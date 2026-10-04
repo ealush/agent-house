@@ -1,16 +1,22 @@
-# systemd user unit. Install:
-#   cp contrib/ah.service ~/.config/systemd/user/ && systemctl --user enable --now ah
-#   loginctl enable-linger $USER   # keep running while you're logged out
+# systemd user unit: starts ah at boot (with lingering) and on your tailnet via
+# `tailscale serve`. Install:
+#   cp contrib/ah.service ~/.config/systemd/user/ && systemctl --user daemon-reload
+#   systemctl --user enable --now ah
+#   loginctl enable-linger $USER   # start at boot, before you log in
+# Logs (including first-run setup codes): journalctl --user -u ah -f
 [Unit]
 Description=ah — agent hub (web UI for tmux shells and coding agents)
 After=network-online.target
+Wants=network-online.target
 
 [Service]
 WorkingDirectory=%h/code/ah
-ExecStart=/usr/bin/env node bin/ah.js serve
-# Agents find their tools through tmux's own environment; this PATH is only for node itself.
+# --tailscale = `pnpm serve`: localhost + tailscale serve (retried until tailscaled is up).
+ExecStart=/usr/bin/env node bin/ah.js serve --tailscale
+# Agents find their tools through tmux's own environment; this PATH is for node, tmux, tailscale.
 Environment=PATH=%h/.local/share/mise/shims:%h/.local/bin:/usr/local/bin:/usr/bin
 Restart=on-failure
+RestartSec=3
 # If ah ends up starting the tmux server, tmux lives in this unit's cgroup. Without
 # this, restarting ah would kill tmux and every session in it.
 KillMode=process

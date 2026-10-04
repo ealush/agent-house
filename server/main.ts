@@ -46,7 +46,8 @@ if (wildcard && !args.includes('--unsafe-bind-all')) {
 
 let tailscaleIPv4: string | null = null;
 const allowedHosts = new Set(['localhost', '127.0.0.1', '::1', hostname(), ...config.allowedHosts]);
-async function addTailscaleHosts() {
+/** True once Tailscale answered; at boot ah may start before tailscaled is up. */
+async function addTailscaleHosts(): Promise<boolean> {
   try {
     const { stdout } = await promisify(execFile)('tailscale', ['status', '--json'], { timeout: 5000 });
     const self = JSON.parse(stdout).Self;
@@ -57,9 +58,21 @@ async function addTailscaleHosts() {
     }
     for (const ip of self.TailscaleIPs ?? []) allowedHosts.add(ip);
     tailscaleIPv4 = (self.TailscaleIPs ?? []).find((ip: string) => !ip.includes(':')) ?? null;
+    return !!dns;
   } catch {
-    // Tailscale not installed or not running; localhost still works.
+    // Tailscale not installed or not running yet; localhost still works.
+    return false;
   }
+}
+
+/** Keeps retrying until Tailscale is up (boot races), then refreshes now and then. */
+function watchTailscale() {
+  const tick = async () => {
+    const ok = await addTailscaleHosts();
+    if (ok && !ownerLogin) ownerLogin = (await tailnet()).login;
+    setTimeout(tick, ok ? 5 * 60_000 : 5_000);
+  };
+  tick();
 }
 
 function hostOf(value: string | undefined): string | null {
@@ -561,6 +574,7 @@ function upgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
 const peers = new Peers(config.peers, PORT);
 core.peers = peers;
 await Promise.all([addTailscaleHosts(), t.cleanupViewers(), tailnet().then((t) => (ownerLogin = t.login))]);
+watchTailscale();
 core.start();
 if (!auth.enabled) {
   console.warn('⚠ auth is off ("auth": {"mode": "off"}): anyone who can reach this port gets a shell.');
@@ -591,7 +605,6 @@ for (const h of HOSTS) {
 let tsServe: ChildProcess | null = null;
 if (args.includes('--tailscale')) {
   if (!HOSTS.some((h) => h === '127.0.0.1' || h === 'localhost')) listen('127.0.0.1');
-  tsServe = spawn('tailscale', ['serve', String(PORT)], { stdio: ['ignore', 'pipe', 'pipe'] });
   let fellBack = false;
   const onOutput = (chunk: Buffer) => {
     const text = chunk.toString();
@@ -611,12 +624,24 @@ if (args.includes('--tailscale')) {
       process.stdout.write(`[tailscale] ${text}`);
     }
   };
-  tsServe.stdout!.on('data', onOutput);
-  tsServe.stderr!.on('data', onOutput);
-  tsServe.on('error', (err) => console.error(`tailscale serve failed: ${err.message}`));
-  tsServe.on('exit', (code, signal) => {
-    if (!shuttingDown) console.error(`tailscale serve exited (${signal ?? code}); ah is still on localhost.`);
-  });
+  // Restarted if it dies (e.g. tailscaled not up yet at boot), backing off to a minute.
+  let delay = 2000;
+  const startServe = () => {
+    const started = Date.now();
+    const child = spawn('tailscale', ['serve', String(PORT)], { stdio: ['ignore', 'pipe', 'pipe'] });
+    tsServe = child;
+    child.stdout!.on('data', onOutput);
+    child.stderr!.on('data', onOutput);
+    child.on('error', (err) => console.error(`tailscale serve failed: ${err.message}`));
+    child.on('exit', (code, signal) => {
+      if (shuttingDown) return;
+      if (Date.now() - started > 60_000) delay = 2000;
+      console.error(`tailscale serve exited (${signal ?? code}); retrying in ${Math.round(delay / 1000)}s. ah is still on localhost.`);
+      setTimeout(startServe, delay);
+      delay = Math.min(delay * 2, 60_000);
+    });
+  };
+  startServe();
 } else if (HOSTS.every((h) => h === '127.0.0.1' || h === 'localhost')) {
   console.log('Put it on your tailnet (HTTPS, tailnet-only) with `pnpm serve`.');
 }
