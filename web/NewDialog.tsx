@@ -20,6 +20,7 @@ export function NewDialog({ state, initialCwd, onClose, onCreated }: Props) {
   const [session, setSession] = useState(state.sessions.includes(state.defaultSession) ? state.defaultSession : state.sessions[0] ?? NEW_SESSION);
   const [newSession, setNewSession] = useState(state.sessions.length ? '' : state.defaultSession);
   const [resume, setResume] = useState(false);
+  const [worktree, setWorktree] = useState(false);
   const [projects, setProjects] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +45,7 @@ export function NewDialog({ state, initialCwd, onClose, onCreated }: Props) {
         cwd,
         label,
         session: session === NEW_SESSION ? newSession : session,
+        worktree,
         resume: resume && !!current.resume,
       });
       onCreated(id);
@@ -114,6 +116,13 @@ export function NewDialog({ state, initialCwd, onClose, onCreated }: Props) {
             <input value={newSession} onChange={(e) => setNewSession(e.target.value)} required autoCapitalize="off" />
           </label>
         )}
+
+        <label className="check">
+          <input type="checkbox" checked={worktree} onChange={(e) => setWorktree(e.target.checked)} />
+          <span>
+            Isolated git worktree <span className="hint">— new branch, so agents don't edit the same checkout</span>
+          </span>
+        </label>
 
         {current?.resume && (
           <label className="check">

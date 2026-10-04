@@ -43,11 +43,33 @@ export type Preset = { id: string; name: string; command: string; resume?: strin
 
 export type State = {
   hostname: string;
+  home: string;
   defaultSession: string;
   sessions: string[];
   windows: Win[];
   history: HistoryItem[];
   presets: Preset[];
+};
+
+export type Changes = {
+  root: string;
+  branch: string;
+  files: Array<{ code: string; path: string }>;
+  stat: string;
+  patch: string;
+  truncated: boolean;
+};
+
+export type WorktreeInfo = {
+  path: string;
+  branch: string;
+  repo: string;
+  head: string;
+  dirty: number;
+  ahead: number;
+  live: Array<{ id: string; name: string }>;
+  sessions: Array<{ id: string; title: string; lifecycle: string }>;
+  orphan: boolean;
 };
 
 export type SendResult = { outcome: 'delivered' | 'queued'; windowId: string; resumed: boolean; queued: number };
@@ -75,7 +97,7 @@ const enc = encodeURIComponent;
 export const api = {
   state: () => request<State>('GET', '/api/state'),
   projects: () => request<string[]>('GET', '/api/projects'),
-  create: (body: { preset: string; cwd: string; session: string; label: string; resume: boolean }) =>
+  create: (body: { preset: string; cwd: string; session: string; label: string; resume: boolean; worktree?: boolean }) =>
     request<{ id: string; uid: string }>('POST', '/api/windows', body),
   rename: (id: string, name: string) => request('PATCH', `/api/windows/${enc(id)}`, { name }),
   kill: (id: string) => request('DELETE', `/api/windows/${enc(id)}`),
@@ -85,6 +107,9 @@ export const api = {
   clearQueue: (uid: string) => request('DELETE', `/api/sessions/${enc(uid)}/queue`),
   pin: (uid: string, pinned: boolean) => request('POST', `/api/sessions/${enc(uid)}/pin`, { pinned }),
   forget: (ref: string) => request('DELETE', `/api/sessions/${enc(ref)}`),
+  changes: (id: string) => request<Changes>('GET', `/api/windows/${enc(id)}/changes`),
+  worktrees: () => request<WorktreeInfo[]>('GET', '/api/worktrees'),
+  removeWorktree: (path: string, force: boolean) => request('DELETE', '/api/worktrees', { path, force }),
   prompts: () => request<Array<{ text: string; at: number }>>('GET', '/api/prompts'),
 };
 
@@ -131,6 +156,25 @@ export function subscribe(onState: (s: State) => void, onError: (msg: string | n
     document.removeEventListener('visibilitychange', wake);
   };
 }
+
+export type FsEntry = { name: string; type: 'dir' | 'file' | 'other'; size: number; mtime: number };
+export type FsListing = { path: string; parent: string | null; entries: FsEntry[] };
+
+export const fs = {
+  list: (path: string, hidden: boolean) => request<FsListing>('GET', `/api/fs/list?path=${enc(path)}${hidden ? '&hidden=1' : ''}`),
+  url: (path: string, download = false) => `/api/fs/file?path=${enc(path)}${download ? '&download=1' : ''}`,
+  mkdir: (path: string) => request<{ path: string }>('POST', '/api/fs/mkdir', { path }),
+  async upload(dir: string, file: File): Promise<string> {
+    const res = await fetch(`/api/fs/upload?dir=${enc(dir)}&name=${enc(file.name || 'upload')}`, {
+      method: 'POST',
+      headers: { 'x-ah': '1', 'content-type': 'application/octet-stream' },
+      body: file,
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error ?? res.statusText);
+    return body.path as string;
+  },
+};
 
 export async function upload(file: File): Promise<string> {
   const res = await fetch(`/api/upload?name=${encodeURIComponent(file.name || 'paste.png')}`, {

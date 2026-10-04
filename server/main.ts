@@ -12,6 +12,8 @@ import { shortPath } from './sessions.ts';
 import { Core, CoreError, resolveDir, defaultName } from './core.ts';
 import { attach, viewerCounts } from './terminal.ts';
 import * as t from './tmux.ts';
+import { createWorktree, changes, GitError } from './git.ts';
+import { FsError, list, makeDir, receive, sendFile } from './files.ts';
 
 const config = loadConfig();
 const core = new Core(config, viewerCounts);
@@ -116,6 +118,7 @@ function str(v: unknown, field: string, max = 200): string {
 
 const UPLOAD_DIR = join(process.env.XDG_CACHE_HOME ?? join(homedir(), '.cache'), 'ah', 'uploads');
 const UPLOAD_LIMIT = 50 * 1024 * 1024;
+const FS_UPLOAD_LIMIT = 2 * 1024 * 1024 * 1024;
 
 async function projectSuggestions(windowPaths: string[]): Promise<string[]> {
   const out = new Set<string>(windowPaths);
@@ -174,8 +177,10 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL) {
     if (!session) throw new HttpError(400, 'invalid session');
     const name = str(body.label ?? '', 'label', 80).trim() || defaultName(preset, cwd);
     const command = body.resume && preset.resume ? preset.resume : preset.command;
-    const out = await core.launch({ preset, cwd, session, name, command });
-    audit(req, `create ${out.windowId} (${out.uid}) preset=${preset.id} session=${session} cwd=${cwd}`);
+    // One writing agent per checkout (F29): optionally start in a fresh worktree + branch.
+    const wt = body.worktree ? await createWorktree(cwd, name) : null;
+    const out = await core.launch({ preset, cwd: wt?.path ?? cwd, session, name, command, meta: wt ? { 'ah.worktree': wt } : undefined });
+    audit(req, `create ${out.windowId} (${out.uid}) preset=${preset.id} session=${session} cwd=${wt?.path ?? cwd}${wt ? ` branch=${wt.branch}` : ''}`);
     await core.refreshTmuxPath();
     return send(res, 201, { id: out.windowId, uid: out.uid });
   }
@@ -193,6 +198,37 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL) {
     const out = await core.send(m[1], text, body.enter !== false);
     audit(req, `send ${m[1]} → ${out.windowId}: ${out.outcome}${out.resumed ? ' (resumed)' : ''}`);
     return send(res, 200, out);
+  }
+
+  // ---------- files (explorer + transfer)
+
+  if (route('GET', /^\/api\/fs\/list$/)) {
+    return send(res, 200, await list(url.searchParams.get('path') || '~', url.searchParams.get('hidden') === '1'));
+  }
+
+  if (route('GET', /^\/api\/fs\/file$/)) {
+    return sendFile(res, url.searchParams.get('path') ?? '', url.searchParams.get('download') === '1');
+  }
+
+  if (route('POST', /^\/api\/fs\/upload$/)) {
+    const path = await receive(req, url.searchParams.get('dir') ?? '', url.searchParams.get('name') ?? '', FS_UPLOAD_LIMIT);
+    audit(req, `upload ${path}`);
+    return send(res, 201, { path });
+  }
+
+  if (route('POST', /^\/api\/fs\/mkdir$/)) {
+    const body = await readJson(req);
+    return send(res, 201, { path: await makeDir(str(body.path, 'path', 1024)) });
+  }
+
+  if (route('GET', /^\/api\/worktrees$/)) return send(res, 200, await core.worktrees());
+
+  if (route('DELETE', /^\/api\/worktrees$/)) {
+    const body = await readJson(req);
+    const path = str(body.path, 'path', 1024);
+    await core.removeWorktree(path, body.force === true);
+    audit(req, `remove worktree ${path}${body.force ? ' (forced)' : ''}`);
+    return send(res, 200, { ok: true });
   }
 
   if (route('GET', /^\/api\/prompts$/)) return send(res, 200, core.recentPrompts());
@@ -224,6 +260,12 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL) {
     await writeFile(file, body, { mode: 0o600 });
     audit(req, `upload ${file} (${body.length} bytes)`);
     return send(res, 201, { path: file });
+  }
+
+  if ((m = route('GET', /^\/api\/windows\/(@\d+)\/changes$/))) {
+    const w = (await core.current()).windows.find((w) => w.id === m![1]);
+    if (!w) throw new HttpError(404, 'window not found');
+    return send(res, 200, await changes(expandHome(w.cwd)));
   }
 
   if ((m = path.match(/^\/api\/windows\/(@\d+)(\/capture)?$/))) {
@@ -318,8 +360,10 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     if (url.pathname.startsWith('/api/')) await api(req, res, url);
     else await serveStatic(res, url.pathname);
   } catch (err) {
-    const status = err instanceof HttpError || err instanceof CoreError ? err.status : 500;
+    const status = err instanceof HttpError || err instanceof CoreError ? err.status : err instanceof GitError ? 400 : err instanceof FsError ? err.status : 500;
     if (status === 500) console.error(err);
+    // A failure mid-stream (e.g. a download) can't be turned into a JSON error any more.
+    if (res.headersSent) return res.destroy();
     const stderr = (err as { stderr?: string }).stderr;
     send(res, status, { error: stderr?.trim() || (err as Error).message });
   }

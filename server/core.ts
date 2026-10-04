@@ -12,11 +12,13 @@ import { Registry, type SessionRecord } from './registry.ts';
 import { discover } from './discovery.ts';
 import { expandHome, isExecutableOnPath, type Config, type Preset } from './config.ts';
 import * as t from './tmux.ts';
+import { listWorktrees, mainRepo, removeWorktree, type Worktree } from './git.ts';
 
 export type QueueItem = { id: string; text: string; enter: boolean; at: number };
 
 export type State = {
   hostname: string;
+  home: string;
   defaultSession: string;
   sessions: string[];
   windows: WindowView[];
@@ -88,6 +90,7 @@ export class Core {
       const history = (await buildHistory(this.registry, windows)).filter((h) => !this.hidden.has(h.ref));
       const state: State = {
         hostname: hostname(),
+        home: homedir(),
         defaultSession: this.config.defaultSession,
         sessions: await t.listSessions(),
         windows,
@@ -269,6 +272,38 @@ export class Core {
     await mkdir(dirname(HIDDEN_FILE), { recursive: true });
     await writeFile(HIDDEN_FILE, JSON.stringify([...this.hidden]));
     this.tick().catch(() => {});
+  }
+
+  // ---------- worktrees (F30): what exists, who uses it, what's safe to clean up
+
+  async worktrees() {
+    const state = await this.current();
+    const repos = new Set<string>();
+    for (const r of this.registry.all()) {
+      const wt = r.meta['ah.worktree'] as Worktree | undefined;
+      if (wt?.repo) repos.add(wt.repo);
+    }
+    for (const w of state.windows) if (w.worktree) repos.add(await mainRepo(expandHome(w.cwd)).catch(() => ''));
+    repos.delete('');
+    const list = await listWorktrees([...repos]);
+    return list.map((wt) => {
+      const users = state.windows.filter((w) => expandHome(w.cwd) === wt.path || expandHome(w.cwd).startsWith(wt.path + '/'));
+      const owners = this.registry.all().filter((r) => (r.meta['ah.worktree'] as Worktree | undefined)?.path === wt.path);
+      return {
+        ...wt,
+        live: users.map((w) => ({ id: w.id, name: w.name })),
+        sessions: owners.map((r) => ({ id: r.id, title: r.title, lifecycle: r.lifecycle })),
+        orphan: users.length === 0,
+      };
+    });
+  }
+
+  async removeWorktree(path: string, force: boolean) {
+    const state = await this.current();
+    if (state.windows.some((w) => expandHome(w.cwd) === path || expandHome(w.cwd).startsWith(path + '/'))) {
+      throw new CoreError(409, 'a live session is using this worktree');
+    }
+    await removeWorktree(path, force);
   }
 
   record(ref: string): SessionRecord | undefined {

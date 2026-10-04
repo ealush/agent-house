@@ -7,6 +7,8 @@ import { NewDialog } from './NewDialog.tsx';
 import { KeyBar, applyModifiers } from './KeyBar.tsx';
 import { Composer } from './Composer.tsx';
 import { Switcher } from './Switcher.tsx';
+import { FilesDialog } from './Files.tsx';
+import { ChangesDialog, WorktreesDialog } from './Git.tsx';
 
 function useMedia(query: string) {
   const [match, setMatch] = useState(() => matchMedia(query).matches);
@@ -50,6 +52,7 @@ export function App() {
   const [capture, setCapture] = useState<string | null>(null);
   const [composing, setComposing] = useState(false);
   const [switching, setSwitching] = useState(false);
+  const [panel, setPanel] = useState<'files' | 'changes' | 'worktrees' | null>(null);
   const [dragging, setDragging] = useState(false);
   const narrow = useMedia('(max-width: 760px)');
   const touch = useMedia('(pointer: coarse)');
@@ -220,6 +223,19 @@ export function App() {
     refresh();
   }
 
+  const abs = (p: string) => (state && p.startsWith('~') ? state.home + p.slice(1) : p);
+
+  async function shellIn(path: string) {
+    setPanel(null);
+    try {
+      const out = await api.create({ preset: 'shell', cwd: path, session: current?.session ?? state?.defaultSession ?? '', label: '', resume: false });
+      await refresh();
+      select(out.id);
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
   async function enableNotify() {
     if (!('Notification' in window)) return;
     setNotify(await Notification.requestPermission());
@@ -254,6 +270,7 @@ export function App() {
             refresh();
           }}
           onNew={() => setCreating(true)}
+          onWorktrees={() => setPanel('worktrees')}
           notify={notify}
           onEnableNotify={enableNotify}
         />
@@ -322,6 +339,16 @@ export function App() {
                     <span aria-hidden>✎</span>
                     <span className="lbl">Compose</span>
                   </button>
+                  <button className="btn ghost small" onClick={() => setPanel('files')} title="Browse, upload and download files on the host">
+                    <span aria-hidden>▤</span>
+                    <span className="lbl">Files</span>
+                  </button>
+                  {current.branch && (
+                    <button className="btn ghost small" onClick={() => setPanel('changes')} title="Review uncommitted changes">
+                      <span aria-hidden>±</span>
+                      <span className="lbl">Diff</span>
+                    </button>
+                  )}
                   <button className="btn ghost small" onClick={openCapture} title="Show scrollback as selectable text">
                     <span aria-hidden>≡</span>
                     <span className="lbl">Text</span>
@@ -407,6 +434,23 @@ export function App() {
       )}
 
       {capture !== null && <CaptureDialog text={capture} onClose={() => setCapture(null)} />}
+
+      {panel === 'files' && current && state && (
+        <FilesDialog
+          start={abs(current.cwd)}
+          cwd={abs(current.cwd)}
+          agent={current.agent}
+          onInsert={(text) => {
+            termRef.current?.send(text);
+            termRef.current?.focus();
+          }}
+          onClose={() => setPanel(null)}
+        />
+      )}
+
+      {panel === 'changes' && current && <ChangesDialog windowId={current.id} onClose={() => setPanel(null)} />}
+
+      {panel === 'worktrees' && <WorktreesDialog onClose={() => setPanel(null)} onShell={shellIn} />}
 
       {toast && (
         <div className="toast" role="status">

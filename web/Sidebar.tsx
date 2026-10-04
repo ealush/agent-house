@@ -14,6 +14,7 @@ type Props = {
   onResume: (ref: string) => void;
   onForget: (ref: string) => void;
   onNew: () => void;
+  onWorktrees: () => void;
   notify: NotificationPermission | 'unsupported';
   onEnableNotify: () => void;
 };
@@ -28,7 +29,7 @@ const STATUS_GROUPS: Array<[Win['status'], string]> = [
 
 const GROUP_LABELS: Record<GroupBy, string> = { status: 'Status', project: 'Projects', session: 'tmux' };
 
-export function Sidebar({ state, error, selected, groupBy, setGroupBy, onSelect, onResume, onForget, onNew, notify, onEnableNotify }: Props) {
+export function Sidebar({ state, error, selected, groupBy, setGroupBy, onSelect, onResume, onForget, onNew, onWorktrees, notify, onEnableNotify }: Props) {
   const groups = useMemo(() => {
     const windows = state?.windows ?? [];
     const pinned = windows.filter((w) => w.pinned);
@@ -95,13 +96,16 @@ export function Sidebar({ state, error, selected, groupBy, setGroupBy, onSelect,
         {!!state?.history.length && <History items={state.history} onResume={onResume} onForget={onForget} />}
       </div>
 
-      {notify === 'default' && (
-        <footer className="side-foot">
+      <footer className="side-foot">
+        <button className="btn ghost small" onClick={onWorktrees}>
+          ⎇ Worktrees
+        </button>
+        {notify === 'default' && (
           <button className="btn ghost small" onClick={onEnableNotify}>
-            Notify me when an agent needs me
+            🔔 Notify me
           </button>
-        </footer>
-      )}
+        )}
+      </footer>
     </nav>
   );
 }
