@@ -1,95 +1,101 @@
 # ah — agent hub
 
-A web control plane for persistent tmux shells and coding-agent sessions.
+A self-hosted control plane for persistent terminal and coding-agent sessions.
 **tmux owns the processes; ah owns the experience.**
 
-Start a Claude Code / Codex / Muse / shell session from your desktop, pick it up on your
-iPad, answer a permission prompt from your phone. Everything runs on one machine, inside
+Start a Claude Code / Codex / Muse / shell session at your desk, approve its next command
+from your phone, and pick it up on your iPad. Everything runs on your own machines, inside
 tmux, reachable only over your tailnet.
 
 ```
-phone / iPad / laptop ──https (tailscale serve)──▶ ah (127.0.0.1:7681) ──pty──▶ tmux attach ──▶ agents
+phone / iPad / laptop ──https (tailscale serve)──▶ ah ──pty──▶ tmux ──▶ agents & shells
+                                                     └──/h/<host>──▶ ah on your other machines
 ```
 
 ## Run it
 
 ```bash
 pnpm install          # builds node-pty (needs gcc/make/python3)
-pnpm build            # builds the web UI into dist/
+pnpm build            # web UI → dist/
 pnpm serve            # ah on 127.0.0.1:7681 + `tailscale serve` → https://<machine>.<tailnet>.ts.net
 ```
 
-`pnpm serve` runs `tailscale serve` in the foreground alongside ah, so the tailnet HTTPS
-endpoint exists exactly as long as ah does. If Serve isn't enabled on your tailnet yet, it
-prints the one-time enable link and, until you click it, also listens on the Tailscale IP
-over plain HTTP. `pnpm start` runs ah on localhost only.
+`pnpm serve` runs `tailscale serve` alongside ah, so the tailnet HTTPS endpoint lives
+exactly as long as ah does. The first time, Tailscale asks you to enable Serve for the
+tailnet (one link); until then ah also listens on the Tailscale IP over plain HTTP.
+`pnpm start` is localhost-only. On iPhone/iPad, use Share → Add to Home Screen.
 
-Then open `https://<machine>.<tailnet>.ts.net` on any device. The first `tailscale serve`
-asks you to enable Serve/HTTPS for the tailnet once, via a login.tailscale.com link.
-
-No `tailscale serve`? Listen on the Tailscale IP directly (plain HTTP inside WireGuard;
-clipboard, notifications and home-screen install need HTTPS, though):
-
-```bash
-pnpm start --host 127.0.0.1,tailscale     # → http://100.x.y.z:7681 (note: http, not https)
-``` On iOS, use Share → Add to Home
-Screen for a full-screen app (and notifications).
+After updating, **restart the server**: the page is served fresh from `dist/`, and a page
+newer than the running server shows a "restart ah" banner.
 
 Keep it running with the systemd user unit in [`contrib/ah.service`](contrib/ah.service).
+Development: `pnpm dev`. Tests: `pnpm test`.
 
-Development: `pnpm dev` (server with `--watch` + Vite on :5173, proxied).
-
-### Agent status hooks (recommended)
+### Agent hooks (recommended)
 
 ```bash
-node bin/ah.js hooks install    # Claude Code hooks + Codex notify; backs up both files
-node bin/ah.js hooks status
-node bin/ah.js hooks uninstall
+node bin/ah.js hooks install    # Claude Code hooks + Codex notify (backs both files up)
+node bin/ah.js hooks status | uninstall
 ```
 
-Without hooks, status is inferred from terminal activity. With them you get exact
-**working / waiting for you / done** states, plus each conversation's native id, which is
-what makes resume exact.
+With hooks, ah knows exactly when an agent is working, waiting for you (and on *what* —
+the command or question), or done, and each conversation's id. Without them it falls back
+to terminal rules and output activity, and matches live agents to their transcripts.
 
-## What it does
+## What you get
 
-- **Sidebar** of every tmux window, grouped by git project or by tmux session, with the
-  agent detected from the process tree (node-based CLIs included).
-- **Status**: working (pulsing), waiting for you (ringing), finished since you last looked
-  (amber), quiet. Browser notifications when something needs you.
-- **Live terminal** in the browser. Each device gets its own grouped tmux session, so
-  your phone and laptop can look at different windows at once. Whoever typed last decides
-  the window size (`window-size latest`).
-- **New session**: pick an agent preset, a directory, a name and a tmux session. Optionally
-  continue the last conversation in that directory.
-- **Ended sessions**: every agent session goes in a registry
-  (`~/.local/state/ah/sessions.json`). When its window dies (or tmux does, e.g. after a
-  reboot), it appears under *ended* with **Resume**, which runs the harness's own resume
-  (`claude --resume <id>`, `codex resume <id>`) in the original directory.
-- **Phone/iPad**: sticky Ctrl/Alt key bar, swipe to scroll tmux history, a **Compose** box
-  (dictation, autocorrect, multi-line prompts sent as one bracketed paste), **Text** view
-  of the scrollback for native selection/copy, and file upload: paste, drop or attach an
-  image and its path on the host is typed in for the agent.
-- **⌘K / Ctrl+Shift+K** quick switcher.
-- If ah crashes or restarts, nothing is lost: `tmux ls` still has everything.
+- **Inbox.** What's blocked on you first, as cards showing the exact command or question,
+  with one-tap **Approve / Deny / Reply**. Then what's running (live activity per session),
+  then idle and done. Group by status, host or project.
+- **Sessions.** A real terminal (xterm.js on a tmux client) with an inline composer:
+  messages are typed in now if the agent is idle, **queued** until it's free if it's
+  working, and the session is **resumed** first if it's dead. Diff and Files sit beside it
+  (tabs on a phone). Each device views independently; whoever typed last sizes the window.
+- **History.** Every session ah has run, plus past Claude Code and Codex conversations
+  found on disk. Resume continues the same conversation (`claude --resume <id>`, …).
+- **Files.** Browse the host, upload from any device into any folder, download, preview,
+  and insert a path into the session (as an `@mention` for agents).
+- **Review.** Uncommitted changes per session; click a line to send the agent a comment
+  anchored to that file and line.
+- **Worktrees.** Start a session on its own branch in its own checkout; see dirty/ahead
+  state and clean up orphans.
+- **Notifications.** Web Push for "needs you" / "finished", per device, even with ah closed
+  (HTTPS + home-screen app on iOS).
+- **Multi-host.** Run ah on every machine; the one you open finds the others on your
+  tailnet and proxies them, so one inbox covers all of them.
+- **Phone-first touches.** Bottom tabs, big targets, key row with sticky Ctrl/Alt, swipe to
+  scroll tmux, dictation-friendly composer, scrollback as selectable text.
+- **⌘K / Ctrl+Shift+K**: jump to any session or resume any conversation;
+  filters `h:` host/harness, `s:` status, `p:` project, `m:` model.
+
+### CLI
+
+The CLI is another view over the same daemon, and lets agents drive agents:
+
+```bash
+ah list                       ah history
+ah new claude --cwd ~/code/x  ah resume "fix flaky"
+ah attach <id|name>           ah read <id> -n 200
+ah send reviewer "review the diff" && ah wait reviewer && ah read reviewer
+```
+
+(`node bin/ah.js …`, or `pnpm link --global` for a bare `ah`.)
 
 ## Security model
 
-Opening ah is equivalent to having a shell as your user. The design leans on Tailscale
-rather than home-grown auth:
+Opening ah is equivalent to having a shell as your user, so it leans on Tailscale rather
+than home-grown auth:
 
-- Binds to `127.0.0.1` by default and refuses `0.0.0.0` unless forced. Expose it with
-  `tailscale serve` (tailnet-only HTTPS). **Never use Tailscale Funnel.**
-- Host header allowlist (localhost, this hostname, its Tailscale name and IPs) against
-  DNS rebinding.
-- WebSocket and mutating requests require an allowlisted `Origin`. Mutations also need an
-  `X-AH` header, which can't be sent cross-site without a CORS preflight that ah never
-  approves.
-- No generic "run command" endpoint: sessions start only from configured presets.
-- Strict CSP, an audit log of create/kill/resume/upload on stdout (with the Tailscale
-  login when behind `tailscale serve`), and uploads are written `0600`.
-
-Restrict which of your devices can reach the port with Tailscale ACLs if needed.
+- Binds to `127.0.0.1` (refuses `0.0.0.0`); reach it via `tailscale serve`. **Never Funnel.**
+- Requests arriving through Serve from a Tailscale user other than the machine's owner
+  are refused.
+- Host allowlist (DNS rebinding), Origin checks on WebSockets and writes, plus an `X-AH`
+  header that can't be sent cross-site without a CORS preflight ah never grants.
+- Sessions start only from configured presets; Approve/Deny re-checks that the session is
+  still waiting before typing anything.
+- The file browser is confined to home and `/tmp` (symlinks resolved); every file response
+  is CSP-sandboxed with `nosniff`, so nothing served can run script on ah's origin.
+- Audit log of create/kill/resume/send/answer/upload on stdout.
 
 ## Configuration
 
@@ -101,34 +107,37 @@ Restrict which of your devices can reach the port with Tailscale ACLs if needed.
   "host": "127.0.0.1",
   "defaultSession": "agents",
   "projectRoots": ["~/code"],
-  "allowedHosts": [],
+  "peers": "auto",
   "idleAfter": 4,
   "presets": [
     { "id": "shell", "name": "Shell", "command": "" },
-    { "id": "claude", "name": "Claude Code", "command": "claude",
-      "resume": "claude --continue", "resumeId": "claude --resume {id}", "match": "^claude$" },
-    { "id": "codex", "name": "Codex", "command": "codex",
-      "resume": "codex resume --last", "resumeId": "codex resume {id}", "match": "^codex" }
+    {
+      "id": "claude", "name": "Claude Code", "command": "claude",
+      "resume": "claude --continue", "resumeId": "claude --resume {id}",
+      "match": "^claude$",
+      "waitingPatterns": ["Do you want to (proceed|make this edit)"],
+      "approveKeys": ["Enter"], "denyKeys": ["Escape"]
+    }
   ]
 }
 ```
 
-`match` is tested against the basenames of `argv[0]`/`argv[1]` of processes under each pane.
-Presets whose command isn't on tmux's `PATH` are hidden. Any CLI can report status with
-`bin/ah-hook.js <preset-id> <working|waiting|done> [session-id]`.
+`host` takes a comma list (`127.0.0.1,tailscale`). `peers` is `"auto"` (your own online
+tailnet machines running ah), `[]`, or `[{ "name", "url" }]`. Presets whose command isn't
+on tmux's `PATH` are hidden. Any CLI can report status with
+`bin/ah-hook.js <preset> <working|waiting|done> [session-id]`.
+
+State lives in `~/.local/state/ah/` (registry, prompt history, push subscriptions);
+uploads in `~/.cache/ah/uploads/`.
 
 ## Layout
 
 ```
-server/   main.ts (HTTP + WS, security) · tmux.ts · sessions.ts (status, detection)
-          terminal.ts (pty ⇄ websocket) · registry.ts · procs.ts · config.ts
-web/      React + xterm.js UI
-bin/      ah.js (CLI) · ah-hook.js (agent hooks → tmux window options)
+server/  main.ts (HTTP/WS, security, routing) · core.ts (ticker, launch/resume/send/answer)
+         sessions.ts (status, detection, history) · registry.ts · discovery.ts · tmux.ts
+         terminal.ts · peers.ts · push.ts · files.ts · git.ts · procs.ts · config.ts
+web/     React + xterm.js: Inbox, Session, History, Files, Git, Composer, Switcher, …
+bin/     ah.js + cli.js (CLI) · ah-hook.js (agent hooks → tmux window options)
 ```
 
-## Roadmap
-
-- Multi-machine: a tiny daemon per host connecting out to a hub, one sidebar for all.
-- Web Push, so notifications arrive with the tab closed.
-- Git status/diff and a file browser per project.
-- Splits / multiple terminals side by side.
+See [BACKLOG.md](BACKLOG.md) for what's done, what isn't, and the design decisions.
