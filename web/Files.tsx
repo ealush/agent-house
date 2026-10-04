@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { fs, shellQuote, type FsEntry, type FsListing } from './api.ts';
+import { shellQuote, type FsEntry, type FsListing, type HostApi } from './api.ts';
 
 // File explorer + transfer. Browse the host from the session's folder, pull files
 // down to this device, push files up into any folder, and hand a path to the
 // session: as an @mention for agents that support it, a quoted path otherwise.
 type Props = {
+  fs: HostApi['fs'];
   /** Absolute (or ~) folder to open in; usually the session's cwd. */
   start: string;
   /** The session's cwd, so inserted paths can be relative to it. */
@@ -30,7 +31,7 @@ export function relativeTo(cwd: string, path: string): string {
   return path.startsWith(cwd + '/') ? path.slice(cwd.length + 1) : path;
 }
 
-export function FilesDialog({ start, cwd, agent, onInsert, onClose }: Props) {
+export function FilesDialog({ fs, start, cwd, agent, onInsert, onClose }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const [listing, setListing] = useState<FsListing | null>(null);
   const [path, setPath] = useState(start);

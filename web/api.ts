@@ -2,6 +2,9 @@ export type Status = 'busy' | 'idle' | 'waiting' | 'attention';
 
 export type Win = {
   id: string;
+  /** Added client-side: which machine, and a selection key unique across machines. */
+  host: string;
+  key: string;
   session: string;
   index: number;
   name: string;
@@ -27,6 +30,7 @@ export type Win = {
 
 export type HistoryItem = {
   ref: string;
+  host: string;
   kind: 'ended' | 'saved';
   harness: string;
   harnessId: string | null;
@@ -41,8 +45,11 @@ export type HistoryItem = {
 
 export type Preset = { id: string; name: string; command: string; resume?: string; available: boolean };
 
+export type Host = { name: string; self: boolean; online: boolean };
+
 export type State = {
   hostname: string;
+  hosts: Host[];
   home: string;
   defaultSession: string;
   sessions: string[];
@@ -94,32 +101,61 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 const enc = encodeURIComponent;
 
-export const api = {
-  state: () => request<State>('GET', '/api/state'),
-  projects: () => request<string[]>('GET', '/api/projects'),
-  create: (body: { preset: string; cwd: string; session: string; label: string; resume: boolean; worktree?: boolean }) =>
-    request<{ id: string; uid: string }>('POST', '/api/windows', body),
-  rename: (id: string, name: string) => request('PATCH', `/api/windows/${enc(id)}`, { name }),
-  kill: (id: string) => request('DELETE', `/api/windows/${enc(id)}`),
-  capture: (id: string) => request<string>('GET', `/api/windows/${enc(id)}/capture?lines=3000`),
-  resume: (ref: string) => request<{ id: string; uid: string; resumed: boolean }>('POST', `/api/sessions/${enc(ref)}/resume`),
-  send: (ref: string, text: string, enter: boolean) => request<SendResult>('POST', `/api/sessions/${enc(ref)}/send`, { text, enter }),
-  clearQueue: (uid: string) => request('DELETE', `/api/sessions/${enc(uid)}/queue`),
-  pin: (uid: string, pinned: boolean) => request('POST', `/api/sessions/${enc(uid)}/pin`, { pinned }),
-  forget: (ref: string) => request('DELETE', `/api/sessions/${enc(ref)}`),
-  changes: (id: string) => request<Changes>('GET', `/api/windows/${enc(id)}/changes`),
-  worktrees: () => request<WorktreeInfo[]>('GET', '/api/worktrees'),
-  removeWorktree: (path: string, force: boolean) => request('DELETE', '/api/worktrees', { path, force }),
-  prompts: () => request<Array<{ text: string; at: number }>>('GET', '/api/prompts'),
-};
+async function postFile(url: string, file: File): Promise<string> {
+  const res = await fetch(url, { method: 'POST', headers: { 'x-ah': '1', 'content-type': 'application/octet-stream' }, body: file });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error ?? res.statusText);
+  return body.path as string;
+}
+
+/**
+ * API client for one host. The local daemon is base ""; peers are reached through it
+ * at "/h/<name>" (it proxies HTTP, events and terminals), so the browser has one origin.
+ */
+export function hostApi(base: string) {
+  const r = <T>(method: string, path: string, body?: unknown) => request<T>(method, base + path, body);
+  return {
+    base,
+    state: () => r<State>('GET', '/api/state'),
+    projects: () => r<string[]>('GET', '/api/projects'),
+    create: (body: { preset: string; cwd: string; session: string; label: string; resume: boolean; worktree?: boolean }) =>
+      r<{ id: string; uid: string }>('POST', '/api/windows', body),
+    rename: (id: string, name: string) => r('PATCH', `/api/windows/${enc(id)}`, { name }),
+    kill: (id: string) => r('DELETE', `/api/windows/${enc(id)}`),
+    capture: (id: string) => r<string>('GET', `/api/windows/${enc(id)}/capture?lines=3000`),
+    resume: (ref: string) => r<{ id: string; uid: string; resumed: boolean }>('POST', `/api/sessions/${enc(ref)}/resume`),
+    send: (ref: string, text: string, enter: boolean) => r<SendResult>('POST', `/api/sessions/${enc(ref)}/send`, { text, enter }),
+    clearQueue: (uid: string) => r('DELETE', `/api/sessions/${enc(uid)}/queue`),
+    pin: (uid: string, pinned: boolean) => r('POST', `/api/sessions/${enc(uid)}/pin`, { pinned }),
+    forget: (ref: string) => r('DELETE', `/api/sessions/${enc(ref)}`),
+    changes: (id: string) => r<Changes>('GET', `/api/windows/${enc(id)}/changes`),
+    worktrees: () => r<WorktreeInfo[]>('GET', '/api/worktrees'),
+    removeWorktree: (path: string, force: boolean) => r('DELETE', '/api/worktrees', { path, force }),
+    prompts: () => r<Array<{ text: string; at: number }>>('GET', '/api/prompts'),
+    /** Pasted/dropped files land in the host's upload folder. */
+    upload: (file: File) => postFile(`${base}/api/upload?name=${enc(file.name || 'paste.png')}`, file),
+    fs: {
+      list: (path: string, hidden: boolean) => r<FsListing>('GET', `/api/fs/list?path=${enc(path)}${hidden ? '&hidden=1' : ''}`),
+      url: (path: string, download = false) => `${base}/api/fs/file?path=${enc(path)}${download ? '&download=1' : ''}`,
+      mkdir: (path: string) => r<{ path: string }>('POST', '/api/fs/mkdir', { path }),
+      upload: (dir: string, file: File) => postFile(`${base}/api/fs/upload?dir=${enc(dir)}&name=${enc(file.name || 'upload')}`, file),
+    },
+    wsUrl: (windowId: string, cols: number, rows: number) =>
+      `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${base}/ws/${enc(windowId)}?cols=${cols}&rows=${rows}`,
+  };
+}
+
+export type HostApi = ReturnType<typeof hostApi>;
+
+export const api = hostApi('');
 
 /** Live state over SSE; falls back to polling if the stream can't be held open. */
-export function subscribe(onState: (s: State) => void, onError: (msg: string | null) => void): () => void {
+export function subscribe(onState: (s: State) => void, onError: (msg: string | null) => void, client: HostApi = api): () => void {
   let es: EventSource | null = null;
   let poll: number | undefined;
   let closed = false;
   const fetchOnce = () =>
-    api
+    client
       .state()
       .then((s) => {
         onState(s);
@@ -128,7 +164,7 @@ export function subscribe(onState: (s: State) => void, onError: (msg: string | n
       .catch((e) => onError((e as Error).message));
   const open = () => {
     if (closed) return;
-    es = new EventSource('/api/events');
+    es = new EventSource(`${client.base}/api/events`);
     es.addEventListener('state', (e) => {
       clearInterval(poll);
       poll = undefined;
@@ -159,33 +195,6 @@ export function subscribe(onState: (s: State) => void, onError: (msg: string | n
 
 export type FsEntry = { name: string; type: 'dir' | 'file' | 'other'; size: number; mtime: number };
 export type FsListing = { path: string; parent: string | null; entries: FsEntry[] };
-
-export const fs = {
-  list: (path: string, hidden: boolean) => request<FsListing>('GET', `/api/fs/list?path=${enc(path)}${hidden ? '&hidden=1' : ''}`),
-  url: (path: string, download = false) => `/api/fs/file?path=${enc(path)}${download ? '&download=1' : ''}`,
-  mkdir: (path: string) => request<{ path: string }>('POST', '/api/fs/mkdir', { path }),
-  async upload(dir: string, file: File): Promise<string> {
-    const res = await fetch(`/api/fs/upload?dir=${enc(dir)}&name=${enc(file.name || 'upload')}`, {
-      method: 'POST',
-      headers: { 'x-ah': '1', 'content-type': 'application/octet-stream' },
-      body: file,
-    });
-    const body = await res.json();
-    if (!res.ok) throw new Error(body.error ?? res.statusText);
-    return body.path as string;
-  },
-};
-
-export async function upload(file: File): Promise<string> {
-  const res = await fetch(`/api/upload?name=${encodeURIComponent(file.name || 'paste.png')}`, {
-    method: 'POST',
-    headers: { 'x-ah': '1', 'content-type': 'application/octet-stream' },
-    body: file,
-  });
-  const body = await res.json();
-  if (!res.ok) throw new Error(body.error ?? res.statusText);
-  return body.path as string;
-}
 
 /** Quote a path for POSIX shells and agent prompts alike. */
 export function shellQuote(p: string): string {

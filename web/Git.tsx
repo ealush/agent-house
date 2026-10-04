@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, type Changes, type WorktreeInfo } from './api.ts';
+import { type Changes, type HostApi, type WorktreeInfo } from './api.ts';
 
 function useModal() {
   const ref = useRef<HTMLDialogElement>(null);
@@ -8,13 +8,13 @@ function useModal() {
 }
 
 // Read-only review of a session's working changes (F34): status, stat, patch.
-export function ChangesDialog({ windowId, onClose }: { windowId: string; onClose: () => void }) {
+export function ChangesDialog({ client, windowId, onClose }: { client: HostApi; windowId: string; onClose: () => void }) {
   const ref = useModal();
   const [data, setData] = useState<Changes | null>(null);
   const [error, setError] = useState<string | null>(null);
   const load = () => {
     setError(null);
-    api.changes(windowId).then(setData).catch((e) => setError(e.message));
+    client.changes(windowId).then(setData).catch((e) => setError(e.message));
   };
   useEffect(load, [windowId]);
 
@@ -66,11 +66,11 @@ function Patch({ text }: { text: string }) {
 }
 
 // Managed worktrees (F30): who uses them, what's dirty, and cleanup of orphans.
-export function WorktreesDialog({ onClose, onShell }: { onClose: () => void; onShell: (path: string) => void }) {
+export function WorktreesDialog({ client, onClose, onShell }: { client: HostApi; onClose: () => void; onShell: (path: string) => void }) {
   const ref = useModal();
   const [list, setList] = useState<WorktreeInfo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const load = () => api.worktrees().then(setList).catch((e) => setError(e.message));
+  const load = () => client.worktrees().then(setList).catch((e) => setError(e.message));
   useEffect(() => {
     load();
   }, []);
@@ -82,7 +82,7 @@ export function WorktreesDialog({ onClose, onShell }: { onClose: () => void; onS
       : `Remove worktree ${wt.branch}? The branch itself is kept.`;
     if (!confirm(msg)) return;
     try {
-      await api.removeWorktree(wt.path, dirty);
+      await client.removeWorktree(wt.path, dirty);
       load();
     } catch (e) {
       alert((e as Error).message);

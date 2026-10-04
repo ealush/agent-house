@@ -1,18 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, type State } from './api.ts';
+import type { HostApi, State } from './api.ts';
 import { look } from './agents.ts';
 
 type Props = {
-  state: State;
+  /** Online machines; starting "here or there" is the same code path (F4). */
+  hosts: string[];
+  initialHost: string;
+  hostState: (host: string) => State | null;
+  clientFor: (host: string) => HostApi;
   /** Prefill the directory, e.g. from the currently selected window. */
   initialCwd: string;
   onClose: () => void;
-  onCreated: (id: string) => void;
+  onCreated: (host: string, id: string) => void;
 };
 
 const NEW_SESSION = '\u0000new';
 
-export function NewDialog({ state, initialCwd, onClose, onCreated }: Props) {
+export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd, onClose, onCreated }: Props) {
+  const [host, setHost] = useState(initialHost);
+  const state = hostState(host) ?? hostState(hosts[0])!;
+  const client = clientFor(host);
   const presets = state.presets.filter((p) => p.available);
   const [preset, setPreset] = useState(() => localStorage.getItem('ah.lastPreset') ?? presets[0]?.id ?? 'shell');
   const [cwd, setCwd] = useState(initialCwd);
@@ -26,10 +33,10 @@ export function NewDialog({ state, initialCwd, onClose, onCreated }: Props) {
   const [error, setError] = useState<string | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
 
+  useEffect(() => dialog.current?.showModal(), []);
   useEffect(() => {
-    dialog.current?.showModal();
-    api.projects().then(setProjects).catch(() => {});
-  }, []);
+    client.projects().then(setProjects).catch(() => setProjects([]));
+  }, [host]);
 
   const current = presets.find((p) => p.id === preset) ?? presets[0];
   const recent = projects.slice(0, 8);
@@ -40,7 +47,7 @@ export function NewDialog({ state, initialCwd, onClose, onCreated }: Props) {
     setError(null);
     try {
       localStorage.setItem('ah.lastPreset', current.id);
-      const { id } = await api.create({
+      const { id } = await client.create({
         preset: current.id,
         cwd,
         label,
@@ -48,7 +55,7 @@ export function NewDialog({ state, initialCwd, onClose, onCreated }: Props) {
         worktree,
         resume: resume && !!current.resume,
       });
-      onCreated(id);
+      onCreated(host, id);
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);
@@ -59,6 +66,16 @@ export function NewDialog({ state, initialCwd, onClose, onCreated }: Props) {
     <dialog ref={dialog} className="dialog" onClose={onClose} onClick={(e) => e.target === dialog.current && onClose()}>
       <form onSubmit={submit}>
         <h2>New session</h2>
+
+        {hosts.length > 1 && (
+          <div className="seg host-pick" role="radiogroup" aria-label="Machine">
+            {hosts.map((h) => (
+              <button type="button" key={h} role="radio" aria-checked={h === host} className={h === host ? 'on' : ''} onClick={() => setHost(h)}>
+                {h}
+              </button>
+            ))}
+          </div>
+        )}
 
         <fieldset className="presets">
           <legend>Run</legend>

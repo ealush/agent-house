@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import type { HistoryItem, State, Win } from './api.ts';
 import { look } from './agents.ts';
 
-export type GroupBy = 'status' | 'project' | 'session';
+export type GroupBy = 'status' | 'project' | 'session' | 'host';
 
 type Props = {
   state: State | null;
@@ -11,8 +11,8 @@ type Props = {
   groupBy: GroupBy;
   setGroupBy: (g: GroupBy) => void;
   onSelect: (id: string) => void;
-  onResume: (ref: string) => void;
-  onForget: (ref: string) => void;
+  onResume: (host: string, ref: string) => void;
+  onForget: (host: string, ref: string) => void;
   onNew: () => void;
   onWorktrees: () => void;
   onNotify: () => void;
@@ -27,7 +27,7 @@ const STATUS_GROUPS: Array<[Win['status'], string]> = [
   ['idle', 'idle'],
 ];
 
-const GROUP_LABELS: Record<GroupBy, string> = { status: 'Status', project: 'Projects', session: 'tmux' };
+const GROUP_LABELS: Record<GroupBy, string> = { status: 'Status', project: 'Projects', session: 'tmux', host: 'Hosts' };
 
 export function Sidebar({ state, error, selected, groupBy, setGroupBy, onSelect, onResume, onForget, onNew, onWorktrees, onNotify, notify }: Props) {
   const groups = useMemo(() => {
@@ -40,7 +40,7 @@ export function Sidebar({ state, error, selected, groupBy, setGroupBy, onSelect,
     } else {
       const map = new Map<string, Win[]>();
       for (const w of rest) {
-        const key = groupBy === 'project' ? w.project : w.session;
+        const key = groupBy === 'project' ? w.project : groupBy === 'host' ? w.host : w.session;
         map.set(key, [...(map.get(key) ?? []), w]);
       }
       out = [...map.entries()].sort(([a], [b]) => (a === '~' ? 1 : b === '~' ? -1 : a.localeCompare(b)));
@@ -49,6 +49,7 @@ export function Sidebar({ state, error, selected, groupBy, setGroupBy, onSelect,
   }, [state, groupBy]);
 
   const waiting = state?.windows.filter((w) => w.status === 'waiting').length ?? 0;
+  const multiHost = (state?.hosts.length ?? 0) > 1;
 
   return (
     <nav className="sidebar">
@@ -64,7 +65,7 @@ export function Sidebar({ state, error, selected, groupBy, setGroupBy, onSelect,
 
       <div className="side-tools">
         <div className="seg" role="tablist">
-          {(['status', 'project', 'session'] as const).map((g) => (
+          {(multiHost ? (['status', 'project', 'host'] as const) : (['status', 'project', 'session'] as const)).map((g) => (
             <button key={g} role="tab" aria-selected={groupBy === g} className={groupBy === g ? 'on' : ''} onClick={() => setGroupBy(g)}>
               {GROUP_LABELS[g]}
             </button>
@@ -88,7 +89,7 @@ export function Sidebar({ state, error, selected, groupBy, setGroupBy, onSelect,
             <h3 title={groupBy === 'project' ? wins[0].projectPath : undefined}>{group}</h3>
             <ul>
               {wins.map((w) => (
-                <Item key={w.id} w={w} selected={w.id === selected} groupBy={groupBy} onSelect={onSelect} />
+                <Item key={w.key} w={w} selected={w.key === selected} groupBy={groupBy} multiHost={multiHost} onSelect={onSelect} />
               ))}
             </ul>
           </section>
@@ -110,13 +111,13 @@ export function Sidebar({ state, error, selected, groupBy, setGroupBy, onSelect,
   );
 }
 
-function Item({ w, selected, groupBy, onSelect }: { w: Win; selected: boolean; groupBy: GroupBy; onSelect: (id: string) => void }) {
+function Item({ w, selected, groupBy, multiHost, onSelect }: { w: Win; selected: boolean; groupBy: GroupBy; multiHost: boolean; onSelect: (key: string) => void }) {
   const { color, glyph } = look(w.agent);
   const elsewhere = w.viewers - (selected ? 1 : 0);
-  const context = groupBy === 'project' ? w.session : w.project;
+  const context = [multiHost && groupBy !== 'host' ? w.host : null, groupBy === 'project' ? w.session : w.project].filter(Boolean).join(' · ');
   return (
     <li>
-      <button className={`item ${selected ? 'selected' : ''} ${w.status}`} onClick={() => onSelect(w.id)} style={{ '--agent': color } as React.CSSProperties}>
+      <button className={`item ${selected ? 'selected' : ''} ${w.status}`} onClick={() => onSelect(w.key)} style={{ '--agent': color } as React.CSSProperties}>
         <span className="chip" aria-hidden>
           {glyph}
         </span>
@@ -155,7 +156,7 @@ export const STATUS_TEXT = {
 
 const HISTORY_PREVIEW = 6;
 
-function History({ items, onResume, onForget }: { items: HistoryItem[]; onResume: (ref: string) => void; onForget: (ref: string) => void }) {
+function History({ items, onResume, onForget }: { items: HistoryItem[]; onResume: (host: string, ref: string) => void; onForget: (host: string, ref: string) => void }) {
   const [open, setOpen] = useState(false);
   const [all, setAll] = useState(false);
   const shown = all ? items : items.slice(0, HISTORY_PREVIEW);
@@ -171,7 +172,7 @@ function History({ items, onResume, onForget }: { items: HistoryItem[]; onResume
           {shown.map((h) => {
             const { color, glyph } = look(h.harness);
             return (
-              <li key={h.ref} className="ended-item" style={{ '--agent': color } as React.CSSProperties}>
+              <li key={`${h.host}:${h.ref}`} className="ended-item" style={{ '--agent': color } as React.CSSProperties}>
                 <span className="chip">{glyph}</span>
                 <span className="item-main">
                   <span className="item-name" title={h.title}>
@@ -182,10 +183,10 @@ function History({ items, onResume, onForget }: { items: HistoryItem[]; onResume
                     {h.kind === 'saved' ? '' : ' · ended'}
                   </span>
                 </span>
-                <button className="btn small" onClick={() => onResume(h.ref)} title={h.harnessId ? 'Resume this exact conversation' : 'Continue the latest conversation in this directory'}>
+                <button className="btn small" onClick={() => onResume(h.host, h.ref)} title={h.harnessId ? 'Resume this exact conversation' : 'Continue the latest conversation in this directory'}>
                   Resume
                 </button>
-                <button className="icon-btn small" onClick={() => onForget(h.ref)} title="Hide from history">
+                <button className="icon-btn small" onClick={() => onForget(h.host, h.ref)} title="Hide from history">
                   ×
                 </button>
               </li>

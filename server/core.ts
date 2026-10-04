@@ -14,11 +14,15 @@ import { expandHome, isExecutableOnPath, type Config, type Preset } from './conf
 import * as t from './tmux.ts';
 import { listWorktrees, mainRepo, removeWorktree, type Worktree } from './git.ts';
 import { Push } from './push.ts';
+import type { Peers } from './peers.ts';
 
 export type QueueItem = { id: string; text: string; enter: boolean; at: number };
 
+export type Host = { name: string; self: boolean; online: boolean };
+
 export type State = {
   hostname: string;
+  hosts: Host[];
   home: string;
   defaultSession: string;
   sessions: string[];
@@ -56,6 +60,7 @@ export class Core {
   private hidden = new Set<string>();
   private prompts: Array<{ text: string; at: number }> = [];
   private config: Config;
+  peers: Peers | null = null;
 
   constructor(config: Config, viewerCounts: Map<string, number>) {
     this.config = config;
@@ -93,6 +98,10 @@ export class Core {
       const history = (await buildHistory(this.registry, windows)).filter((h) => !this.hidden.has(h.ref));
       const state: State = {
         hostname: hostname(),
+        hosts: [
+          { name: hostname(), self: true, online: true },
+          ...(this.peers?.list() ?? []).map((p) => ({ name: p.name, self: false, online: p.online })),
+        ],
         home: homedir(),
         defaultSession: this.config.defaultSession,
         sessions: await t.listSessions(),

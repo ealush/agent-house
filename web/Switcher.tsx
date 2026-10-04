@@ -6,8 +6,8 @@ import { ago } from './Sidebar.tsx';
 type Props = {
   windows: Win[];
   history: HistoryItem[];
-  onPick: (id: string) => void;
-  onResume: (ref: string) => void;
+  onPick: (key: string) => void;
+  onResume: (host: string, ref: string) => void;
   onClose: () => void;
 };
 
@@ -59,7 +59,7 @@ export function Switcher({ windows, history, onPick, onResume, onClose }: Props)
   const results = useMemo(() => {
     const { text, f } = parseQuery(q);
     const live: Row[] = windows
-      .filter((w) => has(w.agent ?? w.command, f.h) && has(w.status, f.s) && has(w.project, f.p) && has(w.model, f.m))
+      .filter((w) => (has(w.agent ?? w.command, f.h) || has(w.host, f.h)) && has(w.status, f.s) && has(w.project, f.p) && has(w.model, f.m))
       .map((w) => ({ kind: 'win' as const, w, s: score(text, `${w.name} ${w.project} ${w.agent ?? w.command} ${w.session} ${w.branch ?? ''}`) }))
       .filter((r) => r.s > 0)
       .sort((a, b) => b.s - a.s || b.w.activity - a.w.activity);
@@ -67,7 +67,7 @@ export function Switcher({ windows, history, onPick, onResume, onClose }: Props)
     const past: Row[] =
       text || f.h || f.p || f.m
         ? history
-            .filter((h) => has(h.harness, f.h) && has(h.project, f.p) && has(h.model, f.m) && (!f.s || 'ended saved'.includes(f.s)))
+            .filter((h) => (has(h.harness, f.h) || has(h.host, f.h)) && has(h.project, f.p) && has(h.model, f.m) && (!f.s || 'ended saved'.includes(f.s)))
             .map((h) => ({ kind: 'hist' as const, h, s: score(text, `${h.title} ${h.project} ${h.harness}`) }))
             .filter((r) => r.s > 0)
             .sort((a, b) => b.s - a.s || b.h.at - a.h.at)
@@ -75,7 +75,7 @@ export function Switcher({ windows, history, onPick, onResume, onClose }: Props)
     return [...live, ...past].slice(0, 14);
   }, [windows, history, q]);
 
-  const choose = (r: Row) => (r.kind === 'win' ? onPick(r.w.id) : onResume(r.h.ref));
+  const choose = (r: Row) => (r.kind === 'win' ? onPick(r.w.key) : onResume(r.h.host, r.h.ref));
 
   return (
     <dialog ref={ref} className="dialog switcher" onClose={onClose} onClick={(e) => e.target === ref.current && onClose()}>
@@ -102,7 +102,7 @@ export function Switcher({ windows, history, onPick, onResume, onClose }: Props)
           const agent = r.kind === 'win' ? r.w.agent : r.h.harness;
           const { color, glyph } = look(agent);
           return (
-            <li key={r.kind === 'win' ? r.w.id : r.h.ref}>
+            <li key={r.kind === 'win' ? r.w.key : `${r.h.host}:${r.h.ref}`}>
               <button
                 className={`item ${idx === i ? 'selected' : ''} ${r.kind === 'win' ? r.w.status : 'past'}`}
                 style={{ '--agent': color } as React.CSSProperties}

@@ -14,6 +14,8 @@ export type TerminalHandle = {
 
 type Props = {
   windowId: string;
+  /** Builds the socket URL for this window on its host (local, or proxied peer). */
+  wsUrl: (windowId: string, cols: number, rows: number) => string;
   /** Lets the on-screen key bar rewrite typed input (sticky Ctrl/Alt). */
   transformInput?: (data: string) => string;
   onGone: () => void;
@@ -47,7 +49,7 @@ const THEME = {
 
 const FONT = "'JetBrainsMono Nerd Font', 'JetBrains Mono', 'SF Mono', Menlo, ui-monospace, monospace";
 
-export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ windowId, transformInput, onGone }, ref) {
+export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ windowId, wsUrl, transformInput, onGone }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const term = useRef<XTerm | null>(null);
   const fit = useRef<FitAddon | null>(null);
@@ -147,10 +149,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ wi
       if (disposed) return;
       safeFit();
       setConn(attempt ? 'retrying' : 'connecting');
-      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-      const sock = new WebSocket(
-        `${proto}://${location.host}/ws/${encodeURIComponent(windowId)}?cols=${t.cols}&rows=${t.rows}`,
-      );
+      const sock = new WebSocket(wsUrl(windowId, t.cols, t.rows));
       sock.binaryType = 'arraybuffer';
       ws.current = sock;
       sock.onopen = () => {

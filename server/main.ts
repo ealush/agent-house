@@ -14,9 +14,12 @@ import { attach, viewerCounts } from './terminal.ts';
 import * as t from './tmux.ts';
 import { createWorktree, changes, GitError } from './git.ts';
 import { FsError, list, makeDir, receive, sendFile } from './files.ts';
+import { Peers, proxyHttp, proxyWs, tailnet } from './peers.ts';
 
 const config = loadConfig();
 const core = new Core(config, viewerCounts);
+/** Tailscale login that owns this machine; requests arriving via Serve from anyone else are refused. */
+let ownerLogin: string | null = null;
 const args = process.argv.slice(2);
 const flag = (name: string) => {
   const i = args.indexOf(`--${name}`);
@@ -69,6 +72,12 @@ function hostOf(value: string | undefined): string | null {
 function hostAllowed(req: IncomingMessage): boolean {
   const h = hostOf(req.headers.host);
   return h !== null && allowedHosts.has(h);
+}
+
+/** Behind `tailscale serve`, the caller's identity arrives in a header. Only the owner gets in. */
+function identityAllowed(req: IncomingMessage): boolean {
+  const who = req.headers['tailscale-user-login'];
+  return !who || !ownerLogin || who === ownerLogin;
 }
 
 function originAllowed(req: IncomingMessage): boolean {
@@ -144,6 +153,8 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL) {
   const path = safeDecode(url.pathname);
   const route = (verb: string, re: RegExp) => (method === verb ? path.match(re) : null);
   let m: RegExpMatchArray | null;
+
+  if (route('GET', /^\/api\/hello$/)) return send(res, 200, { ah: true, hostname: hostname() });
 
   if (route('GET', /^\/api\/state$/)) return send(res, 200, await core.current());
 
@@ -379,8 +390,23 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     res.writeHead(421, { 'content-type': 'text/plain' });
     return res.end(`Host not allowed. Add it to allowedHosts in ${CONFIG_PATH}.`);
   }
-  const url = new URL(req.url ?? '/', 'http://x');
+  if (!identityAllowed(req)) {
+    res.writeHead(403, { 'content-type': 'text/plain' });
+    return res.end('This ah belongs to another Tailscale user.');
+  }
+  let url = new URL(req.url ?? '/', 'http://x');
   try {
+    // /h/<host>/… addresses a host: ourselves (served here) or a peer (proxied).
+    const h = url.pathname.match(/^\/h\/([\w.-]{1,64})(\/.*)$/);
+    if (h) {
+      if (h[1] !== hostname()) {
+        if (req.method !== 'GET' && (req.headers['x-ah'] !== '1' || !originAllowed(req))) throw new HttpError(403, 'forbidden');
+        const peer = peers.get(h[1]);
+        if (!peer) throw new HttpError(502, `host ${h[1]} is offline`);
+        return await proxyHttp(peer, h[2] + url.search, req, res);
+      }
+      url = new URL(h[2] + url.search, 'http://x');
+    }
     if (url.pathname.startsWith('/api/')) await api(req, res, url);
     else await serveStatic(res, url.pathname);
   } catch (err) {
@@ -397,23 +423,33 @@ const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
 
 function upgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
   const url = new URL(req.url ?? '/', 'http://x');
-  const m = safeDecode(url.pathname).match(/^\/ws\/(@\d+)$/);
-  if (!m || !hostAllowed(req) || !originAllowed(req)) {
+  const m = safeDecode(url.pathname).match(/^(?:\/h\/([\w.-]{1,64}))?\/ws\/(@\d+)$/);
+  if (!m || !hostAllowed(req) || !originAllowed(req) || !identityAllowed(req)) {
     socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
     return socket.destroy();
   }
+  const [, host, windowId] = m;
+  const peer = host && host !== hostname() ? peers.get(host) : null;
+  if (host && host !== hostname() && !peer) {
+    socket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
+    return socket.destroy();
+  }
   wss.handleUpgrade(req, socket, head, (ws) => {
+    if (peer) return proxyWs(peer, `/ws/${encodeURIComponent(windowId)}${url.search}`, ws);
     const cols = Number(url.searchParams.get('cols'));
     const rows = Number(url.searchParams.get('rows'));
-    attach(ws, m[1], cols, rows).catch((err) => {
+    attach(ws, windowId, cols, rows).catch((err) => {
       console.error(err);
       ws.close(1011, 'attach failed');
     });
   });
 }
 
-await Promise.all([addTailscaleHosts(), t.cleanupViewers()]);
+const peers = new Peers(config.peers, PORT);
+core.peers = peers;
+await Promise.all([addTailscaleHosts(), t.cleanupViewers(), tailnet().then((t) => (ownerLogin = t.login))]);
 core.start();
+peers.start();
 const servers: ReturnType<typeof createServer>[] = [];
 function listen(host: string) {
   const server = createServer(handle);

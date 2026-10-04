@@ -32,6 +32,11 @@ export type Config = {
   allowedHosts: string[];
   /** Seconds since last output after which a window counts as idle. */
   idleAfter: number;
+  /**
+   * Other machines running ah. "auto" finds your own online tailnet machines that
+   * answer on ah's port or via `tailscale serve`; or list them: [{ "name", "url" }].
+   */
+  peers: Array<{ name: string; url: string }> | 'auto';
   presets: Preset[];
 };
 
@@ -76,6 +81,7 @@ export function loadConfig(): Config {
     projectRoots: ['~/code'],
     allowedHosts: [],
     idleAfter: 4,
+    peers: 'auto',
     ...user,
     presets: user.presets ?? DEFAULT_PRESETS,
   };

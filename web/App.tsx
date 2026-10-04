@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, subscribe, upload, shellQuote, type SendResult, type State, type Win } from './api.ts';
+import { shellQuote, type SendResult, type State, type Win } from './api.ts';
+import { useHosts } from './useHosts.ts';
 import { look } from './agents.ts';
 import { Sidebar, STATUS_TEXT, type GroupBy } from './Sidebar.tsx';
 import { Terminal, type TerminalHandle } from './Terminal.tsx';
@@ -42,11 +43,10 @@ function stored<T extends string>(key: string, fallback: T): [T, (v: T) => void]
   ];
 }
 
-const selectedFromHash = () => (location.hash.startsWith('#@') ? decodeURIComponent(location.hash.slice(1)) : null);
+// Window keys: "@12" locally, "<host>/@12" on a peer.
+const selectedFromHash = () => (location.hash.includes('@') ? decodeURIComponent(location.hash.slice(1)) : null);
 
 export function App() {
-  const [state, setState] = useState<State | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(selectedFromHash);
   const [groupBy, setGroupBy] = stored<GroupBy>('ah.groupBy', 'status');
   const [toast, setToast] = useState<string | null>(null);
@@ -70,20 +70,7 @@ export function App() {
   const termRef = useRef<TerminalHandle>(null);
   const prevStatus = useRef(new Map<string, string>());
 
-  const apply = useCallback((s: State) => {
-    setState(s);
-    announce(s.windows);
-  }, []);
-
-  /** Immediate refetch after our own actions; the event stream catches everything else. */
-  const refresh = useCallback(async () => {
-    try {
-      apply(await api.state());
-      setError(null);
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  }, [apply]);
+  const { state, error, refresh, clientFor, hostState } = useHosts((s: State) => announce(s.windows));
 
   function flash(msg: string) {
     setToast(msg);
@@ -93,21 +80,21 @@ export function App() {
   function announce(windows: Win[]) {
     const prev = prevStatus.current;
     for (const w of windows) {
-      const was = prev.get(w.uid);
+      const was = prev.get(w.key);
       const alerting = w.status === 'attention' || w.status === 'waiting';
       // With Web Push on, the service worker notifies; in-page alerts are the http fallback.
       if (was && was !== w.status && alerting && !pushActive.current && 'Notification' in window && Notification.permission === 'granted') {
-        if (document.hidden || w.id !== selectedRef.current) {
-          const n = new Notification(w.status === 'waiting' ? `${w.name} needs you` : `${w.name} finished`, { body: `${w.project} · ${w.agent ?? w.command}`, tag: w.id, icon: '/icon-512.png' });
+        if (document.hidden || w.key !== selectedRef.current) {
+          const n = new Notification(w.status === 'waiting' ? `${w.name} needs you` : `${w.name} finished`, { body: `${w.project} · ${w.agent ?? w.command}`, tag: w.key, icon: '/icon-512.png' });
           n.onclick = () => {
             window.focus();
-            select(w.id);
+            select(w.key);
             n.close();
           };
         }
       }
     }
-    prevStatus.current = new Map(windows.map((w) => [w.uid, w.status]));
+    prevStatus.current = new Map(windows.map((w) => [w.key, w.status]));
     const waiting = windows.filter((w) => w.status === 'waiting').length;
     document.title = waiting ? `(${waiting}) ah` : 'ah';
   }
@@ -116,7 +103,6 @@ export function App() {
   selectedRef.current = selected;
 
   useEffect(() => {
-    const stop = subscribe(apply, setError);
     const onHash = () => {
       const id = selectedFromHash();
       setSelected(id);
@@ -129,11 +115,8 @@ export function App() {
         .catch(() => {});
     }
     window.addEventListener('hashchange', onHash);
-    return () => {
-      stop();
-      window.removeEventListener('hashchange', onHash);
-    };
-  }, [apply]);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
 
   // ⌘K / Ctrl+Shift+K opens the switcher. Captured before xterm so the shell never sees it.
   useEffect(() => {
@@ -152,7 +135,7 @@ export function App() {
   // Pasted or dropped files are uploaded to the host and their paths typed in.
   async function sendFiles(files: FileList | File[]) {
     try {
-      const paths = await Promise.all([...files].map(upload));
+      const paths = await Promise.all([...files].map((f) => client.upload(f)));
       termRef.current?.send(paths.map(shellQuote).join(' ') + ' ');
       termRef.current?.focus();
     } catch (e) {
@@ -176,7 +159,9 @@ export function App() {
     if (id) setShowList(false);
   }
 
-  const current = state?.windows.find((w) => w.id === selected) ?? null;
+  const current = state?.windows.find((w) => w.key === selected) ?? null;
+  /** API of the machine the selected session lives on. */
+  const client = clientFor(current?.host);
   // Forget a selection whose window no longer exists (killed elsewhere).
   useEffect(() => {
     if (state && selected && !current) select(null);
@@ -186,33 +171,34 @@ export function App() {
     if (!current) return;
     const name = prompt('Rename window', current.name)?.trim();
     if (!name || name === current.name) return;
-    await api.rename(current.id, name).catch((e) => alert(e.message));
-    refresh();
+    await client.rename(current.id, name).catch((e) => alert(e.message));
+    refresh(current.host);
   }
 
   async function kill() {
     if (!current) return;
     if (!confirm(`Kill "${current.name}"? Everything running in it will be terminated.`)) return;
-    await api.kill(current.id).catch((e) => alert(e.message));
+    await client.kill(current.id).catch((e) => alert(e.message));
     select(null);
     setShowList(true);
-    refresh();
+    refresh(current.host);
   }
 
   async function openCapture() {
     if (!current) return;
     try {
-      setCapture(await api.capture(current.id));
+      setCapture(await client.capture(current.id));
     } catch (e) {
       alert((e as Error).message);
     }
   }
 
-  async function resume(ref: string) {
+  /** Resumes where the conversation lives (F7); live sessions just get focused. */
+  async function resume(host: string, ref: string) {
     try {
-      const out = await api.resume(ref);
-      await refresh();
-      select(out.id);
+      const out = await clientFor(host).resume(ref);
+      await refresh(host);
+      select(host === state?.hostname ? out.id : `${host}/${out.id}`);
       if (out.resumed) flash('Resuming…');
     } catch (e) {
       alert((e as Error).message);
@@ -222,29 +208,31 @@ export function App() {
   function sent(r: SendResult) {
     if (r.outcome === 'delivered') return flash('Sent');
     flash(r.resumed ? 'Resuming the session; your message goes in once it is ready' : `Queued (${r.queued}) — sent when the agent is free`);
-    refresh();
+    refresh(current?.host);
   }
 
   async function togglePin() {
     if (!current) return;
-    await api.pin(current.uid, !current.pinned).catch((e) => alert(e.message));
-    refresh();
+    await client.pin(current.uid, !current.pinned).catch((e) => alert(e.message));
+    refresh(current.host);
   }
 
   async function clearQueue() {
     if (!current || !confirm(`Drop ${current.queued} queued message${current.queued > 1 ? 's' : ''}?`)) return;
-    await api.clearQueue(current.uid).catch((e) => alert(e.message));
-    refresh();
+    await client.clearQueue(current.uid).catch((e) => alert(e.message));
+    refresh(current.host);
   }
 
-  const abs = (p: string) => (state && p.startsWith('~') ? state.home + p.slice(1) : p);
+  const home = (current && hostState(current.host)?.home) ?? state?.home ?? '';
+  const abs = (p: string) => (p.startsWith('~') ? home + p.slice(1) : p);
 
   async function shellIn(path: string) {
     setPanel(null);
+    const host = current?.host ?? state?.hostname ?? '';
     try {
-      const out = await api.create({ preset: 'shell', cwd: path, session: current?.session ?? state?.defaultSession ?? '', label: '', resume: false });
-      await refresh();
-      select(out.id);
+      const out = await clientFor(host).create({ preset: 'shell', cwd: path, session: current?.session ?? state?.defaultSession ?? '', label: '', resume: false });
+      await refresh(host);
+      select(host === state?.hostname ? out.id : `${host}/${out.id}`);
     } catch (e) {
       alert((e as Error).message);
     }
@@ -279,9 +267,9 @@ export function App() {
           setGroupBy={setGroupBy}
           onSelect={select}
           onResume={resume}
-          onForget={async (ref) => {
-            await api.forget(ref).catch((e) => alert(e.message));
-            refresh();
+          onForget={async (host, ref) => {
+            await clientFor(host).forget(ref).catch((e) => alert(e.message));
+            refresh(host);
           }}
           onNew={() => setCreating(true)}
           onWorktrees={() => setPanel('worktrees')}
@@ -335,7 +323,8 @@ export function App() {
                   <span className="title-sub">
                     <span className={`status ${current.status}`} title={STATUS_TEXT[current.status]} /> {current.cwd}
                     {current.branch ? ` ⎇ ${current.branch}` : ''}
-                    {current.model ? ` · ${current.model}` : ''} · {current.session}:{current.index}
+                    {current.model ? ` · ${current.model}` : ''} · {state && state.hosts.length > 1 ? `${current.host} · ` : ''}
+                    {current.session}:{current.index}
                     {current.viewers > 1 && <span className="shared"> · on {current.viewers} devices</span>}
                   </span>
                 </div>
@@ -390,8 +379,8 @@ export function App() {
 
           {current ? (
             <>
-              <Terminal ref={termRef} windowId={current.id} transformInput={transform} onGone={refresh} />
-              {dragging && <div className="drop-hint">Drop to upload to {state?.hostname} and insert the path</div>}
+              <Terminal ref={termRef} key={current.host} windowId={current.id} wsUrl={client.wsUrl} transformInput={transform} onGone={() => refresh(current.host)} />
+              {dragging && <div className="drop-hint">Drop to upload to {current.host} and insert the path</div>}
               {showKeys && (
                 <KeyBar
                   ctrl={ctrl}
@@ -416,19 +405,22 @@ export function App() {
 
       {creating && state && (
         <NewDialog
-          state={state}
+          hosts={state.hosts.filter((h) => h.online).map((h) => h.name)}
+          initialHost={current?.host ?? state.hostname}
+          hostState={hostState}
+          clientFor={clientFor}
           initialCwd={current?.projectPath ?? '~'}
           onClose={() => setCreating(false)}
-          onCreated={async (id) => {
+          onCreated={async (host, id) => {
             setCreating(false);
-            await refresh();
-            select(id);
+            await refresh(host);
+            select(host === state.hostname ? id : `${host}/${id}`);
           }}
         />
       )}
 
       {composing && current && (
-        <Composer target={current.uid} name={current.name} onSent={sent} onClose={() => setComposing(false)} />
+        <Composer client={client} target={current.uid} name={current.name} onSent={sent} onClose={() => setComposing(false)} />
       )}
 
       {switching && state && (
@@ -439,9 +431,9 @@ export function App() {
             setSwitching(false);
             select(id);
           }}
-          onResume={(ref) => {
+          onResume={(host, ref) => {
             setSwitching(false);
-            resume(ref);
+            resume(host, ref);
           }}
           onClose={() => setSwitching(false)}
         />
@@ -451,6 +443,7 @@ export function App() {
 
       {panel === 'files' && current && state && (
         <FilesDialog
+          fs={client.fs}
           start={abs(current.cwd)}
           cwd={abs(current.cwd)}
           agent={current.agent}
@@ -462,11 +455,11 @@ export function App() {
         />
       )}
 
-      {panel === 'changes' && current && <ChangesDialog windowId={current.id} onClose={() => setPanel(null)} />}
+      {panel === 'changes' && current && <ChangesDialog client={client} windowId={current.id} onClose={() => setPanel(null)} />}
 
       {panel === 'notify' && <NotifyDialog onClose={() => setPanel(null)} onChange={(on) => (pushActive.current = on)} />}
 
-      {panel === 'worktrees' && <WorktreesDialog onClose={() => setPanel(null)} onShell={shellIn} />}
+      {panel === 'worktrees' && <WorktreesDialog client={client} onClose={() => setPanel(null)} onShell={shellIn} />}
 
       {toast && (
         <div className="toast" role="status">

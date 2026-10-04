@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, upload, shellQuote, type SendResult } from './api.ts';
+import { shellQuote, type HostApi, type SendResult } from './api.ts';
 
 // A native text box for writing prompts: dictation, autocorrect and selection all
 // work here, unlike inside the terminal canvas. Sends go through the server, which
 // types them in now if the agent is idle or queues them for its next idle moment.
 type Props = {
+  client: HostApi;
   /** Registry id of the session. */
   target: string;
   name: string;
@@ -14,7 +15,7 @@ type Props = {
 
 const drafts = new Map<string, string>();
 
-export function Composer({ target, name, onSent, onClose }: Props) {
+export function Composer({ client, target, name, onSent, onClose }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const area = useRef<HTMLTextAreaElement>(null);
   const [text, setText] = useState(() => drafts.get(target) ?? '');
@@ -26,7 +27,7 @@ export function Composer({ target, name, onSent, onClose }: Props) {
   useEffect(() => {
     ref.current?.showModal();
     area.current?.focus();
-    api.prompts().then((p) => setRecent(p.map((x) => x.text))).catch(() => {});
+    client.prompts().then((p) => setRecent(p.map((x) => x.text))).catch(() => {});
   }, []);
   useEffect(() => {
     drafts.set(target, text);
@@ -37,7 +38,7 @@ export function Composer({ target, name, onSent, onClose }: Props) {
     setBusy('send');
     setError(null);
     try {
-      const result = await api.send(target, text, enter);
+      const result = await client.send(target, text, enter);
       drafts.delete(target);
       onSent(result);
       onClose();
@@ -51,7 +52,7 @@ export function Composer({ target, name, onSent, onClose }: Props) {
     if (!files?.length) return;
     setBusy('upload');
     try {
-      const paths = await Promise.all([...files].map(upload));
+      const paths = await Promise.all([...files].map((f) => client.upload(f)));
       setText((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}${paths.map(shellQuote).join(' ')} `);
     } catch (e) {
       setError((e as Error).message);
