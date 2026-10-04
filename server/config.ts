@@ -19,6 +19,9 @@ export type Preset = {
    * a false "needs you" is worse than a missed one.
    */
   waitingPatterns?: string[];
+  /** tmux key names typed for one-tap Approve / Deny on a permission prompt. */
+  approveKeys?: string[];
+  denyKeys?: string[];
 };
 
 export type Config = {
@@ -50,6 +53,9 @@ const DEFAULT_PRESETS: Preset[] = [
     resumeId: 'claude --resume {id}',
     match: '^claude$',
     waitingPatterns: ['Do you want to (proceed|make this edit|create|allow)', '^\\s*❯\\s*1\\.\\s*Yes'],
+    // The permission dialog highlights "Yes"; Esc declines.
+    approveKeys: ['Enter'],
+    denyKeys: ['Escape'],
   },
   {
     id: 'codex',
@@ -59,6 +65,8 @@ const DEFAULT_PRESETS: Preset[] = [
     resumeId: 'codex resume {id}',
     match: '^codex',
     waitingPatterns: ['Would you like to (run|make|apply)', 'Allow (Codex|command)', '\\(y\\)es.*\\(n\\)o'],
+    approveKeys: ['y'],
+    denyKeys: ['Escape'],
   },
   { id: 'gemini', name: 'Gemini', command: 'gemini', match: '^gemini$' },
   { id: 'grok', name: 'Grok', command: 'grok', match: '^grok$' },

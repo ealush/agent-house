@@ -10,14 +10,14 @@ import { WebSocketServer } from 'ws';
 import { loadConfig, expandHome, CONFIG_PATH } from './config.ts';
 import { shortPath } from './sessions.ts';
 import { Core, CoreError, resolveDir, defaultName } from './core.ts';
-import { attach, viewerCounts } from './terminal.ts';
+import { attach, viewers } from './terminal.ts';
 import * as t from './tmux.ts';
 import { createWorktree, changes, GitError } from './git.ts';
 import { FsError, list, makeDir, receive, sendFile } from './files.ts';
 import { Peers, proxyHttp, proxyWs, tailnet } from './peers.ts';
 
 const config = loadConfig();
-const core = new Core(config, viewerCounts);
+const core = new Core(config, viewers);
 /** Tailscale login that owns this machine; requests arriving via Serve from anyone else are refused. */
 let ownerLogin: string | null = null;
 const args = process.argv.slice(2);
@@ -268,6 +268,14 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL) {
 
   if (route('GET', /^\/api\/prompts$/)) return send(res, 200, core.recentPrompts());
 
+  if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/answer$/))) {
+    const answer = (await readJson(req)).answer;
+    if (answer !== 'approve' && answer !== 'deny') throw new HttpError(400, 'answer must be approve or deny');
+    await core.answer(m[1], answer);
+    audit(req, `${answer} ${m[1]}`);
+    return send(res, 200, { ok: true });
+  }
+
   if ((m = route('GET', /^\/api\/sessions\/([\w-]{1,40})\/queue$/))) return send(res, 200, core.queue(m[1]));
 
   if ((m = route('DELETE', /^\/api\/sessions\/([\w-]{1,40})\/queue(?:\/([\w-]{1,40}))?$/))) {
@@ -438,7 +446,8 @@ function upgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
     if (peer) return proxyWs(peer, `/ws/${encodeURIComponent(windowId)}${url.search}`, ws);
     const cols = Number(url.searchParams.get('cols'));
     const rows = Number(url.searchParams.get('rows'));
-    attach(ws, windowId, cols, rows).catch((err) => {
+    const device = (url.searchParams.get('device') ?? '').replace(/[^\w .-]/g, '').slice(0, 24) || 'browser';
+    attach(ws, windowId, cols, rows, device).catch((err) => {
       console.error(err);
       ws.close(1011, 'attach failed');
     });

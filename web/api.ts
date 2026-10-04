@@ -8,6 +8,7 @@ export type Win = {
   session: string;
   index: number;
   name: string;
+  title: string;
   uid: string;
   agent: string | null;
   harnessId: string | null;
@@ -20,13 +21,19 @@ export type Win = {
   branch: string | null;
   worktree: boolean;
   status: Status;
+  detail: string | null;
+  ask: Ask | null;
+  answerable: boolean;
   viewers: number;
+  devices: string[];
   activity: number;
   createdAt: number;
   panes: number;
   pinned: boolean;
   queued: number;
 };
+
+export type Ask = { kind: 'command' | 'tool' | 'question' | 'screen'; text: string };
 
 export type HistoryItem = {
   ref: string;
@@ -47,7 +54,10 @@ export type Preset = { id: string; name: string; command: string; resume?: strin
 
 export type Host = { name: string; self: boolean; online: boolean };
 
+export const API_VERSION = 3;
+
 export type State = {
+  api?: number;
   hostname: string;
   hosts: Host[];
   home: string;
@@ -125,6 +135,7 @@ export function hostApi(base: string) {
     capture: (id: string) => r<string>('GET', `/api/windows/${enc(id)}/capture?lines=3000`),
     resume: (ref: string) => r<{ id: string; uid: string; resumed: boolean }>('POST', `/api/sessions/${enc(ref)}/resume`),
     send: (ref: string, text: string, enter: boolean) => r<SendResult>('POST', `/api/sessions/${enc(ref)}/send`, { text, enter }),
+    answer: (uid: string, answer: 'approve' | 'deny') => r('POST', `/api/sessions/${enc(uid)}/answer`, { answer }),
     clearQueue: (uid: string) => r('DELETE', `/api/sessions/${enc(uid)}/queue`),
     pin: (uid: string, pinned: boolean) => r('POST', `/api/sessions/${enc(uid)}/pin`, { pinned }),
     forget: (ref: string) => r('DELETE', `/api/sessions/${enc(ref)}`),
@@ -141,13 +152,36 @@ export function hostApi(base: string) {
       upload: (dir: string, file: File) => postFile(`${base}/api/fs/upload?dir=${enc(dir)}&name=${enc(file.name || 'upload')}`, file),
     },
     wsUrl: (windowId: string, cols: number, rows: number) =>
-      `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${base}/ws/${enc(windowId)}?cols=${cols}&rows=${rows}`,
+      `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${base}/ws/${enc(windowId)}?cols=${cols}&rows=${rows}&device=${enc(deviceName())}`,
   };
 }
 
 export type HostApi = ReturnType<typeof hostApi>;
 
 export const api = hostApi('');
+
+/**
+ * Fills in what an older server doesn't send, so a page that's newer than the
+ * running daemon degrades (with a "restart ah" banner) instead of crashing.
+ */
+export function normalize(s: State): State {
+  return {
+    ...s,
+    hosts: s.hosts ?? [{ name: s.hostname, self: true, online: true }],
+    history: s.history ?? [],
+    windows: (s.windows ?? []).map((w) => ({
+      ...w,
+      title: w.title ?? w.name,
+      uid: w.uid ?? w.id,
+      devices: w.devices ?? [],
+      detail: w.detail ?? null,
+      ask: w.ask ?? null,
+      answerable: w.answerable ?? false,
+      queued: w.queued ?? 0,
+      pinned: w.pinned ?? false,
+    })),
+  };
+}
 
 /** Live state over SSE; falls back to polling if the stream can't be held open. */
 export function subscribe(onState: (s: State) => void, onError: (msg: string | null) => void, client: HostApi = api): () => void {
@@ -158,7 +192,7 @@ export function subscribe(onState: (s: State) => void, onError: (msg: string | n
     client
       .state()
       .then((s) => {
-        onState(s);
+        onState(normalize(s));
         onError(null);
       })
       .catch((e) => onError((e as Error).message));
@@ -168,7 +202,7 @@ export function subscribe(onState: (s: State) => void, onError: (msg: string | n
     es.addEventListener('state', (e) => {
       clearInterval(poll);
       poll = undefined;
-      onState(JSON.parse((e as MessageEvent).data));
+      onState(normalize(JSON.parse((e as MessageEvent).data)));
       onError(null);
     });
     es.onerror = () => {
@@ -195,6 +229,18 @@ export function subscribe(onState: (s: State) => void, onError: (msg: string | n
 
 export type FsEntry = { name: string; type: 'dir' | 'file' | 'other'; size: number; mtime: number };
 export type FsListing = { path: string; parent: string | null; entries: FsEntry[] };
+
+/** A short label for this device, shown to others as "also open on …". */
+export function deviceName(): string {
+  const ua = navigator.userAgent;
+  if (/iPhone/.test(ua)) return 'iPhone';
+  if (/iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return 'iPad';
+  if (/Mac/.test(ua)) return 'Mac';
+  if (/Android/.test(ua)) return 'Android';
+  if (/Windows/.test(ua)) return 'Windows';
+  if (/Linux/.test(ua)) return 'Linux';
+  return 'browser';
+}
 
 /** Quote a path for POSIX shells and agent prompts alike. */
 export function shellQuote(p: string): string {

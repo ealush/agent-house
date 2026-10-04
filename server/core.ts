@@ -20,7 +20,11 @@ export type QueueItem = { id: string; text: string; enter: boolean; at: number }
 
 export type Host = { name: string; self: boolean; online: boolean };
 
+/** Bumped when the state shape changes, so a newer page can tell an older server apart. */
+export const API_VERSION = 3;
+
 export type State = {
+  api: number;
   hostname: string;
   hosts: Host[];
   home: string;
@@ -51,7 +55,7 @@ const now = () => Math.floor(Date.now() / 1000);
 export class Core {
   readonly registry = new Registry();
   readonly push = new Push();
-  readonly viewerCounts: Map<string, number>;
+  readonly viewers: Map<string, string[]>;
   private state: State | null = null;
   private json = '';
   private listeners = new Set<(json: string) => void>();
@@ -62,9 +66,9 @@ export class Core {
   private config: Config;
   peers: Peers | null = null;
 
-  constructor(config: Config, viewerCounts: Map<string, number>) {
+  constructor(config: Config, viewers: Map<string, string[]>) {
     this.config = config;
-    this.viewerCounts = viewerCounts;
+    this.viewers = viewers;
     try {
       if (existsSync(HIDDEN_FILE)) this.hidden = new Set(JSON.parse(readFileSync(HIDDEN_FILE, 'utf8')));
       if (existsSync(PROMPTS_FILE)) this.prompts = JSON.parse(readFileSync(PROMPTS_FILE, 'utf8'));
@@ -91,12 +95,13 @@ export class Core {
   /** One pass: tmux → windows → registry → history → queue delivery → push to subscribers. */
   tick(): Promise<State> {
     this.ticking ??= (async () => {
-      const windows = await buildWindows(this.config, this.viewerCounts, this.registry);
+      const windows = await buildWindows(this.config, this.viewers, this.registry);
       adoptTranscripts(windows, await discover(), this.registry);
       await this.deliverQueued(windows);
       this.push.observe(windows);
       const history = (await buildHistory(this.registry, windows)).filter((h) => !this.hidden.has(h.ref));
       const state: State = {
+        api: API_VERSION,
         hostname: hostname(),
         hosts: [
           { name: hostname(), self: true, online: true },
@@ -220,7 +225,8 @@ export class Core {
     const state = target.resumed ? await this.tick() : await this.current();
     const w = state.windows.find((w) => w.id === target.windowId);
     const queue = this.queue(target.uid);
-    const ready = !target.resumed && w && (w.status === 'idle' || w.status === 'attention') && queue.length === 0;
+    // Shells take input immediately (a dev server is always "busy"); agents get queued while working.
+    const ready = !target.resumed && w && queue.length === 0 && (!w.agent || w.status === 'idle' || w.status === 'attention');
     if (ready) {
       await t.pasteText(target.windowId, text, enter);
       return { outcome: 'delivered', windowId: target.windowId, resumed: false, queued: 0 };
@@ -265,6 +271,22 @@ export class Core {
       w.queued = rest.length;
       w.status = 'busy';
     }
+  }
+
+  /**
+   * One-tap answer to a permission prompt. Re-checks against a fresh tick that the
+   * session is *still* waiting, so a stale button never types into a live agent.
+   */
+  async answer(uid: string, answer: 'approve' | 'deny') {
+    const state = await this.tick();
+    const w = state.windows.find((w) => w.uid === uid);
+    if (!w) throw new CoreError(404, 'session not found');
+    if (w.status !== 'waiting') throw new CoreError(409, 'it is no longer waiting');
+    if (!w.answerable || !w.agent) throw new CoreError(400, 'this prompt needs a reply, not approve/deny');
+    const keys = answer === 'approve' ? this.preset(w.agent).approveKeys : this.preset(w.agent).denyKeys;
+    if (!keys?.length) throw new CoreError(400, `no ${answer} keys configured for ${w.agent}`);
+    await t.tmux('send-keys', '-t', w.id, ...keys);
+    this.tick().catch(() => {});
   }
 
   // ---------- small mutations

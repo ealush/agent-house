@@ -1,213 +1,115 @@
-import { useMemo, useState } from 'react';
-import type { HistoryItem, State, Win } from './api.ts';
-import { look } from './agents.ts';
+import type { State, Win } from './api.ts';
+import { Icon } from './icons.tsx';
 
-export type GroupBy = 'status' | 'project' | 'session' | 'host';
+export type Page = 'inbox' | 'history' | 'sessions';
 
 type Props = {
   state: State | null;
   error: string | null;
+  page: Page;
   selected: string | null;
-  groupBy: GroupBy;
-  setGroupBy: (g: GroupBy) => void;
-  onSelect: (id: string) => void;
-  onResume: (host: string, ref: string) => void;
-  onForget: (host: string, ref: string) => void;
+  device: string;
+  onPage: (p: Page) => void;
+  onSelect: (key: string) => void;
+  onSearch: () => void;
   onNew: () => void;
   onWorktrees: () => void;
-  onNotify: () => void;
-  notify: NotificationPermission | 'unsupported';
+  onNotify: (() => void) | null;
 };
 
-// Needs-you first (F21): the dashboard is for what's blocked on you.
-const STATUS_GROUPS: Array<[Win['status'], string]> = [
-  ['waiting', 'needs you'],
-  ['attention', 'done'],
-  ['busy', 'working'],
-  ['idle', 'idle'],
-];
-
-const GROUP_LABELS: Record<GroupBy, string> = { status: 'Status', project: 'Projects', session: 'tmux', host: 'Hosts' };
-
-export function Sidebar({ state, error, selected, groupBy, setGroupBy, onSelect, onResume, onForget, onNew, onWorktrees, onNotify, notify }: Props) {
-  const groups = useMemo(() => {
-    const windows = state?.windows ?? [];
-    const pinned = windows.filter((w) => w.pinned);
-    const rest = windows.filter((w) => !w.pinned);
-    let out: Array<[string, Win[]]>;
-    if (groupBy === 'status') {
-      out = STATUS_GROUPS.map(([s, label]): [string, Win[]] => [label, rest.filter((w) => w.status === s)]).filter(([, ws]) => ws.length);
-    } else {
-      const map = new Map<string, Win[]>();
-      for (const w of rest) {
-        const key = groupBy === 'project' ? w.project : groupBy === 'host' ? w.host : w.session;
-        map.set(key, [...(map.get(key) ?? []), w]);
-      }
-      out = [...map.entries()].sort(([a], [b]) => (a === '~' ? 1 : b === '~' ? -1 : a.localeCompare(b)));
-    }
-    return pinned.length ? [['pinned', pinned] as [string, Win[]], ...out] : out;
-  }, [state, groupBy]);
-
-  const waiting = state?.windows.filter((w) => w.status === 'waiting').length ?? 0;
+/** Desktop navigation: inbox, hosts, and every live session grouped by host (or project). */
+export function Sidebar({ state, error, page, selected, device, onPage, onSelect, onSearch, onNew, onWorktrees, onNotify }: Props) {
+  const windows = state?.windows ?? [];
+  const waiting = windows.filter((w) => w.status === 'waiting').length;
   const multiHost = (state?.hosts.length ?? 0) > 1;
+
+  const groups = new Map<string, Win[]>();
+  for (const w of [...windows].sort((a, b) => Number(b.pinned) - Number(a.pinned) || rank(a) - rank(b) || b.activity - a.activity)) {
+    const k = multiHost ? w.host : w.project;
+    groups.set(k, [...(groups.get(k) ?? []), w]);
+  }
 
   return (
     <nav className="sidebar">
-      <header className="side-head">
-        <div className="brand">
-          <span className="brand-mark">ah</span>
-          <span className="host">{state?.hostname ?? '…'}</span>
-        </div>
-        <button className="btn primary" onClick={onNew}>
-          <span aria-hidden>＋</span> New
-        </button>
-      </header>
-
-      <div className="side-tools">
-        <div className="seg" role="tablist">
-          {(multiHost ? (['status', 'project', 'host'] as const) : (['status', 'project', 'session'] as const)).map((g) => (
-            <button key={g} role="tab" aria-selected={groupBy === g} className={groupBy === g ? 'on' : ''} onClick={() => setGroupBy(g)}>
-              {GROUP_LABELS[g]}
-            </button>
-          ))}
-        </div>
-        {waiting > 0 && <span className="waiting">{waiting} need you</span>}
+      <div className="brand">
+        <span className="logo">&gt;_</span>
+        <span className="brand-name">ah</span>
+        <span className="host-pill" title="This device">
+          <span className="dot online" /> {device}
+        </span>
       </div>
 
-      <div className="side-list">
+      <button className="search" onClick={onSearch}>
+        <Icon name="search" size={15} />
+        <span>Search or jump to</span>
+        <kbd>⌘K</kbd>
+      </button>
+
+      <button className={`nav-item ${page === 'inbox' && !selected ? 'on' : ''}`} onClick={() => onPage('inbox')}>
+        <Icon name="inbox" />
+        <span className="grow">Inbox</span>
+        {waiting > 0 ? <span className="badge">{waiting}</span> : <span className="count">{windows.length}</span>}
+      </button>
+      <button className={`nav-item ${page === 'history' && !selected ? 'on' : ''}`} onClick={() => onPage('history')}>
+        <Icon name="history" />
+        <span className="grow">History</span>
+        <span className="count">{state?.history.length ?? ''}</span>
+      </button>
+
+      <div className="side-scroll">
         {error && <div className="side-error">Can't reach server: {error}</div>}
-        {state && state.windows.length === 0 && (
-          <div className="empty">
-            <p>Nothing running.</p>
-            <button className="btn" onClick={onNew}>
-              Start a session
-            </button>
-          </div>
+        {multiHost && (
+          <>
+            <div className="side-label">
+              <span className="grow">Hosts</span>
+            </div>
+            {state!.hosts.map((h) => (
+              <div key={h.name} className="nav-item" style={{ cursor: 'default' }}>
+                <span className={`dot ${h.online ? 'online' : 'offline'}`} />
+                <span className="grow mono">{h.name}</span>
+                <span className="count">{h.online ? `${windows.filter((w) => w.host === h.name).length} live` : 'offline'}</span>
+              </div>
+            ))}
+          </>
         )}
-        {groups.map(([group, wins]) => (
-          <section key={group} className="group">
-            <h3 title={groupBy === 'project' ? wins[0].projectPath : undefined}>{group}</h3>
-            <ul>
-              {wins.map((w) => (
-                <Item key={w.key} w={w} selected={w.key === selected} groupBy={groupBy} multiHost={multiHost} onSelect={onSelect} />
-              ))}
-            </ul>
+        {[...groups.entries()].map(([group, ws]) => (
+          <section key={group}>
+            <div className={`side-label ${multiHost ? 'host' : ''}`}>
+              {multiHost && <span className="dot online" />}
+              <span className="grow">{group}</span>
+            </div>
+            {ws.map((w) => (
+              <button key={w.key} className={`side-session ${w.key === selected ? 'on' : ''} ${w.agent ? '' : 'shellish'}`} onClick={() => onSelect(w.key)} title={`${w.title} — ${w.cwd}`}>
+                <span className={`dot ${w.status}`} />
+                <span className="name">
+                  {w.pinned ? '★ ' : ''}
+                  {w.agent ? w.title : `${w.title === w.command || w.title === 'shell' ? w.command : w.title} ${w.cwd}`}
+                </span>
+                {w.queued > 0 && <span className="count">⇥{w.queued}</span>}
+              </button>
+            ))}
           </section>
         ))}
-        {!!state?.history.length && <History items={state.history} onResume={onResume} onForget={onForget} />}
       </div>
 
       <footer className="side-foot">
-        <button className="btn ghost small" onClick={onWorktrees}>
-          ⎇ Worktrees
+        <button className="btn block" onClick={onNew}>
+          New session
         </button>
-        {notify !== 'unsupported' && (
-          <button className="btn ghost small" onClick={onNotify}>
-            🔔 Notifications
+        <div className="row-btns">
+          <button className="btn ghost small" onClick={onWorktrees}>
+            <Icon name="branch" size={14} /> Worktrees
           </button>
-        )}
+          {onNotify && (
+            <button className="btn ghost small" onClick={onNotify}>
+              <Icon name="bell" size={14} /> Notifications
+            </button>
+          )}
+        </div>
       </footer>
     </nav>
   );
 }
 
-function Item({ w, selected, groupBy, multiHost, onSelect }: { w: Win; selected: boolean; groupBy: GroupBy; multiHost: boolean; onSelect: (key: string) => void }) {
-  const { color, glyph } = look(w.agent);
-  const elsewhere = w.viewers - (selected ? 1 : 0);
-  const context = [multiHost && groupBy !== 'host' ? w.host : null, groupBy === 'project' ? w.session : w.project].filter(Boolean).join(' · ');
-  return (
-    <li>
-      <button className={`item ${selected ? 'selected' : ''} ${w.status}`} onClick={() => onSelect(w.key)} style={{ '--agent': color } as React.CSSProperties}>
-        <span className="chip" aria-hidden>
-          {glyph}
-        </span>
-        <span className="item-main">
-          <span className="item-name">{w.name}</span>
-          <span className="item-sub">
-            {context}
-            {w.branch && w.worktree ? ` ⎇ ${w.branch}` : ''} · {w.agent ?? w.command}
-            {w.panes > 1 ? ` · ${w.panes} panes` : ''}
-          </span>
-        </span>
-        <span className="item-meta">
-          {w.queued > 0 && (
-            <span className="queued" title={`${w.queued} queued prompt${w.queued > 1 ? 's' : ''}`}>
-              ⇥{w.queued}
-            </span>
-          )}
-          {elsewhere > 0 && (
-            <span className="viewers" title={`Open on ${elsewhere} other device${elsewhere > 1 ? 's' : ''}`}>
-              ◉{elsewhere > 1 ? elsewhere : ''}
-            </span>
-          )}
-          <span className={`status ${w.status}`} title={STATUS_TEXT[w.status] + (w.statusSource === 'hook' ? '' : ` (from ${w.statusSource})`)} />
-        </span>
-      </button>
-    </li>
-  );
-}
-
-export const STATUS_TEXT = {
-  busy: 'Working',
-  idle: 'Quiet',
-  waiting: 'Needs your input',
-  attention: 'Finished since you last looked',
-};
-
-const HISTORY_PREVIEW = 6;
-
-function History({ items, onResume, onForget }: { items: HistoryItem[]; onResume: (host: string, ref: string) => void; onForget: (host: string, ref: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const [all, setAll] = useState(false);
-  const shown = all ? items : items.slice(0, HISTORY_PREVIEW);
-  return (
-    <section className="group history">
-      <h3>
-        <button className="linkish" onClick={() => setOpen(!open)} aria-expanded={open}>
-          {open ? '▾' : '▸'} history · {items.length}
-        </button>
-      </h3>
-      {open && (
-        <ul>
-          {shown.map((h) => {
-            const { color, glyph } = look(h.harness);
-            return (
-              <li key={`${h.host}:${h.ref}`} className="ended-item" style={{ '--agent': color } as React.CSSProperties}>
-                <span className="chip">{glyph}</span>
-                <span className="item-main">
-                  <span className="item-name" title={h.title}>
-                    {h.title}
-                  </span>
-                  <span className="item-sub" title={h.harnessId ? `${h.harness} ${h.harnessId}` : undefined}>
-                    {h.project} · {ago(h.at)}
-                    {h.kind === 'saved' ? '' : ' · ended'}
-                  </span>
-                </span>
-                <button className="btn small" onClick={() => onResume(h.host, h.ref)} title={h.harnessId ? 'Resume this exact conversation' : 'Continue the latest conversation in this directory'}>
-                  Resume
-                </button>
-                <button className="icon-btn small" onClick={() => onForget(h.host, h.ref)} title="Hide from history">
-                  ×
-                </button>
-              </li>
-            );
-          })}
-          {items.length > HISTORY_PREVIEW && (
-            <li>
-              <button className="linkish more" onClick={() => setAll(!all)}>
-                {all ? 'Show fewer' : `Show all ${items.length}`}
-              </button>
-            </li>
-          )}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-export function ago(ts: number): string {
-  const s = Date.now() / 1000 - ts;
-  if (s < 3600) return `${Math.max(1, Math.round(s / 60))}m ago`;
-  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
-  return `${Math.round(s / 86400)}d ago`;
-}
+const ORDER = { waiting: 0, busy: 1, attention: 2, idle: 3 };
+const rank = (w: Win) => ORDER[w.status];

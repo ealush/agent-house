@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api, hostApi, subscribe, type HostApi, type State } from './api.ts';
+import { api, hostApi, normalize, subscribe, type HostApi, type State } from './api.ts';
 
 /**
  * Live state for every host: the local daemon plus each online peer it proxies.
@@ -60,7 +60,7 @@ export function useHosts(onState: (merged: State) => void) {
     async (host?: string) => {
       try {
         const c = clientFor(host);
-        const s = await c.state();
+        const s = normalize(await c.state());
         if (c === api) setLocal(s);
         else setPeers((p) => ({ ...p, [host!]: s }));
         setError(null);

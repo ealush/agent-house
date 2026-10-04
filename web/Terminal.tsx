@@ -14,6 +14,8 @@ export type TerminalHandle = {
 
 type Props = {
   windowId: string;
+  /** Kept mounted (and connected) while another tab is showing. */
+  hidden?: boolean;
   /** Builds the socket URL for this window on its host (local, or proxied peer). */
   wsUrl: (windowId: string, cols: number, rows: number) => string;
   /** Lets the on-screen key bar rewrite typed input (sticky Ctrl/Alt). */
@@ -49,7 +51,7 @@ const THEME = {
 
 const FONT = "'JetBrainsMono Nerd Font', 'JetBrains Mono', 'SF Mono', Menlo, ui-monospace, monospace";
 
-export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ windowId, wsUrl, transformInput, onGone }, ref) {
+export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ windowId, hidden, wsUrl, transformInput, onGone }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const term = useRef<XTerm | null>(null);
   const fit = useRef<FitAddon | null>(null);
@@ -200,7 +202,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ wi
   }, [windowId]);
 
   return (
-    <div className="term-wrap">
+    <div className={`term-wrap ${hidden ? 'hidden' : ''}`}>
       <div ref={host} className="term" />
       {conn !== 'open' && (
         <div className="term-overlay">

@@ -19,6 +19,8 @@ export type WindowView = {
   session: string;
   index: number;
   name: string;
+  /** Best human title: the conversation's own title when the window name is generic. */
+  title: string;
   uid: string;
   agent: string | null;
   harnessId: string | null;
@@ -32,13 +34,23 @@ export type WindowView = {
   branch: string | null;
   worktree: boolean;
   status: Status;
+  /** One line of what's happening: hook activity, or the last line on screen. */
+  detail: string | null;
+  /** What a waiting session is blocked on, for the Inbox card. */
+  ask: Ask | null;
+  /** Whether one-tap Approve/Deny applies (a permission prompt with known keys). */
+  answerable: boolean;
   viewers: number;
+  /** Labels of the devices currently viewing ("iPad", "Mac"). */
+  devices: string[];
   activity: number;
   createdAt: number;
   panes: number;
   pinned: boolean;
   queued: number;
 };
+
+export type Ask = { kind: 'command' | 'tool' | 'question' | 'screen'; text: string };
 
 export type HistoryItem = {
   /** Registry id for sessions ah ran, `harness:harnessId` for discovered ones. */
@@ -163,21 +175,31 @@ export function screenAsks(lines: string[], patterns: RegExp[]): boolean {
   return patterns.some((re) => re.test(tail));
 }
 
-const screenCache = new Map<string, { activity: number; asks: boolean }>();
+/** Last non-empty lines of a window's visible screen, re-captured only when it printed something. */
+const screenCache = new Map<string, { activity: number; lines: string[] }>();
 
-async function screenWaiting(windowId: string, activity: number, patterns: RegExp[]): Promise<boolean> {
-  if (!patterns.length) return false;
+async function screenTail(windowId: string, activity: number): Promise<string[]> {
   const hit = screenCache.get(windowId);
-  if (hit?.activity === activity) return hit.asks;
+  if (hit?.activity === activity) return hit.lines;
   const text = await capturePane(windowId, 0).catch(() => '');
-  const asks = screenAsks(text.split('\n'), patterns);
-  screenCache.set(windowId, { activity, asks });
-  return asks;
+  const lines = text.split('\n').map((l) => l.trimEnd()).filter((l) => l.trim());
+  screenCache.set(windowId, { activity, lines: lines.slice(-12) });
+  return lines.slice(-12);
 }
+
+function parseJson<T>(s: string): T | null {
+  try {
+    return s ? JSON.parse(s) : null;
+  } catch {
+    return null;
+  }
+}
+
+const clip = (s: string, n = 160) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 
 // ---------- windows
 
-export async function buildWindows(config: Config, viewerCounts: Map<string, number>, registry: Registry): Promise<WindowView[]> {
+export async function buildWindows(config: Config, viewerMap: Map<string, string[]>, registry: Registry): Promise<WindowView[]> {
   const [raw, procs] = await Promise.all([listWindows(), snapshot()]);
   const matchers = compileMatchers(config.presets);
   const waitingRules = new Map(config.presets.map((p) => [p.id, (p.waitingPatterns ?? []).map((s) => new RegExp(s, 'm'))]));
@@ -186,7 +208,8 @@ export async function buildWindows(config: Config, viewerCounts: Map<string, num
 
   const views = await Promise.all(
     raw.map(async (w): Promise<WindowView> => {
-      const viewers = viewerCounts.get(w.windowId) ?? 0;
+      const devices = viewerMap.get(w.windowId) ?? [];
+      const viewers = devices.length;
       // Anything printed while someone is looking counts as read.
       let seen = w.seen;
       if (viewers > 0 && w.activity > seen) {
@@ -198,7 +221,9 @@ export async function buildWindows(config: Config, viewerCounts: Map<string, num
       // Hook state is trusted only while that agent is still running in the window.
       const hooked = !!w.hookState && w.hookState !== 'ended' && agent === w.harness;
       const quiet = now - w.activity >= config.idleAfter;
-      const asks = !hooked && agent && quiet ? await screenWaiting(w.windowId, w.activity, waitingRules.get(agent) ?? []) : false;
+      const tail = await screenTail(w.windowId, w.activity);
+      const rules = agent ? (waitingRules.get(agent) ?? []) : [];
+      const asks = !hooked && !!agent && quiet && rules.length > 0 && screenAsks(tail, rules);
       const { status, source } = computeStatus({
         now,
         activity: w.activity,
@@ -234,11 +259,20 @@ export async function buildWindows(config: Config, viewerCounts: Map<string, num
 
       const repo = repoInfo(w.path);
       const rec = registry.get(uid)!;
+      const hookDetail = hooked ? parseJson<Ask>(w.hookDetail) : null;
+      let ask: Ask | null = null;
+      if (status === 'waiting') {
+        ask = hooked ? (parseJson<Ask>(w.hookAsk) ?? { kind: 'question', text: 'Waiting for your input' }) : { kind: 'screen', text: tail.slice(-4).join('\n') };
+      }
+      const preset = agent ? config.presets.find((p) => p.id === agent) : undefined;
+      // Agents' own TUIs make poor one-liners; for them only hook activity is shown.
+      const detail = hookDetail ? (hookDetail.kind === 'command' ? `$ ${hookDetail.text}` : hookDetail.text) : agent ? null : tail.length ? clip(tail[tail.length - 1].trim()) : null;
       return {
         id: w.windowId,
         session: w.session,
         index: w.index,
         name: w.name,
+        title: w.name,
         uid,
         agent,
         harnessId: rec.harnessId ?? null,
@@ -250,7 +284,11 @@ export async function buildWindows(config: Config, viewerCounts: Map<string, num
         branch: repo?.branch ?? null,
         worktree: repo?.worktree ?? false,
         status,
+        detail,
+        ask,
+        answerable: status === 'waiting' && ask?.kind !== 'question' && !!preset?.approveKeys?.length,
         viewers,
+        devices,
         activity: w.activity,
         createdAt: w.createdAt,
         panes: w.panes,
@@ -272,6 +310,8 @@ export async function buildWindows(config: Config, viewerCounts: Map<string, num
  * present, always win over this guess.
  */
 export function adoptTranscripts(windows: WindowView[], transcripts: Transcript[], registry: Registry) {
+  const byId = new Map(transcripts.map((t) => [t.harnessId, t]));
+  const generic = (w: WindowView) => !w.name || w.name === w.agent || w.name === w.command || /^(claude|codex|gemini|grok|muse|hermes|opencode|shell|bash|zsh|fish|node)$/.test(w.name);
   const claimed = new Set(windows.map((w) => w.harnessId).filter(Boolean));
   const cwdOf = (w: WindowView) => (w.cwd.startsWith('~') ? HOME + w.cwd.slice(1) : w.cwd);
   for (const w of windows) {
@@ -288,6 +328,10 @@ export function adoptTranscripts(windows: WindowView[], transcripts: Transcript[
     w.harnessId = match.harnessId;
     w.model ??= match.model ?? null;
     registry.adopt(w.uid, match.harnessId, match.model);
+  }
+  for (const w of windows) {
+    const t = w.harnessId ? byId.get(w.harnessId) : undefined;
+    if (t && generic(w)) w.title = t.title;
   }
 }
 

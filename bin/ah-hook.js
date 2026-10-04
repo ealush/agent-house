@@ -46,6 +46,38 @@ function parse(text) {
 let state = null;
 let id = '';
 let model = '';
+/** What the agent is doing right now ("Editing src/x.ts", "$ pnpm test"). */
+let detail = null;
+/** What it's blocked on, shown on the Inbox card: { kind: 'command' | 'tool' | 'question', text }. */
+let ask = undefined; // undefined = leave as is, null = clear
+
+const short = (s, n = 240) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
+
+/** One line describing a tool call, relative to the session's directory. */
+function describe(tool, input = {}, cwd = '') {
+  const rel = (p) => (typeof p === 'string' && cwd && p.startsWith(cwd + '/') ? p.slice(cwd.length + 1) : p);
+  switch (tool) {
+    case 'Bash':
+      return { kind: 'command', text: short(String(input.command ?? '').trim()) };
+    case 'Edit':
+    case 'MultiEdit':
+    case 'Write':
+    case 'NotebookEdit':
+      return { kind: 'tool', text: `Editing ${rel(input.file_path ?? input.notebook_path ?? '')}` };
+    case 'Read':
+      return { kind: 'tool', text: `Reading ${rel(input.file_path ?? '')}` };
+    case 'Grep':
+    case 'Glob':
+      return { kind: 'tool', text: `Searching ${short(String(input.pattern ?? ''), 80)}` };
+    case 'WebFetch':
+    case 'WebSearch':
+      return { kind: 'tool', text: `Browsing ${short(String(input.url ?? input.query ?? ''), 80)}` };
+    case 'Task':
+      return { kind: 'tool', text: `Subagent: ${short(String(input.description ?? ''), 80)}` };
+    default:
+      return { kind: 'tool', text: tool ?? 'Working' };
+  }
+}
 
 if (harness === 'claude') {
   const p = parse(await readStdin());
@@ -56,6 +88,12 @@ if (harness === 'claude') {
     const kind = p.notification_type ?? '';
     const blocking = /permission|elicitation/.test(kind) || (!kind && /permission|needs your|approve/i.test(p.message ?? ''));
     state = blocking ? 'waiting' : null;
+    // The pending tool call (recorded at PreToolUse) is the concrete thing to approve.
+    if (blocking) ask = /elicitation/.test(kind) ? { kind: 'question', text: short(p.message ?? '') } : 'pending';
+  } else if (p.hook_event_name === 'PreToolUse') {
+    detail = describe(p.tool_name, p.tool_input, p.cwd);
+  } else if (['PostToolUse', 'UserPromptSubmit', 'Stop', 'SessionStart', 'SessionEnd'].includes(p.hook_event_name)) {
+    ask = null;
   }
   id = p.session_id ?? '';
   model = typeof p.model === 'string' ? p.model : (p.model?.id ?? '');
@@ -69,10 +107,20 @@ if (harness === 'claude') {
   id = process.argv[4] ?? '';
 }
 
-if (!state) process.exit(0);
+if (!state && !detail) process.exit(0);
 
 const now = String(Math.floor(Date.now() / 1000));
-const args = ['set-option', '-w', '-q', '-t', pane, '@ah-state', state, ';', 'set-option', '-w', '-q', '-t', pane, '@ah-state-at', now, ';', 'set-option', '-w', '-q', '-t', pane, '@ah-harness', harness];
+const args = ['set-option', '-w', '-q', '-t', pane, '@ah-harness', harness];
+if (state) args.push(';', 'set-option', '-w', '-q', '-t', pane, '@ah-state', state, ';', 'set-option', '-w', '-q', '-t', pane, '@ah-state-at', now);
 if (id) args.push(';', 'set-option', '-w', '-q', '-t', pane, '@ah-harness-id', id);
 if (model) args.push(';', 'set-option', '-w', '-q', '-t', pane, '@ah-model', model);
-execFile('tmux', args, () => process.exit(0));
+if (detail) args.push(';', 'set-option', '-w', '-q', '-t', pane, '@ah-detail', JSON.stringify(detail));
+if (ask === null) args.push(';', 'set-option', '-w', '-q', '-u', '-t', pane, '@ah-ask');
+else if (ask === 'pending') {
+  // Promote the last tool call to the question; needs a read, so do it as a second step.
+  execFile('tmux', ['show-options', '-w', '-v', '-q', '-t', pane, '@ah-detail'], (_e, out) => {
+    if (out?.trim()) args.push(';', 'set-option', '-w', '-q', '-t', pane, '@ah-ask', out.trim());
+    execFile('tmux', args, () => process.exit(0));
+  });
+} else if (ask) args.push(';', 'set-option', '-w', '-q', '-t', pane, '@ah-ask', JSON.stringify(ask));
+if (ask !== 'pending') execFile('tmux', args, () => process.exit(0));

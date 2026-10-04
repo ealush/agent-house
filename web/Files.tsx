@@ -12,7 +12,6 @@ type Props = {
   cwd: string;
   agent: string | null;
   onInsert: (text: string) => void;
-  onClose: () => void;
 };
 
 const MENTION_AGENTS = new Set(['claude', 'codex', 'gemini', 'opencode']);
@@ -31,8 +30,7 @@ export function relativeTo(cwd: string, path: string): string {
   return path.startsWith(cwd + '/') ? path.slice(cwd.length + 1) : path;
 }
 
-export function FilesDialog({ fs, start, cwd, agent, onInsert, onClose }: Props) {
-  const ref = useRef<HTMLDialogElement>(null);
+export function FilesPanel({ fs, start, cwd, agent, onInsert }: Props) {
   const [listing, setListing] = useState<FsListing | null>(null);
   const [path, setPath] = useState(start);
   const [hidden, setHidden] = useState(false);
@@ -42,8 +40,6 @@ export function FilesDialog({ fs, start, cwd, agent, onInsert, onClose }: Props)
   const [dragging, setDragging] = useState(false);
   const [mention, setMention] = useState(() => MENTION_AGENTS.has(agent ?? ''));
   const crumbsRef = useRef<HTMLElement>(null);
-
-  useEffect(() => ref.current?.showModal(), []);
 
   const load = (p = path) => {
     setError(null);
@@ -59,7 +55,6 @@ export function FilesDialog({ fs, start, cwd, agent, onInsert, onClose }: Props)
   function insert(abs: string) {
     const rel = relativeTo(cwd, abs);
     onInsert(mention ? `@${rel} ` : `${shellQuote(rel)} `);
-    onClose();
   }
 
   async function open(e: FsEntry) {
@@ -104,11 +99,8 @@ export function FilesDialog({ fs, start, cwd, agent, onInsert, onClose }: Props)
   }, [listing]);
 
   return (
-    <dialog
-      ref={ref}
-      className="dialog files-dialog"
-      onClose={onClose}
-      onClick={(e) => e.target === ref.current && onClose()}
+    <div
+      className="fs"
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes('Files')) {
           e.preventDefault();
@@ -124,17 +116,6 @@ export function FilesDialog({ fs, start, cwd, agent, onInsert, onClose }: Props)
         }
       }}
     >
-      <div className="capture-head">
-        <h2>Files</h2>
-        <label className="btn small primary">
-          {uploading ? `Uploading ${uploading}…` : 'Upload here'}
-          <input type="file" multiple hidden onChange={(e) => e.target.files && uploadFiles(e.target.files)} />
-        </label>
-        <button className="btn ghost small" onClick={onClose}>
-          Close
-        </button>
-      </div>
-
       <div className="fs-bar">
         <button className="btn ghost small" disabled={!listing?.parent} onClick={() => listing?.parent && setPath(listing.parent)} title="Up">
           ↑
@@ -152,7 +133,6 @@ export function FilesDialog({ fs, start, cwd, agent, onInsert, onClose }: Props)
             </span>
           ))}
         </nav>
-        <span className="spacer" />
         <button className="btn ghost small" onClick={() => setPath(cwd)} title="Session folder">
           ⌂ session
         </button>
@@ -196,12 +176,16 @@ export function FilesDialog({ fs, start, cwd, agent, onInsert, onClose }: Props)
       <div className="fs-foot">
         <label className="check">
           <input type="checkbox" checked={mention} onChange={(e) => setMention(e.target.checked)} />
-          <span>Insert as @mention (for agents)</span>
+          <span>@mention</span>
         </label>
         <span className="spacer" />
-        <button className="btn small" onClick={() => insert(listing?.path ?? path)}>
-          Insert this folder
+        <button className="btn ghost small" onClick={() => insert(listing?.path ?? path)}>
+          Insert folder
         </button>
+        <label className="btn small primary">
+          {uploading ? `Uploading ${uploading}…` : 'Upload here'}
+          <input type="file" multiple hidden onChange={(e) => e.target.files && uploadFiles(e.target.files)} />
+        </label>
       </div>
 
       {dragging && <div className="drop-hint">Drop to upload into {crumbs.at(-1) ?? '/'}</div>}
@@ -225,6 +209,6 @@ export function FilesDialog({ fs, start, cwd, agent, onInsert, onClose }: Props)
           </div>
         </div>
       )}
-    </dialog>
+    </div>
   );
 }

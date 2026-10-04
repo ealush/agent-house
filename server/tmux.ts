@@ -47,6 +47,9 @@ export type RawWindow = {
   harness: string;
   harnessId: string;
   model: string;
+  /** JSON from hooks: what the agent is doing / what it's blocked on. */
+  hookDetail: string;
+  hookAsk: string;
 };
 
 const WINDOW_FIELDS = [
@@ -72,6 +75,8 @@ const WINDOW_FIELDS = [
   '@ah-harness',
   '@ah-harness-id',
   '@ah-model',
+  '@ah-detail',
+  '@ah-ask',
 ];
 
 export async function listWindows(): Promise<RawWindow[]> {
@@ -111,6 +116,8 @@ export async function listWindows(): Promise<RawWindow[]> {
       harness: f[19],
       harnessId: f[20],
       model: f[21],
+      hookDetail: f[22] ?? '',
+      hookAsk: f[23] ?? '',
     });
   }
   return rows;

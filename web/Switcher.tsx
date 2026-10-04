@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { HistoryItem, Win } from './api.ts';
 import { look } from './agents.ts';
-import { ago } from './Sidebar.tsx';
+import { age as ago } from './agents.ts';
 
 type Props = {
   windows: Win[];
@@ -60,7 +60,7 @@ export function Switcher({ windows, history, onPick, onResume, onClose }: Props)
     const { text, f } = parseQuery(q);
     const live: Row[] = windows
       .filter((w) => (has(w.agent ?? w.command, f.h) || has(w.host, f.h)) && has(w.status, f.s) && has(w.project, f.p) && has(w.model, f.m))
-      .map((w) => ({ kind: 'win' as const, w, s: score(text, `${w.name} ${w.project} ${w.agent ?? w.command} ${w.session} ${w.branch ?? ''}`) }))
+      .map((w) => ({ kind: 'win' as const, w, s: score(text, `${w.title} ${w.name} ${w.project} ${w.agent ?? w.command} ${w.session} ${w.branch ?? ''}`) }))
       .filter((r) => r.s > 0)
       .sort((a, b) => b.s - a.s || b.w.activity - a.w.activity);
     // History only joins once you type: the empty switcher is for jumping between live sessions.
@@ -103,18 +103,13 @@ export function Switcher({ windows, history, onPick, onResume, onClose }: Props)
           const { color, glyph } = look(agent);
           return (
             <li key={r.kind === 'win' ? r.w.key : `${r.h.host}:${r.h.ref}`}>
-              <button
-                className={`item ${idx === i ? 'selected' : ''} ${r.kind === 'win' ? r.w.status : 'past'}`}
-                style={{ '--agent': color } as React.CSSProperties}
-                onMouseEnter={() => setI(idx)}
-                onClick={() => choose(r)}
-              >
+              <button className={`switch-item ${idx === i ? 'on' : ''}`} style={{ '--agent': color } as React.CSSProperties} onMouseEnter={() => setI(idx)} onClick={() => choose(r)}>
                 <span className="chip">{glyph}</span>
-                <span className="item-main">
-                  <span className="item-name">{r.kind === 'win' ? r.w.name : r.h.title}</span>
-                  <span className="item-sub">{r.kind === 'win' ? `${r.w.project} · ${r.w.session}` : `${r.h.project} · ${ago(r.h.at)}`}</span>
+                <span className="stack">
+                  <span className="name">{r.kind === 'win' ? r.w.title : r.h.title}</span>
+                  <span className="sub">{r.kind === 'win' ? [r.w.host, r.w.project, r.w.detail].filter(Boolean).join(' · ') : `${r.h.host} · ${r.h.project} · ${ago(r.h.at)}`}</span>
                 </span>
-                {r.kind === 'win' ? <span className={`status ${r.w.status}`} /> : <span className="tag">resume</span>}
+                {r.kind === 'win' ? <span className={`dot ${r.w.status}`} /> : <span className="pill">resume</span>}
               </button>
             </li>
           );

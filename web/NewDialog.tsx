@@ -110,7 +110,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
           </div>
         )}
 
-        <div className="row">
+        <div className="fields">
           <label className="field">
             <span>Name</span>
             <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={current?.command ? current.id : 'shell'} maxLength={80} />

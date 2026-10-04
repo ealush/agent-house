@@ -8,7 +8,8 @@ import * as pty from 'node-pty';
 import type { WebSocket } from 'ws';
 import { cleanEnv, tmux, VIEWER_PREFIX, windowExists, setWindowOption } from './tmux.ts';
 
-export const viewerCounts = new Map<string, number>();
+/** windowId → labels of the devices currently looking at it ("iPad", "Mac"). */
+export const viewers = new Map<string, string[]>();
 
 type ClientMessage = { t: 'i'; d: string } | { t: 'r'; c: number; r: number };
 
@@ -16,7 +17,7 @@ function clamp(n: number, min: number, max: number, fallback: number): number {
   return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.floor(n))) : fallback;
 }
 
-export async function attach(ws: WebSocket, windowId: string, cols: number, rows: number): Promise<void> {
+export async function attach(ws: WebSocket, windowId: string, cols: number, rows: number, device: string): Promise<void> {
   const target = await windowExists(windowId);
   if (!target) {
     ws.close(4404, 'window not found');
@@ -44,7 +45,7 @@ export async function attach(ws: WebSocket, windowId: string, cols: number, rows
     },
   );
 
-  viewerCounts.set(windowId, (viewerCounts.get(windowId) ?? 0) + 1);
+  viewers.set(windowId, [...(viewers.get(windowId) ?? []), device]);
   let closed = false;
 
   // Coalesce output into fewer frames; full-screen TUIs emit many tiny writes.
@@ -90,9 +91,10 @@ export async function attach(ws: WebSocket, windowId: string, cols: number, rows
   function cleanup() {
     if (closed) return;
     closed = true;
-    const n = (viewerCounts.get(windowId) ?? 1) - 1;
-    if (n > 0) viewerCounts.set(windowId, n);
-    else viewerCounts.delete(windowId);
+    const rest = [...(viewers.get(windowId) ?? [])];
+    rest.splice(rest.indexOf(device), 1);
+    if (rest.length) viewers.set(windowId, rest);
+    else viewers.delete(windowId);
     // Whatever was on screen when you left counts as read.
     tmux('display-message', '-p', '-t', windowId, '#{window_activity}')
       .then((a) => setWindowOption(windowId, '@ah-seen', a.trim()))
