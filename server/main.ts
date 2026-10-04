@@ -448,7 +448,7 @@ async function serveStatic(res: ServerResponse, pathname: string) {
     body = await readFile(file).catch(() => null);
   }
   if (!body) {
-    res.writeHead(503, { 'content-type': 'text/plain' });
+    res.writeHead(503, { 'content-type': 'text/plain', 'content-security-policy': CSP });
     return res.end('UI not built. Run `pnpm build`, or use `pnpm dev`.');
   }
   res.writeHead(200, {

@@ -47,6 +47,14 @@ export async function startAh(config: Record<string, unknown> = {}, dir = mkdtem
   delete env.AH_PORT;
   delete env.AH_HOST;
 
+  // Start the private tmux server ourselves, without the developer's tmux.conf, so
+  // tests behave the same on every machine (and an old tmux doesn't choke on new options).
+  try {
+    execFileSync('tmux', ['-f', '/dev/null', 'new-session', '-d', '-s', '_harness'], { env, stdio: 'ignore' });
+  } catch {
+    // already running (restart of the same dir)
+  }
+
   const proc = spawn(process.execPath, [MAIN, '--port', '0'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
   let out = '';
   proc.stdout!.on('data', (d) => (out += d));

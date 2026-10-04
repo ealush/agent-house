@@ -8,6 +8,16 @@ import { randomUUID } from 'node:crypto';
 const run = promisify(execFile);
 const SEP = '\x1f';
 
+/**
+ * Splits one line of `-F` output. tmux ≥ 3.5 prints the separator raw; older
+ * releases (3.4, as shipped by Ubuntu LTS) escape control characters in output,
+ * so it arrives as the four characters "\037". Values are escaped the same way,
+ * so splitting on the escaped form is unambiguous there too.
+ */
+export function fields(line: string): string[] {
+  return line.includes(SEP) ? line.split(SEP) : line.split('\\037');
+}
+
 export const VIEWER_PREFIX = 'ah-v-';
 
 export async function tmux(...args: string[]): Promise<string> {
@@ -92,7 +102,7 @@ export async function listWindows(): Promise<RawWindow[]> {
   const rows: RawWindow[] = [];
   for (const line of out.split('\n')) {
     if (!line) continue;
-    const f = line.split(SEP);
+    const f = fields(line);
     if (f[0].startsWith(VIEWER_PREFIX)) continue;
     rows.push({
       session: f[0],
@@ -178,7 +188,7 @@ export async function cleanupViewers(): Promise<void> {
   try {
     const out = await tmux('list-sessions', '-F', `#{session_name}${SEP}#{session_attached}`);
     for (const line of out.split('\n')) {
-      const [name, attached] = line.split(SEP);
+      const [name, attached] = fields(line);
       if (name?.startsWith(VIEWER_PREFIX) && attached === '0') {
         await tmux('kill-session', '-t', `=${name}`).catch(() => {});
       }

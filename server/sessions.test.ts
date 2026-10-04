@@ -85,3 +85,9 @@ test('adoption pairs a live window with its transcript, once', () => {
   assert.deepEqual(adopted, ['a=new'], 'second window does not steal it; stale transcript is not adopted');
   assert.equal(windows[0].harnessId, 'new');
 });
+
+test('tmux output parses with raw (≥3.5) and escaped (3.4) separators', async () => {
+  const { fields } = await import('./tmux.ts');
+  assert.deepEqual(fields('agents\x1f@1\x1f/home/u'), ['agents', '@1', '/home/u']);
+  assert.deepEqual(fields('agents\\037@1\\037/home/u'), ['agents', '@1', '/home/u']);
+});
