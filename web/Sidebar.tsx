@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
-import type { Ended, State, Win } from './api.ts';
+import type { HistoryItem, State, Win } from './api.ts';
 import { look } from './agents.ts';
 
-export type GroupBy = 'project' | 'session';
+export type GroupBy = 'status' | 'project' | 'session';
 
 type Props = {
   state: State | null;
@@ -11,24 +11,43 @@ type Props = {
   groupBy: GroupBy;
   setGroupBy: (g: GroupBy) => void;
   onSelect: (id: string) => void;
-  onResume: (uid: string) => void;
-  onForget: (uid: string) => void;
+  onResume: (ref: string) => void;
+  onForget: (ref: string) => void;
   onNew: () => void;
   notify: NotificationPermission | 'unsupported';
   onEnableNotify: () => void;
 };
 
+// Needs-you first (F21): the dashboard is for what's blocked on you.
+const STATUS_GROUPS: Array<[Win['status'], string]> = [
+  ['waiting', 'needs you'],
+  ['attention', 'done'],
+  ['busy', 'working'],
+  ['idle', 'idle'],
+];
+
+const GROUP_LABELS: Record<GroupBy, string> = { status: 'Status', project: 'Projects', session: 'tmux' };
+
 export function Sidebar({ state, error, selected, groupBy, setGroupBy, onSelect, onResume, onForget, onNew, notify, onEnableNotify }: Props) {
   const groups = useMemo(() => {
-    const map = new Map<string, Win[]>();
-    for (const w of state?.windows ?? []) {
-      const key = groupBy === 'project' ? w.project : w.session;
-      map.set(key, [...(map.get(key) ?? []), w]);
+    const windows = state?.windows ?? [];
+    const pinned = windows.filter((w) => w.pinned);
+    const rest = windows.filter((w) => !w.pinned);
+    let out: Array<[string, Win[]]>;
+    if (groupBy === 'status') {
+      out = STATUS_GROUPS.map(([s, label]): [string, Win[]] => [label, rest.filter((w) => w.status === s)]).filter(([, ws]) => ws.length);
+    } else {
+      const map = new Map<string, Win[]>();
+      for (const w of rest) {
+        const key = groupBy === 'project' ? w.project : w.session;
+        map.set(key, [...(map.get(key) ?? []), w]);
+      }
+      out = [...map.entries()].sort(([a], [b]) => (a === '~' ? 1 : b === '~' ? -1 : a.localeCompare(b)));
     }
-    return [...map.entries()].sort(([a], [b]) => (a === '~' ? 1 : b === '~' ? -1 : a.localeCompare(b)));
+    return pinned.length ? [['pinned', pinned] as [string, Win[]], ...out] : out;
   }, [state, groupBy]);
 
-  const waiting = state?.windows.filter((w) => w.status === 'attention' || w.status === 'waiting').length ?? 0;
+  const waiting = state?.windows.filter((w) => w.status === 'waiting').length ?? 0;
 
   return (
     <nav className="sidebar">
@@ -44,28 +63,28 @@ export function Sidebar({ state, error, selected, groupBy, setGroupBy, onSelect,
 
       <div className="side-tools">
         <div className="seg" role="tablist">
-          {(['project', 'session'] as const).map((g) => (
+          {(['status', 'project', 'session'] as const).map((g) => (
             <button key={g} role="tab" aria-selected={groupBy === g} className={groupBy === g ? 'on' : ''} onClick={() => setGroupBy(g)}>
-              {g === 'project' ? 'Projects' : 'tmux sessions'}
+              {GROUP_LABELS[g]}
             </button>
           ))}
         </div>
-        {waiting > 0 && <span className="waiting">{waiting} waiting</span>}
+        {waiting > 0 && <span className="waiting">{waiting} need you</span>}
       </div>
 
       <div className="side-list">
         {error && <div className="side-error">Can't reach server: {error}</div>}
         {state && state.windows.length === 0 && (
           <div className="empty">
-            <p>No tmux windows yet.</p>
+            <p>Nothing running.</p>
             <button className="btn" onClick={onNew}>
-              Start one
+              Start a session
             </button>
           </div>
         )}
         {groups.map(([group, wins]) => (
           <section key={group} className="group">
-            <h3 title={groupBy === 'project' ? wins[0].projectPath : `tmux session ${group}`}>{group}</h3>
+            <h3 title={groupBy === 'project' ? wins[0].projectPath : undefined}>{group}</h3>
             <ul>
               {wins.map((w) => (
                 <Item key={w.id} w={w} selected={w.id === selected} groupBy={groupBy} onSelect={onSelect} />
@@ -73,13 +92,13 @@ export function Sidebar({ state, error, selected, groupBy, setGroupBy, onSelect,
             </ul>
           </section>
         ))}
-        {!!state?.ended.length && <EndedList ended={state.ended} onResume={onResume} onForget={onForget} />}
+        {!!state?.history.length && <History items={state.history} onResume={onResume} onForget={onForget} />}
       </div>
 
       {notify === 'default' && (
         <footer className="side-foot">
           <button className="btn ghost small" onClick={onEnableNotify}>
-            Notify me when an agent is waiting
+            Notify me when an agent needs me
           </button>
         </footer>
       )}
@@ -100,68 +119,88 @@ function Item({ w, selected, groupBy, onSelect }: { w: Win; selected: boolean; g
         <span className="item-main">
           <span className="item-name">{w.name}</span>
           <span className="item-sub">
-            {context} · {w.agent ?? w.command}
+            {context}
+            {w.branch && w.worktree ? ` ⎇ ${w.branch}` : ''} · {w.agent ?? w.command}
             {w.panes > 1 ? ` · ${w.panes} panes` : ''}
           </span>
         </span>
         <span className="item-meta">
+          {w.queued > 0 && (
+            <span className="queued" title={`${w.queued} queued prompt${w.queued > 1 ? 's' : ''}`}>
+              ⇥{w.queued}
+            </span>
+          )}
           {elsewhere > 0 && (
             <span className="viewers" title={`Open on ${elsewhere} other device${elsewhere > 1 ? 's' : ''}`}>
               ◉{elsewhere > 1 ? elsewhere : ''}
             </span>
           )}
-          <span className={`status ${w.status}`} title={STATUS_TEXT[w.status]} />
+          <span className={`status ${w.status}`} title={STATUS_TEXT[w.status] + (w.statusSource === 'hook' ? '' : ` (from ${w.statusSource})`)} />
         </span>
       </button>
     </li>
   );
 }
 
-const STATUS_TEXT = {
+export const STATUS_TEXT = {
   busy: 'Working',
   idle: 'Quiet',
-  waiting: 'Waiting for your input',
+  waiting: 'Needs your input',
   attention: 'Finished since you last looked',
 };
 
-function EndedList({ ended, onResume, onForget }: { ended: Ended[]; onResume: (uid: string) => void; onForget: (uid: string) => void }) {
+const HISTORY_PREVIEW = 6;
+
+function History({ items, onResume, onForget }: { items: HistoryItem[]; onResume: (ref: string) => void; onForget: (ref: string) => void }) {
   const [open, setOpen] = useState(false);
+  const [all, setAll] = useState(false);
+  const shown = all ? items : items.slice(0, HISTORY_PREVIEW);
   return (
-    <section className="group ended">
+    <section className="group history">
       <h3>
         <button className="linkish" onClick={() => setOpen(!open)} aria-expanded={open}>
-          {open ? '▾' : '▸'} ended · {ended.length}
+          {open ? '▾' : '▸'} history · {items.length}
         </button>
       </h3>
       {open && (
         <ul>
-          {ended.map((r) => {
-            const { color, glyph } = look(r.harness);
+          {shown.map((h) => {
+            const { color, glyph } = look(h.harness);
             return (
-              <li key={r.uid} className="ended-item" style={{ '--agent': color } as React.CSSProperties}>
+              <li key={h.ref} className="ended-item" style={{ '--agent': color } as React.CSSProperties}>
                 <span className="chip">{glyph}</span>
                 <span className="item-main">
-                  <span className="item-name">{r.name}</span>
-                  <span className="item-sub" title={r.harnessId ? `${r.harness} session ${r.harnessId}` : undefined}>
-                    {r.cwd} · {ago(r.endedAt)}
+                  <span className="item-name" title={h.title}>
+                    {h.title}
+                  </span>
+                  <span className="item-sub" title={h.harnessId ? `${h.harness} ${h.harnessId}` : undefined}>
+                    {h.project} · {ago(h.at)}
+                    {h.kind === 'saved' ? '' : ' · ended'}
                   </span>
                 </span>
-                <button className="btn small" onClick={() => onResume(r.uid)} title={r.harnessId ? 'Resume this exact conversation' : 'Continue the latest conversation in this directory'}>
+                <button className="btn small" onClick={() => onResume(h.ref)} title={h.harnessId ? 'Resume this exact conversation' : 'Continue the latest conversation in this directory'}>
                   Resume
                 </button>
-                <button className="icon-btn small" onClick={() => onForget(r.uid)} title="Forget">
+                <button className="icon-btn small" onClick={() => onForget(h.ref)} title="Hide from history">
                   ×
                 </button>
               </li>
             );
           })}
+          {items.length > HISTORY_PREVIEW && (
+            <li>
+              <button className="linkish more" onClick={() => setAll(!all)}>
+                {all ? 'Show fewer' : `Show all ${items.length}`}
+              </button>
+            </li>
+          )}
         </ul>
       )}
     </section>
   );
 }
 
-function ago(ts: number): string {
+export function ago(ts: number): string {
   const s = Date.now() / 1000 - ts;
   if (s < 3600) return `${Math.max(1, Math.round(s / 60))}m ago`;
   if (s < 86400) return `${Math.round(s / 3600)}h ago`;

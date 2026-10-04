@@ -1,15 +1,17 @@
 // Turns raw tmux windows into the model the UI shows: which agent is running,
-// which project it belongs to, and whether it is working, idle or waiting on you.
-import { existsSync } from 'node:fs';
+// which project it belongs to, and whether it is working, waiting on you or done.
+// Every window is registered (F3), so it can be found and resumed from anywhere.
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
-import { listWindows, setWindowOption, type RawWindow } from './tmux.ts';
-import { Registry } from './registry.ts';
+import { basename, dirname, join, resolve } from 'node:path';
+import { capturePane, listWindows, setWindowOption, type RawWindow } from './tmux.ts';
+import { Registry, type SessionRecord } from './registry.ts';
 import { snapshot, descendants } from './procs.ts';
+import { discover, type Transcript } from './discovery.ts';
 import type { Config, Preset } from './config.ts';
 
-// busy: producing output · waiting: agent asked for input/permission (hooks only)
-// attention: finished since you last looked · idle: nothing new
+// busy: working · waiting: needs your input/permission · attention: finished since
+// you last looked · idle: nothing new. When unsure we say done/idle, never "waiting".
 export type Status = 'busy' | 'idle' | 'waiting' | 'attention';
 
 export type WindowView = {
@@ -17,45 +19,94 @@ export type WindowView = {
   session: string;
   index: number;
   name: string;
-  uid: string | null;
+  uid: string;
   agent: string | null;
+  harnessId: string | null;
   model: string | null;
-  /** True when status comes from agent hooks rather than output heuristics. */
-  hooked: boolean;
+  /** Where the status came from: agent hooks, terminal rules, or output activity. */
+  statusSource: 'hook' | 'screen' | 'activity';
   command: string;
   cwd: string;
   project: string;
   projectPath: string;
+  branch: string | null;
+  worktree: boolean;
   status: Status;
   viewers: number;
   activity: number;
   createdAt: number;
   panes: number;
+  pinned: boolean;
+  queued: number;
+};
+
+export type HistoryItem = {
+  /** Registry id for sessions ah ran, `harness:harnessId` for discovered ones. */
+  ref: string;
+  kind: 'ended' | 'saved';
+  harness: string;
+  harnessId: string | null;
+  title: string;
+  cwd: string;
+  project: string;
+  model: string | null;
+  at: number;
+  pinned: boolean;
+  worktree: string | null;
 };
 
 const HOME = homedir();
-const gitRootCache = new Map<string, string | null>();
 
-function gitRoot(dir: string): string | null {
-  if (gitRootCache.has(dir)) return gitRootCache.get(dir)!;
-  let cur = dir;
-  let found: string | null = null;
-  while (cur && cur !== '/') {
-    if (existsSync(join(cur, '.git'))) {
-      found = cur;
-      break;
-    }
-    const parent = dirname(cur);
-    if (parent === cur) break;
-    cur = parent;
+// ---------- git
+
+type Repo = { root: string; project: string; branch: string | null; worktree: boolean };
+const repoCache = new Map<string, { root: string; gitDir: string; main: string } | null>();
+
+function findRepo(dir: string) {
+  if (repoCache.has(dir)) return repoCache.get(dir)!;
+  let found: { root: string; gitDir: string; main: string } | null = null;
+  for (let cur = dir; cur && cur !== '/'; cur = dirname(cur)) {
+    const dotgit = join(cur, '.git');
+    if (!existsSync(dotgit)) continue;
+    let gitDir = dotgit;
+    let main = cur;
+    try {
+      if (statSync(dotgit).isFile()) {
+        // Linked worktree: ".git" is a file pointing at <main>/.git/worktrees/<name>.
+        gitDir = resolve(cur, readFileSync(dotgit, 'utf8').replace(/^gitdir:\s*/, '').trim());
+        const i = gitDir.indexOf('/.git/worktrees/');
+        if (i >= 0) main = gitDir.slice(0, i);
+      }
+    } catch {}
+    found = { root: cur, gitDir, main };
+    break;
   }
-  gitRootCache.set(dir, found);
+  repoCache.set(dir, found);
   return found;
+}
+
+export function repoInfo(dir: string): Repo | null {
+  const r = findRepo(dir);
+  if (!r) return null;
+  let branch: string | null = null;
+  try {
+    const head = readFileSync(join(r.gitDir, 'HEAD'), 'utf8').trim();
+    branch = head.startsWith('ref: refs/heads/') ? head.slice(16) : head.slice(0, 7);
+  } catch {}
+  return { root: r.root, project: basename(r.main), branch, worktree: r.main !== r.root };
 }
 
 export function shortPath(p: string): string {
   return p === HOME ? '~' : p.startsWith(HOME + '/') ? '~' + p.slice(HOME.length) : p;
 }
+
+function projectOf(dir: string): { project: string; projectPath: string } {
+  const repo = repoInfo(dir);
+  const path = repo?.root ?? dir;
+  return { project: repo?.project ?? (path === HOME ? '~' : basename(path)), projectPath: shortPath(path) };
+}
+
+// ---------- agent detection
 
 function compileMatchers(presets: Preset[]): Array<[string, RegExp]> {
   return presets
@@ -68,8 +119,7 @@ function escape(s: string): string {
 }
 
 function detectAgent(w: RawWindow, procs: Awaited<ReturnType<typeof snapshot>>, matchers: Array<[string, RegExp]>) {
-  const tree = descendants(procs, w.panePid);
-  for (const proc of tree) {
+  for (const proc of descendants(procs, w.panePid)) {
     const names = proc.argv.slice(0, 2).map((a) => basename(a));
     for (const [id, re] of matchers) {
       if (names.some((n) => re.test(n))) return id;
@@ -78,14 +128,64 @@ function detectAgent(w: RawWindow, procs: Awaited<ReturnType<typeof snapshot>>, 
   return null;
 }
 
+// ---------- status
+
+export type StatusInput = {
+  now: number;
+  activity: number;
+  seen: number;
+  viewers: number;
+  idleAfter: number;
+  /** Hook state, only when the hooked agent is still the one running. */
+  hook: { state: string; at: number } | null;
+  /** True when a terminal rule says the agent is asking something (non-hooked agents). */
+  screenWaiting: boolean;
+};
+
+export function computeStatus(s: StatusInput): { status: Status; source: WindowView['statusSource'] } {
+  const quiet = s.now - s.activity >= s.idleAfter;
+  const unread = (t: number) => t > s.seen && s.viewers === 0;
+  if (s.hook) {
+    const { state, at } = s.hook;
+    if (state === 'waiting') return { status: 'waiting', source: 'hook' };
+    // An interrupted turn may never send Stop; long silence overrides "working".
+    if (state === 'working') return { status: s.now - s.activity < 30 ? 'busy' : unread(s.activity) ? 'attention' : 'idle', source: 'hook' };
+    if (state === 'done' || state === 'idle') return { status: unread(at) ? 'attention' : quiet ? 'idle' : 'busy', source: 'hook' };
+  }
+  if (quiet && s.screenWaiting) return { status: 'waiting', source: 'screen' };
+  if (!quiet) return { status: 'busy', source: 'activity' };
+  return { status: s.seen > 0 && unread(s.activity) ? 'attention' : 'idle', source: 'activity' };
+}
+
+/** Terminal rules (F18): does the bottom of the screen look like a question? */
+export function screenAsks(lines: string[], patterns: RegExp[]): boolean {
+  const tail = lines.filter((l) => l.trim()).slice(-12).join('\n');
+  return patterns.some((re) => re.test(tail));
+}
+
+const screenCache = new Map<string, { activity: number; asks: boolean }>();
+
+async function screenWaiting(windowId: string, activity: number, patterns: RegExp[]): Promise<boolean> {
+  if (!patterns.length) return false;
+  const hit = screenCache.get(windowId);
+  if (hit?.activity === activity) return hit.asks;
+  const text = await capturePane(windowId, 0).catch(() => '');
+  const asks = screenAsks(text.split('\n'), patterns);
+  screenCache.set(windowId, { activity, asks });
+  return asks;
+}
+
+// ---------- windows
+
 export async function buildWindows(config: Config, viewerCounts: Map<string, number>, registry: Registry): Promise<WindowView[]> {
   const [raw, procs] = await Promise.all([listWindows(), snapshot()]);
   const matchers = compileMatchers(config.presets);
+  const waitingRules = new Map(config.presets.map((p) => [p.id, (p.waitingPatterns ?? []).map((s) => new RegExp(s, 'm'))]));
   const now = Date.now() / 1000;
   const alive = new Set<string>();
 
   const views = await Promise.all(
-    raw.map(async (w) => {
+    raw.map(async (w): Promise<WindowView> => {
       const viewers = viewerCounts.get(w.windowId) ?? 0;
       // Anything printed while someone is looking counts as read.
       let seen = w.seen;
@@ -95,42 +195,45 @@ export async function buildWindows(config: Config, viewerCounts: Map<string, num
       }
 
       const agent = detectAgent(w, procs, matchers);
-      const quiet = now - w.activity >= config.idleAfter;
       // Hook state is trusted only while that agent is still running in the window.
       const hooked = !!w.hookState && w.hookState !== 'ended' && agent === w.harness;
-      let status: Status;
-      if (hooked && w.hookState === 'waiting') status = 'waiting';
-      // An interrupted turn may never send Stop; long silence overrides "working".
-      else if (hooked && w.hookState === 'working' && now - w.activity < 30) status = 'busy';
-      else if (hooked && (w.hookState === 'done' || w.hookState === 'idle'))
-        status = w.hookAt > seen && viewers === 0 ? 'attention' : quiet ? 'idle' : 'busy';
-      else status = !quiet ? 'busy' : w.activity > seen && viewers === 0 && seen > 0 ? 'attention' : 'idle';
+      const quiet = now - w.activity >= config.idleAfter;
+      const asks = !hooked && agent && quiet ? await screenWaiting(w.windowId, w.activity, waitingRules.get(agent) ?? []) : false;
+      const { status, source } = computeStatus({
+        now,
+        activity: w.activity,
+        seen,
+        viewers,
+        idleAfter: config.idleAfter,
+        hook: hooked ? { state: w.hookState, at: w.hookAt } : null,
+        screenWaiting: asks,
+      });
 
-      const root = gitRoot(w.path);
-      const projectPath = root ?? w.path;
-
-      // Register agent windows so they can be resumed after tmux itself is gone.
-      const harness = agent ?? (w.harness || (w.agentTag && w.agentTag !== 'shell' ? w.agentTag : ''));
-      let uid = w.uid || null;
-      if (harness && !uid) {
+      // Register every window, shells included (F3).
+      let uid = w.uid;
+      if (!uid) {
         uid = Registry.newId();
         await setWindowOption(w.windowId, '@ah-uid', uid).catch(() => {});
       }
-      if (uid) {
-        alive.add(uid);
-        registry.upsert(uid, {
-          tmuxSession: w.session,
-          windowId: w.windowId,
-          name: w.name,
-          cwd: w.path,
-          harness: harness || registry.get(uid)?.harness || 'shell',
-          harnessId: w.harness === harness ? w.harnessId : undefined,
-          model: w.harness === harness ? w.model : undefined,
-          status,
-          createdAt: w.createdAt || undefined,
-        });
-      }
+      alive.add(uid);
+      const prev = registry.get(uid);
+      const harness = agent ?? (w.harness || prev?.harness || (w.agentTag && w.agentTag !== 'shell' ? w.agentTag : 'shell'));
+      const harnessId = w.harness === harness && w.harnessId ? w.harnessId : prev?.harness === harness ? prev?.harnessId : undefined;
+      const model = w.harness === harness && w.model ? w.model : undefined;
+      registry.live(uid, {
+        harness,
+        harnessId,
+        cwd: w.path,
+        model,
+        title: w.name,
+        status,
+        tmux: { session: w.session, windowId: w.windowId },
+        activity: w.activity,
+        createdAt: w.createdAt || undefined,
+      });
 
+      const repo = repoInfo(w.path);
+      const rec = registry.get(uid)!;
       return {
         id: w.windowId,
         session: w.session,
@@ -138,20 +241,105 @@ export async function buildWindows(config: Config, viewerCounts: Map<string, num
         name: w.name,
         uid,
         agent,
-        model: hooked && w.model ? w.model : null,
-        hooked,
+        harnessId: rec.harnessId ?? null,
+        model: agent ? (rec.model ?? null) : null,
+        statusSource: source,
         command: w.command,
         cwd: shortPath(w.path),
-        project: projectPath === HOME ? '~' : basename(projectPath),
-        projectPath: shortPath(projectPath),
+        ...projectOf(w.path),
+        branch: repo?.branch ?? null,
+        worktree: repo?.worktree ?? false,
         status,
         viewers,
         activity: w.activity,
         createdAt: w.createdAt,
         panes: w.panes,
+        pinned: !!rec.meta['ah.pinned'],
+        queued: (rec.meta['ah.queue'] as unknown[] | undefined)?.length ?? 0,
       };
     }),
   );
   registry.reconcile(alive);
   return views;
+}
+
+// ---------- transcript adoption (F10): live agent windows without hooks learn their conversation id
+
+/**
+ * Pairs live agent windows that don't know their conversation id with the transcript
+ * they're most likely writing: same harness and directory, touched since the window
+ * started (or around its last output, for windows ah didn't create). Hooks, when
+ * present, always win over this guess.
+ */
+export function adoptTranscripts(windows: WindowView[], transcripts: Transcript[], registry: Registry) {
+  const claimed = new Set(windows.map((w) => w.harnessId).filter(Boolean));
+  const cwdOf = (w: WindowView) => (w.cwd.startsWith('~') ? HOME + w.cwd.slice(1) : w.cwd);
+  for (const w of windows) {
+    if (!w.agent || w.harnessId) continue;
+    const match = transcripts.find(
+      (t) =>
+        t.harness === w.agent &&
+        t.cwd === cwdOf(w) &&
+        !claimed.has(t.harnessId) &&
+        (w.createdAt ? t.updatedAt >= w.createdAt - 60 : Math.abs(t.updatedAt - w.activity) < 300),
+    );
+    if (!match) continue;
+    claimed.add(match.harnessId);
+    w.harnessId = match.harnessId;
+    w.model ??= match.model ?? null;
+    registry.adopt(w.uid, match.harnessId, match.model);
+  }
+}
+
+// ---------- history (F10): ended registry records ∪ discovered transcripts, deduped by harness id
+
+export async function buildHistory(registry: Registry, windows: WindowView[]): Promise<HistoryItem[]> {
+  const transcripts = await discover();
+  const running = new Set(windows.map((w) => w.harnessId).filter(Boolean));
+  const byHarnessId = new Map<string, Transcript>(transcripts.map((t) => [t.harnessId, t]));
+  const claimed = new Set<string>();
+  const items: HistoryItem[] = [];
+
+  for (const r of registry.all()) {
+    if (r.lifecycle !== 'ended') continue;
+    if (r.harnessId && running.has(r.harnessId)) continue; // resumed elsewhere already
+    const t = r.harnessId ? byHarnessId.get(r.harnessId) : undefined;
+    if (r.harnessId) claimed.add(r.harnessId);
+    items.push(fromRecord(r, t));
+  }
+  for (const t of transcripts) {
+    if (running.has(t.harnessId) || claimed.has(t.harnessId)) continue;
+    items.push({
+      ref: `${t.harness}:${t.harnessId}`,
+      kind: 'saved',
+      harness: t.harness,
+      harnessId: t.harnessId,
+      title: t.title,
+      cwd: shortPath(t.cwd),
+      project: projectOf(t.cwd).project,
+      model: t.model ?? null,
+      at: t.updatedAt,
+      pinned: false,
+      worktree: null,
+    });
+  }
+  return items.sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.at - a.at).slice(0, 150);
+}
+
+function fromRecord(r: SessionRecord, t?: Transcript): HistoryItem {
+  const wt = r.meta['ah.worktree'] as { path: string } | undefined;
+  return {
+    ref: r.id,
+    kind: 'ended',
+    harness: r.harness,
+    harnessId: r.harnessId ?? null,
+    // The window name is often just "claude"; the harness's own title is better.
+    title: t && (r.title === r.harness || !r.title) ? t.title : r.title || t?.title || r.harness,
+    cwd: shortPath(r.cwd),
+    project: projectOf(r.cwd).project,
+    model: r.model ?? t?.model ?? null,
+    at: r.endedAt ?? r.lastActivityAt,
+    pinned: !!r.meta['ah.pinned'],
+    worktree: wt?.path ? shortPath(wt.path) : null,
+  };
 }

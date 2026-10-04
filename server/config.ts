@@ -13,6 +13,12 @@ export type Preset = {
   resumeId?: string;
   /** Regex tested against the basenames of running processes' argv[0]/argv[1]. */
   match?: string;
+  /**
+   * Terminal rules for agents without hooks: regexes (multiline) tested against the last
+   * screen lines of a quiet window. A match means "waiting for you". Keep them tight —
+   * a false "needs you" is worse than a missed one.
+   */
+  waitingPatterns?: string[];
 };
 
 export type Config = {
@@ -31,8 +37,24 @@ export type Config = {
 
 const DEFAULT_PRESETS: Preset[] = [
   { id: 'shell', name: 'Shell', command: '' },
-  { id: 'claude', name: 'Claude Code', command: 'claude', resume: 'claude --continue', resumeId: 'claude --resume {id}', match: '^claude$' },
-  { id: 'codex', name: 'Codex', command: 'codex', resume: 'codex resume --last', resumeId: 'codex resume {id}', match: '^codex' },
+  {
+    id: 'claude',
+    name: 'Claude Code',
+    command: 'claude',
+    resume: 'claude --continue',
+    resumeId: 'claude --resume {id}',
+    match: '^claude$',
+    waitingPatterns: ['Do you want to (proceed|make this edit|create|allow)', '^\\s*❯\\s*1\\.\\s*Yes'],
+  },
+  {
+    id: 'codex',
+    name: 'Codex',
+    command: 'codex',
+    resume: 'codex resume --last',
+    resumeId: 'codex resume {id}',
+    match: '^codex',
+    waitingPatterns: ['Would you like to (run|make|apply)', 'Allow (Codex|command)', '\\(y\\)es.*\\(n\\)o'],
+  },
   { id: 'gemini', name: 'Gemini', command: 'gemini', match: '^gemini$' },
   { id: 'grok', name: 'Grok', command: 'grok', match: '^grok$' },
   { id: 'muse', name: 'Muse', command: 'muse', match: '^muse' },

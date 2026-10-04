@@ -84,12 +84,16 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ wi
     t.loadAddon(new Unicode11Addon());
     t.unicode.activeVersion = '11';
     t.open(host.current!);
-    try {
-      const gl = new WebglAddon();
-      gl.onContextLoss(() => gl.dispose());
-      t.loadAddon(gl);
-    } catch {
-      // DOM renderer fallback
+    // WebGL is fastest on desktop, but mobile Safari drops GL contexts when backgrounded
+    // and headless browsers paint it unreliably; the DOM renderer is the safe default there.
+    if (matchMedia('(pointer: fine)').matches && !navigator.webdriver) {
+      try {
+        const gl = new WebglAddon();
+        gl.onContextLoss(() => gl.dispose());
+        t.loadAddon(gl);
+      } catch {
+        // DOM renderer fallback
+      }
     }
 
     // Copy a local (shift/option-drag) selection instead of sending ^C.

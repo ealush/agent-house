@@ -5,19 +5,38 @@ export type Win = {
   session: string;
   index: number;
   name: string;
-  uid: string | null;
+  uid: string;
   agent: string | null;
+  harnessId: string | null;
   model: string | null;
-  hooked: boolean;
+  statusSource: 'hook' | 'screen' | 'activity';
   command: string;
   cwd: string;
   project: string;
   projectPath: string;
+  branch: string | null;
+  worktree: boolean;
   status: Status;
   viewers: number;
   activity: number;
   createdAt: number;
   panes: number;
+  pinned: boolean;
+  queued: number;
+};
+
+export type HistoryItem = {
+  ref: string;
+  kind: 'ended' | 'saved';
+  harness: string;
+  harnessId: string | null;
+  title: string;
+  cwd: string;
+  project: string;
+  model: string | null;
+  at: number;
+  pinned: boolean;
+  worktree: string | null;
 };
 
 export type Preset = { id: string; name: string; command: string; resume?: string; available: boolean };
@@ -27,19 +46,11 @@ export type State = {
   defaultSession: string;
   sessions: string[];
   windows: Win[];
-  ended: Ended[];
+  history: HistoryItem[];
   presets: Preset[];
 };
 
-export type Ended = {
-  uid: string;
-  name: string;
-  cwd: string;
-  harness: string;
-  harnessId?: string;
-  tmuxSession: string;
-  endedAt: number;
-};
+export type SendResult = { outcome: 'delivered' | 'queued'; windowId: string; resumed: boolean; queued: number };
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
@@ -59,17 +70,67 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return (type.includes('json') ? JSON.parse(text) : text) as T;
 }
 
+const enc = encodeURIComponent;
+
 export const api = {
   state: () => request<State>('GET', '/api/state'),
   projects: () => request<string[]>('GET', '/api/projects'),
   create: (body: { preset: string; cwd: string; session: string; label: string; resume: boolean }) =>
-    request<{ id: string }>('POST', '/api/windows', body),
-  rename: (id: string, name: string) => request('PATCH', `/api/windows/${encodeURIComponent(id)}`, { name }),
-  kill: (id: string) => request('DELETE', `/api/windows/${encodeURIComponent(id)}`),
-  resume: (uid: string) => request<{ id: string }>('POST', `/api/sessions/${encodeURIComponent(uid)}/resume`),
-  forget: (uid: string) => request('DELETE', `/api/sessions/${encodeURIComponent(uid)}`),
-  capture: (id: string) => request<string>('GET', `/api/windows/${encodeURIComponent(id)}/capture?lines=3000`),
+    request<{ id: string; uid: string }>('POST', '/api/windows', body),
+  rename: (id: string, name: string) => request('PATCH', `/api/windows/${enc(id)}`, { name }),
+  kill: (id: string) => request('DELETE', `/api/windows/${enc(id)}`),
+  capture: (id: string) => request<string>('GET', `/api/windows/${enc(id)}/capture?lines=3000`),
+  resume: (ref: string) => request<{ id: string; uid: string; resumed: boolean }>('POST', `/api/sessions/${enc(ref)}/resume`),
+  send: (ref: string, text: string, enter: boolean) => request<SendResult>('POST', `/api/sessions/${enc(ref)}/send`, { text, enter }),
+  clearQueue: (uid: string) => request('DELETE', `/api/sessions/${enc(uid)}/queue`),
+  pin: (uid: string, pinned: boolean) => request('POST', `/api/sessions/${enc(uid)}/pin`, { pinned }),
+  forget: (ref: string) => request('DELETE', `/api/sessions/${enc(ref)}`),
+  prompts: () => request<Array<{ text: string; at: number }>>('GET', '/api/prompts'),
 };
+
+/** Live state over SSE; falls back to polling if the stream can't be held open. */
+export function subscribe(onState: (s: State) => void, onError: (msg: string | null) => void): () => void {
+  let es: EventSource | null = null;
+  let poll: number | undefined;
+  let closed = false;
+  const fetchOnce = () =>
+    api
+      .state()
+      .then((s) => {
+        onState(s);
+        onError(null);
+      })
+      .catch((e) => onError((e as Error).message));
+  const open = () => {
+    if (closed) return;
+    es = new EventSource('/api/events');
+    es.addEventListener('state', (e) => {
+      clearInterval(poll);
+      poll = undefined;
+      onState(JSON.parse((e as MessageEvent).data));
+      onError(null);
+    });
+    es.onerror = () => {
+      // EventSource reconnects by itself; poll meanwhile so the UI never goes stale.
+      poll ??= window.setInterval(fetchOnce, 3000);
+      if (es?.readyState === EventSource.CLOSED) setTimeout(open, 3000);
+    };
+  };
+  open();
+  // iOS kills background connections; resync immediately when we come back.
+  const wake = () => {
+    if (document.visibilityState !== 'visible') return;
+    fetchOnce();
+    if (!es || es.readyState === EventSource.CLOSED) open();
+  };
+  document.addEventListener('visibilitychange', wake);
+  return () => {
+    closed = true;
+    es?.close();
+    clearInterval(poll);
+    document.removeEventListener('visibilitychange', wake);
+  };
+}
 
 export async function upload(file: File): Promise<string> {
   const res = await fetch(`/api/upload?name=${encodeURIComponent(file.name || 'paste.png')}`, {

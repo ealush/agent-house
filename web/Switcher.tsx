@@ -1,11 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Win } from './api.ts';
+import type { HistoryItem, Win } from './api.ts';
 import { look } from './agents.ts';
+import { ago } from './Sidebar.tsx';
 
-type Props = { windows: Win[]; onPick: (id: string) => void; onClose: () => void };
+type Props = {
+  windows: Win[];
+  history: HistoryItem[];
+  onPick: (id: string) => void;
+  onResume: (ref: string) => void;
+  onClose: () => void;
+};
 
 // Subsequence match, scoring contiguous runs and word starts higher.
-function score(query: string, text: string): number {
+export function score(query: string, text: string): number {
   if (!query) return 1;
   const q = query.toLowerCase();
   const t = text.toLowerCase();
@@ -22,29 +29,60 @@ function score(query: string, text: string): number {
   return s;
 }
 
-export function Switcher({ windows, onPick, onClose }: Props) {
+type Filters = { h?: string; s?: string; p?: string; m?: string };
+
+/** `h:claude s:waiting p:vest m:opus free text` → filters + fuzzy text (F27). */
+export function parseQuery(q: string): { text: string; f: Filters } {
+  const f: Filters = {};
+  const text = q
+    .split(/\s+/)
+    .filter((tok) => {
+      const m = tok.match(/^([hspm]):(.+)$/);
+      if (m) f[m[1] as keyof Filters] = m[2].toLowerCase();
+      return !m;
+    })
+    .join(' ');
+  return { text, f };
+}
+
+const has = (v: string | null | undefined, want?: string) => !want || (v ?? '').toLowerCase().includes(want);
+
+type Row = { kind: 'win'; w: Win; s: number } | { kind: 'hist'; h: HistoryItem; s: number };
+
+export function Switcher({ windows, history, onPick, onResume, onClose }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const [q, setQ] = useState('');
   const [i, setI] = useState(0);
 
   useEffect(() => ref.current?.showModal(), []);
 
-  const results = useMemo(
-    () =>
-      windows
-        .map((w) => ({ w, s: score(q, `${w.name} ${w.project} ${w.agent ?? w.command} ${w.session}`) }))
-        .filter((r) => r.s > 0)
-        .sort((a, b) => b.s - a.s || b.w.activity - a.w.activity)
-        .slice(0, 12),
-    [windows, q],
-  );
+  const results = useMemo(() => {
+    const { text, f } = parseQuery(q);
+    const live: Row[] = windows
+      .filter((w) => has(w.agent ?? w.command, f.h) && has(w.status, f.s) && has(w.project, f.p) && has(w.model, f.m))
+      .map((w) => ({ kind: 'win' as const, w, s: score(text, `${w.name} ${w.project} ${w.agent ?? w.command} ${w.session} ${w.branch ?? ''}`) }))
+      .filter((r) => r.s > 0)
+      .sort((a, b) => b.s - a.s || b.w.activity - a.w.activity);
+    // History only joins once you type: the empty switcher is for jumping between live sessions.
+    const past: Row[] =
+      text || f.h || f.p || f.m
+        ? history
+            .filter((h) => has(h.harness, f.h) && has(h.project, f.p) && has(h.model, f.m) && (!f.s || 'ended saved'.includes(f.s)))
+            .map((h) => ({ kind: 'hist' as const, h, s: score(text, `${h.title} ${h.project} ${h.harness}`) }))
+            .filter((r) => r.s > 0)
+            .sort((a, b) => b.s - a.s || b.h.at - a.h.at)
+        : [];
+    return [...live, ...past].slice(0, 14);
+  }, [windows, history, q]);
+
+  const choose = (r: Row) => (r.kind === 'win' ? onPick(r.w.id) : onResume(r.h.ref));
 
   return (
     <dialog ref={ref} className="dialog switcher" onClose={onClose} onClick={(e) => e.target === ref.current && onClose()}>
       <input
         autoFocus
         value={q}
-        placeholder="Jump to session…"
+        placeholder="Jump or resume…  h:claude s:waiting p:vest m:opus"
         autoCapitalize="off"
         autoCorrect="off"
         onChange={(e) => {
@@ -54,25 +92,29 @@ export function Switcher({ windows, onPick, onClose }: Props) {
         onKeyDown={(e) => {
           if (e.key === 'ArrowDown') setI((i) => Math.min(results.length - 1, i + 1));
           else if (e.key === 'ArrowUp') setI((i) => Math.max(0, i - 1));
-          else if (e.key === 'Enter' && results[i]) onPick(results[i].w.id);
+          else if (e.key === 'Enter' && results[i]) choose(results[i]);
           else return;
           e.preventDefault();
         }}
       />
       <ul>
-        {results.map(({ w }, idx) => {
-          const { color, glyph } = look(w.agent);
+        {results.map((r, idx) => {
+          const agent = r.kind === 'win' ? r.w.agent : r.h.harness;
+          const { color, glyph } = look(agent);
           return (
-            <li key={w.id}>
-              <button className={`item ${idx === i ? 'selected' : ''} ${w.status}`} style={{ '--agent': color } as React.CSSProperties} onMouseEnter={() => setI(idx)} onClick={() => onPick(w.id)}>
+            <li key={r.kind === 'win' ? r.w.id : r.h.ref}>
+              <button
+                className={`item ${idx === i ? 'selected' : ''} ${r.kind === 'win' ? r.w.status : 'past'}`}
+                style={{ '--agent': color } as React.CSSProperties}
+                onMouseEnter={() => setI(idx)}
+                onClick={() => choose(r)}
+              >
                 <span className="chip">{glyph}</span>
                 <span className="item-main">
-                  <span className="item-name">{w.name}</span>
-                  <span className="item-sub">
-                    {w.project} · {w.session}
-                  </span>
+                  <span className="item-name">{r.kind === 'win' ? r.w.name : r.h.title}</span>
+                  <span className="item-sub">{r.kind === 'win' ? `${r.w.project} · ${r.w.session}` : `${r.h.project} · ${ago(r.h.at)}`}</span>
                 </span>
-                <span className={`status ${w.status}`} />
+                {r.kind === 'win' ? <span className={`status ${r.w.status}`} /> : <span className="tag">resume</span>}
               </button>
             </li>
           );

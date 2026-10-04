@@ -1,0 +1,5 @@
+{"type":"mode","sessionId":"abc"}
+{"type":"user","isSidechain":false,"cwd":"/home/u/code/proj","sessionId":"abc","message":{"role":"user","content":"<command-name>/clear</command-name>"}}
+{"type":"user","isSidechain":false,"cwd":"/home/u/code/proj","sessionId":"abc","message":{"role":"user","content":[{"type":"text","text":"fix the flaky login test\nit fails on CI"}]}}
+{"type":"assistant","message":{"model":"claude-opus-5-5","content":[]}}
+{"type":"ai-title","aiTitle":"Fix flaky login test","sessionId":"abc"}

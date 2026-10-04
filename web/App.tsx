@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, upload, shellQuote, type State, type Win } from './api.ts';
+import { api, subscribe, upload, shellQuote, type SendResult, type State, type Win } from './api.ts';
 import { look } from './agents.ts';
-import { Sidebar, type GroupBy } from './Sidebar.tsx';
+import { Sidebar, STATUS_TEXT, type GroupBy } from './Sidebar.tsx';
 import { Terminal, type TerminalHandle } from './Terminal.tsx';
 import { NewDialog } from './NewDialog.tsx';
 import { KeyBar, applyModifiers } from './KeyBar.tsx';
 import { Composer } from './Composer.tsx';
 import { Switcher } from './Switcher.tsx';
-
-const POLL_MS = 2000;
 
 function useMedia(query: string) {
   const [match, setMatch] = useState(() => matchMedia(query).matches);
@@ -46,7 +44,8 @@ export function App() {
   const [state, setState] = useState<State | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(selectedFromHash);
-  const [groupBy, setGroupBy] = stored<GroupBy>('ah.groupBy', 'project');
+  const [groupBy, setGroupBy] = stored<GroupBy>('ah.groupBy', 'status');
+  const [toast, setToast] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [capture, setCapture] = useState<string | null>(null);
   const [composing, setComposing] = useState(false);
@@ -65,21 +64,30 @@ export function App() {
   const termRef = useRef<TerminalHandle>(null);
   const prevStatus = useRef(new Map<string, string>());
 
+  const apply = useCallback((s: State) => {
+    setState(s);
+    announce(s.windows);
+  }, []);
+
+  /** Immediate refetch after our own actions; the event stream catches everything else. */
   const refresh = useCallback(async () => {
     try {
-      const s = await api.state();
-      setState(s);
+      apply(await api.state());
       setError(null);
-      announce(s.windows);
     } catch (err) {
       setError((err as Error).message);
     }
-  }, []);
+  }, [apply]);
+
+  function flash(msg: string) {
+    setToast(msg);
+    window.setTimeout(() => setToast((t) => (t === msg ? null : t)), 3500);
+  }
 
   function announce(windows: Win[]) {
     const prev = prevStatus.current;
     for (const w of windows) {
-      const was = prev.get(w.id);
+      const was = prev.get(w.uid);
       const alerting = w.status === 'attention' || w.status === 'waiting';
       if (was && was !== w.status && alerting && 'Notification' in window && Notification.permission === 'granted') {
         if (document.hidden || w.id !== selectedRef.current) {
@@ -92,8 +100,8 @@ export function App() {
         }
       }
     }
-    prevStatus.current = new Map(windows.map((w) => [w.id, w.status]));
-    const waiting = windows.filter((w) => w.status === 'attention' || w.status === 'waiting').length;
+    prevStatus.current = new Map(windows.map((w) => [w.uid, w.status]));
+    const waiting = windows.filter((w) => w.status === 'waiting').length;
     document.title = waiting ? `(${waiting}) ah` : 'ah';
   }
 
@@ -101,24 +109,14 @@ export function App() {
   selectedRef.current = selected;
 
   useEffect(() => {
-    refresh();
-    let timer = window.setInterval(refresh, POLL_MS);
-    const vis = () => {
-      clearInterval(timer);
-      if (document.visibilityState === 'visible') {
-        refresh();
-        timer = window.setInterval(refresh, POLL_MS);
-      }
-    };
-    document.addEventListener('visibilitychange', vis);
+    const stop = subscribe(apply, setError);
     const onHash = () => setSelected(selectedFromHash());
     window.addEventListener('hashchange', onHash);
     return () => {
-      clearInterval(timer);
-      document.removeEventListener('visibilitychange', vis);
+      stop();
       window.removeEventListener('hashchange', onHash);
     };
-  }, [refresh]);
+  }, [apply]);
 
   // ⌘K / Ctrl+Shift+K opens the switcher. Captured before xterm so the shell never sees it.
   useEffect(() => {
@@ -193,6 +191,35 @@ export function App() {
     }
   }
 
+  async function resume(ref: string) {
+    try {
+      const out = await api.resume(ref);
+      await refresh();
+      select(out.id);
+      if (out.resumed) flash('Resuming…');
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
+  function sent(r: SendResult) {
+    if (r.outcome === 'delivered') return flash('Sent');
+    flash(r.resumed ? 'Resuming the session; your message goes in once it is ready' : `Queued (${r.queued}) — sent when the agent is free`);
+    refresh();
+  }
+
+  async function togglePin() {
+    if (!current) return;
+    await api.pin(current.uid, !current.pinned).catch((e) => alert(e.message));
+    refresh();
+  }
+
+  async function clearQueue() {
+    if (!current || !confirm(`Drop ${current.queued} queued message${current.queued > 1 ? 's' : ''}?`)) return;
+    await api.clearQueue(current.uid).catch((e) => alert(e.message));
+    refresh();
+  }
+
   async function enableNotify() {
     if (!('Notification' in window)) return;
     setNotify(await Notification.requestPermission());
@@ -221,17 +248,9 @@ export function App() {
           groupBy={groupBy}
           setGroupBy={setGroupBy}
           onSelect={select}
-          onResume={async (uid) => {
-            try {
-              const { id } = await api.resume(uid);
-              await refresh();
-              select(id);
-            } catch (e) {
-              alert((e as Error).message);
-            }
-          }}
-          onForget={async (uid) => {
-            await api.forget(uid).catch((e) => alert(e.message));
+          onResume={resume}
+          onForget={async (ref) => {
+            await api.forget(ref).catch((e) => alert(e.message));
             refresh();
           }}
           onNew={() => setCreating(true)}
@@ -283,26 +302,41 @@ export function App() {
                     {current.name}
                   </button>
                   <span className="title-sub">
-                    {current.cwd} · {current.session}:{current.index}
+                    <span className={`status ${current.status}`} title={STATUS_TEXT[current.status]} /> {current.cwd}
+                    {current.branch ? ` ⎇ ${current.branch}` : ''}
+                    {current.model ? ` · ${current.model}` : ''} · {current.session}:{current.index}
                     {current.viewers > 1 && <span className="shared"> · on {current.viewers} devices</span>}
                   </span>
                 </div>
                 <div className="head-actions">
+                  {current.queued > 0 && (
+                    <button className="btn ghost small queued" onClick={clearQueue} title="Queued messages — click to drop">
+                      ⇥ {current.queued}
+                      <span className="lbl"> queued</span>
+                    </button>
+                  )}
+                  <button className={`btn ghost small ${current.pinned ? 'on' : ''}`} onClick={togglePin} title={current.pinned ? 'Unpin' : 'Pin to top'}>
+                    {current.pinned ? '★' : '☆'}
+                  </button>
                   <button className="btn ghost small" onClick={() => setComposing(true)} title="Write a prompt in a text box (dictation, attachments)">
-                    Compose
+                    <span aria-hidden>✎</span>
+                    <span className="lbl">Compose</span>
                   </button>
                   <button className="btn ghost small" onClick={openCapture} title="Show scrollback as selectable text">
-                    Text
+                    <span aria-hidden>≡</span>
+                    <span className="lbl">Text</span>
                   </button>
                   <button
                     className={`btn ghost small ${showKeys ? 'on' : ''}`}
                     onClick={() => setKeysPref(showKeys ? 'off' : 'on')}
                     title="On-screen keys"
                   >
-                    Keys
+                    <span aria-hidden>⌨</span>
+                    <span className="lbl">Keys</span>
                   </button>
                   <button className="btn ghost small danger" onClick={kill} title="Kill window">
-                    Kill
+                    <span aria-hidden>✕</span>
+                    <span className="lbl">Kill</span>
                   </button>
                 </div>
               </>
@@ -353,21 +387,32 @@ export function App() {
       )}
 
       {composing && current && (
-        <Composer target={current.id} send={(d) => termRef.current?.send(d)} onClose={() => setComposing(false)} />
+        <Composer target={current.uid} name={current.name} onSent={sent} onClose={() => setComposing(false)} />
       )}
 
       {switching && state && (
         <Switcher
           windows={state.windows}
+          history={state.history}
           onPick={(id) => {
             setSwitching(false);
             select(id);
+          }}
+          onResume={(ref) => {
+            setSwitching(false);
+            resume(ref);
           }}
           onClose={() => setSwitching(false)}
         />
       )}
 
       {capture !== null && <CaptureDialog text={capture} onClose={() => setCapture(null)} />}
+
+      {toast && (
+        <div className="toast" role="status">
+          {toast}
+        </div>
+      )}
     </div>
   );
 }

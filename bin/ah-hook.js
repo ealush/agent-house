@@ -50,6 +50,13 @@ let model = '';
 if (harness === 'claude') {
   const p = parse(await readStdin());
   state = CLAUDE_STATES[p.hook_event_name] ?? null;
+  // Notification also fires for "idle for 60s" nags after a turn ended. Only a permission
+  // or question prompt means the agent is blocked on you; anything else stays "done".
+  if (p.hook_event_name === 'Notification') {
+    const kind = p.notification_type ?? '';
+    const blocking = /permission|elicitation/.test(kind) || (!kind && /permission|needs your|approve/i.test(p.message ?? ''));
+    state = blocking ? 'waiting' : null;
+  }
   id = p.session_id ?? '';
   model = typeof p.model === 'string' ? p.model : (p.model?.id ?? '');
 } else if (harness === 'codex') {
