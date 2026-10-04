@@ -1,8 +1,6 @@
 #!/usr/bin/env node
-// ah            start the server (same as `ah serve`)
-// ah hooks install | uninstall | status
-//               wire Claude Code hooks and Codex notify to ah-hook.js so the
-//               sidebar knows when an agent is working, waiting or done.
+// ah — see `ah help`. `serve` runs the daemon; `hooks` wires agent status hooks;
+// everything else is a client of the running daemon (bin/cli.js).
 import { readFileSync, writeFileSync, existsSync, copyFileSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -34,8 +32,8 @@ if (cmd === 'serve' || cmd.startsWith('--')) {
   const codex = existsSync(CODEX_CONFIG) && readFileSync(CODEX_CONFIG, 'utf8').includes('ah-hook.js');
   console.log(`Codex: ${codex ? 'wired' : 'not wired'} (${CODEX_CONFIG})`);
 } else {
-  console.log('usage: ah [serve] [--port N] [--host H] | ah hooks install|uninstall|status');
-  process.exit(1);
+  const { run } = await import('./cli.js');
+  await run(cmd, process.argv.slice(3));
 }
 
 function readJson(file) {
