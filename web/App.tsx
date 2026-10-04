@@ -15,6 +15,7 @@ import { pushStatus, pushSupport, registerWorker } from './notify.ts';
 import { API_VERSION } from './api.ts';
 import { Security } from './Security.tsx';
 import { Icon } from './icons.tsx';
+import { trackViewport } from './viewport.ts';
 
 function useMedia(query: string) {
   const [match, setMatch] = useState(() => matchMedia(query).matches);
@@ -189,19 +190,8 @@ export function App({ onLock }: { onLock: () => void }) {
     return () => window.removeEventListener('keydown', onKey, true);
   }, []);
 
-  // Keep the layout pinned to the visual viewport so the iOS keyboard doesn't cover the input.
-  useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-    const set = () => document.documentElement.style.setProperty('--vh', `${vv.height}px`);
-    set();
-    vv.addEventListener('resize', set);
-    window.addEventListener('pageshow', set);
-    return () => {
-      vv.removeEventListener('resize', set);
-      window.removeEventListener('pageshow', set);
-    };
-  }, []);
+  // Fill the screen normally; shrink only while the software keyboard is open.
+  useEffect(() => trackViewport(window, document), []);
 
   const current = state?.windows.find((w) => w.key === selected) ?? null;
   // A session killed elsewhere: fall back to where we were (split panes show an ended state instead).
