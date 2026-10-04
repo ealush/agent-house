@@ -9,6 +9,8 @@ import { Composer } from './Composer.tsx';
 import { Switcher } from './Switcher.tsx';
 import { FilesDialog } from './Files.tsx';
 import { ChangesDialog, WorktreesDialog } from './Git.tsx';
+import { NotifyDialog } from './NotifyDialog.tsx';
+import { pushStatus, pushSupport, registerWorker } from './notify.ts';
 
 function useMedia(query: string) {
   const [match, setMatch] = useState(() => matchMedia(query).matches);
@@ -52,7 +54,8 @@ export function App() {
   const [capture, setCapture] = useState<string | null>(null);
   const [composing, setComposing] = useState(false);
   const [switching, setSwitching] = useState(false);
-  const [panel, setPanel] = useState<'files' | 'changes' | 'worktrees' | null>(null);
+  const [panel, setPanel] = useState<'files' | 'changes' | 'worktrees' | 'notify' | null>(null);
+  const pushActive = useRef(false);
   const [dragging, setDragging] = useState(false);
   const narrow = useMedia('(max-width: 760px)');
   const touch = useMedia('(pointer: coarse)');
@@ -92,7 +95,8 @@ export function App() {
     for (const w of windows) {
       const was = prev.get(w.uid);
       const alerting = w.status === 'attention' || w.status === 'waiting';
-      if (was && was !== w.status && alerting && 'Notification' in window && Notification.permission === 'granted') {
+      // With Web Push on, the service worker notifies; in-page alerts are the http fallback.
+      if (was && was !== w.status && alerting && !pushActive.current && 'Notification' in window && Notification.permission === 'granted') {
         if (document.hidden || w.id !== selectedRef.current) {
           const n = new Notification(w.status === 'waiting' ? `${w.name} needs you` : `${w.name} finished`, { body: `${w.project} · ${w.agent ?? w.command}`, tag: w.id, icon: '/icon-512.png' });
           n.onclick = () => {
@@ -113,7 +117,17 @@ export function App() {
 
   useEffect(() => {
     const stop = subscribe(apply, setError);
-    const onHash = () => setSelected(selectedFromHash());
+    const onHash = () => {
+      const id = selectedFromHash();
+      setSelected(id);
+      if (id) setShowList(false); // e.g. opened from a notification
+    };
+    if (pushSupport() === 'ok') {
+      registerWorker();
+      pushStatus()
+        .then((e) => (pushActive.current = !!e))
+        .catch(() => {});
+    }
     window.addEventListener('hashchange', onHash);
     return () => {
       stop();
@@ -271,8 +285,8 @@ export function App() {
           }}
           onNew={() => setCreating(true)}
           onWorktrees={() => setPanel('worktrees')}
+          onNotify={() => (pushSupport() === 'ok' ? setPanel('notify') : enableNotify())}
           notify={notify}
-          onEnableNotify={enableNotify}
         />
       )}
 
@@ -449,6 +463,8 @@ export function App() {
       )}
 
       {panel === 'changes' && current && <ChangesDialog windowId={current.id} onClose={() => setPanel(null)} />}
+
+      {panel === 'notify' && <NotifyDialog onClose={() => setPanel(null)} onChange={(on) => (pushActive.current = on)} />}
 
       {panel === 'worktrees' && <WorktreesDialog onClose={() => setPanel(null)} onShell={shellIn} />}
 

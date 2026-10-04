@@ -221,6 +221,30 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL) {
     return send(res, 201, { path: await makeDir(str(body.path, 'path', 1024)) });
   }
 
+  // ---------- web push
+
+  if (route('GET', /^\/api\/push\/key$/)) return send(res, 200, { key: core.push.publicKey });
+
+  if (route('POST', /^\/api\/push\/subscribe$/)) {
+    const body = await readJson(req);
+    const events = body.events as { waiting?: unknown; done?: unknown } | undefined;
+    try {
+      core.push.subscribe(body.subscription as never, { waiting: events?.waiting !== false, done: events?.done === true }, String(body.label ?? ''));
+    } catch (err) {
+      throw new HttpError(400, (err as Error).message);
+    }
+    return send(res, 200, { ok: true });
+  }
+
+  if (route('POST', /^\/api\/push\/unsubscribe$/)) {
+    core.push.unsubscribe(str((await readJson(req)).endpoint, 'endpoint', 2048));
+    return send(res, 200, { ok: true });
+  }
+
+  if (route('POST', /^\/api\/push\/status$/)) {
+    return send(res, 200, { events: core.push.settings(str((await readJson(req)).endpoint, 'endpoint', 2048)) });
+  }
+
   if (route('GET', /^\/api\/worktrees$/)) return send(res, 200, await core.worktrees());
 
   if (route('DELETE', /^\/api\/worktrees$/)) {

@@ -15,8 +15,8 @@ type Props = {
   onForget: (ref: string) => void;
   onNew: () => void;
   onWorktrees: () => void;
+  onNotify: () => void;
   notify: NotificationPermission | 'unsupported';
-  onEnableNotify: () => void;
 };
 
 // Needs-you first (F21): the dashboard is for what's blocked on you.
@@ -29,7 +29,7 @@ const STATUS_GROUPS: Array<[Win['status'], string]> = [
 
 const GROUP_LABELS: Record<GroupBy, string> = { status: 'Status', project: 'Projects', session: 'tmux' };
 
-export function Sidebar({ state, error, selected, groupBy, setGroupBy, onSelect, onResume, onForget, onNew, onWorktrees, notify, onEnableNotify }: Props) {
+export function Sidebar({ state, error, selected, groupBy, setGroupBy, onSelect, onResume, onForget, onNew, onWorktrees, onNotify, notify }: Props) {
   const groups = useMemo(() => {
     const windows = state?.windows ?? [];
     const pinned = windows.filter((w) => w.pinned);
@@ -100,9 +100,9 @@ export function Sidebar({ state, error, selected, groupBy, setGroupBy, onSelect,
         <button className="btn ghost small" onClick={onWorktrees}>
           ⎇ Worktrees
         </button>
-        {notify === 'default' && (
-          <button className="btn ghost small" onClick={onEnableNotify}>
-            🔔 Notify me
+        {notify !== 'unsupported' && (
+          <button className="btn ghost small" onClick={onNotify}>
+            🔔 Notifications
           </button>
         )}
       </footer>

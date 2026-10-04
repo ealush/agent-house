@@ -1,0 +1,45 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+process.env.XDG_STATE_HOME = mkdtempSync(join(tmpdir(), 'ah-push-'));
+const { Push } = await import('./push.ts');
+
+const win = (uid: string, status: string) => ({ uid, id: '@1', name: uid, project: 'p', agent: 'claude', command: 'claude', status }) as any;
+
+test('notifies on transitions only, never on startup, with per-event filtering', () => {
+  const push = new Push();
+  const sent: string[] = [];
+  (push as any).send = (event: string, p: { title: string }) => sent.push(`${event}:${p.title}`);
+
+  push.observe([win('a', 'waiting'), win('b', 'busy')]); // first pass: learn, don't alert
+  assert.deepEqual(sent, []);
+
+  push.observe([win('a', 'waiting'), win('b', 'attention')]); // b finished
+  assert.deepEqual(sent, ['done:b finished']);
+
+  push.observe([win('a', 'busy'), win('b', 'idle')]);
+  push.observe([win('a', 'waiting'), win('b', 'idle')]); // a asks again
+  assert.deepEqual(sent, ['done:b finished', 'waiting:a needs you']);
+
+  push.observe([win('a', 'busy')]);
+  push.observe([win('a', 'waiting')]); // within cooldown: suppressed
+  assert.equal(sent.length, 2);
+});
+
+test('idle → attention (output while away, not a finished turn) is not a "done" alert', () => {
+  const push = new Push();
+  const sent: string[] = [];
+  (push as any).send = (event: string) => sent.push(event);
+  push.observe([win('c', 'idle')]);
+  push.observe([win('c', 'attention')]);
+  assert.deepEqual(sent, []);
+});
+
+test('rejects malformed subscriptions', () => {
+  const push = new Push();
+  assert.throws(() => push.subscribe({ endpoint: 'http://insecure', keys: { p256dh: 'x', auth: 'y' } }, { waiting: true, done: false }, ''));
+  assert.throws(() => push.subscribe({} as any, { waiting: true, done: false }, ''));
+});

@@ -13,6 +13,7 @@ import { discover } from './discovery.ts';
 import { expandHome, isExecutableOnPath, type Config, type Preset } from './config.ts';
 import * as t from './tmux.ts';
 import { listWorktrees, mainRepo, removeWorktree, type Worktree } from './git.ts';
+import { Push } from './push.ts';
 
 export type QueueItem = { id: string; text: string; enter: boolean; at: number };
 
@@ -45,6 +46,7 @@ const now = () => Math.floor(Date.now() / 1000);
 
 export class Core {
   readonly registry = new Registry();
+  readonly push = new Push();
   readonly viewerCounts: Map<string, number>;
   private state: State | null = null;
   private json = '';
@@ -87,6 +89,7 @@ export class Core {
       const windows = await buildWindows(this.config, this.viewerCounts, this.registry);
       adoptTranscripts(windows, await discover(), this.registry);
       await this.deliverQueued(windows);
+      this.push.observe(windows);
       const history = (await buildHistory(this.registry, windows)).filter((h) => !this.hidden.has(h.ref));
       const state: State = {
         hostname: hostname(),
