@@ -31,8 +31,6 @@ export type Config = {
   defaultSession: string;
   /** Directories whose children are offered as project folders. */
   projectRoots: string[];
-  /** Extra Host header values to accept (the Tailscale name and IPs are added automatically). */
-  allowedHosts: string[];
   /** Seconds since last output after which a window counts as idle. */
   idleAfter: number;
   /**
@@ -40,6 +38,14 @@ export type Config = {
    * answer on ah's port or via `tailscale serve`; or list them: [{ "name", "url" }].
    */
   peers: Array<{ name: string; url: string; token?: string }> | 'auto';
+  /**
+   * Where the file browser may read and write. Defaults to your project roots,
+   * ah's upload folder and /tmp; add "~" to open up your whole home (dotfiles,
+   * keys and all) — a deliberate choice, not a default.
+   */
+  files: { roots: string[] };
+  /** How many sent prompts to remember for "recent" (0 = don't keep any). They're sensitive. */
+  promptHistory: number;
   /** App sign-in on top of Tailscale. See server/auth.ts. */
   auth: { mode: 'passkey' | 'off'; idleHours: number; maxDays: number };
   presets: Preset[];
@@ -82,18 +88,25 @@ export const CONFIG_PATH = join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '
 export function loadConfig(): Config {
   let user: Partial<Config> = {};
   if (existsSync(CONFIG_PATH)) {
-    user = JSON.parse(readFileSync(CONFIG_PATH, 'utf8'));
+    try {
+      user = JSON.parse(readFileSync(CONFIG_PATH, 'utf8'));
+    } catch (err) {
+      // Refuse to guess: a typo here could silently change who can get in.
+      throw new Error(`${CONFIG_PATH} is not valid JSON (${(err as Error).message}). Fix it and restart.`);
+    }
   }
   return {
     port: 7681,
     host: '127.0.0.1',
     defaultSession: 'agents',
     projectRoots: ['~/code'],
-    allowedHosts: [],
     idleAfter: 4,
-    peers: 'auto',
+    // Multi-host is opt-in: list peers, or "auto" to discover your own tailnet machines.
+    peers: [],
     ...user,
     auth: { mode: 'passkey', idleHours: 24, maxDays: 30, ...user.auth },
+    files: { roots: [...(user.projectRoots ?? ['~/code']), '~/.cache/ah/uploads', '/tmp'], ...user.files },
+    promptHistory: user.promptHistory ?? 60,
     presets: user.presets ?? DEFAULT_PRESETS,
   };
 }

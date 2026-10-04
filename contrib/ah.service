@@ -1,5 +1,6 @@
-# systemd user unit: starts ah at boot (with lingering) and on your tailnet via
-# `tailscale serve`. Install:
+# systemd user unit: starts ah at boot (with lingering), on loopback only. Tailnet
+# access is a one-time, persistent `node bin/ah.js setup tailscale` — tailscaled keeps
+# that config across reboots; ah never changes its own exposure. Install:
 #   cp contrib/ah.service ~/.config/systemd/user/ && systemctl --user daemon-reload
 #   systemctl --user enable --now ah
 #   loginctl enable-linger $USER   # start at boot, before you log in
@@ -11,9 +12,9 @@ Wants=network-online.target
 
 [Service]
 WorkingDirectory=%h/code/ah
-# --tailscale = `pnpm serve`: localhost + tailscale serve (retried until tailscaled is up).
-ExecStart=/usr/bin/env node bin/ah.js serve --tailscale
+ExecStart=/usr/bin/env node bin/ah.js serve
 # Agents find their tools through tmux's own environment; this PATH is for node, tmux, tailscale.
+# (ah reads `tailscale status` to learn its ts.net name and owner, and retries until it's up.)
 Environment=PATH=%h/.local/share/mise/shims:%h/.local/bin:/usr/local/bin:/usr/bin
 Restart=on-failure
 RestartSec=3

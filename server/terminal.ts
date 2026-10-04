@@ -11,6 +11,9 @@ import { cleanEnv, tmux, VIEWER_PREFIX, windowExists, setWindowOption } from './
 /** windowId → labels of the devices currently looking at it ("iPad", "Mac"). */
 export const viewers = new Map<string, string[]>();
 
+const HIGH_WATER = 4 * 1024 * 1024;
+const LOW_WATER = 512 * 1024;
+
 type ClientMessage = { t: 'i'; d: string } | { t: 'r'; c: number; r: number };
 
 function clamp(n: number, min: number, max: number, fallback: number): number {
@@ -51,10 +54,24 @@ export async function attach(ws: WebSocket, windowId: string, cols: number, rows
   // Coalesce output into fewer frames; full-screen TUIs emit many tiny writes.
   let pending: Buffer[] = [];
   let flushTimer: NodeJS.Timeout | null = null;
+  // Backpressure: a slow client (phone on a bad network) pauses the tmux client instead
+  // of letting output pile up in memory; tmux keeps the session state regardless.
+  let paused = false;
   const flush = () => {
     flushTimer = null;
     if (pending.length && ws.readyState === ws.OPEN) ws.send(Buffer.concat(pending));
     pending = [];
+    if (!paused && ws.bufferedAmount > HIGH_WATER) {
+      paused = true;
+      term.pause();
+      const drain = setInterval(() => {
+        if (ws.readyState !== ws.OPEN || ws.bufferedAmount < LOW_WATER) {
+          clearInterval(drain);
+          paused = false;
+          term.resume();
+        }
+      }, 50);
+    }
   };
 
   term.onData((data) => {

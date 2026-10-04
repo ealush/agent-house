@@ -49,9 +49,21 @@ export async function tailnet(): Promise<{ login: string | null; candidates: Arr
   }
 }
 
-async function hello(url: string): Promise<boolean> {
+/** Peers are reached over https (their own `tailscale serve`), or loopback http for local setups/tests. */
+export function peerUrlAllowed(url: string): boolean {
   try {
-    const res = await fetch(`${url}/api/hello`, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+    const u = new URL(url);
+    return u.protocol === 'https:' || (u.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname));
+  } catch {
+    return false;
+  }
+}
+
+async function hello(url: string): Promise<boolean> {
+  if (!peerUrlAllowed(url)) return false;
+  try {
+    // Never follow redirects: a peer must answer as itself.
+    const res = await fetch(`${url}/api/hello`, { signal: AbortSignal.timeout(TIMEOUT_MS), redirect: 'manual' });
     return res.ok && (await res.json()).ah === true;
   } catch {
     return false;
@@ -85,12 +97,9 @@ export class Peers {
   private async probe() {
     let candidates: PeerConfig[][];
     if (this.configured === 'auto') {
-      // Prefer the peer's `tailscale serve` HTTPS endpoint, else its Tailscale IP.
+      // Only the peer's `tailscale serve` HTTPS endpoint; peers never listen on their tailnet IP.
       const { candidates: found } = await tailnet();
-      candidates = found.map((c) => [
-        ...(c.dns ? [{ name: c.name, url: `https://${c.dns}` }] : []),
-        ...(c.ip ? [{ name: c.name, url: `http://${c.ip}:${this.port}` }] : []),
-      ]);
+      candidates = found.filter((c) => c.dns).map((c) => [{ name: c.name, url: `https://${c.dns}` }]);
     } else {
       candidates = this.configured.map((c) => [c]);
     }
@@ -135,6 +144,8 @@ export async function proxyHttp(peer: Peer, path: string, req: IncomingMessage, 
     // @ts-expect-error duplex is required by undici for streamed request bodies
     duplex: hasBody ? 'half' : undefined,
     signal: ctrl.signal,
+    // Never follow redirects: they could carry our token somewhere else.
+    redirect: 'manual',
   });
   const out: Record<string, string> = {};
   for (const h of FORWARD_RES) {
@@ -152,7 +163,9 @@ export async function proxyHttp(peer: Peer, path: string, req: IncomingMessage, 
 export function proxyWs(peer: Peer, path: string, client: WebSocket) {
   const url = new URL(path, peer.url);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-  const upstream = new WebSocket(url, { headers: { origin: new URL(peer.url).origin, ...(peer.token ? { authorization: `Bearer ${peer.token}` } : {}) } });
+  const upstream = new WebSocket(url, {
+    followRedirects: false,
+    maxPayload: 4 * 1024 * 1024, headers: { origin: new URL(peer.url).origin, ...(peer.token ? { authorization: `Bearer ${peer.token}` } : {}) } });
   const pending: Array<[RawData, boolean]> = [];
   client.on('message', (data, binary) => (upstream.readyState === WebSocket.OPEN ? upstream.send(data, { binary }) : pending.push([data, binary])));
   upstream.on('open', () => {
@@ -166,5 +179,6 @@ export function proxyWs(peer: Peer, path: string, client: WebSocket) {
   };
   upstream.on('close', closeBoth);
   upstream.on('error', () => closeBoth(1011));
+  client.on('error', () => upstream.terminate());
   client.on('close', () => upstream.terminate());
 }

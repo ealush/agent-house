@@ -11,9 +11,11 @@
     "dev": "node --watch server/main.ts & vite",
     "build": "vite build",
     "start": "node server/main.ts",
-    "serve": "node server/main.ts --tailscale",
+    "serve": "node server/main.ts",
+    "setup:tailscale": "node bin/ah.js setup tailscale",
     "typecheck": "tsc --noEmit",
-    "test": "node --test server/*.test.ts"
+    "test": "node --test server/*.test.ts test/*.test.ts test/security/*.test.ts",
+    "test:security": "node --test test/security/*.test.ts"
   },
   "engines": {
     "node": ">=23.6"

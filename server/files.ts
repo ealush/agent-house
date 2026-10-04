@@ -1,8 +1,8 @@
 // File explorer + transfer: browse the host, pull files to the device you're on,
 // push files from it into any folder, so a path can be handed to a shell or agent.
-import { createReadStream, existsSync } from 'node:fs';
+import { createReadStream, existsSync, realpathSync } from 'node:fs';
 import { open, readdir, realpath, stat, mkdir, rm } from 'node:fs/promises';
-import { homedir, tmpdir } from 'node:os';
+import { homedir } from 'node:os';
 import { basename, dirname, extname, join, resolve, sep } from 'node:path';
 import type { ServerResponse } from 'node:http';
 import { pipeline } from 'node:stream/promises';
@@ -16,9 +16,19 @@ export class FsError extends Error {
   }
 }
 
-// Everything reachable is the user's own anyway (they have a shell), but keep the
-// explorer to home and tmp so a stray path can't wander into /etc or /proc.
-const ROOTS = [homedir(), tmpdir(), '/tmp'].map((r) => resolve(r));
+// A signed-in device has a shell anyway, but file APIs are easier to misuse than
+// typing, so the browser only reaches configured roots (projects, ah's uploads, /tmp
+// by default). Your whole home — keys, tokens, dotfiles — is opt-in via config.
+let ROOTS: string[] = [];
+
+/** Sets the browsable roots (resolved through symlinks, so containment checks compare real paths). */
+export function setRoots(input: string[]) {
+  ROOTS = [...new Set(input.map((r) => resolve(r)).map((r) => (existsSync(r) ? realpathSync(r) : r)))];
+}
+
+export function roots(): string[] {
+  return ROOTS.filter((r) => existsSync(r));
+}
 
 function within(p: string): boolean {
   return ROOTS.some((r) => p === r || p.startsWith(r + sep));
@@ -32,7 +42,7 @@ export async function safePath(input: string, { mustExist = true } = {}): Promis
   // Follow symlinks so a link can't point the explorer outside the roots.
   const real = mustExist ? await realpath(abs).catch(() => null) : await realpath(dirname(abs)).then((d) => join(d, basename(abs))).catch(() => null);
   if (!real) throw new FsError(404, `no such file or directory: ${input}`);
-  if (!within(real)) throw new FsError(403, 'outside the browsable area (home and /tmp)');
+  if (!within(real)) throw new FsError(403, 'outside the browsable folders (see "files.roots" in the config)');
   return real;
 }
 
@@ -118,7 +128,8 @@ export async function receive(body: Readable, dirInput: string, rawName: string,
   let target = join(dir, name);
   for (let i = 1; existsSync(target); i++) target = join(dir, `${stem} (${i})${ext}`);
 
-  const fh = await open(target, 'wx', 0o644);
+  // Owner-only: uploads (screenshots, logs) often hold things you wouldn't share.
+  const fh = await open(target, 'wx', 0o600);
   let size = 0;
   try {
     for await (const chunk of body) {

@@ -48,7 +48,7 @@ export class CoreError extends Error {
 const STATE_DIR = join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah');
 const HIDDEN_FILE = join(STATE_DIR, 'hidden.json');
 const PROMPTS_FILE = join(STATE_DIR, 'prompts.json');
-const MAX_PROMPTS = 60;
+
 const TICK_MS = 1500;
 const now = () => Math.floor(Date.now() / 1000);
 
@@ -241,8 +241,16 @@ export class Core {
     return this.prompts;
   }
 
+  clearPrompts() {
+    this.prompts = [];
+    writeFile(PROMPTS_FILE, '[]', { mode: 0o600 }).catch(() => {});
+  }
+
   private remember(text: string) {
-    this.prompts = [{ text, at: now() }, ...this.prompts.filter((p) => p.text !== text)].slice(0, MAX_PROMPTS);
+    // Prompts can hold pasted secrets; keep only as many as configured (0 = none).
+    const keep = this.config.promptHistory;
+    if (keep <= 0) return;
+    this.prompts = [{ text, at: now() }, ...this.prompts.filter((p) => p.text !== text)].slice(0, keep);
     mkdir(STATE_DIR, { recursive: true })
       .then(() => writeFile(PROMPTS_FILE, JSON.stringify(this.prompts), { mode: 0o600 }))
       .catch((err) => console.error('saving prompt history failed:', err));

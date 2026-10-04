@@ -4,9 +4,12 @@ import { mkdtemp, writeFile, symlink, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
-import { safePath, list, receive, FsError } from './files.ts';
+import { safePath, list, receive, FsError, setRoots } from './files.ts';
 
-test('paths are confined to home and tmp, symlinks included', async () => {
+// Tests browse under the system temp dir; nothing else is a root.
+setRoots([tmpdir()]);
+
+test('paths are confined to the configured roots, symlinks included', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'ah-fs-'));
   await symlink('/etc', join(dir, 'escape'));
   await assert.rejects(safePath('/etc/passwd'), (e: FsError) => e.status === 403);

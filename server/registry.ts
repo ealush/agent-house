@@ -1,7 +1,7 @@
 // Durable record of every session this host has run, kept beside tmux rather
 // than in it. tmux forgets everything when its server dies (reboot, crash);
 // this file is what lets a session be found and resumed from any device later.
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, renameSync } from 'node:fs';
 import { mkdir, writeFile, rename } from 'node:fs/promises';
 import { homedir, hostname } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -52,7 +52,13 @@ export class Registry {
         this.records.set(r.id, r);
       }
     } catch (err) {
-      console.error(`ignoring unreadable registry ${FILE}:`, err);
+      // Keep the evidence instead of overwriting it on the next save; tmux still has the live sessions.
+      const aside = `${FILE}.corrupt-${Date.now()}`;
+      try {
+        renameSync(FILE, aside);
+      } catch {}
+      console.error(`registry ${FILE} was unreadable (${(err as Error).message}); moved it to ${aside} and starting fresh`);
+      this.records.clear();
     }
   }
 

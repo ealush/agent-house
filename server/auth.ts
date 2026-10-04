@@ -32,6 +32,12 @@ const AUDIT = join(DIR, 'audit.log');
 export const LOCAL_TOKEN_FILE = join(DIR, 'local-token');
 
 const CODE_TTL_MS = 10 * 60_000;
+const THROTTLE_WINDOW_MS = 5 * 60_000;
+const THROTTLE_PER_SOURCE = 10;
+const THROTTLE_GLOBAL = 30;
+/** Outstanding WebAuthn challenges are capped so unauthenticated callers can't grow memory. */
+const MAX_CHALLENGES = 200;
+type Mechanism = 'password' | 'code';
 const CHALLENGE_TTL_MS = 5 * 60_000;
 const SCRYPT = { N: 1 << 15, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
 
@@ -76,14 +82,24 @@ export class Auth {
   private store: Store;
   private codes = new Map<string, number>(); // code → expiry
   private challenges = new Map<string, { challenge: string; rpID: string; origin: string; expires: number; enrollCode?: string; sessionId?: string }>();
-  private failures: number[] = [];
+  /** Failure timestamps per "mechanism:source" bucket, plus one global bucket per mechanism. */
+  private failures = new Map<string, number[]>();
   /** Live sockets/streams per session, so revoking a device also cuts its terminals. */
   private live = new Map<string, Set<{ close: () => void }>>();
   readonly localToken: string;
 
   constructor(config: AuthConfig) {
     this.config = config;
-    this.store = existsSync(FILE) ? JSON.parse(readFileSync(FILE, 'utf8')) : { userId: newSecret(), passkeys: [], sessions: [], tokens: [] };
+    if (existsSync(FILE)) {
+      try {
+        this.store = JSON.parse(readFileSync(FILE, 'utf8'));
+      } catch (err) {
+        // Fail closed: starting fresh would silently drop every passkey and session.
+        throw new Error(`${FILE} is unreadable (${(err as Error).message}). Restore it from a backup, or move it away to start over.`);
+      }
+    } else {
+      this.store = { userId: newSecret(), passkeys: [], sessions: [], tokens: [] };
+    }
     this.store.tokens ??= [];
     // A fresh local token every start; the CLI reads it from a 0600 file.
     this.localToken = newSecret();
@@ -97,6 +113,10 @@ export class Auth {
   }
 
   /** Has any way to sign in been set up? */
+  get hasPassword() {
+    return !!this.store.password;
+  }
+
   get enrolled() {
     return this.store.passkeys.length > 0 || !!this.store.password;
   }
@@ -122,16 +142,31 @@ export class Auth {
     }
   }
 
-  // ---------- throttling (all login paths share one budget)
+  // ---------- throttling
+  //
+  // Only guessable secrets are throttled (master password, setup codes): passkeys
+  // can't be brute-forced, so failed passkey attempts never lock anyone out. Buckets
+  // are per mechanism and per source (Tailscale identity, or "local"), with a higher
+  // global ceiling per mechanism so many sources can't add up to a brute force.
 
-  private throttle() {
+  private recent(key: string): number[] {
     const t = now();
-    this.failures = this.failures.filter((f) => t - f < 5 * 60_000);
-    if (this.failures.length >= 10) throw new AuthError(429, 'Too many failed attempts. Try again in a few minutes.');
+    const list = (this.failures.get(key) ?? []).filter((f) => t - f < THROTTLE_WINDOW_MS);
+    this.failures.set(key, list);
+    return list;
   }
 
-  private fail(reason: string, req: IncomingMessage): never {
-    this.failures.push(now());
+  private throttle(mech: Mechanism, req: IncomingMessage) {
+    if (this.recent(`${mech}:${who(req)}`).length >= THROTTLE_PER_SOURCE || this.recent(`${mech}:*`).length >= THROTTLE_GLOBAL) {
+      throw new AuthError(429, 'Too many failed attempts. Try again in a few minutes.');
+    }
+  }
+
+  private fail(reason: string, req: IncomingMessage, mech?: Mechanism): never {
+    if (mech) {
+      this.recent(`${mech}:${who(req)}`).push(now());
+      this.recent(`${mech}:*`).push(now());
+    }
     this.audit('auth.failed', { reason, from: who(req) });
     throw new AuthError(401, reason);
   }
@@ -227,6 +262,15 @@ export class Auth {
 
   // ---------- passkeys
 
+  private newChallenge(c: { challenge: string; rpID: string; origin: string; expires: number; enrollCode?: string; sessionId?: string }): string {
+    const t = now();
+    for (const [id, v] of this.challenges) if (v.expires < t) this.challenges.delete(id);
+    if (this.challenges.size >= MAX_CHALLENGES) throw new AuthError(429, 'Too many sign-ins in progress. Try again shortly.');
+    const id = shortId();
+    this.challenges.set(id, c);
+    return id;
+  }
+
   private originOf(req: IncomingMessage): { origin: string; rpID: string } {
     const origin = String(req.headers.origin ?? '');
     let host: string;
@@ -237,16 +281,17 @@ export class Auth {
     }
     // WebAuthn needs a domain (not an IP) on https, or localhost.
     if (/^[\d.]+$/.test(host) || host.includes(':')) throw new AuthError(400, 'Passkeys need a domain name — open ah through its https://….ts.net address.');
+    if (!origin.startsWith('https://') && host !== 'localhost') throw new AuthError(400, 'Passkeys need https.');
     return { origin, rpID: host };
   }
 
   /** Step 1 of adding a passkey: either with a host-issued code, or from a signed-in device. */
   async registrationOptions(req: IncomingMessage, caller: Caller | null, code: string | undefined) {
-    this.throttle();
     let enrollCode: string | undefined;
     if (!caller || caller.kind !== 'session') {
+      this.throttle('code', req);
       const c = code && this.takeCode(code, false);
-      if (!c) this.fail('invalid or expired setup code', req);
+      if (!c) this.fail('invalid or expired setup code', req, 'code');
       enrollCode = c;
     }
     const { origin, rpID } = this.originOf(req);
@@ -260,18 +305,16 @@ export class Auth {
       excludeCredentials: this.store.passkeys.filter((p) => p.rpID === rpID).map((p) => ({ id: p.id, transports: p.transports as never })),
       authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
     });
-    const challengeId = shortId();
-    this.challenges.set(challengeId, { challenge: options.challenge, rpID, origin, expires: now() + CHALLENGE_TTL_MS, enrollCode, sessionId: caller?.kind === 'session' ? caller.session.id : undefined });
+    const challengeId = this.newChallenge({ challenge: options.challenge, rpID, origin, expires: now() + CHALLENGE_TTL_MS, enrollCode, sessionId: caller?.kind === 'session' ? caller.session.id : undefined });
     return { challengeId, options };
   }
 
   async verifyRegistration(req: IncomingMessage, challengeId: string, response: RegistrationResponseJSON, label: string) {
-    this.throttle();
     const ch = this.challenges.get(challengeId);
     this.challenges.delete(challengeId);
     if (!ch || ch.expires < now()) this.fail('setup timed out, try again', req);
-    // The code is spent only once a passkey actually exists.
-    if (ch.enrollCode && !this.takeCode(ch.enrollCode, true)) this.fail('invalid or expired setup code', req);
+    // The code must still be valid now (not spent by a parallel enrollment)…
+    if (ch.enrollCode && !this.takeCode(ch.enrollCode, false)) this.fail('invalid or expired setup code', req, 'code');
     let result;
     try {
       result = await verifyRegistrationResponse({ response, expectedChallenge: ch.challenge, expectedOrigin: ch.origin, expectedRPID: ch.rpID, requireUserVerification: true });
@@ -279,6 +322,8 @@ export class Auth {
       this.fail(`passkey not accepted: ${(err as Error).message}`, req);
     }
     if (!result.verified) this.fail('passkey not accepted', req);
+    // …and is spent only now that a verified passkey exists: a failed attempt keeps it usable.
+    if (ch.enrollCode && !this.takeCode(ch.enrollCode, true)) this.fail('invalid or expired setup code', req, 'code');
     const { credential } = result.registrationInfo;
     const t = now();
     this.store.passkeys.push({ id: credential.id, publicKey: b64url(credential.publicKey), counter: credential.counter, transports: credential.transports, rpID: ch.rpID, label: label.slice(0, 60) || 'passkey', createdAt: t, lastUsedAt: t });
@@ -289,17 +334,14 @@ export class Auth {
   }
 
   async authenticationOptions(req: IncomingMessage) {
-    this.throttle();
     const { origin, rpID } = this.originOf(req);
     // Empty allowCredentials: discoverable credentials, so the OS offers the right passkey.
     const options = await generateAuthenticationOptions({ rpID, userVerification: 'required' });
-    const challengeId = shortId();
-    this.challenges.set(challengeId, { challenge: options.challenge, rpID, origin, expires: now() + CHALLENGE_TTL_MS });
+    const challengeId = this.newChallenge({ challenge: options.challenge, rpID, origin, expires: now() + CHALLENGE_TTL_MS });
     return { challengeId, options };
   }
 
   async verifyAuthentication(req: IncomingMessage, challengeId: string, response: AuthenticationResponseJSON, label: string) {
-    this.throttle();
     const ch = this.challenges.get(challengeId);
     this.challenges.delete(challengeId);
     if (!ch || ch.expires < now()) this.fail('sign-in timed out, try again', req);
@@ -341,10 +383,10 @@ export class Auth {
   }
 
   async passwordLogin(req: IncomingMessage, password: string, label: string) {
-    this.throttle();
-    if (!this.store.password) this.fail('no master password is set', req);
+    this.throttle('password', req);
+    if (!this.store.password) this.fail('no master password is set', req, 'password');
     const hash = await scrypt(password, Buffer.from(this.store.password.salt, 'base64'), 32, SCRYPT);
-    if (!timingSafeEqual(hash, Buffer.from(this.store.password.hash, 'base64'))) this.fail('wrong password', req);
+    if (!timingSafeEqual(hash, Buffer.from(this.store.password.hash, 'base64'))) this.fail('wrong password', req, 'password');
     return this.newSession(req, label, 'password');
   }
 

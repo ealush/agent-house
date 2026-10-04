@@ -23,7 +23,8 @@ const BASE = `http://127.0.0.1:${PORT}`;
 
 export const HELP = `usage: ah <command>
 
-  serve [--port N] [--host H] [--tailscale]   run the daemon (default command)
+  serve [--port N]                            run the daemon on loopback (default command)
+  setup tailscale [--off]                     expose ah on your tailnet via \`tailscale serve\` (once)
   list [--json]                               live sessions
   history [--json]                            ended and saved conversations
   new <harness> [--cwd DIR] [--name N] [--session S] [--continue]
@@ -54,7 +55,7 @@ async function call(method, path, body) {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
-    fail(`ah isn't running on ${BASE} (start it with \`pnpm serve\` or \`ah serve\`)`);
+    fail(`ah isn't running on ${BASE} (start it with \`systemctl --user start ah\` or \`pnpm start\`)`);
   }
   const text = await res.text();
   if (!res.ok) {
@@ -238,6 +239,18 @@ export async function run(cmd, args) {
         return;
       }
       fail('usage: ah auth code | password [--remove] | token <name> | status');
+    }
+    case 'setup': {
+      if (args[0] !== 'tailscale') fail('usage: ah setup tailscale [--off]');
+      // A one-time, persistent Serve config owned by tailscaled. ah itself never changes
+      // its exposure; it only ever listens on loopback.
+      const off = flag(args, '--off');
+      const cmd = off ? ['serve', '--https=443', 'off'] : ['serve', '--bg', '--https=443', `http://127.0.0.1:${PORT}`];
+      console.log(`$ tailscale ${cmd.join(' ')}`);
+      const r = spawnSync('tailscale', cmd, { stdio: 'inherit' });
+      if (r.status !== 0) fail('tailscale serve failed (is Serve enabled on your tailnet? the command above prints a link if not)');
+      if (!off) spawnSync('tailscale', ['serve', 'status'], { stdio: 'inherit' });
+      return;
     }
     case 'peers': {
       if (args[0] !== 'trust' || !args[1] || !args[2]) fail('usage: ah peers trust <peer> <token>');

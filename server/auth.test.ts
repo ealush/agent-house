@@ -73,3 +73,34 @@ test('the last way in cannot be removed', async () => {
   (auth as any).store.passkeys.push({ id: 'k1', publicKey: '', counter: 0, rpID: 'x', label: 'only', createdAt: 0, lastUsedAt: 0 });
   assert.throws(() => auth.removePasskey('k1'), /last way in/);
 });
+
+test('a failed passkey registration does not burn the setup code', async () => {
+  const auth = new Auth(cfg);
+  const code = auth.issueCode('test');
+  const first = await auth.registrationOptions(req(), null, code);
+  await assert.rejects(auth.verifyRegistration(req(), first.challengeId, { id: 'x', rawId: 'x', type: 'public-key', response: {} } as any, 'x'), /passkey not accepted/);
+  // Still valid: the next attempt can use it.
+  const again = await auth.registrationOptions(req(), null, code);
+  assert.ok(again.challengeId);
+});
+
+test('throttling is per mechanism: password guessing never locks out setup codes or passkeys', async () => {
+  const auth = new Auth(cfg);
+  (auth as any).store.password = undefined;
+  await auth.setPassword('correct horse battery');
+  for (let i = 0; i < 10; i++) await assert.rejects(auth.passwordLogin(req(), 'nope', 'x'));
+  await assert.rejects(auth.passwordLogin(req(), 'correct horse battery', 'x'), (e: InstanceType<typeof AuthError>) => e.status === 429);
+  // Other mechanisms are unaffected.
+  const code = auth.issueCode('test');
+  assert.ok((await auth.registrationOptions(req(), null, code)).challengeId);
+  assert.ok((await auth.authenticationOptions(req())).challengeId);
+  // A different source still has its own budget.
+  const { cookie } = await auth.passwordLogin(req({ 'tailscale-user-login': 'other@example.com' }), 'correct horse battery', 'y');
+  assert.ok(cookie);
+});
+
+test('an unreadable auth store refuses to start rather than starting empty', async () => {
+  const { writeFileSync } = await import('node:fs');
+  writeFileSync(join(process.env.XDG_STATE_HOME!, 'ah', 'auth.json'), '{ not json');
+  assert.throws(() => new Auth(cfg), /unreadable/);
+});

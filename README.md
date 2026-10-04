@@ -17,13 +17,15 @@ phone / iPad / laptop ──https (tailscale serve)──▶ ah ──pty──�
 ```bash
 pnpm install          # builds node-pty (needs gcc/make/python3)
 pnpm build            # web UI → dist/
-pnpm serve            # ah on 127.0.0.1:7681 + `tailscale serve` → https://<machine>.<tailnet>.ts.net
+pnpm start                      # ah on 127.0.0.1:7681 — loopback only, always
+node bin/ah.js setup tailscale  # once: `tailscale serve` → https://<machine>.<tailnet>.ts.net
 ```
 
-`pnpm serve` runs `tailscale serve` alongside ah, so the tailnet HTTPS endpoint lives
-exactly as long as ah does. The first time, Tailscale asks you to enable Serve for the
-tailnet (one link); until then ah also listens on the Tailscale IP over plain HTTP.
-`pnpm start` is localhost-only. On iPhone/iPad, use Share → Add to Home Screen.
+ah never listens anywhere but loopback and never changes its own exposure: reaching it
+from other devices is Tailscale's job. `setup tailscale` writes a persistent Serve config
+(tailscaled keeps it across reboots; `--off` removes it). The first time, Tailscale may ask
+you to enable Serve for the tailnet. There is no plain-http fallback. On iPhone/iPad, use
+Share → Add to Home Screen.
 
 After updating, **restart the server**: the page is served fresh from `dist/`, and a page
 newer than the running server shows a "restart ah" banner.
@@ -88,9 +90,12 @@ ah send reviewer "review the diff" && ah wait reviewer && ah read reviewer
 
 Opening ah is equivalent to having a shell as your user, so it has two locks:
 
-**1. Network: Tailscale.** ah binds to `127.0.0.1` (it refuses `0.0.0.0`) and is reached
-through `tailscale serve`, never Funnel. Requests that arrive through Serve from a Tailscale
-user other than the machine's owner are refused. To shrink who can even reach the port,
+**1. Network: Tailscale.** ah only listens on loopback — no flag changes that — and is
+reached through `tailscale serve`, never Funnel. A request addressed to the machine's
+ts.net name can only have come through Serve, which strips client-sent identity headers
+and sets them for user-owned devices; ah then requires the machine owner's identity and
+fails closed (tagged devices, other users, or an unknown owner all get 403). Requests to
+`localhost` don't consult identity at all. To shrink who can even reach the port,
 restrict it in your tailnet policy (admin console → Access controls), e.g.:
 
 ```jsonc
@@ -111,8 +116,8 @@ API, event stream, terminals, files. Nothing loads but the lock screen until the
   host, or use Security → *Create setup code* on a signed-in device. Codes last 10 minutes
   and work once. This also covers **recovery**: if you lose every passkey, get a code on the
   host.
-- **Master password** (optional, scrypt): a fallback for browsers without passkeys (e.g.
-  plain http on the Tailscale IP, where WebAuthn can't run). Set it on the host only:
+- **Master password** (optional, scrypt): a fallback for browsers without passkeys. Set it
+  on the host only:
   `node bin/ah.js auth password`.
 - **Sessions** are HttpOnly, `SameSite=Strict`, `__Host-` cookies on https. A device is
   signed out after 24h unused and after 30 days regardless (`auth.idleHours`,
@@ -150,8 +155,10 @@ drive tmux directly, so treat ah's security as protecting *remote* access.
   "host": "127.0.0.1",
   "defaultSession": "agents",
   "projectRoots": ["~/code"],
-  "peers": "auto",
+  "peers": [],
   "auth": { "mode": "passkey", "idleHours": 24, "maxDays": 30 },
+  "files": { "roots": ["~/code", "~/.cache/ah/uploads", "/tmp"] },
+  "promptHistory": 60,
   "idleAfter": 4,
   "presets": [
     { "id": "shell", "name": "Shell", "command": "" },
@@ -166,13 +173,16 @@ drive tmux directly, so treat ah's security as protecting *remote* access.
 }
 ```
 
-`host` takes a comma list (`127.0.0.1,tailscale`). `peers` is `"auto"` (your own online
-tailnet machines running ah), `[]`, or `[{ "name", "url" }]`. Presets whose command isn't
+`host` must be loopback (`127.0.0.1` or `::1`). `peers` is `[]` (default),
+`[{ "name", "url" }]` with https URLs, or `"auto"` (your own online tailnet machines
+running ah). `files.roots` limits the file browser; add `"~"` deliberately if you want your
+whole home. `promptHistory: 0` keeps no prompt history. Presets whose command isn't
 on tmux's `PATH` are hidden. Any CLI can report status with
 `bin/ah-hook.js <preset> <working|waiting|done> [session-id]`.
 
-State lives in `~/.local/state/ah/` (registry, prompt history, push subscriptions);
-uploads in `~/.cache/ah/uploads/`.
+State lives in `~/.local/state/ah/` and uploads in `~/.cache/ah/uploads/`, all owner-only.
+See [SECURITY.md](SECURITY.md) for the threat model, the tested invariants, and what each
+state file holds.
 
 ## Layout
 

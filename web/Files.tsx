@@ -39,6 +39,7 @@ export function FilesPanel({ fs, start, cwd, agent, onInsert }: Props) {
   const [uploading, setUploading] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [mention, setMention] = useState(() => MENTION_AGENTS.has(agent ?? ''));
+  const [rootList, setRootList] = useState<string[]>([]);
   const crumbsRef = useRef<HTMLElement>(null);
 
   const load = (p = path) => {
@@ -47,8 +48,13 @@ export function FilesPanel({ fs, start, cwd, agent, onInsert }: Props) {
       .then((l) => {
         setListing(l);
         setPath(l.path);
+        if (l.roots) setRootList(l.roots);
       })
-      .catch((e) => setError(e.message));
+      .catch((e) => {
+        setError(e.message);
+        // Learn the browsable roots even when this folder is off-limits.
+        if (!rootList.length) fs.list('', false).then((l) => setRootList(l.roots ?? [])).catch(() => {});
+      });
   };
   useEffect(() => load(path), [path, hidden]);
 
@@ -133,6 +139,16 @@ export function FilesPanel({ fs, start, cwd, agent, onInsert }: Props) {
             </span>
           ))}
         </nav>
+        {rootList.length > 0 && (
+          <select className="roots" value="" onChange={(e) => e.target.value && setPath(e.target.value)} aria-label="Browsable folders">
+            <option value="">Roots…</option>
+            {rootList.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+        )}
         <button className="btn ghost small" onClick={() => setPath(cwd)} title="Session folder">
           ⌂ session
         </button>

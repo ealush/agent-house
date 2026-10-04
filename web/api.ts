@@ -150,6 +150,7 @@ export function hostApi(base: string) {
     worktrees: () => r<WorktreeInfo[]>('GET', '/api/worktrees'),
     removeWorktree: (path: string, force: boolean) => r('DELETE', '/api/worktrees', { path, force }),
     prompts: () => r<Array<{ text: string; at: number }>>('GET', '/api/prompts'),
+    clearPrompts: () => r('DELETE', '/api/prompts'),
     /** Pasted/dropped files land in the host's upload folder. */
     upload: (file: File) => postFile(`${base}/api/upload?name=${enc(file.name || 'paste.png')}`, file),
     fs: {
@@ -235,7 +236,7 @@ export function subscribe(onState: (s: State) => void, onError: (msg: string | n
 }
 
 export type FsEntry = { name: string; type: 'dir' | 'file' | 'other'; size: number; mtime: number };
-export type FsListing = { path: string; parent: string | null; entries: FsEntry[] };
+export type FsListing = { path: string; parent: string | null; entries: FsEntry[]; roots?: string[] };
 
 /** A short label for this device, shown to others as "also open on …". */
 export function deviceName(): string {

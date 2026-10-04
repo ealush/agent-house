@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { authApi, explain, passkeysAvailable, type Overview } from './auth.ts';
 import { age } from './agents.ts';
+import { api } from './api.ts';
 
 const sec = (ms: number) => Math.floor(ms / 1000);
 
@@ -170,6 +171,14 @@ export function Security({ onLocked }: { onLocked: () => void }) {
       <h2 className="section-label">Master password</h2>
       <p className="hint">
         {o?.password ? 'Set. ' : 'Not set. '}A fallback for browsers without passkeys; it can only be set or removed on the host: <code>node bin/ah.js auth password</code>.
+      </p>
+
+      <h2 className="section-label">Prompt history</h2>
+      <p className="hint">
+        Recently sent messages are kept on the host (for “recent prompts”) and may contain anything you pasted. Set <code>promptHistory</code> to 0 in the config to keep none.{' '}
+        <button className="btn small" onClick={() => confirm('Delete the saved prompt history?') && act(() => api.clearPrompts(), 'Prompt history cleared.')}>
+          Clear prompt history
+        </button>
       </p>
 
       <h2 className="section-label">Recent activity</h2>
