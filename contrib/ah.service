@@ -1,0 +1,19 @@
+# systemd user unit. Install:
+#   cp contrib/ah.service ~/.config/systemd/user/ && systemctl --user enable --now ah
+#   loginctl enable-linger $USER   # keep running while you're logged out
+[Unit]
+Description=ah — agent hub (web UI for tmux shells and coding agents)
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/code/ah
+ExecStart=/usr/bin/env node bin/ah.js serve
+# Agents find their tools through tmux's own environment; this PATH is only for node itself.
+Environment=PATH=%h/.local/share/mise/shims:%h/.local/bin:/usr/local/bin:/usr/bin
+Restart=on-failure
+# If ah ends up starting the tmux server, tmux lives in this unit's cgroup. Without
+# this, restarting ah would kill tmux and every session in it.
+KillMode=process
+
+[Install]
+WantedBy=default.target
