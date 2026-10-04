@@ -11,6 +11,7 @@ import { buildWindows, buildHistory, adoptTranscripts, type WindowView, type His
 import { Registry, type SessionRecord } from './registry.ts';
 import { discover } from './discovery.ts';
 import { expandHome, isExecutableOnPath, type Config, type Preset } from './config.ts';
+import { buildLaunch, resumeSelection } from './launch.ts';
 import * as t from './tmux.ts';
 import { listWorktrees, mainRepo, removeWorktree, type Worktree } from './git.ts';
 import { Push } from './push.ts';
@@ -21,7 +22,7 @@ export type QueueItem = { id: string; text: string; enter: boolean; at: number }
 export type Host = { name: string; self: boolean; online: boolean };
 
 /** Bumped when the state shape changes, so a newer page can tell an older server apart. */
-export const API_VERSION = 3;
+export const API_VERSION = 4;
 
 export type State = {
   api: number;
@@ -53,7 +54,7 @@ const TICK_MS = 1500;
 const now = () => Math.floor(Date.now() / 1000);
 
 export class Core {
-  readonly registry = new Registry();
+  readonly registry: Registry;
   readonly push = new Push();
   readonly viewers: Map<string, string[]>;
   private state: State | null = null;
@@ -64,9 +65,13 @@ export class Core {
   private hidden = new Set<string>();
   private prompts: Array<{ text: string; at: number }> = [];
   private config: Config;
+  private resuming = new Map<string, Promise<{ uid: string; windowId: string; resumed: boolean }>>();
+  private inputs = new Map<string, Promise<unknown>>();
+  private sentAt = new Map<string, number>();
   peers: Peers | null = null;
 
-  constructor(config: Config, viewers: Map<string, string[]>) {
+  constructor(config: Config, viewers: Map<string, string[]>, registry = new Registry()) {
+    this.registry = registry;
     this.config = config;
     this.viewers = viewers;
     try {
@@ -97,6 +102,13 @@ export class Core {
     this.ticking ??= (async () => {
       const windows = await buildWindows(this.config, this.viewers, this.registry);
       adoptTranscripts(windows, await discover(), this.registry);
+      // A submit can precede the agent's next hook/output. Protect that interval
+      // so a second device or queued prompt cannot submit another turn into it.
+      for (const w of windows) {
+        if (w.agent && this.justSent(w.uid) && (w.status === 'idle' || w.status === 'attention')) w.status = 'busy';
+      }
+      const alive = new Set(windows.map((w) => w.uid));
+      for (const uid of this.sentAt.keys()) if (!alive.has(uid)) this.sentAt.delete(uid);
       await this.deliverQueued(windows);
       this.push.observe(windows);
       const history = (await buildHistory(this.registry, windows)).filter((h) => !this.hidden.has(h.ref));
@@ -172,7 +184,21 @@ export class Core {
    * Live sessions are returned as-is: callers never need to know which case they hit.
    */
   async resume(ref: string): Promise<{ uid: string; windowId: string; resumed: boolean }> {
-    const state = await this.current();
+    const rec = this.registry.get(ref);
+    const key = rec?.harnessId ? `${rec.harness}:${rec.harnessId}` : ref;
+    const pending = this.resuming.get(key);
+    if (pending) return pending;
+    const task = this.resumeOnce(ref);
+    this.resuming.set(key, task);
+    try {
+      return await task;
+    } finally {
+      if (this.resuming.get(key) === task) this.resuming.delete(key);
+    }
+  }
+
+  private async resumeOnce(ref: string): Promise<{ uid: string; windowId: string; resumed: boolean }> {
+    const state = await this.tick();
     const rec = this.registry.get(ref);
     if (rec && (rec.lifecycle === 'live' || rec.lifecycle === 'starting')) {
       const w = state.windows.find((w) => w.uid === rec.id);
@@ -200,15 +226,26 @@ export class Core {
       title = shortTitle(title);
       meta = { 'ah.source': 'discovered' };
       // Already running somewhere (e.g. resumed from another device a moment ago)?
-      const w = state.windows.find((w) => w.harnessId === harnessId);
+      const w = state.windows.find((w) => w.agent === harness && w.harnessId === harnessId);
       if (w) return { uid: w.uid, windowId: w.id, resumed: false };
     }
 
     const preset = this.preset(harness);
     // Exact conversation when we know its id, else "most recent in this directory".
-    const command = !preset.command ? '' : harnessId && preset.resumeId ? preset.resumeId.replace('{id}', harnessId) : (preset.resume ?? preset.command);
+    // Previous launch mode/model are preserved (F42); flags that don't apply to
+    // resume are dropped by the builder via `appliesTo`.
+    const prevSel = rec ? resumeSelection((rec.meta ?? {}) as Record<string, unknown>) : {};
+    let command: string;
+    let launchMeta: Record<string, unknown> | undefined = meta;
+    try {
+      const plan = buildLaunch(preset, { ...prevSel, resume: harnessId ?? true });
+      command = plan.command;
+      launchMeta = { ...plan.meta, ...meta };
+    } catch {
+      command = !preset.command ? '' : harnessId && preset.resumeId ? preset.resumeId.replace('{id}', harnessId) : (preset.resume ?? preset.command);
+    }
     const dir = (await isDir(cwd)) ? cwd : homedir();
-    const out = await this.launch({ preset, cwd: dir, session, name: title || preset.id, command, uid, harnessId, pendingResume: true, meta });
+    const out = await this.launch({ preset, cwd: dir, session, name: title || preset.id, command, uid, harnessId, pendingResume: true, meta: launchMeta });
     return { ...out, resumed: true };
   }
 
@@ -223,17 +260,36 @@ export class Core {
     const target = await this.resume(ref);
     this.remember(text);
     const state = target.resumed ? await this.tick() : await this.current();
-    const w = state.windows.find((w) => w.id === target.windowId);
-    const queue = this.queue(target.uid);
-    // Shells take input immediately (a dev server is always "busy"); agents get queued while working.
-    const ready = !target.resumed && w && queue.length === 0 && (!w.agent || w.status === 'idle' || w.status === 'attention');
-    if (ready) {
-      await t.pasteText(target.windowId, text, enter);
-      return { outcome: 'delivered', windowId: target.windowId, resumed: false, queued: 0 };
+    return this.withInput<SendResult>(target.uid, async () => {
+      const w = state.windows.find((w) => w.id === target.windowId);
+      const queue = this.queue(target.uid);
+      // Shells take input immediately (a dev server is always "busy"); agents get queued while working.
+      const ready = !target.resumed && w && queue.length === 0 && (!w.agent || (!this.justSent(w.uid) && (w.status === 'idle' || w.status === 'attention')));
+      if (ready) {
+        if (w.agent) this.sentAt.set(w.uid, Date.now());
+        await t.pasteText(target.windowId, text, enter);
+        return { outcome: 'delivered', windowId: target.windowId, resumed: false, queued: 0 };
+      }
+      queue.push({ id: randomUUID().slice(0, 8), text, enter, at: now() });
+      this.registry.setMeta(target.uid, 'ah.queue', queue);
+      return { outcome: 'queued', windowId: target.windowId, resumed: target.resumed, queued: queue.length };
+    });
+  }
+
+  private justSent(uid: string): boolean {
+    return Date.now() - (this.sentAt.get(uid) ?? 0) < 5000;
+  }
+
+  /** Serialize paste + Enter as one operation per session, across every caller. */
+  private async withInput<T>(uid: string, fn: () => Promise<T>): Promise<T> {
+    const prior = this.inputs.get(uid) ?? Promise.resolve();
+    const task = prior.catch(() => {}).then(fn);
+    this.inputs.set(uid, task);
+    try {
+      return await task;
+    } finally {
+      if (this.inputs.get(uid) === task) this.inputs.delete(uid);
     }
-    queue.push({ id: randomUUID().slice(0, 8), text, enter, at: now() });
-    this.registry.setMeta(target.uid, 'ah.queue', queue);
-    return { outcome: 'queued', windowId: target.windowId, resumed: target.resumed, queued: queue.length };
   }
 
   /** Recently sent prompts, newest first, shared by every device (resend from history). */
@@ -271,13 +327,17 @@ export class Core {
       if (!w.queued || (w.status !== 'idle' && w.status !== 'attention')) continue;
       // Freshly (re)started agents render their UI first; don't type into a half-drawn TUI.
       if (t0 - (w.createdAt || 0) < 5) continue;
-      const [next, ...rest] = this.queue(w.uid);
-      if (!next) continue;
-      // Remove before typing: at-most-once, never a duplicate turn (F16).
-      this.registry.setMeta(w.uid, 'ah.queue', rest.length ? rest : undefined);
-      await t.pasteText(w.id, next.text, next.enter).catch((err) => console.error(`queue delivery to ${w.id} failed:`, err));
-      w.queued = rest.length;
-      w.status = 'busy';
+      await this.withInput(w.uid, async () => {
+        if (this.justSent(w.uid)) return;
+        const [next, ...rest] = this.queue(w.uid);
+        if (!next) return;
+        // Remove before typing: at-most-once, never a duplicate turn (F16).
+        this.registry.setMeta(w.uid, 'ah.queue', rest.length ? rest : undefined);
+        this.sentAt.set(w.uid, Date.now());
+        await t.pasteText(w.id, next.text, next.enter).catch((err) => console.error(`queue delivery to ${w.id} failed:`, err));
+        w.queued = rest.length;
+        w.status = 'busy';
+      });
     }
   }
 
@@ -303,6 +363,28 @@ export class Core {
     if (!this.registry.get(ref)) throw new CoreError(404, 'only sessions ah has run can be pinned');
     this.registry.setMeta(ref, 'ah.pinned', pinned || undefined);
     this.tick().catch(() => {});
+  }
+
+  /**
+   * Manual sidebar order (F43). Sparse keys: existing orders keep their gaps,
+   * so inserting between two sessions never rewrites every record.
+   */
+  setOrder(uid: string, order: number) {
+    const rec = this.registry.get(uid);
+    if (!rec) throw new CoreError(404, 'only sessions ah has run can be reordered');
+    if (!Number.isFinite(order)) throw new CoreError(400, 'invalid order');
+    this.registry.setMeta(uid, 'ah.order', order);
+    this.tick().catch(() => {});
+  }
+
+  /** Next order key: max existing + 100, so new sessions land at the end. */
+  nextOrder(): number {
+    let max = 0;
+    for (const r of this.registry.all()) {
+      const o = r.meta['ah.order'];
+      if (typeof o === 'number' && Number.isFinite(o) && o > max) max = o;
+    }
+    return max + 100 || 100;
   }
 
   async forget(ref: string) {

@@ -48,6 +48,10 @@ export type WindowView = {
   panes: number;
   pinned: boolean;
   queued: number;
+  /** Manual sidebar order (F43): sparse `ah.order` key, null when never arranged. */
+  order: number | null;
+  /** Launch summary (F42): "Opus · Skip permissions", from `ah.launch.*` meta. */
+  launch: string | null;
 };
 
 export type Ask = { kind: 'command' | 'tool' | 'question' | 'screen'; text: string };
@@ -112,6 +116,22 @@ export function shortPath(p: string): string {
   return p === HOME ? '~' : p.startsWith(HOME + '/') ? '~' + p.slice(HOME.length) : p;
 }
 
+/** Display summary from stored `ah.launch.*` meta: "Opus · Skip permissions". */
+export function launchSummary(rec: SessionRecord, preset?: Preset): string | null {
+  const modeId = rec.meta['ah.launch.mode'];
+  const modelId = rec.meta['ah.launch.model'];
+  const parts: string[] = [];
+  if (typeof modelId === 'string') {
+    const m = preset?.models?.find((x) => x.id === modelId);
+    parts.push(m ? m.name : modelId);
+  }
+  if (typeof modeId === 'string') {
+    const m = preset?.modes?.find((x) => x.id === modeId);
+    parts.push(m ? m.name : modeId);
+  }
+  return parts.length ? parts.join(' · ') : null;
+}
+
 function projectOf(dir: string): { project: string; projectPath: string } {
   const repo = repoInfo(dir);
   const path = repo?.root ?? dir;
@@ -131,10 +151,11 @@ function escape(s: string): string {
 }
 
 function detectAgent(w: RawWindow, procs: Awaited<ReturnType<typeof snapshot>>, matchers: Array<[string, RegExp]>) {
-  for (const proc of descendants(procs, w.panePid)) {
+  // Shell wrappers often exec the agent, replacing the pane's root process.
+  for (const proc of descendants(procs, w.panePid, true)) {
     const names = proc.argv.slice(0, 2).map((a) => basename(a));
     for (const [id, re] of matchers) {
-      if (names.some((n) => re.test(n))) return id;
+      if (names.some((n) => re.test(n))) return { id, pid: proc.pid };
     }
   }
   return null;
@@ -152,6 +173,8 @@ export type StatusInput = {
   hook: { state: string; at: number } | null;
   /** True when a terminal rule says the agent is asking something (non-hooked agents). */
   screenWaiting: boolean;
+  /** A live shell command below the agent, even when it prints no output. */
+  toolRunning?: boolean;
 };
 
 export function computeStatus(s: StatusInput): { status: Status; source: WindowView['statusSource'] } {
@@ -161,12 +184,21 @@ export function computeStatus(s: StatusInput): { status: Status; source: WindowV
     const { state, at } = s.hook;
     if (state === 'waiting') return { status: 'waiting', source: 'hook' };
     // An interrupted turn may never send Stop; long silence overrides "working".
-    if (state === 'working') return { status: s.now - s.activity < 30 ? 'busy' : unread(s.activity) ? 'attention' : 'idle', source: 'hook' };
+    if (state === 'working') return { status: s.toolRunning || s.now - Math.max(s.activity, at) < 30 ? 'busy' : unread(s.activity) ? 'attention' : 'idle', source: 'hook' };
     if (state === 'done' || state === 'idle') return { status: unread(at) ? 'attention' : quiet ? 'idle' : 'busy', source: 'hook' };
   }
   if (quiet && s.screenWaiting) return { status: 'waiting', source: 'screen' };
+  if (s.toolRunning) return { status: 'busy', source: 'activity' };
   if (!quiet) return { status: 'busy', source: 'activity' };
   return { status: s.seen > 0 && unread(s.activity) ? 'attention' : 'idle', source: 'activity' };
+}
+
+/** Tool shells are evidence of work; persistent MCP servers alone are not. */
+export function hasToolWork(procs: Awaited<ReturnType<typeof snapshot>>, agentPid: number): boolean {
+  return descendants(procs, agentPid).some((p) =>
+    /^(ba|da|z|fi|k)?sh$/.test(basename(p.argv[0] ?? '')) &&
+    p.argv.slice(1).some((a) => /^-[^-]*c/.test(a)),
+  );
 }
 
 /** Terminal rules (F18): does the bottom of the screen look like a question? */
@@ -217,7 +249,8 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
         await setWindowOption(w.windowId, '@ah-seen', String(seen)).catch(() => {});
       }
 
-      const agent = detectAgent(w, procs, matchers);
+      const detected = detectAgent(w, procs, matchers);
+      const agent = detected?.id ?? null;
       // Hook state is trusted only while that agent is still running in the window.
       const hooked = !!w.hookState && w.hookState !== 'ended' && agent === w.harness;
       const quiet = now - w.activity >= config.idleAfter;
@@ -232,6 +265,7 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
         idleAfter: config.idleAfter,
         hook: hooked ? { state: w.hookState, at: w.hookAt } : null,
         screenWaiting: asks,
+        toolRunning: detected ? hasToolWork(procs, detected.pid) : false,
       });
 
       // Register every window, shells included (F3).
@@ -267,6 +301,7 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
       const preset = agent ? config.presets.find((p) => p.id === agent) : undefined;
       // Agents' own TUIs make poor one-liners; for them only hook activity is shown.
       const detail = hookDetail ? (hookDetail.kind === 'command' ? `$ ${hookDetail.text}` : hookDetail.text) : agent ? null : tail.length ? clip(tail[tail.length - 1].trim()) : null;
+      const launch = launchSummary(rec, preset);
       return {
         id: w.windowId,
         session: w.session,
@@ -294,6 +329,8 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
         panes: w.panes,
         pinned: !!rec.meta['ah.pinned'],
         queued: (rec.meta['ah.queue'] as unknown[] | undefined)?.length ?? 0,
+        order: typeof rec.meta['ah.order'] === 'number' ? (rec.meta['ah.order'] as number) : null,
+        launch,
       };
     }),
   );

@@ -38,9 +38,9 @@
 | F17 | Status from hooks | ✅ | `bin/ah-hook.js` writes window options; `ah hooks install`. |
 | F18 | Status from terminal | ◐ | Per-harness `waitingPatterns`, pinned by tests in `server/sessions.test.ts`. No scheduled drift audit yet. |
 | F19 | Needs-you vs done | ✅ | Conservative: only permission/elicitation prompts count as "needs you"; idle nags and anything unknown are "done". No model classifier. |
-| F20 | Background work isn't idle | ✗ | |
+| F20 | Background work isn't idle | ◐ | Live tool shells below an agent keep silent commands busy; persistent services alone do not. Fresh working hooks count before terminal output. Commands that replace their tool shell still rely on hooks/activity. |
 | F21 | Status grouping | ✅ | Needs you → done → working → idle. |
-| F22 | Durable prompt queue | ✅ | Persisted in the registry; delivered at the next idle; visible and clearable. |
+| F22 | Durable prompt queue | ✅ | Persisted in the registry; delivered at the next idle; review and cancel individual follow-ups or clear all, on desktop and phone. Input operations are serialized per session, with a short submit grace period. |
 
 ## Phase 4 — Surfaces
 
@@ -68,13 +68,30 @@
 | F32 | Project briefs | ✗ | CLAUDE.md / AGENTS.md already do this per repo. |
 | F33 | Settings transfer | ✗ | |
 | F34 | Diff view | ✅ | Read-only status + patch. |
-| F35 | Inline code comments | ✗ | |
+| F35 | Inline code comments | ✅ | Click a diff line to send the agent a file/line/code-anchored comment. |
 | F36 | Session forking | ✗ | |
 | F37 | Agent-to-agent control | ✅ | `ah send X … && ah wait X && ah read X` |
 | F38 | Scheduled runs | ✗ | |
 | F39 | Snapshots + rollback | ✗ | |
 | F40 | Idle respawn / rate-limit resume | ✗ | |
 | F41 | Quota display | ✗ | |
+| F42 | Launch choices | ✅ | Preset modes, models, and quoted additional arguments in the web dialog and CLI. Resume retains configured mode/model choices. |
+| F43 | Session ordering | ✅ | Drag to reorder within a sidebar group; sparse keys persist across devices. |
+| F44 | Session termination | ✅ | Sidebar and session controls, with confirmation for stopping a session. |
+| F45 | Split workspace | ✅ | Independent terminal viewers, resizable horizontal/vertical splits, device-local persistence, phone tabs. Duplicate viewers have independent pane controls. |
+| F46 | Workspace navigation | ✅ | Replace the focused pane from the sidebar or picker; drag sessions onto pane edges to split. |
+
+## Reliability pass — October 2026
+
+- Concurrent resumes share one launch; concurrent sends keep paste + Enter together.
+- Detect agents that replace their pane's root shell with `exec`, including Hermes launchers.
+- Preserve transcript/model identity only within the same harness.
+- Keep mobile navigation in layout flow so history rows remain visible and scrollable.
+- Isolate ordering tests from the real config, session store, and tmux server.
+
+Remaining larger work: conversation transfer between hosts (including files), session forking,
+worktree disk usage, and richer adapters for agents without hooks. These require explicit
+product decisions rather than guessing at conversation or workspace ownership.
 
 ## Taken from tlbx (ideas reimplemented; tlbx is AGPL, no code copied)
 

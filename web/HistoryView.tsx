@@ -20,7 +20,7 @@ export function HistoryView({ state, onResume, onForget }: { state: State; onRes
           const { color, glyph, name } = look(h.harness);
           return (
             <li key={`${h.host}:${h.ref}`}>
-              <div className="row quiet" style={{ '--agent': color, gridTemplateColumns: '24px 1fr auto auto' } as React.CSSProperties}>
+              <div className="row quiet history-row" style={{ '--agent': color } as React.CSSProperties}>
                 <span className="chip">{glyph}</span>
                 <span className="stack">
                   <span className="name" title={h.title}>

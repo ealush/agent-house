@@ -20,6 +20,7 @@ import { WebSocketServer } from 'ws';
 import { loadConfig, expandHome, CONFIG_PATH, type Config } from './config.ts';
 import { shortPath } from './sessions.ts';
 import { Core, CoreError, resolveDir, defaultName } from './core.ts';
+import { buildLaunch, LaunchError } from './launch.ts';
 import { attach, viewers } from './terminal.ts';
 import * as t from './tmux.ts';
 import { createWorktree, changes, GitError } from './git.ts';
@@ -138,10 +139,36 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     const session = t.sanitizeSessionName(str(body.session || config.defaultSession, 'session', 64));
     if (!session) throw new HttpError(400, 'invalid session');
     const name = str(body.label ?? '', 'label', 80).trim() || defaultName(preset, cwd);
-    const command = body.resume && preset.resume ? preset.resume : preset.command;
+    // Structured launch options (F42): mode/model ids plus a free-form tail.
+    const mode = body.mode === undefined ? undefined : str(body.mode, 'mode', 40);
+    const model = body.model === undefined ? undefined : str(body.model, 'model', 40);
+    const extraArgs = body.extraArgs === undefined ? undefined : str(body.extraArgs, 'extraArgs', 2048);
+    let command: string;
+    let launchMeta: Record<string, unknown>;
+    try {
+      const plan = buildLaunch(preset, {
+        mode,
+        model,
+        extraArgs,
+        resume: body.resume && preset.resume ? true : undefined,
+      });
+      command = plan.command;
+      launchMeta = { ...plan.meta };
+    } catch (err) {
+      if (err instanceof LaunchError) throw new HttpError(400, err.message);
+      throw err;
+    }
     // One writing agent per checkout (F29): optionally start in a fresh worktree + branch.
     const wt = body.worktree ? await createWorktree(cwd, name) : null;
-    const out = await core.launch({ preset, cwd: wt?.path ?? cwd, session, name, command, meta: wt ? { 'ah.worktree': wt } : undefined });
+    const order = core.nextOrder();
+    const out = await core.launch({
+      preset,
+      cwd: wt?.path ?? cwd,
+      session,
+      name,
+      command,
+      meta: { ...launchMeta!, ...(wt ? { 'ah.worktree': wt } : {}), 'ah.order': order },
+    });
     audit(req, 'session.create', { window: out.windowId, uid: out.uid, preset: preset.id, cwd: wt?.path ?? cwd, branch: wt?.branch });
     await core.refreshTmuxPath();
     return send(res, 201, { id: out.windowId, uid: out.uid });
@@ -178,6 +205,20 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
 
   if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/pin$/))) {
     core.setPinned(m[1], (await readJson(req)).pinned !== false);
+    return send(res, 200, { ok: true });
+  }
+
+  // Manual sidebar order (F43): sparse key, persisted in the registry, synced to every device over SSE.
+  if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/order$/))) {
+    const body = await readJson(req);
+    const order = Number(body.order);
+    if (!Number.isFinite(order)) throw new HttpError(400, 'invalid order');
+    try {
+      core.setOrder(m[1], order);
+    } catch (err) {
+      if (err instanceof CoreError) throw new HttpError(err.status, err.message);
+      throw err;
+    }
     return send(res, 200, { ok: true });
   }
 

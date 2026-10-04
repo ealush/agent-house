@@ -78,3 +78,25 @@ test('killing a session ends it in the registry; resume brings it back with the 
   assert.equal(resumed.status, 201, resumed.body);
   assert.equal(resumed.json().uid, uid);
 });
+
+test('concurrent resumes create one window with the original identity', async () => {
+  const { id, uid } = (await http(ah, 'POST', '/api/windows', { cookie, body: { preset: 'shell', cwd: `${ah.dir}/files`, label: 'one-resume' } })).json();
+  await http(ah, 'DELETE', `/api/windows/${encodeURIComponent(id)}`, { cookie });
+  await until(async () => (await http(ah, 'GET', '/api/state', { cookie })).json().history.some((h: any) => h.ref === uid), 8000, 'ended');
+  const results = await Promise.all(Array.from({ length: 4 }, () => http(ah, 'POST', `/api/sessions/${uid}/resume`, { cookie, body: {} })));
+  for (const result of results) assert.ok(result.status === 200 || result.status === 201, result.body);
+  assert.equal(new Set(results.map((r) => r.json().id)).size, 1);
+  await until(async () => (await http(ah, 'GET', '/api/state', { cookie })).json().windows.filter((w: any) => w.uid === uid).length === 1, 5000, 'one window');
+});
+
+test('concurrent shell sends keep each paste and Enter together', async () => {
+  const { id, uid } = (await http(ah, 'POST', '/api/windows', { cookie, body: { preset: 'shell', cwd: `${ah.dir}/files`, label: 'serial-input' } })).json();
+  const results = await Promise.all(['first', 'second'].map((marker) => http(ah, 'POST', `/api/sessions/${uid}/send`, {
+    cookie, body: { text: `echo ${marker}-$(printf isolated)`, enter: true },
+  })));
+  for (const result of results) assert.equal(result.status, 200, result.body);
+  await until(() => {
+    const lines = ah.tmux('capture-pane', '-p', '-t', id).split('\n');
+    return lines.includes('first-isolated') && lines.includes('second-isolated');
+  }, 5000, 'two separately executed commands');
+});

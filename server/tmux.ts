@@ -3,6 +3,7 @@
 // the app can crash or restart without losing anything.
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
+import { randomUUID } from 'node:crypto';
 
 const run = promisify(execFile);
 const SEP = '\x1f';
@@ -202,7 +203,7 @@ export function sanitizeSessionName(name: string): string {
  * multi-line prompt arrives as a single message instead of one submit per line.
  */
 export async function pasteText(target: string, text: string, enter: boolean): Promise<void> {
-  const buffer = `ah-${process.pid}-${Date.now()}`;
+  const buffer = `ah-${process.pid}-${randomUUID()}`;
   await new Promise<void>((resolve, reject) => {
     const p = spawn('tmux', ['load-buffer', '-b', buffer, '-'], { env: cleanEnv(), stdio: ['pipe', 'ignore', 'pipe'] });
     let err = '';
@@ -211,10 +212,14 @@ export async function pasteText(target: string, text: string, enter: boolean): P
     p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(err.trim() || `load-buffer exited ${code}`))));
     p.stdin.end(text);
   });
-  await tmux('paste-buffer', '-p', '-d', '-b', buffer, '-t', target);
-  if (enter) {
-    // Give TUIs a beat to finish ingesting the paste before submitting it.
-    await new Promise((r) => setTimeout(r, 150));
-    await tmux('send-keys', '-t', target, 'Enter');
+  try {
+    await tmux('paste-buffer', '-p', '-d', '-b', buffer, '-t', target);
+    if (enter) {
+      // Give TUIs a beat to finish ingesting the paste before submitting it.
+      await new Promise((r) => setTimeout(r, 150));
+      await tmux('send-keys', '-t', target, 'Enter');
+    }
+  } finally {
+    await tmux('delete-buffer', '-b', buffer).catch(() => {});
   }
 }

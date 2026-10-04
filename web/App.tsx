@@ -5,6 +5,8 @@ import { Sidebar, type Page } from './Sidebar.tsx';
 import { Inbox, type InboxGroup } from './Inbox.tsx';
 import { HistoryView, SessionsView } from './HistoryView.tsx';
 import { Session } from './Session.tsx';
+import { Workspace } from './Workspace.tsx';
+import { nodeAt, paneLeaves, parseLayout, replaceLeaf, splitLeaf, type LayoutNode, type Path } from './layout.ts';
 import { NewDialog } from './NewDialog.tsx';
 import { Switcher } from './Switcher.tsx';
 import { WorktreesDialog } from './Git.tsx';
@@ -46,7 +48,8 @@ function stored<T extends string>(key: string, fallback: T): [T, (v: T) => void]
 
 // URL hash: "#@12" (local session), "#<host>/@12" (peer session), "#history", "#sessions".
 function fromHash(): { page: Page; selected: string | null } {
-  const h = decodeURIComponent(location.hash.slice(1));
+  let h = '';
+  try { h = decodeURIComponent(location.hash.slice(1)); } catch {}
   if (h.includes('@')) return { page: 'inbox', selected: h };
   return { page: h === 'history' || h === 'sessions' || h === 'security' ? h : 'inbox', selected: null };
 }
@@ -61,6 +64,24 @@ export function App({ onLock }: { onLock: () => void }) {
   const [replyKey, setReplyKey] = useState(0);
   const narrow = useMedia('(max-width: 760px)');
   const touch = useMedia('(pointer: coarse)');
+  const [sideOpen, setSideOpen] = useState(() => {
+    try {
+      return localStorage.getItem('ah.side') !== '0';
+    } catch {
+      return true;
+    }
+  });
+  // Split layout is device-local (F45): a 32" arrangement never follows you to a phone.
+  const [layout, setLayoutState] = useState<LayoutNode | null>(() => {
+    try {
+      return parseLayout(JSON.parse(localStorage.getItem('ah.layout.v1') ?? 'null'));
+    } catch {
+      return null;
+    }
+  });
+  const [focusPath, setFocusPath] = useState<Path | null>(null);
+  const focused = layout ? nodeAt(layout, focusPath ?? []) : null;
+  const focusKey = focused?.type === 'session' ? focused.sessionKey : null;
   const pushActive = useRef(false);
   const prevStatus = useRef(new Map<string, string>());
   const selectedRef = useRef(selected);
@@ -68,13 +89,53 @@ export function App({ onLock }: { onLock: () => void }) {
 
   const { state, error, refresh, clientFor, hostState } = useHosts((s: State) => announce(s.windows));
 
+  function toggleSide() {
+    setSideOpen((v) => {
+      try {
+        localStorage.setItem('ah.side', v ? '0' : '1');
+      } catch {}
+      return !v;
+    });
+  }
+
+  function setLayout(next: LayoutNode | null) {
+    setLayoutState(next);
+    const at = next && focusPath ? nodeAt(next, focusPath) : null;
+    if (!next) setFocusPath(null);
+    else if (at?.type === 'split') setFocusPath([...focusPath!, ...paneLeaves(at)[0].path]);
+    else if (!at) setFocusPath(paneLeaves(next)[0].path);
+    try {
+      if (next) localStorage.setItem('ah.layout.v1', JSON.stringify(next));
+      else localStorage.removeItem('ah.layout.v1');
+    } catch {}
+  }
+
   function go(next: { page?: Page; selected?: string | null }) {
     const route = { page: next.page ?? page, selected: next.selected === undefined ? selected : next.selected };
     setRoute(route);
     const hash = route.selected ?? (route.page === 'inbox' ? '' : route.page);
     history.replaceState(null, '', hash ? `#${hash}` : location.pathname);
   }
-  const open = (key: string | null) => go({ selected: key });
+  const open = (key: string | null) => {
+    // In split view the sidebar points the focused pane at the session (F46);
+    // otherwise it navigates the single view.
+    if (layout && key) {
+      const target = focused?.type === 'session' && focusPath ? focusPath : paneLeaves(layout)[0]?.path;
+      if (target) {
+        setLayout(replaceLeaf(layout, target, key));
+        setFocusPath(target);
+        return;
+      }
+    }
+    go({ selected: key });
+  };
+
+  /** Enter split view from the single session: the new half shows the most recent other session. */
+  function splitFrom(key: string, dir: 'right' | 'below') {
+    const other = state?.windows.find((w) => w.key !== key)?.key ?? key;
+    setLayout(splitLeaf({ type: 'session', sessionKey: key }, key, dir === 'right' ? 'horizontal' : 'vertical', other));
+    setFocusPath(['first']);
+  }
 
   function flash(msg: string) {
     setToast(msg);
@@ -135,13 +196,17 @@ export function App({ onLock }: { onLock: () => void }) {
     const set = () => document.documentElement.style.setProperty('--vh', `${vv.height}px`);
     set();
     vv.addEventListener('resize', set);
-    return () => vv.removeEventListener('resize', set);
+    window.addEventListener('pageshow', set);
+    return () => {
+      vv.removeEventListener('resize', set);
+      window.removeEventListener('pageshow', set);
+    };
   }, []);
 
   const current = state?.windows.find((w) => w.key === selected) ?? null;
-  // A session killed elsewhere: fall back to where we were.
+  // A session killed elsewhere: fall back to where we were (split panes show an ended state instead).
   useEffect(() => {
-    if (state && selected && !current) open(null);
+    if (state && selected && !current && !layout) open(null);
   }, [state, selected, current]);
 
   const keyFor = (host: string, id: string) => (host === state?.hostname ? id : `${host}/${id}`);
@@ -200,19 +265,46 @@ export function App({ onLock }: { onLock: () => void }) {
 
   return (
     <div className={`app ${narrow ? 'narrow' : ''}`}>
-      <Sidebar
-        state={state}
-        error={error}
-        page={page}
-        selected={selected}
-        device={deviceName()}
-        onPage={(p) => go({ page: p, selected: null })}
-        onSelect={open}
-        onSearch={() => setSwitching(true)}
-        onNew={() => setCreating(true)}
-        onWorktrees={() => setDialog('worktrees')}
-        onNotify={'Notification' in window ? enableNotify : null}
-      />
+      {sideOpen ? (
+        <Sidebar
+          state={state}
+          error={error}
+          page={page}
+          selected={focusKey ?? selected}
+          device={deviceName()}
+          onCollapse={toggleSide}
+          onPage={(p) => {
+            setLayout(null);
+            setFocusPath(null);
+            go({ page: p, selected: null });
+          }}
+          onSelect={open}
+          onSearch={() => setSwitching(true)}
+          onNew={() => setCreating(true)}
+          onWorktrees={() => setDialog('worktrees')}
+          onNotify={'Notification' in window ? enableNotify : null}
+          onReorder={(uid, host, order) => {
+            clientFor(host)
+              .order(uid, order)
+              .catch((e) => flash((e as Error).message));
+            refresh(host);
+          }}
+          onKill={(w) => {
+            clientFor(w.host)
+              .kill(w.id)
+              .then(() => refresh(w.host))
+              .catch((e) => alert((e as Error).message));
+          }}
+        />
+      ) : (
+        !narrow && (
+          <div className="rail">
+            <button className="icon-btn" onClick={toggleSide} title="Show sidebar" aria-label="Show sidebar">
+              <Icon name="panel" />
+            </button>
+          </div>
+        )
+      )}
 
       <main className="main">
         {state && (state.api ?? 0) < API_VERSION && (
@@ -220,7 +312,30 @@ export function App({ onLock }: { onLock: () => void }) {
             This page is newer than the running ah server. Restart it (<code>pnpm serve</code>) to finish updating.
           </div>
         )}
-        {current && state ? (
+        {layout && state ? (
+          <Workspace
+            layout={layout}
+            windows={state.windows}
+            narrow={narrow}
+            touch={touch}
+            multiHost={state.hosts.length > 1}
+            home={state.home}
+            replyKey={replyKey}
+            focusPath={focusPath}
+            clientFor={clientFor}
+            hostHome={(host) => hostState(host)?.home ?? state.home}
+            onFocus={setFocusPath}
+            onLayout={setLayout}
+            onAnswer={answer}
+            onSent={sent}
+            onKilledSession={() => {}}
+            refresh={refresh}
+            onExit={() => {
+              setLayout(null);
+              setFocusPath(null);
+            }}
+          />
+        ) : current && state ? (
           <Session
             key={current.key}
             w={current}
@@ -235,6 +350,7 @@ export function App({ onLock }: { onLock: () => void }) {
             onSent={sent}
             onKilled={() => open(null)}
             refresh={() => refresh(current.host)}
+            onSplit={(dir) => splitFrom(current.key, dir)}
           />
         ) : state ? (
           <>

@@ -35,12 +35,16 @@ export async function snapshot(): Promise<Map<number, Proc[]>> {
   return children;
 }
 
-export function descendants(children: Map<number, Proc[]>, root: number): Proc[] {
-  const out: Proc[] = [];
+export function descendants(children: Map<number, Proc[]>, root: number, includeRoot = false): Proc[] {
+  const proc = includeRoot ? [...children.values()].flat().find((p) => p.pid === root) : undefined;
+  const out: Proc[] = proc ? [proc] : [];
   const stack = [root];
+  const seen = new Set([root]);
   while (stack.length) {
     const pid = stack.pop()!;
     for (const child of children.get(pid) ?? []) {
+      if (seen.has(child.pid)) continue;
+      seen.add(child.pid);
       out.push(child);
       stack.push(child.pid);
     }

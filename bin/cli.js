@@ -27,7 +27,7 @@ export const HELP = `usage: ah <command>
   setup tailscale [--off]                     expose ah on your tailnet via \`tailscale serve\` (once)
   list [--json]                               live sessions
   history [--json]                            ended and saved conversations
-  new <harness> [--cwd DIR] [--name N] [--session S] [--continue]
+  new <harness> [--cwd DIR] [--name N] [--session S] [--continue] [--mode M] [--model M] [--args "EXTRA"]
   attach <target>                             open a session in this terminal
   send <target> <text…|->  [--no-enter]       type in now, queue if busy, resume if dead
   read <target> [-n LINES]                    print the session's screen + scrollback
@@ -144,7 +144,11 @@ export async function run(cmd, args) {
         label: opt(args, '--name', ''),
         session: opt(args, '--session', ''),
         resume: flag(args, '--continue'),
+        mode: opt(args, '--mode', undefined),
+        model: opt(args, '--model', undefined),
+        extraArgs: opt(args, '--args', undefined),
       };
+      for (const k of ['mode', 'model', 'extraArgs']) if (body[k] === undefined) delete body[k];
       const out = await call('POST', '/api/windows', body);
       console.log(`${out.uid} ${out.id}`);
       return;

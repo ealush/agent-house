@@ -28,6 +28,9 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
   const [newSession, setNewSession] = useState(state.sessions.length ? '' : state.defaultSession);
   const [resume, setResume] = useState(false);
   const [worktree, setWorktree] = useState(false);
+  const [mode, setMode] = useState('default');
+  const [model, setModel] = useState('default');
+  const [extraArgs, setExtraArgs] = useState('');
   const [projects, setProjects] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +43,17 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
 
   const current = presets.find((p) => p.id === preset) ?? presets[0];
   const recent = projects.slice(0, 8);
+  // Reset launch choices when switching agents; keep them when the preset list reloads.
+  useEffect(() => {
+    setMode('default');
+    setModel('default');
+    setExtraArgs('');
+  }, [preset]);
+  const modes = current?.modes ?? [];
+  const models = current?.models ?? [];
+  const showModes = modes.length > 1;
+  const showModels = models.length > 1;
+  const activeMode = modes.find((m) => m.id === mode);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -54,6 +68,9 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
         session: session === NEW_SESSION ? newSession : session,
         worktree,
         resume: resume && !!current.resume,
+        ...(showModes && mode !== 'default' ? { mode } : {}),
+        ...(showModels && model !== 'default' ? { model } : {}),
+        ...(extraArgs.trim() ? { extraArgs: extraArgs.trim() } : {}),
       });
       onCreated(host, id);
     } catch (err) {
@@ -140,6 +157,45 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
             Isolated git worktree <span className="hint">— new branch, so agents don't edit the same checkout</span>
           </span>
         </label>
+
+        {showModes && (
+          <fieldset className="choices">
+            <legend>Mode</legend>
+            {modes.map((m) => (
+              <label key={m.id} className={`choice ${m.id === mode ? 'on' : ''} ${m.dangerous ? 'danger' : ''}`}>
+                <input type="radio" name="mode" value={m.id} checked={m.id === mode} onChange={() => setMode(m.id)} />
+                <span>
+                  {m.dangerous ? '⚠ ' : ''}
+                  {m.name}
+                </span>
+                {m.description && m.id === mode && <span className="hint">{m.description}</span>}
+              </label>
+            ))}
+          </fieldset>
+        )}
+
+        {showModels && (
+          <fieldset className="choices">
+            <legend>Model</legend>
+            {models.map((m) => (
+              <label key={m.id} className={`choice ${m.id === model ? 'on' : ''}`}>
+                <input type="radio" name="model" value={m.id} checked={m.id === model} onChange={() => setModel(m.id)} />
+                <span>{m.name}</span>
+              </label>
+            ))}
+          </fieldset>
+        )}
+
+        <label className="field">
+          <span>Additional arguments</span>
+          <input value={extraArgs} onChange={(e) => setExtraArgs(e.target.value)} placeholder="--foo --bar" autoCapitalize="off" autoCorrect="off" spellCheck={false} maxLength={2048} />
+        </label>
+
+        {activeMode?.dangerous && activeMode.description && (
+          <p className="warn">
+            ⚠ {activeMode.name} — {activeMode.description}
+          </p>
+        )}
 
         {current?.resume && (
           <label className="check">

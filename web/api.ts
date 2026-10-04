@@ -31,6 +31,8 @@ export type Win = {
   panes: number;
   pinned: boolean;
   queued: number;
+  order: number | null;
+  launch: string | null;
 };
 
 export type Ask = { kind: 'command' | 'tool' | 'question' | 'screen'; text: string };
@@ -50,11 +52,21 @@ export type HistoryItem = {
   worktree: string | null;
 };
 
-export type Preset = { id: string; name: string; command: string; resume?: string; available: boolean };
+export type PresetChoice = { id: string; name: string; args?: string[]; dangerous?: boolean; description?: string; appliesTo?: string };
+export type ModelChoice = { id: string; name: string; args: string[]; appliesTo?: string };
+export type Preset = {
+  id: string;
+  name: string;
+  command: string;
+  resume?: string;
+  modes?: PresetChoice[];
+  models?: ModelChoice[];
+  available: boolean;
+};
 
 export type Host = { name: string; self: boolean; online: boolean };
 
-export const API_VERSION = 3;
+export const API_VERSION = 4;
 
 export type State = {
   api?: number;
@@ -90,6 +102,7 @@ export type WorktreeInfo = {
 };
 
 export type SendResult = { outcome: 'delivered' | 'queued'; windowId: string; resumed: boolean; queued: number };
+export type QueueItem = { id: string; text: string; enter: boolean; at: number };
 
 /** Called whenever the server says we're not signed in (expired, revoked, locked). */
 let onUnauthorized: () => void = () => {};
@@ -121,6 +134,7 @@ const enc = encodeURIComponent;
 async function postFile(url: string, file: File): Promise<string> {
   const res = await fetch(url, { method: 'POST', headers: { 'x-ah': '1', 'content-type': 'application/octet-stream' }, body: file });
   const body = await res.json();
+  if (res.status === 401) onUnauthorized();
   if (!res.ok) throw new Error(body.error ?? res.statusText);
   return body.path as string;
 }
@@ -135,15 +149,17 @@ export function hostApi(base: string) {
     base,
     state: () => r<State>('GET', '/api/state'),
     projects: () => r<string[]>('GET', '/api/projects'),
-    create: (body: { preset: string; cwd: string; session: string; label: string; resume: boolean; worktree?: boolean }) =>
+    create: (body: { preset: string; cwd: string; session: string; label: string; resume: boolean; worktree?: boolean; mode?: string; model?: string; extraArgs?: string }) =>
       r<{ id: string; uid: string }>('POST', '/api/windows', body),
+    order: (uid: string, order: number) => r('POST', `/api/sessions/${enc(uid)}/order`, { order }),
     rename: (id: string, name: string) => r('PATCH', `/api/windows/${enc(id)}`, { name }),
     kill: (id: string) => r('DELETE', `/api/windows/${enc(id)}`),
     capture: (id: string) => r<string>('GET', `/api/windows/${enc(id)}/capture?lines=3000`),
     resume: (ref: string) => r<{ id: string; uid: string; resumed: boolean }>('POST', `/api/sessions/${enc(ref)}/resume`),
     send: (ref: string, text: string, enter: boolean) => r<SendResult>('POST', `/api/sessions/${enc(ref)}/send`, { text, enter }),
     answer: (uid: string, answer: 'approve' | 'deny') => r('POST', `/api/sessions/${enc(uid)}/answer`, { answer }),
-    clearQueue: (uid: string) => r('DELETE', `/api/sessions/${enc(uid)}/queue`),
+    queue: (uid: string) => r<QueueItem[]>('GET', `/api/sessions/${enc(uid)}/queue`),
+    clearQueue: (uid: string, itemId?: string) => r('DELETE', `/api/sessions/${enc(uid)}/queue${itemId ? `/${enc(itemId)}` : ''}`),
     pin: (uid: string, pinned: boolean) => r('POST', `/api/sessions/${enc(uid)}/pin`, { pinned }),
     forget: (ref: string) => r('DELETE', `/api/sessions/${enc(ref)}`),
     changes: (id: string) => r<Changes>('GET', `/api/windows/${enc(id)}/changes`),
@@ -187,6 +203,8 @@ export function normalize(s: State): State {
       answerable: w.answerable ?? false,
       queued: w.queued ?? 0,
       pinned: w.pinned ?? false,
+      order: w.order ?? null,
+      launch: w.launch ?? null,
     })),
   };
 }

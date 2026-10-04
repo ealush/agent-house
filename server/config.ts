@@ -2,11 +2,34 @@ import { readFileSync, existsSync, accessSync, constants } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, isAbsolute } from 'node:path';
 
+export type LaunchAppliesTo = 'launch' | 'resume' | 'both';
+
+export type PresetChoice = {
+  id: string;
+  name: string;
+  /** Extra argv appended after the base command. */
+  args?: string[];
+  /** Shown with a warning; never becomes the implicit default. */
+  dangerous?: boolean;
+  description?: string;
+  appliesTo?: LaunchAppliesTo;
+};
+
+export type ModelChoice = {
+  id: string;
+  name: string;
+  args: string[];
+  appliesTo?: LaunchAppliesTo;
+};
+
 export type Preset = {
   id: string;
   name: string;
   /** Typed into a fresh shell. Empty for a plain shell. */
   command: string;
+  /** Declarative launch choices (F42). For shells, modes select the shell binary. */
+  modes?: PresetChoice[];
+  models?: ModelChoice[];
   /** Optional command that continues the most recent conversation in the cwd. */
   resume?: string;
   /** Resumes one specific conversation; `{id}` is replaced by the id agent hooks reported. */
@@ -52,11 +75,36 @@ export type Config = {
 };
 
 const DEFAULT_PRESETS: Preset[] = [
-  { id: 'shell', name: 'Shell', command: '' },
+  {
+    id: 'shell',
+    name: 'Shell',
+    command: '',
+    modes: [
+      { id: 'default', name: 'Default shell' },
+      { id: 'bash', name: 'bash', args: ['bash', '-i'] },
+      { id: 'zsh', name: 'zsh', args: ['zsh', '-i'] },
+      { id: 'fish', name: 'fish', args: ['fish', '-i'] },
+    ],
+  },
   {
     id: 'claude',
     name: 'Claude Code',
     command: 'claude',
+    modes: [
+      { id: 'default', name: 'Default' },
+      {
+        id: 'dangerous',
+        name: 'Skip permissions',
+        args: ['--dangerously-skip-permissions'],
+        dangerous: true,
+        description: 'Allows the agent to execute commands without interactive approval.',
+      },
+    ],
+    models: [
+      { id: 'default', name: 'Default', args: [] },
+      { id: 'opus', name: 'Opus', args: ['--model', 'opus'] },
+      { id: 'sonnet', name: 'Sonnet', args: ['--model', 'sonnet'] },
+    ],
     resume: 'claude --continue',
     resumeId: 'claude --resume {id}',
     match: '^claude$',
@@ -69,6 +117,11 @@ const DEFAULT_PRESETS: Preset[] = [
     id: 'codex',
     name: 'Codex',
     command: 'codex',
+    modes: [
+      { id: 'default', name: 'Default' },
+      { id: 'yolo', name: 'YOLO', args: ['--yolo'], dangerous: true, description: 'Auto-approves actions without asking.' },
+    ],
+    models: [{ id: 'default', name: 'Default', args: [] }],
     resume: 'codex resume --last',
     resumeId: 'codex resume {id}',
     match: '^codex',
@@ -78,7 +131,20 @@ const DEFAULT_PRESETS: Preset[] = [
   },
   { id: 'gemini', name: 'Gemini', command: 'gemini', match: '^gemini$' },
   { id: 'grok', name: 'Grok', command: 'grok', match: '^grok$' },
-  { id: 'muse', name: 'Muse', command: 'muse', match: '^muse' },
+  {
+    id: 'muse',
+    name: 'Muse',
+    command: 'muse',
+    modes: [
+      { id: 'default', name: 'Default' },
+      { id: 'yolo', name: 'YOLO', args: ['--yolo'], dangerous: true, description: 'Auto-approves actions without asking.' },
+    ],
+    models: [
+      { id: 'default', name: 'Default', args: [] },
+      { id: 'spark', name: 'Spark', args: ['--model', 'spark'] },
+    ],
+    match: '^muse',
+  },
   { id: 'hermes', name: 'Hermes', command: 'hermes', match: '^hermes' },
   { id: 'opencode', name: 'opencode', command: 'opencode', match: '^opencode' },
 ];

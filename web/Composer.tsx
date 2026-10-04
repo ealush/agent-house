@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Icon } from './icons.tsx';
 import { shellQuote, type HostApi, type SendResult } from './api.ts';
+import { clipboardFiles } from './clipboard.ts';
 
 // The message bar under a session. It goes through the server, which types the text
 // in now (idle agent, or any shell), queues it while an agent works, or resumes a dead
@@ -73,11 +74,12 @@ export function ComposerBar({ client, target, agent, onSent, focusKey }: Props) 
     setText(cursor.current < 0 ? '' : list[cursor.current]);
   }
 
-  async function attach(files: FileList | null) {
-    if (!files?.length) return;
+  async function attach(files: FileList | File[] | null) {
+    const list = !files ? [] : Array.isArray(files) ? files : [...files];
+    if (!list.length) return;
     setBusy(true);
     try {
-      const paths = await Promise.all([...files].map((f) => client.upload(f)));
+      const paths = await Promise.all(list.map((f) => client.upload(f)));
       setText((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}${paths.map(shellQuote).join(' ')} `);
       area.current?.focus();
     } catch (e) {
@@ -119,9 +121,11 @@ export function ComposerBar({ client, target, agent, onSent, focusKey }: Props) 
           }
         }}
         onPaste={(e) => {
-          if (e.clipboardData.files.length) {
+          // Screenshots often arrive via items with an empty files list.
+          const pasted = clipboardFiles(e.clipboardData);
+          if (pasted.length) {
             e.preventDefault();
-            attach(e.clipboardData.files);
+            attach(pasted);
           }
         }}
       />

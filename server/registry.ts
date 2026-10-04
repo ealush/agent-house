@@ -43,21 +43,23 @@ export class Registry {
   private records = new Map<string, SessionRecord>();
   private dirty = false;
   private writing: Promise<void> = Promise.resolve();
+  private file: string;
 
-  constructor() {
-    if (!existsSync(FILE)) return;
+  constructor(file = FILE) {
+    this.file = file;
+    if (!existsSync(this.file)) return;
     try {
-      for (const raw of JSON.parse(readFileSync(FILE, 'utf8'))) {
+      for (const raw of JSON.parse(readFileSync(this.file, 'utf8'))) {
         const r = migrate(raw);
         this.records.set(r.id, r);
       }
     } catch (err) {
       // Keep the evidence instead of overwriting it on the next save; tmux still has the live sessions.
-      const aside = `${FILE}.corrupt-${Date.now()}`;
+      const aside = `${this.file}.corrupt-${Date.now()}`;
       try {
-        renameSync(FILE, aside);
+        renameSync(this.file, aside);
       } catch {}
-      console.error(`registry ${FILE} was unreadable (${(err as Error).message}); moved it to ${aside} and starting fresh`);
+      console.error(`registry ${this.file} was unreadable (${(err as Error).message}); moved it to ${aside} and starting fresh`);
       this.records.clear();
     }
   }
@@ -81,9 +83,9 @@ export class Registry {
       id,
       host: hostname(),
       harness: f.harness,
-      harnessId: f.harnessId || prev?.harnessId,
+      harnessId: f.harnessId || (prev?.harness === f.harness ? prev.harnessId : undefined),
       cwd: f.cwd,
-      model: f.model || prev?.model,
+      model: f.model || (prev?.harness === f.harness ? prev.model : undefined),
       title: f.title,
       status: f.status,
       lifecycle: 'live',
@@ -177,10 +179,10 @@ export class Registry {
     const data = JSON.stringify([...this.records.values()], null, 2);
     this.writing = this.writing
       .then(async () => {
-        await mkdir(dirname(FILE), { recursive: true, mode: 0o700 });
-        const tmp = `${FILE}.tmp`;
+        await mkdir(dirname(this.file), { recursive: true, mode: 0o700 });
+        const tmp = `${this.file}.tmp`;
         await writeFile(tmp, data, { mode: 0o600 });
-        await rename(tmp, FILE);
+        await rename(tmp, this.file);
       })
       .catch((err) => console.error('registry write failed:', err));
   }

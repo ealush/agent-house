@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Icon } from './icons.tsx';
+import { clipboardFiles, readClipboard } from './clipboard.ts';
 import { deviceName, shellQuote, type HostApi, type SendResult, type Win } from './api.ts';
 import { look } from './agents.ts';
 import { Terminal, type TerminalHandle } from './Terminal.tsx';
-import { KeyBar, applyModifiers } from './KeyBar.tsx';
+import { KeyBar } from './KeyBar.tsx';
+import { applyModifiers } from './keyboard.ts';
 import { ComposerBar } from './Composer.tsx';
 import { ChangesPanel } from './Git.tsx';
 import { FilesPanel } from './Files.tsx';
+import { QueueDialog } from './Queue.tsx';
 
 type Panel = 'diff' | 'files';
 
@@ -25,6 +28,12 @@ type Props = {
   onSent: (r: SendResult) => void;
   onKilled: () => void;
   refresh: () => void;
+  /** Split this pane (F45). Provided by the workspace; hidden in single view. */
+  onSplit?: (direction: 'right' | 'below') => void;
+  /** Replace this pane's session (F45). */
+  onReplace?: () => void;
+  /** Close this pane without killing the session (F45). */
+  onClosePane?: () => void;
 };
 
 const STATUS_PILL = { waiting: 'Needs you', busy: 'Working', attention: 'Done', idle: 'Idle' };
@@ -59,16 +68,19 @@ function others(devices: string[]): string | null {
   return uniq.length === 1 ? uniq[0] : `${uniq.slice(0, -1).join(', ')} and ${uniq.at(-1)}`;
 }
 
-export function Session({ w, client, narrow, touch, multiHost, home, replyKey, onBack, onAnswer, onSent, onKilled, refresh }: Props) {
+export function Session({ w, client, narrow, touch, multiHost, home, replyKey, onBack, onAnswer, onSent, onKilled, refresh, onSplit, onReplace, onClosePane }: Props) {
   const term = useRef<TerminalHandle>(null);
   const [tab, setTab] = useState<'terminal' | Panel>('terminal');
   const [panel, setPanel] = stored<Panel | ''>('ah.panel', '');
   const [keysPref, setKeysPref] = stored<'auto' | 'on' | 'off'>('ah.keys', 'auto');
   const [menu, setMenu] = useState(false);
   const [capture, setCapture] = useState<string | null>(null);
+  const [queueOpen, setQueueOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [ctrl, setCtrl] = useState(false);
   const [alt, setAlt] = useState(false);
+  const [shift, setShift] = useState(false);
+  const [pasting, setPasting] = useState(false);
   const [focus, setFocus] = useState(0);
   const { color, glyph, name: agentName } = look(w.agent);
 
@@ -85,22 +97,40 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
   const elsewhere = others(w.devices);
   const transform = useCallback(
     (d: string) => {
-      if (!ctrl && !alt) return d;
+      if (!ctrl && !alt && !shift) return d;
       setCtrl(false);
       setAlt(false);
-      return applyModifiers(d, ctrl, alt);
+      setShift(false);
+      return applyModifiers(d, ctrl, alt, shift);
     },
-    [ctrl, alt],
+    [ctrl, alt, shift],
   );
 
   // Pasted or dropped files are uploaded to the host and their paths typed in.
-  async function sendFiles(files: FileList) {
+  async function sendFiles(files: FileList | File[]) {
+    const list = Array.isArray(files) ? files : [...files];
+    if (!list.length) return;
     try {
-      const paths = await Promise.all([...files].map((f) => client.upload(f)));
+      const paths = await Promise.all(list.map((f) => client.upload(f)));
       term.current?.send(paths.map(shellQuote).join(' ') + ' ');
       term.current?.focus();
     } catch (e) {
       alert((e as Error).message);
+    }
+  }
+
+  async function pasteClipboard() {
+    if (pasting) return;
+    setPasting(true);
+    try {
+      // Start the read directly from the click to retain browser user activation.
+      const { text, files } = await readClipboard(navigator.clipboard);
+      if (files.length) await sendFiles(files);
+      else if (text) term.current?.paste(text);
+    } catch {
+      alert('Clipboard access was denied or unavailable. Use the keyboard’s Paste action, or allow clipboard access and try again.');
+    } finally {
+      setPasting(false);
     }
   }
 
@@ -120,12 +150,19 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
       if (name && name !== w.name) await client.rename(w.id, name);
     });
 
-  const kill = () =>
-    act(async () => {
-      if (!confirm(`Kill "${w.title}"? Everything running in it will be terminated.`)) return;
+  // Terminate kills the tmux window; stronger wording while it is working,
+  // waiting, or holding queued prompts (F44).
+  const kill = () => {
+    const hot = w.status === 'busy' || w.status === 'waiting' || w.queued > 0;
+    const msg = hot
+      ? `Terminate "${w.title}"?\n\nIt ${w.status === 'waiting' ? 'is waiting for your input' : w.status === 'busy' ? 'is currently working' : `has ${w.queued} queued message${w.queued === 1 ? '' : 's'}`}.\nThe running process will be stopped.`
+      : `Terminate "${w.title}"? The session will be stopped.`;
+    return act(async () => {
+      if (!confirm(msg)) return;
       await client.kill(w.id);
       onKilled();
     });
+  };
 
   const comment = async (text: string) => onSent(await client.send(w.uid, text, true));
 
@@ -166,6 +203,7 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
               {w.project}
               {w.agent ? ` · ${agentName}` : ''}
               {w.model ? ` · ${w.model}` : ''}
+              {w.launch ? ` · ${w.launch}` : ''}
             </span>
           )}
           <button className="name" onClick={rename} title="Rename">
@@ -191,8 +229,8 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
               </span>
             )}
             {w.queued > 0 && (
-              <button className="pill waiting" onClick={() => act(() => client.clearQueue(w.uid))} title="Drop queued messages">
-                ⇥ {w.queued} queued ×
+              <button className="pill waiting" onClick={() => setQueueOpen(true)} title="Review queued messages">
+                ⇥ {w.queued} queued
               </button>
             )}
             {elsewhere && <span className="devices">On {elsewhere}</span>}
@@ -218,6 +256,47 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
             <div className="menu" onMouseLeave={() => setMenu(false)}>
               <button onClick={rename}>Rename</button>
               <button onClick={() => act(() => client.pin(w.uid, !w.pinned))}>{w.pinned ? 'Unpin' : 'Pin to top'}</button>
+              <button onClick={() => { setMenu(false); setQueueOpen(true); }}>Queued messages ({w.queued})</button>
+              {onSplit && (
+                <>
+                  <button
+                    onClick={() => {
+                      setMenu(false);
+                      onSplit('right');
+                    }}
+                  >
+                    Split right
+                  </button>
+                  <button
+                    onClick={() => {
+                      setMenu(false);
+                      onSplit('below');
+                    }}
+                  >
+                    Split below
+                  </button>
+                </>
+              )}
+              {onReplace && (
+                <button
+                  onClick={() => {
+                    setMenu(false);
+                    onReplace();
+                  }}
+                >
+                  Replace pane…
+                </button>
+              )}
+              {onClosePane && (
+                <button
+                  onClick={() => {
+                    setMenu(false);
+                    onClosePane();
+                  }}
+                >
+                  Close pane
+                </button>
+              )}
               <button
                 onClick={() =>
                   act(async () => {
@@ -245,7 +324,7 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
               </button>
               <hr />
               <button className="danger" onClick={kill}>
-                Kill session
+                Terminate session
               </button>
             </div>
           )}
@@ -272,10 +351,13 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
         <div
           className="session-main"
           onPasteCapture={(e) => {
-            if (tab === 'terminal' && e.clipboardData.files.length && !(e.target as HTMLElement).closest('.composer-bar')) {
-              e.preventDefault();
-              e.stopPropagation();
-              sendFiles(e.clipboardData.files);
+            if (tab === 'terminal' && !(e.target as HTMLElement).closest('.composer-bar')) {
+              const pasted = clipboardFiles(e.clipboardData);
+              if (pasted.length) {
+                e.preventDefault();
+                e.stopPropagation();
+                sendFiles(pasted);
+              }
             }
           }}
           onDragOver={(e) => {
@@ -329,7 +411,12 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
           )}
 
           {showKeys && (
-            <KeyBar ctrl={ctrl} alt={alt} setCtrl={setCtrl} setAlt={setAlt} send={(d) => term.current?.send(d)} onKeyboard={() => term.current?.focus()} />
+            <KeyBar
+              ctrl={ctrl} alt={alt} shift={shift} pasting={pasting}
+              setCtrl={setCtrl} setAlt={setAlt} setShift={setShift}
+              send={(d) => term.current?.send(d)} onPaste={pasteClipboard}
+              onKeyboard={() => term.current?.focus()}
+            />
           )}
           <ComposerBar client={client} target={w.uid} agent={w.agent} onSent={onSent} focusKey={focus} />
         </div>
@@ -356,6 +443,7 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
       </div>
 
       {capture !== null && <CaptureDialog text={capture} onClose={() => setCapture(null)} />}
+      {queueOpen && <QueueDialog client={client} uid={w.uid} onClose={() => setQueueOpen(false)} onChange={refresh} />}
     </>
   );
 }

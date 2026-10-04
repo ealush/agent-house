@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeStatus, screenAsks, adoptTranscripts, type StatusInput, type WindowView } from './sessions.ts';
+import { computeStatus, screenAsks, adoptTranscripts, hasToolWork, type StatusInput, type WindowView } from './sessions.ts';
 import { loadConfig } from './config.ts';
 
 const base: StatusInput = { now: 1000, activity: 900, seen: 900, viewers: 0, idleAfter: 4, hook: null, screenWaiting: false };
@@ -25,6 +25,25 @@ test('hooks win over heuristics', () => {
 test('screen rules only apply to quiet windows', () => {
   assert.equal(status({ screenWaiting: true }), 'waiting');
   assert.equal(status({ activity: 999, screenWaiting: true }), 'busy');
+});
+
+test('silent tool commands remain busy while explicit waiting and completion win', () => {
+  assert.equal(status({ toolRunning: true }), 'busy');
+  assert.equal(status({ toolRunning: true, hook: { state: 'working', at: 900 } }), 'busy');
+  assert.equal(status({ toolRunning: true, hook: { state: 'waiting', at: 900 } }), 'waiting');
+  assert.equal(status({ toolRunning: true, hook: { state: 'done', at: 950 } }), 'attention');
+  assert.equal(status({ toolRunning: true, screenWaiting: true }), 'waiting');
+  assert.equal(status({ hook: { state: 'working', at: 999 } }), 'busy', 'fresh hooks count even before output');
+});
+
+test('tool detection follows the agent subtree and ignores persistent services', () => {
+  const procs = new Map([
+    [1, [{ pid: 2, ppid: 1, argv: ['claude'] }, { pid: 3, ppid: 1, argv: ['bash', '-c', 'sleep 60'] }]],
+    [2, [{ pid: 4, ppid: 2, argv: ['node', 'mcp-server.js'] }]],
+  ]);
+  assert.equal(hasToolWork(procs, 2), false);
+  procs.set(4, [{ pid: 5, ppid: 4, argv: ['/bin/bash', '-lc', 'sleep 60'] }]);
+  assert.equal(hasToolWork(procs, 2), true);
 });
 
 // Pinned terminal rules (F18): each default pattern must keep matching what it was written for,

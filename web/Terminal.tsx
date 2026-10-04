@@ -9,6 +9,7 @@ import '@xterm/xterm/css/xterm.css';
 
 export type TerminalHandle = {
   send: (data: string) => void;
+  paste: (data: string) => void;
   focus: () => void;
 };
 
@@ -57,6 +58,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ wi
   const fit = useRef<FitAddon | null>(null);
   const ws = useRef<WebSocket | null>(null);
   const transform = useRef(transformInput);
+  const pasting = useRef(false);
   const gone = useRef(onGone);
   const [conn, setConn] = useState<Conn>('connecting');
   transform.current = transformInput;
@@ -66,7 +68,16 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ wi
     if (ws.current?.readyState === WebSocket.OPEN) ws.current.send(JSON.stringify({ t: 'i', d: data }));
   };
 
-  useImperativeHandle(ref, () => ({ send, focus: () => term.current?.focus() }), []);
+  useImperativeHandle(ref, () => ({
+    send,
+    paste: (data) => {
+      // xterm normalizes line endings and honors the app's bracketed-paste mode.
+      // Clipboard content must not be changed by a pending one-shot modifier.
+      pasting.current = true;
+      try { term.current?.paste(data); } finally { pasting.current = false; }
+    },
+    focus: () => term.current?.focus(),
+  }), []);
 
   // One xterm instance for the component's lifetime; windows swap underneath it.
   useEffect(() => {
@@ -110,7 +121,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ wi
       return true;
     });
 
-    t.onData((d) => send(transform.current ? transform.current(d) : d));
+    t.onData((d) => send(!pasting.current && transform.current ? transform.current(d) : d));
     t.onBinary((d) => send(d));
     term.current = t;
     fit.current = f;

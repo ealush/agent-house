@@ -55,7 +55,13 @@ to terminal rules and output activity, and matches live agents to their transcri
 - **Sessions.** A real terminal (xterm.js on a tmux client) with an inline composer:
   messages are typed in now if the agent is idle, **queued** until it's free if it's
   working, and the session is **resumed** first if it's dead. Diff and Files sit beside it
-  (tabs on a phone). Each device views independently; whoever typed last sizes the window.
+  (tabs on a phone). Review queued follow-ups and cancel individual messages from the
+  session menu. Each device views independently; whoever typed last sizes the window.
+- **Split workspace.** Split right or below from a session's menu, resize the divider,
+  and replace a pane from the sidebar or by dragging a session onto it. Closing a pane
+  keeps its session running. Layouts stay on each device; phones show panes as tabs.
+- **Launch choices.** Choose a configured model and permission mode, or add quoted CLI
+  arguments. Sidebar sessions can be dragged to reorder them across your devices.
 - **History.** Every session ah has run, plus past Claude Code and Codex conversations
   found on disk. Resume continues the same conversation (`claude --resume <id>`, …).
 - **Files.** Browse the host, upload from any device into any folder, download, preview,
@@ -68,8 +74,9 @@ to terminal rules and output activity, and matches live agents to their transcri
   (HTTPS + home-screen app on iOS).
 - **Multi-host.** Run ah on every machine; the one you open finds the others on your
   tailnet and proxies them, so one inbox covers all of them.
-- **Phone-first touches.** Bottom tabs, big targets, key row with sticky Ctrl/Alt, swipe to
-  scroll tmux, dictation-friendly composer, scrollback as selectable text.
+- **Phone-first touches.** Bottom tabs, big targets, key row with one-tap Ctrl/Alt/Shift
+  and clipboard Paste, swipe to scroll tmux, dictation-friendly composer, scrollback as
+  selectable text. Shift+Enter sends multiline input; pasted screenshots upload to the host.
 - **⌘K / Ctrl+Shift+K**: jump to any session or resume any conversation;
   filters `h:` host/harness, `s:` status, `p:` project, `m:` model.
 
