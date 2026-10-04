@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import { hostname, homedir } from 'node:os';
 import { join, extname, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { Duplex } from 'node:stream';
 import { WebSocketServer } from 'ws';
 import { loadConfig, expandHome, isExecutableOnPath, CONFIG_PATH } from './config.ts';
 import { buildWindows as build, shortPath } from './sessions.ts';
@@ -27,17 +28,23 @@ const flag = (name: string) => {
   return i >= 0 ? args[i + 1] : undefined;
 };
 const PORT = Number(flag('port') ?? process.env.AH_PORT ?? config.port);
-const HOST = flag('host') ?? process.env.AH_HOST ?? config.host;
+// Comma-separated; "tailscale" means this machine's Tailscale IPv4 (plain HTTP, WireGuard-encrypted).
+const HOSTS = String(flag('host') ?? process.env.AH_HOST ?? config.host)
+  .split(',')
+  .map((h) => h.trim())
+  .filter(Boolean);
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 
-if ((HOST === '0.0.0.0' || HOST === '::') && !args.includes('--unsafe-bind-all')) {
-  console.error(`Refusing to listen on ${HOST}: this server hands out shells. Bind to 127.0.0.1 behind`);
+const wildcard = HOSTS.find((h) => h === '0.0.0.0' || h === '::');
+if (wildcard && !args.includes('--unsafe-bind-all')) {
+  console.error(`Refusing to listen on ${wildcard}: this server hands out shells. Bind to 127.0.0.1 behind`);
   console.error('`tailscale serve`, or to your Tailscale IP. Pass --unsafe-bind-all if you really mean it.');
   process.exit(1);
 }
 
 // ---------- Host / Origin allowlist (blocks DNS rebinding and cross-site WebSockets)
 
+let tailscaleIPv4: string | null = null;
 const allowedHosts = new Set(['localhost', '127.0.0.1', '::1', hostname(), ...config.allowedHosts]);
 async function addTailscaleHosts() {
   try {
@@ -49,6 +56,7 @@ async function addTailscaleHosts() {
       allowedHosts.add(dns.split('.')[0]);
     }
     for (const ip of self.TailscaleIPs ?? []) allowedHosts.add(ip);
+    tailscaleIPv4 = (self.TailscaleIPs ?? []).find((ip: string) => !ip.includes(':')) ?? null;
   } catch {
     // Tailscale not installed or not running; localhost still works.
   }
@@ -321,7 +329,7 @@ async function serveStatic(res: ServerResponse, pathname: string) {
 
 // ---------- server
 
-const server = createServer(async (req, res) => {
+async function handle(req: IncomingMessage, res: ServerResponse) {
   if (!hostAllowed(req)) {
     res.writeHead(421, { 'content-type': 'text/plain' });
     return res.end(`Host not allowed. Add it to allowedHosts in ${CONFIG_PATH}.`);
@@ -336,11 +344,11 @@ const server = createServer(async (req, res) => {
     const stderr = (err as { stderr?: string }).stderr;
     send(res, status, { error: stderr?.trim() || (err as Error).message });
   }
-});
+}
 
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
 
-server.on('upgrade', (req, socket, head) => {
+function upgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
   const url = new URL(req.url ?? '/', 'http://x');
   const m = safeDecode(url.pathname).match(/^\/ws\/(@\d+)$/);
   if (!m || !hostAllowed(req) || !originAllowed(req)) {
@@ -355,23 +363,30 @@ server.on('upgrade', (req, socket, head) => {
       ws.close(1011, 'attach failed');
     });
   });
-});
+}
 
 await Promise.all([addTailscaleHosts(), refreshTmuxPath(), t.cleanupViewers()]);
-server.listen(PORT, HOST, () => {
-  const where = HOST.includes(':') ? `[${HOST}]` : HOST;
-  console.log(`ah listening on http://${where}:${PORT}`);
-  if (HOST === '127.0.0.1' || HOST === 'localhost') {
-    console.log('Expose it to your tailnet (HTTPS, tailnet-only) with:');
-    console.log(`  tailscale serve --bg ${PORT}`);
+const servers = HOSTS.map((h) => {
+  const host = h === 'tailscale' ? tailscaleIPv4 : h;
+  if (!host) {
+    console.error('host "tailscale" requested, but Tailscale is not running');
+    process.exit(1);
   }
-  console.log(`config: ${CONFIG_PATH}`);
+  const server = createServer(handle);
+  server.on('upgrade', upgrade);
+  server.listen(PORT, host, () => console.log(`ah listening on http://${host.includes(':') ? `[${host}]` : host}:${PORT}`));
+  return server;
 });
+if (HOSTS.every((h) => h === '127.0.0.1' || h === 'localhost')) {
+  console.log('Expose it to your tailnet (HTTPS, tailnet-only) with:');
+  console.log(`  tailscale serve --bg ${PORT}`);
+}
+console.log(`config: ${CONFIG_PATH}`);
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, () => {
     for (const ws of wss.clients) ws.close(1001, 'server shutting down');
-    server.close();
+    for (const server of servers) server.close();
     setTimeout(() => process.exit(0), 200);
   });
 }

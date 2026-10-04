@@ -20,7 +20,15 @@ pnpm start            # → http://127.0.0.1:7681
 tailscale serve --bg 7681   # HTTPS on https://<machine>.<tailnet>.ts.net, tailnet-only
 ```
 
-Then open `https://<machine>.<tailnet>.ts.net` on any device. On iOS, use Share → Add to Home
+Then open `https://<machine>.<tailnet>.ts.net` on any device. The first `tailscale serve`
+asks you to enable Serve/HTTPS for the tailnet once, via a login.tailscale.com link.
+
+No `tailscale serve`? Listen on the Tailscale IP directly (plain HTTP inside WireGuard;
+clipboard, notifications and home-screen install need HTTPS, though):
+
+```bash
+pnpm start --host 127.0.0.1,tailscale     # → http://100.x.y.z:7681 (note: http, not https)
+``` On iOS, use Share → Add to Home
 Screen for a full-screen app (and notifications).
 
 Keep it running with the systemd user unit in [`contrib/ah.service`](contrib/ah.service).
