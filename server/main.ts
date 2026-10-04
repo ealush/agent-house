@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readFile, readdir, stat, mkdir, writeFile } from 'node:fs/promises';
-import { execFile } from 'node:child_process';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
 import { hostname, homedir } from 'node:os';
 import { join, extname, resolve, basename } from 'node:path';
@@ -366,25 +366,64 @@ function upgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
 }
 
 await Promise.all([addTailscaleHosts(), refreshTmuxPath(), t.cleanupViewers()]);
-const servers = HOSTS.map((h) => {
+const servers: ReturnType<typeof createServer>[] = [];
+function listen(host: string) {
+  const server = createServer(handle);
+  server.on('upgrade', upgrade);
+  server.listen(PORT, host, () => console.log(`ah listening on http://${host.includes(':') ? `[${host}]` : host}:${PORT}`));
+  servers.push(server);
+}
+
+for (const h of HOSTS) {
   const host = h === 'tailscale' ? tailscaleIPv4 : h;
   if (!host) {
     console.error('host "tailscale" requested, but Tailscale is not running');
     process.exit(1);
   }
-  const server = createServer(handle);
-  server.on('upgrade', upgrade);
-  server.listen(PORT, host, () => console.log(`ah listening on http://${host.includes(':') ? `[${host}]` : host}:${PORT}`));
-  return server;
-});
-if (HOSTS.every((h) => h === '127.0.0.1' || h === 'localhost')) {
-  console.log('Expose it to your tailnet (HTTPS, tailnet-only) with:');
-  console.log(`  tailscale serve --bg ${PORT}`);
+  listen(host);
+}
+
+// --tailscale: put ah on the tailnet over HTTPS with a foreground `tailscale serve`,
+// which tailscale tears down again when ah exits.
+let tsServe: ChildProcess | null = null;
+if (args.includes('--tailscale')) {
+  if (!HOSTS.some((h) => h === '127.0.0.1' || h === 'localhost')) listen('127.0.0.1');
+  tsServe = spawn('tailscale', ['serve', String(PORT)], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let fellBack = false;
+  const onOutput = (chunk: Buffer) => {
+    const text = chunk.toString();
+    const url = text.match(/https:\/\/[^\s]+\.ts\.net\/?/)?.[0];
+    if (url) console.log(`\n  ➜  ${url}   (tailnet only)\n`);
+    if (/not enabled/i.test(text)) {
+      const link = text.match(/https:\/\/login\.tailscale\.com\/\S+/)?.[0];
+      console.log(`\nTailscale Serve isn't enabled on your tailnet yet. Enable it once at:\n  ${link}`);
+      console.log('ah will switch to HTTPS automatically when you do.');
+      // Stay reachable meanwhile: plain HTTP on the Tailscale IP (still WireGuard-encrypted).
+      if (!fellBack && tailscaleIPv4 && !HOSTS.includes('tailscale') && !HOSTS.includes(tailscaleIPv4)) {
+        fellBack = true;
+        console.log(`Until then: http://${tailscaleIPv4}:${PORT}  (http, not https)\n`);
+        listen(tailscaleIPv4);
+      }
+    } else if (!url && text.trim() && !/Press Ctrl\+C|^\|--|proxy http/m.test(text)) {
+      process.stdout.write(`[tailscale] ${text}`);
+    }
+  };
+  tsServe.stdout!.on('data', onOutput);
+  tsServe.stderr!.on('data', onOutput);
+  tsServe.on('error', (err) => console.error(`tailscale serve failed: ${err.message}`));
+  tsServe.on('exit', (code, signal) => {
+    if (!shuttingDown) console.error(`tailscale serve exited (${signal ?? code}); ah is still on localhost.`);
+  });
+} else if (HOSTS.every((h) => h === '127.0.0.1' || h === 'localhost')) {
+  console.log('Put it on your tailnet (HTTPS, tailnet-only) with `pnpm serve`.');
 }
 console.log(`config: ${CONFIG_PATH}`);
 
+let shuttingDown = false;
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, () => {
+    shuttingDown = true;
+    tsServe?.kill('SIGINT');
     for (const ws of wss.clients) ws.close(1001, 'server shutting down');
     for (const server of servers) server.close();
     setTimeout(() => process.exit(0), 200);

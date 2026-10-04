@@ -16,9 +16,13 @@ phone / iPad / laptop ──https (tailscale serve)──▶ ah (127.0.0.1:7681)
 ```bash
 pnpm install          # builds node-pty (needs gcc/make/python3)
 pnpm build            # builds the web UI into dist/
-pnpm start            # → http://127.0.0.1:7681
-tailscale serve --bg 7681   # HTTPS on https://<machine>.<tailnet>.ts.net, tailnet-only
+pnpm serve            # ah on 127.0.0.1:7681 + `tailscale serve` → https://<machine>.<tailnet>.ts.net
 ```
+
+`pnpm serve` runs `tailscale serve` in the foreground alongside ah, so the tailnet HTTPS
+endpoint exists exactly as long as ah does. If Serve isn't enabled on your tailnet yet, it
+prints the one-time enable link and, until you click it, also listens on the Tailscale IP
+over plain HTTP. `pnpm start` runs ah on localhost only.
 
 Then open `https://<machine>.<tailnet>.ts.net` on any device. The first `tailscale serve`
 asks you to enable Serve/HTTPS for the tailnet once, via a login.tailscale.com link.
