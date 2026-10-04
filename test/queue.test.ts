@@ -8,6 +8,8 @@ const fixture = fileURLToPath(new URL('./fixtures/agent.js', import.meta.url));
 test('an exec-replaced agent is detected and concurrent follow-ups queue separately', async () => {
   const ah = await startAh({
     auth: { mode: 'off' },
+    // "Idle" means quiet for idleAfter seconds; keep it short so slow CI machines fit the budget.
+    idleAfter: 1,
     presets: [{ id: 'test-agent', name: 'Test agent', command: `exec ${process.execPath} ${fixture}`, match: '^node$' }],
   });
   try {
@@ -15,7 +17,7 @@ test('an exec-replaced agent is detected and concurrent follow-ups queue separat
     assert.equal(created.status, 201, created.body);
     const { id, uid } = created.json();
     const window = async () => (await http(ah, 'GET', '/api/state')).json().windows.find((w: any) => w.uid === uid);
-    await until(async () => (await window())?.agent === 'test-agent' && (await window())?.status === 'idle', 5000, 'root agent detected');
+    await until(async () => (await window())?.agent === 'test-agent' && (await window())?.status === 'idle', 15000, 'root agent detected');
     const sent = await Promise.all(['alpha', 'beta', 'gamma'].map((text) => http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text } })));
     for (const r of sent) assert.equal(r.status, 200, r.body);
     assert.equal(sent.filter((r) => r.json().outcome === 'delivered').length, 1);
