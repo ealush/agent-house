@@ -11,6 +11,8 @@ import { WorktreesDialog } from './Git.tsx';
 import { NotifyDialog } from './NotifyDialog.tsx';
 import { pushStatus, pushSupport, registerWorker } from './notify.ts';
 import { API_VERSION } from './api.ts';
+import { Security } from './Security.tsx';
+import { Icon } from './icons.tsx';
 
 function useMedia(query: string) {
   const [match, setMatch] = useState(() => matchMedia(query).matches);
@@ -46,10 +48,10 @@ function stored<T extends string>(key: string, fallback: T): [T, (v: T) => void]
 function fromHash(): { page: Page; selected: string | null } {
   const h = decodeURIComponent(location.hash.slice(1));
   if (h.includes('@')) return { page: 'inbox', selected: h };
-  return { page: h === 'history' || h === 'sessions' ? h : 'inbox', selected: null };
+  return { page: h === 'history' || h === 'sessions' || h === 'security' ? h : 'inbox', selected: null };
 }
 
-export function App() {
+export function App({ onLock }: { onLock: () => void }) {
   const [{ page, selected }, setRoute] = useState(fromHash);
   const [inboxGroup, setInboxGroup] = stored<InboxGroup>('ah.inboxGroup', 'status');
   const [creating, setCreating] = useState(false);
@@ -236,7 +238,9 @@ export function App() {
           />
         ) : state ? (
           <>
-            {page === 'history' ? (
+            {page === 'security' ? (
+              <Security onLocked={onLock} />
+            ) : page === 'history' ? (
               <HistoryView state={state} onResume={(h) => resume(h.host, h.ref)} onForget={forget} />
             ) : page === 'sessions' && narrow ? (
               <SessionsView state={state} onOpen={(w) => open(w.key)} onNew={() => setCreating(true)} />
@@ -253,6 +257,7 @@ export function App() {
                 onAnswer={answer}
                 onNew={() => setCreating(true)}
                 onSearch={() => setSwitching(true)}
+                onSecurity={() => go({ page: 'security', selected: null })}
               />
             )}
             {narrow && (

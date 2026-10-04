@@ -13,6 +13,7 @@ type Props = {
   onAnswer: (w: Win, answer: 'approve' | 'deny') => void;
   onNew: () => void;
   onSearch: () => void;
+  onSecurity: () => void;
 };
 
 const KIND_LABEL = { command: 'Wants to run a command', tool: 'Wants to use a tool', question: 'Asked a question', screen: 'Waiting for you' };
@@ -20,7 +21,7 @@ const KIND_LABEL = { command: 'Wants to run a command', tool: 'Wants to use a to
 const where = (w: Win, multiHost: boolean) => [multiHost ? w.host : null, w.project].filter(Boolean).join(' · ');
 
 /** The home screen: what's blocked on you first, then what's working, then the rest. */
-export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, onNew, onSearch }: Props) {
+export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, onNew, onSearch, onSecurity }: Props) {
   const multiHost = state.hosts.length > 1;
   const waiting = state.windows.filter((w) => w.status === 'waiting');
   const running = state.windows.filter((w) => w.status === 'busy');
@@ -42,6 +43,9 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, on
         </div>
         {narrow ? (
           <>
+            <button className="icon-btn round" onClick={onSecurity} aria-label="Security">
+              <Icon name="shield" size={19} />
+            </button>
             <button className="icon-btn round" onClick={onSearch} aria-label="Search">
               <Icon name="search" size={20} />
             </button>

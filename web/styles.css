@@ -27,8 +27,8 @@
   --c-opencode: #5fc4b0;
   --c-other: #9a9ea6;
 
-  --ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --mono: 'JetBrainsMono Nerd Font', 'JetBrains Mono', 'SF Mono', Menlo, ui-monospace, monospace;
+  --ui: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'JetBrainsMono Nerd Font', 'JetBrains Mono Variable', 'SF Mono', Menlo, ui-monospace, monospace;
   --vh: 100dvh;
   --radius: 14px;
 
@@ -1823,4 +1823,138 @@ a.btn {
   border-bottom: 1px solid var(--accent-line);
   color: var(--accent);
   font-size: 13px;
+}
+
+/* ---------- lock & security */
+
+.lock {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  min-height: var(--vh);
+}
+
+.lock-card {
+  width: min(400px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.lock-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.lock-card h1 {
+  margin: 8px 0 0;
+  font-size: 26px;
+  font-weight: 600;
+}
+
+.lock-card .brand {
+  padding: 0;
+}
+
+.btn.big {
+  justify-content: center;
+  padding: 13px;
+  font-size: 15px;
+  border-radius: 12px;
+}
+
+.code-input {
+  width: 100%;
+  padding: 13px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line-2);
+  background: var(--sunken);
+  font: 500 20px var(--mono);
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+
+.code-input[type='password'] {
+  font: 16px var(--ui);
+  letter-spacing: 0;
+  text-align: left;
+}
+
+.lock-alt {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+.lock-alt .linkish:hover {
+  color: var(--text);
+}
+
+.security .rows {
+  margin-bottom: 4px;
+}
+
+.sec-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--raised);
+}
+
+.big-code {
+  font: 600 30px var(--mono);
+  letter-spacing: 0.1em;
+  color: var(--accent);
+}
+
+.sec-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.sec-row .stack {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sec-row .name {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.sec-row .sub {
+  font-size: 12.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sec-row .when {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.sec-row .bad .name {
+  color: var(--danger);
+}
+
+.section-label .grow {
+  flex: 1;
 }

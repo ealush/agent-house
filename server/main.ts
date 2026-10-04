@@ -15,9 +15,11 @@ import * as t from './tmux.ts';
 import { createWorktree, changes, GitError } from './git.ts';
 import { FsError, list, makeDir, receive, sendFile } from './files.ts';
 import { Peers, proxyHttp, proxyWs, tailnet } from './peers.ts';
+import { Auth, AuthError, clearCookies, type Caller } from './auth.ts';
 
 const config = loadConfig();
 const core = new Core(config, viewers);
+const auth = new Auth(config.auth);
 /** Tailscale login that owns this machine; requests arriving via Serve from anyone else are refused. */
 let ownerLogin: string | null = null;
 const args = process.argv.slice(2);
@@ -144,7 +146,7 @@ async function projectSuggestions(windowPaths: string[]): Promise<string[]> {
 
 // ---------- API
 
-async function api(req: IncomingMessage, res: ServerResponse, url: URL) {
+async function api(req: IncomingMessage, res: ServerResponse, url: URL, caller: Caller | null) {
   const method = req.method ?? 'GET';
   if (method !== 'GET') {
     // A custom header can't be sent cross-site without a CORS preflight we never answer.
@@ -154,7 +156,10 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL) {
   const route = (verb: string, re: RegExp) => (method === verb ? path.match(re) : null);
   let m: RegExpMatchArray | null;
 
-  if (route('GET', /^\/api\/hello$/)) return send(res, 200, { ah: true, hostname: hostname() });
+  if (route('GET', /^\/api\/hello$/)) return send(res, 200, { ah: true, hostname: hostname(), auth: auth.enabled });
+  if (path.startsWith('/api/auth/')) return authApi(req, res, path, method, caller);
+  // Everything past this point needs a signed-in device or a machine token.
+  if (!caller) throw new HttpError(401, 'sign in required');
 
   if (route('GET', /^\/api\/state$/)) return send(res, 200, await core.current());
 
@@ -168,9 +173,11 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL) {
     });
     const unsubscribe = core.subscribe((json) => res.write(`event: state\ndata: ${json}\n\n`));
     const ping = setInterval(() => res.write(': ping\n\n'), 25_000);
+    const untrack = auth.track(caller, { close: () => res.end() });
     req.on('close', () => {
       clearInterval(ping);
       unsubscribe();
+      untrack();
     });
     return;
   }
@@ -343,6 +350,92 @@ function audit(req: IncomingMessage, msg: string) {
   console.log(`[${new Date().toISOString()}] ${who} ${msg}`);
 }
 
+// ---------- auth routes
+
+async function authApi(req: IncomingMessage, res: ServerResponse, path: string, method: string, caller: Caller | null) {
+  const route = (verb: string, re: RegExp) => (method === verb ? path.match(re) : null);
+  const label = (b: Record<string, unknown>) => String(b.label ?? '').replace(/[^\w .·()-]/g, '').slice(0, 60);
+  const isHost = caller?.kind === 'token' && caller.token.id === 'local';
+  const signedIn = (cookie: { cookie: string } | null, body: unknown = { ok: true }) => {
+    if (cookie) res.setHeader('set-cookie', cookie.cookie);
+    return send(res, 200, body);
+  };
+  let m: RegExpMatchArray | null;
+
+  if (route('GET', /^\/api\/auth\/status$/)) {
+    return send(res, 200, { enabled: auth.enabled, enrolled: auth.enrolled, authenticated: !!caller, password: auth.overview(null).password });
+  }
+  if (route('POST', /^\/api\/auth\/register\/options$/)) {
+    const body = await readJson(req);
+    return send(res, 200, await auth.registrationOptions(req, caller, typeof body.code === 'string' ? body.code : undefined));
+  }
+  if (route('POST', /^\/api\/auth\/register\/verify$/)) {
+    const body = await readJson(req);
+    return signedIn(await auth.verifyRegistration(req, str(body.challengeId, 'challenge', 40), body.response as never, label(body)));
+  }
+  if (route('POST', /^\/api\/auth\/login\/options$/)) return send(res, 200, await auth.authenticationOptions(req));
+  if (route('POST', /^\/api\/auth\/login\/verify$/)) {
+    const body = await readJson(req);
+    return signedIn(await auth.verifyAuthentication(req, str(body.challengeId, 'challenge', 40), body.response as never, label(body)));
+  }
+  if (route('POST', /^\/api\/auth\/password\/login$/)) {
+    const body = await readJson(req);
+    return signedIn(await auth.passwordLogin(req, str(body.password, 'password', 512), label(body)));
+  }
+  if (route('POST', /^\/api\/auth\/logout$/)) {
+    if (caller?.kind === 'session') auth.endSession(caller.session.id, 'signed out');
+    res.setHeader('set-cookie', clearCookies());
+    return send(res, 200, { ok: true });
+  }
+
+  // Management: signed-in devices and the host's own CLI only.
+  if (!caller) throw new HttpError(401, 'sign in required');
+
+  if (route('GET', /^\/api\/auth\/overview$/)) return send(res, 200, { ...auth.overview(caller), audit: auth.recentAudit(50) });
+  if (route('POST', /^\/api\/auth\/code$/)) {
+    return send(res, 200, { code: auth.issueCode(caller.kind === 'session' ? `device ${caller.session.label}` : 'host CLI'), ttlMinutes: 10 });
+  }
+  if ((m = route('DELETE', /^\/api\/auth\/sessions\/(\w{1,20})$/))) {
+    auth.endSession(m[1], 'revoked');
+    return send(res, 200, { ok: true });
+  }
+  if (route('POST', /^\/api\/auth\/signout-all$/)) {
+    auth.signOutEverywhere(caller.kind === 'session' ? caller.session.id : undefined);
+    return send(res, 200, { ok: true });
+  }
+  if ((m = route('DELETE', /^\/api\/auth\/passkeys\/([\w-]{1,512})$/))) {
+    auth.removePasskey(m[1]);
+    return send(res, 200, { ok: true });
+  }
+  if (route('POST', /^\/api\/auth\/tokens$/)) {
+    const body = await readJson(req);
+    return send(res, 200, { token: auth.createToken(str(body.name, 'name', 60)) });
+  }
+  if ((m = route('DELETE', /^\/api\/auth\/tokens\/(\w{1,20})$/))) {
+    auth.removeToken(m[1]);
+    return send(res, 200, { ok: true });
+  }
+  // The master password can only be set from the host itself.
+  if (route('POST', /^\/api\/auth\/password$/)) {
+    if (!isHost) throw new HttpError(403, 'set the master password on the host: node bin/ah.js auth password');
+    const body = await readJson(req);
+    await auth.setPassword(body.password === null ? null : str(body.password, 'password', 512));
+    return send(res, 200, { ok: true });
+  }
+  throw new HttpError(404, 'not found');
+}
+
+const SECURITY_HEADERS: Record<string, string> = {
+  'x-content-type-options': 'nosniff',
+  'x-frame-options': 'DENY',
+  'referrer-policy': 'no-referrer',
+  'cross-origin-opener-policy': 'same-origin',
+  'cross-origin-resource-policy': 'same-origin',
+  'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=()',
+  // Ignored over plain http; pins https once ah has been seen through tailscale serve.
+  'strict-transport-security': 'max-age=31536000',
+};
+
 // ---------- static files
 
 const MIME: Record<string, string> = {
@@ -360,8 +453,9 @@ const CSP = [
   "default-src 'self'",
   "connect-src 'self'",
   "img-src 'self' data:",
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "font-src 'self' https://fonts.gstatic.com",
+  // Inline style attributes only (React); no third-party origins anywhere.
+  "style-src 'self' 'unsafe-inline'",
+  "font-src 'self'",
   "script-src 'self'",
   "frame-ancestors 'none'",
   "base-uri 'none'",
@@ -402,23 +496,26 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     res.writeHead(403, { 'content-type': 'text/plain' });
     return res.end('This ah belongs to another Tailscale user.');
   }
+  for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v);
   let url = new URL(req.url ?? '/', 'http://x');
   try {
+    const caller = auth.identify(req);
     // /h/<host>/… addresses a host: ourselves (served here) or a peer (proxied).
     const h = url.pathname.match(/^\/h\/([\w.-]{1,64})(\/.*)$/);
     if (h) {
       if (h[1] !== hostname()) {
         if (req.method !== 'GET' && (req.headers['x-ah'] !== '1' || !originAllowed(req))) throw new HttpError(403, 'forbidden');
+        if (!caller) throw new HttpError(401, 'sign in required');
         const peer = peers.get(h[1]);
         if (!peer) throw new HttpError(502, `host ${h[1]} is offline`);
         return await proxyHttp(peer, h[2] + url.search, req, res);
       }
       url = new URL(h[2] + url.search, 'http://x');
     }
-    if (url.pathname.startsWith('/api/')) await api(req, res, url);
+    if (url.pathname.startsWith('/api/')) await api(req, res, url, caller);
     else await serveStatic(res, url.pathname);
   } catch (err) {
-    const status = err instanceof HttpError || err instanceof CoreError ? err.status : err instanceof GitError ? 400 : err instanceof FsError ? err.status : 500;
+    const status = err instanceof HttpError || err instanceof CoreError || err instanceof AuthError || err instanceof FsError ? err.status : err instanceof GitError ? 400 : 500;
     if (status === 500) console.error(err);
     // A failure mid-stream (e.g. a download) can't be turned into a JSON error any more.
     if (res.headersSent) return res.destroy();
@@ -436,6 +533,11 @@ function upgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
     socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
     return socket.destroy();
   }
+  const caller = auth.identify(req);
+  if (!caller) {
+    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+    return socket.destroy();
+  }
   const [, host, windowId] = m;
   const peer = host && host !== hostname() ? peers.get(host) : null;
   if (host && host !== hostname() && !peer) {
@@ -443,6 +545,8 @@ function upgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
     return socket.destroy();
   }
   wss.handleUpgrade(req, socket, head, (ws) => {
+    // Revoking this device's session closes its terminals too.
+    ws.on('close', auth.track(caller, { close: () => ws.close(4401, 'signed out') }));
     if (peer) return proxyWs(peer, `/ws/${encodeURIComponent(windowId)}${url.search}`, ws);
     const cols = Number(url.searchParams.get('cols'));
     const rows = Number(url.searchParams.get('rows'));
@@ -458,6 +562,12 @@ const peers = new Peers(config.peers, PORT);
 core.peers = peers;
 await Promise.all([addTailscaleHosts(), t.cleanupViewers(), tailnet().then((t) => (ownerLogin = t.login))]);
 core.start();
+if (!auth.enabled) {
+  console.warn('⚠ auth is off ("auth": {"mode": "off"}): anyone who can reach this port gets a shell.');
+} else if (!auth.enrolled) {
+  const code = auth.issueCode('startup');
+  console.log(`\n  Set up your first device: open ah and enter this one-time code (valid 10 minutes):\n\n      ${code}\n\n  Need another later? Run \`node bin/ah.js auth code\` on this machine.\n`);
+}
 peers.start();
 const servers: ReturnType<typeof createServer>[] = [];
 function listen(host: string) {

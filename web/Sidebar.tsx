@@ -1,7 +1,7 @@
 import type { State, Win } from './api.ts';
 import { Icon } from './icons.tsx';
 
-export type Page = 'inbox' | 'history' | 'sessions';
+export type Page = 'inbox' | 'history' | 'sessions' | 'security';
 
 type Props = {
   state: State | null;
@@ -54,6 +54,11 @@ export function Sidebar({ state, error, page, selected, device, onPage, onSelect
         <Icon name="history" />
         <span className="grow">History</span>
         <span className="count">{state?.history.length ?? ''}</span>
+      </button>
+
+      <button className={`nav-item ${page === 'security' && !selected ? 'on' : ''}`} onClick={() => onPage('security')}>
+        <Icon name="shield" />
+        <span className="grow">Security</span>
       </button>
 
       <div className="side-scroll">

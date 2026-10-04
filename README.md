@@ -28,6 +28,9 @@ tailnet (one link); until then ah also listens on the Tailscale IP over plain HT
 After updating, **restart the server**: the page is served fresh from `dist/`, and a page
 newer than the running server shows a "restart ah" banner.
 
+**First sign-in:** the server prints a one-time setup code at startup. Open ah, enter
+it, and create a passkey. See [Security model](#security-model).
+
 Keep it running with the systemd user unit in [`contrib/ah.service`](contrib/ah.service).
 Development: `pnpm dev`. Tests: `pnpm test`.
 
@@ -83,19 +86,59 @@ ah send reviewer "review the diff" && ah wait reviewer && ah read reviewer
 
 ## Security model
 
-Opening ah is equivalent to having a shell as your user, so it leans on Tailscale rather
-than home-grown auth:
+Opening ah is equivalent to having a shell as your user, so it has two locks:
 
-- Binds to `127.0.0.1` (refuses `0.0.0.0`); reach it via `tailscale serve`. **Never Funnel.**
-- Requests arriving through Serve from a Tailscale user other than the machine's owner
-  are refused.
-- Host allowlist (DNS rebinding), Origin checks on WebSockets and writes, plus an `X-AH`
+**1. Network: Tailscale.** ah binds to `127.0.0.1` (it refuses `0.0.0.0`) and is reached
+through `tailscale serve`, never Funnel. Requests that arrive through Serve from a Tailscale
+user other than the machine's owner are refused. To shrink who can even reach the port,
+restrict it in your tailnet policy (admin console → Access controls), e.g.:
+
+```jsonc
+"grants": [
+  // Only your own (non-tagged) devices may reach ah's HTTPS port on this machine.
+  { "src": ["you@example.com"], "dst": ["omarchy"], "ip": ["443"] }
+]
+```
+
+**2. People: passkeys.** Every device must sign in before it can see or touch anything:
+API, event stream, terminals, files. Nothing loads but the lock screen until then.
+
+- **Passkeys** (Face ID, Touch ID, Windows Hello, security keys): phishing-resistant, and
+  nothing secret is stored on the server. iCloud/Google-synced passkeys work across your
+  devices without re-enrolling.
+- **New devices** need a one-time setup code that only the host can produce. It's printed
+  when the server starts with nobody enrolled, or run `node bin/ah.js auth code` on the
+  host, or use Security → *Create setup code* on a signed-in device. Codes last 10 minutes
+  and work once. This also covers **recovery**: if you lose every passkey, get a code on the
+  host.
+- **Master password** (optional, scrypt): a fallback for browsers without passkeys (e.g.
+  plain http on the Tailscale IP, where WebAuthn can't run). Set it on the host only:
+  `node bin/ah.js auth password`.
+- **Sessions** are HttpOnly, `SameSite=Strict`, `__Host-` cookies on https. A device is
+  signed out after 24h unused and after 30 days regardless (`auth.idleHours`,
+  `auth.maxDays`). **Security** lists passkeys, signed-in devices (revoke one, or sign out
+  everywhere else), and recent activity. Revoking a device also closes its open terminals.
+- **Throttling:** 10 failed attempts in 5 minutes locks every sign-in path for a few
+  minutes.
+- **Machine access:** the local CLI authenticates with a token the server writes to
+  `~/.local/state/ah/local-token` (mode 0600). Other hosts get their own revocable tokens:
+  run `ah auth token <hub>` on the peer, then `ah peers trust <peer> <token>` on the hub.
+- `"auth": { "mode": "off" }` disables sign-in; the server says so loudly when it starts.
+
+Plus:
+- Host allowlist (DNS rebinding), Origin checks on WebSockets and writes, and an `X-AH`
   header that can't be sent cross-site without a CORS preflight ah never grants.
+- Strict CSP with no third-party origins (fonts are bundled), `nosniff`, no framing,
+  COOP/CORP same-origin, HSTS.
 - Sessions start only from configured presets; Approve/Deny re-checks that the session is
   still waiting before typing anything.
 - The file browser is confined to home and `/tmp` (symlinks resolved); every file response
-  is CSP-sandboxed with `nosniff`, so nothing served can run script on ah's origin.
-- Audit log of create/kill/resume/send/answer/upload on stdout.
+  is CSP-sandboxed, so nothing served can run script on ah's origin.
+- An audit log of sign-ins, failures, enrollments and session actions in
+  `~/.local/state/ah/audit.log`.
+
+What it can't protect against: anything already running as your user on the host can
+drive tmux directly, so treat ah's security as protecting *remote* access.
 
 ## Configuration
 
@@ -108,6 +151,7 @@ than home-grown auth:
   "defaultSession": "agents",
   "projectRoots": ["~/code"],
   "peers": "auto",
+  "auth": { "mode": "passkey", "idleHours": 24, "maxDays": 30 },
   "idleAfter": 4,
   "presets": [
     { "id": "shell", "name": "Shell", "command": "" },

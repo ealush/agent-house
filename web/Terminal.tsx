@@ -49,7 +49,7 @@ const THEME = {
   brightWhite: '#ffffff',
 };
 
-const FONT = "'JetBrainsMono Nerd Font', 'JetBrains Mono', 'SF Mono', Menlo, ui-monospace, monospace";
+const FONT = "'JetBrainsMono Nerd Font', 'JetBrains Mono Variable', 'SF Mono', Menlo, ui-monospace, monospace";
 
 export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ windowId, hidden, wsUrl, transformInput, onGone }, ref) {
   const host = useRef<HTMLDivElement>(null);
@@ -165,6 +165,11 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ wi
       sock.onclose = (e) => {
         if (ws.current === sock) ws.current = null;
         if (disposed) return;
+        if (e.code === 4401) {
+          // This device was signed out elsewhere: back to the lock screen.
+          window.dispatchEvent(new Event('ah:unauthorized'));
+          return;
+        }
         if (e.code === 4404) {
           setConn('gone');
           gone.current();

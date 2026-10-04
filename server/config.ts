@@ -39,7 +39,9 @@ export type Config = {
    * Other machines running ah. "auto" finds your own online tailnet machines that
    * answer on ah's port or via `tailscale serve`; or list them: [{ "name", "url" }].
    */
-  peers: Array<{ name: string; url: string }> | 'auto';
+  peers: Array<{ name: string; url: string; token?: string }> | 'auto';
+  /** App sign-in on top of Tailscale. See server/auth.ts. */
+  auth: { mode: 'passkey' | 'off'; idleHours: number; maxDays: number };
   presets: Preset[];
 };
 
@@ -91,6 +93,7 @@ export function loadConfig(): Config {
     idleAfter: 4,
     peers: 'auto',
     ...user,
+    auth: { mode: 'passkey', idleHours: 24, maxDays: 30, ...user.auth },
     presets: user.presets ?? DEFAULT_PRESETS,
   };
 }

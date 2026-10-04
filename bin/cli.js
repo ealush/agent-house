@@ -2,9 +2,20 @@
 // agents to drive other agents (F37):  ah send reviewer "check this diff" && ah wait reviewer && ah read reviewer
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { loadConfig } from '../server/config.ts';
+
+const STATE = join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah');
+/** Written 0600 by the running server; proves we're on the host as its user. */
+function localToken() {
+  try {
+    return readFileSync(join(STATE, 'local-token'), 'utf8').trim();
+  } catch {
+    return '';
+  }
+}
 
 const config = loadConfig();
 const PORT = Number(process.env.AH_PORT ?? config.port);
@@ -23,6 +34,11 @@ export const HELP = `usage: ah <command>
   resume <target>                             bring an ended/saved conversation back
   queue <target> [--clear]                    show or drop queued messages
   hooks install|uninstall|status              wire Claude Code / Codex status hooks
+  auth code                                   one-time code to set up a new device (10 min)
+  auth password [--remove]                    set the optional master password
+  auth token <name>                           token for another host to proxy this one
+  auth status                                 passkeys, signed-in devices, recent activity
+  peers trust <peer> <token>                  use a token issued by <peer> (on the hub)
 
 <target> is a session id, a window id (@12), a name, or the start of a history title.`;
 
@@ -31,7 +47,10 @@ async function call(method, path, body) {
   try {
     res = await fetch(BASE + path, {
       method,
-      headers: method === 'GET' ? {} : { 'content-type': 'application/json', 'x-ah': '1', origin: BASE },
+      headers: {
+        authorization: `Bearer ${localToken()}`,
+        ...(method === 'GET' ? {} : { 'content-type': 'application/json', 'x-ah': '1', origin: BASE }),
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
@@ -187,6 +206,51 @@ export async function run(cmd, args) {
       for (const item of q) console.log(`${item.id}  ${item.text.split('\n')[0]}`);
       return;
     }
+    case 'auth': {
+      const sub = args.shift();
+      if (sub === 'code') {
+        const { code, ttlMinutes } = await call('POST', '/api/auth/code');
+        return console.log(`\n  ${code}\n\n  Enter it on the new device within ${ttlMinutes} minutes. It works once.\n`);
+      }
+      if (sub === 'password') {
+        if (flag(args, '--remove')) {
+          await call('POST', '/api/auth/password', { password: null });
+          return console.log('master password removed');
+        }
+        const a = await secret('New master password (12+ chars): ');
+        const b = await secret('Again: ');
+        if (a !== b) fail("passwords don't match");
+        await call('POST', '/api/auth/password', { password: a });
+        return console.log('master password set');
+      }
+      if (sub === 'token') {
+        const name = args[0] || fail('usage: ah auth token <name-of-the-host-that-will-use-it>');
+        const { token } = await call('POST', '/api/auth/tokens', { name });
+        return console.log(`\n  ${token}\n\n  On ${name}, run:  node bin/ah.js peers trust ${hostnameGuess()} ${token}\n  Shown once; revoke it from Security in the app.\n`);
+      }
+      if (sub === 'status' || !sub) {
+        const o = await call('GET', '/api/auth/overview');
+        console.log(`passkeys (${o.passkeys.length}):`);
+        for (const p of o.passkeys) console.log(`  ${p.label}  ${p.rpID}  last used ${new Date(p.lastUsedAt).toLocaleString()}`);
+        console.log(`signed-in devices (${o.sessions.length}), idle timeout ${o.idleHours}h, max ${o.maxDays}d:`);
+        for (const s of o.sessions) console.log(`  ${s.id}  ${s.label}  via ${s.via}  seen ${new Date(s.lastSeenAt).toLocaleString()}`);
+        console.log(`master password: ${o.password ? 'set' : 'not set'}; host tokens: ${o.tokens.map((t) => t.name).join(', ') || 'none'}`);
+        return;
+      }
+      fail('usage: ah auth code | password [--remove] | token <name> | status');
+    }
+    case 'peers': {
+      if (args[0] !== 'trust' || !args[1] || !args[2]) fail('usage: ah peers trust <peer> <token>');
+      const file = join(STATE, 'peer-tokens.json');
+      let tokens = {};
+      try {
+        tokens = JSON.parse(readFileSync(file, 'utf8'));
+      } catch {}
+      tokens[args[1]] = args[2];
+      mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+      writeFileSync(file, JSON.stringify(tokens, null, 2), { mode: 0o600 });
+      return console.log(`trusting ${args[1]}; it will show up within 30s`);
+    }
     default:
       console.log(HELP);
       process.exit(cmd === 'help' || cmd === '--help' || cmd === '-h' ? 0 : 1);
@@ -209,4 +273,45 @@ function attach(w) {
     { stdio: 'inherit', env },
   );
   process.exit(r.status ?? 0);
+}
+
+function hostnameGuess() {
+  return process.env.HOSTNAME || spawnSync('hostname', { encoding: 'utf8' }).stdout.trim() || 'this-host';
+}
+
+let pipedLines = null;
+
+/** Reads a line from the terminal without echoing it. */
+function secret(prompt) {
+  return new Promise((resolve) => {
+    process.stdout.write(prompt);
+    const stdin = process.stdin;
+    if (!stdin.isTTY) {
+      // Piped (e.g. scripts/tests): one line per prompt.
+      pipedLines ??= readFileSync(0, 'utf8').split('\n');
+      process.stdout.write('\n');
+      resolve(pipedLines.shift() ?? '');
+      return;
+    }
+    let value = '';
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding('utf8');
+    const onData = (ch) => {
+      if (ch === '\r' || ch === '\n') {
+        stdin.setRawMode(false);
+        stdin.pause();
+        stdin.off('data', onData);
+        process.stdout.write('\n');
+        resolve(value);
+      } else if (ch === '\u0003') {
+        process.exit(130);
+      } else if (ch === '\u007f') {
+        value = value.slice(0, -1);
+      } else {
+        value += ch;
+      }
+    };
+    stdin.on('data', onData);
+  });
 }

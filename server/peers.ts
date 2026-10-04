@@ -6,11 +6,28 @@ import { promisify } from 'node:util';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
 import { WebSocket, type RawData } from 'ws';
+import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+
+/**
+ * Tokens other hosts issued to us (`ah auth token <name>` on the peer, then
+ * `ah peers trust <peer> <token>` here). Peers stay locked to everyone else.
+ */
+export const PEER_TOKENS_FILE = join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah', 'peer-tokens.json');
+
+function peerTokens(): Record<string, string> {
+  try {
+    return existsSync(PEER_TOKENS_FILE) ? JSON.parse(readFileSync(PEER_TOKENS_FILE, 'utf8')) : {};
+  } catch {
+    return {};
+  }
+}
 
 const exec = promisify(execFile);
 
-export type PeerConfig = { name: string; url: string };
-export type Peer = { name: string; url: string; online: boolean; checkedAt: number };
+export type PeerConfig = { name: string; url: string; token?: string };
+export type Peer = { name: string; url: string; online: boolean; checkedAt: number; token?: string };
 
 const PROBE_MS = 30_000;
 const TIMEOUT_MS = 2000;
@@ -77,12 +94,13 @@ export class Peers {
     } else {
       candidates = this.configured.map((c) => [c]);
     }
+    const tokens = peerTokens();
     const seen = new Set<string>();
     await Promise.all(
       candidates.map(async (urls) => {
         for (const c of urls) {
           if (await hello(c.url)) {
-            this.peers.set(c.name, { name: c.name, url: c.url, online: true, checkedAt: Date.now() });
+            this.peers.set(c.name, { name: c.name, url: c.url, online: true, checkedAt: Date.now(), token: c.token ?? tokens[c.name] });
             seen.add(c.name);
             return;
           }
@@ -102,6 +120,8 @@ const FORWARD_RES = ['content-type', 'content-disposition', 'content-length', 'c
 export async function proxyHttp(peer: Peer, path: string, req: IncomingMessage, res: ServerResponse) {
   const target = new URL(path, peer.url);
   const headers: Record<string, string> = { origin: new URL(peer.url).origin };
+  // The browser's own session is ours; the peer only trusts the token it issued us.
+  if (peer.token) headers.authorization = `Bearer ${peer.token}`;
   for (const h of FORWARD_REQ) if (typeof req.headers[h] === 'string') headers[h] = req.headers[h] as string;
   const hasBody = req.method !== 'GET' && req.method !== 'HEAD';
   // Abort upstream only if our client goes away before the response is done
@@ -132,7 +152,7 @@ export async function proxyHttp(peer: Peer, path: string, req: IncomingMessage, 
 export function proxyWs(peer: Peer, path: string, client: WebSocket) {
   const url = new URL(path, peer.url);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-  const upstream = new WebSocket(url, { headers: { origin: new URL(peer.url).origin } });
+  const upstream = new WebSocket(url, { headers: { origin: new URL(peer.url).origin, ...(peer.token ? { authorization: `Bearer ${peer.token}` } : {}) } });
   const pending: Array<[RawData, boolean]> = [];
   client.on('message', (data, binary) => (upstream.readyState === WebSocket.OPEN ? upstream.send(data, { binary }) : pending.push([data, binary])));
   upstream.on('open', () => {

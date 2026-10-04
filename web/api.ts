@@ -91,6 +91,12 @@ export type WorktreeInfo = {
 
 export type SendResult = { outcome: 'delivered' | 'queued'; windowId: string; resumed: boolean; queued: number };
 
+/** Called whenever the server says we're not signed in (expired, revoked, locked). */
+let onUnauthorized: () => void = () => {};
+export function setUnauthorizedHandler(fn: () => void) {
+  onUnauthorized = fn;
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
     method,
@@ -98,6 +104,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const text = await res.text();
+  if (res.status === 401) onUnauthorized();
   if (!res.ok) {
     let msg = text;
     try {
