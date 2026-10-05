@@ -4,6 +4,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ToolResult } from '../../server/feed/schema.ts';
 import type { SurfaceHandle, SurfaceProps } from '../surface.ts';
+import { showError } from '../ask.tsx';
 import { look } from '../agents.ts';
 import { AgentLogo } from '../logos.tsx';
 import { useFeed } from './useFeed.ts';
@@ -59,13 +60,13 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
 
   // Typing into the agent's input goes through the same path as the terminal.
   useImperativeHandle(ref, () => ({
-    insert: (text) => void client.send(w.uid, text, false).catch((e) => alert((e as Error).message)),
+    insert: (text) => void client.send(w.uid, text, false).catch((e) => showError(e, "Couldn't send")),
     focus: onReply,
   }));
 
   const actions = useMemo<GuiActions>(
     () => ({
-      reply: (text) => void client.send(w.uid, text, true).catch((e) => alert((e as Error).message)),
+      reply: (text) => void client.send(w.uid, text, true).catch((e) => showError(e, "Couldn't send")),
       fileUrl: (path) => client.fs.url(path),
       resolvePath: (p) => (p.startsWith('/') || p.startsWith('~') ? p : `${w.cwd.replace(/\/$/, '')}/${p.replace(/^\.\//, '')}`),
     }),

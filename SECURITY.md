@@ -67,8 +67,9 @@ All under `~/.local/state/ah/` (mode 0700 directory, 0600 files):
 | `local-token` | the host CLI's bearer token (regenerated each start) |
 | `peer-tokens.json` | tokens other hosts issued to this one |
 | `prompts.json` | recently sent prompts — may contain anything you pasted. `promptHistory: 0` keeps none; Security → Clear prompt history |
-| `audit.log` | sign-ins, failures, enrollments, and session actions (create, send, approve, kill, upload) |
+| `audit.log` | sign-ins, failures, enrollments, and session actions (create, send, approve, kill, upload, subscription save/remove) |
 | `sessions.json` | session registry (titles, directories, conversation ids, queued messages) |
+| `sidechat.json` | chat API keys and side-chat history — keys are never returned by the API |
 | `push.json`, `vapid.json` | Web Push subscriptions and keys |
 
 Uploads go to `~/.cache/ah/uploads/` (0600).

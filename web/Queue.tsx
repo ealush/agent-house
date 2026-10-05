@@ -50,19 +50,21 @@ export function QueueDialog({ client, uid, onClose, onChange }: {
         <h2>Queued messages</h2>
         <button className="btn ghost small" onClick={onClose}>Close</button>
       </div>
-      <p className="hint">Sent in order when the agent is free. Messages already sent cannot be cancelled.</p>
-      {error && <p role="alert">{error}</p>}
-      {items === null && !error && <p className="hint">Loading…</p>}
-      {items?.length === 0 && <p className="hint">No queued messages.</p>}
-      <ol className="queue-items">
-        {items?.map((item) => (
-          <li key={item.id}>
-            <pre>{item.text}</pre>
-            <button className="btn small" disabled={busy} onClick={() => remove(item.id)}>Cancel message</button>
-          </li>
-        ))}
-      </ol>
-      {!!items?.length && <button className="btn ghost small danger" disabled={busy} onClick={() => remove()}>Cancel all queued messages</button>}
+      <div className="queue-body">
+        <p className="hint">Sent in order when the agent is free. Messages already sent cannot be cancelled.</p>
+        {error && <p role="alert">{error}</p>}
+        {items === null && !error && <p className="hint">Loading…</p>}
+        {items?.length === 0 && <p className="hint">No queued messages.</p>}
+        <ol className="queue-items">
+          {items?.map((item) => (
+            <li key={item.id}>
+              <pre>{item.text}</pre>
+              <button className="btn small" disabled={busy} onClick={() => remove(item.id)}>Cancel message</button>
+            </li>
+          ))}
+        </ol>
+        {!!items?.length && <button className="btn ghost small danger queue-clear-all" disabled={busy} onClick={() => remove()}>Cancel all queued messages</button>}
+      </div>
     </dialog>
   );
 }

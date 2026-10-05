@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { showError, showNotice } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { shellQuote, type HostApi, type SendResult, type Win } from './api.ts';
 import { clipboardFiles } from './clipboard.ts';
@@ -81,7 +82,7 @@ export function ComposerBar({ client, target, agent, w, onSent, onNotice = toast
       setText('');
       onSent(result);
     } catch (e) {
-      alert((e as Error).message);
+      showError(e, "Couldn't send");
     } finally {
       setBusy(false);
     }
@@ -92,7 +93,7 @@ export function ComposerBar({ client, target, agent, w, onSent, onNotice = toast
       await client.interrupt(target);
       onNotice('Interrupted');
     } catch (e) {
-      alert((e as Error).message);
+      showError(e, "Couldn't interrupt");
     }
   }
 
@@ -112,7 +113,7 @@ export function ComposerBar({ client, target, agent, w, onSent, onNotice = toast
       setText((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}${paths.map(shellQuote).join(' ')} `);
       area.current?.focus();
     } catch (e) {
-      alert((e as Error).message);
+      showError(e, "Couldn't attach that file");
     } finally {
       setBusy(false);
     }
@@ -134,7 +135,7 @@ export function ComposerBar({ client, target, agent, w, onSent, onNotice = toast
     r.onend = () => setListening(false);
     r.onerror = (e: any) => {
       setListening(false);
-      if (e?.error === 'not-allowed') alert('Microphone access is blocked for this site.');
+      if (e?.error === 'not-allowed') showNotice('Microphone blocked', 'Allow microphone access for this site, then try again.');
     };
     recognition.current = r;
     r.start();
@@ -157,7 +158,7 @@ export function ComposerBar({ client, target, agent, w, onSent, onNotice = toast
       const r = await client.openSettings(w.uid, setting);
       if (r.outcome === 'delivered') { onSent(r); onSettingsOpen?.(); }
       onNotice(r.outcome === 'queued' ? 'Settings will open in the terminal when the agent is free' : 'Choose the setting in the terminal');
-    } catch (e) { alert((e as Error).message); }
+    } catch (e) { showError(e, "Couldn't open settings"); }
   }
 
   async function pickLive(change: { model?: string; effort?: string }, close: () => void) {
@@ -170,7 +171,7 @@ export function ComposerBar({ client, target, agent, w, onSent, onNotice = toast
       const what = switching.model ? (models.find((m) => m.id === switching.model)?.name ?? switching.model) : `${switching.effort} effort`;
       onNotice(r.outcome === 'queued' ? `Switching to ${what} when the agent is free` : `Requested ${what}; check the terminal for confirmation`);
     } catch (e) {
-      alert((e as Error).message);
+      showError(e, "Couldn't switch");
     }
   }
 

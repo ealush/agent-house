@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import type { State, Win } from './api.ts';
+import { askConfirm } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
 
-export type Page = 'inbox' | 'history' | 'sessions' | 'security';
+export type Page = 'inbox' | 'history' | 'sessions' | 'settings';
 
 type Props = {
   state: State | null;
@@ -15,9 +16,9 @@ type Props = {
   onPage: (p: Page) => void;
   onSelect: (key: string) => void;
   onSearch: () => void;
-  onNew: () => void;
+  /** Open the new-session dialog. A project passes its directory and machine. */
+  onNew: (where?: { cwd: string; host: string }) => void;
   onWorktrees: () => void;
-  onNotify: (() => void) | null;
   /** Persist a sparse order key (F43). */
   onReorder: (uid: string, host: string, order: number) => void;
   /** Terminate the live session (F44). */
@@ -49,17 +50,19 @@ export function orderBetween(before: number | null, after: number | null): numbe
 }
 
 /** Terminate means killing the tmux window, not forgetting history (F44). */
-export function terminatePrompt(w: Win): string {
+export function confirmTerminate(w: Win) {
   const hot = w.status === 'busy' || w.status === 'waiting' || w.queued > 0;
-  if (hot) {
-    const why = w.status === 'waiting' ? 'is waiting for your input' : w.status === 'busy' ? 'is currently working' : `has ${w.queued} queued message${w.queued === 1 ? '' : 's'}`;
-    return `Terminate "${w.title}"?\n\nIt ${why}.\nThe running process will be stopped.`;
-  }
-  return `Terminate "${w.title}"? The session will be stopped.`;
+  const why = w.status === 'waiting' ? 'is waiting for your input' : w.status === 'busy' ? 'is currently working' : `has ${w.queued} queued message${w.queued === 1 ? '' : 's'}`;
+  return askConfirm({
+    title: `Terminate "${w.title}"?`,
+    body: hot ? `It ${why}. The running process will be stopped.` : 'The session will be stopped.',
+    confirm: 'Terminate',
+    danger: true,
+  });
 }
 
 /** Desktop navigation: inbox, hosts, and every live session grouped by host (or project). */
-export function Sidebar({ state, error, page, selected, device, onPage, onSelect, onSearch, onNew, onWorktrees, onNotify, onReorder, onKill, onDragSession, onCollapse }: Props) {
+export function Sidebar({ state, error, page, selected, device, onPage, onSelect, onSearch, onNew, onWorktrees, onReorder, onKill, onDragSession, onCollapse }: Props) {
   const windows = state?.windows ?? [];
   const waiting = windows.filter((w) => w.status === 'waiting').length;
   const multiHost = (state?.hosts.length ?? 0) > 1;
@@ -138,7 +141,9 @@ export function Sidebar({ state, error, page, selected, device, onPage, onSelect
           aria-label={`Terminate ${w.title}`}
           onClick={(e) => {
             e.stopPropagation();
-            if (confirm(terminatePrompt(w))) onKill(w);
+            void confirmTerminate(w).then((ok) => {
+              if (ok) onKill(w);
+            });
           }}
         >
           <Icon name="trash" size={14} />
@@ -160,7 +165,9 @@ export function Sidebar({ state, error, page, selected, device, onPage, onSelect
               className="danger"
               onClick={() => {
                 setMenuKey(null);
-                if (confirm(terminatePrompt(w))) onKill(w);
+                void confirmTerminate(w).then((ok) => {
+                  if (ok) onKill(w);
+                });
               }}
             >
               Terminate session
@@ -201,9 +208,9 @@ export function Sidebar({ state, error, page, selected, device, onPage, onSelect
         <span className="count">{state?.history.length ?? ''}</span>
       </button>
 
-      <button className={`nav-item ${page === 'security' && !selected ? 'on' : ''}`} onClick={() => onPage('security')}>
-        <Icon name="shield" />
-        <span className="grow">Security</span>
+      <button className={`nav-item ${page === 'settings' && !selected ? 'on' : ''}`} onClick={() => onPage('settings')}>
+        <Icon name="gear" />
+        <span className="grow">Settings</span>
       </button>
 
       <div className="side-scroll">
@@ -227,6 +234,20 @@ export function Sidebar({ state, error, page, selected, device, onPage, onSelect
             <div className={`side-label ${multiHost ? 'host' : ''}`}>
               {multiHost && <span className="dot online" />}
               <span className="grow">{group}</span>
+              {!multiHost && (
+                <button
+                  type="button"
+                  className="label-add"
+                  title={`New session in ${group}`}
+                  aria-label={`New session in ${group}`}
+                  onClick={() => {
+                    const home = ws.find((w) => !w.worktree) ?? ws[0];
+                    onNew({ cwd: home.projectPath, host: home.host });
+                  }}
+                >
+                  <Icon name="plus" size={12} />
+                </button>
+              )}
             </div>
             {ws.map((w) => row(w, ws))}
           </section>
@@ -234,18 +255,13 @@ export function Sidebar({ state, error, page, selected, device, onPage, onSelect
       </div>
 
       <footer className="side-foot">
-        <button className="btn block" onClick={onNew}>
+        <button className="btn block" onClick={() => onNew()}>
           New session
         </button>
         <div className="row-btns">
           <button className="btn ghost small" onClick={onWorktrees}>
             <Icon name="branch" size={14} /> Worktrees
           </button>
-          {onNotify && (
-            <button className="btn ghost small" onClick={onNotify}>
-              <Icon name="bell" size={14} /> Notifications
-            </button>
-          )}
         </div>
       </footer>
     </nav>

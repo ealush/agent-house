@@ -1,5 +1,6 @@
-// CSS 100dvh owns the normal app height. Only override it for a software
-// keyboard: a smaller visual viewport can also be browser chrome or pinch zoom.
+// The app shell is pinned to the layout viewport. Only override its height for
+// a software keyboard: a smaller visual viewport can also be browser chrome or
+// pinch zoom. Dialogs and the lock screen still use --vh (CSS 100dvh).
 // https://developer.mozilla.org/en-US/docs/Web/API/VisualViewport
 export function keyboardViewportHeight(layoutHeight: number, visualHeight: number, scale: number, editing: boolean): number | null {
   if (!editing || !Number.isFinite(visualHeight) || visualHeight <= 0 || Math.abs(scale - 1) > 0.05) return null;
@@ -30,6 +31,7 @@ export function trackViewport(win: Window, doc: Document): () => void {
     const height = keyboardViewportHeight(root.clientHeight, viewport.height, viewport.scale, editing);
     if (height === null) {
       root.style.removeProperty('--vh');
+      root.style.removeProperty('--keyboard-vh');
       if (guard !== undefined) {
         if (hasTimers) win.clearInterval(guard as number);
         else clearInterval(guard as NodeJS.Timeout);
@@ -37,6 +39,7 @@ export function trackViewport(win: Window, doc: Document): () => void {
       }
     } else {
       root.style.setProperty('--vh', `${height}px`);
+      root.style.setProperty('--keyboard-vh', `${height}px`);
       if (guard === undefined) {
         guard = hasTimers ? win.setInterval(update, 500) : setInterval(update, 500);
         // Never hold a test runner (or a background tab) open for debug timing.
@@ -70,6 +73,7 @@ export function trackViewport(win: Window, doc: Document): () => void {
     doc.removeEventListener('focusout', schedule);
     badge?.remove();
     root.style.removeProperty('--vh');
+    root.style.removeProperty('--keyboard-vh');
   };
 }
 
@@ -97,7 +101,7 @@ function mountVhBadge(win: Window, doc: Document): { refresh: (editing: boolean)
     const inline = doc.documentElement.style.getPropertyValue?.('--vh') || '(css 100dvh)';
     const focus = doc.activeElement as HTMLElement | null;
     el.textContent =
-      `vv ${Math.round(win.visualViewport?.height ?? -1)} · lay ${doc.documentElement.clientHeight} · dvh ${probe.clientHeight} · --vh ${inline}\n` +
+      `vv ${Math.round(win.visualViewport?.height ?? -1)} · lay ${doc.documentElement.clientHeight} · scr ${win.screen?.height ?? -1} · dvh ${probe.clientHeight} · --vh ${inline}\n` +
       `edit ${editing ? 1 : 0} · focus ${focus?.tagName ?? 'none'} · pwa ${standalone ? 1 : 0}`;
   };
   const hasTimers = typeof win.setInterval === 'function' && typeof win.clearInterval === 'function';

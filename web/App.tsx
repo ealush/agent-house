@@ -11,10 +11,10 @@ import { nodeAt, paneLeaves, parseLayout, replaceLeaf, splitLeaf, type LayoutNod
 import { NewDialog } from './NewDialog.tsx';
 import { Switcher } from './Switcher.tsx';
 import { WorktreesDialog } from './Git.tsx';
-import { NotifyDialog } from './NotifyDialog.tsx';
 import { pushStatus, pushSupport, registerWorker } from './notify.ts';
 import { API_VERSION } from './api.ts';
-import { Security } from './Security.tsx';
+import { Settings } from './Settings.tsx';
+import { showError } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { trackViewport } from './viewport.ts';
 
@@ -49,19 +49,22 @@ function stored<T extends string>(key: string, fallback: T): [T, (v: T) => void]
 }
 
 // URL hash: "#@12" (local session), "#<host>/@12" (peer session), "#history", "#sessions".
+// "#security" still lands on settings, where Security lives now.
 function fromHash(): { page: Page; selected: string | null } {
   let h = '';
   try { h = decodeURIComponent(location.hash.slice(1)); } catch {}
   if (h.includes('@')) return { page: 'inbox', selected: h };
-  return { page: h === 'history' || h === 'sessions' || h === 'security' ? h : 'inbox', selected: null };
+  if (h === 'security') h = 'settings';
+  if (h.startsWith('settings/')) h = 'settings';
+  return { page: h === 'history' || h === 'sessions' || h === 'settings' ? h : 'inbox', selected: null };
 }
 
 export function App({ onLock }: { onLock: () => void }) {
   const [{ page, selected }, setRoute] = useState(fromHash);
   const [inboxGroup, setInboxGroup] = stored<InboxGroup>('ah.inboxGroup', 'status');
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState<{ cwd?: string; host?: string } | null>(null);
   const [switching, setSwitching] = useState(false);
-  const [dialog, setDialog] = useState<'worktrees' | 'notify' | null>(null);
+  const [dialog, setDialog] = useState<'worktrees' | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [replyKey, setReplyKey] = useState(0);
   const narrow = useMedia('(max-width: 760px)');
@@ -181,6 +184,7 @@ export function App({ onLock }: { onLock: () => void }) {
   // ⌘K / Ctrl+Shift+K opens the switcher. Captured before xterm so the shell never sees it.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (document.querySelector('dialog.ask[open]')) return;
       if (e.key.toLowerCase() === 'k' && ((e.metaKey && !e.ctrlKey) || (e.ctrlKey && e.shiftKey))) {
         e.preventDefault();
         e.stopPropagation();
@@ -219,7 +223,7 @@ export function App({ onLock }: { onLock: () => void }) {
       open(keyFor(host, out.id));
       if (out.resumed) flash('Resuming…');
     } catch (e) {
-      alert((e as Error).message);
+      showError(e, "Couldn't resume");
     }
   }
 
@@ -237,20 +241,15 @@ export function App({ onLock }: { onLock: () => void }) {
       await refresh(host);
       open(keyFor(host, out.id));
     } catch (e) {
-      alert((e as Error).message);
+      showError(e, "Couldn't open a shell");
     }
-  }
-
-  async function enableNotify() {
-    if (pushSupport() === 'ok') setDialog('notify');
-    else if ('Notification' in window) await Notification.requestPermission();
   }
 
   const waiting = state?.windows.filter((w) => w.status === 'waiting').length ?? 0;
   const forget = async (h: HistoryItem) => {
     await clientFor(h.host)
       .forget(h.ref)
-      .catch((e) => alert(e.message));
+      .catch((e) => showError(e, "Couldn't remove it from history"));
     refresh(h.host);
   };
 
@@ -281,9 +280,8 @@ export function App({ onLock }: { onLock: () => void }) {
           }}
           onSelect={open}
           onSearch={() => setSwitching(true)}
-          onNew={() => setCreating(true)}
+          onNew={(where) => setCreating(where ?? {})}
           onWorktrees={() => setDialog('worktrees')}
-          onNotify={'Notification' in window ? enableNotify : null}
           onReorder={(uid, host, order) => {
             clientFor(host)
               .order(uid, order)
@@ -294,7 +292,7 @@ export function App({ onLock }: { onLock: () => void }) {
             clientFor(w.host)
               .kill(w.id)
               .then(() => refresh(w.host))
-              .catch((e) => alert((e as Error).message));
+              .catch((e) => showError(e, "Couldn't terminate"));
           }}
         />
       ) : (
@@ -355,12 +353,12 @@ export function App({ onLock }: { onLock: () => void }) {
           />
         ) : state ? (
           <>
-            {page === 'security' ? (
-              <Security onLocked={onLock} />
+            {page === 'settings' ? (
+              <Settings onLocked={onLock} onNotifyChange={(on) => (pushActive.current = on)} />
             ) : page === 'history' ? (
               <HistoryView state={state} onResume={(h) => resume(h.host, h.ref)} onForget={forget} />
             ) : page === 'sessions' && narrow ? (
-              <SessionsView state={state} onOpen={(w) => open(w.key)} onNew={() => setCreating(true)} />
+              <SessionsView state={state} onOpen={(w) => open(w.key)} onNew={() => setCreating({})} />
             ) : (
               <Inbox
                 state={state}
@@ -372,9 +370,9 @@ export function App({ onLock }: { onLock: () => void }) {
                   if (reply) setReplyKey((n) => n + 1);
                 }}
                 onAnswer={answer}
-                onNew={() => setCreating(true)}
+                onNew={() => setCreating({})}
                 onSearch={() => setSwitching(true)}
-                onSecurity={() => go({ page: 'security', selected: null })}
+                onSettings={() => go({ page: 'settings', selected: null })}
               />
             )}
             {narrow && (
@@ -398,13 +396,13 @@ export function App({ onLock }: { onLock: () => void }) {
       {creating && state && (
         <NewDialog
           hosts={state.hosts.filter((h) => h.online).map((h) => h.name)}
-          initialHost={current?.host ?? state.hostname}
+          initialHost={creating.host ?? current?.host ?? state.hostname}
           hostState={hostState}
           clientFor={clientFor}
-          initialCwd={current?.projectPath ?? '~'}
-          onClose={() => setCreating(false)}
+          initialCwd={creating.cwd ?? current?.projectPath ?? '~'}
+          onClose={() => setCreating(null)}
           onCreated={async (host, id) => {
-            setCreating(false);
+            setCreating(null);
             await refresh(host);
             open(keyFor(host, id));
           }}
@@ -427,7 +425,6 @@ export function App({ onLock }: { onLock: () => void }) {
         />
       )}
 
-      {dialog === 'notify' && <NotifyDialog onClose={() => setDialog(null)} onChange={(on) => (pushActive.current = on)} />}
       {dialog === 'worktrees' && <WorktreesDialog client={clientFor(current?.host)} onClose={() => setDialog(null)} onShell={shellIn} />}
 
       {toast && (

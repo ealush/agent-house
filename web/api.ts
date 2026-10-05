@@ -82,9 +82,14 @@ export type Preset = {
 
 export type Host = { name: string; self: boolean; online: boolean };
 
-export const API_VERSION = 7;
+export const API_VERSION = 9;
 
 export type PullInfo = { number: number | null; url: string | null };
+
+export type Subscription = { id: string; name: string; baseUrl: string; model: string; hasKey: boolean; isDefault: boolean };
+export type ChatMsg = { role: 'user' | 'assistant'; text: string; at: number };
+export type Followup = { title: string; kind: 'session' | 'chat'; text: string };
+export type ChatReply = { message: ChatMsg; followups: Followup[] };
 
 export type State = {
   api?: number;
@@ -193,6 +198,15 @@ export function hostApi(base: string) {
     branches: (id: string) => r<BranchList>('GET', `/api/windows/${enc(id)}/branches`),
     switchBranch: (id: string, branch: string) => r<{ branch: string }>('POST', `/api/windows/${enc(id)}/branches`, { branch }),
     pull: (id: string) => r<PullInfo>('GET', `/api/windows/${enc(id)}/pull`),
+    subscriptions: () => r<Subscription[]>('GET', '/api/subscriptions'),
+    saveSubscription: (body: { id?: string; name: string; baseUrl: string; model: string; apiKey?: string }) =>
+      r<Subscription>('POST', '/api/subscriptions', body),
+    removeSubscription: (id: string) => r('DELETE', `/api/subscriptions/${enc(id)}`),
+    defaultSubscription: (id: string) => r('POST', '/api/subscriptions/default', { id }),
+    chat: (id: string) => r<{ messages: ChatMsg[]; subscriptionId: string | null }>('GET', `/api/windows/${enc(id)}/chat`),
+    sendChat: (id: string, text: string, subscriptionId?: string) =>
+      r<ChatReply>('POST', `/api/windows/${enc(id)}/chat`, subscriptionId ? { text, subscriptionId } : { text }),
+    clearChat: (id: string) => r('DELETE', `/api/windows/${enc(id)}/chat`),
     worktrees: () => r<WorktreeInfo[]>('GET', '/api/worktrees'),
     removeWorktree: (path: string, force: boolean) => r('DELETE', '/api/worktrees', { path, force }),
     prompts: () => r<Array<{ text: string; at: number }>>('GET', '/api/prompts'),

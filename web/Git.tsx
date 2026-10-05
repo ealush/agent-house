@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { BranchList, Changes, HostApi, PullInfo, WorktreeInfo } from './api.ts';
+import { askConfirm, showError } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { Popover } from './ModelPicker.tsx';
 
@@ -289,15 +290,20 @@ export function WorktreesDialog({ client, onClose, onShell }: { client: HostApi;
 
   async function remove(wt: WorktreeInfo) {
     const dirty = wt.dirty > 0;
-    const msg = dirty
-      ? `${wt.branch} has ${wt.dirty} uncommitted change${wt.dirty > 1 ? 's' : ''}. Delete them and remove the worktree?`
-      : `Remove worktree ${wt.branch}? The branch itself is kept.`;
-    if (!confirm(msg)) return;
+    const ok = await askConfirm({
+      title: `Remove ${wt.branch}?`,
+      body: dirty
+        ? `${wt.dirty} uncommitted change${wt.dirty === 1 ? '' : 's'} will be deleted. The branch itself is kept.`
+        : 'The worktree will be removed. The branch itself is kept.',
+      confirm: 'Remove',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await client.removeWorktree(wt.path, dirty);
       load();
     } catch (e) {
-      alert((e as Error).message);
+      showError(e, "Couldn't remove the worktree");
     }
   }
 

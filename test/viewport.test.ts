@@ -49,10 +49,12 @@ test('keyboard dismissal restores full height and pending resize work is cleaned
   assert.equal(callbacks.size, 1, 'events coalesce');
   flush();
   assert.equal(style.get('--vh'), '500px');
+  assert.equal(style.get('--keyboard-vh'), '500px', 'the app shell tracks the keyboard, not 100dvh');
   viewport.height = 808;
   viewport.dispatchEvent(new Event('scroll'));
   flush();
   assert.equal(style.has('--vh'), false, 'keyboard hide restores CSS even if textarea stays focused');
+  assert.equal(style.has('--keyboard-vh'), false);
   viewport.height = 500;
   viewport.dispatchEvent(new Event('resize'));
   flush();

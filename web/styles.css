@@ -88,8 +88,12 @@ code,
 /* ---------- layout */
 
 .app {
+  /* Pin to the layout viewport. A software keyboard sets --keyboard-vh; that
+     explicit height wins over bottom. */
+  position: fixed;
+  inset: 0;
   display: flex;
-  height: var(--vh);
+  height: var(--keyboard-vh, auto);
   overflow: hidden;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
 }
@@ -305,6 +309,32 @@ kbd {
 
 .side-label.host {
   font-family: var(--mono);
+}
+
+/* New session in this project. Sits on the right of the title, only while the row is hovered. */
+.label-add {
+  flex: none;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--faint);
+}
+
+.side-label:hover .label-add,
+.side-label:focus-within .label-add {
+  display: inline-flex;
+}
+
+.label-add:hover {
+  color: var(--text);
+  background: var(--raised);
 }
 
 .side-session {
@@ -864,6 +894,22 @@ a.pill:hover {
   min-height: 0;
 }
 
+/* Drag handle on the side panel's edge; the shared divider brings the look. */
+.panel-divider {
+  touch-action: none;
+}
+
+/* Slim rail left behind by a collapsed panel; the tab is remembered. */
+.panel-rail {
+  flex: none;
+  width: 30px;
+  border-left: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 8px;
+}
+
 .tabs {
   display: flex;
   align-items: center;
@@ -1102,12 +1148,13 @@ a.pill:hover {
 
 .tabbar {
   flex: none;
-  margin: 0 12px calc(10px + env(safe-area-inset-bottom));
+  margin: 0;
   display: flex;
   gap: 4px;
-  padding: 5px;
-  border-radius: 16px;
+  padding: 6px 6px 8px;
+  border-radius: 16px 16px 0 0;
   border: 1px solid var(--line-2);
+  border-bottom: 0;
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -1370,6 +1417,20 @@ a.btn {
 
 .dialog.wide {
   width: min(760px, calc(100vw - 24px));
+}
+
+/* Short confirm / alert / prompt. Same chrome, tighter than a form dialog. */
+.dialog.ask {
+  width: min(400px, calc(100vw - 24px));
+  overflow: auto;
+}
+
+.ask-body {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
 }
 
 .presets {
@@ -1998,6 +2059,270 @@ a.btn {
   background: var(--raised);
 }
 
+/* Settings embeds the Security page as a section. */
+.settings .page {
+  flex: none;
+  padding: 0;
+}
+
+.settings-body {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.settings-nav {
+  flex: none;
+  width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: sticky;
+  top: 0;
+}
+
+.settings-content {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 760px) {
+  .settings-body {
+    flex-direction: column;
+  }
+
+  .settings-nav {
+    width: 100%;
+    flex-direction: row;
+    overflow-x: auto;
+    position: static;
+  }
+
+  .settings-nav .nav-item {
+    width: auto;
+    white-space: nowrap;
+  }
+}
+
+/* ---------- side chat */
+
+.panel-body.sidechat {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidechat-context {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 0;
+}
+
+.sidechat .panel-msg {
+  padding: 8px 14px;
+}
+
+.sidechat-log {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 14px;
+}
+
+.sidechat-msg {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.sidechat-msg.user {
+  align-items: flex-end;
+}
+
+.sidechat-bubble {
+  max-width: 100%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.sidechat-msg.user .sidechat-bubble {
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-line);
+}
+
+.sidechat-msg.assistant .sidechat-bubble {
+  background: var(--raised);
+  border: 1px solid var(--line);
+}
+
+.sidechat-compose {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 14px 12px;
+  border-top: 1px solid var(--line);
+}
+
+.sidechat-compose select,
+.sidechat-compose textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--line-2);
+  background: var(--sunken);
+  font-size: 13px;
+}
+
+.sidechat-compose textarea {
+  min-height: 56px;
+  resize: vertical;
+}
+
+/* Per-message actions appear on hover; follow-ups ride under the answer. */
+.sidechat-msg .msg-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+}
+
+.sidechat-msg:hover .msg-actions,
+.sidechat-msg:focus-within .msg-actions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .sidechat-msg .msg-actions {
+    opacity: 1;
+  }
+}
+
+.sidechat-msg .suggestions {
+  margin-top: 2px;
+}
+
+/* Rendered markdown inside side-chat answers. */
+.sidechat-bubble .md {
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+  white-space: normal;
+}
+
+.sidechat-bubble .md > :first-child {
+  margin-top: 0;
+}
+
+.sidechat-bubble .md > :last-child {
+  margin-bottom: 0;
+}
+
+.sidechat-bubble .md p,
+.sidechat-bubble .md ul,
+.sidechat-bubble .md ol {
+  margin: 0.5em 0;
+}
+
+.sidechat-bubble .md ul,
+.sidechat-bubble .md ol {
+  padding-left: 1.4em;
+}
+
+.sidechat-bubble .md h1,
+.sidechat-bubble .md h2,
+.sidechat-bubble .md h3,
+.sidechat-bubble .md h4 {
+  margin: 0.9em 0 0.4em;
+  line-height: 1.3;
+}
+
+.sidechat-bubble .md h1 {
+  font-size: 1.3em;
+}
+
+.sidechat-bubble .md h2 {
+  font-size: 1.15em;
+}
+
+.sidechat-bubble .md h3,
+.sidechat-bubble .md h4 {
+  font-size: 1em;
+}
+
+.sidechat-bubble .md a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.sidechat-bubble .md a:hover {
+  text-decoration: underline;
+}
+
+.sidechat-bubble .md code {
+  font: 0.92em var(--mono);
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--raised);
+}
+
+.sidechat-bubble .md pre {
+  margin: 0.5em 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  font: 12.5px/1.55 var(--mono);
+  overflow-x: auto;
+  white-space: pre;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.sidechat-bubble .md pre code {
+  padding: 0;
+  background: none;
+  font-size: inherit;
+}
+
+.sidechat-bubble .md blockquote {
+  margin: 0.5em 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--line-2);
+  color: var(--muted);
+}
+
+.sidechat-bubble .md-table {
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+
+.sidechat-bubble table {
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 50%;
+}
+
+.sidechat-bubble th,
+.sidechat-bubble td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.sidechat-bubble th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
 .big-code {
   font: 600 30px var(--mono);
   letter-spacing: 0.1em;
@@ -2365,6 +2690,22 @@ a.btn {
   width: min(560px, calc(100vw - 24px));
 }
 
+.queue-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px 16px;
+}
+
+.queue-body > p,
+.queue-body > ol {
+  margin: 0;
+}
+
+.queue-body .queue-clear-all {
+  align-self: flex-start;
+}
+
 .queue-items {
   padding: 0;
   list-style-position: inside;
@@ -2373,6 +2714,11 @@ a.btn {
 .queue-items li {
   padding: 14px 0;
   border-top: 1px solid var(--line);
+}
+
+.queue-items li:first-child {
+  padding-top: 4px;
+  border-top: 0;
 }
 
 .queue-items pre {
@@ -2425,9 +2771,13 @@ a.btn {
   border-color: var(--danger);
 }
 
+/* Docked to the layout-viewport edge. iOS home-screen leaves a strip below
+   that viewport; padding it into the bar only makes the bar taller. */
 .narrow .composer {
-  margin: 8px 8px calc(8px + env(safe-area-inset-bottom));
-  border-radius: 20px;
+  margin: 8px 0 0;
+  border-width: 1px 0 0;
+  border-radius: 20px 20px 0 0;
+  padding: 12px 12px 8px 14px;
 }
 
 .composer-input {
@@ -2896,6 +3246,10 @@ button.tool-chip:hover {
   background: var(--danger);
   border-color: var(--danger);
   color: #1b0608;
+}
+
+.btn.danger-solid:hover {
+  filter: brightness(1.06);
 }
 
 .narrow .launch-row {

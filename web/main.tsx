@@ -1,6 +1,7 @@
 import { Component, useEffect, useState, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App.tsx';
+import { AskHost } from './ask.tsx';
 import { Lock } from './Lock.tsx';
 import { authApi, type AuthStatus } from './auth.ts';
 import { setUnauthorizedHandler } from './api.ts';
@@ -59,6 +60,7 @@ function Gate() {
 
 createRoot(document.getElementById('root')!).render(
   <Boundary>
+    <AskHost />
     <Gate />
   </Boundary>,
 );

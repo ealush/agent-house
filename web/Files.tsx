@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { shellQuote, type FsEntry, type FsListing, type HostApi } from './api.ts';
+import { askText } from './ask.tsx';
 
 // File explorer + transfer. Browse the host from the session's folder, pull files
 // down to this device, push files up into any folder, and hand a path to the
@@ -91,8 +92,9 @@ export function FilesPanel({ fs, start, cwd, agent, onInsert }: Props) {
   }
 
   async function newFolder() {
-    const name = prompt('New folder name')?.trim();
-    if (!name || !listing) return;
+    if (!listing) return;
+    const name = await askText({ title: 'New folder', label: 'Name', placeholder: 'notes', confirm: 'Create' });
+    if (!name) return;
     await fs.mkdir(`${listing.path}/${name}`).catch((e) => setError(e.message));
     load();
   }

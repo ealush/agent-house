@@ -1,4 +1,6 @@
 import { Suspense, useEffect, useRef, useState } from 'react';
+import { showError, showNotice } from './ask.tsx';
+import { confirmTerminate } from './Sidebar.tsx';
 import { Icon } from './icons.tsx';
 import { deviceName, type HostApi, type SendResult, type Win } from './api.ts';
 import { look } from './agents.ts';
@@ -6,10 +8,11 @@ import { AgentLogo, shortModel } from './logos.tsx';
 import { SURFACES, VIEW_LABEL, viewsFor, type SurfaceHandle, type View } from './surface.ts';
 import { ComposerBar } from './Composer.tsx';
 import { BranchPicker, ChangesPanel, PrLink } from './Git.tsx';
+import { SideChat } from './SideChat.tsx';
 import { FilesPanel } from './Files.tsx';
 import { QueueDialog } from './Queue.tsx';
 
-type Panel = 'diff' | 'files';
+type Panel = 'diff' | 'files' | 'chat';
 
 type Props = {
   w: Win;
@@ -65,11 +68,56 @@ function others(devices: string[]): string | null {
   return uniq.length === 1 ? uniq[0] : `${uniq.slice(0, -1).join(', ')} and ${uniq.at(-1)}`;
 }
 
+/** Drag handle on the side panel's edge. Double-click resets the width. */
+function PanelDivider({ onResize, onReset }: { onResize: (dx: number) => void; onReset: () => void }) {
+  const dragging = useRef<number | null>(null);
+  const lastX = useRef(0);
+  return (
+    <div
+      className="divider v panel-divider"
+      title="Drag to resize (double-click to reset)"
+      onPointerDown={(e) => {
+        dragging.current = e.pointerId;
+        lastX.current = e.clientX;
+        e.currentTarget.setPointerCapture(e.pointerId);
+        e.preventDefault();
+      }}
+      onPointerMove={(e) => {
+        if (dragging.current !== e.pointerId) return;
+        onResize(e.clientX - lastX.current);
+        lastX.current = e.clientX;
+      }}
+      onPointerUp={() => {
+        dragging.current = null;
+      }}
+      onPointerCancel={() => {
+        dragging.current = null;
+      }}
+      onLostPointerCapture={() => {
+        dragging.current = null;
+      }}
+      onDoubleClick={onReset}
+    />
+  );
+}
+
+const DEFAULT_PANEL_WIDTH = 420;
+
 export function Session({ w, client, narrow, touch, multiHost, home, replyKey, onBack, onAnswer, onSent, onKilled, refresh, onSplit, onReplace, onClosePane }: Props) {
   const surface = useRef<SurfaceHandle>(null);
+  const body = useRef<HTMLDivElement>(null);
   // 'main' is the session itself, drawn by whichever surface is chosen.
   const [tab, setTab] = useState<'main' | Panel>('main');
   const [panel, setPanel] = stored<Panel | ''>('ah.panel', '');
+  const [panelWidth, setPanelWidth] = useState(() => {
+    try {
+      const v = Number(localStorage.getItem('ah.panelWidth'));
+      return Number.isFinite(v) && v > 0 ? Math.min(720, Math.max(280, v)) : DEFAULT_PANEL_WIDTH;
+    } catch {
+      return DEFAULT_PANEL_WIDTH;
+    }
+  });
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [keysPref, setKeysPref] = stored<'auto' | 'on' | 'off'>('ah.keys', 'auto');
   const [viewPref, setViewPref] = stored<View>('ah.view', 'terminal');
   const [menu, setMenu] = useState(false);
@@ -111,12 +159,37 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
     if (focusAfter) requestAnimationFrame(() => requestAnimationFrame(() => surface.current?.focus()));
   };
 
+  /** Open a side panel tab, expanding the panel when it was collapsed. */
+  const openPanel = (p: Panel) => {
+    setPanel(panel === p ? '' : p);
+    setPanelCollapsed(false);
+  };
+
+  /** Dragging the panel's edge left (negative dx) widens it. */
+  const resizePanel = (dx: number) => {
+    const max = body.current ? Math.max(320, body.current.clientWidth * 0.7) : 720;
+    setPanelWidth((prev) => {
+      const next = Math.min(max, Math.max(280, prev - dx));
+      try {
+        localStorage.setItem('ah.panelWidth', String(Math.round(next)));
+      } catch {}
+      return next;
+    });
+  };
+
+  const resetPanelWidth = () => {
+    setPanelWidth(DEFAULT_PANEL_WIDTH);
+    try {
+      localStorage.setItem('ah.panelWidth', String(DEFAULT_PANEL_WIDTH));
+    } catch {}
+  };
+
   async function act(fn: () => Promise<unknown>) {
     setMenu(false);
     try {
       await fn();
     } catch (e) {
-      alert((e as Error).message);
+      showError(e);
     }
     refresh();
   }
@@ -146,7 +219,7 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
     try {
       await client.rename(w.id, name);
     } catch (e) {
-      alert((e as Error).message);
+      showError(e, "Couldn't rename");
       setNameSaving(false);
       return;
     }
@@ -162,17 +235,12 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
 
   // Terminate kills the tmux window; stronger wording while it is working,
   // waiting, or holding queued prompts (F44).
-  const kill = () => {
-    const hot = w.status === 'busy' || w.status === 'waiting' || w.queued > 0;
-    const msg = hot
-      ? `Terminate "${w.title}"?\n\nIt ${w.status === 'waiting' ? 'is waiting for your input' : w.status === 'busy' ? 'is currently working' : `has ${w.queued} queued message${w.queued === 1 ? '' : 's'}`}.\nThe running process will be stopped.`
-      : `Terminate "${w.title}"? The session will be stopped.`;
-    return act(async () => {
-      if (!confirm(msg)) return;
+  const kill = () =>
+    act(async () => {
+      if (!(await confirmTerminate(w))) return;
       await client.kill(w.id);
       onKilled();
     });
-  };
 
   const comment = async (text: string) => onSent(await client.send(w.uid, text, true));
 
@@ -180,6 +248,8 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
   const panelView = (p: Panel) =>
     p === 'diff' ? (
       <ChangesPanel client={client} windowId={w.id} onComment={w.agent ? comment : undefined} />
+    ) : p === 'chat' ? (
+      <SideChat client={client} w={w} onSent={onSent} />
     ) : (
       <FilesPanel
         fs={client.fs}
@@ -287,12 +357,15 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
         {!narrow && (
           <>
             {diffTab && (
-              <button className={`btn ghost small ${panel === 'diff' ? 'on' : ''}`} onClick={() => setPanel(panel === 'diff' ? '' : 'diff')}>
+              <button className={`btn ghost small ${panel === 'diff' && !panelCollapsed ? 'on' : ''}`} onClick={() => openPanel('diff')}>
                 <Icon name="diff" size={15} /> Diff
               </button>
             )}
-            <button className={`btn ghost small ${panel === 'files' ? 'on' : ''}`} onClick={() => setPanel(panel === 'files' ? '' : 'files')}>
+            <button className={`btn ghost small ${panel === 'files' && !panelCollapsed ? 'on' : ''}`} onClick={() => openPanel('files')}>
               <Icon name="files" size={15} /> Files
+            </button>
+            <button className={`btn ghost small ${panel === 'chat' && !panelCollapsed ? 'on' : ''}`} onClick={() => openPanel('chat')}>
+              <Icon name="chat" size={15} /> Chat
             </button>
           </>
         )}
@@ -399,10 +472,13 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
           <button role="tab" aria-selected={tab === 'files'} className={tab === 'files' ? 'on' : ''} onClick={() => setTab('files')}>
             Files
           </button>
+          <button role="tab" aria-selected={tab === 'chat'} className={tab === 'chat' ? 'on' : ''} onClick={() => setTab('chat')}>
+            Chat
+          </button>
         </div>
       )}
 
-      <div className="session-body">
+      <div className="session-body" ref={body}>
         <div className="session-main">
           <Suspense fallback={<div className="surface" />}>
             <Surface
@@ -425,24 +501,41 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
           )}
         </div>
 
-        {!narrow && panel && (panel === 'files' || diffTab) && (
-          <aside className="side-panel">
-            <div className="tabs">
-              {diffTab && (
-                <button className={`tab ${panel === 'diff' ? 'on' : ''}`} onClick={() => setPanel('diff')}>
-                  Diff
+        {!narrow && panel && (panel === 'files' || panel === 'chat' || diffTab) && (
+          <>
+            {!panelCollapsed && <PanelDivider onResize={resizePanel} onReset={resetPanelWidth} />}
+            {panelCollapsed ? (
+              <div className="panel-rail">
+                <button className="icon-btn small" onClick={() => setPanelCollapsed(false)} aria-label="Expand panel" title="Expand panel">
+                  <Icon name="panel" size={14} />
                 </button>
-              )}
-              <button className={`tab ${panel === 'files' ? 'on' : ''}`} onClick={() => setPanel('files')}>
-                Files
-              </button>
-              <span className="spacer" />
-              <button className="icon-btn small" onClick={() => setPanel('')} aria-label="Close panel">
-                <Icon name="close" size={14} />
-              </button>
-            </div>
-            {panelView(panel)}
-          </aside>
+              </div>
+            ) : (
+              <aside className="side-panel" style={{ width: panelWidth }}>
+                <div className="tabs">
+                  {diffTab && (
+                    <button className={`tab ${panel === 'diff' ? 'on' : ''}`} onClick={() => setPanel('diff')}>
+                      Diff
+                    </button>
+                  )}
+                  <button className={`tab ${panel === 'files' ? 'on' : ''}`} onClick={() => setPanel('files')}>
+                    Files
+                  </button>
+                  <button className={`tab ${panel === 'chat' ? 'on' : ''}`} onClick={() => setPanel('chat')}>
+                    Chat
+                  </button>
+                  <span className="spacer" />
+                  <button className="icon-btn small" onClick={() => setPanelCollapsed(true)} aria-label="Collapse panel" title="Collapse panel">
+                    <Icon name="panel-hide" size={14} />
+                  </button>
+                  <button className="icon-btn small" onClick={() => setPanel('')} aria-label="Close panel">
+                    <Icon name="close" size={14} />
+                  </button>
+                </div>
+                {panelView(panel)}
+              </aside>
+            )}
+          </>
         )}
       </div>
 
@@ -470,7 +563,7 @@ function CaptureDialog({ text, onClose }: { text: string; onClose: () => void })
             navigator.clipboard
               ?.writeText(text.trimEnd())
               .then(() => setCopied(true))
-              .catch(() => alert('Clipboard needs HTTPS; select the text instead.'))
+              .catch(() => showNotice('Clipboard needs HTTPS', 'Select the text and copy it yourself.'))
           }
         >
           {copied ? 'Copied' : 'Copy all'}

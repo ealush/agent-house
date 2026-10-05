@@ -26,6 +26,7 @@ import { attach, viewers } from './terminal.ts';
 import { feedPage, streamFeed, SNAPSHOT } from './feed/stream.ts';
 import * as t from './tmux.ts';
 import { createWorktree, changes, listBranches, switchBranch, pullRequest, GitError } from './git.ts';
+import { SideChatStore, SideChatError, changeContext } from './sidechat.ts';
 import { FsError, list, makeDir, receive, sendFile, setRoots, roots } from './files.ts';
 import { Peers, proxyHttp, proxyWs } from './peers.ts';
 import { Auth, AuthError, clearCookies, type Caller } from './auth.ts';
@@ -64,6 +65,7 @@ try {
   process.exit(1);
 }
 const core = new Core(config, viewers);
+const sidechat = new SideChatStore();
 const gate = new Gate();
 const peers = new Peers(config.peers, PORT);
 core.peers = peers;
@@ -380,6 +382,71 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     if (!w) throw new HttpError(404, 'window not found');
     const pr = await pullRequest(expandHome(w.cwd));
     return send(res, 200, { number: pr?.number ?? null, url: pr?.url ?? null });
+  }
+
+  // ---------- side chat (BYOK change discussion, outside the agent's context)
+
+  if (route('GET', /^\/api\/subscriptions$/)) return send(res, 200, sidechat.list());
+
+  if (route('POST', /^\/api\/subscriptions$/)) {
+    const body = await readJson(req);
+    const out = await sidechat.put({
+      ...(body.id === undefined ? {} : { id: str(body.id, 'id', 40) }),
+      name: str(body.name ?? '', 'name', 80),
+      baseUrl: str(body.baseUrl ?? '', 'baseUrl', 200),
+      model: str(body.model ?? '', 'model', 80),
+      ...(body.apiKey === undefined ? {} : { apiKey: str(body.apiKey, 'apiKey', 500) }),
+    });
+    audit(req, 'subscription.save', { id: out.id, name: out.name });
+    return send(res, 200, out);
+  }
+
+  if ((m = route('DELETE', /^\/api\/subscriptions\/([\w-]{1,40})$/))) {
+    await sidechat.remove(m[1]);
+    audit(req, 'subscription.remove', { id: m[1] });
+    return send(res, 200, { ok: true });
+  }
+
+  if (route('POST', /^\/api\/subscriptions\/default$/)) {
+    const id = str((await readJson(req)).id, 'id', 40);
+    await sidechat.setDefault(id);
+    audit(req, 'subscription.default', { id });
+    return send(res, 200, { ok: true });
+  }
+
+  if ((m = route('GET', /^\/api\/windows\/(@\d+)\/chat$/))) {
+    const w = (await core.current()).windows.find((w) => w.id === m![1]);
+    if (!w) throw new HttpError(404, 'window not found');
+    return send(res, 200, { messages: sidechat.history(w.uid), subscriptionId: sidechat.defaultId() });
+  }
+
+  if ((m = route('POST', /^\/api\/windows\/(@\d+)\/chat$/))) {
+    const w = (await core.current()).windows.find((w) => w.id === m![1]);
+    if (!w) throw new HttpError(404, 'window not found');
+    const body = await readJson(req);
+    const text = str(body.text ?? '', 'text', 8000).trim();
+    if (!text) throw new HttpError(400, 'text required');
+    const dir = expandHome(w.cwd);
+    const [chg, pr] = await Promise.all([changeContext(dir).catch(() => null), pullRequest(dir).catch(() => null)]);
+    try {
+      const msg = await sidechat.chat(
+        w.uid,
+        text,
+        { title: w.title, session: w.session, branch: chg?.branch ?? w.branch, pr: pr?.number ?? null, diff: chg?.diff ?? '' },
+        body.subscriptionId === undefined ? undefined : str(body.subscriptionId, 'subscriptionId', 40),
+      );
+      return send(res, 200, msg);
+    } catch (err) {
+      if (err instanceof SideChatError) throw new HttpError(err.status, err.message);
+      throw err;
+    }
+  }
+
+  if ((m = route('DELETE', /^\/api\/windows\/(@\d+)\/chat$/))) {
+    const w = (await core.current()).windows.find((w) => w.id === m![1]);
+    if (!w) throw new HttpError(404, 'window not found');
+    await sidechat.clear(w.uid);
+    return send(res, 200, { ok: true });
   }
 
   if ((m = path.match(/^\/api\/windows\/(@\d+)(\/capture)?$/))) {

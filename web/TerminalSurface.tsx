@@ -1,4 +1,5 @@
 import { forwardRef, useCallback, useImperativeHandle, useRef, useState } from 'react';
+import { showError, showNotice } from './ask.tsx';
 import { clipboardFiles, readClipboard } from './clipboard.ts';
 import { shellQuote } from './api.ts';
 import { Terminal, type TerminalHandle } from './Terminal.tsx';
@@ -46,7 +47,7 @@ export const TerminalSurface = forwardRef<SurfaceHandle, SurfaceProps>(function 
       term.current?.send(paths.map(shellQuote).join(' ') + ' ');
       term.current?.focus();
     } catch (e) {
-      alert((e as Error).message);
+      showError(e, "Couldn't upload");
     }
   }
 
@@ -59,7 +60,7 @@ export const TerminalSurface = forwardRef<SurfaceHandle, SurfaceProps>(function 
       if (files.length) await sendFiles(files);
       else if (text) term.current?.paste(text);
     } catch {
-      alert('Clipboard access was denied or unavailable. Use the keyboard’s Paste action, or allow clipboard access and try again.');
+      showNotice('Clipboard unavailable', 'Clipboard access was denied or unavailable. Use the keyboard’s Paste action, or allow clipboard access and try again.');
     } finally {
       setPasting(false);
     }

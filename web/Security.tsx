@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { askConfirm } from './ask.tsx';
 import { authApi, explain, passkeysAvailable, type Overview } from './auth.ts';
 import { age } from './agents.ts';
 import { api } from './api.ts';
@@ -109,7 +110,19 @@ export function Security({ onLocked }: { onLocked: () => void }) {
                 {p.rpID} · added {age(sec(p.createdAt))} · used {age(sec(p.lastUsedAt))}
               </span>
             </span>
-            <button className="btn ghost small danger" onClick={() => confirm(`Remove passkey "${p.label}"?`) && act(() => authApi.removePasskey(p.id))}>
+            <button
+              className="btn ghost small danger"
+              onClick={() =>
+                void askConfirm({
+                  title: `Remove passkey "${p.label}"?`,
+                  body: 'It can no longer be used to sign in.',
+                  confirm: 'Remove',
+                  danger: true,
+                }).then((ok) => {
+                  if (ok) void act(() => authApi.removePasskey(p.id));
+                })
+              }
+            >
               Remove
             </button>
           </li>
@@ -141,7 +154,19 @@ export function Security({ onLocked }: { onLocked: () => void }) {
       </ul>
       {o && o.sessions.length > 1 && (
         <p>
-          <button className="btn small" onClick={() => confirm('Sign out every other device?') && act(() => authApi.signOutEverywhere(), 'Every other device was signed out.')}>
+          <button
+            className="btn small"
+            onClick={() =>
+              void askConfirm({
+                title: 'Sign out every other device?',
+                body: 'Those devices will need to sign in again.',
+                confirm: 'Sign out',
+                danger: true,
+              }).then((ok) => {
+                if (ok) void act(() => authApi.signOutEverywhere(), 'Every other device was signed out.');
+              })
+            }
+          >
             Sign out everywhere else
           </button>
         </p>
@@ -176,7 +201,19 @@ export function Security({ onLocked }: { onLocked: () => void }) {
       <h2 className="section-label">Prompt history</h2>
       <p className="hint">
         Recently sent messages are kept on the host (for “recent prompts”) and may contain anything you pasted. Set <code>promptHistory</code> to 0 in the config to keep none.{' '}
-        <button className="btn small" onClick={() => confirm('Delete the saved prompt history?') && act(() => api.clearPrompts(), 'Prompt history cleared.')}>
+        <button
+          className="btn small"
+          onClick={() =>
+            void askConfirm({
+              title: 'Delete the saved prompt history?',
+              body: 'Recently sent messages kept on this host will be removed.',
+              confirm: 'Delete',
+              danger: true,
+            }).then((ok) => {
+              if (ok) void act(() => api.clearPrompts(), 'Prompt history cleared.');
+            })
+          }
+        >
           Clear prompt history
         </button>
       </p>
