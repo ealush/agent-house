@@ -20,7 +20,15 @@ export type ModelChoice = {
   name: string;
   args: string[];
   appliesTo?: LaunchAppliesTo;
+  description?: string;
+  /** Effort levels this model supports (defaults to the preset's). */
+  efforts?: string[];
+  /** The harness's own default (from its config), filled in by the catalog. */
+  isDefault?: boolean;
 };
+
+/** Reasoning effort: argv template with {level}, and the accepted levels, low → high. */
+export type EffortSpec = { args: string[]; levels: string[]; appliesTo?: LaunchAppliesTo };
 
 export type Preset = {
   id: string;
@@ -45,6 +53,24 @@ export type Preset = {
   /** tmux key names typed for one-tap Approve / Deny on a permission prompt. */
   approveKeys?: string[];
   denyKeys?: string[];
+  effort?: EffortSpec;
+  /** Where to read the live model list / defaults from (see server/catalog.ts). */
+  catalog?: 'claude' | 'codex' | 'muse' | 'grok';
+  /** tmux keys that interrupt the agent's current turn (Stop button). */
+  interruptKeys?: string[];
+  /** Typed into a live session to switch model / effort, e.g. "/model {model}". */
+  switchModel?: string;
+  switchEffort?: string;
+  /** Native TUI pickers used when a setting cannot be changed by a direct command. */
+  settingsCommands?: { model?: string; effort?: string; mode?: string };
+  /** argv for a model id that isn't in the list ("Other model…"), e.g. ["--model", "{model}"]. */
+  modelArgs?: string[];
+  /**
+   * Live permission-mode switching for agents that cycle modes with a key (Claude:
+   * Shift+Tab). `detect` maps mode ids to text the agent shows in its footer while
+   * that mode is on; a mode with no entry is the one where none of them show.
+   */
+  modeCycle?: { key: string; detect: Record<string, string> };
 };
 
 export type Config = {
@@ -74,6 +100,7 @@ export type Config = {
   presets: Preset[];
 };
 
+// Flags below are taken from each CLI's own --help; keep them that way.
 const DEFAULT_PRESETS: Preset[] = [
   {
     id: 'shell',
@@ -85,26 +112,34 @@ const DEFAULT_PRESETS: Preset[] = [
       { id: 'zsh', name: 'zsh', args: ['zsh', '-i'] },
       { id: 'fish', name: 'fish', args: ['fish', '-i'] },
     ],
+    interruptKeys: ['C-c'],
   },
   {
     id: 'claude',
     name: 'Claude Code',
     command: 'claude',
     modes: [
-      { id: 'default', name: 'Default' },
+      { id: 'default', name: 'Ask' },
+      { id: 'plan', name: 'Plan', args: ['--permission-mode', 'plan'], description: 'Reads and plans; changes nothing until you approve the plan.' },
+      { id: 'accept-edits', name: 'Accept edits', args: ['--permission-mode', 'acceptEdits'], description: 'Edits files without asking; still asks before running commands.' },
+      { id: 'auto', name: 'Auto', args: ['--permission-mode', 'auto'], description: 'Routine actions run without prompts; Claude asks before anything risky.' },
       {
         id: 'dangerous',
         name: 'Skip permissions',
         args: ['--dangerously-skip-permissions'],
         dangerous: true,
-        description: 'Allows the agent to execute commands without interactive approval.',
+        description: 'Runs any command and edits any file without asking.',
       },
     ],
+    // Aliases always point at the latest model of each family.
     models: [
-      { id: 'default', name: 'Default', args: [] },
-      { id: 'opus', name: 'Opus', args: ['--model', 'opus'] },
-      { id: 'sonnet', name: 'Sonnet', args: ['--model', 'sonnet'] },
+      { id: 'fable', name: 'Fable 5.1', args: ['--model', 'fable'], description: 'Most capable' },
+      { id: 'opus', name: 'Opus 5.5', args: ['--model', 'opus'], description: 'Deep work and long tasks' },
+      { id: 'sonnet', name: 'Sonnet 5.5', args: ['--model', 'sonnet'], description: 'Fast and capable' },
+      { id: 'haiku', name: 'Haiku 4.5', args: ['--model', 'haiku'], description: 'Quick, lightweight tasks' },
     ],
+    effort: { args: ['--effort', '{level}'], levels: ['low', 'medium', 'high', 'xhigh', 'max'] },
+    catalog: 'claude',
     resume: 'claude --continue',
     resumeId: 'claude --resume {id}',
     match: '^claude$',
@@ -112,41 +147,108 @@ const DEFAULT_PRESETS: Preset[] = [
     // The permission dialog highlights "Yes"; Esc declines.
     approveKeys: ['Enter'],
     denyKeys: ['Escape'],
+    interruptKeys: ['Escape'],
+    switchModel: '/model {model}',
+    switchEffort: '/effort {level}',
+    settingsCommands: { model: '/model', effort: '/effort', mode: '/permissions' },
+    modelArgs: ['--model', '{model}'],
+    // Shift+Tab cycles Claude's permission mode; its footer says which one is on.
+    modeCycle: {
+      key: 'BTab',
+      detect: { 'accept-edits': 'accept edits on', plan: 'plan mode on', auto: 'auto mode on', dangerous: 'bypass permissions on' },
+    },
   },
   {
     id: 'codex',
     name: 'Codex',
     command: 'codex',
     modes: [
-      { id: 'default', name: 'Default' },
-      { id: 'yolo', name: 'YOLO', args: ['--yolo'], dangerous: true, description: 'Auto-approves actions without asking.' },
+      { id: 'default', name: 'Ask' },
+      {
+        id: 'auto',
+        name: 'Full auto',
+        args: ['--ask-for-approval', 'never', '--sandbox', 'workspace-write'],
+        description: 'Runs without asking, but can only write inside the workspace.',
+      },
+      {
+        id: 'yolo',
+        name: 'Full access',
+        args: ['--dangerously-bypass-approvals-and-sandbox'],
+        dangerous: true,
+        description: 'No approvals and no sandbox: runs any command anywhere.',
+      },
     ],
-    models: [{ id: 'default', name: 'Default', args: [] }],
+    // Models and their effort levels come from Codex's own catalog (models_cache.json).
+    effort: { args: ['-c', 'model_reasoning_effort={level}'], levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] },
+    catalog: 'codex',
+    settingsCommands: { model: '/model', effort: '/model', mode: '/permissions' },
+    modelArgs: ['--model', '{model}'],
     resume: 'codex resume --last',
     resumeId: 'codex resume {id}',
     match: '^codex',
     waitingPatterns: ['Would you like to (run|make|apply)', 'Allow (Codex|command)', '\\(y\\)es.*\\(n\\)o'],
     approveKeys: ['y'],
     denyKeys: ['Escape'],
+    interruptKeys: ['Escape'],
   },
-  { id: 'gemini', name: 'Gemini', command: 'gemini', match: '^gemini$' },
-  { id: 'grok', name: 'Grok', command: 'grok', match: '^grok$' },
+  {
+    id: 'gemini',
+    name: 'Gemini',
+    command: 'gemini',
+    modes: [
+      { id: 'default', name: 'Ask' },
+      { id: 'plan', name: 'Plan', args: ['--approval-mode', 'plan'], description: 'Read-only: plans without changing anything.' },
+      { id: 'auto-edit', name: 'Accept edits', args: ['--approval-mode', 'auto_edit'], description: 'Edits files without asking; asks for other tools.' },
+      { id: 'yolo', name: 'YOLO', args: ['--approval-mode', 'yolo'], dangerous: true, description: 'Approves every tool call automatically.' },
+    ],
+    modelArgs: ['--model', '{model}'],
+    match: '^gemini$',
+    interruptKeys: ['Escape'],
+  },
+  {
+    id: 'grok',
+    name: 'Grok',
+    command: 'grok',
+    modes: [
+      { id: 'default', name: 'Ask' },
+      { id: 'plan', name: 'Plan', args: ['--permission-mode', 'plan'], description: 'Plans without making changes.' },
+      { id: 'accept-edits', name: 'Accept edits', args: ['--permission-mode', 'acceptEdits'], description: 'Edits files without asking.' },
+      { id: 'bypass', name: 'Bypass permissions', args: ['--permission-mode', 'bypassPermissions'], dangerous: true, description: 'Runs anything without asking.' },
+    ],
+    catalog: 'grok',
+    modelArgs: ['-m', '{model}'],
+    match: '^grok$',
+    interruptKeys: ['Escape'],
+  },
   {
     id: 'muse',
     name: 'Muse',
     command: 'muse',
     modes: [
-      { id: 'default', name: 'Default' },
-      { id: 'yolo', name: 'YOLO', args: ['--yolo'], dangerous: true, description: 'Auto-approves actions without asking.' },
+      { id: 'default', name: 'Ask' },
+      { id: 'yolo', name: 'YOLO', args: ['--yolo'], dangerous: true, description: 'Disables approval and sandboxing, and trusts this workspace, for this run.' },
     ],
-    models: [
-      { id: 'default', name: 'Default', args: [] },
-      { id: 'spark', name: 'Spark', args: ['--model', 'spark'] },
-    ],
+    effort: { args: ['--reasoning-effort', '{level}'], levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] },
+    catalog: 'muse',
+    switchEffort: '/effort {level}',
+    settingsCommands: { model: '/models', effort: '/effort', mode: '/permissions' },
+    modelArgs: ['--model', '{model}'],
     match: '^muse',
+    interruptKeys: ['Escape'],
   },
-  { id: 'hermes', name: 'Hermes', command: 'hermes', match: '^hermes' },
-  { id: 'opencode', name: 'opencode', command: 'opencode', match: '^opencode' },
+  {
+    id: 'hermes',
+    name: 'Hermes',
+    command: 'hermes',
+    modes: [
+      { id: 'default', name: 'Ask' },
+      { id: 'yolo', name: 'YOLO', args: ['--yolo'], dangerous: true, description: 'Approves every action automatically.' },
+    ],
+    modelArgs: ['-m', '{model}'],
+    match: '^hermes',
+    interruptKeys: ['Escape'],
+  },
+  { id: 'opencode', name: 'opencode', command: 'opencode', match: '^opencode', interruptKeys: ['Escape'] },
 ];
 
 export const CONFIG_PATH = join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'), 'ah', 'config.json');

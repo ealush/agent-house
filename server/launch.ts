@@ -4,11 +4,13 @@
 // optional free-form tail. Everything is kept as executable+args (never a
 // concatenated shell string) until the final quoting step, so a model name or
 // custom flag can't break out into a second command.
-import type { Preset } from './config.ts';
+import type { ModelChoice, Preset } from './config.ts';
 
 export type LaunchSelection = {
   mode?: string;
   model?: string;
+  /** Reasoning effort level, if the preset supports one. */
+  effort?: string;
   /** Free-form tail from the "Additional arguments" field, split on whitespace. */
   extraArgs?: string[] | string;
   /** Resume target: conversation id, or true for "most recent here". */
@@ -20,7 +22,7 @@ export type LaunchPlan = {
   args: string[];
   /** Shell-quoted single line, safe to type into a fresh shell. Empty for a plain shell. */
   command: string;
-  meta: { 'ah.launch.mode'?: string; 'ah.launch.model'?: string; 'ah.launch.args': string[] };
+  meta: { 'ah.launch.mode'?: string; 'ah.launch.model'?: string; 'ah.launch.effort'?: string; 'ah.launch.args': string[] };
   /** "Claude · Sonnet · Skip permissions" for the session header. */
   summary: string | null;
 };
@@ -110,10 +112,20 @@ export function buildLaunch(preset: Preset, sel: LaunchSelection = {}): LaunchPl
     };
   }
 
+  // On resume, a stored choice the preset no longer offers is dropped, not fatal:
+  // the conversation matters more than a flag that went away.
   const mode = (preset.modes ?? []).find((m) => m.id === (sel.mode ?? 'default'));
-  if (sel.mode && sel.mode !== 'default' && !mode) throw new LaunchError(`unknown mode: ${sel.mode}`);
-  const model = (preset.models ?? []).find((m) => m.id === (sel.model ?? 'default'));
-  if (sel.model && sel.model !== 'default' && !model) throw new LaunchError(`unknown model: ${sel.model}`);
+  if (sel.mode && sel.mode !== 'default' && !mode && !resuming) throw new LaunchError(`unknown mode: ${sel.mode}`);
+  // A model id outside the list ("Other model…") is allowed when the preset says how to pass one.
+  const model = (preset.models ?? []).find((m) => m.id === (sel.model ?? 'default')) ?? customModel(preset, sel.model);
+  if (sel.model && sel.model !== 'default' && !model && !resuming) throw new LaunchError(`unknown model: ${sel.model}`);
+  let effort: string | undefined;
+  if (sel.effort && sel.effort !== 'default') {
+    const effective = model ?? preset.models?.find((m) => m.isDefault);
+    const levels = effective?.efforts ?? preset.effort?.levels ?? [];
+    if (preset.effort && levels.includes(sel.effort)) effort = sel.effort;
+    else if (!resuming) throw new LaunchError(preset.effort ? `${model?.name ?? 'this model'} doesn't support effort "${sel.effort}"` : `${preset.name} has no effort setting`);
+  }
 
   // Resume base: exact conversation when we know its id, else "most recent here".
   let words: string[];
@@ -128,11 +140,13 @@ export function buildLaunch(preset: Preset, sel: LaunchSelection = {}): LaunchPl
 
   if (mode && applies(mode, resuming)) words.push(...(mode.args ?? []));
   if (model && applies(model, resuming)) words.push(...model.args);
+  if (effort && preset.effort && applies(preset.effort, resuming)) words.push(...preset.effort.args.map((a) => a.replace('{level}', effort!)));
   const extra = normalizeExtra(sel.extraArgs);
   words.push(...extra);
 
   const summaryParts = [
     model && model.id !== 'default' ? model.name : null,
+    effort ?? null,
     mode && mode.id !== 'default' ? mode.name : null,
   ].filter(Boolean);
 
@@ -143,10 +157,18 @@ export function buildLaunch(preset: Preset, sel: LaunchSelection = {}): LaunchPl
     meta: {
       ...(mode && mode.id !== 'default' ? { 'ah.launch.mode': mode.id } : {}),
       ...(model && model.id !== 'default' ? { 'ah.launch.model': model.id } : {}),
+      ...(effort ? { 'ah.launch.effort': effort } : {}),
       'ah.launch.args': words.slice(1),
     },
     summary: summaryParts.length ? summaryParts.join(' · ') : null,
   };
+}
+
+/** A free-form model id, validated and turned into argv via the preset's template. */
+export function customModel(preset: Preset, id: string | undefined): ModelChoice | undefined {
+  if (!id || id === 'default' || !preset.modelArgs) return undefined;
+  if (!/^[A-Za-z0-9][\w.:/@-]{0,79}$/.test(id)) throw new LaunchError(`invalid model id: ${id}`);
+  return { id, name: id, args: preset.modelArgs.map((a) => a.replace('{model}', id)) };
 }
 
 function normalizeExtra(extra: LaunchSelection['extraArgs']): string[] {
@@ -156,11 +178,13 @@ function normalizeExtra(extra: LaunchSelection['extraArgs']): string[] {
 }
 
 /** Rebuild the launch flags for resume from stored registry meta (F42). */
-export function resumeSelection(meta: Record<string, unknown>): Pick<LaunchSelection, 'mode' | 'model'> {
+export function resumeSelection(meta: Record<string, unknown>): Pick<LaunchSelection, 'mode' | 'model' | 'effort'> {
   const mode = meta['ah.launch.mode'];
   const model = meta['ah.launch.model'];
+  const effort = meta['ah.launch.effort'];
   return {
     ...(typeof mode === 'string' ? { mode } : {}),
     ...(typeof model === 'string' ? { model } : {}),
+    ...(typeof effort === 'string' ? { effort } : {}),
   };
 }

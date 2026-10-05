@@ -1,6 +1,7 @@
 import type { HistoryItem, State, Win } from './api.ts';
 import { Icon } from './icons.tsx';
 import { age, look } from './agents.ts';
+import { AgentLogo, shortModel } from './logos.tsx';
 import { Rows } from './Inbox.tsx';
 
 /** Ended and saved conversations from every host; one tap resumes on the host that has it. */
@@ -17,17 +18,20 @@ export function HistoryView({ state, onResume, onForget }: { state: State; onRes
       {state.history.length === 0 && <p className="empty-state">Nothing here yet.</p>}
       <ul className="rows">
         {state.history.map((h) => {
-          const { color, glyph, name } = look(h.harness);
+          const { color, name } = look(h.harness);
+          const modelLabel = shortModel(h.model);
           return (
             <li key={`${h.host}:${h.ref}`}>
               <div className="row quiet history-row" style={{ '--agent': color } as React.CSSProperties}>
-                <span className="chip">{glyph}</span>
+                <span className="chip">
+                  <AgentLogo id={h.harness} />
+                </span>
                 <span className="stack">
                   <span className="name" title={h.title}>
                     {h.title}
                   </span>
                   <span className="sub">
-                    {[name, multiHost ? h.host : null, h.project, h.kind === 'ended' ? 'ended' : null, h.worktree ? '⎇ worktree' : null].filter(Boolean).join(' · ')}
+                    {[name, modelLabel, multiHost ? h.host : null, h.project, h.kind === 'ended' ? 'ended' : null, h.worktree ? '⎇ worktree' : null].filter(Boolean).join(' · ')}
                   </span>
                 </span>
                 <span className="when">{age(h.at)}</span>
@@ -60,6 +64,9 @@ export function SessionsView({ state, onOpen, onNew }: { state: State; onOpen: (
           <h1>Sessions</h1>
           <p>{state.windows.length} live</p>
         </div>
+        <button className="icon-btn round" onClick={() => window.location.reload()} aria-label="Reload page">
+          <Icon name="recall" size={19} />
+        </button>
         <button className="icon-btn round light" onClick={onNew} aria-label="New session">
           <Icon name="plus" size={22} />
         </button>

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { PresetsContext } from './ModelPicker.tsx';
 import { deviceName, type HistoryItem, type SendResult, type State, type Win } from './api.ts';
 import { useHosts } from './useHosts.ts';
 import { Sidebar, type Page } from './Sidebar.tsx';
@@ -253,7 +254,17 @@ export function App({ onLock }: { onLock: () => void }) {
     refresh(h.host);
   };
 
+  // Composer notices ("Switched to Sonnet 5.5", "Interrupted") come in as events.
+  useEffect(() => {
+    const onToast = (e: Event) => flash(String((e as CustomEvent).detail));
+    window.addEventListener('ah:toast', onToast);
+    return () => window.removeEventListener('ah:toast', onToast);
+  }, []);
+
+  const presetFor = (host: string, id: string | null) => (id ? hostState(host)?.presets.find((p) => p.id === id) : undefined);
+
   return (
+    <PresetsContext.Provider value={presetFor}>
     <div className={`app ${narrow ? 'narrow' : ''}`}>
       {sideOpen ? (
         <Sidebar
@@ -425,5 +436,6 @@ export function App({ onLock }: { onLock: () => void }) {
         </div>
       )}
     </div>
+    </PresetsContext.Provider>
   );
 }

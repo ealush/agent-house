@@ -17,7 +17,10 @@ test('an exec-replaced agent is detected and concurrent follow-ups queue separat
     assert.equal(created.status, 201, created.body);
     const { id, uid } = created.json();
     const window = async () => (await http(ah, 'GET', '/api/state')).json().windows.find((w: any) => w.uid === uid);
-    await until(async () => (await window())?.agent === 'test-agent' && (await window())?.status === 'idle', 15000, 'root agent detected');
+    await until(async () => {
+      const w = await window();
+      return w?.agent === 'test-agent' && ['idle', 'attention'].includes(w.status);
+    }, 15000, 'root agent detected');
     const sent = await Promise.all(['alpha', 'beta', 'gamma'].map((text) => http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text } })));
     for (const r of sent) assert.equal(r.status, 200, r.body);
     assert.equal(sent.filter((r) => r.json().outcome === 'delivered').length, 1);

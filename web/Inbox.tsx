@@ -1,6 +1,7 @@
 import type { State, Win } from './api.ts';
 import { Icon } from './icons.tsx';
 import { age, look } from './agents.ts';
+import { AgentLogo, shortModel } from './logos.tsx';
 
 export type InboxGroup = 'status' | 'host' | 'project';
 
@@ -48,6 +49,9 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, on
             </button>
             <button className="icon-btn round" onClick={onSearch} aria-label="Search">
               <Icon name="search" size={20} />
+            </button>
+            <button className="icon-btn round" onClick={() => window.location.reload()} aria-label="Reload page">
+              <Icon name="recall" size={19} />
             </button>
             <button className="icon-btn round light" onClick={onNew} aria-label="New session">
               <Icon name="plus" size={22} />
@@ -115,13 +119,16 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, on
 }
 
 function AskCard({ w, multiHost, narrow, onOpen, onAnswer }: { w: Win; multiHost: boolean; narrow: boolean; onOpen: Props['onOpen']; onAnswer: Props['onAnswer'] }) {
-  const { color, glyph, name } = look(w.agent);
+  const { color, name } = look(w.agent);
+  const modelLabel = shortModel(w.model);
   const ask = w.ask;
   const code = ask?.kind === 'command' || ask?.kind === 'screen';
   return (
     <article className="card" style={{ '--agent': color } as React.CSSProperties}>
       <div className="card-head">
-        <span className="chip">{glyph}</span>
+        <span className="chip">
+          <AgentLogo id={w.agent} />
+        </span>
         <button className="card-title" onClick={() => onOpen(w)}>
           {w.title}
         </button>
@@ -157,7 +164,7 @@ function AskCard({ w, multiHost, narrow, onOpen, onAnswer }: { w: Win; multiHost
           </>
         )}
         <span className="meta">
-          {name} · {where(w, multiHost)}
+          {[name, modelLabel, where(w, multiHost)].filter(Boolean).join(' · ')}
         </span>
       </div>
     </article>
@@ -168,12 +175,14 @@ export function Rows({ windows, multiHost, narrow, onOpen, quiet }: { windows: W
   return (
     <ul className="rows">
       {windows.map((w) => {
-        const { color, glyph } = look(w.agent);
+        const { color } = look(w.agent);
         const pill = w.status === 'attention' ? <span className="pill attention">{w.agent ? 'done' : 'new output'}</span> : w.status === 'idle' ? <span className="pill">idle</span> : null;
         return (
           <li key={w.key}>
             <button className={`row ${quiet ? 'quiet' : ''}`} style={{ '--agent': color } as React.CSSProperties} onClick={() => onOpen(w)}>
-              <span className="chip">{glyph}</span>
+              <span className="chip">
+                <AgentLogo id={w.agent} />
+              </span>
               {narrow ? (
                 <>
                   <span className="stack">

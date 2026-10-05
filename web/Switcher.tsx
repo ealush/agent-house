@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { HistoryItem, Win } from './api.ts';
 import { look } from './agents.ts';
 import { age as ago } from './agents.ts';
+import { AgentLogo } from './logos.tsx';
 
 type Props = {
   windows: Win[];
@@ -100,11 +101,13 @@ export function Switcher({ windows, history, onPick, onResume, onClose }: Props)
       <ul>
         {results.map((r, idx) => {
           const agent = r.kind === 'win' ? r.w.agent : r.h.harness;
-          const { color, glyph } = look(agent);
+          const { color } = look(agent);
           return (
             <li key={r.kind === 'win' ? r.w.key : `${r.h.host}:${r.h.ref}`}>
               <button className={`switch-item ${idx === i ? 'on' : ''}`} style={{ '--agent': color } as React.CSSProperties} onMouseEnter={() => setI(idx)} onClick={() => choose(r)}>
-                <span className="chip">{glyph}</span>
+                <span className="chip">
+                  <AgentLogo id={agent} />
+                </span>
                 <span className="stack">
                   <span className="name">{r.kind === 'win' ? r.w.title : r.h.title}</span>
                   <span className="sub">{r.kind === 'win' ? [r.w.host, r.w.project, r.w.detail].filter(Boolean).join(' · ') : `${r.h.host} · ${r.h.project} · ${ago(r.h.at)}`}</span>

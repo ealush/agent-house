@@ -33,6 +33,9 @@ export type Win = {
   queued: number;
   order: number | null;
   launch: string | null;
+  launchModel: string | null;
+  launchEffort: string | null;
+  launchMode: string | null;
 };
 
 export type Ask = { kind: 'command' | 'tool' | 'question' | 'screen'; text: string };
@@ -53,7 +56,7 @@ export type HistoryItem = {
 };
 
 export type PresetChoice = { id: string; name: string; args?: string[]; dangerous?: boolean; description?: string; appliesTo?: string };
-export type ModelChoice = { id: string; name: string; args: string[]; appliesTo?: string };
+export type ModelChoice = { id: string; name: string; args: string[]; appliesTo?: string; description?: string; efforts?: string[]; isDefault?: boolean };
 export type Preset = {
   id: string;
   name: string;
@@ -61,12 +64,21 @@ export type Preset = {
   resume?: string;
   modes?: PresetChoice[];
   models?: ModelChoice[];
+  effort?: { levels: string[] };
+  /** The harness's own defaults, from its config (catalog). */
+  defaultModel?: string;
+  defaultEffort?: string;
+  /** Present when the agent can switch model / effort mid-session. */
+  switchModel?: string;
+  switchEffort?: string;
+  modelArgs?: string[];
+  settingsCommands?: { model?: string; effort?: string; mode?: string };
   available: boolean;
 };
 
 export type Host = { name: string; self: boolean; online: boolean };
 
-export const API_VERSION = 4;
+export const API_VERSION = 5;
 
 export type State = {
   api?: number;
@@ -149,7 +161,7 @@ export function hostApi(base: string) {
     base,
     state: () => r<State>('GET', '/api/state'),
     projects: () => r<string[]>('GET', '/api/projects'),
-    create: (body: { preset: string; cwd: string; session: string; label: string; resume: boolean; worktree?: boolean; mode?: string; model?: string; extraArgs?: string }) =>
+    create: (body: { preset: string; cwd: string; session: string; label: string; resume: boolean; worktree?: boolean; mode?: string; model?: string; effort?: string; extraArgs?: string }) =>
       r<{ id: string; uid: string }>('POST', '/api/windows', body),
     order: (uid: string, order: number) => r('POST', `/api/sessions/${enc(uid)}/order`, { order }),
     rename: (id: string, name: string) => r('PATCH', `/api/windows/${enc(id)}`, { name }),
@@ -159,6 +171,9 @@ export function hostApi(base: string) {
     send: (ref: string, text: string, enter: boolean) => r<SendResult>('POST', `/api/sessions/${enc(ref)}/send`, { text, enter }),
     answer: (uid: string, answer: 'approve' | 'deny') => r('POST', `/api/sessions/${enc(uid)}/answer`, { answer }),
     queue: (uid: string) => r<QueueItem[]>('GET', `/api/sessions/${enc(uid)}/queue`),
+    switchLaunch: (uid: string, change: { model?: string; effort?: string }) => r<SendResult>('POST', `/api/sessions/${enc(uid)}/switch`, change),
+    openSettings: (uid: string, setting: 'model' | 'effort' | 'mode') => r<SendResult>('POST', `/api/sessions/${enc(uid)}/settings`, { setting }),
+    interrupt: (uid: string) => r('POST', `/api/sessions/${enc(uid)}/interrupt`, {}),
     clearQueue: (uid: string, itemId?: string) => r('DELETE', `/api/sessions/${enc(uid)}/queue${itemId ? `/${enc(itemId)}` : ''}`),
     pin: (uid: string, pinned: boolean) => r('POST', `/api/sessions/${enc(uid)}/pin`, { pinned }),
     forget: (ref: string) => r('DELETE', `/api/sessions/${enc(ref)}`),
@@ -205,6 +220,9 @@ export function normalize(s: State): State {
       pinned: w.pinned ?? false,
       order: w.order ?? null,
       launch: w.launch ?? null,
+      launchModel: w.launchModel ?? null,
+      launchEffort: w.launchEffort ?? null,
+      launchMode: w.launchMode ?? null,
     })),
   };
 }

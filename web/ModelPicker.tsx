@@ -1,0 +1,125 @@
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import type { ModelChoice, Preset } from './api.ts';
+
+/** Resolves an agent's preset (with its live model catalog) on a given host. */
+export const PresetsContext = createContext<(host: string, id: string | null) => Preset | undefined>(() => undefined);
+export const usePreset = (host: string, id: string | null) => useContext(PresetsContext)(host, id);
+
+export type Pick = { model?: string; effort?: string };
+
+/** Effort levels a model accepts: its own list, else the preset's. */
+export function effortsFor(preset: Preset, model: ModelChoice | undefined): string[] {
+  return model?.efforts ?? preset.effort?.levels ?? [];
+}
+
+/** The model actually in effect: the chosen one, else the harness default. */
+export function effectiveModel(preset: Preset, id: string | undefined | null): ModelChoice | undefined {
+  const models = preset.models ?? [];
+  return models.find((m) => m.id === id) ?? (id && id !== 'default' ? { id, name: id, args: [] } : models.find((m) => m.isDefault));
+}
+
+const EFFORT_HINT: Record<string, string> = {
+  none: 'No extra reasoning',
+  minimal: 'Fastest, least reasoning',
+  low: 'Fast responses with lighter reasoning',
+  medium: 'Balanced speed and depth',
+  high: 'Deeper reasoning for harder problems',
+  xhigh: 'Extended reasoning for long, agentic work',
+  max: 'Maximum reasoning',
+  ultra: 'Everything it has',
+};
+
+const SHOWN = 5;
+
+/** Model aliases, discovered versions, and an explicit model id. */
+export function ModelPicker({ preset, value, onPick, footer, disabled = false }: { preset: Preset; value: Pick; onPick: (p: Pick) => void; footer?: React.ReactNode; disabled?: boolean }) {
+  const models = preset.models ?? [];
+  const current = effectiveModel(preset, value.model);
+  const [all, setAll] = useState(() => models.findIndex((m) => m.id === current?.id) >= SHOWN);
+  const [custom, setCustom] = useState('');
+  const shown = all ? models : models.slice(0, SHOWN);
+
+  function choose(id?: string) {
+    const next = effectiveModel(preset, id);
+    onPick({ model: id, effort: effortsFor(preset, next).includes(value.effort ?? '') ? value.effort : undefined });
+  }
+
+  return (
+    <div className="picker" aria-label="Model">
+      <div className="picker-title">Model</div>
+      <button type="button" className="picker-name" disabled={disabled} onClick={() => choose()}>
+        Default{preset.defaultModel ? ` · ${effectiveModel(preset, preset.defaultModel)?.name}` : ''}
+        {!value.model && <span className="check">✓</span>}
+      </button>
+      {shown.map((m) => (
+        <div key={m.id} className={`picker-row ${m.id === current?.id ? 'on' : ''}`}>
+          <button type="button" className="picker-name" disabled={disabled} onClick={() => choose(m.id)} title={m.description}>
+            <span>{m.name}</span>
+            {m.isDefault && <span className="hint"> (default)</span>}
+            {value.model === m.id && <span className="check">✓</span>}
+          </button>
+        </div>
+      ))}
+      {models.length > SHOWN && (
+        <button type="button" className="picker-more" onClick={() => setAll(!all)}>
+          {all ? 'Fewer models' : 'More models'} <span aria-hidden>{all ? '▴' : '▾'}</span>
+        </button>
+      )}
+      {preset.modelArgs && !disabled && (
+        <div className="picker-custom">
+          <label className="field">
+            <span>Other model version</span>
+            <input aria-label="Model ID" value={custom} onChange={(e) => setCustom(e.target.value)}
+              placeholder="Exact model ID" maxLength={80} autoCapitalize="off" autoCorrect="off" spellCheck={false}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); if (/^[A-Za-z0-9][\w.:/@-]{0,79}$/.test(custom.trim())) choose(custom.trim()); }
+              }} />
+          </label>
+          <button type="button" className="btn ghost" disabled={!/^[A-Za-z0-9][\w.:/@-]{0,79}$/.test(custom.trim())} onClick={() => choose(custom.trim())}>Use model</button>
+        </div>
+      )}
+      {footer && <div className="picker-foot">{footer}</div>}
+    </div>
+  );
+}
+
+export function EffortPicker({ levels, value, onPick, disabled = false, footer }: { levels: string[]; value?: string; onPick: (level?: string) => void; disabled?: boolean; footer?: React.ReactNode }) {
+  return (
+    <div className="picker" aria-label="Reasoning effort">
+      <div className="picker-title">Reasoning effort</div>
+      {[undefined, ...levels].map((level) => (
+        <button type="button" key={level ?? 'default'} className="picker-name" disabled={disabled}
+          title={level ? EFFORT_HINT[level] : 'Use the agent’s default effort'}
+          onClick={() => onPick(level)}>
+          {level ?? 'Default'}{level === value && <span className="check">✓</span>}
+        </button>
+      ))}
+      {footer && <div className="picker-foot">{footer}</div>}
+    </div>
+  );
+}
+
+/** A button that opens a popover; closes on outside click or Escape. */
+export function Popover({ label, className, children, up = true, title }: { label: React.ReactNode; className?: string; children: (close: () => void) => React.ReactNode; up?: boolean; title?: string }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: Event) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('pointerdown', away);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('pointerdown', away);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [open]);
+  return (
+    <div className="popover-wrap" ref={ref}>
+      <button type="button" className={className} aria-expanded={open} title={title} onClick={() => setOpen(!open)}>
+        {label}
+      </button>
+      {open && <div className={`popover ${up ? 'up' : 'down'}`}>{children(() => setOpen(false))}</div>}
+    </div>
+  );
+}

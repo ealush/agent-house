@@ -3,6 +3,7 @@ import { Icon } from './icons.tsx';
 import { clipboardFiles, readClipboard } from './clipboard.ts';
 import { deviceName, shellQuote, type HostApi, type SendResult, type Win } from './api.ts';
 import { look } from './agents.ts';
+import { AgentLogo, shortModel } from './logos.tsx';
 import { Terminal, type TerminalHandle } from './Terminal.tsx';
 import { KeyBar } from './KeyBar.tsx';
 import { applyModifiers } from './keyboard.ts';
@@ -82,7 +83,8 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
   const [shift, setShift] = useState(false);
   const [pasting, setPasting] = useState(false);
   const [focus, setFocus] = useState(0);
-  const { color, glyph, name: agentName } = look(w.agent);
+  const { color, name: agentName } = look(w.agent);
+  const modelLabel = shortModel(w.model);
 
   useEffect(() => setTab('terminal'), [w.key]);
   useEffect(() => {
@@ -194,7 +196,7 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
         )}
         {!narrow && (
           <span className="chip lg" style={{ '--agent': color } as React.CSSProperties}>
-            {glyph}
+            <AgentLogo id={w.agent} size={17} />
           </span>
         )}
         <div className="session-title">
@@ -202,7 +204,7 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
             <span className="eyebrow">
               {w.project}
               {w.agent ? ` · ${agentName}` : ''}
-              {w.model ? ` · ${w.model}` : ''}
+              {modelLabel ? ` · ${modelLabel}` : ''}
               {w.launch ? ` · ${w.launch}` : ''}
             </span>
           )}
@@ -247,6 +249,11 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
               <Icon name="files" size={15} /> Files
             </button>
           </>
+        )}
+        {narrow && (
+          <button className="icon-btn" onClick={() => window.location.reload()} aria-label="Reload page" title="Reload">
+            <Icon name="recall" />
+          </button>
         )}
         <div className="menu-wrap">
           <button className="icon-btn" onClick={() => setMenu(!menu)} aria-label="More" aria-expanded={menu}>
@@ -418,7 +425,8 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
               onKeyboard={() => term.current?.focus()}
             />
           )}
-          <ComposerBar client={client} target={w.uid} agent={w.agent} onSent={onSent} focusKey={focus} />
+          <ComposerBar client={client} target={w.uid} agent={w.agent} w={w} onSent={onSent} focusKey={focus}
+            onSettingsOpen={() => { setTab('terminal'); requestAnimationFrame(() => term.current?.focus()); }} />
         </div>
 
         {!narrow && panel && (panel === 'files' || diffTab) && (

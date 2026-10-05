@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import type { State, Win } from './api.ts';
 import { Icon } from './icons.tsx';
+import { look } from './agents.ts';
+import { AgentLogo, shortModel } from './logos.tsx';
 
 export type Page = 'inbox' | 'history' | 'sessions' | 'security';
 
@@ -85,6 +87,8 @@ export function Sidebar({ state, error, page, selected, device, onPage, onSelect
 
   function row(w: Win, group: Win[]) {
     const menu = menuKey === w.key;
+    const { color } = look(w.agent);
+    const modelLabel = shortModel(w.model);
     return (
       <div
         key={w.key}
@@ -113,15 +117,19 @@ export function Sidebar({ state, error, page, selected, device, onPage, onSelect
           dropOnto(group, w);
         }}
       >
-        <button className={`side-session ${w.agent ? '' : 'shellish'}`} onClick={() => onSelect(w.key)} title={`${w.title} — ${w.cwd}${w.launch ? ` — ${w.launch}` : ''}`}>
+        <button className={`side-session ${w.agent ? '' : 'shellish'}`} style={{ '--agent': color } as React.CSSProperties} onClick={() => onSelect(w.key)} title={`${w.title} — ${w.cwd}${modelLabel ? ` — ${modelLabel}` : ''}${w.launch ? ` — ${w.launch}` : ''}`}>
           <span className="grip" aria-hidden>
             ⠿
+          </span>
+          <span className="chip sm">
+            <AgentLogo id={w.agent} size={13} />
           </span>
           <span className={`dot ${w.status}`} />
           <span className="name">
             {w.pinned ? '★ ' : ''}
             {w.agent ? w.title : `${w.title === w.command || w.title === 'shell' ? w.command : w.title} ${w.cwd}`}
           </span>
+          {modelLabel && <span className="side-model">{modelLabel}</span>}
           {w.queued > 0 && <span className="count">⇥{w.queued}</span>}
         </button>
         <button

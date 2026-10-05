@@ -6,6 +6,7 @@ import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { ClipboardAddon } from '@xterm/addon-clipboard';
 import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
+import { autoCopySelection } from './selection.ts';
 
 export type TerminalHandle = {
   send: (data: string) => void;
@@ -121,6 +122,8 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ wi
       return true;
     });
 
+    const stopSelectionCopy = autoCopySelection(host.current!, t, () => navigator.clipboard);
+
     t.onData((d) => send(!pasting.current && transform.current ? transform.current(d) : d));
     t.onBinary((d) => send(d));
     term.current = t;
@@ -139,6 +142,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ wi
     return () => {
       ro.disconnect();
       stopTouch();
+      stopSelectionCopy();
       t.dispose();
       term.current = null;
     };

@@ -11,18 +11,20 @@ import { buildWindows, buildHistory, adoptTranscripts, type WindowView, type His
 import { Registry, type SessionRecord } from './registry.ts';
 import { discover } from './discovery.ts';
 import { expandHome, isExecutableOnPath, type Config, type Preset } from './config.ts';
-import { buildLaunch, resumeSelection } from './launch.ts';
+import { buildLaunch, customModel, resumeSelection } from './launch.ts';
+import { withCatalog } from './catalog.ts';
 import * as t from './tmux.ts';
 import { listWorktrees, mainRepo, removeWorktree, type Worktree } from './git.ts';
 import { Push } from './push.ts';
 import type { Peers } from './peers.ts';
 
-export type QueueItem = { id: string; text: string; enter: boolean; at: number };
+type LaunchChange = { model?: string; effort?: string };
+export type QueueItem = { id: string; text: string; enter: boolean; at: number; launchChange?: LaunchChange };
 
 export type Host = { name: string; self: boolean; online: boolean };
 
 /** Bumped when the state shape changes, so a newer page can tell an older server apart. */
-export const API_VERSION = 4;
+export const API_VERSION = 5;
 
 export type State = {
   api: number;
@@ -124,7 +126,7 @@ export class Core {
         sessions: await t.listSessions(),
         windows,
         history,
-        presets: this.config.presets.map((p) => ({ ...p, available: isExecutableOnPath(p.command, this.tmuxPath) })),
+        presets: await Promise.all(this.config.presets.map(async (p) => ({ ...(await withCatalog(p)), available: isExecutableOnPath(p.command, this.tmuxPath) }))),
       };
       this.state = state;
       const json = JSON.stringify(state);
@@ -230,7 +232,7 @@ export class Core {
       if (w) return { uid: w.uid, windowId: w.id, resumed: false };
     }
 
-    const preset = this.preset(harness);
+    const preset = await withCatalog(this.preset(harness));
     // Exact conversation when we know its id, else "most recent in this directory".
     // Previous launch mode/model are preserved (F42); flags that don't apply to
     // resume are dropped by the builder via `appliesTo`.
@@ -255,7 +257,7 @@ export class Core {
    * Delivers a prompt to a session wherever it is: typed in now if the agent is idle,
    * queued until its next idle moment if busy, and resumed first if it isn't running.
    */
-  async send(ref: string, text: string, enter = true): Promise<SendResult> {
+  async send(ref: string, text: string, enter = true, launchChange?: LaunchChange): Promise<SendResult> {
     if (!text) throw new CoreError(400, 'empty message');
     const target = await this.resume(ref);
     this.remember(text);
@@ -268,12 +270,18 @@ export class Core {
       if (ready) {
         if (w.agent) this.sentAt.set(w.uid, Date.now());
         await t.pasteText(target.windowId, text, enter);
+        if (launchChange) this.applyLaunchChange(target.uid, launchChange);
         return { outcome: 'delivered', windowId: target.windowId, resumed: false, queued: 0 };
       }
-      queue.push({ id: randomUUID().slice(0, 8), text, enter, at: now() });
+      queue.push({ id: randomUUID().slice(0, 8), text, enter, at: now(), ...(launchChange ? { launchChange } : {}) });
       this.registry.setMeta(target.uid, 'ah.queue', queue);
       return { outcome: 'queued', windowId: target.windowId, resumed: target.resumed, queued: queue.length };
     });
+  }
+
+  private applyLaunchChange(uid: string, change: LaunchChange) {
+    if (change.model !== undefined) this.registry.setMeta(uid, 'ah.launch.model', change.model);
+    if (change.effort !== undefined) this.registry.setMeta(uid, 'ah.launch.effort', change.effort);
   }
 
   private justSent(uid: string): boolean {
@@ -334,7 +342,12 @@ export class Core {
         // Remove before typing: at-most-once, never a duplicate turn (F16).
         this.registry.setMeta(w.uid, 'ah.queue', rest.length ? rest : undefined);
         this.sentAt.set(w.uid, Date.now());
-        await t.pasteText(w.id, next.text, next.enter).catch((err) => console.error(`queue delivery to ${w.id} failed:`, err));
+        try {
+          await t.pasteText(w.id, next.text, next.enter);
+          if (next.launchChange) this.applyLaunchChange(w.uid, next.launchChange);
+        } catch (err) {
+          console.error(`queue delivery to ${w.id} failed:`, err);
+        }
         w.queued = rest.length;
         w.status = 'busy';
       });
@@ -353,6 +366,54 @@ export class Core {
     if (!w.answerable || !w.agent) throw new CoreError(400, 'this prompt needs a reply, not approve/deny');
     const keys = answer === 'approve' ? this.preset(w.agent).approveKeys : this.preset(w.agent).denyKeys;
     if (!keys?.length) throw new CoreError(400, `no ${answer} keys configured for ${w.agent}`);
+    await t.tmux('send-keys', '-t', w.id, ...keys);
+    this.tick().catch(() => {});
+  }
+
+  /**
+   * Switches model/effort in a live session by typing the agent's own command
+   * ("/model opus"), built from a validated catalog id — never free text. Goes
+   * through send(), so a busy agent gets it queued for its next idle moment.
+   */
+  async switchLaunch(uid: string, change: { model?: string; effort?: string }): Promise<SendResult> {
+    if (Number(change.model !== undefined) + Number(change.effort !== undefined) !== 1) throw new CoreError(400, 'choose one setting to switch');
+    const state = await this.current();
+    const w = state.windows.find((w) => w.uid === uid);
+    if (!w?.agent) throw new CoreError(404, 'no agent session');
+    const preset = await withCatalog(this.preset(w.agent));
+    let text: string;
+    if (change.model !== undefined) {
+      const model = preset.models?.find((m) => m.id === change.model) ?? customModel(preset, change.model);
+      if (!model) throw new CoreError(400, `unknown model: ${change.model}`);
+      if (!preset.switchModel) throw new CoreError(400, `${preset.name} can't switch models mid-session; start a new one`);
+      text = preset.switchModel.replace('{model}', model.id);
+    } else if (change.effort !== undefined) {
+      const model = preset.models?.find((m) => m.id === (w.launchModel ?? preset.defaultModel));
+      const levels = model?.efforts ?? preset.effort?.levels ?? [];
+      if (!levels.includes(change.effort)) throw new CoreError(400, `unsupported effort: ${change.effort}`);
+      if (!preset.switchEffort) throw new CoreError(400, `${preset.name} can't change effort mid-session; start a new one`);
+      text = preset.switchEffort.replace('{level}', change.effort);
+    } else {
+      throw new CoreError(400, 'nothing to switch');
+    }
+    return this.send(uid, text, true, change);
+  }
+
+  async openSettings(uid: string, setting: 'model' | 'effort' | 'mode'): Promise<SendResult> {
+    const w = (await this.current()).windows.find((w) => w.uid === uid);
+    if (!w?.agent) throw new CoreError(404, 'no agent session');
+    const preset = this.preset(w.agent);
+    const command = preset.settingsCommands?.[setting];
+    if (!command) throw new CoreError(400, `${preset.name} has no live ${setting} picker configured`);
+    return this.send(uid, command, true);
+  }
+
+  /** Stop button: interrupts the agent's current turn (Esc for agents, Ctrl-C for shells). */
+  async interrupt(uid: string) {
+    const state = await this.current();
+    const w = state.windows.find((w) => w.uid === uid);
+    if (!w) throw new CoreError(404, 'session not found');
+    const keys = (w.agent ? this.config.presets.find((p) => p.id === w.agent)?.interruptKeys : undefined) ?? (w.agent ? ['Escape'] : ['C-c']);
     await t.tmux('send-keys', '-t', w.id, ...keys);
     this.tick().catch(() => {});
   }

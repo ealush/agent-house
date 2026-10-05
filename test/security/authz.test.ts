@@ -21,6 +21,8 @@ const PROTECTED: Array<[string, string, unknown?]> = [
   ['POST', '/api/sessions/abc/resume', {}],
   ['POST', '/api/sessions/abc/send', { text: 'x' }],
   ['POST', '/api/sessions/abc/answer', { answer: 'approve' }],
+  ['POST', '/api/sessions/abc/switch', { effort: 'high' }],
+  ['POST', '/api/sessions/abc/settings', { setting: 'mode' }],
   ['GET', '/api/sessions/abc/queue'],
   ['DELETE', '/api/sessions/abc/queue'],
   ['POST', '/api/sessions/abc/pin', {}],

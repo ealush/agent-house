@@ -21,6 +21,7 @@ import { loadConfig, expandHome, CONFIG_PATH, type Config } from './config.ts';
 import { shortPath } from './sessions.ts';
 import { Core, CoreError, resolveDir, defaultName } from './core.ts';
 import { buildLaunch, LaunchError } from './launch.ts';
+import { withCatalog } from './catalog.ts';
 import { attach, viewers } from './terminal.ts';
 import * as t from './tmux.ts';
 import { createWorktree, changes, GitError } from './git.ts';
@@ -134,14 +135,15 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
 
   if (route('POST', /^\/api\/windows$/)) {
     const body = await readJson(req);
-    const preset = core.preset(str(body.preset, 'preset', 40));
+    const preset = await withCatalog(core.preset(str(body.preset, 'preset', 40)));
     const cwd = await resolveDir(str(body.cwd ?? '~', 'cwd', 1024));
     const session = t.sanitizeSessionName(str(body.session || config.defaultSession, 'session', 64));
     if (!session) throw new HttpError(400, 'invalid session');
     const name = str(body.label ?? '', 'label', 80).trim() || defaultName(preset, cwd);
     // Structured launch options (F42): mode/model ids plus a free-form tail.
     const mode = body.mode === undefined ? undefined : str(body.mode, 'mode', 40);
-    const model = body.model === undefined ? undefined : str(body.model, 'model', 40);
+    const model = body.model === undefined ? undefined : str(body.model, 'model', 80);
+    const effort = body.effort === undefined ? undefined : str(body.effort, 'effort', 20);
     const extraArgs = body.extraArgs === undefined ? undefined : str(body.extraArgs, 'extraArgs', 2048);
     let command: string;
     let launchMeta: Record<string, unknown>;
@@ -149,6 +151,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
       const plan = buildLaunch(preset, {
         mode,
         model,
+        effort,
         extraArgs,
         resume: body.resume && preset.resume ? true : undefined,
       });
@@ -193,6 +196,31 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     if (answer !== 'approve' && answer !== 'deny') throw new HttpError(400, 'answer must be approve or deny');
     await core.answer(m[1], answer);
     audit(req, `session.${answer}`, { uid: m[1] });
+    return send(res, 200, { ok: true });
+  }
+
+  if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/switch$/))) {
+    const body = await readJson(req);
+    const change = {
+      ...(body.model !== undefined ? { model: str(body.model, 'model', 80) } : {}),
+      ...(body.effort !== undefined ? { effort: str(body.effort, 'effort', 20) } : {}),
+    };
+    const out = await core.switchLaunch(m[1], change);
+    audit(req, 'session.switch', { uid: m[1], ...change, outcome: out.outcome });
+    return send(res, 200, out);
+  }
+
+  if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/settings$/))) {
+    const setting = (await readJson(req)).setting;
+    if (setting !== 'model' && setting !== 'effort' && setting !== 'mode') throw new HttpError(400, 'unknown setting');
+    const out = await core.openSettings(m[1], setting);
+    audit(req, 'session.settings', { uid: m[1], setting, outcome: out.outcome });
+    return send(res, 200, out);
+  }
+
+  if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/interrupt$/))) {
+    await core.interrupt(m[1]);
+    audit(req, 'session.interrupt', { uid: m[1] });
     return send(res, 200, { ok: true });
   }
 

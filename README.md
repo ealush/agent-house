@@ -60,8 +60,13 @@ to terminal rules and output activity, and matches live agents to their transcri
 - **Split workspace.** Split right or below from a session's menu, resize the divider,
   and replace a pane from the sidebar or by dragging a session onto it. Closing a pane
   keeps its session running. Layouts stay on each device; phones show panes as tabs.
-- **Launch choices.** Choose a configured model and permission mode, or add quoted CLI
-  arguments. Sidebar sessions can be dragged to reorder them across your devices.
+- **Launch choices.** Choose a model version (including an exact custom model ID),
+  reasoning effort, and permission mode, or add quoted CLI arguments. The composer
+  also offers model, effort, and permission controls: direct changes where supported,
+  otherwise the agent's native terminal picker. Busy agents queue setting changes.
+  Selecting terminal text automatically copies it to the clipboard; use Shift-drag
+  when the running TUI captures the mouse (Option-drag on macOS).
+  Sidebar sessions can be dragged to reorder them across your devices.
 - **History.** Every session ah has run, plus past Claude Code and Codex conversations
   found on disk. Resume continues the same conversation (`claude --resume <id>`, …).
 - **Files.** Browse the host, upload from any device into any folder, download, preview,

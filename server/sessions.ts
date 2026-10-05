@@ -52,6 +52,10 @@ export type WindowView = {
   order: number | null;
   /** Launch summary (F42): "Opus · Skip permissions", from `ah.launch.*` meta. */
   launch: string | null;
+  /** Raw launch choices (ids), for the composer's model/effort chip. */
+  launchModel: string | null;
+  launchEffort: string | null;
+  launchMode: string | null;
 };
 
 export type Ask = { kind: 'command' | 'tool' | 'question' | 'screen'; text: string };
@@ -120,11 +124,13 @@ export function shortPath(p: string): string {
 export function launchSummary(rec: SessionRecord, preset?: Preset): string | null {
   const modeId = rec.meta['ah.launch.mode'];
   const modelId = rec.meta['ah.launch.model'];
+  const effort = rec.meta['ah.launch.effort'];
   const parts: string[] = [];
   if (typeof modelId === 'string') {
     const m = preset?.models?.find((x) => x.id === modelId);
     parts.push(m ? m.name : modelId);
   }
+  if (typeof effort === 'string') parts.push(effort);
   if (typeof modeId === 'string') {
     const m = preset?.modes?.find((x) => x.id === modeId);
     parts.push(m ? m.name : modeId);
@@ -331,6 +337,9 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
         queued: (rec.meta['ah.queue'] as unknown[] | undefined)?.length ?? 0,
         order: typeof rec.meta['ah.order'] === 'number' ? (rec.meta['ah.order'] as number) : null,
         launch,
+        launchModel: typeof rec.meta['ah.launch.model'] === 'string' ? (rec.meta['ah.launch.model'] as string) : null,
+        launchEffort: typeof rec.meta['ah.launch.effort'] === 'string' ? (rec.meta['ah.launch.effort'] as string) : null,
+        launchMode: typeof rec.meta['ah.launch.mode'] === 'string' ? (rec.meta['ah.launch.mode'] as string) : null,
       };
     }),
   );
