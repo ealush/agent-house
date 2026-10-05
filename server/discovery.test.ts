@@ -7,12 +7,12 @@ const fixture = (name: string) => fileURLToPath(new URL(`./fixtures/${name}`, im
 
 test('claude transcript metadata', async () => {
   const t = await parseClaude(fixture('claude.jsonl'), 123);
-  assert.deepEqual(t, { harness: 'claude', harnessId: 'claude', cwd: '/home/u/code/proj', title: 'Fix flaky login test', model: 'claude-opus-5-5', updatedAt: 123 });
+  assert.deepEqual(t, { harness: 'claude', harnessId: 'claude', cwd: '/home/u/code/proj', title: 'Fix flaky login test', model: 'claude-opus-5-5', updatedAt: 123, file: fixture('claude.jsonl') });
 });
 
 test('codex rollout metadata', async () => {
   const t = await parseCodex(fixture('codex.jsonl'), 456);
-  assert.deepEqual(t, { harness: 'codex', harnessId: '0199-codex', cwd: '/home/u/code/proj', title: 'review PR 12', model: 'gpt-6.1-sol', updatedAt: 456 });
+  assert.deepEqual(t, { harness: 'codex', harnessId: '0199-codex', cwd: '/home/u/code/proj', title: 'review PR 12', model: 'gpt-6.1-sol', updatedAt: 456, file: fixture('codex.jsonl') });
 });
 
 test('prompt titles skip injected context and keep the first line', () => {

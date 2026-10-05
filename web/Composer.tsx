@@ -5,9 +5,10 @@ import { clipboardFiles } from './clipboard.ts';
 import { ModelPicker, EffortPicker, Popover, effectiveModel, effortsFor, usePreset } from './ModelPicker.tsx';
 import { shortModel } from './logos.tsx';
 
-// The message bar under a session. It goes through the server, which types the text
+// The message bar under a GUI session. It goes through the server, which types the text
 // in now (idle agent, or any shell), queues it while an agent works, or resumes a dead
 // session first. A native text box keeps dictation, autocorrect and selection working.
+// The terminal view has no composer: its input comes from the shell itself.
 //
 // The toolbar under the text: the session's model and effort (switchable live where the
 // agent supports it), its mode, recall, attach, voice, and send — or stop while it works.

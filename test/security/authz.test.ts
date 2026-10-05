@@ -24,6 +24,8 @@ const PROTECTED: Array<[string, string, unknown?]> = [
   ['POST', '/api/sessions/abc/switch', { effort: 'high' }],
   ['POST', '/api/sessions/abc/settings', { setting: 'mode' }],
   ['GET', '/api/sessions/abc/queue'],
+  ['GET', '/api/sessions/abc/feed'],
+  ['GET', '/api/sessions/claude:abc/feed/stream'],
   ['DELETE', '/api/sessions/abc/queue'],
   ['POST', '/api/sessions/abc/pin', {}],
   ['DELETE', '/api/sessions/abc'],
@@ -98,7 +100,7 @@ test('public routes are exactly the sign-in surface', async () => {
 test('signed-in browsers and the host token get through; the password stays host-only', async () => {
   const cookie = await signIn(ah);
   for (const [method, path, body] of PROTECTED) {
-    if (path === '/api/events' || path === '/api/auth/signout-all') continue; // streams / signs us out
+    if (path === '/api/events' || path.endsWith('/feed/stream') || path === '/api/auth/signout-all') continue; // streams / signs us out
     const asBrowser = await http(ah, method, path, { body, cookie });
     const asHost = await http(ah, method, path, { body, token: ah.localToken() });
     if (path === '/api/auth/password') {

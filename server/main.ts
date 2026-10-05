@@ -23,8 +23,9 @@ import { Core, CoreError, resolveDir, defaultName } from './core.ts';
 import { buildLaunch, LaunchError } from './launch.ts';
 import { withCatalog } from './catalog.ts';
 import { attach, viewers } from './terminal.ts';
+import { feedPage, streamFeed, SNAPSHOT } from './feed/stream.ts';
 import * as t from './tmux.ts';
-import { createWorktree, changes, GitError } from './git.ts';
+import { createWorktree, changes, listBranches, switchBranch, pullRequest, GitError } from './git.ts';
 import { FsError, list, makeDir, receive, sendFile, setRoots, roots } from './files.ts';
 import { Peers, proxyHttp, proxyWs } from './peers.ts';
 import { Auth, AuthError, clearCookies, type Caller } from './auth.ts';
@@ -224,6 +225,32 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     return send(res, 200, { ok: true });
   }
 
+  // GUI view: the session's transcript as typed events (server/feed). A stream of
+  // snapshot/append messages, plus pages of older entries on demand.
+  if ((m = route('GET', /^\/api\/sessions\/([\w:.-]{1,80})\/feed\/stream$/))) {
+    const ref = m[1];
+    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive', 'x-accel-buffering': 'no' });
+    const done = new AbortController();
+    const ping = setInterval(() => res.write(': ping\n\n'), 25_000);
+    const untrack = auth.track(caller, { close: () => res.end() });
+    req.on('close', () => {
+      done.abort();
+      clearInterval(ping);
+      untrack();
+    });
+    streamFeed((fresh) => core.feedSource(ref, fresh ? 3000 : 15_000), (msg) => res.write(`event: ${msg.type}\ndata: ${JSON.stringify(msg)}\n\n`), done.signal);
+    return;
+  }
+
+  if ((m = route('GET', /^\/api\/sessions\/([\w:.-]{1,80})\/feed$/))) {
+    const before = Number(url.searchParams.get('before') ?? Infinity);
+    const limit = Math.min(1000, Math.max(1, Number(url.searchParams.get('limit')) || SNAPSHOT));
+    if (Number.isNaN(before)) throw new HttpError(400, 'invalid before');
+    const page = await feedPage(() => core.feedSource(m![1]), before, limit);
+    if (!page) throw new HttpError(404, 'no transcript');
+    return send(res, 200, page);
+  }
+
   if ((m = route('GET', /^\/api\/sessions\/([\w-]{1,40})\/queue$/))) return send(res, 200, core.queue(m[1]));
 
   if ((m = route('DELETE', /^\/api\/sessions\/([\w-]{1,40})\/queue(?:\/([\w-]{1,40}))?$/))) {
@@ -329,6 +356,30 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     const w = (await core.current()).windows.find((w) => w.id === m![1]);
     if (!w) throw new HttpError(404, 'window not found');
     return send(res, 200, await changes(expandHome(w.cwd)));
+  }
+
+  if ((m = route('GET', /^\/api\/windows\/(@\d+)\/branches$/))) {
+    const w = (await core.current()).windows.find((w) => w.id === m![1]);
+    if (!w) throw new HttpError(404, 'window not found');
+    return send(res, 200, await listBranches(expandHome(w.cwd)));
+  }
+
+  if ((m = route('POST', /^\/api\/windows\/(@\d+)\/branches$/))) {
+    const w = (await core.current()).windows.find((w) => w.id === m![1]);
+    if (!w) throw new HttpError(404, 'window not found');
+    const branch = str((await readJson(req)).branch, 'branch', 200).trim();
+    if (!branch) throw new HttpError(400, 'branch required');
+    const out = await switchBranch(expandHome(w.cwd), branch);
+    audit(req, 'session.branch', { window: m[1], branch: out.branch });
+    core.tick().catch(() => {});
+    return send(res, 200, out);
+  }
+
+  if ((m = route('GET', /^\/api\/windows\/(@\d+)\/pull$/))) {
+    const w = (await core.current()).windows.find((w) => w.id === m![1]);
+    if (!w) throw new HttpError(404, 'window not found');
+    const pr = await pullRequest(expandHome(w.cwd));
+    return send(res, 200, { number: pr?.number ?? null, url: pr?.url ?? null });
   }
 
   if ((m = path.match(/^\/api\/windows\/(@\d+)(\/capture)?$/))) {

@@ -79,6 +79,7 @@
 | F43 | Session ordering | ✅ | Drag to reorder within a sidebar group; sparse keys persist across devices. |
 | F44 | Session termination | ✅ | Sidebar and session controls, with confirmation for stopping a session. |
 | F45 | Split workspace | ✅ | Independent terminal viewers, resizable horizontal/vertical splits, device-local persistence, phone tabs. Duplicate viewers have independent pane controls. |
+| F46 | GUI view | ◐ | Branch `gui-support`. Transcript adapters (Claude Code, Codex) → typed events over SSE → separate React tree with tool and widget dispatch. Terminal-only interactions (agent pickers) hand off to the terminal. No adapters yet for Gemini, Grok, Muse, Hermes, opencode. |
 | F46 | Workspace navigation | ✅ | Replace the focused pane from the sidebar or picker; drag sessions onto pane edges to split. |
 
 ## Reliability pass — October 2026

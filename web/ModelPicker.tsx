@@ -100,7 +100,7 @@ export function EffortPicker({ levels, value, onPick, disabled = false, footer }
 }
 
 /** A button that opens a popover; closes on outside click or Escape. */
-export function Popover({ label, className, children, up = true, title }: { label: React.ReactNode; className?: string; children: (close: () => void) => React.ReactNode; up?: boolean; title?: string }) {
+export function Popover({ label, className, children, up = true, align = 'left', title }: { label: React.ReactNode; className?: string; children: (close: () => void) => React.ReactNode; up?: boolean; align?: 'left' | 'right'; title?: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -119,7 +119,7 @@ export function Popover({ label, className, children, up = true, title }: { labe
       <button type="button" className={className} aria-expanded={open} title={title} onClick={() => setOpen(!open)}>
         {label}
       </button>
-      {open && <div className={`popover ${up ? 'up' : 'down'}`}>{children(() => setOpen(false))}</div>}
+      {open && <div className={`popover ${up ? 'up' : 'down'} ${align === 'right' ? 'right' : ''}`}>{children(() => setOpen(false))}</div>}
     </div>
   );
 }

@@ -77,8 +77,8 @@ test('adoption pairs a live window with its transcript, once', () => {
   adoptTranscripts(
     windows,
     [
-      { harness: 'claude', harnessId: 'new', cwd: '/p', title: '', updatedAt: 400 },
-      { harness: 'claude', harnessId: 'old', cwd: '/p', title: '', updatedAt: 10 },
+      { harness: 'claude', harnessId: 'new', cwd: '/p', title: '', updatedAt: 400, file: '/p/new.jsonl' },
+      { harness: 'claude', harnessId: 'old', cwd: '/p', title: '', updatedAt: 10, file: '/p/old.jsonl' },
     ],
     registry,
   );

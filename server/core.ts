@@ -23,8 +23,8 @@ export type QueueItem = { id: string; text: string; enter: boolean; at: number; 
 
 export type Host = { name: string; self: boolean; online: boolean };
 
-/** Bumped when the state shape changes, so a newer page can tell an older server apart. */
-export const API_VERSION = 5;
+/** Bumped when the state shape or API routes change, so a newer page can tell an older server apart. */
+export const API_VERSION = 7;
 
 export type State = {
   api: number;
@@ -103,7 +103,10 @@ export class Core {
   tick(): Promise<State> {
     this.ticking ??= (async () => {
       const windows = await buildWindows(this.config, this.viewers, this.registry);
-      adoptTranscripts(windows, await discover(), this.registry);
+      // A just-started agent's transcript appears within seconds; look for it sooner
+      // than the usual rescan so its title and GUI view don't lag behind.
+      const fresh = windows.some((w) => w.agent && !w.harnessId && Date.now() / 1000 - w.createdAt < 120);
+      adoptTranscripts(windows, await discover(fresh ? 2000 : 15_000), this.registry);
       // A submit can precede the agent's next hook/output. Protect that interval
       // so a second device or queued prompt cannot submit another turn into it.
       for (const w of windows) {
@@ -151,6 +154,29 @@ export class Core {
     const p = this.config.presets.find((p) => p.id === id);
     if (!p) throw new CoreError(400, `unknown harness: ${id}`);
     return p;
+  }
+
+  /**
+   * Which transcript the GUI view reads for `ref` (a live uid, a registry id, or
+   * `harness:harnessId`). `file` is null until the agent has written one.
+   */
+  async feedSource(ref: string, maxAgeMs = 15_000): Promise<{ adapter: string; harness: string; file: string | null } | 'no-adapter' | null> {
+    const state = await this.current();
+    const live = state.windows.find((w) => w.uid === ref);
+    const rec = this.registry.get(ref);
+    let harness: string | null = live?.agent ?? rec?.harness ?? null;
+    let harnessId: string | null = live ? live.harnessId : (rec?.harnessId ?? null);
+    if (!live && !rec) {
+      const i = ref.indexOf(':');
+      if (i <= 0) return null;
+      [harness, harnessId] = [ref.slice(0, i), ref.slice(i + 1)];
+    }
+    if (!harness) return 'no-adapter';
+    const adapter = this.config.presets.find((p) => p.id === harness)?.feed;
+    if (!adapter) return 'no-adapter';
+    if (!harnessId) return { adapter, harness, file: null };
+    const found = (await discover(maxAgeMs)).find((t) => t.harness === adapter && t.harnessId === harnessId);
+    return { adapter, harness, file: found?.file ?? null };
   }
 
   // ---------- launch / resume

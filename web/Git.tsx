@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Changes, HostApi, WorktreeInfo } from './api.ts';
+import type { BranchList, Changes, HostApi, PullInfo, WorktreeInfo } from './api.ts';
+import { Icon } from './icons.tsx';
+import { Popover } from './ModelPicker.tsx';
 
 // ---------- unified diff → files / lines with real line numbers
 
@@ -140,6 +142,136 @@ export function ChangesPanel({ client, windowId, onComment }: { client: HostApi;
         )}
       </div>
     </>
+  );
+}
+
+// ---------- branch picker: the header pill opens a dropdown of recent local
+// branches plus remote-tracking ones; typing filters them, and a name that
+// matches nothing is offered as a new branch to create.
+
+export function BranchPicker({ client, windowId, current, onSwitched }: { client: HostApi; windowId: string; current: string; onSwitched: () => void }) {
+  return (
+    <Popover up={false} align="right" className="pill mono" title="Switch branch" label={<><Icon name="branch" size={12} /> {current}</>}>
+      {(close) => <BranchMenu client={client} windowId={windowId} close={close} onSwitched={onSwitched} />}
+    </Popover>
+  );
+}
+
+function BranchMenu({ client, windowId, close, onSwitched }: { client: HostApi; windowId: string; close: () => void; onSwitched: () => void }) {
+  const [list, setList] = useState<BranchList | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [q, setQ] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [active, setActive] = useState(0);
+
+  useEffect(() => {
+    client.branches(windowId).then(setList).catch((e) => setLoadError((e as Error).message));
+  }, [client, windowId]);
+
+  const rows = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    const all = list?.branches ?? [];
+    const kept = needle ? all.filter((b) => b.name.toLowerCase().includes(needle)) : all;
+    return [...kept].sort((a, b) => Number(b.current) - Number(a.current));
+  }, [list, q]);
+
+  const name = q.trim();
+  const create = name && !rows.some((b) => b.name === name) ? name : null;
+  const count = rows.length + (create ? 1 : 0);
+  const at = Math.min(active, Math.max(count - 1, 0));
+
+  async function choose(branch: string) {
+    if (busy) return;
+    setBusy(branch);
+    setError(null);
+    try {
+      await client.switchBranch(windowId, branch);
+      close();
+      onSwitched();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="picker branch-picker" aria-label="Switch branch">
+      <div className="picker-title">Switch branch</div>
+      <label className="field branch-search">
+        <input
+          autoFocus
+          value={q}
+          placeholder="Search or create a branch…"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          maxLength={200}
+          onChange={(e) => {
+            setQ(e.target.value);
+            setActive(0);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowDown') setActive((i) => Math.min(count - 1, i + 1));
+            else if (e.key === 'ArrowUp') setActive((i) => Math.max(0, i - 1));
+            else if (e.key === 'Enter') {
+              const pick = at < rows.length ? rows[at].name : create;
+              if (pick) choose(pick);
+            } else return;
+            e.preventDefault();
+          }}
+        />
+      </label>
+      {loadError && <p className="panel-msg">{loadError}</p>}
+      {!list && !loadError && <p className="panel-msg">Loading branches…</p>}
+      {list && (
+        <div className="branch-rows">
+          {rows.map((b, i) => (
+            <div key={b.name} className={`picker-row ${i === at ? 'on' : ''}`}>
+              <button type="button" className="picker-name" disabled={!!busy} onMouseEnter={() => setActive(i)} onClick={() => choose(b.name)}
+                title={b.remote ? 'Remote branch — checks out with tracking' : b.current ? 'Current branch' : `Switch to ${b.name}`}>
+                <Icon name="branch" size={13} />
+                <span className="branch-name">{b.name}</span>
+                {b.current && <span className="check">✓</span>}
+                {b.remote && !b.current && <span className="hint">remote</span>}
+                {busy === b.name && <span className="hint">switching…</span>}
+              </button>
+            </div>
+          ))}
+          {create && (
+            <div className={`picker-row ${rows.length === at ? 'on' : ''}`}>
+              <button type="button" className="picker-name" disabled={!!busy} onMouseEnter={() => setActive(rows.length)} onClick={() => choose(create)}
+                title={`Create a new branch ${create}`}>
+                <Icon name="plus" size={13} />
+                <span className="branch-name">Create “{create}”</span>
+                {busy === create && <span className="hint">switching…</span>}
+              </button>
+            </div>
+          )}
+          {!count && <p className="panel-msg">No branches yet — type a name to create one.</p>}
+        </div>
+      )}
+      {error && <div className="picker-foot"><span>{error}</span></div>}
+    </div>
+  );
+}
+
+/** PR number for the session's branch, linked when one exists. Otherwise nothing. */
+export function PrLink({ client, windowId, branch }: { client: HostApi; windowId: string; branch: string }) {
+  const [pr, setPr] = useState<PullInfo | null>(null);
+  useEffect(() => {
+    setPr(null);
+    client
+      .pull(windowId)
+      .then((p) => setPr(p.number && p.url ? p : null))
+      .catch(() => {});
+  }, [client, windowId, branch]);
+  if (!pr?.number || !pr.url) return null;
+  return (
+    <a className="pill mono" href={pr.url} target="_blank" rel="noreferrer" title={`Pull request #${pr.number}`}>
+      #{pr.number}
+    </a>
   );
 }
 

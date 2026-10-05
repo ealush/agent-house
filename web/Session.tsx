@@ -1,14 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { Icon } from './icons.tsx';
-import { clipboardFiles, readClipboard } from './clipboard.ts';
-import { deviceName, shellQuote, type HostApi, type SendResult, type Win } from './api.ts';
+import { deviceName, type HostApi, type SendResult, type Win } from './api.ts';
 import { look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
-import { Terminal, type TerminalHandle } from './Terminal.tsx';
-import { KeyBar } from './KeyBar.tsx';
-import { applyModifiers } from './keyboard.ts';
+import { SURFACES, VIEW_LABEL, viewsFor, type SurfaceHandle, type View } from './surface.ts';
 import { ComposerBar } from './Composer.tsx';
-import { ChangesPanel } from './Git.tsx';
+import { BranchPicker, ChangesPanel, PrLink } from './Git.tsx';
 import { FilesPanel } from './Files.tsx';
 import { QueueDialog } from './Queue.tsx';
 
@@ -22,7 +19,7 @@ type Props = {
   multiHost: boolean;
   /** Host home dir, to turn "~/x" into an absolute path. */
   home: string;
-  /** Bumped when the user chose "Reply" somewhere, to focus the composer. */
+  /** Bumped when the user chose "Reply" somewhere, to focus input. */
   replyKey: number;
   onBack: () => void;
   onAnswer: (w: Win, answer: 'approve' | 'deny') => void;
@@ -38,7 +35,6 @@ type Props = {
 };
 
 const STATUS_PILL = { waiting: 'Needs you', busy: 'Working', attention: 'Done', idle: 'Idle' };
-const KIND_LABEL = { command: 'Wants to run a command', tool: 'Wants to use a tool', question: 'Asked a question', screen: 'Waiting for you' };
 
 function stored<T extends string>(key: string, fallback: T): [T, (v: T) => void] {
   const [v, setV] = useState<T>(() => {
@@ -70,71 +66,50 @@ function others(devices: string[]): string | null {
 }
 
 export function Session({ w, client, narrow, touch, multiHost, home, replyKey, onBack, onAnswer, onSent, onKilled, refresh, onSplit, onReplace, onClosePane }: Props) {
-  const term = useRef<TerminalHandle>(null);
-  const [tab, setTab] = useState<'terminal' | Panel>('terminal');
+  const surface = useRef<SurfaceHandle>(null);
+  // 'main' is the session itself, drawn by whichever surface is chosen.
+  const [tab, setTab] = useState<'main' | Panel>('main');
   const [panel, setPanel] = stored<Panel | ''>('ah.panel', '');
   const [keysPref, setKeysPref] = stored<'auto' | 'on' | 'off'>('ah.keys', 'auto');
+  const [viewPref, setViewPref] = stored<View>('ah.view', 'terminal');
   const [menu, setMenu] = useState(false);
   const [capture, setCapture] = useState<string | null>(null);
   const [queueOpen, setQueueOpen] = useState(false);
-  const [dragging, setDragging] = useState(false);
-  const [ctrl, setCtrl] = useState(false);
-  const [alt, setAlt] = useState(false);
-  const [shift, setShift] = useState(false);
-  const [pasting, setPasting] = useState(false);
   const [focus, setFocus] = useState(0);
   const { color, name: agentName } = look(w.agent);
   const modelLabel = shortModel(w.model);
 
-  useEffect(() => setTab('terminal'), [w.key]);
+  const abs = (p: string) => (p.startsWith('~') ? home + p.slice(1) : p);
+  const views = viewsFor(w);
+  const view: View = views.includes(viewPref) ? viewPref : 'terminal';
+  const Surface = SURFACES[view];
+
+  useEffect(() => {
+    setTab('main');
+    setRenaming(false);
+  }, [w.key]);
+  // The terminal supplies its own input, so the graphical composer lives only
+  // in the GUI view. "Reply" focuses whichever input is showing.
+  const focusInput = () => {
+    if (view === 'gui') setFocus((n) => n + 1);
+    else surface.current?.focus();
+  };
   useEffect(() => {
     if (replyKey) {
-      setTab('terminal');
-      setFocus((n) => n + 1);
+      setTab('main');
+      focusInput();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [replyKey]);
-
-  const abs = (p: string) => (p.startsWith('~') ? home + p.slice(1) : p);
-  const showKeys = (keysPref === 'on' || (keysPref === 'auto' && touch)) && tab === 'terminal';
+  const showKeys = (keysPref === 'on' || (keysPref === 'auto' && touch)) && tab === 'main' && view === 'terminal';
   const elsewhere = others(w.devices);
-  const transform = useCallback(
-    (d: string) => {
-      if (!ctrl && !alt && !shift) return d;
-      setCtrl(false);
-      setAlt(false);
-      setShift(false);
-      return applyModifiers(d, ctrl, alt, shift);
-    },
-    [ctrl, alt, shift],
-  );
 
-  // Pasted or dropped files are uploaded to the host and their paths typed in.
-  async function sendFiles(files: FileList | File[]) {
-    const list = Array.isArray(files) ? files : [...files];
-    if (!list.length) return;
-    try {
-      const paths = await Promise.all(list.map((f) => client.upload(f)));
-      term.current?.send(paths.map(shellQuote).join(' ') + ' ');
-      term.current?.focus();
-    } catch (e) {
-      alert((e as Error).message);
-    }
-  }
-
-  async function pasteClipboard() {
-    if (pasting) return;
-    setPasting(true);
-    try {
-      // Start the read directly from the click to retain browser user activation.
-      const { text, files } = await readClipboard(navigator.clipboard);
-      if (files.length) await sendFiles(files);
-      else if (text) term.current?.paste(text);
-    } catch {
-      alert('Clipboard access was denied or unavailable. Use the keyboard’s Paste action, or allow clipboard access and try again.');
-    } finally {
-      setPasting(false);
-    }
-  }
+  /** Switch surfaces; the next one mounts fresh, so focus waits a frame. */
+  const switchView = (next: View, focusAfter = false) => {
+    setViewPref(next);
+    setTab('main');
+    if (focusAfter) requestAnimationFrame(() => requestAnimationFrame(() => surface.current?.focus()));
+  };
 
   async function act(fn: () => Promise<unknown>) {
     setMenu(false);
@@ -146,11 +121,44 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
     refresh();
   }
 
-  const rename = () =>
-    act(async () => {
-      const name = prompt('Rename session', w.name)?.trim();
-      if (name && name !== w.name) await client.rename(w.id, name);
-    });
+  // Inline rename: clicking the title turns it into a field. Enter commits,
+  // Escape cancels, leaving the field commits too.
+  const [renaming, setRenaming] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
+  const [nameSaving, setNameSaving] = useState(false);
+  const renameCancelled = useRef(false);
+
+  const startRename = () => {
+    setNameDraft(w.name);
+    renameCancelled.current = false;
+    setRenaming(true);
+    setMenu(false);
+  };
+
+  async function commitRename() {
+    const name = nameDraft.trim();
+    if (nameSaving) return;
+    if (!name || name === w.name) {
+      setRenaming(false);
+      return;
+    }
+    setNameSaving(true);
+    try {
+      await client.rename(w.id, name);
+    } catch (e) {
+      alert((e as Error).message);
+      setNameSaving(false);
+      return;
+    }
+    setNameSaving(false);
+    setRenaming(false);
+    refresh();
+  }
+
+  const cancelRename = () => {
+    renameCancelled.current = true;
+    setRenaming(false);
+  };
 
   // Terminate kills the tmux window; stronger wording while it is working,
   // waiting, or holding queued prompts (F44).
@@ -179,9 +187,8 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
         cwd={abs(w.cwd)}
         agent={w.agent}
         onInsert={(text) => {
-          setTab('terminal');
-          term.current?.send(text);
-          term.current?.focus();
+          setTab('main');
+          surface.current?.insert(text);
         }}
       />
     );
@@ -208,9 +215,38 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
               {w.launch ? ` · ${w.launch}` : ''}
             </span>
           )}
-          <button className="name" onClick={rename} title="Rename">
-            {w.title}
-          </button>
+          {renaming ? (
+            <input
+              className="name editing"
+              autoFocus
+              value={nameDraft}
+              disabled={nameSaving}
+              maxLength={80}
+              aria-label="Session name"
+              onFocus={(e) => e.currentTarget.select()}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  commitRename();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  cancelRename();
+                }
+              }}
+              onBlur={() => {
+                if (renameCancelled.current) {
+                  renameCancelled.current = false;
+                  return;
+                }
+                commitRename();
+              }}
+            />
+          ) : (
+            <button className="name" onClick={startRename} title="Rename">
+              {w.title}
+            </button>
+          )}
           {narrow && (
             <span className="eyebrow">
               {[w.agent ? agentName : w.cwd, multiHost ? w.host : null, elsewhere ? `also open on ${elsewhere}` : null].filter(Boolean).join(' · ')}
@@ -220,22 +256,32 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
         {narrow ? (
           <span className={`pill ${w.status}`}>{w.status === 'busy' && !w.agent ? 'Live' : STATUS_PILL[w.status]}</span>
         ) : (
-          <div className="session-pills">
-            <span className={`pill ${w.status}`}>
-              {w.status === 'waiting' && <span className="dot waiting" />} {STATUS_PILL[w.status]}
-            </span>
-            {multiHost && <span className="pill mono">{w.host}</span>}
-            {w.branch && (
-              <span className="pill mono">
-                <Icon name="branch" size={12} /> {w.branch}
+          <>
+            <div className="session-pills">
+              <span className={`pill ${w.status}`}>
+                {w.status === 'waiting' && <span className="dot waiting" />} {STATUS_PILL[w.status]}
               </span>
-            )}
-            {w.queued > 0 && (
-              <button className="pill waiting" onClick={() => setQueueOpen(true)} title="Review queued messages">
-                ⇥ {w.queued} queued
+              {multiHost && <span className="pill mono">{w.host}</span>}
+              {w.queued > 0 && (
+                <button className="pill waiting" onClick={() => setQueueOpen(true)} title="Review queued messages">
+                  ⇥ {w.queued} queued
+                </button>
+              )}
+              {elsewhere && <span className="devices">On {elsewhere}</span>}
+            </div>
+            {/* Outside .session-pills: it clips overflow, which would cut off the dropdown. */}
+            {w.branch && <BranchPicker client={client} windowId={w.id} current={w.branch} onSwitched={refresh} />}
+            {w.branch && <PrLink client={client} windowId={w.id} branch={w.branch} />}
+          </>
+        )}
+        {views.length > 1 && (
+          <div className="view-toggle" role="group" aria-label="View">
+            {views.map((v) => (
+              <button key={v} className={v === view ? 'on' : ''} aria-pressed={v === view} title={`${VIEW_LABEL[v]} view`} onClick={() => switchView(v)}>
+                <Icon name={v === 'gui' ? 'chat' : 'terminal'} size={15} />
+                {!narrow && <span>{VIEW_LABEL[v]}</span>}
               </button>
-            )}
-            {elsewhere && <span className="devices">On {elsewhere}</span>}
+            ))}
           </div>
         )}
         {!narrow && (
@@ -261,7 +307,7 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
           </button>
           {menu && (
             <div className="menu" onMouseLeave={() => setMenu(false)}>
-              <button onClick={rename}>Rename</button>
+              <button onClick={startRename}>Rename</button>
               <button onClick={() => act(() => client.pin(w.uid, !w.pinned))}>{w.pinned ? 'Unpin' : 'Pin to top'}</button>
               <button onClick={() => { setMenu(false); setQueueOpen(true); }}>Queued messages ({w.queued})</button>
               {onSplit && (
@@ -313,14 +359,16 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
               >
                 Scrollback as text
               </button>
-              <button
-                onClick={() => {
-                  setKeysPref(showKeys ? 'off' : 'on');
-                  setMenu(false);
-                }}
-              >
-                {showKeys ? 'Hide' : 'Show'} on-screen keys
-              </button>
+              {view === 'terminal' && (
+                <button
+                  onClick={() => {
+                    setKeysPref(showKeys ? 'off' : 'on');
+                    setMenu(false);
+                  }}
+                >
+                  {showKeys ? 'Hide' : 'Show'} on-screen keys
+                </button>
+              )}
               <button
                 onClick={() => {
                   navigator.clipboard?.writeText(`ah attach ${w.uid}`).catch(() => {});
@@ -340,8 +388,8 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
 
       {narrow && (
         <div className="seg-tabs" role="tablist">
-          <button role="tab" aria-selected={tab === 'terminal'} className={tab === 'terminal' ? 'on' : ''} onClick={() => setTab('terminal')}>
-            Terminal
+          <button role="tab" aria-selected={tab === 'main'} className={tab === 'main' ? 'on' : ''} onClick={() => setTab('main')}>
+            {VIEW_LABEL[view]}
           </button>
           {diffTab && (
             <button role="tab" aria-selected={tab === 'diff'} className={tab === 'diff' ? 'on' : ''} onClick={() => setTab('diff')}>
@@ -355,78 +403,26 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
       )}
 
       <div className="session-body">
-        <div
-          className="session-main"
-          onPasteCapture={(e) => {
-            if (tab === 'terminal' && !(e.target as HTMLElement).closest('.composer-bar')) {
-              const pasted = clipboardFiles(e.clipboardData);
-              if (pasted.length) {
-                e.preventDefault();
-                e.stopPropagation();
-                sendFiles(pasted);
-              }
-            }
-          }}
-          onDragOver={(e) => {
-            if (tab === 'terminal' && e.dataTransfer.types.includes('Files')) {
-              e.preventDefault();
-              setDragging(true);
-            }
-          }}
-          onDragLeave={(e) => e.currentTarget === e.target && setDragging(false)}
-          onDrop={(e) => {
-            setDragging(false);
-            if (tab === 'terminal' && e.dataTransfer.files.length) {
-              e.preventDefault();
-              sendFiles(e.dataTransfer.files);
-            }
-          }}
-        >
-          <Terminal
-            ref={term}
-            key={w.key}
-            hidden={tab !== 'terminal'}
-            windowId={w.id}
-            wsUrl={client.wsUrl}
-            transformInput={transform}
-            onGone={refresh}
-          />
-          {tab !== 'terminal' && <div className="session-main" style={{ minHeight: 0 }}>{panelView(tab)}</div>}
-          {dragging && <div className="drop-hint">Drop to upload to {w.host} and insert the path</div>}
-
-          {w.status === 'waiting' && w.ask && tab === 'terminal' && (
-            <div className="ask-banner">
-              <span className="card-kind">{KIND_LABEL[w.ask.kind]}</span>
-              {w.ask.text && <pre className={`ask-box ${w.ask.kind === 'command' || w.ask.kind === 'screen' ? 'code' : ''}`}>{w.ask.text}</pre>}
-              <div className="actions">
-                {w.answerable ? (
-                  <>
-                    <button className="btn primary" onClick={() => onAnswer(w, 'approve')}>
-                      Approve
-                    </button>
-                    <button className="btn" onClick={() => onAnswer(w, 'deny')}>
-                      Deny
-                    </button>
-                  </>
-                ) : (
-                  <button className="btn primary" onClick={() => setFocus((n) => n + 1)}>
-                    Reply
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {showKeys && (
-            <KeyBar
-              ctrl={ctrl} alt={alt} shift={shift} pasting={pasting}
-              setCtrl={setCtrl} setAlt={setAlt} setShift={setShift}
-              send={(d) => term.current?.send(d)} onPaste={pasteClipboard}
-              onKeyboard={() => term.current?.focus()}
+        <div className="session-main">
+          <Suspense fallback={<div className="surface" />}>
+            <Surface
+              key={`${view}:${w.key}`}
+              ref={surface}
+              w={w}
+              client={client}
+              hidden={tab !== 'main'}
+              showKeys={showKeys}
+              onAnswer={onAnswer}
+              onReply={focusInput}
+              onUseTerminal={() => switchView('terminal', true)}
+              refresh={refresh}
             />
+          </Suspense>
+          {tab !== 'main' && <div className="session-main" style={{ minHeight: 0 }}>{panelView(tab)}</div>}
+          {view === 'gui' && (
+            <ComposerBar client={client} target={w.uid} agent={w.agent} w={w} onSent={onSent} focusKey={focus}
+              onSettingsOpen={() => switchView('terminal', true)} />
           )}
-          <ComposerBar client={client} target={w.uid} agent={w.agent} w={w} onSent={onSent} focusKey={focus}
-            onSettingsOpen={() => { setTab('terminal'); requestAnimationFrame(() => term.current?.focus()); }} />
         </div>
 
         {!narrow && panel && (panel === 'files' || diffTab) && (

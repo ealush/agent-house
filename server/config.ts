@@ -71,6 +71,11 @@ export type Preset = {
    * that mode is on; a mode with no entry is the one where none of them show.
    */
   modeCycle?: { key: string; detect: Record<string, string> };
+  /**
+   * GUI view: the transcript adapter that turns this agent's structured log into
+   * typed events (server/feed). Agents without one are terminal-only.
+   */
+  feed?: string;
 };
 
 export type Config = {
@@ -140,6 +145,7 @@ const DEFAULT_PRESETS: Preset[] = [
     ],
     effort: { args: ['--effort', '{level}'], levels: ['low', 'medium', 'high', 'xhigh', 'max'] },
     catalog: 'claude',
+    feed: 'claude',
     resume: 'claude --continue',
     resumeId: 'claude --resume {id}',
     match: '^claude$',
@@ -181,6 +187,7 @@ const DEFAULT_PRESETS: Preset[] = [
     // Models and their effort levels come from Codex's own catalog (models_cache.json).
     effort: { args: ['-c', 'model_reasoning_effort={level}'], levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] },
     catalog: 'codex',
+    feed: 'codex',
     settingsCommands: { model: '/model', effort: '/model', mode: '/permissions' },
     modelArgs: ['--model', '{model}'],
     resume: 'codex resume --last',

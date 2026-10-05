@@ -431,6 +431,15 @@ kbd {
   font-size: 11.5px;
 }
 
+a.pill {
+  text-decoration: none;
+}
+
+a.pill:hover {
+  color: var(--text);
+  border-color: var(--faint);
+}
+
 .pill.waiting {
   background: var(--accent-bg);
   border-color: var(--accent-line);
@@ -758,15 +767,24 @@ kbd {
 }
 
 .session-title .name {
-  border: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
   background: none;
-  padding: 0;
+  padding: 2px 8px;
+  margin-left: -9px;
   text-align: left;
   font-size: 16px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Inline rename: the title becomes a field without moving anything. */
+.session-title input.name.editing {
+  border-color: var(--line-2);
+  background: var(--sunken);
+  text-overflow: clip;
 }
 
 .narrow .session-title .name {
@@ -800,6 +818,41 @@ kbd {
   display: flex;
   flex-direction: column;
   position: relative;
+}
+
+.surface {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* Terminal | GUI: which surface draws the session. */
+.view-toggle {
+  display: flex;
+  padding: 2px;
+  gap: 2px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.view-toggle button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.view-toggle button.on {
+  background: var(--raised);
+  color: var(--text);
 }
 
 .side-panel {
@@ -2549,6 +2602,11 @@ button.tool-chip:hover {
   top: calc(100% + 6px);
 }
 
+.popover.right {
+  left: auto;
+  right: 0;
+}
+
 .picker {
   display: flex;
   flex-direction: column;
@@ -2673,6 +2731,31 @@ button.tool-chip:hover {
 .picker-name:disabled {
   opacity: .55;
   cursor: default;
+}
+
+/* ---------- branch picker (header pill dropdown) */
+
+.branch-picker {
+  min-width: 280px;
+}
+
+.branch-search {
+  padding: 2px 6px 6px;
+}
+
+.branch-rows {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.branch-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 13px;
 }
 
 /* ---------- new session dialog */

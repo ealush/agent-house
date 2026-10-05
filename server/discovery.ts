@@ -1,6 +1,6 @@
 // Finds past conversations in each harness's own on-disk store, so sessions
 // ah never started (or whose registry entry is gone) can still be resumed.
-// We only read metadata — titles, cwd, model — never parse transcripts beyond that.
+// We only read metadata — titles, cwd, model; the GUI's server/feed reads the rest.
 import { createReadStream } from 'node:fs';
 import { open, readdir, readFile, stat } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
@@ -14,6 +14,8 @@ export type Transcript = {
   title: string;
   model?: string;
   updatedAt: number;
+  /** Where it lives, for readers of the conversation itself (server/feed). */
+  file: string;
 };
 
 const MAX_AGE_DAYS = 30;
@@ -109,7 +111,7 @@ export async function parseClaude(file: string, mtime: number): Promise<Transcri
       if (typeof m === 'string' && !m.startsWith('<')) model = m;
     }
   }
-  return { harness: 'claude', harnessId, cwd, title: title ?? prompt, model, updatedAt: mtime };
+  return { harness: 'claude', harnessId, cwd, title: title ?? prompt, model, updatedAt: mtime, file };
 }
 
 async function discoverClaude(): Promise<Transcript[]> {
@@ -146,7 +148,7 @@ export async function parseCodex(file: string, mtime: number): Promise<Transcrip
     return !!(id && model && prompt);
   });
   if (!id || !prompt) return null;
-  return { harness: 'codex', harnessId: id, cwd, title: prompt, model, updatedAt: mtime };
+  return { harness: 'codex', harnessId: id, cwd, title: prompt, model, updatedAt: mtime, file };
 }
 
 async function codexNames(): Promise<Map<string, string>> {

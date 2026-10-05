@@ -1,0 +1,676 @@
+/* GUI view: everything here is scoped under .gui so it can't leak into the terminal path. */
+
+.gui {
+  --gui-bar: #4f8fea; /* single-series bars; validated for the dark surface */
+  background: var(--bg);
+}
+
+.gui .gui-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.gui .gui-feed {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 16px 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.gui .gui-older {
+  align-self: center;
+}
+
+.gui .gui-empty {
+  margin: 48px auto;
+  text-align: center;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.gui .muted {
+  color: var(--muted);
+}
+
+.gui .small {
+  font-size: 12.5px;
+}
+
+/* JetBrains Mono draws => as an arrow through contextual alternates, not just ligatures. */
+.gui pre,
+.gui code,
+.gui .mono,
+.gui .dl {
+  font-variant-ligatures: none;
+  font-feature-settings: 'calt' 0, 'liga' 0;
+}
+
+/* ---------- messages */
+
+.gui .msg {
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+}
+
+.gui .msg.user {
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.gui .msg.user .bubble {
+  max-width: min(85%, 640px);
+  padding: 9px 13px;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--raised);
+  border: 1px solid var(--line-2);
+  overflow-wrap: anywhere;
+}
+
+.gui .msg-time {
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.gui .msg.agent .chip {
+  margin-top: 2px;
+}
+
+.gui .turn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gui .notice {
+  align-self: center;
+  font-size: 12px;
+  color: var(--faint);
+  padding: 2px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.gui .notice.interrupted {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+/* ---------- markdown */
+
+.gui .md {
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+
+.gui .md > :first-child {
+  margin-top: 0;
+}
+
+.gui .md > :last-child {
+  margin-bottom: 0;
+}
+
+.gui .md p,
+.gui .md ul,
+.gui .md ol {
+  margin: 0.5em 0;
+}
+
+.gui .md ul,
+.gui .md ol {
+  padding-left: 1.4em;
+}
+
+.gui .md h1,
+.gui .md h2,
+.gui .md h3,
+.gui .md h4 {
+  margin: 0.9em 0 0.4em;
+  line-height: 1.3;
+}
+
+.gui .md h1 {
+  font-size: 1.3em;
+}
+
+.gui .md h2 {
+  font-size: 1.15em;
+}
+
+.gui .md h3,
+.gui .md h4 {
+  font-size: 1em;
+}
+
+.gui .md a,
+.gui .file-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.gui .md a:hover,
+.gui .file-link:hover {
+  text-decoration: underline;
+}
+
+.gui .md code {
+  font: 0.92em var(--mono);
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--raised);
+}
+
+.gui .md pre,
+.gui .code-block {
+  margin: 0.5em 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  font: 12.5px/1.55 var(--mono);
+  overflow-x: auto;
+  white-space: pre;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.gui .md pre code {
+  padding: 0;
+  background: none;
+  font-size: inherit;
+}
+
+.gui .code-block.command {
+  color: var(--text);
+}
+
+.gui .code-block.error {
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+}
+
+.gui .md blockquote {
+  margin: 0.5em 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--line-2);
+  color: var(--muted);
+}
+
+.gui .md-table {
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+
+.gui table {
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 50%;
+}
+
+.gui th,
+.gui td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.gui th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.gui .md-img {
+  color: var(--faint);
+}
+
+.gui .md hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+/* ---------- reasoning */
+
+.gui .reasoning-head,
+.gui .tool-more {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--faint);
+  font-size: 12.5px;
+}
+
+.gui .reasoning-head span {
+  display: inline-block;
+  transition: transform 0.15s;
+}
+
+.gui .reasoning.open .reasoning-head span {
+  transform: rotate(90deg);
+}
+
+.gui .reasoning .md {
+  margin-top: 6px;
+  padding-left: 10px;
+  border-left: 2px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ---------- tool calls */
+
+.gui .tool-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.gui .tool {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.gui .tool-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 0;
+  background: none;
+  text-align: left;
+  min-width: 0;
+}
+
+.gui .tool-label {
+  flex: none;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.gui .tool-summary {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gui .tool-state {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--faint);
+}
+
+.gui .tool-caret {
+  flex: none;
+  color: var(--faint);
+  transition: transform 0.15s;
+}
+
+.gui .tool.open .tool-caret {
+  transform: rotate(90deg);
+}
+
+.gui .tool-body {
+  padding: 0 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Status: running → blue pulse, done → green, failed → red. Each also has a label. */
+.gui .tool-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--done);
+}
+
+.gui .tool-dot.running {
+  background: var(--run);
+  animation: gui-pulse 1.2s ease-in-out infinite;
+}
+
+.gui .tool-dot.error {
+  background: var(--danger);
+}
+
+@keyframes gui-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gui .tool-dot.running {
+    animation: none;
+  }
+}
+
+.gui .gui-diff {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--sunken);
+}
+
+.gui .gui-diff .dl {
+  cursor: default;
+}
+
+.gui .gui-diff .dl:hover {
+  box-shadow: none;
+}
+
+.gui .gui-diff .dl .code {
+  overflow: visible;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.gui .gui-diff-file {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+
+.gui .gui-diff .more {
+  margin: 4px;
+}
+
+.gui .questions .question ul {
+  margin: 6px 0;
+  padding-left: 1.2em;
+}
+
+.gui .questions li.picked {
+  color: var(--done);
+}
+
+/* ---------- widgets */
+
+.gui .widget {
+  position: relative;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gui .widget-title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.gui .widget-card.tone-success {
+  border-color: color-mix(in srgb, var(--done) 40%, transparent);
+}
+
+.gui .widget-card.tone-warning {
+  border-color: var(--accent-line);
+  background: var(--accent-bg);
+}
+
+.gui .widget-card.tone-danger {
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+}
+
+.gui .widget-actions,
+.gui .widget-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.gui .widget-choices {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.gui .widget-choice {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.gui .widget-toggle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+.gui .widget .widget {
+  padding: 0;
+  border: 0;
+}
+
+.gui .checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gui .checklist li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.gui .checklist .check {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  border: 1.5px solid var(--line-2);
+  transform: translateY(1px);
+}
+
+.gui .checklist li.done {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-color: var(--faint);
+}
+
+.gui .checklist li.done .check {
+  background: var(--done);
+  border-color: var(--done);
+}
+
+.gui .checklist li.active .check {
+  border-color: var(--run);
+  background: color-mix(in srgb, var(--run) 30%, transparent);
+}
+
+.gui .stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.gui .stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gui .stat-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.gui .stat-value {
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.gui .stat-delta {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.gui .stat-delta.tone-success::before {
+  content: '▲ ';
+  color: var(--done);
+}
+
+.gui .stat-delta.tone-danger::before {
+  content: '▼ ';
+  color: var(--danger);
+}
+
+/* Bars: one baseline, ≤ 20px thick, rounded data end, value at the tip in text ink. */
+.gui .bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gui .bar-row {
+  display: grid;
+  grid-template-columns: minmax(60px, 30%) 1fr;
+  gap: 10px;
+  align-items: center;
+  font-size: 12.5px;
+}
+
+.gui .bar-label {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gui .bar-track {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-left: 1px solid var(--line-2);
+  min-width: 0;
+}
+
+.gui .bar {
+  height: 16px;
+  min-width: 2px;
+  background: var(--gui-bar);
+  border-radius: 0 4px 4px 0;
+}
+
+.gui .bar-row:hover .bar {
+  filter: brightness(1.15);
+}
+
+.gui .bar-value {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.gui .progress {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--raised);
+  overflow: hidden;
+}
+
+.gui .progress span {
+  display: block;
+  height: 100%;
+  background: var(--gui-bar);
+  border-radius: 999px;
+}
+
+.gui .links {
+  margin: 0;
+  padding-left: 1.2em;
+}
+
+.gui .widget-img {
+  max-width: 100%;
+  max-height: 480px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  align-self: flex-start;
+}
+
+/* ---------- live state */
+
+.gui .approval {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--accent-line);
+  background: var(--accent-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gui .approval .actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.gui .working {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  padding-left: 34px;
+}
+
+.gui .gui-latest {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  box-shadow: 0 4px 16px #0008;
+}
+
+.gui .gui-conn {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--raised);
+  color: var(--muted);
+}
+
+.narrow .gui .gui-feed {
+  padding: 10px 12px 16px;
+}
+
+.narrow .gui .msg.agent .chip {
+  display: none;
+}
+
+.narrow .gui .working {
+  padding-left: 0;
+}

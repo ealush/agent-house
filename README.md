@@ -52,7 +52,7 @@ to terminal rules and output activity, and matches live agents to their transcri
 - **Inbox.** What's blocked on you first, as cards showing the exact command or question,
   with one-tap **Approve / Deny / Reply**. Then what's running (live activity per session),
   then idle and done. Group by status, host or project.
-- **Sessions.** A real terminal (xterm.js on a tmux client) with an inline composer:
+- **Sessions.** A real terminal (xterm.js on a tmux client), and a GUI with an inline composer:
   messages are typed in now if the agent is idle, **queued** until it's free if it's
   working, and the session is **resumed** first if it's dead. Diff and Files sit beside it
   (tabs on a phone). Review queued follow-ups and cancel individual messages from the
@@ -67,6 +67,10 @@ to terminal rules and output activity, and matches live agents to their transcri
   Selecting terminal text automatically copies it to the clipboard; use Shift-drag
   when the running TUI captures the mouse (Option-drag on macOS).
   Sidebar sessions can be dragged to reorder them across your devices.
+- **GUI view.** Flip a Claude Code or Codex session from its terminal to a GUI built
+  from the agent's own transcript: markdown, tool calls with diffs and output, plans,
+  approvals, and widgets the agent can ask for (choices, tables, stats, charts).
+  Same live session, no restart. See [docs/gui.md](docs/gui.md).
 - **History.** Every session ah has run, plus past Claude Code and Codex conversations
   found on disk. Resume continues the same conversation (`claude --resume <id>`, …).
 - **Files.** Browse the host, upload from any device into any folder, download, preview,

@@ -1,3 +1,5 @@
+import type { FeedPage } from '../server/feed/schema.ts';
+
 export type Status = 'busy' | 'idle' | 'waiting' | 'attention';
 
 export type Win = {
@@ -36,6 +38,8 @@ export type Win = {
   launchModel: string | null;
   launchEffort: string | null;
   launchMode: string | null;
+  /** Set when the agent's transcript can drive the GUI view. */
+  feed: string | null;
 };
 
 export type Ask = { kind: 'command' | 'tool' | 'question' | 'screen'; text: string };
@@ -78,7 +82,9 @@ export type Preset = {
 
 export type Host = { name: string; self: boolean; online: boolean };
 
-export const API_VERSION = 5;
+export const API_VERSION = 7;
+
+export type PullInfo = { number: number | null; url: string | null };
 
 export type State = {
   api?: number;
@@ -112,6 +118,9 @@ export type WorktreeInfo = {
   sessions: Array<{ id: string; title: string; lifecycle: string }>;
   orphan: boolean;
 };
+
+export type BranchInfo = { name: string; current: boolean; remote: boolean };
+export type BranchList = { current: string | null; branches: BranchInfo[] };
 
 export type SendResult = { outcome: 'delivered' | 'queued'; windowId: string; resumed: boolean; queued: number };
 export type QueueItem = { id: string; text: string; enter: boolean; at: number };
@@ -173,11 +182,17 @@ export function hostApi(base: string) {
     queue: (uid: string) => r<QueueItem[]>('GET', `/api/sessions/${enc(uid)}/queue`),
     switchLaunch: (uid: string, change: { model?: string; effort?: string }) => r<SendResult>('POST', `/api/sessions/${enc(uid)}/switch`, change),
     openSettings: (uid: string, setting: 'model' | 'effort' | 'mode') => r<SendResult>('POST', `/api/sessions/${enc(uid)}/settings`, { setting }),
+    /** GUI view: typed transcript events (server/feed). */
+    feedUrl: (ref: string) => `${base}/api/sessions/${enc(ref)}/feed/stream`,
+    feedPage: (ref: string, before: number, limit = 200) => r<FeedPage>('GET', `/api/sessions/${enc(ref)}/feed?before=${before}&limit=${limit}`),
     interrupt: (uid: string) => r('POST', `/api/sessions/${enc(uid)}/interrupt`, {}),
     clearQueue: (uid: string, itemId?: string) => r('DELETE', `/api/sessions/${enc(uid)}/queue${itemId ? `/${enc(itemId)}` : ''}`),
     pin: (uid: string, pinned: boolean) => r('POST', `/api/sessions/${enc(uid)}/pin`, { pinned }),
     forget: (ref: string) => r('DELETE', `/api/sessions/${enc(ref)}`),
     changes: (id: string) => r<Changes>('GET', `/api/windows/${enc(id)}/changes`),
+    branches: (id: string) => r<BranchList>('GET', `/api/windows/${enc(id)}/branches`),
+    switchBranch: (id: string, branch: string) => r<{ branch: string }>('POST', `/api/windows/${enc(id)}/branches`, { branch }),
+    pull: (id: string) => r<PullInfo>('GET', `/api/windows/${enc(id)}/pull`),
     worktrees: () => r<WorktreeInfo[]>('GET', '/api/worktrees'),
     removeWorktree: (path: string, force: boolean) => r('DELETE', '/api/worktrees', { path, force }),
     prompts: () => r<Array<{ text: string; at: number }>>('GET', '/api/prompts'),
@@ -223,6 +238,7 @@ export function normalize(s: State): State {
       launchModel: w.launchModel ?? null,
       launchEffort: w.launchEffort ?? null,
       launchMode: w.launchMode ?? null,
+      feed: w.feed ?? null,
     })),
   };
 }

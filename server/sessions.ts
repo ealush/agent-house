@@ -56,6 +56,8 @@ export type WindowView = {
   launchModel: string | null;
   launchEffort: string | null;
   launchMode: string | null;
+  /** Transcript adapter for the GUI view (server/feed), null for terminal-only agents. */
+  feed: string | null;
 };
 
 export type Ask = { kind: 'command' | 'tool' | 'question' | 'screen'; text: string };
@@ -340,6 +342,7 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
         launchModel: typeof rec.meta['ah.launch.model'] === 'string' ? (rec.meta['ah.launch.model'] as string) : null,
         launchEffort: typeof rec.meta['ah.launch.effort'] === 'string' ? (rec.meta['ah.launch.effort'] as string) : null,
         launchMode: typeof rec.meta['ah.launch.mode'] === 'string' ? (rec.meta['ah.launch.mode'] as string) : null,
+        feed: preset?.feed ?? null,
       };
     }),
   );
