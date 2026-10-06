@@ -11,6 +11,7 @@ export type SnapshotInfo = {
   uid: string;
   turn: number;
   commit: string;
+  repoRoot?: string;
   kind: 'turn' | 'safety';
   promptExcerpt: string;
   branch: string;
@@ -27,6 +28,7 @@ type Row = {
   uid: string;
   turn: number;
   commit: string;
+  repoRoot: string;
   kind: string;
   promptExcerpt: string;
   branch: string;
@@ -49,6 +51,7 @@ function fromRow(r: Row): SnapshotInfo {
     uid: r.uid,
     turn: r.turn,
     commit: r.commit,
+    repoRoot: r.repoRoot,
     kind: r.kind === 'safety' ? 'safety' : 'turn',
     promptExcerpt: r.promptExcerpt,
     branch: r.branch,
@@ -99,6 +102,7 @@ export class SnapshotStore {
         uid: s.uid,
         turn: s.turn,
         commit: s.commit,
+        repoRoot: s.repoRoot ?? '',
         kind: s.kind,
         promptExcerpt: s.promptExcerpt,
         branch: s.branch,

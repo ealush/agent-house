@@ -833,6 +833,7 @@ export class Core {
         uid,
         turn,
         commit: made.commit,
+        repoRoot: await mainRepo(cwd),
         kind,
         promptExcerpt: promptText.replace(/\s+/g, ' ').trim().slice(0, 120),
         branch: made.branch,
@@ -942,7 +943,8 @@ export class Core {
         : !rec && last && now() - last.createdAt > retentionDays * 86_400;
       const doomed = expired ? list : list.slice(0, Math.max(0, list.length - keepTurns));
       for (const row of doomed) {
-        if (rec) await deleteSnapshotRef(expandHome(rec.cwd), uid, row.turn);
+        const repo = row.repoRoot || (rec ? expandHome(rec.cwd) : null);
+        if (repo) await deleteSnapshotRef(repo, uid, row.turn);
         await this.snapshotStore.remove(uid, row.turn).catch(() => {});
       }
     }

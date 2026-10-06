@@ -1,5 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { createSnapshot, snapshotRef } from './git.ts';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ensureMigrated } from './db.ts';
@@ -58,4 +61,19 @@ test('Core.pruneSnapshots: turn cap keeps the newest, rows of vanished sessions 
   await core.pruneSnapshots();
   assert.deepEqual((await store.list('live1')).map((s) => s.turn), [6, 5, 4], 'cap keeps newest 3');
   assert.deepEqual(await store.list('gone1'), [], 'session gone and rows older than retention: pruned');
+});
+
+
+test('expired snapshots of forgotten sessions also release their git refs', async () => {
+  const path = await freshDb();
+  const repo = await mkdtemp(join(tmpdir(), 'ah-snapshot-retention-'));
+  execFileSync('git', ['init', '-q', repo]);
+  await writeFile(join(repo, 'a.txt'), 'captured');
+  const made = await createSnapshot(repo, { uid: 'forgotten', turn: 1, indexFile: join(repo, '.git', 'test-index'), parent: null, maxFileBytes: 1024 });
+  const store = new SnapshotStore(path);
+  await store.create({ ...row('forgotten', 1, Math.floor(Date.now() / 1000) - 8 * 86400), commit: made.commit, repoRoot: repo });
+  const core = new Core({ ...loadConfig(), snapshots: { maxFileBytes: 1024, keepTurns: 3, retentionDays: 7 } }, new Map(), new Registry(path), new PromptStore(path), store, new RecipeStore(path));
+  await core.pruneSnapshots();
+  assert.deepEqual(await store.list('forgotten'), []);
+  assert.throws(() => execFileSync('git', ['-C', repo, 'rev-parse', '--verify', snapshotRef('forgotten', 1)], { stdio: 'ignore' }));
 });
