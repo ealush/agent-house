@@ -8,14 +8,15 @@ import { dirname, join, resolve, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { buildWindows, buildHistory, adoptTranscripts, type WindowView, type HistoryItem } from './sessions.ts';
-import { Registry, type SessionRecord } from './registry.ts';
+import { Registry, forkMetaOf, type ForkMeta, type SessionRecord } from './registry.ts';
+import { copyTranscript, forkUnavailableReason, removeCopiedTranscript, ForkError } from './fork.ts';
 import { PromptStore } from './prompts.ts';
 import { discover } from './discovery.ts';
 import { expandHome, isExecutableOnPath, type Config, type Preset } from './config.ts';
 import { buildLaunch, customModel, resumeSelection } from './launch.ts';
 import { withCatalog } from './catalog.ts';
 import * as t from './tmux.ts';
-import { listWorktrees, mainRepo, removeWorktree, type Worktree } from './git.ts';
+import { createWorktree, headInfo, listWorktrees, mainRepo, removeWorktree, GitError, type Worktree } from './git.ts';
 import { Push } from './push.ts';
 import type { Peers } from './peers.ts';
 
@@ -25,7 +26,7 @@ export type QueueItem = { id: string; text: string; enter: boolean; at: number; 
 export type Host = { name: string; self: boolean; online: boolean };
 
 /** Bumped when the state shape or API routes change, so a newer page can tell an older server apart. */
-export const API_VERSION = 11;
+export const API_VERSION = 12;
 
 export type State = {
   api: number;
@@ -40,6 +41,34 @@ export type State = {
 };
 
 export type SendResult = { outcome: 'delivered' | 'queued'; windowId: string; resumed: boolean; queued: number };
+
+export type ForkInfo = {
+  canFork: boolean;
+  reason: string | null;
+  harness: string;
+  title: string;
+  suggestedName: string;
+  branch: string | null;
+  head: string | null;
+  dirty: number;
+  busy: boolean;
+  mode: string | null;
+  model: string | null;
+  effort: string | null;
+  dangerous: boolean;
+};
+
+export type ForkResult = {
+  uid: string;
+  id: string;
+  harnessId: string;
+  worktree: string;
+  branch: string;
+  base: string;
+  prompt: SendResult['outcome'] | null;
+};
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export class CoreError extends Error {
   status: number;
@@ -276,6 +305,145 @@ export class Core {
     const dir = (await isDir(cwd)) ? cwd : homedir();
     const out = await this.launch({ preset, cwd: dir, session, name: title || preset.id, command, uid, harnessId, pendingResume: true, meta: launchMeta });
     return { ...out, resumed: true };
+  }
+
+  // ---------- fork (F36): duplicate the conversation into its own worktree session
+
+  /** The parent a fork would copy: a registry record, or a discovered conversation. */
+  private async forkParent(ref: string): Promise<{ uid: string; rec?: SessionRecord; harness: string; harnessId?: string; cwd: string; title: string }> {
+    const rec = this.registry.get(ref);
+    if (rec) return { uid: rec.id, rec, harness: rec.harness, harnessId: rec.harnessId, cwd: rec.cwd, title: rec.title };
+    const i = ref.indexOf(':');
+    if (i > 0) {
+      const found = (await discover()).find((x) => x.harness === ref.slice(0, i) && x.harnessId === ref.slice(i + 1));
+      if (found) return { uid: ref, harness: found.harness, harnessId: found.harnessId, cwd: found.cwd, title: found.title };
+    }
+    throw new CoreError(404, 'session not found');
+  }
+
+  /** What the fork dialog needs to know before anything is created. */
+  async forkInfo(ref: string): Promise<ForkInfo> {
+    const parent = await this.forkParent(ref);
+    const reason = forkUnavailableReason(parent.harness, parent.harnessId);
+    const head = await headInfo(expandHome(parent.cwd)).catch(() => null);
+    const state = await this.current();
+    const live = parent.rec ? state.windows.find((w) => w.uid === parent.rec!.id) : undefined;
+    const sel = parent.rec ? resumeSelection(parent.rec.meta as Record<string, unknown>) : {};
+    const preset = this.config.presets.find((p) => p.id === parent.harness);
+    const mode = sel.mode ? preset?.modes?.find((m) => m.id === sel.mode) : undefined;
+    return {
+      canFork: !reason && !!head?.head,
+      reason: reason ?? (head?.head ? null : 'forking needs a git repository with at least one commit: two sessions in one checkout would overwrite each other'),
+      harness: parent.harness,
+      title: parent.title,
+      suggestedName: `${parent.title} (fork)`,
+      branch: head?.branch ?? null,
+      head: head?.head ? head.head.slice(0, 7) : null,
+      dirty: head?.dirty ?? 0,
+      busy: live?.status === 'busy',
+      mode: sel.mode ?? null,
+      model: sel.model ?? null,
+      effort: sel.effort ?? null,
+      dangerous: !!mode?.dangerous,
+    };
+  }
+
+  /**
+   * Forks a session: copies its transcript to a new conversation id homed in a
+   * fresh worktree, then resumes the copy there. The parent is never touched.
+   * A working parent is waited out (its transcript is mid-write); the copy,
+   * the worktree and the launch roll back as one if anything fails midway.
+   */
+  async fork(ref: string, o: { name?: string; prompt?: string; model?: string; effort?: string; mode?: string } = {}): Promise<ForkResult> {
+    const parent = await this.forkParent(ref);
+    const reason = forkUnavailableReason(parent.harness, parent.harnessId);
+    if (reason) throw new CoreError(422, reason);
+
+    // Wait for the live turn to end: the transcript is only consistent between turns.
+    if (parent.rec) {
+      const deadline = Date.now() + 120_000;
+      for (;;) {
+        const state = await this.current();
+        const live = state.windows.find((w) => w.uid === parent.rec!.id);
+        if (!live || live.status !== 'busy') break;
+        if (Date.now() > deadline) throw new CoreError(409, 'the session is still working; a fork starts when its current turn ends, so try again shortly');
+        await sleep(500);
+        await this.tick().catch(() => {});
+      }
+    }
+
+    const found = (await discover()).find((x) => x.harness === parent.harness && x.harnessId === parent.harnessId);
+    if (!found) throw new CoreError(422, 'no transcript found for this conversation; it may have been cleared or rotated');
+
+    const cwd = expandHome(parent.cwd);
+    const head = await headInfo(cwd).catch(() => null);
+    if (!head?.head) throw new CoreError(422, 'forking needs a git repository with at least one commit: two sessions in one checkout would overwrite each other');
+
+    const name = (o.name?.trim() || `${parent.title} (fork)`).slice(0, 80);
+    let wt: Worktree;
+    try {
+      wt = await createWorktree(cwd, name, head.head);
+    } catch (err) {
+      if (err instanceof GitError) throw new CoreError(400, err.message);
+      throw err;
+    }
+
+    let copied: { harnessId: string; file: string };
+    try {
+      copied = await copyTranscript(parent.harness, found.file, wt.path);
+    } catch (err) {
+      await removeWorktree(wt.path, true).catch(() => {});
+      if (err instanceof ForkError) throw new CoreError(err.status, err.message);
+      throw new CoreError(500, `fork failed while copying the conversation: ${(err as Error).message}`);
+    }
+
+    const preset = await withCatalog(this.preset(parent.harness));
+    const inherited = parent.rec ? resumeSelection(parent.rec.meta as Record<string, unknown>) : {};
+    const sel = { mode: o.mode ?? inherited.mode, model: o.model ?? inherited.model, effort: o.effort ?? inherited.effort };
+    let command: string;
+    let launchMeta: Record<string, unknown>;
+    try {
+      const plan = buildLaunch(preset, { ...sel, resume: copied.harnessId });
+      command = plan.command;
+      launchMeta = { ...plan.meta };
+    } catch {
+      command = preset.resumeId ? preset.resumeId.replace('{id}', copied.harnessId) : (preset.resume ?? preset.command);
+      launchMeta = {};
+    }
+    const parentFork: ForkMeta | null = parent.rec ? forkMetaOf(parent.rec) : null;
+    const forkMeta: ForkMeta = {
+      parentUid: parent.uid,
+      rootUid: parentFork?.rootUid ?? parent.uid,
+      rootTitle: parentFork?.rootTitle ?? parent.title,
+      forkedAt: now(),
+      forkSeq: this.registry.forksOf(parent.uid).length + 1,
+    };
+    let session = this.config.defaultSession;
+    if (parent.rec?.tmux?.session && (await t.hasSession(parent.rec.tmux.session))) session = parent.rec.tmux.session;
+    let out: { uid: string; windowId: string };
+    try {
+      out = await this.launch({
+        preset,
+        cwd: wt.path,
+        session,
+        name,
+        command,
+        harnessId: copied.harnessId,
+        pendingResume: true,
+        meta: { ...launchMeta, 'ah.worktree': wt, 'ah.order': this.nextOrder(), 'ah.fork': forkMeta },
+      });
+    } catch (err) {
+      await removeCopiedTranscript(copied.file);
+      await removeWorktree(wt.path, true).catch(() => {});
+      throw err;
+    }
+
+    let prompt: SendResult['outcome'] | null = null;
+    if (o.prompt?.trim()) {
+      prompt = await this.send(out.uid, o.prompt.trim()).then((r) => r.outcome).catch(() => null);
+    }
+    this.tick().catch(() => {});
+    return { uid: out.uid, id: out.windowId, harnessId: copied.harnessId, worktree: wt.path, branch: wt.branch, base: head.head.slice(0, 7), prompt };
   }
 
   // ---------- send (F8 alive/dead branch, F22 durable queue)

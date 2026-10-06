@@ -5,7 +5,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { capturePane, listWindows, setWindowOption, type RawWindow } from './tmux.ts';
-import { Registry, type SessionRecord } from './registry.ts';
+import { Registry, forkMetaOf, type SessionRecord } from './registry.ts';
 import { snapshot, descendants } from './procs.ts';
 import { discover, type Transcript } from './discovery.ts';
 import type { Config, Preset } from './config.ts';
@@ -58,6 +58,8 @@ export type WindowView = {
   launchMode: string | null;
   /** Transcript adapter for the GUI view (server/feed), null for terminal-only agents. */
   feed: string | null;
+  /** Fork lineage (F36): this session is a fork, and how many forks it has. Null when neither. */
+  fork: { parentUid: string; parentTitle: string; rootUid: string; forks: number } | null;
 };
 
 export type Ask = { kind: 'command' | 'tool' | 'question' | 'screen'; text: string };
@@ -75,6 +77,8 @@ export type HistoryItem = {
   at: number;
   pinned: boolean;
   worktree: string | null;
+  /** Fork lineage (F36): the title of the session this one was forked from. */
+  fork: { parentTitle: string } | null;
 };
 
 const HOME = homedir();
@@ -241,6 +245,11 @@ const clip = (s: string, n = 160) => (s.length > n ? s.slice(0, n - 1) + '…' :
 
 export async function buildWindows(config: Config, viewerMap: Map<string, string[]>, registry: Registry): Promise<WindowView[]> {
   const [raw, procs] = await Promise.all([listWindows(), snapshot()]);
+  const forkCounts = new Map<string, number>();
+  for (const r of registry.all()) {
+    const f = forkMetaOf(r);
+    if (f) forkCounts.set(f.parentUid, (forkCounts.get(f.parentUid) ?? 0) + 1);
+  }
   const matchers = compileMatchers(config.presets);
   const waitingRules = new Map(config.presets.map((p) => [p.id, (p.waitingPatterns ?? []).map((s) => new RegExp(s, 'm'))]));
   const now = Date.now() / 1000;
@@ -343,6 +352,17 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
         launchEffort: typeof rec.meta['ah.launch.effort'] === 'string' ? (rec.meta['ah.launch.effort'] as string) : null,
         launchMode: typeof rec.meta['ah.launch.mode'] === 'string' ? (rec.meta['ah.launch.mode'] as string) : null,
         feed: preset?.feed ?? null,
+        fork: (() => {
+          const f = forkMetaOf(rec);
+          const forks = forkCounts.get(uid) ?? 0;
+          if (!f && !forks) return null;
+          return {
+            parentUid: f?.parentUid ?? '',
+            parentTitle: f ? (registry.get(f.parentUid)?.title ?? f.rootTitle) : '',
+            rootUid: f?.rootUid ?? uid,
+            forks,
+          };
+        })(),
       };
     }),
   );
@@ -414,6 +434,7 @@ export async function buildHistory(registry: Registry, windows: WindowView[]): P
       at: t.updatedAt,
       pinned: false,
       worktree: null,
+      fork: null,
     });
   }
   return items.sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.at - a.at).slice(0, 150);
@@ -421,6 +442,7 @@ export async function buildHistory(registry: Registry, windows: WindowView[]): P
 
 function fromRecord(r: SessionRecord, t?: Transcript): HistoryItem {
   const wt = r.meta['ah.worktree'] as { path: string } | undefined;
+  const fork = forkMetaOf(r);
   return {
     ref: r.id,
     kind: 'ended',
@@ -434,5 +456,6 @@ function fromRecord(r: SessionRecord, t?: Transcript): HistoryItem {
     at: r.endedAt ?? r.lastActivityAt,
     pinned: !!r.meta['ah.pinned'],
     worktree: wt?.path ? shortPath(wt.path) : null,
+    fork: fork ? { parentTitle: fork.rootTitle } : null,
   };
 }
