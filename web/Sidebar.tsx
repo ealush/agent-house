@@ -4,24 +4,6 @@ import { askConfirm } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
-import { setThemeMode, toggleMode } from './theme.ts';
-import { useTheme } from './useTheme.ts';
-
-/** One-tap dark/light switch; full control lives in Settings → Appearance. */
-function ThemeToggle() {
-  const { mode, resolved } = useTheme();
-  const next = resolved === 'dark' ? 'light' : 'dark';
-  return (
-    <button
-      className="btn ghost small"
-      title={`Appearance: ${mode} — switch to ${next}`}
-      aria-label={`Switch to ${next} mode`}
-      onClick={() => setThemeMode(toggleMode(mode, resolved))}
-    >
-      <Icon name={resolved === 'dark' ? 'sun' : 'moon'} size={14} /> {resolved === 'dark' ? 'Light' : 'Dark'}
-    </button>
-  );
-}
 
 export type Page = 'inbox' | 'history' | 'sessions' | 'settings' | 'search';
 
@@ -338,7 +320,6 @@ export function Sidebar({ state, error, page, selected, visibleKeys, device, onP
           <button className="btn ghost small" onClick={onWorktrees}>
             <Icon name="branch" size={14} /> Worktrees
           </button>
-          <ThemeToggle />
         </div>
       </footer>
     </nav>
