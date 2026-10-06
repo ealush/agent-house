@@ -2,6 +2,11 @@
 // history, recent prompts, and loose settings. One SQLite file per host at
 // ~/.local/state/ah/ah.db (0600). Chat history is keyed by session uid with
 // no foreign key, so it outlives the session's own row on purpose.
+//
+// Full-text search (issue #9) adds FTS5 virtual tables (transcript_fts,
+// chat_fts) and a SearchSource fingerprint table to the same file. Prisma
+// cannot model FTS5, so they exist only in the migration SQL and in raw
+// queries in server/search.ts; the search.enabled flag lives in Setting.
 
 generator client {
   provider = "prisma-client-js"

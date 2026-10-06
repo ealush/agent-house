@@ -119,7 +119,42 @@ export const API_VERSION = 12;
 export type PullInfo = { number: number | null; url: string | null };
 
 export type Subscription = { id: string; name: string; baseUrl: string; model: string; hasKey: boolean; isDefault: boolean };
-export type ChatMsg = { role: 'user' | 'assistant'; text: string; at: number };
+export type ChatMsg = { role: 'user' | 'assistant'; text: string; at: number; id?: number };
+
+/** Full-text search (issue #9): one grouped hit per session or chat. */
+export type SearchExcerpt = { seq: number | null; msgId: number | null; role: string; at: number; snippet: string };
+export type SearchHit = {
+  kind: 'transcript' | 'chat';
+  host: string;
+  ref: string | null;
+  uid: string | null;
+  harness: string | null;
+  harnessId: string | null;
+  title: string;
+  cwd: string;
+  at: number;
+  matches: number;
+  excerpts: SearchExcerpt[];
+};
+export type SearchResponse = {
+  enabled: boolean;
+  building: boolean;
+  results: SearchHit[];
+  total: number;
+  tookMs: number;
+  notes: Array<{ host: string; error: string }>;
+};
+export type SearchStatus = {
+  enabled: boolean;
+  building: boolean;
+  sourcesIndexed: number;
+  sourcesKnown: number;
+  entries: number;
+  transcriptEntries: number;
+  chatEntries: number;
+  lastBuiltAt: number;
+};
+export type SearchQuery = { q: string; scope?: string; role?: string; project?: string; host?: string; model?: string; limit?: number; offset?: number };
 export type ChatSummary = { uid: string; title: string; count: number; firstAt: number; lastAt: number; preview: string };
 export type Followup = { title: string; kind: 'session' | 'chat'; text: string };
 export type ChatReply = { message: ChatMsg; followups: Followup[] };
@@ -327,6 +362,20 @@ export function hostApi(base: string) {
       r<ChatReply>('POST', `/api/windows/${enc(id)}/chat`, subscriptionId ? { text, subscriptionId } : { text }),
     clearChat: (id: string) => r('DELETE', `/api/windows/${enc(id)}/chat`),
     pastChats: (q?: string) => r<ChatSummary[]>('GET', q ? `/api/chats?q=${enc(q)}` : '/api/chats'),
+    search: (p: SearchQuery, all = false) => {
+      const qs = new URLSearchParams({ q: p.q });
+      if (p.scope) qs.set('in', p.scope);
+      if (p.role) qs.set('role', p.role);
+      if (p.project) qs.set('p', p.project);
+      if (p.host) qs.set('h', p.host);
+      if (p.model) qs.set('m', p.model);
+      if (p.limit) qs.set('limit', String(p.limit));
+      if (p.offset) qs.set('offset', String(p.offset));
+      return r<SearchResponse>('GET', `/api/search${all ? '/all' : ''}?${qs}`);
+    },
+    searchStatus: () => r<SearchStatus>('GET', '/api/search/status'),
+    searchRebuild: () => r<SearchStatus>('POST', '/api/search/rebuild', {}),
+    searchSetEnabled: (enabled: boolean) => r<SearchStatus>('POST', '/api/search/enabled', { enabled }),
     pastChat: (uid: string) => r<{ messages: ChatMsg[] }>('GET', `/api/chats/${enc(uid)}`),
     recipes: () => r<Recipe[]>('GET', '/api/recipes'),
     saveRecipes: (recipes: Recipe[]) => r<Recipe[]>('PUT', '/api/recipes', { recipes }),

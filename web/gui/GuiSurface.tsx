@@ -23,10 +23,18 @@ const UNAVAILABLE: Record<string, string> = {
 const time = (at: number) => (at ? new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
 
 function BlockView({ block, results, agent, snap, onRestore }: { block: Block; results: Record<string, ToolResult>; agent: string | null; snap?: SnapshotInfo; onRestore?: (snap: SnapshotInfo) => void }) {
-  if (block.kind === 'notice') return <PartView part={block.part} />;
+  // data-seq is the search jump target (issue #9): the block key starts with
+  // the seq of its first entry.
+  const seq = parseInt(block.key, 10);
+  if (block.kind === 'notice')
+    return (
+      <div data-seq={seq} style={{ display: 'contents' }}>
+        <PartView part={block.part} />
+      </div>
+    );
   if (block.kind === 'user') {
     return (
-      <div className="msg user">
+      <div className="msg user" data-seq={seq}>
         <div className="bubble">
           {block.parts.map((p, i) => (
             <PartView key={i} part={p} />
@@ -45,7 +53,7 @@ function BlockView({ block, results, agent, snap, onRestore }: { block: Block; r
     );
   }
   return (
-    <div className="msg agent">
+    <div className="msg agent" data-seq={seq}>
       <span className="chip sm" style={{ '--agent': look(agent).color } as React.CSSProperties}>
         <AgentLogo id={agent} size={13} />
       </span>
@@ -126,6 +134,43 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
     }),
     [client, w.uid, w.cwd],
   );
+
+  // Search jump (issue #9): a result asked for one entry by seq. Page older
+  // entries in until it is loaded, then scroll to it and flash it, once.
+  const jumpSeq = useRef<number | null>(null);
+  const jumpTries = useRef(0);
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('ah.seqJump');
+      if (!raw) return;
+      const jump = JSON.parse(raw) as { uid?: string; seq?: number };
+      if (jump.uid === w.uid && typeof jump.seq === 'number') {
+        sessionStorage.removeItem('ah.seqJump');
+        jumpSeq.current = jump.seq;
+        jumpTries.current = 0;
+        stick.current = false;
+      }
+    } catch {}
+  }, [w.uid]);
+  useEffect(() => {
+    const target = jumpSeq.current;
+    if (target == null || state.status === 'unavailable') return;
+    const el = scroller.current?.querySelector(`[data-seq="${target}"]`);
+    if (el) {
+      jumpSeq.current = null;
+      el.scrollIntoView({ block: 'center' });
+      el.classList.add('jump-flash');
+      setTimeout(() => el.classList.remove('jump-flash'), 2400);
+      return;
+    }
+    // Not loaded yet: the snapshot holds only the newest page, so page older.
+    if (state.hasOlder && jumpTries.current < 60) {
+      jumpTries.current++;
+      void loadOlder();
+    } else if (!state.hasOlder && state.entries.length) {
+      jumpSeq.current = null; // older than anything retained; give up quietly
+    }
+  }, [state.entries, state.hasOlder, state.status, loadOlder]);
 
   // Follow new output while you're at the bottom; keep your place when you scrolled up,
   // and when older entries are prepended.

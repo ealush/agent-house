@@ -5,7 +5,7 @@ import { Icon } from './icons.tsx';
 import { look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
 
-export type Page = 'inbox' | 'history' | 'sessions' | 'settings';
+export type Page = 'inbox' | 'history' | 'sessions' | 'settings' | 'search';
 
 type Props = {
   state: State | null;

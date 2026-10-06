@@ -31,6 +31,7 @@ import { ensureMigrated, getDb } from './db.ts';
 import { importLegacyJson } from './migrate.ts';
 import { FsError, list, makeDir, receive, sendFile, setRoots, roots } from './files.ts';
 import { Peers, proxyHttp, proxyWs } from './peers.ts';
+import { SearchIndexer, combineResponses, type SearchParams } from './search.ts';
 import { Auth, AuthError, clearCookies, type Caller } from './auth.ts';
 import { Gate, LOOPBACK_BIND } from './gate.ts';
 import { HttpError, send, readBody, readJson, str, safeDecode } from './http.ts';
@@ -68,6 +69,7 @@ try {
 }
 const core = new Core(config, viewers);
 const sidechat = new SideChatStore();
+const search = new SearchIndexer(getDb(), () => core.searchSources());
 const gate = new Gate();
 const peers = new Peers(config.peers, PORT);
 core.peers = peers;
@@ -104,6 +106,25 @@ async function projectSuggestions(windowPaths: string[]): Promise<string[]> {
   }
   out.add('~');
   return [...out];
+}
+
+/** Query params for /api/search and /api/search/all. Values are only ever bound parameters downstream. */
+function searchParams(url: URL): SearchParams {
+  const scope = url.searchParams.get('in');
+  const num = (k: string) => {
+    const n = Number(url.searchParams.get(k));
+    return Number.isFinite(n) && n > 0 ? n : undefined;
+  };
+  return {
+    q: (url.searchParams.get('q') ?? '').slice(0, 500),
+    scope: scope === 'transcripts' || scope === 'chats' ? scope : 'all',
+    role: url.searchParams.get('role') ?? undefined,
+    project: url.searchParams.get('p') ?? undefined,
+    host: url.searchParams.get('h') ?? undefined,
+    model: url.searchParams.get('m') ?? undefined,
+    limit: num('limit'),
+    offset: num('offset'),
+  };
 }
 
 // ---------- API (reached only after the gate in handle())
@@ -615,6 +636,55 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     return send(res, 200, { messages: await sidechat.history(m[1]) });
   }
 
+  // ---------- full-text search over transcripts and side chats (issue #9)
+
+  if (route('GET', /^\/api\/search\/status$/)) return send(res, 200, await search.status());
+
+  if (route('GET', /^\/api\/search$/)) return send(res, 200, await search.search(searchParams(url)));
+
+  if (route('GET', /^\/api\/search\/all$/)) {
+    // Hub fan-out: our own results plus every peer's, merged. A peer that is
+    // offline or errors becomes a note in the response, never a failed search.
+    const params = searchParams(url);
+    const parts: Array<{ host: string; body?: Awaited<ReturnType<typeof search.search>>; error?: string }> = [
+      { host: hostname(), body: await search.search(params) },
+    ];
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries({ q: params.q, in: params.scope, role: params.role, p: params.project, m: params.model, limit: params.limit, offset: params.offset })) {
+      if (v !== undefined && v !== 'all') qs.set(k, String(v));
+    }
+    for (const peer of peers.list()) {
+      if (!peer.online) {
+        parts.push({ host: peer.name, error: 'offline' });
+        continue;
+      }
+      try {
+        const r = await fetch(`${peer.url}/api/search?${qs}`, {
+          headers: peer.token ? { authorization: `Bearer ${peer.token}` } : {},
+          signal: AbortSignal.timeout(3000),
+        });
+        if (!r.ok) throw new Error(`http ${r.status}`);
+        parts.push({ host: peer.name, body: await r.json() });
+      } catch {
+        parts.push({ host: peer.name, error: 'unreachable' });
+      }
+    }
+    return send(res, 200, combineResponses(parts));
+  }
+
+  if (route('POST', /^\/api\/search\/rebuild$/)) {
+    void search.rebuild().catch((err) => console.error('search rebuild failed:', err));
+    audit(req, 'search.rebuild');
+    return send(res, 200, await search.status());
+  }
+
+  if (route('POST', /^\/api\/search\/enabled$/)) {
+    const on = (await readJson(req)).enabled === true;
+    await search.setEnabled(on);
+    audit(req, on ? 'search.enable' : 'search.disable');
+    return send(res, 200, await search.status());
+  }
+
   if ((m = path.match(/^\/api\/windows\/(@\d+)(\/capture)?$/))) {
     const id = m[1];
     if (!(await t.windowExists(id))) throw new HttpError(404, 'window not found');
@@ -894,6 +964,7 @@ await importLegacyJson(getDb()).then(
 );
 await core.loadPrompts();
 core.start();
+search.start();
 peers.start();
 
 const server: Server = createServer(handle);

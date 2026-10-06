@@ -127,6 +127,8 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   // Past-chats browser inside the chat panel; resets with the session.
   const [chatHistory, setChatHistory] = useState(false);
+  // A search result can ask for one chat at one message (issue #9).
+  const [chatJump, setChatJump] = useState<{ uid: string; msgId: number } | null>(null);
   const [keysPref, setKeysPref] = stored<'auto' | 'on' | 'off'>('ah.keys', 'auto');
   const [viewPref, setViewPref] = stored<View>('ah.view', 'terminal');
   const [menu, setMenu] = useState(false);
@@ -146,6 +148,20 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
     setTab('main');
     setRenaming(false);
     setChatHistory(false);
+    setChatJump(null);
+    try {
+      const raw = sessionStorage.getItem('ah.chatJump');
+      if (raw) {
+        sessionStorage.removeItem('ah.chatJump');
+        const jump = JSON.parse(raw) as { uid?: string; msgId?: number };
+        if (jump.uid === w.uid && typeof jump.msgId === 'number') {
+          setChatJump({ uid: jump.uid, msgId: jump.msgId });
+          setChatHistory(true);
+          setPanel('chat');
+          setPanelCollapsed(false);
+        }
+      }
+    } catch {}
   }, [w.key]);
   // The terminal supplies its own input, so the graphical composer lives only
   // in the GUI view. "Reply" focuses whichever input is showing.
@@ -274,7 +290,7 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
     ) : p === 'diff' ? (
       <ChangesPanel client={client} windowId={w.id} onComment={w.agent ? comment : undefined} />
     ) : p === 'chat' ? (
-      chatHistory ? <ChatHistory client={client} /> : <SideChat client={client} w={w} onSent={onSent} />
+      chatHistory ? <ChatHistory client={client} jump={chatJump} /> : <SideChat client={client} w={w} onSent={onSent} />
     ) : (
       <FilesPanel
         fs={client.fs}
