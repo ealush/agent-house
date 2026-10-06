@@ -108,6 +108,12 @@ export function Workspace(props: Props) {
             const other = windows.find((x) => x.key !== w.key)?.key ?? w.key;
             props.onLayout(splitLeaf(layout, path, dir === 'right' ? 'horizontal' : 'vertical', other));
           }}
+          onOpenKey={(key) => {
+            const hit = panes.find((p) => p.sessionKey === key);
+            if (hit) props.onFocus(hit.path);
+            else props.onLayout(replaceLeaf(layout, path, key));
+          }}
+          onSplitWith={(key) => props.onLayout(splitLeaf(layout, path, 'horizontal', key))}
           onReplace={() => setPicking(path)}
           onClosePane={() => props.onLayout(closeLeaf(layout, path))}
         />
