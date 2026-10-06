@@ -115,6 +115,27 @@ test('branches: list local recency, switch local, track remote, create new, reje
   await assert.rejects(switchBranch(dir, 'other'), /local changes.*overwritten/i);
 });
 
+test('branches: a branch checked out in another worktree is marked and refuses to switch', async () => {
+  const dir = await repo();
+  const wt = await createWorktree(dir, 'Held work');
+  try {
+    const fromMain = await listBranches(dir);
+    assert.equal(fromMain.branches.find((b) => b.name === wt.branch)?.worktree, wt.path);
+    assert.equal(fromMain.branches.find((b) => b.name === 'main')?.worktree ?? null, null);
+
+    const fromWt = await listBranches(wt.path);
+    assert.equal(fromWt.branches.find((b) => b.name === wt.branch)?.worktree ?? null, null, 'own checkout never counts');
+    assert.equal(fromWt.branches.find((b) => b.name === 'main')?.worktree, dir);
+
+    await assert.rejects(switchBranch(dir, wt.branch), /already checked out in worktree/);
+
+    await removeWorktree(wt.path, true);
+    assert.equal((await switchBranch(dir, wt.branch)).branch, wt.branch, 'removing the worktree frees the kept branch');
+  } finally {
+    await removeWorktree(wt.path, true).catch(() => {});
+  }
+});
+
 test('worktree lifecycle: create, detect, list, refuse dirty removal, force', async () => {
   const dir = await repo();
   const wt = await createWorktree(dir, 'Fix login');
