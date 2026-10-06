@@ -299,6 +299,12 @@ export function App({ onLock }: { onLock: () => void }) {
               .then(() => refresh(w.host))
               .catch((e) => showError(e, "Couldn't terminate"));
           }}
+          onRunAction={(host, runId, action) => {
+            const client = clientFor(host);
+            (action === 'stop' ? client.stopRun(runId) : client.archiveRun(runId))
+              .then(() => refresh(host))
+              .catch((e) => showError(e, action === 'stop' ? "Couldn't stop the run" : "Couldn't archive the run"));
+          }}
         />
       ) : (
         !narrow && (

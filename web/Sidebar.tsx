@@ -25,6 +25,8 @@ type Props = {
   onReorder: (uid: string, host: string, order: number) => void;
   /** Terminate the live session (F44). */
   onKill: (w: Win) => void;
+  /** Stop or archive a whole recipe run (issue #6). */
+  onRunAction?: (host: string, runId: string, action: 'stop' | 'archive') => void;
   /** Start dragging a session toward a split pane (F46). */
   onDragSession?: (w: Win) => void;
   /** Collapse the sidebar into a rail. */
@@ -64,7 +66,7 @@ export function confirmTerminate(w: Win) {
 }
 
 /** Desktop navigation: inbox, hosts, and every live session grouped by host (or project). */
-export function Sidebar({ state, error, page, selected, visibleKeys, device, onPage, onSelect, onSearch, onNew, onWorktrees, onReorder, onKill, onDragSession, onCollapse }: Props) {
+export function Sidebar({ state, error, page, selected, visibleKeys, device, onPage, onSelect, onSearch, onNew, onWorktrees, onReorder, onKill, onRunAction, onDragSession, onCollapse }: Props) {
   const windows = state?.windows ?? [];
   const visible = new Set(visibleKeys);
   const waiting = windows.filter((w) => w.status === 'waiting').length;
@@ -72,9 +74,16 @@ export function Sidebar({ state, error, page, selected, visibleKeys, device, onP
   const [dragKey, setDragKey] = useState<string | null>(null);
   const [overKey, setOverKey] = useState<string | null>(null);
   const [menuKey, setMenuKey] = useState<string | null>(null);
+  const [collapsedRuns, setCollapsedRuns] = useState<Set<string>>(new Set());
 
+  // Recipe members group under their run (issue #6); the rest keep the usual grouping.
+  const runGroups = new Map<string, Win[]>();
   const groups = new Map<string, Win[]>();
   for (const w of sortWindows(windows)) {
+    if (w.run) {
+      runGroups.set(w.run.runId, [...(runGroups.get(w.run.runId) ?? []), w]);
+      continue;
+    }
     const k = multiHost ? w.host : w.project;
     groups.set(k, [...(groups.get(k) ?? []), w]);
   }
@@ -239,6 +248,45 @@ export function Sidebar({ state, error, page, selected, visibleKeys, device, onP
             ))}
           </>
         )}
+        {[...runGroups.entries()].map(([runId, ws]) => {
+          const first = ws[0];
+          const run = first.run!;
+          const needsYou = ws.filter((w) => w.status === 'waiting').length;
+          const rolled = ws.some((w) => w.status === 'waiting') ? 'waiting' : ws.some((w) => w.status === 'busy') ? 'busy' : ws.some((w) => w.status === 'attention') ? 'attention' : 'idle';
+          const collapsed = collapsedRuns.has(runId);
+          const toggle = () =>
+            setCollapsedRuns((prev) => {
+              const next = new Set(prev);
+              if (next.has(runId)) next.delete(runId);
+              else next.add(runId);
+              return next;
+            });
+          return (
+            <section key={runId}>
+              <div className="side-label">
+                <button type="button" className="run-toggle" aria-expanded={!collapsed} title={collapsed ? 'Expand run' : 'Collapse run'} onClick={toggle}>
+                  <span aria-hidden>{collapsed ? '▸' : '▾'}</span>
+                </button>
+                <span className={`dot ${rolled}`} />
+                <span className="grow">
+                  {run.name} - {first.project}
+                </span>
+                {needsYou > 0 && <span className="badge">{needsYou}</span>}
+                {onRunAction && (
+                  <>
+                    <button type="button" className="run-act" title="Stop all sessions in this run" onClick={() => onRunAction(first.host, runId, 'stop')}>
+                      Stop
+                    </button>
+                    <button type="button" className="run-act" title="Archive this run: ends sessions, keeps transcripts in History" onClick={() => onRunAction(first.host, runId, 'archive')}>
+                      Archive
+                    </button>
+                  </>
+                )}
+              </div>
+              {!collapsed && ws.map((w) => row(w, ws))}
+            </section>
+          );
+        })}
         {[...groups.entries()].map(([group, ws]) => (
           <section key={group}>
             <div className={`side-label ${multiHost ? 'host' : ''}`}>

@@ -3342,3 +3342,62 @@ button.tool-chip:hover {
   flex-direction: column;
   align-items: stretch;
 }
+
+/* Fleet recipes (issue #6) */
+.run-toggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+}
+.run-act {
+  flex: none;
+  display: none;
+  padding: 0 2px;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0.75;
+}
+.side-label:hover .run-act,
+.side-label:focus-within .run-act {
+  display: inline-block;
+}
+.run-act:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+.recipe-members {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+}
+.recipe-member {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.recipe-member .grow {
+  flex: 1;
+}
+.recipe-editor textarea {
+  width: 100%;
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+  margin: 8px 0;
+}
+.new-session textarea {
+  width: 100%;
+  font: inherit;
+}

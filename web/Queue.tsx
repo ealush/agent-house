@@ -96,6 +96,7 @@ function QueueRow({ item, busy, onSendNow, onCancel }: {
   const preview = firstLine.length > 160 ? `${firstLine.slice(0, 160)}…` : firstLine;
   return (
     <li>
+      {item.source && <span className="pill attention">{item.source}</span>}
       {open || !collapsible ? <pre>{item.text}</pre> : <pre className="queue-preview">{preview}</pre>}
       {collapsible && (
         <button className="btn ghost small queue-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>

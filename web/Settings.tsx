@@ -2,14 +2,16 @@ import { useEffect, useState } from 'react';
 import { NotifySettings } from './NotifyDialog.tsx';
 import { Security } from './Security.tsx';
 import { SubscriptionsPanel } from './Subscriptions.tsx';
+import { RecipesPanel } from './Recipes.tsx';
 
-// Settings with a side panel: Security, Notifications, Subscriptions.
+// Settings with a side panel: Security, Notifications, Subscriptions, Recipes.
 // Sections are hash-addressable (#settings/subscriptions) so anything in the
 // app can link straight at one.
 const SECTIONS = [
   { id: 'security', label: 'Security' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'subscriptions', label: 'Subscriptions' },
+  { id: 'recipes', label: 'Recipes' },
 ] as const;
 
 type Section = (typeof SECTIONS)[number]['id'];
@@ -59,6 +61,7 @@ export function Settings({ onLocked, onNotifyChange }: { onLocked: () => void; o
             </div>
           )}
           {section === 'subscriptions' && <SubscriptionsPanel />}
+          {section === 'recipes' && <RecipesPanel />}
         </div>
       </div>
     </div>
