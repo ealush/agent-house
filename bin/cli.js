@@ -34,6 +34,10 @@ export const HELP = `usage: ah <command>
   wait <target> [--timeout SECS]              block until the agent stops working
   resume <target>                             bring an ended/saved conversation back
   queue <target> [--clear]                    show or drop queued messages
+  recipe list                                 fleet recipes and recent runs
+  recipe run <id> [--cwd DIR] [--brief "..."] [--session S]
+                                              launch a recipe's whole team at once
+  recipe stop <runId>                         stop every session in a run
   hooks install|uninstall|status              wire Claude Code / Codex status hooks
   auth code                                   one-time code to set up a new device (10 min)
   auth password [--remove]                    set the optional master password
@@ -210,6 +214,46 @@ export async function run(cmd, args) {
       if (!q.length) return console.log('queue empty');
       for (const item of q) console.log(`${item.id}  ${item.text.split('\n')[0]}`);
       return;
+    }
+    case 'recipe': {
+      const sub = args.shift();
+      if (sub === 'list' || !sub) {
+        const recipes = await call('GET', '/api/recipes');
+        if (!recipes.length) console.log('no recipes');
+        else
+          table([
+            ['ID', 'NAME', 'MEMBERS', 'PROBLEMS'],
+            ...recipes.map((r) => [r.id, r.name, r.members.map((m) => `${m.key}:${m.preset}`).join(' '), (r.errors ?? []).join('; ')]),
+          ]);
+        const runs = await call('GET', '/api/runs');
+        if (runs.length) {
+          console.log('');
+          table([
+            ['RUN', 'RECIPE', 'STATE', 'MEMBERS'],
+            ...runs.map((r) => [r.runId, r.recipeId, r.state, r.members.map((m) => `${m.key}=${m.status}`).join(' ')]),
+          ]);
+        }
+        return;
+      }
+      if (sub === 'run') {
+        const id = args.shift() ?? fail('usage: ah recipe run <id> [--cwd DIR] [--brief "..."]');
+        const body = {
+          cwd: resolve(opt(args, '--cwd', process.cwd())),
+          brief: opt(args, '--brief', ''),
+          session: opt(args, '--session', undefined),
+        };
+        if (body.session === undefined) delete body.session;
+        const out = await call('POST', `/api/recipes/${encodeURIComponent(id)}/launch`, body);
+        console.log(`run ${out.run.runId} (${out.run.name})`);
+        for (const m of out.members) console.log(`  ${m.key}  ${m.uid}  ${m.id}`);
+        return;
+      }
+      if (sub === 'stop') {
+        const runId = args.shift() ?? fail('usage: ah recipe stop <runId>');
+        await call('POST', `/api/runs/${encodeURIComponent(runId)}/stop`, {});
+        return console.log(`stopped run ${runId}`);
+      }
+      fail('usage: ah recipe list | run <id> [--cwd DIR] [--brief "..."] | stop <runId>');
     }
     case 'auth': {
       const sub = args.shift();
