@@ -247,7 +247,7 @@ export type WorktreeInfo = {
 
 export type BulkRemoveResult = { path: string; ok: boolean; error?: string; gone?: boolean; reclaimedBytes: number };
 
-export type BranchInfo = { name: string; current: boolean; remote: boolean };
+export type BranchInfo = { name: string; current: boolean; remote: boolean; worktree?: string | null };
 export type BranchList = { current: string | null; branches: BranchInfo[] };
 
 export type SendResult = { outcome: 'delivered' | 'queued'; windowId: string; resumed: boolean; queued: number };

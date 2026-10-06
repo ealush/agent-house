@@ -226,6 +226,12 @@ export type BranchInfo = {
   current: boolean;
   /** True for a remote-tracking branch with no local branch of the same name. */
   remote: boolean;
+  /**
+   * Path of another worktree that already has this branch checked out
+   * (null when the branch is free to switch to). The current checkout is
+   * never reported here: only a *different* worktree blocks `git switch`.
+   */
+  worktree?: string | null;
 };
 
 export type BranchList = { current: string | null; branches: BranchInfo[] };
@@ -238,24 +244,53 @@ async function toplevel(dir: string): Promise<string> {
   }
 }
 
+/**
+ * Branch -> path of a *different* worktree holding it checked out.
+ * Parsed from `git worktree list --porcelain`; the caller's own checkout
+ * never counts, since switching to its current branch is a no-op.
+ */
+async function otherWorktreesByBranch(root: string): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const porcelain = await git(root, 'worktree', 'list', '--porcelain').catch(() => '');
+  let path = '';
+  for (const line of porcelain.split('\n')) {
+    if (line.startsWith('worktree ')) path = line.slice('worktree '.length).trim();
+    else if (line.startsWith('branch refs/heads/')) {
+      const branch = line.slice('branch refs/heads/'.length).trim();
+      if (path && path !== root && branch && !out.has(branch)) out.set(branch, path);
+    } else if (!line.trim()) path = '';
+  }
+  return out;
+}
+
+function friendlyWorktreeError(branch: string, path: string): string {
+  return `branch '${branch}' is already checked out in worktree at '${path}' — open that worktree, or remove it (the branch itself is kept) to free the name`;
+}
+
 /** Local branches (most recently committed first), then remote-tracking ones. */
 export async function listBranches(dir: string): Promise<BranchList> {
   const root = await toplevel(dir);
-  const [current, locals, remotes] = await Promise.all([
+  const [current, locals, remotes, holders] = await Promise.all([
     git(root, 'branch', '--show-current').then((s) => s.trim() || null).catch(() => null),
     git(root, 'for-each-ref', '--sort=-committerdate', '--format=%(refname:short)', 'refs/heads/').catch(() => ''),
     git(root, 'for-each-ref', '--sort=refname', '--format=%(refname:short)', 'refs/remotes/').catch(() => ''),
+    otherWorktreesByBranch(root),
   ]);
   const localNames = locals.split('\n').map((s) => s.trim()).filter(Boolean);
   const localSet = new Set(localNames);
-  const branches: BranchInfo[] = localNames.map((name) => ({ name, current: name === current, remote: false }));
+  const branches: BranchInfo[] = localNames.map((name) => ({
+    name,
+    current: name === current,
+    remote: false,
+    worktree: name === current ? null : (holders.get(name) ?? null),
+  }));
   for (const full of remotes.split('\n').map((s) => s.trim()).filter(Boolean)) {
     if (full.endsWith('/HEAD')) continue; // symbolic ref (e.g. origin/HEAD), not a branch
     const slash = full.indexOf('/');
     if (slash < 0) continue;
     const name = full.slice(slash + 1);
     if (!name || localSet.has(name)) continue;
-    branches.push({ name, current: false, remote: true });
+    branches.push({ name, current: false, remote: true, worktree: null });
   }
   return { current, branches };
 }
@@ -275,8 +310,14 @@ function gitMessage(err: unknown): string {
  */
 export async function switchBranch(dir: string, name: string): Promise<{ branch: string }> {
   const root = await toplevel(dir);
-  const fail = (err: unknown): never => {
-    throw new GitError(gitMessage(err));
+  const fail = (err: unknown, branch = name): never => {
+    const raw = gitMessage(err);
+    // Git's raw conflict ("'x' is already used by worktree at '...'") survives
+    // terminating the session because the managed worktree is kept for resume.
+    // Rewrite it into an actionable message instead of leaking the raw fatal.
+    const m = raw.match(/^'(.+)' is already used by worktree at '(.+)'$/);
+    if (m) throw new GitError(friendlyWorktreeError(m[1], m[2]));
+    throw new GitError(raw);
   };
   try {
     await git(root, 'check-ref-format', '--branch', name);
@@ -285,6 +326,10 @@ export async function switchBranch(dir: string, name: string): Promise<{ branch:
   }
   const local = await git(root, 'show-ref', '--verify', '--quiet', `refs/heads/${name}`).then(() => true).catch(() => false);
   if (local) {
+    // Fail fast with the worktree path before git does: the holder survives
+    // session termination (it is kept so an ended session can resume there).
+    const holder = (await otherWorktreesByBranch(root)).get(name);
+    if (holder) throw new GitError(friendlyWorktreeError(name, holder));
     try {
       await git(root, 'switch', name);
     } catch (err) {

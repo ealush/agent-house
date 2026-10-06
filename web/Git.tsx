@@ -184,6 +184,15 @@ function BranchMenu({ client, windowId, close, onSwitched }: { client: HostApi; 
 
   async function choose(branch: string) {
     if (busy) return;
+    // A branch checked out in another worktree can never switch here — git
+    // refuses even after its session is terminated, because the managed
+    // worktree is kept so the ended session can resume. Fail inline with the
+    // same actionable message the server returns, without a round trip.
+    const held = rows.find((b) => b.name === branch)?.worktree;
+    if (held) {
+      setError(`branch '${branch}' is already checked out in worktree at '${held}' — open that worktree, or remove it (the branch itself is kept) to free the name`);
+      return;
+    }
     setBusy(branch);
     setError(null);
     try {
@@ -228,18 +237,22 @@ function BranchMenu({ client, windowId, close, onSwitched }: { client: HostApi; 
       {!list && !loadError && <p className="panel-msg">Loading branches…</p>}
       {list && (
         <div className="branch-rows">
-          {rows.map((b, i) => (
+          {rows.map((b, i) => {
+            const held = !b.current && !!b.worktree;
+            return (
             <div key={b.name} className={`picker-row ${i === at ? 'on' : ''}`}>
-              <button type="button" className="picker-name" disabled={!!busy} onMouseEnter={() => setActive(i)} onClick={() => choose(b.name)}
-                title={b.remote ? 'Remote branch — checks out with tracking' : b.current ? 'Current branch' : `Switch to ${b.name}`}>
+              <button type="button" className="picker-name" disabled={!!busy || held} onMouseEnter={() => setActive(i)} onClick={() => choose(b.name)}
+                title={held ? `Already checked out in worktree at ${b.worktree} — open that worktree or remove it (the branch is kept)` : b.remote ? 'Remote branch — checks out with tracking' : b.current ? 'Current branch' : `Switch to ${b.name}`}>
                 <Icon name="branch" size={13} />
                 <span className="branch-name">{b.name}</span>
                 {b.current && <span className="check">✓</span>}
-                {b.remote && !b.current && <span className="hint">remote</span>}
+                {held && !b.current && <span className="hint">in worktree</span>}
+                {!held && b.remote && !b.current && <span className="hint">remote</span>}
                 {busy === b.name && <span className="hint">switching…</span>}
               </button>
             </div>
-          ))}
+            );
+          })}
           {create && (
             <div className={`picker-row ${rows.length === at ? 'on' : ''}`}>
               <button type="button" className="picker-name" disabled={!!busy} onMouseEnter={() => setActive(rows.length)} onClick={() => choose(create)}
