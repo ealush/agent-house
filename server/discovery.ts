@@ -348,7 +348,7 @@ async function discoverMuse(): Promise<Transcript[]> {
 
 export async function parseOpencode(file: string, mtime: number): Promise<Transcript | null> {
   const info = json(await readFile(file, 'utf8').catch(() => ''));
-  if (typeof info?.id !== 'string') return null;
+  if (typeof info?.id !== 'string' || info.parentID || info.parentId || info.parent_id) return null;
   const storage = file.split('/').slice(0, -3).join('/');
   let prompt: string | null = null;
   let model: string | undefined;

@@ -250,3 +250,33 @@ test('feed: reads incrementally across partial lines, numbers by line, rebuilds 
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+
+test('DocumentFeed rebuilds on same-length edits and tool-result updates', async () => {
+  let doc: any = { messages: [{ id: 'm1', type: 'gemini', content: 'before' }] };
+  const feed = new DocumentFeed('mem-edits', async () => parseGeminiDocument(doc));
+  await feed.update();
+  doc.messages[0].content = 'after!';
+  await feed.update();
+  assert.equal(feed.generation, 1);
+  assert.equal((feed.entries[0].parts[0] as any).text, 'after!');
+  doc.messages[0].toolCalls = [{ id: 'tool', name: 'run_shell_command', args: {}, result: 'done', status: 'success' }];
+  await feed.update();
+  assert.equal(feed.generation, 2);
+  assert.ok(feed.entries[0].parts.some((p) => p.type === 'tool_result'));
+});
+
+test('DocumentFeed retains its generation when a capped document grows and resets its floor on replacement', async () => {
+  let entries = Array.from({ length: 5001 }, (_, i) => ({ seq: i + 1, id: String(i), role: 'user' as const, step: 'message' as const, at: 0, parts: [{ type: 'text' as const, text: String(i) }] }));
+  const feed = new DocumentFeed('mem-cap', async () => entries);
+  await feed.update();
+  assert.equal(feed.floor, 2);
+  entries = [...entries, { ...entries[0], seq: 5002, id: 'new' }];
+  await feed.update();
+  assert.equal(feed.generation, 0);
+  assert.equal(feed.floor, 3);
+  entries = [{ ...entries[0], id: 'replacement' }];
+  await feed.update();
+  assert.equal(feed.generation, 1);
+  assert.equal(feed.floor, 0);
+});

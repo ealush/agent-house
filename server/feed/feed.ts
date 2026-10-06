@@ -184,17 +184,19 @@ export class DocumentFeed {
   private async reload() {
     const next = await this.load(this.file).catch(() => null);
     if (!next) return;
-    const sig = next.map((e) => `${e.seq}:${e.id}:${e.parts.length}`).join('|') + `#${next.reduce((n, e) => n + JSON.stringify(e.parts).length, 0)}`;
+    const sig = JSON.stringify(next);
     if (sig === this.sig) return;
-    const prefix = this.entries.length <= next.length && this.entries.every((e, i) => e.id === next[i].id && e.seq === next[i].seq);
+    const retained = next.slice(-MAX_ENTRIES);
+    const floor = next.length > MAX_ENTRIES ? retained[0].seq : 0;
+    const bySeq = new Map(next.map((e) => [e.seq, e]));
+    // A stream can append new entries, but needs a fresh snapshot when an
+    // existing message is edited (tokens, tool results, same-length changes).
+    const prefix = this.entries.every((e) => e.seq < floor || JSON.stringify(e) === JSON.stringify(bySeq.get(e.seq)));
     if (this.entries.length && !prefix) this.generation++;
-    this.entries = next;
+    this.entries = retained;
     this.sig = sig;
     this.head = next.length ? next[next.length - 1].seq : 0;
-    if (this.entries.length > MAX_ENTRIES) {
-      this.entries.splice(0, this.entries.length - MAX_ENTRIES);
-      this.floor = this.entries[0].seq;
-    }
+    this.floor = floor;
   }
 }
 

@@ -101,6 +101,7 @@ async function loadFromDb(source: string): Promise<Entry[] | null> {
         parts,
       });
     }
+    messages.sort((a, b) => a.at - b.at || a.id.localeCompare(b.id));
     return opencodeEntries(messages);
   } catch {
     return null;
