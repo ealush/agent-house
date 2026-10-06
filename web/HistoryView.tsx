@@ -5,7 +5,7 @@ import { AgentLogo, shortModel } from './logos.tsx';
 import { Rows } from './Inbox.tsx';
 
 /** Ended and saved conversations from every host; one tap resumes on the host that has it. */
-export function HistoryView({ state, onResume, onForget }: { state: State; onResume: (h: HistoryItem) => void; onForget: (h: HistoryItem) => void }) {
+export function HistoryView({ state, onResume, onForget, onFork }: { state: State; onResume: (h: HistoryItem) => void; onForget: (h: HistoryItem) => void; onFork?: (h: HistoryItem) => void }) {
   const multiHost = state.hosts.length > 1;
   return (
     <div className="page">
@@ -31,7 +31,7 @@ export function HistoryView({ state, onResume, onForget }: { state: State; onRes
                     {h.title}
                   </span>
                   <span className="sub">
-                    {[name, modelLabel, multiHost ? h.host : null, h.project, h.kind === 'ended' ? 'ended' : null, h.worktree ? '⎇ worktree' : null].filter(Boolean).join(' · ')}
+                    {[name, modelLabel, multiHost ? h.host : null, h.project, h.kind === 'ended' ? 'ended' : null, h.worktree ? '⎇ worktree' : null, h.fork ? `⑂ fork of ${h.fork.parentTitle}` : null].filter(Boolean).join(' · ')}
                   </span>
                 </span>
                 <span className="when">{age(h.at)}</span>
@@ -39,6 +39,11 @@ export function HistoryView({ state, onResume, onForget }: { state: State; onRes
                   <button className="btn small" onClick={() => onResume(h)}>
                     Resume
                   </button>
+                  {onFork && (h.harness === 'claude' || h.harness === 'codex') && (
+                    <button className="btn small ghost" onClick={() => onFork(h)}>
+                      Fork
+                    </button>
+                  )}
                   <button className="icon-btn small" title="Hide" onClick={() => onForget(h)}>
                     <Icon name="close" size={14} />
                   </button>

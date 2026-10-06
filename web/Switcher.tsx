@@ -109,7 +109,10 @@ export function Switcher({ windows, history, onPick, onResume, onClose }: Props)
                   <AgentLogo id={agent} />
                 </span>
                 <span className="stack">
-                  <span className="name">{r.kind === 'win' ? r.w.title : r.h.title}</span>
+                  <span className="name">
+                    {r.kind === 'win' ? r.w.title : r.h.title}
+                    {(r.kind === 'win' ? r.w.fork : r.h.fork) ? ' ⑂' : ''}
+                  </span>
                   <span className="sub">{r.kind === 'win' ? [r.w.host, r.w.project, r.w.detail].filter(Boolean).join(' · ') : `${r.h.host} · ${r.h.project} · ${ago(r.h.at)}`}</span>
                 </span>
                 {r.kind === 'win' ? <span className={`dot ${r.w.status}`} /> : <span className="pill">resume</span>}

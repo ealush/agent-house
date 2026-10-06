@@ -44,18 +44,33 @@ export function slugify(s: string): string {
 
 export type Worktree = { path: string; branch: string; repo: string };
 
-export async function createWorktree(dir: string, name: string): Promise<Worktree> {
+export async function createWorktree(dir: string, name: string, fromRef?: string): Promise<Worktree> {
   const main = await mainRepo(dir);
   const slug = `${slugify(name)}-${randomBytes(2).toString('hex')}`;
   const path = join(worktreeRoot(main), slug);
   const branch = `ah/${slug}`;
   await mkdir(dirname(path), { recursive: true });
   try {
-    await git(main, 'worktree', 'add', '-b', branch, path);
+    // `fromRef` pins the base (a fork starts from its parent's branch HEAD, which
+    // may differ from the main checkout's HEAD when the parent is itself a worktree).
+    await git(main, 'worktree', 'add', '-b', branch, path, ...(fromRef ? [fromRef] : []));
   } catch (err) {
     throw new GitError(String((err as { stderr?: string }).stderr ?? err).trim());
   }
   return { path, branch, repo: main };
+}
+
+export type HeadInfo = { branch: string | null; head: string; dirty: number };
+
+/** Where a checkout stands: current branch, HEAD commit, uncommitted file count. */
+export async function headInfo(dir: string): Promise<HeadInfo> {
+  const root = await toplevel(dir);
+  const [branch, head, status] = await Promise.all([
+    git(root, 'branch', '--show-current').then((s) => s.trim() || null).catch(() => null),
+    git(root, 'rev-parse', 'HEAD').then((s) => s.trim()).catch(() => ''),
+    git(root, 'status', '--porcelain').catch(() => ''),
+  ]);
+  return { branch, head, dirty: status.split('\n').filter(Boolean).length };
 }
 
 export type WorktreeInfo = Worktree & {
@@ -73,6 +88,7 @@ export type WorktreeInfo = Worktree & {
   /** Seconds since epoch: directory mtime, refined by Core with the owning session's last activity. */
   lastActivityAt: number;
 };
+
 
 /** Worktrees of the given repos that ah manages, with enough state to decide cleanup. */
 export async function listWorktrees(repos: string[]): Promise<WorktreeInfo[]> {

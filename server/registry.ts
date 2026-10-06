@@ -37,6 +37,31 @@ export type SessionRecord = {
 
 type Tmux = { session: string; windowId: string };
 
+/** Fork lineage (F36), stored in SessionRecord.meta under `ah.fork`. */
+export type ForkMeta = {
+  parentUid: string;
+  /** The original ancestor, so fork-of-fork chains group flat under one root. */
+  rootUid: string;
+  /** Title snapshot of the root, so lineage labels survive the root being forgotten. */
+  rootTitle: string;
+  forkedAt: number;
+  /** 1-based position among the parent's forks. */
+  forkSeq: number;
+};
+
+/** Reads and validates the `ah.fork` meta of a record, if it is one. */
+export function forkMetaOf(r: SessionRecord): ForkMeta | null {
+  const f = r.meta['ah.fork'] as Partial<ForkMeta> | undefined;
+  if (!f || typeof f.parentUid !== 'string' || typeof f.rootUid !== 'string') return null;
+  return {
+    parentUid: f.parentUid,
+    rootUid: f.rootUid,
+    rootTitle: typeof f.rootTitle === 'string' ? f.rootTitle : '',
+    forkedAt: typeof f.forkedAt === 'number' ? f.forkedAt : 0,
+    forkSeq: typeof f.forkSeq === 'number' ? f.forkSeq : 1,
+  };
+}
+
 const KEEP_ENDED_SECONDS = 30 * 24 * 3600;
 const now = () => Math.floor(Date.now() / 1000);
 
@@ -209,6 +234,20 @@ export class Registry {
     r.model ??= model;
     this.dirty = true;
     this.flush();
+  }
+
+  /** Direct forks of a session, oldest first (F36). */
+  forksOf(id: string): SessionRecord[] {
+    return this.all()
+      .filter((r) => forkMetaOf(r)?.parentUid === id)
+      .sort((a, b) => (forkMetaOf(a)!.forkSeq - forkMetaOf(b)!.forkSeq) || (forkMetaOf(a)!.forkedAt - forkMetaOf(b)!.forkedAt));
+  }
+
+  /** The session this one was forked from, if it's still in the registry (F36). */
+  forkParent(id: string): SessionRecord | undefined {
+    const r = this.records.get(id);
+    const f = r ? forkMetaOf(r) : null;
+    return f ? this.records.get(f.parentUid) : undefined;
   }
 
   setMeta(id: string, key: string, value: unknown) {
