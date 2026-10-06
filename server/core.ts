@@ -9,6 +9,7 @@ import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { buildWindows, buildHistory, adoptTranscripts, type WindowView, type HistoryItem } from './sessions.ts';
 import { Registry, type SessionRecord } from './registry.ts';
+import { PromptStore } from './prompts.ts';
 import { discover } from './discovery.ts';
 import { expandHome, isExecutableOnPath, type Config, type Preset } from './config.ts';
 import { buildLaunch, customModel, resumeSelection } from './launch.ts';
@@ -24,7 +25,7 @@ export type QueueItem = { id: string; text: string; enter: boolean; at: number; 
 export type Host = { name: string; self: boolean; online: boolean };
 
 /** Bumped when the state shape or API routes change, so a newer page can tell an older server apart. */
-export const API_VERSION = 9;
+export const API_VERSION = 10;
 
 export type State = {
   api: number;
@@ -50,7 +51,6 @@ export class CoreError extends Error {
 
 const STATE_DIR = join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah');
 const HIDDEN_FILE = join(STATE_DIR, 'hidden.json');
-const PROMPTS_FILE = join(STATE_DIR, 'prompts.json');
 
 const TICK_MS = 1500;
 const now = () => Math.floor(Date.now() / 1000);
@@ -66,19 +66,20 @@ export class Core {
   private ticking: Promise<State> | null = null;
   private hidden = new Set<string>();
   private prompts: Array<{ text: string; at: number }> = [];
+  private promptStore: PromptStore;
   private config: Config;
   private resuming = new Map<string, Promise<{ uid: string; windowId: string; resumed: boolean }>>();
   private inputs = new Map<string, Promise<unknown>>();
   private sentAt = new Map<string, number>();
   peers: Peers | null = null;
 
-  constructor(config: Config, viewers: Map<string, string[]>, registry = new Registry()) {
+  constructor(config: Config, viewers: Map<string, string[]>, registry = new Registry(), prompts = new PromptStore()) {
     this.registry = registry;
+    this.promptStore = prompts;
     this.config = config;
     this.viewers = viewers;
     try {
       if (existsSync(HIDDEN_FILE)) this.hidden = new Set(JSON.parse(readFileSync(HIDDEN_FILE, 'utf8')));
-      if (existsSync(PROMPTS_FILE)) this.prompts = JSON.parse(readFileSync(PROMPTS_FILE, 'utf8'));
     } catch {}
   }
 
@@ -331,9 +332,14 @@ export class Core {
     return this.prompts;
   }
 
+  /** Load persisted prompts (boot only — the table is read once, then mirrored). */
+  async loadPrompts(): Promise<void> {
+    this.prompts = await this.promptStore.load();
+  }
+
   clearPrompts() {
     this.prompts = [];
-    writeFile(PROMPTS_FILE, '[]', { mode: 0o600 }).catch(() => {});
+    this.promptStore.clear();
   }
 
   private remember(text: string) {
@@ -341,9 +347,7 @@ export class Core {
     const keep = this.config.promptHistory;
     if (keep <= 0) return;
     this.prompts = [{ text, at: now() }, ...this.prompts.filter((p) => p.text !== text)].slice(0, keep);
-    mkdir(STATE_DIR, { recursive: true })
-      .then(() => writeFile(PROMPTS_FILE, JSON.stringify(this.prompts), { mode: 0o600 }))
-      .catch((err) => console.error('saving prompt history failed:', err));
+    this.promptStore.save(this.prompts);
   }
 
   queue(uid: string): QueueItem[] {

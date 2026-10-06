@@ -82,12 +82,13 @@ export type Preset = {
 
 export type Host = { name: string; self: boolean; online: boolean };
 
-export const API_VERSION = 9;
+export const API_VERSION = 10;
 
 export type PullInfo = { number: number | null; url: string | null };
 
 export type Subscription = { id: string; name: string; baseUrl: string; model: string; hasKey: boolean; isDefault: boolean };
 export type ChatMsg = { role: 'user' | 'assistant'; text: string; at: number };
+export type ChatSummary = { uid: string; title: string; count: number; firstAt: number; lastAt: number; preview: string };
 export type Followup = { title: string; kind: 'session' | 'chat'; text: string };
 export type ChatReply = { message: ChatMsg; followups: Followup[] };
 
@@ -207,6 +208,8 @@ export function hostApi(base: string) {
     sendChat: (id: string, text: string, subscriptionId?: string) =>
       r<ChatReply>('POST', `/api/windows/${enc(id)}/chat`, subscriptionId ? { text, subscriptionId } : { text }),
     clearChat: (id: string) => r('DELETE', `/api/windows/${enc(id)}/chat`),
+    pastChats: (q?: string) => r<ChatSummary[]>('GET', q ? `/api/chats?q=${enc(q)}` : '/api/chats'),
+    pastChat: (uid: string) => r<{ messages: ChatMsg[] }>('GET', `/api/chats/${enc(uid)}`),
     worktrees: () => r<WorktreeInfo[]>('GET', '/api/worktrees'),
     removeWorktree: (path: string, force: boolean) => r('DELETE', '/api/worktrees', { path, force }),
     prompts: () => r<Array<{ text: string; at: number }>>('GET', '/api/prompts'),

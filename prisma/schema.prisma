@@ -1,0 +1,61 @@
+// ah's durable state: sessions (the registry), side-chat subscriptions and
+// history, recent prompts, and loose settings. One SQLite file per host at
+// ~/.local/state/ah/ah.db (0600). Chat history is keyed by session uid with
+// no foreign key, so it outlives the session's own row on purpose.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  uid            String  @id
+  host           String  @default("")
+  title          String  @default("")
+  harness        String  @default("")
+  harnessId      String?
+  cwd            String  @default("")
+  model          String?
+  status         String  @default("idle")
+  lifecycle      String  @default("live")
+  pendingResume  Boolean @default(false)
+  createdAt      Int     @default(0)
+  lastActivityAt Int     @default(0)
+  endedAt        Int?
+  exitCode       Int?
+  tmuxJson       String?
+  metaJson       String  @default("{}")
+}
+
+model ChatMessage {
+  id   Int    @id @default(autoincrement())
+  uid  String
+  role String
+  text String
+  at   Int
+
+  @@index([uid, id])
+}
+
+model Prompt {
+  id   Int    @id @default(autoincrement())
+  text String
+  at   Int
+}
+
+model Subscription {
+  id      String @id
+  name    String
+  baseUrl String
+  model   String
+  apiKey  String
+}
+
+model Setting {
+  key   String @id
+  value String
+}

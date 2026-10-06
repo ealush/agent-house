@@ -9,6 +9,7 @@ import { SURFACES, VIEW_LABEL, viewsFor, type SurfaceHandle, type View } from '.
 import { ComposerBar } from './Composer.tsx';
 import { BranchPicker, ChangesPanel, PrLink } from './Git.tsx';
 import { SideChat } from './SideChat.tsx';
+import { ChatHistory } from './ChatHistory.tsx';
 import { FilesPanel } from './Files.tsx';
 import { QueueDialog } from './Queue.tsx';
 
@@ -118,6 +119,8 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
     }
   });
   const [panelCollapsed, setPanelCollapsed] = useState(false);
+  // Past-chats browser inside the chat panel; resets with the session.
+  const [chatHistory, setChatHistory] = useState(false);
   const [keysPref, setKeysPref] = stored<'auto' | 'on' | 'off'>('ah.keys', 'auto');
   const [viewPref, setViewPref] = stored<View>('ah.view', 'terminal');
   const [menu, setMenu] = useState(false);
@@ -135,6 +138,7 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
   useEffect(() => {
     setTab('main');
     setRenaming(false);
+    setChatHistory(false);
   }, [w.key]);
   // The terminal supplies its own input, so the graphical composer lives only
   // in the GUI view. "Reply" focuses whichever input is showing.
@@ -249,7 +253,7 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
     p === 'diff' ? (
       <ChangesPanel client={client} windowId={w.id} onComment={w.agent ? comment : undefined} />
     ) : p === 'chat' ? (
-      <SideChat client={client} w={w} onSent={onSent} />
+      chatHistory ? <ChatHistory client={client} /> : <SideChat client={client} w={w} onSent={onSent} />
     ) : (
       <FilesPanel
         fs={client.fs}
@@ -525,6 +529,17 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
                     Chat
                   </button>
                   <span className="spacer" />
+                  {panel === 'chat' && (
+                    <button
+                      className="icon-btn small"
+                      onClick={() => setChatHistory(!chatHistory)}
+                      aria-label={chatHistory ? 'Back to current chat' : 'Past chats'}
+                      aria-pressed={chatHistory}
+                      title={chatHistory ? 'Back to current chat' : 'Past chats'}
+                    >
+                      <Icon name="history" size={14} />
+                    </button>
+                  )}
                   <button className="icon-btn small" onClick={() => setPanelCollapsed(true)} aria-label="Collapse panel" title="Collapse panel">
                     <Icon name="panel-hide" size={14} />
                   </button>

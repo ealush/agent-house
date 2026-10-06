@@ -4,10 +4,10 @@
 import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { existsSync, readFileSync, renameSync } from 'node:fs';
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { dirname, join, sep } from 'node:path';
+import { readFile, stat } from 'node:fs/promises';
+import { join, sep } from 'node:path';
+import type { PrismaClient } from '@prisma/client';
+import { defaultDbPath, getDb } from './db.ts';
 import { changes } from './git.ts';
 
 const run = promisify(execFile);
@@ -31,6 +31,9 @@ export type ChatContext = { title: string; session: string; branch: string | nul
  */
 export type Followup = { title: string; kind: 'session' | 'chat'; text: string };
 export type ChatReply = { message: ChatMessage; followups: Followup[] };
+
+/** One row in the historic-chats browser: newest first. */
+export type ChatSummary = { uid: string; title: string; count: number; firstAt: number; lastAt: number; preview: string };
 
 /**
  * Pull the structured reply out of the model, tolerating chatty models
@@ -68,7 +71,7 @@ export function parseStructured(raw: string): { content: string; followups: Foll
   return { content: content.trim(), followups: out };
 }
 
-const FILE = join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah', 'sidechat.json');
+const DB_FILE = process.env.AH_DB_FILE ?? defaultDbPath();
 const HISTORY_LIMIT = 30;
 const CHAT_TIMEOUT_MS = 90_000;
 // Context budget: tracked patch + new-file contents + recent log stay small
@@ -178,55 +181,34 @@ function firstLine(s: string): string {
   return s.trim().split('\n').map((l) => l.trim()).find(Boolean) ?? '';
 }
 
-type Store = { subscriptions: Subscription[]; defaultId?: string; chats: Record<string, ChatMessage[]> };
+const DEFAULT_SETTING = 'sidechat.defaultId';
 
 export class SideChatStore {
-  private file: string;
-  private data: Store = { subscriptions: [], chats: {} };
-  private writing: Promise<void> = Promise.resolve();
+  private db: PrismaClient;
 
-  constructor(file = FILE) {
-    this.file = file;
-    if (!existsSync(file)) return;
-    try {
-      const raw = JSON.parse(readFileSync(file, 'utf8'));
-      if (raw && typeof raw === 'object') {
-        this.data = {
-          subscriptions: Array.isArray(raw.subscriptions) ? raw.subscriptions : [],
-          defaultId: typeof raw.defaultId === 'string' ? raw.defaultId : undefined,
-          chats: raw.chats && typeof raw.chats === 'object' ? raw.chats : {},
-        };
-      }
-    } catch {
-      const aside = `${file}.corrupt-${Date.now()}`;
-      try {
-        renameSync(file, aside);
-      } catch {}
-      this.data = { subscriptions: [], chats: {} };
-    }
+  constructor(dbPath = DB_FILE) {
+    this.db = getDb(dbPath);
   }
 
-  private save(): Promise<void> {
-    const body = JSON.stringify(this.data);
-    this.writing = this.writing.then(async () => {
-      await mkdir(dirname(this.file), { recursive: true, mode: 0o700 });
-      const tmp = `${this.file}.tmp-${process.pid}`;
-      await writeFile(tmp, body, { mode: 0o600 });
-      renameSync(tmp, this.file);
-    });
-    return this.writing;
+  private redact(s: Subscription, defaultId: string | null): SubscriptionInfo {
+    return { id: s.id, name: s.name, baseUrl: s.baseUrl, model: s.model, hasKey: !!s.apiKey, isDefault: s.id === defaultId };
   }
 
-  private redact(s: Subscription): SubscriptionInfo {
-    return { id: s.id, name: s.name, baseUrl: s.baseUrl, model: s.model, hasKey: !!s.apiKey, isDefault: s.id === this.data.defaultId };
+  async list(): Promise<SubscriptionInfo[]> {
+    const [subs, def] = await Promise.all([
+      this.db.subscription.findMany({ orderBy: { name: 'asc' } }),
+      this.defaultId(),
+    ]);
+    return subs.map((s) => this.redact(s, def));
   }
 
-  list(): SubscriptionInfo[] {
-    return this.data.subscriptions.map((s) => this.redact(s));
-  }
-
-  defaultId(): string | null {
-    return this.data.subscriptions.some((s) => s.id === this.data.defaultId) ? this.data.defaultId! : (this.data.subscriptions[0]?.id ?? null);
+  async defaultId(): Promise<string | null> {
+    const [ids, def] = await Promise.all([
+      this.db.subscription.findMany({ select: { id: true }, orderBy: { name: 'asc' } }),
+      this.db.setting.findUnique({ where: { key: DEFAULT_SETTING } }),
+    ]);
+    if (def && ids.some((s) => s.id === def.value)) return def.value;
+    return ids[0]?.id ?? null;
   }
 
   async put(input: { id?: string; name: string; baseUrl: string; model: string; apiKey?: string }): Promise<SubscriptionInfo> {
@@ -237,57 +219,104 @@ export class SideChatStore {
     if (!model) throw new SideChatError(400, 'model required');
     if (!/^https?:\/\/[^/]+/.test(baseUrl)) throw new SideChatError(400, 'base URL must be http(s)');
     if (input.id) {
-      const s = this.data.subscriptions.find((x) => x.id === input.id);
+      const s = await this.db.subscription.findUnique({ where: { id: input.id } });
       if (!s) throw new SideChatError(404, 'subscription not found');
-      s.name = name;
-      s.baseUrl = baseUrl;
-      s.model = model;
-      if (input.apiKey !== undefined && input.apiKey !== '') s.apiKey = input.apiKey;
-      if (!s.apiKey) throw new SideChatError(400, 'API key required');
-      await this.save();
-      return this.redact(s);
+      const apiKey = input.apiKey !== undefined && input.apiKey !== '' ? input.apiKey : s.apiKey;
+      if (!apiKey) throw new SideChatError(400, 'API key required');
+      const updated = await this.db.subscription.update({ where: { id: input.id }, data: { name, baseUrl, model, apiKey } });
+      return this.redact(updated, await this.defaultId());
     }
     if (!input.apiKey) throw new SideChatError(400, 'API key required');
-    const s: Subscription = { id: randomUUID(), name, baseUrl, model, apiKey: input.apiKey };
-    this.data.subscriptions.push(s);
-    if (!this.data.defaultId) this.data.defaultId = s.id;
-    await this.save();
-    return this.redact(s);
+    const created = await this.db.subscription.create({ data: { id: randomUUID(), name, baseUrl, model, apiKey: input.apiKey } });
+    if (!(await this.db.setting.findUnique({ where: { key: DEFAULT_SETTING } }))) {
+      await this.db.setting.create({ data: { key: DEFAULT_SETTING, value: created.id } });
+    }
+    return this.redact(created, await this.defaultId());
   }
 
   async remove(id: string): Promise<void> {
-    const i = this.data.subscriptions.findIndex((s) => s.id === id);
-    if (i < 0) throw new SideChatError(404, 'subscription not found');
-    this.data.subscriptions.splice(i, 1);
-    if (this.data.defaultId === id) this.data.defaultId = this.data.subscriptions[0]?.id;
-    await this.save();
+    try {
+      await this.db.subscription.delete({ where: { id } });
+    } catch {
+      throw new SideChatError(404, 'subscription not found');
+    }
+    const def = await this.db.setting.findUnique({ where: { key: DEFAULT_SETTING } });
+    if (def?.value === id) {
+      const [next] = await this.db.subscription.findMany({ select: { id: true }, orderBy: { name: 'asc' }, take: 1 });
+      if (next) await this.db.setting.update({ where: { key: DEFAULT_SETTING }, data: { value: next.id } });
+      else await this.db.setting.delete({ where: { key: DEFAULT_SETTING } });
+    }
   }
 
   async setDefault(id: string): Promise<void> {
-    if (!this.data.subscriptions.some((s) => s.id === id)) throw new SideChatError(404, 'subscription not found');
-    this.data.defaultId = id;
-    await this.save();
+    const s = await this.db.subscription.findUnique({ where: { id }, select: { id: true } });
+    if (!s) throw new SideChatError(404, 'subscription not found');
+    await this.db.setting.upsert({ where: { key: DEFAULT_SETTING }, create: { key: DEFAULT_SETTING, value: id }, update: { value: id } });
   }
 
-  history(uid: string): ChatMessage[] {
-    return this.data.chats[uid] ?? [];
+  async history(uid: string): Promise<ChatMessage[]> {
+    const rows = await this.db.chatMessage.findMany({ where: { uid }, orderBy: { id: 'asc' } });
+    return rows.slice(-HISTORY_LIMIT).map((r) => ({ role: r.role as 'user' | 'assistant', text: r.text, at: r.at }));
+  }
+
+  /**
+   * Every stored conversation, newest first, with the session title when its
+   * row still exists (pruned sessions fall back to the uid). `query` matches
+   * session title, uid, or message text, case-insensitively.
+   */
+  async listChats(query?: string): Promise<ChatSummary[]> {
+    const q = query?.trim().toLowerCase();
+    const groups = await this.db.chatMessage.groupBy({
+      by: ['uid'],
+      _count: { _all: true },
+      _min: { at: true },
+      _max: { at: true },
+    });
+    const uids = groups.map((g) => g.uid);
+    if (!uids.length) return [];
+    const [sessions, last] = await Promise.all([
+      this.db.session.findMany({ where: { uid: { in: uids } }, select: { uid: true, title: true } }),
+      this.db.chatMessage.findMany({ where: { uid: { in: uids } }, orderBy: { id: 'desc' }, select: { uid: true, text: true } }),
+    ]);
+    const titles = new Map(sessions.map((s) => [s.uid, s.title || s.uid]));
+    const previews = new Map<string, string>();
+    for (const m of last) if (!previews.has(m.uid)) previews.set(m.uid, m.text);
+    let textHit: Set<string> | null = null;
+    if (q) {
+      const hits = await this.db.chatMessage.findMany({
+        where: { uid: { in: uids }, text: { contains: q } },
+        select: { uid: true },
+        distinct: ['uid'],
+      });
+      textHit = new Set(hits.map((h) => h.uid));
+    }
+    return groups
+      .map((g) => ({
+        uid: g.uid,
+        title: titles.get(g.uid) ?? g.uid,
+        count: g._count._all,
+        firstAt: g._min.at ?? 0,
+        lastAt: g._max.at ?? 0,
+        preview: (previews.get(g.uid) ?? '').slice(0, 140),
+      }))
+      .filter((c) => !q || c.uid.toLowerCase().includes(q) || c.title.toLowerCase().includes(q) || textHit!.has(c.uid))
+      .sort((a, b) => b.lastAt - a.lastAt);
   }
 
   async clear(uid: string): Promise<void> {
-    delete this.data.chats[uid];
-    await this.save();
+    await this.db.chatMessage.deleteMany({ where: { uid } });
   }
 
-  private resolve(subscriptionId?: string): Subscription {
-    const id = subscriptionId ?? this.defaultId();
-    const s = this.data.subscriptions.find((x) => x.id === id);
+  private async resolve(subscriptionId?: string): Promise<Subscription> {
+    const id = subscriptionId ?? (await this.defaultId());
+    const s = id ? await this.db.subscription.findUnique({ where: { id } }) : null;
     if (!s) throw new SideChatError(400, 'no chat subscription configured yet — add one under Settings → Subscriptions');
     return s;
   }
 
   async chat(uid: string, text: string, ctx: ChatContext, subscriptionId?: string): Promise<ChatReply> {
-    const sub = this.resolve(subscriptionId);
-    const prior = this.history(uid).slice(-HISTORY_LIMIT);
+    const sub = await this.resolve(subscriptionId);
+    const prior = (await this.history(uid)).slice(-HISTORY_LIMIT);
     const messages = [
       { role: 'system', content: `${SYSTEM}\n\n${contextBlock(ctx)}` },
       ...prior.map((m) => ({ role: m.role, content: m.text })),
@@ -324,8 +353,10 @@ export class SideChatStore {
     const { content, followups } = parseStructured(raw);
     const at = Math.floor(Date.now() / 1000);
     const log = [...prior, { role: 'user' as const, text, at }, { role: 'assistant' as const, text: content, at }].slice(-HISTORY_LIMIT);
-    this.data.chats[uid] = log;
-    await this.save();
+    await this.db.$transaction([
+      this.db.chatMessage.deleteMany({ where: { uid } }),
+      this.db.chatMessage.createMany({ data: log.map((m) => ({ uid, role: m.role, text: m.text, at: m.at })) }),
+    ]);
     return { message: { role: 'assistant', text: content, at }, followups };
   }
 }
