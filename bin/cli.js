@@ -34,6 +34,8 @@ export const HELP = `usage: ah <command>
   wait <target> [--timeout SECS]              block until the agent stops working
   resume <target>                             bring an ended/saved conversation back
   queue <target> [--clear]                    show or drop queued messages
+  snapshots <target>                          list per-turn file snapshots
+  rollback <target> --to TURN [--interrupt]   restore files to before TURN (takes a safety snapshot first)
   hooks install|uninstall|status              wire Claude Code / Codex status hooks
   auth code                                   one-time code to set up a new device (10 min)
   auth password [--remove]                    set the optional master password
@@ -209,6 +211,35 @@ export async function run(cmd, args) {
       const q = await call('GET', `/api/sessions/${live.uid}/queue`);
       if (!q.length) return console.log('queue empty');
       for (const item of q) console.log(`${item.id}  ${item.text.split('\n')[0]}`);
+      return;
+    }
+    case 'snapshots': {
+      const found = await find(args[0], { history: true });
+      const ref = found.live?.uid ?? found.past.ref;
+      const out = await call('GET', `/api/sessions/${encodeURIComponent(ref)}/snapshots`);
+      if (!out.available) return console.log('snapshots unavailable: not a git repository');
+      if (!out.snapshots.length) return console.log('no snapshots yet');
+      table([
+        ['TURN', 'KIND', 'WHEN', 'BRANCH', 'CHANGES', 'PROMPT'],
+        ...out.snapshots.map((s) => [
+          s.turn,
+          s.kind,
+          new Date(s.createdAt * 1000).toLocaleString(),
+          s.branch || '',
+          `${s.filesChanged} files +${s.insertions}/-${s.deletions}`,
+          s.promptExcerpt,
+        ]),
+      ]);
+      return;
+    }
+    case 'rollback': {
+      const interrupt = flag(args, '--interrupt');
+      const to = opt(args, '--to', undefined);
+      if (!to || !/^\d+$/.test(to)) fail('usage: ah rollback <target> --to TURN [--interrupt]');
+      const found = await find(args[0], { history: true });
+      const ref = found.live?.uid ?? found.past.ref;
+      const out = await call('POST', `/api/sessions/${encodeURIComponent(ref)}/snapshots/${to}/restore`, { interrupt });
+      console.log(`restored to before turn ${to}; safety snapshot is turn ${out.safety.turn} (restore it to undo)`);
       return;
     }
     case 'auth': {
