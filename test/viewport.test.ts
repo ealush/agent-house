@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { keyboardViewportHeight, trackViewport } from '../web/viewport.ts';
+import { keyboardViewportHeight, shellViewportHeight, trackViewport } from '../web/viewport.ts';
 
 test('a smaller visual viewport with the keyboard closed does not shorten the app', () => {
   assert.equal(keyboardViewportHeight(868, 808, 1, false), null);
@@ -68,6 +68,98 @@ test('keyboard dismissal restores full height and pending resize work is cleaned
   viewport.dispatchEvent(new Event('resize'));
   doc.dispatchEvent(new Event('focusin'));
   assert.equal(callbacks.size, 0, 'all listeners removed');
+});
+
+test('a standalone shell that came up a status-bar band short heals to the screen height', () => {
+  const base = { visualHeight: 812, visualWidth: 402, screenWidth: 402, screenHeight: 874, scale: 1, editing: false, standalone: true };
+  assert.equal(shellViewportHeight(base), 874, 'the 62px shortfall from the field screenshots');
+  assert.equal(shellViewportHeight({ ...base, visualHeight: 874 }), null, 'full height needs no heal');
+  assert.equal(shellViewportHeight({ ...base, visualHeight: 866 }), null, 'safe-area sized differences are not the bug');
+  assert.equal(shellViewportHeight({ ...base, visualHeight: 500 }), null, 'keyboard sized shortfalls belong to the keyboard path');
+  assert.equal(shellViewportHeight({ ...base, editing: true }), null, 'never fight the keyboard');
+  assert.equal(shellViewportHeight({ ...base, standalone: false }), null, 'browser chrome owns the visible height in a tab');
+  assert.equal(shellViewportHeight({ ...base, visualWidth: 700 }), null, 'a window narrower than the screen is not a phone shell');
+  assert.equal(shellViewportHeight({ ...base, visualWidth: 874, visualHeight: 402 }), null, 'landscape widths do not match the portrait screen width');
+  assert.equal(shellViewportHeight({ ...base, scale: 1.5 }), null, 'pinch zoom is not a short shell');
+});
+
+test('trackViewport heals a short standalone shell and clears it when the viewport recovers', () => {
+  const viewport = Object.assign(new EventTarget(), { height: 812, width: 402, scale: 1 });
+  const frames = new Map<number, FrameRequestCallback>();
+  let sequence = 0;
+  const timers = new Map<number, () => void>();
+  const scrolledTo: Array<[number, number]> = [];
+  const win = Object.assign(new EventTarget(), {
+    visualViewport: viewport,
+    screen: { width: 402, height: 874 },
+    navigator: {},
+    matchMedia: (query: string) => ({ matches: query === '(display-mode: standalone)' }),
+    scrollY: 0,
+    scrollX: 0,
+    scrollTo(x: number, y: number) { scrolledTo.push([x, y]); },
+    requestAnimationFrame(fn: FrameRequestCallback) { frames.set(++sequence, fn); return sequence; },
+    cancelAnimationFrame(id: number) { frames.delete(id); },
+    setInterval(fn: () => void) { timers.set(++sequence, fn); return sequence; },
+    clearInterval(id: number) { timers.delete(id); },
+  });
+  const style = new Map<string, string>();
+  const doc = Object.assign(new EventTarget(), {
+    activeElement: null as unknown,
+    documentElement: {
+      clientHeight: 812,
+      style: {
+        setProperty(key: string, value: string) { style.set(key, value); },
+        removeProperty(key: string) { style.delete(key); },
+        getPropertyValue(key: string) { return style.get(key) ?? ''; },
+      },
+    },
+  });
+  const flush = () => {
+    const pending = [...frames.values()];
+    frames.clear();
+    pending.forEach((fn) => fn(0));
+  };
+  const stop = trackViewport(win as unknown as Window, doc as unknown as Document);
+  assert.equal(style.get('--app-h'), '874px', 'shell stretched to the physical screen');
+  assert.equal(style.get('--vh'), '874px', 'dialogs size to the healed shell');
+  assert.equal(style.has('--keyboard-vh'), false, 'no keyboard is involved');
+  assert.equal(timers.size, 1, 'guard watches the healed override');
+  viewport.height = 874;
+  viewport.dispatchEvent(new Event('resize'));
+  flush();
+  assert.equal(style.has('--app-h'), false, 'heal clears once the viewport is whole');
+  assert.equal(style.has('--vh'), false);
+  assert.equal(timers.size, 0, 'guard stops with the override');
+  stop();
+});
+
+test('a leftover document scroll snaps back when not editing', () => {
+  const viewport = Object.assign(new EventTarget(), { height: 874, scale: 1 });
+  const frames = new Map<number, FrameRequestCallback>();
+  let sequence = 0;
+  const scrolledTo: Array<[number, number]> = [];
+  const win = Object.assign(new EventTarget(), {
+    visualViewport: viewport,
+    scrollY: 62,
+    scrollX: 0,
+    scrollTo(x: number, y: number) { scrolledTo.push([x, y]); (win as { scrollY: number }).scrollY = 0; },
+    requestAnimationFrame(fn: FrameRequestCallback) { frames.set(++sequence, fn); return sequence; },
+    cancelAnimationFrame(id: number) { frames.delete(id); },
+  });
+  const style = new Map<string, string>();
+  const doc = Object.assign(new EventTarget(), {
+    activeElement: null as unknown,
+    documentElement: {
+      clientHeight: 874,
+      style: {
+        setProperty(key: string, value: string) { style.set(key, value); },
+        removeProperty(key: string) { style.delete(key); },
+      },
+    },
+  });
+  const stop = trackViewport(win as unknown as Window, doc as unknown as Document);
+  assert.deepEqual(scrolledTo, [[0, 0]], 'mount snaps a scrolled document back under the fixed shell');
+  stop();
 });
 
 test('a stale small override is re-synced even when iOS fires no dismissal events', () => {
