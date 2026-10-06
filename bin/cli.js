@@ -33,6 +33,7 @@ export const HELP = `usage: ah <command>
   read <target> [-n LINES]                    print the session's screen + scrollback
   wait <target> [--timeout SECS]              block until the agent stops working
   resume <target>                             bring an ended/saved conversation back
+  fork <target> [--name N] [--prompt "TEXT"]  copy the conversation into a new worktree session
   queue <target> [--clear]                    show or drop queued messages
   worktrees [--json] [--orphans]              managed worktrees, with on-disk sizes
   worktrees clean --orphans [--force-dirty] [--yes]
@@ -177,6 +178,18 @@ export async function run(cmd, args) {
       const ref = found.live?.uid ?? found.past.ref;
       const out = await call('POST', `/api/sessions/${encodeURIComponent(ref)}/resume`);
       console.log(`${out.uid} ${out.id}${out.resumed ? ' (resumed)' : ' (already running)'}`);
+      return;
+    }
+    case 'fork': {
+      const name = opt(args, '--name', undefined);
+      const prompt = opt(args, '--prompt', undefined);
+      const found = await find(args[0], { history: true });
+      const ref = found.live?.uid ?? found.past.ref;
+      const body = {};
+      if (name !== undefined) body.name = name;
+      if (prompt !== undefined) body.prompt = prompt;
+      const out = await call('POST', `/api/sessions/${encodeURIComponent(ref)}/fork`, body);
+      console.log(`${out.uid} ${out.id}  ${out.branch}  ${out.worktree}`);
       return;
     }
     case 'send': {

@@ -12,6 +12,7 @@ import { SideChat } from './SideChat.tsx';
 import { ChatHistory } from './ChatHistory.tsx';
 import { FilesPanel } from './Files.tsx';
 import { QueuePanel } from './Queue.tsx';
+import { ForkDialog, ForksDialog } from './ForkDialog.tsx';
 
 type Panel = 'diff' | 'files' | 'chat' | 'queue';
 
@@ -30,6 +31,10 @@ type Props = {
   onSent: (r: SendResult) => void;
   onKilled: () => void;
   refresh: () => void;
+  /** Navigate to another session by key (fork focus, fork family). */
+  onOpenKey?: (key: string) => void;
+  /** Open another session beside this one in split view (fork comparison). */
+  onSplitWith?: (key: string) => void;
   /** Split this pane (F45). Provided by the workspace; hidden in single view. */
   onSplit?: (direction: 'right' | 'below') => void;
   /** Replace this pane's session (F45). */
@@ -104,7 +109,7 @@ function PanelDivider({ onResize, onReset }: { onResize: (dx: number) => void; o
 
 const DEFAULT_PANEL_WIDTH = 420;
 
-export function Session({ w, client, narrow, touch, multiHost, home, replyKey, onBack, onAnswer, onSent, onKilled, refresh, onSplit, onReplace, onClosePane }: Props) {
+export function Session({ w, client, narrow, touch, multiHost, home, replyKey, onBack, onAnswer, onSent, onKilled, refresh, onSplit, onReplace, onClosePane, onOpenKey, onSplitWith }: Props) {
   const surface = useRef<SurfaceHandle>(null);
   const body = useRef<HTMLDivElement>(null);
   // 'main' is the session itself, drawn by whichever surface is chosen.
@@ -124,6 +129,8 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
   const [keysPref, setKeysPref] = stored<'auto' | 'on' | 'off'>('ah.keys', 'auto');
   const [viewPref, setViewPref] = stored<View>('ah.view', 'terminal');
   const [menu, setMenu] = useState(false);
+  const [forking, setForking] = useState(false);
+  const [forksOpen, setForksOpen] = useState(false);
   const [capture, setCapture] = useState<string | null>(null);
   const [focus, setFocus] = useState(0);
   const { color, name: agentName } = look(w.agent);
@@ -247,6 +254,16 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
 
   const comment = async (text: string) => onSent(await client.send(w.uid, text, true));
 
+  // Window keys are the window id, host-prefixed for peers; a fork on this host
+  // shares the prefix of the session it was forked from.
+  const keyOnThisHost = (id: string) => w.key.slice(0, w.key.length - w.id.length) + id;
+  const forked = (id: string) => {
+    setForking(false);
+    refresh();
+    if (onOpenKey) onOpenKey(keyOnThisHost(id));
+    else window.dispatchEvent(new CustomEvent('ah:toast', { detail: 'Fork started; find it in the sidebar' }));
+  };
+
   const diffTab = w.branch ? 'Diff' : null;
   const panelView = (p: Panel) =>
     p === 'queue' ? (
@@ -329,7 +346,14 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
           )}
         </div>
         {narrow ? (
-          <span className={`pill ${w.status}`}>{w.status === 'busy' && !w.agent ? 'Live' : STATUS_PILL[w.status]}</span>
+          <>
+            <span className={`pill ${w.status}`}>{w.status === 'busy' && !w.agent ? 'Live' : STATUS_PILL[w.status]}</span>
+            {(w.fork?.parentTitle || (w.fork?.forks ?? 0) > 0) && (
+              <button className="pill" onClick={() => setForksOpen(true)} title="Show the fork family">
+                ⑂{w.fork!.forks > 0 ? ` ${w.fork!.forks}` : ''}
+              </button>
+            )}
+          </>
         ) : (
           <>
             <div className="session-pills">
@@ -340,6 +364,16 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
               {w.queued > 0 && (
                 <button className="pill waiting" onClick={() => openPanel('queue')} title="Review queued messages">
                   ⇥ {w.queued} queued
+                </button>
+              )}
+              {w.fork?.parentTitle && (
+                <button className="pill" onClick={() => setForksOpen(true)} title="Show the fork family">
+                  ⑂ fork of {w.fork.parentTitle}
+                </button>
+              )}
+              {(w.fork?.forks ?? 0) > 0 && (
+                <button className="pill" onClick={() => setForksOpen(true)} title="Show the fork family">
+                  Forks ({w.fork!.forks})
                 </button>
               )}
               {elsewhere && <span className="devices">On {elsewhere}</span>}
@@ -389,6 +423,14 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
           {menu && (
             <div className="menu" onMouseLeave={() => setMenu(false)}>
               <button onClick={startRename}>Rename</button>
+              <button
+                onClick={() => {
+                  setMenu(false);
+                  setForking(true);
+                }}
+              >
+                Fork session…
+              </button>
               <button onClick={() => act(() => client.pin(w.uid, !w.pinned))}>{w.pinned ? 'Unpin' : 'Pin to top'}</button>
               <button onClick={() => { setMenu(false); openPanel('queue'); }}>Queued messages ({w.queued})</button>
               {onSplit && (
@@ -565,6 +607,32 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
       </div>
 
       {capture !== null && <CaptureDialog text={capture} onClose={() => setCapture(null)} />}
+      {forking && (
+        <ForkDialog client={client} target={{ ref: w.uid, host: w.host, harness: w.agent, title: w.title }} onClose={() => setForking(false)} onForked={forked} />
+      )}
+      {forksOpen && (
+        <ForksDialog
+          client={client}
+          w={w}
+          onClose={() => setForksOpen(false)}
+          onOpen={
+            onOpenKey
+              ? (key) => {
+                  setForksOpen(false);
+                  onOpenKey(key);
+                }
+              : undefined
+          }
+          onSplitWith={
+            onSplitWith
+              ? (key) => {
+                  setForksOpen(false);
+                  onSplitWith(key);
+                }
+              : undefined
+          }
+        />
+      )}
     </>
   );
 }

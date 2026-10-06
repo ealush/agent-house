@@ -189,6 +189,35 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     return send(res, out.resumed ? 201 : 200, { id: out.windowId, uid: out.uid, resumed: out.resumed });
   }
 
+  // Fork (F36): what the dialog needs, then the fork itself.
+  if ((m = route('GET', /^\/api\/sessions\/([\w:.-]{1,80})\/fork-info$/))) {
+    try {
+      return send(res, 200, await core.forkInfo(m[1]));
+    } catch (err) {
+      if (err instanceof CoreError) throw new HttpError(err.status, err.message);
+      throw err;
+    }
+  }
+
+  if ((m = route('POST', /^\/api\/sessions\/([\w:.-]{1,80})\/fork$/))) {
+    const body = await readJson(req);
+    const opt = (k: string, max: number) => (body[k] === undefined ? undefined : str(body[k], k, max).trim() || undefined);
+    try {
+      const out = await core.fork(m[1], {
+        name: opt('name', 80),
+        prompt: opt('prompt', 32 * 1024),
+        model: opt('model', 80),
+        effort: opt('effort', 20),
+        mode: opt('mode', 40),
+      });
+      audit(req, 'session.fork', { ref: m[1], uid: out.uid, window: out.id, branch: out.branch });
+      return send(res, 201, out);
+    } catch (err) {
+      if (err instanceof CoreError) throw new HttpError(err.status, err.message);
+      throw err;
+    }
+  }
+
   if ((m = route('POST', /^\/api\/sessions\/([\w:.-]{1,80})\/send$/))) {
     const body = await readJson(req);
     const out = await core.send(m[1], str(body.text, 'text', 32 * 1024), body.enter !== false);

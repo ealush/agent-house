@@ -40,6 +40,34 @@ export type Win = {
   launchMode: string | null;
   /** Set when the agent's transcript can drive the GUI view. */
   feed: string | null;
+  /** Fork lineage (F36): this session is a fork, and how many forks it has. */
+  fork: { parentUid: string; parentTitle: string; rootUid: string; forks: number } | null;
+};
+
+export type ForkInfo = {
+  canFork: boolean;
+  reason: string | null;
+  harness: string;
+  title: string;
+  suggestedName: string;
+  branch: string | null;
+  head: string | null;
+  dirty: number;
+  busy: boolean;
+  mode: string | null;
+  model: string | null;
+  effort: string | null;
+  dangerous: boolean;
+};
+
+export type ForkResult = {
+  uid: string;
+  id: string;
+  harnessId: string;
+  worktree: string;
+  branch: string;
+  base: string;
+  prompt: 'delivered' | 'queued' | null;
 };
 
 export type Ask = { kind: 'command' | 'tool' | 'question' | 'screen'; text: string };
@@ -57,6 +85,8 @@ export type HistoryItem = {
   at: number;
   pinned: boolean;
   worktree: string | null;
+  /** Fork lineage (F36): the title of the session this one was forked from. */
+  fork: { parentTitle: string } | null;
 };
 
 export type PresetChoice = { id: string; name: string; args?: string[]; dangerous?: boolean; description?: string; appliesTo?: string };
@@ -192,6 +222,8 @@ export function hostApi(base: string) {
     kill: (id: string) => r('DELETE', `/api/windows/${enc(id)}`),
     capture: (id: string) => r<string>('GET', `/api/windows/${enc(id)}/capture?lines=3000`),
     resume: (ref: string) => r<{ id: string; uid: string; resumed: boolean }>('POST', `/api/sessions/${enc(ref)}/resume`),
+    forkInfo: (ref: string) => r<ForkInfo>('GET', `/api/sessions/${enc(ref)}/fork-info`),
+    fork: (ref: string, body: { name?: string; prompt?: string; model?: string; effort?: string; mode?: string }) => r<ForkResult>('POST', `/api/sessions/${enc(ref)}/fork`, body),
     send: (ref: string, text: string, enter: boolean) => r<SendResult>('POST', `/api/sessions/${enc(ref)}/send`, { text, enter }),
     answer: (uid: string, answer: 'approve' | 'deny') => r('POST', `/api/sessions/${enc(uid)}/answer`, { answer }),
     queue: (uid: string) => r<QueueItem[]>('GET', `/api/sessions/${enc(uid)}/queue`),
@@ -250,7 +282,6 @@ export function normalize(s: State): State {
   return {
     ...s,
     hosts: s.hosts ?? [{ name: s.hostname, self: true, online: true }],
-    history: s.history ?? [],
     windows: (s.windows ?? []).map((w) => ({
       ...w,
       title: w.title ?? w.name,
@@ -267,7 +298,9 @@ export function normalize(s: State): State {
       launchEffort: w.launchEffort ?? null,
       launchMode: w.launchMode ?? null,
       feed: w.feed ?? null,
+      fork: w.fork ?? null,
     })),
+    history: (s.history ?? []).map((h) => ({ ...h, fork: h.fork ?? null })),
   };
 }
 

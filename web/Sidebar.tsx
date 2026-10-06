@@ -138,6 +138,11 @@ export function Sidebar({ state, error, page, selected, visibleKeys, device, onP
             {w.agent ? w.title : `${w.title === w.command || w.title === 'shell' ? w.command : w.title} ${w.cwd}`}
           </span>
           {modelLabel && <span className="side-model">{modelLabel}</span>}
+          {w.fork && (
+            <span className="count" title={w.fork.parentTitle ? `Fork of ${w.fork.parentTitle}` : `${w.fork.forks} fork${w.fork.forks === 1 ? '' : 's'}`}>
+              ⑂{w.fork.forks > 0 ? w.fork.forks : ''}
+            </span>
+          )}
           {w.queued > 0 && <span className="count">⇥{w.queued}</span>}
         </button>
         <button
