@@ -5,8 +5,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseClaudeLine } from './feed/adapters/claude.ts';
 import { parseCodexLine } from './feed/adapters/codex.ts';
+import { parseGrokLine } from './feed/adapters/grok.ts';
+import { parseMuseLine } from './feed/adapters/muse.ts';
+import { parseGeminiLine, parseGeminiDocument } from './feed/adapters/gemini.ts';
+import { opencodeEntries, loadOpencode } from './feed/adapters/opencode.ts';
 import { textParts, clip } from './feed/parts.ts';
-import { TranscriptFeed, ADAPTERS } from './feed/feed.ts';
+import { TranscriptFeed, DocumentFeed, ADAPTERS, DOC_ADAPTERS } from './feed/feed.ts';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+
+const fixture = (name: string) => fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url));
+const fixtureJson = async (name: string) => JSON.parse(await readFile(fixture(name), 'utf8'));
 
 const at = '2026-10-05T12:00:00.000Z';
 
@@ -82,6 +91,121 @@ test('codex: messages, calls and outputs pair by call id; injected context is sk
   ]);
   assert.equal(line({ type: 'reasoning', summary: [], encrypted_content: 'x' }), null);
   assert.deepEqual(line({ type: 'turn_aborted' }, 'event_msg')!.parts, [{ type: 'notice', kind: 'interrupted', text: 'Interrupted' }]);
+});
+
+test('grok: user wrapper and synthetics, assistant tool calls, results and reasoning', async () => {
+  const lines = (await readFile(fixture('grok/chat_history.jsonl'), 'utf8')).trim().split('\n').map((l) => JSON.parse(l));
+  const entries = lines.map((l, i) => parseGrokLine(l, i + 1)).filter(Boolean) as NonNullable<ReturnType<typeof parseGrokLine>>[];
+  // system, the synthetic context line: skipped. Everything else maps.
+  assert.deepEqual(entries.map((e) => e.role), ['user', 'assistant', 'assistant', 'tool', 'assistant', 'assistant']);
+  assert.deepEqual(entries[0].parts, [{ type: 'text', text: 'Fix the failing build' }]);
+  assert.deepEqual(entries[1].parts, [{ type: 'reasoning', text: 'Run the build and read the error.' }]);
+  assert.deepEqual(entries[2].parts, [{ type: 'tool_call', call: { id: 'call-1', name: 'run_terminal_command', args: { command: 'pnpm build' } } }]);
+  const result = entries[3].parts[0] as any;
+  assert.equal(result.result.callId, 'call-1');
+  assert.equal(result.result.isError, true); // no error flag in the format; the text leads with "Error:"
+  assert.ok(entries[4].parts.some((p) => p.type === 'widget'));
+  assert.equal((entries[5].parts[0] as any).call.name, 'web_search');
+  assert.equal(parseGrokLine({ type: 'something_new' }, 9), null);
+  assert.equal(parseGrokLine(null, 9), null);
+});
+
+test('muse: envelope records map the four conversation event kinds only', async () => {
+  const lines = (await readFile(fixture('muse.jsonl'), 'utf8')).trim().split('\n').map((l) => JSON.parse(l));
+  const entries = lines.map((l, i) => parseMuseLine(l, i + 1)).filter(Boolean) as NonNullable<ReturnType<typeof parseMuseLine>>[];
+  assert.deepEqual(entries.map((e) => e.role), ['user', 'assistant', 'tool', 'assistant']);
+  assert.equal(entries[0].at, 1785972469000); // recorded_at is microseconds
+  assert.deepEqual(entries[1].parts, [{ type: 'tool_call', call: { id: 'c1', name: 'read_file', args: { path: 'src/login.ts' } } }]);
+  assert.equal((entries[2].parts[0] as any).result.callId, 'c1');
+  assert.deepEqual(entries[3].parts, [{ type: 'text', text: 'Fixed the redirect.' }]);
+  assert.equal(parseMuseLine({ payload_type: 'runtime.session' }, 1), null);
+});
+
+test('gemini: metadata is skipped, records map text, thoughts, calls and results', async () => {
+  const lines = (await readFile(fixture('gemini.jsonl'), 'utf8')).trim().split('\n').map((l) => JSON.parse(l));
+  const entries = lines.map((l, i) => parseGeminiLine(l, i + 1)).filter(Boolean) as NonNullable<ReturnType<typeof parseGeminiLine>>[];
+  assert.deepEqual(entries.map((e) => e.role), ['user', 'assistant', 'assistant', 'tool', 'system']);
+  assert.deepEqual(entries[0].parts, [{ type: 'text', text: 'Fix the parser' }]);
+  const kinds = entries[1].parts.map((p) => p.type);
+  assert.deepEqual(kinds, ['reasoning', 'text', 'tool_call', 'tool_result']);
+  assert.equal((entries[1].parts[3] as any).result.text, 'parser.ts');
+  assert.equal((entries[2].parts.find((p) => p.type === 'tool_call') as any).call.name, 'read_file');
+  assert.equal((entries[3].parts[0] as any).result.callId, 'call-2');
+});
+
+test('gemini: the legacy single-document form parses through the document path', async () => {
+  const doc = await fixtureJson('gemini-legacy.json');
+  const entries = parseGeminiDocument(doc);
+  assert.deepEqual(entries.map((e) => [e.seq, e.role]), [[1, 'user'], [2, 'assistant']]);
+  assert.equal((entries[1].parts.find((p) => p.type === 'tool_result') as any).result.isError, true);
+  const viaLoader = await DOC_ADAPTERS.gemini(fixture('gemini-legacy.json'));
+  assert.deepEqual(viaLoader?.map((e) => e.seq), [1, 2]);
+  assert.equal(await DOC_ADAPTERS.gemini(fixture('gemini.jsonl')), null); // JSONL belongs to the line adapter
+});
+
+test('opencode: legacy tree messages and parts become entries; tool state folds in', async () => {
+  const entries = await loadOpencode(fixture('opencode/storage/session/proj1/ses_fixture1.json'));
+  assert.ok(entries);
+  assert.deepEqual(entries.map((e) => e.role), ['user', 'assistant']);
+  assert.deepEqual(entries[0].parts, [{ type: 'text', text: 'Fix the parser' }]);
+  assert.deepEqual(entries[1].parts.map((p) => p.type), ['reasoning', 'tool_call', 'tool_result']);
+  assert.equal((entries[1].parts[2] as any).result.text, 'parser.ts');
+  assert.deepEqual(opencodeEntries([{ id: 'm', role: 'user', at: 0, parts: [{ type: 'step-start' }] }]), []);
+  assert.equal(await loadOpencode(fixture('opencode/storage/session/proj1/missing.json')), null);
+});
+
+test('opencode: the SQLite store reads read-only through the document loader', async () => {
+  const { DatabaseSync } = (await import('node:sqlite')) as any;
+  const dir = await mkdtemp(join(tmpdir(), 'ah-opencode-'));
+  const dbFile = join(dir, 'opencode.db');
+  try {
+    const db = new DatabaseSync(dbFile);
+    db.exec('CREATE TABLE session (id TEXT, directory TEXT, title TEXT, time_updated INTEGER, parent_id TEXT)');
+    db.exec('CREATE TABLE message (id TEXT, session_id TEXT, time_created INTEGER, data TEXT)');
+    db.exec('CREATE TABLE part (id TEXT, message_id TEXT, session_id TEXT, time_created INTEGER, data TEXT)');
+    db.prepare('INSERT INTO session VALUES (?, ?, ?, ?, NULL)').run('ses_db', '/home/u/code/proj', 'DB session', 1759669500000);
+    db.prepare('INSERT INTO message VALUES (?, ?, ?, ?)').run('msg_1', 'ses_db', 1759669201000, JSON.stringify({ role: 'user', time: { created: 1759669201000 } }));
+    db.prepare('INSERT INTO part VALUES (?, ?, ?, ?, ?)').run('prt_1', 'msg_1', 'ses_db', 1759669201000, JSON.stringify({ type: 'text', text: 'Hello from the db' }));
+    db.close();
+    const entries = await loadOpencode(`${dbFile}#ses_db`);
+    assert.deepEqual(entries?.map((e) => e.parts), [[{ type: 'text', text: 'Hello from the db' }]]);
+    assert.equal(await loadOpencode(`${join(dir, 'nope.db')}#ses_db`), null);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('document feed: growth appends, identity change rebuilds, junk is ignored', async () => {
+  let doc: any = await fixtureJson('gemini-legacy.json');
+  const feed = new DocumentFeed('mem', async () => parseGeminiDocument(doc));
+  await feed.update();
+  assert.equal(feed.entries.length, 2);
+  assert.equal(feed.head, 2);
+  doc = { ...doc, messages: [...doc.messages, { id: 'm3', timestamp: '2026-10-04T09:01:00.000Z', type: 'user', content: 'And in prod?' }] };
+  await feed.update();
+  assert.equal(feed.generation, 0);
+  assert.deepEqual(feed.after(2).map((e) => e.seq), [3]);
+  doc = { ...doc, messages: [{ id: 'x1', timestamp: '2026-10-04T09:00:01.000Z', type: 'user', content: 'Different conversation' }] };
+  await feed.update();
+  assert.equal(feed.generation, 1);
+  assert.equal(feed.entries.length, 1);
+});
+
+test('feed: a large grok transcript reads fully and in order', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ah-feed-big-'));
+  const file = join(dir, 'chat_history.jsonl');
+  try {
+    const lines: string[] = [];
+    for (let i = 0; i < 10_000; i++) lines.push(JSON.stringify({ type: 'assistant', content: `line ${i}`, model_id: 'grok-4.5' }));
+    await writeFile(file, lines.join('\n') + '\n');
+    const feed = new TranscriptFeed(file, ADAPTERS.grok);
+    await feed.update();
+    assert.equal(feed.entries.length, 5000); // MAX_ENTRIES cap, floor rises
+    assert.ok(feed.floor > 1);
+    assert.equal((feed.entries.at(-1)?.parts[0] as any).text, 'line 9999');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('widgets: fenced ah-widget JSON becomes a widget part; anything else stays text', () => {

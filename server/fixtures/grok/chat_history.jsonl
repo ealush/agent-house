@@ -1,0 +1,8 @@
+{"type":"system","content":"You are Grok, a coding agent."}
+{"type":"user","content":[{"type":"text","text":"<user_info>OS: linux</user_info>"}],"synthetic_reason":"session_context"}
+{"type":"user","content":[{"type":"text","text":"<user_query>Fix the failing build</user_query>"}],"prompt_index":0}
+{"type":"reasoning","id":"r1","summary":[{"type":"summary_text","text":"Run the build and read the error."}],"encrypted_content":"opaque"}
+{"type":"assistant","content":"","tool_calls":[{"id":"call-1","name":"run_terminal_command","arguments":"{\"command\":\"pnpm build\"}"}],"model_id":"grok-4.5"}
+{"type":"tool_result","tool_call_id":"call-1","content":"Error: src/app.ts(3,1): error TS2304"}
+{"type":"assistant","content":"The build fails on a missing name. Fixing it now.\n\n```ah-widget\n{\"type\":\"choices\",\"prompt\":\"Next?\",\"options\":[\"Fix it\",\"Show the file\"]}\n```","model_id":"grok-4.5"}
+{"type":"backend_tool_call","kind":{"tool_type":"web_search","action":{"query":"TS2304 cannot find name"}}}
