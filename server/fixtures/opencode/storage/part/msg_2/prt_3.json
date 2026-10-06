@@ -1,0 +1,1 @@
+{"callID":"call-1","id":"prt_3","messageID":"msg_2","sessionID":"ses_fixture1","state":{"input":{"command":"ls src"},"output":"parser.ts","status":"completed","time":{"end":1759669220000,"start":1759669215000}},"tool":"bash","type":"tool"}

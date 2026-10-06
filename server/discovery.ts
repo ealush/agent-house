@@ -21,6 +21,10 @@ export type Transcript = {
 const MAX_AGE_DAYS = 30;
 const CLAUDE_DIR = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'projects');
 const CODEX_DIR = process.env.CODEX_HOME ?? join(homedir(), '.codex');
+const GROK_DIR = process.env.GROK_HOME ?? join(homedir(), '.grok');
+const GEMINI_DIR = join(homedir(), '.gemini');
+const MUSE_DIR = join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share'), 'muse');
+const OPENCODE_DIR = join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share'), 'opencode');
 
 // Per-file cache keyed by mtime+size: rescans only touch files that changed.
 const cache = new Map<string, { sig: string; value: Transcript | null }>();
@@ -182,11 +186,251 @@ async function discoverCodex(): Promise<Transcript[]> {
     .map((t) => ({ ...t, title: names.get(t.harnessId) ?? t.title }));
 }
 
+// ---------- Grok: ~/.grok/sessions/<encoded-cwd>/<session-id>/chat_history.jsonl
+// Metadata lives in the sibling summary.json; the chat lines have no timestamps.
+// Subagent sessions (session_kind in summary.json) are skipped, as Grok's own
+// session list skips them. Format documented from third-party readers of real
+// installs, not verified locally.
+
+export async function parseGrok(file: string, mtime: number): Promise<Transcript | null> {
+  const dir = file.split('/').slice(0, -1).join('/');
+  const summary = json(await readFile(join(dir, 'summary.json'), 'utf8').catch(() => ''));
+  if (summary?.session_kind === 'subagent') return null;
+  const harnessId = summary?.info?.id ?? dir.split('/').pop() ?? '';
+  if (!harnessId) return null;
+  let cwd = typeof summary?.info?.cwd === 'string' ? summary.info.cwd : '';
+  if (!cwd) {
+    try {
+      cwd = decodeURIComponent(dir.split('/').slice(0, -1).pop() ?? '');
+    } catch {}
+  }
+  let prompt: string | null = null;
+  const text = await readFile(file, 'utf8').catch(() => '');
+  for (const line of text.split('\n')) {
+    if (prompt || !line.includes('"user"')) continue;
+    const d = json(line);
+    if (!d || d.type !== 'user' || d.synthetic_reason) continue;
+    const raw = (Array.isArray(d.content) ? d.content : []).map((c: any) => c?.text).filter(Boolean).join('\n');
+    prompt = promptTitle(raw.match(/<user_query>([\s\S]*?)<\/user_query>/)?.[1] ?? (d.prompt_index !== undefined ? raw : null));
+  }
+  if (!prompt) return null;
+  const updated = Date.parse(summary?.last_active_at ?? summary?.updated_at ?? '');
+  return {
+    harness: 'grok',
+    harnessId,
+    cwd,
+    title: summary?.generated_title || summary?.session_summary || prompt,
+    model: typeof summary?.current_model_id === 'string' ? summary.current_model_id : undefined,
+    updatedAt: Number.isFinite(updated) ? Math.floor(updated / 1000) : mtime,
+    file,
+  };
+}
+
+async function discoverGrok(): Promise<Transcript[]> {
+  const root = join(GROK_DIR, 'sessions');
+  const cwds = await readdir(root).catch(() => [] as string[]);
+  const out = await Promise.all(
+    cwds.map(async (c) => {
+      const sessions = await readdir(join(root, c)).catch(() => [] as string[]);
+      return Promise.all(sessions.map((s) => cached(join(root, c, s, 'chat_history.jsonl'), parseGrok)));
+    }),
+  );
+  return out.flat().filter((t): t is Transcript => !!t);
+}
+
+// ---------- Gemini: ~/.gemini/tmp/<project>/chats/session-*.jsonl (current) or
+// session-*.json (older single-document form). The recording's own metadata
+// names the session and its directories; `.project_root` beside `chats/` is
+// the fallback cwd. Format documented from the upstream recording service's
+// published shape via third-party readers, not verified locally.
+
+function geminiUserText(record: any): string | null {
+  const content = record?.content;
+  if (typeof content === 'string') return content;
+  const text = (Array.isArray(content) ? content : []).map((p: any) => p?.text).filter((s: unknown) => typeof s === 'string').join('\n');
+  return text || null;
+}
+
+export async function parseGemini(file: string, mtime: number): Promise<Transcript | null> {
+  const text = await readFile(file, 'utf8').catch(() => '');
+  if (!text) return null;
+  let sessionId = '';
+  let summary: string | undefined;
+  let directories: string[] = [];
+  let prompt: string | null = null;
+  let model: string | undefined;
+  const consider = (d: any) => {
+    if (!d || typeof d !== 'object') return;
+    if (typeof d.sessionId === 'string') sessionId ||= d.sessionId;
+    if (typeof d.summary === 'string' && d.summary) summary = d.summary;
+    if (Array.isArray(d.directories)) directories = d.directories.filter((s: unknown) => typeof s === 'string');
+    if (d.type === 'user' && !prompt) prompt = promptTitle(geminiUserText(d));
+    if (d.type === 'gemini' && typeof d.model === 'string') model ??= d.model;
+  };
+  if (file.endsWith('.jsonl')) {
+    for (const line of text.split('\n')) consider(json(line));
+  } else {
+    const doc = json(text);
+    consider(doc);
+    for (const m of Array.isArray(doc?.messages) ? doc.messages : []) consider(m);
+  }
+  if (!sessionId || !prompt) return null;
+  let cwd = directories[0] ?? '';
+  if (!cwd) {
+    const rootFile = join(file.split('/').slice(0, -2).join('/'), '.project_root');
+    cwd = (await readFile(rootFile, 'utf8').catch(() => '')).trim();
+  }
+  return { harness: 'gemini', harnessId: sessionId, cwd, title: summary || prompt, model, updatedAt: mtime, file };
+}
+
+async function discoverGemini(): Promise<Transcript[]> {
+  const root = join(GEMINI_DIR, 'tmp');
+  const projects = await readdir(root).catch(() => [] as string[]);
+  const out = await Promise.all(
+    projects.map(async (p) => {
+      const files = await readdir(join(root, p, 'chats')).catch(() => [] as string[]);
+      return Promise.all(files.filter((f) => f.startsWith('session-') && (f.endsWith('.jsonl') || f.endsWith('.json'))).map((f) => cached(join(root, p, 'chats', f), parseGemini)));
+    }),
+  );
+  return out.flat().filter((t): t is Transcript => !!t);
+}
+
+// ---------- Muse: ~/.local/share/muse/sessions/YYYY/MM/DD/<id>/session.jsonl
+// Envelope records; the metadata record carries stream.id and the workspace
+// root, a `started` run event carries the first prompt. Subagent transcripts
+// nested under a session are skipped (they have no metadata of their own and
+// the parent session covers the work). Documented from a third-party
+// reverse-engineering report on a real corpus, not verified locally.
+
+export async function parseMuse(file: string, mtime: number): Promise<Transcript | null> {
+  let id = '';
+  let cwd = '';
+  let model: string | undefined;
+  let prompt: string | null = null;
+  await scanHead(file, 4 * 1024 * 1024, (line) => {
+    const d = json(line);
+    if (!d) return;
+    if (d.payload_type === 'runtime.session.metadata') {
+      id ||= typeof d.stream?.id === 'string' ? d.stream.id : '';
+      cwd ||= typeof d.payload?.record?.workspace_root === 'string' ? d.payload.record.workspace_root : '';
+    } else if (d.payload_type === 'runtime.session' && d.payload?.kind === 'run') {
+      const ev = d.payload.event ?? {};
+      if (ev.kind === 'started' && !prompt) prompt = promptTitle(ev.prompt);
+      if (ev.kind === 'model_completed' && typeof ev.model === 'string') model ??= ev.model;
+    }
+    return !!(id && cwd && prompt && model);
+  });
+  const harnessId = id || file.split('/').slice(0, -1).pop() || '';
+  if (!harnessId || !prompt) return null;
+  return { harness: 'muse', harnessId, cwd, title: prompt, model, updatedAt: mtime, file };
+}
+
+async function discoverMuse(): Promise<Transcript[]> {
+  const root = join(MUSE_DIR, 'sessions');
+  const files: string[] = [];
+  for (const y of await readdir(root).catch(() => [] as string[])) {
+    for (const m of await readdir(join(root, y)).catch(() => [] as string[])) {
+      for (const d of await readdir(join(root, y, m)).catch(() => [] as string[])) {
+        for (const s of await readdir(join(root, y, m, d)).catch(() => [] as string[])) {
+          files.push(join(root, y, m, d, s, 'session.jsonl'));
+        }
+      }
+    }
+  }
+  const parsed = await Promise.all(files.map((f) => cached(f, parseMuse)));
+  return parsed.filter((t): t is Transcript => !!t);
+}
+
+// ---------- opencode: SQLite store (current) plus the legacy JSON tree.
+// DB sessions address their transcript as "<db path>#<session id>"; the feed's
+// document loader splits that apart. Tree sessions use their info file.
+// Documented from third-party readers of real installs, not verified locally.
+
+export async function parseOpencode(file: string, mtime: number): Promise<Transcript | null> {
+  const info = json(await readFile(file, 'utf8').catch(() => ''));
+  if (typeof info?.id !== 'string') return null;
+  const storage = file.split('/').slice(0, -3).join('/');
+  let prompt: string | null = null;
+  let model: string | undefined;
+  const messageDir = join(storage, 'message', info.id);
+  const names = (await readdir(messageDir).catch(() => [] as string[])).filter((f) => f.endsWith('.json')).sort();
+  for (const name of names) {
+    const msg = json(await readFile(join(messageDir, name), 'utf8').catch(() => ''));
+    if (!msg) continue;
+    if (typeof msg.modelID === 'string') model ??= msg.modelID;
+    if (prompt || msg.role !== 'user' || typeof msg.id !== 'string') continue;
+    const partDir = join(storage, 'part', msg.id);
+    const parts = (await readdir(partDir).catch(() => [] as string[])).filter((f) => f.endsWith('.json')).sort();
+    for (const p of parts) {
+      const part = json(await readFile(join(partDir, p), 'utf8').catch(() => ''));
+      if (part?.type === 'text') prompt ??= promptTitle(part.text);
+    }
+  }
+  const updated = typeof info.time?.updated === 'number' ? Math.floor(info.time.updated / 1000) : mtime;
+  return {
+    harness: 'opencode',
+    harnessId: info.id,
+    cwd: typeof info.directory === 'string' ? info.directory : '',
+    title: typeof info.title === 'string' && info.title ? info.title : (prompt ?? 'opencode session'),
+    model,
+    updatedAt: updated,
+    file,
+  };
+}
+
+async function discoverOpencodeDb(dbPath: string): Promise<Transcript[]> {
+  const { DatabaseSync } = (await import('node:sqlite')) as any;
+  let db: any;
+  try {
+    db = new DatabaseSync(dbPath, { readOnly: true });
+  } catch {
+    return [];
+  }
+  try {
+    const rows = db.prepare('SELECT id, directory, title, time_updated FROM session WHERE parent_id IS NULL ORDER BY time_updated DESC LIMIT 200').all();
+    return rows
+      .filter((r: any) => typeof r.id === 'string')
+      .map((r: any) => ({
+        harness: 'opencode',
+        harnessId: String(r.id),
+        cwd: typeof r.directory === 'string' ? r.directory : '',
+        title: typeof r.title === 'string' && r.title ? r.title : 'opencode session',
+        updatedAt: typeof r.time_updated === 'number' ? Math.floor(r.time_updated / 1000) : 0,
+        file: `${dbPath}#${String(r.id)}`,
+      }));
+  } catch {
+    return [];
+  } finally {
+    try {
+      db.close();
+    } catch {}
+  }
+}
+
+async function discoverOpencode(): Promise<Transcript[]> {
+  const fromDb = await discoverOpencodeDb(join(OPENCODE_DIR, 'opencode.db')).catch(() => [] as Transcript[]);
+  const seen = new Set(fromDb.map((t) => t.harnessId));
+  const treeRoot = join(OPENCODE_DIR, 'storage', 'session');
+  const projects = await readdir(treeRoot).catch(() => [] as string[]);
+  const parsed = await Promise.all(
+    projects.map(async (p) => {
+      const files = await readdir(join(treeRoot, p)).catch(() => [] as string[]);
+      return Promise.all(files.filter((f) => f.endsWith('.json')).map((f) => cached(join(treeRoot, p, f), parseOpencode)));
+    }),
+  );
+  const fromTree = parsed.flat().filter((t): t is Transcript => !!t && !seen.has(t.harnessId));
+  return [...fromDb, ...fromTree];
+}
+
 // ---------- adapter table: harness id → discoverer
 
 const DISCOVERERS: Record<string, () => Promise<Transcript[]>> = {
   claude: discoverClaude,
   codex: discoverCodex,
+  grok: discoverGrok,
+  gemini: discoverGemini,
+  muse: discoverMuse,
+  opencode: discoverOpencode,
 };
 
 let last: { at: number; value: Transcript[] } | null = null;

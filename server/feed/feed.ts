@@ -6,6 +6,10 @@ import { open, stat } from 'node:fs/promises';
 import type { Entry } from './schema.ts';
 import { parseClaudeLine } from './adapters/claude.ts';
 import { parseCodexLine } from './adapters/codex.ts';
+import { parseGrokLine } from './adapters/grok.ts';
+import { parseMuseLine } from './adapters/muse.ts';
+import { loadGeminiDocument, parseGeminiLine } from './adapters/gemini.ts';
+import { loadOpencode } from './adapters/opencode.ts';
 
 export type Adapter = (line: unknown, seq: number) => Entry | null;
 
@@ -13,6 +17,24 @@ export type Adapter = (line: unknown, seq: number) => Entry | null;
 export const ADAPTERS: Record<string, Adapter> = {
   claude: parseClaudeLine,
   codex: parseCodexLine,
+  grok: parseGrokLine,
+  muse: parseMuseLine,
+  gemini: parseGeminiLine,
+};
+
+/**
+ * Document adapters: harnesses whose transcript is not an append-only line
+ * stream (a whole JSON document, a JSON tree, a SQLite store) register a
+ * loader instead. The loader returns the conversation's entries in order, or
+ * null when there is nothing readable yet. `gemini` has both shapes: current
+ * installs write JSONL (the line adapter), older ones one JSON document (the
+ * loader); feedFor picks by file name.
+ */
+export type DocAdapter = (source: string) => Promise<Entry[] | null>;
+
+export const DOC_ADAPTERS: Record<string, DocAdapter> = {
+  gemini: loadGeminiDocument,
+  opencode: loadOpencode,
 };
 
 const CHUNK = 4 * 1024 * 1024;
@@ -117,18 +139,81 @@ export class TranscriptFeed {
   }
 }
 
+/**
+ * A feed over a whole-document transcript. Every poll reloads the document
+ * (they are small compared to line transcripts, and two of the sources, a
+ * rewritten JSON file and a SQLite store, have no cheaper cursor). Entries
+ * keep their position while the document only grows; a document whose
+ * entries change identity mid-list bumps `generation`, like a truncated
+ * line transcript, so viewers rebuild from a snapshot.
+ */
+export class DocumentFeed {
+  entries: Entry[] = [];
+  generation = 0;
+  head = 0;
+  floor = 0;
+  private sig = '';
+  private loading: Promise<void> | null = null;
+
+  readonly file: string;
+  private readonly load: DocAdapter;
+
+  constructor(file: string, load: DocAdapter) {
+    this.file = file;
+    this.load = load;
+  }
+
+  update(): Promise<void> {
+    this.loading ??= this.reload().finally(() => (this.loading = null));
+    return this.loading;
+  }
+
+  after(seq: number): Entry[] {
+    let i = this.entries.length;
+    while (i > 0 && this.entries[i - 1].seq > seq) i--;
+    return this.entries.slice(i);
+  }
+
+  page(before: number, limit: number): { entries: Entry[]; hasOlder: boolean } {
+    let end = this.entries.length;
+    while (end > 0 && this.entries[end - 1].seq >= before) end--;
+    const start = Math.max(0, end - limit);
+    return { entries: this.entries.slice(start, end), hasOlder: start > 0 };
+  }
+
+  private async reload() {
+    const next = await this.load(this.file).catch(() => null);
+    if (!next) return;
+    const sig = next.map((e) => `${e.seq}:${e.id}:${e.parts.length}`).join('|') + `#${next.reduce((n, e) => n + JSON.stringify(e.parts).length, 0)}`;
+    if (sig === this.sig) return;
+    const prefix = this.entries.length <= next.length && this.entries.every((e, i) => e.id === next[i].id && e.seq === next[i].seq);
+    if (this.entries.length && !prefix) this.generation++;
+    this.entries = next;
+    this.sig = sig;
+    this.head = next.length ? next[next.length - 1].seq : 0;
+    if (this.entries.length > MAX_ENTRIES) {
+      this.entries.splice(0, this.entries.length - MAX_ENTRIES);
+      this.floor = this.entries[0].seq;
+    }
+  }
+}
+
+export type AnyFeed = TranscriptFeed | DocumentFeed;
+
 // Open feeds are shared by every viewer of the same transcript; a few stay cached
 // after the last viewer leaves so switching back to the GUI is instant.
-const feeds = new Map<string, TranscriptFeed>();
+const feeds = new Map<string, AnyFeed>();
 const KEEP = 8;
 
-export function feedFor(file: string, adapter: string): TranscriptFeed | null {
+export function feedFor(file: string, adapter: string): AnyFeed | null {
   const parse = ADAPTERS[adapter];
-  if (!parse) return null;
+  const doc = DOC_ADAPTERS[adapter];
+  if (!parse && !doc) return null;
   const key = `${adapter}\0${file}`;
   let feed = feeds.get(key);
   if (feed) feeds.delete(key);
-  else feed = new TranscriptFeed(file, parse);
+  else if (doc && (!parse || (adapter === 'gemini' && file.endsWith('.json')))) feed = new DocumentFeed(file, doc);
+  else feed = new TranscriptFeed(file, parse!);
   feeds.set(key, feed); // most recently used last
   while (feeds.size > KEEP) feeds.delete(feeds.keys().next().value!);
   return feed;

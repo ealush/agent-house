@@ -2,7 +2,7 @@
 // re-resolved every few seconds, so a fresh session whose transcript appears later,
 // or a /clear that starts a new one, turns into a new snapshot rather than a stall.
 import type { FeedMessage, FeedPage } from './schema.ts';
-import { feedFor, type TranscriptFeed } from './feed.ts';
+import { feedFor, type AnyFeed } from './feed.ts';
 
 export type Source = { adapter: string; harness: string; file: string | null } | 'no-adapter' | null;
 export type Resolve = (fresh: boolean) => Promise<Source>;
@@ -11,7 +11,7 @@ const POLL_MS = 400;
 const RESOLVE_MS = 2500;
 export const SNAPSHOT = 200;
 
-type Open = { feed: TranscriptFeed; harness: string } | { reason: 'no-adapter' | 'no-transcript' | 'not-found' };
+type Open = { feed: AnyFeed; harness: string } | { reason: 'no-adapter' | 'no-transcript' | 'not-found' };
 
 async function openFeed(resolve: Resolve, fresh: boolean): Promise<Open> {
   const src = await resolve(fresh);
@@ -23,7 +23,7 @@ async function openFeed(resolve: Resolve, fresh: boolean): Promise<Open> {
 
 /** Runs until `signal` aborts. `send` writes one message to the client. */
 export async function streamFeed(resolve: Resolve, send: (msg: FeedMessage) => void, signal: AbortSignal) {
-  let feed: TranscriptFeed | null = null;
+  let feed: AnyFeed | null = null;
   let harness = '';
   let generation = -1;
   let head = 0;
