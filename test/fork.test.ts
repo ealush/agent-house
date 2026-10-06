@@ -75,6 +75,13 @@ test('fork end to end: copied transcript, own worktree, lineage, honest refusals
     assert.equal(invalid.status, 400, invalid.body);
     assert.equal(git(repo, 'worktree', 'list', '--porcelain'), worktreesBefore, 'invalid launch selection leaves no worktree');
 
+    // Resuming starts a real process; fork only after startup has become quiet.
+    // A fast runner can otherwise reach this request while cat is still starting.
+    await until(async () => {
+      const state = (await http(ah, 'GET', '/api/state')).json();
+      const parent = state.windows.find((w: any) => w.uid === parentUid);
+      return parent && ['idle', 'attention'].includes(parent.status);
+    }, 15000, 'resumed parent ready to fork');
     const forked = await http(ah, 'POST', `/api/sessions/${parentUid}/fork`, { body: { name: 'proj risky', prompt: 'try the risky approach' } });
     assert.equal(forked.status, 201, forked.body);
     const out = forked.json();
