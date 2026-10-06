@@ -130,6 +130,35 @@ test('parseStructured: strict shape, tolerant envelope', () => {
     },
   );
   assert.deepEqual(parseStructured(JSON.stringify({ followups: [] })), { content: JSON.stringify({ followups: [] }), followups: [] });
+  // Code fences inside content are markdown, not a wrapper around the JSON.
+  const fencedAnswer = '### Checks\n```bash\ngit diff\n```\n- done';
+  assert.deepEqual(
+    parseStructured(JSON.stringify({ content: fencedAnswer, followups: [{ title: 'Summarize diff', kind: 'session', text: 'Summarize the diff' }] })),
+    { content: fencedAnswer, followups: [{ title: 'Summarize diff', kind: 'session', text: 'Summarize the diff' }] },
+  );
+});
+
+test('history: shows the answer when a stored reply is still the raw envelope', async () => {
+  const { store, path } = await freshStore();
+  const answer = '### Checks\n```bash\ngit diff\n```\n- done';
+  const raw = JSON.stringify({ content: answer, followups: [{ title: 'Summarize diff', kind: 'session', text: 'Summarize the diff' }] });
+  const db = getDb(path);
+  await db.chatMessage.create({ data: { uid: 'broken', role: 'assistant', text: raw, at: 1 } });
+  await db.chatMessage.create({ data: { uid: 'pasted', role: 'user', text: raw, at: 1 } });
+  const example = 'Use this response shape:\n```json\n' + JSON.stringify({ content: 'Example', followups: [] }) + '\n```';
+  await db.chatMessage.create({ data: { uid: 'example', role: 'assistant', text: example, at: 1 } });
+  await db.chatMessage.create({ data: { uid: 'fenced', role: 'assistant', text: '```json\n' + raw + '\n```', at: 1 } });
+  assert.equal((await store.history('broken'))[0].text, answer);
+  assert.equal((await store.history('pasted'))[0].text, raw);
+  assert.equal((await store.history('example'))[0].text, example);
+  assert.equal((await store.history('fenced'))[0].text, answer);
+  for (const text of ['```json\n{"answer":"example"}\n```', JSON.stringify([{ content: 'example' }])]) {
+    await db.chatMessage.create({ data: { uid: 'json-data', role: 'assistant', text, at: 1 } });
+    assert.equal((await store.history('json-data')).at(-1)!.text, text);
+  }
+  const chats = await store.listChats();
+  assert.match(chats.find((c) => c.uid === 'broken')!.preview, /^### Checks/);
+  assert.match(chats.find((c) => c.uid === 'pasted')!.preview, /^\{"content"/);
 });
 
 test('chat: request carries key, model and session context', async () => {

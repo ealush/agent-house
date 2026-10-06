@@ -35,25 +35,36 @@ export type ChatReply = { message: ChatMessage; followups: Followup[] };
 /** One row in the historic-chats browser: newest first. */
 export type ChatSummary = { uid: string; title: string; count: number; firstAt: number; lastAt: number; preview: string };
 
+/** First `{...}` in `text` when it is JSON; undefined when it is not. */
+function parseObject(text: string): unknown | undefined {
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start < 0 || end <= start) return undefined;
+  try {
+    return JSON.parse(text.slice(start, end + 1));
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Pull the structured reply out of the model, tolerating chatty models
  * (fences, prose around the JSON). Anything unparseable or misshapen is the
  * answer itself with no follow-ups, so chat never breaks on a bad reply.
+ *
+ * Parse the raw text before stripping fences. `content` is markdown and often
+ * contains its own ``` blocks; stripping the first fence first corrupts the
+ * object, JSON.parse throws, and the raw blob is shown with literal `\n`.
  */
 export function parseStructured(raw: string): { content: string; followups: Followup[] } {
   const fallback = { content: raw.trim() || raw, followups: [] as Followup[] };
-  let obj: unknown;
-  try {
-    const fenced = raw
+  let obj = parseObject(raw);
+  if (obj === undefined) {
+    const unwrapped = raw
       .replace(/^[\s\S]*?```(?:json)?\s*/, '')
       .replace(/\s*```[\s\S]*$/, '')
       .trim();
-    const start = fenced.indexOf('{');
-    const end = fenced.lastIndexOf('}');
-    if (start < 0 || end <= start) return fallback;
-    obj = JSON.parse(fenced.slice(start, end + 1));
-  } catch {
-    return fallback;
+    if (unwrapped && unwrapped !== raw.trim()) obj = parseObject(unwrapped);
   }
   if (!obj || typeof obj !== 'object') return fallback;
   const { content, followups } = obj as { content?: unknown; followups?: unknown };
@@ -69,6 +80,21 @@ export function parseStructured(raw: string): { content: string; followups: Foll
     }
   }
   return { content: content.trim(), followups: out };
+}
+
+/**
+ * A reply stored before a fenced `content` could be parsed is the raw JSON
+ * envelope. Show the answer. Leave everything else, including user text, as stored.
+ */
+function answerText(role: string, text: string): string {
+  if (role !== 'assistant') return text;
+  // Repair whole envelopes only: normal answers can contain JSON examples.
+  const envelope = text.trim().replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
+  try {
+    const obj = JSON.parse(envelope) as { content?: unknown } | null;
+    if (!obj || typeof obj.content !== 'string' || !obj.content.trim()) return text;
+  } catch { return text; }
+  return parseStructured(envelope).content;
 }
 
 const DB_FILE = process.env.AH_DB_FILE ?? defaultDbPath();
@@ -258,7 +284,7 @@ export class SideChatStore {
     const rows = await this.db.chatMessage.findMany({ where: { uid }, orderBy: { id: 'asc' } });
     const index = aroundId === undefined ? -1 : rows.findIndex((r) => r.id === aroundId);
     const start = index < 0 ? Math.max(0, rows.length - HISTORY_LIMIT) : Math.max(0, index - Math.floor(HISTORY_LIMIT / 2));
-    return rows.slice(start, start + HISTORY_LIMIT).map((r) => ({ role: r.role as 'user' | 'assistant', text: r.text, at: r.at, id: r.id }));
+    return rows.slice(start, start + HISTORY_LIMIT).map((r) => ({ role: r.role as 'user' | 'assistant', text: answerText(r.role, r.text), at: r.at, id: r.id }));
   }
 
   /**
@@ -278,11 +304,11 @@ export class SideChatStore {
     if (!uids.length) return [];
     const [sessions, last] = await Promise.all([
       this.db.session.findMany({ where: { uid: { in: uids } }, select: { uid: true, title: true } }),
-      this.db.chatMessage.findMany({ where: { uid: { in: uids } }, orderBy: { id: 'desc' }, select: { uid: true, text: true } }),
+      this.db.chatMessage.findMany({ where: { uid: { in: uids } }, orderBy: { id: 'desc' }, select: { uid: true, role: true, text: true } }),
     ]);
     const titles = new Map(sessions.map((s) => [s.uid, s.title || s.uid]));
     const previews = new Map<string, string>();
-    for (const m of last) if (!previews.has(m.uid)) previews.set(m.uid, m.text);
+    for (const m of last) if (!previews.has(m.uid)) previews.set(m.uid, answerText(m.role, m.text));
     let textHit: Set<string> | null = null;
     if (q) {
       const hits = await this.db.chatMessage.findMany({
