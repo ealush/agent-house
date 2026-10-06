@@ -215,27 +215,33 @@ export class Core {
   async launch(o: { preset: Preset; cwd: string; session: string; name: string; command: string; uid?: string; harnessId?: string; pendingResume?: boolean; meta?: Record<string, unknown> }) {
     const uid = o.uid ?? Registry.newId();
     const windowId = await t.createWindow({ session: o.session, cwd: o.cwd, name: o.name });
-    const ts = String(now());
-    await t.setWindowOption(windowId, '@ah-uid', uid);
-    await t.setWindowOption(windowId, '@ah-agent', o.preset.id);
-    await t.setWindowOption(windowId, '@ah-created', ts);
-    await t.setWindowOption(windowId, '@ah-seen', ts);
-    if (o.harnessId) {
-      await t.setWindowOption(windowId, '@ah-harness', o.preset.id);
-      await t.setWindowOption(windowId, '@ah-harness-id', o.harnessId);
+    try {
+      const ts = String(now());
+      await t.setWindowOption(windowId, '@ah-uid', uid);
+      await t.setWindowOption(windowId, '@ah-agent', o.preset.id);
+      await t.setWindowOption(windowId, '@ah-created', ts);
+      await t.setWindowOption(windowId, '@ah-seen', ts);
+      if (o.harnessId) {
+        await t.setWindowOption(windowId, '@ah-harness', o.preset.id);
+        await t.setWindowOption(windowId, '@ah-harness-id', o.harnessId);
+      }
+      this.registry.starting(uid, {
+        harness: o.preset.id,
+        harnessId: o.harnessId,
+        cwd: o.cwd,
+        title: o.name,
+        tmux: { session: o.session, windowId },
+        pendingResume: o.pendingResume,
+        meta: o.meta,
+      });
+      if (o.command) await t.sendLine(windowId, o.command);
+      this.tick().catch(() => {});
+      return { uid, windowId };
+    } catch (err) {
+      await t.killWindow(windowId).catch(() => {});
+      this.registry.remove(uid);
+      throw err;
     }
-    this.registry.starting(uid, {
-      harness: o.preset.id,
-      harnessId: o.harnessId,
-      cwd: o.cwd,
-      title: o.name,
-      tmux: { session: o.session, windowId },
-      pendingResume: o.pendingResume,
-      meta: o.meta,
-    });
-    if (o.command) await t.sendLine(windowId, o.command);
-    this.tick().catch(() => {});
-    return { uid, windowId };
   }
 
   /**
@@ -373,32 +379,38 @@ export class Core {
       }
     }
 
-    const found = (await discover()).find((x) => x.harness === parent.harness && x.harnessId === parent.harnessId);
-    if (!found) throw new CoreError(422, 'no transcript found for this conversation; it may have been cleared or rotated');
-
-    const cwd = expandHome(parent.cwd);
-    const head = await headInfo(cwd).catch(() => null);
-    if (!head?.head) throw new CoreError(422, 'forking needs a git repository with at least one commit: two sessions in one checkout would overwrite each other');
-
-    const name = (o.name?.trim() || `${parent.title} (fork)`).slice(0, 80);
-    let wt: Worktree;
-    try {
-      wt = await createWorktree(cwd, name, head.head);
-    } catch (err) {
-      if (err instanceof GitError) throw new CoreError(400, err.message);
-      throw err;
-    }
-
-    let copied: { harnessId: string; file: string };
-    try {
-      copied = await copyTranscript(parent.harness, found.file, wt.path);
-    } catch (err) {
-      await removeWorktree(wt.path, true).catch(() => {});
-      if (err instanceof ForkError) throw new CoreError(err.status, err.message);
-      throw new CoreError(500, `fork failed while copying the conversation: ${(err as Error).message}`);
-    }
-
     const preset = await withCatalog(this.preset(parent.harness));
+    await this.tick();
+    const { copied, wt, head, name } = await this.withInput(parent.uid, async () => {
+      const live = (await this.current()).windows.find((w) => w.uid === parent.uid);
+      if (live && (live.status === 'busy' || this.justSent(parent.uid))) throw new CoreError(409, 'the parent started another turn; try forking when it finishes');
+      const found = (await discover()).find((x) => x.harness === parent.harness && x.harnessId === parent.harnessId);
+      if (!found) throw new CoreError(422, 'no transcript found for this conversation; it may have been cleared or rotated');
+
+      const cwd = expandHome(parent.cwd);
+      const head = await headInfo(cwd).catch(() => null);
+      if (!head?.head) throw new CoreError(422, 'forking needs a git repository with at least one commit: two sessions in one checkout would overwrite each other');
+
+      const name = (o.name?.trim() || `${parent.title} (fork)`).slice(0, 80);
+      let wt: Worktree;
+      try {
+        wt = await createWorktree(cwd, name, head.head);
+      } catch (err) {
+        if (err instanceof GitError) throw new CoreError(400, err.message);
+        throw err;
+      }
+
+      let copied: { harnessId: string; file: string };
+      try {
+        copied = await copyTranscript(parent.harness, found.file, wt.path);
+      } catch (err) {
+        await removeWorktree(wt.path, true).catch(() => {});
+        if (err instanceof ForkError) throw new CoreError(err.status, err.message);
+        throw new CoreError(500, `fork failed while copying the conversation: ${(err as Error).message}`);
+      }
+      return { copied, wt, head, name };
+    });
+
     const inherited = parent.rec ? resumeSelection(parent.rec.meta as Record<string, unknown>) : {};
     const sel = { mode: o.mode ?? inherited.mode, model: o.model ?? inherited.model, effort: o.effort ?? inherited.effort };
     let command: string;
@@ -407,9 +419,10 @@ export class Core {
       const plan = buildLaunch(preset, { ...sel, resume: copied.harnessId });
       command = plan.command;
       launchMeta = { ...plan.meta };
-    } catch {
-      command = preset.resumeId ? preset.resumeId.replace('{id}', copied.harnessId) : (preset.resume ?? preset.command);
-      launchMeta = {};
+    } catch (err) {
+      await removeCopiedTranscript(copied.file);
+      await removeWorktree(wt.path, true).catch(() => {});
+      throw new CoreError(400, (err as Error).message);
     }
     const parentFork: ForkMeta | null = parent.rec ? forkMetaOf(parent.rec) : null;
     const forkMeta: ForkMeta = {

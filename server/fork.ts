@@ -11,7 +11,7 @@
 // keep writing to the parent's conversation.
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 export class ForkError extends Error {
@@ -47,6 +47,7 @@ function rewriteJsonl(text: string, rewrite: (d: Record<string, any>) => void): 
       } catch {
         return line;
       }
+      if (!d || typeof d !== 'object' || Array.isArray(d)) return line;
       rewrite(d);
       return JSON.stringify(d);
     })
@@ -54,12 +55,12 @@ function rewriteJsonl(text: string, rewrite: (d: Record<string, any>) => void): 
 }
 
 async function writeCopy(file: string, text: string): Promise<void> {
-  await mkdir(dirname(file), { recursive: true });
+  await mkdir(dirname(file), { recursive: true, mode: 0o700 });
   try {
     // 'wx': never overwrite a conversation that already exists under the new id.
-    await writeFile(file, text, { flag: 'wx' });
+    await writeFile(file, text, { flag: 'wx', mode: 0o600 });
   } catch (err) {
-    await rm(file, { force: true }).catch(() => {});
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') await rm(file, { force: true }).catch(() => {});
     throw err;
   }
 }
@@ -92,7 +93,7 @@ async function forkCodex(sourceFile: string, newId: string, targetCwd: string): 
   const stamp = name.match(/^rollout-(.+)-[^-]+\.jsonl$/)?.[1];
   const file = join(dirname(sourceFile), stamp ? `rollout-${stamp}-${newId}.jsonl` : `rollout-${newId}.jsonl`);
   // The rollout must stay under the Codex home the discovery pass scans.
-  if (!file.startsWith(codexHome())) throw new ForkError(422, 'codex transcript is outside its session store; cannot fork it');
+  if (!resolve(file).startsWith(resolve(codexHome(), 'sessions') + sep)) throw new ForkError(422, 'codex transcript is outside its session store; cannot fork it');
   await writeCopy(file, out);
   return { file };
 }

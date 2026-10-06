@@ -70,6 +70,11 @@ test('fork end to end: copied transcript, own worktree, lineage, honest refusals
     const info2 = await http(ah, 'GET', `/api/sessions/${parentUid}/fork-info`);
     assert.ok(info2.json().dirty >= 1, info2.body);
 
+    const worktreesBefore = git(repo, 'worktree', 'list', '--porcelain');
+    const invalid = await http(ah, 'POST', `/api/sessions/${parentUid}/fork`, { body: { mode: 'invalid-mode' } });
+    assert.equal(invalid.status, 400, invalid.body);
+    assert.equal(git(repo, 'worktree', 'list', '--porcelain'), worktreesBefore, 'invalid launch selection leaves no worktree');
+
     const forked = await http(ah, 'POST', `/api/sessions/${parentUid}/fork`, { body: { name: 'proj risky', prompt: 'try the risky approach' } });
     assert.equal(forked.status, 201, forked.body);
     const out = forked.json();
@@ -101,7 +106,7 @@ test('fork end to end: copied transcript, own worktree, lineage, honest refusals
     assert.equal(forkWin.cwd, out.worktree);
 
     // The prompt is delivered to the fork (queued while it starts, then typed in).
-    assert.equal(out.prompt, 'queued');
+    assert.ok(['queued', 'delivered'].includes(out.prompt), 'first prompt uses the normal send path');
     await until(() => ah.tmux('capture-pane', '-p', '-t', out.id).includes('try the risky approach'), 15000, 'prompt delivered to fork');
 
     // Worktree isolation: a file written in the fork does not dirty the parent checkout.

@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { copyTranscript, encodeClaudeProjectDir, forkUnavailableReason } from './fork.ts';
+import { copyTranscript, FORKERS, encodeClaudeProjectDir, forkUnavailableReason } from './fork.ts';
 import { parseClaude, parseCodex } from './discovery.ts';
 import { ensureMigrated } from './db.ts';
 import { Registry } from './registry.ts';
@@ -95,4 +95,19 @@ test('registry lineage: forksOf and forkParent read ah.fork meta', async () => {
   assert.equal(reg.forkParent('fork1a')?.id, 'fork1');
   assert.equal(reg.forkParent('root1'), undefined);
   assert.deepEqual(reg.forksOf('nope'), []);
+});
+
+
+test('fork copy never removes an existing conversation on an id collision', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ah-fork-collision-'));
+  process.env.CLAUDE_CONFIG_DIR = join(dir, 'claude');
+  const target = '/tmp/fork-collision-target';
+  const bucket = join(dir, 'claude', 'projects', encodeClaudeProjectDir(target));
+  await mkdir(bucket, { recursive: true });
+  const existing = join(bucket, 'existing.jsonl');
+  await writeFile(existing, 'original conversation');
+  const source = join(dir, 'source.jsonl');
+  await writeFile(source, CLAUDE_SRC);
+  await assert.rejects(FORKERS.claude(source, 'existing', target), { code: 'EEXIST' });
+  assert.equal(await readFile(existing, 'utf8'), 'original conversation');
 });
