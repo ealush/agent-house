@@ -133,3 +133,20 @@ test('launching a brief-only recipe without a brief fails and launches nothing',
     await cleanup(ah);
   }
 });
+
+test('a later member launch failure removes all windows and worktrees created by the run', async () => {
+  const ah = await startAh(config);
+  try {
+    const repo = gitRepo(ah);
+    const before = execFileSync('git', ['-C', repo, 'worktree', 'list', '--porcelain'], { encoding: 'utf8' });
+    const launched = await http(ah, 'POST', '/api/recipes/pair/launch', {
+      body: { cwd: repo, brief: 'x', overrides: { reviewer: { mode: 'nonexistent' } } },
+    });
+    assert.equal(launched.status, 400, launched.body);
+    const state = (await http(ah, 'GET', '/api/state')).json();
+    assert.equal(state.windows.filter((w: any) => w.run).length, 0);
+    assert.equal(execFileSync('git', ['-C', repo, 'worktree', 'list', '--porcelain'], { encoding: 'utf8' }), before);
+  } finally {
+    await cleanup(ah);
+  }
+});

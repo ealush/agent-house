@@ -243,3 +243,21 @@ test('needs-you fires on entering waiting; a dead source is skipped, never sent'
   assert.match(store.getHandoff('h1')?.reason ?? '', /source session ended/);
   assert.equal(sent.length, 1);
 });
+
+test('a queued handoff does not fire again on later source turns or after restart', async () => {
+  const store = await freshStore();
+  makeRun(store, [{ armed: true }, { id: 'h1', event: 'needs-you' }]);
+  let sends = 0;
+  const send = async () => ({ outcome: 'queued' as const, queueId: `q${++sends}` });
+  const first = new HandoffEngine(store, send);
+  await first.observe(both, aliveBoth);
+  await first.observe(new Map([['u1', 'busy'], ['u2', 'busy']]), aliveBoth);
+  await first.observe(new Map([['u1', 'waiting'], ['u2', 'busy']]), aliveBoth);
+  await first.observe(both, aliveBoth);
+  assert.equal(sends, 2, 'one queued turn-end and one queued needs-you');
+  const restarted = new HandoffEngine(store, send);
+  await restarted.observe(new Map([['u1', 'waiting'], ['u2', 'busy']]), aliveBoth);
+  await restarted.observe(new Map([['u1', 'busy'], ['u2', 'busy']]), aliveBoth);
+  await restarted.observe(both, aliveBoth);
+  assert.equal(sends, 2, 'existing queue items retain ownership after restart');
+});

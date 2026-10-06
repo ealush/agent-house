@@ -520,6 +520,10 @@ export class Core {
     this.remember(text);
     const state = target.resumed ? await this.tick() : await this.current();
     return this.withInput<SendResult>(target.uid, async () => {
+      if (source) {
+        const handoff = this.recipeStore.getHandoff(source.handoffId);
+        if (!handoff || handoff.state !== 'pending' || this.recipeStore.getRun(handoff.runId)?.state !== 'running') throw new CoreError(409, 'handoff is no longer pending');
+      }
       const w = state.windows.find((w) => w.id === target.windowId);
       const queue = this.queue(target.uid);
       // Shells take input immediately (a dev server is always "busy"); agents get queued while working.
@@ -811,6 +815,7 @@ export class Core {
     const runId = newRunId();
     type Launched = { member: RecipeMember; uid: string; windowId: string; cwd: string; worktree: Worktree | null };
     const launched: Launched[] = [];
+    const createdWorktrees: Worktree[] = [];
     let runCreated = false;
     try {
       for (const member of recipe.members) {
@@ -824,6 +829,7 @@ export class Core {
           cwd = src.cwd;
         }
         const wt = member.worktree ? await createWorktree(cwd, title) : null;
+        if (wt) createdWorktrees.push(wt);
         const dir = wt?.path ?? cwd;
         let plan;
         try {
@@ -900,7 +906,11 @@ export class Core {
       this.tick().catch(() => {});
       return { run: this.runView(run), members: launched.map((l) => ({ key: l.member.key, uid: l.uid, id: l.windowId })) };
     } catch (err) {
-      for (const l of [...launched].reverse()) await t.killWindow(l.windowId).catch(() => {});
+      for (const l of [...launched].reverse()) {
+        await t.killWindow(l.windowId).catch(() => {});
+        this.registry.remove(l.uid);
+      }
+      for (const wt of createdWorktrees.reverse()) await removeWorktree(wt.path, true).catch(() => {});
       if (runCreated) {
         this.recipeStore.setRunState(runId, 'failed', err instanceof Error ? err.message : String(err));
         for (const h of this.recipeStore.handoffsForRun(runId)) {

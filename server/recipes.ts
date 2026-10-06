@@ -144,6 +144,7 @@ export function validateRecipe(raw: unknown, presets: Preset[]): { recipe: Recip
     if (member.cwdFrom !== undefined) {
       if (member.cwdFrom === member.key) errors.push(`member ${member.key}: cwdFrom cannot point at itself`);
       else if (!keys.has(member.cwdFrom)) errors.push(`member ${member.key}: cwdFrom points at unknown member "${member.cwdFrom}"`);
+      else if (members.findIndex((m) => m.key === member.cwdFrom) >= members.indexOf(member)) errors.push(`member ${member.key}: cwdFrom must point at an earlier member`);
     }
     if (member.prompt) checkVars(member.prompt, `member ${member.key} prompt`, keys, errors);
     if (member.title) checkVars(member.title, `member ${member.key} title`, keys, errors);
@@ -452,6 +453,7 @@ export class HandoffEngine {
         this.store.updateHandoff(h.id, { state: 'skipped', reason: 'source session ended' });
         continue;
       }
+      if (h.queueId) continue; // The queue owns this firing until it settles, including after restart.
       const cur = statuses.get(h.sourceUid);
       if (cur === undefined) continue;
       const prev = this.last.get(h.sourceUid);
@@ -477,6 +479,7 @@ export class HandoffEngine {
     const text = resolveTemplate(h.template, runVars(run));
     try {
       const out = await this.send(h.targetUid, text, { label, handoffId: h.id });
+      if (h.state !== 'pending' || run.state !== 'running') return;
       if (out.outcome === 'queued') {
         // Still pending: the queue owns delivery now, and its outcome decides
         // the final state (delivered via the queue, or cancelled by the user).
@@ -491,7 +494,7 @@ export class HandoffEngine {
         });
       }
     } catch (err) {
-      this.store.updateHandoff(h.id, { state: 'skipped', reason: `delivery failed: ${(err as Error).message}` });
+      if (h.state === 'pending') this.store.updateHandoff(h.id, { state: 'skipped', reason: `delivery failed: ${(err as Error).message}` });
     }
   }
 

@@ -9,6 +9,7 @@ import { askConfirm } from './ask.tsx';
 export function RecipesPanel() {
   const [list, setList] = useState<Recipe[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [editor, setEditor] = useState<string | null>(null);
   const [importText, setImportText] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -49,7 +50,7 @@ export function RecipesPanel() {
       return;
     }
     const id = (parsed as { id?: unknown }).id;
-    const rest = clean(list).filter((r) => r.id !== id);
+    const rest = clean(list).filter((r) => r.id !== (editingId ?? id));
     await saveAll([...rest, parsed as Recipe]);
   }
 
@@ -126,7 +127,7 @@ export function RecipesPanel() {
                 </span>
                 {r.errors?.length ? <span className="form-error">{r.errors.join('; ')}</span> : null}
               </div>
-              <button className="btn small" disabled={busy} onClick={() => setEditor(JSON.stringify(clean([r])[0], null, 2))}>
+              <button className="btn small" disabled={busy} onClick={() => { setEditingId(r.id); setEditor(JSON.stringify(clean([r])[0], null, 2)); }}>
                 Edit
               </button>
               <button className="btn small" disabled={busy} onClick={() => duplicate(r)}>
@@ -153,7 +154,7 @@ export function RecipesPanel() {
         </div>
       ) : (
         <div className="actions">
-          <button className="btn" disabled={busy || !list} onClick={() => setEditor(JSON.stringify(skeleton, null, 2))}>
+          <button className="btn" disabled={busy || !list} onClick={() => { setEditingId(null); setEditor(JSON.stringify(skeleton, null, 2)); }}>
             New recipe
           </button>
           <button className="btn ghost" disabled={busy || !list} onClick={exportAll}>

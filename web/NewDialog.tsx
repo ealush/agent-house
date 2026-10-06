@@ -84,6 +84,8 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
     setResume(false);
   }, [host, preset?.id]);
 
+  useEffect(() => setMemberModes({}), [host, recipe?.id]);
+
   const modes = preset?.modes ?? [];
   const models = preset?.models ?? [];
   const isShell = preset?.id === 'shell' || !preset?.command;
@@ -104,7 +106,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
       const overrides: Record<string, { mode?: string }> = {};
       for (const member of recipe.members) {
         const mode = memberModes[member.key] ?? member.mode ?? undefined;
-        if (mode && mode !== 'default') overrides[member.key] = { mode };
+        if (mode) overrides[member.key] = { mode };
       }
       const out = await client.launchRecipe(recipe.id, {
         cwd,
