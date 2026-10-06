@@ -27,6 +27,8 @@ import { feedPage, streamFeed, SNAPSHOT } from './feed/stream.ts';
 import * as t from './tmux.ts';
 import { createWorktree, changes, listBranches, switchBranch, pullRequest, GitError } from './git.ts';
 import { SideChatStore, SideChatError, changeContext } from './sidechat.ts';
+import { ensureMigrated, getDb } from './db.ts';
+import { importLegacyJson } from './migrate.ts';
 import { FsError, list, makeDir, receive, sendFile, setRoots, roots } from './files.ts';
 import { Peers, proxyHttp, proxyWs } from './peers.ts';
 import { Auth, AuthError, clearCookies, type Caller } from './auth.ts';
@@ -386,7 +388,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
 
   // ---------- side chat (BYOK change discussion, outside the agent's context)
 
-  if (route('GET', /^\/api\/subscriptions$/)) return send(res, 200, sidechat.list());
+  if (route('GET', /^\/api\/subscriptions$/)) return send(res, 200, await sidechat.list());
 
   if (route('POST', /^\/api\/subscriptions$/)) {
     const body = await readJson(req);
@@ -417,7 +419,8 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   if ((m = route('GET', /^\/api\/windows\/(@\d+)\/chat$/))) {
     const w = (await core.current()).windows.find((w) => w.id === m![1]);
     if (!w) throw new HttpError(404, 'window not found');
-    return send(res, 200, { messages: sidechat.history(w.uid), subscriptionId: sidechat.defaultId() });
+    const [messages, subscriptionId] = await Promise.all([sidechat.history(w.uid), sidechat.defaultId()]);
+    return send(res, 200, { messages, subscriptionId });
   }
 
   if ((m = route('POST', /^\/api\/windows\/(@\d+)\/chat$/))) {
@@ -447,6 +450,17 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     if (!w) throw new HttpError(404, 'window not found');
     await sidechat.clear(w.uid);
     return send(res, 200, { ok: true });
+  }
+
+  // ---------- historic chats (every stored conversation, live session or not)
+
+  if (route('GET', /^\/api\/chats$/)) {
+    const q = url.searchParams.get('q') ?? undefined;
+    return send(res, 200, await sidechat.listChats(q?.slice(0, 200)));
+  }
+
+  if ((m = route('GET', /^\/api\/chats\/([\w-]{1,64})$/))) {
+    return send(res, 200, { messages: await sidechat.history(m[1]) });
   }
 
   if ((m = path.match(/^\/api\/windows\/(@\d+)(\/capture)?$/))) {
@@ -719,6 +733,14 @@ async function serveStatus(port: number): Promise<string | null> {
 }
 
 await Promise.all([gate.watch(), t.cleanupViewers()]);
+// SQLite is the durable state now: deploy schema, import any pre-Prisma JSON
+// once (idempotent), then seed the in-memory mirrors before the first tick.
+await ensureMigrated();
+await importLegacyJson(getDb()).then(
+  (c) => console.log('imported legacy state:', JSON.stringify(c)),
+  (err) => console.error('legacy import failed:', err),
+);
+await core.loadPrompts();
 core.start();
 peers.start();
 

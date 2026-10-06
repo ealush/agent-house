@@ -5,8 +5,14 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SideChatStore, changeContext, parseStructured, type ChatContext } from './sidechat.ts';
+import { ensureMigrated } from './db.ts';
 
-const file = () => join(tmpdir(), `ah-sidechat-test-${process.pid}-${Math.random().toString(36).slice(2)}.json`);
+const file = () => join(tmpdir(), `ah-sidechat-test-${process.pid}-${Math.random().toString(36).slice(2)}.db`);
+
+async function freshStore(dbPath = file()) {
+  await ensureMigrated(dbPath);
+  return { store: new SideChatStore(dbPath), path: dbPath };
+}
 const ctx: ChatContext = { title: 'vest', session: 'agents', branch: 'gui-support', pr: 12, diff: 'diff --git a.ts\n+hi' };
 
 async function withFetch(fn: (seen: { url: unknown; init: unknown }[]) => Response, run: () => Promise<void>) {
@@ -26,27 +32,26 @@ async function withFetch(fn: (seen: { url: unknown; init: unknown }[]) => Respon
 const ok = (content: string) =>
   new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status: 200, headers: { 'content-type': 'application/json' } });
 
-async function subscribed(store?: SideChatStore) {
-  const s = store ?? new SideChatStore(file());
+async function subscribed(dbPath?: string) {
+  const { store: s, path } = await freshStore(dbPath);
   const info = await s.put({ name: ' work ', baseUrl: 'https://api.example.com/v1/', model: ' model ', apiKey: 'key' });
-  return { store: s, id: info.id };
+  return { store: s, id: info.id, path };
 }
 
 test('subscriptions: trimmed, redacted, first is default, persisted', async () => {
-  const f = file();
-  const { store, id } = await subscribed(new SideChatStore(f));
-  const [listed] = store.list();
+  const { store, id, path } = await subscribed();
+  const [listed] = await store.list();
   assert.equal(listed.name, 'work');
   assert.equal(listed.baseUrl, 'https://api.example.com/v1');
   assert.equal(listed.model, 'model');
   assert.equal(listed.hasKey, true);
   assert.equal(listed.isDefault, true);
   assert.ok(!('apiKey' in listed));
-  assert.deepEqual(new SideChatStore(f).list().map((s) => s.id), [id]);
+  assert.deepEqual((await new SideChatStore(path).list()).map((s) => s.id), [id]);
 });
 
 test('subscriptions: validation and missing ids', async () => {
-  const s = new SideChatStore(file());
+  const { store: s } = await freshStore();
   await assert.rejects(s.put({ name: '', baseUrl: 'https://x/v1', model: 'm', apiKey: 'k' }), /name required/);
   await assert.rejects(s.put({ name: 'n', baseUrl: 'ftp://x', model: 'm', apiKey: 'k' }), /base URL/);
   await assert.rejects(s.put({ name: 'n', baseUrl: 'https://x/v1', model: '', apiKey: 'k' }), /model required/);
@@ -65,10 +70,33 @@ test('chat: posts OpenAI-compatible request and keeps history', async () => {
   });
   assert.equal(reply.message.text, 'looks good');
   assert.deepEqual(reply.followups, []);
-  assert.deepEqual(store.history('u1').map((m) => [m.role, m.text]), [
+  assert.deepEqual((await store.history('u1')).map((m) => [m.role, m.text]), [
     ['user', 'review this'],
     ['assistant', 'looks good'],
   ]);
+});
+
+test('listChats: newest first, with previews, counts, and search', async () => {
+  const { store } = await subscribed();
+  const chat = (uid: string, text: string) =>
+    withFetch(() => ok(JSON.stringify({ content: `re:${text}`, followups: [] })), async () => {
+      await store.chat(uid, text, ctx);
+    });
+  await chat('aaa', 'review the auth flow');
+  await chat('bbb', 'explain pagination');
+  await chat('aaa', 'and the login page');
+
+  const all = await store.listChats();
+  assert.deepEqual(all.map((c) => c.uid), ['aaa', 'bbb']);
+  const [first] = all;
+  assert.equal(first.count, 4);
+  assert.equal(first.title, 'aaa'); // no session row: uid fallback
+  assert.match(first.preview, /re:and the login page/);
+  assert.ok(first.lastAt >= first.firstAt && first.firstAt > 0);
+
+  assert.deepEqual((await store.listChats('pagination')).map((c) => c.uid), ['bbb']);
+  assert.deepEqual((await store.listChats('AAA')).map((c) => c.uid), ['aaa']);
+  assert.deepEqual(await store.listChats('no such text'), []);
 });
 
 test('parseStructured: strict shape, tolerant envelope', () => {
@@ -145,7 +173,7 @@ test('chat: provider failures surface cleanly', async () => {
   await withFetch(() => ok('   '), async () => {
     await assert.rejects(store.chat('u3', 'hi', ctx), /empty reply/);
   });
-  assert.deepEqual(store.history('u3'), []);
+  assert.deepEqual(await store.history('u3'), []);
 });
 
 async function fixtureRepo() {

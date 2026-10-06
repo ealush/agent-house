@@ -1,11 +1,13 @@
 // Durable record of every session this host has run, kept beside tmux rather
 // than in it. tmux forgets everything when its server dies (reboot, crash);
-// this file is what lets a session be found and resumed from any device later.
-import { readFileSync, existsSync, renameSync } from 'node:fs';
-import { mkdir, writeFile, rename } from 'node:fs/promises';
-import { homedir, hostname } from 'node:os';
-import { dirname, join } from 'node:path';
+// this store is what lets a session be found and resumed from any device later.
+//
+// Synchronous in-memory API (hot paths in tick/send read it constantly) with
+// SQLite as the durable backing: one ah.db per host, written fire-and-forget.
+import { hostname } from 'node:os';
 import { randomUUID } from 'node:crypto';
+import type { PrismaClient } from '@prisma/client';
+import { defaultDbPath, getDb } from './db.ts';
 
 /** "Saved" (history only) is not a registry state: those come from transcript discovery. */
 export type Lifecycle = 'starting' | 'live' | 'ended' | 'unavailable';
@@ -35,37 +37,110 @@ export type SessionRecord = {
 
 type Tmux = { session: string; windowId: string };
 
-const FILE = join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah', 'sessions.json');
 const KEEP_ENDED_SECONDS = 30 * 24 * 3600;
 const now = () => Math.floor(Date.now() / 1000);
 
+function toRow(r: SessionRecord) {
+  return {
+    uid: r.id,
+    host: r.host,
+    title: r.title,
+    harness: r.harness,
+    harnessId: r.harnessId ?? null,
+    cwd: r.cwd,
+    model: r.model ?? null,
+    status: r.status,
+    lifecycle: r.lifecycle,
+    pendingResume: r.pendingResume ?? false,
+    createdAt: r.createdAt,
+    lastActivityAt: r.lastActivityAt,
+    endedAt: r.endedAt ?? null,
+    exitCode: r.exitCode,
+    tmuxJson: r.tmux ? JSON.stringify(r.tmux) : null,
+    metaJson: JSON.stringify(r.meta),
+  };
+}
+
+function fromRow(row: {
+  uid: string;
+  host: string;
+  title: string;
+  harness: string;
+  harnessId: string | null;
+  cwd: string;
+  model: string | null;
+  status: string;
+  lifecycle: string;
+  pendingResume: boolean;
+  createdAt: number;
+  lastActivityAt: number;
+  endedAt: number | null;
+  exitCode: number | null;
+  tmuxJson: string | null;
+  metaJson: string;
+}): SessionRecord {
+  let meta: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(row.metaJson);
+    if (parsed && typeof parsed === 'object') meta = parsed as Record<string, unknown>;
+  } catch {}
+  let tmux: Tmux | undefined;
+  try {
+    if (row.tmuxJson) tmux = JSON.parse(row.tmuxJson) as Tmux;
+  } catch {}
+  return {
+    id: row.uid,
+    host: row.host,
+    title: row.title,
+    harness: row.harness,
+    harnessId: row.harnessId ?? undefined,
+    cwd: row.cwd,
+    model: row.model ?? undefined,
+    status: row.status,
+    lifecycle: row.lifecycle as Lifecycle,
+    pendingResume: row.pendingResume,
+    createdAt: row.createdAt,
+    lastActivityAt: row.lastActivityAt,
+    endedAt: row.endedAt ?? undefined,
+    exitCode: row.exitCode,
+    tmux,
+    meta,
+  };
+}
+
 export class Registry {
   private records = new Map<string, SessionRecord>();
+  private removed = new Set<string>();
   private dirty = false;
   private writing: Promise<void> = Promise.resolve();
-  private file: string;
+  private loaded: Promise<void>;
+  private db: PrismaClient;
+  private dbPath: string;
 
-  constructor(file = FILE) {
-    this.file = file;
-    if (!existsSync(this.file)) return;
-    try {
-      for (const raw of JSON.parse(readFileSync(this.file, 'utf8'))) {
-        const r = migrate(raw);
-        this.records.set(r.id, r);
-      }
-    } catch (err) {
-      // Keep the evidence instead of overwriting it on the next save; tmux still has the live sessions.
-      const aside = `${this.file}.corrupt-${Date.now()}`;
-      try {
-        renameSync(this.file, aside);
-      } catch {}
-      console.error(`registry ${this.file} was unreadable (${(err as Error).message}); moved it to ${aside} and starting fresh`);
-      this.records.clear();
-    }
+  constructor(dbPath = defaultDbPath()) {
+    this.dbPath = dbPath;
+    this.db = getDb(dbPath);
+    // In-memory writes made before the load lands win over stored rows.
+    this.loaded = this.db.session
+      .findMany()
+      .then((rows) => {
+        for (const row of rows) if (!this.records.has(row.uid)) this.records.set(row.uid, fromRow(row));
+      })
+      .catch((err) => console.error(`registry load failed (${dbPath}):`, err));
   }
 
   static newId(): string {
     return randomUUID().slice(0, 8);
+  }
+
+  /** Resolves once stored rows have merged into memory. Tests only. */
+  ready(): Promise<void> {
+    return this.loaded.then(() => {});
+  }
+
+  /** Resolves once every queued write has landed. Tests only. */
+  settled(): Promise<void> {
+    return this.writing.then(() => {});
   }
 
   get(id: string): SessionRecord | undefined {
@@ -160,6 +235,7 @@ export class Registry {
       }
       if (r.endedAt && t - r.endedAt > KEEP_ENDED_SECONDS && !r.meta['ah.pinned']) {
         this.records.delete(r.id);
+        this.removed.add(r.id);
         this.dirty = true;
       }
     }
@@ -168,6 +244,7 @@ export class Registry {
 
   remove(id: string) {
     if (this.records.delete(id)) {
+      this.removed.add(id);
       this.dirty = true;
       this.flush();
     }
@@ -176,15 +253,24 @@ export class Registry {
   flush() {
     if (!this.dirty) return;
     this.dirty = false;
-    const data = JSON.stringify([...this.records.values()], null, 2);
-    this.writing = this.writing
-      .then(async () => {
-        await mkdir(dirname(this.file), { recursive: true, mode: 0o700 });
-        const tmp = `${this.file}.tmp`;
-        await writeFile(tmp, data, { mode: 0o600 });
-        await rename(tmp, this.file);
-      })
+    const records = [...this.records.values()].map(toRow);
+    const removed = [...this.removed];
+    this.removed.clear();
+    // Capture the in-flight write first: reading this.writing inside the
+    // callback below would observe the reassigned (self) promise and deadlock.
+    const prev = this.writing;
+    this.writing = this.loaded
+      .catch(() => {})
+      .then(() => prev.catch(() => {}))
+      .then(() => this.persist(records, removed))
       .catch((err) => console.error('registry write failed:', err));
+  }
+
+  private async persist(records: ReturnType<typeof toRow>[], removed: string[]) {
+    if (removed.length) await this.db.session.deleteMany({ where: { uid: { in: removed } } });
+    if (records.length) {
+      await this.db.$transaction(records.map((r) => this.db.session.upsert({ where: { uid: r.uid }, create: r, update: r })));
+    }
   }
 }
 
@@ -192,8 +278,9 @@ function key(r: SessionRecord): string {
   return JSON.stringify([r.harness, r.harnessId, r.cwd, r.model, r.title, r.tmux]);
 }
 
-// v1 records (uid/name/tmuxSession/windowId/lastAliveAt) → v2.
-function migrate(r: Record<string, any>): SessionRecord {
+// v1 records (uid/name/tmuxSession/windowId/lastAliveAt) → v2. Kept for the
+// one-time JSON import; the database only ever holds v2.
+export function migrate(r: Record<string, any>): SessionRecord {
   if (r.id && r.lifecycle) return { meta: {}, exitCode: null, ...r } as SessionRecord;
   return {
     id: r.uid,

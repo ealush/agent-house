@@ -2188,6 +2188,61 @@ a.btn {
   resize: vertical;
 }
 
+/* Past-chats browser: search plus one row per stored conversation. */
+.past-search {
+  flex: none;
+  padding: 8px 14px 0;
+}
+
+.past-search input {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--line-2);
+  background: var(--sunken);
+  font-size: 13px;
+}
+
+.past-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--raised);
+  text-align: left;
+  cursor: pointer;
+}
+
+.past-row:hover {
+  border-color: var(--line-2);
+}
+
+.past-title {
+  font-weight: 600;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.past-meta {
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.past-preview {
+  font-size: 12.5px;
+  color: var(--faint);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
 /* Per-message actions appear on hover; follow-ups ride under the answer. */
 .sidechat-msg .msg-actions {
   display: flex;

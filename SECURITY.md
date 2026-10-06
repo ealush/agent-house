@@ -66,10 +66,8 @@ All under `~/.local/state/ah/` (mode 0700 directory, 0600 files):
 | `auth.json` | passkey public keys, hashed session and token secrets, scrypt password hash |
 | `local-token` | the host CLI's bearer token (regenerated each start) |
 | `peer-tokens.json` | tokens other hosts issued to this one |
-| `prompts.json` | recently sent prompts — may contain anything you pasted. `promptHistory: 0` keeps none; Security → Clear prompt history |
+| `ah.db` (SQLite via Prisma) | the session registry (titles, directories, conversation ids, queued messages), recent prompts (may contain anything you pasted — `promptHistory: 0` keeps none; Security → Clear prompt history), chat API keys and side-chat history (keys are never returned by the API), and loose settings. First boot imports `sessions.json`/`prompts.json`/`sidechat.json` once when present; those legacy files are then unused |
 | `audit.log` | sign-ins, failures, enrollments, and session actions (create, send, approve, kill, upload, subscription save/remove) |
-| `sessions.json` | session registry (titles, directories, conversation ids, queued messages) |
-| `sidechat.json` | chat API keys and side-chat history — keys are never returned by the API |
 | `push.json`, `vapid.json` | Web Push subscriptions and keys |
 
 Uploads go to `~/.cache/ah/uploads/` (0600).
