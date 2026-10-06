@@ -9,6 +9,7 @@ import { join, sep } from 'node:path';
 import type { PrismaClient } from '@prisma/client';
 import { defaultDbPath, getDb } from './db.ts';
 import { changes } from './git.ts';
+import { conversationKey } from './registry.ts';
 
 const run = promisify(execFile);
 
@@ -280,6 +281,27 @@ export class SideChatStore {
     await this.db.setting.upsert({ where: { key: DEFAULT_SETTING }, create: { key: DEFAULT_SETTING, value: id }, update: { value: id } });
   }
 
+  /**
+   * Conversation-stable key for a session's side chat. Follows
+   * `harness:harnessId` across ah uids (registry wipes, resumed-as-new
+   * sessions); sessions without a harness conversation id keep their uid.
+   */
+  chatKey(harness: string | null, harnessId: string | null, uid: string): string {
+    return harness && harnessId ? conversationKey(harness, harnessId, uid) : uid;
+  }
+
+  /**
+   * Moves messages stored under a previous key (the ah uid) to the
+   * conversation key, merging when both hold messages. History follows the
+   * conversation when its harness id is learned after chats already exist.
+   */
+  async rekey(fromUid: string, toKey: string): Promise<void> {
+    if (fromUid === toKey) return;
+    const legacy = await this.db.chatMessage.count({ where: { uid: fromUid } });
+    if (!legacy) return;
+    await this.db.chatMessage.updateMany({ where: { uid: fromUid }, data: { uid: toKey } });
+  }
+
   async history(uid: string, aroundId?: number): Promise<ChatMessage[]> {
     const rows = await this.db.chatMessage.findMany({ where: { uid }, orderBy: { id: 'asc' } });
     const index = aroundId === undefined ? -1 : rows.findIndex((r) => r.id === aroundId);
@@ -302,11 +324,24 @@ export class SideChatStore {
     });
     const uids = groups.map((g) => g.uid);
     if (!uids.length) return [];
+    // Chat keys are ah uids or `harness:harnessId` conversation keys: match
+    // session rows on either, so titles follow the conversation.
+    const pairs = uids.flatMap((u) => {
+      const i = u.indexOf(':');
+      return i > 0 ? [{ harness: u.slice(0, i), harnessId: u.slice(i + 1) }] : [];
+    });
     const [sessions, last] = await Promise.all([
-      this.db.session.findMany({ where: { uid: { in: uids } }, select: { uid: true, title: true } }),
+      this.db.session.findMany({
+        where: { OR: [{ uid: { in: uids } }, ...pairs.map((p) => ({ harness: p.harness, harnessId: p.harnessId }))] },
+        select: { uid: true, harness: true, harnessId: true, title: true },
+      }),
       this.db.chatMessage.findMany({ where: { uid: { in: uids } }, orderBy: { id: 'desc' }, select: { uid: true, role: true, text: true } }),
     ]);
-    const titles = new Map(sessions.map((s) => [s.uid, s.title || s.uid]));
+    const titles = new Map<string, string>();
+    for (const s of sessions) {
+      titles.set(s.uid, s.title || s.uid);
+      if (s.harnessId) titles.set(`${s.harness}:${s.harnessId}`, s.title || s.uid);
+    }
     const previews = new Map<string, string>();
     for (const m of last) if (!previews.has(m.uid)) previews.set(m.uid, answerText(m.role, m.text));
     let textHit: Set<string> | null = null;

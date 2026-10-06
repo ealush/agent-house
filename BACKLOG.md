@@ -20,7 +20,7 @@
 | F7 | Resume on chosen host | ◐ | Resumes on the host that holds the conversation. Resuming a conversation on a *different* machine needs its files moved first (F31). |
 | F8 | Alive/dead branch on send | ✅ | `Core.send`: types into idle agents, queues for busy ones, resumes dead ones then delivers. The caller can't tell which happened (unless it wants to). |
 | F9 | Lifecycle states | ✅ | `starting / live / ended / unavailable`, with `pendingResume` as an orthogonal flag. "Saved" = discovered history. |
-| F10 | Transcript discovery | ✅ | `server/discovery.ts` (~20 ms cold, cached per file). Live agent windows without hooks adopt their transcript id. |
+| F10 | Transcript discovery | ✅ | `server/discovery.ts` (~20 ms cold, cached per file). Live agent windows without hooks adopt their transcript id by conversation identity (launch novelty + ownership, never recency). |
 | F11 | Multi-writer policy | ✅ | **Decision: last-active-wins.** Each device attaches through its own grouped tmux session, so viewing is independent; tmux `window-size latest` gives the window to whoever typed last. No locks or leases. |
 
 ## Phase 2 — Transport
@@ -40,7 +40,7 @@
 | F19 | Needs-you vs done | ✅ | Conservative: only permission/elicitation prompts count as "needs you"; idle nags and anything unknown are "done". No model classifier. |
 | F20 | Background work isn't idle | ◐ | Live tool shells below an agent keep silent commands busy; persistent services alone do not. Fresh working hooks count before terminal output. Commands that replace their tool shell still rely on hooks/activity. |
 | F21 | Status grouping | ✅ | Needs you → done → working → idle. |
-| F22 | Durable prompt queue | ✅ | Persisted in the registry; delivered at the next idle; review and cancel individual follow-ups or clear all, on desktop and phone. Input operations are serialized per session, with a short submit grace period. |
+| F22 | Durable prompt queue | ✅ | Persisted in the registry under the conversation identity (follows adoption/resume); delivered at the next idle; review and cancel individual follow-ups or clear all, on desktop and phone. Input operations are serialized per session, with a short submit grace period. |
 
 ## Phase 4 — Surfaces
 
@@ -93,6 +93,24 @@
 Remaining larger work: conversation transfer between hosts (including files),
 worktree disk usage, and richer adapters for agents without hooks. These require explicit
 product decisions rather than guessing at conversation or workspace ownership.
+
+## Design rules
+
+- **Conversation identity is the attachment key.** Transcripts, side-chats, and
+  queued follow-ups attach to `harness:harnessId` (the harness's own conversation
+  id), never to recency, cwd proximity, or ah's local uid. Sessions whose harness
+  has no conversation id (plain shells) keep the registry uid as their key.
+  - Transcripts: hooks report the id (Claude/Codex); resume and fork pass it
+    explicitly; ah-launched sessions snapshot the ids known at launch
+    (`ah.knownTranscripts` in `server/core.ts`) and `server/sessions.ts` adopts
+    only a novel, unowned id. Windows ah did not launch keep a best-effort
+    recency fallback. Timing remains only for safety debounces (submit grace,
+    half-drawn TUI guard), never for ownership.
+  - Side-chats (`server/sidechat.ts`) key to the conversation and migrate legacy
+    uid rows on access, so history survives re-adoption and resumed-as-new uids.
+  - Queues (`ah.queue` in `server/registry.ts`) move with the conversation when it
+    is adopted or resumed under a new uid. Forks get a new conversation id, so
+    the parent keeps its queue.
 
 ## Taken from tlbx (ideas reimplemented; tlbx is AGPL, no code copied)
 

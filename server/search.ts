@@ -440,7 +440,12 @@ export class SearchIndexer {
     }
     await this.db.$executeRaw`DELETE FROM chat_fts WHERE msg_id > ${fromId}`;
 
-    const titles = new Map((await this.db.session.findMany({ select: { uid: true, title: true } })).map((s) => [s.uid, s.title || s.uid]));
+    const sessions = await this.db.session.findMany({ select: { uid: true, harness: true, harnessId: true, title: true } });
+    const titles = new Map<string, string>();
+    for (const s of sessions) {
+      titles.set(s.uid, s.title || s.uid);
+      if (s.harnessId) titles.set(`${s.harness}:${s.harnessId}`, s.title || s.uid);
+    }
     let inserted = 0;
     let batch: Prisma.Sql[] = [];
     const flush = async () => {

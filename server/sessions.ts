@@ -389,17 +389,34 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
 export function adoptTranscripts(windows: WindowView[], transcripts: Transcript[], registry: Registry) {
   const byId = new Map(transcripts.map((t) => [t.harnessId, t]));
   const generic = (w: WindowView) => !w.name || w.name === w.agent || w.name === w.command || /^(claude|codex|gemini|grok|muse|hermes|opencode|shell|bash|zsh|fish|node)$/.test(w.name);
+  // A conversation belongs to exactly one session: ids another record already
+  // owns (e.g. an ended session in the same directory) are never re-adopted,
+  // so a fresh window without hooks (muse) cannot steal its history and show
+  // it as its own GUI transcript while the terminal shows the live session.
   const claimed = new Set(windows.map((w) => w.harnessId).filter(Boolean));
+  try {
+    for (const r of registry.all?.() ?? []) if (r.harnessId) claimed.add(r.harnessId);
+  } catch {}
   const cwdOf = (w: WindowView) => (w.cwd.startsWith('~') ? HOME + w.cwd.slice(1) : w.cwd);
+  const knownAtLaunch = (uid: string): string[] | null => {
+    const meta = registry.get?.(uid)?.meta?.['ah.knownTranscripts'];
+    return Array.isArray(meta) && meta.every((s) => typeof s === 'string') ? (meta as string[]) : null;
+  };
   for (const w of windows) {
     if (!w.agent || w.harnessId) continue;
-    const match = transcripts.find(
-      (t) =>
-        t.harness === w.agent &&
-        t.cwd === cwdOf(w) &&
-        !claimed.has(t.harnessId) &&
-        (w.createdAt ? t.updatedAt >= w.createdAt - 60 : Math.abs(t.updatedAt - w.activity) < 300),
-    );
+    const known = knownAtLaunch(w.uid);
+    const match = transcripts.find((t) => {
+      if (t.harness !== w.agent || t.cwd !== cwdOf(w) || claimed.has(t.harnessId)) return false;
+      if (known) {
+        // Session-bound: only a conversation id that did not exist when this
+        // session launched can be its transcript. Set membership, no clocks.
+        return !known.includes(t.harnessId);
+      }
+      // Best-effort recency for windows ah did not launch (no launch snapshot):
+      // the transcript must have been touched after the window started, or
+      // around its last output when the window's age is unknown.
+      return w.createdAt ? t.updatedAt >= w.createdAt : Math.abs(t.updatedAt - w.activity) < 300;
+    });
     if (!match) continue;
     claimed.add(match.harnessId);
     w.harnessId = match.harnessId;

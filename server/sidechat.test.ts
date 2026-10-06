@@ -99,6 +99,29 @@ test('listChats: newest first, with previews, counts, and search', async () => {
   assert.deepEqual(await store.listChats('no such text'), []);
 });
 
+test('side chats key to the conversation and migrate legacy uid rows', async () => {
+  const { store, path } = await subscribed();
+  assert.equal(store.chatKey('muse', 'conv1', 'u1'), 'muse:conv1');
+  assert.equal(store.chatKey('shell', null, 'u1'), 'u1');
+  assert.equal(store.chatKey(null, null, 'u1'), 'u1');
+  await withFetch(() => ok(JSON.stringify({ content: 'before id known', followups: [] })), async () => {
+    await store.chat('u1', 'early question', ctx);
+  });
+  // The harness id is learned later (adoption); history migrates to the key.
+  await store.rekey('u1', 'muse:conv1');
+  assert.deepEqual((await store.history('muse:conv1')).map((m) => m.text), ['early question', 'before id known']);
+  assert.deepEqual(await store.history('u1'), [], 'legacy rows moved, not copied');
+  await withFetch(() => ok(JSON.stringify({ content: 'after', followups: [] })), async () => {
+    await store.chat('muse:conv1', 'follow-up', ctx);
+  });
+  assert.equal((await store.history('muse:conv1')).length, 4, 'one merged conversation');
+  // Titles follow the conversation key through the session row.
+  const db = getDb(path);
+  await db.session.create({ data: { uid: 'other-uid', harness: 'muse', harnessId: 'conv1', title: 'My session', cwd: '/p' } });
+  const found = (await store.listChats()).find((c) => c.uid === 'muse:conv1');
+  assert.equal(found?.title, 'My session');
+});
+
 test('parseStructured: strict shape, tolerant envelope', () => {
   assert.deepEqual(parseStructured(JSON.stringify({ content: 'hi', followups: [{ title: 'Send it', kind: 'session', text: 'go' }] })), {
     content: 'hi',

@@ -86,6 +86,70 @@ test('adoption pairs a live window with its transcript, once', () => {
   assert.equal(windows[0].harnessId, 'new');
 });
 
+test('fresh window does not adopt a transcript that ended before it started', () => {
+  const win = (o: Partial<WindowView>) => ({ agent: 'muse', harnessId: null, cwd: '/p', createdAt: 1000, activity: 1000, uid: 'fresh', model: null, ...o }) as WindowView;
+  const adopted: string[] = [];
+  const registry = { adopt: (uid: string, id: string) => adopted.push(`${uid}=${id}`), all: () => [] } as any;
+  const windows = [win({})];
+  adoptTranscripts(windows, [{ harness: 'muse', harnessId: 'old', cwd: '/p', title: 'pwa probe', updatedAt: 990, file: '/old/session.jsonl' }], registry);
+  assert.deepEqual(adopted, [], 'transcript touched before the window started is not its conversation');
+  assert.equal(windows[0].harnessId, null);
+});
+
+test('adoption skips transcripts another record already owns', () => {
+  const win = (o: Partial<WindowView>) => ({ agent: 'muse', harnessId: null, cwd: '/p', createdAt: 100, activity: 500, uid: 'fresh', model: null, ...o }) as WindowView;
+  const adopted: string[] = [];
+  const registry = {
+    adopt: (uid: string, id: string) => adopted.push(`${uid}=${id}`),
+    all: () => [{ id: 'ended1', harness: 'muse', harnessId: 'taken' }],
+  } as any;
+  const windows = [win({})];
+  adoptTranscripts(
+    windows,
+    [{ harness: 'muse', harnessId: 'taken', cwd: '/p', title: 'ended session', updatedAt: 400, file: '/p/taken.jsonl' }],
+    registry,
+  );
+  assert.deepEqual(adopted, [], 'an owned conversation id is never re-adopted by a new window');
+  assert.equal(windows[0].harnessId, null);
+});
+
+test('novelty adoption binds by session identity, not recency', () => {
+  const win = (o: Partial<WindowView>) => ({ agent: 'muse', harnessId: null, cwd: '/p', createdAt: 1000, activity: 1000, uid: 'n', model: null, ...o }) as WindowView;
+  const adopted: string[] = [];
+  const registry = {
+    adopt: (uid: string, id: string) => adopted.push(`${uid}=${id}`),
+    all: () => [],
+    get: () => ({ meta: { 'ah.knownTranscripts': ['old'] } }),
+  } as any;
+  const windows = [win({})];
+  adoptTranscripts(
+    windows,
+    [
+      // Still being written by another process, newer than the window — but it
+      // existed at launch, so it is not this session's transcript.
+      { harness: 'muse', harnessId: 'old', cwd: '/p', title: 'other session', updatedAt: 2000, file: '/old/session.jsonl' },
+      { harness: 'muse', harnessId: 'new', cwd: '/p', title: 'own session', updatedAt: 1005, file: '/new/session.jsonl' },
+    ],
+    registry,
+  );
+  assert.deepEqual(adopted, ['n=new'], 'known ids are never adopted, however recent');
+  assert.equal(windows[0].harnessId, 'new');
+});
+
+test('novelty adoption waits when only known transcripts exist', () => {
+  const win = (o: Partial<WindowView>) => ({ agent: 'muse', harnessId: null, cwd: '/p', createdAt: 1000, activity: 1000, uid: 'n', model: null, ...o }) as WindowView;
+  const adopted: string[] = [];
+  const registry = {
+    adopt: (uid: string, id: string) => adopted.push(`${uid}=${id}`),
+    all: () => [],
+    get: () => ({ meta: { 'ah.knownTranscripts': ['old'] } }),
+  } as any;
+  const windows = [win({})];
+  adoptTranscripts(windows, [{ harness: 'muse', harnessId: 'old', cwd: '/p', title: 'other', updatedAt: 2000, file: '/old/session.jsonl' }], registry);
+  assert.deepEqual(adopted, [], 'no novel transcript yet: GUI waits instead of showing another session');
+  assert.equal(windows[0].harnessId, null);
+});
+
 test('tmux output parses with raw (≥3.5) and escaped (3.4) separators', async () => {
   const { fields } = await import('./tmux.ts');
   assert.deepEqual(fields('agents\x1f@1\x1f/home/u'), ['agents', '@1', '/home/u']);

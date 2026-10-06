@@ -280,6 +280,16 @@ export class Core {
 
   async launch(o: { preset: Preset; cwd: string; session: string; name: string; command: string; uid?: string; harnessId?: string; pendingResume?: boolean; meta?: Record<string, unknown> }) {
     const uid = o.uid ?? Registry.newId();
+    let meta = o.meta;
+    // A new agent conversation has no id yet: snapshot the transcript ids that
+    // already exist so adoption binds by novelty (session identity), never by
+    // recency. Taken before the agent starts, so its own transcript is novel.
+    if (!o.harnessId && o.preset.feed) {
+      try {
+        const known = (await discover()).filter((x) => x.harness === o.preset.id).map((x) => x.harnessId);
+        meta = { ...meta, 'ah.knownTranscripts': known };
+      } catch {}
+    }
     const windowId = await t.createWindow({ session: o.session, cwd: o.cwd, name: o.name });
     try {
       const ts = String(now());
@@ -298,7 +308,7 @@ export class Core {
         title: o.name,
         tmux: { session: o.session, windowId },
         pendingResume: o.pendingResume,
-        meta: o.meta,
+        meta,
       });
       if (o.command) await t.sendLine(windowId, o.command);
       this.tick().catch(() => {});

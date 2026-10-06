@@ -65,6 +65,16 @@ export function forkMetaOf(r: SessionRecord): ForkMeta | null {
 const KEEP_ENDED_SECONDS = 30 * 24 * 3600;
 const now = () => Math.floor(Date.now() / 1000);
 
+/**
+ * Conversation identity (system rule): transcripts, side-chats and queues
+ * attach to the harness's own conversation id (`harness:harnessId`), never to
+ * recency, cwd proximity, or ah's local uid. Sessions whose harness has no
+ * conversation id (plain shells) keep the registry uid as their key.
+ */
+export function conversationKey(harness: string, harnessId: string | undefined, uid: string): string {
+  return harnessId ? `${harness}:${harnessId}` : uid;
+}
+
 function toRow(r: SessionRecord) {
   return {
     uid: r.id,
@@ -223,6 +233,7 @@ export class Registry {
       meta: { ...prev?.meta, ...f.meta },
     });
     this.dirty = true;
+    this.inheritQueue(id);
     this.flush();
   }
 
@@ -232,8 +243,29 @@ export class Registry {
     if (!r || r.harnessId) return;
     r.harnessId = harnessId;
     r.model ??= model;
+    this.inheritQueue(id);
     this.dirty = true;
     this.flush();
+  }
+
+  /**
+   * Queued follow-ups belong to the conversation, not the window: when a
+   * session takes on an existing conversation id (adopted, or resumed under a
+   * new uid), it inherits what was queued for that conversation from any
+   * sibling record. A forked copy has a new id, so the parent keeps its queue.
+   */
+  private inheritQueue(id: string): void {
+    const r = this.records.get(id);
+    if (!r?.harnessId) return;
+    for (const other of this.records.values()) {
+      if (other.id === id || other.harness !== r.harness || other.harnessId !== r.harnessId) continue;
+      const queued = other.meta['ah.queue'] as unknown[] | undefined;
+      if (queued?.length) {
+        r.meta['ah.queue'] = [...((r.meta['ah.queue'] as unknown[]) ?? []), ...queued];
+        delete other.meta['ah.queue'];
+        this.dirty = true;
+      }
+    }
   }
 
   /** Direct forks of a session, oldest first (F36). */

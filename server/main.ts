@@ -592,16 +592,27 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     return send(res, 200, { ok: true });
   }
 
-  if ((m = route('GET', /^\/api\/windows\/(@\d+)\/chat$/))) {
-    const w = (await core.current()).windows.find((w) => w.id === m![1]);
+  // Side chats attach to the conversation (`harness:harnessId`), not the window:
+  // the key follows the session across uids, and legacy uid rows migrate over.
+  const chatKeyFor = async (windowId: string) => {
+    const w = (await core.current()).windows.find((w) => w.id === windowId);
     if (!w) throw new HttpError(404, 'window not found');
-    const [messages, subscriptionId] = await Promise.all([sidechat.history(w.uid), sidechat.defaultId()]);
+    const key = sidechat.chatKey(w.agent, w.harnessId, w.uid);
+    await sidechat.rekey(w.uid, key);
+    return key;
+  };
+
+  if ((m = route('GET', /^\/api\/windows\/(@\d+)\/chat$/))) {
+    const key = await chatKeyFor(m![1]);
+    const [messages, subscriptionId] = await Promise.all([sidechat.history(key), sidechat.defaultId()]);
     return send(res, 200, { messages, subscriptionId });
   }
 
   if ((m = route('POST', /^\/api\/windows\/(@\d+)\/chat$/))) {
     const w = (await core.current()).windows.find((w) => w.id === m![1]);
     if (!w) throw new HttpError(404, 'window not found');
+    const key = sidechat.chatKey(w.agent, w.harnessId, w.uid);
+    await sidechat.rekey(w.uid, key);
     const body = await readJson(req);
     const text = str(body.text ?? '', 'text', 8000).trim();
     if (!text) throw new HttpError(400, 'text required');
@@ -609,7 +620,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     const [chg, pr] = await Promise.all([changeContext(dir).catch(() => null), pullRequest(dir).catch(() => null)]);
     try {
       const msg = await sidechat.chat(
-        w.uid,
+        key,
         text,
         { title: w.title, session: w.session, branch: chg?.branch ?? w.branch, pr: pr?.number ?? null, diff: chg?.diff ?? '' },
         body.subscriptionId === undefined ? undefined : str(body.subscriptionId, 'subscriptionId', 40),
@@ -622,9 +633,8 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   }
 
   if ((m = route('DELETE', /^\/api\/windows\/(@\d+)\/chat$/))) {
-    const w = (await core.current()).windows.find((w) => w.id === m![1]);
-    if (!w) throw new HttpError(404, 'window not found');
-    await sidechat.clear(w.uid);
+    const key = await chatKeyFor(m![1]);
+    await sidechat.clear(key);
     return send(res, 200, { ok: true });
   }
 
@@ -635,7 +645,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     return send(res, 200, await sidechat.listChats(q?.slice(0, 200)));
   }
 
-  if ((m = route('GET', /^\/api\/chats\/([\w-]{1,64})$/))) {
+  if ((m = route('GET', /^\/api\/chats\/([\w:.-]{1,80})$/))) {
     return send(res, 200, { messages: await sidechat.history(m[1], Number(url.searchParams.get('msgId')) || undefined) });
   }
 
