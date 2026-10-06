@@ -12,8 +12,9 @@ import { SideChat } from './SideChat.tsx';
 import { ChatHistory } from './ChatHistory.tsx';
 import { FilesPanel } from './Files.tsx';
 import { QueuePanel } from './Queue.tsx';
+import { SnapshotsPanel } from './Snapshots.tsx';
 
-type Panel = 'diff' | 'files' | 'chat' | 'queue';
+type Panel = 'diff' | 'files' | 'chat' | 'queue' | 'snapshots';
 
 type Props = {
   w: Win;
@@ -251,6 +252,8 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
   const panelView = (p: Panel) =>
     p === 'queue' ? (
       <QueuePanel client={client} uid={w.uid} onChange={refresh} />
+    ) : p === 'snapshots' ? (
+      <SnapshotsPanel client={client} w={w} onChange={refresh} />
     ) : p === 'diff' ? (
       <ChangesPanel client={client} windowId={w.id} onComment={w.agent ? comment : undefined} />
     ) : p === 'chat' ? (
@@ -375,6 +378,9 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
             <button className={`btn ghost small ${panel === 'queue' && !panelCollapsed ? 'on' : ''}`} onClick={() => openPanel('queue')} title="Queued follow-ups for this conversation">
               Queue{w.queued > 0 ? ` (${w.queued})` : ''}
             </button>
+            <button className={`btn ghost small ${panel === 'snapshots' && !panelCollapsed ? 'on' : ''}`} onClick={() => openPanel('snapshots')} title="Per-turn file snapshots and rollback">
+              Snapshots
+            </button>
           </>
         )}
         {narrow && (
@@ -391,6 +397,7 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
               <button onClick={startRename}>Rename</button>
               <button onClick={() => act(() => client.pin(w.uid, !w.pinned))}>{w.pinned ? 'Unpin' : 'Pin to top'}</button>
               <button onClick={() => { setMenu(false); openPanel('queue'); }}>Queued messages ({w.queued})</button>
+              <button onClick={() => { setMenu(false); openPanel('snapshots'); }}>Snapshots</button>
               {onSplit && (
                 <>
                   <button
@@ -486,6 +493,9 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
           <button role="tab" aria-selected={tab === 'queue'} className={tab === 'queue' ? 'on' : ''} onClick={() => setTab('queue')}>
             Queue{w.queued > 0 ? ` (${w.queued})` : ''}
           </button>
+          <button role="tab" aria-selected={tab === 'snapshots'} className={tab === 'snapshots' ? 'on' : ''} onClick={() => setTab('snapshots')}>
+            Snapshots
+          </button>
         </div>
       )}
 
@@ -512,7 +522,7 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
           )}
         </div>
 
-        {!narrow && panel && (panel === 'files' || panel === 'chat' || panel === 'queue' || diffTab) && (
+        {!narrow && panel && (panel === 'files' || panel === 'chat' || panel === 'queue' || panel === 'snapshots' || diffTab) && (
           <>
             {!panelCollapsed && <PanelDivider onResize={resizePanel} onReset={resetPanelWidth} />}
             {panelCollapsed ? (
@@ -537,6 +547,9 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
                   </button>
                   <button className={`tab ${panel === 'queue' ? 'on' : ''}`} onClick={() => setPanel('queue')}>
                     Queue{w.queued > 0 ? ` (${w.queued})` : ''}
+                  </button>
+                  <button className={`tab ${panel === 'snapshots' ? 'on' : ''}`} onClick={() => setPanel('snapshots')}>
+                    Snapshots
                   </button>
                   <span className="spacer" />
                   {panel === 'chat' && (

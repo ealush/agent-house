@@ -4,7 +4,8 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ToolResult } from '../../server/feed/schema.ts';
 import type { SurfaceHandle, SurfaceProps } from '../surface.ts';
-import { showError } from '../ask.tsx';
+import type { SnapshotInfo } from '../api.ts';
+import { askConfirm, showError } from '../ask.tsx';
 import { look } from '../agents.ts';
 import { AgentLogo } from '../logos.tsx';
 import { useFeed } from './useFeed.ts';
@@ -21,7 +22,7 @@ const UNAVAILABLE: Record<string, string> = {
 
 const time = (at: number) => (at ? new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
 
-function BlockView({ block, results, agent }: { block: Block; results: Record<string, ToolResult>; agent: string | null }) {
+function BlockView({ block, results, agent, snap, onRestore }: { block: Block; results: Record<string, ToolResult>; agent: string | null; snap?: SnapshotInfo; onRestore?: (snap: SnapshotInfo) => void }) {
   if (block.kind === 'notice') return <PartView part={block.part} />;
   if (block.kind === 'user') {
     return (
@@ -32,6 +33,14 @@ function BlockView({ block, results, agent }: { block: Block; results: Record<st
           ))}
         </div>
         <span className="msg-time">{time(block.at)}</span>
+        {snap && (
+          <div className="snap-marker">
+            <span>Snapshot taken before this turn</span>
+            <button className="btn ghost small" onClick={() => onRestore?.(snap)}>
+              Restore
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -49,8 +58,53 @@ function BlockView({ block, results, agent }: { block: Block; results: Record<st
   );
 }
 
-const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({ w, client, hidden, onAnswer, onReply, onUseTerminal }, ref) {
+const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({ w, client, hidden, onAnswer, onReply, onUseTerminal, refresh }, ref) {
   const { state, loadOlder, loadingOlder } = useFeed(client, w.uid);
+  const [snaps, setSnaps] = useState<SnapshotInfo[]>([]);
+  useEffect(() => {
+    let stopped = false;
+    const load = () =>
+      client
+        .snapshots(w.uid)
+        .then((r) => {
+          if (!stopped) setSnaps(r.snapshots);
+        })
+        .catch(() => {});
+    load();
+    const timer = setInterval(load, 5000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [client, w.uid]);
+
+  const restoreSnap = async (snap: SnapshotInfo) => {
+    const ok = await askConfirm({
+      title: `Restore to before turn ${snap.turn}?`,
+      body: 'Files return to how they were before this turn. A safety snapshot of the current state is taken first, so this can itself be undone.',
+      confirm: 'Restore',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      try {
+        await client.restoreSnapshot(w.uid, snap.turn);
+      } catch (e) {
+        if (!/agent is working/i.test((e as Error).message)) throw e;
+        const stop = await askConfirm({
+          title: 'The agent is working',
+          body: 'Stop the current turn and restore now?',
+          confirm: 'Stop and restore',
+          danger: true,
+        });
+        if (!stop) return;
+        await client.restoreSnapshot(w.uid, snap.turn, true);
+      }
+      refresh();
+    } catch (e) {
+      showError(e, "Couldn't restore");
+    }
+  };
   const blocks = useMemo(() => project(state.entries), [state.entries]);
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
@@ -125,9 +179,12 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
             )}
             {empty && <div className="gui-empty muted">{state.status === 'connecting' ? 'Connecting…' : 'No messages yet.'}</div>}
 
-            {blocks.map((b) => (
-              <BlockView key={b.key} block={b} results={state.results} agent={w.agent} />
-            ))}
+            {blocks.map((b, i) => {
+              // User blocks start turns, in order: the nth user block is turn n.
+              const turn = b.kind === 'user' ? blocks.slice(0, i + 1).filter((x) => x.kind === 'user').length : 0;
+              const snap = turn ? snaps.find((s) => s.kind === 'turn' && s.turn === turn) : undefined;
+              return <BlockView key={b.key} block={b} results={state.results} agent={w.agent} snap={snap} onRestore={restoreSnap} />;
+            })}
 
             {waiting && (
               <div className="approval">
