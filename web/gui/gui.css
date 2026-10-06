@@ -674,3 +674,11 @@
 .narrow .gui .working {
   padding-left: 0;
 }
+
+.snap-marker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  opacity: 0.75;
+}

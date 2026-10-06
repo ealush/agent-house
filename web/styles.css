@@ -2781,6 +2781,20 @@ a.btn {
   align-self: flex-start;
 }
 
+.snapshots-panel .snapshot-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.snapshots-panel .snapshot-toggle {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+}
+
 .queue-panel .queue-actions {
   display: flex;
   gap: 8px;

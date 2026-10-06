@@ -218,6 +218,30 @@ export type BranchList = { current: string | null; branches: BranchInfo[] };
 export type SendResult = { outcome: 'delivered' | 'queued'; windowId: string; resumed: boolean; queued: number };
 export type QueueItem = { id: string; text: string; enter: boolean; at: number; source?: string; handoffId?: string };
 
+export type SnapshotInfo = {
+  id: number;
+  uid: string;
+  turn: number;
+  commit: string;
+  kind: 'turn' | 'safety';
+  promptExcerpt: string;
+  branch: string;
+  createdAt: number;
+  filesChanged: number;
+  insertions: number;
+  deletions: number;
+  skipped: string[];
+  submodules: boolean;
+};
+
+export type SnapshotList = {
+  snapshots: SnapshotInfo[];
+  enabled: boolean;
+  available: boolean;
+  partial: boolean;
+  branch: string | null;
+};
+
 /** Called whenever the server says we're not signed in (expired, revoked, locked). */
 let onUnauthorized: () => void = () => {};
 export function setUnauthorizedHandler(fn: () => void) {
@@ -284,6 +308,10 @@ export function hostApi(base: string) {
     clearQueue: (uid: string, itemId?: string) => r('DELETE', `/api/sessions/${enc(uid)}/queue${itemId ? `/${enc(itemId)}` : ''}`),
     sendNow: (uid: string, itemId: string) => r<SendResult>('POST', `/api/sessions/${enc(uid)}/queue/${enc(itemId)}/send-now`),
     pin: (uid: string, pinned: boolean) => r('POST', `/api/sessions/${enc(uid)}/pin`, { pinned }),
+    snapshots: (uid: string) => r<SnapshotList>('GET', `/api/sessions/${enc(uid)}/snapshots`),
+    restoreSnapshot: (uid: string, turn: number, interrupt = false) =>
+      r<{ safety: SnapshotInfo; restored: SnapshotInfo }>('POST', `/api/sessions/${enc(uid)}/snapshots/${turn}/restore`, { interrupt }),
+    toggleSnapshots: (uid: string, enabled: boolean) => r('POST', `/api/sessions/${enc(uid)}/snapshots/toggle`, { enabled }),
     forget: (ref: string) => r('DELETE', `/api/sessions/${enc(ref)}`),
     changes: (id: string) => r<Changes>('GET', `/api/windows/${enc(id)}/changes`),
     branches: (id: string) => r<BranchList>('GET', `/api/windows/${enc(id)}/branches`),
