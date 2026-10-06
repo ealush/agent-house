@@ -2320,6 +2320,20 @@ a.btn {
   padding: 10px 14px 0;
 }
 
+.sidechat-where {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--faint);
+}
+
+.sidechat-where .hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sidechat .panel-msg {
   padding: 8px 14px;
 }
@@ -2330,15 +2344,57 @@ a.btn {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 10px 14px;
+  gap: 14px;
+  padding: 12px 14px;
+}
+
+/* Pushes a short thread down against the composer; shrinks away once it scrolls. */
+.sidechat-spacer {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.sidechat-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 28px 32px;
+  text-align: center;
+  color: var(--faint);
+}
+
+.sidechat-empty p {
+  margin: 0;
+  max-width: 34ch;
+}
+
+.sidechat-empty .title {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.sidechat-empty .hint {
+  line-height: 1.5;
+}
+
+.sidechat-status {
+  flex: none;
+  margin: 0;
+  color: var(--faint);
+  font-size: 12.5px;
 }
 
 .sidechat-msg {
+  flex: none;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 4px;
+  max-width: 100%;
 }
 
 .sidechat-msg.user {
@@ -2347,45 +2403,71 @@ a.btn {
 
 .sidechat-bubble {
   max-width: 100%;
-  padding: 8px 12px;
-  border-radius: 12px;
   font-size: 13.5px;
-  white-space: pre-wrap;
+  line-height: 1.5;
   word-break: break-word;
 }
 
 .sidechat-msg.user .sidechat-bubble {
-  background: var(--accent-bg);
+  max-width: min(100%, 42ch);
+  padding: 8px 12px;
+  border-radius: 16px 16px 4px 16px;
+  background: color-mix(in srgb, var(--accent) 14%, var(--raised));
   border: 1px solid var(--accent-line);
+  white-space: pre-wrap;
 }
 
 .sidechat-msg.assistant .sidechat-bubble {
-  background: var(--raised);
-  border: 1px solid var(--line);
+  padding: 0 2px;
 }
 
 .sidechat-compose {
   flex: none;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 14px 12px;
-  border-top: 1px solid var(--line);
-}
-
-.sidechat-compose select,
-.sidechat-compose textarea {
-  width: 100%;
-  padding: 8px 10px;
-  border-radius: 9px;
+  gap: 8px;
+  margin: 4px 12px 12px;
+  padding: 6px 6px 6px 14px;
+  border-radius: 18px;
   border: 1px solid var(--line-2);
-  background: var(--sunken);
-  font-size: 13px;
+  background: var(--raised);
+}
+
+.sidechat-compose:focus-within {
+  border-color: var(--faint);
+}
+
+.sidechat-field {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
 }
 
 .sidechat-compose textarea {
-  min-height: 56px;
-  resize: vertical;
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  border: 0;
+  outline: none;
+  background: none;
+  padding: 8px 0;
+  min-height: 22px;
+  max-height: 160px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.sidechat-compose select {
+  align-self: flex-start;
+  max-width: 100%;
+  height: 30px;
+  margin: 6px 8px 0 0;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12.5px;
 }
 
 /* Past-chats browser: search plus one row per stored conversation. */
@@ -2443,20 +2525,28 @@ a.btn {
   -webkit-box-orient: vertical;
 }
 
-/* Per-message actions appear on hover; follow-ups ride under the answer. */
+/* Per-message actions appear on hover and take no space until then.
+   Follow-ups ride under the answer. */
 .sidechat-msg .msg-actions {
   display: flex;
   gap: 4px;
+  height: 0;
+  min-height: 0;
+  overflow: hidden;
   opacity: 0;
 }
 
 .sidechat-msg:hover .msg-actions,
 .sidechat-msg:focus-within .msg-actions {
+  height: auto;
+  overflow: visible;
   opacity: 1;
 }
 
 @media (hover: none) {
   .sidechat-msg .msg-actions {
+    height: auto;
+    overflow: visible;
     opacity: 1;
   }
 }
