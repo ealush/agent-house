@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ChatMsg, Followup, HostApi, SendResult, Subscription, Win } from './api.ts';
 import { askConfirm, showError, showNotice } from './ask.tsx';
+import { Icon } from './icons.tsx';
 import { Markdown } from './Markdown.tsx';
 
 // Side chat: talk about the session's change without polluting the agent's
@@ -16,9 +17,18 @@ export function SideChat({ client, w, onSent }: { client: HostApi; w: Win; onSen
   // Premade next steps under the latest answer; gone once used or superseded.
   const [followups, setFollowups] = useState<Followup[]>([]);
   const logRef = useRef<HTMLDivElement>(null);
+  const areaRef = useRef<HTMLTextAreaElement>(null);
   const msgRefs = useRef(new Map<number, HTMLDivElement>());
   const seenRef = useRef(0);
   const prevLenRef = useRef(0);
+
+  // Grow with the draft, up to the CSS max-height, same as the session composer.
+  useLayoutEffect(() => {
+    const el = areaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [draft]);
 
   useEffect(() => {
     setFollowups([]);
@@ -36,8 +46,9 @@ export function SideChat({ client, w, onSent }: { client: HostApi; w: Win; onSen
 
   // Keep the oldest unread message in view when messages arrive. At the
   // bottom (or first load) that means the bottom; scrolled up, it means the
-  // first message since the user last saw the bottom.
-  useEffect(() => {
+  // first message since the user last saw the bottom. Layout, not passive,
+  // so a short thread doesn't flash from the top of the spacer.
+  useLayoutEffect(() => {
     const el = logRef.current;
     if (!el) {
       prevLenRef.current = messages.length;
@@ -113,12 +124,18 @@ export function SideChat({ client, w, onSent }: { client: HostApi; w: Win; onSen
     return -1;
   })();
 
+  const noSub = subs !== null && subs.length === 0;
+  const showEmpty = !messages.length && !noSub && !error;
+
   return (
     <div className="panel-body sidechat">
       <div className="sidechat-context">
-        <span className="hint">
-          {w.branch ? `⎇ ${w.branch}` : 'no branch'}
-          {w.agent ? ` · talking about ${w.title}` : ` · talking about this shell`}
+        <span className="sidechat-where">
+          <Icon name="branch" size={14} />
+          <span className="hint">
+            {w.branch ?? 'no branch'}
+            {w.agent ? ` · talking about ${w.title}` : ' · talking about this shell'}
+          </span>
         </span>
         <span className="spacer" />
         {messages.length > 0 && (
@@ -128,15 +145,12 @@ export function SideChat({ client, w, onSent }: { client: HostApi; w: Win; onSen
         )}
       </div>
 
-      {subs && subs.length === 0 && (
+      {noSub && (
         <p className="panel-msg">
           No chat subscription yet. <a href="#settings/subscriptions">Add one under Settings → Subscriptions</a>.
         </p>
       )}
       {error && <p className="panel-msg">{error}</p>}
-      {!messages.length && !(subs && subs.length === 0) && !error && (
-        <p className="panel-msg">Ask about this change — review, explanation, or a plan. The agent won't see any of it unless you send it over.</p>
-      )}
 
       <div
         className="sidechat-log"
@@ -146,6 +160,14 @@ export function SideChat({ client, w, onSent }: { client: HostApi; w: Win; onSen
           if (el.scrollHeight - el.scrollTop - el.clientHeight < 48) seenRef.current = messages.length;
         }}
       >
+        {showEmpty && (
+          <div className="sidechat-empty">
+            <Icon name="chat" size={28} />
+            <p className="title">Ask about this change</p>
+            <p className="hint">A review, an explanation, or a plan. Nothing here reaches the agent unless you send it over.</p>
+          </div>
+        )}
+        {messages.length > 0 && <div className="sidechat-spacer" aria-hidden />}
         {messages.map((m, i) => (
           <div
             key={i}
@@ -177,10 +199,16 @@ export function SideChat({ client, w, onSent }: { client: HostApi; w: Win; onSen
             )}
           </div>
         ))}
-        {busy && <p className="panel-msg">Thinking…</p>}
+        {busy && <p className="sidechat-status">Thinking…</p>}
       </div>
 
-      <div className="sidechat-compose">
+      <form
+        className="sidechat-compose"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit(draft);
+        }}
+      >
         {subs && subs.length > 1 && (
           <select aria-label="Chat subscription" value={subId ?? ''} disabled={busy} onChange={(e) => setSubId(e.target.value || undefined)}>
             {subs.map((s) => (
@@ -190,25 +218,28 @@ export function SideChat({ client, w, onSent }: { client: HostApi; w: Win; onSen
             ))}
           </select>
         )}
-        <textarea
-          value={draft}
-          disabled={busy || (subs !== null && subs.length === 0)}
-          rows={2}
-          placeholder="Ask about this change… (Shift+Enter for a new line)"
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              submit(draft);
-            }
-          }}
-        />
-        <div className="actions">
-          <button className="btn primary small" disabled={!draft.trim() || busy} onClick={() => submit(draft)}>
-            {busy ? 'Sending…' : 'Send'}
+        <div className="sidechat-field">
+          <textarea
+            ref={areaRef}
+            value={draft}
+            disabled={busy || noSub}
+            rows={1}
+            enterKeyHint="send"
+            placeholder="Ask about this change…"
+            title="Shift+Enter for a new line"
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                submit(draft);
+              }
+            }}
+          />
+          <button type="submit" className="send-btn" disabled={!draft.trim() || busy} aria-label={busy ? 'Sending' : 'Send'} title={busy ? 'Sending' : 'Send'}>
+            <Icon name="up" />
           </button>
         </div>
-      </div>
+      </form>
     </div>
   );
 }
