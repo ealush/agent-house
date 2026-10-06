@@ -278,15 +278,64 @@ export function PrLink({ client, windowId, branch }: { client: HostApi; windowId
 
 // ---------- managed worktrees (F30)
 
+export function fmtSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let v = bytes / 1024;
+  let u = 0;
+  while (v >= 1024 && u < units.length - 1) {
+    v /= 1024;
+    u++;
+  }
+  return `${v >= 100 ? Math.round(v) : v.toFixed(1)} ${units[u]}`;
+}
+
+function fmtAge(atSeconds: number): string {
+  if (!atSeconds) return '';
+  const days = Math.floor((Date.now() / 1000 - atSeconds) / 86400);
+  if (days >= 1) return `idle ${days}d`;
+  const hours = Math.floor((Date.now() / 1000 - atSeconds) / 3600);
+  if (hours >= 1) return `idle ${hours}h`;
+  return 'active just now';
+}
+
+/** Size cell: allocated bytes when measured, a state note otherwise. Measured sizes keep the state in the tooltip. */
+function sizeLabel(wt: WorktreeInfo): { text: string; title: string } {
+  if (wt.sizeTooLarge) return { text: 'too large to measure', title: 'This worktree has too many files to size in the background.' };
+  if (wt.sizeBytes === null) return { text: 'measuring…', title: 'Size is being measured in the background.' };
+  const exact = `${wt.sizeBytes.toLocaleString()} bytes on disk${wt.logicalBytes !== null ? `, ${wt.logicalBytes.toLocaleString()} bytes of files` : ''}`;
+  return { text: `${wt.sizePartial ? '~' : ''}${fmtSize(wt.sizeBytes)} on disk`, title: exact };
+}
+
 export function WorktreesDialog({ client, onClose, onShell }: { client: HostApi; onClose: () => void; onShell: (path: string) => void }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [list, setList] = useState<WorktreeInfo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const load = () => client.worktrees().then(setList).catch((e) => setError(e.message));
+  const [bySize, setBySize] = useState(false);
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [summary, setSummary] = useState<string | null>(null);
+  const load = () => client.worktrees().then((rows) => { setList(rows); setError(null); }).catch((e) => setError(e.message));
   useEffect(() => {
     ref.current?.showModal();
     load();
-  }, []);
+    const timer = setInterval(load, 2000);
+    return () => clearInterval(timer);
+  }, [client]);
+
+  const orphans = useMemo(() => (list ?? []).filter((wt) => wt.orphan), [list]);
+  const totalBytes = (list ?? []).reduce((n, wt) => n + (wt.sizeBytes ?? 0), 0);
+  const orphanBytes = orphans.reduce((n, wt) => n + (wt.sizeBytes ?? 0), 0);
+  const anyMeasured = (list ?? []).some((wt) => wt.sizeBytes !== null);
+  const rows = useMemo(() => {
+    const all = [...(list ?? [])];
+    // Unmeasured and partial rows sort last: their true place is unknown.
+    if (bySize) all.sort((a, b) => Number(a.sizePartial || a.sizeBytes === null) - Number(b.sizePartial || b.sizeBytes === null) || (b.sizeBytes ?? -1) - (a.sizeBytes ?? -1));
+    return all;
+  }, [list, bySize]);
+  const picked = orphans.filter((wt) => selected.has(wt.path));
+  const pickedBytes = picked.reduce((n, wt) => n + (wt.sizeBytes ?? 0), 0);
 
   async function remove(wt: WorktreeInfo) {
     const dirty = wt.dirty > 0;
@@ -307,6 +356,56 @@ export function WorktreesDialog({ client, onClose, onShell }: { client: HostApi;
     }
   }
 
+  function startCleanup() {
+    // Clean orphans start checked; dirty ones are listed unchecked, and
+    // checking one opts that item into the force path only.
+    setSelected(new Set(orphans.filter((wt) => wt.dirty === 0).map((wt) => wt.path)));
+    setSummary(null);
+    setSelecting(true);
+  }
+
+  function toggle(path: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }
+
+  async function removeSelected() {
+    if (!picked.length || busy) return;
+    const lines = picked.map((wt) => `⎇ ${wt.branch} · ${sizeLabel(wt).text}${wt.dirty ? ` · ${wt.dirty} uncommitted (will be force-removed)` : ''}`);
+    const ok = await askConfirm({
+      title: `Remove ${picked.length} worktree${picked.length === 1 ? '' : 's'}?`,
+      body: `${lines.join('\n')}\n\nAbout ${fmtSize(pickedBytes)} will be reclaimed. Branches are kept. Every item is re-checked before removal: one that came back into use or changed state is skipped and reported.`,
+      confirm: 'Remove selected',
+      danger: true,
+    });
+    if (!ok) return;
+    setBusy(true);
+    try {
+      const { results } = await client.removeWorktreesBulk(
+        picked.map((wt) => wt.path),
+        picked.filter((wt) => wt.dirty > 0).map((wt) => wt.path),
+      );
+      const done = results.filter((r) => r.ok);
+      const failed = results.filter((r) => !r.ok);
+      const reclaimed = done.reduce((n, r) => n + r.reclaimedBytes, 0);
+      setSummary(
+        `Removed ${done.length} worktree${done.length === 1 ? '' : 's'}, reclaimed about ${fmtSize(reclaimed)}.` +
+          (failed.length ? ` ${failed.length} skipped: ${failed.map((r) => `${r.path.split('/').pop()} (${r.error ?? 'failed'})`).join('; ')}` : ''),
+      );
+      setSelecting(false);
+      setSelected(new Set());
+      load();
+    } catch (e) {
+      showError(e, "Couldn't remove the worktrees");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <dialog ref={ref} className="dialog wide" onClose={onClose} onClick={(e) => e.target === ref.current && onClose()}>
       <div className="capture-head">
@@ -315,26 +414,78 @@ export function WorktreesDialog({ client, onClose, onShell }: { client: HostApi;
           Close
         </button>
       </div>
+      {list && list.length > 0 && (
+        <p className="panel-msg">
+          {list.length} worktree{list.length === 1 ? '' : 's'}
+          {anyMeasured ? `, using ${fmtSize(totalBytes)}` : ', measuring sizes…'} · {orphans.length} orphaned
+          {orphans.length && anyMeasured ? ` (${fmtSize(orphanBytes)})` : ''}
+        </p>
+      )}
+      {summary && <p className="panel-msg">{summary}</p>}
       {error && <p className="panel-msg">{error}</p>}
       {list?.length === 0 && <p className="panel-msg">No ah-managed worktrees yet. Tick “Isolated git worktree” when starting a session.</p>}
+      {list && list.length > 0 && (
+        <div className="actions">
+          <button className="btn ghost small" onClick={() => setBySize((v) => !v)}>
+            {bySize ? 'Default order' : 'Sort by size'}
+          </button>
+          {!selecting && orphans.length > 0 && (
+            <button className="btn small" onClick={startCleanup}>
+              Clean up orphans
+            </button>
+          )}
+          {selecting && (
+            <>
+              <button className="btn ghost small" disabled={busy} onClick={() => setSelecting(false)}>
+                Cancel
+              </button>
+              <button className="btn small danger" disabled={busy || !picked.length} onClick={() => removeSelected()}>
+                {busy ? 'Removing…' : `Remove ${picked.length} selected (about ${fmtSize(pickedBytes)})`}
+              </button>
+            </>
+          )}
+        </div>
+      )}
       <ul className="worktrees">
-        {list?.map((wt) => (
-          <li key={wt.path}>
-            <div className="stack">
-              <span>⎇ {wt.branch}</span>
-              <span className="sub">
-                {wt.repo.split('/').pop()} · {wt.dirty ? `${wt.dirty} uncommitted` : 'clean'} · {wt.ahead} ahead
-                {wt.live.length ? ` · in use by ${wt.live.map((l) => l.name).join(', ')}` : ' · orphaned'}
-              </span>
-            </div>
-            <button className="btn small" onClick={() => onShell(wt.path)}>
-              Shell
-            </button>
-            <button className="btn ghost small danger" disabled={wt.live.length > 0} onClick={() => remove(wt)} title={wt.live.length ? 'In use' : 'Remove'}>
-              Remove
-            </button>
-          </li>
-        ))}
+        {rows.map((wt) => {
+          const size = sizeLabel(wt);
+          const inUse = wt.live.length > 0;
+          return (
+            <li key={wt.path} className={selecting && !wt.orphan ? 'dim' : undefined}>
+              {selecting && (
+                <input
+                  type="checkbox"
+                  className="wt-check"
+                  disabled={!wt.orphan}
+                  checked={selected.has(wt.path)}
+                  onChange={() => toggle(wt.path)}
+                  title={!wt.orphan ? 'Live or resumable session; cannot be removed in bulk' : wt.dirty ? 'Uncommitted changes; checking opts into force removal' : 'Remove this orphan'}
+                />
+              )}
+              <div className="stack">
+                <span>⎇ {wt.branch}</span>
+                <span className="sub">
+                  {wt.repo.split('/').pop()} · {wt.dirty ? `${wt.dirty} uncommitted` : 'clean'} · {wt.ahead} ahead
+                  {inUse ? ` · in use by ${wt.live.map((l) => l.name).join(', ')}` : wt.orphan ? ' · orphaned' : ' · saved session'}
+                  {wt.lastActivityAt ? ` · ${fmtAge(wt.lastActivityAt)}` : ''}
+                </span>
+                <span className="sub" title={size.title}>
+                  {size.text}
+                </span>
+              </div>
+              {!selecting && (
+                <>
+                  <button className="btn small" onClick={() => onShell(wt.path)}>
+                    Shell
+                  </button>
+                  <button className="btn ghost small danger" disabled={inUse} onClick={() => remove(wt)} title={inUse ? 'In use' : 'Remove'}>
+                    Remove
+                  </button>
+                </>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </dialog>
   );

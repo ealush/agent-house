@@ -10,14 +10,20 @@ process.stdin.setRawMode(true);
 state('idle');
 console.log('READY');
 let text = '';
+let turnTimer;
 process.stdin.on('data', (chunk) => {
   for (const char of chunk.toString()) {
-    if (char === '\r' || char === '\n') {
+    if (char === '\x1b' || char === '\x03') {
+      clearTimeout(turnTimer);
+      text = '';
+      state('done');
+      console.log('INTERRUPTED');
+    } else if (char === '\r' || char === '\n') {
       const prompt = text;
       text = '';
       state('working');
       console.log(`RECEIVED:${prompt}`);
-      setTimeout(() => { state('done'); console.log(`FINISHED:${prompt}`); }, 600);
+      turnTimer = setTimeout(() => { state('done'); console.log(`FINISHED:${prompt}`); }, 600);
     } else text += char;
   }
 });

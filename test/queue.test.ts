@@ -64,9 +64,8 @@ test('send-now interrupts the live turn and delivers one queued message', async 
     assert.equal(now.json().outcome, 'delivered');
     assert.equal(now.json().queued, 0);
     assert.equal((await http(ah, 'GET', `/api/sessions/${uid}/queue`)).json().length, 0);
-    // The interrupt key lands in the fixture's input buffer ahead of the paste,
-    // so match loosely; what matters is the urgent text arrives as a turn now.
-    await until(() => /RECEIVED:.*urgent/.test(ah.tmux('capture-pane', '-p', '-t', id)), 10000, 'urgent delivered immediately');
+    await until(() => ah.tmux('capture-pane', '-p', '-t', id).includes('RECEIVED:urgent'), 10000, 'urgent delivered immediately');
+    assert.ok(ah.tmux('capture-pane', '-p', '-t', id).includes('INTERRUPTED'), 'live turn was interrupted');
   } finally {
     await cleanup(ah);
   }

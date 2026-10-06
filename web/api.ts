@@ -82,7 +82,7 @@ export type Preset = {
 
 export type Host = { name: string; self: boolean; online: boolean };
 
-export const API_VERSION = 11;
+export const API_VERSION = 12;
 
 export type PullInfo = { number: number | null; url: string | null };
 
@@ -120,10 +120,19 @@ export type WorktreeInfo = {
   head: string;
   dirty: number;
   ahead: number;
+  /** Allocated on-disk bytes; null until the background measurement lands, or when too large to measure. */
+  sizeBytes: number | null;
+  logicalBytes: number | null;
+  sizePartial: boolean;
+  sizeTooLarge: boolean;
+  sizeMeasuredAt: number | null;
+  lastActivityAt: number;
   live: Array<{ id: string; name: string }>;
   sessions: Array<{ id: string; title: string; lifecycle: string }>;
   orphan: boolean;
 };
+
+export type BulkRemoveResult = { path: string; ok: boolean; error?: string; gone?: boolean; reclaimedBytes: number };
 
 export type BranchInfo = { name: string; current: boolean; remote: boolean };
 export type BranchList = { current: string | null; branches: BranchInfo[] };
@@ -213,6 +222,7 @@ export function hostApi(base: string) {
     pastChat: (uid: string) => r<{ messages: ChatMsg[] }>('GET', `/api/chats/${enc(uid)}`),
     worktrees: () => r<WorktreeInfo[]>('GET', '/api/worktrees'),
     removeWorktree: (path: string, force: boolean) => r('DELETE', '/api/worktrees', { path, force }),
+    removeWorktreesBulk: (paths: string[], force: string[]) => r<{ results: BulkRemoveResult[] }>('POST', '/api/worktrees/remove-bulk', { paths, force }),
     prompts: () => r<Array<{ text: string; at: number }>>('GET', '/api/prompts'),
     clearPrompts: () => r('DELETE', '/api/prompts'),
     /** Pasted/dropped files land in the host's upload folder. */
