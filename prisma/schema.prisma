@@ -32,6 +32,7 @@ model Session {
 }
 
 model Snapshot {
+  repoRoot      String @default("")
   id            Int    @id @default(autoincrement())
   uid           String
   turn          Int
