@@ -6,11 +6,13 @@ import { RecipesPanel } from './Recipes.tsx';
 
 // Settings with a side panel: Security, Notifications, Subscriptions, Recipes.
 import { SearchSettingsPanel } from './SearchSettings.tsx';
+import { AppearancePanel } from './Appearance.tsx';
 // Settings with a side panel: Security, Notifications, Subscriptions, Search.
 // Sections are hash-addressable (#settings/subscriptions) so anything in the
 // app can link straight at one.
 const SECTIONS = [
   { id: 'security', label: 'Security' },
+  { id: 'appearance', label: 'Appearance' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'subscriptions', label: 'Subscriptions' },
   { id: 'recipes', label: 'Recipes' },
@@ -58,6 +60,7 @@ export function Settings({ onLocked, onNotifyChange }: { onLocked: () => void; o
 
         <div className="settings-content">
           {section === 'security' && <Security onLocked={onLocked} />}
+          {section === 'appearance' && <AppearancePanel />}
           {section === 'notifications' && (
             <div className="sec-card">
               <NotifySettings onChange={onNotifyChange} />

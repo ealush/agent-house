@@ -11,11 +11,14 @@
 
   --accent: #f2b44b;
   --accent-ink: #1b1306;
-  --accent-bg: #f2b44b0f;
-  --accent-line: #f2b44b3d;
+  --accent-bg: color-mix(in srgb, var(--accent) 6%, transparent);
+  --accent-line: color-mix(in srgb, var(--accent) 24%, transparent);
   --run: #5b9cf6;
   --done: #3fbf86;
   --danger: #ef6b73;
+  --danger-ink: #1b0608;
+  /* Soft black for popover/dialog shadows; a cooler ink in light mode. */
+  --shadow: #000;
 
   --c-shell: #9aa3ae;
   --c-claude: #e08a5f;
@@ -33,6 +36,41 @@
   --radius: 14px;
 
   color-scheme: dark;
+}
+
+/* Light theme: flat white surfaces, hairline borders, and the site pink —
+   accented one step darker than the brand #E91E63 so text and white-on-fill
+   both keep contrast. */
+:root[data-theme='light'] {
+  --bg: #edeff2;
+  --surface: #ffffff;
+  --raised: #ffffff;
+  --sunken: #f2f4f6;
+  --line: #e6e8ec;
+  --line-2: #d4d8de;
+  --text: #333333;
+  --muted: #757575;
+  --faint: #6e7480;
+
+  --accent: #d81b60;
+  --accent-ink: #ffffff;
+  --run: #1f47c8;
+  --done: #1e7f4f;
+  --danger: #b93a0b;
+  --danger-ink: #ffffff;
+  --shadow: #232a36;
+
+  --c-shell: #5b6570;
+  --c-claude: #a8511f;
+  --c-codex: #2f5fd0;
+  --c-gemini: #2b5fc7;
+  --c-grok: #67707a;
+  --c-muse: #6d3fd4;
+  --c-hermes: #8a6300;
+  --c-opencode: #14705e;
+  --c-other: #6e7480;
+
+  color-scheme: light;
 }
 
 * {
@@ -190,6 +228,11 @@ code,
   background: var(--text);
   color: var(--bg);
   font: 700 12px var(--mono);
+}
+
+:root[data-theme='light'] .logo {
+  background: var(--accent);
+  color: #fff;
 }
 
 .brand-name {
@@ -397,7 +440,7 @@ kbd {
   margin: 6px;
   padding: 8px 10px;
   border-radius: 8px;
-  background: #ef6b7322;
+  background: color-mix(in srgb, var(--danger) 13%, transparent);
   color: var(--danger);
   font-size: 12px;
 }
@@ -486,13 +529,13 @@ a.pill:hover {
 
 .pill.busy {
   color: var(--run);
-  border-color: #5b9cf640;
+  border-color: color-mix(in srgb, var(--run) 25%, transparent);
 }
 
 .pill.attention {
   color: var(--done);
-  background: #3fbf8614;
-  border-color: #3fbf8640;
+  background: color-mix(in srgb, var(--done) 8%, transparent);
+  border-color: color-mix(in srgb, var(--done) 25%, transparent);
 }
 
 /* ---------- chips */
@@ -987,6 +1030,11 @@ a.pill:hover {
   background: var(--surface);
 }
 
+/* The terminal itself stays dark in both UI themes, so its gutter does too. */
+:root[data-theme='light'] .term-wrap {
+  background: #0e1014;
+}
+
 .narrow .term-wrap {
   margin: 0 8px;
   padding: 6px 0 0 8px;
@@ -1361,7 +1409,7 @@ a.btn {
   border-radius: 12px;
   border: 1px solid var(--line-2);
   background: var(--raised);
-  box-shadow: 0 16px 48px #000a;
+  box-shadow: 0 16px 48px color-mix(in srgb, var(--shadow) 67%, transparent);
   z-index: 30;
 }
 
@@ -1402,7 +1450,7 @@ a.btn {
   border-radius: 16px;
   background: var(--surface);
   color: var(--text);
-  box-shadow: 0 30px 80px #000b;
+  box-shadow: 0 30px 80px color-mix(in srgb, var(--shadow) 73%, transparent);
 }
 
 .dialog::backdrop {
@@ -1859,7 +1907,7 @@ a.btn {
   border-radius: 12px;
   background: var(--raised);
   border: 1px solid var(--line-2);
-  box-shadow: 0 12px 40px #0009;
+  box-shadow: 0 12px 40px color-mix(in srgb, var(--shadow) 60%, transparent);
   font-size: 13px;
   z-index: 50;
 }
@@ -1871,7 +1919,7 @@ a.btn {
   place-items: center;
   border: 2px dashed var(--accent);
   border-radius: 12px;
-  background: #0b0d10cc;
+  background: color-mix(in srgb, var(--sunken) 80%, transparent);
   color: var(--accent);
   font-weight: 600;
   pointer-events: none;
@@ -1938,7 +1986,7 @@ a.btn {
 }
 
 .dl.add {
-  background: #3fbf8618;
+  background: color-mix(in srgb, var(--done) 9%, transparent);
 }
 
 .dl.add .ln {
@@ -1946,7 +1994,7 @@ a.btn {
 }
 
 .dl.del {
-  background: #ef6b7318;
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
 }
 
 .dl.del .ln {
@@ -1955,7 +2003,7 @@ a.btn {
 
 .dl.hunk {
   color: var(--faint);
-  background: #5b9cf60c;
+  background: color-mix(in srgb, var(--run) 5%, transparent);
   cursor: default;
 }
 
@@ -2809,8 +2857,8 @@ a.btn {
   margin: 0;
   padding: 8px 10px;
   border-radius: 9px;
-  background: #ef6b7314;
-  border: 1px solid #ef6b7340;
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent);
   color: var(--danger);
   font-size: 12.5px;
 }
@@ -2861,7 +2909,7 @@ a.btn {
 
 .row-kill:hover {
   color: var(--danger);
-  background: #ef6b7322;
+  background: color-mix(in srgb, var(--danger) 13%, transparent);
 }
 
 .row-more:hover {
@@ -3302,7 +3350,7 @@ button.tool-chip:hover {
 
 .tool-chip.danger {
   color: var(--danger);
-  border-color: #ef6b7355;
+  border-color: color-mix(in srgb, var(--danger) 33%, transparent);
 }
 
 .dim {
@@ -3311,7 +3359,7 @@ button.tool-chip:hover {
 
 .icon-btn.live {
   color: var(--danger);
-  background: #ef6b7318;
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
 }
 
 .send-btn.stop {
@@ -3341,7 +3389,7 @@ button.tool-chip:hover {
   border-radius: 14px;
   border: 1px solid var(--line-2);
   background: var(--raised);
-  box-shadow: 0 18px 50px #000b;
+  box-shadow: 0 18px 50px color-mix(in srgb, var(--shadow) 73%, transparent);
 }
 
 .popover.up {
@@ -3614,8 +3662,8 @@ button.tool-chip:hover {
 }
 
 .seg.modes button.danger.on {
-  background: #ef6b7322;
-  box-shadow: inset 0 0 0 1px #ef6b7366;
+  background: color-mix(in srgb, var(--danger) 13%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 40%, transparent);
   color: var(--danger);
 }
 
@@ -3645,7 +3693,7 @@ button.tool-chip:hover {
 .btn.danger-solid {
   background: var(--danger);
   border-color: var(--danger);
-  color: #1b0608;
+  color: var(--danger-ink);
 }
 
 .btn.danger-solid:hover {

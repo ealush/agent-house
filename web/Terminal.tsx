@@ -8,6 +8,7 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import { autoCopySelection, copyText } from './selection.ts';
 import { terminalArrow } from './keyboard.ts';
+import { TERMINAL_THEME } from './theme.ts';
 
 export type TerminalHandle = {
   send: (data: string) => void;
@@ -29,30 +30,6 @@ type Props = {
 };
 
 type Conn = 'connecting' | 'open' | 'retrying' | 'gone';
-
-const THEME = {
-  background: '#0e1014',
-  foreground: '#e8e6e1',
-  cursor: '#e8b04a',
-  cursorAccent: '#0e1014',
-  selectionBackground: '#e8b04a55',
-  black: '#1a1d23',
-  red: '#e06c75',
-  green: '#98c379',
-  yellow: '#e5c07b',
-  blue: '#61afef',
-  magenta: '#c678dd',
-  cyan: '#56b6c2',
-  white: '#d7dae0',
-  brightBlack: '#5c6370',
-  brightRed: '#ef7b84',
-  brightGreen: '#a9d48a',
-  brightYellow: '#f0cd8c',
-  brightBlue: '#74bdfa',
-  brightMagenta: '#d58ce9',
-  brightCyan: '#68c7d3',
-  brightWhite: '#ffffff',
-};
 
 const FONT = "'JetBrainsMono Nerd Font', 'JetBrains Mono Variable', 'SF Mono', Menlo, ui-monospace, monospace";
 
@@ -96,7 +73,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ wi
       scrollback: 0, // tmux owns scrollback
       macOptionIsMeta: true,
       macOptionClickForcesSelection: true,
-      theme: THEME,
+      theme: TERMINAL_THEME,
     });
     const f = new FitAddon();
     t.loadAddon(f);

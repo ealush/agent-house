@@ -5,6 +5,10 @@
   background: var(--bg);
 }
 
+:root[data-theme='light'] .gui {
+  --gui-bar: #e91e63;
+}
+
 .gui .gui-scroll {
   flex: 1;
   min-height: 0;

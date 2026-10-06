@@ -5,6 +5,9 @@ import { AskHost } from './ask.tsx';
 import { Lock } from './Lock.tsx';
 import { authApi, type AuthStatus } from './auth.ts';
 import { setUnauthorizedHandler } from './api.ts';
+import { initTheme } from './theme.ts';
+
+initTheme();
 // Fonts ship with the app: nothing loads from third parties.
 import '@fontsource-variable/inter';
 import '@fontsource-variable/jetbrains-mono';
