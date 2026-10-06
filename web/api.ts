@@ -82,7 +82,7 @@ export type Preset = {
 
 export type Host = { name: string; self: boolean; online: boolean };
 
-export const API_VERSION = 10;
+export const API_VERSION = 11;
 
 export type PullInfo = { number: number | null; url: string | null };
 
@@ -193,6 +193,7 @@ export function hostApi(base: string) {
     feedPage: (ref: string, before: number, limit = 200) => r<FeedPage>('GET', `/api/sessions/${enc(ref)}/feed?before=${before}&limit=${limit}`),
     interrupt: (uid: string) => r('POST', `/api/sessions/${enc(uid)}/interrupt`, {}),
     clearQueue: (uid: string, itemId?: string) => r('DELETE', `/api/sessions/${enc(uid)}/queue${itemId ? `/${enc(itemId)}` : ''}`),
+    sendNow: (uid: string, itemId: string) => r<SendResult>('POST', `/api/sessions/${enc(uid)}/queue/${enc(itemId)}/send-now`),
     pin: (uid: string, pinned: boolean) => r('POST', `/api/sessions/${enc(uid)}/pin`, { pinned }),
     forget: (ref: string) => r('DELETE', `/api/sessions/${enc(ref)}`),
     changes: (id: string) => r<Changes>('GET', `/api/windows/${enc(id)}/changes`),

@@ -1,18 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import type { HostApi, QueueItem } from './api.ts';
+import { askConfirm } from './ask.tsx';
 
-/** Review pending follow-ups and cancel just the ones you no longer want. */
-export function QueueDialog({ client, uid, onClose, onChange }: {
-  client: HostApi; uid: string; onClose: () => void; onChange: () => void;
+/** This conversation's queue, as a side panel: review, send now, or cancel follow-ups. */
+export function QueuePanel({ client, uid, onChange }: {
+  client: HostApi; uid: string; onChange: () => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
   const [items, setItems] = useState<QueueItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const version = useRef(0);
 
   useEffect(() => {
-    dialog.current?.showModal();
     let stopped = false;
     const load = async () => {
       const current = ++version.current;
@@ -28,12 +27,9 @@ export function QueueDialog({ client, uid, onClose, onChange }: {
     return () => { stopped = true; clearInterval(timer); };
   }, [client, uid]);
 
-  async function remove(id?: string) {
-    if (busy) return;
-    setBusy(true);
+  async function refresh() {
     ++version.current;
     try {
-      await client.clearQueue(uid, id);
       const next = await client.queue(uid);
       ++version.current;
       setItems(next);
@@ -41,30 +37,77 @@ export function QueueDialog({ client, uid, onClose, onChange }: {
       onChange();
     } catch (e) {
       setError((e as Error).message);
+    }
+  }
+
+  async function remove(id?: string) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await client.clearQueue(uid, id);
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally { setBusy(false); }
+  }
+
+  /** Urgent follow-up: stop the live turn and deliver this message right away. */
+  async function sendNow(item: QueueItem) {
+    if (busy) return;
+    const ok = await askConfirm({
+      title: 'Send now and interrupt?',
+      body: 'Stops the current turn and delivers this message immediately. The rest of the queue is untouched.',
+      confirm: 'Send now',
+      danger: true,
+    });
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await client.sendNow(uid, item.id);
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
     } finally { setBusy(false); }
   }
 
   return (
-    <dialog ref={dialog} className="dialog queue-dialog" onClose={onClose} onClick={(e) => e.target === dialog.current && onClose()}>
-      <div className="capture-head">
-        <h2>Queued messages</h2>
-        <button className="btn ghost small" onClick={onClose}>Close</button>
+    <div className="queue-panel">
+      <p className="hint">Queued for this conversation, sent in order when the agent is free. Messages already sent cannot be cancelled.</p>
+      {error && <p role="alert">{error}</p>}
+      {items === null && !error && <p className="hint">Loading…</p>}
+      {items?.length === 0 && <p className="hint">No queued messages.</p>}
+      <ol className="queue-items">
+        {items?.map((item) => (
+          <QueueRow key={item.id} item={item} busy={busy} onSendNow={() => sendNow(item)} onCancel={() => remove(item.id)} />
+        ))}
+      </ol>
+      {!!items?.length && <button className="btn ghost small danger queue-clear-all" disabled={busy} onClick={() => remove()}>Cancel all queued messages</button>}
+    </div>
+  );
+}
+
+/** One queued follow-up: collapsed to its first line until expanded. */
+function QueueRow({ item, busy, onSendNow, onCancel }: {
+  item: QueueItem; busy: boolean; onSendNow: () => void; onCancel: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const firstLine = item.text.split('\n')[0];
+  const collapsible = item.text.length > 160 || firstLine.length < item.text.length;
+  const preview = firstLine.length > 160 ? `${firstLine.slice(0, 160)}…` : firstLine;
+  return (
+    <li>
+      {open || !collapsible ? <pre>{item.text}</pre> : <pre className="queue-preview">{preview}</pre>}
+      {collapsible && (
+        <button className="btn ghost small queue-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+          {open ? 'Collapse' : 'Expand'}
+        </button>
+      )}
+      <div className="queue-actions">
+        <button className="btn primary small" disabled={busy} onClick={onSendNow} title="Stop the current turn and deliver this message now">
+          Send now
+        </button>
+        <button className="btn small" disabled={busy} onClick={onCancel}>Cancel message</button>
       </div>
-      <div className="queue-body">
-        <p className="hint">Sent in order when the agent is free. Messages already sent cannot be cancelled.</p>
-        {error && <p role="alert">{error}</p>}
-        {items === null && !error && <p className="hint">Loading…</p>}
-        {items?.length === 0 && <p className="hint">No queued messages.</p>}
-        <ol className="queue-items">
-          {items?.map((item) => (
-            <li key={item.id}>
-              <pre>{item.text}</pre>
-              <button className="btn small" disabled={busy} onClick={() => remove(item.id)}>Cancel message</button>
-            </li>
-          ))}
-        </ol>
-        {!!items?.length && <button className="btn ghost small danger queue-clear-all" disabled={busy} onClick={() => remove()}>Cancel all queued messages</button>}
-      </div>
-    </dialog>
+    </li>
   );
 }

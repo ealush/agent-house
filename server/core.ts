@@ -25,7 +25,7 @@ export type QueueItem = { id: string; text: string; enter: boolean; at: number; 
 export type Host = { name: string; self: boolean; online: boolean };
 
 /** Bumped when the state shape or API routes change, so a newer page can tell an older server apart. */
-export const API_VERSION = 10;
+export const API_VERSION = 11;
 
 export type State = {
   api: number;
@@ -443,9 +443,40 @@ export class Core {
     const state = await this.current();
     const w = state.windows.find((w) => w.uid === uid);
     if (!w) throw new CoreError(404, 'session not found');
-    const keys = (w.agent ? this.config.presets.find((p) => p.id === w.agent)?.interruptKeys : undefined) ?? (w.agent ? ['Escape'] : ['C-c']);
-    await t.tmux('send-keys', '-t', w.id, ...keys);
+    await t.tmux('send-keys', '-t', w.id, ...this.interruptKeys(w));
     this.tick().catch(() => {});
+  }
+
+  private interruptKeys(w: WindowView): string[] {
+    return (w.agent ? this.config.presets.find((p) => p.id === w.agent)?.interruptKeys : undefined) ?? (w.agent ? ['Escape'] : ['C-c']);
+  }
+
+  /**
+   * Urgent follow-up: pulls one queued message out and delivers it now,
+   * stopping the current turn first. The rest of the queue is untouched.
+   */
+  async sendNow(uid: string, itemId: string): Promise<SendResult> {
+    const state = await this.current();
+    const w = state.windows.find((w) => w.uid === uid);
+    if (!w) throw new CoreError(404, 'session is not running');
+    return this.withInput<SendResult>(uid, async () => {
+      const items = this.queue(uid);
+      const at = items.findIndex((q) => q.id === itemId);
+      if (at < 0) throw new CoreError(404, 'queued message not found');
+      const [next] = items.splice(at, 1);
+      // Remove before typing: at-most-once, never a duplicate turn (F16).
+      this.registry.setMeta(uid, 'ah.queue', items.length ? items : undefined);
+      // Stop the live turn so the urgent message replaces it; idle sessions
+      // need no interruption (a stray Esc/C-c could hit the wrong thing).
+      if (w.status === 'busy' || w.status === 'waiting') {
+        await t.tmux('send-keys', '-t', w.id, ...this.interruptKeys(w));
+      }
+      if (w.agent) this.sentAt.set(uid, Date.now());
+      await t.pasteText(w.id, next.text, next.enter);
+      if (next.launchChange) this.applyLaunchChange(uid, next.launchChange);
+      this.tick().catch(() => {});
+      return { outcome: 'delivered', windowId: w.id, resumed: false, queued: items.length };
+    });
   }
 
   // ---------- small mutations

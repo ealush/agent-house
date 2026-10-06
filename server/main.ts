@@ -262,6 +262,13 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     return send(res, 200, { ok: true });
   }
 
+  // Urgent follow-up: deliver one queued message now, stopping the live turn.
+  if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/queue\/([\w-]{1,40})\/send-now$/))) {
+    const out = await core.sendNow(m[1], m[2]);
+    audit(req, 'session.send-now', { uid: m[1], window: out.windowId });
+    return send(res, 200, out);
+  }
+
   if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/pin$/))) {
     core.setPinned(m[1], (await readJson(req)).pinned !== false);
     return send(res, 200, { ok: true });

@@ -2749,11 +2749,8 @@ a.btn {
   padding-top: 16px;
 }
 
-.queue-dialog {
-  width: min(560px, calc(100vw - 24px));
-}
-
-.queue-body {
+.queue-body,
+.queue-panel {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -2761,12 +2758,26 @@ a.btn {
 }
 
 .queue-body > p,
-.queue-body > ol {
+.queue-body > ol,
+.queue-panel > p,
+.queue-panel > ol {
   margin: 0;
 }
 
-.queue-body .queue-clear-all {
+.queue-body .queue-clear-all,
+.queue-panel .queue-clear-all {
   align-self: flex-start;
+}
+
+.queue-panel .queue-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.queue-panel .queue-toggle {
+  align-self: flex-start;
+  margin-top: 6px;
 }
 
 .queue-items {

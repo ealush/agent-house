@@ -37,3 +37,37 @@ test('an exec-replaced agent is detected and concurrent follow-ups queue separat
     await cleanup(ah);
   }
 });
+
+test('send-now interrupts the live turn and delivers one queued message', async () => {
+  const ah = await startAh({
+    auth: { mode: 'off' },
+    idleAfter: 1,
+    presets: [{ id: 'test-agent', name: 'Test agent', command: `exec ${process.execPath} ${fixture}`, match: '^node$' }],
+  });
+  try {
+    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'test-agent', cwd: `${ah.dir}/files` } });
+    assert.equal(created.status, 201, created.body);
+    const { id, uid } = created.json();
+    await until(async () => {
+      const w = (await http(ah, 'GET', '/api/state')).json().windows.find((w: any) => w.uid === uid);
+      return w?.agent === 'test-agent' && ['idle', 'attention'].includes(w.status);
+    }, 15000, 'root agent detected');
+    assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'routine' } })).json().outcome, 'delivered');
+    const queuedSend = await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'urgent' } });
+    assert.equal(queuedSend.json().outcome, 'queued', 'urgent would otherwise wait');
+    const queued = (await http(ah, 'GET', `/api/sessions/${uid}/queue`)).json();
+    assert.equal(queued.length, 1);
+    // Unknown ids and unknown sessions fail instead of typing anywhere.
+    assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/queue/nope/send-now`, {})).status, 404);
+    const now = await http(ah, 'POST', `/api/sessions/${uid}/queue/${queued[0].id}/send-now`, {});
+    assert.equal(now.status, 200, now.body);
+    assert.equal(now.json().outcome, 'delivered');
+    assert.equal(now.json().queued, 0);
+    assert.equal((await http(ah, 'GET', `/api/sessions/${uid}/queue`)).json().length, 0);
+    // The interrupt key lands in the fixture's input buffer ahead of the paste,
+    // so match loosely; what matters is the urgent text arrives as a turn now.
+    await until(() => /RECEIVED:.*urgent/.test(ah.tmux('capture-pane', '-p', '-t', id)), 10000, 'urgent delivered immediately');
+  } finally {
+    await cleanup(ah);
+  }
+});

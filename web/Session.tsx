@@ -11,9 +11,9 @@ import { BranchPicker, ChangesPanel, PrLink } from './Git.tsx';
 import { SideChat } from './SideChat.tsx';
 import { ChatHistory } from './ChatHistory.tsx';
 import { FilesPanel } from './Files.tsx';
-import { QueueDialog } from './Queue.tsx';
+import { QueuePanel } from './Queue.tsx';
 
-type Panel = 'diff' | 'files' | 'chat';
+type Panel = 'diff' | 'files' | 'chat' | 'queue';
 
 type Props = {
   w: Win;
@@ -125,7 +125,6 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
   const [viewPref, setViewPref] = stored<View>('ah.view', 'terminal');
   const [menu, setMenu] = useState(false);
   const [capture, setCapture] = useState<string | null>(null);
-  const [queueOpen, setQueueOpen] = useState(false);
   const [focus, setFocus] = useState(0);
   const { color, name: agentName } = look(w.agent);
   const modelLabel = shortModel(w.model);
@@ -250,7 +249,9 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
 
   const diffTab = w.branch ? 'Diff' : null;
   const panelView = (p: Panel) =>
-    p === 'diff' ? (
+    p === 'queue' ? (
+      <QueuePanel client={client} uid={w.uid} onChange={refresh} />
+    ) : p === 'diff' ? (
       <ChangesPanel client={client} windowId={w.id} onComment={w.agent ? comment : undefined} />
     ) : p === 'chat' ? (
       chatHistory ? <ChatHistory client={client} /> : <SideChat client={client} w={w} onSent={onSent} />
@@ -337,7 +338,7 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
               </span>
               {multiHost && <span className="pill mono">{w.host}</span>}
               {w.queued > 0 && (
-                <button className="pill waiting" onClick={() => setQueueOpen(true)} title="Review queued messages">
+                <button className="pill waiting" onClick={() => openPanel('queue')} title="Review queued messages">
                   ⇥ {w.queued} queued
                 </button>
               )}
@@ -371,6 +372,9 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
             <button className={`btn ghost small ${panel === 'chat' && !panelCollapsed ? 'on' : ''}`} onClick={() => openPanel('chat')}>
               <Icon name="chat" size={15} /> Chat
             </button>
+            <button className={`btn ghost small ${panel === 'queue' && !panelCollapsed ? 'on' : ''}`} onClick={() => openPanel('queue')} title="Queued follow-ups for this conversation">
+              Queue{w.queued > 0 ? ` (${w.queued})` : ''}
+            </button>
           </>
         )}
         {narrow && (
@@ -386,7 +390,7 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
             <div className="menu" onMouseLeave={() => setMenu(false)}>
               <button onClick={startRename}>Rename</button>
               <button onClick={() => act(() => client.pin(w.uid, !w.pinned))}>{w.pinned ? 'Unpin' : 'Pin to top'}</button>
-              <button onClick={() => { setMenu(false); setQueueOpen(true); }}>Queued messages ({w.queued})</button>
+              <button onClick={() => { setMenu(false); openPanel('queue'); }}>Queued messages ({w.queued})</button>
               {onSplit && (
                 <>
                   <button
@@ -479,6 +483,9 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
           <button role="tab" aria-selected={tab === 'chat'} className={tab === 'chat' ? 'on' : ''} onClick={() => setTab('chat')}>
             Chat
           </button>
+          <button role="tab" aria-selected={tab === 'queue'} className={tab === 'queue' ? 'on' : ''} onClick={() => setTab('queue')}>
+            Queue{w.queued > 0 ? ` (${w.queued})` : ''}
+          </button>
         </div>
       )}
 
@@ -505,7 +512,7 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
           )}
         </div>
 
-        {!narrow && panel && (panel === 'files' || panel === 'chat' || diffTab) && (
+        {!narrow && panel && (panel === 'files' || panel === 'chat' || panel === 'queue' || diffTab) && (
           <>
             {!panelCollapsed && <PanelDivider onResize={resizePanel} onReset={resetPanelWidth} />}
             {panelCollapsed ? (
@@ -527,6 +534,9 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
                   </button>
                   <button className={`tab ${panel === 'chat' ? 'on' : ''}`} onClick={() => setPanel('chat')}>
                     Chat
+                  </button>
+                  <button className={`tab ${panel === 'queue' ? 'on' : ''}`} onClick={() => setPanel('queue')}>
+                    Queue{w.queued > 0 ? ` (${w.queued})` : ''}
                   </button>
                   <span className="spacer" />
                   {panel === 'chat' && (
@@ -555,7 +565,6 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
       </div>
 
       {capture !== null && <CaptureDialog text={capture} onClose={() => setCapture(null)} />}
-      {queueOpen && <QueueDialog client={client} uid={w.uid} onClose={() => setQueueOpen(false)} onChange={refresh} />}
     </>
   );
 }
