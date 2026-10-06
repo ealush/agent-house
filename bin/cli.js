@@ -34,6 +34,9 @@ export const HELP = `usage: ah <command>
   wait <target> [--timeout SECS]              block until the agent stops working
   resume <target>                             bring an ended/saved conversation back
   queue <target> [--clear]                    show or drop queued messages
+  worktrees [--json] [--orphans]              managed worktrees, with on-disk sizes
+  worktrees clean --orphans [--force-dirty] [--yes]
+                                              remove orphaned worktrees (dry run unless --yes)
   hooks install|uninstall|status              wire Claude Code / Codex status hooks
   auth code                                   one-time code to set up a new device (10 min)
   auth password [--remove]                    set the optional master password
@@ -112,6 +115,18 @@ function unique(list, target) {
 }
 
 const STATUS = { waiting: '● needs you', attention: '◆ done', busy: '◌ working', idle: '○ idle' };
+
+function fmtBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let v = bytes / 1024;
+  let u = 0;
+  while (v >= 1024 && u < units.length - 1) {
+    v /= 1024;
+    u++;
+  }
+  return `${v >= 100 ? Math.round(v) : v.toFixed(1)} ${units[u]}`;
+}
 
 function table(rows) {
   const widths = rows[0].map((_, i) => Math.max(...rows.map((r) => String(r[i]).length)));
@@ -209,6 +224,50 @@ export async function run(cmd, args) {
       const q = await call('GET', `/api/sessions/${live.uid}/queue`);
       if (!q.length) return console.log('queue empty');
       for (const item of q) console.log(`${item.id}  ${item.text.split('\n')[0]}`);
+      return;
+    }
+    case 'worktrees': {
+      const list = await call('GET', '/api/worktrees');
+      if (args[0] === 'clean') {
+        args.shift();
+        if (!flag(args, '--orphans')) fail('usage: ah worktrees clean --orphans [--force-dirty] [--yes]');
+        const forceDirty = flag(args, '--force-dirty');
+        const yes = flag(args, '--yes');
+        const orphans = list.filter((w) => w.orphan);
+        const targets = orphans.filter((w) => forceDirty || w.dirty === 0);
+        const heldDirty = orphans.length - targets.length;
+        if (heldDirty) console.log(`holding back ${heldDirty} dirty orphan${heldDirty === 1 ? '' : 's'} (pass --force-dirty to include)`);
+        if (!targets.length) return console.log('no orphaned worktrees to clean');
+        const total = targets.reduce((n, w) => n + (w.sizeBytes ?? 0), 0);
+        for (const w of targets) console.log(`${w.branch}  ${w.sizeBytes === null ? 'size unknown' : fmtBytes(w.sizeBytes)}  ${w.path}${w.dirty ? `  (${w.dirty} uncommitted)` : ''}`);
+        console.log(`${targets.length} worktree${targets.length === 1 ? '' : 's'}, about ${fmtBytes(total)} to reclaim`);
+        if (!yes) return console.log('dry run; nothing removed. Re-run with --yes to remove.');
+        const { results } = await call('POST', '/api/worktrees/remove-bulk', {
+          paths: targets.map((w) => w.path),
+          force: targets.filter((w) => w.dirty > 0).map((w) => w.path),
+        });
+        let reclaimed = 0;
+        for (const r of results) {
+          if (r.ok) {
+            reclaimed += r.reclaimedBytes;
+            console.log(`removed ${r.path}${r.gone ? ' (already gone)' : ''}`);
+          } else console.log(`skipped ${r.path}: ${r.error}`);
+        }
+        return console.log(`reclaimed about ${fmtBytes(reclaimed)}`);
+      }
+      const orphansOnly = flag(args, '--orphans');
+      const rows = orphansOnly ? list.filter((w) => w.orphan) : list;
+      if (flag(args, '--json')) return console.log(JSON.stringify(rows, null, 2));
+      if (!rows.length) return console.log('no managed worktrees');
+      table([
+        ['BRANCH', 'SIZE', 'STATE', 'PATH'],
+        ...rows.map((w) => [
+          w.branch,
+          w.sizeBytes === null ? (w.sizeTooLarge ? 'too large' : 'measuring') : (w.sizePartial ? '~' : '') + fmtBytes(w.sizeBytes),
+          w.live.length ? `in use (${w.live.map((l) => l.name).join(', ')})` : w.dirty ? `orphan, ${w.dirty} uncommitted` : 'orphan, clean',
+          w.path,
+        ]),
+      ]);
       return;
     }
     case 'auth': {
