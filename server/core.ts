@@ -380,6 +380,11 @@ export class Core {
     }
 
     const preset = await withCatalog(this.preset(parent.harness));
+    try {
+      buildLaunch(preset, { mode: o.mode, model: o.model, effort: o.effort });
+    } catch (err) {
+      throw new CoreError(400, (err as Error).message);
+    }
     await this.tick();
     const { copied, wt, head, name } = await this.withInput(parent.uid, async () => {
       const live = (await this.current()).windows.find((w) => w.uid === parent.uid);
