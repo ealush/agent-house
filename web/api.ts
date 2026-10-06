@@ -114,7 +114,7 @@ export type Preset = {
 
 export type Host = { name: string; self: boolean; online: boolean };
 
-export const API_VERSION = 13;
+export const API_VERSION = 14;
 
 export type PullInfo = { number: number | null; url: string | null };
 
@@ -378,6 +378,8 @@ export function hostApi(base: string) {
     searchStatus: () => r<SearchStatus>('GET', '/api/search/status'),
     searchRebuild: () => r<SearchStatus>('POST', '/api/search/rebuild', {}),
     searchSetEnabled: (enabled: boolean) => r<SearchStatus>('POST', '/api/search/enabled', { enabled }),
+    /** Settings → System: bounce the daemon on this host (systemd brings it back). */
+    restart: () => r<{ ok: true }>('POST', '/api/system/restart', {}),
     pastChat: (uid: string, msgId?: number) => r<{ messages: ChatMsg[] }>('GET', `/api/chats/${enc(uid)}${msgId ? `?msgId=${msgId}` : ''}`),
     recipes: () => r<Recipe[]>('GET', '/api/recipes'),
     saveRecipes: (recipes: Recipe[]) => r<Recipe[]>('PUT', '/api/recipes', { recipes }),

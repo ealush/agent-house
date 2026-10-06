@@ -9,7 +9,7 @@
 //      short PUBLIC list below (sign-in itself).
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http';
 import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { hostname, homedir } from 'node:os';
 import { join, extname, resolve } from 'node:path';
@@ -128,6 +128,17 @@ function searchParams(url: URL): SearchParams {
     to: num('to'),
     order: url.searchParams.get('sort') === 'recent' ? 'recent' : undefined,
   };
+}
+
+/**
+ * What "restart the server" runs. AH_RESTART_CMD overrides the unit restart,
+ * so tests can stub the side effect (e.g. `touch flagfile`) instead of
+ * bouncing a real systemd unit.
+ */
+function restartCommand(): string[] {
+  const override = process.env.AH_RESTART_CMD?.trim();
+  if (override) return ['/bin/sh', '-c', override];
+  return ['systemctl', '--user', 'restart', 'ah'];
 }
 
 // ---------- API (reached only after the gate in handle())
@@ -423,6 +434,22 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/pin$/))) {
     core.setPinned(m[1], (await readJson(req)).pinned !== false);
     return send(res, 200, { ok: true });
+  }
+
+  // ---------- system: host-level actions behind Settings → System
+
+  if (route('POST', /^\/api\/system\/restart$/)) {
+    audit(req, 'system.restart');
+    // Answer first: the restart below stops this process (systemd brings it
+    // back; tmux and the sessions survive it — see KillMode in ah.service).
+    send(res, 200, { ok: true });
+    setTimeout(() => {
+      const [cmd, ...args] = restartCommand();
+      const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
+      child.on('error', (err) => console.error(`restart failed: ${err.message}`));
+      child.unref();
+    }, 100);
+    return;
   }
 
   // Manual sidebar order (F43): sparse key, persisted in the registry, synced to every device over SSE.

@@ -4,12 +4,12 @@ import { Security } from './Security.tsx';
 import { SubscriptionsPanel } from './Subscriptions.tsx';
 import { RecipesPanel } from './Recipes.tsx';
 
-// Settings with a side panel: Security, Notifications, Subscriptions, Recipes.
+// Settings with a side panel: Security, Appearance, Notifications,
+// Subscriptions, Recipes, Search, System. Sections are hash-addressable
+// (#settings/subscriptions) so anything in the app can link straight at one.
 import { SearchSettingsPanel } from './SearchSettings.tsx';
 import { AppearancePanel } from './Appearance.tsx';
-// Settings with a side panel: Security, Notifications, Subscriptions, Search.
-// Sections are hash-addressable (#settings/subscriptions) so anything in the
-// app can link straight at one.
+import { SystemPanel } from './System.tsx';
 const SECTIONS = [
   { id: 'security', label: 'Security' },
   { id: 'appearance', label: 'Appearance' },
@@ -17,6 +17,7 @@ const SECTIONS = [
   { id: 'subscriptions', label: 'Subscriptions' },
   { id: 'recipes', label: 'Recipes' },
   { id: 'search', label: 'Search' },
+  { id: 'system', label: 'System' },
 ] as const;
 
 type Section = (typeof SECTIONS)[number]['id'];
@@ -69,6 +70,7 @@ export function Settings({ onLocked, onNotifyChange }: { onLocked: () => void; o
           {section === 'subscriptions' && <SubscriptionsPanel />}
           {section === 'recipes' && <RecipesPanel />}
           {section === 'search' && <SearchSettingsPanel />}
+          {section === 'system' && <SystemPanel />}
         </div>
       </div>
     </div>
