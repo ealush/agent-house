@@ -1492,7 +1492,8 @@ a.btn {
 }
 
 .field input,
-.field select {
+.field select,
+.field textarea {
   width: 100%;
   padding: 9px 10px;
   border-radius: 9px;
@@ -1504,7 +1505,8 @@ a.btn {
 
 @media (pointer: fine) {
   .field input,
-  .field select {
+  .field select,
+  .field textarea {
     font-size: 13px;
   }
 }

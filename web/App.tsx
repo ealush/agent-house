@@ -9,6 +9,7 @@ import { Session } from './Session.tsx';
 import { Workspace } from './Workspace.tsx';
 import { leaves, nodeAt, paneLeaves, parseLayout, replaceLeaf, splitLeaf, type LayoutNode, type Path } from './layout.ts';
 import { NewDialog } from './NewDialog.tsx';
+import { ForkDialog, type ForkTarget } from './ForkDialog.tsx';
 import { Switcher } from './Switcher.tsx';
 import { WorktreesDialog } from './Git.tsx';
 import { pushStatus, pushSupport, registerWorker } from './notify.ts';
@@ -63,6 +64,7 @@ export function App({ onLock }: { onLock: () => void }) {
   const [{ page, selected }, setRoute] = useState(fromHash);
   const [inboxGroup, setInboxGroup] = stored<InboxGroup>('ah.inboxGroup', 'status');
   const [creating, setCreating] = useState<{ cwd?: string; host?: string } | null>(null);
+  const [forking, setForking] = useState<ForkTarget | null>(null);
   const [switching, setSwitching] = useState(false);
   const [dialog, setDialog] = useState<'worktrees' | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -138,8 +140,8 @@ export function App({ onLock }: { onLock: () => void }) {
   };
 
   /** Enter split view from the single session: the new half shows the most recent other session. */
-  function splitFrom(key: string, dir: 'right' | 'below') {
-    const other = state?.windows.find((w) => w.key !== key)?.key ?? key;
+  function splitFrom(key: string, dir: 'right' | 'below', otherKey?: string) {
+    const other = otherKey ?? state?.windows.find((w) => w.key !== key)?.key ?? key;
     setLayout(splitLeaf({ type: 'session', sessionKey: key }, key, dir === 'right' ? 'horizontal' : 'vertical', other));
     setFocusPath(['first']);
   }
@@ -353,13 +355,20 @@ export function App({ onLock }: { onLock: () => void }) {
             onKilled={() => open(null)}
             refresh={() => refresh(current.host)}
             onSplit={(dir) => splitFrom(current.key, dir)}
+            onOpenKey={open}
+            onSplitWith={(key) => splitFrom(current.key, 'right', key)}
           />
         ) : state ? (
           <>
             {page === 'settings' ? (
               <Settings onLocked={onLock} onNotifyChange={(on) => (pushActive.current = on)} />
             ) : page === 'history' ? (
-              <HistoryView state={state} onResume={(h) => resume(h.host, h.ref)} onForget={forget} />
+              <HistoryView
+                state={state}
+                onResume={(h) => resume(h.host, h.ref)}
+                onForget={forget}
+                onFork={(h) => setForking({ ref: h.ref, host: h.host, harness: h.harness, title: h.title })}
+              />
             ) : page === 'sessions' && narrow ? (
               <SessionsView state={state} onOpen={(w) => open(w.key)} onNew={() => setCreating({})} />
             ) : (
@@ -406,6 +415,20 @@ export function App({ onLock }: { onLock: () => void }) {
           onClose={() => setCreating(null)}
           onCreated={async (host, id) => {
             setCreating(null);
+            await refresh(host);
+            open(keyFor(host, id));
+          }}
+        />
+      )}
+
+      {forking && state && (
+        <ForkDialog
+          client={clientFor(forking.host)}
+          target={forking}
+          onClose={() => setForking(null)}
+          onForked={async (id) => {
+            const host = forking.host;
+            setForking(null);
             await refresh(host);
             open(keyFor(host, id));
           }}
