@@ -44,10 +44,11 @@ export function SideChat({ client, w, onSent }: { client: HostApi; w: Win; onSen
     client.subscriptions().then(setSubs).catch(() => setSubs([]));
   }, [w.id, w.key, client]);
 
-  // Keep the oldest unread message in view when messages arrive. At the
-  // bottom (or first load) that means the bottom; scrolled up, it means the
-  // first message since the user last saw the bottom. Layout, not passive,
-  // so a short thread doesn't flash from the top of the spacer.
+  // Keep new arrivals readable from their top: at the bottom (or first load)
+  // that means the first new message's top; scrolled up, it means the first
+  // message since the user last saw the bottom. Jumping to the very bottom
+  // would hide a long answer's beginning. Layout, not passive, so a short
+  // thread doesn't flash from the top of the spacer.
   useLayoutEffect(() => {
     const el = logRef.current;
     if (!el) {
@@ -56,8 +57,9 @@ export function SideChat({ client, w, onSent }: { client: HostApi; w: Win; onSen
     }
     if (messages.length > prevLenRef.current) {
       const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+      const firstNew = Math.min(prevLenRef.current, messages.length - 1);
       if (atBottom || prevLenRef.current === 0) {
-        el.scrollTop = el.scrollHeight;
+        msgRefs.current.get(firstNew)?.scrollIntoView({ block: 'start' });
         seenRef.current = messages.length;
       } else {
         msgRefs.current.get(Math.min(seenRef.current, messages.length - 1))?.scrollIntoView({ block: 'start' });
