@@ -150,6 +150,8 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
     setChatHistory(false);
     setChatJump(null);
     try {
+      const seqJump = JSON.parse(sessionStorage.getItem('ah.seqJump') ?? 'null');
+      if (seqJump?.host === w.host && seqJump?.uid === w.uid) setViewPref('gui');
       const raw = sessionStorage.getItem('ah.chatJump');
       if (raw) {
         const jump = JSON.parse(raw) as { host?: string; uid?: string; msgId?: number };

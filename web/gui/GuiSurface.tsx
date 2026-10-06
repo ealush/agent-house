@@ -140,6 +140,11 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
   const jumpSeq = useRef<number | null>(null);
   const jumpTries = useRef(0);
   const [jumpVersion, setJumpVersion] = useState(0);
+  // A rebuilt projection is a new conversation: start at its end.
+  useEffect(() => {
+    stick.current = jumpSeq.current === null;
+  }, [state.epoch]);
+
   useEffect(() => {
     const accept = (jump: { host?: string; uid?: string; seq?: number }) => {
       if (jump.host !== w.host || jump.uid !== w.uid || typeof jump.seq !== 'number') return;
@@ -192,11 +197,6 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
     prevHeight.current = el.scrollHeight;
     prevFirst.current = first;
   }, [state.entries, w.status, hidden]);
-
-  // A rebuilt projection is a new conversation: start at its end.
-  useEffect(() => {
-    stick.current = jumpSeq.current === null;
-  }, [state.epoch]);
 
   const onScroll = () => {
     const el = scroller.current!;
