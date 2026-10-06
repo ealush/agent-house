@@ -241,6 +241,23 @@ export const TOOLS: Record<string, ToolView> = {
   apply_patch: Patch,
   update_plan: Todos,
   web_search: WebSearch,
+  // Grok, Gemini, Muse and opencode tool names. Anything not listed here
+  // still renders through the default view; these are the common file and
+  // shell tools whose arguments match the existing views.
+  run_terminal_command: Shell,
+  run_shell_command: Shell,
+  bash: Shell,
+  read_file: Read,
+  read: Read,
+  write_file: Write,
+  write: Write,
+  search_replace: Edit,
+  replace: Edit,
+  edit: Edit,
+  grep: Search,
+  grep_search: Search,
+  glob: Search,
+  web_fetch: Web,
 };
 
 /** `mcp__server__tool` → "tool (server)"; otherwise the name as given. */
