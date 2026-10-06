@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react';
 import type { HostApi, SendResult, Win } from './api.ts';
 import { Session } from './Session.tsx';
+import { sortWindows } from './Sidebar.tsx';
+import { cycleKey } from './keyboard.ts';
 import { closeLeaf, paneLeaves, replaceLeaf, setRatio, splitLeaf, type LayoutNode, type Path } from './layout.ts';
 
 type Props = {
@@ -112,6 +114,10 @@ export function Workspace(props: Props) {
             const hit = panes.find((p) => p.sessionKey === key);
             if (hit) props.onFocus(hit.path);
             else props.onLayout(replaceLeaf(layout, path, key));
+          }}
+          onCycleSession={(dir) => {
+            const next = cycleKey(sortWindows(windows).map((x) => x.key), w.key, dir);
+            if (next) props.onLayout(replaceLeaf(layout, path, next));
           }}
           onSplitWith={(key) => props.onLayout(splitLeaf(layout, path, 'horizontal', key))}
           onReplace={() => setPicking(path)}

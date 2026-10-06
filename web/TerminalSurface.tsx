@@ -11,7 +11,7 @@ const KIND_LABEL = { command: 'Wants to run a command', tool: 'Wants to use a to
 
 /** The session as its own TUI: xterm.js attached to the tmux window, plus the
  *  touch key bar, file paste/drop, and the screen-scraped permission banner. */
-export const TerminalSurface = forwardRef<SurfaceHandle, SurfaceProps>(function TerminalSurface({ w, client, hidden, showKeys, onAnswer, onReply, refresh }, ref) {
+export const TerminalSurface = forwardRef<SurfaceHandle, SurfaceProps>(function TerminalSurface({ w, client, hidden, showKeys, onAnswer, onReply, onCycleSession, refresh }, ref) {
   const term = useRef<TerminalHandle>(null);
   const [dragging, setDragging] = useState(false);
   const [ctrl, setCtrl] = useState(false);
@@ -92,7 +92,7 @@ export const TerminalSurface = forwardRef<SurfaceHandle, SurfaceProps>(function 
         }
       }}
     >
-      <Terminal ref={term} key={w.key} hidden={hidden} windowId={w.id} wsUrl={client.wsUrl} transformInput={transform} onGone={refresh} />
+      <Terminal ref={term} key={w.key} hidden={hidden} windowId={w.id} wsUrl={client.wsUrl} transformInput={transform} onCycleSession={onCycleSession} onGone={refresh} />
       {dragging && <div className="drop-hint">Drop to upload to {w.host} and insert the path</div>}
 
       {w.status === 'waiting' && w.ask && (

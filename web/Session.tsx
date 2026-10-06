@@ -34,6 +34,8 @@ type Props = {
   refresh: () => void;
   /** Navigate to another session by key (fork focus, fork family). */
   onOpenKey?: (key: string) => void;
+  /** Step session focus from the terminal (Option+Up/Down). */
+  onCycleSession?: (dir: -1 | 1) => void;
   /** Open another session beside this one in split view (fork comparison). */
   onSplitWith?: (key: string) => void;
   /** Split this pane (F45). Provided by the workspace; hidden in single view. */
@@ -110,7 +112,7 @@ function PanelDivider({ onResize, onReset }: { onResize: (dx: number) => void; o
 
 const DEFAULT_PANEL_WIDTH = 420;
 
-export function Session({ w, client, narrow, touch, multiHost, home, replyKey, onBack, onAnswer, onSent, onKilled, refresh, onSplit, onReplace, onClosePane, onOpenKey, onSplitWith }: Props) {
+export function Session({ w, client, narrow, touch, multiHost, home, replyKey, onBack, onAnswer, onSent, onKilled, refresh, onSplit, onReplace, onClosePane, onOpenKey, onCycleSession, onSplitWith }: Props) {
   const surface = useRef<SurfaceHandle>(null);
   const body = useRef<HTMLDivElement>(null);
   // 'main' is the session itself, drawn by whichever surface is chosen.
@@ -587,6 +589,7 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
               onAnswer={onAnswer}
               onReply={focusInput}
               onUseTerminal={() => switchView('terminal', true)}
+              onCycleSession={onCycleSession}
               refresh={refresh}
             />
           </Suspense>

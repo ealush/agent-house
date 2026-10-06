@@ -2,13 +2,57 @@
 const UNSHIFTED = "`1234567890-=[]\\;',./";
 const SHIFTED = '~!@#$%^&*()_+{}|:"<>?';
 
+/** Physical-key arrow behavior inside the terminal. `send` writes bytes to the
+ *  pty; `cycle` moves session focus instead (handled by the session layer). */
+export type ArrowAction = { send: string } | { cycle: -1 | 1 };
+export type ArrowMods = { meta: boolean; alt: boolean; ctrl: boolean; shift: boolean };
+
+/**
+ * Cmd+Left/Right seek line ends (Home/End), Option+Left/Right seek words
+ * (ESC b/f, like GUI terminals), Option+Up/Down cycles sessions. Everything
+ * else stays with xterm — notably Shift selections and Ctrl combinations.
+ * Handling these here (with preventDefault at the call site) also keeps the
+ * browser from eating them as Back/Forward navigation.
+ */
+export function terminalArrow(key: string, mod: ArrowMods): ArrowAction | null {
+  if (mod.shift || mod.ctrl) return null;
+  switch (key) {
+    case 'ArrowLeft':
+      if (mod.meta) return { send: '\x1b[H' };
+      if (mod.alt) return { send: '\x1bb' };
+      return null;
+    case 'ArrowRight':
+      if (mod.meta) return { send: '\x1b[F' };
+      if (mod.alt) return { send: '\x1bf' };
+      return null;
+    case 'ArrowUp':
+      return mod.alt && !mod.meta ? { cycle: -1 } : null;
+    case 'ArrowDown':
+      return mod.alt && !mod.meta ? { cycle: 1 } : null;
+    default:
+      return null;
+  }
+}
+
+/** Step through sidebar-ordered session keys with wrap-around. */
+export function cycleKey(keys: string[], anchor: string | null, dir: -1 | 1): string | null {
+  if (!keys.length) return null;
+  const i = anchor === null ? -1 : keys.indexOf(anchor);
+  if (i < 0) return dir > 0 ? keys[0] : keys[keys.length - 1];
+  return keys[(i + dir + keys.length) % keys.length];
+}
+
 export function applyModifiers(data: string, ctrl: boolean, alt: boolean, shift = false): string {
   const modifiers = (shift ? 1 : 0) | (alt ? 2 : 0) | (ctrl ? 4 : 0);
   const cursor = data.match(/^\x1b(?:\[|O)([ABCDHF])$/);
   const modifiedCursor = data.match(/^\x1b\[1;(\d+)([ABCDHF])$/);
   if (modifiers && (cursor || modifiedCursor)) {
+    const letter = cursor?.[1] ?? modifiedCursor![2];
+    // Sticky Alt on the touch key bar matches physical Option: Left/Right move
+    // by word. Other modified cursors keep the standard encoding.
+    if (alt && !ctrl && !shift && (letter === 'D' || letter === 'C')) return letter === 'D' ? '\x1bb' : '\x1bf';
     const existing = modifiedCursor ? Number(modifiedCursor[1]) - 1 : 0;
-    return `\x1b[1;${1 + (existing | modifiers)}${cursor?.[1] ?? modifiedCursor![2]}`;
+    return `\x1b[1;${1 + (existing | modifiers)}${letter}`;
   }
   let out = data;
   if (shift) {

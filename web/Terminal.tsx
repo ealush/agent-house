@@ -7,6 +7,7 @@ import { ClipboardAddon } from '@xterm/addon-clipboard';
 import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import { autoCopySelection, copyText } from './selection.ts';
+import { terminalArrow } from './keyboard.ts';
 
 export type TerminalHandle = {
   send: (data: string) => void;
@@ -22,6 +23,8 @@ type Props = {
   wsUrl: (windowId: string, cols: number, rows: number) => string;
   /** Lets the on-screen key bar rewrite typed input (sticky Ctrl/Alt). */
   transformInput?: (data: string) => string;
+  /** Option+Up/Down steps session focus (handled by the session layer). */
+  onCycleSession?: (dir: -1 | 1) => void;
   onGone: () => void;
 };
 
@@ -53,7 +56,7 @@ const THEME = {
 
 const FONT = "'JetBrainsMono Nerd Font', 'JetBrains Mono Variable', 'SF Mono', Menlo, ui-monospace, monospace";
 
-export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ windowId, hidden, wsUrl, transformInput, onGone }, ref) {
+export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ windowId, hidden, wsUrl, transformInput, onCycleSession, onGone }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const term = useRef<XTerm | null>(null);
   const fit = useRef<FitAddon | null>(null);
@@ -61,9 +64,11 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ wi
   const transform = useRef(transformInput);
   const pasting = useRef(false);
   const gone = useRef(onGone);
+  const cycle = useRef(onCycleSession);
   const [conn, setConn] = useState<Conn>('connecting');
   transform.current = transformInput;
   gone.current = onGone;
+  cycle.current = onCycleSession;
 
   const send = (data: string) => {
     if (ws.current?.readyState === WebSocket.OPEN) ws.current.send(JSON.stringify({ t: 'i', d: data }));
@@ -118,6 +123,17 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ wi
       if (e.type === 'keydown' && copy && t.hasSelection()) {
         void copyText(t.getSelection());
         return false;
+      }
+      // Cmd/Option arrows go to the pty with terminal-native encodings (and
+      // never reach the browser as Back/Forward navigation). Returning false
+      // prevents xterm's default handling of the same event.
+      if (e.type === 'keydown') {
+        const action = terminalArrow(e.key, { meta: e.metaKey, alt: e.altKey, ctrl: e.ctrlKey, shift: e.shiftKey });
+        if (action) {
+          if ('cycle' in action) cycle.current?.(action.cycle);
+          else if (ws.current?.readyState === WebSocket.OPEN) ws.current.send(JSON.stringify({ t: 'i', d: action.send }));
+          return false;
+        }
       }
       return true;
     });

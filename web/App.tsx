@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { PresetsContext } from './ModelPicker.tsx';
 import { deviceName, type HistoryItem, type SearchHit, type SendResult, type State, type Win } from './api.ts';
 import { useHosts } from './useHosts.ts';
-import { Sidebar, type Page } from './Sidebar.tsx';
+import { Sidebar, sortWindows, type Page } from './Sidebar.tsx';
+import { cycleKey } from './keyboard.ts';
 import { Inbox, type InboxGroup } from './Inbox.tsx';
 import { HistoryView, SessionsView } from './HistoryView.tsx';
 import { Session } from './Session.tsx';
@@ -141,6 +142,13 @@ export function App({ onLock }: { onLock: () => void }) {
       }
     }
     go({ selected: key });
+  };
+
+  /** Option+Up/Down in a terminal steps through sessions in sidebar order. */
+  const cycleSession = (dir: -1 | 1) => {
+    const keys = sortWindows(state?.windows ?? []).map((w) => w.key);
+    const next = cycleKey(keys, focusKey ?? selected, dir);
+    if (next) open(next);
   };
 
   /** Enter split view from the single session: the new half shows the most recent other session. */
@@ -420,6 +428,7 @@ export function App({ onLock }: { onLock: () => void }) {
             refresh={() => refresh(current.host)}
             onSplit={(dir) => splitFrom(current.key, dir)}
             onOpenKey={open}
+            onCycleSession={cycleSession}
             onSplitWith={(key) => splitFrom(current.key, 'right', key)}
           />
         ) : state ? (
