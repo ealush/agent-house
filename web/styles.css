@@ -88,14 +88,12 @@ code,
 /* ---------- layout */
 
 .app {
-  /* Pin to the layout viewport. An explicit pixel height from viewport.ts
-     wins over bottom: --app-h carries the software keyboard height, or the
-     full screen height when a standalone launch came up a status-bar band
-     short (see shellViewportHeight). */
+  /* Pin to the layout viewport. A software keyboard sets --keyboard-vh; that
+     explicit height wins over bottom. */
   position: fixed;
   inset: 0;
   display: flex;
-  height: var(--app-h, var(--keyboard-vh, auto));
+  height: var(--keyboard-vh, auto);
   overflow: hidden;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
 }
