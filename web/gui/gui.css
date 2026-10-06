@@ -21,6 +21,24 @@
   gap: 14px;
 }
 
+/* Search jump target (issue #9): the entry a result opened at. */
+.gui .jump-flash {
+  animation: gui-jump-flash 2.4s ease-out;
+  border-radius: 12px;
+}
+
+@keyframes gui-jump-flash {
+  0%,
+  60% {
+    box-shadow: 0 0 0 2px #f5b544;
+    background: rgba(245, 181, 68, 0.16);
+  }
+  100% {
+    box-shadow: none;
+    background: transparent;
+  }
+}
+
 .gui .gui-older {
   align-self: center;
 }
