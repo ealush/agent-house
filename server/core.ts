@@ -15,7 +15,8 @@ import { expandHome, isExecutableOnPath, type Config, type Preset } from './conf
 import { buildLaunch, customModel, resumeSelection } from './launch.ts';
 import { withCatalog } from './catalog.ts';
 import * as t from './tmux.ts';
-import { listWorktrees, mainRepo, removeWorktree, type Worktree } from './git.ts';
+import { listWorktrees, mainRepo, removeWorktree, removeWorktreesBulk, type Worktree } from './git.ts';
+import { invalidateSize } from './size.ts';
 import { Push } from './push.ts';
 import type { Peers } from './peers.ts';
 
@@ -25,7 +26,7 @@ export type QueueItem = { id: string; text: string; enter: boolean; at: number; 
 export type Host = { name: string; self: boolean; online: boolean };
 
 /** Bumped when the state shape or API routes change, so a newer page can tell an older server apart. */
-export const API_VERSION = 11;
+export const API_VERSION = 12;
 
 export type State = {
   api: number;
@@ -537,6 +538,8 @@ export class Core {
       const owners = this.registry.all().filter((r) => (r.meta['ah.worktree'] as Worktree | undefined)?.path === wt.path);
       return {
         ...wt,
+        // The owning session's activity is the better "last used" signal when there is one.
+        lastActivityAt: Math.max(wt.lastActivityAt, ...owners.map((r) => r.lastActivityAt)),
         live: users.map((w) => ({ id: w.id, name: w.name })),
         sessions: owners.map((r) => ({ id: r.id, title: r.title, lifecycle: r.lifecycle })),
         orphan: users.length === 0,
@@ -550,6 +553,19 @@ export class Core {
       throw new CoreError(409, 'a live session is using this worktree');
     }
     await removeWorktree(path, force);
+    invalidateSize(path);
+  }
+
+  /**
+   * Bulk removal for the cleanup flow. In-use is re-checked per item against
+   * a fresh state pass; everything else (managed root, dirty) is revalidated
+   * inside the git layer at the moment of removal.
+   */
+  async removeWorktreesBulk(paths: string[], force: string[]) {
+    return removeWorktreesBulk(paths, new Set(force), async (path) => {
+      const state = await this.current();
+      return state.windows.some((w) => expandHome(w.cwd) === path || expandHome(w.cwd).startsWith(path + '/'));
+    });
   }
 
   record(ref: string): SessionRecord | undefined {

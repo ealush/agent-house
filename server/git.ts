@@ -3,9 +3,10 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, stat } from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { randomBytes } from 'node:crypto';
+import { cachedSize, invalidateSize, requestSize } from './size.ts';
 
 const exec = promisify(execFile);
 
@@ -57,7 +58,21 @@ export async function createWorktree(dir: string, name: string): Promise<Worktre
   return { path, branch, repo: main };
 }
 
-export type WorktreeInfo = Worktree & { head: string; dirty: number; ahead: number; managed: boolean };
+export type WorktreeInfo = Worktree & {
+  head: string;
+  dirty: number;
+  ahead: number;
+  managed: boolean;
+  /** Allocated on-disk size from the background size cache; null until measured (or too large to measure). */
+  sizeBytes: number | null;
+  logicalBytes: number | null;
+  sizePartial: boolean;
+  sizeTooLarge: boolean;
+  /** Seconds since epoch of the cached measurement, null until measured. */
+  sizeMeasuredAt: number | null;
+  /** Seconds since epoch: directory mtime, refined by Core with the owning session's last activity. */
+  lastActivityAt: number;
+};
 
 /** Worktrees of the given repos that ah manages, with enough state to decide cleanup. */
 export async function listWorktrees(repos: string[]): Promise<WorktreeInfo[]> {
@@ -76,6 +91,12 @@ export async function listWorktrees(repos: string[]): Promise<WorktreeInfo[]> {
         git(path, 'status', '--porcelain').catch(() => ''),
         git(repo, 'rev-list', '--count', `${base}..${branch}`).catch(() => '0'),
       ]);
+      // Sizes come from the background cache (server/size.ts): this listing
+      // never walks the tree itself. A miss starts a measurement and reports
+      // nulls until it lands; the next listing carries the numbers.
+      requestSize(path);
+      const size = cachedSize(path);
+      const mtime = await stat(path).then((s) => Math.floor(s.mtimeMs / 1000)).catch(() => 0);
       out.push({
         path,
         branch,
@@ -84,6 +105,12 @@ export async function listWorktrees(repos: string[]): Promise<WorktreeInfo[]> {
         dirty: status.split('\n').filter(Boolean).length,
         ahead: Number(ahead.trim()) || 0,
         managed: true,
+        sizeBytes: size?.sizeBytes ?? null,
+        logicalBytes: size ? size.logicalBytes : null,
+        sizePartial: size?.partial ?? false,
+        sizeTooLarge: size?.tooLarge ?? false,
+        sizeMeasuredAt: size?.measuredAt ?? null,
+        lastActivityAt: mtime,
       });
     }
   }
@@ -101,6 +128,44 @@ export async function removeWorktree(path: string, force: boolean): Promise<void
     const msg = String((err as { stderr?: string }).stderr ?? err).trim();
     throw new GitError(/modified or untracked|is dirty/.test(msg) ? 'worktree has uncommitted changes' : msg);
   }
+}
+
+export type BulkRemoveResult = { path: string; ok: boolean; error?: string; gone?: boolean; reclaimedBytes: number };
+
+/**
+ * Bulk orphan cleanup. Every item is revalidated at removal time, never
+ * trusted from the listing the user confirmed: a path already gone counts
+ * as success, the managed-root guard runs inside removeWorktree, the
+ * in-use check is the caller's fresh view (Core passes live windows), and
+ * a worktree that turned dirty since listing fails its git removal unless
+ * its path is in `force`. One item's failure never stops the rest.
+ */
+export async function removeWorktreesBulk(
+  paths: string[],
+  force: Set<string>,
+  isInUse: (path: string) => boolean | Promise<boolean>,
+): Promise<BulkRemoveResult[]> {
+  const out: BulkRemoveResult[] = [];
+  for (const raw of paths) {
+    const path = resolve(raw);
+    if (!existsSync(path)) {
+      out.push({ path, ok: true, gone: true, reclaimedBytes: 0 });
+      continue;
+    }
+    if (await isInUse(path)) {
+      out.push({ path, ok: false, error: 'a live session is using this worktree', reclaimedBytes: 0 });
+      continue;
+    }
+    const reclaimed = cachedSize(path)?.sizeBytes ?? 0;
+    try {
+      await removeWorktree(path, force.has(path) || force.has(raw));
+      invalidateSize(path);
+      out.push({ path, ok: true, reclaimedBytes: reclaimed });
+    } catch (err) {
+      out.push({ path, ok: false, error: (err as Error).message, reclaimedBytes: 0 });
+    }
+  }
+  return out;
 }
 
 // ---------- branches
