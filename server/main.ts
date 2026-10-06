@@ -354,6 +354,24 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     return send(res, 200, { ok: true });
   }
 
+  if (route('POST', /^\/api\/worktrees\/remove-bulk$/)) {
+    const body = await readJson(req);
+    const paths = Array.isArray(body.paths) ? body.paths.slice(0, 200).map((p: unknown) => str(p, 'path', 1024)) : [];
+    const force = Array.isArray(body.force) ? body.force.slice(0, 200).map((p: unknown) => str(p, 'path', 1024)) : [];
+    if (!paths.length) throw new HttpError(400, 'no worktrees given');
+    // The client selection is never trusted: Core and the git layer
+    // revalidate in-use, dirty, and managed-root per item at removal time.
+    const results = await core.removeWorktreesBulk(paths, force);
+    const removed = results.filter((r) => r.ok).map((r) => r.path);
+    audit(req, 'worktree.remove-bulk', {
+      removed,
+      failed: results.length - removed.length,
+      forced: force,
+      reclaimedBytes: results.reduce((n, r) => n + (r.ok ? r.reclaimedBytes : 0), 0),
+    });
+    return send(res, 200, { results });
+  }
+
   if (route('GET', /^\/api\/prompts$/)) return send(res, 200, core.recentPrompts());
   if (route('DELETE', /^\/api\/prompts$/)) {
     core.clearPrompts();

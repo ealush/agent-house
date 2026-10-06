@@ -1972,6 +1972,16 @@ a.btn {
   color: var(--muted);
 }
 
+.worktrees li.dim {
+  opacity: 0.55;
+}
+
+.worktrees .wt-check {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+
 .stale-banner {
   flex: none;
   padding: 8px 14px;

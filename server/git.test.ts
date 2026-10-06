@@ -5,7 +5,8 @@ import { chmod, mkdtemp, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createWorktree, listWorktrees, removeWorktree, changes, listBranches, switchBranch, pullRequest, slugify, mainRepo } from './git.ts';
+import { createWorktree, listWorktrees, removeWorktree, removeWorktreesBulk, changes, listBranches, switchBranch, pullRequest, slugify, mainRepo } from './git.ts';
+import { settleSizes } from './size.ts';
 import { repoInfo } from './sessions.ts';
 
 async function repo() {
@@ -138,4 +139,51 @@ test('worktree lifecycle: create, detect, list, refuse dirty removal, force', as
   await removeWorktree(wt.path, true);
   assert.equal(existsSync(wt.path), false);
   await assert.rejects(removeWorktree(dir, true), /not an ah-managed worktree/);
+});
+
+test('worktree sizes: cold list reports nulls, warm list carries measured bytes', async () => {
+  const dir = await repo();
+  const wt = await createWorktree(dir, 'Sized');
+  await writeFile(join(wt.path, 'big.bin'), 'x'.repeat(200_000));
+  const [cold] = await listWorktrees([dir]);
+  assert.equal(cold.sizeBytes, null, 'first listing must not block on measuring');
+  assert.equal(cold.sizeMeasuredAt, null);
+  assert.ok(cold.lastActivityAt > 0, 'directory mtime stands in for last activity');
+  await settleSizes();
+  const [warm] = await listWorktrees([dir]);
+  assert.ok(warm.sizeBytes !== null && warm.sizeBytes >= 200_000, `size ${warm.sizeBytes}`);
+  assert.ok(warm.logicalBytes !== null && warm.logicalBytes >= 200_000);
+  assert.equal(warm.sizePartial, false);
+  assert.equal(warm.sizeTooLarge, false);
+  assert.ok(warm.sizeMeasuredAt !== null && warm.sizeMeasuredAt > 0);
+  await removeWorktree(wt.path, true);
+});
+
+test('bulk removal: revalidates in-use, dirty, and managed root per item', async () => {
+  const dir = await repo();
+  const clean = await createWorktree(dir, 'Clean one');
+  const dirty = await createWorktree(dir, 'Dirty one');
+  const busy = await createWorktree(dir, 'Busy one');
+  await writeFile(join(dirty.path, 'a.txt'), 'changed\n');
+  const missing = join(dir, '.worktrees', 'proj', 'already-gone');
+
+  const results = await removeWorktreesBulk([clean.path, dirty.path, busy.path, dir, missing], new Set(), (p) => p === busy.path);
+  const byPath = new Map(results.map((r) => [r.path, r]));
+  assert.equal(byPath.get(clean.path)?.ok, true);
+  assert.equal(existsSync(clean.path), false);
+  assert.match(byPath.get(dirty.path)?.error ?? '', /uncommitted/);
+  assert.equal(existsSync(dirty.path), true, 'dirty orphan survives a non-force bulk pass');
+  assert.match(byPath.get(busy.path)?.error ?? '', /live session/);
+  assert.equal(existsSync(busy.path), true, 'a worktree that became in use after listing is skipped');
+  assert.match(byPath.get(dir)?.error ?? '', /not an ah-managed worktree/);
+  assert.equal(byPath.get(missing)?.ok, true, 'already gone counts as success');
+  assert.equal(byPath.get(missing)?.gone, true);
+
+  // Force-checking the dirty one removes just it; the busy one still stays.
+  const second = await removeWorktreesBulk([dirty.path, busy.path], new Set([dirty.path]), (p) => p === busy.path);
+  assert.equal(second[0].ok, true);
+  assert.equal(existsSync(dirty.path), false);
+  assert.equal(second[1].ok, false);
+
+  await removeWorktree(busy.path, true);
 });
