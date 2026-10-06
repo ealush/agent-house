@@ -117,7 +117,11 @@ test('fork end to end: copied transcript, own worktree, lineage, honest refusals
     // Shell sessions refuse honestly and create nothing.
     const shell = await http(ah, 'POST', '/api/windows', { body: { preset: 'shell', cwd: repo } });
     assert.equal(shell.status, 201, shell.body);
-    const countBefore = (await http(ah, 'GET', '/api/state')).json().windows.length;
+    const beforeState = await until(async () => {
+      const state = (await http(ah, 'GET', '/api/state')).json();
+      return state.windows.some((w: any) => w.uid === shell.json().uid) ? state : null;
+    }, 10000, 'shell present in state');
+    const countBefore = beforeState.windows.length;
     const shellFork = await http(ah, 'POST', `/api/sessions/${shell.json().uid}/fork`, { body: {} });
     assert.equal(shellFork.status, 422, shellFork.body);
     assert.match(shellFork.json().error, /shell sessions have no conversation/);
