@@ -31,6 +31,25 @@ model Session {
   metaJson       String  @default("{}")
 }
 
+model Snapshot {
+  id            Int    @id @default(autoincrement())
+  uid           String
+  turn          Int
+  commit        String
+  kind          String @default("turn")
+  promptExcerpt String @default("")
+  branch        String @default("")
+  createdAt     Int    @default(0)
+  filesChanged  Int    @default(0)
+  insertions    Int    @default(0)
+  deletions     Int    @default(0)
+  skippedJson   String @default("[]")
+  submodules    Boolean @default(false)
+
+  @@unique([uid, turn])
+  @@index([uid, turn])
+}
+
 model ChatMessage {
   id   Int    @id @default(autoincrement())
   uid  String

@@ -269,6 +269,40 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     return send(res, 200, out);
   }
 
+  // Per-turn snapshots (F39): list, restore (with safety snapshot), toggle.
+  if ((m = route('GET', /^\/api\/sessions\/([\w-]{1,40})\/snapshots$/))) {
+    try {
+      return send(res, 200, await core.listSnapshots(m[1]));
+    } catch (err) {
+      if (err instanceof CoreError) throw new HttpError(err.status, err.message);
+      throw err;
+    }
+  }
+
+  if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/snapshots\/(\d{1,9})\/restore$/))) {
+    const body = await readJson(req);
+    try {
+      const out = await core.restoreSnapshot(m[1], Number(m[2]), { interrupt: body.interrupt === true });
+      audit(req, 'snapshot.restore', { uid: m[1], turn: Number(m[2]), safetyId: out.safety.id, safetyTurn: out.safety.turn });
+      return send(res, 200, out);
+    } catch (err) {
+      if (err instanceof CoreError) throw new HttpError(err.status, err.message);
+      throw err;
+    }
+  }
+
+  if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/snapshots\/toggle$/))) {
+    const body = await readJson(req);
+    try {
+      core.setSnapshotsEnabled(m[1], body.enabled !== false);
+    } catch (err) {
+      if (err instanceof CoreError) throw new HttpError(err.status, err.message);
+      throw err;
+    }
+    audit(req, 'snapshot.toggle', { uid: m[1], enabled: body.enabled !== false });
+    return send(res, 200, { ok: true });
+  }
+
   if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/pin$/))) {
     core.setPinned(m[1], (await readJson(req)).pinned !== false);
     return send(res, 200, { ok: true });

@@ -1,9 +1,9 @@
 // Git helpers: per-session worktrees (one writing agent per checkout) and a
 // read-only view of a session's changes for reviewing from a phone.
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, rm, rmdir, stat } from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { randomBytes } from 'node:crypto';
 
@@ -12,6 +12,39 @@ const exec = promisify(execFile);
 async function git(cwd: string, ...args: string[]): Promise<string> {
   const { stdout } = await exec('git', ['-C', cwd, ...args], { maxBuffer: 32 * 1024 * 1024, timeout: 15_000 });
   return stdout;
+}
+
+/** git with extra environment (temp index, snapshot identity). */
+async function gitEnv(cwd: string, env: Record<string, string>, args: string[]): Promise<string> {
+  const { stdout } = await exec('git', ['-C', cwd, ...args], {
+    maxBuffer: 32 * 1024 * 1024,
+    timeout: 60_000,
+    env: { ...process.env, ...env },
+  });
+  return stdout;
+}
+
+/**
+ * git with stdin, via spawn: execFile's `input` option does not close the
+ * pipe in a way `checkout-index --stdin` accepts, and it waits for EOF forever.
+ */
+function gitStdin(cwd: string, env: Record<string, string>, args: string[], input: string): Promise<void> {
+  return new Promise((resolvePromise, reject) => {
+    const p = spawn('git', ['-C', cwd, ...args], { env: { ...process.env, ...env } });
+    let err = '';
+    const timer = setTimeout(() => p.kill('SIGTERM'), 60_000);
+    p.stderr.on('data', (d) => (err += d));
+    p.on('error', (e) => {
+      clearTimeout(timer);
+      reject(e);
+    });
+    p.on('close', (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolvePromise();
+      else reject(new GitError(err.trim() || `git ${args[0]} failed`));
+    });
+    p.stdin.end(input);
+  });
 }
 
 export class GitError extends Error {}
@@ -270,4 +303,157 @@ export async function changes(dir: string): Promise<Changes> {
     patch: patch.length > PATCH_LIMIT ? patch.slice(0, PATCH_LIMIT) : patch,
     truncated: patch.length > PATCH_LIMIT,
   };
+}
+
+// ---------- per-turn snapshots (F39)
+//
+// A snapshot is a commit built entirely with plumbing against a throwaway
+// index (GIT_INDEX_FILE under ah's state dir): the user's own index, stash
+// and branches are never touched. The commit is kept alive by a ref under
+// refs/ah-snapshots/<uid>/<turn>, which also protects it from `git gc`.
+
+export function snapshotRef(uid: string, turn: number): string {
+  return `refs/ah-snapshots/${uid}/${turn}`;
+}
+
+export type SnapshotMade = {
+  commit: string;
+  tree: string;
+  /** Branch checked out at capture time ('' when detached). */
+  branch: string;
+  /** Untracked files left out for exceeding the size cap, repo-relative. */
+  skipped: string[];
+  /** True when the tree contains submodules (recorded as commits, not recursed). */
+  submodules: boolean;
+};
+
+const SNAPSHOT_IDENTITY = {
+  GIT_AUTHOR_NAME: 'ah',
+  GIT_AUTHOR_EMAIL: 'ah@localhost',
+  GIT_COMMITTER_NAME: 'ah',
+  GIT_COMMITTER_EMAIL: 'ah@localhost',
+};
+
+/**
+ * Captures the worktree's current state as a snapshot commit. Ignored files
+ * are excluded by git's own rules; untracked files over `maxFileBytes` are
+ * excluded by pathspec and reported in `skipped`. `parent` is the previous
+ * snapshot commit when there is one, else the worktree HEAD (or no parent
+ * for a repo with no commits yet).
+ */
+export async function createSnapshot(
+  dir: string,
+  o: { uid: string; turn: number; indexFile: string; parent: string | null; maxFileBytes: number },
+): Promise<SnapshotMade> {
+  const root = await toplevel(dir);
+  const branch = (await git(root, 'branch', '--show-current').catch(() => '')).trim();
+  const head = (await git(root, 'rev-parse', '--verify', '-q', 'HEAD').catch(() => '')).trim() || null;
+
+  // Oversized untracked files: left out, and named so the UI can say so.
+  const skipped: string[] = [];
+  const others = await git(root, 'ls-files', '--others', '--exclude-standard', '-z').catch(() => '');
+  for (const rel of others.split('\0').filter(Boolean)) {
+    const st = await stat(join(root, rel)).catch(() => null);
+    if (st?.isFile() && st.size > o.maxFileBytes) skipped.push(rel);
+  }
+  skipped.sort();
+
+  await mkdir(dirname(o.indexFile), { recursive: true });
+  await rm(o.indexFile, { force: true });
+  const env = { GIT_INDEX_FILE: o.indexFile };
+  try {
+    await gitEnv(root, env, ['add', '-A', '--', '.', ...skipped.map((p) => `:(exclude)${p}`)]);
+    const tree = (await gitEnv(root, env, ['write-tree'])).trim();
+    const parent = o.parent ?? head;
+    const commit = (
+      await gitEnv(root, { ...env, ...SNAPSHOT_IDENTITY }, [
+        'commit-tree',
+        tree,
+        ...(parent ? ['-p', parent] : []),
+        '-m',
+        `ah snapshot ${o.uid} turn ${o.turn} ${new Date().toISOString()}`,
+      ])
+    ).trim();
+    await git(root, 'update-ref', snapshotRef(o.uid, o.turn), commit);
+    const staged = await git(root, 'ls-tree', '-r', commit).catch(() => '');
+    return { commit, tree, branch, skipped, submodules: /^160000 /m.test(staged) };
+  } finally {
+    await rm(o.indexFile, { force: true });
+  }
+}
+
+export type DiffStat = { filesChanged: number; insertions: number; deletions: number };
+
+/** Line stats between two snapshot commits (either may be a tree hash). */
+export async function snapshotDiff(dir: string, from: string | null, to: string): Promise<DiffStat> {
+  if (!from) return { filesChanged: 0, insertions: 0, deletions: 0 };
+  const root = await toplevel(dir);
+  const out = await git(root, 'diff', '--numstat', '-z', from, to).catch(() => '');
+  const stat: DiffStat = { filesChanged: 0, insertions: 0, deletions: 0 };
+  for (const tok of out.split('\0')) {
+    const m = tok.match(/^(\d+|-)\t(\d+|-)\t/);
+    if (!m) continue; // rename path halves carry no counts
+    stat.filesChanged++;
+    if (m[1] !== '-') stat.insertions += Number(m[1]);
+    if (m[2] !== '-') stat.deletions += Number(m[2]);
+  }
+  return stat;
+}
+
+type TreeEntry = { mode: string; path: string };
+
+async function treeEntries(root: string, treeish: string): Promise<TreeEntry[]> {
+  const out = await git(root, 'ls-tree', '-r', '-z', treeish);
+  return out
+    .split('\0')
+    .filter(Boolean)
+    .map((e) => {
+      const tab = e.indexOf('\t');
+      return { mode: e.slice(0, e.indexOf(' ')), path: e.slice(tab + 1) };
+    });
+}
+
+/**
+ * Returns the worktree to `target`'s tree. Only files that differ between the
+ * `current` snapshot and the target are written (through a temp index, via
+ * checkout-index), and only files present in `current` but absent in the
+ * target are deleted: untracked files no snapshot ever captured (including
+ * oversized skipped files) are left alone. The user's real index is never
+ * read or written by any of this.
+ */
+export async function restoreSnapshot(dir: string, o: { target: string; current: string; indexFile: string }): Promise<void> {
+  const root = await toplevel(dir);
+  const [targetEntries, currentEntries] = await Promise.all([treeEntries(root, o.target), treeEntries(root, o.current)]);
+  const targetPaths = new Map(targetEntries.filter((e) => e.mode !== '160000').map((e) => [e.path, e]));
+  const currentPaths = new Map(currentEntries.filter((e) => e.mode !== '160000').map((e) => [e.path, e]));
+  const changed = new Set((await git(root, 'diff', '--name-only', '-z', o.current, o.target)).split('\0').filter(Boolean));
+  const toWrite = [...changed].filter((p) => targetPaths.has(p));
+  const toDelete = [...currentPaths.keys()].filter((p) => !targetPaths.has(p));
+
+  if (toWrite.length) {
+    await mkdir(dirname(o.indexFile), { recursive: true });
+    await rm(o.indexFile, { force: true });
+    const env = { GIT_INDEX_FILE: o.indexFile };
+    try {
+      await gitEnv(root, env, ['read-tree', o.target]);
+      await gitStdin(root, env, ['checkout-index', '-f', '-z', '--stdin'], toWrite.join('\0') + '\0');
+    } finally {
+      await rm(o.indexFile, { force: true });
+    }
+  }
+  for (const rel of toDelete) {
+    await rm(join(root, rel), { force: true });
+    // Prune directories the deletion emptied, up to (never including) the root.
+    let d = dirname(join(root, rel));
+    while (d.startsWith(root + sep) || d === root) {
+      if (d === root) break;
+      if (!(await rmdir(d).then(() => true).catch(() => false))) break;
+      d = dirname(d);
+    }
+  }
+}
+
+/** Drops a snapshot's ref; the commit then becomes collectable by git gc. */
+export async function deleteSnapshotRef(dir: string, uid: string, turn: number): Promise<void> {
+  await git(dir, 'update-ref', '-d', snapshotRef(uid, turn)).catch(() => {});
 }
