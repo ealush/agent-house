@@ -23,10 +23,18 @@ const UNAVAILABLE: Record<string, string> = {
 const time = (at: number) => (at ? new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
 
 function BlockView({ block, results, agent, snap, onRestore }: { block: Block; results: Record<string, ToolResult>; agent: string | null; snap?: SnapshotInfo; onRestore?: (snap: SnapshotInfo) => void }) {
-  if (block.kind === 'notice') return <PartView part={block.part} />;
+  // data-seq is the search jump target (issue #9): the block key starts with
+  // the seq of its first entry.
+  const seq = parseInt(block.key, 10);
+  if (block.kind === 'notice')
+    return (
+      <div data-seq={seq} style={{ display: 'contents' }}>
+        <PartView part={block.part} />
+      </div>
+    );
   if (block.kind === 'user') {
     return (
-      <div className="msg user">
+      <div className="msg user" data-seq={seq}>
         <div className="bubble">
           {block.parts.map((p, i) => (
             <PartView key={i} part={p} />
@@ -45,13 +53,13 @@ function BlockView({ block, results, agent, snap, onRestore }: { block: Block; r
     );
   }
   return (
-    <div className="msg agent">
+    <div className="msg agent" data-seq={seq}>
       <span className="chip sm" style={{ '--agent': look(agent).color } as React.CSSProperties}>
         <AgentLogo id={agent} size={13} />
       </span>
       <div className="turn">
         {block.items.map((item) => (
-          <ItemView key={item.key} item={item} results={results} />
+          <div key={item.key} data-seq={parseInt(item.key, 10)}><ItemView item={item} results={results} /></div>
         ))}
       </div>
     </div>
@@ -127,6 +135,54 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
     [client, w.uid, w.cwd],
   );
 
+  // Search jump (issue #9): a result asked for one entry by seq. Page older
+  // entries in until it is loaded, then scroll to it and flash it, once.
+  const jumpSeq = useRef<number | null>(null);
+  const jumpTries = useRef(0);
+  const [jumpVersion, setJumpVersion] = useState(0);
+  // A rebuilt projection is a new conversation: start at its end.
+  useEffect(() => {
+    stick.current = jumpSeq.current === null;
+  }, [state.epoch]);
+
+  useEffect(() => {
+    const accept = (jump: { host?: string; uid?: string; seq?: number }) => {
+      if (jump.host !== w.host || jump.uid !== w.uid || typeof jump.seq !== 'number') return;
+      sessionStorage.removeItem('ah.seqJump');
+      jumpSeq.current = jump.seq; jumpTries.current = 0; stick.current = false;
+      setJumpVersion((n) => n + 1);
+    };
+    try {
+      const raw = sessionStorage.getItem('ah.seqJump');
+      if (raw) accept(JSON.parse(raw));
+    } catch {}
+    const listener = (event: Event) => accept((event as CustomEvent).detail);
+    window.addEventListener('ah:search-jump', listener);
+    return () => window.removeEventListener('ah:search-jump', listener);
+  }, [w.host, w.uid]);
+  useEffect(() => {
+    const target = jumpSeq.current;
+    if (target == null || state.status === 'unavailable') return;
+    // Folded tool results and consecutive tool calls share the preceding rendered group.
+    const loaded = state.entries.some((e) => e.seq === target);
+    const candidates = Array.from(scroller.current?.querySelectorAll<HTMLElement>('[data-seq]') ?? []);
+    const el = loaded ? candidates.filter((el) => Number(el.dataset.seq) <= target).sort((a, b) => Number(b.dataset.seq) - Number(a.dataset.seq))[0] : undefined;
+    if (el) {
+      jumpSeq.current = null;
+      el.scrollIntoView({ block: 'center' });
+      el.classList.add('jump-flash');
+      setTimeout(() => el.classList.remove('jump-flash'), 2400);
+      return;
+    }
+    // Not loaded yet: the snapshot holds only the newest page, so page older.
+    if (!loadingOlder && state.hasOlder && target < (state.entries[0]?.seq ?? Infinity) && jumpTries.current < 60) {
+      jumpTries.current++;
+      void loadOlder();
+    } else if (!state.hasOlder && state.entries.length) {
+      jumpSeq.current = null; // older than anything retained; give up quietly
+    }
+  }, [state.entries, state.hasOlder, state.status, loadOlder, loadingOlder, jumpVersion]);
+
   // Follow new output while you're at the bottom; keep your place when you scrolled up,
   // and when older entries are prepended.
   useLayoutEffect(() => {
@@ -141,11 +197,6 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
     prevHeight.current = el.scrollHeight;
     prevFirst.current = first;
   }, [state.entries, w.status, hidden]);
-
-  // A rebuilt projection is a new conversation: start at its end.
-  useEffect(() => {
-    stick.current = true;
-  }, [state.epoch]);
 
   const onScroll = () => {
     const el = scroller.current!;

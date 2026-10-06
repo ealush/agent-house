@@ -30,7 +30,8 @@ import { SideChatStore, SideChatError, changeContext } from './sidechat.ts';
 import { ensureMigrated, getDb } from './db.ts';
 import { importLegacyJson } from './migrate.ts';
 import { FsError, list, makeDir, receive, sendFile, setRoots, roots } from './files.ts';
-import { Peers, proxyHttp, proxyWs } from './peers.ts';
+import { Peers, proxyHttp, proxyWs, peerUrlAllowed } from './peers.ts';
+import { SearchIndexer, combineResponses, type SearchParams } from './search.ts';
 import { Auth, AuthError, clearCookies, type Caller } from './auth.ts';
 import { Gate, LOOPBACK_BIND } from './gate.ts';
 import { HttpError, send, readBody, readJson, str, safeDecode } from './http.ts';
@@ -68,6 +69,7 @@ try {
 }
 const core = new Core(config, viewers);
 const sidechat = new SideChatStore();
+const search = new SearchIndexer(getDb(), () => core.searchSources());
 const gate = new Gate();
 const peers = new Peers(config.peers, PORT);
 core.peers = peers;
@@ -104,6 +106,28 @@ async function projectSuggestions(windowPaths: string[]): Promise<string[]> {
   }
   out.add('~');
   return [...out];
+}
+
+/** Query params for /api/search and /api/search/all. Values are only ever bound parameters downstream. */
+function searchParams(url: URL): SearchParams {
+  const scope = url.searchParams.get('in');
+  const num = (k: string) => {
+    const n = Number(url.searchParams.get(k));
+    return Number.isFinite(n) && n > 0 ? n : undefined;
+  };
+  return {
+    q: (url.searchParams.get('q') ?? '').slice(0, 500),
+    scope: scope === 'transcripts' || scope === 'chats' ? scope : 'all',
+    role: url.searchParams.get('role') ?? undefined,
+    project: url.searchParams.get('p') ?? undefined,
+    host: url.searchParams.get('h') ?? undefined,
+    model: url.searchParams.get('m') ?? undefined,
+    limit: num('limit'),
+    offset: num('offset'),
+    from: num('from'),
+    to: num('to'),
+    order: url.searchParams.get('sort') === 'recent' ? 'recent' : undefined,
+  };
 }
 
 // ---------- API (reached only after the gate in handle())
@@ -612,7 +636,72 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   }
 
   if ((m = route('GET', /^\/api\/chats\/([\w-]{1,64})$/))) {
-    return send(res, 200, { messages: await sidechat.history(m[1]) });
+    return send(res, 200, { messages: await sidechat.history(m[1], Number(url.searchParams.get('msgId')) || undefined) });
+  }
+
+  // ---------- full-text search over transcripts and side chats (issue #9)
+
+  if (route('GET', /^\/api\/search\/status$/)) return send(res, 200, await search.status());
+
+  if (route('GET', /^\/api\/search$/)) return send(res, 200, await search.search(searchParams(url)));
+
+  if (route('GET', /^\/api\/search\/all$/)) {
+    // Hub fan-out: our own results plus every peer's, merged. A peer that is
+    // offline or errors becomes a note in the response, never a failed search.
+    const params = searchParams(url);
+    const limit = Math.min(50, Math.max(1, Math.floor(params.limit ?? 20)));
+    const offset = Math.max(0, Math.floor(params.offset ?? 0));
+    const needed = offset + limit;
+    const selected = (host: string) => !params.host || host.toLowerCase().includes(params.host.toLowerCase());
+    // Every host supplies the ordered prefix needed for this global page.
+    // Applying the global offset on each host would lose or repeat sessions.
+    const prefix = async (get: (p: SearchParams) => Promise<Awaited<ReturnType<typeof search.search>>>) => {
+      let body: Awaited<ReturnType<typeof search.search>> | undefined;
+      const results: NonNullable<typeof body>['results'] = [];
+      do {
+        const next = await get({ ...params, host: undefined, order: 'recent', limit: Math.min(50, needed - results.length), offset: results.length });
+        body = next;
+        results.push(...next.results);
+        if (!next.results.length || results.length >= next.total) break;
+      } while (results.length < needed);
+      return { ...body!, results };
+    };
+    const parts = await Promise.all([
+      ...(selected(hostname()) ? [prefix((p) => search.search(p)).then((body) => ({ host: hostname(), body }))] : []),
+      ...peers.list().filter((peer) => selected(peer.name)).map(async (peer) => {
+        if (!peer.online || !peerUrlAllowed(peer.url)) return { host: peer.name, error: 'offline' };
+        try {
+          const body = await prefix(async (p) => {
+            const qs = new URLSearchParams();
+            for (const [k, v] of Object.entries({ q: p.q, in: p.scope, role: p.role, p: p.project, m: p.model, limit: p.limit, offset: p.offset, from: p.from, to: p.to, sort: 'recent' })) {
+              if (v !== undefined && v !== 'all') qs.set(k, String(v));
+            }
+            const r = await fetch(`${peer.url}/api/search?${qs}`, {
+              headers: peer.token ? { authorization: `Bearer ${peer.token}` } : {},
+              signal: AbortSignal.timeout(3000),
+              redirect: 'manual',
+            });
+            if (!r.ok) throw new Error(`http ${r.status}`);
+            return await r.json();
+          });
+          return { host: peer.name, body };
+        } catch { return { host: peer.name, error: 'unreachable' }; }
+      }),
+    ]);
+    return send(res, 200, combineResponses(parts, { offset, limit }));
+  }
+
+  if (route('POST', /^\/api\/search\/rebuild$/)) {
+    void search.rebuild().catch((err) => console.error('search rebuild failed:', err));
+    audit(req, 'search.rebuild');
+    return send(res, 200, await search.status());
+  }
+
+  if (route('POST', /^\/api\/search\/enabled$/)) {
+    const on = (await readJson(req)).enabled === true;
+    await search.setEnabled(on);
+    audit(req, on ? 'search.enable' : 'search.disable');
+    return send(res, 200, await search.status());
   }
 
   if ((m = path.match(/^\/api\/windows\/(@\d+)(\/capture)?$/))) {
@@ -894,6 +983,7 @@ await importLegacyJson(getDb()).then(
 );
 await core.loadPrompts();
 core.start();
+search.start();
 peers.start();
 
 const server: Server = createServer(handle);

@@ -29,10 +29,14 @@ export async function startAh(config: Record<string, unknown> = {}, dir = mkdtem
   const files = join(dir, 'files');
   mkdirSync(join(dir, 'config', 'ah'), { recursive: true });
   mkdirSync(files, { recursive: true });
+  mkdirSync(join(dir, 'home'), { recursive: true });
   mkdirSync(join(dir, 'tmux'), { recursive: true, mode: 0o700 });
   writeFileSync(join(dir, 'config', 'ah', 'config.json'), JSON.stringify({ defaultSession: 'it', projectRoots: [files], files: { roots: [files] }, ...config }));
   const env: NodeJS.ProcessEnv = {
     ...process.env,
+    HOME: join(dir, 'home'),
+    GROK_HOME: join(dir, 'grok'),
+    XDG_DATA_HOME: join(dir, 'data'),
     XDG_CONFIG_HOME: join(dir, 'config'),
     XDG_STATE_HOME: join(dir, 'state'),
     XDG_CACHE_HOME: join(dir, 'cache'),

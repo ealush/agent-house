@@ -22,7 +22,7 @@ export class SideChatError extends Error {
 
 export type Subscription = { id: string; name: string; baseUrl: string; model: string; apiKey: string };
 export type SubscriptionInfo = { id: string; name: string; baseUrl: string; model: string; hasKey: boolean; isDefault: boolean };
-export type ChatMessage = { role: 'user' | 'assistant'; text: string; at: number };
+export type ChatMessage = { role: 'user' | 'assistant'; text: string; at: number; /** ChatMessage row id, so search results can jump to one message (issue #9). */ id?: number };
 export type ChatContext = { title: string; session: string; branch: string | null; pr: number | null; diff: string };
 
 /**
@@ -254,9 +254,11 @@ export class SideChatStore {
     await this.db.setting.upsert({ where: { key: DEFAULT_SETTING }, create: { key: DEFAULT_SETTING, value: id }, update: { value: id } });
   }
 
-  async history(uid: string): Promise<ChatMessage[]> {
+  async history(uid: string, aroundId?: number): Promise<ChatMessage[]> {
     const rows = await this.db.chatMessage.findMany({ where: { uid }, orderBy: { id: 'asc' } });
-    return rows.slice(-HISTORY_LIMIT).map((r) => ({ role: r.role as 'user' | 'assistant', text: r.text, at: r.at }));
+    const index = aroundId === undefined ? -1 : rows.findIndex((r) => r.id === aroundId);
+    const start = index < 0 ? Math.max(0, rows.length - HISTORY_LIMIT) : Math.max(0, index - Math.floor(HISTORY_LIMIT / 2));
+    return rows.slice(start, start + HISTORY_LIMIT).map((r) => ({ role: r.role as 'user' | 'assistant', text: r.text, at: r.at, id: r.id }));
   }
 
   /**
@@ -357,6 +359,7 @@ export class SideChatStore {
       this.db.chatMessage.deleteMany({ where: { uid } }),
       this.db.chatMessage.createMany({ data: log.map((m) => ({ uid, role: m.role, text: m.text, at: m.at })) }),
     ]);
-    return { message: { role: 'assistant', text: content, at }, followups };
+    const saved = await this.db.chatMessage.findFirst({ where: { uid }, orderBy: { id: 'desc' }, select: { id: true } });
+    return { message: { role: 'assistant', text: content, at, id: saved?.id }, followups };
   }
 }

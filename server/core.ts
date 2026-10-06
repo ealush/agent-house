@@ -38,6 +38,7 @@ import {
 import { SnapshotStore, type SnapshotInfo } from './snapshots.ts';
 import { Push } from './push.ts';
 import type { Peers } from './peers.ts';
+import type { TranscriptSource } from './search.ts';
 
 type LaunchChange = { model?: string; effort?: string };
 export type QueueItem = {
@@ -1245,6 +1246,33 @@ export class Core {
 
   record(ref: string): SessionRecord | undefined {
     return this.registry.get(ref);
+  }
+
+  /**
+   * Transcripts the full-text search index reads (issue #9): every discovered
+   * conversation whose harness has a feed adapter, addressed by its registry
+   * id when ah ran it and by `harness:harnessId` otherwise.
+   */
+  async searchSources(): Promise<TranscriptSource[]> {
+    const transcripts = await discover();
+    const out: TranscriptSource[] = [];
+    for (const t of transcripts) {
+      const adapter = this.config.presets.find((p) => p.id === t.harness)?.feed;
+      if (!adapter) continue;
+      const rec = this.registry.all().find((r) => r.harness === t.harness && r.harnessId === t.harnessId);
+      out.push({
+        file: t.file,
+        harness: t.harness,
+        adapter,
+        harnessId: t.harnessId,
+        ref: rec?.id ?? `${t.harness}:${t.harnessId}`,
+        uid: rec?.id ?? null,
+        title: t.title,
+        cwd: t.cwd,
+        model: t.model,
+      });
+    }
+    return out;
   }
 }
 

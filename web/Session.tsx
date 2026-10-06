@@ -127,6 +127,8 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   // Past-chats browser inside the chat panel; resets with the session.
   const [chatHistory, setChatHistory] = useState(false);
+  // A search result can ask for one chat at one message (issue #9).
+  const [chatJump, setChatJump] = useState<{ uid: string; msgId: number } | null>(null);
   const [keysPref, setKeysPref] = stored<'auto' | 'on' | 'off'>('ah.keys', 'auto');
   const [viewPref, setViewPref] = stored<View>('ah.view', 'terminal');
   const [menu, setMenu] = useState(false);
@@ -146,7 +148,38 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
     setTab('main');
     setRenaming(false);
     setChatHistory(false);
+    setChatJump(null);
+    try {
+      const seqJump = JSON.parse(sessionStorage.getItem('ah.seqJump') ?? 'null');
+      if (seqJump?.host === w.host && seqJump?.uid === w.uid) setViewPref('gui');
+      const raw = sessionStorage.getItem('ah.chatJump');
+      if (raw) {
+        const jump = JSON.parse(raw) as { host?: string; uid?: string; msgId?: number };
+        if (jump.host === w.host && jump.uid === w.uid && typeof jump.msgId === 'number') {
+          sessionStorage.removeItem('ah.chatJump');
+          setChatJump({ uid: jump.uid, msgId: jump.msgId });
+          setChatHistory(true);
+          setPanel('chat');
+          setPanelCollapsed(false);
+          setTab('chat');
+        }
+      }
+    } catch {}
   }, [w.key]);
+  useEffect(() => {
+    const jump = (event: Event) => {
+      const detail = (event as CustomEvent<{ host: string; uid: string; seq?: number; msgId?: number }>).detail;
+      if (detail.host !== w.host || detail.uid !== w.uid) return;
+      if (detail.seq != null) { setViewPref('gui'); setTab('main'); }
+      if (detail.msgId != null) {
+        sessionStorage.removeItem('ah.chatJump');
+        setChatJump({ uid: w.uid, msgId: detail.msgId });
+        setChatHistory(true); setPanel('chat'); setPanelCollapsed(false); setTab('chat');
+      }
+    };
+    window.addEventListener('ah:search-jump', jump);
+    return () => window.removeEventListener('ah:search-jump', jump);
+  }, [w.host, w.uid]);
   // The terminal supplies its own input, so the graphical composer lives only
   // in the GUI view. "Reply" focuses whichever input is showing.
   const focusInput = () => {
@@ -274,7 +307,7 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
     ) : p === 'diff' ? (
       <ChangesPanel client={client} windowId={w.id} onComment={w.agent ? comment : undefined} />
     ) : p === 'chat' ? (
-      chatHistory ? <ChatHistory client={client} /> : <SideChat client={client} w={w} onSent={onSent} />
+      chatHistory ? <ChatHistory client={client} jump={chatJump} /> : <SideChat client={client} w={w} onSent={onSent} />
     ) : (
       <FilesPanel
         fs={client.fs}

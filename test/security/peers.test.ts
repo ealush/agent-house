@@ -91,3 +91,16 @@ test("revoking the peer's token cuts the hub off, even with a valid hub session"
   await http(peer, 'DELETE', `/api/auth/tokens/${tokens[0].id}`, { token: peer.localToken() });
   assert.equal((await http(hub, 'GET', '/h/peer/api/state', { cookie })).status, 401);
 });
+
+
+test('aggregate search never follows a peer redirect with its token', async () => {
+  await until(() => online('fake'), 10000, 'fake online');
+  const cookie = await signIn(hub);
+  evilSaw.length = 0; peerSaw.length = 0;
+  const result = await http(hub, 'GET', '/api/search/all?q=kettle&h=fake', { cookie });
+  assert.equal(result.status, 200);
+  assert.ok(result.json().notes.some((n: any) => n.host === 'fake' && n.error === 'unreachable'));
+  assert.deepEqual(evilSaw, [], 'search leaked credentials to a redirect target');
+  assert.ok(peerSaw.length > 0);
+  for (const r of peerSaw) { assert.equal(r.cookie, undefined); assert.equal(r.auth, 'Bearer token-for-fake'); }
+});

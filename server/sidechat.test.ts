@@ -5,7 +5,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SideChatStore, changeContext, parseStructured, type ChatContext } from './sidechat.ts';
-import { ensureMigrated } from './db.ts';
+import { getDb, ensureMigrated } from './db.ts';
 
 const file = () => join(tmpdir(), `ah-sidechat-test-${process.pid}-${Math.random().toString(36).slice(2)}.db`);
 
@@ -211,4 +211,14 @@ test('changeContext: clean tree says so, non-repo rejects', async () => {
   assert.match(clean.diff, /\(working tree clean\)/);
   assert.match(clean.diff, /Recent commits:/);
   await assert.rejects(changeContext(join(tmpdir(), `ah-sidechat-norepo-${process.pid}`)), /not a git repository/);
+});
+
+
+test('historic search jumps include messages older than the latest chat window', async () => {
+  const { store, path } = await freshStore();
+  const db = getDb(path);
+  await db.chatMessage.createMany({ data: Array.from({ length: 80 }, (_, i) => ({ uid: 'old', role: 'user', text: `message ${i}`, at: i + 1 })) });
+  const first = await db.chatMessage.findFirstOrThrow({ where: { uid: 'old' }, orderBy: { id: 'asc' } });
+  assert.ok(!(await store.history('old')).some((m) => m.id === first.id));
+  assert.ok((await store.history('old', first.id)).some((m) => m.id === first.id));
 });
