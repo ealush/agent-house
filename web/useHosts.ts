@@ -42,11 +42,13 @@ export function useHosts(onState: (merged: State) => void) {
     const tag = (s: State, self: boolean) => ({
       windows: s.windows.map((w) => ({ ...w, host: s.hostname, key: self ? w.id : `${s.hostname}/${w.id}` })),
       history: s.history.map((h) => ({ ...h, host: s.hostname })),
+      runs: (s.runs ?? []).map((r) => ({ ...r, host: s.hostname })),
     });
     const parts = [tag(local, true), ...peerNames.filter((n) => peers[n]).map((n) => tag({ ...peers[n], hostname: n }, false))];
     return {
       ...local,
       windows: parts.flatMap((p) => p.windows),
+      runs: parts.flatMap((p) => p.runs),
       history: parts.flatMap((p) => p.history).sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.at - a.at),
     };
   }, [local, peers, peerKey]);

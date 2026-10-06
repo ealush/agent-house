@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmod, mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -304,4 +304,24 @@ test('snapshots: repo with no commits yet', async () => {
   const safety = await createSnapshot(dir, { uid: 'u3', turn: 3, indexFile: idx, parent: s2.commit, maxFileBytes: 1024 });
   await restoreSnapshot(dir, { target: s2.commit, current: safety.commit, indexFile: idx });
   assert.equal(await readFile(join(dir, 'new.txt'), 'utf8'), 'edited\n');
+});
+
+test('snapshots restore file/directory transitions and retain tracked files matched by ignore rules', async () => {
+  const dir = await repo();
+  const indexFile = join(dir, '..', 'transition-index');
+  const snapshot = (turn: number, parent: string | null) => createSnapshot(dir, { uid: 'transitions', turn, indexFile, parent, maxFileBytes: 1024 });
+  await writeFile(join(dir, '.gitignore'), 'a.txt\n');
+  const file = await snapshot(1, null);
+  assert.match(execFileSync('git', ['-C', dir, 'ls-tree', '-r', '--name-only', file.commit], { encoding: 'utf8' }), /a\.txt/);
+  await rm(join(dir, 'a.txt'));
+  await mkdir(join(dir, 'a.txt'));
+  await writeFile(join(dir, 'a.txt', 'child'), 'child\n');
+  // Clear the ignore rule so the new directory can be captured.
+  await writeFile(join(dir, '.gitignore'), '');
+  const directory = await snapshot(2, file.commit);
+  await restoreSnapshot(dir, { target: file.commit, current: directory.commit, indexFile });
+  assert.equal(await readFile(join(dir, 'a.txt'), 'utf8'), 'hello\n');
+  const safety = await snapshot(3, directory.commit);
+  await restoreSnapshot(dir, { target: directory.commit, current: safety.commit, indexFile });
+  assert.equal(await readFile(join(dir, 'a.txt', 'child'), 'utf8'), 'child\n');
 });

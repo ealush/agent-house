@@ -133,7 +133,7 @@ export type Config = {
   /** How many sent prompts to remember for "recent" (0 = don't keep any). They're sensitive. */
   promptHistory: number;
   /** Per-turn snapshots (F39): size cap per untracked file, per-session turn cap, days kept after a session ends. */
-  snapshots: { maxFileBytes: number; keepTurns: number; retentionDays: number };
+  snapshots: { enabled?: boolean; maxFileBytes: number; keepTurns: number; retentionDays: number };
   /** App sign-in on top of Tailscale. See server/auth.ts. */
   auth: { mode: 'passkey' | 'off'; idleHours: number; maxDays: number };
   presets: Preset[];

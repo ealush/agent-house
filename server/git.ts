@@ -3,7 +3,7 @@
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
-import { mkdir, rm, rmdir, stat } from 'node:fs/promises';
+import { mkdir, rm, rmdir, stat, lstat } from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { cachedSize, invalidateSize, requestSize } from './size.ts';
@@ -435,16 +435,17 @@ export async function createSnapshot(
   const skipped: string[] = [];
   const others = await git(root, 'ls-files', '--others', '--exclude-standard', '-z').catch(() => '');
   for (const rel of others.split('\0').filter(Boolean)) {
-    const st = await stat(join(root, rel)).catch(() => null);
+    const st = await lstat(join(root, rel)).catch(() => null);
     if (st?.isFile() && st.size > o.maxFileBytes) skipped.push(rel);
   }
   skipped.sort();
 
-  await mkdir(dirname(o.indexFile), { recursive: true });
+  await mkdir(dirname(o.indexFile), { recursive: true, mode: 0o700 });
   await rm(o.indexFile, { force: true });
   const env = { GIT_INDEX_FILE: o.indexFile };
   try {
-    await gitEnv(root, env, ['add', '-A', '--', '.', ...skipped.map((p) => `:(exclude)${p}`)]);
+    if (head) await gitEnv(root, env, ['read-tree', head]);
+    await gitEnv(root, env, ['add', '-A', '--', '.', ...skipped.map((p) => `:(exclude,literal)${p}`)]);
     const tree = (await gitEnv(root, env, ['write-tree'])).trim();
     const parent = o.parent ?? head;
     const commit = (
@@ -512,17 +513,6 @@ export async function restoreSnapshot(dir: string, o: { target: string; current:
   const toWrite = [...changed].filter((p) => targetPaths.has(p));
   const toDelete = [...currentPaths.keys()].filter((p) => !targetPaths.has(p));
 
-  if (toWrite.length) {
-    await mkdir(dirname(o.indexFile), { recursive: true });
-    await rm(o.indexFile, { force: true });
-    const env = { GIT_INDEX_FILE: o.indexFile };
-    try {
-      await gitEnv(root, env, ['read-tree', o.target]);
-      await gitStdin(root, env, ['checkout-index', '-f', '-z', '--stdin'], toWrite.join('\0') + '\0');
-    } finally {
-      await rm(o.indexFile, { force: true });
-    }
-  }
   for (const rel of toDelete) {
     await rm(join(root, rel), { force: true });
     // Prune directories the deletion emptied, up to (never including) the root.
@@ -533,6 +523,18 @@ export async function restoreSnapshot(dir: string, o: { target: string; current:
       d = dirname(d);
     }
   }
+  if (toWrite.length) {
+    await mkdir(dirname(o.indexFile), { recursive: true, mode: 0o700 });
+    await rm(o.indexFile, { force: true });
+    const env = { GIT_INDEX_FILE: o.indexFile };
+    try {
+      await gitEnv(root, env, ['read-tree', o.target]);
+      await gitStdin(root, env, ['checkout-index', '-f', '-z', '--stdin'], toWrite.join('\0') + '\0');
+    } finally {
+      await rm(o.indexFile, { force: true });
+    }
+  }
+
 }
 
 /** Drops a snapshot's ref; the commit then becomes collectable by git gc. */

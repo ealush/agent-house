@@ -179,10 +179,11 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
             )}
             {empty && <div className="gui-empty muted">{state.status === 'connecting' ? 'Connecting…' : 'No messages yet.'}</div>}
 
-            {blocks.map((b, i) => {
-              // User blocks start turns, in order: the nth user block is turn n.
-              const turn = b.kind === 'user' ? blocks.slice(0, i + 1).filter((x) => x.kind === 'user').length : 0;
-              const snap = turn ? snaps.find((s) => s.kind === 'turn' && s.turn === turn) : undefined;
+            {blocks.map((b) => {
+              // Snapshot numbers include safety captures and start when ah first
+              // runs the session, so a visible-page ordinal is not a turn id.
+              const prompt = b.kind === 'user' ? b.parts.filter((p) => p.type === 'text').map((p) => p.text).join('\n').replace(/\s+/g, ' ').trim().slice(0, 120) : '';
+              const snap = b.kind === 'user' && b.at ? snaps.filter((s) => s.kind === 'turn' && Math.abs(s.createdAt * 1000 - b.at) < 15_000 && (!s.promptExcerpt || s.promptExcerpt === prompt)).sort((a, c) => Math.abs(a.createdAt * 1000 - b.at) - Math.abs(c.createdAt * 1000 - b.at))[0] : undefined;
               return <BlockView key={b.key} block={b} results={state.results} agent={w.agent} snap={snap} onRestore={restoreSnap} />;
             })}
 

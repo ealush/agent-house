@@ -145,13 +145,13 @@ export class Core {
   private lastPrune = 0;
   peers: Peers | null = null;
 
-  constructor(config: Config, viewers: Map<string, string[]>, registry = new Registry(), prompts = new PromptStore(), snapshots = new SnapshotStore()) {
+  constructor(config: Config, viewers: Map<string, string[]>, registry = new Registry(), prompts = new PromptStore(), snapshots = new SnapshotStore(), recipes = new RecipeStore()) {
     this.registry = registry;
     this.promptStore = prompts;
     this.snapshotStore = snapshots;
     this.config = config;
     this.viewers = viewers;
-    this.recipeStore = new RecipeStore();
+    this.recipeStore = recipes;
     this.handoffEngine = new HandoffEngine(this.recipeStore, (uid, text, source) => this.sendHandoff(uid, text, source));
     try {
       if (existsSync(HIDDEN_FILE)) this.hidden = new Set(JSON.parse(readFileSync(HIDDEN_FILE, 'utf8')));
@@ -554,7 +554,7 @@ export class Core {
         if (w.agent) {
           this.sentAt.set(w.uid, Date.now());
           // Snapshot before the prompt lands, so the turn starts from a known state (F39).
-          await this.captureTurnStart(target.uid, text);
+          if (enter) await this.captureTurnStart(target.uid, text);
         }
         await t.pasteText(target.windowId, text, enter);
         if (launchChange) this.applyLaunchChange(target.uid, launchChange);
@@ -650,7 +650,7 @@ export class Core {
         // Remove before typing: at-most-once, never a duplicate turn (F16).
         this.registry.setMeta(w.uid, 'ah.queue', rest.length ? rest : undefined);
         this.sentAt.set(w.uid, Date.now());
-        await this.captureTurnStart(w.uid, next.text);
+        if (next.enter) await this.captureTurnStart(w.uid, next.text);
         try {
           await t.pasteText(w.id, next.text, next.enter);
           if (next.launchChange) this.applyLaunchChange(w.uid, next.launchChange);
@@ -756,7 +756,7 @@ export class Core {
         this.sentAt.set(uid, Date.now());
         // The interrupted turn is over; this delivery starts a new one (F39).
         this.turnPeriod.delete(uid);
-        await this.captureTurnStart(uid, next.text);
+        if (next.enter) await this.captureTurnStart(uid, next.text);
       }
       await t.pasteText(w.id, next.text, next.enter);
       if (next.launchChange) this.applyLaunchChange(uid, next.launchChange);
@@ -769,12 +769,12 @@ export class Core {
   // ---------- per-turn snapshots (F39)
 
   private snapConfig() {
-    return { maxFileBytes: 10 * 1024 * 1024, keepTurns: 50, retentionDays: 7, ...(this.config.snapshots ?? {}) };
+    return { maxFileBytes: this.config.snapshots?.maxFileBytes ?? 10 * 1024 * 1024, keepTurns: this.config.snapshots?.keepTurns ?? 50, retentionDays: this.config.snapshots?.retentionDays ?? 7 };
   }
 
   private snapSettings(uid: string): { enabled: boolean; lastTurn: number } {
     const s = this.registry.get(uid)?.meta['ah.snapshots'] as { enabled?: unknown; lastTurn?: unknown } | undefined;
-    return { enabled: s?.enabled !== false, lastTurn: typeof s?.lastTurn === 'number' ? s.lastTurn : 0 };
+    return { enabled: this.config.snapshots?.enabled !== false && s?.enabled !== false, lastTurn: typeof s?.lastTurn === 'number' ? s.lastTurn : 0 };
   }
 
   /** Serialize snapshot work per session: captures and restores never overlap. */
@@ -810,7 +810,7 @@ export class Core {
       const rec = this.registry.get(uid);
       if (!rec || !rec.harness || rec.harness === 'shell') return null;
       const settings = this.snapSettings(uid);
-      if (!settings.enabled) return null;
+      if (kind !== 'safety' && !settings.enabled) return null;
       const cwd = expandHome(rec.cwd);
       if (!(await isDir(cwd))) return null;
       const latest = await this.snapshotStore.latest(uid).catch(() => null);
@@ -849,7 +849,7 @@ export class Core {
     const rec = this.registry.get(uid);
     if (!rec) throw new CoreError(404, 'session not found');
     const snapshots = await this.snapshotStore.list(uid).catch(() => []);
-    const available = await mainRepo(expandHome(rec.cwd)).then(() => true).catch(() => false);
+    const available = !!rec.harness && rec.harness !== 'shell' && await mainRepo(expandHome(rec.cwd)).then(() => true).catch(() => false);
     const w = (await this.current()).windows.find((x) => x.uid === uid);
     return {
       snapshots,
@@ -889,17 +889,28 @@ export class Core {
       await new Promise((r) => setTimeout(r, 500));
       w = (await this.tick()).windows.find((x) => x.uid === uid);
     }
-    if (w && (w.status === 'busy' || w.status === 'waiting')) {
-      if (!opts.interrupt) throw new CoreError(409, 'the agent is working; stop it first or confirm the interrupt');
-      await this.interrupt(uid);
-    }
     const out = await this.withInput(uid, async () => {
+      w = (await buildWindows(this.config, this.viewers, this.registry)).find((x) => x.uid === uid);
+      if (w && (w.status === 'busy' || w.status === 'waiting' || this.justSent(uid))) {
+        if (!opts.interrupt) throw new CoreError(409, 'the agent is working; stop it first or confirm the interrupt');
+        await t.tmux('send-keys', '-t', w.id, ...this.interruptKeys(w));
+        this.sentAt.delete(uid);
+        for (let i = 0; i < 12; i++) {
+          await sleep(500);
+          w = (await buildWindows(this.config, this.viewers, this.registry)).find((x) => x.uid === uid);
+          if (!w || (w.status !== 'busy' && w.status !== 'waiting')) break;
+        }
+        if (w && (w.status === 'busy' || w.status === 'waiting')) throw new CoreError(409, 'the agent is working; it did not stop after the interrupt');
+      }
+      this.turnPeriod.add(uid);
       const cwd = expandHome(rec.cwd);
       const safety = await this.captureSnapshot(uid, 'safety', `Before restoring turn ${turn}`);
       if (!safety) throw new CoreError(400, 'could not snapshot the current state; nothing was restored');
       try {
         await restoreSnapshotFiles(cwd, { target: target.commit, current: safety.commit, indexFile: join(STATE_DIR, 'snapshots', uid, 'index-restore') });
       } catch (err) {
+        // Undo a partial checkout using the safety snapshot before reporting failure.
+        await restoreSnapshotFiles(cwd, { target: safety.commit, current: target.commit, indexFile: join(STATE_DIR, 'snapshots', uid, 'index-recover') }).catch(() => {});
         throw new CoreError(400, `restore failed: ${(err as Error).message}`);
       }
       return { safety, restored: target };

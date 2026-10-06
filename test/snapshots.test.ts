@@ -87,6 +87,9 @@ test('per-turn snapshots: turns are captured, restore rolls files back and is it
     assert.equal((await snaps()).enabled, false);
     await send('third');
     assert.equal((await snaps()).snapshots.length, before, 'no new snapshot while disabled');
+    const whileDisabled = await http(ah, 'POST', `/api/sessions/${uid}/snapshots/2/restore`, { body: {} });
+    assert.equal(whileDisabled.status, 200, whileDisabled.body);
+    assert.equal(whileDisabled.json().safety.kind, 'safety', 'disabled automatic capture still protects restores');
     await http(ah, 'POST', `/api/sessions/${uid}/snapshots/toggle`, { body: { enabled: true } });
   } finally {
     await cleanup(ah);

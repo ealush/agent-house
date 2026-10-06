@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ensureMigrated } from './db.ts';
 import { SnapshotStore } from './snapshots.ts';
+import { RecipeStore } from './recipes.ts';
 import { Core } from './core.ts';
 import { Registry } from './registry.ts';
 import { PromptStore } from './prompts.ts';
@@ -49,7 +50,7 @@ test('Core.pruneSnapshots: turn cap keeps the newest, rows of vanished sessions 
   const path = await freshDb();
   const store = new SnapshotStore(path);
   const config = { ...loadConfig(), snapshots: { maxFileBytes: 1024, keepTurns: 3, retentionDays: 7 } };
-  const core = new Core(config, new Map(), new Registry(path), new PromptStore(path), store);
+  const core = new Core(config, new Map(), new Registry(path), new PromptStore(path), store, new RecipeStore(path));
   const old = Math.floor(Date.now() / 1000) - 8 * 86_400;
   const recent = Math.floor(Date.now() / 1000);
   for (let turn = 1; turn <= 6; turn++) await store.create(row('live1', turn, recent));
