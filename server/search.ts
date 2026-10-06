@@ -7,11 +7,12 @@
 // so a refresh only re-reads what changed. Disabling search drops the FTS
 // tables outright; the indexed text does not linger.
 import { createReadStream } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { open, stat } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
+import { createHash } from 'node:crypto';
 import { hostname } from 'node:os';
 import { Prisma, type PrismaClient } from '@prisma/client';
-import { ADAPTERS } from './feed/feed.ts';
+import { ADAPTERS, DOC_ADAPTERS } from './feed/feed.ts';
 import type { Entry } from './feed/schema.ts';
 
 export type TranscriptSource = {
@@ -38,6 +39,9 @@ export type SearchParams = {
   model?: string;
   limit?: number;
   offset?: number;
+  from?: number;
+  to?: number;
+  order?: 'recent';
 };
 
 export type SearchExcerpt = { seq: number | null; msgId: number | null; role: string; at: number; snippet: string };
@@ -136,12 +140,13 @@ export function entryText(entry: Entry): string {
 // ---------- result merging across hosts
 
 /** Merges per-host responses (hub fan-out): failures become notes, never a failed search. */
-export function combineResponses(parts: Array<{ host: string; body?: SearchResponse; error?: string }>): SearchResponse {
+export function combineResponses(parts: Array<{ host: string; body?: SearchResponse; error?: string }>, page: { offset?: number; limit?: number } = {}): SearchResponse {
   const notes: Array<{ host: string; error: string }> = [];
   const results: SearchHit[] = [];
   let enabled = false;
   let building = false;
   let tookMs = 0;
+  let total = 0;
   for (const part of parts) {
     if (!part.body) {
       notes.push({ host: part.host, error: part.error ?? 'unreachable' });
@@ -150,11 +155,12 @@ export function combineResponses(parts: Array<{ host: string; body?: SearchRespo
     enabled ||= part.body.enabled;
     building ||= part.body.building;
     tookMs = Math.max(tookMs, part.body.tookMs);
-    results.push(...part.body.results);
+    total += part.body.total;
+    results.push(...part.body.results.map((hit) => ({ ...hit, host: part.host })));
     notes.push(...part.body.notes);
   }
-  results.sort((a, b) => b.at - a.at || (a.ref ?? a.uid ?? '').localeCompare(b.ref ?? b.uid ?? ''));
-  return { enabled, building, results, total: results.length, tookMs, notes };
+  results.sort((a, b) => b.at - a.at || a.host.localeCompare(b.host) || a.kind.localeCompare(b.kind) || (a.ref ?? a.uid ?? '').localeCompare(b.ref ?? b.uid ?? ''));
+  return { enabled, building, results: results.slice(page.offset ?? 0, page.limit === undefined ? undefined : (page.offset ?? 0) + page.limit), total, tookMs, notes };
 }
 
 // ---------- the indexer
@@ -181,6 +187,13 @@ export class SearchIndexer {
   building = false;
   private lastBuiltAt = 0;
   private sourcesKnown = 0;
+  private mutations: Promise<unknown> = Promise.resolve();
+
+  private serialize<T>(fn: () => Promise<T>): Promise<T> {
+    const task = this.mutations.catch(() => {}).then(fn);
+    this.mutations = task;
+    return task;
+  }
 
   constructor(db: PrismaClient, listTranscripts: () => Promise<TranscriptSource[]>) {
     this.db = db;
@@ -218,17 +231,18 @@ export class SearchIndexer {
   }
 
   /** Disable drops the indexed content itself, not just the UI. Enable rebuilds from scratch. */
-  async setEnabled(on: boolean): Promise<void> {
-    if (!on) {
-      await this.db.$executeRawUnsafe(`DROP TABLE IF EXISTS transcript_fts`);
-      await this.db.$executeRawUnsafe(`DROP TABLE IF EXISTS chat_fts`);
-      await this.db.$executeRawUnsafe(`DROP TABLE IF EXISTS SearchSource`);
-      await this.setSetting('0');
-      return;
-    }
-    await this.setSetting('1');
-    await this.ensureTables();
-    await this.rebuild();
+  setEnabled(on: boolean): Promise<void> {
+    return this.serialize(async () => {
+      await this.setSetting(on ? '1' : '0');
+      if (!on) {
+        await this.db.$executeRawUnsafe(`DROP TABLE IF EXISTS transcript_fts`);
+        await this.db.$executeRawUnsafe(`DROP TABLE IF EXISTS chat_fts`);
+        await this.db.$executeRawUnsafe(`DROP TABLE IF EXISTS SearchSource`);
+        return;
+      }
+      await this.ensureTables();
+      await this.run(true);
+    });
   }
 
   start() {
@@ -243,24 +257,28 @@ export class SearchIndexer {
   }
 
   /** Full rebuild: every source is re-read, stale rows for it are dropped first. */
-  async rebuild(): Promise<void> {
-    if (!(await this.enabled())) return;
-    await this.ensureTables();
-    return this.run(true);
+  rebuild(): Promise<void> {
+    return this.serialize(async () => {
+      if (!(await this.enabled())) return;
+      await this.ensureTables();
+      await this.run(true);
+    });
   }
 
-  /** Incremental pass: stat fingerprints decide what (if anything) changed. */
-  async refresh(): Promise<void> {
-    if (!(await this.enabled())) return;
-    await this.ensureTables();
-    return this.run(false);
+  /** Incremental pass, serialized with rebuilds and toggles. */
+  refresh(): Promise<void> {
+    return this.serialize(async () => {
+      if (!(await this.enabled())) return;
+      await this.ensureTables();
+      await this.run(false);
+    });
   }
 
   private run(force: boolean): Promise<void> {
     this.running ??= (async () => {
       this.building = true;
       try {
-        const sources = await this.listTranscripts().catch(() => [] as TranscriptSource[]);
+        const sources = await this.listTranscripts();
         this.sourcesKnown = sources.length + 1; // transcripts + the chat store
         for (const src of sources) await this.indexTranscript(src, force).catch((err) => console.error(`search index ${src.file}:`, err));
         await this.pruneTranscripts(sources);
@@ -293,11 +311,14 @@ export class SearchIndexer {
   }
 
   private async indexTranscript(src: TranscriptSource, force: boolean): Promise<void> {
+    const doc = DOC_ADAPTERS[src.adapter];
+    if (doc && (src.adapter === 'opencode' || src.file.endsWith('.json'))) return this.indexDocument(src, doc, force);
     const parse = ADAPTERS[src.adapter];
     if (!parse) return;
     const s = await stat(src.file).catch(() => null);
     if (!s) return;
-    const sig = `${s.ino}:${s.size}:${Math.floor(s.mtimeMs)}`;
+    const meta = createHash('sha256').update(JSON.stringify([src.ref, src.uid, src.title, src.cwd, src.model])).digest('hex');
+    const sig = `${s.ino}:${s.size}:${Math.floor(s.mtimeMs)}:${meta}`;
     const key = `t:${src.file}`;
     const prev = await this.sourceRow(key);
     if (!force && prev?.sig === sig) return;
@@ -308,12 +329,14 @@ export class SearchIndexer {
     let kept = 0;
     if (!force && prev) {
       const [ino, size] = prev.sig.split(':').map(Number);
-      if (ino === s.ino && s.size > size) {
+      if (ino === s.ino && s.size > size && prev.ref === src.ref && prev.sig.split(':')[3] === meta) {
         fromSeq = prev.last_key;
         kept = prev.entries;
       }
     }
-    if (!fromSeq) await this.db.$executeRaw`DELETE FROM transcript_fts WHERE ref = ${src.ref}`;
+    if (prev && prev.ref !== src.ref) await this.db.$executeRaw`DELETE FROM transcript_fts WHERE ref = ${prev.ref}`;
+    // Clean any uncommitted tail left by a failed indexing pass before retrying.
+    await this.db.$executeRaw`DELETE FROM transcript_fts WHERE ref = ${src.ref} AND seq > ${fromSeq}`;
 
     let lastSeq = fromSeq;
     let inserted = 0;
@@ -324,33 +347,63 @@ export class SearchIndexer {
       inserted += batch.length;
       batch = [];
     };
-    const stream = createReadStream(src.file, { encoding: 'utf8' });
+    if (!s.size) {
+      await this.saveSource({ source: key, kind: 'transcript', ref: src.ref, sig, last_key: 0, entries: 0 });
+      return;
+    }
+    const fh = await open(src.file, 'r');
+    let complete = false;
+    try {
+      const tail = Buffer.alloc(1);
+      await fh.read(tail, 0, 1, s.size - 1);
+      complete = tail[0] === 10;
+    } finally { await fh.close(); }
+    const stream = createReadStream(src.file, { encoding: 'utf8', end: s.size - 1 });
     const rl = createInterface({ input: stream, crlfDelay: Infinity });
     let lineNo = 0;
+    const consume = async (line: string) => {
+      lineNo++;
+      if (lineNo <= fromSeq) return;
+      lastSeq = lineNo;
+      if (!line.trim()) return;
+      let json: unknown;
+      try { json = JSON.parse(line); } catch { return; }
+      const entry = parse(json, lineNo);
+      if (!entry) return;
+      const text = entryText(entry);
+      if (!text) return;
+      batch.push(Prisma.sql`(${text}, ${src.title}, ${src.uid ?? ''}, ${src.ref}, ${src.harness}, ${src.harnessId}, ${src.cwd}, ${src.model ?? ''}, ${entry.seq}, ${entry.role}, ${entry.at})`);
+      if (batch.length >= BATCH) await flush();
+    };
+    let pending: string | undefined;
     try {
       for await (const line of rl) {
-        lineNo++;
-        if (lineNo <= fromSeq || !line.trim()) continue;
-        lastSeq = lineNo;
-        let json: unknown;
-        try {
-          json = JSON.parse(line);
-        } catch {
-          continue;
-        }
-        const entry = parse(json, lineNo);
-        if (!entry) continue;
-        const text = entryText(entry);
-        if (!text) continue;
-        batch.push(Prisma.sql`(${text}, ${src.title}, ${src.uid ?? ''}, ${src.ref}, ${src.harness}, ${src.harnessId}, ${src.cwd}, ${src.model ?? ''}, ${entry.seq}, ${entry.role}, ${entry.at})`);
-        if (batch.length >= BATCH) await flush();
+        if (pending !== undefined) await consume(pending);
+        pending = line;
       }
+      if (complete && pending !== undefined) await consume(pending);
     } finally {
       rl.close();
       stream.destroy();
     }
     await flush();
     await this.saveSource({ source: key, kind: 'transcript', ref: src.ref, sig, last_key: lastSeq, entries: kept + inserted });
+  }
+
+  private async indexDocument(src: TranscriptSource, load: (file: string) => Promise<Entry[] | null>, force: boolean): Promise<void> {
+    const entries = await load(src.file);
+    if (!entries) return;
+    const key = `t:${src.file}`;
+    const sig = createHash('sha256').update(JSON.stringify([src, entries])).digest('hex');
+    const prev = await this.sourceRow(key);
+    if (!force && prev?.sig === sig) return;
+    if (prev && prev.ref !== src.ref) await this.db.$executeRaw`DELETE FROM transcript_fts WHERE ref = ${prev.ref}`;
+    await this.db.$executeRaw`DELETE FROM transcript_fts WHERE ref = ${src.ref}`;
+    const rows = entries.filter((e) => entryText(e)).map((e) => Prisma.sql`(${entryText(e)}, ${src.title}, ${src.uid ?? ''}, ${src.ref}, ${src.harness}, ${src.harnessId}, ${src.cwd}, ${src.model ?? ''}, ${e.seq}, ${e.role}, ${e.at})`);
+    for (let i = 0; i < rows.length; i += BATCH) {
+      await this.db.$executeRaw`INSERT INTO transcript_fts (text, title, uid, ref, harness, harness_id, cwd, model, seq, role, at) VALUES ${Prisma.join(rows.slice(i, i + BATCH))}`;
+    }
+    await this.saveSource({ source: key, kind: 'transcript', ref: src.ref, sig, last_key: entries.at(-1)?.seq ?? 0, entries: rows.length });
   }
 
   /** Transcripts that vanished from discovery lose their rows and fingerprint. */
@@ -381,11 +434,11 @@ export class SearchIndexer {
 
     let fromId = 0;
     let kept = 0;
-    if (!force && prev && maxId > prev.last_key && count >= prev.entries) {
+    if (!force && prev && maxId > prev.last_key && count - Number(prev.sig.split(':')[1]) === await this.db.chatMessage.count({ where: { id: { gt: prev.last_key } } })) {
       fromId = prev.last_key;
       kept = prev.entries;
     }
-    if (!fromId) await this.db.$executeRawUnsafe(`DELETE FROM chat_fts`);
+    await this.db.$executeRaw`DELETE FROM chat_fts WHERE msg_id > ${fromId}`;
 
     const titles = new Map((await this.db.session.findMany({ select: { uid: true, title: true } })).map((s) => [s.uid, s.title || s.uid]));
     let inserted = 0;
@@ -416,20 +469,21 @@ export class SearchIndexer {
 
   // ---------- query
 
-  async search(params: SearchParams): Promise<SearchResponse> {
+  search(params: SearchParams): Promise<SearchResponse> {
+    return this.serialize(() => this.query(params));
+  }
+
+  private async query(params: SearchParams): Promise<SearchResponse> {
     const t0 = Date.now();
     const empty: SearchResponse = { enabled: true, building: this.building, results: [], total: 0, tookMs: 0, notes: [] };
     if (!(await this.enabled())) return { ...empty, enabled: false };
     const match = buildFtsMatch(params.q ?? '');
     if (!match) return { ...empty, tookMs: Date.now() - t0 };
-    if (params.host && params.host !== hostname()) return { ...empty, tookMs: Date.now() - t0 };
-    await this.ensureTables();
-
+    if (params.host && !hostname().toLowerCase().includes(params.host.toLowerCase())) return { ...empty, tookMs: Date.now() - t0 };
     const limit = Math.min(50, Math.max(1, params.limit ?? 20));
     const offset = Math.max(0, params.offset ?? 0);
     const role = params.role === 'agent' ? 'assistant' : params.role === 'user' ? 'user' : null;
     const scope = params.scope ?? 'all';
-    const fetchRows = Math.min(500, (limit + offset) * 10 + 30);
     const { terms, phrases } = tokenizeQuery(params.q);
     const needles = [...terms, ...phrases];
     const hits = new Map<string, SearchHit & { score: number }>();
@@ -457,9 +511,9 @@ export class SearchIndexer {
           };
           hits.set(key, hit);
         }
-        hit.matches++;
+        hit.matches = Number(row.matches);
         const at = Number(row.at) || 0;
-        hit.at = Math.max(hit.at, at);
+        hit.at = Math.max(hit.at, Number(row.latest_at) || at);
         if (hit.excerpts.length < 3) {
           hit.excerpts.push({
             seq: kind === 'transcript' ? Number(row.seq) : null,
@@ -472,7 +526,7 @@ export class SearchIndexer {
         // bm25 returns lower-is-better negatives; add recency and a title
         // boost so ordering is useful and, for a fixed corpus, deterministic.
         const titleHit = needles.some((n) => hit!.title.toLowerCase().includes(n)) ? 1.5 : 0;
-        hit.score = Math.max(hit.score, -Number(row.rank) + titleHit + at / 1e13);
+        hit.score = Math.max(hit.score, -Number(row.rank) + titleHit + hit.at / 1e13);
       }
     };
 
@@ -480,28 +534,45 @@ export class SearchIndexer {
       const filters: Prisma.Sql[] = [Prisma.sql`transcript_fts MATCH ${match}`];
       if (role) filters.push(Prisma.sql`role = ${role}`);
       if (params.project) filters.push(Prisma.sql`instr(lower(cwd), lower(${params.project})) > 0`);
+      if (params.from) filters.push(Prisma.sql`at >= ${params.from}`);
+      if (params.to) filters.push(Prisma.sql`at <= ${params.to}`);
       if (params.model) filters.push(Prisma.sql`instr(lower(model), lower(${params.model})) > 0`);
       const rows = await this.db.$queryRaw<Array<Record<string, unknown>>>`
-        SELECT uid, ref, harness, harness_id, cwd, title, seq, role, at,
-               snippet(transcript_fts, 0, ${MARK_START}, ${MARK_END}, '…', 24) AS snippet,
-               bm25(transcript_fts) AS rank
-        FROM transcript_fts WHERE ${Prisma.join(filters, ' AND ')}
-        ORDER BY rank LIMIT ${fetchRows}`;
+        WITH matched AS MATERIALIZED (
+          SELECT uid, ref, harness, harness_id, cwd, title, seq, role, at,
+                 snippet(transcript_fts, 0, ${MARK_START}, ${MARK_END}, '…', 24) AS snippet,
+                 bm25(transcript_fts) AS rank
+          FROM transcript_fts WHERE ${Prisma.join(filters, ' AND ')}
+        ), grouped AS (
+          SELECT *, COUNT(*) OVER (PARTITION BY ref) AS matches,
+                 MAX(at) OVER (PARTITION BY ref) AS latest_at,
+                 ROW_NUMBER() OVER (PARTITION BY ref ORDER BY rank, seq) AS excerpt
+          FROM matched
+        ) SELECT * FROM grouped WHERE excerpt <= 3 ORDER BY rank, seq`;
       addRows('transcript', rows);
     }
     if (scope !== 'transcripts' && !params.model) {
       const filters: Prisma.Sql[] = [Prisma.sql`chat_fts MATCH ${match}`];
       if (role) filters.push(Prisma.sql`role = ${role}`);
+      if (params.project) filters.push(Prisma.sql`uid IN (SELECT uid FROM Session WHERE instr(lower(cwd), lower(${params.project})) > 0)`);
+      if (params.from) filters.push(Prisma.sql`at >= ${params.from}`);
+      if (params.to) filters.push(Prisma.sql`at <= ${params.to}`);
       const rows = await this.db.$queryRaw<Array<Record<string, unknown>>>`
-        SELECT uid, msg_id, title, role, at,
-               snippet(chat_fts, 0, ${MARK_START}, ${MARK_END}, '…', 24) AS snippet,
-               bm25(chat_fts) AS rank
-        FROM chat_fts WHERE ${Prisma.join(filters, ' AND ')}
-        ORDER BY rank LIMIT ${fetchRows}`;
+        WITH matched AS MATERIALIZED (
+          SELECT uid, msg_id, title, role, at,
+                 snippet(chat_fts, 0, ${MARK_START}, ${MARK_END}, '…', 24) AS snippet,
+                 bm25(chat_fts) AS rank
+          FROM chat_fts WHERE ${Prisma.join(filters, ' AND ')}
+        ), grouped AS (
+          SELECT *, COUNT(*) OVER (PARTITION BY uid) AS matches,
+                 MAX(at) OVER (PARTITION BY uid) AS latest_at,
+                 ROW_NUMBER() OVER (PARTITION BY uid ORDER BY rank, at DESC, msg_id DESC) AS excerpt
+          FROM matched
+        ) SELECT * FROM grouped WHERE excerpt <= 3 ORDER BY rank, at DESC, msg_id DESC`;
       addRows('chat', rows);
     }
 
-    const all = [...hits.values()].sort((a, b) => b.score - a.score || b.at - a.at || (a.ref ?? a.uid ?? '').localeCompare(b.ref ?? b.uid ?? ''));
+    const all = [...hits.values()].sort((a, b) => (params.order === 'recent' ? 0 : b.score - a.score) || b.at - a.at || (a.ref ?? a.uid ?? '').localeCompare(b.ref ?? b.uid ?? ''));
     const page = all.slice(offset, offset + limit).map(({ score: _score, ...hit }) => hit);
     return { enabled: true, building: this.building, results: page, total: all.length, tookMs: Date.now() - t0, notes: [] };
   }
@@ -512,7 +583,6 @@ export class SearchIndexer {
     let chatEntries = 0;
     let sourcesIndexed = 0;
     if (enabled) {
-      await this.ensureTables();
       const t = await this.db.$queryRawUnsafe<Array<{ c: number }>>(`SELECT COUNT(*) AS c FROM transcript_fts`).catch(() => [{ c: 0 }]);
       const c = await this.db.$queryRawUnsafe<Array<{ c: number }>>(`SELECT COUNT(*) AS c FROM chat_fts`).catch(() => [{ c: 0 }]);
       transcriptEntries = Number(t[0]?.c ?? 0);

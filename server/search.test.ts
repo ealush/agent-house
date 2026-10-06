@@ -4,7 +4,7 @@ import { appendFile, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ensureMigrated, getDb } from './db.ts';
-import { SearchIndexer, buildFtsMatch, combineResponses, tokenizeQuery, type TranscriptSource } from './search.ts';
+import { SearchIndexer, buildFtsMatch, combineResponses, tokenizeQuery, type SearchHit, type TranscriptSource } from './search.ts';
 
 async function freshDb() {
   const path = join(tmpdir(), `ah-search-test-${process.pid}-${Math.random().toString(36).slice(2)}.db`);
@@ -177,11 +177,77 @@ test('ranking is deterministic and a 200-conversation corpus answers fast', asyn
   const t0 = Date.now();
   const r = await ix.search({ q: 'parser' });
   const ms = Date.now() - t0;
-  assert.ok(r.total > 0);
+  assert.equal(r.total, 200);
+  assert.equal(r.results[0].matches, 10);
+  const pages = await Promise.all(Array.from({ length: 4 }, (_, i) => ix.search({ q: 'parser', limit: 50, offset: i * 50 })));
+  assert.equal(new Set(pages.flatMap((p) => p.results.map((h) => h.ref))).size, 200);
   // The session whose title names the topic ranks first; repeat queries agree.
   assert.equal(r.results[0].ref, 's42');
   const again = await ix.search({ q: 'parser' });
   assert.deepEqual(again.results.map((x) => x.ref), r.results.map((x) => x.ref));
-  assert.ok(ms < 2000, `search took ${ms} ms`);
+  assert.ok(ms < 500, `search took ${ms} ms`);
   console.log(`corpus: build ${buildMs} ms, search ${ms} ms over 2000 entries`);
+});
+
+
+test('documents, partial JSONL writes, reference changes and server date filters', async () => {
+  const { db } = await freshDb();
+  const dir = await mkdtemp(join(tmpdir(), 'ah-search-formats-'));
+  const file = join(dir, 'gemini.json');
+  await writeFile(file, JSON.stringify({ sessionId: 'gem', messages: [{ id: 'm', type: 'user', timestamp: '2026-10-01T10:00:00Z', content: 'document unicorn' }] }));
+  const lineFile = join(dir, 'partial.jsonl');
+  const line = userLine('partial unicorn', '2026-10-02T10:00:00Z');
+  await writeFile(lineFile, line.slice(0, -5));
+  const sources: TranscriptSource[] = [
+    { file, harness: 'gemini', adapter: 'gemini', harnessId: 'gem', ref: 'gemini:gem', uid: null, title: 'Gemini', cwd: '/x' },
+    { file: lineFile, harness: 'claude', adapter: 'claude', harnessId: 'partial', ref: 'partial', uid: null, title: 'Partial', cwd: '/x' },
+  ];
+  const ix = new SearchIndexer(db, async () => sources);
+  await ix.refresh();
+  assert.equal((await ix.search({ q: 'unicorn' })).total, 1);
+  await appendFile(lineFile, line.slice(-5) + '\n');
+  await ix.refresh();
+  assert.equal((await ix.search({ q: 'unicorn' })).total, 2);
+  assert.equal((await ix.search({ q: 'unicorn', from: Date.parse('2026-10-02') })).total, 1);
+  sources[1].ref = 'registered'; sources[1].uid = 'registered'; sources[1].title = 'Registered';
+  await ix.refresh();
+  const hits = await ix.search({ q: 'partial' });
+  assert.equal(hits.total, 1); assert.equal(hits.results[0].ref, 'registered');
+  // A toggle racing with requests must not recreate tables or throw.
+  await Promise.all([ix.refresh(), ix.setEnabled(false), ix.search({ q: 'unicorn' }), ix.status()]);
+  assert.equal((await ix.search({ q: 'unicorn' })).enabled, false);
+  const tables = await db.$queryRawUnsafe(`SELECT name FROM sqlite_master WHERE name IN ('transcript_fts', 'chat_fts', 'SearchSource')`);
+  assert.deepEqual(tables, []);
+});
+
+test('aggregate totals and global offsets retain distinct hosts', () => {
+  const hit = (ref: string, at: number): SearchHit => ({ kind: 'transcript', host: 'internal', ref, uid: null, harness: 'claude', harnessId: ref, title: ref, cwd: '/x', at, matches: 1, excerpts: [] });
+  const body = (results: SearchHit[], total: number) => ({ enabled: true, building: false, total, tookMs: 1, notes: [], results });
+  const out = combineResponses([
+    { host: 'a', body: body([hit('same', 10), hit('old', 5)], 100) },
+    { host: 'b', body: body([hit('same', 9), hit('older', 4)], 50) },
+  ], { offset: 1, limit: 2 });
+  assert.equal(out.total, 150);
+  assert.deepEqual(out.results.map((h) => [h.host, h.ref]), [['b', 'same'], ['a', 'old']]);
+});
+
+
+test('opencode SQLite transcripts are indexed and rewritten tool output replaces stale text', async () => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const { db } = await freshDb();
+  const dir = await mkdtemp(join(tmpdir(), 'ah-search-opencode-'));
+  const file = join(dir, 'opencode.db');
+  const doc = new DatabaseSync(file);
+  try {
+    doc.exec('CREATE TABLE message (id TEXT, session_id TEXT, time_created INTEGER, data TEXT); CREATE TABLE part (id TEXT, message_id TEXT, session_id TEXT, time_created INTEGER, data TEXT)');
+    doc.prepare('INSERT INTO message VALUES (?, ?, ?, ?)').run('m', 's', 1, JSON.stringify({ role: 'user', time: { created: 1000 } }));
+    doc.prepare('INSERT INTO part VALUES (?, ?, ?, ?, ?)').run('p', 'm', 's', 1, JSON.stringify({ type: 'text', text: 'old opencode walnut' }));
+    const ix = new SearchIndexer(db, async () => [{ file: `${file}#s`, harness: 'opencode', adapter: 'opencode', harnessId: 's', ref: 'opencode:s', uid: null, title: 'Open', cwd: '/x' }]);
+    await ix.refresh();
+    assert.equal((await ix.search({ q: 'walnut' })).total, 1);
+    doc.prepare('UPDATE part SET data = ?').run(JSON.stringify({ type: 'text', text: 'new opencode quokka' }));
+    await ix.refresh();
+    assert.equal((await ix.search({ q: 'walnut' })).total, 0);
+    assert.equal((await ix.search({ q: 'quokka' })).results[0].excerpts[0].seq, 1);
+  } finally { doc.close(); }
 });

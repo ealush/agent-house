@@ -54,3 +54,32 @@ test('search routes: status, transcript hit at its seq, aggregate, disable drops
     await cleanup(ah);
   }
 });
+
+
+test('aggregate search pages the global host order and preserves total and date filters', async () => {
+  const peer = await startAh();
+  const hub = await startAh({ peers: [{ name: 'other', url: `http://127.0.0.1:${peer.port}`, token: peer.localToken() }] });
+  try {
+    for (const [hostIndex, ah] of [hub, peer].entries()) {
+      const project = join(ah.dir, 'claude', 'projects', 'search-pages');
+      await mkdir(project, { recursive: true });
+      for (let i = 0; i < 4; i++) {
+        const day = 1 + i * 2 + hostIndex;
+        await writeFile(join(project, `s${day}.jsonl`), JSON.stringify({ type: 'user', cwd: join(ah.dir, 'files'), timestamp: `2026-10-0${day}T10:00:00Z`, message: { content: 'pagination walrus' } }) + '\n');
+      }
+      await http(ah, 'POST', '/api/search/rebuild', { token: ah.localToken(), body: {} });
+      await until(async () => (await http(ah, 'GET', '/api/search?q=walrus', { token: ah.localToken() })).json().total === 4, 30000, 'four indexed sources');
+    }
+    await until(async () => (await http(hub, 'GET', '/api/state', { token: hub.localToken() })).json().hosts.some((h: any) => h.name === 'other' && h.online), 10000, 'peer online');
+    const get = async (suffix: string) => (await http(hub, 'GET', `/api/search/all?q=walrus${suffix}`, { token: hub.localToken() })).json();
+    const first = await get('&limit=3');
+    const second = await get('&limit=3&offset=3');
+    const third = await get('&limit=3&offset=6');
+    assert.equal(first.total, 8); assert.equal(second.total, 8); assert.equal(third.total, 8);
+    const hits = [...first.results, ...second.results, ...third.results];
+    assert.deepEqual(hits.map((h: any) => new Date(h.at).getUTCDate()), [8, 7, 6, 5, 4, 3, 2, 1]);
+    assert.equal(new Set(hits.map((h: any) => `${h.host}:${h.ref}`)).size, 8);
+    assert.equal((await get('&h=other')).total, 4);
+    assert.equal((await get(`&from=${Date.parse('2026-10-05')}`)).total, 4);
+  } finally { await cleanup(hub); await cleanup(peer); }
+});

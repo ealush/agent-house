@@ -116,12 +116,12 @@ export function Switcher({ windows, history, hosts, onSearchContent, onPick, onR
   // the metadata results under their own heading.
   useEffect(() => {
     const { text, f } = parseQuery(q);
+    const id = ++runId.current;
     if (text.trim().length < 2) {
       setContent([]);
       setContentNote(null);
       return;
     }
-    const id = ++runId.current;
     const timer = setTimeout(async () => {
       const query: SearchQuery = {
         q: text,
@@ -137,16 +137,16 @@ export function Switcher({ windows, history, hosts, onSearchContent, onPick, onR
       const hits: SearchHit[] = [];
       let anyEnabled = false;
       let building = false;
-      for (const s of settled) {
+      for (const [index, s] of settled.entries()) {
         if (s.status !== 'fulfilled') continue;
         anyEnabled ||= s.value.enabled;
         building ||= s.value.building;
-        hits.push(...s.value.results);
+        hits.push(...s.value.results.map((hit) => ({ ...hit, host: hosts[index] })));
       }
       setContent(hits.slice(0, 8));
       setContentNote(!anyEnabled ? 'Content search is off (Settings → Search).' : building && !hits.length ? 'Indexing conversations…' : null);
     }, 250);
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); runId.current++; };
   }, [q, hosts, onSearchContent]);
 
   const choose = (r: Row) => (r.kind === 'win' ? onPick(r.w.key) : onResume(r.h.host, r.h.ref));
@@ -169,7 +169,7 @@ export function Switcher({ windows, history, hosts, onSearchContent, onPick, onR
           setI(0);
         }}
         onKeyDown={(e) => {
-          if (e.key === 'ArrowDown') setI((i) => Math.min(navCount - 1, i + 1));
+          if (e.key === 'ArrowDown') setI((i) => Math.max(0, Math.min(navCount - 1, i + 1)));
           else if (e.key === 'ArrowUp') setI((i) => Math.max(0, i - 1));
           else if (e.key === 'Enter' && navCount > 0) chooseNav(Math.min(i, navCount - 1));
           else return;

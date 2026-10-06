@@ -154,7 +154,7 @@ export type SearchStatus = {
   chatEntries: number;
   lastBuiltAt: number;
 };
-export type SearchQuery = { q: string; scope?: string; role?: string; project?: string; host?: string; model?: string; limit?: number; offset?: number };
+export type SearchQuery = { q: string; scope?: string; role?: string; project?: string; host?: string; model?: string; limit?: number; offset?: number; from?: number; to?: number };
 export type ChatSummary = { uid: string; title: string; count: number; firstAt: number; lastAt: number; preview: string };
 export type Followup = { title: string; kind: 'session' | 'chat'; text: string };
 export type ChatReply = { message: ChatMsg; followups: Followup[] };
@@ -371,12 +371,14 @@ export function hostApi(base: string) {
       if (p.model) qs.set('m', p.model);
       if (p.limit) qs.set('limit', String(p.limit));
       if (p.offset) qs.set('offset', String(p.offset));
+      if (p.from) qs.set('from', String(p.from));
+      if (p.to) qs.set('to', String(p.to));
       return r<SearchResponse>('GET', `/api/search${all ? '/all' : ''}?${qs}`);
     },
     searchStatus: () => r<SearchStatus>('GET', '/api/search/status'),
     searchRebuild: () => r<SearchStatus>('POST', '/api/search/rebuild', {}),
     searchSetEnabled: (enabled: boolean) => r<SearchStatus>('POST', '/api/search/enabled', { enabled }),
-    pastChat: (uid: string) => r<{ messages: ChatMsg[] }>('GET', `/api/chats/${enc(uid)}`),
+    pastChat: (uid: string, msgId?: number) => r<{ messages: ChatMsg[] }>('GET', `/api/chats/${enc(uid)}${msgId ? `?msgId=${msgId}` : ''}`),
     recipes: () => r<Recipe[]>('GET', '/api/recipes'),
     saveRecipes: (recipes: Recipe[]) => r<Recipe[]>('PUT', '/api/recipes', { recipes }),
     launchRecipe: (id: string, body: { cwd: string; brief: string; session?: string; overrides?: Record<string, { mode?: string; model?: string; effort?: string }> }) =>

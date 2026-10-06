@@ -30,7 +30,7 @@ export function ChatHistory({ client, jump }: { client: HostApi; jump?: { uid: s
   useEffect(() => {
     if (!jump) return;
     client
-      .pastChat(jump.uid)
+      .pastChat(jump.uid, jump.msgId)
       .then(async ({ messages }) => {
         const summary = (await client.pastChats().catch(() => [])).find((c) => c.uid === jump.uid);
         setMessages(messages);
@@ -126,4 +126,14 @@ export function ChatHistory({ client, jump }: { client: HostApi; jump?: { uid: s
       </div>
     </div>
   );
+}
+
+/** Opens search hits from ended sessions without launching an agent. */
+export function ChatSearchDialog({ client, jump, onClose }: { client: HostApi; jump: { uid: string; msgId: number }; onClose: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => { dialog.current?.showModal(); }, []);
+  return <dialog ref={dialog} className="dialog" onClose={onClose} onClick={(e) => e.target === dialog.current && onClose()}>
+    <header className="dialog-head"><h2>Past chat</h2><button className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="close" /></button></header>
+    <ChatHistory client={client} jump={jump} />
+  </dialog>;
 }

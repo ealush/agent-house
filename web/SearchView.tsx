@@ -23,37 +23,28 @@ export function SearchView({
   const [to, setTo] = useState('');
   const [resp, setResp] = useState<SearchResponse | null>(null);
   const [extra, setExtra] = useState<SearchHit[]>([]);
-  const [lastPage, setLastPage] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const runId = useRef(0);
 
   const queryText = q.trim();
-  const inRange = useCallback(
-    (hit: SearchHit) => {
-      const day = new Date(hit.at).toISOString().slice(0, 10);
-      return (!from || day >= from) && (!to || day <= to);
-    },
-    [from, to],
-  );
-
   const run = useCallback(
     async (offset: number) => {
+      const id = ++runId.current;
       if (queryText.length < 2) {
+        setBusy(false);
         setResp(null);
         setExtra([]);
         return;
       }
-      const id = ++runId.current;
       setBusy(true);
       setError(null);
       try {
         const out = await client.search(
-          { q: queryText, ...(scope !== 'all' ? { scope } : {}), ...(role ? { role } : {}), limit: 20, offset },
+          { q: queryText, ...(scope !== 'all' ? { scope } : {}), ...(role ? { role } : {}), limit: 20, offset, ...(from ? { from: Date.parse(`${from}T00:00:00Z`) } : {}), ...(to ? { to: Date.parse(`${to}T23:59:59.999Z`) } : {}) },
           true,
         );
         if (runId.current !== id) return;
-        setLastPage(out.results.length);
         if (offset === 0) {
           setResp(out);
           setExtra([]);
@@ -66,15 +57,15 @@ export function SearchView({
         if (runId.current === id) setBusy(false);
       }
     },
-    [client, queryText, scope, role],
+    [client, queryText, scope, role, from, to],
   );
 
   useEffect(() => {
     const t = setTimeout(() => void run(0), 300);
-    return () => clearTimeout(t);
+    return () => { clearTimeout(t); runId.current++; };
   }, [run]);
 
-  const hits = [...(resp?.results ?? []), ...extra].filter(inRange);
+  const hits = [...(resp?.results ?? []), ...extra];
   const loaded = (resp?.results.length ?? 0) + extra.length;
 
   return (
@@ -155,7 +146,7 @@ export function SearchView({
         ))}
       </div>
 
-      {resp && lastPage === 20 && (
+      {resp && loaded < resp.total && (
         <button className="btn" disabled={busy} onClick={() => void run(loaded)}>
           {busy ? 'Loading…' : 'Load more'}
         </button>

@@ -11,6 +11,7 @@ import { leaves, nodeAt, paneLeaves, parseLayout, replaceLeaf, splitLeaf, type L
 import { NewDialog } from './NewDialog.tsx';
 import { ForkDialog, type ForkTarget } from './ForkDialog.tsx';
 import { Switcher } from './Switcher.tsx';
+import { ChatSearchDialog } from './ChatHistory.tsx';
 import { SearchView } from './SearchView.tsx';
 import { WorktreesDialog } from './Git.tsx';
 import { pushStatus, pushSupport, registerWorker } from './notify.ts';
@@ -68,6 +69,7 @@ export function App({ onLock }: { onLock: () => void }) {
   const [forking, setForking] = useState<ForkTarget | null>(null);
   const [switching, setSwitching] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [pastChatJump, setPastChatJump] = useState<{ host: string; uid: string; msgId: number } | null>(null);
   const [dialog, setDialog] = useState<'worktrees' | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [replyKey, setReplyKey] = useState(0);
@@ -246,21 +248,25 @@ export function App({ onLock }: { onLock: () => void }) {
     const w = state?.windows.find((x) => x.host === host && (hit.uid ? x.uid === hit.uid : !!hit.harnessId && x.harnessId === hit.harnessId));
     if (hit.kind === 'chat' && hit.uid && msgId != null) {
       try {
-        sessionStorage.setItem('ah.chatJump', JSON.stringify({ uid: hit.uid, msgId }));
+        sessionStorage.setItem('ah.chatJump', JSON.stringify({ host, uid: hit.uid, msgId }));
       } catch {}
     }
     if (w) {
       if (seq != null) {
         try {
-          sessionStorage.setItem('ah.seqJump', JSON.stringify({ uid: w.uid, seq }));
+          sessionStorage.setItem('ah.seqJump', JSON.stringify({ host, uid: w.uid, seq }));
           localStorage.setItem('ah.view', 'gui');
         } catch {}
       }
       open(w.key);
+      window.dispatchEvent(new CustomEvent('ah:search-jump', { detail: { host, uid: w.uid, seq, msgId } }));
       return;
     }
     if (hit.kind === 'chat') {
-      flash('That chat belongs to a session that is not running.');
+      if (hit.uid && msgId != null) {
+        sessionStorage.removeItem('ah.chatJump');
+        setPastChatJump({ host, uid: hit.uid, msgId });
+      }
       return;
     }
     if (!hit.ref) {
@@ -272,7 +278,7 @@ export function App({ onLock }: { onLock: () => void }) {
       await refresh(host);
       if (seq != null) {
         try {
-          sessionStorage.setItem('ah.seqJump', JSON.stringify({ uid: out.uid, seq }));
+          sessionStorage.setItem('ah.seqJump', JSON.stringify({ host, uid: out.uid, seq }));
           localStorage.setItem('ah.view', 'gui');
         } catch {}
       }
@@ -520,6 +526,8 @@ export function App({ onLock }: { onLock: () => void }) {
           onClose={() => setSwitching(false)}
         />
       )}
+
+      {pastChatJump && <ChatSearchDialog key={`${pastChatJump.host}:${pastChatJump.uid}:${pastChatJump.msgId}`} client={clientFor(pastChatJump.host)} jump={pastChatJump} onClose={() => setPastChatJump(null)} />}
 
       {dialog === 'worktrees' && <WorktreesDialog client={clientFor(current?.host)} onClose={() => setDialog(null)} onShell={shellIn} />}
 

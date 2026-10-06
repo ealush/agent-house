@@ -152,17 +152,32 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
     try {
       const raw = sessionStorage.getItem('ah.chatJump');
       if (raw) {
-        sessionStorage.removeItem('ah.chatJump');
-        const jump = JSON.parse(raw) as { uid?: string; msgId?: number };
-        if (jump.uid === w.uid && typeof jump.msgId === 'number') {
+        const jump = JSON.parse(raw) as { host?: string; uid?: string; msgId?: number };
+        if (jump.host === w.host && jump.uid === w.uid && typeof jump.msgId === 'number') {
+          sessionStorage.removeItem('ah.chatJump');
           setChatJump({ uid: jump.uid, msgId: jump.msgId });
           setChatHistory(true);
           setPanel('chat');
           setPanelCollapsed(false);
+          setTab('chat');
         }
       }
     } catch {}
   }, [w.key]);
+  useEffect(() => {
+    const jump = (event: Event) => {
+      const detail = (event as CustomEvent<{ host: string; uid: string; seq?: number; msgId?: number }>).detail;
+      if (detail.host !== w.host || detail.uid !== w.uid) return;
+      if (detail.seq != null) { setViewPref('gui'); setTab('main'); }
+      if (detail.msgId != null) {
+        sessionStorage.removeItem('ah.chatJump');
+        setChatJump({ uid: w.uid, msgId: detail.msgId });
+        setChatHistory(true); setPanel('chat'); setPanelCollapsed(false); setTab('chat');
+      }
+    };
+    window.addEventListener('ah:search-jump', jump);
+    return () => window.removeEventListener('ah:search-jump', jump);
+  }, [w.host, w.uid]);
   // The terminal supplies its own input, so the graphical composer lives only
   // in the GUI view. "Reply" focuses whichever input is showing.
   const focusInput = () => {
