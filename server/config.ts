@@ -78,6 +78,38 @@ export type Preset = {
   feed?: string;
 };
 
+/** One member of a fleet recipe: a preset launched as part of a team (issue #6). */
+export type RecipeMember = {
+  key: string;
+  preset: string;
+  title?: string;
+  /** Start this member in its own git worktree, like the launch dialog's checkbox. */
+  worktree?: boolean;
+  /** Take the working directory from another member's final directory (its worktree when it has one). */
+  cwdFrom?: string;
+  model?: string | null;
+  effort?: string | null;
+  mode?: string | null;
+  /** First message delivered after launch; may use {brief} and {<key>.cwd|worktree|branch|title}. */
+  prompt?: string;
+};
+
+export type RecipeHandoff = {
+  when: { session: string; event: 'turn-end' | 'needs-you' };
+  sendTo: string;
+  template: string;
+  /** Fire on every matching transition instead of only the first. */
+  repeat?: boolean;
+};
+
+export type Recipe = {
+  id: string;
+  name: string;
+  description?: string;
+  members: RecipeMember[];
+  handoffs?: RecipeHandoff[];
+};
+
 export type Config = {
   port: number;
   host: string;
@@ -103,6 +135,8 @@ export type Config = {
   /** App sign-in on top of Tailscale. See server/auth.ts. */
   auth: { mode: 'passkey' | 'off'; idleHours: number; maxDays: number };
   presets: Preset[];
+  /** Fleet recipes (issue #6). Absent means the built-in recipes in server/recipes.ts. */
+  recipes?: Recipe[];
 };
 
 // Flags below are taken from each CLI's own --help; keep them that way.
@@ -283,6 +317,7 @@ export function loadConfig(): Config {
     files: { roots: [...(user.projectRoots ?? ['~/code']), '~/.cache/ah/uploads', '/tmp'], ...user.files },
     promptHistory: user.promptHistory ?? 60,
     presets: user.presets ?? DEFAULT_PRESETS,
+    recipes: user.recipes,
   };
 }
 

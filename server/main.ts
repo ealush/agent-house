@@ -182,6 +182,70 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     return send(res, 201, { id: out.windowId, uid: out.uid });
   }
 
+  // ---------- fleet recipes (issue #6)
+
+  if (route('GET', /^\/api\/recipes$/)) return send(res, 200, core.listRecipes());
+
+  if (route('PUT', /^\/api\/recipes$/)) {
+    const body = await readJson(req);
+    try {
+      const out = core.saveRecipes(body.recipes);
+      audit(req, 'recipes.save', { count: out.length });
+      return send(res, 200, out);
+    } catch (err) {
+      if (err instanceof CoreError) throw new HttpError(err.status, err.message);
+      throw err;
+    }
+  }
+
+  if ((m = route('POST', /^\/api\/recipes\/([\w-]{1,40})\/launch$/))) {
+    const body = await readJson(req);
+    const cwd = await resolveDir(str(body.cwd ?? '~', 'cwd', 1024));
+    const brief = body.brief === undefined ? '' : str(body.brief, 'brief', 32 * 1024);
+    const session = body.session ? t.sanitizeSessionName(str(body.session, 'session', 64)) : config.defaultSession;
+    if (!session) throw new HttpError(400, 'invalid session');
+    const overrides: Record<string, { mode?: string; model?: string; effort?: string }> = {};
+    if (body.overrides && typeof body.overrides === 'object' && !Array.isArray(body.overrides)) {
+      for (const [key, value] of Object.entries(body.overrides as Record<string, unknown>)) {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+        const o = value as Record<string, unknown>;
+        overrides[key] = {
+          ...(typeof o.mode === 'string' ? { mode: o.mode } : {}),
+          ...(typeof o.model === 'string' ? { model: o.model } : {}),
+          ...(typeof o.effort === 'string' ? { effort: o.effort } : {}),
+        };
+      }
+    }
+    try {
+      const out = await core.launchRecipe(m[1], { cwd, brief, session, overrides });
+      audit(req, 'recipe.launch', { recipe: m[1], runId: out.run.runId, members: out.members.map((x) => x.uid) });
+      return send(res, 201, out);
+    } catch (err) {
+      if (err instanceof CoreError) throw new HttpError(err.status, err.message);
+      throw err;
+    }
+  }
+
+  if (route('GET', /^\/api\/runs$/)) return send(res, 200, core.recipeRuns());
+
+  if ((m = route('GET', /^\/api\/runs\/([\w-]{1,40})$/))) {
+    const run = core.recipeRun(m[1]);
+    if (!run) throw new HttpError(404, 'run not found');
+    return send(res, 200, run);
+  }
+
+  if ((m = route('POST', /^\/api\/runs\/([\w-]{1,40})\/(stop|archive)$/))) {
+    try {
+      if (m[2] === 'stop') await core.stopRun(m[1]);
+      else await core.archiveRun(m[1]);
+    } catch (err) {
+      if (err instanceof CoreError) throw new HttpError(err.status, err.message);
+      throw err;
+    }
+    audit(req, `run.${m[2]}`, { runId: m[1] });
+    return send(res, 200, { ok: true });
+  }
+
   // Sessions are addressed by registry id, or `harness:harnessId` for discovered history.
   if ((m = route('POST', /^\/api\/sessions\/([\w:.-]{1,80})\/resume$/))) {
     const out = await core.resume(m[1]);
