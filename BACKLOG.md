@@ -69,7 +69,7 @@
 | F33 | Settings transfer | ✗ | |
 | F34 | Diff view | ✅ | Read-only status + patch. |
 | F35 | Inline code comments | ✅ | Click a diff line to send the agent a file/line/code-anchored comment. |
-| F36 | Session forking | ✗ | |
+| F36 | Session forking | ✅ | `server/fork.ts` + `Core.fork`: transcript copied to a new conversation id homed in a fresh `ah/<slug>` worktree (Claude Code and Codex), lineage in `ah.fork` meta, fork dialog + family view, `ah fork`. Mid-transcript fork points are not supported (fork is at the current end). |
 | F37 | Agent-to-agent control | ✅ | `ah send X … && ah wait X && ah read X` |
 | F38 | Scheduled runs | ✗ | |
 | F39 | Snapshots + rollback | ✗ | |
@@ -90,7 +90,7 @@
 - Keep mobile navigation in layout flow so history rows remain visible and scrollable.
 - Isolate ordering tests from the real config, session store, and tmux server.
 
-Remaining larger work: conversation transfer between hosts (including files), session forking,
+Remaining larger work: conversation transfer between hosts (including files),
 worktree disk usage, and richer adapters for agents without hooks. These require explicit
 product decisions rather than guessing at conversation or workspace ownership.
 
