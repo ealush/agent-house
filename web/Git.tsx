@@ -316,20 +316,22 @@ export function WorktreesDialog({ client, onClose, onShell }: { client: HostApi;
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
-  const load = () => client.worktrees().then(setList).catch((e) => setError(e.message));
+  const load = () => client.worktrees().then((rows) => { setList(rows); setError(null); }).catch((e) => setError(e.message));
   useEffect(() => {
     ref.current?.showModal();
     load();
-  }, []);
+    const timer = setInterval(load, 2000);
+    return () => clearInterval(timer);
+  }, [client]);
 
-  const orphans = useMemo(() => (list ?? []).filter((wt) => wt.live.length === 0), [list]);
+  const orphans = useMemo(() => (list ?? []).filter((wt) => wt.orphan), [list]);
   const totalBytes = (list ?? []).reduce((n, wt) => n + (wt.sizeBytes ?? 0), 0);
   const orphanBytes = orphans.reduce((n, wt) => n + (wt.sizeBytes ?? 0), 0);
   const anyMeasured = (list ?? []).some((wt) => wt.sizeBytes !== null);
   const rows = useMemo(() => {
     const all = [...(list ?? [])];
     // Unmeasured and partial rows sort last: their true place is unknown.
-    if (bySize) all.sort((a, b) => (b.sizeBytes ?? -1) - (a.sizeBytes ?? -1));
+    if (bySize) all.sort((a, b) => Number(a.sizePartial || a.sizeBytes === null) - Number(b.sizePartial || b.sizeBytes === null) || (b.sizeBytes ?? -1) - (a.sizeBytes ?? -1));
     return all;
   }, [list, bySize]);
   const picked = orphans.filter((wt) => selected.has(wt.path));
@@ -449,22 +451,22 @@ export function WorktreesDialog({ client, onClose, onShell }: { client: HostApi;
           const size = sizeLabel(wt);
           const inUse = wt.live.length > 0;
           return (
-            <li key={wt.path} className={selecting && inUse ? 'dim' : undefined}>
+            <li key={wt.path} className={selecting && !wt.orphan ? 'dim' : undefined}>
               {selecting && (
                 <input
                   type="checkbox"
                   className="wt-check"
-                  disabled={inUse}
+                  disabled={!wt.orphan}
                   checked={selected.has(wt.path)}
                   onChange={() => toggle(wt.path)}
-                  title={inUse ? 'In use; cannot be removed in bulk' : wt.dirty ? 'Uncommitted changes; checking opts into force removal' : 'Remove this orphan'}
+                  title={!wt.orphan ? 'Live or resumable session; cannot be removed in bulk' : wt.dirty ? 'Uncommitted changes; checking opts into force removal' : 'Remove this orphan'}
                 />
               )}
               <div className="stack">
                 <span>⎇ {wt.branch}</span>
                 <span className="sub">
                   {wt.repo.split('/').pop()} · {wt.dirty ? `${wt.dirty} uncommitted` : 'clean'} · {wt.ahead} ahead
-                  {inUse ? ` · in use by ${wt.live.map((l) => l.name).join(', ')}` : ' · orphaned'}
+                  {inUse ? ` · in use by ${wt.live.map((l) => l.name).join(', ')}` : wt.orphan ? ' · orphaned' : ' · saved session'}
                   {wt.lastActivityAt ? ` · ${fmtAge(wt.lastActivityAt)}` : ''}
                 </span>
                 <span className="sub" title={size.title}>

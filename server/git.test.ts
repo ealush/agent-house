@@ -187,3 +187,17 @@ test('bulk removal: revalidates in-use, dirty, and managed root per item', async
 
   await removeWorktree(busy.path, true);
 });
+
+
+test('removal rejects a nested directory and a foreign worktree under a lookalike root', async () => {
+  const dir = await repo();
+  const wt = await createWorktree(dir, 'Guarded');
+  const nested = join(wt.path, '.worktrees', 'nested');
+  await (await import('node:fs/promises')).mkdir(nested, { recursive: true });
+  await assert.rejects(removeWorktree(nested, true), /not an ah-managed worktree/);
+  await removeWorktree(wt.path, true);
+  const foreign = join(dir, '.worktrees', 'foreign');
+  execFileSync('git', ['-C', dir, 'worktree', 'add', '-b', 'foreign', foreign]);
+  await assert.rejects(removeWorktree(foreign, true), /not an ah-managed worktree/);
+  execFileSync('git', ['-C', dir, 'worktree', 'remove', '--force', foreign]);
+});

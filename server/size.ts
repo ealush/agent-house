@@ -31,35 +31,33 @@ export async function measureDir(root: string, maxEntries = MAX_ENTRIES): Promis
   let partial = false;
   let tooLarge = false;
   const stack = [root];
+  const seen = new Set<string>();
   while (stack.length) {
-    const dir = stack.pop()!;
-    let names: string[];
+    const path = stack.pop()!;
+    if (++entries > maxEntries) {
+      tooLarge = true;
+      break;
+    }
+    if (entries % YIELD_EVERY === 0) await new Promise((r) => setImmediate(r));
+    let st;
     try {
-      names = await readdir(dir);
+      st = await lstat(path);
     } catch {
       partial = true;
       continue;
     }
-    for (const name of names) {
-      if (++entries > maxEntries) {
-        tooLarge = true;
-        break;
-      }
-      // Yield periodically so a huge walk never starves the ticker or terminals.
-      if (entries % YIELD_EVERY === 0) await new Promise((r) => setImmediate(r));
-      const p = join(dir, name);
-      let st;
-      try {
-        st = await lstat(p);
-      } catch {
-        partial = true;
-        continue;
-      }
-      logical += st.size;
-      allocated += st.blocks != null ? st.blocks * 512 : st.size;
-      if (st.isDirectory() && !st.isSymbolicLink()) stack.push(p);
+    // du counts the root directory and each hard-linked inode once.
+    const inode = `${st.dev}:${st.ino}`;
+    if (seen.has(inode)) continue;
+    seen.add(inode);
+    logical += st.size;
+    allocated += st.blocks != null ? st.blocks * 512 : st.size;
+    if (!st.isDirectory() || st.isSymbolicLink()) continue;
+    try {
+      for (const name of await readdir(path)) stack.push(join(path, name));
+    } catch {
+      partial = true;
     }
-    if (tooLarge) break;
   }
   return { sizeBytes: tooLarge ? null : allocated, logicalBytes: logical, partial, tooLarge, measuredAt: Math.floor(Date.now() / 1000) };
 }
@@ -69,6 +67,8 @@ export async function measureDir(root: string, maxEntries = MAX_ENTRIES): Promis
 const TTL_MS = 5 * 60 * 1000;
 const cache = new Map<string, { size: DirSize; rootMtimeMs: number }>();
 const inflight = new Map<string, Promise<void>>();
+const revisions = new Map<string, number>();
+let measurementQueue = Promise.resolve();
 
 export function cachedSize(path: string): DirSize | null {
   return cache.get(path)?.size ?? null;
@@ -77,24 +77,27 @@ export function cachedSize(path: string): DirSize | null {
 /** Refresh the cached size for a path in the background, unless a fresh one exists. Never blocks the caller. */
 export function requestSize(path: string): void {
   if (inflight.has(path)) return;
-  const run = (async () => {
+  const revision = revisions.get(path) ?? 0;
+  const run = measurementQueue.then(async () => {
     try {
       const st = await lstat(path);
       const hit = cache.get(path);
       if (hit && hit.rootMtimeMs === st.mtimeMs && Date.now() - hit.size.measuredAt * 1000 < TTL_MS) return;
       const size = await measureDir(path);
-      cache.set(path, { size, rootMtimeMs: st.mtimeMs });
+      if ((revisions.get(path) ?? 0) === revision) cache.set(path, { size, rootMtimeMs: st.mtimeMs });
     } catch {
       // Path gone or unreadable: keep any stale value rather than flapping to null.
     } finally {
       inflight.delete(path);
     }
-  })();
+  });
+  measurementQueue = run;
   inflight.set(path, run);
 }
 
 export function invalidateSize(path: string): void {
   cache.delete(path);
+  revisions.set(path, (revisions.get(path) ?? 0) + 1);
 }
 
 /** Test hook: wait for all background measurements to settle. */

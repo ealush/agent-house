@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, link, symlink, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { cachedSize, invalidateSize, measureDir, requestSize, settleSizes } from './size.ts';
@@ -59,5 +60,25 @@ test('size cache: requestSize fills in the background, invalidateSize drops it',
   await settleSizes();
   assert.equal(cachedSize(dir)?.measuredAt, hit.measuredAt);
   invalidateSize(dir);
+  assert.equal(cachedSize(dir), null);
+});
+
+
+test('measureDir matches du for directories and hard links, and never follows a root symlink', async () => {
+  const dir = await tree();
+  await link(join(dir, 'sub', 'b.bin'), join(dir, 'duplicate.bin'));
+  const measured = await measureDir(dir);
+  const du = Number(execFileSync('du', ['-s', '-B1', dir], { encoding: 'utf8' }).split(/\s/)[0]);
+  assert.equal(measured.sizeBytes, du);
+  const linked = dir + '-link';
+  await symlink(dir, linked);
+  assert.ok((await measureDir(linked)).logicalBytes < 1000);
+});
+
+test('invalidating an in-flight size measurement does not repopulate a stale cache', async () => {
+  const dir = await tree();
+  requestSize(dir);
+  invalidateSize(dir);
+  await settleSizes();
   assert.equal(cachedSize(dir), null);
 });

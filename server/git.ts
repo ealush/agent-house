@@ -122,6 +122,7 @@ export async function removeWorktree(path: string, force: boolean): Promise<void
   // Only ever remove worktrees under a managed .worktrees directory.
   if (!abs.includes(`${sep}.worktrees${sep}`)) throw new GitError('not an ah-managed worktree');
   const main = await mainRepo(abs);
+  if (!abs.startsWith(worktreeRoot(main) + sep) || abs !== await toplevel(abs)) throw new GitError('not an ah-managed worktree');
   try {
     await git(main, 'worktree', 'remove', ...(force ? ['--force'] : []), abs);
   } catch (err) {

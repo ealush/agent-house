@@ -534,7 +534,7 @@ export class Core {
     repos.delete('');
     const list = await listWorktrees([...repos]);
     return list.map((wt) => {
-      const users = state.windows.filter((w) => expandHome(w.cwd) === wt.path || expandHome(w.cwd).startsWith(wt.path + '/'));
+      const users = state.windows.filter((w) => this.usesWorktree(w, wt.path));
       const owners = this.registry.all().filter((r) => (r.meta['ah.worktree'] as Worktree | undefined)?.path === wt.path);
       return {
         ...wt,
@@ -542,7 +542,7 @@ export class Core {
         lastActivityAt: Math.max(wt.lastActivityAt, ...owners.map((r) => r.lastActivityAt)),
         live: users.map((w) => ({ id: w.id, name: w.name })),
         sessions: owners.map((r) => ({ id: r.id, title: r.title, lifecycle: r.lifecycle })),
-        orphan: users.length === 0,
+        orphan: users.length === 0 && !owners.some((r) => !!r.harnessId || r.lifecycle === 'starting'),
       };
     });
   }
@@ -563,9 +563,17 @@ export class Core {
    */
   async removeWorktreesBulk(paths: string[], force: string[]) {
     return removeWorktreesBulk(paths, new Set(force), async (path) => {
-      const state = await this.current();
-      return state.windows.some((w) => expandHome(w.cwd) === path || expandHome(w.cwd).startsWith(path + '/'));
+      const state = await this.tick();
+      return state.windows.some((w) => this.usesWorktree(w, path)) || this.registry.all().some((r) =>
+        (r.meta['ah.worktree'] as Worktree | undefined)?.path === path && (!!r.harnessId || r.lifecycle === 'starting'),
+      );
     });
+  }
+
+  private usesWorktree(w: WindowView, path: string): boolean {
+    const cwd = expandHome(w.cwd);
+    return cwd === path || cwd.startsWith(path + '/') ||
+      (this.registry.get(w.uid)?.meta['ah.worktree'] as Worktree | undefined)?.path === path;
   }
 
   record(ref: string): SessionRecord | undefined {
