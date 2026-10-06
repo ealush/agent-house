@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { PresetsContext } from './ModelPicker.tsx';
-import { deviceName, type HistoryItem, type SendResult, type State, type Win } from './api.ts';
+import { deviceName, type HistoryItem, type SearchHit, type SendResult, type State, type Win } from './api.ts';
 import { useHosts } from './useHosts.ts';
 import { Sidebar, type Page } from './Sidebar.tsx';
 import { Inbox, type InboxGroup } from './Inbox.tsx';
@@ -10,6 +10,7 @@ import { Workspace } from './Workspace.tsx';
 import { leaves, nodeAt, paneLeaves, parseLayout, replaceLeaf, splitLeaf, type LayoutNode, type Path } from './layout.ts';
 import { NewDialog } from './NewDialog.tsx';
 import { Switcher } from './Switcher.tsx';
+import { SearchView } from './SearchView.tsx';
 import { WorktreesDialog } from './Git.tsx';
 import { pushStatus, pushSupport, registerWorker } from './notify.ts';
 import { API_VERSION } from './api.ts';
@@ -56,7 +57,7 @@ function fromHash(): { page: Page; selected: string | null } {
   if (h.includes('@')) return { page: 'inbox', selected: h };
   if (h === 'security') h = 'settings';
   if (h.startsWith('settings/')) h = 'settings';
-  return { page: h === 'history' || h === 'sessions' || h === 'settings' ? h : 'inbox', selected: null };
+  return { page: h === 'history' || h === 'sessions' || h === 'settings' || h === 'search' ? h : 'inbox', selected: null };
 }
 
 export function App({ onLock }: { onLock: () => void }) {
@@ -64,6 +65,7 @@ export function App({ onLock }: { onLock: () => void }) {
   const [inboxGroup, setInboxGroup] = stored<InboxGroup>('ah.inboxGroup', 'status');
   const [creating, setCreating] = useState<{ cwd?: string; host?: string } | null>(null);
   const [switching, setSwitching] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [dialog, setDialog] = useState<'worktrees' | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [replyKey, setReplyKey] = useState(0);
@@ -229,6 +231,56 @@ export function App({ onLock }: { onLock: () => void }) {
     }
   }
 
+  /**
+   * Opens a content search hit (issue #9): a transcript lands in the GUI at
+   * the matching seq; a chat opens its session's past-chats at the message.
+   * The jump target travels in sessionStorage because the session view (and
+   * its surfaces) mount after navigation.
+   */
+  async function openSearchHit(host: string, hit: SearchHit, target?: number) {
+    setSwitching(false);
+    const seq = hit.kind === 'transcript' ? (target ?? hit.excerpts[0]?.seq ?? undefined) : undefined;
+    const msgId = hit.kind === 'chat' ? (target ?? hit.excerpts[0]?.msgId ?? undefined) : undefined;
+    const w = state?.windows.find((x) => x.host === host && (hit.uid ? x.uid === hit.uid : !!hit.harnessId && x.harnessId === hit.harnessId));
+    if (hit.kind === 'chat' && hit.uid && msgId != null) {
+      try {
+        sessionStorage.setItem('ah.chatJump', JSON.stringify({ uid: hit.uid, msgId }));
+      } catch {}
+    }
+    if (w) {
+      if (seq != null) {
+        try {
+          sessionStorage.setItem('ah.seqJump', JSON.stringify({ uid: w.uid, seq }));
+          localStorage.setItem('ah.view', 'gui');
+        } catch {}
+      }
+      open(w.key);
+      return;
+    }
+    if (hit.kind === 'chat') {
+      flash('That chat belongs to a session that is not running.');
+      return;
+    }
+    if (!hit.ref) {
+      flash('Session not found.');
+      return;
+    }
+    try {
+      const out = await clientFor(host).resume(hit.ref);
+      await refresh(host);
+      if (seq != null) {
+        try {
+          sessionStorage.setItem('ah.seqJump', JSON.stringify({ uid: out.uid, seq }));
+          localStorage.setItem('ah.view', 'gui');
+        } catch {}
+      }
+      open(keyFor(host, out.id));
+      if (out.resumed) flash('Resuming…');
+    } catch (e) {
+      showError(e, "Couldn't open that session");
+    }
+  }
+
   function sent(r: SendResult) {
     if (r.outcome === 'delivered') flash('Sent');
     else flash(r.resumed ? 'Resuming the session; your message goes in once it is ready' : `Queued (${r.queued}) — sent when the agent is free`);
@@ -356,7 +408,9 @@ export function App({ onLock }: { onLock: () => void }) {
           />
         ) : state ? (
           <>
-            {page === 'settings' ? (
+            {page === 'search' ? (
+              <SearchView key={searchQuery} initialQuery={searchQuery} client={clientFor(state.hostname)} onOpenHit={openSearchHit} />
+            ) : page === 'settings' ? (
               <Settings onLocked={onLock} onNotifyChange={(on) => (pushActive.current = on)} />
             ) : page === 'history' ? (
               <HistoryView state={state} onResume={(h) => resume(h.host, h.ref)} onForget={forget} />
@@ -416,6 +470,8 @@ export function App({ onLock }: { onLock: () => void }) {
         <Switcher
           windows={state.windows}
           history={state.history}
+          hosts={state.hosts.filter((h) => h.online).map((h) => h.name)}
+          onSearchContent={(host, q) => clientFor(host).search(q)}
           onPick={(key) => {
             setSwitching(false);
             open(key);
@@ -423,6 +479,14 @@ export function App({ onLock }: { onLock: () => void }) {
           onResume={(host, ref) => {
             setSwitching(false);
             resume(host, ref);
+          }}
+          onContent={(host, hit) => void openSearchHit(host, hit)}
+          onShowAll={(text) => {
+            setSwitching(false);
+            setSearchQuery(text);
+            setLayout(null);
+            setFocusPath(null);
+            go({ page: 'search', selected: null });
           }}
           onClose={() => setSwitching(false)}
         />

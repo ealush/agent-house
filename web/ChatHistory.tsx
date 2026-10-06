@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ChatMsg, ChatSummary, HostApi } from './api.ts';
 import { showNotice } from './ask.tsx';
 import { Icon } from './icons.tsx';
@@ -18,12 +18,31 @@ function fmtDate(at: number): string {
 
 // Past side-chat conversations, live sessions and ended ones alike. Read-only:
 // the session they belonged to may be gone, so there is nothing to continue.
-export function ChatHistory({ client }: { client: HostApi }) {
+// `jump` (from a search result, issue #9) opens one chat at one message.
+export function ChatHistory({ client, jump }: { client: HostApi; jump?: { uid: string; msgId: number } | null }) {
   const [q, setQ] = useState('');
   const [list, setList] = useState<ChatSummary[] | null>(null);
   const [open, setOpen] = useState<ChatSummary | null>(null);
   const [messages, setMessages] = useState<ChatMsg[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const jumpRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!jump) return;
+    client
+      .pastChat(jump.uid)
+      .then(async ({ messages }) => {
+        const summary = (await client.pastChats().catch(() => [])).find((c) => c.uid === jump.uid);
+        setMessages(messages);
+        setOpen(summary ?? { uid: jump.uid, title: jump.uid, count: messages.length, firstAt: messages[0]?.at ?? 0, lastAt: messages.at(-1)?.at ?? 0, preview: '' });
+      })
+      .catch((e) => setError(e.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jump?.uid, jump?.msgId]);
+
+  useEffect(() => {
+    if (open && jump && messages) jumpRef.current?.scrollIntoView({ block: 'center' });
+  }, [open, jump, messages]);
 
   useEffect(() => {
     setList(null);
@@ -69,8 +88,8 @@ export function ChatHistory({ client }: { client: HostApi }) {
         {error && <p className="panel-msg">{error}</p>}
         <div className="sidechat-log">
           {(messages ?? []).map((m, i) => (
-            <div key={i} className={`sidechat-msg ${m.role}`}>
-              <div className="sidechat-bubble">{m.role === 'assistant' ? <Markdown text={m.text} /> : m.text}</div>
+            <div key={i} className={`sidechat-msg ${m.role}`} ref={jump && m.id === jump.msgId ? jumpRef : undefined}>
+              <div className={`sidechat-bubble ${jump && m.id === jump.msgId ? 'jump-flash' : ''}`}>{m.role === 'assistant' ? <Markdown text={m.text} /> : m.text}</div>
               <div className="msg-actions">
                 <button className="btn ghost small" onClick={() => copy(m.text)}>
                   Copy
