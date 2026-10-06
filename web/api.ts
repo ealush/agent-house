@@ -40,6 +40,8 @@ export type Win = {
   launchMode: string | null;
   /** Set when the agent's transcript can drive the GUI view. */
   feed: string | null;
+  /** Fleet recipe membership (issue #6); null for standalone sessions. */
+  run: { runId: string; recipeId: string; key: string; name: string } | null;
 };
 
 export type Ask = { kind: 'command' | 'tool' | 'question' | 'screen'; text: string };
@@ -82,7 +84,7 @@ export type Preset = {
 
 export type Host = { name: string; self: boolean; online: boolean };
 
-export const API_VERSION = 11;
+export const API_VERSION = 12;
 
 export type PullInfo = { number: number | null; url: string | null };
 
@@ -91,6 +93,51 @@ export type ChatMsg = { role: 'user' | 'assistant'; text: string; at: number };
 export type ChatSummary = { uid: string; title: string; count: number; firstAt: number; lastAt: number; preview: string };
 export type Followup = { title: string; kind: 'session' | 'chat'; text: string };
 export type ChatReply = { message: ChatMsg; followups: Followup[] };
+
+export type RecipeMember = {
+  key: string;
+  preset: string;
+  title?: string;
+  worktree?: boolean;
+  cwdFrom?: string;
+  model?: string | null;
+  effort?: string | null;
+  mode?: string | null;
+  prompt?: string;
+};
+
+export type Recipe = {
+  id: string;
+  name: string;
+  description?: string;
+  members: RecipeMember[];
+  handoffs?: Array<{ when: { session: string; event: string }; sendTo: string; template: string; repeat?: boolean }>;
+  /** Validation problems reported by the server; a recipe with any cannot launch. */
+  errors?: string[];
+};
+
+export type RunMemberView = { key: string; uid: string; title: string; preset: string; cwd: string; branch: string | null; status: string };
+export type HandoffView = {
+  id: string;
+  sourceKey: string;
+  targetKey: string;
+  event: string;
+  state: string;
+  deliveredAt?: number | null;
+  reason?: string | null;
+};
+export type RunView = {
+  runId: string;
+  recipeId: string;
+  name: string;
+  cwd: string;
+  brief: string;
+  state: string;
+  reason?: string | null;
+  createdAt: number;
+  members: RunMemberView[];
+  handoffs: HandoffView[];
+};
 
 export type State = {
   api?: number;
@@ -102,6 +149,7 @@ export type State = {
   windows: Win[];
   history: HistoryItem[];
   presets: Preset[];
+  runs: RunView[];
 };
 
 export type Changes = {
@@ -129,7 +177,7 @@ export type BranchInfo = { name: string; current: boolean; remote: boolean };
 export type BranchList = { current: string | null; branches: BranchInfo[] };
 
 export type SendResult = { outcome: 'delivered' | 'queued'; windowId: string; resumed: boolean; queued: number };
-export type QueueItem = { id: string; text: string; enter: boolean; at: number };
+export type QueueItem = { id: string; text: string; enter: boolean; at: number; source?: string; handoffId?: string };
 
 /** Called whenever the server says we're not signed in (expired, revoked, locked). */
 let onUnauthorized: () => void = () => {};
@@ -211,6 +259,13 @@ export function hostApi(base: string) {
     clearChat: (id: string) => r('DELETE', `/api/windows/${enc(id)}/chat`),
     pastChats: (q?: string) => r<ChatSummary[]>('GET', q ? `/api/chats?q=${enc(q)}` : '/api/chats'),
     pastChat: (uid: string) => r<{ messages: ChatMsg[] }>('GET', `/api/chats/${enc(uid)}`),
+    recipes: () => r<Recipe[]>('GET', '/api/recipes'),
+    saveRecipes: (recipes: Recipe[]) => r<Recipe[]>('PUT', '/api/recipes', { recipes }),
+    launchRecipe: (id: string, body: { cwd: string; brief: string; session?: string; overrides?: Record<string, { mode?: string; model?: string; effort?: string }> }) =>
+      r<{ run: RunView; members: Array<{ key: string; uid: string; id: string }> }>('POST', `/api/recipes/${enc(id)}/launch`, body),
+    run: (runId: string) => r<RunView>('GET', `/api/runs/${enc(runId)}`),
+    stopRun: (runId: string) => r('POST', `/api/runs/${enc(runId)}/stop`, {}),
+    archiveRun: (runId: string) => r('POST', `/api/runs/${enc(runId)}/archive`, {}),
     worktrees: () => r<WorktreeInfo[]>('GET', '/api/worktrees'),
     removeWorktree: (path: string, force: boolean) => r('DELETE', '/api/worktrees', { path, force }),
     prompts: () => r<Array<{ text: string; at: number }>>('GET', '/api/prompts'),
@@ -241,6 +296,7 @@ export function normalize(s: State): State {
     ...s,
     hosts: s.hosts ?? [{ name: s.hostname, self: true, online: true }],
     history: s.history ?? [],
+    runs: s.runs ?? [],
     windows: (s.windows ?? []).map((w) => ({
       ...w,
       title: w.title ?? w.name,
@@ -257,6 +313,7 @@ export function normalize(s: State): State {
       launchEffort: w.launchEffort ?? null,
       launchMode: w.launchMode ?? null,
       feed: w.feed ?? null,
+      run: w.run ?? null,
     })),
   };
 }
