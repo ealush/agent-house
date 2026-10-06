@@ -431,13 +431,13 @@ export class Core {
     await this.tick();
     const { copied, wt, head, name } = await this.withInput(parent.uid, async () => {
       const live = (await this.current()).windows.find((w) => w.uid === parent.uid);
-      if (live && (live.status === 'busy' || this.justSent(parent.uid))) throw new CoreError(409, 'the parent started another turn; try forking when it finishes');
       const found = (await discover()).find((x) => x.harness === parent.harness && x.harnessId === parent.harnessId);
       if (!found) throw new CoreError(422, 'no transcript found for this conversation; it may have been cleared or rotated');
 
       const cwd = expandHome(parent.cwd);
       const head = await headInfo(cwd).catch(() => null);
       if (!head?.head) throw new CoreError(422, 'forking needs a git repository with at least one commit: two sessions in one checkout would overwrite each other');
+      if (live && (live.status === 'busy' || this.justSent(parent.uid))) throw new CoreError(409, 'the parent started another turn; try forking when it finishes');
 
       const name = (o.name?.trim() || `${parent.title} (fork)`).slice(0, 80);
       let wt: Worktree;
