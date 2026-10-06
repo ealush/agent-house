@@ -1,0 +1,1 @@
+ALTER TABLE "Snapshot" ADD COLUMN "repoRoot" TEXT NOT NULL DEFAULT '';

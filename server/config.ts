@@ -132,6 +132,8 @@ export type Config = {
   files: { roots: string[] };
   /** How many sent prompts to remember for "recent" (0 = don't keep any). They're sensitive. */
   promptHistory: number;
+  /** Per-turn snapshots (F39): size cap per untracked file, per-session turn cap, days kept after a session ends. */
+  snapshots: { enabled?: boolean; maxFileBytes: number; keepTurns: number; retentionDays: number };
   /** App sign-in on top of Tailscale. See server/auth.ts. */
   auth: { mode: 'passkey' | 'off'; idleHours: number; maxDays: number };
   presets: Preset[];
@@ -332,6 +334,7 @@ export function loadConfig(): Config {
     auth: { mode: 'passkey', idleHours: 24, maxDays: 30, ...user.auth },
     files: { roots: [...(user.projectRoots ?? ['~/code']), '~/.cache/ah/uploads', '/tmp'], ...user.files },
     promptHistory: user.promptHistory ?? 60,
+    snapshots: { maxFileBytes: 10 * 1024 * 1024, keepTurns: 50, retentionDays: 7, ...user.snapshots },
     presets: user.presets ?? DEFAULT_PRESETS,
     recipes: user.recipes,
   };
