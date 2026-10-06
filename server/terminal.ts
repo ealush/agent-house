@@ -36,6 +36,9 @@ export async function attach(ws: WebSocket, windowId: string, cols: number, rows
       ';', 'set-option', 'destroy-unattached', 'on',
       ';', 'set-option', 'status', 'off',
       ';', 'set-option', 'mouse', 'on',
+      // Let TUI apps copy to the browser clipboard via OSC 52: tmux forwards the
+      // sequence to the viewer PTY, where xterm's ClipboardAddon writes it out.
+      ';', 'set-option', 'set-clipboard', 'on',
       ';', 'select-window', '-t', `${viewer}:${windowId}`,
     ],
     {

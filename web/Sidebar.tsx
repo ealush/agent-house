@@ -12,6 +12,8 @@ type Props = {
   error: string | null;
   page: Page;
   selected: string | null;
+  /** Every session key currently on screen: one in single view, all panes in split view. */
+  visibleKeys: string[];
   device: string;
   onPage: (p: Page) => void;
   onSelect: (key: string) => void;
@@ -62,8 +64,9 @@ export function confirmTerminate(w: Win) {
 }
 
 /** Desktop navigation: inbox, hosts, and every live session grouped by host (or project). */
-export function Sidebar({ state, error, page, selected, device, onPage, onSelect, onSearch, onNew, onWorktrees, onReorder, onKill, onDragSession, onCollapse }: Props) {
+export function Sidebar({ state, error, page, selected, visibleKeys, device, onPage, onSelect, onSearch, onNew, onWorktrees, onReorder, onKill, onDragSession, onCollapse }: Props) {
   const windows = state?.windows ?? [];
+  const visible = new Set(visibleKeys);
   const waiting = windows.filter((w) => w.status === 'waiting').length;
   const multiHost = (state?.hosts.length ?? 0) > 1;
   const [dragKey, setDragKey] = useState<string | null>(null);
@@ -92,10 +95,12 @@ export function Sidebar({ state, error, page, selected, device, onPage, onSelect
     const menu = menuKey === w.key;
     const { color } = look(w.agent);
     const modelLabel = shortModel(w.model);
+    const active = w.key === selected;
+    const seen = visible.has(w.key);
     return (
       <div
         key={w.key}
-        className={`side-row ${w.key === selected ? 'on' : ''} ${overKey === w.key ? 'drop' : ''} ${dragKey === w.key ? 'dragging' : ''}`}
+        className={`side-row ${overKey === w.key ? 'drop' : ''} ${dragKey === w.key ? 'dragging' : ''}`}
         draggable
         onDragStart={(e) => {
           setDragKey(w.key);
@@ -120,7 +125,7 @@ export function Sidebar({ state, error, page, selected, device, onPage, onSelect
           dropOnto(group, w);
         }}
       >
-        <button className={`side-session ${w.agent ? '' : 'shellish'}`} style={{ '--agent': color } as React.CSSProperties} onClick={() => onSelect(w.key)} title={`${w.title} — ${w.cwd}${modelLabel ? ` — ${modelLabel}` : ''}${w.launch ? ` — ${w.launch}` : ''}`}>
+        <button className={`side-session ${w.agent ? '' : 'shellish'}${active ? ' on' : ''}${seen && !active ? ' visible' : ''}`} style={{ '--agent': color } as React.CSSProperties} onClick={() => onSelect(w.key)} aria-current={active ? true : undefined} title={`${w.title} — ${w.cwd}${modelLabel ? ` — ${modelLabel}` : ''}${w.launch ? ` — ${w.launch}` : ''}`}>
           <span className="grip" aria-hidden>
             ⠿
           </span>

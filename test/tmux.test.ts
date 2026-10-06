@@ -39,6 +39,10 @@ test('create, attach two viewers, type, resize, detach, SIGKILL ah, restart: the
   await a.opened;
   await b.opened;
   await until(() => viewerSessions().length === 2, 5000, 'two viewer sessions');
+  // Viewers forward OSC 52 so TUI apps can copy to the browser clipboard.
+  for (const s of viewerSessions()) {
+    assert.match(ah.tmux('show-options', '-t', `=${s}`, 'set-clipboard'), /set-clipboard on/, `clipboard passthrough on ${s}`);
+  }
   // Presence shows up on the next state tick.
   await until(async () => (await http(ah, 'GET', '/api/state', { cookie })).json().windows.find((w: any) => w.id === id)?.devices.length === 2, 5000, 'presence');
 

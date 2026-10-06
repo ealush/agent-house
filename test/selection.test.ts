@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { autoCopySelection } from '../web/selection.ts';
+import { autoCopySelection, copyText, legacyCopy } from '../web/selection.ts';
 
 function harness(write?: (text: string) => Promise<void>) {
   const document = new EventTarget();
@@ -51,4 +51,65 @@ test('denied clipboard access leaves selection usable and permits a later retry'
   h.element.dispatchEvent(new Event('keyup'));
   assert.equal(attempts, 2);
   h.stop();
+});
+
+// Plain-http origins have no async Clipboard API: stub document.execCommand and
+// prove selections still land on the clipboard instead of being dropped.
+function stubExecCopy() {
+  const g = globalThis as Record<string, unknown>;
+  const prev = g.document;
+  const copied: string[] = [];
+  let area: { value: string } | null = null;
+  g.document = {
+    createElement: () => (area = {
+      value: '',
+      style: {},
+      setAttribute: () => {},
+      select: () => {},
+      remove: () => {},
+    }),
+    body: { appendChild: () => {} },
+    execCommand: (cmd: string) => {
+      if (cmd === 'copy' && area) copied.push(area.value);
+      return true;
+    },
+  };
+  return { copied, restore: () => { g.document = prev; } };
+}
+
+test('without the async clipboard, selections copy via the execCommand fallback', () => {
+  const stub = stubExecCopy();
+  try {
+    const document = new EventTarget();
+    const element = Object.assign(new EventTarget(), { ownerDocument: document });
+    let text = '';
+    let listener = () => {};
+    const stop = autoCopySelection(element, {
+      getSelection: () => text,
+      onSelectionChange: (fn) => { listener = fn; return { dispose: () => { listener = () => {}; } }; },
+    }, () => undefined);
+    element.dispatchEvent(new Event('pointerdown'));
+    text = 'fallback\nselection';
+    listener();
+    document.dispatchEvent(new Event('pointerup'));
+    assert.deepEqual(stub.copied, ['fallback\nselection']);
+    stop();
+  } finally {
+    stub.restore();
+  }
+});
+
+test('copyText prefers the async clipboard and falls back when it rejects', async () => {
+  assert.equal(await copyText('fast', { writeText: async () => {} }), true);
+  const stub = stubExecCopy();
+  try {
+    assert.equal(await copyText('slow', { writeText: async () => { throw new Error('Denied'); } }), true);
+    assert.deepEqual(stub.copied, ['slow']);
+  } finally {
+    stub.restore();
+  }
+});
+
+test('legacyCopy reports failure instead of throwing when no document exists', () => {
+  assert.equal(legacyCopy('nothing to copy to'), false);
 });

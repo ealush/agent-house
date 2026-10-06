@@ -7,7 +7,7 @@ import { Inbox, type InboxGroup } from './Inbox.tsx';
 import { HistoryView, SessionsView } from './HistoryView.tsx';
 import { Session } from './Session.tsx';
 import { Workspace } from './Workspace.tsx';
-import { nodeAt, paneLeaves, parseLayout, replaceLeaf, splitLeaf, type LayoutNode, type Path } from './layout.ts';
+import { leaves, nodeAt, paneLeaves, parseLayout, replaceLeaf, splitLeaf, type LayoutNode, type Path } from './layout.ts';
 import { NewDialog } from './NewDialog.tsx';
 import { Switcher } from './Switcher.tsx';
 import { WorktreesDialog } from './Git.tsx';
@@ -87,6 +87,8 @@ export function App({ onLock }: { onLock: () => void }) {
   const [focusPath, setFocusPath] = useState<Path | null>(null);
   const focused = layout ? nodeAt(layout, focusPath ?? []) : null;
   const focusKey = focused?.type === 'session' ? focused.sessionKey : null;
+  // Every pane on screen, so the sidebar can mark them all (split view shows several at once).
+  const visibleKeys = layout ? leaves(layout) : selected ? [selected] : [];
   const pushActive = useRef(false);
   const prevStatus = useRef(new Map<string, string>());
   const selectedRef = useRef(selected);
@@ -271,6 +273,7 @@ export function App({ onLock }: { onLock: () => void }) {
           error={error}
           page={page}
           selected={focusKey ?? selected}
+          visibleKeys={visibleKeys}
           device={deviceName()}
           onCollapse={toggleSide}
           onPage={(p) => {

@@ -3,6 +3,37 @@ type SelectionSource = {
   onSelectionChange(listener: () => void): { dispose(): void };
 };
 
+/** Best-effort clipboard write. The async Clipboard API is missing on plain-http
+ *  origins (LAN / Tailscale); there a hidden textarea plus execCommand still
+ *  copies within the user's selection gesture. Never rejects. */
+export function copyText(text: string, target?: Pick<Clipboard, 'writeText'> | undefined | null): Promise<boolean> {
+  const clip = target ?? (globalThis as unknown as { navigator?: Navigator }).navigator?.clipboard;
+  if (clip?.writeText) return clip.writeText(text).then(
+    () => true,
+    () => legacyCopy(text),
+  );
+  return Promise.resolve(legacyCopy(text));
+}
+
+/** Synchronous fallback for contexts without the async Clipboard API. */
+export function legacyCopy(text: string): boolean {
+  try {
+    const doc = (globalThis as { document?: Document }).document;
+    if (!doc || typeof doc.execCommand !== 'function') return false;
+    const area = doc.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none;';
+    doc.body.appendChild(area);
+    area.select();
+    const ok = doc.execCommand('copy');
+    area.remove();
+    return ok !== false;
+  } catch {
+    return false;
+  }
+}
+
 /** Copy completed terminal selections, preserving the range for normal copy shortcuts. */
 export function autoCopySelection(
   element: EventTarget & { ownerDocument: EventTarget },
@@ -14,8 +45,14 @@ export function autoCopySelection(
   const copy = () => {
     const text = terminal.getSelection();
     if (!text) { last = ''; return; }
+    if (text === last) return;
     const target = clipboard();
-    if (text === last || !target?.writeText) return;
+    if (!target?.writeText) {
+      // No async Clipboard API here: the legacy path still copies, and `last`
+      // is only kept when it actually landed so a later gesture retries.
+      last = legacyCopy(text) ? text : '';
+      return;
+    }
     last = text;
     try {
       target.writeText(text).catch(() => { if (last === text) last = ''; });

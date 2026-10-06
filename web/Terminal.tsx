@@ -6,7 +6,7 @@ import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { ClipboardAddon } from '@xterm/addon-clipboard';
 import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
-import { autoCopySelection } from './selection.ts';
+import { autoCopySelection, copyText } from './selection.ts';
 
 export type TerminalHandle = {
   send: (data: string) => void;
@@ -116,7 +116,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ wi
     t.attachCustomKeyEventHandler((e) => {
       const copy = (e.metaKey && e.key === 'c') || (e.ctrlKey && e.shiftKey && e.key === 'C');
       if (e.type === 'keydown' && copy && t.hasSelection()) {
-        navigator.clipboard?.writeText(t.getSelection()).catch(() => {});
+        void copyText(t.getSelection());
         return false;
       }
       return true;
