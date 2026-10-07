@@ -559,8 +559,13 @@ export class Core {
       }
       const w = state.windows.find((w) => w.id === target.windowId);
       const queue = this.queue(target.uid);
+      // A waiting agent is blocked on your input: what you send now is the
+      // answer to its question or approval prompt, so it is typed immediately
+      // instead of queued behind the turn that asked. (The ticker never flushes
+      // the queue into a waiting session, so queueing here would strand it.)
       // Shells take input immediately (a dev server is always "busy"); agents get queued while working.
-      const ready = !target.resumed && w && queue.length === 0 && (!w.agent || (!this.justSent(w.uid) && (w.status === 'idle' || w.status === 'attention')));
+      const answering = !!w?.agent && w.status === 'waiting';
+      const ready = !target.resumed && !!w && (answering || queue.length === 0) && (answering || !w.agent || (!this.justSent(w.uid) && (w.status === 'idle' || w.status === 'attention')));
       if (ready) {
         if (w.agent) {
           this.sentAt.set(w.uid, Date.now());

@@ -38,6 +38,49 @@ test('an exec-replaced agent is detected and concurrent follow-ups queue separat
   }
 });
 
+test('replies to a waiting session deliver immediately instead of queueing', async () => {
+  const ah = await startAh({
+    auth: { mode: 'off' },
+    idleAfter: 1,
+    presets: [{ id: 'test-agent', name: 'Test agent', command: `exec ${process.execPath} ${fixture}`, match: '^node$' }],
+  });
+  try {
+    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'test-agent', cwd: `${ah.dir}/files` } });
+    assert.equal(created.status, 201, created.body);
+    const { id, uid } = created.json();
+    const window = async () => (await http(ah, 'GET', '/api/state')).json().windows.find((w: any) => w.uid === uid);
+    await until(async () => {
+      const w = await window();
+      return w?.agent === 'test-agent' && ['idle', 'attention'].includes(w.status);
+    }, 15000, 'root agent detected');
+    // A first follow-up, so the reply below also falls inside the submit grace period.
+    assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'first' } })).json().outcome, 'delivered');
+    await until(() => ah.tmux('capture-pane', '-p', '-t', id).includes('FINISHED:first'), 10000, 'first turn finished');
+    // The agent asks a question: hook state waiting with the question payload.
+    // Nothing clears it afterwards (the fixture's turn timer already fired), so
+    // the waiting status below is stable, not a timing accident.
+    const at = String(Math.floor(Date.now() / 1000));
+    ah.tmux(
+      'set-option', '-w', '-t', id, '@ah-state', 'waiting',
+      ';', 'set-option', '-w', '-t', id, '@ah-state-at', at,
+      ';', 'set-option', '-w', '-t', id, '@ah-ask', JSON.stringify({ kind: 'question', text: 'Which fix?' }),
+    );
+    await until(async () => {
+      const w = await window();
+      return w?.status === 'waiting' && w?.ask?.kind === 'question' && w?.ask?.text === 'Which fix?';
+    }, 10000, 'question surfaces as waiting with its text');
+    // A waiting agent is blocked on your input: the reply is the answer, so it
+    // must be typed now rather than queued behind the turn that asked.
+    const reply = await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'the first one' } });
+    assert.equal(reply.status, 200, reply.body);
+    assert.equal(reply.json().outcome, 'delivered', 'reply to a waiting session is delivered, not queued');
+    await until(() => ah.tmux('capture-pane', '-p', '-t', id).includes('RECEIVED:the first one'), 10000, 'reply typed into the waiting agent');
+    assert.equal((await http(ah, 'GET', `/api/sessions/${uid}/queue`)).json().length, 0);
+  } finally {
+    await cleanup(ah);
+  }
+});
+
 test('send-now interrupts the live turn and delivers one queued message', async () => {
   const ah = await startAh({
     auth: { mode: 'off' },
