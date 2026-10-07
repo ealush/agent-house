@@ -275,7 +275,7 @@ const DEFAULT_PRESETS: Preset[] = [
     command: 'muse',
     modes: [
       { id: 'default', name: 'Ask' },
-      { id: 'yolo', name: 'YOLO', args: ['--yolo'], dangerous: true, description: 'Disables approval and sandboxing, and trusts this workspace, for this run.' },
+      { id: 'yolo', name: 'YOLO', args: ['--yolo', '--approval-mode', 'never'], dangerous: true, description: 'Disables approval and sandboxing, and trusts this workspace, for this run.' },
     ],
     effort: { args: ['--reasoning-effort', '{level}'], levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] },
     catalog: 'muse',

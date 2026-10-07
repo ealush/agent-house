@@ -8,7 +8,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { join, sep } from 'node:path';
 import type { PrismaClient } from '@prisma/client';
 import { defaultDbPath, getDb } from './db.ts';
-import { changes } from './git.ts';
+import { changes, toplevel, prPatch, prMeta, workingPatch, workingStat, mergeBase, showAtRef, commitShow, type PrMeta } from './git.ts';
 import { conversationKey } from './registry.ts';
 
 const run = promisify(execFile);
@@ -24,7 +24,15 @@ export class SideChatError extends Error {
 export type Subscription = { id: string; name: string; baseUrl: string; model: string; apiKey: string };
 export type SubscriptionInfo = { id: string; name: string; baseUrl: string; model: string; hasKey: boolean; isDefault: boolean };
 export type ChatMessage = { role: 'user' | 'assistant'; text: string; at: number; /** ChatMessage row id, so search results can jump to one message (issue #9). */ id?: number };
-export type ChatContext = { title: string; session: string; branch: string | null; pr: number | null; diff: string };
+export type ChatContext = {
+  title: string;
+  session: string;
+  branch: string | null;
+  pr: number | null;
+  diff: string;
+  /** Session cwd: when set and inside a repo, the model gets read-only repo tools. */
+  dir?: string | null;
+};
 
 /**
  * Premade next step under an answer: `session` sends its text to the live
@@ -109,10 +117,12 @@ const UNTRACKED_TOTAL = 12000;
 const UNTRACKED_MAX_BYTES = 100_000;
 const LOG_LINES = 12;
 
-const SYSTEM = [
+const SYSTEM_BASE = [
   'You are a sidekick inside "ah", an agent hub where every session is a live tmux terminal (a coding-agent TUI or a plain shell) with a working git checkout, a branch, a diff view, and a message queue: text sent to a session goes in now when idle, queues while it works, and resumes it first when dead.',
   'You discuss the change described below: review it, explain it, or help plan next steps.',
-  'You cannot run commands or see anything beyond the context given; say so when asked for more.',
+].join(' ');
+
+const SYSTEM_REST = [
   'The human can forward your words to the live session with one click, or fire one of your premade follow-ups.',
   'Keep answers short and concrete. Name file paths and line numbers when you reference code.',
   'Format the content as GitHub-flavored markdown: short sections under ### headings, fenced code blocks with language tags, - bullets for lists, and | tables | for comparisons.',
@@ -123,14 +133,23 @@ const SYSTEM = [
   'Offer 0-2 followups, only when genuinely useful.',
 ].join(' ');
 
-function contextBlock(ctx: ChatContext): string {
+/** Capability line: tool sessions pull repo detail on demand, others get the summary only. */
+function systemPrompt(tools: boolean): string {
+  const access = tools
+    ? 'You have read-only repo tools (repo_map, pr_info, pr_diff, working_diff, read_file, commit_show): call them instead of guessing about code you have not seen, then answer. You cannot run commands or change anything; say so when asked for more.'
+    : 'You cannot run commands or see anything beyond the context given; say so when asked for more.';
+  return `${SYSTEM_BASE} ${access} ${SYSTEM_REST}`;
+}
+
+function contextBlock(ctx: ChatContext, tools: boolean): string {
   const head = [
     `Session: ${ctx.title} (${ctx.session})`,
     ctx.branch ? `Branch: ${ctx.branch}` : null,
     ctx.pr ? `Pull request: #${ctx.pr}` : null,
   ].filter(Boolean).join('\n');
   // Caps and truncation notes are owned by changeContext(); this stays verbatim.
-  return `${head}\n${ctx.diff || '(working tree clean)'}`;
+  const tail = tools ? '\nUse the repo tools to read the branch, pull request, or working tree beyond this summary.' : '';
+  return `${head}\n${ctx.diff || '(working tree clean)'}${tail}`;
 }
 
 /** New-file contents: `git diff` never shows untracked files, so read them. */
@@ -202,6 +221,290 @@ export async function changeContext(dir: string): Promise<ChangeContext> {
   if (fresh) work.push(fresh);
   const parts = [...(log ? [`Recent commits:\n${log}`] : []), ...(work.length ? work : ['(working tree clean)'])];
   return { branch: c.branch || null, diff: parts.join('\n\n') };
+}
+
+// ---------- repo tools: the model pulls detail on demand instead of getting
+// a full dump up front. Every tool is read-only and scoped to the session's
+// repo; failures degrade to notes, never throws.
+
+const MAX_TOOL_ROUNDS = 6;
+const TOOL_RESULT_LIMIT = 12_000;
+
+type ToolDef = { type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } };
+
+const PATHS_SCHEMA = {
+  type: 'object',
+  properties: {
+    paths: { type: 'array', items: { type: 'string' }, description: 'Exact repo-relative file paths to keep; omit for the whole patch.' },
+    max_chars: { type: 'number', description: `Cap on returned characters (default ${TOOL_RESULT_LIMIT}, max 60000).` },
+  },
+  additionalProperties: false,
+};
+
+const REPO_TOOLS: ToolDef[] = [
+  {
+    type: 'function',
+    function: {
+      name: 'repo_map',
+      description: 'Orient on the checkout: branch and HEAD, pull-request metadata with CI check counts, working-tree stat, and the PR file list. Call first when the summary is not enough.',
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'pr_info',
+      description: 'Pull-request title, base and head branches, state, mergeability, and per-check results.',
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'pr_diff',
+      description: 'The pull-request patch (branch vs base). Large PRs truncate: narrow with paths or expect a list of omitted files.',
+      parameters: PATHS_SCHEMA,
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'working_diff',
+      description: 'Uncommitted changes (git diff HEAD). Same truncation rules as pr_diff.',
+      parameters: PATHS_SCHEMA,
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'read_file',
+      description: 'Read a file from the working tree, HEAD, or the PR base. Paths stay inside the repo.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Repo-relative file path.' },
+          ref: { type: 'string', enum: ['working', 'HEAD', 'base'], description: 'Which version to read (default working).' },
+          max_chars: { type: 'number', description: `Cap on returned characters (default ${TOOL_RESULT_LIMIT}, max 60000).` },
+        },
+        required: ['path'],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'commit_show',
+      description: 'Stat plus patch of one commit, by full or abbreviated sha.',
+      parameters: {
+        type: 'object',
+        properties: { sha: { type: 'string', description: 'Commit sha.' }, max_chars: { type: 'number', description: 'Patch cap (default 12000, max 60000).' } },
+        required: ['sha'],
+        additionalProperties: false,
+      },
+    },
+  },
+];
+
+type ToolEnv = {
+  root: string;
+  pr: number | null;
+  branch: string | null;
+  working: () => Promise<string>;
+  prPatchText: () => Promise<string | null>;
+  meta: () => Promise<PrMeta | null>;
+};
+
+/** Tool scope for a session dir: null outside a repo (legacy one-shot chat). */
+export async function repoToolEnv(dir: string | null | undefined, pr: number | null, branch: string | null): Promise<ToolEnv | null> {
+  if (!dir) return null;
+  let root: string;
+  try {
+    root = await toplevel(dir);
+  } catch {
+    return null;
+  }
+  const memo = <T>(fn: () => Promise<T>): (() => Promise<T>) => {
+    let p: Promise<T> | null = null;
+    return () => (p ??= fn());
+  };
+  return {
+    root,
+    pr,
+    branch,
+    working: memo(() => workingPatch(root)),
+    prPatchText: memo(async () => (pr === null ? null : await prPatch(root, pr).catch(() => null))),
+    meta: memo(async () => (pr === null ? null : await prMeta(root, pr).catch(() => null))),
+  };
+}
+
+function toolMax(args: Record<string, unknown>): number {
+  const n = args.max_chars;
+  if (typeof n !== 'number' || !Number.isFinite(n)) return TOOL_RESULT_LIMIT;
+  return Math.min(60000, Math.max(1000, Math.floor(n)));
+}
+
+function toolPaths(args: Record<string, unknown>): string[] | undefined {
+  const p = args.paths;
+  if (p === undefined) return undefined;
+  if (!Array.isArray(p)) throw new Error('paths must be an array of strings');
+  const out = p.map((x) => {
+    if (typeof x !== 'string' || !x.trim() || x.length > 500) throw new Error('paths must be an array of strings');
+    return x.trim();
+  });
+  return [...new Set(out)].slice(0, 50);
+}
+
+/**
+ * File paths from a `diff --git` header. Generation forces canonical a/ b/,
+ * but a quoted or single-letter (mnemonic) prefix is tolerated so foreign
+ * patches (e.g. pasted `gh` output) still slice.
+ */
+function diffNames(header: string): string[] {
+  const m = header.match(/^diff --git (?:"([^"]+)"|(\S+)) (?:"([^"]+)"|(\S+))\s*$/);
+  if (!m) return [];
+  const norm = (p: string) => p.replace(/^[a-z]\//, '');
+  return [norm(m[1] ?? m[2]), norm(m[3] ?? m[4])];
+}
+
+/** Keep only the hunks for `paths`, then cap: omitted files are named so the model can ask again. */
+function slicePatch(patch: string, paths: string[] | undefined, max: number): string {
+  const blocks = patch.split(/(?=^diff --git )/m).filter((b) => b.startsWith('diff --git '));
+  const names = (b: string): string[] => diffNames(b.split('\n', 1)[0]);
+  const kept = paths ? blocks.filter((b) => names(b).some((n) => paths.includes(n))) : blocks;
+  if (!kept.length) return paths ? `(no patch hunks for: ${paths.join(', ')})` : '(empty patch)';
+  let out = '';
+  const omitted: string[] = [];
+  for (const b of kept) {
+    if (out.length + b.length > max) {
+      omitted.push(names(b)[0] || 'unknown');
+      continue;
+    }
+    out += b;
+  }
+  if (paths) {
+    const missing = paths.filter((p) => !blocks.some((b) => names(b).includes(p)));
+    if (missing.length) out += `\n(no patch hunks for: ${missing.join(', ')})`;
+  }
+  if (omitted.length) out += `\n... (truncated: ${omitted.length} more file${omitted.length === 1 ? '' : 's'} omitted: ${omitted.slice(0, 8).join(', ')})`;
+  return out;
+}
+
+function prFileList(patch: string): string[] {
+  const files = new Set<string>();
+  for (const line of patch.split('\n')) {
+    if (!line.startsWith('diff --git ')) continue;
+    const [first] = diffNames(line);
+    if (first) files.add(first);
+  }
+  return [...files];
+}
+
+/**
+ * One repo-tool call. Returns display text (capped), never throws: bad input
+ * and backend failures become notes the model can react to.
+ */
+export async function runRepoTool(env: ToolEnv, name: string, rawArgs: unknown): Promise<string> {
+  try {
+    const args = rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs) ? (rawArgs as Record<string, unknown>) : {};
+    switch (name) {
+      case 'repo_map': {
+        const [branchOut, headOut, stat, patch, meta] = await Promise.all([
+          run('git', ['-C', env.root, 'branch', '--show-current'], { maxBuffer: 64 * 1024, timeout: 10_000 }).then((r) => r.stdout.trim(), () => ''),
+          run('git', ['-C', env.root, 'log', '-1', '--format=%H %s'], { maxBuffer: 64 * 1024, timeout: 10_000 }).then((r) => r.stdout.trim(), () => ''),
+          workingStat(env.root),
+          env.prPatchText(),
+          env.meta(),
+        ]);
+        const lines = [`Branch: ${branchOut || env.branch || '(unknown)'}`, headOut ? `HEAD: ${headOut}` : null];
+        if (env.pr === null) lines.push('Pull request: none for this branch');
+        else if (!meta) lines.push(`Pull request: #${env.pr} (unavailable — gh failed or no access)`);
+        else {
+          lines.push(`Pull request: #${meta.number} "${meta.title}" (${meta.head}...${meta.base}) state=${meta.state}${meta.mergeable ? ` mergeable=${meta.mergeable}` : ''} ${meta.url}`);
+          lines.push(
+            meta.checks
+              ? `Checks: ${meta.checks.pass} pass, ${meta.checks.fail} fail, ${meta.checks.pending} pending${meta.checks.failing.length ? ` (failing: ${meta.checks.failing.join(', ')})` : ''}`
+              : 'Checks: none reported',
+          );
+        }
+        lines.push(`Working tree: ${stat || 'clean'}`);
+        if (patch) {
+          const files = prFileList(patch);
+          lines.push(
+            files.length <= 60
+              ? `PR files (${files.length}): ${files.join(', ')}`
+              : `PR files (${files.length}): ${files.slice(0, 60).join(', ')} ... and ${files.length - 60} more — ask pr_diff with paths=[...]`,
+          );
+        } else if (env.pr !== null) lines.push('PR patch: unavailable (gh failed or no access)');
+        return lines.filter(Boolean).join('\n');
+      }
+      case 'pr_info': {
+        if (env.pr === null) return 'No pull request in context for this branch.';
+        const meta = await env.meta();
+        if (!meta) return `Pull request #${env.pr} is unavailable (gh failed or no access).`;
+        const checks = meta.checks
+          ? `Checks: ${meta.checks.pass} pass, ${meta.checks.fail} fail, ${meta.checks.pending} pending${meta.checks.failing.length ? `\nFailing: ${meta.checks.failing.join('\n')}` : ''}`
+          : 'Checks: none reported';
+        return [`#${meta.number} ${meta.title}`, meta.url, `Base: ${meta.base}`, `Head: ${meta.head}`, `State: ${meta.state}`, `Mergeable: ${meta.mergeable ?? 'unknown'}`, checks].join('\n');
+      }
+      case 'pr_diff': {
+        if (env.pr === null) return 'No pull request in context for this branch.';
+        const patch = await env.prPatchText();
+        if (patch === null) return `Pull request #${env.pr} patch is unavailable (gh failed or no access).`;
+        return slicePatch(patch, toolPaths(args), toolMax(args));
+      }
+      case 'working_diff': {
+        const patch = await env.working();
+        if (!patch.trim()) return '(working tree clean)';
+        return slicePatch(patch, toolPaths(args), toolMax(args));
+      }
+      case 'read_file': {
+        const p = args.path;
+        if (typeof p !== 'string' || !p.trim() || p.length > 500) return 'read_file needs a repo-relative path.';
+        const max = toolMax(args);
+        const ref = args.ref === undefined || args.ref === 'working' ? 'working' : args.ref === 'HEAD' || args.ref === 'base' ? args.ref : null;
+        if (!ref) return "ref must be 'working', 'HEAD', or 'base'.";
+        if (ref === 'working') {
+          const abs = join(env.root, p);
+          if (!abs.startsWith(env.root + sep)) return 'Path escapes the repo.';
+          let text: string;
+          try {
+            const size = (await stat(abs)).size;
+            if (size > 100_000) return `File too large (${size} bytes), not shown.`;
+            text = await readFile(abs, 'utf8');
+          } catch {
+            return `Cannot read ${p} from the working tree.`;
+          }
+          if (text.includes('\0')) return 'Binary file, not shown.';
+          return text.length > max ? `${text.slice(0, max)}\n... (truncated)` : text;
+        }
+        const rev = ref === 'HEAD' ? 'HEAD' : await (async () => {
+          const meta = await env.meta();
+          if (!meta?.base) return null;
+          return await mergeBase(env.root, meta.base);
+        })();
+        if (!rev) return 'PR base is not available locally.';
+        try {
+          return await showAtRef(env.root, rev, p, max);
+        } catch (err) {
+          return (err as Error).message;
+        }
+      }
+      case 'commit_show': {
+        if (typeof args.sha !== 'string') return 'commit_show needs a sha.';
+        try {
+          const { stat, patch } = await commitShow(env.root, args.sha, toolMax(args));
+          return `${stat}${patch.trim() ? `\n\n${patch}` : '\n\n(no patch — merge or empty commit)'}`;
+        } catch (err) {
+          return (err as Error).message;
+        }
+      }
+      default:
+        return `Unknown tool: ${name}. Available: repo_map, pr_info, pr_diff, working_diff, read_file, commit_show.`;
+    }
+  } catch (err) {
+    return `Tool failed: ${err instanceof Error ? err.message : 'unknown error'}`;
+  }
 }
 
 function firstLine(s: string): string {
@@ -377,50 +680,113 @@ export class SideChatStore {
     return s;
   }
 
-  async chat(uid: string, text: string, ctx: ChatContext, subscriptionId?: string): Promise<ChatReply> {
-    const sub = await this.resolve(subscriptionId);
-    const prior = (await this.history(uid)).slice(-HISTORY_LIMIT);
-    const messages = [
-      { role: 'system', content: `${SYSTEM}\n\n${contextBlock(ctx)}` },
-      ...prior.map((m) => ({ role: m.role, content: m.text })),
-      { role: 'user', content: text },
-    ];
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), CHAT_TIMEOUT_MS);
+  /** One provider round; tools attached only when offered. */
+  private async complete(
+    sub: Subscription,
+    messages: Record<string, unknown>[],
+    withTools: boolean,
+    signal: AbortSignal,
+  ): Promise<{ content: unknown; toolCalls: Array<{ id: string; name: string; args: unknown; echoArgs: string }> }> {
     let res: Response;
     try {
       res = await fetch(`${sub.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${sub.apiKey}` },
-        body: JSON.stringify({ model: sub.model, messages }),
-        signal: ctrl.signal,
+        body: JSON.stringify({ model: sub.model, messages, ...(withTools ? { tools: REPO_TOOLS, tool_choice: 'auto' } : {}) }),
+        signal,
       });
     } catch (err) {
       throw new SideChatError(err instanceof Error && err.name === 'AbortError' ? 504 : 502, err instanceof Error && err.name === 'AbortError' ? 'chat provider timed out' : 'chat provider unreachable');
-    } finally {
-      clearTimeout(timer);
     }
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       throw new SideChatError(502, `chat provider: ${res.status} ${firstLine(body) || res.statusText}`.trim());
     }
-    let data: { choices?: Array<{ message?: { content?: unknown } }> };
+    let data: { choices?: Array<{ message?: { content?: unknown; tool_calls?: Array<{ id?: unknown; type?: unknown; function?: { name?: unknown; arguments?: unknown } }> } }> };
     try {
       data = await res.json();
     } catch {
       throw new SideChatError(502, 'chat provider returned invalid JSON');
     }
-    const raw = data.choices?.[0]?.message?.content;
-    if (typeof raw !== 'string' || !raw.trim()) throw new SideChatError(502, 'chat provider returned an empty reply');
-    // Follow-ups are ephemeral UI; history keeps the answer text only.
-    const { content, followups } = parseStructured(raw);
-    const at = Math.floor(Date.now() / 1000);
-    const log = [...prior, { role: 'user' as const, text, at }, { role: 'assistant' as const, text: content, at }].slice(-HISTORY_LIMIT);
-    await this.db.$transaction([
-      this.db.chatMessage.deleteMany({ where: { uid } }),
-      this.db.chatMessage.createMany({ data: log.map((m) => ({ uid, role: m.role, text: m.text, at: m.at })) }),
-    ]);
-    const saved = await this.db.chatMessage.findFirst({ where: { uid }, orderBy: { id: 'desc' }, select: { id: true } });
-    return { message: { role: 'assistant', text: content, at, id: saved?.id }, followups };
+    const msg = data.choices?.[0]?.message;
+    if (!msg) throw new SideChatError(502, 'chat provider returned an empty reply');
+    const toolCalls: Array<{ id: string; name: string; args: unknown; echoArgs: string }> = [];
+    if (withTools && Array.isArray(msg.tool_calls)) {
+      msg.tool_calls.forEach((c, i) => {
+        const fn = c?.function;
+        if (c?.type !== 'function' || !fn || typeof fn.name !== 'string' || !fn.name) return;
+        const echoArgs = typeof fn.arguments === 'string' ? fn.arguments : JSON.stringify(fn.arguments ?? {});
+        let args: unknown = {};
+        try {
+          args = JSON.parse(echoArgs);
+        } catch {
+          args = { _raw: echoArgs };
+        }
+        toolCalls.push({ id: typeof c.id === 'string' && c.id ? c.id : `call_${i}`, name: fn.name, args, echoArgs });
+      });
+    }
+    return { content: msg.content, toolCalls };
+  }
+
+  async chat(uid: string, text: string, ctx: ChatContext, subscriptionId?: string): Promise<ChatReply> {
+    const sub = await this.resolve(subscriptionId);
+    const prior = (await this.history(uid)).slice(-HISTORY_LIMIT);
+    // Repo tools when the session lives in a checkout; otherwise the legacy one-shot.
+    const env = await repoToolEnv(ctx.dir, ctx.pr, ctx.branch);
+    const messages: Record<string, unknown>[] = [
+      { role: 'system', content: `${systemPrompt(!!env)}\n\n${contextBlock(ctx, !!env)}` },
+      ...prior.map((m) => ({ role: m.role, content: m.text })),
+      { role: 'user', content: text },
+    ];
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), CHAT_TIMEOUT_MS);
+    // Providers without function calling get the legacy shape on retry.
+    let offerTools = !!env;
+    let retriedPlain = false;
+    try {
+      for (let round = 0; ; round++) {
+        let content: unknown;
+        let toolCalls: Array<{ id: string; name: string; args: unknown; echoArgs: string }>;
+        try {
+          ({ content, toolCalls } = await this.complete(sub, messages, offerTools, ctrl.signal));
+        } catch (err) {
+          if (offerTools && !retriedPlain && err instanceof SideChatError && /tool|function/i.test(err.message)) {
+            offerTools = false;
+            retriedPlain = true;
+            ({ content, toolCalls } = await this.complete(sub, messages, false, ctrl.signal));
+            toolCalls = [];
+          } else throw err;
+        }
+        if (offerTools && toolCalls.length && round < MAX_TOOL_ROUNDS && env) {
+          const results = await Promise.all(toolCalls.map((c) => runRepoTool(env, c.name, c.args)));
+          messages.push({
+            role: 'assistant',
+            content: typeof content === 'string' ? content : '',
+            tool_calls: toolCalls.map((c) => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.echoArgs } })),
+          });
+          toolCalls.forEach((c, i) => messages.push({ role: 'tool', tool_call_id: c.id, content: results[i] }));
+          continue;
+        }
+        if (offerTools && toolCalls.length) {
+          // Tool budget spent: one last answer without tools.
+          messages.push({ role: 'user', content: 'Tool budget spent. Reply now with ONLY the JSON object, no tool calls.' });
+          offerTools = false;
+          continue;
+        }
+        if (typeof content !== 'string' || !content.trim()) throw new SideChatError(502, 'chat provider returned an empty reply');
+        // Follow-ups and tool chatter are ephemeral UI; history keeps the answer text only.
+        const { content: answer, followups } = parseStructured(content);
+        const at = Math.floor(Date.now() / 1000);
+        const log = [...prior, { role: 'user' as const, text, at }, { role: 'assistant' as const, text: answer, at }].slice(-HISTORY_LIMIT);
+        await this.db.$transaction([
+          this.db.chatMessage.deleteMany({ where: { uid } }),
+          this.db.chatMessage.createMany({ data: log.map((m) => ({ uid, role: m.role, text: m.text, at: m.at })) }),
+        ]);
+        const saved = await this.db.chatMessage.findFirst({ where: { uid }, orderBy: { id: 'desc' }, select: { id: true } });
+        return { message: { role: 'assistant', text: answer, at, id: saved?.id }, followups };
+      }
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }

@@ -236,7 +236,7 @@ export type BranchInfo = {
 
 export type BranchList = { current: string | null; branches: BranchInfo[] };
 
-async function toplevel(dir: string): Promise<string> {
+export async function toplevel(dir: string): Promise<string> {
   try {
     return (await git(dir, 'rev-parse', '--show-toplevel')).trim();
   } catch {
@@ -414,10 +414,12 @@ export async function changes(dir: string): Promise<Changes> {
   } catch {
     throw new GitError('not a git repository');
   }
+  // Canonical prefixes: the caller's diff.mnemonicprefix (c/ w/) would
+  // otherwise leak into the Diff view and every patch parser downstream.
   const [status, stat, patch] = await Promise.all([
     git(root, 'status', '--porcelain=v1', '-b', '--untracked-files=all'),
     git(root, 'diff', 'HEAD', '--stat=120').catch(() => ''),
-    git(root, 'diff', 'HEAD', '--no-color', '--no-ext-diff').catch(() => ''),
+    git(root, 'diff', 'HEAD', '--src-prefix=a/', '--dst-prefix=b/', '--no-color', '--no-ext-diff').catch(() => ''),
   ]);
   const lines = status.split('\n').filter(Boolean);
   const branch = (lines[0] ?? '').replace(/^## /, '').split('...')[0];
@@ -430,6 +432,148 @@ export async function changes(dir: string): Promise<Changes> {
     patch: patch.length > PATCH_LIMIT ? patch.slice(0, PATCH_LIMIT) : patch,
     truncated: patch.length > PATCH_LIMIT,
   };
+}
+
+// ---------- side-chat repo tools (all read-only)
+
+// Raw material the side-chat tool loop slices per call; presentation caps
+// live with the executor so one fetch serves many narrow questions.
+const TOOL_FETCH_LIMIT = 400 * 1024;
+const GH_TIMEOUT_MS = 15_000;
+
+/** `gh` JSON that also arrives on a nonzero exit (`gh pr checks` fails red). */
+async function ghJson(root: string, args: string[]): Promise<unknown | null> {
+  try {
+    return JSON.parse((await exec('gh', args, { cwd: root, maxBuffer: 8 * 1024 * 1024, timeout: GH_TIMEOUT_MS })).stdout);
+  } catch (err) {
+    const out = (err as { stdout?: unknown }).stdout;
+    if (typeof out === 'string' && out.trim()) {
+      try {
+        return JSON.parse(out);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
+function validSha(s: string): boolean {
+  return /^[0-9a-f]{4,40}$/i.test(s);
+}
+
+/** Full `gh pr diff` output for the branch's PR, capped. Throws when gh fails. */
+export async function prPatch(root: string, pr: number): Promise<string> {
+  const { stdout } = await exec('gh', ['pr', 'diff', String(pr)], {
+    cwd: root,
+    maxBuffer: 64 * 1024 * 1024,
+    timeout: GH_TIMEOUT_MS,
+  });
+  return stdout.length > TOOL_FETCH_LIMIT ? stdout.slice(0, TOOL_FETCH_LIMIT) : stdout;
+}
+
+export type PrChecks = { pass: number; fail: number; pending: number; failing: string[] };
+export type PrMeta = {
+  number: number;
+  title: string;
+  url: string;
+  base: string;
+  head: string;
+  state: string;
+  mergeable: string | null;
+  checks: PrChecks | null;
+};
+
+/** PR metadata plus a compact checks rollup; null when gh can't see the PR. */
+export async function prMeta(root: string, pr: number): Promise<PrMeta | null> {
+  const v = (await ghJson(root, ['pr', 'view', String(pr), '--json', 'number,title,url,baseRefName,headRefName,state,mergeable'])) as {
+    number?: unknown;
+    title?: unknown;
+    url?: unknown;
+    baseRefName?: unknown;
+    headRefName?: unknown;
+    state?: unknown;
+    mergeable?: unknown;
+  } | null;
+  if (!v || typeof v.number !== 'number') return null;
+  const raw = await ghJson(root, ['pr', 'checks', String(pr), '--json', 'name,state']);
+  let checks: PrChecks | null = null;
+  if (Array.isArray(raw)) {
+    const failing: string[] = [];
+    let pass = 0;
+    let fail = 0;
+    let pending = 0;
+    for (const c of raw) {
+      if (!c || typeof c !== 'object') continue;
+      const { name, state } = c as { name?: unknown; state?: unknown };
+      if (state === 'SUCCESS' || state === 'SKIPPED' || state === 'NEUTRAL') pass++;
+      else if (state === 'FAILURE' || state === 'CANCELLED' || state === 'TIMED_OUT' || state === 'ACTION_REQUIRED') {
+        fail++;
+        if (typeof name === 'string' && name && failing.length < 10) failing.push(name);
+      } else pending++;
+    }
+    checks = { pass, fail, pending, failing };
+  }
+  return {
+    number: v.number,
+    title: typeof v.title === 'string' ? v.title : '',
+    url: typeof v.url === 'string' ? v.url : '',
+    base: typeof v.baseRefName === 'string' ? v.baseRefName : '',
+    head: typeof v.headRefName === 'string' ? v.headRefName : '',
+    state: typeof v.state === 'string' ? v.state : '',
+    mergeable: typeof v.mergeable === 'string' ? v.mergeable : null,
+    checks,
+  };
+}
+
+/** Full uncommitted patch (`git diff HEAD`), capped, canonical prefixes. */
+export async function workingPatch(root: string): Promise<string> {
+  const patch = await git(root, 'diff', 'HEAD', '--src-prefix=a/', '--dst-prefix=b/', '--no-color', '--no-ext-diff').catch(() => '');
+  return patch.length > TOOL_FETCH_LIMIT ? patch.slice(0, TOOL_FETCH_LIMIT) : patch;
+}
+
+/** validation for caller-supplied revisions: no flags, no shell, no traversal. */
+function validRef(s: string): boolean {
+  return /^(HEAD|[0-9a-f]{4,40}|[\w][\w./-]{0,99})$/.test(s) && !s.startsWith('-') && !s.includes('..');
+}
+
+/** Shortstat of the working tree, one line. */
+export async function workingStat(root: string): Promise<string> {
+  return (await git(root, 'diff', 'HEAD', '--shortstat').catch(() => '')).trim();
+}
+
+/** merge-base of HEAD with a branch name; null when the base isn't local. */
+export async function mergeBase(root: string, branch: string): Promise<string | null> {
+  if (!validRef(branch)) return null;
+  for (const ref of [`origin/${branch}`, branch]) {
+    try {
+      const sha = (await git(root, 'merge-base', 'HEAD', ref)).trim();
+      if (/^[0-9a-f]{40}$/.test(sha)) return sha;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+/** Capped file contents at a revision; throws GitError on bad input. */
+export async function showAtRef(root: string, rev: string, path: string, limit: number): Promise<string> {
+  if (!validRef(rev)) throw new GitError('invalid revision');
+  if (path.startsWith('-') || path.startsWith('/') || /(^|\/)\.\.(\/|$)/.test(path)) throw new GitError('path escapes the repo');
+  const out = await git(root, 'show', `${rev}:${path}`).catch(() => {
+    throw new GitError(`no such file at ${rev}: ${path}`);
+  });
+  return out.length > limit ? `${out.slice(0, limit)}\n... (truncated)` : out;
+}
+
+/** `git show` stat plus capped patch for one commit; throws on bad input. */
+export async function commitShow(root: string, sha: string, patchLimit: number): Promise<{ stat: string; patch: string }> {
+  if (!validSha(sha)) throw new GitError('invalid commit sha');
+  const [stat, patch] = await Promise.all([
+    git(root, 'show', '--no-color', '--stat=120', '--format=%h %s', sha),
+    git(root, 'show', '--no-color', '--no-ext-diff', '--format=', sha).catch(() => ''),
+  ]);
+  return { stat: stat.trim(), patch: patch.length > patchLimit ? `${patch.slice(0, patchLimit)}\n... (truncated)` : patch };
 }
 
 // ---------- per-turn snapshots (F39)

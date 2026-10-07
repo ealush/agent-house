@@ -649,7 +649,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
       const msg = await sidechat.chat(
         key,
         text,
-        { title: w.title, session: w.session, branch: chg?.branch ?? w.branch, pr: pr?.number ?? null, diff: chg?.diff ?? '' },
+        { title: w.title, session: w.session, branch: chg?.branch ?? w.branch, pr: pr?.number ?? null, diff: chg?.diff ?? '', dir },
         body.subscriptionId === undefined ? undefined : str(body.subscriptionId, 'subscriptionId', 40),
       );
       return send(res, 200, msg);

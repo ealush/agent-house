@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { SideChatStore, changeContext, parseStructured, type ChatContext } from './sidechat.ts';
+import { SideChatStore, changeContext, parseStructured, repoToolEnv, runRepoTool, type ChatContext } from './sidechat.ts';
 import { getDb, ensureMigrated } from './db.ts';
 
 const file = () => join(tmpdir(), `ah-sidechat-test-${process.pid}-${Math.random().toString(36).slice(2)}.db`);
@@ -202,11 +202,13 @@ test('chat: request carries key, model and session context', async () => {
   assert.equal(init.headers.authorization, 'Bearer key');
   const body = JSON.parse(init.body);
   assert.equal(body.model, 'model');
+  assert.ok(!('tools' in body), 'no repo dir in context: legacy one-shot, no tools offered');
   const system = body.messages[0].content as string;
   assert.match(system, /Session: vest/);
   assert.match(system, /Branch: gui-support/);
   assert.match(system, /Pull request: #12/);
   assert.match(system, /working tree clean/);
+  assert.match(system, /beyond the context given/);
 });
 
 test('chat: provider failures surface cleanly', async () => {
@@ -265,6 +267,117 @@ test('changeContext: clean tree says so, non-repo rejects', async () => {
   await assert.rejects(changeContext(join(tmpdir(), `ah-sidechat-norepo-${process.pid}`)), /not a git repository/);
 });
 
+
+const toolCall = (name: string, args: unknown = {}) =>
+  new Response(
+    JSON.stringify({ choices: [{ message: { content: '', tool_calls: [{ id: 'c1', type: 'function', function: { name, arguments: JSON.stringify(args) } }] } }] }),
+    { status: 200, headers: { 'content-type': 'application/json' } },
+  );
+
+const finalAnswer = (content: string) => ok(JSON.stringify({ content, followups: [] }));
+
+async function dirtyRepo() {
+  const { dir, g } = await fixtureRepo();
+  await writeFile(join(dir, 'b.txt'), 'second file\n');
+  g('add', '.');
+  g('commit', '-qm', 'second');
+  await writeFile(join(dir, 'a.txt'), 'hello changed\n');
+  await writeFile(join(dir, 'b.txt'), 'second file changed\n');
+  return { dir, g };
+}
+
+test('chat: repo tools run server-side and feed the answer', async () => {
+  const { dir } = await dirtyRepo();
+  const { store } = await subscribed();
+  const seen: { url: unknown; init: unknown }[] = [];
+  let reply!: Awaited<ReturnType<typeof store.chat>>;
+  await withFetch(
+    (s) => {
+      seen.push(...s.splice(0));
+      return seen.length === 1 ? toolCall('working_diff') : finalAnswer('two files changed');
+    },
+    async () => {
+      reply = await store.chat('tools-u', 'what changed?', { ...ctx, dir, diff: '' });
+    },
+  );
+  assert.equal(reply.message.text, 'two files changed');
+  assert.equal(seen.length, 2);
+  const first = JSON.parse((seen[0].init as { body: string }).body);
+  assert.ok(Array.isArray(first.tools) && first.tools.some((t: { function: { name: string } }) => t.function?.name === 'working_diff'), 'tools offered on the first round');
+  const second = JSON.parse((seen[1].init as { body: string }).body);
+  const toolMsg = second.messages.find((m: { role: string }) => m.role === 'tool');
+  assert.match(toolMsg.content, /\+hello changed/, 'uncommitted diff reached the model without a dump up front');
+  assert.match(JSON.stringify(second.messages.find((m: { role: string }) => m.role === 'system')), /repo tools/);
+  // Tool chatter is ephemeral: history keeps the answer only.
+  assert.deepEqual((await store.history('tools-u')).map((m) => [m.role, m.text]), [
+    ['user', 'what changed?'],
+    ['assistant', 'two files changed'],
+  ]);
+});
+
+test('chat: providers without function calling fall back to one-shot', async () => {
+  const { dir } = await dirtyRepo();
+  const { store } = await subscribed();
+  const bodies: string[] = [];
+  await withFetch(
+    (s) => {
+      const init = s[s.length - 1].init as { body: string };
+      bodies.push(init.body);
+      return JSON.parse(init.body).tools ? new Response('{"error":{"message":"tools are not supported"}}', { status: 400 }) : finalAnswer('plain answer');
+    },
+    async () => {
+      const reply = await store.chat('fallback-u', 'hi', { ...ctx, dir, diff: '' });
+      assert.equal(reply.message.text, 'plain answer');
+    },
+  );
+  assert.equal(bodies.length, 2);
+  assert.ok(JSON.parse(bodies[0]).tools, 'tried tools first');
+  assert.ok(!('tools' in JSON.parse(bodies[1])), 'retried without tools');
+});
+
+test('chat: a model that only calls tools still terminates', async () => {
+  const { dir } = await dirtyRepo();
+  const { store } = await subscribed();
+  let calls = 0;
+  await withFetch(
+    () => {
+      calls++;
+      // Six tool rounds, then the budget nudge, then a final plain answer.
+      return calls <= 6 ? toolCall('working_diff') : finalAnswer('done');
+    },
+    async () => {
+      const reply = await store.chat('budget-u', 'hi', { ...ctx, dir, diff: '' });
+      assert.equal(reply.message.text, 'done');
+    },
+  );
+  assert.equal(calls, 7, `six tool rounds plus the final answer (saw ${calls})`);
+});
+
+test('runRepoTool: patches slice by path, reads confine to the repo', async () => {
+  const { dir, g } = await dirtyRepo();
+  const env = await repoToolEnv(dir, null, 'main');
+  assert.ok(env);
+  const whole = await runRepoTool(env, 'working_diff', {});
+  assert.match(whole, /diff --git a\/a\.txt b\/a\.txt/, 'canonical prefixes regardless of diff.mnemonicprefix');
+  const onlyB = await runRepoTool(env, 'working_diff', { paths: ['b.txt'] });
+  assert.match(onlyB, /second file/);
+  assert.ok(!onlyB.includes('hello changed'), 'other hunks filtered out');
+  assert.match(await runRepoTool(env, 'working_diff', { paths: ['nope.txt'] }), /no patch hunks for: nope\.txt/);
+  assert.match(await runRepoTool(env, 'read_file', { path: 'a.txt', ref: 'HEAD' }), /^hello$/m);
+  assert.match(await runRepoTool(env, 'read_file', { path: '../evil' }), /escapes the repo/);
+  assert.match(await runRepoTool(env, 'read_file', { path: 'a.txt', ref: 'whatever' }), /must be 'working', 'HEAD', or 'base'/);
+  assert.match(await runRepoTool(env, 'commit_show', { sha: 'zzz' }), /invalid commit sha/);
+  const sha = g('rev-parse', 'HEAD').toString().trim();
+  assert.match(await runRepoTool(env, 'commit_show', { sha }), /second/);
+  assert.match(await runRepoTool(env, 'pr_diff', {}), /No pull request in context/);
+  assert.match(await runRepoTool(env, 'pr_info', {}), /No pull request in context/);
+  assert.match(await runRepoTool(env, 'bogus', {}), /Unknown tool/);
+});
+
+test('repoToolEnv: null outside a repo', async () => {
+  assert.equal(await repoToolEnv(undefined, null, null), null);
+  assert.equal(await repoToolEnv(join(tmpdir(), `ah-sidechat-nondir-${process.pid}`), null, null), null);
+});
 
 test('historic search jumps include messages older than the latest chat window', async () => {
   const { store, path } = await freshStore();

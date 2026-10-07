@@ -44,6 +44,7 @@ test('claude resume preserves flags', () => {
 test('muse default / yolo / model', () => {
   assert.equal(buildLaunch(muse).command, 'muse');
   assert.ok(buildLaunch(muse, { mode: 'yolo' }).command.includes('--yolo'));
+  assert.ok(buildLaunch(muse, { mode: 'yolo' }).command.includes('--approval-mode never'), 'yolo states approval never explicitly');
   assert.ok(buildLaunch(muse, { model: 'spark' }).command.includes('--model spark'));
 });
 
@@ -103,6 +104,7 @@ test('model version, effort, and permissions become launch flags and survive res
     assert.ok(plan.command.includes('--model muse-spark-1.3-contributor'));
     assert.ok(plan.command.includes('--reasoning-effort ultra'));
     assert.ok(plan.command.includes('--yolo'));
+    assert.ok(plan.command.includes('--approval-mode never'), 'explicit approval-never survives resume');
     assert.equal(plan.meta['ah.launch.model'], choice.model);
     assert.equal(plan.meta['ah.launch.effort'], choice.effort);
   }
