@@ -365,6 +365,7 @@ export function App({ onLock }: { onLock: () => void }) {
               .then(() => refresh(w.host))
               .catch((e) => showError(e, "Couldn't terminate"));
           }}
+          onFork={(w) => setForking({ ref: w.uid, host: w.host, harness: w.agent, title: w.title })}
           onRunAction={(host, runId, action) => {
             const client = clientFor(host);
             (action === 'stop' ? client.stopRun(runId) : client.archiveRun(runId))

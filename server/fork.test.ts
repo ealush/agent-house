@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { copyTranscript, FORKERS, encodeClaudeProjectDir, forkUnavailableReason } from './fork.ts';
-import { parseClaude, parseCodex } from './discovery.ts';
+import { parseClaude, parseCodex, parseMuse } from './discovery.ts';
 import { ensureMigrated } from './db.ts';
 import { Registry } from './registry.ts';
 
@@ -16,6 +16,7 @@ import { Registry } from './registry.ts';
 // by the contract test below — and update the shape stamp + capture date here.
 const CLAUDE_SHAPE = 'claude-code jsonl, captured ~late 2026: per-line sessionId/cwd, bucket dir by encoded cwd';
 const CODEX_SHAPE = 'codex rollout jsonl, captured ~late 2026: session_meta payload.id/cwd, rollout-<stamp>-<id>.jsonl under sessions/YYYY/MM/DD';
+const MUSE_SHAPE = 'muse session.jsonl, verified against a local 1.4.x store 2026-10-08: stream.id per line, metadata workspace_root, record_json frames';
 
 const CLAUDE_SRC = [
   '{"type":"mode","sessionId":"abc"}',
@@ -32,7 +33,22 @@ const CODEX_SRC = [
   '',
 ].join('\n');
 
-test(`fork fixtures carry the identity fields the forkers rewrite (${CLAUDE_SHAPE}; ${CODEX_SHAPE})`, () => {
+const MUSE_FRAME_INNER = {
+  schema_version: 1,
+  stream: { kind: 'session', id: 'muse-old' },
+  payload_type: 'runtime.session.metadata',
+  payload: { record: { workspace_root: '/home/u/code/proj' } },
+};
+const MUSE_SRC = [
+  '{"schema_version":1,"id":"e1","stream":{"kind":"session","id":"muse-old"},"sequence":1,"recorded_at":1785972468000000,"payload_type":"runtime.session.metadata","payload":{"record":{"workspace_root":"/home/u/code/proj"}}}',
+  '{"schema_version":1,"id":"e2","stream":{"kind":"session","id":"muse-old"},"sequence":2,"recorded_at":1785972469000000,"payload_type":"runtime.session","payload":{"kind":"run","event":{"kind":"started","prompt":"Fix the login redirect"}}}',
+  '{"schema_version":1,"id":"e3","stream":{"kind":"session","id":"muse-old"},"sequence":3,"recorded_at":1785972470000000,"payload_type":"runtime.session","payload":{"kind":"run","event":{"kind":"assistant_message_committed","text":"Fixed the redirect."}}}',
+  JSON.stringify({ retained_frame: 'session_permission_transaction', children: [{ child_index: 0, record_json: JSON.stringify(MUSE_FRAME_INNER) }] }),
+  '{"retained_marker":"omitted_live_only","stream":{"kind":"session","id":"muse-old"}}',
+  '',
+].join('\n');
+
+test(`fork fixtures carry the identity fields the forkers rewrite (${CLAUDE_SHAPE}; ${CODEX_SHAPE}; ${MUSE_SHAPE})`, () => {
   const claudeLines = CLAUDE_SRC.split('\n').filter(Boolean).map((l) => JSON.parse(l));
   assert.ok(claudeLines.some((d) => typeof d?.sessionId === 'string'), 'claude fixture needs per-line sessionId');
   assert.ok(claudeLines.some((d) => typeof d?.cwd === 'string'), 'claude fixture needs per-line cwd');
@@ -40,6 +56,9 @@ test(`fork fixtures carry the identity fields the forkers rewrite (${CLAUDE_SHAP
   const meta = codexLines.find((d) => d?.type === 'session_meta');
   assert.ok(meta && typeof meta.payload?.id === 'string', 'codex fixture needs session_meta payload.id');
   assert.ok(codexLines.some((d) => typeof d?.payload?.cwd === 'string'), 'codex fixture needs payload.cwd');
+  const museLines = MUSE_SRC.split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  assert.ok(museLines.every((d) => d?.stream?.id === 'muse-old' || (d.children && JSON.parse(d.children[0].record_json).stream?.id === 'muse-old')), 'muse fixture needs stream.id on every line');
+  assert.ok(museLines.some((d) => d?.payload?.record?.workspace_root === '/home/u/code/proj'), 'muse fixture needs metadata workspace_root');
 });
 
 test('claude project buckets are the cwd with non-alphanumerics dashed', () => {
@@ -82,6 +101,28 @@ test('codex fork copy rewrites the rollout id and cwd, keeping its date director
   assert.equal(await readFile(src, 'utf8'), CODEX_SRC);
 });
 
+test('muse fork copy is re-ided and re-homed under a new session id', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ah-fork-unit-'));
+  process.env.XDG_DATA_HOME = join(dir, 'xdg');
+  const src = join(dir, 'session.jsonl');
+  await writeFile(src, MUSE_SRC);
+  const target = '/home/u/code/.worktrees/proj/risky-1a2b';
+  const { harnessId, file } = await copyTranscript('muse', src, target);
+  assert.notEqual(harnessId, 'muse-old');
+  assert.ok(file.startsWith(join(dir, 'xdg', 'muse', 'sessions')), file);
+  assert.ok(file.endsWith(join(harnessId, 'session.jsonl')), file);
+  const body = await readFile(file, 'utf8');
+  assert.ok(!body.includes('muse-old'), 'no line keeps the parent session id');
+  assert.ok(!body.includes('/home/u/code/proj'), 'no workspace root keeps the parent checkout');
+  const parsed = await parseMuse(file, 999);
+  assert.equal(parsed?.harnessId, harnessId);
+  assert.equal(parsed?.cwd, target);
+  assert.equal(parsed?.title, 'Fix the login redirect');
+  // The parent transcript is untouched.
+  assert.equal(await readFile(src, 'utf8'), MUSE_SRC);
+  delete process.env.XDG_DATA_HOME;
+});
+
 test('a failed copy leaves nothing behind', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'ah-fork-unit-'));
   process.env.CLAUDE_CONFIG_DIR = join(dir, 'claude');
@@ -96,6 +137,7 @@ test('unavailable reasons are specific per harness', () => {
   assert.match(forkUnavailableReason('grok', 'g1')!, /can't be forked yet/);
   assert.equal(forkUnavailableReason('claude', 'c1'), null);
   assert.equal(forkUnavailableReason('codex', 'x1'), null);
+  assert.equal(forkUnavailableReason('muse', 'm1'), null);
 });
 
 test('registry lineage: forksOf and forkParent read ah.fork meta', async () => {

@@ -69,7 +69,7 @@
 | F33 | Settings transfer | ✗ | |
 | F34 | Diff view | ✅ | Read-only status + patch. |
 | F35 | Inline code comments | ✅ | Click a diff line to send the agent a file/line/code-anchored comment. |
-| F36 | Session forking | ✅ | `server/fork.ts` + `Core.fork`: transcript copied to a new conversation id homed in a fresh `ah/<slug>` worktree (Claude Code and Codex), lineage in `ah.fork` meta, fork dialog + family view, `ah fork`. Mid-transcript fork points are not supported (fork is at the current end). |
+| F36 | Session forking | ✅ | `server/fork.ts` + `Core.fork`: transcript copied to a new conversation id homed in a fresh `ah/<slug>` worktree (Claude Code, Codex and Muse), lineage in `ah.fork` meta, fork dialog + family view, `ah fork`. Mid-transcript fork points are not supported (fork is at the current end). |
 | F37 | Agent-to-agent control | ✅ | `ah send X … && ah wait X && ah read X` |
 | F38 | Scheduled runs | ✗ | |
 | F39 | Snapshots + rollback | ✅ | Per-turn git snapshots under private refs (`server/snapshots.ts`), captured at turn start, with rollback that takes a safety snapshot first so a restore is itself undoable; `Snapshots.tsx` panel with per-turn list and restore. |

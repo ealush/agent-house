@@ -39,7 +39,7 @@ export function HistoryView({ state, onResume, onForget, onFork }: { state: Stat
                   <button className="btn small" onClick={() => onResume(h)}>
                     Resume
                   </button>
-                  {onFork && (h.harness === 'claude' || h.harness === 'codex') && (
+                  {onFork && (h.harness === 'claude' || h.harness === 'codex' || h.harness === 'muse') && (
                     <button className="btn small ghost" onClick={() => onFork(h)}>
                       Fork
                     </button>

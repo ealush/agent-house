@@ -25,6 +25,8 @@ type Props = {
   onReorder: (uid: string, host: string, order: number) => void;
   /** Terminate the live session (F44). */
   onKill: (w: Win) => void;
+  /** Fork the live session into a fresh worktree (F36). */
+  onFork?: (w: Win) => void;
   /** Stop or archive a whole recipe run (issue #6). */
   onRunAction?: (host: string, runId: string, action: 'stop' | 'archive') => void;
   /** Start dragging a session toward a split pane (F46). */
@@ -66,7 +68,7 @@ export function confirmTerminate(w: Win) {
 }
 
 /** Desktop navigation: inbox, hosts, and every live session grouped by host (or project). */
-export function Sidebar({ state, error, page, selected, visibleKeys, device, onPage, onSelect, onSearch, onNew, onWorktrees, onReorder, onKill, onRunAction, onDragSession, onCollapse }: Props) {
+export function Sidebar({ state, error, page, selected, visibleKeys, device, onPage, onSelect, onSearch, onNew, onWorktrees, onReorder, onKill, onFork, onRunAction, onDragSession, onCollapse }: Props) {
   const windows = state?.windows ?? [];
   const visible = new Set(visibleKeys);
   const waiting = windows.filter((w) => w.status === 'waiting').length;
@@ -180,6 +182,16 @@ export function Sidebar({ state, error, page, selected, visibleKeys, device, onP
             >
               Open
             </button>
+            {onFork && w.agent && (
+              <button
+                onClick={() => {
+                  setMenuKey(null);
+                  onFork(w);
+                }}
+              >
+                Fork session…
+              </button>
+            )}
             <button
               className="danger"
               onClick={() => {
