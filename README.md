@@ -139,8 +139,9 @@ API, event stream, terminals, files. Nothing loads but the lock screen until the
   signed out after 24h unused and after 30 days regardless (`auth.idleHours`,
   `auth.maxDays`). **Security** lists passkeys, signed-in devices (revoke one, or sign out
   everywhere else), and recent activity. Revoking a device also closes its open terminals.
-- **Throttling:** 10 failed attempts in 5 minutes locks every sign-in path for a few
-  minutes.
+- **Throttling:** guessable secrets (master password, setup codes) are throttled per
+  source and per mechanism, with a global ceiling. Failed passkey attempts are never
+  throttled — nobody can lock you out of passkey sign-in.
 - **Machine access:** the local CLI authenticates with a token the server writes to
   `~/.local/state/ah/local-token` (mode 0600). Other hosts get their own revocable tokens:
   run `ah auth token <hub>` on the peer, then `ah peers trust <peer> <token>` on the hub.
@@ -153,7 +154,7 @@ Plus:
   COOP/CORP same-origin, HSTS.
 - Sessions start only from configured presets; Approve/Deny re-checks that the session is
   still waiting before typing anything.
-- The file browser is confined to home and `/tmp` (symlinks resolved); every file response
+- The file browser is confined to the configured `files.roots` (home is opt-in, symlinks resolved); every file response
   is CSP-sandboxed, so nothing served can run script on ah's origin.
 - An audit log of sign-ins, failures, enrollments and session actions in
   `~/.local/state/ah/audit.log`.

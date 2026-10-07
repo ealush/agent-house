@@ -36,22 +36,12 @@ import {
   type RunRecord,
 } from './recipes.ts';
 import { SnapshotStore, type SnapshotInfo } from './snapshots.ts';
+import { QueueManager, type LaunchChange, type QueueItem } from './queue.ts';
 import { Push } from './push.ts';
 import type { Peers } from './peers.ts';
 import type { TranscriptSource } from './search.ts';
 
-type LaunchChange = { model?: string; effort?: string };
-export type QueueItem = {
-  id: string;
-  text: string;
-  enter: boolean;
-  at: number;
-  launchChange?: LaunchChange;
-  /** Provenance label for recipe handoffs, shown in the queue panel (issue #6). */
-  source?: string;
-  /** The handoff record this item carries, so its fate updates the handoff. */
-  handoffId?: string;
-};
+export type { LaunchChange, QueueItem } from './queue.ts';
 
 export type Host = { name: string; self: boolean; online: boolean };
 
@@ -125,6 +115,8 @@ export class Core {
   readonly registry: Registry;
   readonly recipeStore: RecipeStore;
   private handoffEngine: HandoffEngine;
+  /** Durable prompt queue (F22): state and flush policy live in server/queue.ts. */
+  private queues: QueueManager;
   readonly push = new Push();
   readonly viewers: Map<string, string[]>;
   private state: State | null = null;
@@ -154,6 +146,14 @@ export class Core {
     this.viewers = viewers;
     this.recipeStore = recipes;
     this.handoffEngine = new HandoffEngine(this.recipeStore, (uid, text, source) => this.sendHandoff(uid, text, source));
+    this.queues = new QueueManager(this.registry, this.handoffEngine, {
+      withInput: (uid, fn) => this.withInput(uid, fn),
+      justSent: (uid) => this.justSent(uid),
+      markSent: (uid) => void this.sentAt.set(uid, Date.now()),
+      captureTurnStart: (uid, text) => this.captureTurnStart(uid, text),
+      paste: (windowId, text, enter) => t.pasteText(windowId, text, enter),
+      applyLaunchChange: (uid, change) => this.applyLaunchChange(uid, change),
+    });
     try {
       if (existsSync(HIDDEN_FILE)) this.hidden = new Set(JSON.parse(readFileSync(HIDDEN_FILE, 'utf8')));
     } catch {}
@@ -206,7 +206,7 @@ export class Core {
         this.lastPrune = now();
         void this.pruneSnapshots().catch((err) => console.error('snapshot prune failed:', err));
       }
-      await this.deliverQueued(windows);
+      await this.queues.deliverDue(windows);
       this.push.observe(windows);
       const history = (await buildHistory(this.registry, windows)).filter((h) => !this.hidden.has(h.ref));
       const state: State = {
@@ -558,14 +558,14 @@ export class Core {
         if (!handoff || handoff.state !== 'pending' || this.recipeStore.getRun(handoff.runId)?.state !== 'running') throw new CoreError(409, 'handoff is no longer pending');
       }
       const w = state.windows.find((w) => w.id === target.windowId);
-      const queue = this.queue(target.uid);
+      const queued = this.queues.items(target.uid);
       // A waiting agent is blocked on your input: what you send now is the
       // answer to its question or approval prompt, so it is typed immediately
       // instead of queued behind the turn that asked. (The ticker never flushes
       // the queue into a waiting session, so queueing here would strand it.)
       // Shells take input immediately (a dev server is always "busy"); agents get queued while working.
       const answering = !!w?.agent && w.status === 'waiting';
-      const ready = !target.resumed && !!w && (answering || queue.length === 0) && (answering || !w.agent || (!this.justSent(w.uid) && (w.status === 'idle' || w.status === 'attention')));
+      const ready = !target.resumed && !!w && (answering || queued.length === 0) && (answering || !w.agent || (!this.justSent(w.uid) && (w.status === 'idle' || w.status === 'attention')));
       if (ready) {
         if (w.agent) {
           this.sentAt.set(w.uid, Date.now());
@@ -584,9 +584,8 @@ export class Core {
         ...(launchChange ? { launchChange } : {}),
         ...(source ? { source: source.label, handoffId: source.handoffId } : {}),
       };
-      queue.push(item);
-      this.registry.setMeta(target.uid, 'ah.queue', queue);
-      return { outcome: 'queued', windowId: target.windowId, resumed: target.resumed, queued: queue.length, queueId: item.id };
+      const queuedCount = this.queues.enqueue(target.uid, item);
+      return { outcome: 'queued', windowId: target.windowId, resumed: target.resumed, queued: queuedCount, queueId: item.id };
     });
   }
 
@@ -640,45 +639,14 @@ export class Core {
     this.promptStore.save(this.prompts);
   }
 
+  /** A copy of the session's queued items, oldest first (state lives in the QueueManager). */
   queue(uid: string): QueueItem[] {
-    return [...((this.registry.get(uid)?.meta['ah.queue'] as QueueItem[] | undefined) ?? [])];
+    return this.queues.items(uid);
   }
 
+  /** Drop one queued item or the whole queue. */
   clearQueue(uid: string, itemId?: string) {
-    const before = this.queue(uid);
-    const rest = itemId ? before.filter((q) => q.id !== itemId) : [];
-    const removed = itemId ? before.filter((q) => q.id === itemId) : before;
-    this.registry.setMeta(uid, 'ah.queue', rest.length ? rest : undefined);
-    // Cancelling a queued handoff cancels the handoff itself (issue #6).
-    for (const item of removed) if (item.handoffId) this.handoffEngine.queueItemCancelled(item.id);
-  }
-
-  private async deliverQueued(windows: WindowView[]) {
-    const t0 = now();
-    for (const w of windows) {
-      if (!w.queued || (w.status !== 'idle' && w.status !== 'attention')) continue;
-      // Freshly (re)started agents render their UI first; don't type into a half-drawn TUI.
-      if (t0 - (w.createdAt || 0) < 5) continue;
-      await this.withInput(w.uid, async () => {
-        if (this.justSent(w.uid)) return;
-        const [next, ...rest] = this.queue(w.uid);
-        if (!next) return;
-        // Remove before typing: at-most-once, never a duplicate turn (F16).
-        this.registry.setMeta(w.uid, 'ah.queue', rest.length ? rest : undefined);
-        this.sentAt.set(w.uid, Date.now());
-        if (next.enter) await this.captureTurnStart(w.uid, next.text);
-        try {
-          await t.pasteText(w.id, next.text, next.enter);
-          if (next.launchChange) this.applyLaunchChange(w.uid, next.launchChange);
-          if (next.handoffId) this.handoffEngine.queueItemDelivered(next.id);
-        } catch (err) {
-          console.error(`queue delivery to ${w.id} failed:`, err);
-          if (next.handoffId) this.handoffEngine.queueItemFailed(next.id, (err as Error).message);
-        }
-        w.queued = rest.length;
-        w.status = 'busy';
-      });
-    }
+    this.queues.clear(uid, itemId);
   }
 
   /**
@@ -757,12 +725,9 @@ export class Core {
     const w = state.windows.find((w) => w.uid === uid);
     if (!w) throw new CoreError(404, 'session is not running');
     return this.withInput<SendResult>(uid, async () => {
-      const items = this.queue(uid);
-      const at = items.findIndex((q) => q.id === itemId);
-      if (at < 0) throw new CoreError(404, 'queued message not found');
-      const [next] = items.splice(at, 1);
-      // Remove before typing: at-most-once, never a duplicate turn (F16).
-      this.registry.setMeta(uid, 'ah.queue', items.length ? items : undefined);
+      const taken = this.queues.take(uid, itemId);
+      if (!taken) throw new CoreError(404, 'queued message not found');
+      const { next, rest } = taken;
       // Stop the live turn so the urgent message replaces it; idle sessions
       // need no interruption (a stray Esc/C-c could hit the wrong thing).
       if (w.status === 'busy' || w.status === 'waiting') {
@@ -778,7 +743,7 @@ export class Core {
       if (next.launchChange) this.applyLaunchChange(uid, next.launchChange);
       if (next.handoffId) this.handoffEngine.queueItemDelivered(next.id);
       this.tick().catch(() => {});
-      return { outcome: 'delivered', windowId: w.id, resumed: false, queued: items.length };
+      return { outcome: 'delivered', windowId: w.id, resumed: false, queued: rest.length };
     });
   }
 

@@ -9,6 +9,14 @@ import { parseClaude, parseCodex } from './discovery.ts';
 import { ensureMigrated } from './db.ts';
 import { Registry } from './registry.ts';
 
+// Fixture provenance (version-sensitive adapters): these samples pin the
+// transcript shapes the forkers in `./fork.ts` understand. Upstream layout
+// changes break forking without touching ah, so refreshing a fixture for a new
+// harness version must keep the identity fields the forkers rewrite — pinned
+// by the contract test below — and update the shape stamp + capture date here.
+const CLAUDE_SHAPE = 'claude-code jsonl, captured ~late 2026: per-line sessionId/cwd, bucket dir by encoded cwd';
+const CODEX_SHAPE = 'codex rollout jsonl, captured ~late 2026: session_meta payload.id/cwd, rollout-<stamp>-<id>.jsonl under sessions/YYYY/MM/DD';
+
 const CLAUDE_SRC = [
   '{"type":"mode","sessionId":"abc"}',
   '{"type":"user","isSidechain":false,"cwd":"/home/u/code/proj","sessionId":"abc","message":{"role":"user","content":"fix the flaky login test"}}',
@@ -23,6 +31,16 @@ const CODEX_SRC = [
   '{"timestamp":"2026-10-04T19:05:48.600Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"review PR 12"}]}}',
   '',
 ].join('\n');
+
+test(`fork fixtures carry the identity fields the forkers rewrite (${CLAUDE_SHAPE}; ${CODEX_SHAPE})`, () => {
+  const claudeLines = CLAUDE_SRC.split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  assert.ok(claudeLines.some((d) => typeof d?.sessionId === 'string'), 'claude fixture needs per-line sessionId');
+  assert.ok(claudeLines.some((d) => typeof d?.cwd === 'string'), 'claude fixture needs per-line cwd');
+  const codexLines = CODEX_SRC.split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const meta = codexLines.find((d) => d?.type === 'session_meta');
+  assert.ok(meta && typeof meta.payload?.id === 'string', 'codex fixture needs session_meta payload.id');
+  assert.ok(codexLines.some((d) => typeof d?.payload?.cwd === 'string'), 'codex fixture needs payload.cwd');
+});
 
 test('claude project buckets are the cwd with non-alphanumerics dashed', () => {
   assert.equal(encodeClaudeProjectDir('/home/u/code/my proj'), '-home-u-code-my-proj');

@@ -9,6 +9,12 @@
 // So a copy must be re-homed to the fork's worktree directory and re-ided line
 // by line, or the harness would either not find it from the new cwd or would
 // keep writing to the parent's conversation.
+//
+// Version-sensitive adapters: these on-disk layouts are private-ish and
+// upstream changes can break forking without touching ah. The pinned shapes
+// live as fixtures in `server/fork.test.ts` (see the provenance stamps there);
+// a harness update means refreshing the fixture and re-checking the rewrite
+// below, not just the copy.
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve, sep } from 'node:path';

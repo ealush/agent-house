@@ -1,7 +1,7 @@
 # Feed adapter research: Grok, Gemini, Muse, opencode
 
 Per-harness notes for the adapters in `server/feed/adapters/`, written for
-BACKLOG F46 (issue #7). Honesty marker, stated once and true throughout: none
+BACKLOG F47 (issue #7). Honesty marker, stated once and true throughout: none
 of these formats was verified against a local install of the harness. Each
 was documented from third-party readers and reverse-engineering reports that
 were themselves written against real installs (late 2026), and each adapter

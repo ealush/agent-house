@@ -18,7 +18,7 @@
 |---|---|---|---|
 | F6 | Harness adapter table | ✅ | Presets (`command`, `resume`, `resumeId`, `match`, `waitingPatterns`) + discoverers for Claude Code and Codex. No transcript code. Other harnesses fall back to "continue last". |
 | F7 | Resume on chosen host | ◐ | Resumes on the host that holds the conversation. Resuming a conversation on a *different* machine needs its files moved first (F31). |
-| F8 | Alive/dead branch on send | ✅ | `Core.send`: types into idle agents, queues for busy ones, resumes dead ones then delivers. The caller can't tell which happened (unless it wants to). |
+| F8 | Alive/dead branch on send | ✅ | `Core.send`: types into idle agents, delivers immediately to waiting ones (the reply is the answer to the prompt), queues for busy ones, resumes dead ones then delivers. The caller can't tell which happened (unless it wants to). |
 | F9 | Lifecycle states | ✅ | `starting / live / ended / unavailable`, with `pendingResume` as an orthogonal flag. "Saved" = discovered history. |
 | F10 | Transcript discovery | ✅ | `server/discovery.ts` (~20 ms cold, cached per file). Live agent windows without hooks adopt their transcript id by conversation identity (launch novelty + ownership, never recency). |
 | F11 | Multi-writer policy | ✅ | **Decision: last-active-wins.** Each device attaches through its own grouped tmux session, so viewing is independent; tmux `window-size latest` gives the window to whoever typed last. No locks or leases. |
@@ -40,7 +40,7 @@
 | F19 | Needs-you vs done | ✅ | Conservative: only permission/elicitation prompts count as "needs you"; idle nags and anything unknown are "done". No model classifier. |
 | F20 | Background work isn't idle | ◐ | Live tool shells below an agent keep silent commands busy; persistent services alone do not. Fresh working hooks count before terminal output. Commands that replace their tool shell still rely on hooks/activity. |
 | F21 | Status grouping | ✅ | Needs you → done → working → idle. |
-| F22 | Durable prompt queue | ✅ | Persisted in the registry under the conversation identity (follows adoption/resume); delivered at the next idle; review and cancel individual follow-ups or clear all, on desktop and phone. Input operations are serialized per session, with a short submit grace period. |
+| F22 | Durable prompt queue | ✅ | Persisted in the registry under the conversation identity (follows adoption/resume); delivered at the next idle, except replies sent while waiting, which deliver immediately; review and cancel individual follow-ups or clear all, on desktop and phone. Input operations are serialized per session, with a short submit grace period. |
 
 ## Phase 4 — Surfaces
 
@@ -50,7 +50,7 @@
 | F24 | Mobile steering | ✅ | Composer (dictation, recent prompts, attachments), key bar, swipe scroll, text view, diff view. |
 | F25 | Notifications | ✅ | Web Push with per-device opt-in for "needs you" and "finished". No "error" event yet. |
 | F26 | Terminal view | ✅ | |
-| F27 | Search with filters | ✅ | ⌘K: fuzzy search over live and history, with `h:` host/harness, `s:` status, `p:` project, `m:` model. |
+| F27 | Search with filters | ✅ | ⌘K: full-text search (`server/search.ts`, FTS with fingerprints and incremental indexing) over transcripts, side-chats and history, with `h:` host/harness, `s:` status, `p:` project, `m:` model, role and time-range filters, plus open-at-message navigation. |
 | F28 | Host/project views | ✅ | Status / Projects / Hosts (or tmux sessions on a single host). |
 
 ## Phase 5 — Workspace hygiene
@@ -58,7 +58,7 @@
 | # | Feature | | Where / notes |
 |---|---|---|---|
 | F29 | Worktree per session | ✅ | "Isolated git worktree" → `ah/<name>` branch in `<parent>/.worktrees/<repo>/`. |
-| F30 | Worktree lifecycle | ◐ | List with dirty/ahead/in-use, orphan detection, safe removal. No disk-usage reporting. |
+| F30 | Worktree lifecycle | ✅ | List with dirty/ahead/in-use, orphan detection, safe removal, and background on-disk size reporting (`server/size.ts`). |
 | F31 | Move session between hosts | ✗ | |
 
 ## Phase 6 — Nice to have
@@ -72,15 +72,15 @@
 | F36 | Session forking | ✅ | `server/fork.ts` + `Core.fork`: transcript copied to a new conversation id homed in a fresh `ah/<slug>` worktree (Claude Code and Codex), lineage in `ah.fork` meta, fork dialog + family view, `ah fork`. Mid-transcript fork points are not supported (fork is at the current end). |
 | F37 | Agent-to-agent control | ✅ | `ah send X … && ah wait X && ah read X` |
 | F38 | Scheduled runs | ✗ | |
-| F39 | Snapshots + rollback | ✗ | |
+| F39 | Snapshots + rollback | ✅ | Per-turn git snapshots under private refs (`server/snapshots.ts`), captured at turn start, with rollback that takes a safety snapshot first so a restore is itself undoable; `Snapshots.tsx` panel with per-turn list and restore. |
 | F40 | Idle respawn / rate-limit resume | ✗ | |
 | F41 | Quota display | ✗ | |
 | F42 | Launch choices | ✅ | Preset modes, models, and quoted additional arguments in the web dialog and CLI. Resume retains configured mode/model choices. |
 | F43 | Session ordering | ✅ | Drag to reorder within a sidebar group; sparse keys persist across devices. |
 | F44 | Session termination | ✅ | Sidebar and session controls, with confirmation for stopping a session. |
 | F45 | Split workspace | ✅ | Independent terminal viewers, resizable horizontal/vertical splits, device-local persistence, phone tabs. Duplicate viewers have independent pane controls. |
-| F46 | GUI view | ◐ | Branch `gui-support`. Transcript adapters (Claude Code, Codex) → typed events over SSE → separate React tree with tool and widget dispatch. Terminal-only interactions (agent pickers) hand off to the terminal. No adapters yet for Gemini, Grok, Muse, Hermes, opencode. |
 | F46 | Workspace navigation | ✅ | Replace the focused pane from the sidebar or picker; drag sessions onto pane edges to split. |
+| F47 | GUI view | ✅ | Transcript adapters (Claude Code, Codex, Gemini, Grok, Muse, opencode) → typed events over SSE → separate React tree with tool and widget dispatch. Terminal-only interactions (agent pickers) hand off to the terminal. Hermes is still terminal-only (no adapter yet). |
 
 ## Reliability pass — October 2026
 
