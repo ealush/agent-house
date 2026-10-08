@@ -118,6 +118,11 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
   // 'main' is the session itself, drawn by whichever surface is chosen.
   const [tab, setTab] = useState<'main' | Panel>('main');
   const [panel, setPanel] = stored<Panel | ''>('ah.panel', '');
+  // Last non-empty panel, so the single header toggle reopens where you left off.
+  const [lastPanel, setLastPanel] = useState<Panel>('files');
+  useEffect(() => {
+    if (panel) setLastPanel(panel);
+  }, [panel]);
   const [panelWidth, setPanelWidth] = useState(() => {
     try {
       const v = Number(localStorage.getItem('ah.panelWidth'));
@@ -432,25 +437,22 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
           </div>
         )}
         {!narrow && (
-          <>
-            {diffTab && (
-              <button className={`btn ghost small ${panel === 'diff' && !panelCollapsed ? 'on' : ''}`} onClick={() => openPanel('diff')}>
-                <Icon name="diff" size={15} /> Diff
-              </button>
-            )}
-            <button className={`btn ghost small ${panel === 'files' && !panelCollapsed ? 'on' : ''}`} onClick={() => openPanel('files')}>
-              <Icon name="files" size={15} /> Files
-            </button>
-            <button className={`btn ghost small ${panel === 'chat' && !panelCollapsed ? 'on' : ''}`} onClick={() => openPanel('chat')}>
-              <Icon name="chat" size={15} /> Chat
-            </button>
-            <button className={`btn ghost small ${panel === 'queue' && !panelCollapsed ? 'on' : ''}`} onClick={() => openPanel('queue')} title="Queued follow-ups for this conversation">
-              Queue{w.queued > 0 ? ` (${w.queued})` : ''}
-            </button>
-            <button className={`btn ghost small ${panel === 'snapshots' && !panelCollapsed ? 'on' : ''}`} onClick={() => openPanel('snapshots')} title="Per-turn file snapshots and rollback">
-              Snapshots
-            </button>
-          </>
+          <button
+            className="icon-btn"
+            onClick={() => {
+              if (panel && !panelCollapsed) setPanelCollapsed(true);
+              else if (panel) setPanelCollapsed(false);
+              else {
+                setPanel(lastPanel);
+                setPanelCollapsed(false);
+              }
+            }}
+            aria-label="Toggle panel"
+            aria-pressed={!!panel && !panelCollapsed}
+            title={`Panel: ${lastPanel}${w.queued > 0 ? ` (Queue ${w.queued})` : ''}`}
+          >
+            <Icon name={panel && !panelCollapsed ? 'panel-hide' : 'panel'} size={16} />
+          </button>
         )}
         {narrow && (
           <button className="icon-btn" onClick={() => window.location.reload()} aria-label="Reload page" title="Reload">
@@ -473,6 +475,9 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
                 Fork session…
               </button>
               <button onClick={() => act(() => client.pin(w.uid, !w.pinned))}>{w.pinned ? 'Unpin' : 'Pin to top'}</button>
+              {diffTab && <button onClick={() => { setMenu(false); openPanel('diff'); }}>Diff</button>}
+              <button onClick={() => { setMenu(false); openPanel('files'); }}>Files</button>
+              <button onClick={() => { setMenu(false); openPanel('chat'); }}>Chat</button>
               <button onClick={() => { setMenu(false); openPanel('queue'); }}>Queued messages ({w.queued})</button>
               <button onClick={() => { setMenu(false); openPanel('snapshots'); }}>Snapshots</button>
               {onSplit && (
@@ -596,7 +601,11 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
           {tab !== 'main' && <div className="session-main" style={{ minHeight: 0 }}>{panelView(tab)}</div>}
           {view === 'gui' && (
             <ComposerBar client={client} target={w.uid} agent={w.agent} w={w} onSent={onSent} focusKey={focus}
-              onSettingsOpen={() => switchView('terminal', true)} />
+              onSettingsOpen={() => switchView('terminal', true)}
+              onRelaunched={(id) => {
+                refresh();
+                if (onOpenKey) onOpenKey(keyOnThisHost(id));
+              }} />
           )}
         </div>
 
