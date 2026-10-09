@@ -3,6 +3,7 @@ import type { HistoryItem, SearchHit, SearchQuery, SearchResponse, Win } from '.
 import { look } from './agents.ts';
 import { age as ago } from './agents.ts';
 import { AgentLogo } from './logos.tsx';
+import { useSavedGroups } from './groupOrder.ts';
 import { sidebarOrder } from './sessionOrder.ts';
 
 type Props = {
@@ -94,9 +95,10 @@ export function Switcher({ windows, history, hosts, onSearchContent, onPick, onR
 
   useEffect(() => ref.current?.showModal(), []);
 
+  const savedGroups = useSavedGroups(hosts.length > 1);
   const results = useMemo(() => {
     const { text, f } = parseQuery(q);
-    const rank = new Map(sidebarOrder(windows, hosts.length > 1).map((w, i) => [w.key, i]));
+    const rank = new Map(sidebarOrder(windows, hosts.length > 1, savedGroups).map((w, i) => [w.key, i]));
     const live: Row[] = windows
       .filter((w) => (has(w.agent ?? w.command, f.h) || has(w.host, f.h)) && has(w.status, f.s) && has(w.project, f.p) && has(w.model, f.m))
       .map((w) => ({ kind: 'win' as const, w, s: score(text, `${w.title} ${w.name} ${w.project} ${w.agent ?? w.command} ${w.session} ${w.branch ?? ''}`) }))
@@ -112,7 +114,7 @@ export function Switcher({ windows, history, hosts, onSearchContent, onPick, onR
             .sort((a, b) => b.s - a.s || b.h.at - a.h.at)
         : [];
     return [...live, ...past].slice(0, 14);
-  }, [windows, history, hosts, q]);
+  }, [windows, history, hosts, q, savedGroups]);
 
   // Content search (issue #9): debounced, one query per host, merged below
   // the metadata results under their own heading.

@@ -346,6 +346,22 @@ kbd {
   color: var(--faint);
 }
 
+.side-label[draggable='true'] {
+  cursor: grab;
+}
+
+.side-block.dragging > .side-label {
+  opacity: 0.5;
+}
+
+.side-block.drop {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.side-block.drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
 .side-label .grow {
   flex: 1;
 }
@@ -368,6 +384,7 @@ kbd {
   border-radius: 5px;
   background: none;
   color: var(--faint);
+  cursor: pointer;
 }
 
 .side-label:hover .label-add,
@@ -2878,14 +2895,19 @@ a.btn {
 }
 
 .side-row.drop .side-session {
-  box-shadow: inset 0 0 0 1.5px var(--accent);
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.side-row.drop-after .side-session {
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .side-row.dragging {
   opacity: 0.5;
 }
 
-.side-row .grip {
+.side-row .grip,
+.side-label .grip {
   flex: none;
   color: var(--faint);
   font-size: 12px;
@@ -3748,10 +3770,16 @@ button.tool-chip:hover {
 .recipe-member {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
 }
 .recipe-member .grow {
   flex: 1;
+  min-width: 0;
+}
+.recipe-member select {
+  flex: none;
+  max-width: 42%;
 }
 .recipe-editor textarea {
   width: 100%;

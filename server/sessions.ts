@@ -349,7 +349,9 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
         viewers,
         devices,
         activity: w.activity,
-        createdAt: w.createdAt,
+        // `@ah-created` is the launch time. A window ah found already running
+        // has none, so the registry's first-seen time keeps opening order stable.
+        createdAt: w.createdAt || rec.createdAt,
         panes: w.panes,
         pinned: !!rec.meta['ah.pinned'],
         queued: (rec.meta['ah.queue'] as unknown[] | undefined)?.length ?? 0,

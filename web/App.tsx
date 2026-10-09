@@ -3,6 +3,7 @@ import { PresetsContext } from './ModelPicker.tsx';
 import { deviceName, type HistoryItem, type SearchHit, type SendResult, type State, type Win } from './api.ts';
 import { useHosts } from './useHosts.ts';
 import { Sidebar, type Page } from './Sidebar.tsx';
+import { useSavedGroups } from './groupOrder.ts';
 import { sidebarOrder } from './sessionOrder.ts';
 import { cycleKey } from './keyboard.ts';
 import { Inbox, type InboxGroup } from './Inbox.tsx';
@@ -103,6 +104,7 @@ export function App({ onLock }: { onLock: () => void }) {
   selectedRef.current = selected;
 
   const { state, error, refresh, clientFor, hostState } = useHosts((s: State) => announce(s.windows));
+  const savedGroups = useSavedGroups((state?.hosts.length ?? 0) > 1);
 
   function toggleSide() {
     setSideOpen((v) => {
@@ -147,7 +149,7 @@ export function App({ onLock }: { onLock: () => void }) {
 
   /** Option+Up/Down in a terminal steps through sessions in sidebar paint order. */
   const cycleSession = (dir: -1 | 1) => {
-    const keys = sidebarOrder(state?.windows ?? [], (state?.hosts.length ?? 0) > 1).map((w) => w.key);
+    const keys = sidebarOrder(state?.windows ?? [], (state?.hosts.length ?? 0) > 1, savedGroups).map((w) => w.key);
     const next = cycleKey(keys, focusKey ?? selected, dir);
     if (next) open(next);
   };

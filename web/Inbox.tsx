@@ -2,6 +2,7 @@ import type { State, Win } from './api.ts';
 import { Icon } from './icons.tsx';
 import { age, look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
+import { useSavedGroups } from './groupOrder.ts';
 import { sidebarSections } from './sessionOrder.ts';
 
 export type InboxGroup = 'status' | 'host' | 'project';
@@ -233,7 +234,7 @@ export function Rows({ windows, multiHost, narrow, onOpen, quiet }: { windows: W
 }
 
 function Grouped({ windows, by, multiHost, onOpen }: { windows: Win[]; by: 'host' | 'project'; multiHost: boolean; onOpen: Props['onOpen'] }) {
-  const sections = sidebarSections(windows, by === 'host');
+  const sections = sidebarSections(windows, by === 'host', useSavedGroups(by === 'host'));
   return (
     <>
       {sections.map((section, i) => {

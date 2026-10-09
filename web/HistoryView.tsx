@@ -3,6 +3,7 @@ import { Icon } from './icons.tsx';
 import { age, look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
 import { Rows } from './Inbox.tsx';
+import { useSavedGroups } from './groupOrder.ts';
 import { sidebarSections } from './sessionOrder.ts';
 
 /** Ended and saved conversations from every host; one tap resumes on the host that has it. */
@@ -61,7 +62,7 @@ export function HistoryView({ state, onResume, onForget, onFork }: { state: Stat
 /** Phone "Sessions" tab: the same blocks and row order as the sidebar. */
 export function SessionsView({ state, onOpen, onNew }: { state: State; onOpen: (w: Win) => void; onNew: () => void }) {
   const multiHost = state.hosts.length > 1;
-  const sections = sidebarSections(state.windows, multiHost);
+  const sections = sidebarSections(state.windows, multiHost, useSavedGroups(multiHost));
   return (
     <div className="page">
       <header className="page-head">

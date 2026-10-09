@@ -4,7 +4,8 @@ import { askConfirm } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
-import { sidebarSections } from './sessionOrder.ts';
+import { useSavedGroups, setGroupList } from './groupOrder.ts';
+import { movedSessionOrders, saveGroupMove, sidebarSections } from './sessionOrder.ts';
 
 export type Page = 'inbox' | 'history' | 'sessions' | 'settings' | 'search';
 
@@ -36,15 +37,6 @@ type Props = {
   onCollapse: () => void;
 };
 
-/** Sparse key between two neighbors: midpoint, or ±100 at the ends. */
-export function orderBetween(before: number | null, after: number | null): number {
-  if (before == null && after == null) return 100;
-  if (before == null) return after! - 100;
-  if (after == null) return before + 100;
-  if (after - before < 0.001) return before + 0.5; // degenerate: still lands between
-  return (before + after) / 2;
-}
-
 /** Terminate means killing the tmux window, not forgetting history (F44). */
 export function confirmTerminate(w: Win) {
   const hot = w.status === 'busy' || w.status === 'waiting' || w.queued > 0;
@@ -63,26 +55,37 @@ export function Sidebar({ state, error, page, selected, visibleKeys, device, onP
   const visible = new Set(visibleKeys);
   const waiting = windows.filter((w) => w.status === 'waiting').length;
   const multiHost = (state?.hosts.length ?? 0) > 1;
-  const [dragKey, setDragKey] = useState<string | null>(null);
+  const savedGroups = useSavedGroups(multiHost);
+  const [drag, setDrag] = useState<{ kind: 'session'; key: string } | { kind: 'group'; id: string } | null>(null);
   const [overKey, setOverKey] = useState<string | null>(null);
+  const [overAfter, setOverAfter] = useState(false);
+  const [overGroup, setOverGroup] = useState<string | null>(null);
   const [menuKey, setMenuKey] = useState<string | null>(null);
   const [collapsedRuns, setCollapsedRuns] = useState<Set<string>>(new Set());
 
   // Recipe members group under their run (issue #6); the rest keep the usual grouping.
-  const sections = sidebarSections(windows, multiHost);
+  const sections = sidebarSections(windows, multiHost, savedGroups);
   const runGroups = sections.filter((section) => section.run);
   const groups = sections.filter((section) => !section.run);
 
-  function dropOnto(group: Win[], target: Win) {
-    if (!dragKey) return;
-    const dragged = group.find((w) => w.key === dragKey);
+  function lowerHalf(e: React.DragEvent<HTMLElement>) {
+    const box = e.currentTarget.getBoundingClientRect();
+    return e.clientY >= box.top + box.height / 2;
+  }
+
+  function dropSession(group: Win[], target: Win, after: boolean) {
+    if (drag?.kind !== 'session') return;
     // Cross-group drags never mutate project/host metadata (F43 v1): ignore them.
-    if (!dragged || dragged.key === target.key) return;
-    const rest = group.filter((w) => w.key !== dragKey);
-    const idx = rest.findIndex((w) => w.key === target.key);
-    const before = idx > 0 ? rest[idx - 1].order : null;
-    const after = rest[idx]?.order ?? null;
-    onReorder(dragged.uid, dragged.host, orderBetween(before, after));
+    if (!group.some((w) => w.key === drag.key) || drag.key === target.key) return;
+    for (const change of movedSessionOrders(group, drag.key, target.key, after)) {
+      const row = group.find((w) => w.key === change.key);
+      if (row) onReorder(row.uid, row.host, change.order);
+    }
+  }
+
+  function dropGroup(targetId: string, after: boolean) {
+    if (drag?.kind !== 'group' || drag.id === targetId) return;
+    setGroupList(multiHost ? 'host' : 'project', saveGroupMove(groups.map((section) => section.id), savedGroups, drag.id, targetId, after));
   }
 
   function row(w: Win, group: Win[]) {
@@ -94,29 +97,35 @@ export function Sidebar({ state, error, page, selected, visibleKeys, device, onP
     return (
       <div
         key={w.key}
-        className={`side-row ${overKey === w.key ? 'drop' : ''} ${dragKey === w.key ? 'dragging' : ''}`}
+        className={`side-row ${overKey === w.key ? (overAfter ? 'drop-after' : 'drop') : ''} ${drag?.kind === 'session' && drag.key === w.key ? 'dragging' : ''}`}
         draggable
         onDragStart={(e) => {
-          setDragKey(w.key);
+          setDrag({ kind: 'session', key: w.key });
           onDragSession?.(w);
           e.dataTransfer.effectAllowed = 'move';
           e.dataTransfer.setData('text/ah-session', w.key);
         }}
         onDragEnd={() => {
-          setDragKey(null);
+          setDrag(null);
           setOverKey(null);
+          setOverGroup(null);
         }}
         onDragOver={(e) => {
-          if (dragKey && dragKey !== w.key) {
+          if (drag?.kind === 'group') return;
+          if (drag?.kind === 'session' && drag.key !== w.key) {
             e.preventDefault();
+            e.stopPropagation();
             setOverKey(w.key);
+            setOverAfter(lowerHalf(e));
           }
         }}
         onDragLeave={() => setOverKey((k) => (k === w.key ? null : k))}
         onDrop={(e) => {
+          if (drag?.kind === 'group') return;
           e.preventDefault();
+          e.stopPropagation();
           setOverKey(null);
-          dropOnto(group, w);
+          dropSession(group, w, lowerHalf(e));
         }}
       >
         <button className={`side-session ${w.agent ? '' : 'shellish'}${active ? ' on' : ''}${seen && !active ? ' visible' : ''}`} style={{ '--agent': color } as React.CSSProperties} onClick={() => onSelect(w.key)} aria-current={active ? true : undefined} title={`${w.title} — ${w.cwd}${modelLabel ? ` — ${modelLabel}` : ''}${w.launch ? ` — ${w.launch}` : ''}`}>
@@ -287,9 +296,41 @@ export function Sidebar({ state, error, page, selected, visibleKeys, device, onP
         {groups.map((section) => {
           const group = section.id;
           const ws = section.windows;
+          const dragging = drag?.kind === 'group' && drag.id === group;
+          const over = overGroup === group && !dragging;
           return (
-            <section key={group}>
-              <div className={`side-label ${multiHost ? 'host' : ''}`}>
+            <section
+              key={group}
+              className={`side-block${dragging ? ' dragging' : ''}${over ? (overAfter ? ' drop-after' : ' drop') : ''}`}
+              onDragOver={(e) => {
+                if (drag?.kind !== 'group' || drag.id === group) return;
+                e.preventDefault();
+                setOverGroup(group);
+                setOverAfter(lowerHalf(e));
+              }}
+              onDrop={(e) => {
+                if (drag?.kind !== 'group') return;
+                e.preventDefault();
+                setOverGroup(null);
+                dropGroup(group, lowerHalf(e));
+              }}
+            >
+              <div
+                className={`side-label ${multiHost ? 'host' : ''}`}
+                draggable
+                onDragStart={(e) => {
+                  setDrag({ kind: 'group', id: group });
+                  e.dataTransfer.effectAllowed = 'move';
+                  e.dataTransfer.setData('text/ah-group', group);
+                }}
+                onDragEnd={() => {
+                  setDrag(null);
+                  setOverGroup(null);
+                }}
+              >
+                <span className="grip" title="Drag to reorder" aria-hidden>
+                  ⠿
+                </span>
                 {multiHost && <span className="dot online" />}
                 <span className="grow">{group}</span>
                 {!multiHost && (
@@ -298,6 +339,8 @@ export function Sidebar({ state, error, page, selected, visibleKeys, device, onP
                     className="label-add"
                     title={`New session in ${group}`}
                     aria-label={`New session in ${group}`}
+                    draggable={false}
+                    onMouseDown={(e) => e.stopPropagation()}
                     onClick={() => {
                       const home = ws.find((w) => !w.worktree) ?? ws[0];
                       onNew({ cwd: home.projectPath, host: home.host });
