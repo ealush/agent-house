@@ -3174,13 +3174,16 @@ a.btn {
   min-height: 0;
   min-width: 0;
   display: flex;
+  /* Stretch, so a pane fills its half. The inbox `.row` rule centers its
+     children; these panes must not use that class or they shrink to content. */
+  align-items: stretch;
 }
 
-.split.row {
+.split.horizontal {
   flex-direction: row;
 }
 
-.split.col {
+.split.vertical {
   flex-direction: column;
 }
 

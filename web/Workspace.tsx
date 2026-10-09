@@ -165,7 +165,7 @@ export function Workspace(props: Props) {
     if (n.type === 'session') return pane(n.sessionKey, path);
     const row = n.direction === 'horizontal';
     return (
-      <div className={`split ${row ? 'row' : 'col'}`}>
+      <div className={`split ${row ? 'horizontal' : 'vertical'}`}>
         <div className="split-first" style={{ flexGrow: n.ratio, flexBasis: 0 }}>
           {node(n.first, [...path, 'first'])}
         </div>
