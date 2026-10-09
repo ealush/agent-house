@@ -1,4 +1,6 @@
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { placeFloatingMenu } from './menuPlace.ts';
 import { showError, showNotice } from './ask.tsx';
 import { confirmTerminate } from './Sidebar.tsx';
 import { Icon } from './icons.tsx';
@@ -139,6 +141,51 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
   const [keysPref, setKeysPref] = stored<'auto' | 'on' | 'off'>('ah.keys', 'auto');
   const [viewPref, setViewPref] = stored<View>('ah.view', 'terminal');
   const [menu, setMenu] = useState(false);
+  const menuBtn = useRef<HTMLButtonElement>(null);
+  const menuEl = useRef<HTMLDivElement>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+
+  // The overflow menu is portalled to the body: split panes clip with
+  // `.pane { overflow: hidden }`, which cut the menu off in short panes.
+  useLayoutEffect(() => {
+    if (!menu) {
+      setMenuPos(null);
+      return;
+    }
+    const anchor = menuBtn.current?.getBoundingClientRect();
+    const body = menuEl.current?.getBoundingClientRect();
+    if (!anchor || !body) return;
+    setMenuPos(
+      placeFloatingMenu(
+        anchor,
+        { width: body.width, height: body.height },
+        { width: window.innerWidth, height: window.innerHeight },
+      ),
+    );
+  }, [menu]);
+
+  useEffect(() => {
+    if (!menu) return;
+    const onDown = (e: PointerEvent) => {
+      if (menuEl.current?.contains(e.target as Node)) return;
+      if (menuBtn.current?.contains(e.target as Node)) return;
+      setMenu(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenu(false);
+    };
+    const onShift = () => setMenu(false);
+    document.addEventListener('pointerdown', onDown, true);
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('resize', onShift);
+    window.addEventListener('scroll', onShift, true);
+    return () => {
+      document.removeEventListener('pointerdown', onDown, true);
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', onShift);
+      window.removeEventListener('scroll', onShift, true);
+    };
+  }, [menu]);
   const [forking, setForking] = useState(false);
   const [forksOpen, setForksOpen] = useState(false);
   const [capture, setCapture] = useState<string | null>(null);
@@ -460,11 +507,21 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
           </button>
         )}
         <div className="menu-wrap">
-          <button className="icon-btn" onClick={() => setMenu(!menu)} aria-label="More" aria-expanded={menu}>
+          <button ref={menuBtn} className="icon-btn" onClick={() => setMenu(!menu)} aria-label="More" aria-expanded={menu}>
             <Icon name="more" />
           </button>
-          {menu && (
-            <div className="menu" onMouseLeave={() => setMenu(false)}>
+          {menu &&
+            createPortal(
+              <div
+                ref={menuEl}
+                className="menu"
+                onMouseLeave={() => setMenu(false)}
+                style={
+                  menuPos
+                    ? { position: 'fixed', right: 'auto', top: menuPos.top, left: menuPos.left, zIndex: 90, margin: 0 }
+                    : { position: 'fixed', right: 'auto', visibility: 'hidden', zIndex: 90, margin: 0 }
+                }
+              >
               <button onClick={startRename}>Rename</button>
               <button
                 onClick={() => {
@@ -551,8 +608,9 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
               <button className="danger" onClick={kill}>
                 Terminate session
               </button>
-            </div>
-          )}
+              </div>,
+              document.body,
+            )}
         </div>
       </header>
 

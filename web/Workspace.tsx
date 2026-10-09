@@ -78,10 +78,16 @@ export function Workspace(props: Props) {
         onDragOver={(e) => {
           if (e.dataTransfer.types.includes('text/ah-session') || e.dataTransfer.types.includes('text/plain')) {
             e.preventDefault();
-            setDropPane(paneId);
+            setDropPane((k) => (k === paneId ? k : paneId));
           }
         }}
-        onDragLeave={() => setDropPane((k) => (k === paneId ? null : k))}
+        onDragLeave={(e) => {
+          // Moving onto the drop-grid overlay (a child of the pane) is not
+          // leaving the pane. Without this the overlay flickers under the
+          // cursor and drops land on the wrong zone (or replace the pane).
+          if (e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) return;
+          setDropPane((k) => (k === paneId ? null : k));
+        }}
         onDrop={(e) => {
           e.preventDefault();
           setDropPane(null);
