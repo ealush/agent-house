@@ -3,6 +3,7 @@ import { Icon } from './icons.tsx';
 import { age, look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
 import { Rows } from './Inbox.tsx';
+import { sidebarSections } from './sessionOrder.ts';
 
 /** Ended and saved conversations from every host; one tap resumes on the host that has it. */
 export function HistoryView({ state, onResume, onForget, onFork }: { state: State; onResume: (h: HistoryItem) => void; onForget: (h: HistoryItem) => void; onFork?: (h: HistoryItem) => void }) {
@@ -57,11 +58,10 @@ export function HistoryView({ state, onResume, onForget, onFork }: { state: Stat
   );
 }
 
-/** Phone "Sessions" tab: everything live, grouped by project. */
+/** Phone "Sessions" tab: the same blocks and row order as the sidebar. */
 export function SessionsView({ state, onOpen, onNew }: { state: State; onOpen: (w: Win) => void; onNew: () => void }) {
   const multiHost = state.hosts.length > 1;
-  const groups = new Map<string, Win[]>();
-  for (const w of state.windows) groups.set(w.project, [...(groups.get(w.project) ?? []), w]);
+  const sections = sidebarSections(state.windows, multiHost);
   return (
     <div className="page">
       <header className="page-head">
@@ -76,14 +76,16 @@ export function SessionsView({ state, onOpen, onNew }: { state: State; onOpen: (
           <Icon name="plus" size={22} />
         </button>
       </header>
-      {[...groups.entries()]
-        .sort(([a], [b]) => (a === '~' ? 1 : b === '~' ? -1 : a.localeCompare(b)))
-        .map(([project, ws], i) => (
-          <section key={project}>
-            <h2 className={`section-label ${i === 0 ? 'first' : ''}`}>{project}</h2>
-            <Rows windows={ws} multiHost={multiHost} narrow onOpen={onOpen} />
+      {sections.map((section, i) => {
+        const first = section.windows[0];
+        const title = section.run ? `${first.run!.name} - ${first.project}` : section.id;
+        return (
+          <section key={`${section.run ? 'run' : 'group'}:${section.id}`}>
+            <h2 className={`section-label ${i === 0 ? 'first' : ''}`}>{title}</h2>
+            <Rows windows={section.windows} multiHost={false} narrow onOpen={onOpen} />
           </section>
-        ))}
+        );
+      })}
     </div>
   );
 }

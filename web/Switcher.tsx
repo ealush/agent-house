@@ -3,6 +3,7 @@ import type { HistoryItem, SearchHit, SearchQuery, SearchResponse, Win } from '.
 import { look } from './agents.ts';
 import { age as ago } from './agents.ts';
 import { AgentLogo } from './logos.tsx';
+import { sidebarOrder } from './sessionOrder.ts';
 
 type Props = {
   windows: Win[];
@@ -95,11 +96,12 @@ export function Switcher({ windows, history, hosts, onSearchContent, onPick, onR
 
   const results = useMemo(() => {
     const { text, f } = parseQuery(q);
+    const rank = new Map(sidebarOrder(windows, hosts.length > 1).map((w, i) => [w.key, i]));
     const live: Row[] = windows
       .filter((w) => (has(w.agent ?? w.command, f.h) || has(w.host, f.h)) && has(w.status, f.s) && has(w.project, f.p) && has(w.model, f.m))
       .map((w) => ({ kind: 'win' as const, w, s: score(text, `${w.title} ${w.name} ${w.project} ${w.agent ?? w.command} ${w.session} ${w.branch ?? ''}`) }))
       .filter((r) => r.s > 0)
-      .sort((a, b) => b.s - a.s || b.w.activity - a.w.activity);
+      .sort((a, b) => b.s - a.s || (rank.get(a.w.key) ?? 0) - (rank.get(b.w.key) ?? 0));
     // History only joins once you type: the empty switcher is for jumping between live sessions.
     const past: Row[] =
       text || f.h || f.p || f.m
@@ -110,7 +112,7 @@ export function Switcher({ windows, history, hosts, onSearchContent, onPick, onR
             .sort((a, b) => b.s - a.s || b.h.at - a.h.at)
         : [];
     return [...live, ...past].slice(0, 14);
-  }, [windows, history, q]);
+  }, [windows, history, hosts, q]);
 
   // Content search (issue #9): debounced, one query per host, merged below
   // the metadata results under their own heading.
@@ -191,7 +193,7 @@ export function Switcher({ windows, history, hosts, onSearchContent, onPick, onR
                     {r.kind === 'win' ? r.w.title : r.h.title}
                     {(r.kind === 'win' ? r.w.fork : r.h.fork) ? ' ⑂' : ''}
                   </span>
-                  <span className="sub">{r.kind === 'win' ? [r.w.host, r.w.project, r.w.detail].filter(Boolean).join(' · ') : `${r.h.host} · ${r.h.project} · ${ago(r.h.at)}`}</span>
+                  <span className="sub">{r.kind === 'win' ? [hosts.length > 1 ? r.w.host : null, r.w.project, r.w.detail].filter(Boolean).join(' · ') : [hosts.length > 1 ? r.h.host : null, r.h.project, ago(r.h.at)].filter(Boolean).join(' · ')}</span>
                 </span>
                 {r.kind === 'win' ? <span className={`dot ${r.w.status}`} /> : <span className="pill">resume</span>}
               </button>
@@ -216,7 +218,7 @@ export function Switcher({ windows, history, hosts, onSearchContent, onPick, onR
                     <span className="stack">
                       <span className="name">{hit.title}</span>
                       <span className="sub">
-                        {[hit.host, hit.kind === 'chat' ? 'side chat' : hit.harness, hitDate(hit.at), `${hit.matches} match${hit.matches === 1 ? '' : 'es'}`].filter(Boolean).join(' · ')}
+                        {[hosts.length > 1 ? hit.host : null, hit.kind === 'chat' ? 'side chat' : hit.harness, hitDate(hit.at), `${hit.matches} match${hit.matches === 1 ? '' : 'es'}`].filter(Boolean).join(' · ')}
                       </span>
                       {first && (
                         <span className="excerpt">

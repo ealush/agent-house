@@ -37,6 +37,20 @@ test('sidebar order lists recipe runs before project blocks', () => {
   assert.deepEqual(sidebarOrder(windows, false).map((w) => w.key), ['member', 'plain']);
 });
 
+test('drag order stays inside the project block', () => {
+  const before = [
+    win({ key: 'ah-a', project: 'ah', host: 'local', status: 'idle', activity: 10, order: 100 }),
+    win({ key: 'ah-b', project: 'ah', host: 'local', status: 'idle', activity: 5, order: 300 }),
+    win({ key: 'code', project: 'code', host: 'local', status: 'idle', activity: 1, order: 200 }),
+  ];
+  assert.deepEqual(sortWindows(before).map((w) => w.key), ['ah-a', 'code', 'ah-b']);
+  assert.deepEqual(sidebarOrder(before, false).map((w) => w.key), ['ah-a', 'ah-b', 'code']);
+
+  const after = before.map((w) => (w.key === 'ah-a' ? { ...w, order: 400 } : w));
+  assert.deepEqual(sortWindows(after).map((w) => w.key), ['code', 'ah-b', 'ah-a']);
+  assert.deepEqual(sidebarOrder(after, false).map((w) => w.key), ['ah-b', 'ah-a', 'code']);
+});
+
 test('multiple hosts group by host instead of project', () => {
   const windows = [
     win({ key: 'a-wait', project: 'ah', host: 'a', status: 'waiting', activity: 1 }),

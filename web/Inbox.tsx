@@ -2,6 +2,7 @@ import type { State, Win } from './api.ts';
 import { Icon } from './icons.tsx';
 import { age, look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
+import { sidebarSections } from './sessionOrder.ts';
 
 export type InboxGroup = 'status' | 'host' | 'project';
 
@@ -232,21 +233,19 @@ export function Rows({ windows, multiHost, narrow, onOpen, quiet }: { windows: W
 }
 
 function Grouped({ windows, by, multiHost, onOpen }: { windows: Win[]; by: 'host' | 'project'; multiHost: boolean; onOpen: Props['onOpen'] }) {
-  const groups = new Map<string, Win[]>();
-  for (const w of windows) {
-    const k = by === 'host' ? w.host : w.project;
-    groups.set(k, [...(groups.get(k) ?? []), w]);
-  }
+  const sections = sidebarSections(windows, by === 'host');
   return (
     <>
-      {[...groups.entries()]
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([k, ws], i) => (
-          <section key={k}>
-            <h2 className={`section-label ${i === 0 ? 'first' : ''}`}>{k}</h2>
-            <Rows windows={ws} multiHost={multiHost && by !== 'host'} narrow={false} onOpen={onOpen} />
+      {sections.map((section, i) => {
+        const first = section.windows[0];
+        const title = section.run ? `${first.run!.name} - ${first.project}` : section.id;
+        return (
+          <section key={`${section.run ? 'run' : 'group'}:${section.id}`}>
+            <h2 className={`section-label ${i === 0 ? 'first' : ''}`}>{title}</h2>
+            <Rows windows={section.windows} multiHost={multiHost && by !== 'host'} narrow={false} onOpen={onOpen} />
           </section>
-        ))}
+        );
+      })}
     </>
   );
 }
