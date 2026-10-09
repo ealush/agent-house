@@ -12,6 +12,12 @@ export function paneLeaves(node: LayoutNode, path: Path = []): Array<{ sessionKe
   ];
 }
 
+/** A split needs two panes. One pane is the ordinary session, so the layout goes away. */
+export function normalizeSplit(node: LayoutNode | null): LayoutNode | null {
+  if (!node || paneLeaves(node).length < 2) return null;
+  return node;
+}
+
 export function nodeAt(node: LayoutNode, path: Path): LayoutNode | null {
   for (const part of path) {
     if (node.type !== 'split') return null;

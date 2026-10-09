@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { splitLeaf, replaceLeaf, closeLeaf, setRatio, parseLayout, leaves, paneLeaves, nodeAt, neighborPane, moveLeaf, toggleSplit, dockLeaf, moveLeafTo, type LayoutNode, type Path } from '../web/layout.ts';
+import { splitLeaf, replaceLeaf, closeLeaf, setRatio, parseLayout, leaves, paneLeaves, nodeAt, neighborPane, moveLeaf, toggleSplit, dockLeaf, moveLeafTo, normalizeSplit, type LayoutNode, type Path } from '../web/layout.ts';
 
 const leaf = (k: string): LayoutNode => ({ type: 'session', sessionKey: k });
 
@@ -36,6 +36,14 @@ test('replace and close collapse', () => {
   const closed = closeLeaf(l, 'a');
   assert.deepEqual(closed, leaf('c'));
   assert.equal(closeLeaf(leaf('a'), 'a'), null);
+});
+
+test('one pane is not a split', () => {
+  const pair = splitLeaf(leaf('a'), 'a', 'horizontal', 'b');
+  assert.equal(normalizeSplit(pair), pair);
+  assert.equal(normalizeSplit(closeLeaf(pair, 'b')), null);
+  assert.equal(normalizeSplit(leaf('a')), null);
+  assert.equal(normalizeSplit(null), null);
 });
 
 test('close of unknown key leaves layout alone', () => {

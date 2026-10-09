@@ -10,7 +10,7 @@ import { Inbox, type InboxGroup } from './Inbox.tsx';
 import { HistoryView, SessionsView } from './HistoryView.tsx';
 import { Session } from './Session.tsx';
 import { Workspace } from './Workspace.tsx';
-import { leaves, moveLeaf, neighborPane, nodeAt, paneLeaves, parseLayout, replaceLeaf, splitLeaf, toggleSplit, type LayoutNode, type PaneDir, type Path } from './layout.ts';
+import { leaves, moveLeaf, neighborPane, nodeAt, normalizeSplit, paneLeaves, parseLayout, replaceLeaf, splitLeaf, toggleSplit, type LayoutNode, type PaneDir, type Path } from './layout.ts';
 import { NewDialog } from './NewDialog.tsx';
 import { ForkDialog, type ForkTarget } from './ForkDialog.tsx';
 import { Switcher } from './Switcher.tsx';
@@ -89,10 +89,15 @@ export function App({ onLock }: { onLock: () => void }) {
       return true;
     }
   });
+  // A stored one-pane layout is not a split. Remember its session so the first paint can open it.
+  const resumeSolo = useRef<string | null>(null);
   // Split layout is device-local (F45): a 32" arrangement never follows you to a phone.
   const [layout, setLayoutState] = useState<LayoutNode | null>(() => {
     try {
-      return parseLayout(JSON.parse(localStorage.getItem('ah.layout.v1') ?? 'null'));
+      const parsed = parseLayout(JSON.parse(localStorage.getItem('ah.layout.v1') ?? 'null'));
+      const split = normalizeSplit(parsed);
+      if (parsed && !split) resumeSolo.current = paneLeaves(parsed)[0]?.sessionKey ?? null;
+      return split;
     } catch {
       return null;
     }
@@ -120,13 +125,20 @@ export function App({ onLock }: { onLock: () => void }) {
   }
 
   function setLayout(next: LayoutNode | null) {
-    setLayoutState(next);
-    const at = next && focusPath ? nodeAt(next, focusPath) : null;
-    if (!next) setFocusPath(null);
-    else if (at?.type === 'split') setFocusPath([...focusPath!, ...paneLeaves(at)[0].path]);
-    else if (!at) setFocusPath(paneLeaves(next)[0].path);
+    // Closing the second-to-last pane leaves one session. That is the normal view, not a split of one.
+    const split = normalizeSplit(next);
+    setLayoutState(split);
+    if (!split) {
+      setFocusPath(null);
+      const solo = next ? paneLeaves(next) : [];
+      if (solo.length === 1) go({ selected: solo[0].sessionKey });
+    } else {
+      const at = focusPath ? nodeAt(split, focusPath) : null;
+      if (at?.type === 'split') setFocusPath([...focusPath!, ...paneLeaves(at)[0].path]);
+      else if (!at) setFocusPath(paneLeaves(split)[0].path);
+    }
     try {
-      if (next) localStorage.setItem('ah.layout.v1', JSON.stringify(next));
+      if (split) localStorage.setItem('ah.layout.v1', JSON.stringify(split));
       else localStorage.removeItem('ah.layout.v1');
     } catch {}
   }
@@ -260,6 +272,16 @@ export function App({ onLock }: { onLock: () => void }) {
 
   // Fill the screen normally; shrink only while the software keyboard is open.
   useEffect(() => trackViewport(window, document), []);
+
+  useEffect(() => {
+    const key = resumeSolo.current;
+    if (!key) return;
+    resumeSolo.current = null;
+    try {
+      localStorage.removeItem('ah.layout.v1');
+    } catch {}
+    go({ selected: key });
+  }, []);
 
   const current = state?.windows.find((w) => w.key === selected) ?? null;
   // A session killed elsewhere: fall back to where we were (split panes show an ended state instead).
