@@ -41,11 +41,22 @@ export function useCommand(id: CommandId, fn: () => void, enabled = true) {
   }, [id, enabled]);
 }
 
+/** One raised cap per key. Tooltips and search still use the `formatChord` string. */
+function Keycaps({ chord }: { chord: Chord }) {
+  return (
+    <span className="keycaps">
+      {chordParts(chord).map((part) => (
+        <kbd key={part}>{part}</kbd>
+      ))}
+    </span>
+  );
+}
+
 export function ShortcutHint({ id }: { id: CommandId }) {
   useShortcutRevision();
   const chord = hintChord(id, isMac(), loadOverrides());
   if (!chord) return null;
-  return <kbd>{formatChord(chord, isMac())}</kbd>;
+  return <Keycaps chord={chord} />;
 }
 
 export function shortcutTitle(label: string, id: CommandId): string {
@@ -228,13 +239,17 @@ export function ShortcutsPanel({ focusSearch = false }: { focusSearch?: boolean 
                     <td>
                       {live ? (
                         <div className="keymap-record">
-                          {pending ? <kbd>{formatChord(pending, mac)}</kbd> : <span className="hint">Press a shortcut, then Enter</span>}
-                          <span className="hint">Enter saves · Esc cancels · ⌫ clears</span>
+                          {pending ? <Keycaps chord={pending} /> : <span className="hint">Press a shortcut, then Enter</span>}
+                          <span className="hint keymap-how">
+                            <span className="keycaps"><kbd>Enter</kbd></span> saves
+                            <span className="keycaps"><kbd>Esc</kbd></span> cancels
+                            <span className="keycaps"><kbd>Backspace</kbd></span> clears
+                          </span>
                           {error && <span className="keymap-error">{error}</span>}
                         </div>
                       ) : (
                         <button type="button" className="keymap-bind" onClick={() => start(cmd.id)} title={`Change ${cmd.label}`}>
-                          {chords.length ? chords.map((c, i) => <kbd key={i}>{formatChord(c, mac)}</kbd>) : <span className="hint">Record</span>}
+                          {chords.length ? chords.map((c, i) => <Keycaps key={i} chord={c} />) : <span className="hint">Record</span>}
                         </button>
                       )}
                     </td>
@@ -367,13 +382,7 @@ export function CommandPalette({ onClose, onRun }: { onClose: () => void; onRun:
                   <Icon name={COMMAND_ICONS[cmd.id]} size={16} />
                 </span>
                 <span className="name">{cmd.label}</span>
-                {chord && (
-                  <span className="cmd-keys">
-                    {chordParts(chord).map((part) => (
-                      <kbd key={part}>{part}</kbd>
-                    ))}
-                  </span>
-                )}
+                {chord && <Keycaps chord={chord} />}
               </button>
             </li>
           );
