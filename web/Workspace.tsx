@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import type { HostApi, SendResult, Win } from './api.ts';
 import { Session } from './Session.tsx';
-import { sortWindows } from './Sidebar.tsx';
+import { sidebarOrder } from './sessionOrder.ts';
 import { cycleKey } from './keyboard.ts';
 import { closeLeaf, paneLeaves, replaceLeaf, setRatio, splitLeaf, type LayoutNode, type Path } from './layout.ts';
 
@@ -122,7 +122,7 @@ export function Workspace(props: Props) {
             else props.onLayout(replaceLeaf(layout, path, key));
           }}
           onCycleSession={(dir) => {
-            const next = cycleKey(sortWindows(windows).map((x) => x.key), w.key, dir);
+            const next = cycleKey(sidebarOrder(windows, props.multiHost).map((x) => x.key), w.key, dir);
             if (next) props.onLayout(replaceLeaf(layout, path, next));
           }}
           onSplitWith={(key) => props.onLayout(splitLeaf(layout, path, 'horizontal', key))}

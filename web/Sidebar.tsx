@@ -4,6 +4,7 @@ import { askConfirm } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
+import { sidebarSections } from './sessionOrder.ts';
 
 export type Page = 'inbox' | 'history' | 'sessions' | 'settings' | 'search';
 
@@ -34,17 +35,6 @@ type Props = {
   /** Collapse the sidebar into a rail. */
   onCollapse: () => void;
 };
-
-/** Sort: pinned first, then manual order, then status/activity for never-arranged rows. */
-export function sortWindows(windows: Win[]): Win[] {
-  return [...windows].sort((a, b) => {
-    if (Number(b.pinned) !== Number(a.pinned)) return Number(b.pinned) - Number(a.pinned);
-    if (a.order != null && b.order != null) return a.order - b.order;
-    if (a.order != null) return -1;
-    if (b.order != null) return 1;
-    return rank(a) - rank(b) || b.activity - a.activity;
-  });
-}
 
 /** Sparse key between two neighbors: midpoint, or ±100 at the ends. */
 export function orderBetween(before: number | null, after: number | null): number {
@@ -79,16 +69,9 @@ export function Sidebar({ state, error, page, selected, visibleKeys, device, onP
   const [collapsedRuns, setCollapsedRuns] = useState<Set<string>>(new Set());
 
   // Recipe members group under their run (issue #6); the rest keep the usual grouping.
-  const runGroups = new Map<string, Win[]>();
-  const groups = new Map<string, Win[]>();
-  for (const w of sortWindows(windows)) {
-    if (w.run) {
-      runGroups.set(w.run.runId, [...(runGroups.get(w.run.runId) ?? []), w]);
-      continue;
-    }
-    const k = multiHost ? w.host : w.project;
-    groups.set(k, [...(groups.get(k) ?? []), w]);
-  }
+  const sections = sidebarSections(windows, multiHost);
+  const runGroups = sections.filter((section) => section.run);
+  const groups = sections.filter((section) => !section.run);
 
   function dropOnto(group: Win[], target: Win) {
     if (!dragKey) return;
@@ -260,7 +243,9 @@ export function Sidebar({ state, error, page, selected, visibleKeys, device, onP
             ))}
           </>
         )}
-        {[...runGroups.entries()].map(([runId, ws]) => {
+        {runGroups.map((section) => {
+          const runId = section.id;
+          const ws = section.windows;
           const first = ws[0];
           const run = first.run!;
           const needsYou = ws.filter((w) => w.status === 'waiting').length;
@@ -299,29 +284,33 @@ export function Sidebar({ state, error, page, selected, visibleKeys, device, onP
             </section>
           );
         })}
-        {[...groups.entries()].map(([group, ws]) => (
-          <section key={group}>
-            <div className={`side-label ${multiHost ? 'host' : ''}`}>
-              {multiHost && <span className="dot online" />}
-              <span className="grow">{group}</span>
-              {!multiHost && (
-                <button
-                  type="button"
-                  className="label-add"
-                  title={`New session in ${group}`}
-                  aria-label={`New session in ${group}`}
-                  onClick={() => {
-                    const home = ws.find((w) => !w.worktree) ?? ws[0];
-                    onNew({ cwd: home.projectPath, host: home.host });
-                  }}
-                >
-                  <Icon name="plus" size={12} />
-                </button>
-              )}
-            </div>
-            {ws.map((w) => row(w, ws))}
-          </section>
-        ))}
+        {groups.map((section) => {
+          const group = section.id;
+          const ws = section.windows;
+          return (
+            <section key={group}>
+              <div className={`side-label ${multiHost ? 'host' : ''}`}>
+                {multiHost && <span className="dot online" />}
+                <span className="grow">{group}</span>
+                {!multiHost && (
+                  <button
+                    type="button"
+                    className="label-add"
+                    title={`New session in ${group}`}
+                    aria-label={`New session in ${group}`}
+                    onClick={() => {
+                      const home = ws.find((w) => !w.worktree) ?? ws[0];
+                      onNew({ cwd: home.projectPath, host: home.host });
+                    }}
+                  >
+                    <Icon name="plus" size={12} />
+                  </button>
+                )}
+              </div>
+              {ws.map((w) => row(w, ws))}
+            </section>
+          );
+        })}
       </div>
 
       <footer className="side-foot">
@@ -338,5 +327,3 @@ export function Sidebar({ state, error, page, selected, visibleKeys, device, onP
   );
 }
 
-const ORDER = { waiting: 0, busy: 1, attention: 2, idle: 3 };
-const rank = (w: Win) => ORDER[w.status];
