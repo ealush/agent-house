@@ -145,6 +145,11 @@ test('split movement is directional, and terminate and exit split start unbound'
   assert.equal(press('ArrowRight', { ctrlKey: true, shiftKey: true, code: 'ArrowRight' }), 'focus-pane-right');
   assert.equal(press('ArrowUp', { ctrlKey: true, shiftKey: true, code: 'ArrowUp' }), 'focus-pane-up');
   assert.equal(press('ArrowDown', { ctrlKey: true, shiftKey: true, code: 'ArrowDown' }), 'focus-pane-down');
+  assert.equal(press('ArrowLeft', { ctrlKey: true, altKey: true, code: 'ArrowLeft' }), 'move-pane-left');
+  assert.equal(press('ArrowRight', { ctrlKey: true, altKey: true, code: 'ArrowRight' }), 'move-pane-right');
+  assert.equal(press('ArrowUp', { ctrlKey: true, altKey: true, code: 'ArrowUp' }), 'move-pane-up');
+  assert.equal(press('ArrowDown', { ctrlKey: true, altKey: true, code: 'ArrowDown' }), 'move-pane-down');
+  assert.equal(press('j', { ctrlKey: true, altKey: true, code: 'KeyJ' }), 'toggle-split');
   assert.equal(press('ArrowRight', { ctrlKey: true, shiftKey: true, code: 'ArrowRight' }, 'field'), null);
   assert.equal(press('ArrowUp', { altKey: true, code: 'ArrowUp' }), 'cycle-prev');
   assert.deepEqual(resolveChords('terminate'), []);

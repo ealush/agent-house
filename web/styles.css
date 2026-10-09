@@ -579,6 +579,19 @@ a.pill:hover {
   font-size: 13px;
 }
 
+.chip.pane-drag {
+  cursor: grab;
+}
+
+.chip.pane-drag:active {
+  cursor: grabbing;
+}
+
+/* The logo must not start its own drag, or the pane path never gets set. */
+.chip.pane-drag * {
+  pointer-events: none;
+}
+
 .chip.sm {
   width: 20px;
   height: 20px;
@@ -3310,6 +3323,10 @@ a.btn {
   text-align: center;
 }
 
+.pane.dragging {
+  opacity: 0.55;
+}
+
 .pane.terminated .actions {
   display: flex;
   gap: 8px;
@@ -3371,6 +3388,32 @@ a.btn {
 .drop-zone.top { grid-area: top; }
 .drop-zone.bottom { grid-area: bottom; }
 .drop-zone.center { grid-area: center; }
+
+/* Edge docks sit above a pane's drop grid so a drop on the rim spans the workspace. */
+.dock-frame {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  pointer-events: none;
+}
+
+.dock-zone {
+  position: absolute;
+  pointer-events: auto;
+  display: grid;
+  place-items: center;
+  margin: 8px;
+  border-radius: 9px;
+  border: 1.5px dashed var(--accent);
+  color: var(--accent);
+  font-size: 12px;
+  background: var(--accent-bg);
+}
+
+.dock-zone.left { left: 0; top: 18%; bottom: 18%; width: 16%; }
+.dock-zone.right { right: 0; top: 18%; bottom: 18%; width: 16%; }
+.dock-zone.top { left: 12%; right: 12%; top: 0; height: 18%; }
+.dock-zone.bottom { left: 12%; right: 12%; bottom: 0; height: 22%; }
 
 .ws-tabs {
   flex: 1;

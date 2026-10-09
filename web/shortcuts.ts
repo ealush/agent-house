@@ -40,6 +40,11 @@ export type CommandId =
   | 'focus-pane-right'
   | 'focus-pane-up'
   | 'focus-pane-down'
+  | 'move-pane-left'
+  | 'move-pane-right'
+  | 'move-pane-up'
+  | 'move-pane-down'
+  | 'toggle-split'
   | 'exit-split'
   | 'show-shortcuts';
 
@@ -243,6 +248,46 @@ export const COMMANDS: Command[] = [
     label: 'Pane down',
     detail: 'Move to the pane below. On a narrow screen this switches tabs.',
     chords: [{ key: 'ArrowDown', ctrl: true, shift: true }],
+    scopes: session,
+  },
+  {
+    id: 'move-pane-left',
+    group: 'Workspace',
+    label: 'Move pane left',
+    detail: 'Move the focused pane left. At the edge of its split, it spans the column beyond.',
+    chords: [{ key: 'ArrowLeft', ctrl: true, alt: true }],
+    scopes: session,
+  },
+  {
+    id: 'move-pane-right',
+    group: 'Workspace',
+    label: 'Move pane right',
+    detail: 'Move the focused pane right. At the edge of its split, it spans the column beyond.',
+    chords: [{ key: 'ArrowRight', ctrl: true, alt: true }],
+    scopes: session,
+  },
+  {
+    id: 'move-pane-up',
+    group: 'Workspace',
+    label: 'Move pane up',
+    detail: 'Move the focused pane up. At the edge of its split, it spans the row beyond.',
+    chords: [{ key: 'ArrowUp', ctrl: true, alt: true }],
+    scopes: session,
+  },
+  {
+    id: 'move-pane-down',
+    group: 'Workspace',
+    label: 'Move pane down',
+    detail: 'Move the focused pane down. At the edge of its split, it spans the row beyond.',
+    chords: [{ key: 'ArrowDown', ctrl: true, alt: true }],
+    scopes: session,
+  },
+  {
+    id: 'toggle-split',
+    group: 'Workspace',
+    label: 'Flip split',
+    detail: 'Turn the split around the focused pane the other way, side by side or stacked.',
+    chords: [{ key: 'j', ctrl: true, alt: true }],
     scopes: session,
   },
   {

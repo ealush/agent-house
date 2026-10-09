@@ -10,7 +10,7 @@ import { Inbox, type InboxGroup } from './Inbox.tsx';
 import { HistoryView, SessionsView } from './HistoryView.tsx';
 import { Session } from './Session.tsx';
 import { Workspace } from './Workspace.tsx';
-import { leaves, neighborPane, nodeAt, paneLeaves, parseLayout, replaceLeaf, splitLeaf, type LayoutNode, type PaneDir, type Path } from './layout.ts';
+import { leaves, moveLeaf, neighborPane, nodeAt, paneLeaves, parseLayout, replaceLeaf, splitLeaf, toggleSplit, type LayoutNode, type PaneDir, type Path } from './layout.ts';
 import { NewDialog } from './NewDialog.tsx';
 import { ForkDialog, type ForkTarget } from './ForkDialog.tsx';
 import { Switcher } from './Switcher.tsx';
@@ -171,6 +171,20 @@ export function App({ onLock }: { onLock: () => void }) {
     if (next) setFocusPath(next);
   };
 
+  const movePane = (dir: PaneDir) => {
+    if (!layout) return;
+    const from = focusPath ?? paneLeaves(layout)[0]?.path ?? [];
+    const next = moveLeaf(layout, from, dir);
+    setLayout(next.layout);
+    setFocusPath(next.path);
+  };
+
+  const flipSplit = () => {
+    if (!layout) return;
+    const from = focusPath ?? paneLeaves(layout)[0]?.path ?? [];
+    setLayout(toggleSplit(layout, from));
+  };
+
   const exitSplit = () => {
     setLayout(null);
     setFocusPath(null);
@@ -191,6 +205,11 @@ export function App({ onLock }: { onLock: () => void }) {
   useCommand('focus-pane-right', () => focusPane('right'), splitOpen);
   useCommand('focus-pane-up', () => focusPane('up'), splitOpen);
   useCommand('focus-pane-down', () => focusPane('down'), splitOpen);
+  useCommand('move-pane-left', () => movePane('left'), splitOpen);
+  useCommand('move-pane-right', () => movePane('right'), splitOpen);
+  useCommand('move-pane-up', () => movePane('up'), splitOpen);
+  useCommand('move-pane-down', () => movePane('down'), splitOpen);
+  useCommand('toggle-split', flipSplit, splitOpen);
   useCommand('exit-split', exitSplit, !!layout);
 
   /** Enter split view from the single session: the new half shows the most recent other session. */

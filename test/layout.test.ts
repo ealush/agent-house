@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { splitLeaf, replaceLeaf, closeLeaf, setRatio, parseLayout, leaves, paneLeaves, nodeAt, neighborPane, type LayoutNode, type Path } from '../web/layout.ts';
+import { splitLeaf, replaceLeaf, closeLeaf, setRatio, parseLayout, leaves, paneLeaves, nodeAt, neighborPane, moveLeaf, toggleSplit, dockLeaf, moveLeafTo, type LayoutNode, type Path } from '../web/layout.ts';
 
 const leaf = (k: string): LayoutNode => ({ type: 'session', sessionKey: k });
 
@@ -93,4 +93,58 @@ test('parseLayout rejects garbage, clamps ratios', () => {
   assert.equal((l as { ratio: number }).ratio, 0.85);
   // A split with one dead side collapses to the live side.
   assert.deepEqual(parseLayout({ type: 'split', direction: 'horizontal', first: leaf('a'), second: null }), leaf('a'));
+});
+
+test('moving the bottom-right pane down makes it a full-width row', () => {
+  // a | (b / c). c is the pane stuck at the bottom of the right column.
+  const stack = row(leaf('a'), col(leaf('b'), leaf('c')));
+  const moved = moveLeaf(stack, ['second', 'second'], 'down');
+  assert.deepEqual(moved.layout, col(row(leaf('a'), leaf('b')), leaf('c')));
+  assert.deepEqual(moved.path, ['second']);
+  // Once it spans the bottom, another down leaves the split and its ratio alone.
+  const sized = col(row(leaf('a'), leaf('b')), leaf('c'), 0.7);
+  assert.equal(moveLeaf(sized, ['second'], 'down').layout, sized);
+});
+
+test('moving toward a sibling swaps the two halves', () => {
+  const pair = row(leaf('a'), leaf('b'), 0.7);
+  const moved = moveLeaf(pair, ['first'], 'right');
+  assert.deepEqual(moved.layout, row(leaf('b'), leaf('a'), 0.7));
+  assert.deepEqual(moved.path, ['second']);
+  // Up from the full-width bottom pane stacks it on top.
+  const below = col(row(leaf('a'), leaf('b')), leaf('c'));
+  assert.deepEqual(moveLeaf(below, ['second'], 'up').layout, col(leaf('c'), row(leaf('a'), leaf('b'))));
+});
+
+test('moving sideways steps into the neighbor instead of spanning the edge', () => {
+  const stack = row(leaf('a'), col(leaf('b'), leaf('c')));
+  const moved = moveLeaf(stack, ['second', 'second'], 'left');
+  assert.deepEqual(moved.layout, row(row(leaf('c'), leaf('a')), leaf('b')));
+  assert.deepEqual(moved.path, ['first', 'first']);
+});
+
+test('flip split turns the parent the other way', () => {
+  const pair = row(leaf('a'), leaf('b'), 0.7);
+  assert.deepEqual(toggleSplit(pair, ['second']), col(leaf('a'), leaf('b'), 0.7));
+  assert.deepEqual(toggleSplit(leaf('a'), []), leaf('a'));
+});
+
+test('docking on the bottom edge spans the workspace', () => {
+  const stack = row(leaf('a'), col(leaf('b'), leaf('c'), 0.4), 0.3);
+  const docked = dockLeaf(stack, ['second', 'second'], 'down');
+  assert.deepEqual(docked.layout, col(row(leaf('a'), leaf('b'), 0.3), leaf('c')));
+  assert.deepEqual(docked.path, ['second']);
+  assert.equal(dockLeaf(docked.layout, ['second'], 'down').layout, docked.layout);
+});
+
+test('dropping a pane splits the target and keeps the one left behind', () => {
+  const stack = row(leaf('a'), col(leaf('b'), leaf('c')));
+  // c leaves the right column, so that column collapses to b, and a splits below.
+  const dropped = moveLeafTo(stack, ['second', 'second'], ['first'], 'bottom');
+  assert.deepEqual(dropped.layout, row(col(leaf('a'), leaf('c')), leaf('b')));
+  assert.deepEqual(dropped.path, ['first', 'second']);
+  const swapped = moveLeafTo(stack, ['second', 'second'], ['first'], 'center');
+  assert.deepEqual(swapped.layout, row(leaf('c'), col(leaf('b'), leaf('a'))));
+  assert.deepEqual(swapped.path, ['first']);
+  assert.equal(moveLeafTo(stack, ['first'], ['first'], 'left').layout, stack);
 });

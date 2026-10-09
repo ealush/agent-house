@@ -35,6 +35,7 @@ const PATHS: Record<string, string> = {
   view: 'M4 4h16v16H4zM4 12h16M7.5 7.2l2.4 1.6-2.4 1.6M8 15.5h8',
   'split-right': 'M4 5h16v14H4zM12 5v14',
   'split-below': 'M4 5h16v14H4zM4 12h16',
+  'split-flip': 'M4 5h16v14H4zM12 5v14M4 12h16',
   'pane-close': 'M4 5h16v14H4zM9 9l6 6M15 9l-6 6',
   'pane-left': 'M4 5h16v14H4zM14 9l-4 3 4 3',
   'pane-right': 'M4 5h16v14H4zM10 9l4 3-4 3',

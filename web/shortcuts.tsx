@@ -87,6 +87,11 @@ const COMMAND_ICONS = {
   'focus-pane-right': 'pane-right',
   'focus-pane-up': 'pane-up',
   'focus-pane-down': 'pane-down',
+  'move-pane-left': 'pane-left',
+  'move-pane-right': 'pane-right',
+  'move-pane-up': 'pane-up',
+  'move-pane-down': 'pane-down',
+  'toggle-split': 'split-flip',
   'exit-split': 'pane',
 } as const satisfies Record<CommandId, IconName>;
 

@@ -3,7 +3,7 @@ import type { HostApi, SendResult, Win } from './api.ts';
 import { Session } from './Session.tsx';
 import { useSavedGroups } from './groupOrder.ts';
 import { sidebarOrder } from './sessionOrder.ts';
-import { closeLeaf, paneLeaves, replaceLeaf, setRatio, splitLeaf, type LayoutNode, type Path } from './layout.ts';
+import { closeLeaf, dockLeaf, moveLeafTo, paneLeaves, replaceLeaf, setRatio, splitLeaf, toggleSplit, type LayoutNode, type Path } from './layout.ts';
 import { ShortcutHint } from './shortcuts.tsx';
 
 type Props = {
@@ -37,6 +37,7 @@ export function Workspace(props: Props) {
   const { layout, windows } = props;
   const [picking, setPicking] = useState<Path | null>(null);
   const [dropPane, setDropPane] = useState<string | null>(null);
+  const [paneDrag, setPaneDrag] = useState<Path | null>(null);
 
   const savedGroups = useSavedGroups(props.multiHost);
   const orderedWindows = sidebarOrder(windows, props.multiHost, savedGroups);
@@ -52,6 +53,25 @@ export function Workspace(props: Props) {
   function dropKey(e: React.DragEvent): string | null {
     // Sidebar rows set text/ah-session; fall back to plain text for other sources.
     return e.dataTransfer.getData('text/ah-session') || e.dataTransfer.getData('text/plain') || null;
+  }
+
+  function panePath(raw: string): Path | null {
+    if (!raw) return null;
+    const parts = raw.split('/');
+    if (!parts.every((part) => part === 'first' || part === 'second')) return null;
+    return parts as Path;
+  }
+
+  function dropPaneOnto(from: Path, target: Path, where: 'left' | 'right' | 'top' | 'bottom' | 'center') {
+    const next = moveLeafTo(layout, from, target, where);
+    props.onLayout(next.layout);
+    props.onFocus(next.path);
+  }
+
+  function dock(from: Path, where: 'left' | 'right' | 'top' | 'bottom') {
+    const next = dockLeaf(layout, from, where === 'top' ? 'up' : where === 'bottom' ? 'down' : where);
+    props.onLayout(next.layout);
+    props.onFocus(next.path);
   }
 
   function handleDrop(target: Path, where: 'left' | 'right' | 'top' | 'bottom' | 'center', key: string | null) {
@@ -82,10 +102,10 @@ export function Workspace(props: Props) {
     }
     return (
       <div
-        className={`pane ${focused ? 'focused' : ''} ${dropPane === paneId ? 'dropping' : ''}`}
+        className={`pane ${focused ? 'focused' : ''} ${dropPane === paneId ? 'dropping' : ''} ${paneDrag && paneDrag.join('/') === paneId ? 'dragging' : ''}`}
         onClick={() => props.onFocus(path)}
         onDragOver={(e) => {
-          if (e.dataTransfer.types.includes('text/ah-session') || e.dataTransfer.types.includes('text/plain')) {
+          if (e.dataTransfer.types.includes('text/ah-pane') || e.dataTransfer.types.includes('text/ah-session') || e.dataTransfer.types.includes('text/plain')) {
             e.preventDefault();
             setDropPane((k) => (k === paneId ? k : paneId));
           }
@@ -100,7 +120,9 @@ export function Workspace(props: Props) {
         onDrop={(e) => {
           e.preventDefault();
           setDropPane(null);
-          handleDrop(path, 'center', dropKey(e));
+          const from = panePath(e.dataTransfer.getData('text/ah-pane'));
+          if (from) dropPaneOnto(from, path, 'center');
+          else handleDrop(path, 'center', dropKey(e));
         }}
       >
         <Session
@@ -136,6 +158,12 @@ export function Workspace(props: Props) {
           onSplitWith={(key) => props.onLayout(splitLeaf(layout, path, 'horizontal', key))}
           onReplace={() => setPicking(path)}
           onClosePane={() => props.onLayout(closeLeaf(layout, path))}
+          onFlipSplit={() => props.onLayout(toggleSplit(layout, path))}
+          panePath={paneId}
+          onPaneDrag={(active) => {
+            setPaneDrag(active ? path : null);
+            if (!active) setDropPane(null);
+          }}
           onStartSession={(prompt) => props.onStartSession(w, prompt)}
         />
         {dropPane === paneId && (
@@ -149,10 +177,12 @@ export function Workspace(props: Props) {
                   e.preventDefault();
                   e.stopPropagation();
                   setDropPane(null);
-                  handleDrop(path, where, dropKey(e));
+                  const from = panePath(e.dataTransfer.getData('text/ah-pane'));
+                  if (from) dropPaneOnto(from, path, where);
+                  else handleDrop(path, where, dropKey(e));
                 }}
               >
-                {where === 'center' ? 'Replace' : `Drop ${where}`}
+                {where === 'center' ? (paneDrag ? 'Swap' : 'Replace') : `Drop ${where}`}
               </div>
             ))}
           </div>
@@ -204,7 +234,30 @@ export function Workspace(props: Props) {
           <div className="ws-tab-body">{activeTab && pane(activeTab.sessionKey, activeTab.path)}</div>
         </div>
       ) : (
-        <div className="ws-root">{node(layout, [])}</div>
+        <div className="ws-root">
+          {node(layout, [])}
+          {paneDrag && (
+            <div className="dock-frame">
+              {(['left', 'right', 'top', 'bottom'] as const).map((where) => (
+                <div
+                  key={where}
+                  className={`dock-zone ${where}`}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const from = panePath(e.dataTransfer.getData('text/ah-pane'));
+                    setPaneDrag(null);
+                    setDropPane(null);
+                    if (from) dock(from, where);
+                  }}
+                >
+                  {where === 'left' || where === 'right' ? 'Full height' : 'Full width'}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
       {picking && (
         <div className="picker-veil" onClick={() => setPicking(null)}>

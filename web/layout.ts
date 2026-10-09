@@ -131,6 +131,136 @@ export function neighborPane(root: LayoutNode, from: Path, dir: PaneDir): Path |
   return ranked[0]?.path ?? null;
 }
 
+type Side = 'first' | 'second';
+type Axis = 'horizontal' | 'vertical';
+
+function dirSide(dir: PaneDir): { axis: Axis; side: Side } {
+  if (dir === 'left') return { axis: 'horizontal', side: 'first' };
+  if (dir === 'right') return { axis: 'horizontal', side: 'second' };
+  if (dir === 'up') return { axis: 'vertical', side: 'first' };
+  return { axis: 'vertical', side: 'second' };
+}
+
+function setAt(root: LayoutNode, path: Path, next: LayoutNode): LayoutNode {
+  if (path.length === 0) return next;
+  if (root.type !== 'split') return root;
+  const key = path[0];
+  return { ...root, [key]: setAt(root[key], path.slice(1), next) };
+}
+
+function splitBeside(node: LayoutNode, leaf: LayoutNode, side: Side, axis: Axis): LayoutNode {
+  return side === 'first'
+    ? { type: 'split', direction: axis, ratio: 0.5, first: leaf, second: node }
+    : { type: 'split', direction: axis, ratio: 0.5, first: node, second: leaf };
+}
+
+function sameTree(a: LayoutNode, b: LayoutNode): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * Put `leaf` on `side` of the container at `slot`, after `leaf` was pulled out
+ * of the tree. A perpendicular parent is wrapped, so a pane leaving the bottom
+ * of a column spans that whole parent. A parallel parent that still has room
+ * in `side` gives the leaf half of the neighbor there.
+ */
+function placeBeyond(layout: LayoutNode, slot: Path, leaf: LayoutNode, side: Side, axis: Axis): { layout: LayoutNode; path: Path } {
+  if (slot.length === 0) return { layout: splitBeside(layout, leaf, side, axis), path: [side] };
+  const parentPath = slot.slice(0, -1);
+  const parent = nodeAt(layout, parentPath);
+  if (!parent || parent.type !== 'split') return { layout, path: slot };
+  const slotSide = slot[slot.length - 1];
+  if (parent.direction === axis && slotSide === side) return placeBeyond(layout, parentPath, leaf, side, axis);
+  if (parent.direction === axis) {
+    const next: LayoutNode = { ...parent, [side]: splitBeside(parent[side], leaf, side, axis) };
+    return { layout: setAt(layout, parentPath, next), path: [...parentPath, side, side] };
+  }
+  return { layout: setAt(layout, parentPath, splitBeside(parent, leaf, side, axis)), path: [...parentPath, side] };
+}
+
+/**
+ * Move the pane one step in `dir`. Toward its sibling, the halves trade places.
+ * Already at that edge, the pane is pulled out and spans the parent beyond it:
+ * the bottom-right pane moved down becomes a full-width row underneath.
+ * A pane that already spans that outer edge stays put, ratio included.
+ */
+export function moveLeaf(root: LayoutNode, path: Path, dir: PaneDir): { layout: LayoutNode; path: Path } {
+  const leaf = nodeAt(root, path);
+  if (!leaf || leaf.type !== 'session' || path.length === 0) return { layout: root, path };
+  const { axis, side } = dirSide(dir);
+  const parentPath = path.slice(0, -1);
+  const parent = nodeAt(root, parentPath);
+  if (!parent || parent.type !== 'split') return { layout: root, path };
+  const at = path[path.length - 1];
+  if (parent.direction === axis && at !== side) {
+    const swapped: LayoutNode = { ...parent, first: parent.second, second: parent.first };
+    return { layout: setAt(root, parentPath, swapped), path: [...parentPath, side] };
+  }
+  if (parent.direction === axis && at === side && parentPath.length === 0) return { layout: root, path };
+  const removed = closeLeaf(root, path);
+  if (!removed) return { layout: root, path };
+  const placed = placeBeyond(removed, parentPath, leaf, side, axis);
+  if (sameTree(placed.layout, root)) return { layout: root, path };
+  return placed;
+}
+
+/** Flip the split that holds this pane, from side by side to stacked or back. */
+export function toggleSplit(root: LayoutNode, path: Path): LayoutNode {
+  const parentPath = path.slice(0, -1);
+  const parent = nodeAt(root, parentPath);
+  if (!parent || parent.type !== 'split') return root;
+  const direction: Axis = parent.direction === 'horizontal' ? 'vertical' : 'horizontal';
+  return setAt(root, parentPath, { ...parent, direction });
+}
+
+/**
+ * Pull the pane out and dock it on an outer edge, spanning the workspace.
+ * Dropping the bottom-right pane on the bottom edge puts it full width below.
+ */
+export function dockLeaf(root: LayoutNode, path: Path, dir: PaneDir): { layout: LayoutNode; path: Path } {
+  const leaf = nodeAt(root, path);
+  if (!leaf || leaf.type !== 'session' || path.length === 0) return { layout: root, path };
+  const { axis, side } = dirSide(dir);
+  const parent = nodeAt(root, path.slice(0, -1));
+  if (path.length === 1 && parent?.type === 'split' && parent.direction === axis && path[0] === side) return { layout: root, path };
+  const removed = closeLeaf(root, path);
+  if (!removed) return { layout: root, path };
+  return { layout: splitBeside(removed, leaf, side, axis), path: [side] };
+}
+
+/** Where a path points after the leaf at `from` is removed and its sibling takes the parent slot. */
+function pathAfterClose(from: Path, to: Path): Path | null {
+  if (from.length === 0) return null;
+  if (to.length >= from.length && from.every((part, i) => to[i] === part)) return null;
+  const parent = from.slice(0, -1);
+  const other: Side = from[from.length - 1] === 'first' ? 'second' : 'first';
+  const sibling = [...parent, other];
+  if (to.length >= sibling.length && sibling.every((part, i) => to[i] === part)) return [...parent, ...to.slice(sibling.length)];
+  return to;
+}
+
+export type DropWhere = 'left' | 'right' | 'top' | 'bottom' | 'center';
+
+/** Move the pane at `from` onto the pane at `to`. Center swaps the two sessions. */
+export function moveLeafTo(root: LayoutNode, from: Path, to: Path, where: DropWhere): { layout: LayoutNode; path: Path } {
+  if (samePath(from, to)) return { layout: root, path: from };
+  const leaf = nodeAt(root, from);
+  const target = nodeAt(root, to);
+  if (!leaf || leaf.type !== 'session' || !target || target.type !== 'session') return { layout: root, path: from };
+  if (where === 'center') {
+    const layout = replaceLeaf(replaceLeaf(root, from, target.sessionKey), to, leaf.sessionKey);
+    return { layout, path: to };
+  }
+  const dest = pathAfterClose(from, to);
+  if (!dest) return { layout: root, path: from };
+  const removed = closeLeaf(root, from);
+  if (!removed) return { layout: root, path: from };
+  const staying = nodeAt(removed, dest);
+  if (!staying) return { layout: root, path: from };
+  const { axis, side } = dirSide(where === 'left' ? 'left' : where === 'right' ? 'right' : where === 'top' ? 'up' : 'down');
+  return { layout: setAt(removed, dest, splitBeside(staying, leaf, side, axis)), path: [...dest, side] };
+}
+
 /** Parse a stored layout without trusting it: wrong shapes become null. */
 export function parseLayout(v: unknown): LayoutNode | null {
   if (!v || typeof v !== 'object') return null;

@@ -51,6 +51,12 @@ type Props = {
   onReplace?: () => void;
   /** Close this pane without killing the session (F45). */
   onClosePane?: () => void;
+  /** Flip the split that holds this pane, side by side or stacked. */
+  onFlipSplit?: () => void;
+  /** This pane's path in the split tree (`first/second`). Set while it can be dragged. */
+  panePath?: string;
+  /** Fires when a pane drag starts or ends, so the workspace can show edge docks. */
+  onPaneDrag?: (active: boolean) => void;
   /** Send to… → New session. Opens the start dialog with this first message. */
   onStartSession?: (prompt: string) => void;
 };
@@ -121,7 +127,7 @@ function PanelDivider({ onResize, onReset }: { onResize: (dx: number) => void; o
 
 const DEFAULT_PANEL_WIDTH = 420;
 
-export function Session({ w, client, windows, clientFor, narrow, touch, multiHost, home, replyKey, onBack, onAnswer, onSent, onKilled, refresh, onSplit, onReplace, onClosePane, onOpenKey, onSplitWith, onStartSession, active = true }: Props) {
+export function Session({ w, client, windows, clientFor, narrow, touch, multiHost, home, replyKey, onBack, onAnswer, onSent, onKilled, refresh, onSplit, onReplace, onClosePane, onFlipSplit, panePath, onPaneDrag, onOpenKey, onSplitWith, onStartSession, active = true }: Props) {
   const surface = useRef<SurfaceHandle>(null);
   const body = useRef<HTMLDivElement>(null);
   // 'main' is the session itself, drawn by whichever surface is chosen.
@@ -429,7 +435,19 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
           </button>
         )}
         {!narrow && (
-          <span className="chip lg" style={{ '--agent': color } as React.CSSProperties}>
+          <span
+            className={`chip lg${panePath ? ' pane-drag' : ''}`}
+            style={{ '--agent': color } as React.CSSProperties}
+            draggable={!!panePath}
+            title={panePath ? 'Drag to move this pane' : undefined}
+            onDragStart={(e) => {
+              if (!panePath) return;
+              e.dataTransfer.effectAllowed = 'move';
+              e.dataTransfer.setData('text/ah-pane', panePath);
+              onPaneDrag?.(true);
+            }}
+            onDragEnd={() => onPaneDrag?.(false)}
+          >
             <AgentLogo id={w.agent} size={17} />
           </span>
         )}
@@ -612,6 +630,17 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
                     <span className="grow">Split below</span>
                     <ShortcutHint id="split-below" />
                   </button>
+                  {onFlipSplit && (
+                    <button
+                      onClick={() => {
+                        setMenu(false);
+                        onFlipSplit();
+                      }}
+                    >
+                      <span className="grow">Flip split</span>
+                      <ShortcutHint id="toggle-split" />
+                    </button>
+                  )}
                 </>
               )}
               {onReplace && (
