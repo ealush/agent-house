@@ -8,6 +8,7 @@ import { askConfirm, showError } from './ask.tsx';
 export function SystemPanel() {
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState<'restart' | 'rebuild' | null>(null);
+  const [uploadsNote, setUploadsNote] = useState<string | null>(null);
 
   async function restart() {
     if (
@@ -53,20 +54,52 @@ export function SystemPanel() {
     }
   }
 
+  async function clearUploads() {
+    if (
+      !(await askConfirm({
+        title: 'Clear the uploads folder?',
+        body: 'Everything in ~/.cache/ah/uploads is deleted.',
+        confirm: 'Clear uploads',
+        danger: true,
+      }))
+    )
+      return;
+    setBusy(true);
+    setUploadsNote(null);
+    try {
+      const { removed } = await api.clearUploads();
+      setUploadsNote(removed === 0 ? 'Uploads folder is already empty.' : removed === 1 ? 'Cleared 1 file from the uploads folder.' : `Cleared ${removed} files from the uploads folder.`);
+    } catch (e) {
+      showError(e, "Couldn't clear the uploads folder");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    <div className="sec-card">
-      <h2>Server</h2>
-      <p className="hint">
-        Restart the ah server on this host after updating it or changing its config. Rebuild and restart clears the old build, builds the UI again from this checkout, and then restarts. Sessions keep running, and this page reconnects by itself.
-      </p>
-      {phase === 'restart' && <p className="panel-msg">Restarting… this page reconnects when the server is back.</p>}
-      {phase === 'rebuild' && <p className="panel-msg">Clearing the old build and rebuilding… the server restarts when the build finishes, and this page reconnects.</p>}
-      <div className="system-actions">
-        <button className="btn" disabled={busy || phase !== null} onClick={() => void restart()}>
-          Restart server
-        </button>
-        <button className="btn" disabled={busy || phase !== null} onClick={() => void rebuild()}>
-          Rebuild and restart
+    <div className="system-panels">
+      <div className="sec-card">
+        <h2>Server</h2>
+        <p className="hint">
+          Restart the ah server on this host after updating it or changing its config. Rebuild and restart clears the old build, builds the UI again from this checkout, and then restarts. Sessions keep running, and this page reconnects by itself.
+        </p>
+        {phase === 'restart' && <p className="panel-msg">Restarting… this page reconnects when the server is back.</p>}
+        {phase === 'rebuild' && <p className="panel-msg">Clearing the old build and rebuilding… the server restarts when the build finishes, and this page reconnects.</p>}
+        <div className="system-actions">
+          <button className="btn" disabled={busy || phase !== null} onClick={() => void restart()}>
+            Restart server
+          </button>
+          <button className="btn" disabled={busy || phase !== null} onClick={() => void rebuild()}>
+            Rebuild and restart
+          </button>
+        </div>
+      </div>
+      <div className="sec-card">
+        <h2>Uploads</h2>
+        <p className="hint">Pasted and dropped files are stored in ~/.cache/ah/uploads on this host.</p>
+        {uploadsNote && <p className="hint">{uploadsNote}</p>}
+        <button className="btn" disabled={busy || phase !== null} onClick={() => void clearUploads()}>
+          Clear uploads folder
         </button>
       </div>
     </div>

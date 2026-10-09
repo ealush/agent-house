@@ -44,6 +44,7 @@ const PROTECTED: Array<[string, string, unknown?]> = [
   ['DELETE', '/api/prompts'],
   ['POST', '/api/system/restart', {}],
   ['POST', '/api/system/rebuild', {}],
+  ['POST', '/api/system/uploads/clear', {}],
   ['GET', '/api/windows/@1/changes'],
   ['GET', '/api/windows/@1/capture'],
   ['PATCH', '/api/windows/@1', { name: 'x' }],

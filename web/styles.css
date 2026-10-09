@@ -2350,6 +2350,13 @@ a.btn {
   background: var(--raised);
 }
 
+.system-panels {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+}
+
 .system-actions {
   display: flex;
   flex-wrap: wrap;

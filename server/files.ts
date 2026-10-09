@@ -151,3 +151,27 @@ export async function makeDir(input: string): Promise<string> {
   await mkdir(path);
   return path;
 }
+
+const UPLOADS_SUFFIX = `${sep}ah${sep}uploads`;
+
+/**
+ * Delete every entry in ah's paste-upload directory (`~/.cache/ah/uploads`).
+ * The directory stays. A path that is not that directory is refused, including
+ * a symlink that points somewhere else.
+ */
+export async function clearUploadDir(dir: string): Promise<number> {
+  let real: string;
+  try {
+    real = await realpath(dir);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    const resolved = resolve(dir);
+    if (!resolved.endsWith(UPLOADS_SUFFIX)) throw new Error(`refusing to clear ${resolved}`);
+    await mkdir(resolved, { recursive: true, mode: 0o700 });
+    return 0;
+  }
+  if (!real.endsWith(UPLOADS_SUFFIX)) throw new Error(`refusing to clear ${real}`);
+  const names = await readdir(real);
+  await Promise.all(names.map((name) => rm(join(real, name), { recursive: true, force: true })));
+  return names.length;
+}

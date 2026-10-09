@@ -112,7 +112,7 @@ export type Preset = {
 
 export type Host = { name: string; self: boolean; online: boolean };
 
-export const API_VERSION = 17;
+export const API_VERSION = 18;
 
 export type PullInfo = { number: number | null; url: string | null };
 
@@ -339,6 +339,8 @@ export function hostApi(base: string) {
     restart: () => r<{ ok: true }>('POST', '/api/system/restart', {}),
     /** Settings → System: delete dist, rebuild the UI from this checkout, then bounce the daemon. */
     rebuild: () => r<{ ok: true }>('POST', '/api/system/rebuild', {}),
+    /** Settings → System: delete everything in ~/.cache/ah/uploads. */
+    clearUploads: () => r<{ ok: true; removed: number }>('POST', '/api/system/uploads/clear', {}),
     pastChat: (uid: string, msgId?: number) => r<{ messages: ChatMsg[] }>('GET', `/api/chats/${enc(uid)}${msgId ? `?msgId=${msgId}` : ''}`),
     worktrees: () => r<WorktreeInfo[]>('GET', '/api/worktrees'),
     removeWorktree: (path: string, force: boolean) => r('DELETE', '/api/worktrees', { path, force }),

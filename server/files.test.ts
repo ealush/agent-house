@@ -1,10 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, symlink, readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
-import { safePath, list, receive, FsError, setRoots } from './files.ts';
+import { safePath, list, receive, FsError, setRoots, clearUploadDir } from './files.ts';
 
 // Tests browse under the system temp dir; nothing else is a root.
 setRoots([tmpdir()]);
@@ -26,6 +27,39 @@ test('listing hides dotfiles unless asked, folders first', async () => {
   const shown = await list(dir, false);
   assert.deepEqual(shown.entries.map((e) => e.name), ['z-dir', 'b.txt']);
   assert.ok((await list(dir, true)).entries.some((e) => e.name === '.secret'));
+});
+
+test('clearUploadDir removes only the uploads directory contents', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ah-fs-'));
+  const uploads = join(root, 'ah', 'uploads');
+  await mkdir(uploads, { recursive: true });
+  await writeFile(join(uploads, 'shot.png'), 'png');
+  await mkdir(join(uploads, 'sub'));
+  await writeFile(join(uploads, 'sub', 'inner.txt'), 'in');
+  await writeFile(join(root, 'keep.txt'), 'keep');
+
+  assert.equal(await clearUploadDir(uploads), 2);
+  assert.equal(existsSync(join(uploads, 'shot.png')), false);
+  assert.equal(existsSync(join(uploads, 'sub')), false);
+  assert.equal(existsSync(uploads), true);
+  assert.equal(await readFile(join(root, 'keep.txt'), 'utf8'), 'keep');
+});
+
+test('clearUploadDir creates a missing uploads directory and refuses anything else', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ah-fs-'));
+  const uploads = join(root, 'ah', 'uploads');
+  await writeFile(join(root, 'keep.txt'), 'keep');
+  assert.equal(await clearUploadDir(uploads), 0);
+  assert.equal(existsSync(uploads), true);
+
+  const evil = await mkdtemp(join(tmpdir(), 'ah-evil-'));
+  await writeFile(join(evil, 'precious'), 'no');
+  const link = join(root, 'linked-uploads');
+  await symlink(evil, link);
+  await assert.rejects(() => clearUploadDir(link), /refusing to clear/);
+  await assert.rejects(() => clearUploadDir(root), /refusing to clear/);
+  assert.equal(await readFile(join(evil, 'precious'), 'utf8'), 'no');
+  assert.equal(await readFile(join(root, 'keep.txt'), 'utf8'), 'keep');
 });
 
 test('uploads never overwrite and strip path tricks from names', async () => {

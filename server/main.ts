@@ -29,7 +29,7 @@ import { createWorktree, changes, listBranches, switchBranch, pullRequest, GitEr
 import { SideChatStore, SideChatError, changeContext } from './sidechat.ts';
 import { ensureMigrated, getDb } from './db.ts';
 import { importLegacyJson } from './migrate.ts';
-import { FsError, list, makeDir, receive, sendFile, setRoots, roots } from './files.ts';
+import { FsError, list, makeDir, receive, sendFile, setRoots, roots, clearUploadDir } from './files.ts';
 import { Peers, proxyHttp, proxyWs, peerUrlAllowed } from './peers.ts';
 import { SearchIndexer, combineResponses, type SearchParams } from './search.ts';
 import { Auth, AuthError, clearCookies, type Caller } from './auth.ts';
@@ -435,6 +435,18 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
       scheduleRestart();
     }
     return;
+  }
+
+  if (route('POST', /^\/api\/system\/uploads\/clear$/)) {
+    try {
+      const removed = await clearUploadDir(UPLOAD_DIR);
+      audit(req, 'system.uploads.clear', { removed });
+      return send(res, 200, { ok: true, removed });
+    } catch (err) {
+      const msg = (err as Error).message || 'could not clear uploads';
+      console.error(`clear uploads failed: ${msg}`);
+      return send(res, 500, { error: msg });
+    }
   }
 
   // Manual sidebar order (F43): sparse key, persisted in the registry, synced to every device over SSE.

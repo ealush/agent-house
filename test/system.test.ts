@@ -3,7 +3,7 @@
 // the side effect instead of bouncing systemd or deleting dist.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startAh, cleanup, http, signIn, until, type Ah } from './helpers.ts';
@@ -37,6 +37,15 @@ test('anonymous callers are refused and nothing rebuilds', async () => {
   const res = await http(ah, 'POST', '/api/system/rebuild', { body: {} });
   assert.equal(res.status, 401);
   assert.ok(!existsSync(rebuilt));
+});
+
+test('anonymous callers are refused and uploads stay', async () => {
+  const uploads = join(ah.dir, 'cache', 'ah', 'uploads');
+  mkdirSync(uploads, { recursive: true });
+  writeFileSync(join(uploads, 'keep.png'), 'png');
+  const res = await http(ah, 'POST', '/api/system/uploads/clear', { body: {} });
+  assert.equal(res.status, 401);
+  assert.equal(existsSync(join(uploads, 'keep.png')), true);
 });
 
 test('a signed-in device gets 200 and the restart command runs', async () => {
@@ -84,4 +93,27 @@ test('the rebuild is audited', async () => {
   const overview = await http(ah, 'GET', '/api/auth/overview', { token: ah.localToken() });
   assert.equal(overview.status, 200);
   assert.ok(overview.json().audit.some((a: { event: string }) => a.event === 'system.rebuild'));
+});
+
+test('a signed-in device clears the uploads folder and nothing beside it', async () => {
+  const uploads = join(ah.dir, 'cache', 'ah', 'uploads');
+  const sibling = join(ah.dir, 'cache', 'ah', 'keep.txt');
+  mkdirSync(uploads, { recursive: true });
+  const leftover = join(uploads, 'keep.png');
+  if (existsSync(leftover)) unlinkSync(leftover);
+  writeFileSync(join(uploads, 'shot.png'), 'png');
+  writeFileSync(sibling, 'keep');
+  const cookie = await signIn(ah);
+  const res = await http(ah, 'POST', '/api/system/uploads/clear', { body: {}, cookie });
+  assert.equal(res.status, 200);
+  assert.equal(res.json().removed, 1);
+  assert.equal(existsSync(join(uploads, 'shot.png')), false);
+  assert.equal(existsSync(uploads), true);
+  assert.equal(readFileSync(sibling, 'utf8'), 'keep');
+});
+
+test('clearing uploads is audited', async () => {
+  const overview = await http(ah, 'GET', '/api/auth/overview', { token: ah.localToken() });
+  assert.equal(overview.status, 200);
+  assert.ok(overview.json().audit.some((a: { event: string }) => a.event === 'system.uploads.clear'));
 });
