@@ -15,13 +15,18 @@ import { ChatHistory } from './ChatHistory.tsx';
 import { FilesPanel } from './Files.tsx';
 import { QueuePanel } from './Queue.tsx';
 import { ForkDialog, ForksDialog } from './ForkDialog.tsx';
+import { SendToDialog } from './SendToDialog.tsx';
 import { SnapshotsPanel } from './Snapshots.tsx';
+import { ShortcutHint, shortcutTitle, useCommand, useShortcutRevision } from './shortcuts.tsx';
 
 type Panel = 'diff' | 'files' | 'chat' | 'queue' | 'snapshots';
 
 type Props = {
   w: Win;
   client: HostApi;
+  /** Live sessions in sidebar order. Send to… picks one of the others. */
+  windows: Win[];
+  clientFor: (host: string | undefined) => HostApi;
   narrow: boolean;
   touch: boolean;
   multiHost: boolean;
@@ -36,8 +41,8 @@ type Props = {
   refresh: () => void;
   /** Navigate to another session by key (fork focus, fork family). */
   onOpenKey?: (key: string) => void;
-  /** Step session focus from the terminal (Option+Up/Down). */
-  onCycleSession?: (dir: -1 | 1) => void;
+  /** This session receives UI shortcuts. Split view sets it on the focused pane. */
+  active?: boolean;
   /** Open another session beside this one in split view (fork comparison). */
   onSplitWith?: (key: string) => void;
   /** Split this pane (F45). Provided by the workspace; hidden in single view. */
@@ -46,6 +51,8 @@ type Props = {
   onReplace?: () => void;
   /** Close this pane without killing the session (F45). */
   onClosePane?: () => void;
+  /** Send to… → New session. Opens the start dialog with this first message. */
+  onStartSession?: (prompt: string) => void;
 };
 
 const STATUS_PILL = { waiting: 'Needs you', busy: 'Working', attention: 'Done', idle: 'Idle' };
@@ -114,7 +121,7 @@ function PanelDivider({ onResize, onReset }: { onResize: (dx: number) => void; o
 
 const DEFAULT_PANEL_WIDTH = 420;
 
-export function Session({ w, client, narrow, touch, multiHost, home, replyKey, onBack, onAnswer, onSent, onKilled, refresh, onSplit, onReplace, onClosePane, onOpenKey, onCycleSession, onSplitWith }: Props) {
+export function Session({ w, client, windows, clientFor, narrow, touch, multiHost, home, replyKey, onBack, onAnswer, onSent, onKilled, refresh, onSplit, onReplace, onClosePane, onOpenKey, onSplitWith, onStartSession, active = true }: Props) {
   const surface = useRef<SurfaceHandle>(null);
   const body = useRef<HTMLDivElement>(null);
   // 'main' is the session itself, drawn by whichever surface is chosen.
@@ -187,6 +194,7 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
     };
   }, [menu]);
   const [forking, setForking] = useState(false);
+  const [sending, setSending] = useState(false);
   const [forksOpen, setForksOpen] = useState(false);
   const [capture, setCapture] = useState<string | null>(null);
   const [focus, setFocus] = useState(0);
@@ -352,6 +360,40 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
     else window.dispatchEvent(new CustomEvent('ah:toast', { detail: 'Fork started; find it in the sidebar' }));
   };
 
+  useShortcutRevision();
+  // Desktop only: a phone would pop the software keyboard every time a session opens.
+  // Two frames, because the GUI surface is lazy and the ref is empty on the first.
+  useEffect(() => {
+    if (!active || touch) return;
+    let inner = 0;
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => surface.current?.focus());
+    });
+    return () => {
+      cancelAnimationFrame(outer);
+      cancelAnimationFrame(inner);
+    };
+  }, [active, w.key, touch]);
+  useCommand('toggle-view', () => switchView(view === 'gui' ? 'terminal' : 'gui', true), active && views.length > 1);
+  useCommand(
+    'toggle-panel',
+    () => {
+      if (panel && !panelCollapsed) setPanelCollapsed(true);
+      else if (panel) setPanelCollapsed(false);
+      else {
+        setPanel(lastPanel);
+        setPanelCollapsed(false);
+      }
+    },
+    active && !narrow,
+  );
+  useCommand('split-right', () => onSplit?.('right'), active && !!onSplit);
+  useCommand('split-below', () => onSplit?.('below'), active && !!onSplit);
+  useCommand('close-pane', () => onClosePane?.(), active && !!onClosePane);
+  useCommand('approve', () => onAnswer(w, 'approve'), active && w.answerable && w.status === 'waiting');
+  useCommand('deny', () => onAnswer(w, 'deny'), active && w.answerable && w.status === 'waiting');
+  useCommand('reply', focusInput, active);
+
   const diffTab = w.branch ? 'Diff' : null;
   const panelView = (p: Panel) =>
     p === 'queue' ? (
@@ -476,7 +518,7 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
         {views.length > 1 && (
           <div className="view-toggle" role="group" aria-label="View">
             {views.map((v) => (
-              <button key={v} className={v === view ? 'on' : ''} aria-pressed={v === view} title={`${VIEW_LABEL[v]} view`} onClick={() => switchView(v)}>
+              <button key={v} className={v === view ? 'on' : ''} aria-pressed={v === view} title={shortcutTitle(`${VIEW_LABEL[v]} view`, 'toggle-view')} onClick={() => switchView(v)}>
                 <Icon name={v === 'gui' ? 'chat' : 'terminal'} size={15} />
                 {!narrow && <span>{VIEW_LABEL[v]}</span>}
               </button>
@@ -496,7 +538,7 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
             }}
             aria-label="Toggle panel"
             aria-pressed={!!panel && !panelCollapsed}
-            title={`Panel: ${lastPanel}${w.queued > 0 ? ` (Queue ${w.queued})` : ''}`}
+            title={shortcutTitle(`Panel: ${lastPanel}${w.queued > 0 ? ` (Queue ${w.queued})` : ''}`, 'toggle-panel')}
           >
             <Icon name={panel && !panelCollapsed ? 'panel-hide' : 'panel'} size={16} />
           </button>
@@ -531,6 +573,16 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
               >
                 Fork session…
               </button>
+              {w.feed && (
+                <button
+                  onClick={() => {
+                    setMenu(false);
+                    setSending(true);
+                  }}
+                >
+                  Send to…
+                </button>
+              )}
               <button onClick={() => act(() => client.pin(w.uid, !w.pinned))}>{w.pinned ? 'Unpin' : 'Pin to top'}</button>
               {diffTab && <button onClick={() => { setMenu(false); openPanel('diff'); }}>Diff</button>}
               <button onClick={() => { setMenu(false); openPanel('files'); }}>Files</button>
@@ -545,7 +597,8 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
                       onSplit('right');
                     }}
                   >
-                    Split right
+                    <span className="grow">Split right</span>
+                    <ShortcutHint id="split-right" />
                   </button>
                   <button
                     onClick={() => {
@@ -553,7 +606,8 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
                       onSplit('below');
                     }}
                   >
-                    Split below
+                    <span className="grow">Split below</span>
+                    <ShortcutHint id="split-below" />
                   </button>
                 </>
               )}
@@ -574,7 +628,8 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
                     onClosePane();
                   }}
                 >
-                  Close pane
+                  <span className="grow">Close pane</span>
+                  <ShortcutHint id="close-pane" />
                 </button>
               )}
               <button
@@ -652,7 +707,6 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
               onAnswer={onAnswer}
               onReply={focusInput}
               onUseTerminal={() => switchView('terminal', true)}
-              onCycleSession={onCycleSession}
               refresh={refresh}
             />
           </Suspense>
@@ -725,6 +779,18 @@ export function Session({ w, client, narrow, touch, multiHost, home, replyKey, o
       {capture !== null && <CaptureDialog text={capture} onClose={() => setCapture(null)} />}
       {forking && (
         <ForkDialog client={client} target={{ ref: w.uid, host: w.host, harness: w.agent, title: w.title }} onClose={() => setForking(false)} onForked={forked} />
+      )}
+      {sending && (
+        <SendToDialog
+          client={client}
+          clientFor={clientFor}
+          source={w}
+          windows={windows}
+          multiHost={multiHost}
+          onClose={() => setSending(false)}
+          onSent={onSent}
+          onNewSession={(prompt) => onStartSession?.(prompt)}
+        />
       )}
       {forksOpen && (
         <ForksDialog

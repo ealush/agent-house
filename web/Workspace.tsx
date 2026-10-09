@@ -3,7 +3,6 @@ import type { HostApi, SendResult, Win } from './api.ts';
 import { Session } from './Session.tsx';
 import { useSavedGroups } from './groupOrder.ts';
 import { sidebarOrder } from './sessionOrder.ts';
-import { cycleKey } from './keyboard.ts';
 import { closeLeaf, paneLeaves, replaceLeaf, setRatio, splitLeaf, type LayoutNode, type Path } from './layout.ts';
 
 type Props = {
@@ -24,6 +23,8 @@ type Props = {
   onKilledSession: () => void;
   refresh: (host?: string) => void;
   onExit: () => void;
+  /** Send to… → New session, in this pane's project. */
+  onStartSession: (w: Win, prompt: string) => void;
 };
 
 /**
@@ -37,10 +38,12 @@ export function Workspace(props: Props) {
   const [dropPane, setDropPane] = useState<string | null>(null);
 
   const savedGroups = useSavedGroups(props.multiHost);
+  const orderedWindows = sidebarOrder(windows, props.multiHost, savedGroups);
   const byKey = new Map(windows.map((w) => [w.key, w]));
   const panes = paneLeaves(layout);
   const [tab, setTab] = useState('');
   const activeTab = panes.find((p) => p.path.join('/') === tab) ?? panes[0];
+  const keyboardId = (props.narrow ? activeTab?.path : (props.focusPath ?? panes[0]?.path))?.join('/');
 
   function dropKey(e: React.DragEvent): string | null {
     // Sidebar rows set text/ah-session; fall back to plain text for other sources.
@@ -100,6 +103,8 @@ export function Workspace(props: Props) {
           key={w.key}
           w={w}
           client={props.clientFor(w.host)}
+          windows={orderedWindows}
+          clientFor={props.clientFor}
           narrow={props.narrow}
           touch={props.touch}
           multiHost={props.multiHost}
@@ -118,18 +123,16 @@ export function Workspace(props: Props) {
             const other = windows.find((x) => x.key !== w.key)?.key ?? w.key;
             props.onLayout(splitLeaf(layout, path, dir === 'right' ? 'horizontal' : 'vertical', other));
           }}
+          active={keyboardId === paneId}
           onOpenKey={(key) => {
             const hit = panes.find((p) => p.sessionKey === key);
             if (hit) props.onFocus(hit.path);
             else props.onLayout(replaceLeaf(layout, path, key));
           }}
-          onCycleSession={(dir) => {
-            const next = cycleKey(sidebarOrder(windows, props.multiHost, savedGroups).map((x) => x.key), w.key, dir);
-            if (next) props.onLayout(replaceLeaf(layout, path, next));
-          }}
           onSplitWith={(key) => props.onLayout(splitLeaf(layout, path, 'horizontal', key))}
           onReplace={() => setPicking(path)}
           onClosePane={() => props.onLayout(closeLeaf(layout, path))}
+          onStartSession={(prompt) => props.onStartSession(w, prompt)}
         />
         {dropPane === paneId && (
           <div className="drop-grid">

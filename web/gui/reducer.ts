@@ -122,3 +122,122 @@ export function project(entries: Entry[]): Block[] {
   }
   return blocks;
 }
+
+/**
+ * Prose of the newest assistant turn. A trailing turn that only called tools
+ * is skipped, so the last thing the agent actually said is what gets sent.
+ */
+export function lastAssistantText(entries: Entry[]): string {
+  const blocks = project(entries);
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const block = blocks[i];
+    if (block.kind !== 'agent') continue;
+    const text = blockText(block).trim();
+    if (text) return text;
+  }
+  return '';
+}
+
+/**
+ * The newest agent turn may have started before this page. A user message or
+ * a notice earlier in the page means the turn is already whole.
+ */
+export function assistantTurnCutOff(entries: Entry[]): boolean {
+  if (!entries.length) return false;
+  const blocks = project(entries);
+  let lastAgent = -1;
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    if (blocks[i].kind === 'agent') {
+      lastAgent = i;
+      break;
+    }
+  }
+  if (lastAgent < 0) return false;
+  for (let i = 0; i < lastAgent; i++) {
+    if (blocks[i].kind === 'user' || blocks[i].kind === 'notice') return false;
+  }
+  return true;
+}
+
+const ASSISTANT_PAGE = 200;
+const ASSISTANT_PAGES = 5;
+/** Prose sent to the subscription for a handoff summary. The latest reply is kept separately, in full. */
+const TRANSCRIPT_BUDGET = 16_000;
+const HANDOFF_PAGES = 8;
+
+/** User and assistant prose, in order. Tool calls, results, and reasoning are left out. */
+export function transcriptProse(entries: Entry[]): string {
+  const out: string[] = [];
+  for (const block of project(entries)) {
+    const text = blockText(block).trim();
+    if (!text) continue;
+    if (block.kind === 'user') out.push(`User:\n${text}`);
+    else if (block.kind === 'agent') out.push(`Assistant:\n${text}`);
+    else out.push(text);
+  }
+  return out.join('\n\n');
+}
+
+/** Keep the end of a transcript so the newest turns survive a length cap. */
+export function clipTail(text: string, max: number): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= max) return trimmed;
+  const cut = trimmed.slice(trimmed.length - max);
+  const breakAt = cut.indexOf('\n\n');
+  return (breakAt >= 0 && breakAt < 400 ? cut.slice(breakAt + 2) : cut).trimStart();
+}
+
+/** What Send to… puts in the box: a subscription summary, the latest reply, or both. */
+export function handoffText(summary: string, latest: string): string {
+  const s = summary.trim();
+  const l = latest.trim();
+  if (s && l) return `Session summary:\n${s}\n\nLatest reply:\n${l}`;
+  if (s) return `Session summary:\n${s}`;
+  return l;
+}
+
+/**
+ * Last assistant prose. Pages backward while the newest turn is cut off, or
+ * while that turn has not spoken yet. Stops after a few pages so a long tool
+ * run cannot walk the whole transcript.
+ */
+export async function readLastAssistant(page: (before: number, limit: number) => Promise<FeedPage>): Promise<string> {
+  let before = Number.POSITIVE_INFINITY;
+  let entries: Entry[] = [];
+  for (let n = 0; n < ASSISTANT_PAGES; n++) {
+    const got = await page(before, ASSISTANT_PAGE);
+    if (!got.entries.length) break;
+    entries = [...got.entries, ...entries];
+    const text = lastAssistantText(entries);
+    // A busy turn may not have spoken yet, so keep going until a reply is in hand
+    // and that reply's turn starts inside the pages we have.
+    if (!got.hasOlder || (!assistantTurnCutOff(entries) && text)) break;
+    const oldest = got.entries[0].seq;
+    if (!(oldest < before)) break;
+    before = oldest;
+  }
+  return lastAssistantText(entries);
+}
+
+/**
+ * Latest assistant reply, plus a clipped prose transcript of the recent
+ * session for a subscription to summarize. Pages backward until that reply's
+ * turn is whole and the transcript is full, and then stops.
+ */
+export async function readHandoff(page: (before: number, limit: number) => Promise<FeedPage>): Promise<{ latest: string; transcript: string }> {
+  let before = Number.POSITIVE_INFINITY;
+  let entries: Entry[] = [];
+  for (let n = 0; n < HANDOFF_PAGES; n++) {
+    const got = await page(before, ASSISTANT_PAGE);
+    if (!got.entries.length) break;
+    entries = [...got.entries, ...entries];
+    const latest = lastAssistantText(entries);
+    const prose = transcriptProse(entries);
+    const whole = !assistantTurnCutOff(entries);
+    if (!got.hasOlder || (whole && latest && prose.length >= TRANSCRIPT_BUDGET)) break;
+    const oldest = got.entries[0].seq;
+    if (!(oldest < before)) break;
+    before = oldest;
+  }
+  return { latest: lastAssistantText(entries), transcript: clipTail(transcriptProse(entries), TRANSCRIPT_BUDGET) };
+}

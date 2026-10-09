@@ -35,6 +35,7 @@ import { SearchIndexer, combineResponses, type SearchParams } from './search.ts'
 import { Auth, AuthError, clearCookies, type Caller } from './auth.ts';
 import { Gate, LOOPBACK_BIND } from './gate.ts';
 import { HttpError, send, readBody, readJson, str, safeDecode } from './http.ts';
+import { rebuildFailure, rebuildWeb } from './rebuild.ts';
 
 let config: Config;
 try {
@@ -51,6 +52,7 @@ const flag = (name: string) => {
 const PORT = Number(flag('port') ?? process.env.AH_PORT ?? config.port);
 const HOST = String(flag('host') ?? process.env.AH_HOST ?? config.host);
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 // Invariant 1. No flag turns this off: exposure belongs to Tailscale, not to ah.
 if (!LOOPBACK_BIND.has(HOST)) {
@@ -141,6 +143,19 @@ function restartCommand(): string[] {
   return ['systemctl', '--user', 'restart', 'ah'];
 }
 
+/** One rebuild at a time. A second click while a build is running is refused. */
+let rebuilding = false;
+
+// Answer first, then bounce. The restart stops this process; systemd brings it back.
+function scheduleRestart() {
+  setTimeout(() => {
+    const [cmd, ...args] = restartCommand();
+    const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
+    child.on('error', (err) => console.error(`restart failed: ${err.message}`));
+    child.unref();
+  }, 100);
+}
+
 // ---------- API (reached only after the gate in handle())
 
 async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: string, caller: Caller | null) {
@@ -215,70 +230,6 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     audit(req, 'session.create', { window: out.windowId, uid: out.uid, preset: preset.id, cwd: wt?.path ?? cwd, branch: wt?.branch });
     await core.refreshTmuxPath();
     return send(res, 201, { id: out.windowId, uid: out.uid });
-  }
-
-  // ---------- fleet recipes (issue #6)
-
-  if (route('GET', /^\/api\/recipes$/)) return send(res, 200, core.listRecipes());
-
-  if (route('PUT', /^\/api\/recipes$/)) {
-    const body = await readJson(req);
-    try {
-      const out = core.saveRecipes(body.recipes);
-      audit(req, 'recipes.save', { count: out.length });
-      return send(res, 200, out);
-    } catch (err) {
-      if (err instanceof CoreError) throw new HttpError(err.status, err.message);
-      throw err;
-    }
-  }
-
-  if ((m = route('POST', /^\/api\/recipes\/([\w-]{1,40})\/launch$/))) {
-    const body = await readJson(req);
-    const cwd = await resolveDir(str(body.cwd ?? '~', 'cwd', 1024));
-    const brief = body.brief === undefined ? '' : str(body.brief, 'brief', 32 * 1024);
-    const session = body.session ? t.sanitizeSessionName(str(body.session, 'session', 64)) : config.defaultSession;
-    if (!session) throw new HttpError(400, 'invalid session');
-    const overrides: Record<string, { mode?: string; model?: string; effort?: string }> = {};
-    if (body.overrides && typeof body.overrides === 'object' && !Array.isArray(body.overrides)) {
-      for (const [key, value] of Object.entries(body.overrides as Record<string, unknown>)) {
-        if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
-        const o = value as Record<string, unknown>;
-        overrides[key] = {
-          ...(typeof o.mode === 'string' ? { mode: o.mode } : {}),
-          ...(typeof o.model === 'string' ? { model: o.model } : {}),
-          ...(typeof o.effort === 'string' ? { effort: o.effort } : {}),
-        };
-      }
-    }
-    try {
-      const out = await core.launchRecipe(m[1], { cwd, brief, session, overrides });
-      audit(req, 'recipe.launch', { recipe: m[1], runId: out.run.runId, members: out.members.map((x) => x.uid) });
-      return send(res, 201, out);
-    } catch (err) {
-      if (err instanceof CoreError) throw new HttpError(err.status, err.message);
-      throw err;
-    }
-  }
-
-  if (route('GET', /^\/api\/runs$/)) return send(res, 200, core.recipeRuns());
-
-  if ((m = route('GET', /^\/api\/runs\/([\w-]{1,40})$/))) {
-    const run = core.recipeRun(m[1]);
-    if (!run) throw new HttpError(404, 'run not found');
-    return send(res, 200, run);
-  }
-
-  if ((m = route('POST', /^\/api\/runs\/([\w-]{1,40})\/(stop|archive)$/))) {
-    try {
-      if (m[2] === 'stop') await core.stopRun(m[1]);
-      else await core.archiveRun(m[1]);
-    } catch (err) {
-      if (err instanceof CoreError) throw new HttpError(err.status, err.message);
-      throw err;
-    }
-    audit(req, `run.${m[2]}`, { runId: m[1] });
-    return send(res, 200, { ok: true });
   }
 
   // Sessions are addressed by registry id, or `harness:harnessId` for discovered history.
@@ -451,15 +402,38 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
 
   if (route('POST', /^\/api\/system\/restart$/)) {
     audit(req, 'system.restart');
-    // Answer first: the restart below stops this process (systemd brings it
-    // back; tmux and the sessions survive it — see KillMode in ah.service).
+    // systemd brings the process back; tmux and the sessions survive it (KillMode in ah.service).
     send(res, 200, { ok: true });
-    setTimeout(() => {
-      const [cmd, ...args] = restartCommand();
-      const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
-      child.on('error', (err) => console.error(`restart failed: ${err.message}`));
-      child.unref();
-    }, 100);
+    scheduleRestart();
+    return;
+  }
+
+  if (route('POST', /^\/api\/system\/rebuild$/)) {
+    if (rebuilding) throw new HttpError(409, 'a rebuild is already running');
+    audit(req, 'system.rebuild');
+    rebuilding = true;
+    // Tests stub the whole side effect. The real path clears dist, builds, answers, then restarts.
+    const override = process.env.AH_REBUILD_CMD?.trim();
+    try {
+      if (override) {
+        await promisify(execFile)('/bin/sh', ['-c', override], { timeout: 30_000, maxBuffer: 1024 * 1024 });
+      } else {
+        console.log('rebuild: clearing dist and building');
+        await rebuildWeb(ROOT, DIST);
+      }
+    } catch (err) {
+      const msg = rebuildFailure(err);
+      console.error(`rebuild failed: ${msg}`);
+      // Sent here so the build log reaches the page. A thrown 500 is replaced with "internal error".
+      return send(res, 500, { error: msg });
+    } finally {
+      rebuilding = false;
+    }
+    send(res, 200, { ok: true });
+    if (!override) {
+      console.log('rebuild finished; restarting');
+      scheduleRestart();
+    }
     return;
   }
 
@@ -628,6 +602,20 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     await sidechat.setDefault(id);
     audit(req, 'subscription.default', { id });
     return send(res, 200, { ok: true });
+  }
+
+  // Handoff brief: summarize a transcript with the chat subscription. Not stored.
+  if (route('POST', /^\/api\/summarize$/)) {
+    const body = await readJson(req);
+    const text = str(body.text ?? '', 'text', 24_000).trim();
+    if (!text) throw new HttpError(400, 'text required');
+    try {
+      const summary = await sidechat.summarize(text, body.subscriptionId === undefined ? undefined : str(body.subscriptionId, 'subscriptionId', 40));
+      return send(res, 200, { summary });
+    } catch (err) {
+      if (err instanceof SideChatError) throw new HttpError(err.status, err.message);
+      throw err;
+    }
   }
 
   // Side chats attach to the conversation (`harness:harnessId`), not the window:

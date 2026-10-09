@@ -77,16 +77,12 @@ export function SessionsView({ state, onOpen, onNew }: { state: State; onOpen: (
           <Icon name="plus" size={22} />
         </button>
       </header>
-      {sections.map((section, i) => {
-        const first = section.windows[0];
-        const title = section.run ? `${first.run!.name} - ${first.project}` : section.id;
-        return (
-          <section key={`${section.run ? 'run' : 'group'}:${section.id}`}>
-            <h2 className={`section-label ${i === 0 ? 'first' : ''}`}>{title}</h2>
-            <Rows windows={section.windows} multiHost={false} narrow onOpen={onOpen} />
-          </section>
-        );
-      })}
+      {sections.map((section, i) => (
+        <section key={section.id}>
+          <h2 className={`section-label ${i === 0 ? 'first' : ''}`}>{section.id}</h2>
+          <Rows windows={section.windows} multiHost={false} narrow onOpen={onOpen} />
+        </section>
+      ))}
     </div>
   );
 }

@@ -2,17 +2,17 @@
 const UNSHIFTED = "`1234567890-=[]\\;',./";
 const SHIFTED = '~!@#$%^&*()_+{}|:"<>?';
 
-/** Physical-key arrow behavior inside the terminal. `send` writes bytes to the
- *  pty; `cycle` moves session focus instead (handled by the session layer). */
-export type ArrowAction = { send: string } | { cycle: -1 | 1 };
+/** Physical-key arrow behavior inside the terminal. `send` writes bytes to the pty.
+ *  Session cycling is a UI shortcut (shortcuts.ts), not a pty byte. */
+export type ArrowAction = { send: string };
 export type ArrowMods = { meta: boolean; alt: boolean; ctrl: boolean; shift: boolean };
 
 /**
  * Cmd+Left/Right seek line ends (Home/End), Option+Left/Right seek words
- * (ESC b/f, like GUI terminals), Option+Up/Down cycles sessions. Everything
- * else stays with xterm — notably Shift selections and Ctrl combinations.
- * Handling these here (with preventDefault at the call site) also keeps the
- * browser from eating them as Back/Forward navigation.
+ * (ESC b/f, like GUI terminals). Everything else stays with xterm — notably
+ * Shift selections, Ctrl combinations, and Option+Up/Down (those cycle sessions
+ * through the UI shortcut table). Handling these here, with preventDefault at
+ * the call site, also keeps the browser from eating them as Back/Forward.
  */
 export function terminalArrow(key: string, mod: ArrowMods): ArrowAction | null {
   if (mod.shift || mod.ctrl) return null;
@@ -25,10 +25,6 @@ export function terminalArrow(key: string, mod: ArrowMods): ArrowAction | null {
       if (mod.meta) return { send: '\x1b[F' };
       if (mod.alt) return { send: '\x1bf' };
       return null;
-    case 'ArrowUp':
-      return mod.alt && !mod.meta ? { cycle: -1 } : null;
-    case 'ArrowDown':
-      return mod.alt && !mod.meta ? { cycle: 1 } : null;
     default:
       return null;
   }

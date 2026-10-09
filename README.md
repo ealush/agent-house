@@ -86,8 +86,11 @@ to terminal rules and output activity, and matches live agents to their transcri
 - **Phone-first touches.** Bottom tabs, big targets, key row with one-tap Ctrl/Alt/Shift
   and clipboard Paste, swipe to scroll tmux, dictation-friendly composer, scrollback as
   selectable text. Shift+Enter sends multiline input; pasted screenshots upload to the host.
-- **⌘K / Ctrl+Shift+K**: jump to any session or resume any conversation;
-  filters `h:` host/harness, `s:` status, `p:` project, `m:` model.
+- **Keyboard.** Ctrl+Shift+K (⌘K on a Mac) jumps to any session or resumes a
+  conversation; filters `h:` host/harness, `s:` status, `p:` project, `m:` model.
+  Alt+↑ / Alt+↓ moves through sessions in sidebar order, from the terminal, the
+  GUI, or the inbox. Ctrl+Shift+/ opens the shortcut table (also under Settings →
+  Shortcuts), where each binding can be changed on this device.
 
 ### CLI
 

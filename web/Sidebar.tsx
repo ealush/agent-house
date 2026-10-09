@@ -6,6 +6,7 @@ import { look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
 import { useSavedGroups, setGroupList } from './groupOrder.ts';
 import { movedSessionOrders, saveGroupMove, sidebarSections } from './sessionOrder.ts';
+import { ShortcutHint, shortcutTitle, useShortcutRevision } from './shortcuts.tsx';
 
 export type Page = 'inbox' | 'history' | 'sessions' | 'settings' | 'search';
 
@@ -29,8 +30,6 @@ type Props = {
   onKill: (w: Win) => void;
   /** Fork the live session into a fresh worktree (F36). */
   onFork?: (w: Win) => void;
-  /** Stop or archive a whole recipe run (issue #6). */
-  onRunAction?: (host: string, runId: string, action: 'stop' | 'archive') => void;
   /** Start dragging a session toward a split pane (F46). */
   onDragSession?: (w: Win) => void;
   /** Collapse the sidebar into a rail. */
@@ -50,7 +49,8 @@ export function confirmTerminate(w: Win) {
 }
 
 /** Desktop navigation: inbox, hosts, and every live session grouped by host (or project). */
-export function Sidebar({ state, error, page, selected, visibleKeys, device, onPage, onSelect, onSearch, onNew, onWorktrees, onReorder, onKill, onFork, onRunAction, onDragSession, onCollapse }: Props) {
+export function Sidebar({ state, error, page, selected, visibleKeys, device, onPage, onSelect, onSearch, onNew, onWorktrees, onReorder, onKill, onFork, onDragSession, onCollapse }: Props) {
+  useShortcutRevision();
   const windows = state?.windows ?? [];
   const visible = new Set(visibleKeys);
   const waiting = windows.filter((w) => w.status === 'waiting').length;
@@ -61,12 +61,8 @@ export function Sidebar({ state, error, page, selected, visibleKeys, device, onP
   const [overAfter, setOverAfter] = useState(false);
   const [overGroup, setOverGroup] = useState<string | null>(null);
   const [menuKey, setMenuKey] = useState<string | null>(null);
-  const [collapsedRuns, setCollapsedRuns] = useState<Set<string>>(new Set());
 
-  // Recipe members group under their run (issue #6); the rest keep the usual grouping.
   const sections = sidebarSections(windows, multiHost, savedGroups);
-  const runGroups = sections.filter((section) => section.run);
-  const groups = sections.filter((section) => !section.run);
 
   function lowerHalf(e: React.DragEvent<HTMLElement>) {
     const box = e.currentTarget.getBoundingClientRect();
@@ -85,7 +81,7 @@ export function Sidebar({ state, error, page, selected, visibleKeys, device, onP
 
   function dropGroup(targetId: string, after: boolean) {
     if (drag?.kind !== 'group' || drag.id === targetId) return;
-    setGroupList(multiHost ? 'host' : 'project', saveGroupMove(groups.map((section) => section.id), savedGroups, drag.id, targetId, after));
+    setGroupList(multiHost ? 'host' : 'project', saveGroupMove(sections.map((section) => section.id), savedGroups, drag.id, targetId, after));
   }
 
   function row(w: Win, group: Win[]) {
@@ -209,7 +205,7 @@ export function Sidebar({ state, error, page, selected, visibleKeys, device, onP
         <span className="host-pill" title="This device">
           <span className="dot online" /> {device}
         </span>
-        <button className="icon-btn small" onClick={onCollapse} title="Hide sidebar" aria-label="Hide sidebar">
+        <button className="icon-btn small" onClick={onCollapse} title={shortcutTitle('Hide sidebar', 'toggle-sidebar')} aria-label="Hide sidebar">
           <Icon name="panel-hide" />
         </button>
       </div>
@@ -217,21 +213,21 @@ export function Sidebar({ state, error, page, selected, visibleKeys, device, onP
       <button className="search" onClick={onSearch}>
         <Icon name="search" size={15} />
         <span>Search or jump to</span>
-        <kbd>⌘K</kbd>
+        <ShortcutHint id="switcher" />
       </button>
 
-      <button className={`nav-item ${page === 'inbox' && !selected ? 'on' : ''}`} onClick={() => onPage('inbox')}>
+      <button className={`nav-item ${page === 'inbox' && !selected ? 'on' : ''}`} title={shortcutTitle('Inbox', 'go-inbox')} onClick={() => onPage('inbox')}>
         <Icon name="inbox" />
         <span className="grow">Inbox</span>
         {waiting > 0 ? <span className="badge">{waiting}</span> : <span className="count">{windows.length}</span>}
       </button>
-      <button className={`nav-item ${page === 'history' && !selected ? 'on' : ''}`} onClick={() => onPage('history')}>
+      <button className={`nav-item ${page === 'history' && !selected ? 'on' : ''}`} title={shortcutTitle('History', 'go-history')} onClick={() => onPage('history')}>
         <Icon name="history" />
         <span className="grow">History</span>
         <span className="count">{state?.history.length ?? ''}</span>
       </button>
 
-      <button className={`nav-item ${page === 'settings' && !selected ? 'on' : ''}`} onClick={() => onPage('settings')}>
+      <button className={`nav-item ${page === 'settings' && !selected ? 'on' : ''}`} title={shortcutTitle('Settings', 'go-settings')} onClick={() => onPage('settings')}>
         <Icon name="gear" />
         <span className="grow">Settings</span>
       </button>
@@ -252,48 +248,7 @@ export function Sidebar({ state, error, page, selected, visibleKeys, device, onP
             ))}
           </>
         )}
-        {runGroups.map((section) => {
-          const runId = section.id;
-          const ws = section.windows;
-          const first = ws[0];
-          const run = first.run!;
-          const needsYou = ws.filter((w) => w.status === 'waiting').length;
-          const rolled = ws.some((w) => w.status === 'waiting') ? 'waiting' : ws.some((w) => w.status === 'busy') ? 'busy' : ws.some((w) => w.status === 'attention') ? 'attention' : 'idle';
-          const collapsed = collapsedRuns.has(runId);
-          const toggle = () =>
-            setCollapsedRuns((prev) => {
-              const next = new Set(prev);
-              if (next.has(runId)) next.delete(runId);
-              else next.add(runId);
-              return next;
-            });
-          return (
-            <section key={runId}>
-              <div className="side-label">
-                <button type="button" className="run-toggle" aria-expanded={!collapsed} title={collapsed ? 'Expand run' : 'Collapse run'} onClick={toggle}>
-                  <span aria-hidden>{collapsed ? '▸' : '▾'}</span>
-                </button>
-                <span className={`dot ${rolled}`} />
-                <span className="grow">
-                  {run.name} - {first.project}
-                </span>
-                {needsYou > 0 && <span className="badge">{needsYou}</span>}
-                {onRunAction && (
-                  <>
-                    <button type="button" className="run-act" title="Stop all sessions in this run" onClick={() => onRunAction(first.host, runId, 'stop')}>
-                      Stop
-                    </button>
-                    <button type="button" className="run-act" title="Archive this run: ends sessions, keeps transcripts in History" onClick={() => onRunAction(first.host, runId, 'archive')}>
-                      Archive
-                    </button>
-                  </>
-                )}
-              </div>
-              {!collapsed && ws.map((w) => row(w, ws))}
-            </section>
-          );
-        })}
-        {groups.map((section) => {
+        {sections.map((section) => {
           const group = section.id;
           const ws = section.windows;
           const dragging = drag?.kind === 'group' && drag.id === group;
@@ -357,8 +312,9 @@ export function Sidebar({ state, error, page, selected, visibleKeys, device, onP
       </div>
 
       <footer className="side-foot">
-        <button className="btn block" onClick={() => onNew()}>
-          New session
+        <button className="btn block" onClick={() => onNew()} title={shortcutTitle('New session', 'new-session')}>
+          <span>New session</span>
+          <ShortcutHint id="new-session" />
         </button>
         <div className="row-btns">
           <button className="btn ghost small" onClick={onWorktrees}>

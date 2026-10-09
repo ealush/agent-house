@@ -6,12 +6,13 @@ import { Terminal, type TerminalHandle } from './Terminal.tsx';
 import { KeyBar } from './KeyBar.tsx';
 import { applyModifiers } from './keyboard.ts';
 import type { SurfaceHandle, SurfaceProps } from './surface.ts';
+import { shortcutTitle } from './shortcuts.tsx';
 
 const KIND_LABEL = { command: 'Wants to run a command', tool: 'Wants to use a tool', question: 'Asked a question', screen: 'Waiting for you' };
 
 /** The session as its own TUI: xterm.js attached to the tmux window, plus the
  *  touch key bar, file paste/drop, and the screen-scraped permission banner. */
-export const TerminalSurface = forwardRef<SurfaceHandle, SurfaceProps>(function TerminalSurface({ w, client, hidden, showKeys, onAnswer, onReply, onCycleSession, refresh }, ref) {
+export const TerminalSurface = forwardRef<SurfaceHandle, SurfaceProps>(function TerminalSurface({ w, client, hidden, showKeys, onAnswer, onReply, refresh }, ref) {
   const term = useRef<TerminalHandle>(null);
   const [dragging, setDragging] = useState(false);
   const [ctrl, setCtrl] = useState(false);
@@ -92,7 +93,7 @@ export const TerminalSurface = forwardRef<SurfaceHandle, SurfaceProps>(function 
         }
       }}
     >
-      <Terminal ref={term} key={w.key} hidden={hidden} windowId={w.id} wsUrl={client.wsUrl} transformInput={transform} onCycleSession={onCycleSession} onGone={refresh} />
+      <Terminal ref={term} key={w.key} hidden={hidden} windowId={w.id} wsUrl={client.wsUrl} transformInput={transform} onGone={refresh} />
       {dragging && <div className="drop-hint">Drop to upload to {w.host} and insert the path</div>}
 
       {w.status === 'waiting' && w.ask && (
@@ -102,15 +103,15 @@ export const TerminalSurface = forwardRef<SurfaceHandle, SurfaceProps>(function 
           <div className="actions">
             {w.answerable ? (
               <>
-                <button className="btn primary" onClick={() => onAnswer(w, 'approve')}>
+                <button className="btn primary" title={shortcutTitle('Approve', 'approve')} onClick={() => onAnswer(w, 'approve')}>
                   Approve
                 </button>
-                <button className="btn" onClick={() => onAnswer(w, 'deny')}>
+                <button className="btn" title={shortcutTitle('Deny', 'deny')} onClick={() => onAnswer(w, 'deny')}>
                   Deny
                 </button>
               </>
             ) : (
-              <button className="btn primary" onClick={onReply}>
+              <button className="btn primary" title={shortcutTitle('Reply', 'reply')} onClick={onReply}>
                 Reply
               </button>
             )}

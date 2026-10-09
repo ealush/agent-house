@@ -76,6 +76,31 @@ test('chat: posts OpenAI-compatible request and keeps history', async () => {
   ]);
 });
 
+test('summarize: one plain completion, no tools, history untouched', async () => {
+  const { store } = await subscribed();
+  let summary = '';
+  await withFetch((seen) => {
+    const body = JSON.parse((seen.at(-1)?.init as { body: string }).body) as { tools?: unknown; messages: Array<{ role: string; content: string }> };
+    assert.equal(body.tools, undefined);
+    assert.equal(body.messages[0].role, 'system');
+    assert.match(body.messages[0].content, /handoff brief/);
+    assert.equal(body.messages[1].role, 'user');
+    assert.match(body.messages[1].content, /fix the parser/);
+    return ok('Decided to keep the queue. The parser rewrite is still open.');
+  }, async () => {
+    summary = await store.summarize('User:\nfix the parser\n\nAssistant:\nI will keep the queue.');
+  });
+  assert.equal(summary, 'Decided to keep the queue. The parser rewrite is still open.');
+  assert.equal((await store.history('any')).length, 0);
+});
+
+test('summarize: empty text and no subscription', async () => {
+  const { store } = await subscribed();
+  await assert.rejects(store.summarize('  '), /text required/);
+  const { store: bare } = await freshStore();
+  await assert.rejects(bare.summarize('hello'), /no chat subscription/);
+});
+
 test('listChats: newest first, with previews, counts, and search', async () => {
   const { store } = await subscribed();
   const chat = (uid: string, text: string) =>

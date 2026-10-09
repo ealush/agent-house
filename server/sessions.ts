@@ -60,8 +60,6 @@ export type WindowView = {
   feed: string | null;
   /** Fork lineage (F36): this session is a fork, and how many forks it has. Null when neither. */
   fork: { parentUid: string; parentTitle: string; rootUid: string; forks: number } | null;
-  /** Fleet recipe membership (issue #6), from `ah.run` meta; null for standalone sessions. */
-  run: { runId: string; recipeId: string; key: string; name: string } | null;
 };
 
 export type Ask = { kind: 'command' | 'tool' | 'question' | 'screen'; text: string };
@@ -321,11 +319,6 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
       // Agents' own TUIs make poor one-liners; for them only hook activity is shown.
       const detail = hookDetail ? (hookDetail.kind === 'command' ? `$ ${hookDetail.text}` : hookDetail.text) : agent ? null : tail.length ? clip(tail[tail.length - 1].trim()) : null;
       const launch = launchSummary(rec, preset);
-      const runRaw = rec.meta['ah.run'] as { runId?: unknown; recipeId?: unknown; key?: unknown; name?: unknown } | undefined;
-      const run =
-        runRaw && typeof runRaw.runId === 'string'
-          ? { runId: runRaw.runId, recipeId: String(runRaw.recipeId ?? ''), key: String(runRaw.key ?? ''), name: String(runRaw.name ?? '') }
-          : null;
       return {
         id: w.windowId,
         session: w.session,
@@ -372,7 +365,6 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
             forks,
           };
         })(),
-        run,
       };
     }),
   );

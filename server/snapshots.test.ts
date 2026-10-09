@@ -7,7 +7,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ensureMigrated } from './db.ts';
 import { SnapshotStore } from './snapshots.ts';
-import { RecipeStore } from './recipes.ts';
 import { Core } from './core.ts';
 import { Registry } from './registry.ts';
 import { PromptStore } from './prompts.ts';
@@ -65,7 +64,7 @@ test('Core.pruneSnapshots: turn cap keeps the newest, rows of vanished sessions 
   const path = await freshDb();
   const store = new SnapshotStore(path);
   const config = { ...loadConfig(), snapshots: { maxFileBytes: 1024, keepTurns: 3, retentionDays: 7 } };
-  const core = new Core(config, new Map(), new Registry(path), new PromptStore(path), store, new RecipeStore(path));
+  const core = new Core(config, new Map(), new Registry(path), new PromptStore(path), store);
   const old = Math.floor(Date.now() / 1000) - 8 * 86_400;
   const recent = Math.floor(Date.now() / 1000);
   for (let turn = 1; turn <= 6; turn++) await store.create(row('live1', turn, recent));
@@ -84,7 +83,7 @@ test('expired snapshots of forgotten sessions also release their git refs', asyn
   const made = await createSnapshot(repo, { uid: 'forgotten', turn: 1, indexFile: join(repo, '.git', 'test-index'), parent: null, maxFileBytes: 1024 });
   const store = new SnapshotStore(path);
   await store.create({ ...row('forgotten', 1, Math.floor(Date.now() / 1000) - 8 * 86400), commit: made.commit, repoRoot: repo });
-  const core = new Core({ ...loadConfig(), snapshots: { maxFileBytes: 1024, keepTurns: 3, retentionDays: 7 } }, new Map(), new Registry(path), new PromptStore(path), store, new RecipeStore(path));
+  const core = new Core({ ...loadConfig(), snapshots: { maxFileBytes: 1024, keepTurns: 3, retentionDays: 7 } }, new Map(), new Registry(path), new PromptStore(path), store);
   await core.pruneSnapshots();
   assert.deepEqual(await store.list('forgotten'), []);
   assert.throws(() => execFileSync('git', ['-C', repo, 'rev-parse', '--verify', snapshotRef('forgotten', 1)], { stdio: 'ignore' }));

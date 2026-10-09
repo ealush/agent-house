@@ -24,8 +24,6 @@ export type SurfaceProps = {
   onReply: () => void;
   /** Some interactions exist only in the agent's TUI (its own pickers). */
   onUseTerminal: () => void;
-  /** Option+Up/Down in the terminal steps session focus (terminal surface only). */
-  onCycleSession?: (dir: -1 | 1) => void;
   refresh: () => void;
 };
 

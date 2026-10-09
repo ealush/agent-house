@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import type { HostApi, Recipe, State } from './api.ts';
+import type { HostApi, SendResult, State } from './api.ts';
+import { showError } from './ask.tsx';
 import { look } from './agents.ts';
 import { AgentLogo } from './logos.tsx';
 import { ModelPicker, Popover, effectiveModel, effortsFor, type Pick } from './ModelPicker.tsx';
@@ -12,8 +13,12 @@ type Props = {
   clientFor: (host: string) => HostApi;
   /** Prefill the directory, e.g. from the currently selected window. */
   initialCwd: string;
+  /** First message, sent once the session is up. Send to… fills this in. */
+  initialPrompt?: string;
   onClose: () => void;
   onCreated: (host: string, id: string) => void;
+  /** Queue flash for that first message. */
+  onSent?: (r: SendResult) => void;
 };
 
 const NEW_SESSION = '\u0000new';
@@ -28,7 +33,7 @@ function remembered(preset: string): Remembered {
   }
 }
 
-export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd, onClose, onCreated }: Props) {
+export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd, initialPrompt = '', onClose, onCreated, onSent }: Props) {
   const [host, setHost] = useState(initialHost);
   const state = hostState(host) ?? hostState(hosts[0])!;
   const client = clientFor(host);
@@ -43,32 +48,17 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
   const [worktree, setWorktree] = useState(false);
   const [mode, setMode] = useState('default');
   const [pick, setPick] = useState<Pick>({});
+  const [prompt, setPrompt] = useState(initialPrompt);
   const [extraArgs, setExtraArgs] = useState('');
   const [more, setMore] = useState(false);
   const [projects, setProjects] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
-  // Fleet recipes (issue #6): launch a wired team instead of a single session.
-  const [kind, setKind] = useState<'session' | 'recipe'>('session');
-  const [recipes, setRecipes] = useState<Recipe[]>([]);
-  const [recipeId, setRecipeId] = useState('');
-  const [brief, setBrief] = useState('');
-  const [memberModes, setMemberModes] = useState<Record<string, string>>({});
-  const recipe = recipes.find((r) => r.id === recipeId) ?? recipes.find((r) => !r.errors?.length) ?? recipes[0];
 
   useEffect(() => dialog.current?.showModal(), []);
   useEffect(() => {
     client.projects().then(setProjects).catch(() => setProjects([]));
-  }, [host]);
-  useEffect(() => {
-    client
-      .recipes()
-      .then((list) => {
-        setRecipes(list);
-        setRecipeId((cur) => (list.some((r) => r.id === cur) ? cur : (list.find((r) => !r.errors?.length)?.id ?? list[0]?.id ?? '')));
-      })
-      .catch(() => setRecipes([]));
   }, [host]);
 
   // Per-agent memory of the last launch choices. A dangerous mode is never restored.
@@ -84,8 +74,6 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
     setResume(false);
   }, [host, preset?.id]);
 
-  useEffect(() => setMemberModes({}), [host, recipe?.id]);
-
   const modes = preset?.modes ?? [];
   const models = preset?.models ?? [];
   const isShell = preset?.id === 'shell' || !preset?.command;
@@ -94,38 +82,8 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
   const levels = preset ? effortsFor(preset, chosen) : [];
   const recent = projects.slice(0, 6);
 
-  async function submitRecipe() {
-    if (!recipe) return;
-    if (recipe.errors?.length) {
-      setError(`This recipe cannot launch: ${recipe.errors.join('; ')}`);
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const overrides: Record<string, { mode?: string }> = {};
-      for (const member of recipe.members) {
-        const mode = memberModes[member.key] ?? member.mode ?? undefined;
-        if (mode) overrides[member.key] = { mode };
-      }
-      const out = await client.launchRecipe(recipe.id, {
-        cwd,
-        brief,
-        session: session === NEW_SESSION ? newSession : session,
-        ...(Object.keys(overrides).length ? { overrides } : {}),
-      });
-      const first = out.members[0];
-      if (!first) throw new Error('recipe launched no sessions');
-      onCreated(host, first.id);
-    } catch (err) {
-      setError((err as Error).message);
-      setBusy(false);
-    }
-  }
-
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (kind === 'recipe') return submitRecipe();
     if (!preset) return;
     setBusy(true);
     setError(null);
@@ -135,7 +93,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
       // Only send what differs from the harness's own defaults: fewer flags, same result.
       const model = pick.model && pick.model !== preset.defaultModel ? pick.model : undefined;
       const eff = pick.effort && (pick.effort !== preset.defaultEffort || model) ? pick.effort : undefined;
-      const { id } = await client.create({
+      const { id, uid } = await client.create({
         preset: preset.id,
         cwd,
         label,
@@ -147,7 +105,19 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
         ...(eff ? { effort: eff } : {}),
         ...(extraArgs.trim() ? { extraArgs: extraArgs.trim() } : {}),
       });
+      const first = prompt.trim();
+      let sent: SendResult | null = null;
+      let sendError: unknown = null;
+      if (first) {
+        try {
+          sent = await client.send(uid, first, true);
+        } catch (err) {
+          sendError = err;
+        }
+      }
       onCreated(host, id);
+      if (sent) onSent?.(sent);
+      if (sendError) showError(sendError, 'Session started. The first message did not send.');
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);
@@ -170,34 +140,6 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
           )}
         </header>
 
-        <div className="seg" role="radiogroup" aria-label="What to start">
-          <button type="button" role="radio" aria-checked={kind === 'session'} className={kind === 'session' ? 'on' : ''} onClick={() => setKind('session')}>
-            Session
-          </button>
-          <button type="button" role="radio" aria-checked={kind === 'recipe'} className={kind === 'recipe' ? 'on' : ''} onClick={() => setKind('recipe')}>
-            Recipe (team)
-          </button>
-        </div>
-
-        {kind === 'recipe' ? (
-          <div className="agents" role="radiogroup" aria-label="Recipe">
-            {recipes.length === 0 && <p className="hint">No recipes on this host yet. Add them in Settings, Recipes.</p>}
-            {recipes.map((r) => (
-              <button
-                type="button"
-                key={r.id}
-                role="radio"
-                aria-checked={r.id === recipe?.id}
-                className={`agent-pill ${r.id === recipe?.id ? 'on' : ''}`}
-                onClick={() => setRecipeId(r.id)}
-                title={r.errors?.length ? r.errors.join('; ') : r.description}
-              >
-                {r.name} · {r.members.length}
-                {r.errors?.length ? ' ⚠' : ''}
-              </button>
-            ))}
-          </div>
-        ) : (
         <div className="agents" role="radiogroup" aria-label="Agent">
           {presets.map((p) => (
             <button
@@ -216,7 +158,6 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
             </button>
           ))}
         </div>
-        )}
 
         <label className="field">
           <span>Project</span>
@@ -237,49 +178,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
           </div>
         )}
 
-        {kind === 'recipe' && recipe && (
-          <>
-            {recipe.description && <p className="hint">{recipe.description}</p>}
-            {recipe.errors?.length ? <p className="form-error">{recipe.errors.join('; ')}</p> : null}
-            <label className="field">
-              <span>Brief</span>
-              <textarea value={brief} onChange={(e) => setBrief(e.target.value)} rows={4} placeholder="What should the team do?" maxLength={32000} />
-            </label>
-            <div className="recipe-members">
-              {recipe.members.map((member) => {
-                const mp = state.presets.find((p) => p.id === member.preset);
-                return (
-                  <div key={member.key} className="recipe-member">
-                    <span className="grow">
-                      {member.title ?? member.key}{' '}
-                      <span className="hint">
-                        · {mp?.name ?? member.preset}
-                        {member.worktree ? ' · worktree' : ''}
-                        {member.cwdFrom ? ` · in ${member.cwdFrom}'s directory` : ''}
-                      </span>
-                    </span>
-                    {mp?.modes && mp.modes.length > 1 && (
-                      <select
-                        aria-label={`Permissions for ${member.title ?? member.key}`}
-                        value={memberModes[member.key] ?? member.mode ?? 'default'}
-                        onChange={(e) => setMemberModes({ ...memberModes, [member.key]: e.target.value })}
-                      >
-                        {mp.modes.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.dangerous ? `⚠ ${m.name}` : m.name}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            <p className="hint">Runs on {host} only. Members launch together; handoffs fire as their turns end.</p>
-          </>
-        )}
-
-        {kind === 'session' && preset && (models.length > 0 || preset.modelArgs || levels.length > 0 || modes.length > 1) && (
+        {preset && (models.length > 0 || preset.modelArgs || levels.length > 0 || modes.length > 1) && (
           <div className="launch-row">
             {(models.length > 0 || preset.modelArgs) && (
               <div className="field compact">
@@ -343,10 +242,13 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
             )}
           </div>
         )}
-        {kind === 'session' && activeMode?.description && activeMode.id !== 'default' && <p className={activeMode.dangerous ? 'warn' : 'hint'}>{activeMode.description}</p>}
+        {activeMode?.description && activeMode.id !== 'default' && <p className={activeMode.dangerous ? 'warn' : 'hint'}>{activeMode.description}</p>}
 
-        {kind === 'session' && (
-        <>
+        <label className="field">
+          <span>Prompt</span>
+          <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={initialPrompt ? 8 : 3} placeholder="Optional. Sent once the session starts." />
+        </label>
+
         <button type="button" className="disclosure" aria-expanded={more} onClick={() => setMore(!more)}>
           <span aria-hidden>{more ? '▾' : '▸'}</span> More options
           {!more && (label || worktree || resume || extraArgs || session !== state.defaultSession) && <span className="dim"> · changed</span>}
@@ -398,8 +300,6 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
             )}
           </div>
         )}
-        </>
-        )}
 
         {error && <p className="form-error">{error}</p>}
 
@@ -409,10 +309,10 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
           </button>
           <button
             type="submit"
-            className={`btn ${kind === 'session' && activeMode?.dangerous ? 'danger-solid' : 'primary'}`}
-            disabled={busy || (kind === 'session' ? !preset : !recipe || !!recipe.errors?.length)}
+            className={`btn ${activeMode?.dangerous ? 'danger-solid' : 'primary'}`}
+            disabled={busy || !preset}
           >
-            {busy ? 'Starting…' : kind === 'recipe' ? `Start ${recipe?.name ?? 'recipe'}` : `Start ${preset?.name ?? ''}`}
+            {busy ? 'Starting…' : `Start ${preset?.name ?? ''}`}
           </button>
         </div>
       </form>

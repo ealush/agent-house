@@ -18,23 +18,6 @@ import { withCatalog } from './catalog.ts';
 import * as t from './tmux.ts';
 import { createSnapshot, restoreSnapshot as restoreSnapshotFiles, snapshotDiff, deleteSnapshotRef, createWorktree, headInfo, listWorktrees, mainRepo, removeWorktree, removeWorktreesBulk, GitError, type Worktree } from './git.ts';
 import { invalidateSize } from './size.ts';
-import {
-  RecipeStore,
-  HandoffEngine,
-  effectiveRecipes,
-  validateRecipe,
-  validateRecipes,
-  saveRecipesToConfigFile,
-  resolveTemplate,
-  runVars,
-  newRunId,
-  newHandoffId,
-  type HandoffRecord,
-  type Recipe,
-  type RecipeMember,
-  type RunMember,
-  type RunRecord,
-} from './recipes.ts';
 import { SnapshotStore, type SnapshotInfo } from './snapshots.ts';
 import { QueueManager, type LaunchChange, type QueueItem } from './queue.ts';
 import { Push } from './push.ts';
@@ -46,7 +29,7 @@ export type { LaunchChange, QueueItem } from './queue.ts';
 export type Host = { name: string; self: boolean; online: boolean };
 
 /** Bumped when the state shape or API routes change, so a newer page can tell an older server apart. */
-export const API_VERSION = 14;
+export const API_VERSION = 17;
 
 export type State = {
   api: number;
@@ -58,13 +41,6 @@ export type State = {
   windows: WindowView[];
   history: HistoryItem[];
   presets: Array<Preset & { available: boolean }>;
-  runs: RunView[];
-};
-
-/** A recipe run as the UI shows it: members with live status, handoffs with state. */
-export type RunView = Omit<RunRecord, 'snapshot' | 'members'> & {
-  members: Array<RunMember & { status: string }>;
-  handoffs: HandoffRecord[];
 };
 
 export type SendResult = { outcome: 'delivered' | 'queued'; windowId: string; resumed: boolean; queued: number; queueId?: string };
@@ -113,8 +89,6 @@ const now = () => Math.floor(Date.now() / 1000);
 
 export class Core {
   readonly registry: Registry;
-  readonly recipeStore: RecipeStore;
-  private handoffEngine: HandoffEngine;
   /** Durable prompt queue (F22): state and flush policy live in server/queue.ts. */
   private queues: QueueManager;
   readonly push = new Push();
@@ -138,15 +112,13 @@ export class Core {
   private lastPrune = 0;
   peers: Peers | null = null;
 
-  constructor(config: Config, viewers: Map<string, string[]>, registry = new Registry(), prompts = new PromptStore(), snapshots = new SnapshotStore(), recipes = new RecipeStore()) {
+  constructor(config: Config, viewers: Map<string, string[]>, registry = new Registry(), prompts = new PromptStore(), snapshots = new SnapshotStore()) {
     this.registry = registry;
     this.promptStore = prompts;
     this.snapshotStore = snapshots;
     this.config = config;
     this.viewers = viewers;
-    this.recipeStore = recipes;
-    this.handoffEngine = new HandoffEngine(this.recipeStore, (uid, text, source) => this.sendHandoff(uid, text, source));
-    this.queues = new QueueManager(this.registry, this.handoffEngine, {
+    this.queues = new QueueManager(this.registry, {
       withInput: (uid, fn) => this.withInput(uid, fn),
       justSent: (uid) => this.justSent(uid),
       markSent: (uid) => void this.sentAt.set(uid, Date.now()),
@@ -222,13 +194,8 @@ export class Core {
         windows,
         history,
         presets: await Promise.all(this.config.presets.map(async (p) => ({ ...(await withCatalog(p)), available: isExecutableOnPath(p.command, this.tmuxPath) }))),
-        runs: this.recipeRuns(windows),
       };
       this.state = state;
-      // Handoffs fire off the back of this tick, never inside it: delivering
-      // one goes through send(), which itself awaits a tick.
-      const statuses = new Map(windows.map((w) => [w.uid, w.status]));
-      setTimeout(() => this.handoffEngine.observe(statuses, alive).catch(() => {}), 0);
       const json = JSON.stringify(state);
       if (json !== this.json) {
         this.json = json;
@@ -547,16 +514,12 @@ export class Core {
    * Delivers a prompt to a session wherever it is: typed in now if the agent is idle,
    * queued until its next idle moment if busy, and resumed first if it isn't running.
    */
-  async send(ref: string, text: string, enter = true, launchChange?: LaunchChange, source?: { label: string; handoffId: string }): Promise<SendResult> {
+  async send(ref: string, text: string, enter = true, launchChange?: LaunchChange): Promise<SendResult> {
     if (!text) throw new CoreError(400, 'empty message');
     const target = await this.resume(ref);
     this.remember(text);
     const state = target.resumed ? await this.tick() : await this.current();
     return this.withInput<SendResult>(target.uid, async () => {
-      if (source) {
-        const handoff = this.recipeStore.getHandoff(source.handoffId);
-        if (!handoff || handoff.state !== 'pending' || this.recipeStore.getRun(handoff.runId)?.state !== 'running') throw new CoreError(409, 'handoff is no longer pending');
-      }
       const w = state.windows.find((w) => w.id === target.windowId);
       const queued = this.queues.items(target.uid);
       // A waiting agent is blocked on your input: what you send now is the
@@ -582,17 +545,10 @@ export class Core {
         enter,
         at: now(),
         ...(launchChange ? { launchChange } : {}),
-        ...(source ? { source: source.label, handoffId: source.handoffId } : {}),
       };
       const queuedCount = this.queues.enqueue(target.uid, item);
       return { outcome: 'queued', windowId: target.windowId, resumed: target.resumed, queued: queuedCount, queueId: item.id };
     });
-  }
-
-  /** The handoff engine's delivery path: a normal send with provenance attached. */
-  private async sendHandoff(uid: string, text: string, source: { label: string; handoffId: string }): Promise<{ outcome: 'delivered' | 'queued'; queueId?: string }> {
-    const out = await this.send(uid, text, true, undefined, source);
-    return out.outcome === 'queued' ? { outcome: 'queued', queueId: out.queueId } : { outcome: 'delivered' };
   }
 
   private applyLaunchChange(uid: string, change: LaunchChange) {
@@ -813,7 +769,6 @@ export class Core {
       }
       await t.pasteText(w.id, next.text, next.enter);
       if (next.launchChange) this.applyLaunchChange(uid, next.launchChange);
-      if (next.handoffId) this.handoffEngine.queueItemDelivered(next.id);
       this.tick().catch(() => {});
       return { outcome: 'delivered', windowId: w.id, resumed: false, queued: rest.length };
     });
@@ -1040,204 +995,6 @@ export class Core {
     if (rec?.harnessId) this.hidden.add(`${rec.harness}:${rec.harnessId}`);
     await mkdir(dirname(HIDDEN_FILE), { recursive: true });
     await writeFile(HIDDEN_FILE, JSON.stringify([...this.hidden]));
-    this.tick().catch(() => {});
-  }
-
-  // ---------- fleet recipes (issue #6): launch a wired team, run its handoffs
-
-  /** Recipes in effect, each with its validation errors (empty when valid). */
-  listRecipes(): Array<Recipe & { errors: string[] }> {
-    return effectiveRecipes(this.config).map((raw) => {
-      const v = validateRecipe(raw, this.config.presets);
-      const base = (v.recipe ?? raw) as Recipe;
-      return { ...base, errors: v.errors };
-    });
-  }
-
-  /** Replace the saved recipe list (Settings). Validated as a whole or not at all. */
-  saveRecipes(rawList: unknown): Array<Recipe & { errors: string[] }> {
-    const v = validateRecipes(rawList, this.config.presets);
-    if (v.errors.length) throw new CoreError(400, v.errors.join('; '));
-    saveRecipesToConfigFile(v.recipes);
-    this.config.recipes = v.recipes;
-    return this.listRecipes();
-  }
-
-  /**
-   * Launch every member of a recipe in order, persist the run and its
-   * handoffs, then deliver the opening prompts. Any failure stops the members
-   * already launched and marks the run failed: no orphan half-teams.
-   */
-  async launchRecipe(recipeId: string, input: { cwd: string; brief: string; session: string; overrides?: Record<string, { mode?: string; model?: string; effort?: string }> }): Promise<{ run: RunView; members: Array<{ key: string; uid: string; id: string }> }> {
-    const raw = effectiveRecipes(this.config).find((r) => (r as Recipe)?.id === recipeId);
-    if (!raw) throw new CoreError(404, `unknown recipe: ${recipeId}`);
-    const v = validateRecipe(raw, this.config.presets);
-    if (!v.recipe) throw new CoreError(400, `recipe ${recipeId} is invalid: ${v.errors.join('; ')}`);
-    const recipe = v.recipe;
-    const brief = input.brief ?? '';
-    for (const member of recipe.members) {
-      if (member.prompt?.trim() === '{brief}' && !brief.trim()) {
-        throw new CoreError(400, `this recipe needs a brief: member "${member.key}" has no other prompt`);
-      }
-    }
-    const runId = newRunId();
-    type Launched = { member: RecipeMember; uid: string; windowId: string; cwd: string; worktree: Worktree | null };
-    const launched: Launched[] = [];
-    const createdWorktrees: Worktree[] = [];
-    let runCreated = false;
-    try {
-      for (const member of recipe.members) {
-        const preset = await withCatalog(this.preset(member.preset));
-        const override = input.overrides?.[member.key];
-        const title = member.title ?? member.key;
-        let cwd = input.cwd;
-        if (member.cwdFrom) {
-          const src = launched.find((l) => l.member.key === member.cwdFrom);
-          if (!src) throw new CoreError(400, `member ${member.key}: cwdFrom member "${member.cwdFrom}" has not launched yet`);
-          cwd = src.cwd;
-        }
-        const wt = member.worktree ? await createWorktree(cwd, title) : null;
-        if (wt) createdWorktrees.push(wt);
-        const dir = wt?.path ?? cwd;
-        let plan;
-        try {
-          plan = buildLaunch(preset, {
-            mode: override?.mode ?? member.mode ?? undefined,
-            model: override?.model ?? member.model ?? undefined,
-            effort: override?.effort ?? member.effort ?? undefined,
-          });
-        } catch (err) {
-          if (err instanceof LaunchError) throw new CoreError(400, err.message);
-          throw err;
-        }
-        const out = await this.launch({
-          preset,
-          cwd: dir,
-          session: input.session,
-          name: title,
-          command: plan.command,
-          meta: {
-            ...plan.meta,
-            'ah.order': this.nextOrder(),
-            ...(wt ? { 'ah.worktree': wt } : {}),
-            'ah.run': { runId, recipeId: recipe.id, key: member.key, name: recipe.name },
-          },
-        });
-        launched.push({ member, uid: out.uid, windowId: out.windowId, cwd: dir, worktree: wt });
-      }
-      // The run snapshot is the recipe as resolved now; later edits never touch it.
-      const run: RunRecord = {
-        runId,
-        recipeId: recipe.id,
-        name: recipe.name,
-        host: hostname(),
-        cwd: input.cwd,
-        brief,
-        state: 'running',
-        createdAt: now(),
-        members: launched.map((l) => ({
-          key: l.member.key,
-          uid: l.uid,
-          title: l.member.title ?? l.member.key,
-          preset: l.member.preset,
-          cwd: l.cwd,
-          branch: l.worktree?.branch ?? null,
-          worktree: l.worktree?.path ?? null,
-        })),
-        snapshot: recipe,
-      };
-      this.recipeStore.createRun(run);
-      runCreated = true;
-      const byKey = new Map(launched.map((l) => [l.member.key, l]));
-      for (const h of recipe.handoffs ?? []) {
-        this.recipeStore.addHandoff({
-          id: newHandoffId(),
-          runId,
-          sourceUid: byKey.get(h.when.session)!.uid,
-          targetUid: byKey.get(h.sendTo)!.uid,
-          sourceKey: h.when.session,
-          targetKey: h.sendTo,
-          event: h.when.event,
-          template: h.template,
-          repeat: h.repeat ?? false,
-          state: 'pending',
-          armed: false,
-          fires: 0,
-        });
-      }
-      const vars = runVars(run);
-      for (const l of launched) {
-        if (!l.member.prompt) continue;
-        const text = resolveTemplate(l.member.prompt, vars);
-        if (text.trim()) await this.send(l.uid, text);
-      }
-      this.tick().catch(() => {});
-      return { run: this.runView(run), members: launched.map((l) => ({ key: l.member.key, uid: l.uid, id: l.windowId })) };
-    } catch (err) {
-      for (const l of [...launched].reverse()) {
-        await t.killWindow(l.windowId).catch(() => {});
-        this.registry.remove(l.uid);
-      }
-      for (const wt of createdWorktrees.reverse()) await removeWorktree(wt.path, true).catch(() => {});
-      if (runCreated) {
-        this.recipeStore.setRunState(runId, 'failed', err instanceof Error ? err.message : String(err));
-        for (const h of this.recipeStore.handoffsForRun(runId)) {
-          if (h.state === 'pending') this.recipeStore.updateHandoff(h.id, { state: 'skipped', reason: 'run failed to launch' });
-        }
-      }
-      throw err;
-    }
-  }
-
-  private runView(run: RunRecord, windows?: WindowView[]): RunView {
-    const { snapshot, ...rest } = run;
-    return {
-      ...rest,
-      members: run.members.map((m) => {
-        const live = windows?.find((w) => w.uid === m.uid);
-        const rec = this.registry.get(m.uid);
-        return { ...m, status: live?.status ?? (rec ? (rec.lifecycle === 'ended' ? 'ended' : rec.status) : 'ended') };
-      }),
-      handoffs: this.recipeStore.handoffsForRun(run.runId),
-    };
-  }
-
-  recipeRuns(windows?: WindowView[]): RunView[] {
-    return this.recipeStore.allRuns().slice(0, 50).map((r) => this.runView(r, windows));
-  }
-
-  recipeRun(runId: string): RunView | undefined {
-    const run = this.recipeStore.getRun(runId);
-    return run ? this.runView(run) : undefined;
-  }
-
-  async stopRun(runId: string) {
-    await this.endRun(runId, 'stopped');
-  }
-
-  /** Archive is stop with a different label: sessions end, transcripts stay in History. */
-  async archiveRun(runId: string) {
-    await this.endRun(runId, 'archived');
-  }
-
-  private async endRun(runId: string, state: 'stopped' | 'archived') {
-    const run = this.recipeStore.getRun(runId);
-    if (!run) throw new CoreError(404, 'run not found');
-    // Settle handoffs first, so clearing their queue items below cannot flip
-    // them to cancelled, and no pending handoff can fire into a stopped run.
-    const queuedItems: Array<{ uid: string; queueId: string }> = [];
-    for (const h of this.recipeStore.handoffsForRun(runId)) {
-      if (h.state !== 'pending') continue;
-      if (h.queueId) queuedItems.push({ uid: h.targetUid, queueId: h.queueId });
-      this.recipeStore.updateHandoff(h.id, { state: 'skipped', reason: `run ${state}` });
-    }
-    for (const item of queuedItems) this.clearQueue(item.uid, item.queueId);
-    const stateNow = await this.current();
-    for (const m of run.members) {
-      const w = stateNow.windows.find((w) => w.uid === m.uid);
-      if (w) await t.killWindow(w.id).catch(() => {});
-    }
-    this.recipeStore.setRunState(runId, state);
     this.tick().catch(() => {});
   }
 

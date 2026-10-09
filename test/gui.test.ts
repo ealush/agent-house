@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Entry } from '../server/feed/schema.ts';
-import { blockText, initialFeed, project, reduce } from '../web/gui/reducer.ts';
+import { assistantTurnCutOff, blockText, clipTail, handoffText, initialFeed, lastAssistantText, project, readHandoff, readLastAssistant, reduce, transcriptProse } from '../web/gui/reducer.ts';
 import { patchLines, structuredLines } from '../web/gui/diff.ts';
 
 const user = (seq: number, text: string): Entry => ({ seq, id: `u${seq}`, role: 'user', step: 'message', at: seq, parts: [{ type: 'text', text }] });
@@ -52,6 +52,73 @@ test('blockText copies message prose, never tool calls, results, or reasoning', 
   ]);
   assert.equal(blockText(u), 'go');
   assert.equal(blockText(a), 'on it\n\ndone');
+});
+
+test('lastAssistantText is the newest reply, skipping a trailing tool-only turn', () => {
+  const whole = [user(1, 'go'), say(2, 'plan'), user(3, 'do it'), call(4, 'a')];
+  assert.equal(lastAssistantText(whole), 'plan');
+  assert.equal(assistantTurnCutOff(whole), false);
+  assert.equal(assistantTurnCutOff([call(4, 'a'), call(5, 'b')]), true);
+  assert.equal(assistantTurnCutOff([]), false);
+});
+
+test('readLastAssistant pages backward while the newest turn is cut off', async () => {
+  const text = await readLastAssistant(async (before) => {
+    if (before === Infinity) return { entries: [call(4, 'a'), call(5, 'b')], hasOlder: true };
+    assert.equal(before, 4);
+    return { entries: [user(1, 'go'), say(2, 'looking'), say(3, 'fixed')], hasOlder: false };
+  });
+  assert.equal(text, 'looking\n\nfixed');
+});
+
+test('readLastAssistant keeps the start of a reply that continues on the newest page', async () => {
+  let calls = 0;
+  const text = await readLastAssistant(async (before) => {
+    calls++;
+    if (before === Infinity) return { entries: [say(5, 'done')], hasOlder: true };
+    return { entries: [user(1, 'go'), say(2, 'looking')], hasOlder: true };
+  });
+  assert.equal(text, 'looking\n\ndone');
+  assert.equal(calls, 2);
+});
+
+test('readLastAssistant looks past a turn that has not spoken yet', async () => {
+  const text = await readLastAssistant(async (before) => {
+    if (before === Infinity) return { entries: [user(3, 'do it'), result(4, 'a')], hasOlder: true };
+    return { entries: [user(1, 'go'), say(2, 'plan')], hasOlder: false };
+  });
+  assert.equal(text, 'plan');
+});
+
+test('transcript prose and the handoff carry the summary and the latest reply', () => {
+  const text = transcriptProse([user(1, 'fix the parser'), say(2, 'on it'), call(3, 'a'), result(4, 'a'), say(5, 'done')]);
+  assert.equal(text, 'User:\nfix the parser\n\nAssistant:\non it\n\ndone');
+  assert.equal(handoffText('Kept the queue.', 'done'), 'Session summary:\nKept the queue.\n\nLatest reply:\ndone');
+  assert.equal(handoffText('', 'done'), 'done');
+  assert.equal(handoffText('Kept the queue.', ''), 'Session summary:\nKept the queue.');
+  assert.equal(clipTail('abcd', 3), 'bcd');
+});
+
+test('readHandoff stops once the newest page already fills the brief', async () => {
+  let calls = 0;
+  const out = await readHandoff(async () => {
+    calls++;
+    return { entries: [user(1, 'go'), say(2, 'y'.repeat(20_000))], hasOlder: true };
+  });
+  assert.equal(calls, 1);
+  assert.equal(out.latest, 'y'.repeat(20_000));
+  assert.ok(out.transcript.length <= 16_000);
+  assert.ok(out.transcript.endsWith('y'));
+});
+
+test('readLastAssistant stops when the newest page already holds the reply', async () => {
+  let calls = 0;
+  const text = await readLastAssistant(async () => {
+    calls++;
+    return { entries: [user(1, 'go'), say(2, 'done')], hasOlder: true };
+  });
+  assert.equal(text, 'done');
+  assert.equal(calls, 1);
 });
 
 test('diffs: codex patches and claude structured hunks number lines from the new file', () => {

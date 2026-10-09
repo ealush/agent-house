@@ -30,12 +30,6 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, on
   const running = state.windows.filter((w) => w.status === 'busy');
   const rest = state.windows.filter((w) => w.status === 'attention' || w.status === 'idle').sort((a, b) => b.activity - a.activity);
   const online = state.hosts.filter((h) => h.online).length;
-  // Waiting members of one recipe run collapse under a run header (issue #6).
-  const waitingByRun = new Map<string, Win[]>();
-  for (const w of waiting) if (w.run) waitingByRun.set(w.run.runId, [...(waitingByRun.get(w.run.runId) ?? []), w]);
-  const waitingRunGroups = [...waitingByRun.values()].filter((ws) => ws.length >= 2);
-  const groupedWaiting = new Set(waitingRunGroups.flatMap((ws) => ws.map((w) => w.uid)));
-  const waitingSingles = waiting.filter((w) => !groupedWaiting.has(w.uid));
 
   const subtitle = narrow
     ? `${online} host${online === 1 ? '' : 's'} online · ${state.windows.length} live session${state.windows.length === 1 ? '' : 's'}`
@@ -99,25 +93,11 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, on
               <h2 className="section-label waiting first">
                 <span className="dot waiting" /> Needs you
               </h2>
-              {waitingRunGroups.map((ws) => (
-                <div key={ws[0].run!.runId}>
-                  <h3 className="section-label">
-                    <span className="dot waiting" /> Run · {ws[0].run!.name}
-                  </h3>
-                  <div className="cards">
-                    {ws.map((w) => (
-                      <AskCard key={w.key} w={w} multiHost={multiHost} narrow={narrow} onOpen={onOpen} onAnswer={onAnswer} />
-                    ))}
-                  </div>
-                </div>
-              ))}
-              {waitingSingles.length > 0 && (
-                <div className="cards">
-                  {waitingSingles.map((w) => (
-                    <AskCard key={w.key} w={w} multiHost={multiHost} narrow={narrow} onOpen={onOpen} onAnswer={onAnswer} />
-                  ))}
-                </div>
-              )}
+              <div className="cards">
+                {waiting.map((w) => (
+                  <AskCard key={w.key} w={w} multiHost={multiHost} narrow={narrow} onOpen={onOpen} onAnswer={onAnswer} />
+                ))}
+              </div>
             </>
           )}
           {running.length > 0 && (
@@ -237,16 +217,12 @@ function Grouped({ windows, by, multiHost, onOpen }: { windows: Win[]; by: 'host
   const sections = sidebarSections(windows, by === 'host', useSavedGroups(by === 'host'));
   return (
     <>
-      {sections.map((section, i) => {
-        const first = section.windows[0];
-        const title = section.run ? `${first.run!.name} - ${first.project}` : section.id;
-        return (
-          <section key={`${section.run ? 'run' : 'group'}:${section.id}`}>
-            <h2 className={`section-label ${i === 0 ? 'first' : ''}`}>{title}</h2>
-            <Rows windows={section.windows} multiHost={multiHost && by !== 'host'} narrow={false} onOpen={onOpen} />
-          </section>
-        );
-      })}
+      {sections.map((section, i) => (
+        <section key={section.id}>
+          <h2 className={`section-label ${i === 0 ? 'first' : ''}`}>{section.id}</h2>
+          <Rows windows={section.windows} multiHost={multiHost && by !== 'host'} narrow={false} onOpen={onOpen} />
+        </section>
+      ))}
     </>
   );
 }

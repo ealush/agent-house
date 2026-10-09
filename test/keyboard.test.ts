@@ -32,7 +32,7 @@ test('sticky Alt with Left/Right moves by word, Up/Down stay modified cursors', 
   assert.equal(applyModifiers('\x1b[D', false, false), '\x1b[D');
 });
 
-test('terminal arrows: Cmd seeks line ends, Option seeks words, Option+Up/Down cycles', () => {
+test('terminal arrows: Cmd seeks line ends, Option seeks words, Up/Down stay with the UI shortcut table', () => {
   const meta = { meta: true, alt: false, ctrl: false, shift: false };
   const alt = { meta: false, alt: true, ctrl: false, shift: false };
   const none = { meta: false, alt: false, ctrl: false, shift: false };
@@ -40,8 +40,8 @@ test('terminal arrows: Cmd seeks line ends, Option seeks words, Option+Up/Down c
   assert.deepEqual(terminalArrow('ArrowRight', meta), { send: '\x1b[F' });
   assert.deepEqual(terminalArrow('ArrowLeft', alt), { send: '\x1bb' });
   assert.deepEqual(terminalArrow('ArrowRight', alt), { send: '\x1bf' });
-  assert.deepEqual(terminalArrow('ArrowUp', alt), { cycle: -1 });
-  assert.deepEqual(terminalArrow('ArrowDown', alt), { cycle: 1 });
+  assert.equal(terminalArrow('ArrowUp', alt), null, 'Alt+Up cycles sessions in shortcuts.ts');
+  assert.equal(terminalArrow('ArrowDown', alt), null, 'Alt+Down cycles sessions in shortcuts.ts');
   assert.equal(terminalArrow('ArrowLeft', none), null);
   assert.equal(terminalArrow('ArrowUp', none), null);
   assert.equal(terminalArrow('a', meta), null);

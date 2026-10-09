@@ -4,7 +4,7 @@ import type { Win } from '../web/api.ts';
 import { applyGroupOrder, movedSessionOrders, saveGroupMove, sidebarOrder, sortWindows } from '../web/sessionOrder.ts';
 
 function win(partial: Pick<Win, 'key' | 'project' | 'host' | 'status' | 'activity'> & Partial<Win>): Win {
-  return { pinned: false, order: null, run: null, createdAt: 0, ...partial } as Win;
+  return { pinned: false, order: null, createdAt: 0, ...partial } as Win;
 }
 
 const keys = (windows: Win[]) => windows.map((w) => w.key);
@@ -28,17 +28,6 @@ test('a pin stays inside its project and does not float the block', () => {
   ];
   assert.deepEqual(keys(sortWindows(windows)), ['ah-pin', 'code-wait', 'ah-old']);
   assert.deepEqual(keys(sidebarOrder(windows, false)), ['code-wait', 'ah-pin', 'ah-old']);
-});
-
-test('sidebar order lists recipe runs before project blocks, oldest run first', () => {
-  const run = { runId: 'run-1', recipeId: 'r', key: 'a', name: 'fleet' };
-  const later = { runId: 'run-2', recipeId: 'r', key: 'b', name: 'other' };
-  const windows = [
-    win({ key: 'plain', project: 'ah', host: 'local', status: 'waiting', activity: 5, createdAt: 1 }),
-    win({ key: 'later', project: 'ah', host: 'local', status: 'busy', activity: 9, createdAt: 4, run: later }),
-    win({ key: 'member', project: 'ah', host: 'local', status: 'idle', activity: 1, createdAt: 3, run }),
-  ];
-  assert.deepEqual(keys(sidebarOrder(windows, false)), ['member', 'later', 'plain']);
 });
 
 test('drag order stays inside the project block', () => {

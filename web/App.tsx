@@ -23,6 +23,7 @@ import { Settings } from './Settings.tsx';
 import { showError } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { trackViewport } from './viewport.ts';
+import { Shortcuts, ShortcutsDialog, shortcutTitle, useCommand } from './shortcuts.tsx';
 
 function useMedia(query: string) {
   const [match, setMatch] = useState(() => matchMedia(query).matches);
@@ -68,9 +69,10 @@ function fromHash(): { page: Page; selected: string | null } {
 export function App({ onLock }: { onLock: () => void }) {
   const [{ page, selected }, setRoute] = useState(fromHash);
   const [inboxGroup, setInboxGroup] = stored<InboxGroup>('ah.inboxGroup', 'status');
-  const [creating, setCreating] = useState<{ cwd?: string; host?: string } | null>(null);
+  const [creating, setCreating] = useState<{ cwd?: string; host?: string; prompt?: string } | null>(null);
   const [forking, setForking] = useState<ForkTarget | null>(null);
   const [switching, setSwitching] = useState(false);
+  const [keymap, setKeymap] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [pastChatJump, setPastChatJump] = useState<{ host: string; uid: string; msgId: number } | null>(null);
   const [dialog, setDialog] = useState<'worktrees' | null>(null);
@@ -147,12 +149,40 @@ export function App({ onLock }: { onLock: () => void }) {
     go({ selected: key });
   };
 
-  /** Option+Up/Down in a terminal steps through sessions in sidebar paint order. */
+  /** Alt+Up/Down steps through sessions in sidebar paint order, from any view. */
   const cycleSession = (dir: -1 | 1) => {
     const keys = sidebarOrder(state?.windows ?? [], (state?.hosts.length ?? 0) > 1, savedGroups).map((w) => w.key);
     const next = cycleKey(keys, focusKey ?? selected, dir);
     if (next) open(next);
   };
+
+  const showPage = (p: Page) => {
+    setLayout(null);
+    setFocusPath(null);
+    go({ page: p, selected: null });
+  };
+
+  const focusPane = (dir: -1 | 1) => {
+    if (!layout) return;
+    const panes = paneLeaves(layout);
+    if (panes.length < 2) return;
+    const id = (focusPath ?? panes[0].path).join('/');
+    const i = panes.findIndex((p) => p.path.join('/') === id);
+    const next = panes[(Math.max(0, i) + dir + panes.length) % panes.length];
+    setFocusPath(next.path);
+  };
+
+  useCommand('switcher', () => setSwitching((v) => !v));
+  useCommand('new-session', () => setCreating({}));
+  useCommand('toggle-sidebar', toggleSide);
+  useCommand('cycle-prev', () => cycleSession(-1));
+  useCommand('cycle-next', () => cycleSession(1));
+  useCommand('go-inbox', () => showPage('inbox'));
+  useCommand('go-history', () => showPage('history'));
+  useCommand('go-settings', () => showPage('settings'));
+  useCommand('show-shortcuts', () => setKeymap(true));
+  useCommand('focus-next-pane', () => focusPane(1), !!layout);
+  useCommand('focus-prev-pane', () => focusPane(-1), !!layout);
 
   /** Enter split view from the single session: the new half shows the most recent other session. */
   function splitFrom(key: string, dir: 'right' | 'below', otherKey?: string) {
@@ -198,20 +228,6 @@ export function App({ onLock }: { onLock: () => void }) {
         .catch(() => {});
     }
     return () => window.removeEventListener('hashchange', onHash);
-  }, []);
-
-  // ⌘K / Ctrl+Shift+K opens the switcher. Captured before xterm so the shell never sees it.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (document.querySelector('dialog.ask[open]')) return;
-      if (e.key.toLowerCase() === 'k' && ((e.metaKey && !e.ctrlKey) || (e.ctrlKey && e.shiftKey))) {
-        e.preventDefault();
-        e.stopPropagation();
-        setSwitching((v) => !v);
-      }
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
   }, []);
 
   // Fill the screen normally; shrink only while the software keyboard is open.
@@ -338,6 +354,7 @@ export function App({ onLock }: { onLock: () => void }) {
   return (
     <PresetsContext.Provider value={presetFor}>
     <div className={`app ${narrow ? 'narrow' : ''}`}>
+      <Shortcuts />
       {sideOpen ? (
         <Sidebar
           state={state}
@@ -347,11 +364,7 @@ export function App({ onLock }: { onLock: () => void }) {
           visibleKeys={visibleKeys}
           device={deviceName()}
           onCollapse={toggleSide}
-          onPage={(p) => {
-            setLayout(null);
-            setFocusPath(null);
-            go({ page: p, selected: null });
-          }}
+          onPage={showPage}
           onSelect={open}
           onSearch={() => setSwitching(true)}
           onNew={(where) => setCreating(where ?? {})}
@@ -369,17 +382,11 @@ export function App({ onLock }: { onLock: () => void }) {
               .catch((e) => showError(e, "Couldn't terminate"));
           }}
           onFork={(w) => setForking({ ref: w.uid, host: w.host, harness: w.agent, title: w.title })}
-          onRunAction={(host, runId, action) => {
-            const client = clientFor(host);
-            (action === 'stop' ? client.stopRun(runId) : client.archiveRun(runId))
-              .then(() => refresh(host))
-              .catch((e) => showError(e, action === 'stop' ? "Couldn't stop the run" : "Couldn't archive the run"));
-          }}
         />
       ) : (
         !narrow && (
           <div className="rail">
-            <button className="icon-btn" onClick={toggleSide} title="Show sidebar" aria-label="Show sidebar">
+            <button className="icon-btn" onClick={toggleSide} title={shortcutTitle('Show sidebar', 'toggle-sidebar')} aria-label="Show sidebar">
               <Icon name="panel" />
             </button>
           </div>
@@ -409,6 +416,7 @@ export function App({ onLock }: { onLock: () => void }) {
             onAnswer={answer}
             onSent={sent}
             onKilledSession={() => {}}
+            onStartSession={(w, prompt) => setCreating({ cwd: w.projectPath, host: w.host, prompt })}
             refresh={refresh}
             onExit={() => {
               setLayout(null);
@@ -420,6 +428,8 @@ export function App({ onLock }: { onLock: () => void }) {
             key={current.key}
             w={current}
             client={clientFor(current.host)}
+            windows={sidebarOrder(state.windows, state.hosts.length > 1, savedGroups)}
+            clientFor={clientFor}
             narrow={narrow}
             touch={touch}
             multiHost={state.hosts.length > 1}
@@ -430,9 +440,9 @@ export function App({ onLock }: { onLock: () => void }) {
             onSent={sent}
             onKilled={() => open(null)}
             refresh={() => refresh(current.host)}
+            onStartSession={(prompt) => setCreating({ cwd: current.projectPath, host: current.host, prompt })}
             onSplit={(dir) => splitFrom(current.key, dir)}
             onOpenKey={open}
-            onCycleSession={cycleSession}
             onSplitWith={(key) => splitFrom(current.key, 'right', key)}
           />
         ) : state ? (
@@ -491,7 +501,9 @@ export function App({ onLock }: { onLock: () => void }) {
           hostState={hostState}
           clientFor={clientFor}
           initialCwd={creating.cwd ?? current?.projectPath ?? '~'}
+          initialPrompt={creating.prompt}
           onClose={() => setCreating(null)}
+          onSent={sent}
           onCreated={async (host, id) => {
             setCreating(null);
             await refresh(host);
@@ -513,6 +525,8 @@ export function App({ onLock }: { onLock: () => void }) {
           }}
         />
       )}
+
+      {keymap && <ShortcutsDialog onClose={() => setKeymap(false)} />}
 
       {switching && state && (
         <Switcher

@@ -9,6 +9,7 @@ import { askConfirm, showError, showNotice } from '../ask.tsx';
 import { look } from '../agents.ts';
 import { AgentLogo } from '../logos.tsx';
 import { Icon } from '../icons.tsx';
+import { shortcutTitle } from '../shortcuts.tsx';
 import { copyText } from '../selection.ts';
 import { blockText } from './reducer.ts';
 import { useFeed } from './useFeed.ts';
@@ -279,15 +280,15 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
                 <div className="actions">
                   {w.answerable ? (
                     <>
-                      <button className="btn primary" onClick={() => onAnswer(w, 'approve')}>
+                      <button className="btn primary" title={shortcutTitle('Approve', 'approve')} onClick={() => onAnswer(w, 'approve')}>
                         Approve
                       </button>
-                      <button className="btn" onClick={() => onAnswer(w, 'deny')}>
+                      <button className="btn" title={shortcutTitle('Deny', 'deny')} onClick={() => onAnswer(w, 'deny')}>
                         Deny
                       </button>
                     </>
                   ) : (
-                    <button className="btn primary" onClick={onReply}>
+                    <button className="btn primary" title={shortcutTitle('Reply', 'reply')} onClick={onReply}>
                       Reply
                     </button>
                   )}

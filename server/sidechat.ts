@@ -789,4 +789,39 @@ export class SideChatStore {
       clearTimeout(timer);
     }
   }
+
+  /**
+   * One-shot handoff brief. Uses the chat subscription and does not write
+   * side-chat history or offer repo tools.
+   */
+  async summarize(text: string, subscriptionId?: string): Promise<string> {
+    const body = text.trim();
+    if (!body) throw new SideChatError(400, 'text required');
+    const sub = await this.resolve(subscriptionId);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), CHAT_TIMEOUT_MS);
+    try {
+      const { content } = await this.complete(
+        sub,
+        [
+          {
+            role: 'system',
+            content: [
+              'You write a handoff brief for another coding agent that will continue this session.',
+              'The transcript is user and assistant prose. Tool calls were left out.',
+              'Cover what is being done, what was decided, what is already done, and what is still open.',
+              'Plain prose, a few short paragraphs. No title, no preamble, no JSON.',
+            ].join(' '),
+          },
+          { role: 'user', content: body },
+        ],
+        false,
+        ctrl.signal,
+      );
+      if (typeof content !== 'string' || !content.trim()) throw new SideChatError(502, 'chat provider returned an empty reply');
+      return content.trim();
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 }

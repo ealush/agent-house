@@ -1369,6 +1369,10 @@ a.pill:hover {
   justify-content: center;
 }
 
+.side-foot .btn.block {
+  justify-content: space-between;
+}
+
 a.btn {
   text-decoration: none;
 }
@@ -1450,6 +1454,10 @@ a.btn {
   background: var(--line);
 }
 
+.menu button .grow {
+  flex: 1;
+}
+
 .menu button.danger {
   color: var(--danger);
 }
@@ -1493,6 +1501,21 @@ a.btn {
 
 .dialog.wide {
   width: min(760px, calc(100vw - 24px));
+}
+
+.send-to {
+  overflow: auto;
+}
+
+.send-to p {
+  margin: 0;
+}
+
+.send-to textarea {
+  min-height: 9em;
+  max-height: 40vh;
+  resize: vertical;
+  line-height: 1.45;
 }
 
 /* Short confirm / alert / prompt. Same chrome, tighter than a form dialog. */
@@ -2325,6 +2348,136 @@ a.btn {
   border-radius: 12px;
   border: 1px solid var(--line);
   background: var(--raised);
+}
+
+.system-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.keymap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.keymap-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.keymap-search {
+  flex: 1;
+}
+
+.keymap-scroll {
+  overflow: auto;
+  max-height: min(64vh, 640px);
+}
+
+.keymap-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.keymap-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: left;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--faint);
+  background: var(--surface);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.keymap-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.keymap-table .hint {
+  margin: 2px 0 0;
+}
+
+.keymap-name {
+  font-weight: 600;
+}
+
+.keymap-group td {
+  padding: 14px 8px 4px;
+  border-bottom: 0;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.keymap-table tr.recording td {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.keymap-bind {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+
+.keymap-bind:hover kbd,
+.keymap-bind:focus-visible kbd {
+  border-color: var(--faint);
+}
+
+.keymap-record {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.keymap-error {
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.keymap-when,
+.keymap-source {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.keymap-actions {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.keymap-dialog {
+  width: min(920px, calc(100vw - 24px));
+  padding: 16px 18px 18px;
+}
+
+.keymap-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
 /* Settings embeds the Security page as a section. */
@@ -3612,6 +3765,13 @@ button.tool-chip:hover {
   gap: 12px;
 }
 
+.new-session textarea {
+  min-height: 4.5em;
+  max-height: 28vh;
+  resize: vertical;
+  line-height: 1.45;
+}
+
 .ns-head {
   display: flex;
   align-items: center;
@@ -3748,69 +3908,4 @@ button.tool-chip:hover {
 .narrow .launch-row {
   flex-direction: column;
   align-items: stretch;
-}
-
-/* Fleet recipes (issue #6) */
-.run-toggle {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  background: none;
-  border: none;
-  color: inherit;
-  cursor: pointer;
-}
-.run-act {
-  flex: none;
-  display: none;
-  padding: 0 2px;
-  background: none;
-  border: none;
-  color: inherit;
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-  opacity: 0.75;
-}
-.side-label:hover .run-act,
-.side-label:focus-within .run-act {
-  display: inline-block;
-}
-.run-act:hover {
-  opacity: 1;
-  text-decoration: underline;
-}
-.recipe-members {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 8px 0;
-}
-.recipe-member {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.recipe-member .grow {
-  flex: 1;
-  min-width: 0;
-}
-.recipe-member select {
-  flex: none;
-  max-width: 42%;
-}
-.recipe-editor textarea {
-  width: 100%;
-  font-family: var(--mono, monospace);
-  font-size: 12px;
-  margin: 8px 0;
-}
-.new-session textarea {
-  width: 100%;
-  font: inherit;
 }

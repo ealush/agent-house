@@ -3,10 +3,9 @@
 // follow adoption and resume. Core owns typing and turn state; this module owns
 // queue state and the flush policy (deliver at the next idle — never into a
 // waiting session, where typed text would answer the agent's prompt). It takes
-// its runtime as narrow callbacks, the same shape as HandoffEngine's store+send
-// split: registry + handoff fate on one side, Core's input path on the other.
+// its runtime as narrow callbacks: the registry on one side, Core's input path
+// on the other.
 import type { Registry } from './registry.ts';
-import type { HandoffEngine } from './recipes.ts';
 import type { WindowView } from './sessions.ts';
 
 export type LaunchChange = { model?: string; effort?: string };
@@ -17,10 +16,6 @@ export type QueueItem = {
   enter: boolean;
   at: number;
   launchChange?: LaunchChange;
-  /** Provenance label for recipe handoffs, shown in the queue panel (issue #6). */
-  source?: string;
-  /** The handoff record this item carries, so its fate updates the handoff. */
-  handoffId?: string;
 };
 
 const now = () => Math.floor(Date.now() / 1000);
@@ -41,16 +36,12 @@ export type QueueRuntime = {
   applyLaunchChange(uid: string, change: LaunchChange): void;
 };
 
-type Handoffs = Pick<HandoffEngine, 'queueItemDelivered' | 'queueItemFailed' | 'queueItemCancelled'>;
-
 export class QueueManager {
   private registry: Registry;
-  private handoffs: Handoffs;
   private rt: QueueRuntime;
 
-  constructor(registry: Registry, handoffs: Handoffs, rt: QueueRuntime) {
+  constructor(registry: Registry, rt: QueueRuntime) {
     this.registry = registry;
-    this.handoffs = handoffs;
     this.rt = rt;
   }
 
@@ -92,8 +83,6 @@ export class QueueManager {
     const rest = itemId ? before.filter((q) => q.id !== itemId) : [];
     const removed = itemId ? before.filter((q) => q.id === itemId) : before;
     this.store(uid, rest);
-    // Cancelling a queued handoff cancels the handoff itself (issue #6).
-    for (const item of removed) if (item.handoffId) this.handoffs.queueItemCancelled(item.id);
     return removed;
   }
 
@@ -118,10 +107,8 @@ export class QueueManager {
         try {
           await this.rt.paste(w.id, next.text, next.enter);
           if (next.launchChange) this.rt.applyLaunchChange(w.uid, next.launchChange);
-          if (next.handoffId) this.handoffs.queueItemDelivered(next.id);
         } catch (err) {
           console.error(`queue delivery to ${w.id} failed:`, err);
-          if (next.handoffId) this.handoffs.queueItemFailed(next.id, (err as Error).message);
         }
         w.queued = rest.length;
         w.status = 'busy';

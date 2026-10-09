@@ -42,8 +42,6 @@ export type Win = {
   feed: string | null;
   /** Fork lineage (F36): this session is a fork, and how many forks it has. */
   fork: { parentUid: string; parentTitle: string; rootUid: string; forks: number } | null;
-  /** Fleet recipe membership (issue #6); null for standalone sessions. */
-  run: { runId: string; recipeId: string; key: string; name: string } | null;
 };
 
 export type ForkInfo = {
@@ -114,7 +112,7 @@ export type Preset = {
 
 export type Host = { name: string; self: boolean; online: boolean };
 
-export const API_VERSION = 14;
+export const API_VERSION = 17;
 
 export type PullInfo = { number: number | null; url: string | null };
 
@@ -159,51 +157,6 @@ export type ChatSummary = { uid: string; title: string; count: number; firstAt: 
 export type Followup = { title: string; kind: 'session' | 'chat'; text: string };
 export type ChatReply = { message: ChatMsg; followups: Followup[] };
 
-export type RecipeMember = {
-  key: string;
-  preset: string;
-  title?: string;
-  worktree?: boolean;
-  cwdFrom?: string;
-  model?: string | null;
-  effort?: string | null;
-  mode?: string | null;
-  prompt?: string;
-};
-
-export type Recipe = {
-  id: string;
-  name: string;
-  description?: string;
-  members: RecipeMember[];
-  handoffs?: Array<{ when: { session: string; event: string }; sendTo: string; template: string; repeat?: boolean }>;
-  /** Validation problems reported by the server; a recipe with any cannot launch. */
-  errors?: string[];
-};
-
-export type RunMemberView = { key: string; uid: string; title: string; preset: string; cwd: string; branch: string | null; status: string };
-export type HandoffView = {
-  id: string;
-  sourceKey: string;
-  targetKey: string;
-  event: string;
-  state: string;
-  deliveredAt?: number | null;
-  reason?: string | null;
-};
-export type RunView = {
-  runId: string;
-  recipeId: string;
-  name: string;
-  cwd: string;
-  brief: string;
-  state: string;
-  reason?: string | null;
-  createdAt: number;
-  members: RunMemberView[];
-  handoffs: HandoffView[];
-};
-
 export type State = {
   api?: number;
   hostname: string;
@@ -214,7 +167,6 @@ export type State = {
   windows: Win[];
   history: HistoryItem[];
   presets: Preset[];
-  runs: RunView[];
 };
 
 export type Changes = {
@@ -251,7 +203,7 @@ export type BranchInfo = { name: string; current: boolean; remote: boolean; work
 export type BranchList = { current: string | null; branches: BranchInfo[] };
 
 export type SendResult = { outcome: 'delivered' | 'queued'; windowId: string; resumed: boolean; queued: number };
-export type QueueItem = { id: string; text: string; enter: boolean; at: number; source?: string; handoffId?: string };
+export type QueueItem = { id: string; text: string; enter: boolean; at: number };
 
 export type SnapshotInfo = {
   id: number;
@@ -359,6 +311,9 @@ export function hostApi(base: string) {
       r<Subscription>('POST', '/api/subscriptions', body),
     removeSubscription: (id: string) => r('DELETE', `/api/subscriptions/${enc(id)}`),
     defaultSubscription: (id: string) => r('POST', '/api/subscriptions/default', { id }),
+    /** One-shot handoff brief from a chat subscription. Not stored as side chat. */
+    summarize: (text: string, subscriptionId?: string) =>
+      r<{ summary: string }>('POST', '/api/summarize', subscriptionId ? { text, subscriptionId } : { text }),
     chat: (id: string) => r<{ messages: ChatMsg[]; subscriptionId: string | null }>('GET', `/api/windows/${enc(id)}/chat`),
     sendChat: (id: string, text: string, subscriptionId?: string) =>
       r<ChatReply>('POST', `/api/windows/${enc(id)}/chat`, subscriptionId ? { text, subscriptionId } : { text }),
@@ -382,14 +337,9 @@ export function hostApi(base: string) {
     searchSetEnabled: (enabled: boolean) => r<SearchStatus>('POST', '/api/search/enabled', { enabled }),
     /** Settings → System: bounce the daemon on this host (systemd brings it back). */
     restart: () => r<{ ok: true }>('POST', '/api/system/restart', {}),
+    /** Settings → System: delete dist, rebuild the UI from this checkout, then bounce the daemon. */
+    rebuild: () => r<{ ok: true }>('POST', '/api/system/rebuild', {}),
     pastChat: (uid: string, msgId?: number) => r<{ messages: ChatMsg[] }>('GET', `/api/chats/${enc(uid)}${msgId ? `?msgId=${msgId}` : ''}`),
-    recipes: () => r<Recipe[]>('GET', '/api/recipes'),
-    saveRecipes: (recipes: Recipe[]) => r<Recipe[]>('PUT', '/api/recipes', { recipes }),
-    launchRecipe: (id: string, body: { cwd: string; brief: string; session?: string; overrides?: Record<string, { mode?: string; model?: string; effort?: string }> }) =>
-      r<{ run: RunView; members: Array<{ key: string; uid: string; id: string }> }>('POST', `/api/recipes/${enc(id)}/launch`, body),
-    run: (runId: string) => r<RunView>('GET', `/api/runs/${enc(runId)}`),
-    stopRun: (runId: string) => r('POST', `/api/runs/${enc(runId)}/stop`, {}),
-    archiveRun: (runId: string) => r('POST', `/api/runs/${enc(runId)}/archive`, {}),
     worktrees: () => r<WorktreeInfo[]>('GET', '/api/worktrees'),
     removeWorktree: (path: string, force: boolean) => r('DELETE', '/api/worktrees', { path, force }),
     removeWorktreesBulk: (paths: string[], force: string[]) => r<{ results: BulkRemoveResult[] }>('POST', '/api/worktrees/remove-bulk', { paths, force }),
@@ -420,7 +370,6 @@ export function normalize(s: State): State {
   return {
     ...s,
     hosts: s.hosts ?? [{ name: s.hostname, self: true, online: true }],
-    runs: s.runs ?? [],
     windows: (s.windows ?? []).map((w) => ({
       ...w,
       title: w.title ?? w.name,
@@ -438,7 +387,6 @@ export function normalize(s: State): State {
       launchMode: w.launchMode ?? null,
       feed: w.feed ?? null,
       fork: w.fork ?? null,
-      run: w.run ?? null,
     })),
     history: (s.history ?? []).map((h) => ({ ...h, fork: h.fork ?? null })),
   };

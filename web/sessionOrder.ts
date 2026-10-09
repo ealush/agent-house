@@ -40,7 +40,7 @@ export function sortWindows(windows: Win[]): Win[] {
   return [...arrange(windows.filter((w) => w.pinned)), ...arrange(windows.filter((w) => !w.pinned))];
 }
 
-export type SideSection = { id: string; run: boolean; windows: Win[] };
+export type SideSection = { id: string; windows: Win[] };
 
 function openedAt(ws: Win[]): number {
   let min = Number.POSITIVE_INFINITY;
@@ -108,30 +108,24 @@ function weave(saved: string[], visibleNext: string[]): string[] {
 }
 
 /**
- * Sidebar paint order. Recipe runs come first, oldest run first. Then one
- * block per project, or per host when more than one machine is online.
- * A block stays in the order its first session was opened, unless `savedGroups`
- * records a drag. Drag keys apply only inside the block.
+ * Sidebar paint order. One block per project, or per host when more than one
+ * machine is online. A block stays in the order its first session was opened,
+ * unless `savedGroups` records a drag. Drag keys apply only inside the block.
  */
 export function sidebarSections(windows: Win[], multiHost: boolean, savedGroups: string[] = []): SideSection[] {
-  const runs = new Map<string, Win[]>();
   const groups = new Map<string, Win[]>();
   for (const w of windows) {
-    const bucket = w.run ? runs : groups;
-    const id = w.run ? w.run.runId : multiHost ? w.host : w.project;
-    const list = bucket.get(id);
+    const id = multiHost ? w.host : w.project;
+    const list = groups.get(id);
     if (list) list.push(w);
-    else bucket.set(id, [w]);
+    else groups.set(id, [w]);
   }
-  const finish = (id: string, run: boolean, ws: Win[]): SideSection => ({ id, run, windows: sortWindows(ws) });
-  const runList = [...runs].sort(byOpened).map(([id, ws]) => finish(id, true, ws));
   const opened = [...groups].sort(byOpened);
   const byId = new Map(opened);
-  const groupList = applyGroupOrder(
+  return applyGroupOrder(
     opened.map(([id]) => id),
     savedGroups,
-  ).map((id) => finish(id, false, byId.get(id)!));
-  return [...runList, ...groupList];
+  ).map((id) => ({ id, windows: sortWindows(byId.get(id)!) }));
 }
 
 /** Sessions in the order the sidebar draws them, top to bottom. */
