@@ -1810,6 +1810,88 @@ a.btn {
   color: inherit;
 }
 
+.commands {
+  width: min(360px, calc(100vw - 32px));
+  margin-top: auto;
+  padding: 10px 10px 8px;
+  border-radius: 12px;
+}
+
+.commands input {
+  margin: 0 0 6px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--sunken);
+  font-size: 15px;
+}
+
+.commands ul {
+  /* Room for an overlay scrollbar, so the keycaps are not tucked under it. */
+  padding: 2px 16px 6px 2px;
+}
+
+.cmd-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  text-align: left;
+  color: var(--muted);
+}
+
+.cmd-row.on,
+.cmd-row.on .cmd-icon {
+  color: var(--accent);
+}
+
+.cmd-icon {
+  flex: none;
+  display: flex;
+  color: inherit;
+}
+
+.cmd-row .name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cmd-keys {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+}
+
+.cmd-keys kbd {
+  min-width: 18px;
+  padding: 0 4px;
+  border-radius: 4px;
+  border: 1px solid var(--line-2);
+  border-bottom-color: color-mix(in srgb, var(--text) 28%, var(--line-2));
+  background: color-mix(in srgb, var(--text) 7%, var(--raised));
+  color: var(--text);
+  font-family: var(--ui);
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 20px;
+  text-align: center;
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, black 45%, transparent);
+}
+
+.cmd-empty {
+  margin: 4px 16px 14px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
 /* Full-page search (issue #9) */
 .search-controls {
   display: flex;
@@ -2415,6 +2497,18 @@ a.btn {
 
 .keymap-table .hint {
   margin: 2px 0 0;
+}
+
+.keymap-cmd {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.keymap-cmd > svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--muted);
 }
 
 .keymap-name {
@@ -3164,6 +3258,7 @@ a.btn {
 }
 
 .ws-root {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;

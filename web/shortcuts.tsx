@@ -1,17 +1,21 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
+import { Icon, type IconName } from './icons.tsx';
 import {
   COMMANDS,
   bindingError,
   chordFromEvent,
+  chordParts,
   formatChord,
   handleShortcutKey,
   hintChord,
   isMac,
   isOverridden,
   loadOverrides,
+  matchShortcut,
   registerCommand,
   resetAllOverrides,
   resetOverride,
+  searchCommands,
   setOverride,
   setShortcutCapture,
   subscribeShortcuts,
@@ -57,6 +61,34 @@ export function Shortcuts() {
   }, []);
   return null;
 }
+
+/** One icon per catalog action. The type fails the build when a command has none. */
+const COMMAND_ICONS = {
+  'command-palette': 'commands',
+  switcher: 'search',
+  'cycle-prev': 'chevron-up',
+  'cycle-next': 'chevron-down',
+  'new-session': 'plus',
+  'toggle-sidebar': 'panel',
+  'go-inbox': 'inbox',
+  'go-history': 'history',
+  'go-settings': 'gear',
+  'show-shortcuts': 'keyboard',
+  'toggle-view': 'view',
+  'toggle-panel': 'panel-right',
+  reply: 'reply',
+  approve: 'check',
+  deny: 'ban',
+  terminate: 'trash',
+  'split-right': 'split-right',
+  'split-below': 'split-below',
+  'close-pane': 'pane-close',
+  'focus-pane-left': 'pane-left',
+  'focus-pane-right': 'pane-right',
+  'focus-pane-up': 'pane-up',
+  'focus-pane-down': 'pane-down',
+  'exit-split': 'pane',
+} as const satisfies Record<CommandId, IconName>;
 
 function resolved(id: CommandId, overrides: Overrides): Chord[] {
   if (Object.prototype.hasOwnProperty.call(overrides, id)) return overrides[id] ?? [];
@@ -180,8 +212,13 @@ export function ShortcutsPanel({ focusSearch = false }: { focusSearch?: boolean 
                   )}
                   <tr className={live ? 'recording' : undefined}>
                     <td>
-                      <div className="keymap-name">{cmd.label}</div>
-                      <div className="hint">{cmd.detail}</div>
+                      <div className="keymap-cmd">
+                        <Icon name={COMMAND_ICONS[cmd.id]} size={16} />
+                        <div>
+                          <div className="keymap-name">{cmd.label}</div>
+                          <div className="hint">{cmd.detail}</div>
+                        </div>
+                      </div>
                     </td>
                     <td>
                       {live ? (
@@ -241,6 +278,104 @@ export function ShortcutsPanel({ focusSearch = false }: { focusSearch?: boolean 
         </table>
       </div>
     </div>
+  );
+}
+
+/** Searchable list of actions that can run right now. The binding sits on the right. */
+export function CommandPalette({ onClose, onRun }: { onClose: () => void; onRun: (id: CommandId) => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  const [query, setQuery] = useState('');
+  const [i, setI] = useState(0);
+  useShortcutRevision();
+  const mac = isMac();
+  const overrides = loadOverrides();
+  const commands = searchCommands(query, { mac, overrides });
+  const index = commands.length ? Math.min(i, commands.length - 1) : 0;
+
+  useEffect(() => {
+    ref.current?.showModal();
+  }, []);
+
+  useEffect(() => {
+    listRef.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' });
+  }, [index, commands.length]);
+
+  return (
+    <dialog
+      ref={ref}
+      className="dialog switcher commands"
+      aria-label="Command palette"
+      onClose={onClose}
+      onClick={(e) => e.target === ref.current && onClose()}
+      onKeyDown={(e) => {
+        // The palette is a dialog, so its own chord is not stolen by the global listener. Pressing it again closes.
+        if (matchShortcut(e, 'app', overrides) === 'command-palette') {
+          e.preventDefault();
+          onClose();
+          return;
+        }
+        if (e.key === 'ArrowDown') {
+          setI((cur) => {
+            if (!commands.length) return 0;
+            const at = Math.min(cur, commands.length - 1);
+            return (at + 1) % commands.length;
+          });
+        } else if (e.key === 'ArrowUp') {
+          setI((cur) => {
+            if (!commands.length) return 0;
+            const at = Math.min(cur, commands.length - 1);
+            return (at - 1 + commands.length) % commands.length;
+          });
+        } else if (e.key === 'Enter' && commands[index]) onRun(commands[index].id);
+        else return;
+        e.preventDefault();
+      }}
+    >
+      <input
+        autoFocus
+        value={query}
+        placeholder="Go..."
+        aria-label="Go"
+        autoCapitalize="off"
+        autoCorrect="off"
+        spellCheck={false}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setI(0);
+        }}
+      />
+      <ul ref={listRef}>
+        {commands.map((cmd, idx) => {
+          const chord = hintChord(cmd.id, mac, overrides);
+          return (
+            <li key={cmd.id}>
+              <button
+                type="button"
+                className={`cmd-row ${idx === index ? 'on' : ''}`}
+                aria-selected={idx === index}
+                title={cmd.detail}
+                onMouseEnter={() => setI(idx)}
+                onClick={() => onRun(cmd.id)}
+              >
+                <span className="cmd-icon">
+                  <Icon name={COMMAND_ICONS[cmd.id]} size={16} />
+                </span>
+                <span className="name">{cmd.label}</span>
+                {chord && (
+                  <span className="cmd-keys">
+                    {chordParts(chord).map((part) => (
+                      <kbd key={part}>{part}</kbd>
+                    ))}
+                  </span>
+                )}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {commands.length === 0 && <p className="cmd-empty">No commands match.</p>}
+    </dialog>
   );
 }
 

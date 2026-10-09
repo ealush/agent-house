@@ -23,7 +23,8 @@ import { Settings } from './Settings.tsx';
 import { showError } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { trackViewport } from './viewport.ts';
-import { Shortcuts, ShortcutsDialog, shortcutTitle, useCommand } from './shortcuts.tsx';
+import { runCommand } from './shortcuts.ts';
+import { CommandPalette, Shortcuts, ShortcutsDialog, shortcutTitle, useCommand } from './shortcuts.tsx';
 
 function useMedia(query: string) {
   const [match, setMatch] = useState(() => matchMedia(query).matches);
@@ -72,6 +73,7 @@ export function App({ onLock }: { onLock: () => void }) {
   const [creating, setCreating] = useState<{ cwd?: string; host?: string; prompt?: string } | null>(null);
   const [forking, setForking] = useState<ForkTarget | null>(null);
   const [switching, setSwitching] = useState(false);
+  const [palette, setPalette] = useState(false);
   const [keymap, setKeymap] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [pastChatJump, setPastChatJump] = useState<{ host: string; uid: string; msgId: number } | null>(null);
@@ -175,6 +177,7 @@ export function App({ onLock }: { onLock: () => void }) {
   };
 
   const splitOpen = !!layout && paneLeaves(layout).length > 1;
+  useCommand('command-palette', () => setPalette((v) => !v));
   useCommand('switcher', () => setSwitching((v) => !v));
   useCommand('new-session', () => setCreating({}));
   useCommand('toggle-sidebar', toggleSide);
@@ -530,6 +533,17 @@ export function App({ onLock }: { onLock: () => void }) {
       )}
 
       {keymap && <ShortcutsDialog onClose={() => setKeymap(false)} />}
+
+      {palette && (
+        <CommandPalette
+          onClose={() => setPalette(false)}
+          onRun={(id) => {
+            setPalette(false);
+            // After the dialog releases focus, so Reply and the other focus actions land.
+            requestAnimationFrame(() => requestAnimationFrame(() => runCommand(id)));
+          }}
+        />
+      )}
 
       {switching && state && (
         <Switcher

@@ -18,6 +18,7 @@ export type Chord = {
 };
 
 export type CommandId =
+  | 'command-palette'
   | 'switcher'
   | 'new-session'
   | 'cycle-prev'
@@ -58,6 +59,15 @@ const nav: Array<Exclude<Scope, 'ask'>> = ['app', 'terminal'];
 const session: Array<Exclude<Scope, 'ask'>> = ['app', 'terminal'];
 
 export const COMMANDS: Command[] = [
+  {
+    id: 'command-palette',
+    group: 'Navigate',
+    label: 'Command palette',
+    detail: 'Search the actions you can run right now. The binding sits on the right of each one.',
+    // ⌘⇧P on a Mac, Ctrl+Shift+P elsewhere. Same letter as VS Code.
+    chords: [{ key: 'p', meta: true, shift: true }, { key: 'p', ctrl: true, shift: true }],
+    scopes: ['app', 'terminal', 'field'],
+  },
   {
     id: 'switcher',
     group: 'Navigate',
@@ -143,7 +153,8 @@ export const COMMANDS: Command[] = [
     group: 'Session',
     label: 'Toggle side panel',
     detail: 'Show or hide the session side panel.',
-    chords: [{ key: 'p', ctrl: true, shift: true }],
+    // J, not P: Ctrl+Shift+P opens the command palette.
+    chords: [{ key: 'j', ctrl: true, shift: true }],
     scopes: session,
   },
   {
@@ -389,6 +400,23 @@ export function formatChord(c: Chord, mac: boolean): string {
   return parts.join('+');
 }
 
+/** One label per key, in the order VS Code draws a chord: Ctrl, Shift, Alt, Super, then the key. */
+const PART_LABEL: Record<string, string> = {
+  ...KEY_LABEL,
+  Backspace: 'Backspace',
+  Tab: 'Tab',
+};
+
+export function chordParts(c: Chord): string[] {
+  const parts: string[] = [];
+  if (c.ctrl) parts.push('⌃');
+  if (c.shift) parts.push('⇧');
+  if (c.alt) parts.push('⌥');
+  if (c.meta) parts.push('⌘');
+  parts.push(PART_LABEL[c.key] ?? (c.key.length === 1 ? c.key.toUpperCase() : c.key));
+  return parts;
+}
+
 export function bindingError(id: CommandId, chord: Chord, overrides: Overrides, mac = false): string | null {
   if (!chordUsable(chord)) return 'Use Ctrl, Alt, or Super together with another key.';
   for (const cmd of COMMANDS) {
@@ -490,6 +518,52 @@ export function registerCommand(id: CommandId, fn: Handler): () => void {
   if (!set) handlers.set(id, (set = new Set()));
   set.add(fn);
   return () => set!.delete(fn);
+}
+
+/** True when a mounted view is listening, so the action can run right now. */
+export function commandActive(id: CommandId): boolean {
+  return (handlers.get(id)?.size ?? 0) > 0;
+}
+
+/** Subsequence score. Contiguous runs and word starts count more. Zero when a character is missing. */
+function fuzzy(query: string, text: string): number {
+  if (!query) return 1;
+  const q = query.toLowerCase();
+  const t = text.toLowerCase();
+  let s = 0;
+  let ti = 0;
+  let run = 0;
+  for (const ch of q) {
+    const found = t.indexOf(ch, ti);
+    if (found < 0) return 0;
+    run = found === ti ? run + 1 : 1;
+    s += run + (found === 0 || /[\s/+·:_-]/.test(t[found - 1] ?? '') ? 3 : 0);
+    ti = found + 1;
+  }
+  return s;
+}
+
+/**
+ * Commands the palette can offer. The palette itself is left out.
+ * An empty query keeps catalog order. A query ranks the label, the group, and the recorded binding.
+ * The long detail counts only when it contains the query as a phrase, so a short word does not match every description.
+ */
+export function searchCommands(query: string, opts: { active?: (id: CommandId) => boolean; mac?: boolean; overrides?: Overrides } = {}): Command[] {
+  const active = opts.active ?? commandActive;
+  const mac = opts.mac ?? false;
+  const overrides = opts.overrides ?? {};
+  const q = query.trim().toLowerCase();
+  const hits = COMMANDS.filter((cmd) => cmd.id !== 'command-palette' && active(cmd.id)).map((cmd) => {
+    if (!q) return { cmd, s: 1 };
+    const chords = resolveChords(cmd.id, overrides).map((c) => formatChord(c, mac));
+    const chordScore = chords.reduce((best, chord) => Math.max(best, fuzzy(q, chord)), 0);
+    const detail = cmd.detail.toLowerCase().includes(q) ? q.length : 0;
+    const s = Math.max(fuzzy(q, cmd.label), fuzzy(q, cmd.group), chordScore, detail);
+    return { cmd, s };
+  });
+  const matched = hits.filter((hit) => hit.s > 0);
+  if (q) matched.sort((a, b) => b.s - a.s || COMMANDS.indexOf(a.cmd) - COMMANDS.indexOf(b.cmd));
+  return matched.map((hit) => hit.cmd);
 }
 
 /** Run the most recently registered handler. False when nothing is listening. */

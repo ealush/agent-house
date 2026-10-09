@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {
   bindingError,
   chordFromEvent,
+  commandActive,
   eventKey,
+  chordParts,
   formatChord,
   handleShortcutKey,
   hintChord,
@@ -11,6 +13,7 @@ import {
   readOverrides,
   registerCommand,
   resolveChords,
+  searchCommands,
   shortcutContext,
   whenLabel,
   type Chord,
@@ -88,6 +91,47 @@ test('a chord cannot be bare, and cannot duplicate another command', () => {
   assert.equal(bindingError('switcher', { key: 'k', meta: true }, {}), null);
 });
 
+test('the command palette is Ctrl+Shift+P, and the side panel moves to Ctrl+Shift+J', () => {
+  assert.equal(press('p', { ctrlKey: true, shiftKey: true, code: 'KeyP' }), 'command-palette');
+  assert.equal(press('P', { metaKey: true, shiftKey: true, code: 'KeyP' }), 'command-palette');
+  assert.equal(press('p', { ctrlKey: true, shiftKey: true, code: 'KeyP' }, 'field'), 'command-palette');
+  assert.equal(press('p', { ctrlKey: true, shiftKey: true, code: 'KeyP' }, 'dialog'), null);
+  assert.equal(press('p', { ctrlKey: true, shiftKey: true, code: 'KeyP' }, 'ask'), null);
+  assert.equal(press('j', { ctrlKey: true, shiftKey: true, code: 'KeyJ' }), 'toggle-panel');
+  assert.equal(whenLabel('command-palette'), 'Not in a dialog');
+});
+
+test('the command palette lists registered actions and ranks a typed query', () => {
+  const stopInbox = registerCommand('go-inbox', () => {});
+  const stopPanel = registerCommand('toggle-panel', () => {});
+  const stopPalette = registerCommand('command-palette', () => {});
+  try {
+    assert.equal(commandActive('go-inbox'), true);
+    assert.equal(commandActive('new-session'), false);
+    const open = searchCommands('', { active: commandActive }).map((c) => c.id);
+    assert.ok(open.includes('go-inbox'));
+    assert.ok(open.includes('toggle-panel'));
+    assert.ok(open.indexOf('go-inbox') < open.indexOf('toggle-panel'));
+    assert.equal(open.includes('command-palette'), false);
+    assert.equal(open.includes('new-session'), false);
+    assert.equal(searchCommands('inbox', { active: commandActive })[0]?.id, 'go-inbox');
+    const panel = searchCommands('panel', { mac: false, active: () => true }).map((c) => c.id);
+    assert.equal(panel[0], 'toggle-panel');
+    assert.equal(panel.includes('switcher'), false);
+    assert.equal(searchCommands('ctrl+shift+j', { mac: false, active: commandActive })[0]?.id, 'toggle-panel');
+    assert.equal(searchCommands('ctrl+alt+x', { mac: false, overrides: { 'go-inbox': [{ key: 'x', ctrl: true, alt: true }] }, active: () => true })[0]?.id, 'go-inbox');
+    const all = searchCommands('', { active: () => true }).map((c) => c.id);
+    assert.equal(all.includes('command-palette'), false);
+    assert.ok(all.indexOf('switcher') < all.indexOf('go-inbox'));
+    assert.ok(all.includes('terminate'));
+    assert.equal(searchCommands('no-such-command', { active: () => true }).length, 0);
+  } finally {
+    stopInbox();
+    stopPanel();
+    stopPalette();
+  }
+});
+
 test('the shortcut table describes when a chord is allowed to fire', () => {
   assert.equal(whenLabel('switcher'), 'Anywhere except a confirm');
   assert.equal(whenLabel('cycle-next'), 'Not in a dialog');
@@ -113,6 +157,14 @@ test('formatChord speaks Mac symbols and Linux words', () => {
   assert.equal(formatChord({ key: 'k', ctrl: true, shift: true }, false), 'Ctrl+Shift+K');
   assert.equal(formatChord({ key: 'ArrowUp', alt: true }, false), 'Alt+↑');
   assert.equal(formatChord({ key: 'Enter', ctrl: true, alt: true }, true), '⌃⌥Enter');
+});
+
+test('a chord drawn for the palette is one glyph per key', () => {
+  assert.deepEqual(chordParts({ key: 'k', ctrl: true, shift: true }), ['⌃', '⇧', 'K']);
+  assert.deepEqual(chordParts({ key: 'p', meta: true, shift: true }), ['⇧', '⌘', 'P']);
+  assert.deepEqual(chordParts({ key: 'ArrowUp', alt: true }), ['⌥', '↑']);
+  assert.deepEqual(chordParts({ key: 'Enter', ctrl: true, alt: true }), ['⌃', '⌥', 'Enter']);
+  assert.deepEqual(chordParts({ key: 'Backspace', ctrl: true, shift: true }), ['⌃', '⇧', 'Backspace']);
 });
 
 test('the listener runs the newest handler and lets an unbound chord through', () => {

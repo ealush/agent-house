@@ -25,7 +25,25 @@ const PATHS: Record<string, string> = {
   trash: 'M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6.5 7l.8 13a1 1 0 0 0 1 .9h7.4a1 1 0 0 0 1-.9l.8-13M10 11v6M14 11v6',
   copy: 'M9 9h12v12H9zM5 15H4V4h11v1',
   check: 'M20 6 9 17l-5-5',
+  commands: 'M4 7h16M4 12h7M4 17h16M14 10l3 2-3 2',
+  keyboard: 'M2 5h20v14H2zM5.5 8h3.2v2.6H5.5zM10.4 8h3.2v2.6h-3.2zM15.3 8h3.2v2.6h-3.2zM5.5 13h13v2.4h-13z',
+  'panel-right': 'M4 5h16v14H4zM15 5v14',
+  'chevron-up': 'M6 14l6-6 6 6',
+  'chevron-down': 'M6 10l6 6 6-6',
+  reply: 'M9 14 4 9l5-5M4 9h8.5a6 6 0 0 1 6 6v4',
+  ban: 'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0M7 7l10 10',
+  view: 'M4 4h16v16H4zM4 12h16M7.5 7.2l2.4 1.6-2.4 1.6M8 15.5h8',
+  'split-right': 'M4 5h16v14H4zM12 5v14',
+  'split-below': 'M4 5h16v14H4zM4 12h16',
+  'pane-close': 'M4 5h16v14H4zM9 9l6 6M15 9l-6 6',
+  'pane-left': 'M4 5h16v14H4zM14 9l-4 3 4 3',
+  'pane-right': 'M4 5h16v14H4zM10 9l4 3-4 3',
+  'pane-up': 'M4 5h16v14H4zM9 14l3-4 3 4',
+  'pane-down': 'M4 5h16v14H4zM9 10l3 4 3-4',
+  pane: 'M4 5h16v14H4z',
 };
+
+export type IconName = keyof typeof PATHS;
 
 export function Icon({ name, size = 18 }: { name: keyof typeof PATHS | string; size?: number }) {
   return (
