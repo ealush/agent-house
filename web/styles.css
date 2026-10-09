@@ -370,10 +370,10 @@ kbd {
   font-family: var(--mono);
 }
 
-/* New session in this project. Sits on the right of the title, only while the row is hovered. */
+/* New session in this project. The slot is always there so showing it does not shift the header. */
 .label-add {
   flex: none;
-  display: none;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 18px;
@@ -385,11 +385,14 @@ kbd {
   background: none;
   color: var(--faint);
   cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .side-label:hover .label-add,
 .side-label:focus-within .label-add {
-  display: inline-flex;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .label-add:hover {
@@ -2909,10 +2912,23 @@ a.btn {
 .side-row .grip,
 .side-label .grip {
   flex: none;
+  width: 12px;
   color: var(--faint);
   font-size: 12px;
+  line-height: 1;
+  text-align: center;
   cursor: grab;
   letter-spacing: -2px;
+  opacity: 0;
+}
+
+.side-row:hover .grip,
+.side-row:focus-within .grip,
+.side-row.dragging .grip,
+.side-label:hover .grip,
+.side-label:focus-within .grip,
+.side-block.dragging > .side-label .grip {
+  opacity: 1;
 }
 
 .row-kill,
@@ -2949,6 +2965,13 @@ a.btn {
 @media (pointer: coarse) {
   .side-row .row-more {
     display: inline-flex;
+  }
+
+  .side-row .grip,
+  .side-label .grip,
+  .label-add {
+    opacity: 1;
+    pointer-events: auto;
   }
 }
 
