@@ -89,8 +89,10 @@ to terminal rules and output activity, and matches live agents to their transcri
 - **Keyboard.** Ctrl+Shift+K (⌘K on a Mac) jumps to any session or resumes a
   conversation; filters `h:` host/harness, `s:` status, `p:` project, `m:` model.
   Alt+↑ / Alt+↓ moves through sessions in sidebar order, from the terminal, the
-  GUI, or the inbox. Ctrl+Shift+/ opens the shortcut table (also under Settings →
-  Shortcuts), where each binding can be changed on this device.
+  GUI, or the inbox. In a split, Ctrl+Shift+arrows moves to the pane in that
+  direction. Ctrl+Shift+/ opens the shortcut table (also under Settings →
+  Shortcuts), where each binding can be changed on this device. Exit split and
+  terminate session are in that table with no default chord.
 
 ### CLI
 

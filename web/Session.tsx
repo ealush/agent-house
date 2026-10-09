@@ -390,6 +390,9 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   useCommand('split-right', () => onSplit?.('right'), active && !!onSplit);
   useCommand('split-below', () => onSplit?.('below'), active && !!onSplit);
   useCommand('close-pane', () => onClosePane?.(), active && !!onClosePane);
+  useCommand('terminate', () => {
+    void kill();
+  }, active);
   useCommand('approve', () => onAnswer(w, 'approve'), active && w.answerable && w.status === 'waiting');
   useCommand('deny', () => onAnswer(w, 'deny'), active && w.answerable && w.status === 'waiting');
   useCommand('reply', focusInput, active);
@@ -661,7 +664,8 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
               </button>
               <hr />
               <button className="danger" onClick={kill}>
-                Terminate session
+                <span className="grow">Terminate session</span>
+                <ShortcutHint id="terminate" />
               </button>
               </div>,
               document.body,

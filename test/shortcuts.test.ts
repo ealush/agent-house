@@ -96,6 +96,18 @@ test('the shortcut table describes when a chord is allowed to fire', () => {
   assert.equal(press('?', { ctrlKey: true, shiftKey: true, code: 'Slash' }), 'show-shortcuts');
 });
 
+test('split movement is directional, and terminate and exit split start unbound', () => {
+  assert.equal(press('ArrowLeft', { ctrlKey: true, shiftKey: true, code: 'ArrowLeft' }), 'focus-pane-left');
+  assert.equal(press('ArrowRight', { ctrlKey: true, shiftKey: true, code: 'ArrowRight' }), 'focus-pane-right');
+  assert.equal(press('ArrowUp', { ctrlKey: true, shiftKey: true, code: 'ArrowUp' }), 'focus-pane-up');
+  assert.equal(press('ArrowDown', { ctrlKey: true, shiftKey: true, code: 'ArrowDown' }), 'focus-pane-down');
+  assert.equal(press('ArrowRight', { ctrlKey: true, shiftKey: true, code: 'ArrowRight' }, 'field'), null);
+  assert.equal(press('ArrowUp', { altKey: true, code: 'ArrowUp' }), 'cycle-prev');
+  assert.deepEqual(resolveChords('terminate'), []);
+  assert.deepEqual(resolveChords('exit-split'), []);
+  assert.equal(hintChord('terminate', false), null);
+});
+
 test('formatChord speaks Mac symbols and Linux words', () => {
   assert.equal(formatChord({ key: 'k', meta: true }, true), '⌘K');
   assert.equal(formatChord({ key: 'k', ctrl: true, shift: true }, false), 'Ctrl+Shift+K');

@@ -80,6 +80,57 @@ export function setRatio(root: LayoutNode, path: Path, ratio: number): LayoutNod
   return at(root, 0);
 }
 
+export type PaneDir = 'left' | 'right' | 'up' | 'down';
+
+type Box = { x: number; y: number; w: number; h: number };
+
+function layoutBoxes(node: LayoutNode, box: Box, path: Path, out: Array<{ path: Path; box: Box }>): void {
+  if (node.type === 'session') {
+    out.push({ path, box });
+    return;
+  }
+  const across = node.direction === 'horizontal';
+  const span = (across ? box.w : box.h) * node.ratio;
+  const first: Box = across ? { x: box.x, y: box.y, w: span, h: box.h } : { x: box.x, y: box.y, w: box.w, h: span };
+  const second: Box = across
+    ? { x: box.x + span, y: box.y, w: box.w - span, h: box.h }
+    : { x: box.x, y: box.y + span, w: box.w, h: box.h - span };
+  layoutBoxes(node.first, first, [...path, 'first'], out);
+  layoutBoxes(node.second, second, [...path, 'second'], out);
+}
+
+function samePath(a: Path, b: Path): boolean {
+  return a.length === b.length && a.every((part, i) => part === b[i]);
+}
+
+/**
+ * The pane in `dir` from `from`. A neighbor has to share part of the edge you
+ * are leaving, so a corner touch does not count. The nearest edge wins, then
+ * the pane that shares more of it. Equal panes keep tree order, so a move
+ * right from a full-height pane into a stack lands on the top one.
+ */
+export function neighborPane(root: LayoutNode, from: Path, dir: PaneDir): Path | null {
+  const panes: Array<{ path: Path; box: Box }> = [];
+  layoutBoxes(root, { x: 0, y: 0, w: 1, h: 1 }, [], panes);
+  const origin = panes.find((p) => samePath(p.path, from));
+  if (!origin) return null;
+  const o = origin.box;
+  const across = dir === 'left' || dir === 'right';
+  const ranked = panes.flatMap((p) => {
+    if (samePath(p.path, from)) return [];
+    const b = p.box;
+    const gap = dir === 'right' ? b.x - (o.x + o.w) : dir === 'left' ? o.x - (b.x + b.w) : dir === 'down' ? b.y - (o.y + o.h) : o.y - (b.y + b.h);
+    const overlap = across
+      ? Math.min(o.y + o.h, b.y + b.h) - Math.max(o.y, b.y)
+      : Math.min(o.x + o.w, b.x + b.w) - Math.max(o.x, b.x);
+    if (gap < -1e-6 || overlap <= 1e-6) return [];
+    const centerDist = across ? Math.abs(o.y + o.h / 2 - (b.y + b.h / 2)) : Math.abs(o.x + o.w / 2 - (b.x + b.w / 2));
+    return [{ path: p.path, gap, overlap, centerDist }];
+  });
+  ranked.sort((a, b) => a.gap - b.gap || b.overlap - a.overlap || a.centerDist - b.centerDist);
+  return ranked[0]?.path ?? null;
+}
+
 /** Parse a stored layout without trusting it: wrong shapes become null. */
 export function parseLayout(v: unknown): LayoutNode | null {
   if (!v || typeof v !== 'object') return null;

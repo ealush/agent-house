@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { splitLeaf, replaceLeaf, closeLeaf, setRatio, parseLayout, leaves, paneLeaves, nodeAt, type LayoutNode } from '../web/layout.ts';
+import { splitLeaf, replaceLeaf, closeLeaf, setRatio, parseLayout, leaves, paneLeaves, nodeAt, neighborPane, type LayoutNode, type Path } from '../web/layout.ts';
 
 const leaf = (k: string): LayoutNode => ({ type: 'session', sessionKey: k });
 
@@ -49,6 +49,38 @@ test('ratio is clamped and targeted', () => {
   assert.equal((l as { ratio: number }).ratio, 0.85);
   l = setRatio(l, [], 0.01);
   assert.equal((l as { ratio: number }).ratio, 0.15);
+});
+
+const row = (first: LayoutNode, second: LayoutNode, ratio = 0.5): LayoutNode => ({ type: 'split', direction: 'horizontal', ratio, first, second });
+const col = (first: LayoutNode, second: LayoutNode, ratio = 0.5): LayoutNode => ({ type: 'split', direction: 'vertical', ratio, first, second });
+
+test('neighbor follows the shared edge, not a corner or a farther pane', () => {
+  // a | (b / c). Right from the full-height pane lands on the top of the stack.
+  const stack = row(leaf('a'), col(leaf('b'), leaf('c')));
+  assert.deepEqual(neighborPane(stack, ['first'], 'right'), ['second', 'first']);
+  assert.equal(neighborPane(stack, ['first'], 'down'), null);
+  assert.deepEqual(neighborPane(stack, ['second', 'first'], 'left'), ['first']);
+  assert.deepEqual(neighborPane(stack, ['second', 'first'], 'down'), ['second', 'second']);
+  assert.deepEqual(neighborPane(stack, ['second', 'second'], 'left'), ['first']);
+  assert.deepEqual(neighborPane(stack, ['second', 'second'], 'up'), ['second', 'first']);
+
+  // 2×2. Right from the top-left is the top-right, not the pane that only meets the corner.
+  const grid = col(row(leaf('tl'), leaf('tr')), row(leaf('bl'), leaf('br')));
+  const topLeft: Path = ['first', 'first'];
+  assert.deepEqual(neighborPane(grid, topLeft, 'right'), ['first', 'second']);
+  assert.deepEqual(neighborPane(grid, topLeft, 'down'), ['second', 'first']);
+  assert.equal(neighborPane(grid, topLeft, 'left'), null);
+  assert.equal(neighborPane(grid, topLeft, 'up'), null);
+
+  // Uneven edges: the bottom-left shares its right edge with the tall bottom-right, not the short top-right.
+  const uneven = row(col(leaf('a'), leaf('b'), 0.7), col(leaf('c'), leaf('d'), 0.4), 0.3);
+  assert.deepEqual(neighborPane(uneven, ['first', 'second'], 'right'), ['second', 'second']);
+  assert.deepEqual(neighborPane(uneven, ['first', 'first'], 'right'), ['second', 'first']);
+
+  const columns = row(leaf('a'), row(leaf('b'), leaf('c')), 1 / 3);
+  assert.deepEqual(neighborPane(columns, ['first'], 'right'), ['second', 'first']);
+  assert.equal(neighborPane(leaf('a'), [], 'right'), null);
+  assert.equal(neighborPane(stack, ['first', 'second'], 'left'), null);
 });
 
 test('parseLayout rejects garbage, clamps ratios', () => {

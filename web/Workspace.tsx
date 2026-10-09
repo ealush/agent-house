@@ -4,6 +4,7 @@ import { Session } from './Session.tsx';
 import { useSavedGroups } from './groupOrder.ts';
 import { sidebarOrder } from './sessionOrder.ts';
 import { closeLeaf, paneLeaves, replaceLeaf, setRatio, splitLeaf, type LayoutNode, type Path } from './layout.ts';
+import { ShortcutHint } from './shortcuts.tsx';
 
 type Props = {
   layout: LayoutNode;
@@ -42,7 +43,10 @@ export function Workspace(props: Props) {
   const byKey = new Map(windows.map((w) => [w.key, w]));
   const panes = paneLeaves(layout);
   const [tab, setTab] = useState('');
-  const activeTab = panes.find((p) => p.path.join('/') === tab) ?? panes[0];
+  // Directional shortcuts only update focusPath. Prefer that over the tab last
+  // clicked, so a narrow split follows the keyboard.
+  const focusId = props.focusPath?.join('/') ?? '';
+  const activeTab = panes.find((p) => p.path.join('/') === (focusId || tab)) ?? panes[0];
   const keyboardId = (props.narrow ? activeTab?.path : (props.focusPath ?? panes[0]?.path))?.join('/');
 
   function dropKey(e: React.DragEvent): string | null {
@@ -182,6 +186,7 @@ export function Workspace(props: Props) {
         <span className="spacer" />
         <button className="btn ghost small" onClick={props.onExit}>
           Exit split
+          <ShortcutHint id="exit-split" />
         </button>
       </div>
       {props.narrow ? (

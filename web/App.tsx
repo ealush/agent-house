@@ -10,7 +10,7 @@ import { Inbox, type InboxGroup } from './Inbox.tsx';
 import { HistoryView, SessionsView } from './HistoryView.tsx';
 import { Session } from './Session.tsx';
 import { Workspace } from './Workspace.tsx';
-import { leaves, nodeAt, paneLeaves, parseLayout, replaceLeaf, splitLeaf, type LayoutNode, type Path } from './layout.ts';
+import { leaves, neighborPane, nodeAt, paneLeaves, parseLayout, replaceLeaf, splitLeaf, type LayoutNode, type PaneDir, type Path } from './layout.ts';
 import { NewDialog } from './NewDialog.tsx';
 import { ForkDialog, type ForkTarget } from './ForkDialog.tsx';
 import { Switcher } from './Switcher.tsx';
@@ -162,16 +162,19 @@ export function App({ onLock }: { onLock: () => void }) {
     go({ page: p, selected: null });
   };
 
-  const focusPane = (dir: -1 | 1) => {
+  const focusPane = (dir: PaneDir) => {
     if (!layout) return;
-    const panes = paneLeaves(layout);
-    if (panes.length < 2) return;
-    const id = (focusPath ?? panes[0].path).join('/');
-    const i = panes.findIndex((p) => p.path.join('/') === id);
-    const next = panes[(Math.max(0, i) + dir + panes.length) % panes.length];
-    setFocusPath(next.path);
+    const from = focusPath ?? paneLeaves(layout)[0]?.path ?? [];
+    const next = neighborPane(layout, from, dir);
+    if (next) setFocusPath(next);
   };
 
+  const exitSplit = () => {
+    setLayout(null);
+    setFocusPath(null);
+  };
+
+  const splitOpen = !!layout && paneLeaves(layout).length > 1;
   useCommand('switcher', () => setSwitching((v) => !v));
   useCommand('new-session', () => setCreating({}));
   useCommand('toggle-sidebar', toggleSide);
@@ -181,8 +184,11 @@ export function App({ onLock }: { onLock: () => void }) {
   useCommand('go-history', () => showPage('history'));
   useCommand('go-settings', () => showPage('settings'));
   useCommand('show-shortcuts', () => setKeymap(true));
-  useCommand('focus-next-pane', () => focusPane(1), !!layout);
-  useCommand('focus-prev-pane', () => focusPane(-1), !!layout);
+  useCommand('focus-pane-left', () => focusPane('left'), splitOpen);
+  useCommand('focus-pane-right', () => focusPane('right'), splitOpen);
+  useCommand('focus-pane-up', () => focusPane('up'), splitOpen);
+  useCommand('focus-pane-down', () => focusPane('down'), splitOpen);
+  useCommand('exit-split', exitSplit, !!layout);
 
   /** Enter split view from the single session: the new half shows the most recent other session. */
   function splitFrom(key: string, dir: 'right' | 'below', otherKey?: string) {
@@ -418,10 +424,7 @@ export function App({ onLock }: { onLock: () => void }) {
             onKilledSession={() => {}}
             onStartSession={(w, prompt) => setCreating({ cwd: w.projectPath, host: w.host, prompt })}
             refresh={refresh}
-            onExit={() => {
-              setLayout(null);
-              setFocusPath(null);
-            }}
+            onExit={exitSplit}
           />
         ) : current && state ? (
           <Session

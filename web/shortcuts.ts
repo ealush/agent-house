@@ -31,11 +31,15 @@ export type CommandId =
   | 'reply'
   | 'approve'
   | 'deny'
+  | 'terminate'
   | 'split-right'
   | 'split-below'
   | 'close-pane'
-  | 'focus-next-pane'
-  | 'focus-prev-pane'
+  | 'focus-pane-left'
+  | 'focus-pane-right'
+  | 'focus-pane-up'
+  | 'focus-pane-down'
+  | 'exit-split'
   | 'show-shortcuts';
 
 export type CommandGroup = 'Navigate' | 'Session' | 'Workspace';
@@ -167,6 +171,14 @@ export const COMMANDS: Command[] = [
     scopes: session,
   },
   {
+    id: 'terminate',
+    group: 'Session',
+    label: 'Terminate session',
+    detail: 'Stop the focused session. Asks for confirmation first.',
+    chords: [],
+    scopes: session,
+  },
+  {
     id: 'split-right',
     group: 'Workspace',
     label: 'Split right',
@@ -186,24 +198,48 @@ export const COMMANDS: Command[] = [
     id: 'close-pane',
     group: 'Workspace',
     label: 'Close pane',
-    detail: 'Close the focused split pane without stopping the session.',
+    detail: 'Close the focused pane, or the current tab on a narrow screen, without stopping the session.',
     chords: [{ key: 'Backspace', ctrl: true, shift: true }],
     scopes: session,
   },
   {
-    id: 'focus-next-pane',
+    id: 'focus-pane-left',
     group: 'Workspace',
-    label: 'Next pane',
-    detail: 'Move keyboard focus to the next pane in the split.',
+    label: 'Pane left',
+    detail: 'Move to the pane on the left. On a narrow screen this switches tabs.',
+    chords: [{ key: 'ArrowLeft', ctrl: true, shift: true }],
+    scopes: session,
+  },
+  {
+    id: 'focus-pane-right',
+    group: 'Workspace',
+    label: 'Pane right',
+    detail: 'Move to the pane on the right. On a narrow screen this switches tabs.',
     chords: [{ key: 'ArrowRight', ctrl: true, shift: true }],
     scopes: session,
   },
   {
-    id: 'focus-prev-pane',
+    id: 'focus-pane-up',
     group: 'Workspace',
-    label: 'Previous pane',
-    detail: 'Move keyboard focus to the previous pane in the split.',
-    chords: [{ key: 'ArrowLeft', ctrl: true, shift: true }],
+    label: 'Pane up',
+    detail: 'Move to the pane above. On a narrow screen this switches tabs.',
+    chords: [{ key: 'ArrowUp', ctrl: true, shift: true }],
+    scopes: session,
+  },
+  {
+    id: 'focus-pane-down',
+    group: 'Workspace',
+    label: 'Pane down',
+    detail: 'Move to the pane below. On a narrow screen this switches tabs.',
+    chords: [{ key: 'ArrowDown', ctrl: true, shift: true }],
+    scopes: session,
+  },
+  {
+    id: 'exit-split',
+    group: 'Workspace',
+    label: 'Exit split',
+    detail: 'Leave split view and close every pane. Sessions keep running.',
+    chords: [],
     scopes: session,
   },
 ];
