@@ -351,6 +351,17 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     return send(res, 200, out);
   }
 
+  if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/relaunch$/))) {
+    const body = await readJson(req);
+    const change = {
+      ...(body.model !== undefined ? { model: str(body.model, 'model', 80) } : {}),
+      ...(body.effort !== undefined ? { effort: str(body.effort, 'effort', 20) } : {}),
+    };
+    const out = await core.relaunch(m[1], change);
+    audit(req, 'session.relaunch', { uid: m[1], ...change, window: out.id });
+    return send(res, 200, out);
+  }
+
   if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/interrupt$/))) {
     await core.interrupt(m[1]);
     audit(req, 'session.interrupt', { uid: m[1] });

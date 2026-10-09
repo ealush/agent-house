@@ -112,6 +112,17 @@ test('model version, effort, and permissions become launch flags and survive res
   assert.throws(() => buildLaunch(shell, { extraArgs: '$(evil)' }), LaunchError);
 });
 
+test('hot swap: resume keeps the conversation id and applies the new model/effort', () => {
+  const swap = buildLaunch(codex, { model: 'gpt-6-sol', resume: 'rid123' });
+  assert.ok(swap.command.startsWith('codex resume rid123'), swap.command);
+  assert.ok(swap.command.includes('--model gpt-6-sol'), swap.command);
+  assert.equal(swap.meta['ah.launch.model'], 'gpt-6-sol');
+  const effort = buildLaunch(codex, { effort: 'high', resume: 'rid123' });
+  assert.ok(effort.command.includes('model_reasoning_effort=high'), effort.command);
+  const museSwap = buildLaunch(muse, { model: 'muse-spark-1.3', resume: 'mid456' });
+  assert.ok(museSwap.command.includes('--model muse-spark-1.3'), museSwap.command);
+});
+
 test('effort validation respects the default model and an explicitly empty supported list', () => {
   const preset = { ...codex, models: [
     { id: 'light', name: 'Light', args: ['--model', 'light'], efforts: [], isDefault: true },

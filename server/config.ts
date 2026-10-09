@@ -224,8 +224,8 @@ const DEFAULT_PRESETS: Preset[] = [
     effort: { args: ['-c', 'model_reasoning_effort={level}'], levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] },
     catalog: 'codex',
     feed: 'codex',
-    // '/model' picks both model and reasoning effort; a slug argument switches directly.
-    switchModel: '/model {model}',
+    // '/model' opens the picker for model and reasoning effort; it takes no
+    // direct-switch argument (the agent refuses '/model <slug>' in-conversation).
     settingsCommands: { model: '/model', effort: '/model', mode: '/permissions' },
     modelArgs: ['--model', '{model}'],
     resume: 'codex resume --last',
@@ -292,7 +292,8 @@ const DEFAULT_PRESETS: Preset[] = [
     effort: { args: ['--reasoning-effort', '{level}'], levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] },
     catalog: 'muse',
     feed: 'muse',
-    switchModel: '/model {model}',
+    // No verified direct-switch form for '/model <id>' (unlike '/effort <level>');
+    // model changes go through the picker until one is confirmed live.
     switchEffort: '/effort {level}',
     settingsCommands: { model: '/models', effort: '/effort', mode: '/permissions' },
     modelArgs: ['--model', '{model}'],

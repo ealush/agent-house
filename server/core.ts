@@ -703,6 +703,78 @@ export class Core {
     return this.send(uid, command, true);
   }
 
+  /**
+   * Hot swap: restart an idle session with a different model/effort while
+   * keeping the same conversation. Unlike switchLaunch (which types a live
+   * command), this kills the window and resumes the same harness
+   * conversation with new launch flags — the path for agents without a
+   * live-switch command. The queue follows the conversation id via
+   * inheritQueue; snapshots are rekeyed to the replacement session.
+   */
+  async relaunch(uid: string, change: { model?: string; effort?: string }): Promise<{ uid: string; id: string }> {
+    if (Number(change.model !== undefined) + Number(change.effort !== undefined) !== 1) throw new CoreError(400, 'choose one setting to relaunch with');
+    const state = await this.current();
+    const w = state.windows.find((w) => w.uid === uid);
+    if (!w?.agent) throw new CoreError(404, 'no agent session');
+    if (w.status === 'busy' || w.status === 'waiting' || w.queued > 0 || this.justSent(uid)) {
+      throw new CoreError(409, 'relaunch when the session is idle; it is working, waiting or holding queued prompts');
+    }
+    const rec = this.registry.get(uid);
+    const harnessId = w.harnessId ?? rec?.harnessId;
+    if (!harnessId) throw new CoreError(422, 'this session has no conversation id yet, so there is nothing to resume');
+    const preset = await withCatalog(this.preset(w.agent));
+    let model: string | undefined;
+    let effort: string | undefined;
+    if (change.model !== undefined) {
+      // customModel throws LaunchError on malformed ids; the HTTP layer only
+      // maps CoreError, so convert here instead of leaking a 500.
+      // customModel throws LaunchError on malformed ids; the HTTP layer only
+      // maps CoreError, so convert here instead of leaking a 500.
+      let found;
+      try {
+        found = preset.models?.find((m) => m.id === change.model) ?? customModel(preset, change.model);
+      } catch (err) {
+        throw new CoreError(400, (err as Error).message);
+      }
+      if (!found) throw new CoreError(400, `unknown model: ${change.model}`);
+      model = found.id;
+    } else {
+      const current = preset.models?.find((m) => m.id === (w.launchModel ?? preset.defaultModel));
+      const levels = current?.efforts ?? preset.effort?.levels ?? [];
+      if (!preset.effort || !levels.includes(change.effort!)) {
+        throw new CoreError(400, preset.effort ? `unsupported effort: ${change.effort}` : `${preset.name} has no effort setting`);
+      }
+      effort = change.effort;
+    }
+    const inherited = rec ? resumeSelection(rec.meta as Record<string, unknown>) : {};
+    const sel = { ...inherited, ...(model !== undefined ? { model } : {}), ...(effort !== undefined ? { effort } : {}) };
+    let plan;
+    try {
+      plan = buildLaunch(preset, { ...sel, resume: harnessId });
+    } catch (err) {
+      throw new CoreError(400, (err as Error).message);
+    }
+    await t.killWindow(w.id);
+    const cwd = expandHome(rec?.cwd ?? w.cwd);
+    let session = this.config.defaultSession;
+    if (rec?.tmux?.session && (await t.hasSession(rec.tmux.session))) session = rec.tmux.session;
+    const out = await this.launch({
+      preset,
+      cwd: (await isDir(cwd)) ? cwd : homedir(),
+      session,
+      name: w.title,
+      command: plan.command,
+      harnessId,
+      pendingResume: true,
+      meta: plan.meta,
+    });
+    await this.snapshotStore.rekey(uid, out.uid).catch(() => {});
+    const snap = rec?.meta['ah.snapshots'];
+    if (snap !== undefined) this.registry.setMeta(out.uid, 'ah.snapshots', snap);
+    this.tick().catch(() => {});
+    return { uid: out.uid, id: out.windowId };
+  }
+
   /** Stop button: interrupts the agent's current turn (Esc for agents, Ctrl-C for shells). */
   async interrupt(uid: string) {
     const state = await this.current();

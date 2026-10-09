@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { showError, showNotice } from './ask.tsx';
+import { askConfirm, showError, showNotice } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { shellQuote, type HostApi, type SendResult, type Win } from './api.ts';
 import { clipboardFiles } from './clipboard.ts';
@@ -23,6 +23,8 @@ type Props = {
   onSent: (r: SendResult) => void;
   onNotice?: (msg: string) => void;
   onSettingsOpen?: () => void;
+  /** Hot swap finished: open the replacement window id on this host. */
+  onRelaunched?: (id: string) => void;
   /** Bumped to pull focus here (e.g. "Reply" on an ask). */
   focusKey?: number;
 };
@@ -34,7 +36,7 @@ const SpeechRecognition: (new () => Recognition) | undefined = (window as any).S
 
 const toast = (msg: string) => window.dispatchEvent(new CustomEvent('ah:toast', { detail: msg }));
 
-export function ComposerBar({ client, target, agent, w, onSent, onNotice = toast, onSettingsOpen, focusKey }: Props) {
+export function ComposerBar({ client, target, agent, w, onSent, onNotice = toast, onSettingsOpen, onRelaunched, focusKey }: Props) {
   const area = useRef<HTMLTextAreaElement>(null);
   const [text, setText] = useState(() => drafts.get(target) ?? '');
   const [busy, setBusy] = useState(false);
@@ -175,6 +177,35 @@ export function ComposerBar({ client, target, agent, w, onSent, onNotice = toast
     }
   }
 
+  /** Hot swap for agents with no live-switch command: restart this idle
+   *  session with the new setting, keeping the same conversation. */
+  async function relaunchWith(change: { model?: string; effort?: string }, close: () => void) {
+    if (!w) return;
+    const same = change.model ? change.model === model?.id : change.effort === effort;
+    close();
+    if (same) return;
+    // Mirror the server's idle check (busy, waiting, queued) so the confirm
+    // dialog doesn't open for a relaunch the server would reject.
+    if (working || w.status === 'waiting' || w.queued > 0) {
+      onNotice('Wait until the session is idle to relaunch');
+      return;
+    }
+    const what = change.model ? (models.find((m) => m.id === change.model)?.name ?? change.model) : `${change.effort} effort`;
+    const ok = await askConfirm({
+      title: `Relaunch with ${what}?`,
+      body: 'The session restarts with the new setting; the conversation, queue and snapshots carry over.',
+      confirm: 'Relaunch',
+    });
+    if (!ok) return;
+    try {
+      const r = await client.relaunch(w.uid, change);
+      onNotice(`Relaunched with ${what}`);
+      onRelaunched?.(r.id);
+    } catch (e) {
+      showError(e, "Couldn't relaunch");
+    }
+  }
+
   const canSend = !!text.trim() && !busy;
   const showStop = !isShell && working && !text.trim();
 
@@ -227,10 +258,10 @@ export function ComposerBar({ client, target, agent, w, onSent, onNotice = toast
             <Popover className="tool-chip" title="Model version" label={modelLabel ?? 'Model: Default'}>
               {(close) => (
                 <ModelPicker preset={preset} value={{ model: model?.id, effort }}
-                  disabled={!preset.switchModel}
+                  disabled={!preset.switchModel && !preset.modelArgs}
                   onPick={(p) => {
                     const id = p.model ?? preset.defaultModel;
-                    if (id) pickLive({ model: id }, close);
+                    if (id) (preset.switchModel ? pickLive({ model: id }, close) : relaunchWith({ model: id }, close));
                     else openSettings('model', close);
                   }}
                   footer={preset.settingsCommands?.model
@@ -242,10 +273,10 @@ export function ComposerBar({ client, target, agent, w, onSent, onNotice = toast
           {preset && (levels.length > 0 || preset.settingsCommands?.effort) && (
             <Popover className="tool-chip" title="Reasoning effort" label={`Effort: ${effort ?? 'Default'}`}>
               {(close) => (
-                <EffortPicker levels={levels} value={effort} disabled={!preset.switchEffort}
+                <EffortPicker levels={levels} value={effort} disabled={!preset.switchEffort && !preset.effort}
                   onPick={(level) => {
                     const next = level ?? preset.defaultEffort;
-                    if (next) pickLive({ effort: next }, close);
+                    if (next) (preset.switchEffort ? pickLive({ effort: next }, close) : relaunchWith({ effort: next }, close));
                     else openSettings('effort', close);
                   }}
                   footer={preset.settingsCommands?.effort

@@ -336,6 +336,8 @@ export function hostApi(base: string) {
     queue: (uid: string) => r<QueueItem[]>('GET', `/api/sessions/${enc(uid)}/queue`),
     switchLaunch: (uid: string, change: { model?: string; effort?: string }) => r<SendResult>('POST', `/api/sessions/${enc(uid)}/switch`, change),
     openSettings: (uid: string, setting: 'model' | 'effort' | 'mode') => r<SendResult>('POST', `/api/sessions/${enc(uid)}/settings`, { setting }),
+    /** Hot swap: restart an idle session with a new model/effort, same conversation. */
+    relaunch: (uid: string, change: { model?: string; effort?: string }) => r<{ uid: string; id: string }>('POST', `/api/sessions/${enc(uid)}/relaunch`, change),
     /** GUI view: typed transcript events (server/feed). */
     feedUrl: (ref: string) => `${base}/api/sessions/${enc(ref)}/feed/stream`,
     feedPage: (ref: string, before: number, limit = 200) => r<FeedPage>('GET', `/api/sessions/${enc(ref)}/feed?before=${before}&limit=${limit}`),

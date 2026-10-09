@@ -120,4 +120,10 @@ export class SnapshotStore {
   async remove(uid: string, turn: number): Promise<void> {
     await this.client().snapshot.deleteMany({ where: { uid, turn } });
   }
+
+  /** Hot swap (relaunch): move a session's snapshots to its replacement uid. */
+  async rekey(oldUid: string, newUid: string): Promise<number> {
+    const r = await this.client().snapshot.updateMany({ where: { uid: oldUid }, data: { uid: newUid } });
+    return r.count;
+  }
 }

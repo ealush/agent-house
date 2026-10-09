@@ -49,6 +49,18 @@ test('SnapshotStore: create, list newest first, latest, get, remove', async () =
   assert.deepEqual((await store.all()).map((s) => s.uid), ['u1', 'u2']);
 });
 
+test('SnapshotStore.rekey moves rows to the hot-swap replacement uid', async () => {
+  const store = new SnapshotStore(await freshDb());
+  await store.create(row('old1', 1));
+  await store.create(row('old1', 2));
+  await store.create(row('other', 1));
+  assert.equal(await store.rekey('old1', 'new1'), 2);
+  assert.deepEqual((await store.list('new1')).map((s) => s.turn), [2, 1]);
+  assert.deepEqual(await store.list('old1'), []);
+  assert.deepEqual((await store.list('other')).map((s) => s.turn), [1]);
+  assert.equal(await store.rekey('missing', 'new2'), 0);
+});
+
 test('Core.pruneSnapshots: turn cap keeps the newest, rows of vanished sessions expire', async () => {
   const path = await freshDb();
   const store = new SnapshotStore(path);

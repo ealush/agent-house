@@ -17,12 +17,14 @@ test('live-switch templates carry their placeholder', () => {
 
 test('composer can switch model live where the harness supports it', () => {
   assert.equal(byId('claude').switchModel, '/model {model}');
-  assert.equal(byId('codex').switchModel, '/model {model}');
-  assert.equal(byId('muse').switchModel, '/model {model}');
   assert.equal(byId('gemini').switchModel, '/model set {model}');
   assert.equal(byId('grok').switchModel, '/model {model}');
   assert.equal(byId('hermes').switchModel, '/model {model} --once');
-  // opencode's /models is a picker with no argument form, so it stays terminal-only.
+  // codex and muse take no verified direct-switch argument (codex refuses
+  // '/model <slug>' in-conversation), so they stay terminal-picker-only;
+  // opencode's /models is likewise a picker.
+  assert.equal(byId('codex').switchModel, undefined);
+  assert.equal(byId('muse').switchModel, undefined);
   assert.equal(byId('opencode').switchModel, undefined);
   assert.equal(byId('opencode').settingsCommands?.model, '/models');
 });
