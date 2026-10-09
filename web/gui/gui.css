@@ -127,6 +127,38 @@
   border-color: color-mix(in srgb, var(--danger) 30%, transparent);
 }
 
+/* Hover copy action below each message. The row is always in the layout and
+   only flips visibility, so appearing never shifts the feed. */
+.gui .msg-actions {
+  display: flex;
+  align-items: center;
+  height: 22px;
+  visibility: hidden;
+}
+
+.gui .msg:hover .msg-actions {
+  visibility: visible;
+}
+
+.gui .msg-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.gui .msg-copy:hover {
+  background: var(--line);
+  color: var(--text);
+}
+
 /* ---------- markdown */
 
 .gui .md {

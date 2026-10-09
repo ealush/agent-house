@@ -66,6 +66,20 @@ export function reduce(s: FeedState, a: Action): FeedState {
 
 export type Item = { kind: 'part'; key: string; part: Part } | { kind: 'tools'; key: string; calls: ToolCall[] };
 
+/**
+ * Plain text a message block copies as: the message prose. Tool calls and
+ * results, widgets, media, and (collapsed) reasoning are never included.
+ */
+export function blockText(block: Block): string {
+  if (block.kind === 'notice') return block.part.text;
+  if (block.kind === 'user') return block.parts.filter((p) => p.type === 'text').map((p) => p.text).join('\n');
+  const out: string[] = [];
+  for (const item of block.items) {
+    if (item.kind === 'part' && item.part.type === 'text') out.push(item.part.text);
+  }
+  return out.join('\n\n');
+}
+
 export type Block =
   | { kind: 'user'; key: string; at: number; parts: Part[] }
   | { kind: 'agent'; key: string; at: number; items: Item[] }

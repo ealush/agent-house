@@ -5,9 +5,12 @@ import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, u
 import type { ToolResult } from '../../server/feed/schema.ts';
 import type { SurfaceHandle, SurfaceProps } from '../surface.ts';
 import type { SnapshotInfo } from '../api.ts';
-import { askConfirm, showError } from '../ask.tsx';
+import { askConfirm, showError, showNotice } from '../ask.tsx';
 import { look } from '../agents.ts';
 import { AgentLogo } from '../logos.tsx';
+import { Icon } from '../icons.tsx';
+import { copyText } from '../selection.ts';
+import { blockText } from './reducer.ts';
 import { useFeed } from './useFeed.ts';
 import { project, type Block } from './reducer.ts';
 import { GuiContext, type GuiActions } from './context.ts';
@@ -21,6 +24,35 @@ const UNAVAILABLE: Record<string, string> = {
 };
 
 const time = (at: number) => (at ? new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
+
+/** Hover-only copy action below a message. The row is always laid out (see
+ *  gui.css: visibility, not display), so appearing never shifts the feed. */
+function MsgCopy({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1200);
+    return () => clearTimeout(t);
+  }, [copied]);
+  if (!text) return null;
+  return (
+    <div className="msg-actions">
+      <button
+        className="msg-copy"
+        onClick={() => {
+          void copyText(text).then((ok) => {
+            if (ok) setCopied(true);
+            else showNotice('Copy failed', 'Select the text and copy it yourself.');
+          });
+        }}
+        aria-label={copied ? 'Copied' : 'Copy message'}
+        title={copied ? 'Copied' : 'Copy message'}
+      >
+        <Icon name={copied ? 'check' : 'copy'} size={13} />
+      </button>
+    </div>
+  );
+}
 
 function BlockView({ block, results, agent, snap, onRestore }: { block: Block; results: Record<string, ToolResult>; agent: string | null; snap?: SnapshotInfo; onRestore?: (snap: SnapshotInfo) => void }) {
   // data-seq is the search jump target (issue #9): the block key starts with
@@ -41,6 +73,7 @@ function BlockView({ block, results, agent, snap, onRestore }: { block: Block; r
           ))}
         </div>
         <span className="msg-time">{time(block.at)}</span>
+        <MsgCopy text={blockText(block)} />
         {snap && (
           <div className="snap-marker">
             <span>Snapshot taken before this turn</span>
@@ -61,6 +94,7 @@ function BlockView({ block, results, agent, snap, onRestore }: { block: Block; r
         {block.items.map((item) => (
           <div key={item.key} data-seq={parseInt(item.key, 10)}><ItemView item={item} results={results} /></div>
         ))}
+        <MsgCopy text={blockText(block)} />
       </div>
     </div>
   );

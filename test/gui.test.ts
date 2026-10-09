@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Entry } from '../server/feed/schema.ts';
-import { initialFeed, project, reduce } from '../web/gui/reducer.ts';
+import { blockText, initialFeed, project, reduce } from '../web/gui/reducer.ts';
 import { patchLines, structuredLines } from '../web/gui/diff.ts';
 
 const user = (seq: number, text: string): Entry => ({ seq, id: `u${seq}`, role: 'user', step: 'message', at: seq, parts: [{ type: 'text', text }] });
@@ -39,6 +39,19 @@ test('projection: agent turns group text and consecutive tool calls; results nev
     blocks.map((b) => (b.kind === 'agent' ? b.items.map((i) => (i.kind === 'tools' ? `tools:${i.calls.map((c) => c.id).join(',')}` : i.part.type)) : b.kind)),
     ['user', ['text', 'tools:a,b', 'text'], 'user'],
   );
+});
+
+test('blockText copies message prose, never tool calls, results, or reasoning', () => {
+  const [u, a] = project([
+    user(1, 'go'),
+    say(2, 'on it'),
+    call(3, 'a'),
+    result(4, 'a'),
+    { seq: 5, id: 'r5', role: 'assistant', step: 'llm_call', at: 5, parts: [{ type: 'reasoning', text: 'hmm' }] },
+    say(6, 'done'),
+  ]);
+  assert.equal(blockText(u), 'go');
+  assert.equal(blockText(a), 'on it\n\ndone');
 });
 
 test('diffs: codex patches and claude structured hunks number lines from the new file', () => {
