@@ -61,9 +61,6 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, cl
             <button className="icon-btn round" onClick={onSearch} aria-label="Search">
               <Icon name="search" size={20} />
             </button>
-            <button className="icon-btn round" onClick={() => window.location.reload()} aria-label="Reload page">
-              <Icon name="recall" size={19} />
-            </button>
             <button className="icon-btn round light" onClick={onNew} aria-label="New session">
               <Icon name="plus" size={22} />
             </button>

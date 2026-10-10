@@ -78,6 +78,13 @@ export function SystemPanel() {
 
   return (
     <div className="system-panels">
+      <div className="sec-card">
+        <h2>This device</h2>
+        <p className="hint">Load the app again on this device, for example after an update. Sessions keep running.</p>
+        <button className="btn" onClick={() => window.location.reload()}>
+          Reload page
+        </button>
+      </div>
       <HooksCard />
       <div className="sec-card">
         <h2>Server</h2>

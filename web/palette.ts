@@ -79,7 +79,7 @@ export const TREE: Spec = {
         'toggle-sidebar',
       ],
     },
-    { key: 'help', label: 'Help', icon: 'keyboard', children: ['show-shortcuts'] },
+    { key: 'help', label: 'Help', icon: 'keyboard', children: ['show-shortcuts', 'reload-page'] },
   ],
 };
 

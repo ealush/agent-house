@@ -683,11 +683,6 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
             <Icon name={panel && !panelCollapsed ? 'panel-hide' : 'panel'} size={16} />
           </button>
         )}
-        {narrow && (
-          <button className="icon-btn" onClick={() => window.location.reload()} aria-label="Reload page" title="Reload">
-            <Icon name="recall" />
-          </button>
-        )}
         <div className="menu-wrap">
           <button ref={menuBtn} className="icon-btn" onClick={() => setMenu(!menu)} aria-label="More" aria-expanded={menu}>
             <Icon name="more" />

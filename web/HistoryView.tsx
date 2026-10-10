@@ -104,9 +104,6 @@ export function SessionsView({ state, onOpen, onNew }: { state: State; onOpen: (
           <h1>Sessions</h1>
           <p>{state.windows.length} live</p>
         </div>
-        <button className="icon-btn round" onClick={() => window.location.reload()} aria-label="Reload page">
-          <Icon name="recall" size={19} />
-        </button>
         <button className="icon-btn round light" onClick={onNew} aria-label="New session">
           <Icon name="plus" size={22} />
         </button>

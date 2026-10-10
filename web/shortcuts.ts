@@ -55,6 +55,7 @@ export type CommandId =
   | 'session-menu'
   | 'focus-sidebar'
   | 'focus-main'
+  | 'reload-page'
   | 'split-right'
   | 'split-below'
   | 'close-pane'
@@ -175,6 +176,14 @@ export const COMMANDS: Command[] = [
     label: 'Focus the session',
     detail: 'Back to the open session: its composer in the GUI, the terminal otherwise.',
     chords: [{ key: '9', ctrl: true, shift: true }],
+    scopes: ['app', 'terminal', 'field'],
+  },
+  {
+    id: 'reload-page',
+    group: 'Navigate',
+    label: 'Reload page',
+    detail: 'Load the app again on this device. Sessions keep running.',
+    chords: [],
     scopes: ['app', 'terminal', 'field'],
   },
   {

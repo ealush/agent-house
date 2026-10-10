@@ -120,6 +120,7 @@ const COMMAND_ICONS = {
   'session-menu': 'more',
   'focus-sidebar': 'panel',
   'focus-main': 'view',
+  'reload-page': 'recall',
   'split-right': 'split-right',
   'split-below': 'split-below',
   'close-pane': 'pane-close',

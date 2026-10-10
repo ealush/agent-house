@@ -216,6 +216,7 @@ export function App({ onLock }: { onLock: () => void }) {
   useCommand('go-history', () => showPage('history'));
   useCommand('go-settings', () => showPage('settings'));
   useCommand('show-shortcuts', () => setKeymap(true));
+  useCommand('reload-page', () => window.location.reload());
   useCommand('focus-pane-left', () => focusPane('left'), splitOpen);
   useCommand('focus-pane-right', () => focusPane('right'), splitOpen);
   useCommand('focus-pane-up', () => focusPane('up'), splitOpen);
