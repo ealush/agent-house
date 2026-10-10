@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { api } from './api.ts';
+import { useEffect, useState } from 'react';
+import { api, type HooksStatus } from './api.ts';
 import { askConfirm, showError } from './ask.tsx';
 
 // Settings → System: host-level actions. A restart bounces the daemon while
@@ -78,6 +78,7 @@ export function SystemPanel() {
 
   return (
     <div className="system-panels">
+      <HooksCard />
       <div className="sec-card">
         <h2>Server</h2>
         <p className="hint">
@@ -101,6 +102,71 @@ export function SystemPanel() {
         <button className="btn" disabled={busy || phase !== null} onClick={() => void clearUploads()}>
           Clear uploads folder
         </button>
+      </div>
+    </div>
+  );
+}
+
+/** Agent status hooks: exact working / needs-you / done, and Claude's questions in full. */
+function HooksCard() {
+  const [status, setStatus] = useState<HooksStatus | null>(null);
+  const [notes, setNotes] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api.hooks().then(setStatus).catch(() => {});
+  }, []);
+  const on = !!status && status.claude.wired === status.claude.of;
+
+  async function change(action: 'install' | 'uninstall') {
+    if (
+      action === 'uninstall' &&
+      !(await askConfirm({ title: 'Remove the agent hooks?', body: 'ah falls back to reading the screen for status. Your other hooks stay.', confirm: 'Remove', danger: true }))
+    )
+      return;
+    setBusy(true);
+    try {
+      const r = await api.setHooks(action);
+      setStatus(r.status);
+      setNotes(r.messages);
+    } catch (e) {
+      showError(e, "Couldn't change the hooks");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="sec-card">
+      <h2>Agent hooks</h2>
+      <p className="hint">
+        With hooks, Claude Code and Codex tell ah exactly when they are working, waiting for you, or done, and Claude's questions arrive whole. Without them, ah reads the screen,
+        which is slower and can miss a prompt. Installing adds entries that run ah's hook script; your own hooks are kept, and each file is backed up first.
+      </p>
+      {status && (
+        <ul className="hook-status">
+          <li>
+            <span className={`dot ${on ? 'online' : 'offline'}`} /> Claude Code: {status.claude.wired}/{status.claude.of} events <span className="mono hint">{status.claude.file}</span>
+          </li>
+          <li>
+            <span className={`dot ${status.codex.wired ? 'online' : 'offline'}`} /> Codex: {status.codex.wired ? 'wired' : status.codex.otherNotify ? 'another notify program is set' : 'not wired'}{' '}
+            <span className="mono hint">{status.codex.file}</span>
+          </li>
+        </ul>
+      )}
+      {notes.map((n) => (
+        <p key={n} className="hint">
+          {n}
+        </p>
+      ))}
+      <div className="system-actions">
+        <button className="btn primary" disabled={busy} onClick={() => void change('install')}>
+          {on ? 'Reinstall hooks' : 'Install hooks'}
+        </button>
+        {(status?.claude.wired || status?.codex.wired) && (
+          <button className="btn" disabled={busy} onClick={() => void change('uninstall')}>
+            Remove hooks
+          </button>
+        )}
       </div>
     </div>
   );

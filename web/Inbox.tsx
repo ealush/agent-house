@@ -200,15 +200,16 @@ function AskCard({ w, client, multiHost, narrow, onOpen, onAnswer }: { w: Win; c
   );
 }
 
-/** Column headers over desktop session rows, matching the design's STATUS / HOST / PROJECT strip. */
+/** Column headers over desktop session rows. */
 function ListHead() {
   return (
     <div className="list-head" aria-hidden="true">
-      <span>Status</span>
+      {/* The first column is the agent's icon: too narrow for a word. */}
+      <span />
       <span>Session</span>
       <span>Detail</span>
-      <span>Host · Project</span>
-      <span />
+      <span>Status · Project</span>
+      <span>Active</span>
     </div>
   );
 }

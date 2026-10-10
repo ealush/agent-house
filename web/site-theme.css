@@ -476,6 +476,10 @@ button.tag:hover {
   overflow: hidden;
 }
 
+.list-head > :last-child {
+  text-align: right;
+}
+
 /* Waiting-card chips lay out as a trailing chip row. */
 .card-foot .meta {
   display: inline-flex;

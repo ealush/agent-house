@@ -77,6 +77,10 @@ export type Question = {
   options: Array<{ label: string; description?: string }>;
 };
 export type QuestionAnswer = { picked: number[]; text?: string };
+export type HooksStatus = {
+  claude: { wired: number; of: number; file: string };
+  codex: { wired: boolean; otherNotify: boolean; file: string };
+};
 export type SlashCommand = { name: string; description: string; source: 'built-in' | 'project' | 'user' | 'skill' };
 export type Ask = {
   kind: 'command' | 'tool' | 'question' | 'screen' | 'choice';
@@ -363,6 +367,8 @@ export function hostApi(base: string) {
     rebuild: () => r<{ ok: true }>('POST', '/api/system/rebuild', {}),
     /** Settings → System: delete everything in ~/.cache/ah/uploads. */
     clearUploads: () => r<{ ok: true; removed: number }>('POST', '/api/system/uploads/clear', {}),
+    hooks: () => r<HooksStatus>('GET', '/api/system/hooks'),
+    setHooks: (action: 'install' | 'uninstall') => r<{ messages: string[]; status: HooksStatus }>('POST', '/api/system/hooks', { action }),
     pastChat: (uid: string, msgId?: number) => r<{ messages: ChatMsg[] }>('GET', `/api/chats/${enc(uid)}${msgId ? `?msgId=${msgId}` : ''}`),
     worktrees: () => r<WorktreeInfo[]>('GET', '/api/worktrees'),
     removeWorktree: (path: string, force: boolean) => r('DELETE', '/api/worktrees', { path, force }),
