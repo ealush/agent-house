@@ -138,8 +138,7 @@ if (state) args.push(';', 'set-option', '-w', '-q', '-t', pane, '@ah-state', sta
 if (id) args.push(';', 'set-option', '-w', '-q', '-t', pane, '@ah-harness-id', id);
 if (model) args.push(';', 'set-option', '-w', '-q', '-t', pane, '@ah-model', model);
 if (detail) args.push(';', 'set-option', '-w', '-q', '-t', pane, '@ah-detail', JSON.stringify(detail));
-if (ask === null) args.push(';', 'set-option', '-w', '-q', '-u', '-t', pane, '@ah-ask');
-else if (ask === 'pending' || ask?.kind === 'question') {
+if (ask === 'pending' || ask?.kind === 'question') {
   // Promote the last tool call to the question; needs a read, so do it as a second step.
   // A question dialog recorded at PreToolUse is richer than either, so it stays.
   execFile('tmux', ['show-options', '-w', '-v', '-q', '-t', pane, '@ah-ask'], (_e, current) => {
@@ -154,6 +153,8 @@ else if (ask === 'pending' || ask?.kind === 'question') {
     });
   });
 } else {
-  if (ask) args.push(';', 'set-option', '-w', '-q', '-t', pane, '@ah-ask', JSON.stringify(ask));
+  // Every other event writes its state here, clearing the ask (null) or setting it.
+  if (ask === null) args.push(';', 'set-option', '-w', '-q', '-u', '-t', pane, '@ah-ask');
+  else if (ask) args.push(';', 'set-option', '-w', '-q', '-t', pane, '@ah-ask', JSON.stringify(ask));
   execFile('tmux', args, () => process.exit(0));
 }
