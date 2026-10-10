@@ -117,3 +117,14 @@ test('a stale small override is re-synced even when iOS fires no dismissal event
   assert.equal(timers.size, 0, 'guard stops once the override is gone');
   stop();
 });
+
+test('an iOS home-screen app fills the screen when the viewport is short by the status bar', async () => {
+  const { standaloneHeight } = await import('../web/viewport.ts');
+  const iphone = { standalone: true, ios: true, portrait: true, screenW: 402, screenH: 874, inner: 812 };
+  assert.equal(standaloneHeight(iphone), 874);
+  assert.equal(standaloneHeight({ ...iphone, inner: 874 }), null, 'no gap, nothing to fix');
+  assert.equal(standaloneHeight({ ...iphone, standalone: false }), null, 'Safari tabs have real browser chrome');
+  assert.equal(standaloneHeight({ ...iphone, ios: false }), null, "Android's screen height includes its nav bar");
+  assert.equal(standaloneHeight({ ...iphone, inner: 500 }), null, 'a keyboard-sized gap is not the status bar');
+  assert.equal(standaloneHeight({ ...iphone, portrait: false, inner: 340 }), 402, 'landscape uses the short side');
+});

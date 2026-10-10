@@ -9,6 +9,33 @@ export function keyboardViewportHeight(layoutHeight: number, visualHeight: numbe
   return visualHeight;
 }
 
+/**
+ * iOS home-screen apps with a translucent status bar report a viewport that is
+ * short by the status bar, so a shell pinned to it stops ~60pt above the bottom
+ * and leaves a strip under the tab bar. A standalone app has no browser chrome:
+ * it always fills the screen. Only iOS, and only for a status-bar-sized gap
+ * (Android's screen height includes its navigation bar).
+ */
+export function standaloneHeight(o: { standalone: boolean; ios: boolean; portrait: boolean; screenW: number; screenH: number; inner: number }): number | null {
+  if (!o.standalone || !o.ios) return null;
+  const full = o.portrait ? Math.max(o.screenW, o.screenH) : Math.min(o.screenW, o.screenH);
+  const short = full - o.inner;
+  return short >= 16 && short <= 100 ? full : null;
+}
+
+function standaloneInfo(win: Window) {
+  const nav = win.navigator as Navigator & { standalone?: boolean };
+  const media = (q: string) => typeof win.matchMedia === 'function' && win.matchMedia(q).matches;
+  return {
+    standalone: media('(display-mode: standalone)') || nav?.standalone === true,
+    ios: /iPhone|iPad|iPod/.test(nav?.userAgent ?? '') || (/Macintosh/.test(nav?.userAgent ?? '') && (nav?.maxTouchPoints ?? 0) > 1),
+    portrait: media('(orientation: portrait)'),
+    screenW: win.screen?.width ?? 0,
+    screenH: win.screen?.height ?? 0,
+    inner: win.innerHeight ?? 0,
+  };
+}
+
 export function trackViewport(win: Window, doc: Document): () => void {
   const viewport = win.visualViewport;
   if (!viewport) return () => {};
@@ -29,6 +56,9 @@ export function trackViewport(win: Window, doc: Document): () => void {
       'textarea, input:not([type="button"]):not([type="submit"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"])',
     ));
     const height = keyboardViewportHeight(root.clientHeight, viewport.height, viewport.scale, editing);
+    const full = height === null ? standaloneHeight(standaloneInfo(win)) : null;
+    if (full !== null) root.style.setProperty('--app-h', `${full}px`);
+    else root.style.removeProperty('--app-h');
     if (height === null) {
       root.style.removeProperty('--vh');
       root.style.removeProperty('--keyboard-vh');
@@ -82,6 +112,7 @@ export function trackViewport(win: Window, doc: Document): () => void {
     root.style.removeProperty('--vh');
     root.style.removeProperty('--keyboard-vh');
     root.style.removeProperty('--keyboard-top');
+    root.style.removeProperty('--app-h');
     delete root.dataset.keyboard;
   };
 }

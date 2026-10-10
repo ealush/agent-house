@@ -148,7 +148,8 @@ code,
   inset: 0;
   top: var(--keyboard-top, 0px);
   display: flex;
-  height: var(--keyboard-vh, auto);
+  /* Keyboard up: the visible height. iOS home-screen app: the whole screen (viewport.ts). */
+  height: var(--keyboard-vh, var(--app-h, auto));
   overflow: hidden;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
 }
@@ -2690,15 +2691,26 @@ a.btn {
   min-width: 0;
 }
 
+/* Long paths and ids break instead of widening the page (not the tables: they'd
+   collapse to a letter per line). */
+.settings-content .hint,
+.settings-content .mono,
+.settings-content p {
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 760px) {
+  /* Stretch, not flex-start: a column sized to its widest line ran off the screen. */
   .settings-body {
     flex-direction: column;
+    align-items: stretch;
   }
 
+  /* Wrap, not scroll: all seven sections stay in sight. */
   .settings-nav {
     width: 100%;
     flex-direction: row;
-    overflow-x: auto;
+    flex-wrap: wrap;
     position: static;
   }
 
@@ -4571,5 +4583,57 @@ button.tool-chip:hover {
 @media (hover: none) {
   .palette-keys {
     display: none;
+  }
+}
+
+/* The shortcut table on a phone: one block per command, its binding and actions
+   under it; "when" and "source" are left to the wide layout. */
+@media (max-width: 760px) {
+  .keymap-scroll {
+    max-height: none;
+  }
+
+  .keymap-table thead {
+    display: none;
+  }
+
+  .keymap-table,
+  .keymap-table tbody {
+    display: block;
+  }
+
+  .keymap-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .keymap-table td {
+    display: block;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+  }
+
+  .keymap-table td:first-child,
+  .keymap-group td {
+    grid-column: 1 / -1;
+  }
+
+  .keymap-table .keymap-when,
+  .keymap-table .keymap-source {
+    display: none;
+  }
+
+  .keymap-table tr.keymap-group {
+    padding: 14px 0 2px;
+    border-bottom: 0;
+  }
+
+  .keymap-bind {
+    flex-wrap: wrap;
   }
 }
