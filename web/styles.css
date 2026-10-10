@@ -36,6 +36,9 @@
   --radius: 14px;
   /* The home indicator's strip. Zero while the keyboard covers it. */
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* What a bottom bar actually needs: the indicator is a thin line ~8pt up, so
+     controls clear it with the inset less 14pt, not the whole 34pt. */
+  --safe-pad: max(calc(var(--safe-bottom) - 14px), 0px);
 
   color-scheme: dark;
 }
@@ -1145,7 +1148,7 @@ a.pill:hover {
 
 /* Nothing under the terminal (keys hidden): keep it out of the home indicator. */
 .narrow .session-main:not(:has(.composer, .keybar)) {
-  padding-bottom: var(--safe-bottom);
+  padding-bottom: var(--safe-pad);
 }
 
 .term {
@@ -1215,7 +1218,7 @@ a.pill:hover {
 }
 
 .narrow .composer-bar {
-  margin: 8px 8px calc(8px + var(--safe-bottom));
+  margin: 8px 8px calc(6px + var(--safe-pad));
   border-radius: 24px;
   padding: 5px 5px 5px 14px;
 }
@@ -1315,7 +1318,7 @@ a.pill:hover {
   margin: 0;
   display: flex;
   gap: 4px;
-  padding: 6px 6px calc(8px + var(--safe-bottom));
+  padding: 4px 6px calc(4px + var(--safe-pad));
   border-radius: 16px 16px 0 0;
   border: 1px solid var(--line-2);
   border-bottom: 0;
@@ -1327,7 +1330,7 @@ a.pill:hover {
 
 .tabbar button {
   flex: 1;
-  padding: 11px 0;
+  padding: 8px 0;
   border: 0;
   border-radius: 12px;
   background: none;
@@ -1357,7 +1360,7 @@ a.pill:hover {
   flex: none;
   display: flex;
   gap: 6px;
-  padding: 8px 8px calc(8px + var(--safe-bottom));
+  padding: 8px 8px calc(6px + var(--safe-pad));
   overflow-x: auto;
   scrollbar-width: none;
   touch-action: pan-x;
@@ -3681,7 +3684,7 @@ a.btn {
   margin: 0;
   border-width: 1px 0 0;
   border-radius: 18px 18px 0 0;
-  padding: 10px 10px calc(6px + var(--safe-bottom)) 14px;
+  padding: 10px 10px calc(4px + var(--safe-pad)) 14px;
 }
 
 .composer-input {
@@ -4713,7 +4716,7 @@ button.tool-chip:hover {
   position: sticky;
   bottom: 0;
   margin: auto -16px 0;
-  padding: 10px 16px calc(10px + var(--safe-bottom));
+  padding: 10px 16px calc(6px + var(--safe-pad));
   border-top: 1px solid var(--line);
   background: var(--bg);
 }
