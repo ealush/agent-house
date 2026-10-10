@@ -90,6 +90,28 @@
 - Keep mobile navigation in layout flow so history rows remain visible and scrollable.
 - Isolate ordering tests from the real config, session store, and tmux server.
 
+## Hardening pass — 10 October 2026
+
+- Answer from anywhere: Claude's question dialog as a form (whole set from hooks,
+  else one question at a time from the screen), numbered pickers and cursor lists
+  (permission prompts, folder trust) as buttons with their context; keys typed only
+  after re-reading the screen (`server/choices.ts`).
+- Keyboard first: every session action is a palette command, most with Ctrl+Alt
+  chords that also work from the composer; arrow keys in menus, pickers, sidebar,
+  inbox, history and queue; Esc stops a turn from an empty composer.
+- GUI: `/` and `@` autocomplete, queued follow-ups inline (Send now / Edit /
+  Cancel), sending bubbles, a working line with elapsed time, folded answered
+  questions, Hermes adapter.
+- Phone: safe areas and keyboard offset, 16px fields (no zoom), exact-line touch
+  scrolling with momentum, pinch for terminal font, edge-to-edge terminal.
+- Reliability: relaunch creates the new window first and keeps pin/order/
+  worktree/fork meta; a follow-up whose paste typed nothing is requeued; prompts
+  Claude redraws every second still read as "needs you"; CSP violations fixed;
+  the test harness cleans its temp dirs; hooks installable from Settings.
+
+Next candidates: rate-limit auto-resume (F40, opt-in, needs each CLI's reset
+message), quota display (F41), keyboard reordering in the sidebar.
+
 Remaining larger work: conversation transfer between hosts (including files),
 worktree disk usage, and richer adapters for agents without hooks. These require explicit
 product decisions rather than guessing at conversation or workspace ownership.
