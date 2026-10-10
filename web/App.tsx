@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { PresetsContext } from './ModelPicker.tsx';
-import { deviceName, type HistoryItem, type SearchHit, type SendResult, type State, type Win } from './api.ts';
+import { deviceName, waitForWindow, type HistoryItem, type SearchHit, type SendResult, type State, type Win } from './api.ts';
 import { useHosts } from './useHosts.ts';
 import { Sidebar, type Page } from './Sidebar.tsx';
 import { useSavedGroups } from './groupOrder.ts';
@@ -551,9 +551,12 @@ export function App({ onLock }: { onLock: () => void }) {
           initialPrompt={creating.prompt}
           onClose={() => setCreating(null)}
           onSent={sent}
-          onCreated={async (host, id) => {
+          onCreated={async (host, id, uid) => {
             setCreating(null);
-            await refresh(host);
+            // The new window can miss the next tick; opening immediately
+            // selects a key nothing matches and the missing-selection
+            // fallback bounces to the inbox. Wait until state lists it.
+            await waitForWindow(() => refresh(host), { id, uid });
             open(keyFor(host, id));
           }}
         />

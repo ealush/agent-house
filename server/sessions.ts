@@ -396,21 +396,39 @@ export function adoptTranscripts(windows: WindowView[], transcripts: Transcript[
     const meta = registry.get?.(uid)?.meta?.['ah.knownTranscripts'];
     return Array.isArray(meta) && meta.every((s) => typeof s === 'string') ? (meta as string[]) : null;
   };
+  // A transcript born long before the window cannot be its conversation;
+  // without this floor an older hungry window steals a newer window's
+  // transcript (both are novel to it, and discover order is newest-first).
+  const BIRTH_SLOP = 120;
   for (const w of windows) {
     if (!w.agent || w.harnessId) continue;
     const known = knownAtLaunch(w.uid);
-    const match = transcripts.find((t) => {
+    const cands = transcripts.filter((t) => {
       if (t.harness !== w.agent || t.cwd !== cwdOf(w) || claimed.has(t.harnessId)) return false;
       if (known) {
         // Session-bound: only a conversation id that did not exist when this
-        // session launched can be its transcript. Set membership, no clocks.
-        return !known.includes(t.harnessId);
+        // session launched can be its transcript. Set membership, no clocks —
+        // plus a birth floor, so a window whose own transcript is not visible
+        // yet (no prompt submitted) cannot claim a newer window's.
+        if (known.includes(t.harnessId)) return false;
+        if (t.birthAt != null && w.createdAt && t.birthAt < w.createdAt - BIRTH_SLOP) return false;
+        return true;
       }
       // Best-effort recency for windows ah did not launch (no launch snapshot):
       // the transcript must have been touched after the window started, or
       // around its last output when the window's age is unknown.
       return w.createdAt ? t.updatedAt >= w.createdAt : Math.abs(t.updatedAt - w.activity) < 300;
     });
+    // Earliest-born first: a window binds the transcript born closest after
+    // its own creation. Transcripts without a birth keep discover order
+    // (newest first), as before.
+    cands.sort((a, b) => {
+      if (a.birthAt == null || b.birthAt == null) return 0;
+      const ka = a.birthAt >= w.createdAt ? a.birthAt - w.createdAt : Infinity;
+      const kb = b.birthAt >= w.createdAt ? b.birthAt - w.createdAt : Infinity;
+      return ka === kb ? 0 : ka - kb;
+    });
+    const match = cands[0];
     if (!match) continue;
     claimed.add(match.harnessId);
     w.harnessId = match.harnessId;

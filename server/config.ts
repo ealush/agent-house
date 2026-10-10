@@ -264,6 +264,15 @@ const DEFAULT_PRESETS: Preset[] = [
     settingsCommands: { model: '/models', effort: '/effort', mode: '/permissions' },
     modelArgs: ['--model', '{model}'],
     match: '^muse',
+    // The TUI draws its own permission picker ("Would you like to allow this
+    // network access?", "Yes, don't ask again this session (p)"). There are no
+    // hooks, so these screen rules are what surfaces "needs you" in the inbox
+    // and GUI (answered in the terminal or with one-tap keys).
+    waitingPatterns: ['Would you like to allow', "don['\u2019]t ask again this session"],
+    // The picker hints "(y)" for yes-once and "(esc)" for no; Enter picks the
+    // highlighted row, Escape declines.
+    approveKeys: ['y'],
+    denyKeys: ['Escape'],
     interruptKeys: ['Escape'],
   },
   {

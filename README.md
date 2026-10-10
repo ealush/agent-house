@@ -33,7 +33,7 @@ newer than the running server shows a "restart ah" banner.
 **First sign-in:** the server prints a one-time setup code at startup. Open ah, enter
 it, and create a passkey. See [Security model](#security-model).
 
-Keep it running with the systemd user unit in [`contrib/ah.service`](contrib/ah.service).
+Keep it running with the systemd user units in [`contrib/ah.service`](contrib/ah.service) and [`contrib/ah-tmux.service`](contrib/ah-tmux.service) (the second owns the tmux server, so ah restarts never touch live sessions).
 Development: `pnpm dev`. Tests: `pnpm test`.
 
 ### Agent hooks (recommended)

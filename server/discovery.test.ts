@@ -31,7 +31,16 @@ test('gemini transcript metadata, both file forms', async () => {
 
 test('muse transcript metadata from the envelope records', async () => {
   const t = await parseMuse(fixture('muse.jsonl'), 321);
-  assert.deepEqual(t, { harness: 'muse', harnessId: 'muse-1', cwd: '/home/u/code/proj', title: 'Fix the login redirect', model: 'muse-spark-1.2', updatedAt: 321, file: fixture('muse.jsonl') });
+  assert.deepEqual(t, { harness: 'muse', harnessId: 'muse-1', cwd: '/home/u/code/proj', title: 'Fix the login redirect', model: 'muse-spark-1.2', updatedAt: 321, file: fixture('muse.jsonl'), birthAt: 1785972468 });
+});
+
+test('muse startup-only sessions stay discoverable with a fallback title', async () => {
+  const t = await parseMuse(fixture('muse-startup.jsonl'), 999);
+  assert.deepEqual(t, { harness: 'muse', harnessId: 'muse-new', cwd: '/home/u/code/proj', title: 'Muse session', model: undefined, updatedAt: 999, file: fixture('muse-startup.jsonl'), birthAt: 1785972468 });
+});
+
+test('muse approval sidecars without metadata are skipped', async () => {
+  assert.equal(await parseMuse(fixture('muse-approval.jsonl'), 999), null);
 });
 
 test('opencode legacy tree metadata', async () => {

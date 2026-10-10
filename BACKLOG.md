@@ -6,7 +6,7 @@
 
 | # | Feature | | Where / notes |
 |---|---|---|---|
-| F1 | Host daemon | ✅ | `server/core.ts`. Wraps tmux; re-derives everything on start, so restarting ah never touches sessions. |
+| F1 | Host daemon | ✅ | `server/core.ts`. Wraps tmux; re-derives everything on start, so restarting ah never touches sessions. The tmux server itself is owned by `contrib/ah-tmux.service` (`exit-empty off`, also enforced by `ensureServer()` on every boot); ended records keep their harness id/cwd and stay one-tap resumable from History (`server/crash.test.ts`). |
 | F2 | Session registry | ✅ | `server/registry.ts`, `~/.local/state/ah/sessions.json`: id, host, harness, harnessId, cwd, model, title, status, lifecycle, created/lastActivity/ended, exitCode, tmux, `meta` (our keys are `ah.*`). exitCode is always null today: tmux doesn't keep it without `remain-on-exit`. |
 | F3 | Register-on-spawn | ✅ | Every window is registered the first time it's seen, shells and windows ah didn't create included. |
 | F4 | Local is just a host | ✅ | `server/peers.ts`: same daemon everywhere; the one you open proxies the rest under `/h/<host>/`. |

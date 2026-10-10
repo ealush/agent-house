@@ -402,7 +402,9 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
 
   if (route('POST', /^\/api\/system\/restart$/)) {
     audit(req, 'system.restart');
-    // systemd brings the process back; tmux and the sessions survive it (KillMode in ah.service).
+    // `systemctl --user restart ah` stops (SIGTERM → graceful drain above) and
+    // starts us again. Live processes belong to ah-tmux.service and never
+    // notice; ended records keep their resume data in SQLite.
     send(res, 200, { ok: true });
     scheduleRestart();
     return;
@@ -1021,7 +1023,7 @@ async function serveStatus(port: number): Promise<string | null> {
   return null;
 }
 
-await Promise.all([gate.watch(), t.cleanupViewers()]);
+await Promise.all([gate.watch(), t.cleanupViewers(), t.ensureServer()]);
 // SQLite is the durable state now: deploy schema, import any pre-Prisma JSON
 // once (idempotent), then seed the in-memory mirrors before the first tick.
 await ensureMigrated();
@@ -1051,10 +1053,29 @@ server.listen(PORT, HOST, async () => {
   console.log(`config: ${CONFIG_PATH}`);
 });
 
+let stopping = false;
+// Graceful shutdown is part of crash persistence: session records are written
+// fire-and-forget during ticks, so exiting in 200ms could truncate the very
+// rows a post-restart resume needs. Stop the ticker, then drain them (bounded).
+async function shutdown(sig: string) {
+  if (stopping) process.exit(1); // second signal: out now
+  stopping = true;
+  console.log(`ah shutting down (${sig})`);
+  for (const ws of wss.clients) ws.close(1001, 'server shutting down');
+  server.close();
+  core.stop();
+  const drain = (async () => {
+    core.registry.flush();
+    await core.registry.settled();
+    // A tick that was already in flight may have dirtied the registry after
+    // the first flush; a second round catches its write too.
+    core.registry.flush();
+    await core.registry.settled();
+  })().catch((err) => console.error('shutdown drain failed:', err));
+  await Promise.race([drain, new Promise((r) => setTimeout(r, 5000))]);
+  process.exit(0);
+}
+
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
-  process.on(sig, () => {
-    for (const ws of wss.clients) ws.close(1001, 'server shutting down');
-    server.close();
-    setTimeout(() => process.exit(0), 200);
-  });
+  process.on(sig, () => void shutdown(sig));
 }

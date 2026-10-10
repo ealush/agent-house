@@ -1,0 +1,24 @@
+# systemd user unit: owns the tmux server ah's sessions live in, so ah can
+# crash, stop, or redeploy without ever sharing fate with live processes.
+# The server idles with zero sessions (`exit-empty off`, also enforced by ah
+# itself on every boot) and survives ah restarts. Stopping ah no longer needs
+# KillMode games; sessions simply stay where they are until ah comes back.
+# Install alongside ah:
+#   cp contrib/ah-tmux.service contrib/ah.service ~/.config/systemd/user/ && systemctl --user daemon-reload
+#   systemctl --user enable --now ah-tmux ah
+#   loginctl enable-linger $USER   # start at boot, before you log in
+[Unit]
+Description=ah tmux server (persists agent sessions across ah restarts)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# No shell here: the quoted ";" reaches tmux as one argv element, which tmux
+# reads as the command separator (one invocation, so an empty server cannot
+# exit before `exit-empty off` lands).
+ExecStart=/usr/bin/tmux start-server ";" set-option -s exit-empty off
+
+[Install]
+WantedBy=default.target

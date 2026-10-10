@@ -64,6 +64,24 @@ test('codex terminal rules', () => {
   assert.ok(!screenAsks(['• Ran pnpm test', '  └ 12 passed'], r));
 });
 
+test('muse terminal rules', () => {
+  const r = rules('muse');
+  assert.ok(
+    screenAsks(
+      [
+        'Would you like to allow this network access? · from workflow-agent',
+        '  network: api.github.com:443 https',
+        '  1. Yes, proceed (y)',
+        '> 2. Yes, don\'t ask again this session (p)  api.github.com:443 (https)',
+        '  3. Always allow this network destination  api.github.com:443 (https)',
+        '  4. No, and tell Muse Code what to do differently (esc)',
+      ],
+      r,
+    ),
+  );
+  assert.ok(!screenAsks(['✳ Thinking…', '> '], r));
+});
+
 test('only the last screen lines count', () => {
   const lines = ['Do you want to proceed?', ...Array.from({ length: 20 }, (_, i) => `line ${i}`)];
   assert.ok(!screenAsks(lines, rules('claude')));
@@ -134,6 +152,30 @@ test('novelty adoption binds by session identity, not recency', () => {
   );
   assert.deepEqual(adopted, ['n=new'], 'known ids are never adopted, however recent');
   assert.equal(windows[0].harnessId, 'new');
+});
+
+test('a hungry window cannot steal a newer window conversation', () => {
+  const win = (o: Partial<WindowView>) => ({ agent: 'muse', harnessId: null, cwd: '/p', createdAt: 1000, activity: 1000, uid: 'n', model: null, ...o }) as WindowView;
+  const adopted: string[] = [];
+  const registry = {
+    adopt: (uid: string, id: string) => adopted.push(`${uid}=${id}`),
+    all: () => [],
+    get: () => ({ meta: { 'ah.knownTranscripts': [] } }),
+  } as any;
+  // Older window (its own transcript has no prompt yet, so both are novel to
+  // it) must not grab the newest transcript, which belongs to the newer window.
+  const windows = [win({ uid: 'old', createdAt: 1000 }), win({ uid: 'new', createdAt: 2000 })];
+  adoptTranscripts(
+    windows,
+    [
+      { harness: 'muse', harnessId: 'new-t', cwd: '/p', title: 'new work', updatedAt: 2010, birthAt: 2001, file: '/new/session.jsonl' },
+      { harness: 'muse', harnessId: 'old-t', cwd: '/p', title: 'Muse session', updatedAt: 1005, birthAt: 1001, file: '/old/session.jsonl' },
+    ],
+    registry,
+  );
+  assert.deepEqual(adopted, ['old=old-t', 'new=new-t']);
+  assert.equal(windows[0].harnessId, 'old-t');
+  assert.equal(windows[1].harnessId, 'new-t');
 });
 
 test('novelty adoption waits when only known transcripts exist', () => {

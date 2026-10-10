@@ -16,7 +16,7 @@ type Props = {
   /** First message, sent once the session is up. Send to… fills this in. */
   initialPrompt?: string;
   onClose: () => void;
-  onCreated: (host: string, id: string) => void;
+  onCreated: (host: string, id: string, uid: string) => void;
   /** Queue flash for that first message. */
   onSent?: (r: SendResult) => void;
 };
@@ -115,7 +115,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
           sendError = err;
         }
       }
-      onCreated(host, id);
+      onCreated(host, id, uid);
       if (sent) onSent?.(sent);
       if (sendError) showError(sendError, 'Session started. The first message did not send.');
     } catch (err) {

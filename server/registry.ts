@@ -173,7 +173,7 @@ export class Registry {
     return this.loaded.then(() => {});
   }
 
-  /** Resolves once every queued write has landed. Tests only. */
+  /** Resolves once every queued write has landed. Tests and the shutdown drain. */
   settled(): Promise<void> {
     return this.writing.then(() => {});
   }

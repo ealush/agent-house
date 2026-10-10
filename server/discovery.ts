@@ -16,6 +16,13 @@ export type Transcript = {
   updatedAt: number;
   /** Where it lives, for readers of the conversation itself (server/feed). */
   file: string;
+  /**
+   * Seconds since the epoch when the conversation was born (muse: the session
+   * metadata record's time). Absent when the harness does not record one.
+   * Adoption uses it to bind a transcript to the window created just before
+   * it, so a hungry window cannot steal a newer window's conversation.
+   */
+  birthAt?: number;
 };
 
 const MAX_AGE_DAYS = 30;
@@ -307,12 +314,16 @@ export async function parseMuse(file: string, mtime: number): Promise<Transcript
   let cwd = '';
   let model: string | undefined;
   let prompt: string | null = null;
+  let birthAt: number | undefined;
+  let sawMeta = false;
   await scanHead(file, 4 * 1024 * 1024, (line) => {
     const d = json(line);
     if (!d) return;
     if (d.payload_type === 'runtime.session.metadata') {
+      sawMeta = true;
       id ||= typeof d.stream?.id === 'string' ? d.stream.id : '';
       cwd ||= typeof d.payload?.record?.workspace_root === 'string' ? d.payload.record.workspace_root : '';
+      if (birthAt == null && typeof d.recorded_at === 'number') birthAt = Math.floor(d.recorded_at / 1_000_000);
     } else if (d.payload_type === 'runtime.session' && d.payload?.kind === 'run') {
       const ev = d.payload.event ?? {};
       if (ev.kind === 'started' && !prompt) prompt = promptTitle(ev.prompt);
@@ -321,8 +332,15 @@ export async function parseMuse(file: string, mtime: number): Promise<Transcript
     return !!(id && cwd && prompt && model);
   });
   const harnessId = id || file.split('/').slice(0, -1).pop() || '';
-  if (!harnessId || !prompt) return null;
-  return { harness: 'muse', harnessId, cwd, title: prompt, model, updatedAt: mtime, file };
+  // Approval sidecars (workflow children) carry no metadata record of their
+  // own; without it there is no cwd to match and no birth to bind by.
+  if (!harnessId || !sawMeta) return null;
+  // A session that never got past startup (no prompt yet) still counts: its
+  // window is hungry until it binds its own birth transcript, and a hungry
+  // window binds whatever is newest — i.e. a newer window's conversation.
+  const t: Transcript = { harness: 'muse', harnessId, cwd, title: prompt ?? 'Muse session', model, updatedAt: mtime, file };
+  if (birthAt != null) t.birthAt = birthAt;
+  return t;
 }
 
 async function discoverMuse(): Promise<Transcript[]> {

@@ -365,6 +365,28 @@ export type HostApi = ReturnType<typeof hostApi>;
 export const api = hostApi('');
 
 /**
+ * A freshly created window can miss the next tick: POST /api/windows returns
+ * before the ticker lists it, so navigating immediately selects a key nothing
+ * matches and the missing-selection fallback bounces to the inbox. Poll the
+ * state until the window appears (bounded), then navigate.
+ */
+export async function waitForWindow(
+  fetchState: () => Promise<{ windows: Array<Pick<Win, 'id' | 'uid'>> } | null>,
+  ref: { id: string; uid?: string },
+  opts?: { tries?: number; delayMs?: number; sleep?: (ms: number) => Promise<void> },
+): Promise<boolean> {
+  const tries = opts?.tries ?? 25;
+  const delayMs = opts?.delayMs ?? 400;
+  const sleep = opts?.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+  for (let i = 0; i < tries; i++) {
+    const s = await fetchState().catch(() => null);
+    if (s?.windows.some((w) => (ref.uid != null && w.uid === ref.uid) || w.id === ref.id)) return true;
+    if (i < tries - 1) await sleep(delayMs);
+  }
+  return false;
+}
+
+/**
  * Fills in what an older server doesn't send, so a page that's newer than the
  * running daemon degrades (with a "restart ah" banner) instead of crashing.
  */

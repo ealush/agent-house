@@ -134,6 +134,18 @@ export async function listWindows(): Promise<RawWindow[]> {
   return rows;
 }
 
+/**
+ * Idempotent: guarantees a (possibly empty) tmux server that outlives us.
+ * `exit-empty off` keeps the server — and our socket — around when the last
+ * window closes, so a mass window death never strands ah with a stale socket
+ * and every ah restart finds the same server its sessions live in.
+ */
+export async function ensureServer(): Promise<void> {
+  // One client invocation: the commands run back-to-back on the server, so an
+  // empty server cannot exit in between (it would before `exit-empty off` lands).
+  await tmux('start-server', ';', 'set-option', '-s', 'exit-empty', 'off').catch(() => {});
+}
+
 export async function listSessions(): Promise<string[]> {
   try {
     const out = await tmux('list-sessions', '-F', '#{session_name}');
@@ -200,7 +212,9 @@ export async function cleanupViewers(): Promise<void> {
 
 function isNoServer(err: unknown): boolean {
   const msg = String((err as { stderr?: string }).stderr ?? err);
-  return /no server running|error connecting|No such file or directory/.test(msg);
+  // An alive-but-empty server answers `list-windows -a` with "no current
+  // target" — for these list calls that is the same as no server: no windows.
+  return /no server running|error connecting|No such file or directory|no current target/.test(msg);
 }
 
 // tmux session names cannot contain '.' or ':'.

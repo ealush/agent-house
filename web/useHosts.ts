@@ -55,17 +55,19 @@ export function useHosts(onState: (merged: State) => void) {
     if (merged) onState(merged);
   }, [merged]);
 
-  /** Immediate refetch after our own actions; the event streams catch everything else. */
+  /** Immediate refetch after our own actions; the event streams catch everything else. Returns the fetched state so callers can wait on it. */
   const refresh = useCallback(
-    async (host?: string) => {
+    async (host?: string): Promise<State | null> => {
       try {
         const c = clientFor(host);
         const s = normalize(await c.state());
         if (c === api) setLocal(s);
         else setPeers((p) => ({ ...p, [host!]: s }));
         setError(null);
+        return s;
       } catch (e) {
         setError((e as Error).message);
+        return null;
       }
     },
     [local],

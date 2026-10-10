@@ -98,6 +98,7 @@ export class Core {
   private listeners = new Set<(json: string) => void>();
   private tmuxPath = process.env.PATH ?? '';
   private ticking: Promise<State> | null = null;
+  private stopped = false;
   private hidden = new Set<string>();
   private prompts: Array<{ text: string; at: number }> = [];
   private promptStore: PromptStore;
@@ -133,8 +134,17 @@ export class Core {
 
   start() {
     this.refreshTmuxPath();
-    const loop = () => this.tick().catch((err) => console.error('tick failed:', err)).finally(() => setTimeout(loop, TICK_MS));
+    this.stopped = false;
+    const loop = () => {
+      if (this.stopped) return;
+      this.tick().catch((err) => console.error('tick failed:', err)).finally(() => setTimeout(loop, TICK_MS));
+    };
     loop();
+  }
+
+  /** Stop scheduling ticks (shutdown). An in-flight tick finishes on its own. */
+  stop() {
+    this.stopped = true;
   }
 
   /** Current state, recomputed if nothing has been computed yet. */
