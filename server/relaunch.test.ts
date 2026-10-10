@@ -87,3 +87,26 @@ test('relaunch 400s unsupported effort levels', async () => {
   const gemini = idle({ agent: 'gemini' });
   assert.equal(await statusOf(core([gemini]).relaunch('u1', { effort: 'high' })), 400);
 });
+
+test('relaunch creates the new window before stopping the old one, and keeps the session’s place', async () => {
+  const c = core([idle()]);
+  c.registry.starting('u1', { harness: 'codex', harnessId: 'rid1', cwd: '/tmp', title: 's', tmux: { session: 'nope', windowId: '@1' } });
+  c.registry.setMeta('u1', 'ah.pinned', true);
+  c.registry.setMeta('u1', 'ah.order', 7);
+  c.registry.setMeta('u1', 'ah.worktree', { path: '/tmp/wt', branch: 'ah/x' });
+  c.registry.setMeta('u1', 'ah.launch.model', 'old-model');
+  let launched: any = null;
+  c.launch = async (o: any) => {
+    launched = o;
+    return { uid: 'u2', windowId: '@2' };
+  };
+  c.tick = async () => ({ windows: [] });
+  const out = await c.relaunch('u1', { effort: 'high' });
+  assert.deepEqual(out, { uid: 'u2', id: '@2' });
+  assert.equal(typeof launched.beforeCommand, 'function', 'the old window is stopped from inside the launch, after the new one exists');
+  assert.equal(launched.meta['ah.pinned'], true);
+  assert.equal(launched.meta['ah.order'], 7);
+  assert.deepEqual(launched.meta['ah.worktree'], { path: '/tmp/wt', branch: 'ah/x' });
+  assert.equal(launched.meta['ah.queue'], undefined);
+  assert.equal(launched.meta['ah.launch.effort'], 'high');
+});

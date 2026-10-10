@@ -256,7 +256,19 @@ export class Core {
 
   // ---------- launch / resume
 
-  async launch(o: { preset: Preset; cwd: string; session: string; name: string; command: string; uid?: string; harnessId?: string; pendingResume?: boolean; meta?: Record<string, unknown> }) {
+  async launch(o: {
+    preset: Preset;
+    cwd: string;
+    session: string;
+    name: string;
+    command: string;
+    uid?: string;
+    harnessId?: string;
+    pendingResume?: boolean;
+    meta?: Record<string, unknown>;
+    /** Runs once the window exists and is registered, just before the command is typed. */
+    beforeCommand?: () => Promise<void>;
+  }) {
     const uid = o.uid ?? Registry.newId();
     let meta = o.meta;
     // A new agent conversation has no id yet: snapshot the transcript ids that
@@ -288,6 +300,7 @@ export class Core {
         pendingResume: o.pendingResume,
         meta,
       });
+      await o.beforeCommand?.();
       if (o.command) await t.sendLine(windowId, o.command);
       this.tick().catch(() => {});
       return { uid, windowId };
@@ -798,10 +811,15 @@ export class Core {
     } catch (err) {
       throw new CoreError(400, (err as Error).message);
     }
-    await t.killWindow(w.id);
     const cwd = expandHome(rec?.cwd ?? w.cwd);
     let session = this.config.defaultSession;
     if (rec?.tmux?.session && (await t.hasSession(rec.tmux.session))) session = rec.tmux.session;
+    // The replacement keeps what belongs to the session, not the process: its
+    // pin, sidebar place, worktree and fork lineage. Launch choices are new.
+    const { 'ah.queue': _queue, 'ah.knownTranscripts': _known, ...kept } = (rec?.meta ?? {}) as Record<string, unknown>;
+    // New window first: if it can't be created, the running session is untouched.
+    // The old agent stops only then, before the new one resumes the conversation,
+    // so the two never run it at once.
     const out = await this.launch({
       preset,
       cwd: (await isDir(cwd)) ? cwd : homedir(),
@@ -810,7 +828,8 @@ export class Core {
       command: plan.command,
       harnessId,
       pendingResume: true,
-      meta: plan.meta,
+      meta: { ...kept, ...plan.meta },
+      beforeCommand: () => t.killWindow(w.id).catch(() => {}),
     });
     await this.snapshotStore.rekey(uid, out.uid).catch(() => {});
     const snap = rec?.meta['ah.snapshots'];

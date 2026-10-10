@@ -226,8 +226,20 @@ export function sanitizeSessionName(name: string): string {
  * Types text into a window as one paste (bracketed if the app asked for it), so a
  * multi-line prompt arrives as a single message instead of one submit per line.
  */
+/** A paste that failed. `typed` says whether any of the text reached the window. */
+export class PasteError extends Error {
+  typed: boolean;
+  constructor(message: string, typed: boolean) {
+    super(message);
+    this.typed = typed;
+  }
+}
+
 export async function pasteText(target: string, text: string, enter: boolean): Promise<void> {
   const buffer = `ah-${process.pid}-${randomUUID()}`;
+  const fail = (typed: boolean) => (err: unknown) => {
+    throw new PasteError((err as Error)?.message ?? String(err), typed);
+  };
   await new Promise<void>((resolve, reject) => {
     const p = spawn('tmux', ['load-buffer', '-b', buffer, '-'], { env: cleanEnv(), stdio: ['pipe', 'ignore', 'pipe'] });
     let err = '';
@@ -235,13 +247,13 @@ export async function pasteText(target: string, text: string, enter: boolean): P
     p.on('error', reject);
     p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(err.trim() || `load-buffer exited ${code}`))));
     p.stdin.end(text);
-  });
+  }).catch(fail(false));
   try {
-    await tmux('paste-buffer', '-p', '-d', '-b', buffer, '-t', target);
+    await tmux('paste-buffer', '-p', '-d', '-b', buffer, '-t', target).catch(fail(false));
     if (enter) {
       // Give TUIs a beat to finish ingesting the paste before submitting it.
       await new Promise((r) => setTimeout(r, 150));
-      await tmux('send-keys', '-t', target, 'Enter');
+      await tmux('send-keys', '-t', target, 'Enter').catch(fail(true));
     }
   } finally {
     await tmux('delete-buffer', '-b', buffer).catch(() => {});

@@ -77,6 +77,11 @@ export class QueueManager {
     return { next, rest: items };
   }
 
+  /** Put an item back at the front: its delivery failed before anything was typed. */
+  requeue(uid: string, item: QueueItem): void {
+    this.store(uid, [item, ...this.items(uid).filter((q) => q.id !== item.id)]);
+  }
+
   /** Drop one item or the whole queue; returns what was removed. */
   clear(uid: string, itemId?: string): QueueItem[] {
     const before = this.items(uid);
@@ -109,6 +114,13 @@ export class QueueManager {
           if (next.launchChange) this.rt.applyLaunchChange(w.uid, next.launchChange);
         } catch (err) {
           console.error(`queue delivery to ${w.id} failed:`, err);
+          // Nothing reached the window: the follow-up is still owed, so it goes
+          // back first in line. Once any text landed it stays delivered (never twice).
+          if ((err as { typed?: boolean }).typed === false) {
+            this.requeue(w.uid, next);
+            w.queued = rest.length + 1;
+            return;
+          }
         }
         w.queued = rest.length;
         w.status = 'busy';
