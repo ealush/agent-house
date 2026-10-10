@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import type { HostApi, QueueItem } from './api.ts';
-import { askConfirm } from './ask.tsx';
 
 /** This conversation's queue, as a side panel: review, send now, or cancel follow-ups. */
 export function QueuePanel({ client, uid, onChange }: {
@@ -54,13 +53,6 @@ export function QueuePanel({ client, uid, onChange }: {
   /** Urgent follow-up: stop the live turn and deliver this message right away. */
   async function sendNow(item: QueueItem) {
     if (busy) return;
-    const ok = await askConfirm({
-      title: 'Send now and interrupt?',
-      body: 'Stops the current turn and delivers this message immediately. The rest of the queue is untouched.',
-      confirm: 'Send now',
-      danger: true,
-    });
-    if (!ok) return;
     setBusy(true);
     try {
       await client.sendNow(uid, item.id);
