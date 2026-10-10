@@ -3559,6 +3559,19 @@ a.btn {
   padding: 12px 16px 16px;
 }
 
+/* Queue and Snapshots scroll themselves, in the side panel and as a phone tab. */
+.queue-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.queue-panel > * {
+  flex: none;
+}
+
 .queue-body > p,
 .queue-body > ol,
 .queue-panel > p,
