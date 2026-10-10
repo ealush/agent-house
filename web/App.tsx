@@ -6,6 +6,9 @@ import { Sidebar, type Page } from './Sidebar.tsx';
 import { useSavedGroups } from './groupOrder.ts';
 import { sidebarOrder } from './sessionOrder.ts';
 import { look } from './agents.ts';
+import { loadSpaces, occupied, saveSpaces, sendTo, switchTo, type Slot, type Spaces } from './workspaces.ts';
+import { useTheme } from './useTheme.ts';
+import { setOmarchyPalette } from './theme.ts';
 
 const STATUS_WORD = { waiting: 'Needs you', busy: 'Working', attention: 'Done', idle: 'Idle' } as const;
 import { cycleKey } from './keyboard.ts';
@@ -13,7 +16,7 @@ import { Inbox, type InboxGroup } from './Inbox.tsx';
 import { HistoryView, SessionsView } from './HistoryView.tsx';
 import { Session } from './Session.tsx';
 import { Workspace } from './Workspace.tsx';
-import { leaves, moveLeaf, neighborPane, nodeAt, normalizeSplit, paneLeaves, parseLayout, replaceLeaf, splitLeaf, toggleSplit, type LayoutNode, type PaneDir, type Path } from './layout.ts';
+import { leaves, moveLeaf, nudgeDivider, neighborPane, nodeAt, normalizeSplit, paneLeaves, parseLayout, replaceLeaf, splitLeaf, toggleSplit, type LayoutNode, type PaneDir, type Path } from './layout.ts';
 import { NewDialog } from './NewDialog.tsx';
 import { ForkDialog, type ForkTarget } from './ForkDialog.tsx';
 import { Switcher } from './Switcher.tsx';
@@ -110,6 +113,8 @@ export function App({ onLock }: { onLock: () => void }) {
     }
   });
   const [focusPath, setFocusPath] = useState<Path | null>(null);
+  const [zoom, setZoom] = useState(false);
+  const [resizeMode, setResizeMode] = useState(false);
   const focused = layout ? nodeAt(layout, focusPath ?? []) : null;
   const focusKey = focused?.type === 'session' ? focused.sessionKey : null;
   // Every pane on screen, so the sidebar can mark them all (split view shows several at once).
@@ -231,6 +236,85 @@ export function App({ onLock }: { onLock: () => void }) {
   useCommand('move-pane-down', () => movePane('down'), splitOpen);
   useCommand('toggle-split', flipSplit, splitOpen);
   useCommand('exit-split', exitSplit, !!layout);
+
+  // Workspaces 1–9 (workspaces.ts): Alt+N goes there, Alt+Shift+N sends the focused session.
+  const [spaces, setSpacesState] = useState(loadSpaces);
+  const setSpaces = (next: Spaces) => {
+    setSpacesState(next);
+    saveSpaces(next);
+  };
+  const nowSlot = (): Slot => ({ layout, selected: layout ? null : selected });
+  const showSlot = (slot: Slot) => {
+    setZoom(false);
+    setLayout(slot.layout);
+    if (!slot.layout) go({ page: 'inbox', selected: slot.selected });
+  };
+  const switchWorkspace = (n: number) => {
+    if (n === spaces.current) return;
+    const r = switchTo(spaces, n, nowSlot());
+    setSpaces(r.spaces);
+    showSlot(r.show);
+    flash(`Workspace ${n}`);
+  };
+  const sendToWorkspace = (n: number) => {
+    const key = layout ? focusKey : selected;
+    if (!key || n === spaces.current) return;
+    const r = sendTo(spaces, n, key, nowSlot(), layout ? (focusPath ?? paneLeaves(layout)[0]?.path ?? null) : null);
+    setSpaces(r.spaces);
+    showSlot(r.show);
+    flash(`Sent to workspace ${n}`);
+  };
+  for (const d of [1, 2, 3, 4, 5, 6, 7, 8, 9] as const) {
+    // Fixed count and order, so these hooks are stable across renders.
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    useCommand(`workspace-${d}`, () => switchWorkspace(d));
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    useCommand(`to-workspace-${d}`, () => sendToWorkspace(d), !!(layout ? focusKey : selected));
+  }
+
+  // Hyprland-style resizing. In a split the nearest divider moves; in a single
+  // session the side panel's edge does (Session listens for ah:resize-panel).
+  const nudge = (dir: PaneDir, big = false) => {
+    if (layout && splitOpen && !zoom) {
+      const from = focusPath ?? paneLeaves(layout)[0]?.path ?? [];
+      setLayout(nudgeDivider(layout, from, dir, big ? 0.15 : 0.05));
+    } else if (dir === 'left' || dir === 'right') {
+      // The panel's left edge moves with the arrow: ← widens it, → narrows it.
+      window.dispatchEvent(new CustomEvent('ah:resize-panel', { detail: (dir === 'left' ? -1 : 1) * (big ? 120 : 40) }));
+    }
+  };
+  useCommand('resize-left', () => nudge('left'), !!selected || splitOpen);
+  useCommand('resize-right', () => nudge('right'), !!selected || splitOpen);
+  useCommand('resize-up', () => nudge('up'), splitOpen);
+  useCommand('resize-down', () => nudge('down'), splitOpen);
+  useCommand('resize-mode', () => setResizeMode(true), !!selected || splitOpen);
+  useCommand('maximize-pane', () => setZoom((z) => !z), splitOpen && !narrow);
+  // Resize mode is a submap: arrows resize until Escape or Enter; any other key leaves it.
+  useEffect(() => {
+    if (!resizeMode) return;
+    const key = (e: KeyboardEvent) => {
+      const dir = ({ ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', h: 'left', l: 'right', k: 'up', j: 'down' } as const)[e.key as 'h'];
+      if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (dir) nudge(dir, e.shiftKey);
+      else setResizeMode(false);
+    };
+    window.addEventListener('keydown', key, true);
+    return () => window.removeEventListener('keydown', key, true);
+  });
+  // Appearance → Omarchy: fetch the host's palette, again whenever it changes there.
+  const { mode: themeMode } = useTheme();
+  useEffect(() => {
+    if (themeMode !== 'omarchy' || !state) return;
+    if (!state.omarchy) return setOmarchyPalette(null);
+    clientFor(state.hostname)
+      .omarchyTheme()
+      .then((p) => setOmarchyPalette(p))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [themeMode, state?.omarchy?.at, state?.omarchy?.name]);
+
   // Palette → Go to: every live session, in sidebar order.
   usePaletteProvider('sessions', () => {
     const multi = (state?.hosts.length ?? 0) > 1;
@@ -446,6 +530,11 @@ export function App({ onLock }: { onLock: () => void }) {
       <Shortcuts />
       {sideOpen ? (
         <Sidebar
+          workspaces={{
+            current: spaces.current,
+            used: [1, 2, 3, 4, 5, 6, 7, 8, 9].filter((n) => (n === spaces.current ? occupied(nowSlot()) : occupied(spaces.slots[n]))),
+          }}
+          onWorkspace={switchWorkspace}
           state={state}
           error={error}
           page={page}
@@ -508,6 +597,8 @@ export function App({ onLock }: { onLock: () => void }) {
             onStartSession={(w, prompt) => setCreating({ cwd: w.projectPath, host: w.host, prompt })}
             refresh={refresh}
             onExit={exitSplit}
+            zoom={zoom}
+            onUnzoom={() => setZoom(false)}
           />
         ) : current && state ? (
           <Session
@@ -638,6 +729,20 @@ export function App({ onLock }: { onLock: () => void }) {
       )}
 
       {keymap && <ShortcutsDialog onClose={() => setKeymap(false)} />}
+      {resizeMode && (
+        <div className="submap" role="status">
+          <strong>Resize</strong>
+          <span>
+            <kbd>←</kbd>
+            <kbd>↓</kbd>
+            <kbd>↑</kbd>
+            <kbd>→</kbd> or <kbd>h</kbd>
+            <kbd>j</kbd>
+            <kbd>k</kbd>
+            <kbd>l</kbd> move the divider · <kbd>Shift</kbd> bigger · <kbd>Esc</kbd> done
+          </span>
+        </div>
+      )}
 
       {palette && (
         <CommandPalette

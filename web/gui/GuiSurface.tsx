@@ -67,7 +67,7 @@ function BlockView({ block, results, agent, snap, onRestore }: { block: Block; r
     );
   if (block.kind === 'user') {
     return (
-      <div className="msg user" data-seq={seq}>
+      <div className="msg user" data-seq={seq} tabIndex={-1}>
         <div className="bubble">
           {block.parts.map((p, i) => (
             <PartView key={i} part={p} />
@@ -86,7 +86,7 @@ function BlockView({ block, results, agent, snap, onRestore }: { block: Block; r
     );
   }
   return (
-    <div className="msg agent" data-seq={seq}>
+    <div className="msg agent" data-seq={seq} tabIndex={-1}>
       <span className="chip sm" style={{ '--agent': look(agent).color } as React.CSSProperties}>
         <AgentLogo id={agent} size={13} />
       </span>
@@ -233,6 +233,14 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
       if (!text) return showNotice('Nothing to copy', 'The agent has not replied yet.');
       void copyText(text).then((ok) => window.dispatchEvent(new CustomEvent('ah:toast', { detail: ok ? 'Copied the last reply' : "Couldn't copy" })));
     },
+    browse: () => {
+      const msgs = scroller.current?.querySelectorAll<HTMLElement>('.msg');
+      const last = msgs?.[msgs.length - 1];
+      if (!last) return false;
+      last.focus({ preventScroll: true });
+      last.scrollIntoView({ block: 'nearest' });
+      return true;
+    },
     jumpLatest: () => {
       stick.current = true;
       scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' });
@@ -327,7 +335,31 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
     <GuiContext.Provider value={actions}>
       <div className={`surface gui ${hidden ? 'hidden' : ''}`}>
         <div className="gui-scroll" ref={scroller} onScroll={onScroll}>
-          <div className="gui-feed">
+          <div
+            className="gui-feed"
+            onKeyDown={(e) => {
+              // Browsing messages (Ctrl+Alt+B): the focused message is the cursor.
+              const at = e.target as HTMLElement;
+              if (!at.classList.contains('msg') || e.ctrlKey || e.metaKey || e.altKey) return;
+              const msgs = [...(scroller.current?.querySelectorAll<HTMLElement>('.msg') ?? [])];
+              const i = msgs.indexOf(at);
+              const go = (j: number) => {
+                const el = msgs[Math.max(0, Math.min(msgs.length - 1, j))];
+                el?.focus({ preventScroll: true });
+                el?.scrollIntoView({ block: 'nearest' });
+              };
+              const key = e.key;
+              if (key === 'ArrowUp' || key === 'k') go(i - 1);
+              else if (key === 'ArrowDown' || key === 'j') go(i + 1);
+              else if (key === 'Home') go(0);
+              else if (key === 'End') go(msgs.length - 1);
+              else if (key === 'c') at.querySelector<HTMLElement>('.msg-copy')?.click();
+              else if (key === 'r') at.querySelector<HTMLElement>('.msg-snap')?.click();
+              else if (key === 'Escape') onReply();
+              else return;
+              e.preventDefault();
+            }}
+          >
             {state.hasOlder && (
               <button className="btn ghost small gui-older" onClick={loadOlder} disabled={loadingOlder}>
                 {loadingOlder ? 'Loading…' : 'Load earlier'}
@@ -370,7 +402,7 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
 
             {/* After the live turn: these are sent when it ends. */}
             {queue.map((q, i) => (
-              <div key={`queued-${q.id}`} className="msg user queued">
+              <div key={`queued-${q.id}`} className="msg user queued" tabIndex={-1}>
                 <div className="bubble">{q.text}</div>
                 <div className="msg-meta">
                   <button className="msg-snap" title={shortcutTitle('Stop the current turn and send this now', 'send-now')} onClick={() => queueAct(() => client.sendNow(w.uid, q.id), 'send it now')}>

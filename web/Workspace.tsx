@@ -24,6 +24,9 @@ type Props = {
   onKilledSession: () => void;
   refresh: (host?: string) => void;
   onExit: () => void;
+  /** Maximize pane: show the focused pane alone until this is cleared. */
+  zoom?: boolean;
+  onUnzoom?: () => void;
   /** Send to… → New session, in this pane's project. */
   onStartSession: (w: Win, prompt: string) => void;
 };
@@ -49,6 +52,8 @@ export function Workspace(props: Props) {
   const focusId = props.focusPath?.join('/') ?? '';
   const activeTab = panes.find((p) => p.path.join('/') === (focusId || tab)) ?? panes[0];
   const keyboardId = (props.narrow ? activeTab?.path : (props.focusPath ?? panes[0]?.path))?.join('/');
+  // Maximized: the focused pane (or the first) fills the workspace; the others stay mounted in the layout.
+  const zoomed = props.zoom && !props.narrow ? (panes.find((p) => p.path.join('/') === focusId) ?? panes[0]) : null;
 
   function dropKey(e: React.DragEvent): string | null {
     // Sidebar rows set text/ah-session; fall back to plain text for other sources.
@@ -199,7 +204,7 @@ export function Workspace(props: Props) {
         <div className="split-first" style={{ flexGrow: n.ratio, flexBasis: 0 }}>
           {node(n.first, [...path, 'first'])}
         </div>
-        <Divider row={row} onRatio={(ratio) => props.onLayout(setRatio(layout, path, ratio))} />
+        <Divider row={row} ratio={n.ratio} onRatio={(ratio) => props.onLayout(setRatio(layout, path, ratio))} />
         <div className="split-second" style={{ flexGrow: 1 - n.ratio, flexBasis: 0 }}>
           {node(n.second, [...path, 'second'])}
         </div>
@@ -211,8 +216,14 @@ export function Workspace(props: Props) {
     <div className="workspace">
       <div className="ws-bar">
         <span className="hint">
-          Split view · {panes.length} pane{panes.length === 1 ? '' : 's'}
+          {zoomed ? `Maximized · 1 of ${panes.length} panes` : `Split view · ${panes.length} pane${panes.length === 1 ? '' : 's'}`}
         </span>
+        {zoomed && (
+          <button className="btn ghost small" onClick={props.onUnzoom}>
+            Show all panes
+            <ShortcutHint id="maximize-pane" />
+          </button>
+        )}
         <span className="spacer" />
         <button className="btn ghost small" onClick={props.onExit}>
           Exit split
@@ -235,7 +246,7 @@ export function Workspace(props: Props) {
         </div>
       ) : (
         <div className="ws-root">
-          {node(layout, [])}
+          {zoomed ? pane(zoomed.sessionKey, zoomed.path) : node(layout, [])}
           {paneDrag && (
             <div className="dock-frame">
               {(['left', 'right', 'top', 'bottom'] as const).map((where) => (
@@ -282,11 +293,26 @@ export function Workspace(props: Props) {
 
 
 // Keep the component identity stable while a drag updates the layout.
-function Divider({ row, onRatio }: { row: boolean; onRatio: (ratio: number) => void }) {
+function Divider({ row, ratio, onRatio }: { row: boolean; ratio: number; onRatio: (ratio: number) => void }) {
   const dragging = useRef<number | null>(null);
   return (
     <div
       className={`divider ${row ? 'v' : 'h'}`}
+      // Focusable, so Tab reaches it and the arrows move it (Shift for big steps).
+      tabIndex={0}
+      role="separator"
+      aria-orientation={row ? 'vertical' : 'horizontal'}
+      aria-valuenow={Math.round(ratio * 100)}
+      aria-valuemin={15}
+      aria-valuemax={85}
+      aria-label="Resize panes"
+      onKeyDown={(e) => {
+        const back = row ? 'ArrowLeft' : 'ArrowUp';
+        const fwd = row ? 'ArrowRight' : 'ArrowDown';
+        if (e.key !== back && e.key !== fwd) return;
+        e.preventDefault();
+        onRatio(ratio + (e.key === fwd ? 1 : -1) * (e.shiftKey ? 0.15 : 0.05));
+      }}
       onPointerDown={(e) => {
         dragging.current = e.pointerId;
         e.currentTarget.setPointerCapture(e.pointerId);

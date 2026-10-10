@@ -17,6 +17,8 @@ export type SurfaceHandle = {
   copyLast?: () => void;
   /** Scroll to the newest output. */
   jumpLatest?: () => void;
+  /** Put the keyboard on the newest message, to walk the conversation (GUI). */
+  browse?: () => boolean;
 };
 
 export type SurfaceProps = {

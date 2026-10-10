@@ -88,6 +88,23 @@ export function setRatio(root: LayoutNode, path: Path, ratio: number): LayoutNod
 
 export type PaneDir = 'left' | 'right' | 'up' | 'down';
 
+/**
+ * Hyprland-style keyboard resize: moves the divider nearest the pane at `path`
+ * in the arrow's direction (→ moves a side-by-side divider right, ↓ a stacked
+ * one down). The nearest split of the right kind above the pane is the one that
+ * moves; with none, the layout comes back unchanged.
+ */
+export function nudgeDivider(root: LayoutNode, path: Path, dir: PaneDir, step = 0.05): LayoutNode {
+  const want = dir === 'left' || dir === 'right' ? 'horizontal' : 'vertical';
+  const delta = dir === 'right' || dir === 'down' ? step : -step;
+  for (let depth = path.length - 1; depth >= 0; depth--) {
+    const at = path.slice(0, depth);
+    const n = nodeAt(root, at);
+    if (n?.type === 'split' && n.direction === want) return setRatio(root, at, n.ratio + delta);
+  }
+  return root;
+}
+
 type Box = { x: number; y: number; w: number; h: number };
 
 function layoutBoxes(node: LayoutNode, box: Box, path: Path, out: Array<{ path: Path; box: Box }>): void {

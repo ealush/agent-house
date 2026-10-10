@@ -1135,14 +1135,14 @@ a.pill:hover {
 
 /* The terminal itself stays dark in both UI themes, so its gutter does too. */
 :root[data-theme='light'] .term-wrap {
-  background: #0e1014;
+  background: var(--term-bg, #0e1014);
 }
 
 /* A phone has no width to spare: the terminal runs edge to edge, in its own color. */
 .narrow .term-wrap {
   margin: 0;
   padding: 4px 2px 0 6px;
-  background: #0e1014;
+  background: var(--term-bg, #0e1014);
   border-top: 1px solid var(--line);
 }
 
@@ -4851,9 +4851,9 @@ button.tool-chip:hover {
   min-width: 0;
   display: flex;
   align-items: center;
-  /* Underlined labels have almost no padding. Wider than the old 2px pill
-     gap, and still short enough that all five fit the default panel. */
-  gap: 1rem;
+  /* Share whatever width the panel has, instead of a fixed gap that either
+     bunches the labels or clips the last one. */
+  justify-content: space-between;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -4864,4 +4864,97 @@ button.tool-chip:hover {
 
 .tabs-scroll > button {
   flex: none;
+}
+
+/* Keyboard-focused dividers light up like a hovered one. */
+.divider:focus-visible {
+  outline: none;
+  background: var(--accent);
+}
+
+/* Resize mode, like a Hyprland submap: says which keys mean what until you leave it. */
+.submap {
+  position: fixed;
+  left: 50%;
+  bottom: calc(18px + var(--safe-pad, 0px));
+  transform: translateX(-50%);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 24px);
+  padding: 8px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--accent-line);
+  background: var(--raised);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.submap strong {
+  color: var(--accent);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.submap kbd {
+  margin: 0 1px;
+}
+
+.dl[tabindex='0']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Split panes, Hyprland-style: small gaps, a hairline border, and the focused
+   pane in the accent (Omarchy's active border), so the keyboard's place is plain. */
+.ws-root .pane {
+  margin: 3px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.ws-root .pane.focused {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-line);
+}
+
+/* One pane maximized: no frame needed. */
+.ws-root > .pane {
+  margin: 0;
+  border-color: transparent;
+  box-shadow: none;
+  border-radius: 0;
+}
+
+/* Workspaces 1–9 in the sidebar, like Omarchy's bar. */
+.ws-dots {
+  display: flex;
+  gap: 4px;
+  padding: 0 10px 8px;
+}
+
+.ws-dots button {
+  min-width: 26px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font: 600 11.5px var(--mono);
+}
+
+.ws-dots button:hover {
+  color: var(--text);
+  border-color: var(--line-2);
+}
+
+.ws-dots button.on {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: var(--accent);
 }

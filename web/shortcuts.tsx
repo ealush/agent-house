@@ -81,7 +81,7 @@ export function Shortcuts() {
 }
 
 /** One icon per catalog action. The type fails the build when a command has none. */
-const COMMAND_ICONS = {
+const BASE_ICONS = {
   'command-palette': 'commands',
   switcher: 'search',
   'cycle-prev': 'chevron-up',
@@ -114,6 +114,7 @@ const COMMAND_ICONS = {
   'pick-effort': 'effort',
   'copy-last': 'copy',
   'jump-latest': 'chevron-down',
+  'browse-messages': 'chat',
   scrollback: 'terminal',
   'copy-attach': 'copy',
   'toggle-keys': 'keyboard',
@@ -133,8 +134,22 @@ const COMMAND_ICONS = {
   'move-pane-up': 'pane-up',
   'move-pane-down': 'pane-down',
   'toggle-split': 'split-flip',
+  'resize-left': 'pane-left',
+  'resize-right': 'pane-right',
+  'resize-up': 'pane-up',
+  'resize-down': 'pane-down',
+  'resize-mode': 'split-right',
+  'maximize-pane': 'pane',
   'exit-split': 'pane',
-} as const satisfies Record<CommandId, IconName>;
+} as const satisfies Record<Exclude<CommandId, `workspace-${string}` | `to-workspace-${string}`>, IconName>;
+
+const COMMAND_ICONS = Object.fromEntries([
+  ...Object.entries(BASE_ICONS),
+  ...['1', '2', '3', '4', '5', '6', '7', '8', '9'].flatMap((d) => [
+    [`workspace-${d}`, 'pane'],
+    [`to-workspace-${d}`, 'send'],
+  ]),
+]) as Record<CommandId, IconName>;
 
 function resolved(id: CommandId, overrides: Overrides): Chord[] {
   if (Object.prototype.hasOwnProperty.call(overrides, id)) return overrides[id] ?? [];

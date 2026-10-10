@@ -495,12 +495,6 @@ button.tag:hover {
   gap: 0.25rem 1.25rem;
 }
 
-/* The side panel scrolls these labels. A full 1.25rem gap clips Snapshots
-   in the default 420px panel, so this strip is a step tighter and still open. */
-.tabs-scroll {
-  gap: 1rem;
-}
-
 /* Desktop GUI/Terminal switch: plain underlined labels, like the design. */
 .view-tabs {
   display: flex;

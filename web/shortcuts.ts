@@ -17,7 +17,11 @@ export type Chord = {
   shift?: boolean;
 };
 
+type Digit = '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9';
+
 export type CommandId =
+  | `workspace-${Digit}`
+  | `to-workspace-${Digit}`
   | 'command-palette'
   | 'switcher'
   | 'new-session'
@@ -49,6 +53,7 @@ export type CommandId =
   | 'pick-effort'
   | 'copy-last'
   | 'jump-latest'
+  | 'browse-messages'
   | 'scrollback'
   | 'copy-attach'
   | 'toggle-keys'
@@ -68,6 +73,12 @@ export type CommandId =
   | 'move-pane-up'
   | 'move-pane-down'
   | 'toggle-split'
+  | 'resize-left'
+  | 'resize-right'
+  | 'resize-up'
+  | 'resize-down'
+  | 'resize-mode'
+  | 'maximize-pane'
   | 'exit-split'
   | 'show-shortcuts';
 
@@ -292,6 +303,14 @@ export const COMMANDS: Command[] = [
     scopes: act,
   },
   {
+    id: 'browse-messages',
+    group: 'Session',
+    label: 'Browse messages',
+    detail: 'Put the keyboard on the newest message (GUI): ↑↓ or j/k move, c copies, r restores the files to before it, Esc returns to the composer.',
+    chords: [{ key: 'b', ctrl: true, alt: true }],
+    scopes: act,
+  },
+  {
     id: 'rename',
     group: 'Session',
     label: 'Rename session',
@@ -500,6 +519,54 @@ export const COMMANDS: Command[] = [
     scopes: session,
   },
   {
+    id: 'resize-left',
+    group: 'Workspace',
+    label: 'Resize: divider left',
+    detail: 'Move the divider beside the focused pane left. With no split, widen the side panel.',
+    chords: [{ key: 'ArrowLeft', ctrl: true, shift: true, alt: true }],
+    scopes: session,
+  },
+  {
+    id: 'resize-right',
+    group: 'Workspace',
+    label: 'Resize: divider right',
+    detail: 'Move the divider beside the focused pane right. With no split, narrow the side panel.',
+    chords: [{ key: 'ArrowRight', ctrl: true, shift: true, alt: true }],
+    scopes: session,
+  },
+  {
+    id: 'resize-up',
+    group: 'Workspace',
+    label: 'Resize: divider up',
+    detail: 'Move the divider above or below the focused pane up.',
+    chords: [{ key: 'ArrowUp', ctrl: true, shift: true, alt: true }],
+    scopes: session,
+  },
+  {
+    id: 'resize-down',
+    group: 'Workspace',
+    label: 'Resize: divider down',
+    detail: 'Move the divider above or below the focused pane down.',
+    chords: [{ key: 'ArrowDown', ctrl: true, shift: true, alt: true }],
+    scopes: session,
+  },
+  {
+    id: 'resize-mode',
+    group: 'Workspace',
+    label: 'Resize mode',
+    detail: 'Like a Hyprland submap: arrows move the nearest divider (Shift for big steps) until Escape or Enter.',
+    chords: [{ key: 'r', ctrl: true, shift: true }],
+    scopes: session,
+  },
+  {
+    id: 'maximize-pane',
+    group: 'Workspace',
+    label: 'Maximize pane',
+    detail: 'Show the focused pane alone, like Hyprland fullscreen. Again to bring the split back.',
+    chords: [{ key: 'f', ctrl: true, shift: true }],
+    scopes: session,
+  },
+  {
     id: 'exit-split',
     group: 'Workspace',
     label: 'Exit split',
@@ -508,6 +575,29 @@ export const COMMANDS: Command[] = [
     scopes: session,
   },
 ];
+
+// Workspaces 1–9, Hyprland-style: Alt+N goes there, Alt+Shift+N sends the focused session.
+const DIGITS: Digit[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
+for (const d of DIGITS) {
+  COMMANDS.push({
+    id: `workspace-${d}`,
+    group: 'Workspace',
+    label: `Workspace ${d}`,
+    detail: `Go to workspace ${d}. What you leave is kept there: its split, or its session.`,
+    chords: [{ key: d, alt: true }],
+    scopes: ['app', 'terminal', 'field'],
+  });
+}
+for (const d of DIGITS) {
+  COMMANDS.push({
+    id: `to-workspace-${d}`,
+    group: 'Workspace',
+    label: `Send to workspace ${d}`,
+    detail: `Move the focused session to workspace ${d}, as a new tile beside what is there.`,
+    chords: [{ key: d, alt: true, shift: true }],
+    scopes: ['app', 'terminal', 'field'],
+  });
+}
 
 const BY_ID = new Map(COMMANDS.map((c) => [c.id, c]));
 

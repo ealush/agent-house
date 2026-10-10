@@ -6,12 +6,15 @@ import { look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
 import { useSavedGroups, setGroupList } from './groupOrder.ts';
 import { movedSessionOrders, saveGroupMove, sidebarSections } from './sessionOrder.ts';
-import { runCommand } from './shortcuts.ts';
+import { runCommand, type CommandId } from './shortcuts.ts';
 import { ShortcutHint, shortcutTitle, useShortcutRevision } from './shortcuts.tsx';
 
 export type Page = 'inbox' | 'history' | 'sessions' | 'settings' | 'search';
 
 type Props = {
+  /** Workspaces 1–9: where you are, and which hold something. */
+  workspaces?: { current: number; used: number[] };
+  onWorkspace?: (n: number) => void;
   state: State | null;
   error: string | null;
   page: Page;
@@ -50,7 +53,7 @@ export function confirmTerminate(w: Win) {
 }
 
 /** Desktop navigation: inbox, hosts, and every live session grouped by host (or project). */
-export function Sidebar({ state, error, page, selected, visibleKeys, device, onPage, onSelect, onSearch, onNew, onWorktrees, onReorder, onKill, onFork, onDragSession, onCollapse }: Props) {
+export function Sidebar({ workspaces, onWorkspace, state, error, page, selected, visibleKeys, device, onPage, onSelect, onSearch, onNew, onWorktrees, onReorder, onKill, onFork, onDragSession, onCollapse }: Props) {
   useShortcutRevision();
   const windows = state?.windows ?? [];
   const visible = new Set(visibleKeys);
@@ -76,6 +79,17 @@ export function Sidebar({ state, error, page, selected, visibleKeys, device, onP
     if (!group.some((w) => w.key === drag.key) || drag.key === target.key) return;
     for (const change of movedSessionOrders(group, drag.key, target.key, after)) {
       const row = group.find((w) => w.key === change.key);
+      if (row) onReorder(row.uid, row.host, change.order);
+    }
+  }
+
+  /** Keyboard reorder (Alt+Shift+↑/↓ on a focused row): one place up or down within its group. */
+  function nudgeSession(group: Win[], w: Win, dir: -1 | 1) {
+    const at = group.findIndex((x) => x.key === w.key);
+    const target = group[at + dir];
+    if (!target) return;
+    for (const change of movedSessionOrders(group, w.key, target.key, dir > 0)) {
+      const row = group.find((x) => x.key === change.key);
       if (row) onReorder(row.uid, row.host, change.order);
     }
   }
@@ -125,7 +139,15 @@ export function Sidebar({ state, error, page, selected, visibleKeys, device, onP
           dropSession(group, w, lowerHalf(e));
         }}
       >
-        <button className={`side-session ${w.agent ? '' : 'shellish'}${active ? ' on' : ''}${seen && !active ? ' visible' : ''}`} style={{ '--agent': color } as React.CSSProperties} onClick={() => onSelect(w.key)} aria-current={active ? true : undefined} title={`${w.title} — ${w.cwd}${modelLabel ? ` — ${modelLabel}` : ''}${w.launch ? ` — ${w.launch}` : ''}`}>
+        <button
+          className={`side-session ${w.agent ? '' : 'shellish'}${active ? ' on' : ''}${seen && !active ? ' visible' : ''}`}
+          style={{ '--agent': color } as React.CSSProperties}
+          onClick={() => onSelect(w.key)}
+          onKeyDown={(e) => {
+            if (!e.altKey || !e.shiftKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+            e.preventDefault();
+            nudgeSession(group, w, e.key === 'ArrowUp' ? -1 : 1);
+          }} aria-current={active ? true : undefined} title={`${w.title} — ${w.cwd}${modelLabel ? ` — ${modelLabel}` : ''}${w.launch ? ` — ${w.launch}` : ''}`}>
           <span className="grip" aria-hidden>
             ⠿
           </span>
@@ -220,6 +242,25 @@ export function Sidebar({ state, error, page, selected, visibleKeys, device, onP
           <Icon name="panel-hide" />
         </button>
       </div>
+
+      {/* Like Omarchy's bar: shown once a second workspace is in use. */}
+      {workspaces && (workspaces.current !== 1 || workspaces.used.some((n) => n !== workspaces.current)) && (
+        <div className="ws-dots" role="group" aria-label="Workspaces">
+          {[1, 2, 3, 4, 5, 6, 7, 8, 9]
+            .filter((n) => n === workspaces.current || workspaces.used.includes(n))
+            .map((n) => (
+              <button
+                key={n}
+                className={n === workspaces.current ? 'on' : ''}
+                aria-current={n === workspaces.current ? true : undefined}
+                title={shortcutTitle(`Workspace ${n}`, `workspace-${n}` as CommandId)}
+                onClick={() => onWorkspace?.(n)}
+              >
+                {n}
+              </button>
+            ))}
+        </div>
+      )}
 
       <button className="search" onClick={onSearch}>
         <Icon name="search" size={15} />

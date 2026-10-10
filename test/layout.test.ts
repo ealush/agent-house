@@ -156,3 +156,17 @@ test('dropping a pane splits the target and keeps the one left behind', () => {
   assert.deepEqual(swapped.path, ['first']);
   assert.equal(moveLeafTo(stack, ['first'], ['first'], 'left').layout, stack);
 });
+
+test('keyboard resize moves the nearest divider of the arrow’s kind', async () => {
+  const { nudgeDivider } = await import('../web/layout.ts');
+  // [A | [B / C]]: B is stacked over C, beside A.
+  const tree = { type: 'split', direction: 'horizontal', ratio: 0.5, first: { type: 'session', sessionKey: 'A' }, second: { type: 'split', direction: 'vertical', ratio: 0.5, first: { type: 'session', sessionKey: 'B' }, second: { type: 'session', sessionKey: 'C' } } } as const;
+  const right = nudgeDivider(tree as any, ['second', 'first'], 'right') as any;
+  assert.equal(right.ratio, 0.55, '→ from B moves the A|B divider right');
+  const down = nudgeDivider(tree as any, ['second', 'first'], 'down') as any;
+  assert.equal(down.second.ratio, 0.55, '↓ from B moves the B/C divider down');
+  assert.equal(nudgeDivider(tree as any, ['first'], 'up'), tree, 'A has no stacked divider above it');
+  let far: any = tree;
+  for (let i = 0; i < 20; i++) far = nudgeDivider(far, ['first'], 'left');
+  assert.equal(far.ratio, 0.15, 'clamped like a drag');
+});

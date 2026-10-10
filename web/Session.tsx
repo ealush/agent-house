@@ -21,6 +21,7 @@ import { SendToDialog } from './SendToDialog.tsx';
 import { SnapshotsPanel } from './Snapshots.tsx';
 import { ShortcutHint, shortcutTitle, useCommand, usePaletteProvider, useShortcutRevision } from './shortcuts.tsx';
 import { runCommand } from './shortcuts.ts';
+import { useLaunch, useLaunchPalette } from './useLaunch.ts';
 
 type Panel = 'diff' | 'files' | 'chat' | 'queue' | 'snapshots';
 
@@ -104,7 +105,20 @@ function PanelDivider({ onResize, onReset }: { onResize: (dx: number) => void; o
   return (
     <div
       className="divider v panel-divider"
-      title="Drag to resize (double-click to reset)"
+      title="Drag to resize (double-click to reset). Focused: arrows resize, Home resets."
+      tabIndex={0}
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize side panel"
+      onKeyDown={(e) => {
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          e.preventDefault();
+          onResize((e.key === 'ArrowLeft' ? -1 : 1) * (e.shiftKey ? 120 : 40));
+        } else if (e.key === 'Home') {
+          e.preventDefault();
+          onReset();
+        }
+      }}
       onPointerDown={(e) => {
         dragging.current = e.pointerId;
         lastX.current = e.clientX;
@@ -342,6 +356,17 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
     });
   };
 
+  // Keyboard resize (App's resize commands and resize mode) when there's no split.
+  useEffect(() => {
+    if (!active) return;
+    const onResize = (e: Event) => {
+      if (!panel || panelCollapsed || narrow) return;
+      resizePanel((e as CustomEvent<number>).detail);
+    };
+    window.addEventListener('ah:resize-panel', onResize);
+    return () => window.removeEventListener('ah:resize-panel', onResize);
+  });
+
   const resetPanelWidth = () => {
     setPanelWidth(DEFAULT_PANEL_WIDTH);
     try {
@@ -496,6 +521,25 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   useCommand('panel-snapshots', () => togglePanel('snapshots'), active);
   useCommand('copy-last', () => surface.current?.copyLast?.(), active && view === 'gui');
   useCommand('jump-latest', () => surface.current?.jumpLatest?.(), active && view === 'gui');
+  useCommand('browse-messages', () => void surface.current?.browse?.(), active && view === 'gui');
+
+  // Model and effort in the terminal view (the GUI's composer covers its own view).
+  const launch = useLaunch({
+    client,
+    w,
+    agent: w.agent,
+    onNotice: onToast,
+    onSent,
+    onRelaunched: (id) => {
+      refresh();
+      onOpenKey?.(keyOnThisHost(id));
+    },
+  });
+  useLaunchPalette(launch, active && view !== 'gui' && !!w.agent);
+  const terminalPicker = (setting: 'model' | 'effort') =>
+    launch.preset?.settingsCommands?.[setting] ? launch.openSettings(setting) : onToast(`Palette → Session → Model and effort lists the ${setting === 'model' ? 'models' : 'effort levels'}`);
+  useCommand('pick-model', () => void terminalPicker('model'), active && view !== 'gui' && !!w.agent);
+  useCommand('pick-effort', () => void terminalPicker('effort'), active && view !== 'gui' && !!w.agent);
   useCommand('scrollback', () => void act(async () => setCapture(await client.capture(w.id))), active);
   useCommand(
     'copy-attach',

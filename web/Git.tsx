@@ -77,7 +77,8 @@ export function ChangesPanel({ client, windowId, onComment }: { client: HostApi;
         {error && <p className="panel-msg">{error}</p>}
         {!data && !error && <p className="panel-msg">Loading changes…</p>}
         {data && !files.length && !untracked.length && <p className="panel-msg">Working tree clean on {data.branch}.</p>}
-        <div className="diff">
+        {/* ↑↓ walk the commentable lines; Enter opens a comment on one. */}
+        <div className="diff" data-rove=".dl[tabindex='0']">
           {files.map((f) => (
             <section key={f.path}>
               <div className="diff-file">
@@ -89,10 +90,19 @@ export function ChangesPanel({ client, windowId, onComment }: { client: HostApi;
                 <div key={i}>
                   <div
                     className={`dl ${l.kind}`}
+                    tabIndex={l.kind !== 'hunk' && onComment ? 0 : undefined}
+                    role={l.kind !== 'hunk' && onComment ? 'button' : undefined}
+                    aria-label={l.kind !== 'hunk' && onComment ? `Comment on ${f.path} line ${l.n ?? ''}` : undefined}
                     onClick={() => {
                       if (l.kind === 'hunk' || !onComment) return;
                       setOpen(open?.file === f.path && open.i === i ? null : { file: f.path, i });
                       setDraft('');
+                    }}
+                    onKeyDown={(e) => {
+                      if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) {
+                        e.preventDefault();
+                        e.currentTarget.click();
+                      }
                     }}
                   >
                     <span className="ln">{l.n ?? '…'}</span>
@@ -100,7 +110,24 @@ export function ChangesPanel({ client, windowId, onComment }: { client: HostApi;
                   </div>
                   {open?.file === f.path && open.i === i && (
                     <div className="comment-box">
-                      <textarea autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Comment for the agent…" />
+                      <textarea
+                        autoFocus
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        placeholder="Comment for the agent… (Ctrl+Enter sends, Esc cancels)"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && draft.trim()) {
+                            e.preventDefault();
+                            submit(f.path, l);
+                          } else if (e.key === 'Escape') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const line = e.currentTarget.closest('.comment-box')?.previousElementSibling as HTMLElement | null;
+                            setOpen(null);
+                            line?.focus();
+                          }
+                        }}
+                      />
                       <div className="actions">
                         <button className="btn ghost small" onClick={() => setOpen(null)}>
                           Cancel
