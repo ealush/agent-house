@@ -114,6 +114,11 @@ to terminal rules and output activity, and matches live agents to their transcri
   (Ctrl+Shift+O, or Ctrl+Enter in the switcher; it splits along the focused
   pane's longer side), and a scratchpad shell that floats over anything
   (Ctrl+Shift+`). The focused pane wears the accent border.
+  Splitting never shows one session twice (two viewers fight over a tmux
+  window's size): the new pane asks what goes in it, inside the pane — another
+  session, a new shell, or a new session. Replace pane (Ctrl+Alt+P, or p in
+  pane mode) uses the same chooser; Esc keeps what was there. New session is
+  never a modal: it takes the space the session will occupy.
 - **Omarchy.** Settings → Appearance → Omarchy wears the host's current Omarchy
   theme and monospace font on every device, terminal included, and follows it
   when you switch themes on the desktop. Palette → Run in project starts any

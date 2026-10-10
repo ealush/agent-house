@@ -170,3 +170,11 @@ test('keyboard resize moves the nearest divider of the arrow’s kind', async ()
   for (let i = 0; i < 20; i++) far = nudgeDivider(far, ['first'], 'left');
   assert.equal(far.ratio, 0.15, 'clamped like a drag');
 });
+
+test('a chooser pane remembers what it replaced, and a split’s chooser nothing', async () => {
+  const { pickKey, isPick, pickPrevious } = await import('../web/layout.ts');
+  assert.equal(isPick(pickKey()), true);
+  assert.equal(pickPrevious(pickKey()), null, 'a new split closes on cancel');
+  assert.equal(pickPrevious(pickKey('@4')), '@4', 'Replace pane puts the session back on cancel');
+  assert.equal(isPick('@4'), false);
+});

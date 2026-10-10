@@ -16,7 +16,7 @@ import { Inbox, type InboxGroup } from './Inbox.tsx';
 import { HistoryView, SessionsView } from './HistoryView.tsx';
 import { Session } from './Session.tsx';
 import { Workspace } from './Workspace.tsx';
-import { leaves, moveLeaf, nudgeDivider, neighborPane, nodeAt, normalizeSplit, paneLeaves, parseLayout, replaceLeaf, splitLeaf, toggleSplit, type LayoutNode, type PaneDir, type Path } from './layout.ts';
+import { isPick, pickKey, leaves, moveLeaf, nudgeDivider, neighborPane, nodeAt, normalizeSplit, paneLeaves, parseLayout, replaceLeaf, splitLeaf, toggleSplit, type LayoutNode, type PaneDir, type Path } from './layout.ts';
 import { NewDialog } from './NewDialog.tsx';
 import { ForkDialog, type ForkTarget } from './ForkDialog.tsx';
 import { Switcher } from './Switcher.tsx';
@@ -120,7 +120,8 @@ export function App({ onLock }: { onLock: () => void }) {
   // Ctrl+Enter / Pane mode o / Open as a new pane: the switcher tiles instead of navigating.
   const [switchTile, setSwitchTile] = useState(false);
   const focused = layout ? nodeAt(layout, focusPath ?? []) : null;
-  const focusKey = focused?.type === 'session' ? focused.sessionKey : null;
+  // A chooser pane (layout.ts PICK) holds no session yet.
+  const focusKey = focused?.type === 'session' && !isPick(focused.sessionKey) ? focused.sessionKey : null;
   // Every pane on screen, so the sidebar can mark them all (split view shows several at once).
   const visibleKeys = layout ? leaves(layout) : selected ? [selected] : [];
   const pushActive = useRef(false);
@@ -294,6 +295,9 @@ export function App({ onLock }: { onLock: () => void }) {
   useCommand('resize-mode', () => setSubmap('resize'), !!selected || splitOpen);
   useCommand('pane-mode', () => setSubmap('pane'), !!selected || !!layout);
   useCommand('maximize-pane', () => setZoom((z) => !z), splitOpen && !narrow);
+  // Replace pane: in a split the pane turns into its chooser (Session handles that);
+  // in the single view it is the switcher.
+  useCommand('replace-pane', () => setSwitching(true), !!selected && !layout);
   useCommand('open-in-pane', () => {
     setSwitchTile(true);
     setSwitching(true);
@@ -331,6 +335,8 @@ export function App({ onLock }: { onLock: () => void }) {
           return runCommand('split-below');
         case 'x':
           return runCommand('close-pane');
+        case 'p':
+          return leave(() => runCommand('replace-pane'));
         case 'f':
           return setZoom((z) => !z);
         case 't':
@@ -478,11 +484,41 @@ export function App({ onLock }: { onLock: () => void }) {
     });
   });
 
-  /** Enter split view from the single session: the new half shows the most recent other session. */
+  /** Enter split view from the single session. Without a session to show, the new half asks what goes there. */
   function splitFrom(key: string, dir: 'right' | 'below', otherKey?: string) {
-    const other = otherKey ?? state?.windows.find((w) => w.key !== key)?.key ?? key;
+    const other = otherKey ?? pickKey();
     setLayout(splitLeaf({ type: 'session', sessionKey: key }, key, dir === 'right' ? 'horizontal' : 'vertical', other));
-    setFocusPath(['first']);
+    setFocusPath(otherKey ? ['first'] : ['second']);
+  }
+
+  /** The session nearest a chooser pane (its split sibling first): where a new shell or session starts. */
+  function nearPane(path: Path): Win | null {
+    if (!layout || !state) return current ?? null;
+    for (let depth = path.length - 1; depth >= 0; depth--) {
+      const n = nodeAt(layout, path.slice(0, depth));
+      const key = n ? paneLeaves(n).find((p) => !isPick(p.sessionKey))?.sessionKey : undefined;
+      const w = key ? state.windows.find((x) => x.key === key) : undefined;
+      if (w) return w;
+    }
+    return current ?? null;
+  }
+
+  function fillPane(path: Path, key: string) {
+    if (!layout) return open(key);
+    setLayout(replaceLeaf(layout, path, key));
+    setFocusPath(path);
+  }
+
+  async function newShellInto(path: Path) {
+    const near = nearPane(path);
+    const host = near?.host ?? state?.hostname ?? '';
+    try {
+      const out = await clientFor(host).create({ preset: 'shell', cwd: near?.projectPath ?? '~', session: near?.session ?? state?.defaultSession ?? '', label: '', resume: false });
+      await waitForWindow(() => refresh(host), { id: out.id, uid: out.uid });
+      fillPane(path, keyFor(host, out.id));
+    } catch (e) {
+      showError(e, "Couldn't open a shell");
+    }
   }
 
   function flash(msg: string) {
@@ -730,6 +766,23 @@ export function App({ onLock }: { onLock: () => void }) {
             onExit={exitSplit}
             zoom={zoom}
             onUnzoom={() => setZoom(false)}
+            onNewShell={(path) => void newShellInto(path)}
+            renderNew={(path, onCancel) => (
+              <NewDialog
+                screen
+                hosts={state.hosts.filter((h) => h.online).map((h) => h.name)}
+                initialHost={nearPane(path)?.host ?? state.hostname}
+                hostState={hostState}
+                clientFor={clientFor}
+                initialCwd={nearPane(path)?.projectPath ?? '~'}
+                onClose={onCancel}
+                onSent={sent}
+                onCreated={async (host, id, uid) => {
+                  await waitForWindow(() => refresh(host), { id, uid });
+                  fillPane(path, keyFor(host, id));
+                }}
+              />
+            )}
           />
         ) : current && state ? (
           <Session
@@ -801,7 +854,8 @@ export function App({ onLock }: { onLock: () => void }) {
             <p className="hint">{error ? `Can't reach the server: ${error}` : 'Connecting…'}</p>
           </div>
         )}
-      {creating && state && narrow && (
+      {/* Never a modal: the form takes the space a session would (phone and desktop alike). */}
+      {creating && state && (
         <NewDialog
           screen
           hosts={state.hosts.filter((h) => h.online).map((h) => h.name)}
@@ -824,26 +878,6 @@ export function App({ onLock }: { onLock: () => void }) {
       )}
       </main>
 
-      {creating && state && !narrow && (
-        <NewDialog
-          hosts={state.hosts.filter((h) => h.online).map((h) => h.name)}
-          initialHost={creating.host ?? current?.host ?? state.hostname}
-          hostState={hostState}
-          clientFor={clientFor}
-          initialCwd={creating.cwd ?? current?.projectPath ?? '~'}
-          initialPrompt={creating.prompt}
-          onClose={() => setCreating(null)}
-          onSent={sent}
-          onCreated={async (host, id, uid) => {
-            setCreating(null);
-            // The new window can miss the next tick; opening immediately
-            // selects a key nothing matches and the missing-selection
-            // fallback bounces to the inbox. Wait until state lists it.
-            await waitForWindow(() => refresh(host), { id, uid });
-            open(keyFor(host, id));
-          }}
-        />
-      )}
 
       {forking && state && (
         <ForkDialog
@@ -879,7 +913,7 @@ export function App({ onLock }: { onLock: () => void }) {
               <kbd>j</kbd>
               <kbd>k</kbd>
               <kbd>l</kbd> focus · <kbd>⇧</kbd>+them move · <kbd>v</kbd>
-              <kbd>s</kbd> split · <kbd>x</kbd> close · <kbd>f</kbd> maximize · <kbd>t</kbd> flip · <kbd>r</kbd> resize · <kbd>o</kbd> open here · <kbd>1</kbd>–<kbd>9</kbd> workspace · <kbd>Esc</kbd> done
+              <kbd>s</kbd> split · <kbd>p</kbd> replace · <kbd>x</kbd> close · <kbd>f</kbd> maximize · <kbd>t</kbd> flip · <kbd>r</kbd> resize · <kbd>o</kbd> open here · <kbd>1</kbd>–<kbd>9</kbd> workspace · <kbd>Esc</kbd> done
             </span>
           )}
         </div>

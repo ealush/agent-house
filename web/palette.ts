@@ -77,7 +77,7 @@ export const TREE: Spec = {
       children: [
         'pane-mode',
         { key: 'tiles', label: 'Open as a new pane', icon: 'split-right', detail: 'Beside the focused pane, along its longer side', children: ['open-in-pane', { provider: 'tiles' }] },
-        { key: 'split', label: 'Split', icon: 'split-right', detail: 'Open, flip, close panes', children: ['split-right', 'split-below', 'toggle-split', 'close-pane', 'exit-split'] },
+        { key: 'split', label: 'Split', icon: 'split-right', detail: 'Open, replace, flip, close panes', children: ['split-right', 'split-below', 'replace-pane', 'toggle-split', 'close-pane', 'exit-split'] },
         { key: 'focus', label: 'Focus pane', icon: 'pane-left', children: ['focus-pane-left', 'focus-pane-right', 'focus-pane-up', 'focus-pane-down'] },
         { key: 'move', label: 'Move pane', icon: 'pane-right', children: ['move-pane-left', 'move-pane-right', 'move-pane-up', 'move-pane-down'] },
         {

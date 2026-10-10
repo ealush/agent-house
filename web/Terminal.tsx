@@ -182,7 +182,10 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ wi
         // tmux repaints the whole screen on attach, so start from a clean slate.
         t.reset();
         setConn('open');
-        if (!matchMedia('(pointer: coarse)').matches) t.focus();
+        // Only when nothing else has the keyboard: a split's other pane (or its
+        // chooser), or a reconnect in the background, must not steal it.
+        const idle = !document.activeElement || document.activeElement === document.body;
+        if (idle && !matchMedia('(pointer: coarse)').matches) t.focus();
       };
       sock.onmessage = (e) => t.write(new Uint8Array(e.data as ArrayBuffer));
       sock.onclose = (e) => {

@@ -475,6 +475,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   useCommand('split-right', () => onSplit?.('right'), active && !!onSplit);
   useCommand('split-below', () => onSplit?.('below'), active && !!onSplit);
   useCommand('close-pane', () => onClosePane?.(), active && !!onClosePane);
+  useCommand('replace-pane', () => onReplace?.(), active && !!onReplace);
   useCommand('terminate', () => {
     void kill();
   }, active);
@@ -845,7 +846,8 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
                     onReplace();
                   }}
                 >
-                  Replace pane…
+                  <span className="grow">Replace pane…</span>
+                  <ShortcutHint id="replace-pane" />
                 </button>
               )}
               {onClosePane && (

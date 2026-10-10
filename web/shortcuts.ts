@@ -79,6 +79,7 @@ export type CommandId =
   | 'resize-down'
   | 'resize-mode'
   | 'pane-mode'
+  | 'replace-pane'
   | 'open-in-pane'
   | 'scratchpad'
   | 'maximize-pane'
@@ -567,6 +568,14 @@ export const COMMANDS: Command[] = [
     label: 'Pane mode',
     detail: 'A Hyprland-style submap: h j k l (or arrows) focus, Shift moves, v / s split, x closes, f maximizes, t flips, r resizes, 1–9 go to a workspace (Shift sends), o opens a session as a new pane, Esc leaves.',
     chords: [{ key: ' ', ctrl: true, shift: true }],
+    scopes: ['app', 'terminal', 'field'],
+  },
+  {
+    id: 'replace-pane',
+    group: 'Workspace',
+    label: 'Replace pane…',
+    detail: 'Choose another session, a new shell, or a new session for the focused pane, inside the pane. Esc keeps what was there.',
+    chords: [{ key: 'p', ctrl: true, alt: true }],
     scopes: ['app', 'terminal', 'field'],
   },
   {

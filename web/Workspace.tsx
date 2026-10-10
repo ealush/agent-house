@@ -3,7 +3,8 @@ import type { HostApi, SendResult, Win } from './api.ts';
 import { Session } from './Session.tsx';
 import { useSavedGroups } from './groupOrder.ts';
 import { sidebarOrder } from './sessionOrder.ts';
-import { closeLeaf, dockLeaf, moveLeafTo, paneLeaves, replaceLeaf, setRatio, splitLeaf, toggleSplit, type LayoutNode, type Path } from './layout.ts';
+import { closeLeaf, dockLeaf, isPick, moveLeafTo, paneLeaves, pickKey, pickPrevious, replaceLeaf, setRatio, splitLeaf, toggleSplit, type LayoutNode, type Path } from './layout.ts';
+import { PanePicker } from './PanePicker.tsx';
 import { ShortcutHint } from './shortcuts.tsx';
 
 type Props = {
@@ -27,6 +28,10 @@ type Props = {
   /** Maximize pane: show the focused pane alone until this is cleared. */
   zoom?: boolean;
   onUnzoom?: () => void;
+  /** A chooser pane's "New shell": start one and put it in the pane at `path`. */
+  onNewShell: (path: Path) => void;
+  /** A chooser pane's "New session…": the new-session form, drawn inside that pane. */
+  renderNew: (path: Path, onCancel: () => void) => React.ReactNode;
   /** Send to… → New session, in this pane's project. */
   onStartSession: (w: Win, prompt: string) => void;
 };
@@ -38,7 +43,8 @@ type Props = {
  */
 export function Workspace(props: Props) {
   const { layout, windows } = props;
-  const [picking, setPicking] = useState<Path | null>(null);
+  // The chooser pane whose "New session…" form is open (it fills that pane).
+  const [newIn, setNewIn] = useState<string | null>(null);
   const [dropPane, setDropPane] = useState<string | null>(null);
   const [paneDrag, setPaneDrag] = useState<Path | null>(null);
 
@@ -92,6 +98,31 @@ export function Workspace(props: Props) {
     const w = byKey.get(sessionKey);
     const paneId = path.join('/');
     const focused = props.focusPath?.join('/') === paneId;
+    if (isPick(sessionKey)) {
+      const previous = pickPrevious(sessionKey);
+      const cancel = () => props.onLayout(previous ? replaceLeaf(layout, path, previous) : closeLeaf(layout, path));
+      return (
+        <div className={`pane chooser ${focused ? 'focused' : ''}`} onClick={() => props.onFocus(path)}>
+          {newIn === paneId ? (
+            props.renderNew(path, () => setNewIn(null))
+          ) : (
+            <PanePicker
+              windows={orderedWindows}
+              onScreen={panes.map((p) => p.sessionKey)}
+              replacing={(previous && byKey.get(previous)) || null}
+              focus={keyboardId === paneId}
+              onChoose={(key) => {
+                props.onLayout(replaceLeaf(layout, path, key));
+                props.onFocus(path);
+              }}
+              onNewShell={() => props.onNewShell(path)}
+              onNewSession={() => setNewIn(paneId)}
+              onCancel={cancel}
+            />
+          )}
+        </div>
+      );
+    }
     if (!w) {
       // The session was terminated elsewhere: show the end state, keep history resumable.
       return (
@@ -150,9 +181,9 @@ export function Workspace(props: Props) {
           }}
           refresh={() => props.refresh(w.host)}
           onSplit={(dir) => {
-            // Second half starts on the most recent other session (or the same one twice).
-            const other = windows.find((x) => x.key !== w.key)?.key ?? w.key;
-            props.onLayout(splitLeaf(layout, path, dir === 'right' ? 'horizontal' : 'vertical', other));
+            // The new half asks what goes in it: never the same session twice.
+            props.onLayout(splitLeaf(layout, path, dir === 'right' ? 'horizontal' : 'vertical', pickKey()));
+            props.onFocus([...path, 'second']);
           }}
           active={keyboardId === paneId}
           onOpenKey={(key) => {
@@ -161,7 +192,7 @@ export function Workspace(props: Props) {
             else props.onLayout(replaceLeaf(layout, path, key));
           }}
           onSplitWith={(key) => props.onLayout(splitLeaf(layout, path, 'horizontal', key))}
-          onReplace={() => setPicking(path)}
+          onReplace={() => props.onLayout(replaceLeaf(layout, path, pickKey(w.key)))}
           onClosePane={() => props.onLayout(closeLeaf(layout, path))}
           onFlipSplit={() => props.onLayout(toggleSplit(layout, path))}
           panePath={paneId}
@@ -238,7 +269,7 @@ export function Workspace(props: Props) {
                 setTab(p.path.join('/'));
                 props.onFocus(p.path);
               }}>
-                {byKey.get(p.sessionKey)?.title ?? 'Ended'}
+                {isPick(p.sessionKey) ? 'New pane' : (byKey.get(p.sessionKey)?.title ?? 'Ended')}
               </button>
             ))}
           </div>
@@ -268,23 +299,6 @@ export function Workspace(props: Props) {
               ))}
             </div>
           )}
-        </div>
-      )}
-      {picking && (
-        <div className="picker-veil" onClick={() => setPicking(null)}>
-          <div className="menu picker" onClick={(e) => e.stopPropagation()}>
-            {windows.map((w) => (
-              <button
-                key={w.key}
-                onClick={() => {
-                  props.onLayout(replaceLeaf(layout, picking, w.key));
-                  setPicking(null);
-                }}
-              >
-                {w.title} · {w.project}
-              </button>
-            ))}
-          </div>
         </div>
       )}
     </div>

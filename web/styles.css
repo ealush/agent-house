@@ -4767,8 +4767,9 @@ button.tool-chip:hover {
   }
 }
 
-/* New session on a phone: a screen over the main area, not a modal (iOS clips
-   fixed modals at its short viewport, and a modal can't scroll its own form). */
+/* New session is never a modal: a screen in the space the session will take
+   (the main area, or the pane it was chosen from). A modal hid where the
+   session would land, and on iOS got clipped at the short viewport. */
 .ns-screen {
   position: absolute;
   inset: 0;
@@ -4984,4 +4985,141 @@ button.tool-chip:hover {
   height: auto;
   border: 0;
   border-radius: 0;
+}
+
+/* Wide spaces (a desktop main area, a wide pane): the form keeps a readable
+   width in the middle, and the buttons sit on the right at their own size. */
+.ns-screen .ns-body,
+.ns-screen .ns-head,
+.ns-screen .actions {
+  padding-left: max(16px, calc((100% - 760px) / 2));
+  padding-right: max(16px, calc((100% - 760px) / 2));
+}
+
+@media (min-width: 761px) {
+  .ns-screen .actions {
+    justify-content: flex-end;
+  }
+
+  .ns-screen .actions .btn {
+    flex: none;
+    padding: 8px 18px;
+  }
+}
+
+/* A pane that asks what goes in it (split, Replace pane): a list in its own space. */
+.pane.chooser {
+  background: var(--surface);
+}
+
+.pane-picker {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px max(14px, calc((100% - 640px) / 2)) 0;
+}
+
+.pane-picker-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.pane-picker-head h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.pane-picker-head .hint {
+  margin: 2px 0 0;
+}
+
+.pane-picker-filter {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--line-2);
+  background: var(--sunken);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+
+.pane-picker-filter:focus {
+  border-color: var(--accent-line);
+}
+
+.pane-picker-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  padding: 0 0 14px;
+  list-style: none;
+}
+
+.pane-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.pane-picker-row.on {
+  background: var(--accent-bg);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.pane-picker-row .chip {
+  flex: none;
+}
+
+.pane-picker-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pane-picker-text .name,
+.pane-picker-text .hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pane-picker-text .hint {
+  font-size: 12px;
+}
+
+.pane-picker-empty {
+  padding: 8px 10px;
+}
+
+/* Split panes are often narrow: the header gives up its extras before the title. */
+.ws-root .pane {
+  container-type: inline-size;
+}
+
+@container (max-width: 520px) {
+  .session-head .session-pills .pill:not(.waiting),
+  .session-head > .popover-wrap,
+  .session-head .devices {
+    display: none;
+  }
+}
+
+@container (max-width: 380px) {
+  .session-head .session-pills,
+  .session-head .view-tabs,
+  .session-head .chip.lg {
+    display: none;
+  }
 }

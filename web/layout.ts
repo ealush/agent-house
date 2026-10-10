@@ -5,6 +5,17 @@ export type LayoutNode = { type: 'session'; sessionKey: string } | { type: 'spli
 
 export type Path = Array<'first' | 'second'>;
 
+/**
+ * A pane waiting for you to choose what goes in it (a fresh split, or Replace
+ * pane). Its key carries the session it replaced, restored if you cancel; a
+ * split's chooser carries none and closes instead. Never the same session twice:
+ * two viewers of one tmux window fight over its size.
+ */
+export const PICK = 'pick:';
+export const pickKey = (previous = '') => `${PICK}${previous}`;
+export const isPick = (key: string) => key.startsWith(PICK);
+export const pickPrevious = (key: string) => (isPick(key) ? key.slice(PICK.length) || null : null);
+
 export function paneLeaves(node: LayoutNode, path: Path = []): Array<{ sessionKey: string; path: Path }> {
   return node.type === 'session' ? [{ sessionKey: node.sessionKey, path }] : [
     ...paneLeaves(node.first, [...path, 'first']),
