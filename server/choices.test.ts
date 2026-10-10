@@ -183,3 +183,16 @@ test('a wrapped option label is read whole', () => {
   const lines = [' Do you want to create notes.md?', ' ❯ 1. Yes', '   2. Yes, and switch to accept edits (auto-approve file edits and common file', '      commands) for this session (shift+tab)', '   3. No'];
   assert.deepEqual(parsePicker(lines)?.options.map((o) => o.label), ['Yes', 'Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)', 'No']);
 });
+
+test('each question is answered only once the dialog is on it, and the submit only on the review', async () => {
+  const { dialogAt, claudeQuestionGroups } = await import('./choices.ts');
+  const q2 = ['←  ☒ Color  ☐ Toppings  ✔ Submit  →', 'Pick toppings', '❯ 1. [ ] Cheese', '  2. [ ] Olives', '  3. [ ] Basil', '  4. [ ] Type something', '     Submit', '────', '  5. Chat about this', 'Enter to select · Tab/Arrow keys to navigate · Esc to cancel'].join('\n');
+  assert.equal(dialogAt(CLAUDE_QUESTIONS, Q2, 0), true);
+  assert.equal(dialogAt(q2, Q2, 1), true);
+  assert.equal(dialogAt(q2.replace('Pick toppings', 'Pick a planet'), Q2, 1), false, 'another question took over');
+  assert.equal(dialogAt(q2.replace('[ ] Cheese', '[✔] Cheese'), Q2, 1), false, 'something was already ticked');
+  assert.equal(dialogAt(q2.replace('☒ Color', '☐ Color'), Q2, 1), false, 'the first answer did not land');
+  assert.equal(dialogAt('Ready to submit your answers?\n❯ 1. Submit answers\n  2. Cancel', Q2, 2), true);
+  assert.equal(dialogAt(q2, Q2, 2), false, 'no submit before the review');
+  assert.deepEqual(claudeQuestionGroups(Q2, [{ picked: [1] }, { picked: [0] }]), [[{ keys: ['2'] }], [{ keys: ['1'] }, { keys: ['Right'] }], [{ keys: ['1'] }]]);
+});

@@ -109,4 +109,6 @@ test('relaunch creates the new window before stopping the old one, and keeps the
   assert.deepEqual(launched.meta['ah.worktree'], { path: '/tmp/wt', branch: 'ah/x' });
   assert.equal(launched.meta['ah.queue'], undefined);
   assert.equal(launched.meta['ah.launch.effort'], 'high');
+  // An old window that is already gone is fine (no tmux server here at all).
+  await launched.beforeCommand();
 });

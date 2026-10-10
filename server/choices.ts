@@ -182,23 +182,42 @@ export function checkAnswers(questions: Question[], answers: Answer[]): void {
  * The dialog opens on the first question with the cursor on its first option.
  */
 export function claudeQuestionSteps(questions: Question[], answers: Answer[]): Step[] {
+  return claudeQuestionGroups(questions, answers).flat();
+}
+
+/**
+ * The same steps in groups: one per question, then the review's submit. ah
+ * re-reads the screen before each group (dialogAt), so input from anywhere
+ * else (a terminal typing into the same pane) can't make the rest of the
+ * answers land on a different question: it stops instead.
+ */
+export function claudeQuestionGroups(questions: Question[], answers: Answer[]): Step[][] {
   checkAnswers(questions, answers);
-  const steps: Step[] = [];
-  questions.forEach((q, i) => {
+  const groups: Step[][] = questions.map((q, i) => {
     const a = answers[i];
     const text = a.text?.trim() ?? '';
     const n = q.options.length;
-    if (!q.multiSelect) {
-      if (text) steps.push({ keys: [String(n + 1)] }, { text }, { keys: ['Enter'] });
-      else steps.push({ keys: [String(a.picked[0] + 1)] });
-      return;
-    }
-    for (const p of [...a.picked].sort((x, y) => x - y)) steps.push({ keys: [String(p + 1)] });
+    if (!q.multiSelect) return text ? [{ keys: [String(n + 1)] }, { text }, { keys: ['Enter'] }] : [{ keys: [String(a.picked[0] + 1)] }];
+    const steps: Step[] = [...a.picked].sort((x, y) => x - y).map((p) => ({ keys: [String(p + 1)] }));
     if (text) steps.push({ keys: Array(n).fill('Down') }, { text }, { keys: ['Tab'] }, { keys: ['Enter'] });
     else steps.push({ keys: ['Right'] });
+    return steps;
   });
-  if (questions.length > 1 || questions.some((q) => q.multiSelect)) steps.push({ keys: ['1'] });
-  return steps;
+  if (questions.length > 1 || questions.some((q) => q.multiSelect)) groups.push([{ keys: ['1'] }]);
+  return groups;
+}
+
+/**
+ * Before group `i` of claudeQuestionGroups: the dialog is on question i, with
+ * the earlier ones answered and nothing picked yet on this one; past the last
+ * question, the review is up.
+ */
+export function dialogAt(screen: string, questions: Question[], i: number): boolean {
+  if (i === 0) return pickerAtStart(screen, questions);
+  if (i >= questions.length) return /Ready to submit your answers\?/.test(screen) && /^\s*❯\s*1\.\s+Submit answers/m.test(screen);
+  const d = parseQuestionDialog(screen.split('\n').map((l) => l.trimEnd()));
+  const words = (t: string) => t.replace(/\s+/g, ' ').trim();
+  return !!d && words(d.question).includes(words(questions[i].question).slice(0, 40)) && d.answered === i && d.cursor === 1 && !d.options.some((o) => o.checked);
 }
 
 /**

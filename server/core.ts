@@ -22,7 +22,7 @@ import { SnapshotStore, type SnapshotInfo } from './snapshots.ts';
 import { QueueManager, type LaunchChange, type QueueItem } from './queue.ts';
 import { Push } from './push.ts';
 import { omarchyStamp } from './omarchy.ts';
-import { claudeQuestionSteps, cursorKeys, dialogSteps, parsePicker, parseQuestionDialog, pickerAtStart, type Answer, type Step } from './choices.ts';
+import { claudeQuestionGroups, cursorKeys, dialogAt, dialogSteps, parsePicker, parseQuestionDialog, type Answer, type Step } from './choices.ts';
 import type { Peers } from './peers.ts';
 import type { TranscriptSource } from './search.ts';
 
@@ -676,15 +676,23 @@ export class Core {
 
   /**
    * Answers the agent's question dialog (Claude's AskUserQuestion) as a whole, from
-   * the questions its hook recorded. Keys are typed only while the dialog is on
-   * screen, untouched, and showing those questions.
+   * the questions its hook recorded. Each question's keys go in only once the
+   * screen shows that question untouched (and the submit only on the review), so
+   * input from elsewhere mid-way stops the answer instead of misplacing it.
    */
   async answerQuestions(uid: string, answers: Answer[]) {
     const w = await this.askingWindow(uid);
     const questions = w.ask?.questions;
     if (!questions) throw new CoreError(409, 'the question on screen has changed; answer it again');
-    const steps = this.stepsOr400(() => claudeQuestionSteps(questions, answers));
-    await this.typeSteps(w, steps, (screen) => pickerAtStart(screen, questions));
+    const groups = this.stepsOr400(() => claudeQuestionGroups(questions, answers));
+    await this.typeChecked(
+      w,
+      groups.map((steps, i) => ({
+        steps,
+        ready: (screen: string) => dialogAt(screen, questions, i),
+        stale: i === 0 ? 'the question on screen has changed; answer it again' : `the dialog changed while answering (input from somewhere else?): stopped after ${i} of ${questions.length}; finish it in the terminal`,
+      })),
+    );
   }
 
   /**
@@ -695,12 +703,18 @@ export class Core {
   async answerDialogQuestion(uid: string, question: string, answer: Answer) {
     const w = await this.askingWindow(uid);
     let steps: Step[] = [];
-    await this.typeSteps(w, null, (screen) => {
-      const dialog = parseQuestionDialog(screen.split('\n').map((l) => l.trimEnd()));
-      if (!dialog || dialog.question !== question) return false;
-      steps = this.stepsOr400(() => dialogSteps(dialog, answer));
-      return true;
-    }, () => steps);
+    await this.typeChecked(w, [
+      {
+        steps: () => steps,
+        ready: (screen: string) => {
+          const dialog = parseQuestionDialog(screen.split('\n').map((l) => l.trimEnd()));
+          if (!dialog || dialog.question !== question) return false;
+          steps = this.stepsOr400(() => dialogSteps(dialog, answer));
+          return true;
+        },
+        stale: 'the question on screen has changed; answer it again',
+      },
+    ]);
   }
 
   private async askingWindow(uid: string) {
@@ -712,7 +726,7 @@ export class Core {
     return w;
   }
 
-  private stepsOr400(fn: () => Step[]): Step[] {
+  private stepsOr400<T>(fn: () => T): T {
     try {
       return fn();
     } catch (e) {
@@ -720,16 +734,29 @@ export class Core {
     }
   }
 
-  /** Re-reads the screen inside the input lock, checks it, then types each step with a beat between. */
-  private async typeSteps(w: WindowView, steps: Step[] | null, check: (screen: string) => boolean, late?: () => Step[]) {
+  /**
+   * Types groups of keys into a window inside its input lock, re-reading the
+   * screen before each group: a group goes in only when `ready` holds (waiting
+   * up to ~1s for the agent to redraw after the previous group), else the
+   * answer stops with `stale`. tmux can't reserve a pane for one client (input
+   * off blocks send-keys too), so this keeps any mix-up to one group's keys.
+   */
+  private async typeChecked(w: WindowView, groups: Array<{ steps: Step[] | (() => Step[]); ready: (screen: string) => boolean; stale: string }>) {
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     await this.withInput(w.uid, async () => {
-      const screen = await t.capturePane(w.id, 0).catch(() => '');
-      if (!check(screen)) throw new CoreError(409, 'the question on screen has changed; answer it again');
-      for (const step of steps ?? late?.() ?? []) {
-        if ('text' in step) await t.tmux('send-keys', '-t', w.id, '-l', step.text);
-        else await t.tmux('send-keys', '-t', w.id, ...step.keys);
-        // Ink redraws between keys; a key that lands mid-render can be dropped.
-        await new Promise((r) => setTimeout(r, 90));
+      for (const group of groups) {
+        let ok = false;
+        for (let tries = 0; tries < 12 && !ok; tries++) {
+          if (tries) await sleep(90);
+          ok = group.ready(await t.capturePane(w.id, 0).catch(() => ''));
+        }
+        if (!ok) throw new CoreError(409, group.stale);
+        for (const step of typeof group.steps === 'function' ? group.steps() : group.steps) {
+          if ('text' in step) await t.tmux('send-keys', '-t', w.id, '-l', step.text);
+          else await t.tmux('send-keys', '-t', w.id, ...step.keys);
+          // Ink redraws between keys; a key that lands mid-render can be dropped.
+          await sleep(90);
+        }
       }
     });
     this.tick().catch(() => {});
@@ -842,7 +869,16 @@ export class Core {
       harnessId,
       pendingResume: true,
       meta: { ...kept, ...plan.meta },
-      beforeCommand: () => t.killWindow(w.id).catch(() => {}),
+      // The old agent must be gone before the new one resumes the conversation:
+      // if it won't stop, the relaunch fails (launch removes the new window)
+      // rather than run two agents on one conversation. Already gone is fine.
+      beforeCommand: async () => {
+        try {
+          await t.killWindow(w.id);
+        } catch {
+          if (await t.windowExists(w.id).catch(() => null)) throw new CoreError(409, "the old window wouldn't stop, so the relaunch was cancelled; nothing changed");
+        }
+      },
     });
     await this.snapshotStore.rekey(uid, out.uid).catch(() => {});
     const snap = rec?.meta['ah.snapshots'];
