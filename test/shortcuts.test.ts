@@ -126,6 +126,10 @@ test('the command palette lists registered actions and ranks a typed query', () 
     assert.ok(all.indexOf('switcher') < all.indexOf('go-inbox'));
     assert.ok(all.includes('terminate'));
     assert.equal(searchCommands('no-such-command', { active: () => true }).length, 0);
+    const pane = searchCommands('pane', { active: () => true }).map((c) => c.id);
+    assert.ok(pane.indexOf('focus-pane-left') < pane.indexOf('split-right'));
+    assert.ok(pane.includes('split-below'));
+    assert.ok(searchCommands('right', { active: () => true }).some((c) => c.id === 'split-right'));
   } finally {
     stopInbox();
     stopPanel();
@@ -212,6 +216,8 @@ test('no two commands share a default chord', () => {
 
 test('session actions fire from the composer, pane moves do not (they select words there)', () => {
   const e = (key: string, mods: { ctrl?: boolean; alt?: boolean; shift?: boolean }) => ({ key, code: /^\d$/.test(key) ? `Digit${key}` : `Key${key.toUpperCase()}`, metaKey: false, ctrlKey: !!mods.ctrl, altKey: !!mods.alt, shiftKey: !!mods.shift });
+  assert.equal(matchShortcut(e('k', { ctrl: true, alt: true }), 'terminal'), 'toggle-keys');
+  assert.equal(matchShortcut(e('k', { ctrl: true, alt: true }), 'field'), 'toggle-keys');
   assert.equal(matchShortcut(e('s', { ctrl: true, alt: true }), 'field'), 'send-now');
   assert.equal(matchShortcut(e('x', { ctrl: true, alt: true }), 'field'), 'interrupt');
   assert.equal(matchShortcut(e('4', { ctrl: true, alt: true }), 'field'), 'panel-queue');

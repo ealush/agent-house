@@ -877,7 +877,8 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
                     setMenu(false);
                   }}
                 >
-                  {showKeys ? 'Hide' : 'Show'} on-screen keys
+                  <span className="grow">{showKeys ? 'Hide' : 'Show'} on-screen keys</span>
+                  <ShortcutHint id="toggle-keys" />
                 </button>
               )}
               <button

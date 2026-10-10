@@ -88,6 +88,9 @@ export type CommandId =
 
 export type CommandGroup = 'Navigate' | 'Session' | 'Workspace';
 
+/** One to three extra words that find this item after matches on its own name. */
+export type SearchTerms = readonly [string] | readonly [string, string] | readonly [string, string, string];
+
 export type Command = {
   id: CommandId;
   group: CommandGroup;
@@ -96,6 +99,8 @@ export type Command = {
   chords: Chord[];
   /** Where the chord is allowed to steal the key. `ask` is never listed: those dialogs own the keyboard. */
   scopes: Array<Exclude<Scope, 'ask'>>;
+  /** Related words. A query that hits only these ranks under one that hits the name. */
+  terms?: SearchTerms;
 };
 
 const nav: Array<Exclude<Scope, 'ask'>> = ['app', 'terminal'];
@@ -415,7 +420,8 @@ export const COMMANDS: Command[] = [
     group: 'Session',
     label: 'Show or hide on-screen keys',
     detail: 'The Esc / Tab / arrows / Ctrl key bar under the terminal.',
-    chords: [],
+    // K for the key bar. Ctrl+Alt still fires from the terminal and a text field.
+    chords: [{ key: 'k', ctrl: true, alt: true }],
     scopes: act,
   },
   {
@@ -431,6 +437,7 @@ export const COMMANDS: Command[] = [
     group: 'Workspace',
     label: 'Split right',
     detail: 'Open another session to the right of the focused one.',
+    terms: ['pane'],
     chords: [{ key: '\\', ctrl: true, shift: true }],
     scopes: session,
   },
@@ -439,6 +446,7 @@ export const COMMANDS: Command[] = [
     group: 'Workspace',
     label: 'Split below',
     detail: 'Open another session below the focused one.',
+    terms: ['pane'],
     chords: [{ key: '-', ctrl: true, shift: true }],
     scopes: session,
   },
@@ -938,11 +946,13 @@ export function searchCommands(query: string, opts: { active?: (id: CommandId) =
     const chords = resolveChords(cmd.id, overrides).map((c) => formatChord(c, mac));
     const chordScore = chords.reduce((best, chord) => Math.max(best, fuzzy(q, chord)), 0);
     const detail = cmd.detail.toLowerCase().includes(q) ? q.length : 0;
-    const s = Math.max(fuzzy(q, cmd.label), fuzzy(q, cmd.group), chordScore, detail);
-    return { cmd, s };
+    const own = Math.max(fuzzy(q, cmd.label), fuzzy(q, cmd.group), chordScore, detail);
+    // A related word still finds the command, but only under matches on its own name.
+    const related = own > 0 ? 0 : (cmd.terms ?? []).reduce((best, term) => Math.max(best, fuzzy(q, term)), 0);
+    return { cmd, s: own || related, related: own === 0 && related > 0 };
   });
   const matched = hits.filter((hit) => hit.s > 0);
-  if (q) matched.sort((a, b) => b.s - a.s || COMMANDS.indexOf(a.cmd) - COMMANDS.indexOf(b.cmd));
+  if (q) matched.sort((a, b) => Number(a.related) - Number(b.related) || b.s - a.s || COMMANDS.indexOf(a.cmd) - COMMANDS.indexOf(b.cmd));
   return matched.map((hit) => hit.cmd);
 }
 

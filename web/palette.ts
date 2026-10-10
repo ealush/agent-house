@@ -5,7 +5,7 @@
 // providers that mounted components register, so the tree only offers what can
 // run right now. Pure functions; the dialog is CommandPalette in shortcuts.tsx.
 import type { IconName } from './icons.tsx';
-import { COMMANDS, commandActive, fuzzy, type CommandId } from './shortcuts.ts';
+import { COMMANDS, commandActive, fuzzy, type CommandId, type SearchTerms } from './shortcuts.ts';
 
 export type PaletteNode = {
   /** Unique within its parent; the path of keys identifies a node. */
@@ -14,6 +14,8 @@ export type PaletteNode = {
   icon?: IconName;
   /** One line under the label (a description, a session's project). */
   detail?: string;
+  /** Related words. A query that hits only these ranks under one that hits the name. */
+  terms?: SearchTerms;
   /** A catalog command: its chord shows on the row, and choosing it runs it. */
   command?: CommandId;
   /** Any other action. Runs after the palette closes. */
@@ -25,7 +27,7 @@ export type PaletteNode = {
 /** Where a provider's nodes go in the static tree. */
 export type ProviderId = 'sessions' | 'queue' | 'models' | 'efforts' | 'tiles' | 'projects';
 
-type Spec = { key: string; label: string; icon: IconName; detail?: string; children: Array<Spec | CommandId | { provider: ProviderId }> };
+type Spec = { key: string; label: string; icon: IconName; detail?: string; terms?: SearchTerms; children: Array<Spec | CommandId | { provider: ProviderId }> };
 
 export const TREE: Spec = {
   key: 'root',
@@ -77,7 +79,7 @@ export const TREE: Spec = {
       children: [
         'pane-mode',
         { key: 'tiles', label: 'Open as a new pane', icon: 'split-right', detail: 'Beside the focused pane, along its longer side', children: ['open-in-pane', { provider: 'tiles' }] },
-        { key: 'split', label: 'Split', icon: 'split-right', detail: 'Open, replace, flip, close panes', children: ['split-right', 'split-below', 'replace-pane', 'toggle-split', 'close-pane', 'exit-split'] },
+        { key: 'split', label: 'Split', icon: 'split-right', detail: 'Open, replace, flip, close panes', terms: ['pane'], children: ['split-right', 'split-below', 'replace-pane', 'toggle-split', 'close-pane', 'exit-split'] },
         { key: 'focus', label: 'Focus pane', icon: 'pane-left', children: ['focus-pane-left', 'focus-pane-right', 'focus-pane-up', 'focus-pane-down'] },
         { key: 'move', label: 'Move pane', icon: 'pane-right', children: ['move-pane-left', 'move-pane-right', 'move-pane-up', 'move-pane-down'] },
         {
@@ -136,7 +138,9 @@ export async function resolveTree(spec: Spec = TREE, opts: { active?: (id: Comma
     for (const child of s.children) {
       if (typeof child === 'string') {
         const cmd = BY_ID.get(child);
-        if (cmd && cmd.id !== 'command-palette' && active(cmd.id)) children.push({ key: cmd.id, label: cmd.label, detail: cmd.detail, command: cmd.id });
+        if (cmd && cmd.id !== 'command-palette' && active(cmd.id)) {
+          children.push({ key: cmd.id, label: cmd.label, detail: cmd.detail, command: cmd.id, ...(cmd.terms ? { terms: cmd.terms } : {}) });
+        }
       } else if ('provider' in child) {
         children.push(...(await fill(child.provider)));
       } else {
@@ -145,19 +149,27 @@ export async function resolveTree(spec: Spec = TREE, opts: { active?: (id: Comma
       }
     }
     if (!children.length && s.key !== 'root') return null;
-    return { key: s.key, label: s.label, icon: s.icon, detail: s.detail, children };
+    return { key: s.key, label: s.label, icon: s.icon, detail: s.detail, ...(s.terms ? { terms: s.terms } : {}), children };
   };
   return (await walk(spec))!;
 }
 
 // ---------- search
 
-export type Hit = { node: PaletteNode; /** Ancestors below the search scope, outermost first. */ trail: PaletteNode[]; score: number };
+export type Hit = {
+  node: PaletteNode;
+  /** Ancestors below the search scope, outermost first. */
+  trail: PaletteNode[];
+  score: number;
+  /** The query hit a related word only, so this row stays under name matches. */
+  related: boolean;
+};
 
 /**
- * Everything under `scope` that matches, best first. A label match beats a
- * breadcrumb match, and categories and commands compete on equal terms, so
- * "panels" finds the category and "diff" the command inside it.
+ * Everything under `scope` that matches. A name, detail, or breadcrumb match
+ * comes first. A related word (`terms`) still finds the item, under those.
+ * A label match beats a breadcrumb match, and categories and commands compete
+ * on equal terms, so "panels" finds the category and "diff" the command inside it.
  */
 export function searchTree(scope: PaletteNode, query: string): Hit[] {
   const q = query.trim().toLowerCase();
@@ -172,14 +184,19 @@ export function searchTree(scope: PaletteNode, query: string): Hit[] {
       const words = q.split(/\s+/).filter(Boolean);
       const crumbs = words.length > 1 && words.every((w) => path.includes(w)) ? q.length * 2 : 0;
       const detail = child.detail?.toLowerCase().includes(q) ? q.length : 0;
-      const score = Math.max(label * 3, crumbs, detail);
-      if (score > 0) hits.push({ node: child, trail, score: score - trail.length * 0.5 });
+      const own = Math.max(label * 3, crumbs, detail);
+      const term = own > 0 ? 0 : (child.terms ?? []).reduce((best, word) => Math.max(best, fuzzy(q, word)), 0);
+      const score = own || term;
+      if (score > 0) hits.push({ node: child, trail, score: score - trail.length * 0.5, related: own === 0 });
       if (child.children) visit(child, [...trail, child]);
     }
   };
   visit(scope, []);
-  // Stable: equal scores keep tree order.
-  return hits.map((h, i) => ({ h, i })).sort((a, b) => b.h.score - a.h.score || a.i - b.i).map(({ h }) => h);
+  // Name matches first. Equal scores keep tree order.
+  return hits
+    .map((h, i) => ({ h, i }))
+    .sort((a, b) => Number(a.h.related) - Number(b.h.related) || b.h.score - a.h.score || a.i - b.i)
+    .map(({ h }) => h);
 }
 
 /** Count of runnable leaves under a category (shown beside it). */

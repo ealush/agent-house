@@ -42,6 +42,28 @@ test('a category counts the commands under it', async () => {
   assert.equal(leafCount(move), 4);
 });
 
+test('a name match stays above a match on a related word', async () => {
+  const tree = await resolveTree(undefined, { active: all, provide: none });
+  const right = searchTree(tree, 'right');
+  const splitRight = right.find((h) => h.node.command === 'split-right');
+  assert.ok(splitRight);
+  assert.equal(splitRight.related, false);
+
+  const pane = searchTree(tree, 'pane');
+  const byName = pane.find((h) => h.node.command === 'focus-pane-left');
+  const byTerm = pane.find((h) => h.node.command === 'split-right');
+  const below = pane.find((h) => h.node.command === 'split-below');
+  assert.ok(byName && byTerm && below);
+  assert.equal(byName.related, false);
+  assert.equal(byTerm.related, true);
+  assert.equal(below.related, true);
+  const firstRelated = pane.findIndex((h) => h.related);
+  assert.ok(firstRelated > 0);
+  assert.ok(pane.slice(0, firstRelated).every((h) => !h.related));
+  assert.ok(pane.slice(firstRelated).every((h) => h.related));
+  assert.ok(pane.indexOf(byName) < pane.indexOf(byTerm));
+});
+
 test('a breadcrumb matches word by word, never as a loose subsequence', async () => {
   const tree = await resolveTree(undefined, {
     active: all,
