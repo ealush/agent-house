@@ -32,6 +32,8 @@ export function trackViewport(win: Window, doc: Document): () => void {
     if (height === null) {
       root.style.removeProperty('--vh');
       root.style.removeProperty('--keyboard-vh');
+      root.style.removeProperty('--keyboard-top');
+      delete root.dataset.keyboard;
       if (guard !== undefined) {
         if (hasTimers) win.clearInterval(guard as number);
         else clearInterval(guard as NodeJS.Timeout);
@@ -40,6 +42,11 @@ export function trackViewport(win: Window, doc: Document): () => void {
     } else {
       root.style.setProperty('--vh', `${height}px`);
       root.style.setProperty('--keyboard-vh', `${height}px`);
+      // Safari scrolls the page to keep the field in view; the shell follows, so
+      // nothing slides under the top edge and no gap opens above the keyboard.
+      root.style.setProperty('--keyboard-top', `${Math.max(0, Math.round(viewport.offsetTop ?? 0))}px`);
+      // The home indicator is behind the keyboard: its inset would be a gap.
+      root.dataset.keyboard = '1';
       if (guard === undefined) {
         guard = hasTimers ? win.setInterval(update, 500) : setInterval(update, 500);
         // Never hold a test runner (or a background tab) open for debug timing.
@@ -74,6 +81,8 @@ export function trackViewport(win: Window, doc: Document): () => void {
     badge?.remove();
     root.style.removeProperty('--vh');
     root.style.removeProperty('--keyboard-vh');
+    root.style.removeProperty('--keyboard-top');
+    delete root.dataset.keyboard;
   };
 }
 

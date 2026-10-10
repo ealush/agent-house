@@ -6,7 +6,13 @@ const api = `http://127.0.0.1:${process.env.AH_PORT ?? 7681}`;
 export default defineConfig({
   root: 'web',
   plugins: [react()],
-  build: { outDir: '../dist', emptyOutDir: true, chunkSizeWarningLimit: 1500 },
+  build: {
+    outDir: '../dist',
+    emptyOutDir: true,
+    chunkSizeWarningLimit: 1500,
+    // The CSP allows fonts from 'self' only: a small font inlined as data: is blocked.
+    assetsInlineLimit: (file) => (/\.(woff2?|ttf|otf)$/.test(file) ? false : undefined),
+  },
   server: {
     host: '127.0.0.1',
     proxy: {

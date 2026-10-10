@@ -64,7 +64,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ wi
       allowProposedApi: true,
       cursorBlink: true,
       fontFamily: FONT,
-      fontSize: window.matchMedia('(max-width: 600px)').matches ? 12 : 14,
+      fontSize: storedFontSize(),
       lineHeight: 1.15,
       scrollback: 0, // tmux owns scrollback
       macOptionIsMeta: true,
@@ -125,7 +125,17 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ wi
     });
     ro.observe(host.current!);
 
-    const stopTouch = touchScroll(host.current!, t, send);
+    const stopTouch = touchScroll(
+      host.current!,
+      t,
+      (n, c, r) => {
+        if (ws.current?.readyState === WebSocket.OPEN) ws.current.send(JSON.stringify({ t: 's', n, c, r }));
+      },
+      () => {
+        clearTimeout(timer);
+        timer = window.setTimeout(safeFit, 30);
+      },
+    );
 
     return () => {
       ro.disconnect();
@@ -223,40 +233,118 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ wi
   );
 });
 
-// Touch drag scrolls tmux (via SGR mouse wheel reports) instead of doing nothing.
-function touchScroll(el: HTMLElement, t: XTerm, send: (d: string) => void) {
+const FONT_KEY = 'ah.termFont';
+const MIN_FONT = 8;
+const MAX_FONT = 22;
+
+/** This device's terminal font size: pinch-adjusted, else 12 on a phone, 14 elsewhere. */
+export function storedFontSize(): number {
+  try {
+    const v = Number(localStorage.getItem(FONT_KEY));
+    if (v >= MIN_FONT && v <= MAX_FONT) return v;
+  } catch {}
+  return window.matchMedia('(max-width: 600px)').matches ? 12 : 14;
+}
+
+/**
+ * Touch: one finger scrolls tmux by exact lines, with momentum after a flick; two
+ * fingers pinch the terminal's font size (kept per device) instead of zooming the page.
+ * Scroll requests go to the server as line counts (see scrollLines in server/terminal.ts).
+ */
+function touchScroll(el: HTMLElement, t: XTerm, scroll: (lines: number, col: number, row: number) => void, refit: () => void) {
   let lastY: number | null = null;
+  let lastAt = 0;
+  let velocity = 0; // px per ms, finger-down positive
   let acc = 0;
+  let cell: [number, number] = [1, 1];
+  let glide: number | null = null;
+  let pinch: { dist: number; size: number } | null = null;
   const lineHeight = () => el.clientHeight / t.rows;
+  const distance = (e: TouchEvent) => Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+  const flush = () => {
+    const step = lineHeight();
+    const lines = Math.trunc(acc / step);
+    if (!lines) return;
+    acc -= lines * step;
+    scroll(lines, cell[0], cell[1]);
+  };
+  const stopGlide = () => {
+    if (glide !== null) cancelAnimationFrame(glide);
+    glide = null;
+  };
   const start = (e: TouchEvent) => {
-    lastY = e.touches.length === 1 ? e.touches[0].clientY : null;
+    stopGlide();
+    if (e.touches.length === 2) {
+      pinch = { dist: distance(e), size: t.options.fontSize ?? 12 };
+      lastY = null;
+      return;
+    }
+    pinch = null;
+    if (e.touches.length !== 1) return (lastY = null);
+    const touch = e.touches[0];
+    const rect = el.getBoundingClientRect();
+    cell = [Math.max(1, Math.ceil(((touch.clientX - rect.left) / rect.width) * t.cols)), Math.max(1, Math.ceil(((touch.clientY - rect.top) / rect.height) * t.rows))];
+    lastY = touch.clientY;
+    lastAt = e.timeStamp;
+    velocity = 0;
     acc = 0;
   };
   const move = (e: TouchEvent) => {
-    if (lastY === null || t.modes.mouseTrackingMode === 'none') return;
-    const touch = e.touches[0];
-    const y = touch.clientY;
+    if (pinch && e.touches.length === 2) {
+      const size = Math.round(Math.min(MAX_FONT, Math.max(MIN_FONT, pinch.size * (distance(e) / pinch.dist))));
+      if (size !== t.options.fontSize) {
+        t.options.fontSize = size;
+        refit();
+      }
+      e.preventDefault();
+      return;
+    }
+    if (lastY === null) return;
+    const y = e.touches[0].clientY;
+    const dt = Math.max(1, e.timeStamp - lastAt);
+    velocity = 0.7 * velocity + 0.3 * ((y - lastY) / dt);
     acc += y - lastY;
     lastY = y;
-    const step = lineHeight();
-    // Report the wheel at the finger's cell so tmux scrolls the pane under it.
-    const rect = el.getBoundingClientRect();
-    const col = Math.max(1, Math.ceil(((touch.clientX - rect.left) / rect.width) * t.cols));
-    const row = Math.max(1, Math.ceil(((y - rect.top) / rect.height) * t.rows));
-    while (Math.abs(acc) >= step) {
-      const up = acc > 0;
-      send(`\x1b[<${up ? 64 : 65};${col};${row}M`);
-      acc += up ? -step : step;
-    }
+    lastAt = e.timeStamp;
+    flush();
     e.preventDefault();
   };
-  const end = () => (lastY = null);
+  const end = (e: TouchEvent) => {
+    if (pinch && e.touches.length < 2) {
+      try {
+        localStorage.setItem(FONT_KEY, String(t.options.fontSize));
+      } catch {}
+      pinch = null;
+      return;
+    }
+    if (lastY === null) return;
+    lastY = null;
+    // A flick keeps going and slows down, like native scrolling.
+    if (Math.abs(velocity) < 0.25 || e.timeStamp - lastAt > 80) return;
+    let prev = performance.now();
+    const tick = (now: number) => {
+      const dt = Math.min(48, now - prev);
+      prev = now;
+      acc += velocity * dt;
+      velocity *= Math.pow(0.995, dt);
+      flush();
+      glide = Math.abs(velocity) > 0.03 ? requestAnimationFrame(tick) : null;
+    };
+    glide = requestAnimationFrame(tick);
+  };
+  // Safari's own pinch would zoom the whole page instead.
+  const gesture = (e: Event) => e.preventDefault();
+  el.addEventListener('gesturestart', gesture);
   el.addEventListener('touchstart', start, { passive: true });
   el.addEventListener('touchmove', move, { passive: false });
   el.addEventListener('touchend', end);
+  el.addEventListener('touchcancel', end);
   return () => {
+    stopGlide();
+    el.removeEventListener('gesturestart', gesture);
     el.removeEventListener('touchstart', start);
     el.removeEventListener('touchmove', move);
     el.removeEventListener('touchend', end);
+    el.removeEventListener('touchcancel', end);
   };
 }

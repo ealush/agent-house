@@ -28,6 +28,7 @@ test('keyboard dismissal restores full height and pending resize work is cleaned
   const doc = Object.assign(new EventTarget(), {
     activeElement: null as unknown,
     documentElement: {
+      dataset: {} as Record<string, string>,
       clientHeight: 868,
       style: {
         setProperty(key: string, value: string) { style.set(key, value); },
@@ -50,11 +51,14 @@ test('keyboard dismissal restores full height and pending resize work is cleaned
   flush();
   assert.equal(style.get('--vh'), '500px');
   assert.equal(style.get('--keyboard-vh'), '500px', 'the app shell tracks the keyboard, not 100dvh');
+  assert.equal(doc.documentElement.dataset.keyboard, '1', 'safe-area padding drops while the keyboard covers it');
+  assert.equal(style.get('--keyboard-top'), '0px', 'the shell follows the visual viewport offset');
   viewport.height = 808;
   viewport.dispatchEvent(new Event('scroll'));
   flush();
   assert.equal(style.has('--vh'), false, 'keyboard hide restores CSS even if textarea stays focused');
   assert.equal(style.has('--keyboard-vh'), false);
+  assert.equal(doc.documentElement.dataset.keyboard, undefined);
   viewport.height = 500;
   viewport.dispatchEvent(new Event('resize'));
   flush();
@@ -86,6 +90,7 @@ test('a stale small override is re-synced even when iOS fires no dismissal event
   const doc = Object.assign(new EventTarget(), {
     activeElement: { matches: () => true, isContentEditable: false },
     documentElement: {
+      dataset: {} as Record<string, string>,
       clientHeight: 868,
       style: {
         setProperty(key: string, value: string) { style.set(key, value); },
