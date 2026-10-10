@@ -87,8 +87,12 @@ to terminal rules and output activity, and matches live agents to their transcri
   and clipboard Paste, swipe to scroll tmux, dictation-friendly composer, scrollback as
   selectable text. Shift+Enter sends multiline input; pasted screenshots upload to the host.
 - **Keyboard first.** Everything has a keyboard path; the mouse is optional.
-  Ctrl+Shift+P opens the command palette (every action available right now, with
-  its binding); Ctrl+Shift+K (⌘K on a Mac) jumps to any session or resumes a
+  Ctrl+Shift+P opens the command palette, a tree like Omarchy's menu: categories
+  (Go to, Session, Workspace, Help, and below them Answer, Turn and queue, Model
+  and effort, Panels…) with live branches for open sessions, each queued message
+  (Send now / Edit / Cancel), and the session's models and effort levels. ↑↓ move,
+  → or Enter opens, ← or Backspace goes back, typing searches everything below
+  where you are, categories included; chords sit on their rows. Ctrl+Shift+K (⌘K on a Mac) jumps to any session or resumes a
   conversation, with filters `h:` host/harness, `s:` status, `p:` project, `m:` model.
   Session actions are Ctrl+Alt chords that also work from the composer: R reply
   (into the agent's question or picker when it is waiting), Enter / Backspace

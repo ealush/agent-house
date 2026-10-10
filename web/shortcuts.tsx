@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { Icon, type IconName } from './icons.tsx';
 import { roveKey } from './rove.ts';
+import { leafCount, registerProvider, resolveTree, searchTree, type PaletteNode, type ProviderId } from './palette.ts';
 import {
   COMMANDS,
   bindingError,
@@ -329,30 +330,92 @@ export function ShortcutsPanel({ focusSearch = false }: { focusSearch?: boolean 
   );
 }
 
-/** Searchable list of actions that can run right now. The binding sits on the right. */
-export function CommandPalette({ onClose, onRun }: { onClose: () => void; onRun: (id: CommandId) => void }) {
+/** Register a live palette branch while mounted and `enabled`. The latest `fn` is used. */
+export function usePaletteProvider(id: ProviderId, fn: () => PaletteNode[] | Promise<PaletteNode[]>, enabled = true) {
+  const ref = useRef(fn);
+  ref.current = fn;
+  useEffect(() => {
+    if (!enabled) return;
+    return registerProvider(id, () => ref.current());
+  }, [id, enabled]);
+}
+
+function nodeIcon(node: PaletteNode): IconName {
+  if (node.icon) return node.icon;
+  if (node.command) return COMMAND_ICONS[node.command];
+  return node.children ? 'commands' : 'more';
+}
+
+/**
+ * The command palette as a tree (Omarchy-style): categories you walk into with →
+ * or Enter and out of with ← or Backspace; typing searches everything below where
+ * you are, categories included, each hit with its breadcrumb. A command's chord
+ * sits on its row.
+ */
+export function CommandPalette({ onClose, onRun }: { onClose: () => void; onRun: (node: PaletteNode) => void }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const input = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  const [root, setRoot] = useState<PaletteNode | null>(null);
+  const [stack, setStack] = useState<PaletteNode[]>([]);
   const [query, setQuery] = useState('');
   const [i, setI] = useState(0);
   useShortcutRevision();
   const mac = isMac();
   const overrides = loadOverrides();
-  const commands = searchCommands(query, { mac, overrides });
-  const index = commands.length ? Math.min(i, commands.length - 1) : 0;
 
   useEffect(() => {
     ref.current?.showModal();
+    let live = true;
+    void resolveTree().then((tree) => {
+      if (!live) return;
+      setRoot(tree);
+      setStack([tree]);
+    });
+    return () => {
+      live = false;
+    };
   }, []);
+
+  const here = stack.at(-1) ?? null;
+  const hits = here && query.trim() ? searchTree(here, query) : null;
+  const rows: Array<{ node: PaletteNode; trail: PaletteNode[] }> = hits ?? (here?.children ?? []).map((node) => ({ node, trail: [] }));
+  const index = rows.length ? Math.min(i, rows.length - 1) : 0;
+  const selected = rows[index];
 
   useEffect(() => {
     listRef.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' });
-  }, [index, commands.length]);
+  }, [index, rows.length, here]);
+
+  const enter = (node: PaletteNode, trail: PaletteNode[] = []) => {
+    setStack((st) => [...st, ...trail, node]);
+    setQuery('');
+    setI(0);
+  };
+  const up = (levels = 1) => {
+    if (stack.length < 2) return;
+    const next = stack.slice(0, Math.max(1, stack.length - levels));
+    const leaving = stack[next.length];
+    setStack(next);
+    setQuery('');
+    // Land on the category you came out of.
+    setI(Math.max(0, (next.at(-1)?.children ?? []).indexOf(leaving)));
+  };
+  const choose = (row: { node: PaletteNode; trail: PaletteNode[] } | undefined) => {
+    if (!row) return;
+    if (row.node.children) enter(row.node, row.trail);
+    else onRun(row.node);
+  };
+  const caretAt = (pos: 'start' | 'end') => {
+    const el = input.current;
+    if (!el) return true;
+    return el.selectionStart === el.selectionEnd && el.selectionStart === (pos === 'start' ? 0 : el.value.length);
+  };
 
   return (
     <dialog
       ref={ref}
-      className="dialog switcher commands"
+      className="dialog switcher commands palette-tree"
       aria-label="Command palette"
       onClose={onClose}
       onClick={(e) => e.target === ref.current && onClose()}
@@ -363,28 +426,46 @@ export function CommandPalette({ onClose, onRun }: { onClose: () => void; onRun:
           onClose();
           return;
         }
-        if (e.key === 'ArrowDown') {
-          setI((cur) => {
-            if (!commands.length) return 0;
-            const at = Math.min(cur, commands.length - 1);
-            return (at + 1) % commands.length;
-          });
-        } else if (e.key === 'ArrowUp') {
-          setI((cur) => {
-            if (!commands.length) return 0;
-            const at = Math.min(cur, commands.length - 1);
-            return (at - 1 + commands.length) % commands.length;
-          });
-        } else if (e.key === 'Enter' && commands[index]) onRun(commands[index].id);
-        else return;
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          const step = e.key === 'ArrowDown' ? 1 : -1;
+          setI(() => (rows.length ? (index + step + rows.length) % rows.length : 0));
+        } else if (e.key === 'ArrowRight' && selected?.node.children && caretAt('end')) {
+          enter(selected.node, selected.trail);
+        } else if (e.key === 'ArrowLeft' && stack.length > 1 && caretAt('start')) {
+          up();
+        } else if (e.key === 'Backspace' && !query && stack.length > 1) {
+          up();
+        } else if (e.key === 'Enter') {
+          choose(selected);
+        } else if (e.key === 'Escape' && query) {
+          // First Escape clears the search; the next one closes.
+          setQuery('');
+          setI(0);
+        } else if (e.key === 'Home' && !query) {
+          setI(0);
+        } else if (e.key === 'End' && !query) {
+          setI(Math.max(0, rows.length - 1));
+        } else return;
         e.preventDefault();
       }}
     >
+      <nav className="palette-crumbs" aria-label="Where you are">
+        {stack.map((n, at) => (
+          <Fragment key={n.key + at}>
+            {at > 0 && <span className="palette-sep" aria-hidden>›</span>}
+            <button type="button" className={at === stack.length - 1 ? 'on' : ''} tabIndex={-1} onClick={() => up(stack.length - 1 - at)}>
+              {n.label}
+            </button>
+          </Fragment>
+        ))}
+      </nav>
       <input
+        ref={input}
         autoFocus
         value={query}
-        placeholder="Go..."
-        aria-label="Go"
+        placeholder={here && stack.length > 1 ? `Search ${here.label}…` : 'Search commands and categories…'}
+        aria-label="Search"
+        aria-controls="palette-list"
         autoCapitalize="off"
         autoCorrect="off"
         spellCheck={false}
@@ -393,30 +474,51 @@ export function CommandPalette({ onClose, onRun }: { onClose: () => void; onRun:
           setI(0);
         }}
       />
-      <ul ref={listRef}>
-        {commands.map((cmd, idx) => {
-          const chord = hintChord(cmd.id, mac, overrides);
+      <ul ref={listRef} id="palette-list" role="listbox">
+        {rows.map((row, idx) => {
+          const { node, trail } = row;
+          const chord = node.command ? hintChord(node.command, mac, overrides) : null;
           return (
-            <li key={cmd.id}>
+            <li key={[...trail.map((t) => t.key), node.key].join('/')}>
               <button
                 type="button"
-                className={`cmd-row ${idx === index ? 'on' : ''}`}
+                tabIndex={-1}
+                className={`cmd-row ${idx === index ? 'on' : ''} ${node.children ? 'group' : ''}`}
+                role="option"
                 aria-selected={idx === index}
-                title={cmd.detail}
-                onMouseEnter={() => setI(idx)}
-                onClick={() => onRun(cmd.id)}
+                title={node.detail}
+                onMouseMove={() => idx !== index && setI(idx)}
+                onClick={() => choose(row)}
               >
                 <span className="cmd-icon">
-                  <Icon name={COMMAND_ICONS[cmd.id]} size={16} />
+                  <Icon name={nodeIcon(node)} size={16} />
                 </span>
-                <span className="name">{cmd.label}</span>
+                <span className="cmd-text">
+                  {trail.length > 0 && <span className="cmd-trail">{trail.map((t) => t.label).join(' › ')} ›</span>}
+                  <span className="name">{node.label}</span>
+                  {node.detail && <span className="cmd-detail">{node.detail}</span>}
+                </span>
                 {chord && <Keycaps chord={chord} />}
+                {node.children && (
+                  <span className="cmd-more">
+                    <span className="cmd-count">{leafCount(node)}</span>
+                    <span aria-hidden>›</span>
+                  </span>
+                )}
               </button>
             </li>
           );
         })}
       </ul>
-      {commands.length === 0 && <p className="cmd-empty">No commands match.</p>}
+      {root && rows.length === 0 && <p className="cmd-empty">{query ? `Nothing in ${here?.label ?? 'here'} matches “${query}”.` : 'Nothing to run here right now.'}</p>}
+      {!root && <p className="cmd-empty">Loading…</p>}
+      <footer className="palette-keys" aria-hidden>
+        <span><kbd>↑</kbd><kbd>↓</kbd> move</span>
+        <span><kbd>→</kbd> open</span>
+        <span><kbd>←</kbd> back</span>
+        <span><kbd>Enter</kbd> run</span>
+        <span><kbd>Esc</kbd> {query ? 'clear' : 'close'}</span>
+      </footer>
     </dialog>
   );
 }

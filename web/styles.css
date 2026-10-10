@@ -4446,3 +4446,130 @@ button.tool-chip:hover {
   gap: 8px;
   flex-wrap: wrap;
 }
+
+/* ---------- command palette as a tree (palette.ts) */
+
+.commands.palette-tree {
+  width: min(560px, calc(100vw - 24px));
+  margin-top: 12vh;
+  padding: 10px 10px 6px;
+}
+
+.palette-crumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 0 4px 8px;
+  font-size: 12px;
+}
+
+.palette-crumbs button {
+  border: 0;
+  background: none;
+  padding: 2px 6px;
+  border-radius: 6px;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.palette-crumbs button:hover {
+  background: var(--line);
+  color: var(--text);
+}
+
+.palette-crumbs button.on {
+  color: var(--text);
+  font-weight: 600;
+  cursor: default;
+}
+
+.palette-crumbs button.on:hover {
+  background: none;
+}
+
+.palette-sep {
+  color: var(--faint);
+}
+
+.palette-tree ul {
+  max-height: min(56vh, 460px);
+  overflow-y: auto;
+}
+
+.palette-tree .cmd-row {
+  padding: 7px 8px;
+  align-items: center;
+}
+
+.palette-tree .cmd-row.on {
+  background: var(--accent-bg);
+}
+
+.cmd-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.palette-tree .cmd-row .name {
+  color: var(--text);
+}
+
+.cmd-trail,
+.cmd-detail {
+  font-size: 11.5px;
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cmd-row.group .name {
+  font-weight: 600;
+}
+
+.cmd-more {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--faint);
+  font-size: 15px;
+}
+
+.cmd-count {
+  font-size: 11px;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--line);
+  text-align: center;
+}
+
+.cmd-row.on .cmd-more {
+  color: var(--accent);
+}
+
+.palette-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 8px 6px 2px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.palette-keys kbd {
+  margin-right: 2px;
+}
+
+@media (hover: none) {
+  .palette-keys {
+    display: none;
+  }
+}

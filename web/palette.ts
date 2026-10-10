@@ -1,0 +1,176 @@
+// The command palette as a tree, like Omarchy's menu: categories you walk into
+// and out of with the arrow keys, and a search over everything below where you
+// are. The static shape lives here and points at catalog commands
+// (shortcuts.ts); live branches (open sessions, the queue, models) come from
+// providers that mounted components register, so the tree only offers what can
+// run right now. Pure functions; the dialog is CommandPalette in shortcuts.tsx.
+import type { IconName } from './icons.tsx';
+import { COMMANDS, commandActive, fuzzy, type CommandId } from './shortcuts.ts';
+
+export type PaletteNode = {
+  /** Unique within its parent; the path of keys identifies a node. */
+  key: string;
+  label: string;
+  icon?: IconName;
+  /** One line under the label (a description, a session's project). */
+  detail?: string;
+  /** A catalog command: its chord shows on the row, and choosing it runs it. */
+  command?: CommandId;
+  /** Any other action. Runs after the palette closes. */
+  run?: () => void;
+  /** A category. */
+  children?: PaletteNode[];
+};
+
+/** Where a provider's nodes go in the static tree. */
+export type ProviderId = 'sessions' | 'queue' | 'models' | 'efforts';
+
+type Spec = { key: string; label: string; icon: IconName; detail?: string; children: Array<Spec | CommandId | { provider: ProviderId }> };
+
+export const TREE: Spec = {
+  key: 'root',
+  label: 'Commands',
+  icon: 'commands',
+  children: [
+    'new-session',
+    'switcher',
+    {
+      key: 'go',
+      label: 'Go to',
+      icon: 'search',
+      detail: 'Sessions, pages and focus',
+      children: [{ provider: 'sessions' }, 'go-inbox', 'go-history', 'go-settings', 'cycle-prev', 'cycle-next', 'focus-sidebar', 'focus-main'],
+    },
+    {
+      key: 'session',
+      label: 'Session',
+      icon: 'terminal',
+      detail: 'The focused session',
+      children: [
+        { key: 'answer', label: 'Answer', icon: 'reply', detail: 'Reply, approve, deny', children: ['reply', 'approve', 'deny'] },
+        {
+          key: 'turn',
+          label: 'Turn and queue',
+          icon: 'queue',
+          detail: 'Stop, send queued messages now, cancel them',
+          children: ['interrupt', 'send-now', { provider: 'queue' }, 'clear-queue'],
+        },
+        { key: 'model', label: 'Model and effort', icon: 'model', detail: 'Switch what runs this session', children: [{ provider: 'models' }, { provider: 'efforts' }, 'pick-model', 'pick-effort'] },
+        {
+          key: 'panels',
+          label: 'Panels',
+          icon: 'panel-right',
+          detail: 'Diff, files, chat, queue, snapshots',
+          children: ['panel-diff', 'panel-files', 'panel-chat', 'panel-queue', 'panel-snapshots', 'toggle-panel'],
+        },
+        { key: 'view', label: 'View', icon: 'view', detail: 'GUI or terminal, copy, scroll', children: ['toggle-view', 'copy-last', 'jump-latest', 'scrollback', 'toggle-keys'] },
+        { key: 'manage', label: 'Manage', icon: 'edit', detail: 'Rename, fork, hand off, pin, stop', children: ['rename', 'fork', 'send-to', 'pin', 'copy-attach', 'session-menu', 'terminate'] },
+      ],
+    },
+    {
+      key: 'workspace',
+      label: 'Workspace',
+      icon: 'pane',
+      detail: 'Splits, panes and the sidebar',
+      children: [
+        { key: 'split', label: 'Split', icon: 'split-right', detail: 'Open, flip, close panes', children: ['split-right', 'split-below', 'toggle-split', 'close-pane', 'exit-split'] },
+        { key: 'focus', label: 'Focus pane', icon: 'pane-left', children: ['focus-pane-left', 'focus-pane-right', 'focus-pane-up', 'focus-pane-down'] },
+        { key: 'move', label: 'Move pane', icon: 'pane-right', children: ['move-pane-left', 'move-pane-right', 'move-pane-up', 'move-pane-down'] },
+        'toggle-sidebar',
+      ],
+    },
+    { key: 'help', label: 'Help', icon: 'keyboard', children: ['show-shortcuts'] },
+  ],
+};
+
+// ---------- providers: live branches registered by mounted components
+
+type Provider = () => PaletteNode[] | Promise<PaletteNode[]>;
+const providers = new Map<ProviderId, Provider[]>();
+
+/** The newest registration wins (the focused pane registers last). Returns the unregister. */
+export function registerProvider(id: ProviderId, fn: Provider): () => void {
+  const list = providers.get(id) ?? [];
+  list.push(fn);
+  providers.set(id, list);
+  return () => {
+    const at = list.indexOf(fn);
+    if (at >= 0) list.splice(at, 1);
+  };
+}
+
+async function provide(id: ProviderId): Promise<PaletteNode[]> {
+  const fn = providers.get(id)?.at(-1);
+  if (!fn) return [];
+  try {
+    return await fn();
+  } catch {
+    return [];
+  }
+}
+
+const BY_ID = new Map(COMMANDS.map((c) => [c.id, c]));
+
+/**
+ * The tree as it stands now: commands that can't run are dropped, live branches
+ * filled in, and categories left empty pruned. `active` and `provide` are
+ * injectable for tests.
+ */
+export async function resolveTree(spec: Spec = TREE, opts: { active?: (id: CommandId) => boolean; provide?: (id: ProviderId) => Promise<PaletteNode[]> } = {}): Promise<PaletteNode> {
+  const active = opts.active ?? commandActive;
+  const fill = opts.provide ?? provide;
+  const walk = async (s: Spec): Promise<PaletteNode | null> => {
+    const children: PaletteNode[] = [];
+    for (const child of s.children) {
+      if (typeof child === 'string') {
+        const cmd = BY_ID.get(child);
+        if (cmd && cmd.id !== 'command-palette' && active(cmd.id)) children.push({ key: cmd.id, label: cmd.label, detail: cmd.detail, command: cmd.id });
+      } else if ('provider' in child) {
+        children.push(...(await fill(child.provider)));
+      } else {
+        const sub = await walk(child);
+        if (sub) children.push(sub);
+      }
+    }
+    if (!children.length && s.key !== 'root') return null;
+    return { key: s.key, label: s.label, icon: s.icon, detail: s.detail, children };
+  };
+  return (await walk(spec))!;
+}
+
+// ---------- search
+
+export type Hit = { node: PaletteNode; /** Ancestors below the search scope, outermost first. */ trail: PaletteNode[]; score: number };
+
+/**
+ * Everything under `scope` that matches, best first. A label match beats a
+ * breadcrumb match, and categories and commands compete on equal terms, so
+ * "panels" finds the category and "diff" the command inside it.
+ */
+export function searchTree(scope: PaletteNode, query: string): Hit[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const hits: Hit[] = [];
+  const visit = (node: PaletteNode, trail: PaletteNode[]) => {
+    for (const child of node.children ?? []) {
+      const label = fuzzy(q, child.label);
+      // The breadcrumb counts only word by word ("panels diff"): as a loose
+      // subsequence, any long path would match almost anything.
+      const path = [...trail, child].map((n) => n.label.toLowerCase()).join(' ');
+      const words = q.split(/\s+/).filter(Boolean);
+      const crumbs = words.length > 1 && words.every((w) => path.includes(w)) ? q.length * 2 : 0;
+      const detail = child.detail?.toLowerCase().includes(q) ? q.length : 0;
+      const score = Math.max(label * 3, crumbs, detail);
+      if (score > 0) hits.push({ node: child, trail, score: score - trail.length * 0.5 });
+      if (child.children) visit(child, [...trail, child]);
+    }
+  };
+  visit(scope, []);
+  // Stable: equal scores keep tree order.
+  return hits.map((h, i) => ({ h, i })).sort((a, b) => b.h.score - a.h.score || a.i - b.i).map(({ h }) => h);
+}
+
+/** Count of runnable leaves under a category (shown beside it). */
+export function leafCount(node: PaletteNode): number {
+  return (node.children ?? []).reduce((n, c) => n + (c.children ? leafCount(c) : 1), 0);
+}

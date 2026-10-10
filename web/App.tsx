@@ -5,6 +5,9 @@ import { useHosts } from './useHosts.ts';
 import { Sidebar, type Page } from './Sidebar.tsx';
 import { useSavedGroups } from './groupOrder.ts';
 import { sidebarOrder } from './sessionOrder.ts';
+import { look } from './agents.ts';
+
+const STATUS_WORD = { waiting: 'Needs you', busy: 'Working', attention: 'Done', idle: 'Idle' } as const;
 import { cycleKey } from './keyboard.ts';
 import { Inbox, type InboxGroup } from './Inbox.tsx';
 import { HistoryView, SessionsView } from './HistoryView.tsx';
@@ -24,7 +27,7 @@ import { showError } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { trackViewport } from './viewport.ts';
 import { runCommand } from './shortcuts.ts';
-import { CommandPalette, Shortcuts, ShortcutsDialog, shortcutTitle, useCommand } from './shortcuts.tsx';
+import { CommandPalette, Shortcuts, ShortcutsDialog, shortcutTitle, useCommand, usePaletteProvider } from './shortcuts.tsx';
 
 function useMedia(query: string) {
   const [match, setMatch] = useState(() => matchMedia(query).matches);
@@ -223,6 +226,18 @@ export function App({ onLock }: { onLock: () => void }) {
   useCommand('move-pane-down', () => movePane('down'), splitOpen);
   useCommand('toggle-split', flipSplit, splitOpen);
   useCommand('exit-split', exitSplit, !!layout);
+  // Palette → Go to: every live session, in sidebar order.
+  usePaletteProvider('sessions', () => {
+    const multi = (state?.hosts.length ?? 0) > 1;
+    return sidebarOrder(state?.windows ?? [], multi, savedGroups).map((w) => ({
+      key: `session:${w.key}`,
+      label: w.title,
+      icon: 'sessions' as const,
+      detail: [STATUS_WORD[w.status], w.agent ? look(w.agent).name : 'Shell', multi ? w.host : null, w.project].filter(Boolean).join(' · '),
+      run: () => open(w.key),
+    }));
+  });
+
   // Keyboard into the sidebar: the open session's row, else the current page.
   useCommand(
     'focus-sidebar',
@@ -595,10 +610,10 @@ export function App({ onLock }: { onLock: () => void }) {
       {palette && (
         <CommandPalette
           onClose={() => setPalette(false)}
-          onRun={(id) => {
+          onRun={(node) => {
             setPalette(false);
             // After the dialog releases focus, so Reply and the other focus actions land.
-            requestAnimationFrame(() => requestAnimationFrame(() => runCommand(id)));
+            requestAnimationFrame(() => requestAnimationFrame(() => (node.command ? runCommand(node.command) : node.run?.())));
           }}
         />
       )}

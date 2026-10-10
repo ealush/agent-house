@@ -6,6 +6,7 @@ import { clipboardFiles } from './clipboard.ts';
 import { ModelPicker, EffortPicker, Popover, effectiveModel, effortsFor, usePreset } from './ModelPicker.tsx';
 import { shortModel } from './logos.tsx';
 import { SuggestList, triggerAt, useSuggestions } from './Suggest.tsx';
+import { usePaletteProvider } from './shortcuts.tsx';
 
 // The message bar under a GUI session. It goes through the server, which types the text
 // in now (idle agent, or any shell), queues it while an agent works, or resumes a dead
@@ -247,6 +248,53 @@ export function ComposerBar({ client, target, agent, w, onSent, onNotice = toast
       showError(e, "Couldn't relaunch");
     }
   }
+
+  // Palette → Session → Model and effort: every choice as a row, applied the
+  // same way the chips apply it (live where the agent can, else a relaunch).
+  usePaletteProvider(
+    'models',
+    () =>
+      preset && models.length && (preset.switchModel || preset.modelArgs)
+        ? [
+            {
+              key: 'models',
+              label: 'Model',
+              icon: 'model' as const,
+              detail: `Now ${modelLabel ?? 'default'}`,
+              children: models.map((m) => ({
+                key: m.id,
+                label: m.name,
+                icon: 'model' as const,
+                detail: [m.id === model?.id ? 'current' : '', m.description ?? ''].filter(Boolean).join(' · '),
+                run: () => void (preset.switchModel ? pickLive({ model: m.id }, () => {}) : relaunchWith({ model: m.id }, () => {})),
+              })),
+            },
+          ]
+        : [],
+    active && !!w,
+  );
+  usePaletteProvider(
+    'efforts',
+    () =>
+      preset && levels.length && (preset.switchEffort || preset.effort)
+        ? [
+            {
+              key: 'efforts',
+              label: 'Reasoning effort',
+              icon: 'effort' as const,
+              detail: `Now ${effort ?? 'default'}`,
+              children: levels.map((level) => ({
+                key: level,
+                label: level,
+                icon: 'effort' as const,
+                detail: level === effort ? 'current' : '',
+                run: () => void (preset.switchEffort ? pickLive({ effort: level }, () => {}) : relaunchWith({ effort: level }, () => {})),
+              })),
+            },
+          ]
+        : [],
+    active && !!w,
+  );
 
   const canSend = !!text.trim() && !busy;
   const showStop = !isShell && working && !text.trim();

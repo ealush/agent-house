@@ -19,7 +19,7 @@ import { QueuePanel } from './Queue.tsx';
 import { ForkDialog, ForksDialog } from './ForkDialog.tsx';
 import { SendToDialog } from './SendToDialog.tsx';
 import { SnapshotsPanel } from './Snapshots.tsx';
-import { ShortcutHint, shortcutTitle, useCommand, useShortcutRevision } from './shortcuts.tsx';
+import { ShortcutHint, shortcutTitle, useCommand, usePaletteProvider, useShortcutRevision } from './shortcuts.tsx';
 import { runCommand } from './shortcuts.ts';
 
 type Panel = 'diff' | 'files' | 'chat' | 'queue' | 'snapshots';
@@ -476,6 +476,47 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   );
   useCommand('toggle-keys', () => setKeysPref(showKeys ? 'off' : 'on'), active && view === 'terminal');
   useCommand('session-menu', () => setMenu(true), active);
+
+  // Palette → Session → Turn and queue: each queued message, with what you can do to it.
+  usePaletteProvider(
+    'queue',
+    async () => {
+      const items = await client.queue(w.uid);
+      const act = (fn: () => Promise<unknown>, done: string) => () =>
+        void fn().then(
+          () => {
+            onToast(done);
+            refresh();
+          },
+          (e) => showError(e, "Couldn't change the queue"),
+        );
+      return items.map((item, n) => {
+        const first = item.text.split('\n')[0];
+        return {
+          key: `queued:${item.id}`,
+          label: first.length > 70 ? `${first.slice(0, 69)}…` : first,
+          icon: 'queue' as const,
+          detail: n === 0 ? 'Queued · next' : `Queued · #${n + 1}`,
+          children: [
+            { key: 'send', label: 'Send now', icon: 'send' as const, detail: 'Stop the current turn and deliver this now', run: act(() => client.sendNow(w.uid, item.id), 'Sent') },
+            {
+              key: 'edit',
+              label: 'Edit',
+              icon: 'edit' as const,
+              detail: 'Take it out of the queue and into the composer',
+              run: act(async () => {
+                await client.clearQueue(w.uid, item.id);
+                if (view !== 'gui') switchView('gui');
+                requestAnimationFrame(() => window.dispatchEvent(new CustomEvent('ah:compose', { detail: { uid: w.uid, text: item.text } })));
+              }, 'Back in the composer'),
+            },
+            { key: 'cancel', label: 'Cancel', icon: 'close' as const, detail: 'Drop this message', run: act(() => client.clearQueue(w.uid, item.id), 'Cancelled') },
+          ],
+        };
+      });
+    },
+    active && w.queued > 0,
+  );
 
   const panelView = (p: Panel) =>
     p === 'queue' ? (

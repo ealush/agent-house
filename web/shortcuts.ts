@@ -771,7 +771,7 @@ export function commandActive(id: CommandId): boolean {
 }
 
 /** Subsequence score. Contiguous runs and word starts count more. Zero when a character is missing. */
-function fuzzy(query: string, text: string): number {
+export function fuzzy(query: string, text: string): number {
   if (!query) return 1;
   const q = query.toLowerCase();
   const t = text.toLowerCase();
