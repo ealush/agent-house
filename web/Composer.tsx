@@ -27,6 +27,8 @@ type Props = {
   onRelaunched?: (id: string) => void;
   /** Bumped to pull focus here (e.g. "Reply" on an ask). */
   focusKey?: number;
+  /** The focused pane's composer takes the model/effort commands. */
+  active?: boolean;
 };
 
 const drafts = new Map<string, string>();
@@ -36,7 +38,7 @@ const SpeechRecognition: (new () => Recognition) | undefined = (window as any).S
 
 const toast = (msg: string) => window.dispatchEvent(new CustomEvent('ah:toast', { detail: msg }));
 
-export function ComposerBar({ client, target, agent, w, onSent, onNotice = toast, onSettingsOpen, onRelaunched, focusKey }: Props) {
+export function ComposerBar({ client, target, agent, w, onSent, onNotice = toast, onSettingsOpen, onRelaunched, focusKey, active = false }: Props) {
   const area = useRef<HTMLTextAreaElement>(null);
   const [text, setText] = useState(() => drafts.get(target) ?? '');
   const [busy, setBusy] = useState(false);
@@ -227,10 +229,14 @@ export function ComposerBar({ client, target, agent, w, onSent, onNotice = toast
           autoCapitalize={isShell ? 'off' : 'sentences'}
           autoCorrect={isShell ? 'off' : 'on'}
           spellCheck={!isShell}
-          placeholder={isShell ? 'Type or paste a command' : working ? 'Add to this… (queued until it’s free)' : 'Send a follow-up'}
+          placeholder={isShell ? 'Type or paste a command' : working ? 'Add to this… (queued until it’s free · Esc stops)' : 'Send a follow-up'}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+            if (e.key === 'Escape' && !text && working && !isShell) {
+              // Like the agent's own Esc: an empty composer stops the turn.
+              e.preventDefault();
+              stop();
+            } else if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               submit();
             } else if (e.key === 'ArrowUp' && (!text || cursor.current >= 0)) {
@@ -255,7 +261,7 @@ export function ComposerBar({ client, target, agent, w, onSent, onNotice = toast
       <div className="composer-tools">
         <div className="composer-settings">
           {preset && (models.length > 0 || preset.modelArgs || preset.settingsCommands?.model) && (
-            <Popover className="tool-chip" title="Model version" label={modelLabel ?? 'Model: Default'}>
+            <Popover className="tool-chip" title="Model version" label={modelLabel ?? 'Model: Default'} command="pick-model" active={active}>
               {(close) => (
                 <ModelPicker preset={preset} value={{ model: model?.id, effort }}
                   disabled={!preset.switchModel && !preset.modelArgs}
@@ -271,7 +277,7 @@ export function ComposerBar({ client, target, agent, w, onSent, onNotice = toast
             </Popover>
           )}
           {preset && (levels.length > 0 || preset.settingsCommands?.effort) && (
-            <Popover className="tool-chip" title="Reasoning effort" label={`Effort: ${effort ?? 'Default'}`}>
+            <Popover className="tool-chip" title="Reasoning effort" label={`Effort: ${effort ?? 'Default'}`} command="pick-effort" active={active}>
               {(close) => (
                 <EffortPicker levels={levels} value={effort} disabled={!preset.switchEffort && !preset.effort}
                   onPick={(level) => {

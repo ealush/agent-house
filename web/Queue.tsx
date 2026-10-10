@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { HostApi, QueueItem } from './api.ts';
+import { shortcutTitle } from './shortcuts.tsx';
 
 /** This conversation's queue, as a side panel: review, send now, or cancel follow-ups. */
 export function QueuePanel({ client, uid, onChange }: {
@@ -68,9 +69,9 @@ export function QueuePanel({ client, uid, onChange }: {
       {error && <p role="alert">{error}</p>}
       {items === null && !error && <p className="hint">Loading…</p>}
       {items?.length === 0 && <p className="hint">No queued messages.</p>}
-      <ol className="queue-items">
+      <ol className="queue-items" data-rove>
         {items?.map((item) => (
-          <QueueRow key={item.id} item={item} busy={busy} onSendNow={() => sendNow(item)} onCancel={() => remove(item.id)} />
+          <QueueRow key={item.id} item={item} first={item === items[0]} busy={busy} onSendNow={() => sendNow(item)} onCancel={() => remove(item.id)} />
         ))}
       </ol>
       {!!items?.length && <button className="btn ghost small danger queue-clear-all" disabled={busy} onClick={() => remove()}>Cancel all queued messages</button>}
@@ -79,8 +80,8 @@ export function QueuePanel({ client, uid, onChange }: {
 }
 
 /** One queued follow-up: collapsed to its first line until expanded. */
-function QueueRow({ item, busy, onSendNow, onCancel }: {
-  item: QueueItem; busy: boolean; onSendNow: () => void; onCancel: () => void;
+function QueueRow({ item, first, busy, onSendNow, onCancel }: {
+  item: QueueItem; first: boolean; busy: boolean; onSendNow: () => void; onCancel: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const firstLine = item.text.split('\n')[0];
@@ -95,7 +96,7 @@ function QueueRow({ item, busy, onSendNow, onCancel }: {
         </button>
       )}
       <div className="queue-actions">
-        <button className="btn primary small" disabled={busy} onClick={onSendNow} title="Stop the current turn and deliver this message now">
+        <button className="btn primary small" disabled={busy} onClick={onSendNow} title={first ? shortcutTitle('Stop the current turn and deliver this message now', 'send-now') : 'Stop the current turn and deliver this message now'}>
           Send now
         </button>
         <button className="btn small" disabled={busy} onClick={onCancel}>Cancel message</button>

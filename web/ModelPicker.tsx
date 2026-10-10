@@ -1,5 +1,8 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import type { ModelChoice, Preset } from './api.ts';
+import type { CommandId } from './shortcuts.ts';
+import { shortcutTitle, useCommand } from './shortcuts.tsx';
+import { focusFirst } from './rove.ts';
 
 /** Resolves an agent's preset (with its live model catalog) on a given host. */
 export const PresetsContext = createContext<(host: string, id: string | null) => Preset | undefined>(() => undefined);
@@ -100,13 +103,22 @@ export function EffortPicker({ levels, value, onPick, disabled = false, footer }
 }
 
 /** A button that opens a popover; closes on outside click or Escape. */
-export function Popover({ label, className, children, up = true, align = 'left', title }: { label: React.ReactNode; className?: string; children: (close: () => void) => React.ReactNode; up?: boolean; align?: 'left' | 'right'; title?: string }) {
+export function Popover({ label, className, children, up = true, align = 'left', title, command, active = false }: { label: React.ReactNode; className?: string; children: (close: () => void) => React.ReactNode; up?: boolean; align?: 'left' | 'right'; title?: string; command?: CommandId; active?: boolean }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  useCommand(command ?? 'pick-model', () => setOpen((v) => !v), !!command && active);
   useEffect(() => {
     if (!open) return;
+    // Arrows move through the rows from the start, whether it opened by key or click.
+    focusFirst(body.current);
     const away = (e: Event) => !ref.current?.contains(e.target as Node) && setOpen(false);
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setOpen(false);
+      button.current?.focus();
+    };
     document.addEventListener('pointerdown', away);
     document.addEventListener('keydown', esc);
     return () => {
@@ -116,10 +128,14 @@ export function Popover({ label, className, children, up = true, align = 'left',
   }, [open]);
   return (
     <div className="popover-wrap" ref={ref}>
-      <button type="button" className={className} aria-expanded={open} title={title} onClick={() => setOpen(!open)}>
+      <button ref={button} type="button" className={className} aria-expanded={open} title={command ? shortcutTitle(title ?? '', command) : title} onClick={() => setOpen(!open)}>
         {label}
       </button>
-      {open && <div className={`popover ${up ? 'up' : 'down'} ${align === 'right' ? 'right' : ''}`}>{children(() => setOpen(false))}</div>}
+      {open && (
+        <div ref={body} data-rove className={`popover ${up ? 'up' : 'down'} ${align === 'right' ? 'right' : ''}`}>
+          {children(() => setOpen(false))}
+        </div>
+      )}
     </div>
   );
 }

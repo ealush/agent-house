@@ -149,6 +149,8 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
     }
   };
   const blocks = useMemo(() => project(state.entries), [state.entries]);
+  const blocksRef = useRef(blocks);
+  blocksRef.current = blocks;
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [away, setAway] = useState(false);
@@ -161,6 +163,16 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
     insert: (text) => void client.send(w.uid, text, false).catch((e) => showError(e, "Couldn't send")),
     focus: onReply,
     focusAsk: () => askRef.current?.focus() ?? false,
+    copyLast: () => {
+      const last = [...blocksRef.current].reverse().find((b) => b.kind === 'agent');
+      const text = last ? blockText(last) : '';
+      if (!text) return showNotice('Nothing to copy', 'The agent has not replied yet.');
+      void copyText(text).then((ok) => window.dispatchEvent(new CustomEvent('ah:toast', { detail: ok ? 'Copied the last reply' : "Couldn't copy" })));
+    },
+    jumpLatest: () => {
+      stick.current = true;
+      scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' });
+    },
   }));
 
 

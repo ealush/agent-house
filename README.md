@@ -86,13 +86,22 @@ to terminal rules and output activity, and matches live agents to their transcri
 - **Phone-first touches.** Bottom tabs, big targets, key row with one-tap Ctrl/Alt/Shift
   and clipboard Paste, swipe to scroll tmux, dictation-friendly composer, scrollback as
   selectable text. Shift+Enter sends multiline input; pasted screenshots upload to the host.
-- **Keyboard.** Ctrl+Shift+K (⌘K on a Mac) jumps to any session or resumes a
-  conversation; filters `h:` host/harness, `s:` status, `p:` project, `m:` model.
-  Alt+↑ / Alt+↓ moves through sessions in sidebar order, from the terminal, the
-  GUI, or the inbox. In a split, Ctrl+Shift+arrows moves to the pane in that
-  direction. Ctrl+Shift+/ opens the shortcut table (also under Settings →
-  Shortcuts), where each binding can be changed on this device. Exit split and
-  terminate session are in that table with no default chord.
+- **Keyboard first.** Everything has a keyboard path; the mouse is optional.
+  Ctrl+Shift+P opens the command palette (every action available right now, with
+  its binding); Ctrl+Shift+K (⌘K on a Mac) jumps to any session or resumes a
+  conversation, with filters `h:` host/harness, `s:` status, `p:` project, `m:` model.
+  Session actions are Ctrl+Alt chords that also work from the composer: R reply
+  (into the agent's question or picker when it is waiting), Enter / Backspace
+  approve / deny, X stop the turn (or Esc in an empty composer), S send the next
+  queued message now, M / E model / effort, N rename, F fork, T send to, C copy
+  the last reply, 1–5 the Diff / Files / Chat / Queue / Snapshots panel, `.` the
+  session menu. In a question form, digits pick, arrows move, Space toggles,
+  Ctrl+Enter submits. Lists (sidebar, inbox, history, menus, pickers, queue) move
+  with the arrow keys; Ctrl+Shift+0 focuses the sidebar and Escape (or
+  Ctrl+Shift+9) returns to the session. Alt+↑ / Alt+↓ moves through sessions in
+  sidebar order; in a split, Ctrl+Shift+arrows moves between panes.
+  Ctrl+Shift+/ opens the shortcut table (also under Settings → Shortcuts), where
+  each binding can be changed on this device.
 
 ### CLI
 

@@ -47,7 +47,7 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, cl
       : 'All quiet.';
 
   return (
-    <div className="page">
+    <div className="page" data-rove="button.card-title, button.row">
       <header className="page-head">
         <div className="grow">
           <h1 className="page-title">Inbox<span className="period">.</span></h1>

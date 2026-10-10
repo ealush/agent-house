@@ -42,6 +42,14 @@ const PATHS: Record<string, string> = {
   'pane-up': 'M4 5h16v14H4zM9 14l3-4 3 4',
   'pane-down': 'M4 5h16v14H4zM9 10l3 4 3-4',
   pane: 'M4 5h16v14H4z',
+  stop: 'M7 7h10v10H7z',
+  send: 'M21 3 10 14M21 3l-7 18-4-7-7-4z',
+  edit: 'M4 20h4L19 9l-4-4L4 16zM14 6l4 4',
+  fork: 'M6 3v12M18 9a9 9 0 0 1-9 9M6 21a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM18 9a2 2 0 1 0 0-4 2 2 0 0 0 0 4z',
+  pin: 'M12 16v5M8 4h8l-1 6 3 3v2H6v-2l3-3z',
+  queue: 'M4 6h16M4 12h16M4 18h10',
+  model: 'M7 7h10v10H7zM10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4',
+  effort: 'M12 14l4-4M4.5 18a9 9 0 1 1 15 0',
 };
 
 export type IconName = keyof typeof PATHS;

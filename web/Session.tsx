@@ -1,7 +1,9 @@
 import { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { placeFloatingMenu } from './menuPlace.ts';
-import { showError, showNotice } from './ask.tsx';
+import { askConfirm, showError, showNotice } from './ask.tsx';
+import { copyText } from './selection.ts';
+import { focusFirst } from './rove.ts';
 import { confirmTerminate } from './Sidebar.tsx';
 import { Icon } from './icons.tsx';
 import { deviceName, type HostApi, type SendResult, type Win } from './api.ts';
@@ -18,6 +20,7 @@ import { ForkDialog, ForksDialog } from './ForkDialog.tsx';
 import { SendToDialog } from './SendToDialog.tsx';
 import { SnapshotsPanel } from './Snapshots.tsx';
 import { ShortcutHint, shortcutTitle, useCommand, useShortcutRevision } from './shortcuts.tsx';
+import { runCommand } from './shortcuts.ts';
 
 type Panel = 'diff' | 'files' | 'chat' | 'queue' | 'snapshots';
 
@@ -62,6 +65,8 @@ type Props = {
 };
 
 const STATUS_PILL = { waiting: 'Needs you', busy: 'Working', attention: 'Done', idle: 'Idle' };
+
+const onToast = (msg: string) => window.dispatchEvent(new CustomEvent('ah:toast', { detail: msg }));
 
 function stored<T extends string>(key: string, fallback: T): [T, (v: T) => void] {
   const [v, setV] = useState<T>(() => {
@@ -158,6 +163,19 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   const menuEl = useRef<HTMLDivElement>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
 
+  // Opened from the keyboard or with a click, the first item takes focus once the
+  // menu is placed (it is invisible until then, and can't take focus), so arrows work at once.
+  // Escape hands focus back to wherever it was (the terminal, the composer).
+  const beforeMenu = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const was = document.activeElement as HTMLElement | null;
+    beforeMenu.current = was && !menuEl.current?.contains(was) ? was : null;
+  }, [menu]);
+  useEffect(() => {
+    if (menu && menuPos) focusFirst(menuEl.current);
+  }, [menu, !!menuPos]);
+
   // The overflow menu is portalled to the body: split panes clip with
   // `.pane { overflow: hidden }`, which cut the menu off in short panes.
   useLayoutEffect(() => {
@@ -185,7 +203,10 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       setMenu(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMenu(false);
+      if (e.key !== 'Escape') return;
+      setMenu(false);
+      const back = beforeMenu.current?.isConnected ? beforeMenu.current : menuBtn.current;
+      back?.focus();
     };
     const onShift = () => setMenu(false);
     document.addEventListener('pointerdown', onDown, true);
@@ -370,6 +391,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   };
 
   useShortcutRevision();
+  const diffTab = w.branch ? 'Diff' : null;
   // Desktop only: a phone would pop the software keyboard every time a session opens.
   // Two frames, because the GUI surface is lazy and the ref is empty on the first.
   useEffect(() => {
@@ -405,8 +427,56 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   useCommand('approve', () => onAnswer(w, 'approve'), active && w.answerable && w.status === 'waiting');
   useCommand('deny', () => onAnswer(w, 'deny'), active && w.answerable && w.status === 'waiting');
   useCommand('reply', reply, active);
+  useCommand('focus-main', focusInput, active);
 
-  const diffTab = w.branch ? 'Diff' : null;
+  // Every menu action is also a command, so the palette and chords reach it.
+  const working = w.status === 'busy' || w.status === 'waiting';
+  useCommand('interrupt', () => void client.interrupt(w.uid).then(() => onToast('Interrupted'), (e) => showError(e, "Couldn't interrupt")), active && working);
+  useCommand(
+    'send-now',
+    () =>
+      void (async () => {
+        const [next] = await client.queue(w.uid);
+        if (!next) return onToast('Nothing queued');
+        await client.sendNow(w.uid, next.id);
+        onToast('Sent the next queued message');
+        refresh();
+      })().catch((e) => showError(e, "Couldn't send now")),
+    active && w.queued > 0,
+  );
+  useCommand(
+    'clear-queue',
+    () =>
+      void act(async () => {
+        if (await askConfirm({ title: `Cancel ${w.queued} queued message${w.queued === 1 ? '' : 's'}?`, confirm: 'Cancel them', cancel: 'Keep', danger: true })) await client.clearQueue(w.uid);
+      }),
+    active && w.queued > 0,
+  );
+  useCommand('rename', startRename, active && !renaming);
+  useCommand('fork', () => setForking(true), active);
+  useCommand('send-to', () => setSending(true), active && !!w.feed);
+  useCommand('pin', () => void act(() => client.pin(w.uid, !w.pinned)), active);
+  const togglePanel = (p: Panel) => {
+    if (narrow) setTab(tab === p ? 'main' : p);
+    else openPanel(p);
+  };
+  useCommand('panel-diff', () => togglePanel('diff'), active && !!diffTab);
+  useCommand('panel-files', () => togglePanel('files'), active);
+  useCommand('panel-chat', () => togglePanel('chat'), active);
+  useCommand('panel-queue', () => togglePanel('queue'), active);
+  useCommand('panel-snapshots', () => togglePanel('snapshots'), active);
+  useCommand('copy-last', () => surface.current?.copyLast?.(), active && view === 'gui');
+  useCommand('jump-latest', () => surface.current?.jumpLatest?.(), active && view === 'gui');
+  useCommand('scrollback', () => void act(async () => setCapture(await client.capture(w.id))), active);
+  useCommand(
+    'copy-attach',
+    () =>
+      void copyText(`ah attach ${w.uid}`).then((ok) => onToast(ok ? `Copied “ah attach ${w.uid}”` : "Couldn't copy")),
+    active,
+  );
+  useCommand('toggle-keys', () => setKeysPref(showKeys ? 'off' : 'on'), active && view === 'terminal');
+  useCommand('session-menu', () => setMenu(true), active);
+
   const panelView = (p: Panel) =>
     p === 'queue' ? (
       <QueuePanel client={client} uid={w.uid} onChange={refresh} />
@@ -585,6 +655,8 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
             createPortal(
               <div
                 ref={menuEl}
+                data-rove
+                role="menu"
                 className="menu"
                 onMouseLeave={() => setMenu(false)}
                 style={
@@ -593,14 +665,15 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
                     : { position: 'fixed', right: 'auto', visibility: 'hidden', zIndex: 90, margin: 0 }
                 }
               >
-              <button onClick={startRename}>Rename</button>
+              <button onClick={startRename}><span className="grow">Rename</span><ShortcutHint id="rename" /></button>
               <button
                 onClick={() => {
                   setMenu(false);
                   setForking(true);
                 }}
               >
-                Fork session…
+                <span className="grow">Fork session…</span>
+                <ShortcutHint id="fork" />
               </button>
               {w.feed && (
                 <button
@@ -609,15 +682,17 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
                     setSending(true);
                   }}
                 >
-                  Send to…
+                  <span className="grow">Send to…</span>
+                  <ShortcutHint id="send-to" />
                 </button>
               )}
               <button onClick={() => act(() => client.pin(w.uid, !w.pinned))}>{w.pinned ? 'Unpin' : 'Pin to top'}</button>
-              {diffTab && <button onClick={() => { setMenu(false); openPanel('diff'); }}>Diff</button>}
-              <button onClick={() => { setMenu(false); openPanel('files'); }}>Files</button>
-              <button onClick={() => { setMenu(false); openPanel('chat'); }}>Chat</button>
-              <button onClick={() => { setMenu(false); openPanel('queue'); }}>Queued messages ({w.queued})</button>
-              <button onClick={() => { setMenu(false); openPanel('snapshots'); }}>Snapshots</button>
+              {diffTab && <button onClick={() => { setMenu(false); togglePanel('diff'); }}><span className="grow">Diff</span><ShortcutHint id="panel-diff" /></button>}
+              <button onClick={() => { setMenu(false); togglePanel('files'); }}><span className="grow">Files</span><ShortcutHint id="panel-files" /></button>
+              <button onClick={() => { setMenu(false); togglePanel('chat'); }}><span className="grow">Chat</span><ShortcutHint id="panel-chat" /></button>
+              <button onClick={() => { setMenu(false); togglePanel('queue'); }}><span className="grow">Queued messages ({w.queued})</span><ShortcutHint id="panel-queue" /></button>
+              {w.queued > 0 && <button onClick={() => { setMenu(false); runCommand('send-now'); }}><span className="grow">Send next queued now</span><ShortcutHint id="send-now" /></button>}
+              <button onClick={() => { setMenu(false); togglePanel('snapshots'); }}><span className="grow">Snapshots</span><ShortcutHint id="panel-snapshots" /></button>
               {onSplit && (
                 <>
                   <button
@@ -753,7 +828,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
           </Suspense>
           {tab !== 'main' && <div className="session-main" style={{ minHeight: 0 }}>{panelView(tab)}</div>}
           {view === 'gui' && (
-            <ComposerBar client={client} target={w.uid} agent={w.agent} w={w} onSent={onSent} focusKey={focus}
+            <ComposerBar client={client} target={w.uid} agent={w.agent} w={w} onSent={onSent} focusKey={focus} active={active}
               onSettingsOpen={() => switchView('terminal', true)}
               onRelaunched={(id) => {
                 refresh();

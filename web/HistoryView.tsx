@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { HistoryItem, State, Win } from './api.ts';
 import { Icon } from './icons.tsx';
 import { age, look } from './agents.ts';
@@ -9,17 +10,50 @@ import { sidebarSections } from './sessionOrder.ts';
 /** Ended and saved conversations from every host; one tap resumes on the host that has it. */
 export function HistoryView({ state, onResume, onForget, onFork }: { state: State; onResume: (h: HistoryItem) => void; onForget: (h: HistoryItem) => void; onFork?: (h: HistoryItem) => void }) {
   const multiHost = state.hosts.length > 1;
+  const [filter, setFilter] = useState('');
+  const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = words.length
+    ? state.history.filter((h) => {
+        const hay = [h.title, h.project, h.harness, h.model, h.host, h.cwd].join(' ').toLowerCase();
+        return words.every((w) => hay.includes(w));
+      })
+    : state.history;
   return (
-    <div className="page">
+    <div className="page" data-rove="button.resume">
       <header className="page-head">
         <div className="grow">
           <h1>History</h1>
           <p>Ended sessions and past conversations. Resuming continues the same conversation.</p>
         </div>
       </header>
+      {state.history.length > 0 && (
+        <label className="field history-filter">
+          <input
+            type="search"
+            value={filter}
+            placeholder={`Filter ${state.history.length} conversations by title, project or agent`}
+            aria-label="Filter history"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            onChange={(e) => setFilter(e.target.value)}
+            onKeyDown={(e) => {
+              // Down from the filter lands on the first match.
+              if (e.key === 'ArrowDown' || (e.key === 'Enter' && shown.length)) {
+                e.preventDefault();
+                (e.currentTarget.closest('.page')?.querySelector('button.resume') as HTMLElement | null)?.[e.key === 'Enter' ? 'click' : 'focus']();
+              } else if (e.key === 'Escape' && filter) {
+                e.preventDefault();
+                setFilter('');
+              }
+            }}
+          />
+        </label>
+      )}
       {state.history.length === 0 && <p className="empty-state">Nothing here yet.</p>}
+      {state.history.length > 0 && shown.length === 0 && <p className="empty-state">No conversations match “{filter}”.</p>}
       <ul className="rows">
-        {state.history.map((h) => {
+        {shown.map((h) => {
           const { color, name } = look(h.harness);
           const modelLabel = shortModel(h.model);
           return (
@@ -38,7 +72,7 @@ export function HistoryView({ state, onResume, onForget, onFork }: { state: Stat
                 </span>
                 <span className="when">{age(h.at)}</span>
                 <span style={{ display: 'flex', gap: 4 }}>
-                  <button className="btn small" onClick={() => onResume(h)}>
+                  <button className="btn small resume" onClick={() => onResume(h)}>
                     Resume
                   </button>
                   {onFork && (h.harness === 'claude' || h.harness === 'codex' || h.harness === 'muse') && (

@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { Icon, type IconName } from './icons.tsx';
+import { roveKey } from './rove.ts';
 import {
   COMMANDS,
   bindingError,
@@ -68,7 +69,12 @@ export function shortcutTitle(label: string, id: CommandId): string {
 export function Shortcuts() {
   useEffect(() => {
     window.addEventListener('keydown', handleShortcutKey, true);
-    return () => window.removeEventListener('keydown', handleShortcutKey, true);
+    // Bubble phase: lists with their own arrow handling get the key first.
+    window.addEventListener('keydown', roveKey);
+    return () => {
+      window.removeEventListener('keydown', handleShortcutKey, true);
+      window.removeEventListener('keydown', roveKey);
+    };
   }, []);
   return null;
 }
@@ -91,6 +97,28 @@ const COMMAND_ICONS = {
   approve: 'check',
   deny: 'ban',
   terminate: 'trash',
+  interrupt: 'stop',
+  'send-now': 'send',
+  'clear-queue': 'close',
+  rename: 'edit',
+  fork: 'fork',
+  'send-to': 'send',
+  pin: 'pin',
+  'panel-diff': 'diff',
+  'panel-files': 'files',
+  'panel-chat': 'chat',
+  'panel-queue': 'queue',
+  'panel-snapshots': 'history',
+  'pick-model': 'model',
+  'pick-effort': 'effort',
+  'copy-last': 'copy',
+  'jump-latest': 'chevron-down',
+  scrollback: 'terminal',
+  'copy-attach': 'copy',
+  'toggle-keys': 'keyboard',
+  'session-menu': 'more',
+  'focus-sidebar': 'panel',
+  'focus-main': 'view',
   'split-right': 'split-right',
   'split-below': 'split-below',
   'close-pane': 'pane-close',

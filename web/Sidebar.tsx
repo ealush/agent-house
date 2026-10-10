@@ -6,6 +6,7 @@ import { look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
 import { useSavedGroups, setGroupList } from './groupOrder.ts';
 import { movedSessionOrders, saveGroupMove, sidebarSections } from './sessionOrder.ts';
+import { runCommand } from './shortcuts.ts';
 import { ShortcutHint, shortcutTitle, useShortcutRevision } from './shortcuts.tsx';
 
 export type Page = 'inbox' | 'history' | 'sessions' | 'settings' | 'search';
@@ -198,7 +199,17 @@ export function Sidebar({ state, error, page, selected, visibleKeys, device, onP
   }
 
   return (
-    <nav className="sidebar">
+    <nav
+      className="sidebar"
+      data-rove="button.nav-item, button.side-session"
+      onKeyDown={(e) => {
+        // Escape hands the keyboard back to the open session.
+        if (e.key === 'Escape' && (e.target as HTMLElement).closest('.side-session, .nav-item')) {
+          e.preventDefault();
+          runCommand('focus-main');
+        }
+      }}
+    >
       <div className="brand">
         <span className="logo">&gt;_</span>
         <span className="brand-name">ah</span>

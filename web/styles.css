@@ -1490,7 +1490,8 @@ a.btn {
   font-size: 13.5px;
 }
 
-.menu button:hover {
+.menu button:hover,
+.menu button:focus-visible {
   background: var(--line);
 }
 
@@ -4320,4 +4321,13 @@ button.tool-chip:hover {
 .ask-progress {
   margin-bottom: -6px;
   letter-spacing: 0.02em;
+}
+
+.history-filter {
+  display: block;
+  margin: 0 0 14px;
+}
+
+.history-filter input {
+  width: 100%;
 }

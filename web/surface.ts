@@ -13,6 +13,10 @@ export type SurfaceHandle = {
   focus: () => void;
   /** Move focus to the answer controls of a waiting session. False when there are none. */
   focusAsk?: () => boolean;
+  /** Copy the agent's newest reply (GUI). */
+  copyLast?: () => void;
+  /** Scroll to the newest output. */
+  jumpLatest?: () => void;
 };
 
 export type SurfaceProps = {

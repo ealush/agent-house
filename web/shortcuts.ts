@@ -33,6 +33,28 @@ export type CommandId =
   | 'approve'
   | 'deny'
   | 'terminate'
+  | 'interrupt'
+  | 'send-now'
+  | 'clear-queue'
+  | 'rename'
+  | 'fork'
+  | 'send-to'
+  | 'pin'
+  | 'panel-diff'
+  | 'panel-files'
+  | 'panel-chat'
+  | 'panel-queue'
+  | 'panel-snapshots'
+  | 'pick-model'
+  | 'pick-effort'
+  | 'copy-last'
+  | 'jump-latest'
+  | 'scrollback'
+  | 'copy-attach'
+  | 'toggle-keys'
+  | 'session-menu'
+  | 'focus-sidebar'
+  | 'focus-main'
   | 'split-right'
   | 'split-below'
   | 'close-pane'
@@ -62,6 +84,8 @@ export type Command = {
 
 const nav: Array<Exclude<Scope, 'ask'>> = ['app', 'terminal'];
 const session: Array<Exclude<Scope, 'ask'>> = ['app', 'terminal'];
+/** Ctrl+Alt chords edit nothing in a text box, so they work from the composer too. */
+const act: Array<Exclude<Scope, 'ask'>> = ['app', 'terminal', 'field'];
 
 export const COMMANDS: Command[] = [
   {
@@ -138,6 +162,22 @@ export const COMMANDS: Command[] = [
     scopes: nav,
   },
   {
+    id: 'focus-sidebar',
+    group: 'Navigate',
+    label: 'Focus the sidebar',
+    detail: 'Move focus to the current session in the sidebar. Arrows move, Enter opens, Escape returns.',
+    chords: [{ key: '0', ctrl: true, shift: true }],
+    scopes: ['app', 'terminal', 'field'],
+  },
+  {
+    id: 'focus-main',
+    group: 'Navigate',
+    label: 'Focus the session',
+    detail: 'Back to the open session: its composer in the GUI, the terminal otherwise.',
+    chords: [{ key: '9', ctrl: true, shift: true }],
+    scopes: ['app', 'terminal', 'field'],
+  },
+  {
     id: 'show-shortcuts',
     group: 'Navigate',
     label: 'Keyboard shortcuts',
@@ -168,7 +208,7 @@ export const COMMANDS: Command[] = [
     label: 'Reply',
     detail: 'Focus the composer, or the terminal when that is the current view.',
     chords: [{ key: 'r', ctrl: true, alt: true }],
-    scopes: session,
+    scopes: act,
   },
   {
     id: 'approve',
@@ -176,7 +216,7 @@ export const COMMANDS: Command[] = [
     label: 'Approve',
     detail: 'Approve the prompt on the focused session, when it is waiting for one.',
     chords: [{ key: 'Enter', ctrl: true, alt: true }],
-    scopes: session,
+    scopes: act,
   },
   {
     id: 'deny',
@@ -184,7 +224,167 @@ export const COMMANDS: Command[] = [
     label: 'Deny',
     detail: 'Deny the prompt on the focused session, when it is waiting for one.',
     chords: [{ key: 'Backspace', ctrl: true, alt: true }],
-    scopes: session,
+    scopes: act,
+  },
+  {
+    id: 'interrupt',
+    group: 'Session',
+    label: 'Stop the turn',
+    detail: 'Interrupt what the agent is doing right now (Esc in its terminal). In the GUI, Esc in an empty composer does the same.',
+    chords: [{ key: 'x', ctrl: true, alt: true }],
+    scopes: act,
+  },
+  {
+    id: 'send-now',
+    group: 'Session',
+    label: 'Send the next queued message now',
+    detail: 'Stop the current turn and deliver the oldest queued follow-up right away.',
+    chords: [{ key: 's', ctrl: true, alt: true }],
+    scopes: act,
+  },
+  {
+    id: 'clear-queue',
+    group: 'Session',
+    label: 'Cancel all queued messages',
+    detail: 'Drop every follow-up waiting for this session.',
+    chords: [],
+    scopes: act,
+  },
+  {
+    id: 'pick-model',
+    group: 'Session',
+    label: 'Switch model',
+    detail: 'Open the model picker for this session.',
+    chords: [{ key: 'm', ctrl: true, alt: true }],
+    scopes: act,
+  },
+  {
+    id: 'pick-effort',
+    group: 'Session',
+    label: 'Switch reasoning effort',
+    detail: 'Open the effort picker for this session.',
+    chords: [{ key: 'e', ctrl: true, alt: true }],
+    scopes: act,
+  },
+  {
+    id: 'copy-last',
+    group: 'Session',
+    label: "Copy the agent's last reply",
+    detail: 'Copy the newest agent message as text (GUI view).',
+    chords: [{ key: 'c', ctrl: true, alt: true }],
+    scopes: act,
+  },
+  {
+    id: 'jump-latest',
+    group: 'Session',
+    label: 'Jump to latest',
+    detail: 'Scroll the conversation to its newest message.',
+    chords: [{ key: 'End', ctrl: true, alt: true }],
+    scopes: act,
+  },
+  {
+    id: 'rename',
+    group: 'Session',
+    label: 'Rename session',
+    detail: 'Edit the session name in place. Enter saves, Escape cancels.',
+    chords: [{ key: 'n', ctrl: true, alt: true }],
+    scopes: act,
+  },
+  {
+    id: 'fork',
+    group: 'Session',
+    label: 'Fork session…',
+    detail: 'Copy this conversation into a new session on its own worktree.',
+    chords: [{ key: 'f', ctrl: true, alt: true }],
+    scopes: act,
+  },
+  {
+    id: 'send-to',
+    group: 'Session',
+    label: 'Send to…',
+    detail: 'Hand a summary and the last reply to another session or a new one.',
+    chords: [{ key: 't', ctrl: true, alt: true }],
+    scopes: act,
+  },
+  {
+    id: 'pin',
+    group: 'Session',
+    label: 'Pin or unpin',
+    detail: 'Keep this session at the top of the sidebar.',
+    chords: [],
+    scopes: act,
+  },
+  {
+    id: 'panel-diff',
+    group: 'Session',
+    label: 'Panel: Diff',
+    detail: 'Show the git changes beside the session. Again to close.',
+    chords: [{ key: '1', ctrl: true, alt: true }],
+    scopes: act,
+  },
+  {
+    id: 'panel-files',
+    group: 'Session',
+    label: 'Panel: Files',
+    detail: 'Browse files beside the session. Again to close.',
+    chords: [{ key: '2', ctrl: true, alt: true }],
+    scopes: act,
+  },
+  {
+    id: 'panel-chat',
+    group: 'Session',
+    label: 'Panel: Side chat',
+    detail: 'Discuss this work with another model. Again to close.',
+    chords: [{ key: '3', ctrl: true, alt: true }],
+    scopes: act,
+  },
+  {
+    id: 'panel-queue',
+    group: 'Session',
+    label: 'Panel: Queue',
+    detail: 'Review, send or cancel queued follow-ups. Again to close.',
+    chords: [{ key: '4', ctrl: true, alt: true }],
+    scopes: act,
+  },
+  {
+    id: 'panel-snapshots',
+    group: 'Session',
+    label: 'Panel: Snapshots',
+    detail: 'Per-turn snapshots and restore. Again to close.',
+    chords: [{ key: '5', ctrl: true, alt: true }],
+    scopes: act,
+  },
+  {
+    id: 'session-menu',
+    group: 'Session',
+    label: 'Session menu',
+    detail: 'Open the session menu; arrows move, Enter runs, Escape closes.',
+    chords: [{ key: '.', ctrl: true, alt: true }],
+    scopes: act,
+  },
+  {
+    id: 'scrollback',
+    group: 'Session',
+    label: 'Scrollback as text',
+    detail: "The terminal's scrollback as selectable, copyable text.",
+    chords: [],
+    scopes: act,
+  },
+  {
+    id: 'copy-attach',
+    group: 'Session',
+    label: 'Copy attach command',
+    detail: 'Copy “ah attach <id>” to open this session from a terminal.',
+    chords: [],
+    scopes: act,
+  },
+  {
+    id: 'toggle-keys',
+    group: 'Session',
+    label: 'Show or hide on-screen keys',
+    detail: 'The Esc / Tab / arrows / Ctrl key bar under the terminal.',
+    chords: [],
+    scopes: act,
   },
   {
     id: 'terminate',
@@ -192,7 +392,7 @@ export const COMMANDS: Command[] = [
     label: 'Terminate session',
     detail: 'Stop the focused session. Asks for confirmation first.',
     chords: [],
-    scopes: session,
+    scopes: act,
   },
   {
     id: 'split-right',
@@ -629,6 +829,8 @@ export function setShortcutCapture(fn: ((e: KeyboardEvent) => void) | null) {
 
 export function handleShortcutKey(e: KeyboardEvent) {
   if (e.repeat || e.isComposing) return;
+  // AltGr reports as Ctrl+Alt on some systems; it types characters, never commands.
+  if (e.getModifierState?.('AltGraph')) return;
   if (capture) {
     capture(e);
     e.preventDefault();

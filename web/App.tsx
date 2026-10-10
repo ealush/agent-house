@@ -223,6 +223,19 @@ export function App({ onLock }: { onLock: () => void }) {
   useCommand('move-pane-down', () => movePane('down'), splitOpen);
   useCommand('toggle-split', flipSplit, splitOpen);
   useCommand('exit-split', exitSplit, !!layout);
+  // Keyboard into the sidebar: the open session's row, else the current page.
+  useCommand(
+    'focus-sidebar',
+    () => {
+      if (!sideOpen) toggleSide();
+      requestAnimationFrame(() => {
+        const row = ['.sidebar .side-session[aria-current]', '.sidebar .nav-item.on', '.sidebar .side-session'].map((q) => document.querySelector<HTMLElement>(q)).find(Boolean);
+        row?.focus();
+        row?.scrollIntoView({ block: 'nearest' });
+      });
+    },
+    !narrow,
+  );
 
   /** Enter split view from the single session: the new half shows the most recent other session. */
   function splitFrom(key: string, dir: 'right' | 'below', otherKey?: string) {

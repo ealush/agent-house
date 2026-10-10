@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  COMMANDS,
   bindingError,
   chordFromEvent,
   commandActive,
@@ -196,4 +197,23 @@ test('the listener runs the newest handler and lets an unbound chord through', (
   stop();
   assert.equal(event('3', 'Digit3', { ctrlKey: true, shiftKey: true }), false);
   assert.equal(chordFromEvent({ key: 'Control', code: 'ControlLeft', ...none, ctrlKey: true }), null);
+});
+
+test('no two commands share a default chord', () => {
+  const seen = new Map<string, string>();
+  for (const cmd of COMMANDS) {
+    for (const c of cmd.chords) {
+      const key = formatChord(c, false);
+      assert.ok(!seen.has(key), `${key} is both ${seen.get(key)} and ${cmd.id}`);
+      seen.set(key, cmd.id);
+    }
+  }
+});
+
+test('session actions fire from the composer, pane moves do not (they select words there)', () => {
+  const e = (key: string, mods: { ctrl?: boolean; alt?: boolean; shift?: boolean }) => ({ key, code: /^\d$/.test(key) ? `Digit${key}` : `Key${key.toUpperCase()}`, metaKey: false, ctrlKey: !!mods.ctrl, altKey: !!mods.alt, shiftKey: !!mods.shift });
+  assert.equal(matchShortcut(e('s', { ctrl: true, alt: true }), 'field'), 'send-now');
+  assert.equal(matchShortcut(e('x', { ctrl: true, alt: true }), 'field'), 'interrupt');
+  assert.equal(matchShortcut(e('4', { ctrl: true, alt: true }), 'field'), 'panel-queue');
+  assert.equal(matchShortcut({ ...e('ArrowLeft', { ctrl: true, shift: true }), code: 'ArrowLeft' }, 'field'), null);
 });
