@@ -189,10 +189,10 @@ export type State = {
   history: HistoryItem[];
   presets: Preset[];
   /** The host's Omarchy theme, when it runs Omarchy. */
-  omarchy?: { name: string; at: number } | null;
+  omarchy?: { name: string; at: number; font?: string | null } | null;
 };
 
-export type OmarchyTheme = { name: string; mode: 'dark' | 'light'; colors: Record<string, string> };
+export type OmarchyTheme = { name: string; mode: 'dark' | 'light'; colors: Record<string, string>; font?: string | null };
 
 export type Changes = {
   root: string;

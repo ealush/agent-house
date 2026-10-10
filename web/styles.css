@@ -4958,3 +4958,30 @@ button.tool-chip:hover {
   background: var(--accent);
   border-color: var(--accent);
 }
+
+/* Scratchpad shell (Ctrl+Shift+`): floats over everything, like Hyprland's special workspace. */
+.scratchpad {
+  position: fixed;
+  z-index: 150;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(1040px, 88vw);
+  height: min(660px, 72vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--accent-line);
+}
+
+.narrow .scratchpad {
+  inset: 0;
+  transform: none;
+  width: auto;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+}

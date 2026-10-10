@@ -78,6 +78,9 @@ export type CommandId =
   | 'resize-up'
   | 'resize-down'
   | 'resize-mode'
+  | 'pane-mode'
+  | 'open-in-pane'
+  | 'scratchpad'
   | 'maximize-pane'
   | 'exit-split'
   | 'show-shortcuts';
@@ -557,6 +560,30 @@ export const COMMANDS: Command[] = [
     detail: 'Like a Hyprland submap: arrows move the nearest divider (Shift for big steps) until Escape or Enter.',
     chords: [{ key: 'r', ctrl: true, shift: true }],
     scopes: session,
+  },
+  {
+    id: 'pane-mode',
+    group: 'Workspace',
+    label: 'Pane mode',
+    detail: 'A Hyprland-style submap: h j k l (or arrows) focus, Shift moves, v / s split, x closes, f maximizes, t flips, r resizes, 1–9 go to a workspace (Shift sends), o opens a session as a new pane, Esc leaves.',
+    chords: [{ key: ' ', ctrl: true, shift: true }],
+    scopes: ['app', 'terminal', 'field'],
+  },
+  {
+    id: 'open-in-pane',
+    group: 'Workspace',
+    label: 'Open a session as a new pane…',
+    detail: 'Pick a session; it opens beside the focused pane, split along its longer side.',
+    chords: [{ key: 'o', ctrl: true, shift: true }],
+    scopes: ['app', 'terminal', 'field'],
+  },
+  {
+    id: 'scratchpad',
+    group: 'Workspace',
+    label: 'Scratchpad shell',
+    detail: "Show or hide a floating shell over anything, like Hyprland's special workspace. It keeps running while hidden.",
+    chords: [{ key: '`', ctrl: true, shift: true }],
+    scopes: ['app', 'terminal', 'field'],
   },
   {
     id: 'maximize-pane',

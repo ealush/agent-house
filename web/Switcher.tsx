@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { HistoryItem, SearchHit, SearchQuery, SearchResponse, Win } from './api.ts';
+import { isMac } from './shortcuts.ts';
 import { look } from './agents.ts';
 import { age as ago } from './agents.ts';
 import { AgentLogo } from './logos.tsx';
@@ -16,8 +17,10 @@ type Props = {
   onResume: (host: string, ref: string) => void;
   /** Open a content hit: a transcript at its seq, or a chat at its message. */
   onContent: (host: string, hit: SearchHit) => void;
-  /** Open a live session beside the current one (⌘↵). Absent when splitting is unavailable. */
+  /** Open a live session as a new pane beside the focused one (⌘↵ / Ctrl+↵). Absent when splitting is unavailable. */
   onSplit?: (key: string) => void;
+  /** Opened to pick a new pane (Open as a new pane, Pane mode o): plain Enter tiles too. */
+  tile?: boolean;
   /** Open the full search page with the current query. */
   onShowAll: (q: string) => void;
   onClose: () => void;
@@ -87,7 +90,7 @@ export function Highlighted({ snippet }: { snippet: string }) {
 
 const hitDate = (at: number) => (at ? new Date(at).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '');
 
-export function Switcher({ windows, history, hosts, onSearchContent, onPick, onResume, onContent, onShowAll, onSplit, onClose }: Props) {
+export function Switcher({ windows, history, hosts, onSearchContent, onPick, onResume, onContent, onShowAll, onSplit, onClose, tile = false }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const [q, setQ] = useState('');
   const [i, setI] = useState(0);
@@ -174,7 +177,7 @@ export function Switcher({ windows, history, hosts, onSearchContent, onPick, onR
       <input
         autoFocus
         value={q}
-        placeholder="Jump, resume, or search conversations…  h:claude p:vest in:chats role:user"
+        placeholder={tile ? 'Open as a new pane…' : 'Jump, resume, or search conversations…  h:claude p:vest in:chats role:user'}
         autoCapitalize="off"
         autoCorrect="off"
         onChange={(e) => {
@@ -184,7 +187,7 @@ export function Switcher({ windows, history, hosts, onSearchContent, onPick, onR
         onKeyDown={(e) => {
           if (e.key === 'ArrowDown') setI((i) => Math.max(0, Math.min(navCount - 1, i + 1)));
           else if (e.key === 'ArrowUp') setI((i) => Math.max(0, i - 1));
-          else if (e.key === 'Enter' && navCount > 0) chooseNav(Math.min(i, navCount - 1), e.metaKey || e.ctrlKey);
+          else if (e.key === 'Enter' && navCount > 0) chooseNav(Math.min(i, navCount - 1), tile || e.metaKey || e.ctrlKey);
           else return;
           e.preventDefault();
         }}
@@ -289,11 +292,11 @@ export function Switcher({ windows, history, hosts, onSearchContent, onPick, onR
           <kbd>↑↓</kbd> move
         </span>
         <span>
-          <kbd>↵</kbd> open{onSplit ? ' or resume' : ''}
+          <kbd>↵</kbd> {tile ? 'open as a new pane' : `open${onSplit ? ' or resume' : ''}`}
         </span>
-        {onSplit && (
+        {onSplit && !tile && (
           <span>
-            <kbd>⌘↵</kbd> open in split
+            <kbd>{isMac() ? '⌘↵' : 'Ctrl+↵'}</kbd> open as a new pane
           </span>
         )}
         <span>

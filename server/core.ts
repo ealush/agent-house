@@ -44,7 +44,7 @@ export type State = {
   history: HistoryItem[];
   presets: Array<Preset & { available: boolean }>;
   /** The desktop's Omarchy theme (name and change time), for clients that follow it. */
-  omarchy: { name: string; at: number } | null;
+  omarchy: { name: string; at: number; font: string | null } | null;
 };
 
 export type SendResult = { outcome: 'delivered' | 'queued'; windowId: string; resumed: boolean; queued: number; queueId?: string };

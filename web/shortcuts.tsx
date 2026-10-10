@@ -140,6 +140,9 @@ const BASE_ICONS = {
   'resize-down': 'pane-down',
   'resize-mode': 'split-right',
   'maximize-pane': 'pane',
+  'pane-mode': 'pane',
+  'open-in-pane': 'split-right',
+  'scratchpad': 'terminal',
   'exit-split': 'pane',
 } as const satisfies Record<Exclude<CommandId, `workspace-${string}` | `to-workspace-${string}`>, IconName>;
 

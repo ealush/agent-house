@@ -23,7 +23,7 @@ export type PaletteNode = {
 };
 
 /** Where a provider's nodes go in the static tree. */
-export type ProviderId = 'sessions' | 'queue' | 'models' | 'efforts';
+export type ProviderId = 'sessions' | 'queue' | 'models' | 'efforts' | 'tiles' | 'projects';
 
 type Spec = { key: string; label: string; icon: IconName; detail?: string; children: Array<Spec | CommandId | { provider: ProviderId }> };
 
@@ -34,6 +34,8 @@ export const TREE: Spec = {
   children: [
     'new-session',
     'switcher',
+    'scratchpad',
+    { key: 'run', label: 'Run in project', icon: 'files', detail: 'Start an agent or a shell in one of your projects', children: [{ provider: 'projects' }] },
     {
       key: 'go',
       label: 'Go to',
@@ -73,6 +75,8 @@ export const TREE: Spec = {
       icon: 'pane',
       detail: 'Splits, panes and the sidebar',
       children: [
+        'pane-mode',
+        { key: 'tiles', label: 'Open as a new pane', icon: 'split-right', detail: 'Beside the focused pane, along its longer side', children: ['open-in-pane', { provider: 'tiles' }] },
         { key: 'split', label: 'Split', icon: 'split-right', detail: 'Open, flip, close panes', children: ['split-right', 'split-below', 'toggle-split', 'close-pane', 'exit-split'] },
         { key: 'focus', label: 'Focus pane', icon: 'pane-left', children: ['focus-pane-left', 'focus-pane-right', 'focus-pane-up', 'focus-pane-down'] },
         { key: 'move', label: 'Move pane', icon: 'pane-right', children: ['move-pane-left', 'move-pane-right', 'move-pane-up', 'move-pane-down'] },

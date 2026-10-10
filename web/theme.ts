@@ -59,7 +59,16 @@ export function getResolved(): ResolvedTheme {
 
 // ---------- Omarchy: wear the desktop's theme (server/omarchy.ts reads it)
 
-export type OmarchyPalette = { name: string; mode: 'dark' | 'light'; colors: Record<string, string> };
+export type OmarchyPalette = { name: string; mode: 'dark' | 'light'; colors: Record<string, string>; font?: string | null };
+
+/** ah's monospace stack; the desktop's font goes first when following Omarchy. */
+export const MONO = "'JetBrainsMono Nerd Font', 'JetBrains Mono Variable', 'SF Mono', Menlo, ui-monospace, monospace";
+
+/** The terminal's font right now (devices without the desktop's font fall back down the stack). */
+export function terminalFont(): string {
+  const f = cachedMode === 'omarchy' ? omarchy?.font : null;
+  return f ? `'${f.replace(/'/g, '')}', ${MONO}` : MONO;
+}
 
 const OMARCHY_KEY = 'ah.omarchy.palette';
 let omarchy: OmarchyPalette | null = (() => {
@@ -103,6 +112,7 @@ export function omarchyVars(p: OmarchyPalette): Record<string, string> {
     '--danger': pick('red'),
     '--danger-ink': c.background,
     '--amber': pick('yellow', 'accent'),
+    ...(p.font ? { '--mono': `'${p.font.replace(/'/g, '')}', ${MONO}` } : {}),
   };
 }
 

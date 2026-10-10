@@ -114,7 +114,11 @@ export function App({ onLock }: { onLock: () => void }) {
   });
   const [focusPath, setFocusPath] = useState<Path | null>(null);
   const [zoom, setZoom] = useState(false);
-  const [resizeMode, setResizeMode] = useState(false);
+  // Hyprland-style submaps: while one is on, it owns the keyboard (Esc leaves).
+  const [submap, setSubmap] = useState<null | 'resize' | 'pane'>(null);
+  const [scratch, setScratch] = useState(false);
+  // Ctrl+Enter / Pane mode o / Open as a new pane: the switcher tiles instead of navigating.
+  const [switchTile, setSwitchTile] = useState(false);
   const focused = layout ? nodeAt(layout, focusPath ?? []) : null;
   const focusKey = focused?.type === 'session' ? focused.sessionKey : null;
   // Every pane on screen, so the sidebar can mark them all (split view shows several at once).
@@ -287,22 +291,149 @@ export function App({ onLock }: { onLock: () => void }) {
   useCommand('resize-right', () => nudge('right'), !!selected || splitOpen);
   useCommand('resize-up', () => nudge('up'), splitOpen);
   useCommand('resize-down', () => nudge('down'), splitOpen);
-  useCommand('resize-mode', () => setResizeMode(true), !!selected || splitOpen);
+  useCommand('resize-mode', () => setSubmap('resize'), !!selected || splitOpen);
+  useCommand('pane-mode', () => setSubmap('pane'), !!selected || !!layout);
   useCommand('maximize-pane', () => setZoom((z) => !z), splitOpen && !narrow);
-  // Resize mode is a submap: arrows resize until Escape or Enter; any other key leaves it.
+  useCommand('open-in-pane', () => {
+    setSwitchTile(true);
+    setSwitching(true);
+  }, !!selected || !!layout);
+  useCommand('scratchpad', () => void toggleScratch());
   useEffect(() => {
-    if (!resizeMode) return;
+    if (!submap) return;
+    const DIRS: Record<string, PaneDir> = { arrowleft: 'left', arrowright: 'right', arrowup: 'up', arrowdown: 'down', h: 'left', l: 'right', k: 'up', j: 'down' };
     const key = (e: KeyboardEvent) => {
-      const dir = ({ ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', h: 'left', l: 'right', k: 'up', j: 'down' } as const)[e.key as 'h'];
       if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
       e.preventDefault();
       e.stopPropagation();
-      if (dir) nudge(dir, e.shiftKey);
-      else setResizeMode(false);
+      if (e.key === 'Escape' || e.key === 'Enter') return setSubmap(null);
+      const dir = DIRS[e.key.toLowerCase()];
+      if (submap === 'resize') {
+        if (dir) nudge(dir, e.shiftKey);
+        else setSubmap(null);
+        return;
+      }
+      // Pane mode: stays on for focus, move and resize; actions that open something leave it.
+      if (dir) return e.shiftKey ? movePane(dir) : focusPane(dir);
+      const digit = /^Digit([1-9])$/.exec(e.code)?.[1];
+      if (digit) {
+        setSubmap(null);
+        return e.shiftKey ? sendToWorkspace(Number(digit)) : switchWorkspace(Number(digit));
+      }
+      const leave = (fn: () => void) => {
+        setSubmap(null);
+        fn();
+      };
+      switch (e.key.toLowerCase()) {
+        case 'v':
+          return runCommand('split-right');
+        case 's':
+          return runCommand('split-below');
+        case 'x':
+          return runCommand('close-pane');
+        case 'f':
+          return setZoom((z) => !z);
+        case 't':
+          return flipSplit();
+        case 'r':
+          return setSubmap('resize');
+        case 'o':
+          return leave(() => {
+            setSwitchTile(true);
+            setSwitching(true);
+          });
+        case 'n':
+          return leave(() => setCreating({}));
+        case '`':
+          return leave(() => void toggleScratch());
+      }
     };
     window.addEventListener('keydown', key, true);
     return () => window.removeEventListener('keydown', key, true);
   });
+
+  /** Dwindle-style: a new pane splits the focused one along its longer side. */
+  const autoDir = (): 'right' | 'below' => {
+    const r = (document.querySelector('.ws-root .pane.focused') ?? document.querySelector('.main'))?.getBoundingClientRect();
+    return !r || r.width >= r.height * 1.1 ? 'right' : 'below';
+  };
+  function openTile(key: string) {
+    const dir = autoDir();
+    if (layout) {
+      const at = focusPath ?? paneLeaves(layout)[0]?.path ?? [];
+      setZoom(false);
+      setLayout(splitLeaf(layout, at, dir === 'right' ? 'horizontal' : 'vertical', key));
+      setFocusPath([...at, 'second']);
+    } else if (selected && selected !== key) {
+      splitFrom(selected, dir, key);
+      setFocusPath(['second']);
+    } else open(key);
+  }
+
+  // The scratchpad: one shell of its own, shown floating over everything.
+  async function toggleScratch() {
+    if (scratch) return setScratch(false);
+    if (!state) return;
+    let key: string | null = null;
+    try {
+      key = localStorage.getItem('ah.scratch');
+    } catch {}
+    if (!key || !state.windows.some((w) => w.key === key)) {
+      const host = state.hostname;
+      try {
+        const out = await clientFor(host).create({ preset: 'shell', cwd: '~', session: state.defaultSession, label: 'scratch', resume: false });
+        await waitForWindow(() => refresh(host), { id: out.id, uid: out.uid });
+        key = keyFor(host, out.id);
+        localStorage.setItem('ah.scratch', key);
+      } catch (e) {
+        return showError(e, "Couldn't start the scratchpad shell");
+      }
+    }
+    setScratch(true);
+  }
+  const scratchWin = scratch ? (state?.windows.find((w) => w.key === (() => { try { return localStorage.getItem('ah.scratch'); } catch { return null; } })()) ?? null) : null;
+
+  // Palette → Workspace → Open as a new pane: every session not already on screen.
+  usePaletteProvider(
+    'tiles',
+    () =>
+      sidebarOrder(state?.windows ?? [], (state?.hosts.length ?? 0) > 1, savedGroups)
+        .filter((w) => !visibleKeys.includes(w.key))
+        .map((w) => ({ key: `tile:${w.key}`, label: w.title, icon: 'split-right' as const, detail: [STATUS_WORD[w.status], w.project].join(' · '), run: () => openTile(w.key) })),
+    !!selected || !!layout,
+  );
+
+  // Palette → Run in project: each project, then what to start there.
+  usePaletteProvider('projects', async () => {
+    if (!state) return [];
+    const host = state.hostname;
+    const projects = await clientFor(host).projects().catch(() => [] as string[]);
+    const presets = state.presets.filter((p) => p.available !== false);
+    return projects.slice(0, 30).map((path) => ({
+      key: `project:${path}`,
+      label: path.replace(/\/$/, '').split('/').pop() || path,
+      icon: 'files' as const,
+      detail: path,
+      children: [
+        ...presets.map((p) => ({
+          key: `run:${p.id}`,
+          label: `New ${p.name}`,
+          icon: (p.id === 'shell' ? 'terminal' : 'plus') as 'terminal' | 'plus',
+          detail: 'Starts at once with its defaults',
+          run: () =>
+            void clientFor(host)
+              .create({ preset: p.id, cwd: path, session: state.defaultSession, label: '', resume: false })
+              .then(async (out) => {
+                await waitForWindow(() => refresh(host), { id: out.id, uid: out.uid });
+                open(keyFor(host, out.id));
+              })
+              .catch((e) => showError(e, `Couldn't start ${p.name}`)),
+        })),
+        { key: 'custom', label: 'New session with options…', icon: 'plus' as const, run: () => setCreating({ cwd: path, host }) },
+      ],
+    }));
+  });
+
   // Appearance → Omarchy: fetch the host's palette, again whenever it changes there.
   const { mode: themeMode } = useTheme();
   useEffect(() => {
@@ -313,7 +444,7 @@ export function App({ onLock }: { onLock: () => void }) {
       .then((p) => setOmarchyPalette(p))
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [themeMode, state?.omarchy?.at, state?.omarchy?.name]);
+  }, [themeMode, state?.omarchy?.at, state?.omarchy?.name, state?.omarchy?.font]);
 
   // Palette → Go to: every live session, in sidebar order.
   usePaletteProvider('sessions', () => {
@@ -729,18 +860,50 @@ export function App({ onLock }: { onLock: () => void }) {
       )}
 
       {keymap && <ShortcutsDialog onClose={() => setKeymap(false)} />}
-      {resizeMode && (
+      {submap && (
         <div className="submap" role="status">
-          <strong>Resize</strong>
-          <span>
-            <kbd>←</kbd>
-            <kbd>↓</kbd>
-            <kbd>↑</kbd>
-            <kbd>→</kbd> or <kbd>h</kbd>
-            <kbd>j</kbd>
-            <kbd>k</kbd>
-            <kbd>l</kbd> move the divider · <kbd>Shift</kbd> bigger · <kbd>Esc</kbd> done
-          </span>
+          <strong>{submap === 'resize' ? 'Resize' : 'Pane'}</strong>
+          {submap === 'resize' ? (
+            <span>
+              <kbd>←</kbd>
+              <kbd>↓</kbd>
+              <kbd>↑</kbd>
+              <kbd>→</kbd> or <kbd>h</kbd>
+              <kbd>j</kbd>
+              <kbd>k</kbd>
+              <kbd>l</kbd> move the divider · <kbd>Shift</kbd> bigger · <kbd>Esc</kbd> done
+            </span>
+          ) : (
+            <span>
+              <kbd>h</kbd>
+              <kbd>j</kbd>
+              <kbd>k</kbd>
+              <kbd>l</kbd> focus · <kbd>⇧</kbd>+them move · <kbd>v</kbd>
+              <kbd>s</kbd> split · <kbd>x</kbd> close · <kbd>f</kbd> maximize · <kbd>t</kbd> flip · <kbd>r</kbd> resize · <kbd>o</kbd> open here · <kbd>1</kbd>–<kbd>9</kbd> workspace · <kbd>Esc</kbd> done
+            </span>
+          )}
+        </div>
+      )}
+
+      {scratchWin && state && (
+        <div className="scratchpad" role="dialog" aria-label="Scratchpad shell">
+          <Session
+            key={`scratch:${scratchWin.key}`}
+            w={scratchWin}
+            client={clientFor(scratchWin.host)}
+            windows={state.windows}
+            clientFor={clientFor}
+            narrow={narrow}
+            touch={touch}
+            multiHost={state.hosts.length > 1}
+            home={hostState(scratchWin.host)?.home ?? state.home}
+            replyKey={0}
+            onBack={() => setScratch(false)}
+            onAnswer={answer}
+            onSent={sent}
+            onKilled={() => setScratch(false)}
+            refresh={() => refresh(scratchWin.host)}
+          />
         </div>
       )}
 
@@ -763,6 +926,7 @@ export function App({ onLock }: { onLock: () => void }) {
           onSearchContent={(host, q) => clientFor(host).search(q)}
           onPick={(key) => {
             setSwitching(false);
+            setSwitchTile(false);
             open(key);
           }}
           onResume={(host, ref) => {
@@ -770,11 +934,11 @@ export function App({ onLock }: { onLock: () => void }) {
             resume(host, ref);
           }}
           onContent={(host, hit) => void openSearchHit(host, hit)}
+          tile={switchTile}
           onSplit={(key) => {
             setSwitching(false);
-            const anchor = focusKey ?? selected;
-            if (anchor && anchor !== key) splitFrom(anchor, 'right', key);
-            else open(key);
+            setSwitchTile(false);
+            openTile(key);
           }}
           onShowAll={(text) => {
             setSwitching(false);
@@ -783,7 +947,10 @@ export function App({ onLock }: { onLock: () => void }) {
             setFocusPath(null);
             go({ page: 'search', selected: null });
           }}
-          onClose={() => setSwitching(false)}
+          onClose={() => {
+            setSwitching(false);
+            setSwitchTile(false);
+          }}
         />
       )}
 

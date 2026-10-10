@@ -50,3 +50,13 @@ test('a breadcrumb matches word by word, never as a loose subsequence', async ()
   assert.ok(!searchTree(tree, 'diff').some((h) => h.node.key === 'low'), '"diff" is not in "Model and effort Reasoning effort low"');
   assert.equal(searchTree(tree, 'effort low')[0]?.node.key, 'low');
 });
+
+test('every command in the catalog has a place in the palette tree', async () => {
+  const { TREE } = await import('../web/palette.ts');
+  const { COMMANDS } = await import('../web/shortcuts.ts');
+  const placed = new Set<string>();
+  const walk = (s: any) => s.children.forEach((c: any) => (typeof c === 'string' ? placed.add(c) : 'children' in c ? walk(c) : null));
+  walk(TREE);
+  const missing = COMMANDS.map((c) => c.id).filter((id) => id !== 'command-palette' && !placed.has(id));
+  assert.deepEqual(missing, []);
+});

@@ -106,6 +106,18 @@ to terminal rules and output activity, and matches live agents to their transcri
   sidebar order; in a split, Ctrl+Shift+arrows moves between panes.
   Ctrl+Shift+/ opens the shortcut table (also under Settings → Shortcuts), where
   each binding can be changed on this device.
+- **Hyprland-style workspace.** Workspaces 1–9 (Alt+N; Alt+Shift+N sends the
+  focused session there as a new tile). Pane mode (Ctrl+Shift+Space) is a
+  submap: h j k l focus, Shift+h j k l move, v / s split, x close, f maximize,
+  t flip, r resize, o open a session as a new pane, 1–9 workspaces, Esc leaves.
+  Resize mode (Ctrl+Shift+R), maximize (Ctrl+Shift+F), open as a new pane
+  (Ctrl+Shift+O, or Ctrl+Enter in the switcher; it splits along the focused
+  pane's longer side), and a scratchpad shell that floats over anything
+  (Ctrl+Shift+`). The focused pane wears the accent border.
+- **Omarchy.** Settings → Appearance → Omarchy wears the host's current Omarchy
+  theme and monospace font on every device, terminal included, and follows it
+  when you switch themes on the desktop. Palette → Run in project starts any
+  agent or a shell in one of your projects in two keystrokes.
 
 ### CLI
 

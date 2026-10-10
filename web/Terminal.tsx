@@ -8,7 +8,7 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import { autoCopySelection, copyText } from './selection.ts';
 import { terminalArrow } from './keyboard.ts';
-import { subscribeTheme, terminalTheme } from './theme.ts';
+import { subscribeTheme, terminalFont, terminalTheme } from './theme.ts';
 
 export type TerminalHandle = {
   send: (data: string) => void;
@@ -29,7 +29,6 @@ type Props = {
 
 type Conn = 'connecting' | 'open' | 'retrying' | 'gone';
 
-const FONT = "'JetBrainsMono Nerd Font', 'JetBrains Mono Variable', 'SF Mono', Menlo, ui-monospace, monospace";
 
 export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ windowId, hidden, wsUrl, transformInput, onGone }, ref) {
   const host = useRef<HTMLDivElement>(null);
@@ -63,7 +62,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ wi
     const t = new XTerm({
       allowProposedApi: true,
       cursorBlink: true,
-      fontFamily: FONT,
+      fontFamily: terminalFont(),
       fontSize: storedFontSize(),
       lineHeight: 1.15,
       scrollback: 0, // tmux owns scrollback
@@ -128,6 +127,12 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ wi
     // Follow the theme live (Omarchy's palette changes with the desktop).
     const stopTheme = subscribeTheme(() => {
       t.options.theme = terminalTheme();
+      const font = terminalFont();
+      if (t.options.fontFamily !== font) {
+        t.options.fontFamily = font;
+        clearTimeout(timer);
+        timer = window.setTimeout(safeFit, 40);
+      }
     });
     const stopTouch = touchScroll(
       host.current!,
