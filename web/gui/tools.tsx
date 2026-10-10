@@ -266,6 +266,10 @@ export const TOOLS: Record<string, ToolView> = {
   grep_search: Search,
   glob: Search,
   web_fetch: Web,
+  // Hermes
+  terminal: Shell,
+  search_files: Search,
+  web_extract: { ...Web, summary: (c) => s((c.args.urls as unknown[] | undefined)?.join(', ') ?? c.args.url) },
 };
 
 /** `mcp__server__tool` → "tool (server)"; otherwise the name as given. */

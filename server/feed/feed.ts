@@ -10,6 +10,7 @@ import { parseGrokLine } from './adapters/grok.ts';
 import { parseMuseLine } from './adapters/muse.ts';
 import { loadGeminiDocument, parseGeminiLine } from './adapters/gemini.ts';
 import { loadOpencode } from './adapters/opencode.ts';
+import { loadHermes } from './adapters/hermes.ts';
 
 export type Adapter = (line: unknown, seq: number) => Entry | null;
 
@@ -35,6 +36,7 @@ export type DocAdapter = (source: string) => Promise<Entry[] | null>;
 export const DOC_ADAPTERS: Record<string, DocAdapter> = {
   gemini: loadGeminiDocument,
   opencode: loadOpencode,
+  hermes: loadHermes,
 };
 
 const CHUNK = 4 * 1024 * 1024;

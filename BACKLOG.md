@@ -80,7 +80,7 @@
 | F44 | Session termination | ✅ | Sidebar and session controls, with confirmation for stopping a session. |
 | F45 | Split workspace | ✅ | Independent terminal viewers, resizable horizontal/vertical splits, device-local persistence, phone tabs. Duplicate viewers have independent pane controls. |
 | F46 | Workspace navigation | ✅ | Replace the focused pane from the sidebar or picker; drag sessions onto pane edges to split. |
-| F47 | GUI view | ✅ | Transcript adapters (Claude Code, Codex, Gemini, Grok, Muse, opencode) → typed events over SSE → separate React tree with tool and widget dispatch. Terminal-only interactions (agent pickers) hand off to the terminal. Hermes is still terminal-only (no adapter yet). |
+| F47 | GUI view | ✅ | Transcript adapters (Claude Code, Codex, Gemini, Grok, Muse, opencode, Hermes) → typed events over SSE → separate React tree with tool and widget dispatch. Agents' pickers (permission prompts, Claude's question dialog, cursor lists like folder trust) are answered from the GUI, inbox and phone; other TUI-only pickers (`/model`) hand off to the terminal. |
 
 ## Reliability pass — October 2026
 

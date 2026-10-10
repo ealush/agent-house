@@ -32,6 +32,7 @@ const GROK_DIR = process.env.GROK_HOME ?? join(homedir(), '.grok');
 const GEMINI_DIR = join(homedir(), '.gemini');
 const MUSE_DIR = join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share'), 'muse');
 const OPENCODE_DIR = join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share'), 'opencode');
+const HERMES_DIR = process.env.HERMES_HOME ?? join(homedir(), '.hermes');
 
 // Per-file cache keyed by mtime+size: rescans only touch files that changed.
 const cache = new Map<string, { sig: string; value: Transcript | null }>();
@@ -440,6 +441,44 @@ async function discoverOpencode(): Promise<Transcript[]> {
   return [...fromDb, ...fromTree];
 }
 
+// ---------- Hermes: one SQLite store for every session; terminal sessions carry a cwd.
+
+async function discoverHermes(dbPath = join(HERMES_DIR, 'state.db')): Promise<Transcript[]> {
+  const { DatabaseSync } = (await import('node:sqlite')) as any;
+  let db: any;
+  try {
+    db = new DatabaseSync(dbPath, { readOnly: true });
+  } catch {
+    return [];
+  }
+  try {
+    // Gateway sessions (Telegram, desktop) have no directory to resume in.
+    const rows = db
+      .prepare(
+        `SELECT id, cwd, title, display_name, model, started_at, last_activity_at FROM sessions
+         WHERE cwd IS NOT NULL AND source IN ('cli', 'tui') AND parent_session_id IS NULL AND coalesce(hidden, 0) = 0
+         ORDER BY coalesce(last_activity_at, started_at) DESC LIMIT 200`,
+      )
+      .all();
+    return rows.map((r: any) => ({
+      harness: 'hermes',
+      harnessId: String(r.id),
+      cwd: String(r.cwd),
+      title: (typeof r.title === 'string' && r.title) || (typeof r.display_name === 'string' && r.display_name) || 'Hermes session',
+      model: typeof r.model === 'string' ? r.model : undefined,
+      updatedAt: Math.floor(Number(r.last_activity_at ?? r.started_at) || 0),
+      birthAt: Math.floor(Number(r.started_at) || 0) || undefined,
+      file: `${dbPath}#${String(r.id)}`,
+    }));
+  } catch {
+    return [];
+  } finally {
+    try {
+      db.close();
+    } catch {}
+  }
+}
+
 // ---------- adapter table: harness id → discoverer
 
 const DISCOVERERS: Record<string, () => Promise<Transcript[]>> = {
@@ -449,6 +488,7 @@ const DISCOVERERS: Record<string, () => Promise<Transcript[]>> = {
   gemini: discoverGemini,
   muse: discoverMuse,
   opencode: discoverOpencode,
+  hermes: () => discoverHermes(),
 };
 
 let last: { at: number; value: Transcript[] } | null = null;

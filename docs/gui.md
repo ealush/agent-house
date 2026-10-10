@@ -22,8 +22,9 @@ agent (in tmux) ──writes──▶ transcript (JSONL)
   with a role, a step type and typed parts (`text`, `reasoning`, `media`,
   `tool_call`, `tool_result`, `widget`, `notice`). Claude Code, Codex, Grok,
   Muse and Gemini (JSONL form) ship as line adapters; Gemini's older document
-  form and opencode (SQLite store and legacy JSON tree) ship as document
-  adapters whose loader returns the whole conversation per poll. A preset
+  form, opencode (SQLite store and legacy JSON tree) and Hermes (its SQLite
+  `state.db`) ship as document adapters whose loader returns the whole
+  conversation per poll. A preset
   opts in with `"feed": "<adapter>"`. Agents without an adapter are
   terminal-only. See [gui-adapters.md](gui-adapters.md) for the per-harness
   format research and what is verified vs documented.
