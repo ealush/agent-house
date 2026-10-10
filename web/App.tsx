@@ -601,6 +601,12 @@ export function App({ onLock }: { onLock: () => void }) {
             resume(host, ref);
           }}
           onContent={(host, hit) => void openSearchHit(host, hit)}
+          onSplit={(key) => {
+            setSwitching(false);
+            const anchor = focusKey ?? selected;
+            if (anchor && anchor !== key) splitFrom(anchor, 'right', key);
+            else open(key);
+          }}
           onShowAll={(text) => {
             setSwitching(false);
             setSearchQuery(text);

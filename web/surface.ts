@@ -39,5 +39,5 @@ export const VIEW_LABEL: Record<View, string> = { terminal: 'Terminal', gui: 'GU
 
 /** The GUI needs a transcript adapter; everything can be a terminal. */
 export function viewsFor(w: Win): View[] {
-  return w.feed ? ['terminal', 'gui'] : ['terminal'];
+  return w.feed ? ['gui', 'terminal'] : ['terminal'];
 }

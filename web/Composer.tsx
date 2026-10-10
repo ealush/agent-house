@@ -290,7 +290,20 @@ export function ComposerBar({ client, target, agent, w, onSent, onNotice = toast
               {(close) => (
                 <div className="picker">
                   <div className="picker-title">Permissions</div>
-                  {w?.launchMode && <div className="picker-title">Started with: {mode?.name ?? w.launchMode}</div>}
+                  {preset.modes!.map((m) => {
+                    const current = m.id === (w?.launchMode ?? 'default');
+                    return (
+                      <div key={m.id} className={`picker-row static ${current ? 'on' : ''}`}>
+                        <span className="picker-name" title={m.description}>
+                          <span>
+                            {m.dangerous ? '⚠ ' : ''}{m.name}
+                            {m.description ? <span className="hint"> — {m.description}</span> : null}
+                          </span>
+                          {current && <span className="check">✓</span>}
+                        </span>
+                      </div>
+                    );
+                  })}
                 {preset.settingsCommands?.mode
                     ? <button type="button" className="picker-name" onClick={() => openSettings('mode', close)}>Change permissions in terminal…</button>
                     : <div className="picker-foot">Set when starting a session</div>}

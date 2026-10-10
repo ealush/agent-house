@@ -459,8 +459,12 @@ export function WorktreesDialog({ client, onClose, onShell }: { client: HostApi;
           )}
         </div>
       )}
-      <ul className="worktrees">
-        {rows.map((wt) => {
+      <p className="panel-msg hint">Removing a worktree deletes its checkout. The branch itself is kept.</p>
+      {(() => {
+        const live = rows.filter((wt) => wt.live.length > 0);
+        const rest = rows.filter((wt) => wt.live.length === 0);
+        const restHead = rest.length > 0 && rest.every((wt) => wt.orphan) ? 'Orphaned' : 'Not in use';
+        const renderRow = (wt: WorktreeInfo) => {
           const size = sizeLabel(wt);
           const inUse = wt.live.length > 0;
           return (
@@ -489,7 +493,7 @@ export function WorktreesDialog({ client, onClose, onShell }: { client: HostApi;
               {!selecting && (
                 <>
                   <button className="btn small" onClick={() => onShell(wt.path)}>
-                    Shell
+                    Open shell
                   </button>
                   <button className="btn ghost small danger" disabled={inUse} onClick={() => remove(wt)} title={inUse ? 'In use' : 'Remove'}>
                     Remove
@@ -498,8 +502,25 @@ export function WorktreesDialog({ client, onClose, onShell }: { client: HostApi;
               )}
             </li>
           );
-        })}
-      </ul>
+        };
+        return (
+          <>
+            {live.length > 0 && (
+              <>
+                <h3 className="section-label">In use</h3>
+                <ul className="worktrees">{live.map(renderRow)}</ul>
+              </>
+            )}
+            {rest.length > 0 && (
+              <>
+                <h3 className="section-label">{restHead}</h3>
+                {restHead === 'Orphaned' && <p className="panel-msg hint">No session uses these any more.</p>}
+                <ul className="worktrees">{rest.map(renderRow)}</ul>
+              </>
+            )}
+          </>
+        );
+      })()}
     </dialog>
   );
 }

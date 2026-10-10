@@ -11,7 +11,9 @@ initTheme();
 // Fonts ship with the app: nothing loads from third parties.
 import '@fontsource-variable/inter';
 import '@fontsource-variable/jetbrains-mono';
+import '@fontsource-variable/rubik';
 import './styles.css';
+import './site-theme.css';
 
 /** A crash shows what happened and a way out, never a blank screen. */
 class Boundary extends Component<{ children: ReactNode }, { error: Error | null }> {

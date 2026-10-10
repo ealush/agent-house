@@ -537,12 +537,17 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
           </>
         )}
         {views.length > 1 && (
-          <div className="view-toggle" role="group" aria-label="View">
+          <div className={narrow ? 'view-toggle' : 'view-tabs'} role="group" aria-label="View">
             {views.map((v) => (
-              <button key={v} className={v === view ? 'on' : ''} aria-pressed={v === view} title={shortcutTitle(`${VIEW_LABEL[v]} view`, 'toggle-view')} onClick={() => switchView(v)}>
-                <Icon name={v === 'gui' ? 'chat' : 'terminal'} size={15} />
-                {!narrow && <span>{VIEW_LABEL[v]}</span>}
-              </button>
+              narrow ? (
+                <button key={v} className={v === view ? 'on' : ''} aria-pressed={v === view} title={shortcutTitle(`${VIEW_LABEL[v]} view`, 'toggle-view')} onClick={() => switchView(v)}>
+                  <Icon name={v === 'gui' ? 'chat' : 'terminal'} size={15} />
+                </button>
+              ) : (
+                <button key={v} className="tab-underline" aria-pressed={v === view} title={shortcutTitle(`${VIEW_LABEL[v]} view`, 'toggle-view')} onClick={() => switchView(v)}>
+                  {VIEW_LABEL[v]}
+                </button>
+              )
             ))}
           </div>
         )}
@@ -767,20 +772,20 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
               <aside className="side-panel" style={{ width: panelWidth }}>
                 <div className="tabs">
                   {diffTab && (
-                    <button className={`tab ${panel === 'diff' ? 'on' : ''}`} onClick={() => setPanel('diff')}>
+                    <button role="tab" aria-selected={panel === 'diff'} className="tab-underline" onClick={() => setPanel('diff')}>
                       Diff
                     </button>
                   )}
-                  <button className={`tab ${panel === 'files' ? 'on' : ''}`} onClick={() => setPanel('files')}>
+                  <button role="tab" aria-selected={panel === 'files'} className="tab-underline" onClick={() => setPanel('files')}>
                     Files
                   </button>
-                  <button className={`tab ${panel === 'chat' ? 'on' : ''}`} onClick={() => setPanel('chat')}>
+                  <button role="tab" aria-selected={panel === 'chat'} className="tab-underline" onClick={() => setPanel('chat')}>
                     Chat
                   </button>
-                  <button className={`tab ${panel === 'queue' ? 'on' : ''}`} onClick={() => setPanel('queue')}>
+                  <button role="tab" aria-selected={panel === 'queue'} className="tab-underline" onClick={() => setPanel('queue')}>
                     Queue{w.queued > 0 ? ` (${w.queued})` : ''}
                   </button>
-                  <button className={`tab ${panel === 'snapshots' ? 'on' : ''}`} onClick={() => setPanel('snapshots')}>
+                  <button role="tab" aria-selected={panel === 'snapshots'} className="tab-underline" onClick={() => setPanel('snapshots')}>
                     Snapshots
                   </button>
                   <span className="spacer" />

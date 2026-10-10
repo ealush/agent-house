@@ -1,4 +1,5 @@
 import type { State, Win } from './api.ts';
+import { shortcutTitle } from './shortcuts.tsx';
 import { Icon } from './icons.tsx';
 import { age, look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
@@ -31,18 +32,24 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, on
   const rest = state.windows.filter((w) => w.status === 'attention' || w.status === 'idle').sort((a, b) => b.activity - a.activity);
   const online = state.hosts.filter((h) => h.online).length;
 
+  // The design's tagline reads as live counts ("1 session needs you. 3 working. 6 idle.").
+  const counts = [
+    waiting.length ? `${waiting.length} session${waiting.length === 1 ? ' needs' : 's need'} you` : null,
+    running.length ? `${running.length} working` : null,
+    rest.length ? `${rest.length} idle` : null,
+  ].filter(Boolean);
   const subtitle = narrow
-    ? `${online} host${online === 1 ? '' : 's'} online · ${state.windows.length} live session${state.windows.length === 1 ? '' : 's'}`
-    : waiting.length || running.length
-      ? `${waiting.length ? `${waiting.length} session${waiting.length > 1 ? 's are' : ' is'} waiting on you. ` : ''}${running.length} ${running.length === 1 ? 'is' : 'are'} still working.`
+    ? `${online} host${online === 1 ? '' : 's'} online · ${counts.join('. ') || 'all quiet'}.`
+    : counts.length
+      ? `${counts.join('. ')}.`
       : 'All quiet.';
 
   return (
     <div className="page">
       <header className="page-head">
         <div className="grow">
-          <h1>Inbox</h1>
-          <p>{subtitle}</p>
+          <h1 className="page-title">Inbox<span className="period">.</span></h1>
+          <p className="tagline">{subtitle}</p>
         </div>
         {narrow ? (
           <>
@@ -91,7 +98,7 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, on
           {waiting.length > 0 && (
             <>
               <h2 className="section-label waiting first">
-                <span className="dot waiting" /> Needs you
+                Needs you <span className="count">{waiting.length}</span>
               </h2>
               <div className="cards">
                 {waiting.map((w) => (
@@ -103,14 +110,16 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, on
           {running.length > 0 && (
             <>
               <h2 className={`section-label busy ${waiting.length ? '' : 'first'}`}>
-                <span className="dot busy" /> Running
+                Running <span className="count">{running.length}</span>
               </h2>
+              {!narrow && <ListHead />}
               <Rows windows={running} multiHost={multiHost} narrow={narrow} onOpen={onOpen} />
             </>
           )}
           {rest.length > 0 && (
             <>
-              <h2 className={`section-label ${waiting.length || running.length ? '' : 'first'}`}>Idle and done</h2>
+              <h2 className={`section-label ${waiting.length || running.length ? '' : 'first'}`}>Idle and done <span className="count">{rest.length}</span></h2>
+              {!narrow && <ListHead />}
               <Rows windows={rest} multiHost={multiHost} narrow={narrow} onOpen={onOpen} quiet />
             </>
           )}
@@ -126,10 +135,12 @@ function AskCard({ w, multiHost, narrow, onOpen, onAnswer }: { w: Win; multiHost
   const ask = w.ask;
   const code = ask?.kind === 'command' || ask?.kind === 'screen';
   return (
-    <article className="card" style={{ '--agent': color } as React.CSSProperties}>
+    <article className="card card-needs" style={{ '--agent': color } as React.CSSProperties}>
       <div className="card-head">
-        <span className="chip">
-          <AgentLogo id={w.agent} />
+        <span className="glow">
+          <span className="chip">
+            <AgentLogo id={w.agent} />
+          </span>
         </span>
         <button className="card-title" onClick={() => onOpen(w)}>
           {w.title}
@@ -138,13 +149,18 @@ function AskCard({ w, multiHost, narrow, onOpen, onAnswer }: { w: Win; multiHost
       </div>
       {!narrow && ask && <div className="card-kind">{KIND_LABEL[ask.kind]}</div>}
       {ask?.text && <pre className={`ask-box ${code ? 'code' : ''}`}>{ask.text}</pre>}
+      {!narrow && (
+        <div className="card-where">
+          Where <span className="mono">{multiHost ? `${w.host}:` : ''}{w.projectPath}</span>
+        </div>
+      )}
       <div className="card-foot">
         {w.answerable ? (
           <>
-            <button className="btn primary" onClick={() => onAnswer(w, 'approve')}>
+            <button className="btn primary" title={shortcutTitle('Approve', 'approve')} onClick={() => onAnswer(w, 'approve')}>
               Approve
             </button>
-            <button className="btn" onClick={() => onAnswer(w, 'deny')}>
+            <button className="btn" title={shortcutTitle('Deny', 'deny')} onClick={() => onAnswer(w, 'deny')}>
               Deny
             </button>
           </>
@@ -155,7 +171,7 @@ function AskCard({ w, multiHost, narrow, onOpen, onAnswer }: { w: Win; multiHost
                 Open
               </button>
             )}
-            <button className="btn primary" onClick={() => onOpen(w, true)}>
+            <button className="btn primary" title={shortcutTitle('Reply', 'reply')} onClick={() => onOpen(w, true)}>
               Reply
             </button>
             {!narrow && (
@@ -166,10 +182,25 @@ function AskCard({ w, multiHost, narrow, onOpen, onAnswer }: { w: Win; multiHost
           </>
         )}
         <span className="meta">
-          {[name, modelLabel, where(w, multiHost)].filter(Boolean).join(' · ')}
+          {[name, modelLabel, where(w, multiHost)].filter(Boolean).map((t) => (
+            <span key={t} className="tag">{t}</span>
+          ))}
         </span>
       </div>
     </article>
+  );
+}
+
+/** Column headers over desktop session rows, matching the design's STATUS / HOST / PROJECT strip. */
+function ListHead() {
+  return (
+    <div className="list-head" aria-hidden="true">
+      <span>Status</span>
+      <span>Session</span>
+      <span>Detail</span>
+      <span>Host · Project</span>
+      <span />
+    </div>
   );
 }
 
@@ -219,7 +250,7 @@ function Grouped({ windows, by, multiHost, onOpen }: { windows: Win[]; by: 'host
     <>
       {sections.map((section, i) => (
         <section key={section.id}>
-          <h2 className={`section-label ${i === 0 ? 'first' : ''}`}>{section.id}</h2>
+          <h2 className={`section-label ${i === 0 ? 'first' : ''}`}>{section.id} <span className="count">{section.windows.length}</span></h2>
           <Rows windows={section.windows} multiHost={multiHost && by !== 'host'} narrow={false} onOpen={onOpen} />
         </section>
       ))}

@@ -16,6 +16,8 @@ type Props = {
   onResume: (host: string, ref: string) => void;
   /** Open a content hit: a transcript at its seq, or a chat at its message. */
   onContent: (host: string, hit: SearchHit) => void;
+  /** Open a live session beside the current one (⌘↵). Absent when splitting is unavailable. */
+  onSplit?: (key: string) => void;
   /** Open the full search page with the current query. */
   onShowAll: (q: string) => void;
   onClose: () => void;
@@ -85,7 +87,7 @@ export function Highlighted({ snippet }: { snippet: string }) {
 
 const hitDate = (at: number) => (at ? new Date(at).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '');
 
-export function Switcher({ windows, history, hosts, onSearchContent, onPick, onResume, onContent, onShowAll, onClose }: Props) {
+export function Switcher({ windows, history, hosts, onSearchContent, onPick, onResume, onContent, onShowAll, onSplit, onClose }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const [q, setQ] = useState('');
   const [i, setI] = useState(0);
@@ -155,8 +157,15 @@ export function Switcher({ windows, history, hosts, onSearchContent, onPick, onR
 
   const choose = (r: Row) => (r.kind === 'win' ? onPick(r.w.key) : onResume(r.h.host, r.h.ref));
   const navCount = results.length + content.length;
-  const chooseNav = (n: number) => {
-    if (n < results.length) choose(results[n]);
+  const liveRows = results.filter((r) => r.kind === 'win');
+  const histRows = results.filter((r) => r.kind === 'hist');
+  const chooseNav = (n: number, split = false) => {
+    const r = n < results.length ? results[n] : undefined;
+    if (r?.kind === 'win' && split && onSplit) {
+      onSplit(r.w.key);
+      return;
+    }
+    if (r) choose(r);
     else if (content[n - results.length]) onContent(content[n - results.length].host, content[n - results.length]);
   };
 
@@ -175,34 +184,69 @@ export function Switcher({ windows, history, hosts, onSearchContent, onPick, onR
         onKeyDown={(e) => {
           if (e.key === 'ArrowDown') setI((i) => Math.max(0, Math.min(navCount - 1, i + 1)));
           else if (e.key === 'ArrowUp') setI((i) => Math.max(0, i - 1));
-          else if (e.key === 'Enter' && navCount > 0) chooseNav(Math.min(i, navCount - 1));
+          else if (e.key === 'Enter' && navCount > 0) chooseNav(Math.min(i, navCount - 1), e.metaKey || e.ctrlKey);
           else return;
           e.preventDefault();
         }}
       />
-      <ul>
-        {results.map((r, idx) => {
-          const agent = r.kind === 'win' ? r.w.agent : r.h.harness;
-          const { color } = look(agent);
-          return (
-            <li key={r.kind === 'win' ? r.w.key : `${r.h.host}:${r.h.ref}`}>
-              <button className={`switch-item ${idx === i ? 'on' : ''}`} style={{ '--agent': color } as React.CSSProperties} onMouseEnter={() => setI(idx)} onClick={() => choose(r)}>
-                <span className="chip">
-                  <AgentLogo id={agent} />
-                </span>
-                <span className="stack">
-                  <span className="name">
-                    {r.kind === 'win' ? r.w.title : r.h.title}
-                    {(r.kind === 'win' ? r.w.fork : r.h.fork) ? ' ⑂' : ''}
-                  </span>
-                  <span className="sub">{r.kind === 'win' ? [hosts.length > 1 ? r.w.host : null, r.w.project, r.w.detail].filter(Boolean).join(' · ') : [hosts.length > 1 ? r.h.host : null, r.h.project, ago(r.h.at)].filter(Boolean).join(' · ')}</span>
-                </span>
-                {r.kind === 'win' ? <span className={`dot ${r.w.status}`} /> : <span className="pill">resume</span>}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+      {navCount === 0 && <p className="switch-empty">Nothing matches. Try h:claude or p:ah.</p>}
+      {liveRows.length > 0 && (
+        <>
+          {histRows.length > 0 && <div className="switch-head">Sessions</div>}
+          <ul>
+            {liveRows.map((r, j) => {
+              if (r.kind !== 'win') return null;
+              const { color } = look(r.w.agent);
+              return (
+                <li key={r.w.key}>
+                  <button className={`switch-item ${j === i ? 'on' : ''}`} style={{ '--agent': color } as React.CSSProperties} onMouseEnter={() => setI(j)} onClick={() => choose(r)}>
+                    <span className="chip">
+                      <AgentLogo id={r.w.agent} />
+                    </span>
+                    <span className="stack">
+                      <span className="name">
+                        {r.w.title}
+                        {r.w.fork ? ' ⑂' : ''}
+                      </span>
+                      <span className="sub">{[hosts.length > 1 ? r.w.host : null, r.w.project, r.w.detail].filter(Boolean).join(' · ')}</span>
+                    </span>
+                    <span className={`dot ${r.w.status}`} />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+      {histRows.length > 0 && (
+        <>
+          <div className="switch-head">History</div>
+          <ul>
+            {histRows.map((r, j) => {
+              if (r.kind !== 'hist') return null;
+              const idx = liveRows.length + j;
+              const { color } = look(r.h.harness);
+              return (
+                <li key={`${r.h.host}:${r.h.ref}`}>
+                  <button className={`switch-item ${idx === i ? 'on' : ''}`} style={{ '--agent': color } as React.CSSProperties} onMouseEnter={() => setI(idx)} onClick={() => choose(r)}>
+                    <span className="chip">
+                      <AgentLogo id={r.h.harness} />
+                    </span>
+                    <span className="stack">
+                      <span className="name">
+                        {r.h.title}
+                        {r.h.fork ? ' ⑂' : ''}
+                      </span>
+                      <span className="sub">{[hosts.length > 1 ? r.h.host : null, r.h.project, ago(r.h.at)].filter(Boolean).join(' · ')}</span>
+                    </span>
+                    <span className="pill">resume</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
       {(content.length > 0 || contentNote) && (
         <>
           <div className="switch-head">In conversations</div>
@@ -240,6 +284,22 @@ export function Switcher({ windows, history, hosts, onSearchContent, onPick, onR
           See all results for “{parseQuery(q).text.trim()}” →
         </button>
       )}
+      <div className="switch-foot" aria-hidden>
+        <span>
+          <kbd>↑↓</kbd> move
+        </span>
+        <span>
+          <kbd>↵</kbd> open{onSplit ? ' or resume' : ''}
+        </span>
+        {onSplit && (
+          <span>
+            <kbd>⌘↵</kbd> open in split
+          </span>
+        )}
+        <span>
+          <kbd>esc</kbd>
+        </span>
+      </div>
     </dialog>
   );
 }
