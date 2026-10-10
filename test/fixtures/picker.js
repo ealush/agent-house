@@ -16,6 +16,7 @@ const SCREENS = {
     '  5. Chat about this',
     'Enter to select · Tab/Arrow keys to navigate · Esc to cancel',
   ],
+  plain: ['READY', 'all done here'],
   permission: [
     ' Bash command',
     '   rm -rf build',

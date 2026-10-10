@@ -305,6 +305,10 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
       // drawn: cancelling it with Esc sends no hook, and must not leave "needs you" stuck.
       let hookState = w.hookState;
       if (hooked && hookState === 'waiting' && hookAsk?.kind === 'choice' && !isQuestionDialog(tail) && !isQuestionReview(tail)) hookState = 'working';
+      // A permission prompt is always a picker on screen. A hook that still says
+      // "waiting" once the screen is quiet and shows none missed its next event:
+      // don't keep the session on "needs you" for it.
+      if (hooked && hookState === 'waiting' && (hookAsk?.kind === 'tool' || hookAsk?.kind === 'command') && quiet && !parsePicker(tail) && !isQuestionDialog(tail)) hookState = 'done';
       const rules = agent ? (waitingRules.get(agent) ?? []) : [];
       const asks = !hooked && !!agent && quiet && rules.length > 0 && screenAsks(tail, rules);
       const { status, source } = computeStatus({

@@ -99,3 +99,30 @@ test('picks a row of a permission prompt by its digit', async () => {
     await cleanup(ah);
   }
 });
+
+test('a hook stuck on "waiting" over a screen with no prompt does not hold "needs you"', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ah-it-'));
+  const ah = await startAh({
+    auth: { mode: 'off' },
+    idleAfter: 1,
+    presets: [{ id: 'test-claude', name: 'Test', command: `exec ${process.execPath} ${fixture} plain ${dir}/keys.log`, match: '^node$' }],
+  }, dir);
+  try {
+    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'test-claude', cwd: `${ah.dir}/files` } });
+    const { id, uid } = created.json();
+    const window = async () => (await http(ah, 'GET', '/api/state')).json().windows.find((w: any) => w.uid === uid);
+    await until(async () => (await window())?.agent === 'test-claude', 15000, 'agent detected');
+    ah.tmux(
+      'set-option', '-w', '-t', id, '@ah-harness', 'test-claude',
+      ';', 'set-option', '-w', '-t', id, '@ah-state', 'waiting',
+      ';', 'set-option', '-w', '-t', id, '@ah-state-at', String(Math.floor(Date.now() / 1000)),
+      ';', 'set-option', '-w', '-t', id, '@ah-ask', JSON.stringify({ kind: 'tool', text: 'Editing notes.md' }),
+    );
+    await until(async () => {
+      const w = await window();
+      return w && w.status !== 'waiting' && w.statusSource === 'hook';
+    }, 10000, 'stale waiting dropped once the screen is quiet with no picker');
+  } finally {
+    await cleanup(ah);
+  }
+});
