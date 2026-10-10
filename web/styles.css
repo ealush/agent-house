@@ -4851,7 +4851,9 @@ button.tool-chip:hover {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 2px;
+  /* Underlined labels have almost no padding. Wider than the old 2px pill
+     gap, and still short enough that all five fit the default panel. */
+  gap: 1rem;
   overflow-x: auto;
   scrollbar-width: none;
 }
