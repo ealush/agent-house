@@ -129,6 +129,21 @@ code,
   --safe-bottom: 0px;
 }
 
+/* iOS home-screen bottom shim (viewport.ts): fixed elements stop short of the
+   screen, so the document is stretched to it and the shell sits in it. */
+:root.ios-shim,
+:root.ios-shim body,
+:root.ios-shim #root {
+  height: var(--app-h);
+  overflow: visible;
+}
+
+:root.ios-shim .app {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: var(--app-h);
+}
+
 /* Under 16px, iOS zooms the page into a field that takes focus, and the layout
    never recovers its scale. Touch screens get 16px in every field. */
 @media (pointer: coarse) {
@@ -149,7 +164,7 @@ code,
   top: var(--keyboard-top, 0px);
   display: flex;
   /* Keyboard up: the visible height. iOS home-screen app: the whole screen (viewport.ts). */
-  height: var(--keyboard-vh, var(--app-h, auto));
+  height: var(--keyboard-vh, auto);
   overflow: hidden;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
 }

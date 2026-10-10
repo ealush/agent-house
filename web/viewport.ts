@@ -10,11 +10,13 @@ export function keyboardViewportHeight(layoutHeight: number, visualHeight: numbe
 }
 
 /**
- * iOS home-screen apps with a translucent status bar report a viewport that is
- * short by the status bar, so a shell pinned to it stops ~60pt above the bottom
- * and leaves a strip under the tab bar. A standalone app has no browser chrome:
- * it always fills the screen. Only iOS, and only for a status-bar-sized gap
- * (Android's screen height includes its navigation bar).
+ * iOS home-screen apps can get a layout viewport that stops ~60pt short of the
+ * screen bottom (the "bottom shim"). position: fixed is measured against that
+ * viewport and clipped to it, so a fixed shell either leaves a blank band or,
+ * stretched, gets cut off. With a shim the document is stretched to the screen
+ * and the shell is positioned absolutely in it (styles.css, :root.ios-shim),
+ * since ordinary content paints all the way down. Only iOS standalone, and only
+ * for a shim-sized gap (Android's screen height includes its navigation bar).
  */
 export function standaloneHeight(o: { standalone: boolean; ios: boolean; portrait: boolean; screenW: number; screenH: number; inner: number }): number | null {
   if (!o.standalone || !o.ios) return null;
@@ -57,8 +59,13 @@ export function trackViewport(win: Window, doc: Document): () => void {
     ));
     const height = keyboardViewportHeight(root.clientHeight, viewport.height, viewport.scale, editing);
     const full = height === null ? standaloneHeight(standaloneInfo(win)) : null;
-    if (full !== null) root.style.setProperty('--app-h', `${full}px`);
-    else root.style.removeProperty('--app-h');
+    if (full !== null) {
+      root.style.setProperty('--app-h', `${full}px`);
+      root.classList.add('ios-shim');
+    } else {
+      root.style.removeProperty('--app-h');
+      root.classList.remove('ios-shim');
+    }
     if (height === null) {
       root.style.removeProperty('--vh');
       root.style.removeProperty('--keyboard-vh');
@@ -89,6 +96,12 @@ export function trackViewport(win: Window, doc: Document): () => void {
   const schedule = () => {
     if (frame === null) frame = win.requestAnimationFrame(update);
   };
+  // The stretched document is a little taller than the viewport: keep it from
+  // scrolling (inner scrollers are unaffected), or the shell slides up.
+  const pin = () => {
+    if (root.classList.contains('ios-shim') && (win.scrollY || 0) !== 0) win.scrollTo(0, 0);
+  };
+  win.addEventListener('scroll', pin, { passive: true });
   update();
   viewport.addEventListener('resize', schedule);
   viewport.addEventListener('scroll', schedule);
@@ -113,6 +126,8 @@ export function trackViewport(win: Window, doc: Document): () => void {
     root.style.removeProperty('--keyboard-vh');
     root.style.removeProperty('--keyboard-top');
     root.style.removeProperty('--app-h');
+    root.classList.remove('ios-shim');
+    win.removeEventListener('scroll', pin);
     delete root.dataset.keyboard;
   };
 }
@@ -142,7 +157,7 @@ function mountVhBadge(win: Window, doc: Document): { refresh: (editing: boolean)
     const focus = doc.activeElement as HTMLElement | null;
     el.textContent =
       `vv ${Math.round(win.visualViewport?.height ?? -1)} · lay ${doc.documentElement.clientHeight} · scr ${win.screen?.height ?? -1} · dvh ${probe.clientHeight} · --vh ${inline}\n` +
-      `edit ${editing ? 1 : 0} · focus ${focus?.tagName ?? 'none'} · pwa ${standalone ? 1 : 0}`;
+      `edit ${editing ? 1 : 0} · focus ${focus?.tagName ?? 'none'} · pwa ${standalone ? 1 : 0} · inner ${win.innerHeight} · shim ${doc.documentElement.classList?.contains('ios-shim') ? doc.documentElement.style.getPropertyValue?.('--app-h') : 'off'}`;
   };
   const hasTimers = typeof win.setInterval === 'function' && typeof win.clearInterval === 'function';
   const timer: number | NodeJS.Timeout = hasTimers

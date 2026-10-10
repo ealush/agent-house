@@ -29,6 +29,10 @@ test('keyboard dismissal restores full height and pending resize work is cleaned
     activeElement: null as unknown,
     documentElement: {
       dataset: {} as Record<string, string>,
+      classList: (() => {
+        const set = new Set<string>();
+        return { add: (c: string) => set.add(c), remove: (c: string) => set.delete(c), contains: (c: string) => set.has(c) };
+      })(),
       clientHeight: 868,
       style: {
         setProperty(key: string, value: string) { style.set(key, value); },
@@ -91,6 +95,10 @@ test('a stale small override is re-synced even when iOS fires no dismissal event
     activeElement: { matches: () => true, isContentEditable: false },
     documentElement: {
       dataset: {} as Record<string, string>,
+      classList: (() => {
+        const set = new Set<string>();
+        return { add: (c: string) => set.add(c), remove: (c: string) => set.delete(c), contains: (c: string) => set.has(c) };
+      })(),
       clientHeight: 868,
       style: {
         setProperty(key: string, value: string) { style.set(key, value); },
