@@ -311,12 +311,23 @@
 .gui .md-table {
   overflow-x: auto;
   margin: 0.5em 0;
+  max-width: 100%;
 }
 
-.gui table {
+/* Prose around the table breaks anywhere, which makes a cell's minimum width
+   one letter, so the table squishes instead of scrolling. Cells keep whole
+   words; a wide table scrolls inside .md-table. */
+.gui .md-table table {
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
   font-size: 13px;
-  min-width: 50%;
+}
+
+.gui .md-table th,
+.gui .md-table td {
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .gui th,

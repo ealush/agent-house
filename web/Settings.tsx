@@ -51,7 +51,7 @@ export function Settings({ onLocked, onNotifyChange }: { onLocked: () => void; o
       </header>
 
       <div className="settings-body">
-        <nav className="settings-nav" aria-label="Settings sections">
+        <nav className="settings-nav" aria-label="Settings sections" data-rove>
           {SECTIONS.map((s) => (
             <button key={s.id} className={`nav-item ${section === s.id ? 'on' : ''}`} aria-current={section === s.id ? 'page' : undefined} onClick={() => go(s.id)}>
               <span className="grow">{s.label}</span>

@@ -822,7 +822,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       </header>
 
       {narrow && (
-        <div className="seg-tabs" role="tablist">
+        <div className="seg-tabs" role="tablist" data-rove>
           <button role="tab" aria-selected={tab === 'main'} className={tab === 'main' ? 'on' : ''} onClick={() => setTab('main')}>
             {VIEW_LABEL[view]}
           </button>
@@ -884,7 +884,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
               </div>
             ) : (
               <aside className="side-panel" style={{ width: panelWidth }}>
-                <div className="tabs">
+                <div className="tabs" data-rove>
                   {diffTab && (
                     <button role="tab" aria-selected={panel === 'diff'} className="tab-underline" onClick={() => setPanel('diff')}>
                       Diff

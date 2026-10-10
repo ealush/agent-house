@@ -83,7 +83,11 @@ export function App({ onLock }: { onLock: () => void }) {
   const [dialog, setDialog] = useState<'worktrees' | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [replyKey, setReplyKey] = useState(0);
-  const narrow = useMedia('(max-width: 760px)');
+  // Portrait phones, and a phone turned sideways: short, coarse, and still
+  // narrower than an iPad. The same query is in web/styles.css. A sideways
+  // phone is wider than 760px, but the desktop sidebar and modals don't fit
+  // its height.
+  const narrow = useMedia('(max-width: 760px), ((pointer: coarse) and (max-height: 500px) and (max-width: 1000px))');
   const touch = useMedia('(pointer: coarse)');
   const [sideOpen, setSideOpen] = useState(() => {
     try {
@@ -239,19 +243,25 @@ export function App({ onLock }: { onLock: () => void }) {
     }));
   });
 
-  // Keyboard into the sidebar: the open session's row, else the current page.
-  useCommand(
-    'focus-sidebar',
-    () => {
-      if (!sideOpen) toggleSide();
-      requestAnimationFrame(() => {
-        const row = ['.sidebar .side-session[aria-current]', '.sidebar .nav-item.on', '.sidebar .side-session'].map((q) => document.querySelector<HTMLElement>(q)).find(Boolean);
+  // Keyboard into the session list: the sidebar, or the Sessions tab on a phone
+  // (there is no sidebar there, and this command used to be absent).
+  useCommand('focus-sidebar', () => {
+    if (narrow) {
+      showPage('sessions');
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const row = document.querySelector<HTMLElement>('.page button.row');
         row?.focus();
         row?.scrollIntoView({ block: 'nearest' });
-      });
-    },
-    !narrow,
-  );
+      }));
+      return;
+    }
+    if (!sideOpen) toggleSide();
+    requestAnimationFrame(() => {
+      const row = ['.sidebar .side-session[aria-current]', '.sidebar .nav-item.on', '.sidebar .side-session'].map((q) => document.querySelector<HTMLElement>(q)).find(Boolean);
+      row?.focus();
+      row?.scrollIntoView({ block: 'nearest' });
+    });
+  });
 
   /** Enter split view from the single session: the new half shows the most recent other session. */
   function splitFrom(key: string, dir: 'right' | 'below', otherKey?: string) {
@@ -554,7 +564,7 @@ export function App({ onLock }: { onLock: () => void }) {
               />
             )}
             {narrow && (
-              <nav className="tabbar">
+              <nav className="tabbar" data-rove>
                 {(['inbox', 'sessions', 'history'] as const).map((p) => (
                   <button key={p} className={page === p ? 'on' : ''} onClick={() => go({ page: p, selected: null })}>
                     {p[0].toUpperCase() + p.slice(1)}

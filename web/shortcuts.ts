@@ -165,8 +165,8 @@ export const COMMANDS: Command[] = [
   {
     id: 'focus-sidebar',
     group: 'Navigate',
-    label: 'Focus the sidebar',
-    detail: 'Move focus to the current session in the sidebar. Arrows move, Enter opens, Escape returns.',
+    label: 'Focus the session list',
+    detail: 'Move focus to the current session in the sidebar. On a phone, open the Sessions tab. Arrows move, Enter opens.',
     chords: [{ key: '0', ctrl: true, shift: true }],
     scopes: ['app', 'terminal', 'field'],
   },

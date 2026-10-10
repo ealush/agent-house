@@ -161,6 +161,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
           )}
         </header>
 
+        <div className="ns-body">
         <div className="agents" role="radiogroup" aria-label="Agent">
           {presets.map((p) => (
             <button
@@ -323,6 +324,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
         )}
 
         {error && <p className="form-error">{error}</p>}
+        </div>
 
         <div className="actions">
           <button type="button" className="btn ghost" onClick={onClose}>

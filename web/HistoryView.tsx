@@ -58,7 +58,21 @@ export function HistoryView({ state, onResume, onForget, onFork }: { state: Stat
           const modelLabel = shortModel(h.model);
           return (
             <li key={`${h.host}:${h.ref}`}>
-              <div className="row quiet history-row" style={{ '--agent': color } as React.CSSProperties}>
+              <div
+                className="row quiet history-row"
+                style={{ '--agent': color } as React.CSSProperties}
+                onKeyDown={(e) => {
+                  // Up and down move between conversations (the Resume buttons).
+                  // Left and right reach Fork and Hide on this row.
+                  if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+                  const buttons = [...e.currentTarget.querySelectorAll('button')];
+                  const i = buttons.findIndex((b) => b === e.target || b.contains(e.target as Node));
+                  const next = buttons[i + (e.key === 'ArrowRight' ? 1 : -1)];
+                  if (i < 0 || !next) return;
+                  e.preventDefault();
+                  next.focus();
+                }}
+              >
                 <span className="chip">
                   <AgentLogo id={h.harness} />
                 </span>
@@ -98,7 +112,7 @@ export function SessionsView({ state, onOpen, onNew }: { state: State; onOpen: (
   const multiHost = state.hosts.length > 1;
   const sections = sidebarSections(state.windows, multiHost, useSavedGroups(multiHost));
   return (
-    <div className="page">
+    <div className="page" data-rove="button.row">
       <header className="page-head">
         <div className="grow">
           <h1>Sessions</h1>
