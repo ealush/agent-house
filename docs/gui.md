@@ -39,9 +39,15 @@ agent (in tmux) ──writes──▶ transcript (JSONL)
   adding an entry there; the server already sends everything a view needs.
 - **Sending is unchanged.** The GUI composer, widget buttons and approvals go through
   the same send / answer API as the terminal, so the agent sees ordinary text.
-- **Some things exist only in the terminal**: the agent's own pickers (`/model`,
-  permission prompts it draws itself) and raw keys. The GUI offers "Answer in
-  terminal" for those.
+- **Answering without the terminal.** A waiting agent's numbered picker (a
+  permission prompt's "Yes / Yes, and don't ask again / No") is read off the
+  screen and drawn as buttons; Claude Code's question dialog (AskUserQuestion) is
+  drawn as a form from the questions its hook records, or from the transcript.
+  Digits pick, arrows move, Space toggles, Enter submits. The server types the
+  keys (`server/choices.ts`) only after re-checking that the same picker is still
+  on screen and untouched, so a stale click never lands in a live agent.
+- **Some things exist only in the terminal**: other pickers the agent draws
+  (`/model`) and raw keys. The GUI offers "Answer in terminal" for those.
 
 The two views are separate component trees: `web/TerminalSurface.tsx` and
 `web/gui/` (loaded on first use). `web/surface.ts` is the only place that knows

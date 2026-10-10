@@ -254,11 +254,14 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
     if (view === 'gui') setFocus((n) => n + 1);
     else surface.current?.focus();
   };
+  /** Reply: a waiting session's answer controls first, else the input. */
+  const reply = () => {
+    setTab('main');
+    if (w.status === 'waiting' && surface.current?.focusAsk?.()) return;
+    focusInput();
+  };
   useEffect(() => {
-    if (replyKey) {
-      setTab('main');
-      focusInput();
-    }
+    if (replyKey) reply();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [replyKey]);
   const showKeys = (keysPref === 'on' || (keysPref === 'auto' && touch)) && tab === 'main' && view === 'terminal';
@@ -401,7 +404,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   }, active);
   useCommand('approve', () => onAnswer(w, 'approve'), active && w.answerable && w.status === 'waiting');
   useCommand('deny', () => onAnswer(w, 'deny'), active && w.answerable && w.status === 'waiting');
-  useCommand('reply', focusInput, active);
+  useCommand('reply', reply, active);
 
   const diffTab = w.branch ? 'Diff' : null;
   const panelView = (p: Panel) =>

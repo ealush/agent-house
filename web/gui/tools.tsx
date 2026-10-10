@@ -162,12 +162,13 @@ const Todos: ToolView = {
   },
 };
 
-/** Questions are answered in the agent's own picker; the GUI shows them and the answers. */
+/** While open, the questions are answered in the form under the feed; afterwards this shows the answers. */
 const Question: ToolView = {
   label: 'Asked',
   summary: (c) => firstLine(s((c.args.questions as any[] | undefined)?.[0]?.question)),
   open: true,
   Body: ({ call, result }) => {
+    if (!result) return <p className="muted small">Waiting for your answer below.</p>;
     const qs = (call.args.questions as any[] | undefined) ?? [];
     const answers = (result?.data?.answers ?? {}) as Record<string, unknown>;
     return (
@@ -177,7 +178,7 @@ const Question: ToolView = {
             <strong>{s(q?.question)}</strong>
             <ul>
               {(q?.options ?? []).map((o: any, j: number) => (
-                <li key={j} className={answers[s(q?.question)] === s(o?.label) ? 'picked' : ''}>
+                <li key={j} className={s(answers[s(q?.question)]).split(', ').includes(s(o?.label)) ? 'picked' : ''}>
                   {s(o?.label)}
                   {o?.description && <span className="muted"> — {s(o.description)}</span>}
                 </li>

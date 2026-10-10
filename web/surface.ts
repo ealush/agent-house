@@ -11,6 +11,8 @@ export type SurfaceHandle = {
   /** Put text in the agent's input without submitting it (a file path, a snippet). */
   insert: (text: string) => void;
   focus: () => void;
+  /** Move focus to the answer controls of a waiting session. False when there are none. */
+  focusAsk?: () => boolean;
 };
 
 export type SurfaceProps = {

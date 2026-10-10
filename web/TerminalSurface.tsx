@@ -7,8 +7,10 @@ import { KeyBar } from './KeyBar.tsx';
 import { applyModifiers } from './keyboard.ts';
 import type { SurfaceHandle, SurfaceProps } from './surface.ts';
 import { shortcutTitle } from './shortcuts.tsx';
+import { AskPanel, type AskHandle } from './AskPanel.tsx';
 
-const KIND_LABEL = { command: 'Wants to run a command', tool: 'Wants to use a tool', question: 'Asked a question', screen: 'Waiting for you' };
+const KIND_LABEL = { command: 'Wants to run a command', tool: 'Wants to use a tool', question: 'Asked a question', screen: 'Waiting for you', choice: 'Asked you' };
+const coarse = () => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 
 /** The session as its own TUI: xterm.js attached to the tmux window, plus the
  *  touch key bar, file paste/drop, and the screen-scraped permission banner. */
@@ -19,6 +21,7 @@ export const TerminalSurface = forwardRef<SurfaceHandle, SurfaceProps>(function 
   const [alt, setAlt] = useState(false);
   const [shift, setShift] = useState(false);
   const [pasting, setPasting] = useState(false);
+  const askRef = useRef<AskHandle>(null);
 
   useImperativeHandle(ref, () => ({
     insert: (text) => {
@@ -26,6 +29,7 @@ export const TerminalSurface = forwardRef<SurfaceHandle, SurfaceProps>(function 
       term.current?.focus();
     },
     focus: () => term.current?.focus(),
+    focusAsk: () => askRef.current?.focus() ?? false,
   }));
 
   const transform = useCallback(
@@ -99,23 +103,32 @@ export const TerminalSurface = forwardRef<SurfaceHandle, SurfaceProps>(function 
       {w.status === 'waiting' && w.ask && (
         <div className="ask-banner">
           <span className="card-kind">{KIND_LABEL[w.ask.kind]}</span>
-          {w.ask.text && <pre className={`ask-box ${w.ask.kind === 'command' || w.ask.kind === 'screen' ? 'code' : ''}`}>{w.ask.text}</pre>}
-          <div className="actions">
-            {w.answerable ? (
-              <>
-                <button className="btn primary" title={shortcutTitle('Approve', 'approve')} onClick={() => onAnswer(w, 'approve')}>
-                  Approve
-                </button>
-                <button className="btn" title={shortcutTitle('Deny', 'deny')} onClick={() => onAnswer(w, 'deny')}>
-                  Deny
-                </button>
-              </>
-            ) : (
-              <button className="btn primary" title={shortcutTitle('Reply', 'reply')} onClick={onReply}>
-                Reply
-              </button>
-            )}
-          </div>
+          {w.ask.options?.length || ((w.ask.questions?.length || w.ask.dialog) && coarse()) ? (
+            // A phone can't comfortably drive a picker through the key bar: answer it here.
+            <AskPanel ref={askRef} w={w} client={client} onAnswer={onAnswer} compact />
+          ) : w.ask.kind === 'choice' ? (
+            <p className="muted small ask-hint">Pick in the terminal below: number keys choose, Enter confirms.</p>
+          ) : (
+            <>
+              {w.ask.text && <pre className={`ask-box ${w.ask.kind === 'command' || w.ask.kind === 'screen' ? 'code' : ''}`}>{w.ask.text}</pre>}
+              <div className="actions">
+                {w.answerable ? (
+                  <>
+                    <button className="btn primary" title={shortcutTitle('Approve', 'approve')} onClick={() => onAnswer(w, 'approve')}>
+                      Approve
+                    </button>
+                    <button className="btn" title={shortcutTitle('Deny', 'deny')} onClick={() => onAnswer(w, 'deny')}>
+                      Deny
+                    </button>
+                  </>
+                ) : (
+                  <button className="btn primary" title={shortcutTitle('Reply', 'reply')} onClick={onReply}>
+                    Reply
+                  </button>
+                )}
+              </div>
+            </>
+          )}
         </div>
       )}
 

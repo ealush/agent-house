@@ -9,6 +9,7 @@ import { Registry, forkMetaOf, type SessionRecord } from './registry.ts';
 import { snapshot, descendants } from './procs.ts';
 import { discover, type Transcript } from './discovery.ts';
 import type { Config, Preset } from './config.ts';
+import { parsePicker, parseQuestionDialog, pickerAtStart, type Question, type ScreenOption, type ScreenQuestion } from './choices.ts';
 
 // busy: working · waiting: needs your input/permission · attention: finished since
 // you last looked · idle: nothing new. When unsure we say done/idle, never "waiting".
@@ -62,7 +63,28 @@ export type WindowView = {
   fork: { parentUid: string; parentTitle: string; rootUid: string; forks: number } | null;
 };
 
-export type Ask = { kind: 'command' | 'tool' | 'question' | 'screen'; text: string };
+export type Ask = {
+  kind: 'command' | 'tool' | 'question' | 'screen' | 'choice';
+  text: string;
+  /** `choice`: the agent's multiple-choice questions (Claude's AskUserQuestion), answerable from the GUI. */
+  questions?: Question[];
+  /** A numbered picker on screen ("1. Yes / 2. Yes, don't ask again / 3. No"); each one is a key to type. */
+  options?: ScreenOption[];
+  /** `choice` without usable `questions`: the one question the dialog shows now, answered a step at a time. */
+  dialog?: ScreenQuestion;
+};
+
+/** Claude Code's question dialog: its footer, and the free-text row only that dialog has. */
+const QUESTION_DIALOG = /Enter to select/;
+/** The dialog's last step: a review with "1. Submit answers / 2. Cancel". */
+const isQuestionReview = (tail: string[]) => {
+  const text = tail.join('\n');
+  return /Ready to submit your answers\?/.test(text) && /^\s*❯\s*\d\.\s+(Submit answers|Cancel)/m.test(text);
+};
+export const isQuestionDialog = (tail: string[]) => {
+  const text = tail.join('\n');
+  return QUESTION_DIALOG.test(text) && /Type something/.test(text);
+};
 
 export type HistoryItem = {
   /** Registry id for sessions ah ran, `harness:harnessId` for discovered ones. */
@@ -185,6 +207,8 @@ export type StatusInput = {
   hook: { state: string; at: number } | null;
   /** True when a terminal rule says the agent is asking something (non-hooked agents). */
   screenWaiting: boolean;
+  /** A question dialog is drawn: unambiguous, so it needs no quiet period. */
+  dialog?: boolean;
   /** A live shell command below the agent, even when it prints no output. */
   toolRunning?: boolean;
 };
@@ -199,7 +223,7 @@ export function computeStatus(s: StatusInput): { status: Status; source: WindowV
     if (state === 'working') return { status: s.toolRunning || s.now - Math.max(s.activity, at) < 30 ? 'busy' : unread(s.activity) ? 'attention' : 'idle', source: 'hook' };
     if (state === 'done' || state === 'idle') return { status: unread(at) ? 'attention' : quiet ? 'idle' : 'busy', source: 'hook' };
   }
-  if (quiet && s.screenWaiting) return { status: 'waiting', source: 'screen' };
+  if (s.dialog || (quiet && s.screenWaiting)) return { status: 'waiting', source: 'screen' };
   if (s.toolRunning) return { status: 'busy', source: 'activity' };
   if (!quiet) return { status: 'busy', source: 'activity' };
   return { status: s.seen > 0 && unread(s.activity) ? 'attention' : 'idle', source: 'activity' };
@@ -220,15 +244,19 @@ export function screenAsks(lines: string[], patterns: RegExp[]): boolean {
 }
 
 /** Last non-empty lines of a window's visible screen, re-captured only when it printed something. */
-const screenCache = new Map<string, { activity: number; lines: string[] }>();
+const screenCache = new Map<string, { activity: number; at: number; lines: string[] }>();
 
 async function screenTail(windowId: string, activity: number): Promise<string[]> {
   const hit = screenCache.get(windowId);
-  if (hit?.activity === activity) return hit.lines;
+  // Activity has one-second resolution: a capture taken in the same second as the
+  // last output may have missed the rest of it, so it is only reused once it is newer.
+  if (hit?.activity === activity && hit.at > activity + 1) return hit.lines;
   const text = await capturePane(windowId, 0).catch(() => '');
   const lines = text.split('\n').map((l) => l.trimEnd()).filter((l) => l.trim());
-  screenCache.set(windowId, { activity, lines: lines.slice(-12) });
-  return lines.slice(-12);
+  // More than screenAsks reads: a permission prompt's options sit under its preview.
+  // A question dialog with descriptions runs to ~30 lines.
+  screenCache.set(windowId, { activity, at: Date.now() / 1000, lines: lines.slice(-40) });
+  return lines.slice(-40);
 }
 
 function parseJson<T>(s: string): T | null {
@@ -272,6 +300,11 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
       const hooked = !!w.hookState && w.hookState !== 'ended' && agent === w.harness;
       const quiet = now - w.activity >= config.idleAfter;
       const tail = await screenTail(w.windowId, w.activity);
+      const hookAsk = hooked ? parseJson<Ask>(w.hookAsk) : null;
+      // A question recorded at PreToolUse counts as waiting only while its dialog is
+      // drawn: cancelling it with Esc sends no hook, and must not leave "needs you" stuck.
+      let hookState = w.hookState;
+      if (hooked && hookState === 'waiting' && hookAsk?.kind === 'choice' && !isQuestionDialog(tail) && !isQuestionReview(tail)) hookState = 'working';
       const rules = agent ? (waitingRules.get(agent) ?? []) : [];
       const asks = !hooked && !!agent && quiet && rules.length > 0 && screenAsks(tail, rules);
       const { status, source } = computeStatus({
@@ -280,8 +313,9 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
         seen,
         viewers,
         idleAfter: config.idleAfter,
-        hook: hooked ? { state: w.hookState, at: w.hookAt } : null,
+        hook: hooked ? { state: hookState, at: w.hookAt } : null,
         screenWaiting: asks,
+        dialog: !hooked && !!agent && rules.length > 0 && (isQuestionDialog(tail) || isQuestionReview(tail)),
         toolRunning: detected ? hasToolWork(procs, detected.pid) : false,
       });
 
@@ -313,7 +347,19 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
       const hookDetail = hooked ? parseJson<Ask>(w.hookDetail) : null;
       let ask: Ask | null = null;
       if (status === 'waiting') {
-        ask = hooked ? (parseJson<Ask>(w.hookAsk) ?? { kind: 'question', text: 'Waiting for your input' }) : { kind: 'screen', text: tail.slice(-4).join('\n') };
+        ask = hooked ? (hookAsk ?? { kind: 'question', text: 'Waiting for your input' }) : { kind: 'screen', text: tail.slice(-4).join('\n') };
+        if (agent && isQuestionDialog(tail)) {
+          // Answered from the questions, never by its first row's digit. The hook's
+          // full set answers in one go while the dialog is untouched; otherwise the
+          // question on screen is answered on its own, and the next one follows.
+          const dialog = parseQuestionDialog(tail);
+          const whole = ask.kind === 'choice' && ask.questions?.length && pickerAtStart(tail.join('\n'), ask.questions) ? ask.questions : undefined;
+          ask = { kind: 'choice', text: dialog?.question ?? (ask.kind === 'choice' ? ask.text : 'Asked a question'), ...(whole ? { questions: whole } : {}), ...(dialog ? { dialog } : {}) };
+        } else if (agent) {
+          const picker = parsePicker(tail);
+          // What the picker is about (the command, a dialog's summary) beats the hook's one-liner.
+          if (picker) ask = { ...ask, options: picker.options, text: picker.context || ask.text };
+        }
       }
       const preset = agent ? config.presets.find((p) => p.id === agent) : undefined;
       // Agents' own TUIs make poor one-liners; for them only hook activity is shown.
@@ -338,7 +384,7 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
         status,
         detail,
         ask,
-        answerable: status === 'waiting' && ask?.kind !== 'question' && !!preset?.approveKeys?.length,
+        answerable: status === 'waiting' && ask?.kind !== 'question' && ask?.kind !== 'choice' && !!preset?.approveKeys?.length,
         viewers,
         devices,
         activity: w.activity,

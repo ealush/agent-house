@@ -21,6 +21,7 @@ import { invalidateSize } from './size.ts';
 import { SnapshotStore, type SnapshotInfo } from './snapshots.ts';
 import { QueueManager, type LaunchChange, type QueueItem } from './queue.ts';
 import { Push } from './push.ts';
+import { claudeQuestionSteps, dialogSteps, parseQuestionDialog, pickerAtStart, type Answer, type Step } from './choices.ts';
 import type { Peers } from './peers.ts';
 import type { TranscriptSource } from './search.ts';
 
@@ -628,6 +629,83 @@ export class Core {
     const keys = answer === 'approve' ? this.preset(w.agent).approveKeys : this.preset(w.agent).denyKeys;
     if (!keys?.length) throw new CoreError(400, `no ${answer} keys configured for ${w.agent}`);
     await t.tmux('send-keys', '-t', w.id, ...keys);
+    this.tick().catch(() => {});
+  }
+
+  /**
+   * Picks one row of a numbered picker on screen (a permission prompt's "Yes, and
+   * don't ask again"). The key must be one the fresh screen still offers.
+   */
+  async choose(uid: string, key: string) {
+    const state = await this.tick();
+    const w = state.windows.find((w) => w.uid === uid);
+    if (!w) throw new CoreError(404, 'session not found');
+    if (w.status !== 'waiting') throw new CoreError(409, 'it is no longer waiting');
+    const option = w.ask?.options?.find((o) => o.key === key);
+    if (!option) throw new CoreError(409, 'that choice is no longer on screen');
+    await this.withInput(uid, () => t.tmux('send-keys', '-t', w.id, key));
+    this.tick().catch(() => {});
+    return option;
+  }
+
+  /**
+   * Answers the agent's question dialog (Claude's AskUserQuestion) as a whole, from
+   * the questions its hook recorded. Keys are typed only while the dialog is on
+   * screen, untouched, and showing those questions.
+   */
+  async answerQuestions(uid: string, answers: Answer[]) {
+    const w = await this.askingWindow(uid);
+    const questions = w.ask?.questions;
+    if (!questions) throw new CoreError(409, 'the question on screen has changed; answer it again');
+    const steps = this.stepsOr400(() => claudeQuestionSteps(questions, answers));
+    await this.typeSteps(w, steps, (screen) => pickerAtStart(screen, questions));
+  }
+
+  /**
+   * Answers the one question the dialog shows now (windows without hooks, or a
+   * dialog already half answered in the terminal). `question` is the text the
+   * caller saw; a different question on screen means its answer is stale.
+   */
+  async answerDialogQuestion(uid: string, question: string, answer: Answer) {
+    const w = await this.askingWindow(uid);
+    let steps: Step[] = [];
+    await this.typeSteps(w, null, (screen) => {
+      const dialog = parseQuestionDialog(screen.split('\n').map((l) => l.trimEnd()));
+      if (!dialog || dialog.question !== question) return false;
+      steps = this.stepsOr400(() => dialogSteps(dialog, answer));
+      return true;
+    }, () => steps);
+  }
+
+  private async askingWindow(uid: string) {
+    const state = await this.tick();
+    const w = state.windows.find((w) => w.uid === uid);
+    if (!w?.agent) throw new CoreError(404, 'session not found');
+    if (w.status !== 'waiting' || w.ask?.kind !== 'choice') throw new CoreError(409, 'it is no longer asking');
+    if (this.preset(w.agent).questions !== 'claude') throw new CoreError(400, `answer ${w.agent} in its terminal`);
+    return w;
+  }
+
+  private stepsOr400(fn: () => Step[]): Step[] {
+    try {
+      return fn();
+    } catch (e) {
+      throw new CoreError(400, (e as Error).message);
+    }
+  }
+
+  /** Re-reads the screen inside the input lock, checks it, then types each step with a beat between. */
+  private async typeSteps(w: WindowView, steps: Step[] | null, check: (screen: string) => boolean, late?: () => Step[]) {
+    await this.withInput(w.uid, async () => {
+      const screen = await t.capturePane(w.id, 0).catch(() => '');
+      if (!check(screen)) throw new CoreError(409, 'the question on screen has changed; answer it again');
+      for (const step of steps ?? late?.() ?? []) {
+        if ('text' in step) await t.tmux('send-keys', '-t', w.id, '-l', step.text);
+        else await t.tmux('send-keys', '-t', w.id, ...step.keys);
+        // Ink redraws between keys; a key that lands mid-render can be dropped.
+        await new Promise((r) => setTimeout(r, 90));
+      }
+    });
     this.tick().catch(() => {});
   }
 

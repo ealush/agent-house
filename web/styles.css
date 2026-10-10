@@ -4099,3 +4099,225 @@ button.tool-chip:hover {
   flex-direction: column;
   align-items: stretch;
 }
+
+/* ---------- answering a waiting agent (AskPanel) */
+
+.ask-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ask-panel .actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-start;
+}
+
+.ask-terminal {
+  align-self: flex-start;
+}
+
+.ask-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.ask-question {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ask-question legend {
+  padding: 0;
+  margin-bottom: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 8px;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.ask-header {
+  font: 500 11px var(--ui);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  padding: 2px 7px;
+  border-radius: var(--radius-xs);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-line);
+}
+
+.ask-rows,
+.ask-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ask-row,
+.ask-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 12px;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.ask-row:hover,
+.ask-option:hover {
+  border-color: var(--line-2);
+}
+
+.ask-row:focus-visible,
+.ask-option:focus-visible,
+.ask-other-row:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+
+.ask-row.on,
+.ask-option.on {
+  border-color: var(--accent-line);
+  background: var(--accent-bg);
+}
+
+.ask-row kbd,
+.ask-option kbd {
+  flex: none;
+  min-width: 20px;
+  text-align: center;
+}
+
+.ask-row.on kbd {
+  color: var(--accent);
+  border-color: var(--accent-line);
+}
+
+.ask-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.ask-label {
+  overflow-wrap: anywhere;
+}
+
+.ask-desc {
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.ask-mark {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--line-2);
+  border-radius: 50%;
+}
+
+.ask-mark.box {
+  border-radius: 4px;
+}
+
+.ask-row.on .ask-mark {
+  border-color: var(--brand);
+  background: radial-gradient(circle, var(--brand) 0 4px, transparent 4.5px);
+}
+
+.ask-row.on .ask-mark.box {
+  background: var(--brand);
+  box-shadow: inset 0 0 0 3px var(--raised);
+}
+
+.ask-other {
+  cursor: default;
+  padding: 0 12px 0 0;
+}
+
+.ask-other-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  align-self: stretch;
+  padding: 8px 0 8px 12px;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  flex: none;
+}
+
+.ask-other:not(.on) .ask-other-row {
+  flex: 1;
+}
+
+.ask-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  /* 16px keeps iOS from zooming the page when the field takes focus. */
+  font-size: max(16px, 1em);
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  outline: none;
+  padding: 8px 0;
+}
+
+.ask-option.first:not(.on) {
+  border-color: var(--accent-line);
+}
+
+.ask-sent {
+  margin: 0;
+}
+
+.ask-panel.compact .ask-row,
+.ask-panel.compact .ask-option {
+  min-height: 36px;
+  padding: 6px 10px;
+}
+
+.ask-banner .ask-panel {
+  max-height: 45vh;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.ask-hint {
+  margin: 0;
+}
+
+.ask-progress {
+  margin-bottom: -6px;
+  letter-spacing: 0.02em;
+}

@@ -2,7 +2,7 @@
 // its own config, and its own tmux server (TMUX_TMPDIR), so tests can never touch
 // the developer's real sessions, and every test sees exactly what a client would.
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { request } from 'node:http';
@@ -98,12 +98,14 @@ export async function startAh(config: Record<string, unknown> = {}, dir = mkdtem
   return ah;
 }
 
-/** Kills the test's private tmux server and the daemon. */
+/** Kills the test's private tmux server and the daemon, then removes its state. */
 export async function cleanup(ah: Ah) {
   await ah.stop();
   try {
     execFileSync('tmux', ['kill-server'], { env: ah.env, stdio: 'ignore' });
   } catch {}
+  // Each run leaves ~200 MB of caches behind otherwise, and /tmp is a tmpfs.
+  rmSync(ah.dir, { recursive: true, force: true });
 }
 
 export type Res = { status: number; headers: Record<string, string | string[] | undefined>; body: string; json: () => any };

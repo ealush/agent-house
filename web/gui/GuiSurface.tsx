@@ -3,13 +3,13 @@
 // the same send/answer API the terminal path uses.
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ToolResult } from '../../server/feed/schema.ts';
+import { AskPanel, type AskHandle } from '../AskPanel.tsx';
 import type { SurfaceHandle, SurfaceProps } from '../surface.ts';
 import type { SnapshotInfo } from '../api.ts';
 import { askConfirm, showError, showNotice } from '../ask.tsx';
 import { look } from '../agents.ts';
 import { AgentLogo } from '../logos.tsx';
 import { Icon } from '../icons.tsx';
-import { shortcutTitle } from '../shortcuts.tsx';
 import { copyText } from '../selection.ts';
 import { blockText } from './reducer.ts';
 import { useFeed } from './useFeed.ts';
@@ -155,11 +155,14 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
   const prevHeight = useRef(0);
   const prevFirst = useRef<number | undefined>(undefined);
 
+  const askRef = useRef<AskHandle>(null);
   // Typing into the agent's input goes through the same path as the terminal.
   useImperativeHandle(ref, () => ({
     insert: (text) => void client.send(w.uid, text, false).catch((e) => showError(e, "Couldn't send")),
     focus: onReply,
+    focusAsk: () => askRef.current?.focus() ?? false,
   }));
+
 
   const actions = useMemo<GuiActions>(
     () => ({
@@ -275,28 +278,7 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
 
             {waiting && (
               <div className="approval">
-                <span className="card-kind">{w.ask!.kind === 'question' ? 'Asked a question' : 'Needs your approval'}</span>
-                {w.ask!.text && w.ask!.kind !== 'screen' && <pre className="code-block">{w.ask!.text}</pre>}
-                <div className="actions">
-                  {w.answerable ? (
-                    <>
-                      <button className="btn primary" title={shortcutTitle('Approve', 'approve')} onClick={() => onAnswer(w, 'approve')}>
-                        Approve
-                      </button>
-                      <button className="btn" title={shortcutTitle('Deny', 'deny')} onClick={() => onAnswer(w, 'deny')}>
-                        Deny
-                      </button>
-                    </>
-                  ) : (
-                    <button className="btn primary" title={shortcutTitle('Reply', 'reply')} onClick={onReply}>
-                      Reply
-                    </button>
-                  )}
-                  {/* The agent's own picker lives in its TUI. */}
-                  <button className="btn ghost" onClick={onUseTerminal}>
-                    Answer in terminal
-                  </button>
-                </div>
+                <AskPanel ref={askRef} w={w} client={client} onAnswer={onAnswer} onReply={onReply} onUseTerminal={onUseTerminal} />
               </div>
             )}
             {w.status === 'busy' && (

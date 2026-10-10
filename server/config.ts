@@ -76,6 +76,8 @@ export type Preset = {
    * typed events (server/feed). Agents without one are terminal-only.
    */
   feed?: string;
+  /** How the agent's multiple-choice question dialog takes keys (server/choices.ts). */
+  questions?: 'claude';
 };
 
 export type Config = {
@@ -151,7 +153,9 @@ const DEFAULT_PRESETS: Preset[] = [
     resume: 'claude --continue',
     resumeId: 'claude --resume {id}',
     match: '^claude$',
-    waitingPatterns: ['Do you want to (proceed|make this edit|create|allow)', '^\\s*❯\\s*1\\.\\s*Yes'],
+    // The last one is the question dialog's footer (AskUserQuestion), for windows without hooks.
+    waitingPatterns: ['Do you want to (proceed|make this edit|create|allow)', '^\\s*❯\\s*1\\.\\s*Yes', 'Enter to select · .*to navigate'],
+    questions: 'claude',
     // The permission dialog highlights "Yes"; Esc declines.
     approveKeys: ['Enter'],
     denyKeys: ['Escape'],

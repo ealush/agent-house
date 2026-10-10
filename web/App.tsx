@@ -518,6 +518,7 @@ export function App({ onLock }: { onLock: () => void }) {
                   if (reply) setReplyKey((n) => n + 1);
                 }}
                 onAnswer={answer}
+                clientFor={clientFor}
                 onNew={() => setCreating({})}
                 onSearch={() => setSwitching(true)}
                 onSettings={() => go({ page: 'settings', selected: null })}

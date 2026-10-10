@@ -70,7 +70,23 @@ export type ForkResult = {
   prompt: 'delivered' | 'queued' | null;
 };
 
-export type Ask = { kind: 'command' | 'tool' | 'question' | 'screen'; text: string };
+export type Question = {
+  question: string;
+  header?: string;
+  multiSelect: boolean;
+  options: Array<{ label: string; description?: string }>;
+};
+export type QuestionAnswer = { picked: number[]; text?: string };
+export type Ask = {
+  kind: 'command' | 'tool' | 'question' | 'screen' | 'choice';
+  text: string;
+  /** `choice`: the agent's multiple-choice questions, when its hook reported them. */
+  questions?: Question[];
+  /** Rows of a numbered picker on screen; `key` is what gets typed. */
+  options?: Array<{ key: string; label: string }>;
+  /** The one question the dialog shows now, when the whole set isn't known or it's half answered. */
+  dialog?: { question: string; multiSelect: boolean; options: Array<{ label: string; description?: string; checked?: boolean }>; total: number; answered: number };
+};
 
 export type HistoryItem = {
   ref: string;
@@ -285,6 +301,9 @@ export function hostApi(base: string) {
     fork: (ref: string, body: { name?: string; prompt?: string; model?: string; effort?: string; mode?: string }) => r<ForkResult>('POST', `/api/sessions/${enc(ref)}/fork`, body),
     send: (ref: string, text: string, enter: boolean) => r<SendResult>('POST', `/api/sessions/${enc(ref)}/send`, { text, enter }),
     answer: (uid: string, answer: 'approve' | 'deny') => r('POST', `/api/sessions/${enc(uid)}/answer`, { answer }),
+    choose: (uid: string, key: string) => r('POST', `/api/sessions/${enc(uid)}/choose`, { key }),
+    answerQuestions: (uid: string, answers: QuestionAnswer[]) => r('POST', `/api/sessions/${enc(uid)}/questions`, { answers }),
+    answerQuestion: (uid: string, question: string, answer: QuestionAnswer) => r('POST', `/api/sessions/${enc(uid)}/questions`, { current: { question, answer } }),
     queue: (uid: string) => r<QueueItem[]>('GET', `/api/sessions/${enc(uid)}/queue`),
     switchLaunch: (uid: string, change: { model?: string; effort?: string }) => r<SendResult>('POST', `/api/sessions/${enc(uid)}/switch`, change),
     openSettings: (uid: string, setting: 'model' | 'effort' | 'mode') => r<SendResult>('POST', `/api/sessions/${enc(uid)}/settings`, { setting }),

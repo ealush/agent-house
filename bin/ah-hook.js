@@ -53,6 +53,22 @@ let ask = undefined; // undefined = leave as is, null = clear
 
 const short = (s, n = 240) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 
+/** AskUserQuestion's input, trimmed to what a form needs. */
+function choiceAsk(input = {}) {
+  const qs = Array.isArray(input.questions) ? input.questions : [];
+  const questions = qs
+    .filter((q) => q && typeof q.question === 'string' && Array.isArray(q.options))
+    .map((q) => ({
+      question: short(q.question, 600),
+      header: typeof q.header === 'string' ? short(q.header, 40) : undefined,
+      multiSelect: q.multiSelect === true,
+      options: q.options
+        .filter((o) => o && typeof o.label === 'string')
+        .map((o) => ({ label: short(o.label, 200), description: typeof o.description === 'string' ? short(o.description, 300) : undefined })),
+    }));
+  return questions.length ? { kind: 'choice', text: questions[0].question, questions } : null;
+}
+
 /** One line describing a tool call, relative to the session's directory. */
 function describe(tool, input = {}, cwd = '') {
   const rel = (p) => (typeof p === 'string' && cwd && p.startsWith(cwd + '/') ? p.slice(cwd.length + 1) : p);
@@ -92,6 +108,13 @@ if (harness === 'claude') {
     if (blocking) ask = /elicitation/.test(kind) ? { kind: 'question', text: short(p.message ?? '') } : 'pending';
   } else if (p.hook_event_name === 'PreToolUse') {
     detail = describe(p.tool_name, p.tool_input, p.cwd);
+    // A question dialog blocks on you by definition; carry its questions so the
+    // GUI can answer them (the server checks the dialog is really on screen).
+    const choice = p.tool_name === 'AskUserQuestion' ? choiceAsk(p.tool_input) : null;
+    if (choice) {
+      state = 'waiting';
+      ask = choice;
+    }
   } else if (['PostToolUse', 'UserPromptSubmit', 'Stop', 'SessionStart', 'SessionEnd'].includes(p.hook_event_name)) {
     ask = null;
   }
@@ -116,11 +139,21 @@ if (id) args.push(';', 'set-option', '-w', '-q', '-t', pane, '@ah-harness-id', i
 if (model) args.push(';', 'set-option', '-w', '-q', '-t', pane, '@ah-model', model);
 if (detail) args.push(';', 'set-option', '-w', '-q', '-t', pane, '@ah-detail', JSON.stringify(detail));
 if (ask === null) args.push(';', 'set-option', '-w', '-q', '-u', '-t', pane, '@ah-ask');
-else if (ask === 'pending') {
+else if (ask === 'pending' || ask?.kind === 'question') {
   // Promote the last tool call to the question; needs a read, so do it as a second step.
-  execFile('tmux', ['show-options', '-w', '-v', '-q', '-t', pane, '@ah-detail'], (_e, out) => {
-    if (out?.trim()) args.push(';', 'set-option', '-w', '-q', '-t', pane, '@ah-ask', out.trim());
-    execFile('tmux', args, () => process.exit(0));
+  // A question dialog recorded at PreToolUse is richer than either, so it stays.
+  execFile('tmux', ['show-options', '-w', '-v', '-q', '-t', pane, '@ah-ask'], (_e, current) => {
+    if (/"kind":"choice"/.test(current ?? '')) return execFile('tmux', args, () => process.exit(0));
+    if (ask !== 'pending') {
+      args.push(';', 'set-option', '-w', '-q', '-t', pane, '@ah-ask', JSON.stringify(ask));
+      return execFile('tmux', args, () => process.exit(0));
+    }
+    execFile('tmux', ['show-options', '-w', '-v', '-q', '-t', pane, '@ah-detail'], (_e2, out) => {
+      if (out?.trim()) args.push(';', 'set-option', '-w', '-q', '-t', pane, '@ah-ask', out.trim());
+      execFile('tmux', args, () => process.exit(0));
+    });
   });
-} else if (ask) args.push(';', 'set-option', '-w', '-q', '-t', pane, '@ah-ask', JSON.stringify(ask));
-if (ask !== 'pending') execFile('tmux', args, () => process.exit(0));
+} else {
+  if (ask) args.push(';', 'set-option', '-w', '-q', '-t', pane, '@ah-ask', JSON.stringify(ask));
+  execFile('tmux', args, () => process.exit(0));
+}

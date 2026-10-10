@@ -283,6 +283,33 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     return send(res, 200, { ok: true });
   }
 
+  if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/choose$/))) {
+    const key = str((await readJson(req)).key, 'key', 2);
+    const option = await core.choose(m[1], key);
+    audit(req, 'session.choose', { uid: m[1], key, label: option.label.slice(0, 80) });
+    return send(res, 200, { ok: true });
+  }
+
+  if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/questions$/))) {
+    const body = await readJson(req);
+    const answerOf = (a: any) => ({
+      picked: Array.isArray(a?.picked) ? a.picked.slice(0, 9) : [],
+      ...(a?.text !== undefined ? { text: str(a.text, 'text', 2000) } : {}),
+    });
+    if (body.current) {
+      // One question: the one the dialog shows now.
+      const current = body.current as { question?: unknown; answer?: unknown };
+      await core.answerDialogQuestion(m[1], str(current.question, 'question', 2000), answerOf(current.answer));
+      audit(req, 'session.questions', { uid: m[1], count: 1 });
+      return send(res, 200, { ok: true });
+    }
+    if (!Array.isArray(body.answers) || body.answers.length > 8) throw new HttpError(400, 'answers must be a list');
+    const answers = body.answers.map(answerOf);
+    await core.answerQuestions(m[1], answers);
+    audit(req, 'session.questions', { uid: m[1], count: answers.length });
+    return send(res, 200, { ok: true });
+  }
+
   if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/switch$/))) {
     const body = await readJson(req);
     const change = {

@@ -1,4 +1,5 @@
-import type { State, Win } from './api.ts';
+import type { HostApi, State, Win } from './api.ts';
+import { AskPanel } from './AskPanel.tsx';
 import { shortcutTitle } from './shortcuts.tsx';
 import { Icon } from './icons.tsx';
 import { age, look } from './agents.ts';
@@ -15,17 +16,18 @@ type Props = {
   setGroupBy: (g: InboxGroup) => void;
   onOpen: (w: Win, reply?: boolean) => void;
   onAnswer: (w: Win, answer: 'approve' | 'deny') => void;
+  clientFor: (host: string | undefined) => HostApi;
   onNew: () => void;
   onSearch: () => void;
   onSettings: () => void;
 };
 
-const KIND_LABEL = { command: 'Wants to run a command', tool: 'Wants to use a tool', question: 'Asked a question', screen: 'Waiting for you' };
+const KIND_LABEL = { command: 'Wants to run a command', tool: 'Wants to use a tool', question: 'Asked a question', screen: 'Waiting for you', choice: 'Asked you' };
 
 const where = (w: Win, multiHost: boolean) => [multiHost ? w.host : null, w.project].filter(Boolean).join(' · ');
 
 /** The home screen: what's blocked on you first, then what's working, then the rest. */
-export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, onNew, onSearch, onSettings }: Props) {
+export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, clientFor, onNew, onSearch, onSettings }: Props) {
   const multiHost = state.hosts.length > 1;
   const waiting = state.windows.filter((w) => w.status === 'waiting');
   const running = state.windows.filter((w) => w.status === 'busy');
@@ -102,7 +104,7 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, on
               </h2>
               <div className="cards">
                 {waiting.map((w) => (
-                  <AskCard key={w.key} w={w} multiHost={multiHost} narrow={narrow} onOpen={onOpen} onAnswer={onAnswer} />
+                  <AskCard key={w.key} w={w} client={clientFor(w.host)} multiHost={multiHost} narrow={narrow} onOpen={onOpen} onAnswer={onAnswer} />
                 ))}
               </div>
             </>
@@ -129,11 +131,13 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, on
   );
 }
 
-function AskCard({ w, multiHost, narrow, onOpen, onAnswer }: { w: Win; multiHost: boolean; narrow: boolean; onOpen: Props['onOpen']; onAnswer: Props['onAnswer'] }) {
+function AskCard({ w, client, multiHost, narrow, onOpen, onAnswer }: { w: Win; client: HostApi; multiHost: boolean; narrow: boolean; onOpen: Props['onOpen']; onAnswer: Props['onAnswer'] }) {
   const { color, name } = look(w.agent);
   const modelLabel = shortModel(w.model);
   const ask = w.ask;
   const code = ask?.kind === 'command' || ask?.kind === 'screen';
+  // Answerable right here: the agent's questions, or the rows of its picker.
+  const inline = !!ask && ((ask.kind === 'choice' && (!!ask.questions?.length || !!ask.dialog)) || !!ask.options?.length);
   return (
     <article className="card card-needs" style={{ '--agent': color } as React.CSSProperties}>
       <div className="card-head">
@@ -148,14 +152,19 @@ function AskCard({ w, multiHost, narrow, onOpen, onAnswer }: { w: Win; multiHost
         <span className="card-age">{age(w.activity)}</span>
       </div>
       {!narrow && ask && <div className="card-kind">{KIND_LABEL[ask.kind]}</div>}
-      {ask?.text && <pre className={`ask-box ${code ? 'code' : ''}`}>{ask.text}</pre>}
+      {ask?.text && !(ask.kind === 'choice' && inline) && <pre className={`ask-box ${code ? 'code' : ''}`}>{ask.text}</pre>}
+      {inline && <AskPanel w={w} client={client} onAnswer={onAnswer} compact />}
       {!narrow && (
         <div className="card-where">
           Where <span className="mono">{multiHost ? `${w.host}:` : ''}{w.projectPath}</span>
         </div>
       )}
       <div className="card-foot">
-        {w.answerable ? (
+        {inline ? (
+          <button className="btn" onClick={() => onOpen(w)}>
+            Open
+          </button>
+        ) : w.answerable ? (
           <>
             <button className="btn primary" title={shortcutTitle('Approve', 'approve')} onClick={() => onAnswer(w, 'approve')}>
               Approve
