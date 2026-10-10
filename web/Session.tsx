@@ -151,7 +151,10 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       return DEFAULT_PANEL_WIDTH;
     }
   });
-  const [panelCollapsed, setPanelCollapsed] = useState(false);
+  // A split mounts a fresh session per pane. The open tab is remembered in
+  // ah.panel, but collapsed is not, so the panel would expand in every pane
+  // just as the space gets tighter. Start collapsed; the toggle still opens it.
+  const [panelCollapsed, setPanelCollapsed] = useState(() => !!panePath);
   // Past-chats browser inside the chat panel; resets with the session.
   const [chatHistory, setChatHistory] = useState(false);
   // A search result can ask for one chat at one message (issue #9).
@@ -914,6 +917,8 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
             ) : (
               <aside className="side-panel" style={{ width: panelWidth }}>
                 <div className="tabs" data-rove>
+                  {/* The tabs scroll sideways in a narrow panel; the buttons on the right always stay. */}
+                  <div className="tabs-scroll">
                   {diffTab && (
                     <button role="tab" aria-selected={panel === 'diff'} className="tab-underline" onClick={() => setPanel('diff')}>
                       Diff
@@ -931,7 +936,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
                   <button role="tab" aria-selected={panel === 'snapshots'} className="tab-underline" onClick={() => setPanel('snapshots')}>
                     Snapshots
                   </button>
-                  <span className="spacer" />
+                  </div>
                   {panel === 'chat' && (
                     <button
                       className="icon-btn small"

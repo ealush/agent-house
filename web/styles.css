@@ -4840,3 +4840,26 @@ button.tool-chip:hover {
 .ns-screen .ns-body > .field {
   flex: none;
 }
+
+/* Side panel header: tabs take what's left and scroll; the icon buttons never leave. */
+.side-panel .tabs > .icon-btn {
+  flex: none;
+}
+
+.tabs-scroll {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabs-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.tabs-scroll > button {
+  flex: none;
+}
