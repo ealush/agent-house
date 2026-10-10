@@ -21,7 +21,7 @@ import { invalidateSize } from './size.ts';
 import { SnapshotStore, type SnapshotInfo } from './snapshots.ts';
 import { QueueManager, type LaunchChange, type QueueItem } from './queue.ts';
 import { Push } from './push.ts';
-import { claudeQuestionSteps, dialogSteps, parseQuestionDialog, pickerAtStart, type Answer, type Step } from './choices.ts';
+import { claudeQuestionSteps, cursorKeys, dialogSteps, parsePicker, parseQuestionDialog, pickerAtStart, type Answer, type Step } from './choices.ts';
 import type { Peers } from './peers.ts';
 import type { TranscriptSource } from './search.ts';
 
@@ -654,9 +654,18 @@ export class Core {
     const w = state.windows.find((w) => w.uid === uid);
     if (!w) throw new CoreError(404, 'session not found');
     if (w.status !== 'waiting') throw new CoreError(409, 'it is no longer waiting');
-    const option = w.ask?.options?.find((o) => o.key === key);
-    if (!option) throw new CoreError(409, 'that choice is no longer on screen');
-    await this.withInput(uid, () => t.tmux('send-keys', '-t', w.id, key));
+    if (!w.ask?.options?.some((o) => o.key === key)) throw new CoreError(409, 'that choice is no longer on screen');
+    // Read the screen again inside the input lock: the picker must still be there,
+    // and a cursor list is moved from where its cursor is now.
+    const option = await this.withInput(uid, async () => {
+      const lines = (await t.capturePane(w.id, 0).catch(() => '')).split('\n').map((l) => l.trimEnd());
+      const picker = parsePicker(lines.filter((l) => l.trim()).slice(-40));
+      const found = picker?.options.find((o) => o.key === key);
+      if (!picker || !found) throw new CoreError(409, 'that choice is no longer on screen');
+      const keys = key.startsWith('nav:') ? cursorKeys(picker.cursor ?? 0, Number(key.slice(4))) : [key];
+      await t.tmux('send-keys', '-t', w.id, ...keys);
+      return found;
+    });
     this.tick().catch(() => {});
     return option;
   }

@@ -126,7 +126,7 @@ function ScreenChoices({ w, client, options }: { w: Win; client: HostApi; option
     >
       {options.map((o, i) => (
         <button key={o.key} className={`ask-option ${i === 0 ? 'first' : ''} ${sent === o.key ? 'on' : ''}`} data-ask-first={i === 0 || undefined} disabled={!!sent} onClick={() => void pick(o.key)}>
-          <kbd>{o.key.toUpperCase()}</kbd>
+          <kbd>{o.key.startsWith('nav:') ? i + 1 : o.key.toUpperCase()}</kbd>
           <span>{o.label}</span>
         </button>
       ))}

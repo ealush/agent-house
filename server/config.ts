@@ -153,8 +153,9 @@ const DEFAULT_PRESETS: Preset[] = [
     resume: 'claude --continue',
     resumeId: 'claude --resume {id}',
     match: '^claude$',
-    // The last one is the question dialog's footer (AskUserQuestion), for windows without hooks.
-    waitingPatterns: ['Do you want to (proceed|make this edit|create|allow)', '^\\s*❯\\s*1\\.\\s*Yes', 'Enter to select · .*to navigate'],
+    // For windows without hooks: permission prompts, the question dialog's footer
+    // (AskUserQuestion), and the folder-trust prompt (a picker without numbers).
+    waitingPatterns: ['Do you want to (proceed|make this edit|create|allow)', '^\\s*❯\\s*1\\.\\s*Yes', 'Enter to select · .*to navigate', 'trust this folder|Enter to confirm · Esc to cancel'],
     questions: 'claude',
     // The permission dialog highlights "Yes"; Esc declines.
     approveKeys: ['Enter'],

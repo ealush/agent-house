@@ -296,7 +296,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   }
 
   if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/choose$/))) {
-    const key = str((await readJson(req)).key, 'key', 2);
+    const key = str((await readJson(req)).key, 'key', 8);
     const option = await core.choose(m[1], key);
     audit(req, 'session.choose', { uid: m[1], key, label: option.label.slice(0, 80) });
     return send(res, 200, { ok: true });

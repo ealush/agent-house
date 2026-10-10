@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkAnswers, claudeQuestionSteps, dialogSteps, parsePicker, parseQuestionDialog, parseScreenOptions, pickerAtStart, readQuestions, type Question } from './choices.ts';
+import { checkAnswers, claudeQuestionSteps, cursorKeys, dialogSteps, parsePicker, parseQuestionDialog, parseScreenOptions, pickerAtStart, readQuestions, type Question } from './choices.ts';
 
 // Screens captured from Claude Code 2.1.288 and Codex.
 const CLAUDE_PERMISSION = `
@@ -152,4 +152,29 @@ test('steps for the question on screen toggle only what differs and move from th
   assert.deepEqual(dialogSteps(q, { picked: [], text: 'Cache' }), [{ keys: ['1'] }, { keys: ['Down', 'Down'] }, { text: 'Cache' }, { keys: ['Tab'] }, { keys: ['Enter'] }]);
   const single = parseQuestionDialog(CLAUDE_QUESTIONS.split('\n'))!;
   assert.deepEqual(dialogSteps(single, { picked: [1] }), [{ keys: ['2'] }]);
+});
+
+const TRUST = `
+ Accessing workspace:
+ /tmp/proj/demo
+ Quick safety check: Is this a project you created or one you trust?
+ Claude Code'll be able to read, edit, and execute files here.
+ Security guide
+ ❯ No, exit
+   Yes, I trust this folder
+ Enter to confirm · Esc to cancel`.split('\n');
+
+test('a picker without numbers is read from its cursor row', () => {
+  const p = parsePicker(TRUST)!;
+  assert.deepEqual(p.options, [
+    { key: 'nav:0', label: 'No, exit' },
+    { key: 'nav:1', label: 'Yes, I trust this folder' },
+  ]);
+  assert.equal(p.cursor, 0);
+  assert.match(p.context, /Is this a project you created or one you trust\?/);
+  assert.deepEqual(cursorKeys(0, 1), ['Down', 'Enter']);
+  assert.deepEqual(cursorKeys(2, 0), ['Up', 'Up', 'Enter']);
+  assert.deepEqual(cursorKeys(1, 1), ['Enter']);
+  // Prose with an arrow is not a picker without the footer.
+  assert.equal(parsePicker(['❯ not a menu', '  just text']), null);
 });

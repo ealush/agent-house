@@ -38,7 +38,56 @@ export function parseScreenOptions(lines: string[]): ScreenOption[] {
  * The picker and what it is about: up to `max` lines above its first row (the
  * command to approve, a dialog's summary), stopping at a rule or the screen top.
  */
-export function parsePicker(lines: string[], max = 8): { options: ScreenOption[]; context: string } | null {
+export function parsePicker(lines: string[], max = 8): { options: ScreenOption[]; context: string; cursor?: number } | null {
+  return parseNumbered(lines, max) ?? parseCursorList(lines, max);
+}
+
+/** Lines above row `start`: what the picker is about, up to a rule or `max` lines. */
+function contextAbove(lines: string[], start: number, max: number): string {
+  const above: string[] = [];
+  for (let i = start - 1; i >= 0 && above.length < max; i--) {
+    if (/^\s*[─━╭╰│]{3,}/.test(lines[i]) || /^\s*[╭╰]/.test(lines[i])) break;
+    if (lines[i].trim()) above.unshift(lines[i].replace(/^\s*│\s?|\s?│\s*$/g, ''));
+  }
+  return dedent(above).join('\n');
+}
+
+/**
+ * A picker without numbers ("❯ No, exit / Yes, I trust this folder") right above an
+ * "Enter to confirm" footer: rows aligned with the cursor row's text. Its keys are
+ * `nav:<index>`; the server turns one into arrow moves from the cursor, then Enter.
+ */
+function parseCursorList(lines: string[], max: number): { options: ScreenOption[]; context: string; cursor: number } | null {
+  const footer = lines.findLastIndex((l) => /Enter to (confirm|select|continue)/.test(l));
+  if (footer < 1) return null;
+  let end = footer - 1;
+  while (end >= 0 && !lines[end].trim()) end--;
+  const cursorAt = (() => {
+    for (let i = end; i >= 0 && i > end - 20; i--) if (/^\s*❯\s+\S/.test(lines[i])) return i;
+    return -1;
+  })();
+  if (cursorAt < 0) return null;
+  const indent = lines[cursorAt].indexOf('❯') + 2;
+  const row = (l: string) => {
+    const m = l.match(/^(\s*)❯\s+(\S.*)$/);
+    if (m && m[1].length + 2 === indent) return { label: m[2].trim(), cursor: true };
+    return l.length > indent && l.slice(0, indent).trim() === '' && /\S/.test(l[indent]) ? { label: l.trim(), cursor: false } : null;
+  };
+  let start = cursorAt;
+  while (start > 0 && row(lines[start - 1])) start--;
+  const rows = lines.slice(start, end + 1).map(row);
+  if (rows.length < 2 || rows.some((r) => !r)) return null;
+  const options = rows.map((r, j) => ({ key: `nav:${j}`, label: r!.label }));
+  return { options, context: contextAbove(lines, start, max), cursor: rows.findIndex((r) => r!.cursor) };
+}
+
+/** Keys that pick row `target` of a cursor list whose cursor is on `cursor`. */
+export function cursorKeys(cursor: number, target: number): string[] {
+  const n = target - cursor;
+  return [...Array(Math.abs(n)).fill(n > 0 ? 'Down' : 'Up'), 'Enter'];
+}
+
+function parseNumbered(lines: string[], max: number): { options: ScreenOption[]; context: string } | null {
   let best: Array<{ n: number; label: string; cursor: boolean }> = [];
   let bestStart = -1;
   let run: typeof best = [];
@@ -62,17 +111,12 @@ export function parsePicker(lines: string[], max = 8): { options: ScreenOption[]
     if (line.trim() && !/^\s{2,}/.test(line) && !/^[─━-]{3,}/.test(line.trim())) run = [];
   }
   if (!best.length) return null;
-  const above: string[] = [];
-  for (let i = bestStart - 1; i >= 0 && above.length < max; i--) {
-    if (/^\s*[─━╭╰│]{3,}/.test(lines[i]) || /^\s*[╭╰]/.test(lines[i])) break;
-    if (lines[i].trim()) above.unshift(lines[i].replace(/^\s*│\s?|\s?│\s*$/g, ''));
-  }
   const options = best.map((o) => {
     const hot = o.label.match(/\s\(([a-z])\)$/i);
     const label = o.label.replace(/\s\([a-z]\)$/i, '').replace(/^\[[ x✔]\]\s*/i, '').trim();
     return { key: hot ? hot[1].toLowerCase() : String(o.n), label };
   });
-  return { options, context: dedent(above).join('\n') };
+  return { options, context: contextAbove(lines, bestStart, max) };
 }
 
 function dedent(lines: string[]): string[] {
