@@ -178,3 +178,8 @@ test('a picker without numbers is read from its cursor row', () => {
   // Prose with an arrow is not a picker without the footer.
   assert.equal(parsePicker(['❯ not a menu', '  just text']), null);
 });
+
+test('a wrapped option label is read whole', () => {
+  const lines = [' Do you want to create notes.md?', ' ❯ 1. Yes', '   2. Yes, and switch to accept edits (auto-approve file edits and common file', '      commands) for this session (shift+tab)', '   3. No'];
+  assert.deepEqual(parsePicker(lines)?.options.map((o) => o.label), ['Yes', 'Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)', 'No']);
+});

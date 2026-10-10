@@ -88,24 +88,35 @@ export function cursorKeys(cursor: number, target: number): string[] {
 }
 
 function parseNumbered(lines: string[], max: number): { options: ScreenOption[]; context: string } | null {
-  let best: Array<{ n: number; label: string; cursor: boolean }> = [];
+  let best: Array<{ n: number; label: string; cursor: boolean; col: number }> = [];
   let bestStart = -1;
   let run: typeof best = [];
   let start = -1;
+  let wrapping = false;
   for (const [i, line] of lines.entries()) {
     const m = line.match(OPTION);
     if (m) {
       const n = Number(m[1]);
-      if (n === run.length + 1) run.push({ n, label: m[2], cursor: CURSOR.test(line) });
-      else if (n === 1) run = [{ n, label: m[2], cursor: CURSOR.test(line) }];
+      const row = { n, label: m[2], cursor: CURSOR.test(line), col: line.indexOf(m[2]) };
+      if (n === run.length + 1) run.push(row);
+      else if (n === 1) run = [row];
       else run = [];
       if (n === 1) start = i;
       if (run.length >= 2 && run.some((o) => o.cursor)) {
         best = [...run];
         bestStart = start;
       }
+      wrapping = true;
       continue;
     }
+    // A label the agent wrapped continues on the next line, aligned with its text
+    // ("2. Yes, and switch to accept edits (… common file" / "   commands) …").
+    const last = run.at(-1);
+    if (wrapping && last && line.trim() && line.length - line.trimStart().length === last.col) {
+      last.label += ` ${line.trim()}`;
+      continue;
+    }
+    wrapping = false;
     // Indented description lines and blank separators stay inside a run;
     // a flush-left line of prose ends it.
     if (line.trim() && !/^\s{2,}/.test(line) && !/^[─━-]{3,}/.test(line.trim())) run = [];
