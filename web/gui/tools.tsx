@@ -1,7 +1,7 @@
 // Tool calls as objects: the dispatch router picks a view by tool name, with a
 // default for everything else. A new visualization is a new entry in TOOLS; the
 // server already carries name, id, args and result, so nothing else changes.
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { ToolCall, ToolResult } from '../../server/feed/schema.ts';
 import { DiffView } from './DiffView.tsx';
 import { patchLines, replaceLines, structuredLines } from './diff.ts';
@@ -15,11 +15,13 @@ type ToolView = {
   /** What the agent is doing, e.g. "Ran", "Edited". */
   label: string;
   /** The one thing that identifies this call: a command, a path, a query. */
-  summary: (call: ToolCall) => string;
+  summary: (call: ToolCall, result?: ToolResult) => string;
   /** Expanded content; defaults to the arguments and the output. */
   Body?: (p: ToolProps) => ReactNode;
   /** Expanded without a click (plans and questions are the point of the call). */
   open?: boolean;
+  /** Folds once its result arrives (an answered question reads fine as one line). */
+  foldWhenDone?: boolean;
 };
 
 const s = (v: unknown) => (typeof v === 'string' ? v : v === undefined || v === null ? '' : JSON.stringify(v));
@@ -165,8 +167,13 @@ const Todos: ToolView = {
 /** While open, the questions are answered in the form under the feed; afterwards this shows the answers. */
 const Question: ToolView = {
   label: 'Asked',
-  summary: (c) => firstLine(s((c.args.questions as any[] | undefined)?.[0]?.question)),
+  summary: (c, r) => {
+    const first = firstLine(s((c.args.questions as any[] | undefined)?.[0]?.question), 80);
+    const answers = Object.values((r?.data?.answers ?? {}) as Record<string, unknown>).map(s);
+    return answers.length ? `${first} → ${answers.join(' · ')}` : first;
+  },
   open: true,
+  foldWhenDone: true,
   Body: ({ call, result }) => {
     if (!result) return <p className="muted small">Waiting for your answer below.</p>;
     const qs = (call.args.questions as any[] | undefined) ?? [];
@@ -269,8 +276,12 @@ function displayName(name: string) {
 
 export function ToolRow({ call, result }: ToolProps) {
   const view = TOOLS[call.name] ?? Default;
-  const [open, setOpen] = useState(!!view.open);
+  const [open, setOpen] = useState(!!view.open && !(view.foldWhenDone && result));
   const running = !result;
+  const done = !!result;
+  useEffect(() => {
+    if (done && view.foldWhenDone) setOpen(false);
+  }, [done, view.foldWhenDone]);
   const status = running ? 'running' : result.isError ? 'error' : 'done';
   const Body = view.Body ?? Default.Body!;
   return (
@@ -278,7 +289,7 @@ export function ToolRow({ call, result }: ToolProps) {
       <button className="tool-head" onClick={() => setOpen(!open)} aria-expanded={open}>
         <span className={`tool-dot ${status}`} aria-label={running ? 'Running' : result.isError ? 'Failed' : 'Completed'} />
         <span className="tool-label">{view.label || displayName(call.name)}</span>
-        <span className="tool-summary mono">{view.summary(call)}</span>
+        <span className="tool-summary mono">{view.summary(call, result)}</span>
         {running && <span className="tool-state">Running…</span>}
         {result?.truncated && <span className="tool-state">trimmed</span>}
         <span className="tool-caret" aria-hidden>

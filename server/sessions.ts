@@ -315,7 +315,10 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
         idleAfter: config.idleAfter,
         hook: hooked ? { state: hookState, at: w.hookAt } : null,
         screenWaiting: asks,
-        dialog: !hooked && !!agent && rules.length > 0 && (isQuestionDialog(tail) || isQuestionReview(tail)),
+        // A drawn picker is unambiguous, so it needs no quiet period (Claude redraws
+        // a permission prompt every second, which would otherwise read as working):
+        // the question dialog, its review step, or a prompt rule over a numbered picker.
+        dialog: !hooked && !!agent && rules.length > 0 && (isQuestionDialog(tail) || isQuestionReview(tail) || (screenAsks(tail, rules) && !!parsePicker(tail))),
         toolRunning: detected ? hasToolWork(procs, detected.pid) : false,
       });
 

@@ -36,6 +36,7 @@ import { Auth, AuthError, clearCookies, type Caller } from './auth.ts';
 import { Gate, LOOPBACK_BIND } from './gate.ts';
 import { HttpError, send, readBody, readJson, str, safeDecode } from './http.ts';
 import { rebuildFailure, rebuildWeb } from './rebuild.ts';
+import { slashCommands, projectFiles } from './complete.ts';
 
 let config: Config;
 try {
@@ -281,6 +282,17 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     await core.answer(m[1], answer);
     audit(req, `session.${answer}`, { uid: m[1] });
     return send(res, 200, { ok: true });
+  }
+
+  if ((m = route('GET', /^\/api\/sessions\/([\w-]{1,40})\/commands$/))) {
+    const { preset, cwd } = await core.sessionPlace(m[1]);
+    return send(res, 200, preset ? await slashCommands(preset, cwd) : []);
+  }
+
+  if ((m = route('GET', /^\/api\/sessions\/([\w-]{1,40})\/files$/))) {
+    const { cwd } = await core.sessionPlace(m[1]);
+    const q = (url.searchParams.get('q') ?? '').slice(0, 200);
+    return send(res, 200, await projectFiles(cwd, q));
   }
 
   if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/choose$/))) {

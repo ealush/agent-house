@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { HostApi, Question, QuestionAnswer, Win } from './api.ts';
 import { showError } from './ask.tsx';
 import { shortcutTitle } from './shortcuts.tsx';
@@ -55,7 +55,8 @@ export const AskPanel = forwardRef<AskHandle, Props>(function AskPanel({ w, clie
         <>
           {!compact && ask.text && (ask.kind !== 'screen' || options.length > 0) && <pre className="code-block ask-context">{ask.text}</pre>}
           {options.length > 0 ? (
-            <ScreenChoices w={w} client={client} options={options} />
+            // Keyed by the prompt: the next prompt is a fresh set of buttons, never the last one's "sent" state.
+            <ScreenChoices key={`${ask.text}\n${options.map((o) => o.label).join('\n')}`} w={w} client={client} options={options} />
           ) : (
             <div className="actions">
               {w.answerable ? (
@@ -90,6 +91,12 @@ export const AskPanel = forwardRef<AskHandle, Props>(function AskPanel({ w, clie
 /** A permission picker's rows as buttons. Digits (or the row's own hotkey) pick while focus is here. */
 function ScreenChoices({ w, client, options }: { w: Win; client: HostApi; options: Array<{ key: string; label: string }> }) {
   const [sent, setSent] = useState<string | null>(null);
+  // If the same prompt is still up a while later, the key didn't take: allow another try.
+  useEffect(() => {
+    if (!sent) return;
+    const t = setTimeout(() => setSent(null), 4000);
+    return () => clearTimeout(t);
+  }, [sent]);
   const pick = async (key: string) => {
     if (sent) return;
     setSent(key);

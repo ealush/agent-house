@@ -5,12 +5,13 @@ import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, u
 import type { ToolResult } from '../../server/feed/schema.ts';
 import { AskPanel, type AskHandle } from '../AskPanel.tsx';
 import type { SurfaceHandle, SurfaceProps } from '../surface.ts';
-import type { SnapshotInfo } from '../api.ts';
+import type { QueueItem, SnapshotInfo } from '../api.ts';
 import { askConfirm, showError, showNotice } from '../ask.tsx';
 import { look } from '../agents.ts';
 import { AgentLogo } from '../logos.tsx';
 import { Icon } from '../icons.tsx';
 import { copyText } from '../selection.ts';
+import { shortcutTitle } from '../shortcuts.tsx';
 import { blockText } from './reducer.ts';
 import { useFeed } from './useFeed.ts';
 import { project, type Block } from './reducer.ts';
@@ -28,7 +29,7 @@ const time = (at: number) => (at ? new Date(at).toLocaleTimeString([], { hour: '
 
 /** Hover-only copy action below a message. The row is always laid out (see
  *  gui.css: visibility, not display), so appearing never shifts the feed. */
-function MsgCopy({ text }: { text: string }) {
+function MsgCopy({ text, bare = false }: { text: string; bare?: boolean }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;
@@ -36,8 +37,7 @@ function MsgCopy({ text }: { text: string }) {
     return () => clearTimeout(t);
   }, [copied]);
   if (!text) return null;
-  return (
-    <div className="msg-actions">
+  const button = (
       <button
         className="msg-copy"
         onClick={() => {
@@ -51,8 +51,8 @@ function MsgCopy({ text }: { text: string }) {
       >
         <Icon name={copied ? 'check' : 'copy'} size={13} />
       </button>
-    </div>
   );
+  return bare ? button : <div className="msg-actions">{button}</div>;
 }
 
 function BlockView({ block, results, agent, snap, onRestore }: { block: Block; results: Record<string, ToolResult>; agent: string | null; snap?: SnapshotInfo; onRestore?: (snap: SnapshotInfo) => void }) {
@@ -73,16 +73,15 @@ function BlockView({ block, results, agent, snap, onRestore }: { block: Block; r
             <PartView key={i} part={p} />
           ))}
         </div>
-        <span className="msg-time">{time(block.at)}</span>
-        <MsgCopy text={blockText(block)} />
-        {snap && (
-          <div className="snap-marker">
-            <span>Snapshot taken before this turn</span>
-            <button className="btn ghost small" onClick={() => onRestore?.(snap)}>
-              Restore
+        <div className="msg-meta">
+          {snap && (
+            <button className="msg-snap" title="Restore the files to how they were before this turn (a safety snapshot is taken first)" onClick={() => onRestore?.(snap)}>
+              <Icon name="history" size={12} /> Restore
             </button>
-          </div>
-        )}
+          )}
+          <MsgCopy text={blockText(block)} bare />
+          <span className="msg-time">{time(block.at)}</span>
+        </div>
       </div>
     );
   }
@@ -97,6 +96,26 @@ function BlockView({ block, results, agent, snap, onRestore }: { block: Block; r
         ))}
         <MsgCopy text={blockText(block)} />
       </div>
+    </div>
+  );
+}
+
+/** "Working · 1:12 · Editing src/x.ts": how long this turn has run, and what it's doing when hooks say. */
+function Working({ detail }: { detail: string | null }) {
+  const since = useRef(Date.now());
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => tick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const s = Math.floor((Date.now() - since.current) / 1000);
+  const elapsed = s < 60 ? `${s}s` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  return (
+    <div className="working" aria-live="polite">
+      <span className="tool-dot running" />
+      <span>Working · {elapsed}</span>
+      {detail && <span className="working-detail mono">{detail}</span>}
+      <span className="working-hint">Esc stops</span>
     </div>
   );
 }
@@ -148,7 +167,52 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
       showError(e, "Couldn't restore");
     }
   };
+  // Follow-ups waiting for this conversation, drawn under the feed where they will land.
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const loadQueue = () =>
+    client
+      .queue(w.uid)
+      .then(setQueue)
+      .catch(() => {});
+  useEffect(() => {
+    if (!w.queued) return setQueue([]);
+    void loadQueue();
+    const timer = setInterval(loadQueue, 3000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client, w.uid, w.queued]);
+  const queueAct = async (fn: () => Promise<unknown>, what: string) => {
+    try {
+      await fn();
+    } catch (e) {
+      showError(e, `Couldn't ${what}`);
+    }
+    await loadQueue();
+    refresh();
+  };
+
+  // Sent from this device and typed in, but not in the transcript yet.
+  const [pending, setPending] = useState<Array<{ text: string; at: number }>>([]);
+  useEffect(() => {
+    const onSent = (e: Event) => {
+      const d = (e as CustomEvent<{ uid: string; text: string; outcome: string }>).detail;
+      if (d.uid === w.uid && d.outcome === 'delivered') setPending((p) => [...p, { text: d.text, at: Date.now() }]);
+    };
+    window.addEventListener('ah:sent', onSent);
+    return () => window.removeEventListener('ah:sent', onSent);
+  }, [w.uid]);
+
   const blocks = useMemo(() => project(state.entries), [state.entries]);
+  // A pending message is done once the transcript has it (or after a while, if it never shows).
+  useEffect(() => {
+    if (!pending.length) return;
+    const norm = (t: string) => t.replace(/\s+/g, ' ').trim();
+    const seen = new Set(blocks.filter((b) => b.kind === 'user').map((b) => norm(blockText(b))));
+    const left = pending.filter((p) => !seen.has(norm(p.text)) && Date.now() - p.at < 30_000);
+    if (left.length !== pending.length) setPending(left);
+    const t = setTimeout(() => setPending((p) => p.filter((x) => Date.now() - x.at < 30_000)), 30_000);
+    return () => clearTimeout(t);
+  }, [blocks, pending]);
   const blocksRef = useRef(blocks);
   blocksRef.current = blocks;
   const scroller = useRef<HTMLDivElement>(null);
@@ -288,16 +352,50 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
               return <BlockView key={b.key} block={b} results={state.results} agent={w.agent} snap={snap} onRestore={restoreSnap} />;
             })}
 
+            {pending.map((p) => (
+              <div key={`pending-${p.at}`} className="msg user pending">
+                <div className="bubble">{p.text}</div>
+                <div className="msg-meta">
+                  <span className="msg-time">Sending…</span>
+                </div>
+              </div>
+            ))}
+
             {waiting && (
               <div className="approval">
                 <AskPanel ref={askRef} w={w} client={client} onAnswer={onAnswer} onReply={onReply} onUseTerminal={onUseTerminal} />
               </div>
             )}
-            {w.status === 'busy' && (
-              <div className="working" aria-live="polite">
-                <span className="tool-dot running" /> Working…
+            {w.status === 'busy' && <Working detail={w.detail} />}
+
+            {/* After the live turn: these are sent when it ends. */}
+            {queue.map((q, i) => (
+              <div key={`queued-${q.id}`} className="msg user queued">
+                <div className="bubble">{q.text}</div>
+                <div className="msg-meta">
+                  <button className="msg-snap" title={shortcutTitle('Stop the current turn and send this now', 'send-now')} onClick={() => queueAct(() => client.sendNow(w.uid, q.id), 'send it now')}>
+                    Send now
+                  </button>
+                  <button
+                    className="msg-snap"
+                    title="Take it out of the queue and back into the composer"
+                    onClick={() =>
+                      queueAct(async () => {
+                        await client.clearQueue(w.uid, q.id);
+                        window.dispatchEvent(new CustomEvent('ah:compose', { detail: { uid: w.uid, text: q.text } }));
+                      }, 'edit it')
+                    }
+                  >
+                    Edit
+                  </button>
+                  <button className="msg-snap" onClick={() => queueAct(() => client.clearQueue(w.uid, q.id), 'cancel it')}>
+                    Cancel
+                  </button>
+                  <span className="msg-time">{i === 0 ? 'Queued · next' : 'Queued'}</span>
+                </div>
               </div>
-            )}
+            ))}
+
           </div>
         </div>
         {away && (

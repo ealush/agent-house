@@ -37,6 +37,12 @@ agent (in tmux) ──writes──▶ transcript (JSONL)
   id). `web/gui/tools.tsx` maps tool names to views (command and output, diffs,
   checklists, questions…) with a default for everything else. Adding a view is
   adding an entry there; the server already sends everything a view needs.
+- **Composing.** `/` at the start of a message lists the agent's slash commands
+  (built in, plus your and the project's `.claude/commands` and skills); `@` lists
+  the project's files (`git ls-files`, or a bounded walk outside git). Messages
+  you send show at once until the transcript records them; queued follow-ups sit
+  under the live turn with Send now / Edit / Cancel. Esc in an empty composer
+  stops a working agent.
 - **Sending is unchanged.** The GUI composer, widget buttons and approvals go through
   the same send / answer API as the terminal, so the agent sees ordinary text.
 - **Answering without the terminal.** A waiting agent's numbered picker (a

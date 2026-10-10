@@ -5,6 +5,7 @@ import { shellQuote, type HostApi, type SendResult, type Win } from './api.ts';
 import { clipboardFiles } from './clipboard.ts';
 import { ModelPicker, EffortPicker, Popover, effectiveModel, effortsFor, usePreset } from './ModelPicker.tsx';
 import { shortModel } from './logos.tsx';
+import { SuggestList, triggerAt, useSuggestions } from './Suggest.tsx';
 
 // The message bar under a GUI session. It goes through the server, which types the text
 // in now (idle agent, or any shell), queues it while an agent works, or resumes a dead
@@ -50,6 +51,43 @@ export function ComposerBar({ client, target, agent, w, onSent, onNotice = toast
   const preset = usePreset(w?.host ?? '', agent);
   const working = !!w && w.status === 'busy';
 
+  // Autocomplete: "/" commands and "@" files, for agents (a shell has its own completion).
+  const [caret, setCaret] = useState(0);
+  const [dismissed, setDismissed] = useState<string | null>(null);
+  const [pick, setPick] = useState(0);
+  const rawTrigger = isShell ? null : triggerAt(text, caret);
+  const triggerKey = rawTrigger ? `${rawTrigger.kind}:${rawTrigger.start}` : null;
+  const trigger = rawTrigger && triggerKey !== dismissed ? rawTrigger : null;
+  const suggestions = useSuggestions(client, target, trigger);
+  const suggesting = !!trigger && suggestions.length > 0;
+  useEffect(() => setPick(0), [trigger?.kind, trigger?.query]);
+  const syncCaret = () => setCaret(area.current?.selectionStart ?? 0);
+
+  function accept(i: number) {
+    const item = suggestions[i];
+    if (!item || !trigger) return;
+    const next = text.slice(0, trigger.start) + item.value + text.slice(trigger.end);
+    const at = trigger.start + item.value.length;
+    setText(next);
+    setCaret(at);
+    requestAnimationFrame(() => {
+      area.current?.focus();
+      area.current?.setSelectionRange(at, at);
+    });
+  }
+
+  // "Edit" on a queued message puts its text back here.
+  useEffect(() => {
+    const onCompose = (e: Event) => {
+      const d = (e as CustomEvent<{ uid: string; text: string }>).detail;
+      if (d.uid !== target) return;
+      setText(d.text);
+      requestAnimationFrame(() => area.current?.focus());
+    };
+    window.addEventListener('ah:compose', onCompose);
+    return () => window.removeEventListener('ah:compose', onCompose);
+  }, [target]);
+
   useEffect(() => {
     setText(drafts.get(target) ?? '');
     cursor.current = -1;
@@ -81,6 +119,8 @@ export function ComposerBar({ client, target, agent, w, onSent, onNotice = toast
     setBusy(true);
     try {
       const result = await client.send(target, text, true);
+      // The GUI shows it at once ("sending…") until the transcript records it.
+      window.dispatchEvent(new CustomEvent('ah:sent', { detail: { uid: target, text, outcome: result.outcome } }));
       recent.current = [text, ...recent.current.filter((r) => r !== text)];
       cursor.current = -1;
       setText('');
@@ -219,6 +259,7 @@ export function ComposerBar({ client, target, agent, w, onSent, onNotice = toast
         submit();
       }}
     >
+      {suggesting && trigger && <SuggestList items={suggestions} index={pick} kind={trigger.kind} onPick={accept} />}
       <div className="composer-input">
         {isShell && <span className="prompt-sign">➜</span>}
         <textarea
@@ -229,9 +270,31 @@ export function ComposerBar({ client, target, agent, w, onSent, onNotice = toast
           autoCapitalize={isShell ? 'off' : 'sentences'}
           autoCorrect={isShell ? 'off' : 'on'}
           spellCheck={!isShell}
-          placeholder={isShell ? 'Type or paste a command' : working ? 'Add to this… (queued until it’s free · Esc stops)' : 'Send a follow-up'}
-          onChange={(e) => setText(e.target.value)}
+          placeholder={isShell ? 'Type or paste a command' : working ? 'Add to this… (queued until it’s free · Esc stops)' : 'Send a follow-up · / commands · @ files'}
+          onChange={(e) => {
+            setText(e.target.value);
+            setCaret(e.target.selectionStart ?? e.target.value.length);
+          }}
+          onSelect={syncCaret}
+          onClick={syncCaret}
           onKeyDown={(e) => {
+            if (suggesting && !e.nativeEvent.isComposing) {
+              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                setPick((i) => (i + (e.key === 'ArrowDown' ? 1 : -1) + suggestions.length) % suggestions.length);
+                return;
+              }
+              if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+                e.preventDefault();
+                accept(pick);
+                return;
+              }
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                setDismissed(triggerKey);
+                return;
+              }
+            }
             if (e.key === 'Escape' && !text && working && !isShell) {
               // Like the agent's own Esc: an empty composer stops the turn.
               e.preventDefault();

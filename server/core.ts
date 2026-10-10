@@ -838,6 +838,13 @@ export class Core {
     return { uid: out.uid, id: out.windowId };
   }
 
+  /** A live session's agent preset and absolute working directory (composer autocomplete). */
+  async sessionPlace(uid: string): Promise<{ preset: Preset | null; cwd: string }> {
+    const w = (await this.current()).windows.find((w) => w.uid === uid);
+    if (!w) throw new CoreError(404, 'session not found');
+    return { preset: w.agent ? this.preset(w.agent) : null, cwd: expandHome(this.registry.get(uid)?.cwd ?? w.cwd) };
+  }
+
   /** Stop button: interrupts the agent's current turn (Esc for agents, Ctrl-C for shells). */
   async interrupt(uid: string) {
     const state = await this.current();

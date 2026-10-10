@@ -77,6 +77,7 @@ export type Question = {
   options: Array<{ label: string; description?: string }>;
 };
 export type QuestionAnswer = { picked: number[]; text?: string };
+export type SlashCommand = { name: string; description: string; source: 'built-in' | 'project' | 'user' | 'skill' };
 export type Ask = {
   kind: 'command' | 'tool' | 'question' | 'screen' | 'choice';
   text: string;
@@ -302,6 +303,8 @@ export function hostApi(base: string) {
     send: (ref: string, text: string, enter: boolean) => r<SendResult>('POST', `/api/sessions/${enc(ref)}/send`, { text, enter }),
     answer: (uid: string, answer: 'approve' | 'deny') => r('POST', `/api/sessions/${enc(uid)}/answer`, { answer }),
     choose: (uid: string, key: string) => r('POST', `/api/sessions/${enc(uid)}/choose`, { key }),
+    commands: (uid: string) => r<SlashCommand[]>('GET', `/api/sessions/${enc(uid)}/commands`),
+    files: (uid: string, q: string) => r<string[]>('GET', `/api/sessions/${enc(uid)}/files?q=${enc(q)}`),
     answerQuestions: (uid: string, answers: QuestionAnswer[]) => r('POST', `/api/sessions/${enc(uid)}/questions`, { answers }),
     answerQuestion: (uid: string, question: string, answer: QuestionAnswer) => r('POST', `/api/sessions/${enc(uid)}/questions`, { current: { question, answer } }),
     queue: (uid: string) => r<QueueItem[]>('GET', `/api/sessions/${enc(uid)}/queue`),

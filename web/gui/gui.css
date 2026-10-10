@@ -136,8 +136,57 @@
   visibility: hidden;
 }
 
-.gui .msg:hover .msg-actions {
+.gui .msg:hover .msg-actions,
+.gui .msg:focus-within .msg-actions {
   visibility: visible;
+}
+
+/* Under your message: restore point, copy, time. The actions show on hover or
+   keyboard focus (always on touch screens), the time always. */
+.gui .msg-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 22px;
+}
+
+.gui .msg-meta .msg-copy,
+.gui .msg-snap {
+  visibility: hidden;
+}
+
+.gui .msg:hover .msg-meta .msg-copy,
+.gui .msg:hover .msg-snap,
+.gui .msg-meta :focus-visible {
+  visibility: visible;
+}
+
+.gui .msg-snap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--faint);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.gui .msg-snap:hover {
+  background: var(--line);
+  color: var(--text);
+}
+
+@media (hover: none) {
+  .gui .msg-actions,
+  .gui .msg-meta .msg-copy,
+  .gui .msg-snap {
+    visibility: visible;
+  }
 }
 
 .gui .msg-copy {
@@ -692,9 +741,48 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   color: var(--muted);
   font-size: 13px;
   padding-left: 34px;
+}
+
+.gui .working-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.gui .working-hint {
+  margin-left: auto;
+  flex: none;
+  font-size: 11px;
+  color: var(--faint);
+}
+
+@media (hover: none) {
+  .gui .working-hint {
+    display: none;
+  }
+}
+
+/* Your messages not in the transcript yet: typed in a moment ago, or queued. */
+.gui .msg.user.pending .bubble {
+  opacity: 0.7;
+}
+
+.gui .msg.user.queued .bubble {
+  background: transparent;
+  border-style: dashed;
+  color: var(--text-2, var(--text));
+  white-space: pre-wrap;
+}
+
+.gui .msg.user.queued .msg-snap {
+  visibility: visible;
 }
 
 .gui .gui-latest {
@@ -729,10 +817,7 @@
   padding-left: 0;
 }
 
-.snap-marker {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  opacity: 0.75;
+
+.gui .msg.user.pending .bubble {
+  white-space: pre-wrap;
 }

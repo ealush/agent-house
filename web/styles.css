@@ -3614,6 +3614,7 @@ a.btn {
 /* ---------- composer: text above, toolbar below (one card) */
 
 .composer {
+  position: relative;
   flex: none;
   display: flex;
   flex-direction: column;
@@ -4364,4 +4365,67 @@ button.tool-chip:hover {
 
 .history-filter input {
   width: 100%;
+}
+
+/* ---------- composer autocomplete ("/" commands, "@" files) */
+
+.suggest {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 40;
+  max-height: min(320px, 45vh);
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border-radius: 12px;
+  border: 1px solid var(--line-2);
+  background: var(--raised);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
+.suggest li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  padding: 7px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.suggest li.on {
+  background: var(--accent-bg);
+  box-shadow: inset 2px 0 0 var(--brand, var(--accent));
+}
+
+.suggest-label {
+  flex: none;
+  font-size: 13.5px;
+  color: var(--text);
+}
+
+.suggest-detail {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.suggest li.suggest-hint {
+  cursor: default;
+  padding: 4px 10px 2px;
+  font-size: 11px;
+  color: var(--faint);
+}
+
+@media (hover: none) {
+  .suggest li.suggest-hint {
+    display: none;
+  }
 }
