@@ -133,7 +133,7 @@ export type Preset = {
 
 export type Host = { name: string; self: boolean; online: boolean };
 
-export const API_VERSION = 18;
+export const API_VERSION = 19;
 
 export type PullInfo = { number: number | null; url: string | null };
 
