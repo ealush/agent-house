@@ -188,7 +188,11 @@ export type State = {
   windows: Win[];
   history: HistoryItem[];
   presets: Preset[];
+  /** The host's Omarchy theme, when it runs Omarchy. */
+  omarchy?: { name: string; at: number } | null;
 };
+
+export type OmarchyTheme = { name: string; mode: 'dark' | 'light'; colors: Record<string, string> };
 
 export type Changes = {
   root: string;
@@ -368,6 +372,7 @@ export function hostApi(base: string) {
     /** Settings → System: delete everything in ~/.cache/ah/uploads. */
     clearUploads: () => r<{ ok: true; removed: number }>('POST', '/api/system/uploads/clear', {}),
     hooks: () => r<HooksStatus>('GET', '/api/system/hooks'),
+    omarchyTheme: () => r<OmarchyTheme | null>('GET', '/api/omarchy/theme'),
     setHooks: (action: 'install' | 'uninstall') => r<{ messages: string[]; status: HooksStatus }>('POST', '/api/system/hooks', { action }),
     pastChat: (uid: string, msgId?: number) => r<{ messages: ChatMsg[] }>('GET', `/api/chats/${enc(uid)}${msgId ? `?msgId=${msgId}` : ''}`),
     worktrees: () => r<WorktreeInfo[]>('GET', '/api/worktrees'),

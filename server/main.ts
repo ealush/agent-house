@@ -37,6 +37,7 @@ import { Gate, LOOPBACK_BIND } from './gate.ts';
 import { HttpError, send, readBody, readJson, str, safeDecode } from './http.ts';
 import { rebuildFailure, rebuildWeb } from './rebuild.ts';
 import { slashCommands, projectFiles } from './complete.ts';
+import { omarchyTheme } from './omarchy.ts';
 import { hooksStatus, installClaude, installCodex, uninstallClaude, uninstallCodex } from './hooks.ts';
 
 let config: Config;
@@ -441,6 +442,8 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   // ---------- system: host-level actions behind Settings → System
 
   if (route('GET', /^\/api\/system\/hooks$/)) return send(res, 200, hooksStatus());
+
+  if (route('GET', /^\/api\/omarchy\/theme$/)) return send(res, 200, omarchyTheme());
 
   if (route('POST', /^\/api\/system\/hooks$/)) {
     const action = (await readJson(req)).action;

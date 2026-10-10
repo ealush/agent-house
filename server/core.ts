@@ -21,6 +21,7 @@ import { invalidateSize } from './size.ts';
 import { SnapshotStore, type SnapshotInfo } from './snapshots.ts';
 import { QueueManager, type LaunchChange, type QueueItem } from './queue.ts';
 import { Push } from './push.ts';
+import { omarchyStamp } from './omarchy.ts';
 import { claudeQuestionSteps, cursorKeys, dialogSteps, parsePicker, parseQuestionDialog, pickerAtStart, type Answer, type Step } from './choices.ts';
 import type { Peers } from './peers.ts';
 import type { TranscriptSource } from './search.ts';
@@ -42,6 +43,8 @@ export type State = {
   windows: WindowView[];
   history: HistoryItem[];
   presets: Array<Preset & { available: boolean }>;
+  /** The desktop's Omarchy theme (name and change time), for clients that follow it. */
+  omarchy: { name: string; at: number } | null;
 };
 
 export type SendResult = { outcome: 'delivered' | 'queued'; windowId: string; resumed: boolean; queued: number; queueId?: string };
@@ -205,6 +208,7 @@ export class Core {
         windows,
         history,
         presets: await Promise.all(this.config.presets.map(async (p) => ({ ...(await withCatalog(p)), available: isExecutableOnPath(p.command, this.tmuxPath) }))),
+        omarchy: omarchyStamp(),
       };
       this.state = state;
       const json = JSON.stringify(state);

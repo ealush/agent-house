@@ -8,7 +8,7 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import { autoCopySelection, copyText } from './selection.ts';
 import { terminalArrow } from './keyboard.ts';
-import { TERMINAL_THEME } from './theme.ts';
+import { subscribeTheme, terminalTheme } from './theme.ts';
 
 export type TerminalHandle = {
   send: (data: string) => void;
@@ -69,7 +69,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ wi
       scrollback: 0, // tmux owns scrollback
       macOptionIsMeta: true,
       macOptionClickForcesSelection: true,
-      theme: TERMINAL_THEME,
+      theme: terminalTheme(),
     });
     const f = new FitAddon();
     t.loadAddon(f);
@@ -125,6 +125,10 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ wi
     });
     ro.observe(host.current!);
 
+    // Follow the theme live (Omarchy's palette changes with the desktop).
+    const stopTheme = subscribeTheme(() => {
+      t.options.theme = terminalTheme();
+    });
     const stopTouch = touchScroll(
       host.current!,
       t,
@@ -139,6 +143,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ wi
 
     return () => {
       ro.disconnect();
+      stopTheme();
       stopTouch();
       stopSelectionCopy();
       t.dispose();
