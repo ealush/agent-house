@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { placeFloatingMenu } from './menuPlace.ts';
+import { menuViewport, placeFloatingMenu } from './menuPlace.ts';
 import { askConfirm, showError, showNotice } from './ask.tsx';
 import { copyText } from './selection.ts';
 import { focusFirst } from './rove.ts';
@@ -161,7 +161,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   const [menu, setMenu] = useState(false);
   const menuBtn = useRef<HTMLButtonElement>(null);
   const menuEl = useRef<HTMLDivElement>(null);
-  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
 
   // Opened from the keyboard or with a click, the first item takes focus once the
   // menu is placed (it is invisible until then, and can't take focus), so arrows work at once.
@@ -178,21 +178,40 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
 
   // The overflow menu is portalled to the body: split panes clip with
   // `.pane { overflow: hidden }`, which cut the menu off in short panes.
+  // Cap it to the visible viewport (a sideways phone, or the band above the
+  // keyboard) before measuring, so placement sees the box that will scroll.
   useLayoutEffect(() => {
     if (!menu) {
       setMenuPos(null);
       return;
     }
-    const anchor = menuBtn.current?.getBoundingClientRect();
-    const body = menuEl.current?.getBoundingClientRect();
-    if (!anchor || !body) return;
-    setMenuPos(
-      placeFloatingMenu(
-        anchor,
-        { width: body.width, height: body.height },
+    const place = () => {
+      const anchor = menuBtn.current?.getBoundingClientRect();
+      const el = menuEl.current;
+      if (!anchor || !el) return;
+      const view = menuViewport(
         { width: window.innerWidth, height: window.innerHeight },
-      ),
-    );
+        window.visualViewport,
+      );
+      const maxHeight = Math.max(0, view.height - 16);
+      el.style.maxHeight = `${maxHeight}px`;
+      const body = el.getBoundingClientRect();
+      const next = {
+        ...placeFloatingMenu(anchor, { width: body.width, height: body.height }, view),
+        maxHeight,
+      };
+      setMenuPos((prev) =>
+        prev && prev.top === next.top && prev.left === next.left && prev.maxHeight === next.maxHeight ? prev : next,
+      );
+    };
+    place();
+    const vv = window.visualViewport;
+    vv?.addEventListener('resize', place);
+    vv?.addEventListener('scroll', place);
+    return () => {
+      vv?.removeEventListener('resize', place);
+      vv?.removeEventListener('scroll', place);
+    };
   }, [menu]);
 
   useEffect(() => {
@@ -208,16 +227,23 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       const back = beforeMenu.current?.isConnected ? beforeMenu.current : menuBtn.current;
       back?.focus();
     };
-    const onShift = () => setMenu(false);
+    const close = () => setMenu(false);
+    // Scrolling the menu itself must not dismiss it. Scroll does not bubble,
+    // but this listener is on the capture path, so it still hears the menu.
+    const onScroll = (e: Event) => {
+      const t = e.target;
+      if (t instanceof Node && menuEl.current && (t === menuEl.current || menuEl.current.contains(t))) return;
+      setMenu(false);
+    };
     document.addEventListener('pointerdown', onDown, true);
     document.addEventListener('keydown', onKey);
-    window.addEventListener('resize', onShift);
-    window.addEventListener('scroll', onShift, true);
+    window.addEventListener('resize', close);
+    window.addEventListener('scroll', onScroll, true);
     return () => {
       document.removeEventListener('pointerdown', onDown, true);
       document.removeEventListener('keydown', onKey);
-      window.removeEventListener('resize', onShift);
-      window.removeEventListener('scroll', onShift, true);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('scroll', onScroll, true);
     };
   }, [menu]);
   const [forking, setForking] = useState(false);
@@ -694,10 +720,13 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
                 data-rove
                 role="menu"
                 className="menu"
-                onMouseLeave={() => setMenu(false)}
+                onPointerLeave={(e) => {
+                  if (e.pointerType === 'touch') return;
+                  setMenu(false);
+                }}
                 style={
                   menuPos
-                    ? { position: 'fixed', right: 'auto', top: menuPos.top, left: menuPos.left, zIndex: 90, margin: 0 }
+                    ? { position: 'fixed', right: 'auto', top: menuPos.top, left: menuPos.left, maxHeight: menuPos.maxHeight, zIndex: 90, margin: 0 }
                     : { position: 'fixed', right: 'auto', visibility: 'hidden', zIndex: 90, margin: 0 }
                 }
               >
