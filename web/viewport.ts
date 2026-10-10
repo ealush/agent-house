@@ -25,6 +25,20 @@ export function standaloneHeight(o: { standalone: boolean; ios: boolean; portrai
   return short >= 16 && short <= 100 ? full : null;
 }
 
+export type Shim = { portrait: boolean; full: number };
+
+/**
+ * The shim, measured once per orientation and then kept. Measuring again while
+ * the fix is on would read the stretched page (no gap left), turn the fix off,
+ * bring the gap back, and flicker several times a second.
+ */
+export function nextShim(kept: Shim | null, o: Parameters<typeof standaloneHeight>[0]): Shim | null {
+  if (!o.standalone || !o.ios) return null;
+  if (kept && kept.portrait === o.portrait) return kept;
+  const full = standaloneHeight(o);
+  return full === null ? null : { portrait: o.portrait, full };
+}
+
 function standaloneInfo(win: Window) {
   const nav = win.navigator as Navigator & { standalone?: boolean };
   const media = (q: string) => typeof win.matchMedia === 'function' && win.matchMedia(q).matches;
@@ -45,6 +59,7 @@ export function trackViewport(win: Window, doc: Document): () => void {
   // Window timers in the browser, global timers under test fakes.
   const hasTimers = typeof win.setInterval === 'function' && typeof win.clearInterval === 'function';
   let frame: number | null = null;
+  let shim: Shim | null = null;
   // While a pixel override is active, re-read the viewport on a timer: iOS does
   // not reliably fire resize/scroll/focus events when its keyboard dismisses,
   // and a stale small --vh leaves dead space under the app (mobile Inbox and
@@ -58,7 +73,9 @@ export function trackViewport(win: Window, doc: Document): () => void {
       'textarea, input:not([type="button"]):not([type="submit"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"])',
     ));
     const height = keyboardViewportHeight(root.clientHeight, viewport.height, viewport.scale, editing);
-    const full = height === null ? standaloneHeight(standaloneInfo(win)) : null;
+    // Kept across the keyboard too: while it is up the shell uses the keyboard height instead.
+    shim = nextShim(shim, standaloneInfo(win));
+    const full = height === null ? (shim?.full ?? null) : null;
     if (full !== null) {
       root.style.setProperty('--app-h', `${full}px`);
       root.classList.add('ios-shim');

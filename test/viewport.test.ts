@@ -136,3 +136,15 @@ test('an iOS home-screen app fills the screen when the viewport is short by the 
   assert.equal(standaloneHeight({ ...iphone, inner: 500 }), null, 'a keyboard-sized gap is not the status bar');
   assert.equal(standaloneHeight({ ...iphone, portrait: false, inner: 340 }), 402, 'landscape uses the short side');
 });
+
+test('the measured shim is kept, so the stretched page does not switch it off again', async () => {
+  const { nextShim } = await import('../web/viewport.ts');
+  const iphone = { standalone: true, ios: true, portrait: true, screenW: 402, screenH: 874, inner: 812 };
+  const first = nextShim(null, iphone);
+  assert.deepEqual(first, { portrait: true, full: 874 });
+  // With the fix on, iOS reports the stretched height: no gap. The fix must stay on.
+  assert.deepEqual(nextShim(first, { ...iphone, inner: 874 }), first);
+  // Turning the phone re-measures.
+  assert.equal(nextShim(first, { ...iphone, portrait: false, inner: 402 }), null);
+  assert.equal(nextShim(first, { ...iphone, standalone: false }), null);
+});
