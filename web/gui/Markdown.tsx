@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import { Markdown as SharedMarkdown } from '../Markdown.tsx';
+import { CodeBlock } from './CodeBlock.tsx';
 import { useGui } from './context.ts';
 
 /** Local paths (`/home/…`, `~/…`) open through the files API instead of the web. */
@@ -17,6 +18,7 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
     <SharedMarkdown
       text={text}
       resolveHref={(href) => (isLocalPath(href) ? gui.fileUrl(gui.resolvePath(href.replace(/:\d+(:\d+)?$/, ''))) : href)}
+      components={{ pre: ({ children }) => <CodeBlock>{children}</CodeBlock> }}
     />
   );
 });

@@ -3,6 +3,7 @@
 // server and the data layer don't change. Unknown types render generically.
 import { useState, type ReactNode } from 'react';
 import type { Widget } from '../../server/feed/schema.ts';
+import { CodeBlock } from './CodeBlock.tsx';
 import { Markdown } from './Markdown.tsx';
 import { useGui } from './context.ts';
 import { DiffView } from './DiffView.tsx';
@@ -209,9 +210,9 @@ const Image: Renderer = ({ w }) => {
 
 const Code: Renderer = ({ w }) => (
   <Frame kind="code" title={str(w.title)}>
-    <pre className="code-block">
+    <CodeBlock className="code-block" text={str(w.code)}>
       <code>{str(w.code)}</code>
-    </pre>
+    </CodeBlock>
   </Frame>
 );
 
@@ -224,9 +225,7 @@ const Diff: Renderer = ({ w }) => (
 /** Kept as data, never guessed at: shows the type and its fields. */
 const Unknown: Renderer = ({ w }) => (
   <Frame kind="unknown" title={str(w.title) || w.type}>
-    <pre className="code-block">
-      <code>{JSON.stringify(w, null, 2)}</code>
-    </pre>
+    <CodeBlock className="code-block">{JSON.stringify(w, null, 2)}</CodeBlock>
   </Frame>
 );
 

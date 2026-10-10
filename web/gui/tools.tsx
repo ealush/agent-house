@@ -6,6 +6,7 @@ import type { ToolCall, ToolResult } from '../../server/feed/schema.ts';
 import { DiffView } from './DiffView.tsx';
 import { patchLines, replaceLines, structuredLines } from './diff.ts';
 import { Checklist } from './widgets.tsx';
+import { CodeBlock } from './CodeBlock.tsx';
 import { Markdown } from './Markdown.tsx';
 import { useGui } from './context.ts';
 
@@ -35,7 +36,7 @@ function Output({ result, empty = 'No output' }: { result: ToolResult | undefine
   if (!result) return null;
   return (
     <>
-      {result.text.trim() ? <pre className={`code-block ${result.isError ? 'error' : ''}`}>{result.text.replace(/\n+$/, '')}</pre> : <p className="muted small">{empty}</p>}
+      {result.text.trim() ? <CodeBlock className={`code-block ${result.isError ? 'error' : ''}`}>{result.text.replace(/\n+$/, '')}</CodeBlock> : <p className="muted small">{empty}</p>}
       {result.images?.map((src, i) => <img key={i} className="widget-img" src={src} alt="" />)}
     </>
   );
@@ -53,13 +54,18 @@ function FileLink({ path }: { path: string }) {
 const Shell: ToolView = {
   label: 'Ran',
   summary: (c) => firstLine(s(c.args.command ?? c.args.cmd ?? c.args.input)),
-  Body: ({ call, result }) => (
-    <>
-      {s(call.args.description) && <p className="muted small">{s(call.args.description)}</p>}
-      <pre className="code-block command">$ {s(call.args.command ?? call.args.cmd ?? call.args.input)}</pre>
-      <Output result={result} />
-    </>
-  ),
+  Body: ({ call, result }) => {
+    const cmd = s(call.args.command ?? call.args.cmd ?? call.args.input);
+    return (
+      <>
+        {s(call.args.description) && <p className="muted small">{s(call.args.description)}</p>}
+        <CodeBlock className="code-block command" text={cmd}>
+          $ {cmd}
+        </CodeBlock>
+        <Output result={result} />
+      </>
+    );
+  },
 };
 
 const Edit: ToolView = {
@@ -219,7 +225,7 @@ const Default: ToolView = {
   },
   Body: ({ call, result }) => (
     <>
-      {Object.keys(call.args).length > 0 && <pre className="code-block">{JSON.stringify(call.args, null, 2)}</pre>}
+      {Object.keys(call.args).length > 0 && <CodeBlock className="code-block">{JSON.stringify(call.args, null, 2)}</CodeBlock>}
       <Output result={result} />
     </>
   ),

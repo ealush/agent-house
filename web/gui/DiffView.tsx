@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { CodeBlock } from './CodeBlock.tsx';
 import { patchLines, type DiffLine } from './diff.ts';
 
 const PREVIEW = 40;
@@ -7,7 +8,7 @@ export function DiffView({ patch, lines }: { patch?: string; lines?: DiffLine[] 
   const all = lines ?? patchLines(patch ?? '');
   const [full, setFull] = useState(false);
   const shown = full ? all : all.slice(0, PREVIEW);
-  if (!all.length) return <pre className="code-block">{patch}</pre>;
+  if (!all.length) return <CodeBlock className="code-block">{patch}</CodeBlock>;
   return (
     <div className="gui-diff">
       {shown.map((l, i) =>

@@ -10,7 +10,16 @@ const PLUGINS = [remarkGfm];
  * Pass resolveHref to route links somewhere custom (the GUI opens repo paths
  * through the files API); returning null renders the text without a link.
  */
-export const Markdown = memo(function Markdown({ text, resolveHref }: { text: string; resolveHref?: (href: string) => string | null }) {
+export const Markdown = memo(function Markdown({
+  text,
+  resolveHref,
+  components: extra,
+}: {
+  text: string;
+  resolveHref?: (href: string) => string | null;
+  /** Replaces a default element. The GUI uses this to put a copy button on code blocks. */
+  components?: Components;
+}) {
   const components: Components = {
     a: ({ href = '', children }: { href?: string; children?: ReactNode }) => {
       const to = resolveHref ? resolveHref(href) : href;
@@ -27,6 +36,7 @@ export const Markdown = memo(function Markdown({ text, resolveHref }: { text: st
       </div>
     ),
     img: ({ alt }) => <span className="md-img">{alt ? `[image: ${alt}]` : '[image]'}</span>,
+    ...extra,
   };
   return (
     <div className="md">

@@ -184,7 +184,8 @@
 @media (hover: none) {
   .gui .msg-actions,
   .gui .msg-meta .msg-copy,
-  .gui .msg-snap {
+  .gui .msg-snap,
+  .gui .code-copy {
     visibility: visible;
   }
 }
@@ -291,6 +292,46 @@
   padding: 0;
   background: none;
   font-size: inherit;
+}
+
+/* Copy sits on the block, not in the flow, so the snippet does not grow when it appears. */
+.gui .code-snippet {
+  position: relative;
+  margin: 0.5em 0;
+}
+
+.gui .code-snippet > pre {
+  margin: 0;
+  padding-right: 36px;
+}
+
+.gui .code-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--raised);
+  color: var(--faint);
+  cursor: pointer;
+  visibility: hidden;
+}
+
+.gui .code-snippet:hover .code-copy,
+.gui .code-snippet:focus-within .code-copy {
+  visibility: visible;
+}
+
+.gui .code-copy:hover {
+  background: var(--line);
+  color: var(--text);
 }
 
 .gui .code-block.command {
