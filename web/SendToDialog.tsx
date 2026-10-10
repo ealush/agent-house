@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { ConfirmButton } from './ConfirmButton.tsx';
 import type { HostApi, SendResult, Subscription, Win } from './api.ts';
 import { look } from './agents.ts';
 import { handoffText, readHandoff } from './gui/reducer.ts';
@@ -237,9 +238,9 @@ export function SendToDialog({ client, clientFor, source, windows, multiHost, on
           <button type="button" className="btn ghost" onClick={onClose}>
             Cancel
           </button>
-          <button type="submit" className="btn primary" disabled={busy || loading || !text.trim() || (!creatingNew && !target)}>
+          <ConfirmButton type="submit" className="btn primary" disabled={busy || loading || !text.trim() || (!creatingNew && !target)}>
             {busy ? 'Sending…' : creatingNew ? 'New session…' : 'Send'}
-          </button>
+          </ConfirmButton>
         </div>
       </form>
     </dialog>

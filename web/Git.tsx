@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ConfirmButton } from './ConfirmButton.tsx';
 import type { BranchList, Changes, HostApi, PullInfo, WorktreeInfo } from './api.ts';
 import { askConfirm, showError } from './ask.tsx';
 import { Icon } from './icons.tsx';
@@ -109,7 +110,7 @@ export function ChangesPanel({ client, windowId, onComment }: { client: HostApi;
                     <span className="code">{l.text || ' '}</span>
                   </div>
                   {open?.file === f.path && open.i === i && (
-                    <div className="comment-box">
+                    <div className="comment-box" data-confirm>
                       <textarea
                         autoFocus
                         value={draft}
@@ -132,9 +133,9 @@ export function ChangesPanel({ client, windowId, onComment }: { client: HostApi;
                         <button className="btn ghost small" onClick={() => setOpen(null)}>
                           Cancel
                         </button>
-                        <button className="btn primary small" disabled={!draft.trim()} onClick={() => submit(f.path, l)}>
+                        <ConfirmButton className="btn primary small" disabled={!draft.trim()} onClick={() => submit(f.path, l)}>
                           Send to agent
-                        </button>
+                        </ConfirmButton>
                       </div>
                     </div>
                   )}

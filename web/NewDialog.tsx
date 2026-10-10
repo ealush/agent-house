@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { ConfirmButton } from './ConfirmButton.tsx';
 import { Icon } from './icons.tsx';
 import type { HostApi, SendResult, State } from './api.ts';
 import { showError } from './ask.tsx';
@@ -330,20 +331,20 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
           <button type="button" className="btn ghost" onClick={onClose}>
             Cancel
           </button>
-          <button
+          <ConfirmButton
             type="submit"
             className={`btn ${activeMode?.dangerous ? 'danger-solid' : 'primary'}`}
             disabled={busy || !preset}
           >
             {busy ? 'Starting…' : `Start ${preset?.name ?? ''}`}
-          </button>
+          </ConfirmButton>
         </div>
       </form>
   );
 
   if (screen)
     return (
-      <section className="ns-screen new-session" aria-label="New session">
+      <section className="ns-screen new-session" aria-label="New session" data-confirm>
         {form}
       </section>
     );

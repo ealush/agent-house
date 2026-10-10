@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { ConfirmButton } from './ConfirmButton.tsx';
 import type { ForkInfo, HostApi, Win } from './api.ts';
 import { ModelPicker, Popover, effectiveModel, effortsFor, usePreset, type Pick } from './ModelPicker.tsx';
 
@@ -185,9 +186,9 @@ export function ForkDialog({ client, target, onClose, onForked }: Props) {
               <button type="button" className="btn ghost" onClick={onClose}>
                 Cancel
               </button>
-              <button type="submit" className={`btn ${activeMode?.dangerous ? 'danger-solid' : 'primary'}`} disabled={busy}>
+              <ConfirmButton type="submit" className={`btn ${activeMode?.dangerous ? 'danger-solid' : 'primary'}`} disabled={busy}>
                 {busy ? 'Forking…' : 'Fork session'}
-              </button>
+              </ConfirmButton>
             </div>
           </>
         )}

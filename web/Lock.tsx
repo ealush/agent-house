@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ConfirmButton } from './ConfirmButton.tsx';
 import { authApi, explain, passkeysAvailable, type AuthStatus } from './auth.ts';
 
 /**
@@ -27,7 +28,7 @@ export function Lock({ status, onUnlocked }: { status: AuthStatus; onUnlocked: (
   }
 
   return (
-    <div className="lock">
+    <div className="lock" data-confirm>
       <div className="lock-card">
         <div className="brand">
           <span className="logo">&gt;_</span>
@@ -38,9 +39,9 @@ export function Lock({ status, onUnlocked }: { status: AuthStatus; onUnlocked: (
           <>
             <h1>Unlock</h1>
             <p className="hint">Use the passkey you created for ah on this device or one synced to it.</p>
-            <button className="btn primary big" disabled={busy} onClick={() => run(() => authApi.signIn())}>
+            <ConfirmButton className="btn primary big" disabled={busy} onClick={() => run(() => authApi.signIn())}>
               {busy ? 'Waiting for passkey…' : 'Unlock with passkey'}
-            </button>
+            </ConfirmButton>
           </>
         )}
 
@@ -67,9 +68,9 @@ export function Lock({ status, onUnlocked }: { status: AuthStatus; onUnlocked: (
               autoFocus
             />
             {pk.ok ? (
-              <button className="btn primary big" disabled={busy || code.replace(/[^A-Z0-9]/gi, '').length < 10}>
+              <ConfirmButton className="btn primary big" disabled={busy || code.replace(/[^A-Z0-9]/gi, '').length < 10}>
                 {busy ? 'Creating passkey…' : 'Create a passkey'}
-              </button>
+              </ConfirmButton>
             ) : (
               <p className="form-error">{pk.why}</p>
             )}
@@ -85,9 +86,9 @@ export function Lock({ status, onUnlocked }: { status: AuthStatus; onUnlocked: (
           >
             <h1>Unlock</h1>
             <input className="code-input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Master password" autoComplete="current-password" autoFocus />
-            <button className="btn primary big" disabled={busy || !password}>
+            <ConfirmButton className="btn primary big" disabled={busy || !password}>
               {busy ? 'Checking…' : 'Unlock'}
-            </button>
+            </ConfirmButton>
           </form>
         )}
 

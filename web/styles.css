@@ -5123,3 +5123,27 @@ button.tool-chip:hover {
     display: none;
   }
 }
+
+/* ⌘↵ on a main button: it confirms from anywhere in the dialog or screen. */
+.btn .confirm-keys {
+  margin-left: 8px;
+  gap: 2px;
+  opacity: 0.75;
+}
+
+.btn .confirm-keys kbd {
+  min-width: 0;
+  padding: 0 4px;
+  font-size: 10.5px;
+  line-height: 16px;
+  color: inherit;
+  background: transparent;
+  border-color: currentColor;
+  opacity: 0.8;
+}
+
+@media (hover: none) {
+  .btn .confirm-keys {
+    display: none;
+  }
+}

@@ -561,3 +561,13 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
     </dialog>
   );
 }
+
+/** ⌘↵ on a main button (confirm.ts presses it). Hidden on touch screens. */
+export function ConfirmKeys() {
+  return (
+    <span className="keycaps confirm-keys" aria-hidden>
+      <kbd>{isMac() ? '⌘' : 'Ctrl'}</kbd>
+      <kbd>↵</kbd>
+    </span>
+  );
+}

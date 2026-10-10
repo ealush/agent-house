@@ -105,7 +105,9 @@ to terminal rules and output activity, and matches live agents to their transcri
   Ctrl+Shift+9) returns to the session. Alt+↑ / Alt+↓ moves through sessions in
   sidebar order; in a split, Ctrl+Shift+arrows moves between panes.
   Ctrl+Shift+/ opens the shortcut table (also under Settings → Shortcuts), where
-  each binding can be changed on this device.
+  each binding can be changed on this device. ⌘↵ (Ctrl+↵) presses the main
+  button wherever you are — Start, Terminate, Fork, Send, Unlock — and each such
+  button shows it.
 - **Hyprland-style workspace.** Workspaces 1–9 (Alt+N; Alt+Shift+N sends the
   focused session there as a new tile). Pane mode (Ctrl+Shift+Space) is a
   submap: h j k l focus, Shift+h j k l move, v / s split, x close, f maximize,

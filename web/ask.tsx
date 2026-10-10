@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import { ConfirmButton } from './ConfirmButton.tsx';
 
 // In-app stand-in for alert, confirm, and prompt. One dialog at a time,
 // drawn with the same chrome as the other dialogs.
@@ -171,14 +172,14 @@ function AskDialog({ task, onDone }: { task: Task; onDone: () => void }) {
               {task.cancelLabel}
             </button>
           )}
-          <button
+          <ConfirmButton
             type="submit"
             className={`btn ${task.danger ? 'danger-solid' : 'primary'}`}
             autoFocus={task.kind !== 'prompt'}
             disabled={task.kind === 'prompt' && !value.trim()}
           >
             {task.confirmLabel}
-          </button>
+          </ConfirmButton>
         </div>
       </form>
     </dialog>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ConfirmButton } from './ConfirmButton.tsx';
 import { api, type Subscription } from './api.ts';
 import { askConfirm, showError } from './ask.tsx';
 
@@ -57,7 +58,7 @@ export function SubscriptionsPanel() {
   }
 
   return (
-    <div className="sec-card">
+    <div className="sec-card" data-confirm>
       <p className="hint">
         Side chat talks to these endpoints with the working diff attached. Keys are stored on this host only, alongside ah's other secrets, and are never shown
         again after saving. Any OpenAI-compatible API works: OpenAI, Grok, Gemini, DeepSeek, Ollama.
@@ -136,9 +137,9 @@ export function SubscriptionsPanel() {
           <button className="btn ghost small" disabled={busy} onClick={() => setForm(null)}>
             Cancel
           </button>
-          <button className="btn primary small" disabled={busy || !form.name.trim() || !form.baseUrl.trim() || !form.model.trim() || (!form.id && !form.apiKey)} onClick={save}>
+          <ConfirmButton className="btn primary small" disabled={busy || !form.name.trim() || !form.baseUrl.trim() || !form.model.trim() || (!form.id && !form.apiKey)} onClick={save}>
             {busy ? 'Saving…' : 'Save'}
-          </button>
+          </ConfirmButton>
         </div>
       )}
     </div>
