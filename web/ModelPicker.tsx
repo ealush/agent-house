@@ -116,6 +116,8 @@ export function Popover({ label, className, children, up = true, align = 'left',
     const away = (e: Event) => !ref.current?.contains(e.target as Node) && setOpen(false);
     const esc = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
+      // Claimed: whatever holds the picker (a screen, a composer) doesn't also close.
+      e.preventDefault();
       setOpen(false);
       button.current?.focus();
     };

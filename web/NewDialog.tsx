@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Icon } from './icons.tsx';
 import type { HostApi, SendResult, State } from './api.ts';
 import { showError } from './ask.tsx';
 import { look } from './agents.ts';
@@ -16,6 +17,8 @@ type Props = {
   /** First message, sent once the session is up. Send to… fills this in. */
   initialPrompt?: string;
   onClose: () => void;
+  /** Phones: a full screen inside the app shell (its own scrolling), not a modal over it. */
+  screen?: boolean;
   onCreated: (host: string, id: string, uid: string) => void;
   /** Queue flash for that first message. */
   onSent?: (r: SendResult) => void;
@@ -33,7 +36,7 @@ function remembered(preset: string): Remembered {
   }
 }
 
-export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd, initialPrompt = '', onClose, onCreated, onSent }: Props) {
+export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd, initialPrompt = '', onClose, onCreated, onSent, screen = false }: Props) {
   const [host, setHost] = useState(initialHost);
   const state = hostState(host) ?? hostState(hosts[0])!;
   const client = clientFor(host);
@@ -56,7 +59,21 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
   const [error, setError] = useState<string | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
 
-  useEffect(() => dialog.current?.showModal(), []);
+  useEffect(() => {
+    if (!screen) {
+      dialog.current?.showModal();
+      return;
+    }
+    // A screen has no dialog to catch Escape, and focus may be anywhere: listen
+    // on the window, after anything open inside it (a picker) had its turn.
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      e.preventDefault();
+      onClose();
+    };
+    window.addEventListener('keydown', esc);
+    return () => window.removeEventListener('keydown', esc);
+  }, [screen, onClose]);
   useEffect(() => {
     client.projects().then(setProjects).catch(() => setProjects([]));
   }, [host]);
@@ -124,10 +141,14 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
     }
   }
 
-  return (
-    <dialog ref={dialog} className="dialog new-session" onClose={onClose} onClick={(e) => e.target === dialog.current && onClose()}>
+  const form = (
       <form onSubmit={submit}>
         <header className="ns-head">
+          {screen && (
+            <button type="button" className="icon-btn" onClick={onClose} aria-label="Back">
+              <Icon name="back" size={22} />
+            </button>
+          )}
           <h2>New session</h2>
           {hosts.length > 1 && (
             <div className="seg" role="radiogroup" aria-label="Machine">
@@ -316,6 +337,18 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
           </button>
         </div>
       </form>
+  );
+
+  if (screen)
+    return (
+      <section className="ns-screen new-session" aria-label="New session">
+        {form}
+      </section>
+    );
+
+  return (
+    <dialog ref={dialog} className="dialog new-session" onClose={onClose} onClick={(e) => e.target === dialog.current && onClose()}>
+      {form}
     </dialog>
   );
 }

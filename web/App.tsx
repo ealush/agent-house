@@ -568,9 +568,30 @@ export function App({ onLock }: { onLock: () => void }) {
             <p className="hint">{error ? `Can't reach the server: ${error}` : 'Connecting…'}</p>
           </div>
         )}
+      {creating && state && narrow && (
+        <NewDialog
+          screen
+          hosts={state.hosts.filter((h) => h.online).map((h) => h.name)}
+          initialHost={creating.host ?? current?.host ?? state.hostname}
+          hostState={hostState}
+          clientFor={clientFor}
+          initialCwd={creating.cwd ?? current?.projectPath ?? '~'}
+          initialPrompt={creating.prompt}
+          onClose={() => setCreating(null)}
+          onSent={sent}
+          onCreated={async (host, id, uid) => {
+            setCreating(null);
+            // The new window can miss the next tick; opening immediately
+            // selects a key nothing matches and the missing-selection
+            // fallback bounces to the inbox. Wait until state lists it.
+            await waitForWindow(() => refresh(host), { id, uid });
+            open(keyFor(host, id));
+          }}
+        />
+      )}
       </main>
 
-      {creating && state && (
+      {creating && state && !narrow && (
         <NewDialog
           hosts={state.hosts.filter((h) => h.online).map((h) => h.name)}
           initialHost={creating.host ?? current?.host ?? state.hostname}
