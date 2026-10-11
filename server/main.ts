@@ -207,7 +207,13 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   if (route('GET', /^\/api\/events$/)) {
     // Server-sent state pushes: one stream per client instead of polling.
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive', 'x-accel-buffering': 'no' });
-    const unsubscribe = core.subscribe((json) => res.write(`event: state\ndata: ${json}\n\n`));
+    // The whole state first, then patches (only the fields that changed; web/api.ts merges them).
+    let sent = false;
+    const unsubscribe = core.subscribe((json, patch) => {
+      if (sent && patch) res.write(`event: patch\ndata: ${patch}\n\n`);
+      else res.write(`event: state\ndata: ${json}\n\n`);
+      sent = true;
+    });
     const ping = setInterval(() => res.write(': ping\n\n'), 25_000);
     const untrack = auth.track(caller, { close: () => res.end() });
     req.on('close', () => {

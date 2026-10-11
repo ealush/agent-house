@@ -137,7 +137,7 @@ export type Preset = {
 
 export type Host = { name: string; self: boolean; online: boolean };
 
-export const API_VERSION = 20;
+export const API_VERSION = 21;
 
 export type PullInfo = { number: number | null; url: string | null };
 
@@ -491,11 +491,19 @@ export function subscribe(onState: (s: State) => void, onError: (msg: string | n
   const open = () => {
     if (closed) return;
     es = new EventSource(`${client.base}/api/events`);
+    // The whole state on connect, then patches of the fields that changed.
+    let last: State | null = null;
     es.addEventListener('state', (e) => {
       clearInterval(poll);
       poll = undefined;
-      onState(normalize(JSON.parse((e as MessageEvent).data)));
+      last = normalize(JSON.parse((e as MessageEvent).data));
+      onState(last);
       onError(null);
+    });
+    es.addEventListener('patch', (e) => {
+      if (!last) return;
+      last = normalize({ ...last, ...JSON.parse((e as MessageEvent).data) });
+      onState(last);
     });
     es.onerror = () => {
       // EventSource reconnects by itself; poll meanwhile so the UI never goes stale.

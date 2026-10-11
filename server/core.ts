@@ -32,7 +32,7 @@ export type { LaunchChange, QueueItem } from './queue.ts';
 export type Host = { name: string; self: boolean; online: boolean };
 
 /** Bumped when the state shape or API routes change, so a newer page can tell an older server apart. */
-export const API_VERSION = 20;
+export const API_VERSION = 21;
 
 export type State = {
   api: number;
@@ -105,7 +105,9 @@ export class Core {
   readonly viewers: Map<string, string[]>;
   private state: State | null = null;
   private json = '';
-  private listeners = new Set<(json: string) => void>();
+  private listeners = new Set<(json: string, patch: string | null) => void>();
+  /** Last JSON of each top-level state field, to send subscribers only what changed. */
+  private parts = new Map<string, string>();
   private tmuxPath = process.env.PATH ?? '';
   private ticking: Promise<State> | null = null;
   private stopped = false;
@@ -162,9 +164,10 @@ export class Core {
     return this.state ?? this.tick();
   }
 
-  subscribe(fn: (json: string) => void): () => void {
+  /** `fn(full, patch)`: the whole state once at subscribe (patch null), then each change as a patch of changed fields. */
+  subscribe(fn: (json: string, patch: string | null) => void): () => void {
     this.listeners.add(fn);
-    if (this.json) fn(this.json);
+    if (this.json) fn(this.json, null);
     return () => this.listeners.delete(fn);
   }
 
@@ -218,10 +221,21 @@ export class Core {
         focus: this.focus,
       };
       this.state = state;
-      const json = JSON.stringify(state);
-      if (json !== this.json) {
-        this.json = json;
-        for (const fn of this.listeners) fn(json);
+      // Subscribers get only the top-level fields that changed: history and the
+      // preset catalogs are most of the state and rarely change, while windows
+      // change every tick something is working.
+      const patch: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(state)) {
+        const part = JSON.stringify(v);
+        if (this.parts.get(k) !== part) {
+          this.parts.set(k, part);
+          patch[k] = v;
+        }
+      }
+      if (Object.keys(patch).length) {
+        this.json = JSON.stringify(state);
+        const delta = JSON.stringify(patch);
+        for (const fn of this.listeners) fn(this.json, delta);
       }
       return state;
     })().finally(() => (this.ticking = null));
