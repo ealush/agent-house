@@ -33,7 +33,9 @@
   --ui: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --mono: 'JetBrainsMono Nerd Font', 'JetBrains Mono Variable', 'SF Mono', Menlo, ui-monospace, monospace;
   --vh: 100dvh;
-  --radius: 14px;
+  --radius: 12px;
+  /* Behind every modal and sheet: one depth, one color. */
+  --scrim: #040507a0;
   /* The home indicator's strip. Zero while the keyboard covers it. */
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   /* What a bottom bar actually needs: the indicator is a thin line ~8pt up, so
@@ -314,7 +316,7 @@ code,
 kbd {
   font: 11px var(--mono);
   padding: 1px 6px;
-  border-radius: 5px;
+  border-radius: 6px;
   background: var(--raised);
   border: 1px solid var(--line);
   color: var(--muted);
@@ -339,7 +341,7 @@ kbd {
   color: var(--text);
   font-family: var(--ui);
   font-size: 13px;
-  font-weight: 550;
+  font-weight: 600;
   line-height: 20px;
   text-align: center;
   box-shadow: inset 0 -1px 0 color-mix(in srgb, black 45%, transparent);
@@ -352,7 +354,7 @@ kbd {
   width: 100%;
   padding: 7px 10px;
   border: 0;
-  border-radius: 9px;
+  border-radius: 10px;
   background: none;
   color: var(--muted);
   text-align: left;
@@ -446,7 +448,7 @@ kbd {
   margin-left: auto;
   padding: 0;
   border: 0;
-  border-radius: 5px;
+  border-radius: 6px;
   background: none;
   color: var(--faint);
   cursor: pointer;
@@ -472,7 +474,7 @@ kbd {
   width: 100%;
   padding: 6px 10px;
   border: 0;
-  border-radius: 9px;
+  border-radius: 10px;
   background: none;
   text-align: left;
   color: var(--muted);
@@ -504,9 +506,6 @@ kbd {
   white-space: nowrap;
 }
 
-.side-session.shellish .name {
-  font: 13px var(--mono);
-}
 
 .side-foot {
   display: flex;
@@ -594,7 +593,7 @@ kbd {
 
 .pill.mono {
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 a.pill {
@@ -631,7 +630,7 @@ a.pill:hover {
   place-items: center;
   width: 24px;
   height: 24px;
-  border-radius: 7px;
+  border-radius: 8px;
   font: 700 12px var(--mono);
   color: var(--agent);
   background: color-mix(in srgb, var(--agent) 16%, transparent);
@@ -640,7 +639,7 @@ a.pill:hover {
 .chip.lg {
   width: 30px;
   height: 30px;
-  border-radius: 9px;
+  border-radius: 10px;
   font-size: 13px;
 }
 
@@ -862,7 +861,7 @@ a.pill:hover {
 }
 
 .row .detail {
-  font: 12.5px var(--mono);
+  font: 13px var(--mono);
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -892,7 +891,7 @@ a.pill:hover {
 }
 
 .row .stack .sub {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -931,7 +930,7 @@ a.pill:hover {
 
 .empty-state .empty-title {
   margin: 0;
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 600;
   color: var(--text);
 }
@@ -984,7 +983,7 @@ a.pill:hover {
 
 .empty-recent-row .resume-word {
   flex: none;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--accent);
   opacity: 0;
   transition: opacity 0.12s;
@@ -1101,7 +1100,7 @@ a.pill:hover {
   display: flex;
   padding: 2px;
   gap: 2px;
-  border-radius: 9px;
+  border-radius: 10px;
   border: 1px solid var(--line);
   background: var(--surface);
 }
@@ -1112,10 +1111,10 @@ a.pill:hover {
   gap: 5px;
   padding: 4px 8px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 8px;
   background: none;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 
 .view-toggle button.on {
@@ -1177,7 +1176,7 @@ a.pill:hover {
   padding: 6px 10px;
   white-space: nowrap;
   border: 0;
-  border-radius: 9px;
+  border-radius: 10px;
   background: none;
   color: var(--muted);
   font-size: 14px;
@@ -1288,14 +1287,14 @@ a.pill:hover {
   gap: 6px;
   margin: 10px 14px 14px;
   padding: 6px 6px 6px 12px;
-  border-radius: 14px;
+  border-radius: 12px;
   border: 1px solid var(--line-2);
   background: var(--raised);
 }
 
 .narrow .composer-bar {
   margin: 8px 8px calc(6px + var(--safe-pad));
-  border-radius: 24px;
+  border-radius: 16px;
   padding: 5px 5px 5px 14px;
 }
 
@@ -1476,7 +1475,7 @@ a.pill:hover {
   align-items: center;
   gap: 6px;
   padding: 7px 13px;
-  border-radius: 9px;
+  border-radius: 10px;
   border: 1px solid var(--line-2);
   background: transparent;
   font-weight: 500;
@@ -1528,7 +1527,7 @@ a.pill:hover {
 
 .btn.small {
   padding: 4px 10px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 
 .btn.block {
@@ -1556,7 +1555,7 @@ a.btn {
   border: 0;
   background: none;
   padding: 5px 12px;
-  border-radius: 7px;
+  border-radius: 8px;
   font-size: 13px;
   color: var(--muted);
 }
@@ -1577,7 +1576,7 @@ a.btn {
 
 .hint {
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 400;
 }
 
@@ -1619,7 +1618,7 @@ a.btn {
   border-radius: 8px;
   background: none;
   text-align: left;
-  font-size: 13.5px;
+  font-size: 14px;
 }
 
 .menu button:hover,
@@ -1655,7 +1654,7 @@ a.btn {
 }
 
 .dialog::backdrop {
-  background: #04050799;
+  background: var(--scrim);
   backdrop-filter: blur(3px);
 }
 
@@ -1760,7 +1759,7 @@ a.btn {
 .field textarea {
   width: 100%;
   padding: 9px 10px;
-  border-radius: 9px;
+  border-radius: 10px;
   border: 1px solid var(--line-2);
   background: var(--sunken);
   font-family: var(--mono);
@@ -1902,7 +1901,7 @@ a.btn {
   width: 100%;
   padding: 8px 10px;
   border: 0;
-  border-radius: 9px;
+  border-radius: 10px;
   background: none;
   text-align: left;
 }
@@ -1949,7 +1948,7 @@ a.btn {
 }
 
 .switch-item .excerpt {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--muted);
   white-space: normal;
   display: -webkit-box;
@@ -2230,7 +2229,7 @@ a.btn {
 
 .diff-file {
   padding: 12px 14px 6px;
-  font: 12.5px var(--mono);
+  font: 13px var(--mono);
   color: var(--muted);
   border-top: 1px solid var(--line);
   position: sticky;
@@ -2263,7 +2262,7 @@ a.btn {
 .dl {
   display: grid;
   grid-template-columns: 44px 1fr;
-  font: 12.5px/1.65 var(--mono);
+  font: 13px/1.65 var(--mono);
   cursor: pointer;
 }
 
@@ -2318,7 +2317,7 @@ a.btn {
   width: 100%;
   min-height: 64px;
   padding: 8px 10px;
-  border-radius: 9px;
+  border-radius: 10px;
   border: 1px solid var(--accent-line);
   background: var(--sunken);
   resize: vertical;
@@ -2328,7 +2327,7 @@ a.btn {
   flex: none;
   padding: 10px 14px;
   border-top: 1px solid var(--line);
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--muted);
 }
 
@@ -2438,7 +2437,7 @@ a.btn {
   display: grid;
   place-items: center;
   padding: 12px;
-  background: #04050799;
+  background: var(--scrim);
   z-index: 6;
 }
 
@@ -2542,7 +2541,7 @@ a.btn {
 
 .lock-card h1 {
   margin: 8px 0 0;
-  font-size: 26px;
+  font-size: 24px;
   font-weight: 600;
 }
 
@@ -2581,7 +2580,7 @@ a.btn {
   align-items: flex-start;
   margin-top: 6px;
   color: var(--muted);
-  font-size: 13.5px;
+  font-size: 14px;
 }
 
 .lock-alt .linkish:hover {
@@ -2928,7 +2927,7 @@ a.btn {
   flex: none;
   margin: 0;
   color: var(--faint);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 
 /* A reply on its way: the bubble sits slightly dimmed until the server
@@ -2963,7 +2962,7 @@ a.btn {
   gap: 8px;
   padding: 2px;
   color: var(--faint);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 
 .thinking-dots {
@@ -3024,7 +3023,7 @@ a.btn {
 
 .sidechat-bubble {
   max-width: 100%;
-  font-size: 13.5px;
+  font-size: 14px;
   line-height: 1.5;
   word-break: break-word;
 }
@@ -3049,7 +3048,7 @@ a.btn {
   gap: 8px;
   margin: 4px 12px 12px;
   padding: 6px 6px 6px 14px;
-  border-radius: 18px;
+  border-radius: 16px;
   border: 1px solid var(--line-2);
   background: var(--raised);
 }
@@ -3088,7 +3087,7 @@ a.btn {
   border: 1px solid var(--line-2);
   background: var(--surface);
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 
 /* Past-chats browser: search plus one row per stored conversation. */
@@ -3100,7 +3099,7 @@ a.btn {
 .past-search input {
   width: 100%;
   padding: 8px 10px;
-  border-radius: 9px;
+  border-radius: 10px;
   border: 1px solid var(--line-2);
   background: var(--sunken);
   font-size: 13px;
@@ -3138,7 +3137,7 @@ a.btn {
 }
 
 .past-preview {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--faint);
   overflow: hidden;
   display: -webkit-box;
@@ -3165,7 +3164,7 @@ a.btn {
   padding: 0;
   border: none;
   background: none;
-  font-size: 12.5px;
+  font-size: 13px;
   opacity: 0.8;
 }
 
@@ -3264,7 +3263,7 @@ a.btn {
 .sidechat-bubble .md code {
   font: 0.92em var(--mono);
   padding: 1px 5px;
-  border-radius: 5px;
+  border-radius: 6px;
   background: var(--raised);
 }
 
@@ -3274,7 +3273,7 @@ a.btn {
   border-radius: 10px;
   background: var(--sunken);
   border: 1px solid var(--line);
-  font: 12.5px/1.55 var(--mono);
+  font: 13px/1.55 var(--mono);
   overflow-x: auto;
   white-space: pre;
   max-height: 420px;
@@ -3327,7 +3326,7 @@ a.btn {
 }
 
 .big-code {
-  font: 600 30px var(--mono);
+  font: 600 28px var(--mono);
   letter-spacing: 0.1em;
   color: var(--accent);
 }
@@ -3354,7 +3353,7 @@ a.btn {
 }
 
 .sec-row .sub {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3436,11 +3435,11 @@ a.btn {
 .warn {
   margin: 0;
   padding: 8px 10px;
-  border-radius: 9px;
+  border-radius: 10px;
   background: color-mix(in srgb, var(--danger) 8%, transparent);
   border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent);
   color: var(--danger);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 
 /* ---------- reorderable sidebar (F43/F44) */
@@ -3449,7 +3448,7 @@ a.btn {
   position: relative;
   display: flex;
   align-items: center;
-  border-radius: 9px;
+  border-radius: 10px;
 }
 
 .side-row .side-session {
@@ -3500,7 +3499,7 @@ a.btn {
   width: 26px;
   height: 26px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 8px;
   background: none;
   color: var(--faint);
 }
@@ -3662,14 +3661,14 @@ a.btn {
     '. bottom .';
   gap: 4px;
   padding: 8px;
-  background: #040507aa;
+  background: var(--scrim);
   z-index: 20;
 }
 
 .drop-zone {
   display: grid;
   place-items: center;
-  border-radius: 9px;
+  border-radius: 10px;
   border: 1.5px dashed var(--accent);
   color: var(--accent);
   font-size: 12px;
@@ -3696,7 +3695,7 @@ a.btn {
   display: grid;
   place-items: center;
   margin: 8px;
-  border-radius: 9px;
+  border-radius: 10px;
   border: 1.5px dashed var(--accent);
   color: var(--accent);
   font-size: 12px;
@@ -3724,7 +3723,7 @@ a.btn {
 .picker-veil {
   position: fixed;
   inset: 0;
-  background: #04050799;
+  background: var(--scrim);
   display: grid;
   place-items: center;
   z-index: 60;
@@ -3858,7 +3857,7 @@ a.btn {
   gap: 4px;
   margin: 10px 14px 14px;
   padding: 10px 10px 8px 14px;
-  border-radius: 18px;
+  border-radius: 16px;
   border: 1px solid var(--line-2);
   background: var(--raised);
   transition: border-color 0.15s;
@@ -3877,7 +3876,7 @@ a.btn {
 .narrow .composer {
   margin: 0;
   border-width: 1px 0 0;
-  border-radius: 18px 18px 0 0;
+  border-radius: 16px 16px 0 0;
   padding: 10px 10px calc(4px + var(--safe-pad)) 14px;
 }
 
@@ -3891,7 +3890,7 @@ a.btn {
   overflow-y: auto;
   border: 1px solid var(--line-2);
   border-bottom: 0;
-  border-radius: 14px 14px 0 0;
+  border-radius: 12px 12px 0 0;
   background: var(--surface);
 }
 
@@ -3980,7 +3979,7 @@ a.btn {
 .queue-steer {
   padding: 4px 8px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 8px;
   background: none;
   font: inherit;
   font-size: 13px;
@@ -4096,7 +4095,7 @@ a.btn {
   border: 1px solid var(--line-2);
   background: var(--surface);
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 13px;
   white-space: nowrap;
   max-width: 220px;
   overflow: hidden;
@@ -4150,7 +4149,7 @@ button.tool-chip:hover {
   z-index: 40;
   min-width: 300px;
   max-width: min(420px, calc(100vw - 24px));
-  border-radius: 14px;
+  border-radius: 12px;
   border: 1px solid var(--line-2);
   background: var(--raised);
   box-shadow: 0 18px 50px color-mix(in srgb, var(--shadow) 73%, transparent);
@@ -4185,7 +4184,7 @@ button.tool-chip:hover {
   display: flex;
   align-items: center;
   gap: 10px;
-  border-radius: 9px;
+  border-radius: 10px;
   padding-right: 10px;
 }
 
@@ -4267,7 +4266,7 @@ button.tool-chip:hover {
   margin-top: 2px;
   padding: 9px 10px 4px;
   border-top: 1px solid var(--line);
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--muted);
 }
 
@@ -4383,7 +4382,7 @@ button.tool-chip:hover {
   border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--raised);
-  font-size: 13.5px;
+  font-size: 14px;
   color: var(--muted);
 }
 
@@ -4420,7 +4419,7 @@ button.tool-chip:hover {
   width: 100%;
   height: 38px;
   padding: 0 12px;
-  border-radius: 9px;
+  border-radius: 10px;
   border: 1px solid var(--line-2);
   background: var(--sunken);
   text-align: left;
@@ -4635,7 +4634,7 @@ button.tool-chip:hover {
 
 .ask-desc {
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.4;
 }
 
@@ -4772,7 +4771,7 @@ button.tool-chip:hover {
 
 .suggest-label {
   flex: none;
-  font-size: 13.5px;
+  font-size: 14px;
   color: var(--text);
 }
 
@@ -4890,7 +4889,7 @@ button.tool-chip:hover {
 
 .cmd-trail,
 .cmd-detail {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--faint);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5092,7 +5091,7 @@ button.tool-chip:hover {
 .ns-screen .ns-head h2 {
   flex: 1;
   margin: 0;
-  font-size: 19px;
+  font-size: 20px;
   font-weight: 600;
 }
 
@@ -5168,7 +5167,7 @@ button.tool-chip:hover {
   border: 1px solid var(--accent-line);
   background: var(--raised);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--muted);
 }
 
@@ -5196,7 +5195,7 @@ button.tool-chip:hover {
 }
 
 .submap .keycaps kbd {
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 18px;
 }
 
@@ -5247,7 +5246,7 @@ button.tool-chip:hover {
   border-radius: 6px;
   background: none;
   color: var(--muted);
-  font: 600 11.5px var(--mono);
+  font: 600 12px var(--mono);
 }
 
 .ws-dots button:hover {
@@ -5342,7 +5341,7 @@ button.tool-chip:hover {
 .pane-picker-filter {
   width: 100%;
   padding: 9px 12px;
-  border-radius: 9px;
+  border-radius: 10px;
   border: 1px solid var(--line-2);
   background: var(--sunken);
   color: var(--text);
@@ -5435,7 +5434,7 @@ button.tool-chip:hover {
 .btn .confirm-keys kbd {
   min-width: 0;
   padding: 0 4px;
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 16px;
   color: inherit;
   background: transparent;
@@ -5531,7 +5530,7 @@ button.tool-chip:hover {
   font: inherit;
   font-size: 12px;
   padding: 3px 6px;
-  border-radius: 7px;
+  border-radius: 8px;
   border: 1px solid var(--line-2);
   background: var(--raised);
   color: var(--text);
@@ -5616,7 +5615,7 @@ button.tool-chip:hover {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--faint);
   animation: fade-in 0.25s ease-out;
 }
@@ -5674,8 +5673,8 @@ button.tool-chip:hover {
 }
 
 .handoff-title {
-  font-size: 13.5px;
-  font-weight: 550;
+  font-size: 14px;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -5711,7 +5710,7 @@ button.tool-chip:hover {
 .card-question {
   margin: 0;
   font-size: 15px;
-  font-weight: 550;
+  font-weight: 600;
   color: var(--text);
 }
 
@@ -5804,7 +5803,7 @@ button.tool-chip:hover {
   width: 28px;
   height: 28px;
   padding: 0;
-  border-radius: 7px;
+  border-radius: 8px;
 }
 
 /* Phone panel tabs and the key bar: a soft fade at the edge while more is off screen. */
@@ -5848,7 +5847,7 @@ button.tool-chip:hover {
   width: min(760px, calc(100vw - 32px));
   padding: 12px 16px 14px;
   border: 1px solid var(--line-2);
-  border-radius: 14px;
+  border-radius: 12px;
   background: color-mix(in srgb, var(--raised) 94%, transparent);
   backdrop-filter: blur(12px);
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.4);
@@ -5892,12 +5891,12 @@ button.tool-chip:hover {
   flex: none;
   min-width: 24px;
   padding: 0 5px;
-  border-radius: 5px;
+  border-radius: 6px;
   border: 1px solid var(--line-2);
   border-bottom-color: color-mix(in srgb, var(--text) 28%, var(--line-2));
   background: color-mix(in srgb, var(--text) 7%, var(--raised));
   color: var(--text);
-  font: 550 12px/22px var(--ui);
+  font: 600 12px/22px var(--ui);
   text-align: center;
 }
 
