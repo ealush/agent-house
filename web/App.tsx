@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { PresetsContext } from './ModelPicker.tsx';
-import { deviceName, waitForWindow, type HistoryItem, type SearchHit, type SendResult, type State, type Win } from './api.ts';
+import { CLIENT_ID, deviceName, waitForWindow, type HistoryItem, type SearchHit, type SendResult, type State, type Win } from './api.ts';
 import { useHosts } from './useHosts.ts';
 import { Sidebar, type Page } from './Sidebar.tsx';
 import { useSavedGroups } from './groupOrder.ts';
@@ -41,6 +41,7 @@ import { Inbox, type InboxGroup } from './Inbox.tsx';
 import { HistoryView, SessionsView } from './HistoryView.tsx';
 import { Session } from './Session.tsx';
 import { EndedSession } from './Ended.tsx';
+import { HandoffOffer } from './Handoff.tsx';
 import { Workspace } from './Workspace.tsx';
 import { isPick, pickKey, leaves, moveLeaf, nudgeDivider, neighborPane, nodeAt, normalizeSplit, paneLeaves, parseLayout, replaceLeaf, splitLeaf, toggleSplit, type LayoutNode, type PaneDir, type Path } from './layout.ts';
 import { NewDialog } from './NewDialog.tsx';
@@ -634,6 +635,43 @@ export function App({ onLock }: { onLock: () => void }) {
     if (selected && isLegacyKey(selected)) go({ selected: upgradeKey(selected, state.windows) });
   }, [state]);
 
+  // Handoff: tell the host which session this device is on whenever it is in use…
+  const onScreen = layout ? focusKey : selected;
+  useEffect(() => {
+    if (!state || !onScreen) return;
+    const host = state.hostname;
+    const report = () => {
+      if (document.visibilityState === 'visible') void clientFor(host).focus(onScreen).catch(() => {});
+    };
+    const t = window.setTimeout(report, 800);
+    window.addEventListener('focus', report);
+    document.addEventListener('visibilitychange', report);
+    return () => {
+      window.clearTimeout(t);
+      window.removeEventListener('focus', report);
+      document.removeEventListener('visibilitychange', report);
+    };
+  }, [onScreen, !!state]);
+  // …and offer the one another device was on last, for a quarter of an hour.
+  const [handoffSeen, setHandoffSeen] = useState(0);
+  const lastFocus = state?.focus;
+  const handoffWin =
+    lastFocus && lastFocus.client !== CLIENT_ID && lastFocus.at !== handoffSeen && Date.now() - lastFocus.at < 15 * 60_000 && !visibleKeys.includes(lastFocus.key)
+      ? (state?.windows.find((w) => w.key === lastFocus.key) ?? null)
+      : null;
+  const handoff = handoffWin && lastFocus && (
+    <HandoffOffer
+      w={handoffWin}
+      device={lastFocus.device}
+      at={lastFocus.at}
+      onOpen={() => {
+        setHandoffSeen(lastFocus.at);
+        open(handoffWin.key);
+      }}
+      onDismiss={() => setHandoffSeen(lastFocus.at)}
+    />
+  );
+
   const current = state?.windows.find((w) => w.key === selected) ?? null;
   const ended = current ? null : endedFor(selected);
   // A session that is neither live nor in history (removed, or a bad link): fall back to the
@@ -777,6 +815,7 @@ export function App({ onLock }: { onLock: () => void }) {
           selected={focusKey ?? selected}
           visibleKeys={visibleKeys}
           device={deviceName()}
+          handoff={handoff}
           onCollapse={toggleSide}
           onPage={showPage}
           onSelect={open}
@@ -897,7 +936,7 @@ export function App({ onLock }: { onLock: () => void }) {
             ) : page === 'history' ? (
               <HistoryView
                 state={state}
-                onResume={(h) => resume(h.host, h.ref, { navigate: false })}
+                onResume={(h) => resume(h.host, h.ref)}
                 onForget={forget}
                 onFork={(h) => setForking({ ref: h.ref, host: h.host, harness: h.harness, title: h.title })}
               />
@@ -918,6 +957,7 @@ export function App({ onLock }: { onLock: () => void }) {
                 onNew={() => setCreating({})}
                 onSearch={() => setSwitching(true)}
                 onSettings={() => go({ page: 'settings', selected: null })}
+                handoff={narrow ? handoff : null}
               />
             )}
             {narrow && (

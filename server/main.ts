@@ -498,6 +498,15 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     return send(res, 200, { ok: true });
   }
 
+  // Handoff: the session this device is on, so another device can offer to continue it.
+  if (route('POST', /^\/api\/focus$/)) {
+    const body = await readJson(req);
+    const key = str(body.key, 'key', 120);
+    if (!/^(?:[\w.-]{1,64}\/)?[\w-]{1,40}$/.test(key)) throw new HttpError(400, 'invalid key');
+    core.setFocus({ key, device: str(body.device ?? '', 'device', 40).replace(/[^\w .-]/g, '').slice(0, 24) || 'browser', client: str(body.client ?? '', 'client', 40) });
+    return send(res, 200, { ok: true });
+  }
+
   // Unsent composer text, so a draft follows you between devices (server/drafts.ts).
   if ((m = route('GET', /^\/api\/sessions\/([\w-]{1,40})\/draft$/))) return send(res, 200, { draft: drafts.get(m[1]) });
   if ((m = route('PUT', /^\/api\/sessions\/([\w-]{1,40})\/draft$/))) {

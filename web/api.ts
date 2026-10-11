@@ -192,6 +192,8 @@ export type State = {
   presets: Preset[];
   /** The host's Omarchy theme, when it runs Omarchy. */
   omarchy?: { name: string; at: number; font?: string | null } | null;
+  /** Handoff: the session last in use, and on which device (this page is `client === CLIENT_ID`). */
+  focus?: { key: string; device: string; client: string; at: number } | null;
 };
 
 export type OmarchyTheme = { name: string; mode: 'dark' | 'light'; colors: Record<string, string>; font?: string | null };
@@ -342,6 +344,8 @@ export function hostApi(base: string) {
     moveQueued: (uid: string, itemId: string, to: number) => r<QueueItem[]>('POST', `/api/sessions/${enc(uid)}/queue/${enc(itemId)}/move`, { to }),
     sendNow: (uid: string, itemId: string) => r<SendResult>('POST', `/api/sessions/${enc(uid)}/queue/${enc(itemId)}/send-now`),
     pin: (uid: string, pinned: boolean) => r('POST', `/api/sessions/${enc(uid)}/pin`, { pinned }),
+    /** Handoff: tell the host which session this device is on. */
+    focus: (key: string) => r('POST', '/api/focus', { key, device: deviceName(), client: CLIENT_ID }),
     /** Unsent composer text kept on the host, so it follows you between devices. */
     draft: (uid: string) => r<{ draft: Draft | null }>('GET', `/api/sessions/${enc(uid)}/draft`).then((d) => d.draft),
     saveDraft: (uid: string, text: string) => r<{ draft: Draft | null }>('PUT', `/api/sessions/${enc(uid)}/draft`, { text, device: deviceName(), client: CLIENT_ID }),

@@ -46,7 +46,12 @@ export type State = {
   presets: Array<Preset & { available: boolean }>;
   /** The desktop's Omarchy theme (name and change time), for clients that follow it. */
   omarchy: { name: string; at: number; font: string | null } | null;
+  /** The session you were last using, and on which device: other devices offer to continue it. */
+  focus: Focus | null;
 };
+
+/** `key` is the client's session key (a uid, or "<host>/<uid>" for a peer's session). */
+export type Focus = { key: string; device: string; client: string; at: number };
 
 export type SendResult = { outcome: 'delivered' | 'queued'; windowId: string; resumed: boolean; queued: number; queueId?: string };
 
@@ -210,6 +215,7 @@ export class Core {
         history,
         presets: await Promise.all(this.config.presets.map(async (p) => ({ ...(await withCatalog(p)), available: isExecutableOnPath(p.command, this.tmuxPath) }))),
         omarchy: omarchyStamp(),
+        focus: this.focus,
       };
       this.state = state;
       const json = JSON.stringify(state);
@@ -1181,6 +1187,13 @@ export class Core {
   }
 
   // ---------- small mutations
+
+  /** Handoff: a device says which session it is on. The next tick tells the others. */
+  focus: Focus | null = null;
+  setFocus(f: Omit<Focus, 'at'>) {
+    this.focus = { ...f, at: Date.now() };
+    this.tick().catch(() => {});
+  }
 
   setPinned(ref: string, pinned: boolean) {
     if (!this.registry.get(ref)) throw new CoreError(404, 'only sessions ah has run can be pinned');

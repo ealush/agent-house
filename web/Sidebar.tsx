@@ -38,6 +38,8 @@ type Props = {
   onDragSession?: (w: Win) => void;
   /** Collapse the sidebar into a rail. */
   onCollapse: () => void;
+  /** Continue a session from another device (Handoff), when there is one. */
+  handoff?: React.ReactNode;
 };
 
 /** Terminate means killing the tmux window, not forgetting history (F44). */
@@ -53,7 +55,7 @@ export function confirmTerminate(w: Win) {
 }
 
 /** Desktop navigation: inbox, hosts, and every live session grouped by host (or project). */
-export function Sidebar({ workspaces, onWorkspace, state, error, page, selected, visibleKeys, device, onPage, onSelect, onSearch, onNew, onWorktrees, onReorder, onKill, onFork, onDragSession, onCollapse }: Props) {
+export function Sidebar({ workspaces, onWorkspace, state, error, page, selected, visibleKeys, device, onPage, onSelect, onSearch, onNew, onWorktrees, onReorder, onKill, onFork, onDragSession, onCollapse, handoff }: Props) {
   useShortcutRevision();
   const windows = state?.windows ?? [];
   const visible = new Set(visibleKeys);
@@ -267,6 +269,8 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
         <span>Search or jump to</span>
         <ShortcutHint id="switcher" />
       </button>
+
+      {handoff}
 
       <button className={`nav-item ${page === 'inbox' && !selected ? 'on' : ''}`} title={shortcutTitle('Inbox', 'go-inbox')} onClick={() => onPage('inbox')}>
         <Icon name="inbox" />

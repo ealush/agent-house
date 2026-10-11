@@ -20,6 +20,8 @@ type Props = {
   onNew: () => void;
   onSearch: () => void;
   onSettings: () => void;
+  /** Continue a session from another device (Handoff), when there is one. */
+  handoff?: React.ReactNode;
 };
 
 const KIND_LABEL = { command: 'Wants to run a command', tool: 'Wants to use a tool', question: 'Asked a question', screen: 'Waiting for you', choice: 'Asked you' };
@@ -27,7 +29,7 @@ const KIND_LABEL = { command: 'Wants to run a command', tool: 'Wants to use a to
 const where = (w: Win, multiHost: boolean) => [multiHost ? w.host : null, w.project].filter(Boolean).join(' · ');
 
 /** The home screen: what's blocked on you first, then what's working, then the rest. */
-export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, clientFor, onNew, onSearch, onSettings }: Props) {
+export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, clientFor, onNew, onSearch, onSettings, handoff }: Props) {
   const multiHost = state.hosts.length > 1;
   const waiting = state.windows.filter((w) => w.status === 'waiting');
   const running = state.windows.filter((w) => w.status === 'busy');
@@ -80,6 +82,7 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, cl
           </>
         )}
       </header>
+      {handoff}
 
       {state.windows.length === 0 && (
         <div className="empty-state">
