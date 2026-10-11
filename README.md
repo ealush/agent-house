@@ -57,6 +57,13 @@ to terminal rules and output activity, and matches live agents to their transcri
   working, and the session is **resumed** first if it's dead. Diff and Files sit beside it
   (tabs on a phone). Review queued follow-ups and cancel individual messages from the
   session menu. Each device views independently; whoever typed last sizes the window.
+- **Continuity.** Pick up on any device where you left off. Opening ah offers the session
+  you were just using on another device (*Continue from iPhone*); an unsent message
+  follows you too, kept on the host until you send it. Links, layouts and notifications
+  point at a session, not a tmux window, so they survive resumes and restarts; a session
+  that ends stays where it was, with its conversation and Resume (⌘↵), and typing a
+  message resumes it. Phones and tablets open agents in the GUI; an installed app badges
+  its icon with what needs you.
 - **Split workspace.** Split right or below from a session's menu, resize the divider,
   and replace a pane from the sidebar or by dragging a session onto it. Closing a pane
   keeps its session running. Layouts stay on each device; phones show panes as tabs.
