@@ -5447,3 +5447,68 @@ button.tool-chip:hover {
   /* Most dev pages assume a white canvas; the frame shows theirs, not ah's theme. */
   background: #fff;
 }
+
+/* ---------- an ended session, shown where it was (web/Ended.tsx) */
+
+.session-title .name.static {
+  cursor: default;
+}
+
+.pill.ended {
+  color: var(--faint);
+}
+
+.chip.xl {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+}
+
+.ended-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.ended-empty .chip {
+  margin-bottom: 10px;
+}
+
+.ended-empty strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.ended-bar {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px 8px 16px;
+}
+
+.ended-bar textarea {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  border: 0;
+  outline: none;
+  background: none;
+  padding: 6px 0;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.ended-bar .btn {
+  flex: none;
+  border-radius: 12px;
+}
+
+.ended-session {
+  display: contents;
+}

@@ -16,6 +16,7 @@ import { cycleKey } from './keyboard.ts';
 import { Inbox, type InboxGroup } from './Inbox.tsx';
 import { HistoryView, SessionsView } from './HistoryView.tsx';
 import { Session } from './Session.tsx';
+import { EndedSession } from './Ended.tsx';
 import { Workspace } from './Workspace.tsx';
 import { isPick, pickKey, leaves, moveLeaf, nudgeDivider, neighborPane, nodeAt, normalizeSplit, paneLeaves, parseLayout, replaceLeaf, splitLeaf, toggleSplit, type LayoutNode, type PaneDir, type Path } from './layout.ts';
 import { NewDialog } from './NewDialog.tsx';
@@ -142,6 +143,10 @@ export function App({ onLock }: { onLock: () => void }) {
 
   const { state, error, refresh, clientFor, hostState } = useHosts((s: State) => announce(s.windows));
   const savedGroups = useSavedGroups((state?.hosts.length ?? 0) > 1);
+  // Sessions are keyed by their uid, which survives resume and tmux restarts (a window id does not).
+  const keyFor = (host: string, uid: string) => (host === state?.hostname ? uid : `${host}/${uid}`);
+  /** A session that ended, by key: it stays on screen with Resume instead of disappearing. */
+  const endedFor = (key: string | null) => (key && state?.history.find((h) => h.kind === 'ended' && keyFor(h.host, h.ref) === key)) || null;
 
   function toggleSide() {
     setSideOpen((v) => {
@@ -601,13 +606,18 @@ export function App({ onLock }: { onLock: () => void }) {
   }, [state]);
 
   const current = state?.windows.find((w) => w.key === selected) ?? null;
-  // A session killed elsewhere: fall back to where we were (split panes show an ended state instead).
+  const ended = current ? null : endedFor(selected);
+  // A session that is neither live nor in history (removed, or a bad link): fall back to the
+  // inbox. One state update of grace: a window can leave the list a tick before history has it.
+  const missing = useRef(0);
   useEffect(() => {
-    if (state && selected && !current && !layout && !isLegacyKey(selected)) open(null);
-  }, [state, selected, current]);
+    if (!state || !selected || current || ended || layout || isLegacyKey(selected)) {
+      missing.current = 0;
+      return;
+    }
+    if (++missing.current > 1) open(null);
+  }, [state, selected, current, ended]);
 
-  // Sessions are keyed by their uid, which survives resume and tmux restarts (a window id does not).
-  const keyFor = (host: string, uid: string) => (host === state?.hostname ? uid : `${host}/${uid}`);
 
   async function answer(w: Win, a: 'approve' | 'deny') {
     try {
@@ -619,11 +629,12 @@ export function App({ onLock }: { onLock: () => void }) {
     refresh(w.host);
   }
 
-  async function resume(host: string, ref: string) {
+  async function resume(host: string, ref: string, opts: { navigate?: boolean } = {}) {
     try {
       const out = await clientFor(host).resume(ref);
       await refresh(host);
-      open(keyFor(host, out.uid));
+      // A pane resuming its own session keeps its key; it turns live where it is.
+      if (opts.navigate !== false) open(keyFor(host, out.uid));
       if (out.resumed) flash('Resuming…');
     } catch (e) {
       showError(e, "Couldn't resume");
@@ -790,6 +801,9 @@ export function App({ onLock }: { onLock: () => void }) {
             onAnswer={answer}
             onSent={sent}
             onKilledSession={() => {}}
+            endedFor={endedFor}
+            feedFor={(host, harness) => presetFor(host, harness)?.feed ?? null}
+            onResume={(h) => resume(h.host, h.ref, { navigate: false })}
             onStartSession={(w, prompt) => setCreating({ cwd: w.projectPath, host: w.host, prompt })}
             refresh={refresh}
             onExit={exitSplit}
@@ -835,6 +849,16 @@ export function App({ onLock }: { onLock: () => void }) {
             onOpenKey={open}
             onSplitWith={(key) => splitFrom(current.key, 'right', key)}
           />
+        ) : ended && state ? (
+          <EndedSession
+            key={selected}
+            item={ended}
+            client={clientFor(ended.host)}
+            feed={presetFor(ended.host, ended.harness)?.feed ?? null}
+            narrow={narrow}
+            onResume={() => resume(ended.host, ended.ref)}
+            onClose={() => open(null)}
+          />
         ) : state ? (
           <>
             {page === 'search' ? (
@@ -844,7 +868,7 @@ export function App({ onLock }: { onLock: () => void }) {
             ) : page === 'history' ? (
               <HistoryView
                 state={state}
-                onResume={(h) => resume(h.host, h.ref)}
+                onResume={(h) => resume(h.host, h.ref, { navigate: false })}
                 onForget={forget}
                 onFork={(h) => setForking({ ref: h.ref, host: h.host, harness: h.harness, title: h.title })}
               />

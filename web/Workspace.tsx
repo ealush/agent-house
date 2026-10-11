@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
-import type { HostApi, SendResult, Win } from './api.ts';
+import type { HistoryItem, HostApi, SendResult, Win } from './api.ts';
 import { Session } from './Session.tsx';
+import { EndedSession } from './Ended.tsx';
 import { useSavedGroups } from './groupOrder.ts';
 import { sidebarOrder } from './sessionOrder.ts';
 import { closeLeaf, dockLeaf, isPick, moveLeafTo, paneLeaves, pickKey, pickPrevious, replaceLeaf, setRatio, splitLeaf, toggleSplit, type LayoutNode, type Path } from './layout.ts';
@@ -34,6 +35,10 @@ type Props = {
   renderNew: (path: Path, onCancel: () => void) => React.ReactNode;
   /** Send to… → New session, in this pane's project. */
   onStartSession: (w: Win, prompt: string) => void;
+  /** History for a pane whose session ended, so it can offer Resume in place. */
+  endedFor: (key: string) => HistoryItem | null;
+  feedFor: (host: string, harness: string) => string | null;
+  onResume: (item: HistoryItem) => Promise<void>;
 };
 
 /**
@@ -120,6 +125,24 @@ export function Workspace(props: Props) {
               onCancel={cancel}
             />
           )}
+        </div>
+      );
+    }
+    const ended = w ? null : props.endedFor(sessionKey);
+    if (ended) {
+      // Ended (or gone with a reboot): the conversation and Resume, in the pane it was in.
+      return (
+        <div className={`pane ${focused ? 'focused' : ''}`} onClick={() => props.onFocus(path)}>
+          <EndedSession
+            key={sessionKey}
+            item={ended}
+            client={props.clientFor(ended.host)}
+            feed={props.feedFor(ended.host, ended.harness)}
+            narrow={props.narrow}
+            onResume={() => props.onResume(ended)}
+            onClose={() => props.onLayout(closeLeaf(layout, path))}
+            closeLabel="Close pane"
+          />
         </div>
       );
     }

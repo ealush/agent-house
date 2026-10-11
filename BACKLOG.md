@@ -117,7 +117,7 @@ that follows you across devices, harnesses, restarts and resumes.
 | # | Item | | Notes |
 |---|---|---|---|
 | P1 | Stable session identity | ✅ | Links, layouts, workspaces, scratchpad and notification URLs key on the session's uid, not the tmux window id, so they survive resume and tmux restarts and never point at a different window. |
-| P2 | Ended sessions stay where they are | ✗ | A session that ends (or a link to one) shows in place with Resume (⌘↵) instead of bouncing to the inbox; panes after a reboot offer the same. |
+| P2 | Ended sessions stay where they are | ✅ | A session that ends (or a link to one) shows in place with Resume (⌘↵) instead of bouncing to the inbox; panes after a reboot offer the same. |
 | P3 | Continue on this device | ✗ | Handoff: opening ah offers the session you were just using on another device. |
 | P4 | Drafts follow you | ✗ | An unsent composer draft is kept per session on the host: start on the phone, finish at the desk, survive reloads. |
 | P5 | GUI by default where it reads better | ✗ | Phones open agent sessions in the GUI unless you chose otherwise. |
