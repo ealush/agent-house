@@ -55,6 +55,12 @@ export function confirmTerminate(w: Win) {
 }
 
 /** Desktop navigation: inbox, hosts, and every live session grouped by host (or project). */
+/** A shell's folder inside its project ("web/gui"), or "" at the project root. */
+function subdir(w: Win): string {
+  if (w.cwd === w.projectPath) return '';
+  return w.cwd.startsWith(`${w.projectPath}/`) ? w.cwd.slice(w.projectPath.length + 1) : w.cwd;
+}
+
 export function Sidebar({ workspaces, onWorkspace, state, error, page, selected, visibleKeys, device, onPage, onSelect, onSearch, onNew, onWorktrees, onReorder, onKill, onFork, onDragSession, onCollapse, handoff }: Props) {
   useShortcutRevision();
   const windows = state?.windows ?? [];
@@ -159,9 +165,11 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
           <span className={`dot ${w.status}`} />
           <span className="name">
             {w.pinned ? '★ ' : ''}
-            {w.agent ? w.title : `${w.title === w.command || w.title === 'shell' ? w.command : w.title} ${w.cwd}`}
+            {w.agent ? w.title : w.title === 'shell' ? w.command : w.title}
           </span>
           {modelLabel && <span className="side-model">{modelLabel}</span>}
+          {/* The group already names the project; a shell elsewhere in it says where. */}
+          {!w.agent && subdir(w) && <span className="side-model mono">{subdir(w)}</span>}
           {w.fork && (
             <span className="count" title={w.fork.parentTitle ? `Fork of ${w.fork.parentTitle}` : `${w.fork.forks} fork${w.fork.forks === 1 ? '' : 's'}`}>
               ⑂{w.fork.forks > 0 ? w.fork.forks : ''}
