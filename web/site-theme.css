@@ -464,7 +464,7 @@ button.tag:hover {
 /* Column headers share the session-row grid so every label sits over its column. */
 .list-head {
   display: grid;
-  grid-template-columns: 24px minmax(160px, 1.1fr) minmax(0, 1.4fr) auto 72px;
+  grid-template-columns: 24px minmax(160px, 1.1fr) minmax(0, 1.4fr) 11rem 72px;
   gap: 0 14px;
   padding: 0 10px 6px;
   font-size: 12px;

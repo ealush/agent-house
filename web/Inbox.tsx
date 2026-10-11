@@ -1,5 +1,5 @@
 import type { HostApi, State, Win } from './api.ts';
-import { AskPanel } from './AskPanel.tsx';
+import { AskPanel, cleanScreen, questionLine } from './AskPanel.tsx';
 import { shortcutTitle } from './shortcuts.tsx';
 import { Icon } from './icons.tsx';
 import { age, look } from './agents.ts';
@@ -138,6 +138,10 @@ function AskCard({ w, client, multiHost, narrow, onOpen, onAnswer }: { w: Win; c
   const code = ask?.kind === 'command' || ask?.kind === 'screen';
   // Answerable right here: the agent's questions, or the rows of its picker.
   const inline = !!ask && ((ask.kind === 'choice' && (!!ask.questions?.length || !!ask.dialog)) || !!ask.options?.length);
+  // Lead with the prompt's question; the rest of the screen is context, without the TUI's rules.
+  const showText = !!ask?.text && !(ask.kind === 'choice' && inline);
+  const question = showText && ask!.kind !== 'command' ? questionLine(ask!.text) : null;
+  const context = showText ? cleanScreen(ask!.text, question) : '';
   return (
     <article className="card card-needs" style={{ '--agent': color } as React.CSSProperties}>
       <div className="card-head">
@@ -152,7 +156,8 @@ function AskCard({ w, client, multiHost, narrow, onOpen, onAnswer }: { w: Win; c
         <span className="card-age">{age(w.activity)}</span>
       </div>
       {!narrow && ask && <div className="card-kind">{KIND_LABEL[ask.kind]}</div>}
-      {ask?.text && !(ask.kind === 'choice' && inline) && <pre className={`ask-box ${code ? 'code' : ''}`}>{ask.text}</pre>}
+      {question && <p className="card-question">{question}</p>}
+      {context && <pre className={`ask-box ${code ? 'code' : ''}`}>{context}</pre>}
       {inline && <AskPanel w={w} client={client} onAnswer={onAnswer} compact />}
       {!narrow && (
         <div className="card-where">

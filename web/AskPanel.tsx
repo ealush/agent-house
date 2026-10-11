@@ -23,9 +23,18 @@ type Props = {
 };
 
 /** The prompt's own question ("Do you want to make this edit to calc.py?"), when the screen text ends with one. */
-function questionLine(text: string): string | null {
+export function questionLine(text: string): string | null {
   const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
   return lines.findLast((l) => l.endsWith('?')) ?? null;
+}
+
+/** Screen text without the TUI's rules (──, ╌╌, ....), which only frame things in a terminal. */
+export function cleanScreen(text: string, drop?: string | null): string {
+  return text
+    .split('\n')
+    .filter((l) => !/^[\s─━╌╍┄┅┈┉╴╶\-–—_=·•.…⎯]+$/.test(l) && (!drop || l.trim() !== drop))
+    .join('\n')
+    .replace(/^\n+|\n+$/g, '');
 }
 
 const KIND_LABEL = { command: 'Wants to run a command', tool: 'Wants to use a tool', question: 'Asked a question', screen: 'Waiting for you', choice: 'Asked you' };
@@ -67,11 +76,11 @@ export const AskPanel = forwardRef<AskHandle, Props>(function AskPanel({ w, clie
                 {questionLine(ask.text) && <p className="ask-question">{questionLine(ask.text)}</p>}
                 <details className="ask-raw">
                   <summary>Terminal text</summary>
-                  <pre className="code-block ask-context">{ask.text}</pre>
+                  <pre className="code-block ask-context">{cleanScreen(ask.text)}</pre>
                 </details>
               </>
             ) : (
-              <pre className="code-block ask-context">{ask.text}</pre>
+              <pre className="code-block ask-context">{cleanScreen(ask.text)}</pre>
             ))}
           {options.length > 0 ? (
             // Keyed by the prompt: the next prompt is a fresh set of buttons, never the last one's "sent" state.

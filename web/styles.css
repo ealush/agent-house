@@ -830,7 +830,7 @@ a.pill:hover {
 
 .row {
   display: grid;
-  grid-template-columns: 24px minmax(160px, 1.1fr) minmax(0, 1.4fr) auto 72px;
+  grid-template-columns: 24px minmax(160px, 1.1fr) minmax(0, 1.4fr) 11rem 72px;
   align-items: center;
   gap: 14px;
   width: 100%;
@@ -5628,5 +5628,31 @@ button.tool-chip:hover {
 @media (prefers-reduced-motion: reduce) {
   .handoff {
     animation: none;
+  }
+}
+
+/* The prompt's question, above its screen text (inbox needs-you card). */
+.card-question {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 550;
+  color: var(--text);
+}
+
+/* History row actions: there on hover or keyboard focus, out of the way otherwise (always on touch). */
+.row-actions {
+  display: flex;
+  gap: 4px;
+}
+
+@media (hover: hover) {
+  .history-row .row-actions {
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+
+  .history-row:hover .row-actions,
+  .history-row:focus-within .row-actions {
+    opacity: 1;
   }
 }

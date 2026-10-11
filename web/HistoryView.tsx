@@ -85,7 +85,7 @@ export function HistoryView({ state, onResume, onForget, onFork }: { state: Stat
                   </span>
                 </span>
                 <span className="when">{age(h.at)}</span>
-                <span style={{ display: 'flex', gap: 4 }}>
+                <span className="row-actions">
                   <button className="btn small resume" onClick={() => onResume(h)}>
                     Resume
                   </button>
