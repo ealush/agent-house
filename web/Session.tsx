@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Suspense, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { menuViewport, placeFloatingMenu } from './menuPlace.ts';
 import { askConfirm, showError, showNotice } from './ask.tsx';
@@ -9,6 +9,8 @@ import { Icon } from './icons.tsx';
 import { deviceName, type HostApi, type SendResult, type Win } from './api.ts';
 import { look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
+import { continuePrompt } from './handoff.ts';
+import { HostPresetsContext } from './ModelPicker.tsx';
 import { defaultView, surfaceFor, VIEW_LABEL, viewsFor, type SurfaceHandle, type View } from './surface.ts';
 import { ComposerBar } from './Composer.tsx';
 import { BranchPicker, ChangesPanel, PrLink } from './Git.tsx';
@@ -62,8 +64,8 @@ type Props = {
   panePath?: string;
   /** Fires when a pane drag starts or ends, so the workspace can show edge docks. */
   onPaneDrag?: (active: boolean) => void;
-  /** Send to… → New session. Opens the start dialog with this first message. */
-  onStartSession?: (prompt: string) => void;
+  /** Send to… → New session, and Continue in…: the start dialog with this first message (and agent). */
+  onStartSession?: (prompt: string, preset?: string) => void;
 };
 
 const STATUS_PILL = { waiting: 'Needs you', busy: 'Working', attention: 'Done', idle: 'Idle' };
@@ -556,6 +558,23 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   useCommand('toggle-keys', () => setKeysPref(showKeys ? 'off' : 'on'), active && view === 'terminal');
   useCommand('session-menu', () => setMenu(true), active);
 
+  // Continue in…: the same conversation, handed to another agent in a new session here.
+  const otherAgents = useContext(HostPresetsContext)(w.host).filter((p) => p.available && p.command && p.id !== 'shell' && p.id !== w.agent);
+  async function continueIn(preset: string) {
+    if (!onStartSession) return;
+    onToast('Reading the conversation…');
+    try {
+      onStartSession(await continuePrompt(client, w), preset);
+    } catch (e) {
+      showError(e, "Couldn't read the conversation");
+    }
+  }
+  usePaletteProvider(
+    'agents',
+    () => otherAgents.map((p) => ({ key: `continue:${p.id}`, label: `Continue in ${p.name}`, icon: 'send' as const, detail: 'A new session here, primed with this conversation', run: () => void continueIn(p.id) })),
+    active && !!w.feed && !!onStartSession,
+  );
+
   // Palette → Session → Turn and queue: each queued message, with what you can do to it.
   usePaletteProvider(
     'queue',
@@ -800,6 +819,25 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
                   <span className="grow">Send to…</span>
                   <ShortcutHint id="send-to" />
                 </button>
+              )}
+              {w.feed && onStartSession && otherAgents.length > 0 && (
+                <div className="menu-agents" role="group" aria-label="Continue in another agent">
+                  <span className="menu-agents-label">Continue in</span>
+                  {otherAgents.map((p) => (
+                    <button
+                      key={p.id}
+                      className="menu-agent"
+                      title={`Continue this conversation in ${p.name}`}
+                      aria-label={`Continue in ${p.name}`}
+                      onClick={() => {
+                        setMenu(false);
+                        void continueIn(p.id);
+                      }}
+                    >
+                      <AgentLogo id={p.id} size={16} />
+                    </button>
+                  ))}
+                </div>
               )}
               <button onClick={() => act(() => client.pin(w.uid, !w.pinned))}>{w.pinned ? 'Unpin' : 'Pin to top'}</button>
               {diffTab && <button onClick={() => { setMenu(false); togglePanel('diff'); }}><span className="grow">Diff</span><ShortcutHint id="panel-diff" /></button>}

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { PresetsContext } from './ModelPicker.tsx';
+import { HostPresetsContext, PresetsContext } from './ModelPicker.tsx';
 import { CLIENT_ID, deviceName, waitForWindow, type HistoryItem, type SearchHit, type SendResult, type State, type Win } from './api.ts';
 import { useHosts } from './useHosts.ts';
 import { Sidebar, type Page } from './Sidebar.tsx';
@@ -114,7 +114,7 @@ function fromHash(): { page: Page; selected: string | null } {
 export function App({ onLock }: { onLock: () => void }) {
   const [{ page, selected }, setRoute] = useState(fromHash);
   const [inboxGroup, setInboxGroup] = stored<InboxGroup>('ah.inboxGroup', 'status');
-  const [creating, setCreating] = useState<{ cwd?: string; host?: string; prompt?: string } | null>(null);
+  const [creating, setCreating] = useState<{ cwd?: string; host?: string; prompt?: string; preset?: string } | null>(null);
   const [forking, setForking] = useState<ForkTarget | null>(null);
   const [switching, setSwitching] = useState(false);
   const [palette, setPalette] = useState(false);
@@ -802,6 +802,7 @@ export function App({ onLock }: { onLock: () => void }) {
 
   return (
     <PresetsContext.Provider value={presetFor}>
+    <HostPresetsContext.Provider value={(host) => hostState(host)?.presets ?? []}>
     <div className={`app ${narrow ? 'narrow' : ''}`}>
       <Shortcuts />
       {sideOpen ? (
@@ -874,7 +875,7 @@ export function App({ onLock }: { onLock: () => void }) {
             endedFor={endedFor}
             feedFor={(host, harness) => presetFor(host, harness)?.feed ?? null}
             onResume={(h) => resume(h.host, h.ref, { navigate: false })}
-            onStartSession={(w, prompt) => setCreating({ cwd: w.projectPath, host: w.host, prompt })}
+            onStartSession={(w, prompt, preset) => setCreating({ cwd: w.projectPath, host: w.host, prompt, preset })}
             refresh={refresh}
             onExit={exitSplit}
             zoom={zoom}
@@ -914,7 +915,7 @@ export function App({ onLock }: { onLock: () => void }) {
             onSent={sent}
             onKilled={() => open(null)}
             refresh={() => refresh(current.host)}
-            onStartSession={(prompt) => setCreating({ cwd: current.projectPath, host: current.host, prompt })}
+            onStartSession={(prompt, preset) => setCreating({ cwd: current.projectPath, host: current.host, prompt, preset })}
             onSplit={(dir) => splitFrom(current.key, dir)}
             onOpenKey={open}
             onSplitWith={(key) => splitFrom(current.key, 'right', key)}
@@ -988,6 +989,7 @@ export function App({ onLock }: { onLock: () => void }) {
           clientFor={clientFor}
           initialCwd={creating.cwd ?? current?.projectPath ?? lastCwd(creating.host ?? current?.host ?? state.hostname)}
           initialPrompt={creating.prompt}
+          initialPreset={creating.preset}
           onClose={() => setCreating(null)}
           onSent={sent}
           onCreated={async (host, id, uid) => {
@@ -1111,6 +1113,7 @@ export function App({ onLock }: { onLock: () => void }) {
         </div>
       )}
     </div>
+    </HostPresetsContext.Provider>
     </PresetsContext.Provider>
   );
 }

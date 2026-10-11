@@ -34,7 +34,7 @@ type Props = {
   /** A chooser pane's "New session…": the new-session form, drawn inside that pane. */
   renderNew: (path: Path, onCancel: () => void) => React.ReactNode;
   /** Send to… → New session, in this pane's project. */
-  onStartSession: (w: Win, prompt: string) => void;
+  onStartSession: (w: Win, prompt: string, preset?: string) => void;
   /** History for a pane whose session ended, so it can offer Resume in place. */
   endedFor: (key: string) => HistoryItem | null;
   feedFor: (host: string, harness: string) => string | null;
@@ -223,7 +223,7 @@ export function Workspace(props: Props) {
             setPaneDrag(active ? path : null);
             if (!active) setDropPane(null);
           }}
-          onStartSession={(prompt) => props.onStartSession(w, prompt)}
+          onStartSession={(prompt, preset) => props.onStartSession(w, prompt, preset)}
         />
         {dropPane === paneId && (
           <div className="drop-grid">

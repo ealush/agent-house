@@ -7,6 +7,8 @@ import { focusFirst } from './rove.ts';
 /** Resolves an agent's preset (with its live model catalog) on a given host. */
 export const PresetsContext = createContext<(host: string, id: string | null) => Preset | undefined>(() => undefined);
 export const usePreset = (host: string, id: string | null) => useContext(PresetsContext)(host, id);
+/** Every preset a host offers (to start or continue a conversation in another agent). */
+export const HostPresetsContext = createContext<(host: string) => Preset[]>(() => []);
 
 export type Pick = { model?: string; effort?: string };
 

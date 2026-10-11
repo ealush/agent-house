@@ -17,6 +17,8 @@ type Props = {
   initialCwd: string;
   /** First message, sent once the session is up. Send to… fills this in. */
   initialPrompt?: string;
+  /** Preselect an agent (Continue in…). */
+  initialPreset?: string;
   onClose: () => void;
   /** Phones: a full screen inside the app shell (its own scrolling), not a modal over it. */
   screen?: boolean;
@@ -46,12 +48,12 @@ export function lastCwd(host: string): string {
   }
 }
 
-export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd, initialPrompt = '', onClose, onCreated, onSent, screen = false }: Props) {
+export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd, initialPrompt = '', initialPreset, onClose, onCreated, onSent, screen = false }: Props) {
   const [host, setHost] = useState(initialHost);
   const state = hostState(host) ?? hostState(hosts[0])!;
   const client = clientFor(host);
   const presets = state.presets.filter((p) => p.available);
-  const [presetId, setPresetId] = useState(() => localStorage.getItem('ah.lastPreset') ?? presets[0]?.id ?? 'shell');
+  const [presetId, setPresetId] = useState(() => initialPreset ?? localStorage.getItem('ah.lastPreset') ?? presets[0]?.id ?? 'shell');
   const preset = presets.find((p) => p.id === presetId) ?? presets[0];
   const [cwd, setCwd] = useState(initialCwd);
   const [label, setLabel] = useState('');

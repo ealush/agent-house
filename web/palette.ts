@@ -25,7 +25,7 @@ export type PaletteNode = {
 };
 
 /** Where a provider's nodes go in the static tree. */
-export type ProviderId = 'sessions' | 'queue' | 'models' | 'efforts' | 'tiles' | 'projects';
+export type ProviderId = 'sessions' | 'queue' | 'models' | 'efforts' | 'tiles' | 'projects' | 'agents';
 
 type Spec = { key: string; label: string; icon: IconName; detail?: string; terms?: SearchTerms; children: Array<Spec | CommandId | { provider: ProviderId }> };
 
@@ -69,6 +69,7 @@ export const TREE: Spec = {
         },
         { key: 'view', label: 'View', icon: 'view', detail: 'GUI or terminal, copy, scroll', children: ['toggle-view', 'browse-messages', 'copy-last', 'jump-latest', 'scrollback', 'toggle-keys'] },
         { key: 'manage', label: 'Manage', icon: 'edit', detail: 'Rename, fork, hand off, pin, stop', children: ['rename', 'fork', 'send-to', 'pin', 'copy-attach', 'session-menu', 'terminate'] },
+        { key: 'continue', label: 'Continue in…', icon: 'send', detail: 'This conversation, in another agent', terms: ['handoff', 'switch agent', 'harness'], children: [{ provider: 'agents' }] },
       ],
     },
     {
