@@ -77,6 +77,8 @@ export type Question = {
   options: Array<{ label: string; description?: string }>;
 };
 export type QuestionAnswer = { picked: number[]; text?: string };
+export type DesktopStatus = { installed: boolean; omarchy: boolean; url: string; file: string; bind: string };
+
 export type HooksStatus = {
   claude: { wired: number; of: number; file: string };
   codex: { wired: boolean; otherNotify: boolean; file: string };
@@ -395,6 +397,8 @@ export function hostApi(base: string) {
     clearUploads: () => r<{ ok: true; removed: number }>('POST', '/api/system/uploads/clear', {}),
     hooks: () => r<HooksStatus>('GET', '/api/system/hooks'),
     omarchyTheme: () => r<OmarchyTheme | null>('GET', '/api/omarchy/theme'),
+    desktop: () => r<DesktopStatus>('GET', '/api/system/desktop'),
+    setDesktop: (action: 'install' | 'uninstall') => r<{ messages: string[]; status: DesktopStatus }>('POST', '/api/system/desktop', { action }),
     setHooks: (action: 'install' | 'uninstall') => r<{ messages: string[]; status: HooksStatus }>('POST', '/api/system/hooks', { action }),
     pastChat: (uid: string, msgId?: number) => r<{ messages: ChatMsg[] }>('GET', `/api/chats/${enc(uid)}${msgId ? `?msgId=${msgId}` : ''}`),
     worktrees: () => r<WorktreeInfo[]>('GET', '/api/worktrees'),

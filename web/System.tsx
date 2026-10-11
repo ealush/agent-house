@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { api, type HooksStatus } from './api.ts';
+import { api, type DesktopStatus, type HooksStatus } from './api.ts';
+import { copyText } from './selection.ts';
 import { askConfirm, showError } from './ask.tsx';
 
 // Settings → System: host-level actions. A restart bounces the daemon while
@@ -86,6 +87,7 @@ export function SystemPanel() {
         </button>
       </div>
       <HooksCard />
+      <DesktopCard />
       <div className="sec-card">
         <h2>Server</h2>
         <p className="hint">
@@ -174,6 +176,67 @@ function HooksCard() {
             Remove hooks
           </button>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** ah in the host's app launcher (an Omarchy web app), and a key for it. */
+function DesktopCard() {
+  const [status, setStatus] = useState<DesktopStatus | null>(null);
+  const [notes, setNotes] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api.desktop().then(setStatus).catch(() => {});
+  }, []);
+
+  async function change(action: 'install' | 'uninstall') {
+    setBusy(true);
+    try {
+      const r = await api.setDesktop(action);
+      setStatus(r.status);
+      setNotes(r.messages);
+    } catch (e) {
+      showError(e, "Couldn't change the launcher");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!status) return null;
+  return (
+    <div className="sec-card">
+      <h2>Desktop app</h2>
+      <p className="hint">
+        Open ah from the app launcher{status.omarchy ? ' (Super+Space)' : ''} in a window of its own, without browser tabs or toolbars{status.omarchy ? ', like every other Omarchy web app' : ''}. It opens{' '}
+        <span className="mono">{status.url}</span>.
+      </p>
+      <ul className="hook-status">
+        <li>
+          <span className={`dot ${status.installed ? 'online' : 'offline'}`} /> {status.installed ? 'In the app launcher' : 'Not in the app launcher'} <span className="mono hint">{status.file}</span>
+        </li>
+      </ul>
+      {notes.map((n) => (
+        <p key={n} className="hint">
+          {n}
+        </p>
+      ))}
+      <div className="system-actions">
+        <button className="btn primary" disabled={busy} onClick={() => void change('install')}>
+          {status.installed ? 'Update launcher' : 'Add to app launcher'}
+        </button>
+        {status.installed && (
+          <button className="btn" disabled={busy} onClick={() => void change('uninstall')}>
+            Remove
+          </button>
+        )}
+      </div>
+      <p className="hint">For a key of its own, add this to ~/.config/hypr/bindings.conf:</p>
+      <div className="bind-line">
+        <code className="mono">{status.bind}</code>
+        <button className="btn small ghost" onClick={() => void copyText(status.bind)}>
+          Copy
+        </button>
       </div>
     </div>
   );

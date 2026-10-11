@@ -24,7 +24,9 @@ const BASE = `http://127.0.0.1:${PORT}`;
 export const HELP = `usage: ah <command>
 
   serve [--port N]                            run the daemon on loopback (default command)
+  open [id|name]                              open this tmux window (or that session) in ah's window
   setup tailscale [--off]                     expose ah on your tailnet via \`tailscale serve\` (once)
+  setup desktop [--off]                       add ah to the app launcher, in its own window (Omarchy web app)
   list [--json]                               live sessions
   history [--json]                            ended and saved conversations
   new <harness> [--cwd DIR] [--name N] [--session S] [--continue] [--mode M] [--model M] [--args "EXTRA"]
@@ -170,6 +172,20 @@ export async function run(cmd, args) {
       const out = await call('POST', '/api/windows', body);
       console.log(`${out.uid} ${out.id}`);
       return;
+    }
+    case 'open': {
+      // The session you are in (or the one named) in ah's own window: from a terminal into the app.
+      let target = args[0];
+      if (!target && process.env.TMUX) target = spawnSync('tmux', ['display-message', '-p', '#{window_id}'], { encoding: 'utf8' }).stdout.trim();
+      const { appUrl } = await import('../server/desktop.ts');
+      const base = appUrl(PORT);
+      const found = target ? await find(target, { history: true }) : null;
+      // A live session, or an ended one (it opens in place with Resume); a bare base otherwise.
+      const key = found?.live?.uid ?? (found?.past?.kind === 'ended' ? found.past.ref : '');
+      const url = key ? `${base}/#${key}` : base;
+      const launcher = spawnSync('sh', ['-c', 'command -v omarchy-launch-webapp'], { stdio: 'ignore' }).status === 0 ? 'omarchy-launch-webapp' : 'xdg-open';
+      spawnSync(launcher, [url], { stdio: 'ignore', detached: true });
+      return console.log(url);
     }
     case 'attach': {
       const { live } = await find(args[0]);
@@ -348,7 +364,19 @@ export async function run(cmd, args) {
       fail('usage: ah auth code | password [--remove] | token <name> | status');
     }
     case 'setup': {
-      if (args[0] !== 'tailscale') fail('usage: ah setup tailscale [--off]');
+      if (args[0] === 'desktop') {
+        // A launcher entry (SUPER+SPACE on Omarchy) that opens ah in its own app window.
+        const { desktopStatus, installDesktop, removeDesktop } = await import('../server/desktop.ts');
+        const off = flag(args, '--off');
+        try {
+          for (const line of off ? removeDesktop() : installDesktop(PORT)) console.log(line);
+        } catch (e) {
+          fail(e.message);
+        }
+        if (!off) console.log(`For a key, add to ~/.config/hypr/bindings.conf:\n  ${desktopStatus(PORT).bind}`);
+        return;
+      }
+      if (args[0] !== 'tailscale') fail('usage: ah setup tailscale [--off] | desktop [--off]');
       // A one-time, persistent Serve config owned by tailscaled. ah itself never changes
       // its exposure; it only ever listens on loopback.
       const off = flag(args, '--off');

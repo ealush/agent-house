@@ -27,6 +27,10 @@ from other devices is Tailscale's job. `setup tailscale` writes a persistent Ser
 you to enable Serve for the tailnet. There is no plain-http fallback. On iPhone/iPad, use
 Share → Add to Home Screen.
 
+On Omarchy (or any freedesktop desktop), `node bin/ah.js setup desktop` puts ah in the app
+launcher as a window of its own (also Settings → System → Desktop app), and `ah open` opens
+the tmux window you are in, or any session you name, in that window.
+
 After updating, **restart the server**: the page is served fresh from `dist/`, and a page
 newer than the running server shows a "restart ah" banner.
 

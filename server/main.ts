@@ -23,6 +23,7 @@ import { Core, CoreError, resolveDir, defaultName } from './core.ts';
 import { buildLaunch, LaunchError } from './launch.ts';
 import { withCatalog } from './catalog.ts';
 import { attach, viewers } from './terminal.ts';
+import { desktopStatus, installDesktop, removeDesktop } from './desktop.ts';
 import { Drafts } from './drafts.ts';
 import { feedPage, streamFeed, SNAPSHOT } from './feed/stream.ts';
 import { Previews, removeStaleMappings, tailscalePublish } from './preview.ts';
@@ -523,6 +524,21 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   // ---------- system: host-level actions behind Settings → System
 
   if (route('GET', /^\/api\/system\/hooks$/)) return send(res, 200, hooksStatus());
+
+  // ah in the host's app launcher, in its own window (server/desktop.ts), like the hooks card.
+  if (route('GET', /^\/api\/system\/desktop$/)) return send(res, 200, desktopStatus(config.port));
+  if (route('POST', /^\/api\/system\/desktop$/)) {
+    const action = (await readJson(req)).action;
+    if (action !== 'install' && action !== 'uninstall') throw new HttpError(400, 'action must be install or uninstall');
+    let messages: string[];
+    try {
+      messages = action === 'install' ? installDesktop(config.port) : removeDesktop();
+    } catch (err) {
+      throw new HttpError(500, (err as Error).message);
+    }
+    audit(req, `system.desktop.${action}`);
+    return send(res, 200, { messages, status: desktopStatus(config.port) });
+  }
 
   if (route('GET', /^\/api\/omarchy\/theme$/)) return send(res, 200, omarchyTheme());
 

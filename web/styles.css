@@ -5688,3 +5688,21 @@ button.tool-chip:hover {
     transform: translateY(3px);
   }
 }
+
+.bind-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--sunken);
+}
+
+.bind-line code {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
