@@ -124,7 +124,7 @@ that follows you across devices, harnesses, restarts and resumes.
 | P6 | One visual language | ✅ | One keycap style (platform aware), status pills, clean model names, no duplicated header meta. |
 | P7 | Native permission prompts | ✅ | Edit approvals render with the GUI's own diff; the tool row says it is waiting for you, not "Running". |
 | P8 | App badge | ✅ | Home-screen/installed app icon carries the needs-you count. |
-| P9 | Motion | ✗ | Consistent, quick transitions between pages, sessions and panels; reduced motion respected. |
+| P9 | Motion | ✅ | Consistent, quick transitions between pages, sessions and panels; reduced motion respected. |
 | P10 | Inbox and History polish | ✅ | Aligned columns, actions on hover/focus, tidier rows. |
 | P11 | New session knows where you are | ✅ | Starts in the focused session's project with the last harness and model you used. |
 

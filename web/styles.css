@@ -5656,3 +5656,35 @@ button.tool-chip:hover {
     opacity: 1;
   }
 }
+
+/* ---------- motion: pages and sessions cross-fade in the main area (web/motion.ts) */
+
+.main {
+  view-transition-name: ah-main;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+}
+
+::view-transition-old(ah-main) {
+  animation: 90ms ease-in both vt-out;
+}
+
+::view-transition-new(ah-main) {
+  animation: 160ms cubic-bezier(0.2, 0.8, 0.2, 1) both vt-in;
+}
+
+@keyframes vt-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes vt-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}

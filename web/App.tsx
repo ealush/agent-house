@@ -56,6 +56,7 @@ import { Settings } from './Settings.tsx';
 import { showError } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { trackViewport } from './viewport.ts';
+import { transition } from './motion.ts';
 import { runCommand } from './shortcuts.ts';
 import { CommandPalette, Keycaps, Shortcuts, ShortcutsDialog, shortcutTitle, useCommand, usePaletteProvider } from './shortcuts.tsx';
 
@@ -203,9 +204,10 @@ export function App({ onLock }: { onLock: () => void }) {
 
   function go(next: { page?: Page; selected?: string | null }) {
     const route = { page: next.page ?? page, selected: next.selected === undefined ? selected : next.selected };
-    setRoute(route);
     const hash = route.selected ?? (route.page === 'inbox' ? '' : route.page);
     history.replaceState(null, '', hash ? `#${hash}` : location.pathname);
+    if (route.page === page && route.selected === selected) setRoute(route);
+    else transition(() => setRoute(route));
   }
   const open = (key: string | null) => {
     // In split view the sidebar points the focused pane at the session (F46);
