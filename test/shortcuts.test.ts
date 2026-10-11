@@ -245,3 +245,17 @@ test('session actions fire from the composer, pane focus waits for the caret to 
   assert.equal(matchShortcut(e('4', { ctrl: true, alt: true }), 'field'), 'panel-queue');
   assert.equal(matchShortcut({ ...e('ArrowLeft', { ctrl: true, shift: true }), code: 'ArrowLeft' }, 'field'), null, 'mid-text it selects a word');
 });
+
+test('which-key lists only mounted commands answering the held modifiers', async () => {
+  const { chordsFor, registerCommand } = await import('../web/shortcuts.ts');
+  const off = [registerCommand('reply', () => {}), registerCommand('split-right', () => {})];
+  try {
+    const ctrlAlt = chordsFor({ ctrl: true, alt: true, shift: false, meta: false }, false);
+    assert.ok(ctrlAlt.some((c) => c.id === 'reply' && c.key === 'R'));
+    assert.ok(!ctrlAlt.some((c) => c.id === 'split-right'), 'a Ctrl+Shift chord is not a Ctrl+Alt one');
+    assert.ok(!ctrlAlt.some((c) => c.id === 'fork'), 'nothing mounted can fork');
+    assert.ok(chordsFor({ ctrl: true, alt: false, shift: true, meta: false }, false).some((c) => c.id === 'split-right'));
+  } finally {
+    off.forEach((f) => f());
+  }
+});
