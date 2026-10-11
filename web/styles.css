@@ -5913,3 +5913,9 @@ button.tool-chip:hover {
     animation: none;
   }
 }
+
+/* Long lists lay out only what is on screen (History holds 150 conversations). */
+.history-list li {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 62px;
+}

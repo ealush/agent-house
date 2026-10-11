@@ -52,7 +52,7 @@ export function HistoryView({ state, onResume, onForget, onFork }: { state: Stat
       )}
       {state.history.length === 0 && <p className="empty-state">Nothing here yet.</p>}
       {state.history.length > 0 && shown.length === 0 && <p className="empty-state">No conversations match “{filter}”.</p>}
-      <ul className="rows">
+      <ul className="rows history-list">
         {shown.map((h) => {
           const { color, name } = look(h.harness);
           const modelLabel = shortModel(h.model);
