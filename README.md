@@ -75,6 +75,11 @@ to terminal rules and output activity, and matches live agents to their transcri
   found on disk. Resume continues the same conversation (`claude --resume <id>`, …).
 - **Files.** Browse the host, upload from any device into any folder, download, preview,
   and insert a path into the session (as an `@mention` for agents).
+- **Preview.** A session's dev server (Storybook, Vite, Next…) in a browser pane, served
+  from the host: the Preview tab (Ctrl+Alt+6) offers the ports the session's processes
+  listen on. ah proxies it on a port of its own behind the same sign-in, published on
+  your tailnet as `https://<node>.ts.net:<port>`, so a phone sees what the host serves.
+  Live reload works through it. One preview per session; it survives ah restarts.
 - **Review.** Uncommitted changes per session; click a line to send the agent a comment
   anchored to that file and line.
 - **Worktrees.** Start a session on its own branch in its own checkout; see dirty/ahead
@@ -98,7 +103,7 @@ to terminal rules and output activity, and matches live agents to their transcri
   (into the agent's question or picker when it is waiting), Enter / Backspace
   approve / deny, X stop the turn (or Esc in an empty composer), S send the next
   queued message now, M / E model / effort, N rename, F fork, T send to, C copy
-  the last reply, 1–5 the Diff / Files / Chat / Queue / Snapshots panel, `.` the
+  the last reply, 1–6 the Diff / Files / Chat / Queue / Snapshots / Preview panel, `.` the
   session menu. Pane and workspace chords work from the composer too; the
   Ctrl+Shift+arrows still select words there and move to the next pane once the
   caret reaches the edge of the text. In a question form, digits pick, arrows move, Space toggles,
@@ -216,6 +221,7 @@ drive tmux directly, so treat ah's security as protecting *remote* access.
   "files": { "roots": ["~/code", "~/.cache/ah/uploads", "/tmp"] },
   "promptHistory": 60,
   "idleAfter": 4,
+  "preview": { "ports": [47600, 47699] },
   "presets": [
     { "id": "shell", "name": "Shell", "command": "" },
     {
@@ -232,7 +238,9 @@ drive tmux directly, so treat ah's security as protecting *remote* access.
 `host` must be loopback (`127.0.0.1` or `::1`). `peers` is `[]` (default),
 `[{ "name", "url" }]` with https URLs, or `"auto"` (your own online tailnet machines
 running ah). `files.roots` limits the file browser; add `"~"` deliberately if you want your
-whole home. `promptHistory: 0` keeps no prompt history. Presets whose command isn't
+whole home. `promptHistory: 0` keeps no prompt history. `preview.ports` is the range
+preview proxies listen on and publish with `tailscale serve` (ah needs Tailscale's
+operator permission, the same as for `tailscale serve` itself). Presets whose command isn't
 on tmux's `PATH` are hidden. Any CLI can report status with
 `bin/ah-hook.js <preset> <working|waiting|done> [session-id]`.
 

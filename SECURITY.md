@@ -72,6 +72,15 @@ All under `~/.local/state/ah/` (mode 0700 directory, 0600 files):
 
 Uploads go to `~/.cache/ah/uploads/` (0600).
 
+Previews (a session's dev server, `server/preview.ts`) are proxied on ports of their
+own (47600–47699 by default), each published with `tailscale serve`. A preview requires the
+same Serve identity and sign-in as ah, never forwards ah's session cookie or Tailscale
+identity headers to the dev server, drops any `Set-Cookie` that would overwrite ah's, and
+may be framed only by ah and itself. Being another origin, the previewed page can't read
+ah's pages; ah's exact-Origin check keeps it from writing to ah or opening a terminal.
+Mappings a crashed ah left behind are removed at start (only ours: a port proxied to
+itself).
+
 In the browser, the GUI keeps the newest page of recently viewed conversations in
 IndexedDB (`ah-feed-cache`) so a reload paints at once. Every record is AES-GCM
 encrypted with a key the server derives from that device's sign-in (`cacheSecret` in
