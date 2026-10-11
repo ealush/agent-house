@@ -247,7 +247,7 @@ body,
   border-radius: var(--radius-sm);
   color: var(--text);
   text-decoration: none;
-  transition: background-color 0.25s, transform 0.2s;
+  transition: background-color var(--dur-2), transform var(--dur-2);
 }
 .list-row:hover {
   background: var(--accent-bg);
@@ -281,7 +281,7 @@ body,
   font-size: 12px;
   text-transform: lowercase;
   white-space: nowrap;
-  transition: all 0.2s;
+  transition: all var(--dur-2);
 }
 a.tag:hover,
 button.tag:hover {
@@ -393,7 +393,7 @@ button.tag:hover {
   text-decoration: underline;
   text-underline-offset: 3px;
   text-decoration-color: var(--brand);
-  transition: color 0.2s, text-decoration-color 0.2s;
+  transition: color var(--dur-2), text-decoration-color var(--dur-2);
 }
 .md a:hover,
 .gui a:hover {
@@ -454,7 +454,7 @@ button.tag:hover {
 }
 @media (hover: hover) {
   .row {
-    transition: background-color 0.25s, transform 0.2s;
+    transition: background-color var(--dur-2), transform var(--dur-2);
   }
   .row:hover {
     transform: translateX(4px);

@@ -34,6 +34,10 @@
   --mono: 'JetBrainsMono Nerd Font', 'JetBrains Mono Variable', 'SF Mono', Menlo, ui-monospace, monospace;
   --vh: 100dvh;
   --radius: 12px;
+  /* Motion: one curve, two speeds. Small state changes are fast; things that arrive take a beat longer. */
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dur-1: 120ms;
+  --dur-2: 200ms;
   /* Behind every modal and sheet: one depth, one color. */
   --scrim: #040507a0;
   /* The home indicator's strip. Zero while the keyboard covers it. */
@@ -986,7 +990,7 @@ a.pill:hover {
   font-size: 13px;
   color: var(--accent);
   opacity: 0;
-  transition: opacity 0.12s;
+  transition: opacity var(--dur-1);
 }
 
 .empty-recent-row:hover,
@@ -3645,7 +3649,7 @@ a.btn {
 
 @media (prefers-reduced-motion: no-preference) {
   .divider {
-    transition: background 120ms;
+    transition: background var(--dur-1);
   }
 }
 
@@ -3860,7 +3864,7 @@ a.btn {
   border-radius: 16px;
   border: 1px solid var(--line-2);
   background: var(--raised);
-  transition: border-color 0.15s;
+  transition: border-color var(--dur-1);
 }
 
 .composer:focus-within {
@@ -3939,7 +3943,7 @@ a.btn {
 }
 
 .queue-row.shifting {
-  transition: transform 0.12s ease;
+  transition: transform var(--dur-1) ease;
 }
 
 .queue-row.dragging {
@@ -4587,7 +4591,7 @@ button.tool-chip:hover {
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: border-color 0.12s, background 0.12s;
+  transition: border-color var(--dur-1), background var(--dur-1);
 }
 
 .ask-row:hover,
@@ -5215,7 +5219,7 @@ button.tool-chip:hover {
   margin: 3px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  transition: border-color 0.12s, box-shadow 0.12s;
+  transition: border-color var(--dur-1), box-shadow var(--dur-1);
 }
 
 .ws-root .pane.focused {
@@ -5723,7 +5727,7 @@ button.tool-chip:hover {
 @media (hover: hover) {
   .history-row .row-actions {
     opacity: 0;
-    transition: opacity 0.12s;
+    transition: opacity var(--dur-1);
   }
 
   .history-row:hover .row-actions,
@@ -5917,4 +5921,50 @@ button.tool-chip:hover {
 .history-list li {
   content-visibility: auto;
   contain-intrinsic-size: auto 62px;
+}
+
+/* ---------- motion and touch: sheets arrive, buttons give, reduced motion means none */
+
+.dialog[open],
+.menu {
+  animation: sheet-in var(--dur-2) var(--ease);
+}
+
+.dialog[open]::backdrop {
+  animation: scrim-in var(--dur-2) var(--ease);
+}
+
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.985);
+  }
+}
+
+@keyframes scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.btn,
+.icon-btn,
+.key {
+  transition: transform var(--dur-1) var(--ease), border-color var(--dur-1), background-color var(--dur-1), filter var(--dur-1);
+}
+
+.btn:active:not(:disabled),
+.icon-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after,
+  ::backdrop {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
 }

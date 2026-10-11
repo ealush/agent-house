@@ -406,7 +406,7 @@
 
 .gui .reasoning-head span {
   display: inline-block;
-  transition: transform 0.15s;
+  transition: transform var(--dur-1);
 }
 
 .gui .reasoning.open .reasoning-head span {
@@ -473,7 +473,7 @@
 .gui .tool-caret {
   flex: none;
   color: var(--faint);
-  transition: transform 0.15s;
+  transition: transform var(--dur-1);
 }
 
 .gui .tool.open .tool-caret {
