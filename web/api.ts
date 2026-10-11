@@ -128,6 +128,8 @@ export type Preset = {
   switchEffort?: string;
   modelArgs?: string[];
   settingsCommands?: { model?: string; effort?: string; mode?: string };
+  /** Transcript adapter for the GUI view; absent for terminal-only presets. */
+  feed?: string;
   available: boolean;
 };
 
@@ -225,7 +227,7 @@ export type WorktreeInfo = {
 export type BulkRemoveResult = { path: string; ok: boolean; error?: string; gone?: boolean; reclaimedBytes: number };
 
 export type BranchInfo = { name: string; current: boolean; remote: boolean; worktree?: string | null };
-export type BranchList = { current: string | null; branches: BranchInfo[] };
+export type BranchList = { current: string | null; branches: BranchInfo[]; dirty: number };
 
 export type SendResult = { outcome: 'delivered' | 'queued'; windowId: string; resumed: boolean; queued: number };
 export type QueueItem = { id: string; text: string; enter: boolean; at: number };

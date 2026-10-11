@@ -234,7 +234,7 @@ export type BranchInfo = {
   worktree?: string | null;
 };
 
-export type BranchList = { current: string | null; branches: BranchInfo[] };
+export type BranchList = { current: string | null; branches: BranchInfo[]; dirty: number };
 
 export async function toplevel(dir: string): Promise<string> {
   try {
@@ -270,11 +270,12 @@ function friendlyWorktreeError(branch: string, path: string): string {
 /** Local branches (most recently committed first), then remote-tracking ones. */
 export async function listBranches(dir: string): Promise<BranchList> {
   const root = await toplevel(dir);
-  const [current, locals, remotes, holders] = await Promise.all([
+  const [current, locals, remotes, holders, status] = await Promise.all([
     git(root, 'branch', '--show-current').then((s) => s.trim() || null).catch(() => null),
     git(root, 'for-each-ref', '--sort=-committerdate', '--format=%(refname:short)', 'refs/heads/').catch(() => ''),
     git(root, 'for-each-ref', '--sort=refname', '--format=%(refname:short)', 'refs/remotes/').catch(() => ''),
     otherWorktreesByBranch(root),
+    git(root, 'status', '--porcelain').catch(() => ''),
   ]);
   const localNames = locals.split('\n').map((s) => s.trim()).filter(Boolean);
   const localSet = new Set(localNames);
@@ -292,7 +293,7 @@ export async function listBranches(dir: string): Promise<BranchList> {
     if (!name || localSet.has(name)) continue;
     branches.push({ name, current: false, remote: true, worktree: null });
   }
-  return { current, branches };
+  return { current, branches, dirty: status.split('\n').filter(Boolean).length };
 }
 
 function gitMessage(err: unknown): string {

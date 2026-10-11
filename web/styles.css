@@ -4250,6 +4250,12 @@ button.tool-chip:hover {
   font-size: 13px;
 }
 
+/* Shell-style dirty marker: `main*` when the checkout has uncommitted changes. */
+.dirty-marker {
+  color: var(--accent);
+  font-weight: 700;
+}
+
 /* ---------- new session dialog */
 
 .new-session {

@@ -115,6 +115,15 @@ test('branches: list local recency, switch local, track remote, create new, reje
   await assert.rejects(switchBranch(dir, 'other'), /local changes.*overwritten/i);
 });
 
+test('branches: listBranches reports uncommitted file count as dirty', async () => {
+  const dir = await repo();
+  assert.equal((await listBranches(dir)).dirty, 0);
+  await writeFile(join(dir, 'a.txt'), 'dirty\n');
+  assert.equal((await listBranches(dir)).dirty, 1);
+  await writeFile(join(dir, 'new.txt'), 'untracked\n');
+  assert.equal((await listBranches(dir)).dirty, 2);
+});
+
 test('branches: a branch checked out in another worktree is marked and refuses to switch', async () => {
   const dir = await repo();
   const wt = await createWorktree(dir, 'Held work');

@@ -179,8 +179,24 @@ export function ChangesPanel({ client, windowId, onComment }: { client: HostApi;
 // matches nothing is offered as a new branch to create.
 
 export function BranchPicker({ client, windowId, current, onSwitched }: { client: HostApi; windowId: string; current: string; onSwitched: () => void }) {
+  const [dirty, setDirty] = useState(0);
+  useEffect(() => {
+    let dead = false;
+    const load = () => {
+      client.branches(windowId).then((l) => {
+        if (!dead) setDirty(l.dirty ?? 0);
+      }).catch(() => {});
+    };
+    load();
+    const t = window.setInterval(load, 10_000);
+    return () => {
+      dead = true;
+      window.clearInterval(t);
+    };
+  }, [client, windowId, current]);
+  const title = dirty > 0 ? `Switch branch · ${dirty} uncommitted change${dirty === 1 ? '' : 's'}` : 'Switch branch';
   return (
-    <Popover up={false} align="right" className="pill mono" title="Switch branch" label={<><Icon name="branch" size={12} /> {current}</>}>
+    <Popover up={false} align="right" className="pill mono" title={title} label={<><Icon name="branch" size={12} /> {current}{dirty > 0 && <span className="dirty-marker" aria-hidden="true" title={`${dirty} uncommitted change${dirty === 1 ? '' : 's'}`}>*</span>}</>}>
       {(close) => <BranchMenu client={client} windowId={windowId} close={close} onSwitched={onSwitched} />}
     </Popover>
   );
@@ -270,9 +286,9 @@ function BranchMenu({ client, windowId, close, onSwitched }: { client: HostApi; 
             return (
             <div key={b.name} className={`picker-row ${i === at ? 'on' : ''}`}>
               <button type="button" className="picker-name" disabled={!!busy || held} onMouseEnter={() => setActive(i)} onClick={() => choose(b.name)}
-                title={held ? `Already checked out in worktree at ${b.worktree} — open that worktree or remove it (the branch is kept)` : b.remote ? 'Remote branch — checks out with tracking' : b.current ? 'Current branch' : `Switch to ${b.name}`}>
+                title={held ? `Already checked out in worktree at ${b.worktree} — open that worktree or remove it (the branch is kept)` : b.remote ? 'Remote branch — checks out with tracking' : b.current ? ((list?.dirty ?? 0) > 0 ? `Current branch · ${list!.dirty} uncommitted change${list!.dirty === 1 ? '' : 's'}` : 'Current branch') : `Switch to ${b.name}`}>
                 <Icon name="branch" size={13} />
-                <span className="branch-name">{b.name}</span>
+                <span className="branch-name">{b.name}{b.current && (list?.dirty ?? 0) > 0 && <span className="dirty-marker" aria-hidden="true">*</span>}</span>
                 {b.current && <span className="check">✓</span>}
                 {held && !b.current && <span className="hint">in worktree</span>}
                 {!held && b.remote && !b.current && <span className="hint">remote</span>}
