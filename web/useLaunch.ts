@@ -19,7 +19,7 @@ type Opts = {
   /** The agent's own picker was typed in: show its terminal. */
   onSettingsOpen?: () => void;
   /** A relaunch finished: open the replacement window id on this host. */
-  onRelaunched?: (id: string) => void;
+  onRelaunched?: (uid: string) => void;
 };
 
 export function useLaunch({ client, w, agent, onNotice, onSent, onSettingsOpen, onRelaunched }: Opts) {
@@ -84,7 +84,7 @@ export function useLaunch({ client, w, agent, onNotice, onSent, onSettingsOpen, 
     try {
       const r = await client.relaunch(w.uid, change);
       onNotice(`Relaunched with ${what}`);
-      onRelaunched?.(r.id);
+      onRelaunched?.(r.uid);
     } catch (e) {
       showError(e, "Couldn't relaunch");
     }

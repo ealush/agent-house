@@ -35,7 +35,7 @@ type Props = {
   onNotice?: (msg: string) => void;
   onSettingsOpen?: () => void;
   /** Hot swap finished: open the replacement window id on this host. */
-  onRelaunched?: (id: string) => void;
+  onRelaunched?: (uid: string) => void;
   /** Bumped to pull focus here (e.g. "Reply" on an ask). */
   focusKey?: number;
   /** The focused pane's composer takes the model/effort commands. */

@@ -435,13 +435,13 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
 
   const comment = async (text: string) => onSent(await client.send(w.uid, text, true));
 
-  // Window keys are the window id, host-prefixed for peers; a fork on this host
-  // shares the prefix of the session it was forked from.
-  const keyOnThisHost = (id: string) => w.key.slice(0, w.key.length - w.id.length) + id;
-  const forked = (id: string) => {
+  // Session keys are the uid, host-prefixed for peers; a fork or relaunch on this
+  // host shares the prefix of the session it came from.
+  const keyOnThisHost = (uid: string) => w.key.slice(0, w.key.length - w.uid.length) + uid;
+  const forked = (uid: string) => {
     setForking(false);
     refresh();
-    if (onOpenKey) onOpenKey(keyOnThisHost(id));
+    if (onOpenKey) onOpenKey(keyOnThisHost(uid));
     else window.dispatchEvent(new CustomEvent('ah:toast', { detail: 'Fork started; find it in the sidebar' }));
   };
 
@@ -533,9 +533,9 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
     agent: w.agent,
     onNotice: onToast,
     onSent,
-    onRelaunched: (id) => {
+    onRelaunched: (uid) => {
       refresh();
-      onOpenKey?.(keyOnThisHost(id));
+      onOpenKey?.(keyOnThisHost(uid));
     },
   });
   useLaunchPalette(launch, active && view !== 'gui' && !!w.agent);
@@ -953,9 +953,9 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
           {view === 'gui' && (
             <ComposerBar client={client} target={w.uid} agent={w.agent} w={w} onSent={onSent} onChange={refresh} focusKey={focus} active={active}
               onSettingsOpen={() => switchView('terminal', true)}
-              onRelaunched={(id) => {
+              onRelaunched={(uid) => {
                 refresh();
-                if (onOpenKey) onOpenKey(keyOnThisHost(id));
+                if (onOpenKey) onOpenKey(keyOnThisHost(uid));
               }} />
           )}
         </div>
