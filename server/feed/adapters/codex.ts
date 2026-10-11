@@ -9,6 +9,26 @@ function texts(content: unknown, kind: 'input_text' | 'output_text'): string[] {
   return (Array.isArray(content) ? content : []).filter((c) => c?.type === kind && typeof c.text === 'string').map((c) => c.text);
 }
 
+/** Blocks the harness adds to a user turn that no person typed. */
+const INJECTED = /^<(environment_context|codex_internal_context)\b/;
+
+/** A user's answer to an asked question arrives wrapped with its question. */
+const QUESTION_REPLY = /^<send_user_message_question_reply>([\s\S]*?)<\/send_user_message_question_reply>$/;
+
+/** The answers out of a question-reply wrapper, or null when it holds none. */
+function questionReply(text: string): string | null {
+  const m = text.match(QUESTION_REPLY);
+  if (!m) return null;
+  try {
+    const items = JSON.parse(m[1].trim());
+    const answers = (Array.isArray(items) ? items : [items])
+      .map((i) => (i && typeof i.answer === 'string' ? i.answer.trim() : ''))
+      .filter(Boolean);
+    if (answers.length) return answers.join('\n');
+  } catch {}
+  return m[1].trim() || null;
+}
+
 /** Codex wraps shell output as JSON `{output, metadata: {exit_code}}`, or plain text. */
 function output(raw: unknown): { text: string; isError: boolean; data?: Record<string, unknown>; images: string[] } {
   if (Array.isArray(raw)) {
@@ -43,8 +63,23 @@ export function parseCodexLine(d: any, seq: number): Entry | null {
       if (p.role === 'assistant') return entry('assistant', 'llm_call', texts(p.content, 'output_text').flatMap(textParts));
       if (p.role !== 'user') return null; // developer/system instructions
       const parts: Part[] = [];
-      // Environment context, AGENTS.md and other injected blocks start with a tag or heading.
-      for (const t of texts(p.content, 'input_text')) if (t.trim() && !/^\s*(<|# AGENTS\.md)/.test(t)) parts.push({ type: 'text', text: t.trim() });
+      // The harness's own context (<environment_context>, <codex_internal_context>,
+      // the <image> wrappers around an attached picture, the AGENTS.md repo
+      // instructions) is hidden. Anything else is yours and is shown, whatever
+      // it starts with: image wrappers are stripped inline so a caption beside
+      // them stays.
+      for (const t of texts(p.content, 'input_text')) {
+        const s = t.trim();
+        if (!s || INJECTED.test(s) || s.startsWith('# AGENTS.md instructions for')) continue;
+        // A wrapped answer shows as what the person answered.
+        const reply = questionReply(s);
+        if (reply !== null) {
+          parts.push({ type: 'text', text: reply });
+          continue;
+        }
+        const shown = s.replace(/<image\b[^>]*>|<\/image>/g, '').trim();
+        if (shown) parts.push({ type: 'text', text: shown });
+      }
       for (const c of Array.isArray(p.content) ? p.content : []) {
         if (c?.type === 'input_image' && typeof c.image_url === 'string') {
           const m = c.image_url.match(/^data:(image\/[\w.+-]+);base64,(.*)$/);

@@ -8,17 +8,34 @@ const COMMAND = /<command-name>([^<]*)<\/command-name>/;
 const ARGS = /<command-args>([^<]*)<\/command-args>/;
 const STDOUT = /<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/;
 
+/**
+ * Text the harness puts in a user line that no person typed. Anything else is
+ * yours and is shown, whatever it starts with: a paste (wrapped in
+ * <pasted_content>), "[Image #2] look at this", or "<div> is broken".
+ */
+const INJECTED = /^<(system-reminder|task-notification|local-command-caveat|local-command-stderr|command-message|user-prompt-submit-hook)\b/;
+const PASTED = /<\/?pasted_content\b[^>]*>/g;
+const BASH_IN = /^<bash-input>([\s\S]*?)<\/bash-input>$/;
+const BASH_OUT = /<bash-(stdout|stderr)>([\s\S]*?)<\/bash-\1>/g;
+
 /** What a person typed, or null for text the harness injected into the turn. */
 function userText(text: string): Part | null {
-  const t = text.trim();
+  const t = text.replace(PASTED, '').trim();
   if (!t) return null;
   const cmd = t.match(COMMAND);
   if (cmd) return { type: 'text', text: `${cmd[1].trim()} ${t.match(ARGS)?.[1].trim() ?? ''}`.trim() };
   const out = t.match(STDOUT);
   if (out) return out[1].trim() ? { type: 'notice', kind: 'info', text: out[1].trim() } : null;
+  // "! cmd" in Claude Code: the command is yours, its output is the shell's.
+  const bash = t.match(BASH_IN);
+  if (bash) return { type: 'text', text: `! ${bash[1].trim()}` };
+  if (t.startsWith('<bash-stdout>') || t.startsWith('<bash-stderr>')) {
+    const shown = [...t.matchAll(BASH_OUT)].map((m) => m[2].trim()).filter(Boolean).join('\n');
+    return shown ? { type: 'notice', kind: 'info', text: shown } : null;
+  }
   if (/^\[Request interrupted by user/.test(t)) return { type: 'notice', kind: 'interrupted', text: 'Interrupted' };
-  // System reminders, caveats, task notifications, image size notes…
-  if (t.startsWith('<') || t.startsWith('[') || t.startsWith('Caveat:')) return null;
+  // The harness's note beside an attached image, and its pre-hook caveat.
+  if (INJECTED.test(t) || /^\[Image: source: [^\]]*\]$/.test(t) || t.startsWith('Caveat:')) return null;
   return { type: 'text', text: t };
 }
 

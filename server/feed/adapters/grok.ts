@@ -16,17 +16,26 @@
 import type { Entry, Part } from '../schema.ts';
 import { imageSrc, parseArgs, textParts, toolResult } from '../parts.ts';
 
+/**
+ * Text the harness puts in a user line that no person typed (<user_info>,
+ * <system-reminder> context it re-states every turn). Anything else is yours
+ * and is shown, whatever it starts with.
+ */
+const INJECTED = /^<(user_info|system-reminder)\b/;
+
 /** Text of a user line, or null when the line is injected context, not a person. */
 function userText(d: any): string | null {
   if (d.synthetic_reason) return null;
   const blocks = Array.isArray(d.content) ? d.content : typeof d.content === 'string' ? [{ type: 'text', text: d.content }] : [];
   const text = blocks.filter((c: any) => c?.type === 'text' && typeof c.text === 'string').map((c: any) => c.text).join('\n');
+  // A wrapped prompt is a real prompt even when the harness didn't count it:
+  // wrapped turns without a prompt_index are still yours.
   const wrapped = text.match(/<user_query>([\s\S]*?)<\/user_query>/);
   if (wrapped) return wrapped[1].trim() || null;
   // No wrapper: a human turn only when the harness counted it as a prompt.
   if (d.prompt_index === undefined) return null;
   const t = text.trim();
-  if (!t || t.startsWith('<')) return null;
+  if (!t || INJECTED.test(t)) return null;
   return t;
 }
 
