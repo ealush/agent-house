@@ -135,7 +135,7 @@ export type Preset = {
 
 export type Host = { name: string; self: boolean; online: boolean };
 
-export const API_VERSION = 19;
+export const API_VERSION = 20;
 
 export type PullInfo = { number: number | null; url: string | null };
 
@@ -234,6 +234,11 @@ export type QueueItem = { id: string; text: string; enter: boolean; at: number }
 
 /** A session's browser preview (server/preview.ts): its dev server's port, and ah's proxy port for it. */
 export type Preview = { uid: string; target: number; port: number; published: boolean };
+export type Draft = { text: string; at: number; device: string; client: string };
+
+/** This page load. A draft saved under it is our own, not one from another device. */
+export const CLIENT_ID = Math.random().toString(36).slice(2, 12);
+
 export type PreviewInfo = { preview: Preview | null; ports: number[]; live: boolean };
 
 export type SnapshotInfo = {
@@ -337,6 +342,9 @@ export function hostApi(base: string) {
     moveQueued: (uid: string, itemId: string, to: number) => r<QueueItem[]>('POST', `/api/sessions/${enc(uid)}/queue/${enc(itemId)}/move`, { to }),
     sendNow: (uid: string, itemId: string) => r<SendResult>('POST', `/api/sessions/${enc(uid)}/queue/${enc(itemId)}/send-now`),
     pin: (uid: string, pinned: boolean) => r('POST', `/api/sessions/${enc(uid)}/pin`, { pinned }),
+    /** Unsent composer text kept on the host, so it follows you between devices. */
+    draft: (uid: string) => r<{ draft: Draft | null }>('GET', `/api/sessions/${enc(uid)}/draft`).then((d) => d.draft),
+    saveDraft: (uid: string, text: string) => r<{ draft: Draft | null }>('PUT', `/api/sessions/${enc(uid)}/draft`, { text, device: deviceName(), client: CLIENT_ID }),
     snapshots: (uid: string) => r<SnapshotList>('GET', `/api/sessions/${enc(uid)}/snapshots`),
     restoreSnapshot: (uid: string, turn: number, interrupt = false) =>
       r<{ safety: SnapshotInfo; restored: SnapshotInfo }>('POST', `/api/sessions/${enc(uid)}/snapshots/${turn}/restore`, { interrupt }),

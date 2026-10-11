@@ -9,6 +9,7 @@ import { SuggestList, triggerAt, useSuggestions } from './Suggest.tsx';
 import { useLaunch, useLaunchPalette } from './useLaunch.ts';
 import { addOutgoing, removeOutgoing, updateOutgoing, useOutbox } from './outbox.ts';
 import { QueueTray, type QueueTrayHandle } from './QueueTray.tsx';
+import { useDraftSync } from './useDraftSync.ts';
 
 // The message bar under a GUI session. It goes through the server, which types the text
 // in now (idle agent, or any shell), queues it while an agent works, or resumes a dead
@@ -53,6 +54,8 @@ export function ComposerBar({ client, target, agent, w, onSent, onChange, onNoti
   const area = useRef<HTMLTextAreaElement>(null);
   const tray = useRef<QueueTrayHandle>(null);
   const [text, setText] = useState(() => drafts.get(target) ?? '');
+  // The unsent text also lives on the host, so it follows you to your next device.
+  const draftSync = useDraftSync(client, target, text, setText);
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
   const recognition = useRef<Recognition | null>(null);
@@ -139,6 +142,7 @@ export function ComposerBar({ client, target, agent, w, onSent, onChange, onNoti
     recent.current = [draft, ...recent.current.filter((r) => r !== draft)];
     cursor.current = -1;
     setText('');
+    draftSync.saveNow('');
     sending.current = sending.current.then(async () => {
       try {
         const result = await client.send(target, draft, true);
@@ -239,6 +243,11 @@ export function ComposerBar({ client, target, agent, w, onSent, onChange, onNoti
       }}
     >
       {suggesting && trigger && <SuggestList items={suggestions} index={pick} kind={trigger.kind} onPick={accept} />}
+      {draftSync.from && (
+        <div className="composer-from" role="status">
+          <Icon name="send" size={11} /> Continued from {draftSync.from}
+        </div>
+      )}
       <div className="composer-input">
         {isShell && <span className="prompt-sign">➜</span>}
         <textarea

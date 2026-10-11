@@ -6,6 +6,7 @@ import { Icon } from './icons.tsx';
 import { ConfirmButton } from './ConfirmButton.tsx';
 import { showError } from './ask.tsx';
 import { surfaceFor } from './surface.ts';
+import { useDraftSync } from './useDraftSync.ts';
 
 type Props = {
   item: HistoryItem;
@@ -39,6 +40,7 @@ function readOnlyWin(item: HistoryItem, feed: string): Win {
  */
 export function EndedSession({ item, client, feed, narrow, onResume, onClose, closeLabel = 'Close' }: Props) {
   const [text, setText] = useState('');
+  const draftSync = useDraftSync(client, item.ref, text, setText);
   const [busy, setBusy] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
   const agent = item.harness === 'shell' ? null : item.harness;
@@ -59,6 +61,7 @@ export function EndedSession({ item, client, feed, narrow, onResume, onClose, cl
         // The send path resumes a dead session first, then delivers.
         await client.send(item.ref, msg, true);
         setText('');
+        draftSync.saveNow('');
       }
       await onResume();
     } catch (e) {

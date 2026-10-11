@@ -23,6 +23,7 @@ import { Core, CoreError, resolveDir, defaultName } from './core.ts';
 import { buildLaunch, LaunchError } from './launch.ts';
 import { withCatalog } from './catalog.ts';
 import { attach, viewers } from './terminal.ts';
+import { Drafts } from './drafts.ts';
 import { feedPage, streamFeed, SNAPSHOT } from './feed/stream.ts';
 import { Previews, removeStaleMappings, tailscalePublish } from './preview.ts';
 import { listeningPorts } from './procs.ts';
@@ -75,6 +76,7 @@ try {
   process.exit(1);
 }
 const core = new Core(config, viewers);
+const drafts = new Drafts();
 const sidechat = new SideChatStore();
 const search = new SearchIndexer(getDb(), () => core.searchSources());
 const gate = new Gate();
@@ -494,6 +496,14 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     }
     audit(req, 'snapshot.toggle', { uid: m[1], enabled: body.enabled !== false });
     return send(res, 200, { ok: true });
+  }
+
+  // Unsent composer text, so a draft follows you between devices (server/drafts.ts).
+  if ((m = route('GET', /^\/api\/sessions\/([\w-]{1,40})\/draft$/))) return send(res, 200, { draft: drafts.get(m[1]) });
+  if ((m = route('PUT', /^\/api\/sessions\/([\w-]{1,40})\/draft$/))) {
+    const body = await readJson(req);
+    const text = str(body.text ?? '', 'text', 32 * 1024);
+    return send(res, 200, { draft: drafts.set(m[1], text, str(body.device ?? '', 'device', 40), str(body.client ?? '', 'client', 40)) });
   }
 
   if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/pin$/))) {
@@ -1190,6 +1200,7 @@ async function shutdown(sig: string) {
   for (const ws of wss.clients) ws.close(1001, 'server shutting down');
   server.close();
   core.stop();
+  await drafts.save();
   // Unpublish preview ports; a crash leaves them for removeStaleMappings at the next start.
   await Promise.race([previews.stopAll(), new Promise((r) => setTimeout(r, 3000))]);
   const drain = (async () => {
