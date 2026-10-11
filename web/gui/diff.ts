@@ -56,6 +56,32 @@ export function structuredLines(hunks: unknown): DiffLine[] | null {
 }
 
 /** Before/after strings with no hunk information: shown as a replacement. */
+/**
+ * An edit's old and new text as a line diff: unchanged lines are context, so a
+ * one-line change inside a re-sent block reads as one line. Large inputs (past
+ * what an LCS table should cost) fall back to all removed, then all added.
+ */
 export function replaceLines(before: string, after: string): DiffLine[] {
-  return [...(before ? before.split('\n').map((text) => ({ kind: 'del' as const, text, n: null })) : []), ...after.split('\n').map((text) => ({ kind: 'add' as const, text, n: null }))];
+  const a = before ? before.split('\n') : [];
+  const b = after.split('\n');
+  const del = (text: string): DiffLine => ({ kind: 'del', text, n: null });
+  const add = (text: string): DiffLine => ({ kind: 'add', text, n: null });
+  if (a.length * b.length > 250_000) return [...a.map(del), ...b.map(add)];
+  // lcs[i][j]: common lines of a[i..] and b[j..].
+  const lcs = Array.from({ length: a.length + 1 }, () => new Uint32Array(b.length + 1));
+  for (let i = a.length - 1; i >= 0; i--) for (let j = b.length - 1; j >= 0; j--) lcs[i][j] = a[i] === b[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+  const out: DiffLine[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) {
+      out.push({ kind: 'ctx', text: a[i], n: null });
+      i++;
+      j++;
+    } else if (lcs[i + 1][j] >= lcs[i][j + 1]) out.push(del(a[i++]));
+    else out.push(add(b[j++]));
+  }
+  while (i < a.length) out.push(del(a[i++]));
+  while (j < b.length) out.push(add(b[j++]));
+  return out;
 }

@@ -121,8 +121,8 @@ that follows you across devices, harnesses, restarts and resumes.
 | P3 | Continue on this device | ✗ | Handoff: opening ah offers the session you were just using on another device. |
 | P4 | Drafts follow you | ✗ | An unsent composer draft is kept per session on the host: start on the phone, finish at the desk, survive reloads. |
 | P5 | GUI by default where it reads better | ✅ | Phones open agent sessions in the GUI unless you chose otherwise. |
-| P6 | One visual language | ✗ | One keycap style (platform aware), status pills, clean model names, no duplicated header meta. |
-| P7 | Native permission prompts | ✗ | Edit approvals render with the GUI's own diff; the tool row says it is waiting for you, not "Running". |
+| P6 | One visual language | ✅ | One keycap style (platform aware), status pills, clean model names, no duplicated header meta. |
+| P7 | Native permission prompts | ✅ | Edit approvals render with the GUI's own diff; the tool row says it is waiting for you, not "Running". |
 | P8 | App badge | ✗ | Home-screen/installed app icon carries the needs-you count. |
 | P9 | Motion | ✗ | Consistent, quick transitions between pages, sessions and panels; reduced motion respected. |
 | P10 | Inbox and History polish | ✗ | Aligned columns, actions on hover/focus, tidier rows. |

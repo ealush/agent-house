@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Entry } from '../server/feed/schema.ts';
 import { assistantTurnCutOff, blockText, clipTail, handoffText, initialFeed, lastAssistantText, project, readHandoff, readLastAssistant, reduce, transcriptProse } from '../web/gui/reducer.ts';
-import { patchLines, structuredLines } from '../web/gui/diff.ts';
+import { patchLines, replaceLines, structuredLines } from '../web/gui/diff.ts';
 
 const user = (seq: number, text: string): Entry => ({ seq, id: `u${seq}`, role: 'user', step: 'message', at: seq, parts: [{ type: 'text', text }] });
 const call = (seq: number, id: string): Entry => ({ seq, id: `c${seq}`, role: 'assistant', step: 'tool_execution', at: seq, parts: [{ type: 'tool_call', call: { id, name: 'Bash', args: {} } }] });
@@ -145,4 +145,11 @@ test('diffs: codex patches and claude structured hunks number lines from the new
   ]);
   assert.deepEqual(structuredLines([{ oldStart: 1, newStart: 1, lines: [' a', '-b', '+c'] }])!.map((l) => l.n), [null, 1, 2, 2]);
   assert.equal(structuredLines('nope'), null);
+});
+
+test('an edit diff keeps unchanged lines as context', () => {
+  const kinds = (b: string, a: string) => replaceLines(b, a).map((l) => `${l.kind[0]}${l.text}`);
+  assert.deepEqual(kinds('def add(a, b):\n    return a + b', 'def add(a, b):\n    return a + b\n\ndef sub(a, b):\n    return a - b'), ['cdef add(a, b):', 'c    return a + b', 'a', 'adef sub(a, b):', 'a    return a - b']);
+  assert.deepEqual(kinds('x = 1\ny = 2', 'x = 1\ny = 3'), ['cx = 1', 'dy = 2', 'ay = 3']);
+  assert.deepEqual(kinds('', 'new'), ['anew'], 'a new file is all added');
 });

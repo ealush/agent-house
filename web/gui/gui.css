@@ -512,8 +512,23 @@
   }
 }
 
+/* Held at a permission prompt: the accent, like everything else that needs you. */
+.gui .tool.awaiting {
+  border-color: var(--accent-line);
+}
+
+.gui .tool-dot.awaiting {
+  background: var(--accent);
+  animation: gui-pulse 1.2s ease-in-out infinite;
+}
+
+.gui .tool.awaiting .tool-state {
+  color: var(--accent);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .gui .tool-dot.running {
+  .gui .tool-dot.running,
+  .gui .tool-dot.awaiting {
     animation: none;
   }
 }
@@ -878,4 +893,27 @@
 .gui .msg:focus-visible .msg-snap,
 .gui .msg:focus-visible .msg-actions {
   visibility: visible;
+}
+
+/* The approval card under a natively drawn call: the question, the screen text folded away. */
+.gui .ask-question {
+  margin: 2px 0 4px;
+  font-size: 15px;
+  font-weight: 550;
+  color: var(--text);
+}
+
+.gui .ask-raw summary {
+  width: fit-content;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.gui .ask-raw summary:hover {
+  color: var(--muted);
+}
+
+.gui .ask-raw[open] summary {
+  margin-bottom: 6px;
 }

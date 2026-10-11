@@ -17,6 +17,7 @@ import { useFeed } from './useFeed.ts';
 import { project, type Block } from './reducer.ts';
 import { GuiContext, type GuiActions } from './context.ts';
 import { ItemView, PartView } from './router.tsx';
+import { AwaitingTool } from './tools.tsx';
 import './gui.css';
 
 const UNAVAILABLE: Record<string, string> = {
@@ -321,9 +322,25 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
 
   const waiting = w.status === 'waiting' && w.ask;
   const empty = state.status !== 'unavailable' && !blocks.length;
+  // A permission prompt is about the newest call still without a result in this turn.
+  const awaitingCall = useMemo(() => {
+    if (!waiting || (w.ask!.kind !== 'tool' && w.ask!.kind !== 'command')) return null;
+    for (let i = blocks.length - 1; i >= 0; i--) {
+      const b = blocks[i];
+      if (b.kind === 'user') return null;
+      if (b.kind !== 'agent') continue;
+      for (let j = b.items.length - 1; j >= 0; j--) {
+        const it = b.items[j];
+        const open = it.kind === 'tools' ? it.calls.findLast((c) => !state.results[c.id]) : undefined;
+        if (open) return open.id;
+      }
+    }
+    return null;
+  }, [waiting, w.ask?.kind, blocks, state.results]);
 
   return (
     <GuiContext.Provider value={actions}>
+      <AwaitingTool.Provider value={awaitingCall}>
       <div className={`surface gui ${hidden ? 'hidden' : ''}`}>
         <div className="gui-scroll" ref={scroller} onScroll={onScroll}>
           <div
@@ -386,7 +403,7 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
 
             {waiting && (
               <div className="approval">
-                <AskPanel ref={askRef} w={w} client={client} onAnswer={onAnswer} onReply={onReply} onUseTerminal={onUseTerminal} />
+                <AskPanel ref={askRef} w={w} client={client} onAnswer={onAnswer} onReply={onReply} onUseTerminal={onUseTerminal} drawn={!!awaitingCall} />
               </div>
             )}
             {w.status === 'busy' && <Working detail={w.detail} />}
@@ -406,6 +423,7 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
         )}
         {state.status === 'connecting' && blocks.length > 0 && <div className="gui-conn">Reconnecting…</div>}
       </div>
+      </AwaitingTool.Provider>
     </GuiContext.Provider>
   );
 });

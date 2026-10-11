@@ -18,11 +18,19 @@ type Props = {
   onUseTerminal?: () => void;
   /** Inbox cards: no headings, tighter rows. */
   compact?: boolean;
+  /** The call it asks about is drawn natively right above (GUI): lead with the question, fold the screen text. */
+  drawn?: boolean;
 };
+
+/** The prompt's own question ("Do you want to make this edit to calc.py?"), when the screen text ends with one. */
+function questionLine(text: string): string | null {
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  return lines.findLast((l) => l.endsWith('?')) ?? null;
+}
 
 const KIND_LABEL = { command: 'Wants to run a command', tool: 'Wants to use a tool', question: 'Asked a question', screen: 'Waiting for you', choice: 'Asked you' };
 
-export const AskPanel = forwardRef<AskHandle, Props>(function AskPanel({ w, client, onAnswer, onReply, onUseTerminal, compact }, ref) {
+export const AskPanel = forwardRef<AskHandle, Props>(function AskPanel({ w, client, onAnswer, onReply, onUseTerminal, compact, drawn }, ref) {
   const ask = w.ask;
   const root = useRef<HTMLDivElement>(null);
   useImperativeHandle(ref, () => ({
@@ -53,7 +61,18 @@ export const AskPanel = forwardRef<AskHandle, Props>(function AskPanel({ w, clie
         />
       ) : (
         <>
-          {!compact && ask.text && (ask.kind !== 'screen' || options.length > 0) && <pre className="code-block ask-context">{ask.text}</pre>}
+          {!compact && ask.text && (ask.kind !== 'screen' || options.length > 0) &&
+            (drawn ? (
+              <>
+                {questionLine(ask.text) && <p className="ask-question">{questionLine(ask.text)}</p>}
+                <details className="ask-raw">
+                  <summary>Terminal text</summary>
+                  <pre className="code-block ask-context">{ask.text}</pre>
+                </details>
+              </>
+            ) : (
+              <pre className="code-block ask-context">{ask.text}</pre>
+            ))}
           {options.length > 0 ? (
             // Keyed by the prompt: the next prompt is a fresh set of buttons, never the last one's "sent" state.
             <ScreenChoices key={`${ask.text}\n${options.map((o) => o.label).join('\n')}`} w={w} client={client} options={options} />
