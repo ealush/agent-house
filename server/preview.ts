@@ -68,6 +68,13 @@ export function stripCookies(header: string): string {
 }
 
 /**
+ * Who may frame a preview: ah's page, and the preview itself. The second matters
+ * because frame-ancestors covers every ancestor: Storybook draws each story in an
+ * iframe of its own page, which sits inside ah's frame.
+ */
+export const frameAncestors = (ah: string[]) => `frame-ancestors 'self' ${ah.join(' ')}`;
+
+/**
  * Response headers back to the browser: framable by ah only, and no cookie that
  * would overwrite ah's sign-in (cookies ignore ports, so the app could otherwise).
  */
@@ -77,7 +84,7 @@ export function downstreamHeaders(h: IncomingHttpHeaders, ancestors: string[]): 
     if (v === undefined || k === 'x-frame-options') continue;
     out[k] = v;
   }
-  const frame = `frame-ancestors ${ancestors.join(' ')}`;
+  const frame = frameAncestors(ancestors);
   const csp = h['content-security-policy'];
   out['content-security-policy'] =
     typeof csp === 'string' && csp.trim()
@@ -173,7 +180,7 @@ export class Previews {
   private http(p: Open, req: IncomingMessage, res: ServerResponse) {
     const denied = this.deps.authorize(req);
     if (denied) {
-      res.writeHead(denied.status, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': `frame-ancestors ${this.deps.frameAncestors().join(' ')}` });
+      res.writeHead(denied.status, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': frameAncestors(this.deps.frameAncestors()) });
       return res.end(page('Sign in to ah first', 'This preview is part of your ah. Open ah on this device and sign in, then reload.'));
     }
     const up = request({ host: '127.0.0.1', port: p.target, method: req.method, path: req.url, headers: upstreamHeaders(req.headers, p.target) }, (r) => {
@@ -182,7 +189,7 @@ export class Previews {
     });
     up.on('error', () => {
       if (res.headersSent) return res.destroy();
-      res.writeHead(502, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': `frame-ancestors ${this.deps.frameAncestors().join(' ')}` });
+      res.writeHead(502, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': frameAncestors(this.deps.frameAncestors()) });
       res.end(page(`Nothing on port ${p.target} yet`, `Start the dev server in this session (it should listen on localhost:${p.target}), then reload.`));
     });
     req.pipe(up);

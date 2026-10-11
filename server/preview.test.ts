@@ -60,9 +60,9 @@ test('upstream requests lose ah’s cookie and Tailscale identity, and look loca
 test('responses are framable by ah only and can’t set ah’s cookie', () => {
   const h = downstreamHeaders({ 'x-frame-options': 'DENY', 'content-security-policy': "default-src 'self'; frame-ancestors 'none'", 'set-cookie': ['ah_session=x; Path=/', 'theme=dark'] }, ['https://box.test.ts.net']);
   assert.equal(h['x-frame-options'], undefined);
-  assert.equal(h['content-security-policy'], "default-src 'self'; frame-ancestors https://box.test.ts.net");
+  assert.equal(h['content-security-policy'], "default-src 'self'; frame-ancestors 'self' https://box.test.ts.net", 'ah, and the app framing itself (Storybook draws stories in an iframe)');
   assert.deepEqual(h['set-cookie'], ['theme=dark']);
-  assert.equal(downstreamHeaders({}, ['https://a'])['content-security-policy'], 'frame-ancestors https://a');
+  assert.equal(downstreamHeaders({}, ['https://a'])['content-security-policy'], "frame-ancestors 'self' https://a");
 });
 
 test('a preview proxies its dev server for a signed-in browser, and nobody else', async () => {
@@ -85,7 +85,7 @@ test('a preview proxies its dev server for a signed-in browser, and nobody else'
     assert.equal(echoed.headers.host, `localhost:${dev.port}`);
     assert.equal(echoed.headers.cookie, 'sb=1', 'the dev server never sees the ah cookie');
     assert.equal(ok.headers['x-frame-options'], undefined);
-    assert.equal(ok.headers['content-security-policy'], "default-src 'self'; frame-ancestors https://box.test.ts.net http://localhost:7681");
+    assert.equal(ok.headers['content-security-policy'], "default-src 'self'; frame-ancestors 'self' https://box.test.ts.net http://localhost:7681");
     assert.deepEqual(ok.headers['set-cookie'], ['sb-theme=dark; Path=/']);
   } finally {
     await previews.stopAll();
