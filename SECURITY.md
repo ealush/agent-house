@@ -69,6 +69,7 @@ All under `~/.local/state/ah/` (mode 0700 directory, 0600 files):
 | `ah.db` (SQLite via Prisma) | the session registry (titles, directories, conversation ids, queued messages), recent prompts (may contain anything you pasted — `promptHistory: 0` keeps none; Security → Clear prompt history), chat API keys and side-chat history (keys are never returned by the API), and loose settings. First boot imports `sessions.json`/`prompts.json`/`sidechat.json` once when present; those legacy files are then unused |
 | `audit.log` | sign-ins, failures, enrollments, and session actions (create, send, approve, kill, upload, subscription save/remove) |
 | `push.json`, `vapid.json` | Web Push subscriptions and keys |
+| `drafts.json` | unsent composer text per session (may contain anything you typed or pasted), so it follows you between devices; cleared when sent or emptied, dropped after 14 days untouched |
 
 Uploads go to `~/.cache/ah/uploads/` (0600).
 
