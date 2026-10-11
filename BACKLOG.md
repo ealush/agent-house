@@ -127,6 +127,12 @@ that follows you across devices, harnesses, restarts and resumes.
 | P9 | Motion | ✅ | Consistent, quick transitions between pages, sessions and panels; reduced motion respected. |
 | P10 | Inbox and History polish | ✅ | Aligned columns, actions on hover/focus, tidier rows. |
 | P11 | New session knows where you are | ✅ | Starts in the focused session's project with the last harness and model you used. |
+| P12 | Desktop app | ✅ | `ah setup desktop` / Settings → System: an Omarchy web app (Super+Space), a Hyprland bind to copy, `ah open` from tmux. |
+| P13 | Continue in another agent | ✅ | Session menu row and palette: a new session on another harness, primed with this conversation's transcript. |
+| P14 | Honest tool states | ✅ | A call the turn ended without shows No result, not Running… forever. |
+| P15 | Phone chrome | ✅ | Tabs that fit, edge fades on tabs and key bar, "Shell · project" subtitles, clean titles. |
+| P16 | Instant first paint | ✅ | The session list paints from the encrypted cache before the stream answers; an empty inbox offers recent conversations. |
+| P17 | Which-key | ✅ | Hold Ctrl+Alt / Ctrl+Shift to see what each key does right now. |
 
 Next candidates: rate-limit auto-resume (F40, opt-in, needs each CLI's reset
 message), quota display (F41), keyboard reordering in the sidebar.
