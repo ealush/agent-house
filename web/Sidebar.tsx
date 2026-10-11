@@ -245,8 +245,9 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
       <div className="brand">
         <span className="logo">&gt;_</span>
         <span className="brand-name">ah</span>
-        <span className="host-pill" title="This device">
-          <span className="dot online" /> {device}
+        {/* The machine ah runs on, and whether this device is connected to it right now. */}
+        <span className="host-pill" title={error ? `Can't reach ${state?.hostname ?? 'the host'}: ${error}` : `Connected to ${state?.hostname ?? 'the host'} from this ${device}`}>
+          <span className={`dot ${error ? 'offline' : 'online'}`} /> {state?.hostname ?? device}
         </span>
         <button className="icon-btn small" onClick={onCollapse} title={shortcutTitle('Hide sidebar', 'toggle-sidebar')} aria-label="Hide sidebar">
           <Icon name="panel-hide" />
