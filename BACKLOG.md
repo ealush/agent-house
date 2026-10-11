@@ -126,7 +126,7 @@ that follows you across devices, harnesses, restarts and resumes.
 | P8 | App badge | ✅ | Home-screen/installed app icon carries the needs-you count. |
 | P9 | Motion | ✗ | Consistent, quick transitions between pages, sessions and panels; reduced motion respected. |
 | P10 | Inbox and History polish | ✗ | Aligned columns, actions on hover/focus, tidier rows. |
-| P11 | New session knows where you are | ✗ | Starts in the focused session's project with the last harness and model you used. |
+| P11 | New session knows where you are | ✅ | Starts in the focused session's project with the last harness and model you used. |
 
 Next candidates: rate-limit auto-resume (F40, opt-in, needs each CLI's reset
 message), quota display (F41), keyboard reordering in the sidebar.

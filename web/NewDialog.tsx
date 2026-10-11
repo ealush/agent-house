@@ -37,6 +37,15 @@ function remembered(preset: string): Remembered {
   }
 }
 
+/** Where the last session on `host` was started from this device: the default when nothing nearer is open. */
+export function lastCwd(host: string): string {
+  try {
+    return localStorage.getItem(`ah.lastCwd.${host}`) || '~';
+  } catch {
+    return '~';
+  }
+}
+
 export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd, initialPrompt = '', onClose, onCreated, onSent, screen = false }: Props) {
   const [host, setHost] = useState(initialHost);
   const state = hostState(host) ?? hostState(hosts[0])!;
@@ -107,6 +116,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
     setError(null);
     try {
       localStorage.setItem('ah.lastPreset', preset.id);
+      localStorage.setItem(`ah.lastCwd.${host}`, cwd);
       localStorage.setItem(memKey(preset.id), JSON.stringify({ mode, model: pick.model, effort: pick.effort }));
       // Only send what differs from the harness's own defaults: fewer flags, same result.
       const model = pick.model && pick.model !== preset.defaultModel ? pick.model : undefined;

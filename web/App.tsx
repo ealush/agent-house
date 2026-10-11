@@ -44,7 +44,7 @@ import { EndedSession } from './Ended.tsx';
 import { HandoffOffer } from './Handoff.tsx';
 import { Workspace } from './Workspace.tsx';
 import { isPick, pickKey, leaves, moveLeaf, nudgeDivider, neighborPane, nodeAt, normalizeSplit, paneLeaves, parseLayout, replaceLeaf, splitLeaf, toggleSplit, type LayoutNode, type PaneDir, type Path } from './layout.ts';
-import { NewDialog } from './NewDialog.tsx';
+import { lastCwd, NewDialog } from './NewDialog.tsx';
 import { ForkDialog, type ForkTarget } from './ForkDialog.tsx';
 import { Switcher } from './Switcher.tsx';
 import { ChatSearchDialog } from './ChatHistory.tsx';
@@ -885,7 +885,7 @@ export function App({ onLock }: { onLock: () => void }) {
                 initialHost={nearPane(path)?.host ?? state.hostname}
                 hostState={hostState}
                 clientFor={clientFor}
-                initialCwd={nearPane(path)?.projectPath ?? '~'}
+                initialCwd={nearPane(path)?.projectPath ?? lastCwd(nearPane(path)?.host ?? state.hostname)}
                 onClose={onCancel}
                 onSent={sent}
                 onCreated={async (host, id, uid) => {
@@ -984,7 +984,7 @@ export function App({ onLock }: { onLock: () => void }) {
           initialHost={creating.host ?? current?.host ?? state.hostname}
           hostState={hostState}
           clientFor={clientFor}
-          initialCwd={creating.cwd ?? current?.projectPath ?? '~'}
+          initialCwd={creating.cwd ?? current?.projectPath ?? lastCwd(creating.host ?? current?.host ?? state.hostname)}
           initialPrompt={creating.prompt}
           onClose={() => setCreating(null)}
           onSent={sent}
