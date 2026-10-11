@@ -79,6 +79,10 @@ function key(): Promise<Key | null> {
 
 const enc = new TextEncoder();
 
+/** Any other small thing worth painting before the network answers (the session list), sealed the same way. */
+export const loadSealed = <T>(id: string) => loadCached(id) as Promise<T | null>;
+export const saveSealed = (id: string, value: unknown) => saveCached(id, value as CachedFeed);
+
 export async function loadCached(url: string): Promise<CachedFeed | null> {
   try {
     const k = await key();

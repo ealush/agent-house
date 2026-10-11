@@ -82,7 +82,8 @@ ah's pages; ah's exact-Origin check keeps it from writing to ah or opening a ter
 Mappings a crashed ah left behind are removed at start (only ours: a port proxied to
 itself).
 
-In the browser, the GUI keeps the newest page of recently viewed conversations in
+In the browser, the GUI keeps the newest page of recently viewed conversations, and a
+copy of the session list (titles, directories, statuses; refreshed every 20s at most), in
 IndexedDB (`ah-feed-cache`) so a reload paints at once. Every record is AES-GCM
 encrypted with a key the server derives from that device's sign-in (`cacheSecret` in
 `auth.json`, HMAC'd with the session); the key is fetched after sign-in and never

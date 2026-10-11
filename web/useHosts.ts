@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, hostApi, normalize, subscribe, type HostApi, type State } from './api.ts';
+import { loadSealed, saveSealed } from './gui/feedCache.ts';
 
 /**
  * Live state for every host: the local daemon plus each online peer it proxies.
@@ -14,7 +15,23 @@ export function useHosts(onState: (merged: State) => void) {
   const [error, setError] = useState<string | null>(null);
   const clients = useRef(new Map<string, HostApi>());
 
-  useEffect(() => subscribe(setLocal, setError), []);
+  // The last session list paints at once (sealed per sign-in, gui/feedCache.ts); the stream replaces it.
+  useEffect(() => {
+    let live = false;
+    let savedAt = 0;
+    void loadSealed<State>('state:local').then((cached) => {
+      if (cached && !live) setLocal(cached);
+    });
+    return subscribe((s) => {
+      live = true;
+      setLocal(s);
+      // State changes every tick; a copy every 20s is plenty for a first paint.
+      if (Date.now() - savedAt > 20_000) {
+        savedAt = Date.now();
+        saveSealed('state:local', s);
+      }
+    }, setError);
+  }, []);
 
   const peerNames = (local?.hosts ?? []).filter((h) => !h.self && h.online).map((h) => h.name);
   const peerKey = peerNames.join(',');
