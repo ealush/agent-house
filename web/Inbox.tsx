@@ -1,6 +1,6 @@
-import type { HostApi, State, Win } from './api.ts';
+import type { HistoryItem, HostApi, State, Win } from './api.ts';
 import { AskPanel, cleanScreen, questionLine } from './AskPanel.tsx';
-import { shortcutTitle } from './shortcuts.tsx';
+import { ShortcutHint, shortcutTitle } from './shortcuts.tsx';
 import { Icon } from './icons.tsx';
 import { age, look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
@@ -22,6 +22,8 @@ type Props = {
   onSettings: () => void;
   /** Continue a session from another device (Handoff), when there is one. */
   handoff?: React.ReactNode;
+  /** An empty inbox offers the latest conversations to resume. */
+  onResume?: (h: HistoryItem) => void;
 };
 
 const KIND_LABEL = { command: 'Wants to run a command', tool: 'Wants to use a tool', question: 'Asked a question', screen: 'Waiting for you', choice: 'Asked you' };
@@ -29,7 +31,8 @@ const KIND_LABEL = { command: 'Wants to run a command', tool: 'Wants to use a to
 const where = (w: Win, multiHost: boolean) => [multiHost ? w.host : null, w.project].filter(Boolean).join(' · ');
 
 /** The home screen: what's blocked on you first, then what's working, then the rest. */
-export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, clientFor, onNew, onSearch, onSettings, handoff }: Props) {
+export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, clientFor, onNew, onSearch, onSettings, handoff, onResume }: Props) {
+  const recent = state.windows.length ? [] : state.history.slice(0, 3);
   const multiHost = state.hosts.length > 1;
   const waiting = state.windows.filter((w) => w.status === 'waiting');
   const running = state.windows.filter((w) => w.status === 'busy');
@@ -49,7 +52,7 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, cl
       : 'All quiet.';
 
   return (
-    <div className="page" data-rove="button.card-title, button.row">
+    <div className="page" data-rove="button.card-title, button.row, button.empty-recent-row">
       <header className="page-head">
         <div className="grow">
           <h1 className="page-title">Inbox<span className="period">.</span></h1>
@@ -86,10 +89,27 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, cl
 
       {state.windows.length === 0 && (
         <div className="empty-state">
-          <p>Nothing running.</p>
+          <p className="empty-title">Nothing running.</p>
+          <p className="hint">Start something new, or pick up where you left off.</p>
           <button className="btn light" onClick={onNew}>
-            Start a session
+            Start a session <ShortcutHint id="new-session" />
           </button>
+          {recent.length > 0 && onResume && (
+            <ul className="empty-recent">
+              {recent.map((h) => (
+                <li key={`${h.host}:${h.ref}`}>
+                  <button className="empty-recent-row" onClick={() => onResume(h)} title={`Resume ${h.title}`}>
+                    <span className="chip sm" style={{ '--agent': look(h.harness).color } as React.CSSProperties}>
+                      <AgentLogo id={h.harness} size={13} />
+                    </span>
+                    <span className="grow">{h.title}</span>
+                    <span className="when">{[h.project, age(h.at)].filter(Boolean).join(' · ')}</span>
+                    <span className="resume-word">Resume</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 

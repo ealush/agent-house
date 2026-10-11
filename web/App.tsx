@@ -961,6 +961,7 @@ export function App({ onLock }: { onLock: () => void }) {
                 onSearch={() => setSwitching(true)}
                 onSettings={() => go({ page: 'settings', selected: null })}
                 handoff={narrow ? handoff : null}
+                onResume={(h) => resume(h.host, h.ref)}
               />
             )}
             {narrow && (
