@@ -133,6 +133,11 @@ that follows you across devices, harnesses, restarts and resumes.
 | P15 | Phone chrome | ✅ | Tabs that fit, edge fades on tabs and key bar, "Shell · project" subtitles, clean titles. |
 | P16 | Instant first paint | ✅ | The session list paints from the encrypted cache before the stream answers; an empty inbox offers recent conversations. |
 | P17 | Which-key | ✅ | Hold Ctrl+Alt / Ctrl+Shift to see what each key does right now. |
+| P18 | Lean wire | ✅ | State streams as patches of changed fields: ~740 → ~195 KB per 15 s with one busy session. |
+| P19 | Lean boot | ✅ | Terminal, markdown, passkeys, Settings load on demand: main script 333 → 147 KB gz; throttled phone first paint 984 → 592 ms, ready 1301 → 885 ms. |
+| P20 | One scale | ✅ | Type ramp, radius scale, four weights, one scrim, enforced by test/design.test.ts. |
+| P21 | One motion | ✅ | One curve, two durations; sheets and menus arrive, buttons press in; one reduced-motion rule. |
+| P22 | Settings as one system | ✅ | Titled cards everywhere, readable activity log, honest host chip. |
 
 Next candidates: rate-limit auto-resume (F40, opt-in, needs each CLI's reset
 message), quota display (F41), keyboard reordering in the sidebar.
