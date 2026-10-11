@@ -393,6 +393,17 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     return send(res, 200, { ok: true });
   }
 
+  if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/queue\/([\w-]{1,40})\/move$/))) {
+    const to = (await readJson(req)).to;
+    if (!Number.isInteger(to) || (to as number) < 0 || (to as number) > 1000) throw new HttpError(400, 'invalid position');
+    try {
+      return send(res, 200, core.moveQueued(m[1], m[2], to as number));
+    } catch (err) {
+      if (err instanceof CoreError) throw new HttpError(err.status, err.message);
+      throw err;
+    }
+  }
+
   // Urgent follow-up: deliver one queued message now, stopping the live turn.
   if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/queue\/([\w-]{1,40})\/send-now$/))) {
     const out = await core.sendNow(m[1], m[2]);

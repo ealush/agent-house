@@ -52,3 +52,24 @@ test('a delivered follow-up leaves the queue', async () => {
   assert.deepEqual(q.items('u1').map((i) => i.id), ['b']);
   assert.equal(typed.length, 1);
 });
+
+test('a queued item moves to a new position; the rest keep their order', async () => {
+  const { q } = await setup(async () => {});
+  q.enqueue('u1', { id: 'c', text: 'say c', enter: true, at: 0 });
+  assert.deepEqual(q.move('u1', 'c', 0)?.map((i) => i.id), ['c', 'a', 'b']);
+  assert.deepEqual(q.move('u1', 'c', 99)?.map((i) => i.id), ['a', 'b', 'c'], 'past the end clamps to last');
+  assert.deepEqual(q.move('u1', 'a', 1)?.map((i) => i.id), ['b', 'a', 'c']);
+  assert.deepEqual(q.items('u1').map((i) => i.id), ['b', 'a', 'c'], 'persisted');
+  assert.equal(q.move('u1', 'gone', 0), null, 'an item already sent is not there to move');
+});
+
+test('the next delivery takes whatever was moved to the front', async () => {
+  const typed: string[] = [];
+  const { q, win } = await setup(async (...args: unknown[]) => {
+    typed.push(args[1] as string);
+  });
+  q.move('u1', 'b', 0);
+  await q.deliverDue([win()]);
+  assert.deepEqual(typed, ['say b']);
+  assert.deepEqual(q.items('u1').map((i) => i.id), ['a']);
+});

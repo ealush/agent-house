@@ -3749,9 +3749,9 @@ a.btn {
 .queue-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-height: 32px;
-  padding: 0 4px 0 8px;
+  padding: 0 4px 0 2px;
   border-radius: 8px;
   color: var(--muted);
 }
@@ -3760,9 +3760,45 @@ a.btn {
   background: var(--raised);
 }
 
-.queue-row > svg {
+.queue-grip,
+.queue-grip-slot {
   flex: none;
+  width: 22px;
+  height: 26px;
+}
+
+.queue-grip {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
   color: var(--faint);
+  cursor: grab;
+  /* A drag on touch moves the row, never scrolls the tray. */
+  touch-action: none;
+}
+
+.queue-grip:hover,
+.queue-grip:focus-visible {
+  color: var(--text);
+  background: var(--line);
+}
+
+.queue-row.shifting {
+  transition: transform 0.12s ease;
+}
+
+.queue-row.dragging {
+  position: relative;
+  z-index: 1;
+  background: var(--raised);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--shadow) 40%, transparent);
+}
+
+.queue-row.dragging .queue-grip {
+  cursor: grabbing;
 }
 
 .queue-text {

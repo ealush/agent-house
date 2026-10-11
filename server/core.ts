@@ -628,6 +628,13 @@ export class Core {
     return this.queues.items(uid);
   }
 
+  /** Reorder: one queued item to position `to`. 404 once it was delivered or dropped. */
+  moveQueued(uid: string, itemId: string, to: number): QueueItem[] {
+    const items = this.queues.move(uid, itemId, to);
+    if (!items) throw new CoreError(404, 'that message is no longer queued');
+    return items;
+  }
+
   /** Drop one queued item or the whole queue. */
   clearQueue(uid: string, itemId?: string) {
     this.queues.clear(uid, itemId);

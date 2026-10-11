@@ -27,6 +27,7 @@ const PROTECTED: Array<[string, string, unknown?]> = [
   ['GET', '/api/sessions/abc/feed'],
   ['GET', '/api/sessions/claude:abc/feed/stream'],
   ['DELETE', '/api/sessions/abc/queue'],
+  ['POST', '/api/sessions/abc/queue/q1/move', { to: 0 }],
   ['POST', '/api/sessions/abc/pin', {}],
   ['DELETE', '/api/sessions/abc'],
   ['GET', '/api/fs/list'],

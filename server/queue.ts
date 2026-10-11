@@ -77,6 +77,21 @@ export class QueueManager {
     return { next, rest: items };
   }
 
+  /**
+   * Move one item to position `to` (clamped), the rest keeping their order.
+   * Synchronous, like take(), so a delivery never sees a half-moved queue.
+   * Returns the new order, or null when the id isn't there (already sent).
+   */
+  move(uid: string, itemId: string, to: number): QueueItem[] | null {
+    const items = this.items(uid);
+    const at = items.findIndex((q) => q.id === itemId);
+    if (at < 0) return null;
+    const [item] = items.splice(at, 1);
+    items.splice(Math.max(0, Math.min(items.length, to)), 0, item);
+    this.store(uid, items);
+    return items;
+  }
+
   /** Put an item back at the front: its delivery failed before anything was typed. */
   requeue(uid: string, item: QueueItem): void {
     this.store(uid, [item, ...this.items(uid).filter((q) => q.id !== item.id)]);

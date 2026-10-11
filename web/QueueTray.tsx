@@ -10,6 +10,8 @@ import { shortcutTitle } from './shortcuts.tsx';
  * Codex shows its queue). Steer stops the turn and sends one now; edit takes it
  * back into the box. What you just queued shows here at once, before the server
  * has answered. Enter in an empty composer steers the top row (steerFirst).
+ * With two or more queued, each row has a grip: drag it (mouse or touch), or
+ * focus it and press ↑/↓, to change what goes next.
  */
 export type QueueTrayHandle = {
   /** Steer the first queued message. False when there is none to steer yet. */
@@ -24,13 +26,18 @@ export const QueueTray = forwardRef<QueueTrayHandle, Props>(function QueueTray({
   const mine = outbox.filter((o) => o.state === 'queued');
   const waiting = mine.length > 0;
   const live = useRef(true);
+  // A drag in progress: which row, where it started, and the slot it would land in.
+  const [drag, setDrag] = useState<{ id: string; from: number; to: number; dy: number; rowH: number; startY: number } | null>(null);
+  const dragging = useRef(false);
+  dragging.current = !!drag;
 
   const load = async () => {
     const started = Date.now();
     try {
       const list = await client.queue(uid);
       if (!live.current) return;
-      setItems(list);
+      // Mid-drag the rows stay where your finger put them; the next poll catches up.
+      if (!dragging.current) setItems(list);
       // The server's list now holds what it confirmed before this fetch began: drop
       // our copies (a message the agent already took went into the transcript).
       removeOutgoing(mine.filter((o) => o.confirmedAt !== undefined && o.confirmedAt <= started).map((o) => o.id));
@@ -73,13 +80,78 @@ export const QueueTray = forwardRef<QueueTrayHandle, Props>(function QueueTray({
     },
   }));
 
+  // Reorder: shown at once, then the server's order (a message sent meanwhile is just gone).
+  const move = (id: string, to: number) => {
+    const from = items.findIndex((q) => q.id === id);
+    if (from < 0 || to === from) return;
+    const next = [...items];
+    next.splice(to, 0, ...next.splice(from, 1));
+    setItems(next);
+    void act(() => client.moveQueued(uid, id, to), 'reorder the queue');
+  };
+  const canMove = items.length > 1;
+  // While dragging, rows keep their place in the page (moving the node would drop
+  // the pointer capture); the dragged one follows the pointer, the ones it passes
+  // slide over by a row.
+  const offset = (i: number) => {
+    if (!drag) return 0;
+    if (i === drag.from) return drag.dy;
+    if (drag.from < drag.to && i > drag.from && i <= drag.to) return -drag.rowH;
+    if (drag.to < drag.from && i >= drag.to && i < drag.from) return drag.rowH;
+    return 0;
+  };
+
   const pendingRows = mine.filter((o) => o.confirmedAt === undefined || !items.some((i) => i.text === o.text));
   if (!items.length && !pendingRows.length) return null;
   return (
     <ul className="queue-tray" aria-label="Queued messages">
-      {items.map((q) => (
-        <li key={q.id} className="queue-row">
-          <Icon name="queue" size={15} />
+      {items.map((q, i) => (
+        <li
+          key={q.id}
+          className={`queue-row ${drag?.id === q.id ? 'dragging' : drag ? 'shifting' : ''}`}
+          style={drag ? { transform: `translateY(${offset(i)}px)` } : undefined}
+        >
+          {canMove ? (
+            <button
+              type="button"
+              className="queue-grip"
+              title="Drag to reorder (or ↑/↓)"
+              aria-label={`Move “${q.text.slice(0, 40)}”, position ${i + 1} of ${items.length}`}
+              onPointerDown={(e) => {
+                if (e.button !== 0) return;
+                e.preventDefault();
+                e.currentTarget.setPointerCapture(e.pointerId);
+                const rowH = e.currentTarget.closest('li')?.getBoundingClientRect().height ?? 32;
+                setDrag({ id: q.id, from: i, to: i, dy: 0, rowH, startY: e.clientY });
+              }}
+              onPointerMove={(e) => {
+                if (!drag || drag.id !== q.id) return;
+                const dy = e.clientY - drag.startY;
+                const to = Math.max(0, Math.min(items.length - 1, drag.from + Math.round(dy / drag.rowH)));
+                setDrag({ ...drag, dy, to });
+              }}
+              onPointerUp={() => {
+                if (!drag) return;
+                setDrag(null);
+                move(drag.id, drag.to);
+              }}
+              onPointerCancel={() => setDrag(null)}
+              onKeyDown={(e) => {
+                if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+                e.preventDefault();
+                e.stopPropagation();
+                const to = Math.max(0, Math.min(items.length - 1, i + (e.key === 'ArrowUp' ? -1 : 1)));
+                move(q.id, to);
+                // Keep the keyboard on the row it is carrying.
+                const list = e.currentTarget.closest('ul');
+                requestAnimationFrame(() => list?.querySelectorAll<HTMLElement>('.queue-grip')[to]?.focus());
+              }}
+            >
+              <Icon name="grip" size={15} />
+            </button>
+          ) : (
+            <span className="queue-grip-slot" />
+          )}
           <span className="queue-text" title={q.text}>{q.text}</span>
           <button type="button" className="queue-steer" title={shortcutTitle('Stop the current turn and send this now', 'send-now')} onClick={() => steer(q)}>
             <Icon name="reply" size={14} /> Steer
@@ -105,7 +177,7 @@ export const QueueTray = forwardRef<QueueTrayHandle, Props>(function QueueTray({
       ))}
       {pendingRows.map((o) => (
         <li key={o.id} className="queue-row pending">
-          <Icon name="queue" size={15} />
+          <span className="queue-grip-slot" />
           <span className="queue-text" title={o.text}>{o.text}</span>
           <span className="queue-state">Queuing…</span>
         </li>

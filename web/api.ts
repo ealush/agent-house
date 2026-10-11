@@ -325,6 +325,7 @@ export function hostApi(base: string) {
     feedPage: (ref: string, before: number, limit = 200) => r<FeedPage>('GET', `/api/sessions/${enc(ref)}/feed?before=${before}&limit=${limit}`),
     interrupt: (uid: string) => r('POST', `/api/sessions/${enc(uid)}/interrupt`, {}),
     clearQueue: (uid: string, itemId?: string) => r('DELETE', `/api/sessions/${enc(uid)}/queue${itemId ? `/${enc(itemId)}` : ''}`),
+    moveQueued: (uid: string, itemId: string, to: number) => r<QueueItem[]>('POST', `/api/sessions/${enc(uid)}/queue/${enc(itemId)}/move`, { to }),
     sendNow: (uid: string, itemId: string) => r<SendResult>('POST', `/api/sessions/${enc(uid)}/queue/${enc(itemId)}/send-now`),
     pin: (uid: string, pinned: boolean) => r('POST', `/api/sessions/${enc(uid)}/pin`, { pinned }),
     snapshots: (uid: string) => r<SnapshotList>('GET', `/api/sessions/${enc(uid)}/snapshots`),
