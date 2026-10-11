@@ -17,7 +17,7 @@ import { useFeed } from './useFeed.ts';
 import { project, type Block } from './reducer.ts';
 import { GuiContext, type GuiActions } from './context.ts';
 import { ItemView, PartView } from './router.tsx';
-import { AwaitingTool } from './tools.tsx';
+import { AwaitingTool, TurnLive } from './tools.tsx';
 import './gui.css';
 
 const UNAVAILABLE: Record<string, string> = {
@@ -341,6 +341,7 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
   return (
     <GuiContext.Provider value={actions}>
       <AwaitingTool.Provider value={awaitingCall}>
+      <TurnLive.Provider value={w.status === 'busy' || w.status === 'waiting'}>
       <div className={`surface gui ${hidden ? 'hidden' : ''}`}>
         <div className="gui-scroll" ref={scroller} onScroll={onScroll}>
           <div
@@ -423,6 +424,7 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
         )}
         {state.status === 'connecting' && blocks.length > 0 && <div className="gui-conn">Reconnecting…</div>}
       </div>
+      </TurnLive.Provider>
       </AwaitingTool.Provider>
     </GuiContext.Provider>
   );

@@ -14,6 +14,8 @@ export type ToolProps = { call: ToolCall; result: ToolResult | undefined };
 
 /** The call a permission prompt is asking about, while it waits: drawn open, marked as waiting for you. */
 export const AwaitingTool = createContext<string | null>(null);
+/** False once the session is neither working nor waiting: a call still without a result never got one (denied, interrupted). */
+export const TurnLive = createContext(true);
 
 type ToolView = {
   /** What the agent is doing, e.g. "Ran", "Edited". */
@@ -293,6 +295,8 @@ export function ToolRow({ call, result }: ToolProps) {
   const running = !result;
   const done = !!result;
   const awaiting = useContext(AwaitingTool) === call.id && running;
+  const turnLive = useContext(TurnLive);
+  const stopped = running && !awaiting && !turnLive;
   useEffect(() => {
     if (done && view.foldWhenDone) setOpen(false);
   }, [done, view.foldWhenDone]);
@@ -300,15 +304,15 @@ export function ToolRow({ call, result }: ToolProps) {
   useEffect(() => {
     if (awaiting) setOpen(true);
   }, [awaiting]);
-  const status = awaiting ? 'awaiting' : running ? 'running' : result.isError ? 'error' : 'done';
+  const status = awaiting ? 'awaiting' : stopped ? 'stopped' : running ? 'running' : result.isError ? 'error' : 'done';
   const Body = view.Body ?? Default.Body!;
   return (
     <div className={`tool ${status} ${open ? 'open' : ''}`}>
       <button className="tool-head" onClick={() => setOpen(!open)} aria-expanded={open}>
-        <span className={`tool-dot ${status}`} aria-label={awaiting ? 'Waiting for you' : running ? 'Running' : result.isError ? 'Failed' : 'Completed'} />
+        <span className={`tool-dot ${status}`} aria-label={awaiting ? 'Waiting for you' : stopped ? 'No result' : running ? 'Running' : result.isError ? 'Failed' : 'Completed'} />
         <span className="tool-label">{view.label || displayName(call.name)}</span>
         <span className="tool-summary mono">{view.summary(call, result)}</span>
-        {running && <span className="tool-state">{awaiting ? 'Waiting for you' : 'Running…'}</span>}
+        {running && <span className="tool-state">{awaiting ? 'Waiting for you' : stopped ? 'No result' : 'Running…'}</span>}
         {result?.truncated && <span className="tool-state">trimmed</span>}
         <span className="tool-caret" aria-hidden>
           ›
