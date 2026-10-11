@@ -49,6 +49,9 @@ const PATHS: Record<string, string> = {
   pin: 'M12 16v5M8 4h8l-1 6 3 3v2H6v-2l3-3z',
   queue: 'M4 6h16M4 12h16M4 18h10',
   grip: 'M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01',
+  globe: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z',
+  reload: 'M20 12a8 8 0 1 1-2.34-5.66L20 8M20 3v5h-5',
+  external: 'M14 4h6v6M20 4l-9 9M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5',
   model: 'M7 7h10v10H7zM10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4',
   effort: 'M12 14l4-4M4.5 18a9 9 0 1 1 15 0',
 };

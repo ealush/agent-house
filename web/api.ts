@@ -230,6 +230,10 @@ export type BranchList = { current: string | null; branches: BranchInfo[] };
 export type SendResult = { outcome: 'delivered' | 'queued'; windowId: string; resumed: boolean; queued: number };
 export type QueueItem = { id: string; text: string; enter: boolean; at: number };
 
+/** A session's browser preview (server/preview.ts): its dev server's port, and ah's proxy port for it. */
+export type Preview = { uid: string; target: number; port: number; published: boolean };
+export type PreviewInfo = { preview: Preview | null; ports: number[]; live: boolean };
+
 export type SnapshotInfo = {
   id: number;
   uid: string;
@@ -325,6 +329,9 @@ export function hostApi(base: string) {
     feedPage: (ref: string, before: number, limit = 200) => r<FeedPage>('GET', `/api/sessions/${enc(ref)}/feed?before=${before}&limit=${limit}`),
     interrupt: (uid: string) => r('POST', `/api/sessions/${enc(uid)}/interrupt`, {}),
     clearQueue: (uid: string, itemId?: string) => r('DELETE', `/api/sessions/${enc(uid)}/queue${itemId ? `/${enc(itemId)}` : ''}`),
+    preview: (uid: string) => r<PreviewInfo>('GET', `/api/sessions/${enc(uid)}/preview`),
+    startPreview: (uid: string, target: number) => r<{ preview: Preview }>('PUT', `/api/sessions/${enc(uid)}/preview`, { target }),
+    stopPreview: (uid: string) => r('DELETE', `/api/sessions/${enc(uid)}/preview`),
     moveQueued: (uid: string, itemId: string, to: number) => r<QueueItem[]>('POST', `/api/sessions/${enc(uid)}/queue/${enc(itemId)}/move`, { to }),
     sendNow: (uid: string, itemId: string) => r<SendResult>('POST', `/api/sessions/${enc(uid)}/queue/${enc(itemId)}/send-now`),
     pin: (uid: string, pinned: boolean) => r('POST', `/api/sessions/${enc(uid)}/pin`, { pinned }),

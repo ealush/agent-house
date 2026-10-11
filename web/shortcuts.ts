@@ -49,6 +49,7 @@ export type CommandId =
   | 'panel-chat'
   | 'panel-queue'
   | 'panel-snapshots'
+  | 'panel-preview'
   | 'pick-model'
   | 'pick-effort'
   | 'copy-last'
@@ -397,6 +398,15 @@ export const COMMANDS: Command[] = [
     label: 'Panel: Snapshots',
     detail: 'Per-turn snapshots and restore. Again to close.',
     chords: [{ key: '5', ctrl: true, alt: true }],
+    scopes: act,
+  },
+  {
+    id: 'panel-preview',
+    group: 'Session',
+    label: 'Panel: Preview',
+    detail: 'A dev server running in this session (Storybook, Vite…), in a browser pane served from the host. Again to close.',
+    terms: ['browser', 'storybook', 'localhost'],
+    chords: [{ key: '6', ctrl: true, alt: true }],
     scopes: act,
   },
   {

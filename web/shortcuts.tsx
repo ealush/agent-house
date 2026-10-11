@@ -110,6 +110,7 @@ const BASE_ICONS = {
   'panel-chat': 'chat',
   'panel-queue': 'queue',
   'panel-snapshots': 'history',
+  'panel-preview': 'globe',
   'pick-model': 'model',
   'pick-effort': 'effort',
   'copy-last': 'copy',

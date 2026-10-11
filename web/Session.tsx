@@ -16,6 +16,7 @@ import { SideChat } from './SideChat.tsx';
 import { ChatHistory } from './ChatHistory.tsx';
 import { FilesPanel } from './Files.tsx';
 import { QueuePanel } from './Queue.tsx';
+import { PreviewPanel } from './Preview.tsx';
 import { ForkDialog, ForksDialog } from './ForkDialog.tsx';
 import { SendToDialog } from './SendToDialog.tsx';
 import { SnapshotsPanel } from './Snapshots.tsx';
@@ -23,7 +24,7 @@ import { ShortcutHint, shortcutTitle, useCommand, usePaletteProvider, useShortcu
 import { runCommand } from './shortcuts.ts';
 import { useLaunch, useLaunchPalette } from './useLaunch.ts';
 
-type Panel = 'diff' | 'files' | 'chat' | 'queue' | 'snapshots';
+type Panel = 'diff' | 'files' | 'chat' | 'queue' | 'snapshots' | 'preview';
 
 type Props = {
   w: Win;
@@ -520,6 +521,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   useCommand('panel-chat', () => togglePanel('chat'), active);
   useCommand('panel-queue', () => togglePanel('queue'), active);
   useCommand('panel-snapshots', () => togglePanel('snapshots'), active);
+  useCommand('panel-preview', () => togglePanel('preview'), active);
   useCommand('copy-last', () => surface.current?.copyLast?.(), active && view === 'gui');
   useCommand('jump-latest', () => surface.current?.jumpLatest?.(), active && view === 'gui');
   useCommand('browse-messages', () => void surface.current?.browse?.(), active && view === 'gui');
@@ -597,6 +599,8 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       <QueuePanel client={client} uid={w.uid} onChange={refresh} />
     ) : p === 'snapshots' ? (
       <SnapshotsPanel client={client} w={w} onChange={refresh} />
+    ) : p === 'preview' ? (
+      <PreviewPanel client={client} uid={w.uid} />
     ) : p === 'diff' ? (
       <ChangesPanel client={client} windowId={w.id} onComment={w.agent ? comment : undefined} />
     ) : p === 'chat' ? (
@@ -806,6 +810,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
               <button onClick={() => { setMenu(false); togglePanel('queue'); }}><span className="grow">Queued messages ({w.queued})</span><ShortcutHint id="panel-queue" /></button>
               {w.queued > 0 && <button onClick={() => { setMenu(false); runCommand('send-now'); }}><span className="grow">Send next queued now</span><ShortcutHint id="send-now" /></button>}
               <button onClick={() => { setMenu(false); togglePanel('snapshots'); }}><span className="grow">Snapshots</span><ShortcutHint id="panel-snapshots" /></button>
+              <button onClick={() => { setMenu(false); togglePanel('preview'); }}><span className="grow">Preview</span><ShortcutHint id="panel-preview" /></button>
               {onSplit && (
                 <>
                   <button
@@ -922,6 +927,9 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
           <button role="tab" aria-selected={tab === 'snapshots'} className={tab === 'snapshots' ? 'on' : ''} onClick={() => setTab('snapshots')}>
             Snapshots
           </button>
+          <button role="tab" aria-selected={tab === 'preview'} className={tab === 'preview' ? 'on' : ''} onClick={() => setTab('preview')}>
+            Preview
+          </button>
         </div>
       )}
 
@@ -952,7 +960,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
           )}
         </div>
 
-        {!narrow && panel && (panel === 'files' || panel === 'chat' || panel === 'queue' || panel === 'snapshots' || diffTab) && (
+        {!narrow && panel && (panel === 'files' || panel === 'chat' || panel === 'queue' || panel === 'snapshots' || panel === 'preview' || diffTab) && (
           <>
             {!panelCollapsed && <PanelDivider onResize={resizePanel} onReset={resetPanelWidth} />}
             {panelCollapsed ? (
@@ -982,6 +990,9 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
                   </button>
                   <button role="tab" aria-selected={panel === 'snapshots'} className="tab-underline" onClick={() => setPanel('snapshots')}>
                     Snapshots
+                  </button>
+                  <button role="tab" aria-selected={panel === 'preview'} className="tab-underline" onClick={() => setPanel('preview')}>
+                    Preview
                   </button>
                   </div>
                   {panel === 'chat' && (
