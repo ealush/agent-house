@@ -59,6 +59,7 @@ export function SubscriptionsPanel() {
 
   return (
     <div className="sec-card" data-confirm>
+      <h2>Chat subscriptions</h2>
       <p className="hint">
         Side chat talks to these endpoints with the working diff attached. Keys are stored on this host only, alongside ah's other secrets, and are never shown
         again after saving. Any OpenAI-compatible API works: OpenAI, Grok, Gemini, DeepSeek, Ollama.

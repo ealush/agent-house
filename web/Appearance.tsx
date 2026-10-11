@@ -13,6 +13,7 @@ export function AppearancePanel() {
   const { mode } = useTheme();
   return (
     <div className="sec-card">
+      <h2>Theme</h2>
       <div className="seg" role="radiogroup" aria-label="Appearance">
         {OPTIONS.map((o) => (
           <button

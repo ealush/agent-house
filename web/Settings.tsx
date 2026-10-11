@@ -65,6 +65,7 @@ export function Settings({ onLocked, onNotifyChange }: { onLocked: () => void; o
           {section === 'shortcuts' && <ShortcutsPanel />}
           {section === 'notifications' && (
             <div className="sec-card">
+              <h2>On this device</h2>
               <NotifySettings onChange={onNotifyChange} />
             </div>
           )}

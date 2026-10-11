@@ -17,7 +17,42 @@ const EVENT_TEXT: Record<string, string> = {
   'auth.password_removed': 'Master password removed',
   'auth.token_created': 'Host token created',
   'auth.token_removed': 'Host token revoked',
+  'session.create': 'Started a session',
+  'session.resume': 'Resumed a session',
+  'session.kill': 'Terminated a session',
+  'session.send': 'Sent a message',
+  'session.approve': 'Approved a prompt',
+  'session.deny': 'Denied a prompt',
+  'session.choose': 'Answered a prompt',
+  'session.questions': "Answered an agent's questions",
+  'session.interrupt': 'Stopped a turn',
+  'session.fork': 'Forked a session',
+  'session.relaunch': 'Relaunched a session',
+  'session.settings': 'Changed model or effort',
+  'session.switch': 'Switched branch',
+  'session.branch': 'Created a branch',
+  'file.upload': 'Uploaded a file',
+  'snapshot.restore': 'Restored a snapshot',
+  'snapshot.toggle': 'Turned snapshots on or off',
+  'preview.start': 'Started a preview',
+  'preview.stop': 'Stopped a preview',
+  'prompts.clear': 'Cleared prompt history',
+  'search.rebuild': 'Rebuilt the search index',
+  'subscription.save': 'Saved a chat subscription',
+  'subscription.remove': 'Removed a chat subscription',
+  'subscription.default': 'Changed the default subscription',
+  'system.restart': 'Restarted the server',
+  'system.rebuild': 'Rebuilt and restarted',
+  'system.uploads.clear': 'Cleared the uploads folder',
+  'system.hooks.install': 'Installed agent hooks',
+  'system.hooks.uninstall': 'Removed agent hooks',
+  'system.desktop.install': 'Added ah to the app launcher',
+  'system.desktop.uninstall': 'Removed ah from the app launcher',
+  'worktree.remove': 'Removed a worktree',
 };
+
+/** Anything not named above still reads as words: "worktree.remove-bulk" → "Worktree remove bulk". */
+const eventText = (e: string) => EVENT_TEXT[e] ?? (e.charAt(0).toUpperCase() + e.slice(1)).replace(/[._-]+/g, ' ');
 
 /** Who can get in, from where, and what happened lately. */
 export function Security({ onLocked }: { onLocked: () => void }) {
@@ -50,15 +85,13 @@ export function Security({ onLocked }: { onLocked: () => void }) {
   const current = o?.sessions.find((s) => s.current);
 
   return (
-    <div className="page security">
-      <header className="page-head">
-        <div className="grow">
-          <h1>Security</h1>
-          <p>
-            Tailscale decides which devices can reach ah; signing in decides who can use it. Devices sign out after {o?.idleHours ?? '…'}h unused, and after {o?.maxDays ?? '…'} days
-            regardless.
-          </p>
-        </div>
+    <div className="security">
+      {/* Settings is the page; this is its first section, introduced in a line. */}
+      <div className="settings-intro">
+        <p className="hint">
+          Tailscale decides which devices can reach ah; signing in decides who can use it. Devices sign out after {o?.idleHours ?? '…'}h unused, and after {o?.maxDays ?? '…'} days
+          regardless.
+        </p>
         <button
           className="btn"
           onClick={() =>
@@ -70,13 +103,13 @@ export function Security({ onLocked }: { onLocked: () => void }) {
         >
           Lock now
         </button>
-      </header>
+      </div>
 
       {error && <p className="form-error">{error}</p>}
       {notice && <p className="hint">{notice}</p>}
 
-      <h2 className="section-label first">Add a device</h2>
-      <div className="sec-card">
+      <section className="sec-card">
+        <h2>Add a device</h2>
         {code && code.until > Date.now() ? (
           <>
             <div className="big-code">{code.code}</div>
@@ -98,9 +131,10 @@ export function Security({ onLocked }: { onLocked: () => void }) {
             Add a passkey on this device
           </button>
         )}
-      </div>
+      </section>
 
-      <h2 className="section-label">Passkeys</h2>
+      <section className="sec-card">
+      <h2>Passkeys</h2>
       <ul className="rows">
         {o?.passkeys.map((p) => (
           <li key={p.id} className="sec-row">
@@ -129,10 +163,10 @@ export function Security({ onLocked }: { onLocked: () => void }) {
         ))}
         {o && !o.passkeys.length && <li className="sec-row hint">No passkeys yet.</li>}
       </ul>
+      </section>
 
-      <h2 className="section-label">
-        <span className="grow">Signed-in devices</span>
-      </h2>
+      <section className="sec-card">
+      <h2>Signed-in devices</h2>
       <ul className="rows">
         {o?.sessions.map((s) => (
           <li key={s.id} className="sec-row">
@@ -151,6 +185,7 @@ export function Security({ onLocked }: { onLocked: () => void }) {
             )}
           </li>
         ))}
+        {o && !o.sessions.length && <li className="sec-row hint">No signed-in devices (sign-in is off).</li>}
       </ul>
       {o && o.sessions.length > 1 && (
         <p>
@@ -171,10 +206,11 @@ export function Security({ onLocked }: { onLocked: () => void }) {
           </button>
         </p>
       )}
+      </section>
 
       {!!o?.tokens.length && (
-        <>
-          <h2 className="section-label">Hosts that can reach this one</h2>
+        <section className="sec-card">
+          <h2>Hosts that can reach this one</h2>
           <ul className="rows">
             {o.tokens.map((t) => (
               <li key={t.id} className="sec-row">
@@ -190,17 +226,21 @@ export function Security({ onLocked }: { onLocked: () => void }) {
               </li>
             ))}
           </ul>
-        </>
+        </section>
       )}
 
-      <h2 className="section-label">Master password</h2>
-      <p className="hint">
-        {o?.password ? 'Set. ' : 'Not set. '}A fallback for browsers without passkeys; it can only be set or removed on the host: <code>node bin/ah.js auth password</code>.
-      </p>
+      <section className="sec-card">
+        <h2>Master password</h2>
+        <p className="hint">
+          {o?.password ? 'Set. ' : 'Not set. '}A fallback for browsers without passkeys; it can only be set or removed on the host: <code>node bin/ah.js auth password</code>.
+        </p>
+      </section>
 
-      <h2 className="section-label">Prompt history</h2>
-      <p className="hint">
-        Recently sent messages are kept on the host (for “recent prompts”) and may contain anything you pasted. Set <code>promptHistory</code> to 0 in the config to keep none.{' '}
+      <section className="sec-card">
+        <h2>Prompt history</h2>
+        <p className="hint">
+          Recently sent messages are kept on the host (for “recent prompts”) and may contain anything you pasted. Set <code>promptHistory</code> to 0 in the config to keep none.
+        </p>
         <button
           className="btn small"
           onClick={() =>
@@ -216,20 +256,22 @@ export function Security({ onLocked }: { onLocked: () => void }) {
         >
           Clear prompt history
         </button>
-      </p>
+      </section>
 
-      <h2 className="section-label">Recent activity</h2>
+      <section className="sec-card">
+      <h2>Recent activity</h2>
       <ul className="rows audit">
         {o?.audit.map((a, i) => (
           <li key={i} className="sec-row">
             <span className={`stack ${a.event === 'auth.failed' ? 'bad' : ''}`}>
-              <span className="name">{EVENT_TEXT[a.event] ?? a.event}</span>
+              <span className="name">{eventText(a.event)}</span>
               <span className="sub">{[a.device, a.label, a.via, a.reason, a.from, a.by].filter(Boolean).join(' · ')}</span>
             </span>
             <span className="when">{age(sec(Date.parse(a.at)))}</span>
           </li>
         ))}
       </ul>
+      </section>
     </div>
   );
 }

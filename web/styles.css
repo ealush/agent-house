@@ -2606,6 +2606,49 @@ a.btn {
   background: var(--raised);
 }
 
+/* A card's title is a section label, not a page heading: no browser margins. */
+.sec-card > h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.sec-card > p {
+  margin: 0;
+}
+
+/* Lists inside a card run its full width, rows separated by hairlines. */
+.sec-card > .rows {
+  align-self: stretch;
+  margin: 0;
+}
+
+.sec-card > .rows .sec-row {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.sec-card > .rows .sec-row:last-child {
+  border-bottom: 0;
+}
+
+.security {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.settings-intro {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.settings-intro .hint {
+  flex: 1;
+  margin: 0;
+}
+
 .system-panels {
   display: flex;
   flex-direction: column;
@@ -4737,6 +4780,12 @@ button.tool-chip:hover {
 
 .history-filter input {
   width: 100%;
+}
+
+/* Filters are search boxes, like the palette's, not paths: the UI font. */
+.history-filter input,
+.keymap-search input {
+  font-family: var(--ui);
 }
 
 /* ---------- composer autocomplete ("/" commands, "@" files) */
