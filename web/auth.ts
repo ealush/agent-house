@@ -1,4 +1,5 @@
-import { browserSupportsWebAuthn, startAuthentication, startRegistration } from '@simplewebauthn/browser';
+// The WebAuthn helper loads only when a passkey is created or used, not with every page.
+const webauthn = () => import('@simplewebauthn/browser');
 import { deviceName } from './api.ts';
 import { clearFeedCache } from './gui/feedCache.ts';
 
@@ -34,7 +35,7 @@ export function deviceLabel(): string {
 
 /** Passkeys need WebAuthn and a domain name (the https://….ts.net address, or localhost). */
 export function passkeysAvailable(): { ok: boolean; why?: string } {
-  if (!browserSupportsWebAuthn()) return { ok: false, why: "This browser can't use passkeys." };
+  if (typeof window.PublicKeyCredential !== 'function') return { ok: false, why: "This browser can't use passkeys." };
   if (!window.isSecureContext) return { ok: false, why: 'Passkeys need https. Open ah through its https://….ts.net address (pnpm serve).' };
   if (/^[\d.]+$/.test(location.hostname)) return { ok: false, why: 'Passkeys need a name, not an IP. Open ah through its https://….ts.net address.' };
   return { ok: true };
@@ -46,13 +47,13 @@ export const authApi = {
   /** Creates a passkey for this device: with a host-issued setup code, or while signed in. */
   async addPasskey(code?: string, label = deviceLabel()) {
     const { challengeId, options } = await call<{ challengeId: string; options: never }>('POST', '/api/auth/register/options', { code });
-    const response = await startRegistration({ optionsJSON: options });
+    const response = await (await webauthn()).startRegistration({ optionsJSON: options });
     await call('POST', '/api/auth/register/verify', { challengeId, response, label });
   },
 
   async signIn(label = deviceLabel()) {
     const { challengeId, options } = await call<{ challengeId: string; options: never }>('POST', '/api/auth/login/options');
-    const response = await startAuthentication({ optionsJSON: options });
+    const response = await (await webauthn()).startAuthentication({ optionsJSON: options });
     await call('POST', '/api/auth/login/verify', { challengeId, response, label });
   },
 

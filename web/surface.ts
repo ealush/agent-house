@@ -5,7 +5,6 @@
 // only in the GUI view; the terminal supplies its own input.
 import { lazy, type ComponentType, type RefAttributes } from 'react';
 import type { HostApi, Win } from './api.ts';
-import { TerminalSurface } from './TerminalSurface.tsx';
 
 export type SurfaceHandle = {
   /** Put text in the agent's input without submitting it (a file path, a snippet). */
@@ -60,15 +59,28 @@ export function defaultView(): View {
   }
 }
 
-// Someone who reads in the GUI gets it fetched at boot, next to the session list.
+// The terminal (xterm and its WebGL renderer, the biggest dependency) loads the
+// same way: at boot only on devices that start in it, otherwise on first use.
+let term: Surface | null = null;
+const loadTerminal = () =>
+  import('./TerminalSurface.tsx').then((m) => {
+    term = m.TerminalSurface;
+    return { default: m.TerminalSurface };
+  });
+const LazyTerminal = lazy(loadTerminal);
+
+// Whichever view this device starts in is fetched at boot, next to the session list.
 // Once loaded it is used directly: a lazy component suspends on every first mount,
 // and React holds a suspended reveal back for a moment, which a reload would show.
+// The other one follows once the page has settled, so switching views never waits.
 try {
-  if ((localStorage.getItem('ah.view') ?? defaultView()) === 'gui') void loadGui();
+  const gui = (localStorage.getItem('ah.view') ?? defaultView()) === 'gui';
+  void (gui ? loadGui() : loadTerminal());
+  setTimeout(() => void (gui ? loadTerminal() : loadGui()), 4000);
 } catch {}
 
 export function surfaceFor(view: View): Surface {
-  return view === 'gui' ? (gui ?? LazyGui) : TerminalSurface;
+  return view === 'gui' ? (gui ?? LazyGui) : (term ?? LazyTerminal);
 }
 
 export const VIEW_LABEL: Record<View, string> = { terminal: 'Terminal', gui: 'GUI' };

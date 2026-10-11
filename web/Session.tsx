@@ -1,4 +1,4 @@
-import { Suspense, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { menuViewport, placeFloatingMenu } from './menuPlace.ts';
 import { askConfirm, showError, showNotice } from './ask.tsx';
@@ -14,8 +14,9 @@ import { HostPresetsContext } from './ModelPicker.tsx';
 import { defaultView, surfaceFor, VIEW_LABEL, viewsFor, type SurfaceHandle, type View } from './surface.ts';
 import { ComposerBar } from './Composer.tsx';
 import { BranchPicker, ChangesPanel, PrLink } from './Git.tsx';
-import { SideChat } from './SideChat.tsx';
-import { ChatHistory } from './ChatHistory.tsx';
+// Side chat and past chats (with the markdown renderer) load when the Chat panel first opens.
+const SideChat = lazy(() => import('./SideChat.tsx').then((m) => ({ default: m.SideChat })));
+const ChatHistory = lazy(() => import('./ChatHistory.tsx').then((m) => ({ default: m.ChatHistory })));
 import { FilesPanel } from './Files.tsx';
 import { QueuePanel } from './Queue.tsx';
 import { PreviewPanel } from './Preview.tsx';
@@ -626,7 +627,9 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
     ) : p === 'diff' ? (
       <ChangesPanel client={client} windowId={w.id} onComment={w.agent ? comment : undefined} />
     ) : p === 'chat' ? (
-      chatHistory ? <ChatHistory client={client} jump={chatJump} /> : <SideChat client={client} w={w} onSent={onSent} />
+      <Suspense fallback={<div className="panel-body" />}>
+        {chatHistory ? <ChatHistory client={client} jump={chatJump} /> : <SideChat client={client} w={w} onSent={onSent} />}
+      </Suspense>
     ) : (
       <FilesPanel
         fs={client.fs}

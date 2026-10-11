@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { HostPresetsContext, PresetsContext } from './ModelPicker.tsx';
 import { CLIENT_ID, deviceName, waitForWindow, type HistoryItem, type SearchHit, type SendResult, type State, type Win } from './api.ts';
 import { useHosts } from './useHosts.ts';
@@ -47,18 +47,20 @@ import { isPick, pickKey, leaves, moveLeaf, nudgeDivider, neighborPane, nodeAt, 
 import { lastCwd, NewDialog } from './NewDialog.tsx';
 import { ForkDialog, type ForkTarget } from './ForkDialog.tsx';
 import { Switcher } from './Switcher.tsx';
-import { ChatSearchDialog } from './ChatHistory.tsx';
 import { SearchView } from './SearchView.tsx';
 import { WorktreesDialog } from './Git.tsx';
 import { pushStatus, pushSupport, registerWorker } from './notify.ts';
 import { API_VERSION } from './api.ts';
-import { Settings } from './Settings.tsx';
 import { showError } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { trackViewport } from './viewport.ts';
 import { transition } from './motion.ts';
 import { runCommand } from './shortcuts.ts';
 import { CommandPalette, Keycaps, Shortcuts, ShortcutsDialog, WhichKey, shortcutTitle, useCommand, usePaletteProvider } from './shortcuts.tsx';
+
+// Pages and dialogs most visits never open load on first use.
+const Settings = lazy(() => import('./Settings.tsx').then((m) => ({ default: m.Settings })));
+const ChatSearchDialog = lazy(() => import('./ChatHistory.tsx').then((m) => ({ default: m.ChatSearchDialog })));
 
 function scratchKey(): string | null {
   try {
@@ -936,7 +938,9 @@ export function App({ onLock }: { onLock: () => void }) {
             {page === 'search' ? (
               <SearchView key={searchQuery} initialQuery={searchQuery} client={clientFor(state.hostname)} onOpenHit={openSearchHit} />
             ) : page === 'settings' ? (
-              <Settings onLocked={onLock} onNotifyChange={(on) => (pushActive.current = on)} />
+              <Suspense fallback={<div className="page" />}>
+                <Settings onLocked={onLock} onNotifyChange={(on) => (pushActive.current = on)} />
+              </Suspense>
             ) : page === 'history' ? (
               <HistoryView
                 state={state}
@@ -1105,7 +1109,11 @@ export function App({ onLock }: { onLock: () => void }) {
         />
       )}
 
-      {pastChatJump && <ChatSearchDialog key={`${pastChatJump.host}:${pastChatJump.uid}:${pastChatJump.msgId}`} client={clientFor(pastChatJump.host)} jump={pastChatJump} onClose={() => setPastChatJump(null)} />}
+      {pastChatJump && (
+        <Suspense fallback={null}>
+          <ChatSearchDialog key={`${pastChatJump.host}:${pastChatJump.uid}:${pastChatJump.msgId}`} client={clientFor(pastChatJump.host)} jump={pastChatJump} onClose={() => setPastChatJump(null)} />
+        </Suspense>
+      )}
 
       {dialog === 'worktrees' && <WorktreesDialog client={clientFor(current?.host)} onClose={() => setDialog(null)} onShell={shellIn} />}
 
