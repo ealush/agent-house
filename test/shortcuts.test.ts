@@ -16,6 +16,7 @@ import {
   resolveChords,
   searchCommands,
   shortcutContext,
+  fieldState,
   whenLabel,
   type Chord,
 } from '../web/shortcuts.ts';
@@ -47,7 +48,8 @@ test('digits and punctuation keep their unshifted name when Shift is held', () =
 
 test('scope: typing keeps letters, dialogs keep only the switcher, ask dialogs keep everything', () => {
   assert.equal(press('ArrowDown', { altKey: true, code: 'ArrowDown' }, 'field'), 'cycle-next');
-  assert.equal(press('g', { ctrlKey: true, shiftKey: true, code: 'KeyG' }, 'field'), null);
+  assert.equal(press('g', { ctrlKey: true, shiftKey: true, code: 'KeyG' }, 'field'), 'toggle-view');
+  assert.equal(press('g', { code: 'KeyG' }, 'field'), null);
   assert.equal(press('k', { metaKey: true, code: 'KeyK' }, 'field'), 'switcher');
   assert.equal(press('Enter', { ctrlKey: true, shiftKey: true, code: 'Enter' }, 'dialog'), null);
   assert.equal(press('k', { ctrlKey: true, shiftKey: true, code: 'KeyK' }, 'dialog'), 'switcher');
@@ -141,7 +143,9 @@ test('the shortcut table describes when a chord is allowed to fire', () => {
   assert.equal(whenLabel('switcher'), 'Anywhere except a confirm');
   assert.equal(whenLabel('cycle-next'), 'Not in a dialog');
   assert.equal(whenLabel('show-shortcuts'), 'Not in a dialog');
-  assert.equal(whenLabel('new-session'), 'Not while typing or in a dialog');
+  assert.equal(whenLabel('new-session'), 'Not in a dialog');
+  assert.equal(whenLabel('focus-pane-left'), 'Not in a dialog; while typing, only from the start of the text');
+  assert.equal(whenLabel('close-pane'), 'Not in a dialog; while typing, only in an empty box');
   assert.equal(press('?', { ctrlKey: true, shiftKey: true, code: 'Slash' }), 'show-shortcuts');
 });
 
@@ -156,10 +160,28 @@ test('split movement is directional, and terminate and exit split start unbound'
   assert.equal(press('ArrowDown', { ctrlKey: true, altKey: true, code: 'ArrowDown' }), 'move-pane-down');
   assert.equal(press('j', { ctrlKey: true, altKey: true, code: 'KeyJ' }), 'toggle-split');
   assert.equal(press('ArrowRight', { ctrlKey: true, shiftKey: true, code: 'ArrowRight' }, 'field'), null);
+  assert.equal(press('ArrowLeft', { ctrlKey: true, altKey: true, code: 'ArrowLeft' }, 'field'), 'move-pane-left');
+  assert.equal(press('ArrowUp', { ctrlKey: true, shiftKey: true, altKey: true, code: 'ArrowUp' }, 'field'), 'resize-up');
+  assert.equal(press('\\', { ctrlKey: true, shiftKey: true, code: 'Backslash' }, 'field'), 'split-right');
   assert.equal(press('ArrowUp', { altKey: true, code: 'ArrowUp' }), 'cycle-prev');
   assert.deepEqual(resolveChords('terminate'), []);
   assert.deepEqual(resolveChords('exit-split'), []);
   assert.equal(hintChord('terminate', false), null);
+});
+
+test('in a text box, Ctrl+Shift+arrows select words until the caret reaches the edge', () => {
+  const at = (value: string, start: number, end = start) => fieldState({ value, selectionStart: start, selectionEnd: end } as unknown as EventTarget);
+  const go = (key: string, field: ReturnType<typeof fieldState>) => matchShortcut({ key, code: key, ...none, ctrlKey: true, shiftKey: true }, 'field', {}, field);
+  assert.equal(go('ArrowLeft', at('hello', 3)), null);
+  assert.equal(go('ArrowLeft', at('hello', 0)), 'focus-pane-left');
+  assert.equal(go('ArrowUp', at('hello', 0)), 'focus-pane-up');
+  assert.equal(go('ArrowRight', at('hello', 0)), null);
+  assert.equal(go('ArrowRight', at('hello', 5)), 'focus-pane-right');
+  assert.equal(go('ArrowDown', at('hello', 5)), 'focus-pane-down');
+  assert.equal(go('ArrowRight', at('hello', 2, 5)), null, 'a selection still grows');
+  assert.equal(go('ArrowRight', at('', 0)), 'focus-pane-right');
+  assert.equal(go('Backspace', at('hello', 0)), null, 'Ctrl+Shift+Backspace still edits text');
+  assert.equal(go('Backspace', at('', 0)), 'close-pane');
 });
 
 test('formatChord speaks Mac symbols and Linux words', () => {
@@ -214,12 +236,12 @@ test('no two commands share a default chord', () => {
   }
 });
 
-test('session actions fire from the composer, pane moves do not (they select words there)', () => {
+test('session actions fire from the composer, pane focus waits for the caret to reach an edge', () => {
   const e = (key: string, mods: { ctrl?: boolean; alt?: boolean; shift?: boolean }) => ({ key, code: /^\d$/.test(key) ? `Digit${key}` : `Key${key.toUpperCase()}`, metaKey: false, ctrlKey: !!mods.ctrl, altKey: !!mods.alt, shiftKey: !!mods.shift });
   assert.equal(matchShortcut(e('k', { ctrl: true, alt: true }), 'terminal'), 'toggle-keys');
   assert.equal(matchShortcut(e('k', { ctrl: true, alt: true }), 'field'), 'toggle-keys');
   assert.equal(matchShortcut(e('s', { ctrl: true, alt: true }), 'field'), 'send-now');
   assert.equal(matchShortcut(e('x', { ctrl: true, alt: true }), 'field'), 'interrupt');
   assert.equal(matchShortcut(e('4', { ctrl: true, alt: true }), 'field'), 'panel-queue');
-  assert.equal(matchShortcut({ ...e('ArrowLeft', { ctrl: true, shift: true }), code: 'ArrowLeft' }, 'field'), null);
+  assert.equal(matchShortcut({ ...e('ArrowLeft', { ctrl: true, shift: true }), code: 'ArrowLeft' }, 'field'), null, 'mid-text it selects a word');
 });

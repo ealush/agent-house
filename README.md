@@ -99,7 +99,9 @@ to terminal rules and output activity, and matches live agents to their transcri
   approve / deny, X stop the turn (or Esc in an empty composer), S send the next
   queued message now, M / E model / effort, N rename, F fork, T send to, C copy
   the last reply, 1–5 the Diff / Files / Chat / Queue / Snapshots panel, `.` the
-  session menu. In a question form, digits pick, arrows move, Space toggles,
+  session menu. Pane and workspace chords work from the composer too; the
+  Ctrl+Shift+arrows still select words there and move to the next pane once the
+  caret reaches the edge of the text. In a question form, digits pick, arrows move, Space toggles,
   Ctrl+Enter submits. Lists (sidebar, inbox, history, menus, pickers, queue) move
   with the arrow keys; Ctrl+Shift+0 focuses the sidebar and Escape (or
   Ctrl+Shift+9) returns to the session. Alt+↑ / Alt+↓ moves through sessions in

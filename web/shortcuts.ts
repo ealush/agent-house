@@ -99,12 +99,20 @@ export type Command = {
   chords: Chord[];
   /** Where the chord is allowed to steal the key. `ask` is never listed: those dialogs own the keyboard. */
   scopes: Array<Exclude<Scope, 'ask'>>;
+  /**
+   * In a text box the chord also edits text (Ctrl+Shift+← selects a word), so it fires
+   * only when that edit has nowhere to go: the caret at the start or end, or the box empty.
+   */
+  field?: FieldEdge;
   /** Related words. A query that hits only these ranks under one that hits the name. */
   terms?: SearchTerms;
 };
 
-const nav: Array<Exclude<Scope, 'ask'>> = ['app', 'terminal'];
-const session: Array<Exclude<Scope, 'ask'>> = ['app', 'terminal'];
+export type FieldEdge = 'start' | 'end' | 'empty';
+export type FieldState = Partial<Record<FieldEdge, boolean>>;
+
+const nav: Array<Exclude<Scope, 'ask'>> = ['app', 'terminal', 'field'];
+const session: Array<Exclude<Scope, 'ask'>> = ['app', 'terminal', 'field'];
 /** Ctrl+Alt chords edit nothing in a text box, so they work from the composer too. */
 const act: Array<Exclude<Scope, 'ask'>> = ['app', 'terminal', 'field'];
 
@@ -457,6 +465,7 @@ export const COMMANDS: Command[] = [
     detail: 'Close the focused pane, or the current tab on a narrow screen, without stopping the session.',
     chords: [{ key: 'Backspace', ctrl: true, shift: true }],
     scopes: session,
+    field: 'empty',
   },
   {
     id: 'focus-pane-left',
@@ -465,6 +474,7 @@ export const COMMANDS: Command[] = [
     detail: 'Move to the pane on the left. On a narrow screen this switches tabs.',
     chords: [{ key: 'ArrowLeft', ctrl: true, shift: true }],
     scopes: session,
+    field: 'start',
   },
   {
     id: 'focus-pane-right',
@@ -473,6 +483,7 @@ export const COMMANDS: Command[] = [
     detail: 'Move to the pane on the right. On a narrow screen this switches tabs.',
     chords: [{ key: 'ArrowRight', ctrl: true, shift: true }],
     scopes: session,
+    field: 'end',
   },
   {
     id: 'focus-pane-up',
@@ -481,6 +492,7 @@ export const COMMANDS: Command[] = [
     detail: 'Move to the pane above. On a narrow screen this switches tabs.',
     chords: [{ key: 'ArrowUp', ctrl: true, shift: true }],
     scopes: session,
+    field: 'start',
   },
   {
     id: 'focus-pane-down',
@@ -489,6 +501,7 @@ export const COMMANDS: Command[] = [
     detail: 'Move to the pane below. On a narrow screen this switches tabs.',
     chords: [{ key: 'ArrowDown', ctrl: true, shift: true }],
     scopes: session,
+    field: 'end',
   },
   {
     id: 'move-pane-left',
@@ -739,21 +752,31 @@ export function matchShortcut(
   e: { key: string; code: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean },
   scope: Scope,
   overrides: Overrides = {},
+  field: FieldState = {},
 ): CommandId | null {
   if (scope === 'ask') return null;
   const chord = chordFromEvent(e);
   if (!chord || !chordUsable(chord)) return null;
   for (const cmd of COMMANDS) {
     if (!cmd.scopes.includes(scope)) continue;
+    if (scope === 'field' && cmd.field && !field[cmd.field]) continue;
     if (resolveChords(cmd.id, overrides).some((c) => chordsEqual(c, chord))) return cmd.id;
   }
   return null;
 }
 
+const FIELD_WHEN: Record<FieldEdge, string> = {
+  start: 'only from the start of the text',
+  end: 'only from the end of the text',
+  empty: 'only in an empty box',
+};
+
 /** Short "when" clause for the shortcut table. Confirm dialogs always own the keyboard. */
 export function whenLabel(id: CommandId): string {
   const scopes = BY_ID.get(id)?.scopes ?? [];
   const has = (s: Exclude<Scope, 'ask'>) => scopes.includes(s);
+  const edge = BY_ID.get(id)?.field;
+  if (edge) return `Not in a dialog; while typing, ${FIELD_WHEN[edge]}`;
   if (has('dialog') && has('field')) return 'Anywhere except a confirm';
   if (has('field')) return 'Not in a dialog';
   return 'Not while typing or in a dialog';
@@ -898,6 +921,18 @@ export function shortcutContext(target: EventTarget | null, root: { querySelecto
   return 'app';
 }
 
+/** Where the caret sits in a text box, for chords that edit text there too. */
+export function fieldState(target: EventTarget | null): FieldState {
+  const el = target as { value?: unknown; selectionStart?: number | null; selectionEnd?: number | null; textContent?: string | null } | null;
+  if (!el) return {};
+  if (typeof el.value !== 'string') return { empty: !el.textContent?.trim() };
+  const empty = el.value === '';
+  // Inputs like number and email have no selection API; only an empty one is safe.
+  if (el.selectionStart == null || el.selectionEnd == null) return { empty, start: empty, end: empty };
+  const collapsed = el.selectionStart === el.selectionEnd;
+  return { empty, start: collapsed && el.selectionStart === 0, end: collapsed && el.selectionEnd === el.value.length };
+}
+
 type Handler = () => void;
 const handlers = new Map<CommandId, Set<Handler>>();
 
@@ -982,7 +1017,8 @@ export function handleShortcutKey(e: KeyboardEvent) {
     e.stopPropagation();
     return;
   }
-  const id = matchShortcut(e, shortcutContext(e.target), loadOverrides());
+  const scope = shortcutContext(e.target);
+  const id = matchShortcut(e, scope, loadOverrides(), scope === 'field' ? fieldState(e.target) : {});
   if (!id || !runCommand(id)) return;
   e.preventDefault();
   e.stopPropagation();
