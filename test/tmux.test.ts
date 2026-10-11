@@ -15,7 +15,7 @@ before(async () => {
 after(() => cleanup(ah));
 
 function viewer(windowId: string, cols = 80, rows = 24) {
-  const ws = new WebSocket(`ws://127.0.0.1:${ah.port}/ws/${encodeURIComponent(windowId)}?cols=${cols}&rows=${rows}&device=Test`, { headers: { cookie }, origin: `http://localhost:${ah.port}` });
+  const ws = new WebSocket(`ws://127.0.0.1:${ah.port}/ws/${encodeURIComponent(windowId)}?cols=${cols}&rows=${rows}&device=Test`, { headers: { cookie, host: `localhost:${ah.port}` }, origin: `http://localhost:${ah.port}` });
   let data = '';
   ws.on('message', (d) => (data += d.toString()));
   ws.on('error', () => {});

@@ -20,8 +20,8 @@ repository, or email the maintainer. Don't file a public issue.
 - **A lost or borrowed device.** Every device must sign in with a passkey (or the
   optional master password); sessions expire after 24h idle / 30 days, and can be
   revoked from any signed-in device, which also closes their open terminals.
-- **Malicious web pages you visit.** Host allowlist (DNS rebinding), Origin checks on
-  WebSockets and writes, an `X-AH` header on every write (needs a CORS preflight ah never
+- **Malicious web pages you visit.** Host allowlist (DNS rebinding), exact-Origin checks
+  on WebSockets and writes (a dev server on another port of the same name doesn't pass), an `X-AH` header on every write (needs a CORS preflight ah never
   grants), `SameSite=Strict` cookies, strict CSP with no third-party origins, no framing.
 - **Brute force.** Guessable secrets (master password, setup codes) are throttled per
   source and per mechanism, with a global ceiling. Passkeys can't be guessed, so failed
@@ -48,7 +48,7 @@ repository, or email the maintainer. Don't file a public issue.
 |---|---|
 | Listens on loopback only; no flag overrides it | `test/security/authz.test.ts` |
 | Default deny: every route but the sign-in surface needs a session or token | `authz.test.ts` (route matrix) |
-| Writes need X-AH + same-site Origin | `authz.test.ts` |
+| Writes need X-AH + ah's exact Origin (scheme, host and port: another port on the same name is another site) | `authz.test.ts`, `websocket.test.ts` |
 | Host allowlist; Serve requests need the owner's identity; loopback ignores the header | `authz.test.ts`, `websocket.test.ts` |
 | WebSockets: same checks; revoke closes them; oversized frames don't crash ah | `websocket.test.ts` |
 | Hub never forwards cookies, never follows redirects, never uses plain-http LAN peers | `peers.test.ts` |

@@ -22,7 +22,8 @@ type Outcome = { opened: boolean; status?: number; close?: number; data: string 
 function connect(opts: { path?: string; origin?: string | null; cookie?: string; host?: string; headers?: Record<string, string> } = {}): Promise<{ ws: WebSocket; result: Promise<Outcome> }> {
   const path = opts.path ?? `/ws/${encodeURIComponent(windowId)}?cols=80&rows=24`;
   const headers: Record<string, string> = { ...(opts.cookie ? { cookie: opts.cookie } : {}), ...opts.headers };
-  if (opts.host) headers.host = opts.host;
+  // A browser calls back to the host its page came from, so Host and Origin agree.
+  headers.host = opts.host ?? `localhost:${ah.port}`;
   const ws = new WebSocket(`ws://127.0.0.1:${ah.port}${path}`, {
     headers,
     ...(opts.origin === null ? {} : { origin: opts.origin ?? `http://localhost:${ah.port}` }),
@@ -53,6 +54,10 @@ test('handshake is refused without a session, from a foreign origin, or a bad ho
     ['bad host', { host: 'evil.example' }, 421],
     ['serve host, no identity', { host: TAILNET_DNS, origin: `https://${TAILNET_DNS}` }, 403],
     ['serve host, wrong identity', { host: TAILNET_DNS, origin: `https://${TAILNET_DNS}`, headers: { 'tailscale-user-login': 'mallory@example.com' } }, 403],
+    // A page on another port of our own name (a dev server, a preview) is another site.
+    ['our name, another port (Serve)', { cookie: '', host: TAILNET_DNS, origin: `https://${TAILNET_DNS}:6006`, headers: { 'tailscale-user-login': OWNER } }, 403],
+    ['localhost, another port', { cookie: '', origin: 'http://localhost:6006' }, 403],
+    ['loopback, other name', { cookie: '', origin: `http://127.0.0.1:${ah.port}` }, 403],
   ];
   for (const [what, opts, status] of cases) {
     const c = await connect({ cookie: opts.cookie === '' ? cookie : opts.cookie, ...opts, ...(opts.cookie === '' ? { cookie } : {}) });

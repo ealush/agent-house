@@ -38,6 +38,28 @@ export function hostOf(value: string | undefined): string | null {
   }
 }
 
+function parseOrigin(value: string | undefined): { hostname: string; port: number; https: boolean } | null {
+  if (!value) return null;
+  try {
+    const u = new URL(value);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    const https = u.protocol === 'https:';
+    return { hostname: u.hostname.replace(/^\[|\]$/g, '').toLowerCase(), port: Number(u.port) || (https ? 443 : 80), https };
+  } catch {
+    return null;
+  }
+}
+
+/** The explicit port in a Host header, if any. */
+function portOf(host: string | undefined): number | null {
+  if (!host) return null;
+  try {
+    return Number(new URL(`http://${host}`).port) || null;
+  } catch {
+    return null;
+  }
+}
+
 export type Verdict = { ok: true; via: 'local' | 'serve' } | { ok: false; status: number; reason: string };
 
 export class Gate {
@@ -80,8 +102,20 @@ export class Gate {
     return { ok: true, via: 'local' };
   }
 
-  /** Writes and WebSockets must come from a page served by ah itself. */
+  /**
+   * Writes and WebSockets must come from a page served by ah itself: the Origin
+   * is the exact host and port this request was addressed to. A known name is not
+   * enough. Another port on the same name is another site's page (a dev server, a
+   * preview), and a WebSocket has no preflight to stop it from driving a terminal.
+   */
   originOk(req: IncomingMessage): boolean {
-    return this.known(hostOf(req.headers.origin));
+    const origin = parseOrigin(req.headers.origin);
+    const host = hostOf(req.headers.host);
+    if (!origin || !host || origin.hostname !== host || !this.known(host)) return false;
+    // Serve terminates TLS on 443 and forwards the bare name; locally ah speaks plain
+    // http and the Host carries the port.
+    const serve = this.isServeHost(host);
+    const addressed = portOf(req.headers.host) ?? (serve ? 443 : 80);
+    return origin.https === serve && origin.port === addressed;
   }
 }

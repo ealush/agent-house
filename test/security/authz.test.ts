@@ -153,6 +153,11 @@ test('CSRF: writes need X-AH and a same-site Origin, even with a valid session',
   assert.equal((await http(ah, 'POST', '/api/auth/code', { cookie, body: {}, origin: 'https://evil.example' })).status, 403, 'foreign Origin');
   assert.equal((await http(ah, 'POST', '/api/auth/code', { cookie, body: {}, origin: null })).status, 403, 'no Origin');
   assert.equal((await http(ah, 'POST', '/api/auth/code', { cookie, body: {}, origin: `http://${TAILNET_DNS}.evil.example` })).status, 403, 'lookalike Origin');
+  assert.equal((await http(ah, 'POST', '/api/auth/code', { cookie, body: {}, origin: `http://localhost:${ah.port + 1}` })).status, 403, 'our name, another port');
+  assert.equal((await http(ah, 'POST', '/api/auth/code', { cookie, body: {}, origin: `https://localhost:${ah.port}` })).status, 403, 'https on the http port is another origin');
+  const serve = { host: TAILNET_DNS, headers: { 'tailscale-user-login': OWNER } };
+  assert.equal((await http(ah, 'POST', '/api/auth/code', { ...serve, cookie, body: {}, origin: `https://${TAILNET_DNS}:6006` })).status, 403, 'Serve name, another port');
+  assert.equal((await http(ah, 'POST', '/api/auth/code', { ...serve, cookie, body: {}, origin: `https://${TAILNET_DNS}` })).status, 200, 'Serve control');
   assert.equal((await http(ah, 'POST', '/api/auth/code', { cookie, body: {} })).status, 200, 'control');
 });
 
