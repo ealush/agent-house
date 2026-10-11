@@ -45,6 +45,8 @@ export async function startAh(config: Record<string, unknown> = {}, dir = mkdtem
     CODEX_HOME: join(dir, 'codex'),
     AH_TAILNET_DNS: TAILNET_DNS,
     AH_TAILNET_OWNER: OWNER,
+    // Never touch the developer's real `tailscale serve` config from a test.
+    AH_PREVIEW_PUBLISH: '0',
     TMUX: '',
   };
   delete env.TMUX;

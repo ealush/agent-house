@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer, request, type IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { WebSocketServer, WebSocket } from 'ws';
-import { Previews, downstreamHeaders, stripCookies, upstreamHeaders } from './preview.ts';
+import { Previews, downstreamHeaders, staleMappings, stripCookies, upstreamHeaders } from './preview.ts';
 
 /** A stand-in dev server that echoes what it was sent, with headers a real one might set. */
 async function devServer() {
@@ -136,4 +136,17 @@ test('nothing listening yet answers a page that says so; one preview per session
   } finally {
     await previews.stopAll();
   }
+});
+
+test('only preview mappings ah made are cleaned up after a crash', () => {
+  const status = {
+    Web: {
+      'box.ts.net:443': { Handlers: { '/': { Proxy: 'http://127.0.0.1:7681' } } },
+      'box.ts.net:47601': { Handlers: { '/': { Proxy: 'http://127.0.0.1:47601' } } },
+      'box.ts.net:47602': { Handlers: { '/': { Proxy: 'http://127.0.0.1:3000' } } },
+      'box.ts.net:8443': { Handlers: { '/': { Proxy: 'http://127.0.0.1:8443' } } },
+    },
+  };
+  assert.deepEqual(staleMappings(status, [47600, 47699]), [47601]);
+  assert.deepEqual(staleMappings(null, [1, 2]), []);
 });

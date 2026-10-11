@@ -16,6 +16,7 @@ import { expandHome, isExecutableOnPath, type Config, type Preset } from './conf
 import { buildLaunch, customModel, resumeSelection, LaunchError } from './launch.ts';
 import { withCatalog } from './catalog.ts';
 import * as t from './tmux.ts';
+import { descendants, snapshot as procSnapshot } from './procs.ts';
 import { createSnapshot, restoreSnapshot as restoreSnapshotFiles, snapshotDiff, deleteSnapshotRef, createWorktree, headInfo, listWorktrees, mainRepo, removeWorktree, removeWorktreesBulk, GitError, type Worktree } from './git.ts';
 import { invalidateSize } from './size.ts';
 import { SnapshotStore, type SnapshotInfo } from './snapshots.ts';
@@ -621,6 +622,14 @@ export class Core {
     if (keep <= 0) return;
     this.prompts = [{ text, at: now() }, ...this.prompts.filter((p) => p.text !== text)].slice(0, keep);
     this.promptStore.save(this.prompts);
+  }
+
+  /** The processes in a live session's pane: its shell and everything under it. Null when it isn't running. */
+  async sessionPids(uid: string): Promise<number[] | null> {
+    const w = (await this.current()).windows.find((x) => x.uid === uid);
+    const raw = w && (await t.listWindows()).find((r) => r.windowId === w.id);
+    if (!raw) return null;
+    return descendants(await procSnapshot(), raw.panePid, true).map((p) => p.pid);
   }
 
   /** A copy of the session's queued items, oldest first (state lives in the QueueManager). */

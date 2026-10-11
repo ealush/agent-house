@@ -104,6 +104,11 @@ export type Config = {
   promptHistory: number;
   /** Per-turn snapshots (F39): size cap per untracked file, per-session turn cap, days kept after a session ends. */
   snapshots: { enabled?: boolean; maxFileBytes: number; keepTurns: number; retentionDays: number };
+  /**
+   * Browser previews of a session's dev server (server/preview.ts): the ports
+   * their proxies listen on and publish on the tailnet, inclusive.
+   */
+  preview: { ports: [number, number] };
   /** App sign-in on top of Tailscale. See server/auth.ts. */
   auth: { mode: 'passkey' | 'off'; idleHours: number; maxDays: number };
   presets: Preset[];
@@ -344,6 +349,7 @@ export function loadConfig(): Config {
     files: { roots: [...(user.projectRoots ?? ['~/code']), '~/.cache/ah/uploads', '/tmp'], ...user.files },
     promptHistory: user.promptHistory ?? 60,
     snapshots: { maxFileBytes: 10 * 1024 * 1024, keepTurns: 50, retentionDays: 7, ...user.snapshots },
+    preview: { ports: [47600, 47699], ...user.preview },
     presets: user.presets ?? DEFAULT_PRESETS,
   };
 }

@@ -24,6 +24,8 @@ import { buildLaunch, LaunchError } from './launch.ts';
 import { withCatalog } from './catalog.ts';
 import { attach, viewers } from './terminal.ts';
 import { feedPage, streamFeed, SNAPSHOT } from './feed/stream.ts';
+import { Previews, removeStaleMappings, tailscalePublish } from './preview.ts';
+import { listeningPorts } from './procs.ts';
 import * as t from './tmux.ts';
 import { createWorktree, changes, listBranches, switchBranch, pullRequest, GitError } from './git.ts';
 import { SideChatStore, SideChatError, changeContext } from './sidechat.ts';
@@ -76,6 +78,33 @@ const core = new Core(config, viewers);
 const sidechat = new SideChatStore();
 const search = new SearchIndexer(getDb(), () => core.searchSources());
 const gate = new Gate();
+
+// Browser previews (server/preview.ts): a session's dev server behind ah's own
+// sign-in, each on a port of its own. Tests and setups without Tailscale skip
+// publishing (AH_PREVIEW_PUBLISH=0); the loopback port still works locally.
+const ahPort = () => (server?.address() as AddressInfo | null)?.port ?? PORT;
+const previews = new Previews({
+  authorize: (req) => {
+    const verdict = gate.check(req);
+    if (!verdict.ok) return { status: verdict.status, reason: verdict.reason };
+    return auth.identify(req) ? null : { status: 401, reason: 'sign in required' };
+  },
+  frameAncestors: () => [...(gate.tailnet ? [`https://${gate.tailnet.dnsName}`] : []), `http://localhost:${ahPort()}`, `http://127.0.0.1:${ahPort()}`],
+  publish: process.env.AH_PREVIEW_PUBLISH === '0' ? null : { add: (p) => (gate.tailnet ? tailscalePublish.add(p) : Promise.reject(new Error('no tailnet'))), remove: tailscalePublish.remove },
+  range: config.preview.ports,
+});
+const isPreviewPort = (p: number) => p === ahPort() || (p >= config.preview.ports[0] && p <= config.preview.ports[1]);
+
+/** Keeps previews in step with sessions: back after a restart or a resume, gone with the session. */
+async function syncPreviews() {
+  const running = new Set(previews.list().map((p) => p.uid));
+  for (const rec of core.registry.all()) {
+    const want = (rec.meta['ah.preview'] as { target?: number } | undefined)?.target;
+    const live = running.has(rec.id) || want ? await core.sessionPids(rec.id) : null;
+    if (want && live && !running.has(rec.id)) await previews.start(rec.id, want).catch((err) => console.warn(`preview for ${rec.id}: ${(err as Error).message}`));
+    if (running.has(rec.id) && !live) await previews.stop(rec.id);
+  }
+}
 const peers = new Peers(config.peers, PORT);
 core.peers = peers;
 setRoots(config.files.roots.map(expandHome));
@@ -402,6 +431,28 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
       if (err instanceof CoreError) throw new HttpError(err.status, err.message);
       throw err;
     }
+  }
+
+  // Browser preview: one per session, of a port its dev server listens on.
+  if ((m = route('GET', /^\/api\/sessions\/([\w-]{1,40})\/preview$/))) {
+    const pids = await core.sessionPids(m[1]);
+    const ports = pids ? (await listeningPorts(pids)).filter((p) => !isPreviewPort(p)) : [];
+    return send(res, 200, { preview: previews.get(m[1]), ports, live: !!pids });
+  }
+  if ((m = route('PUT', /^\/api\/sessions\/([\w-]{1,40})\/preview$/))) {
+    const target = (await readJson(req)).target;
+    if (!Number.isInteger(target) || (target as number) < 1 || (target as number) > 65535 || isPreviewPort(target as number)) throw new HttpError(400, 'invalid port');
+    if (!(await core.sessionPids(m[1]))) throw new HttpError(404, 'session not running');
+    const preview = await previews.start(m[1], target as number);
+    core.registry.setMeta(m[1], 'ah.preview', { target });
+    audit(req, 'preview.start', { uid: m[1], target, port: preview.port });
+    return send(res, 200, { preview });
+  }
+  if ((m = route('DELETE', /^\/api\/sessions\/([\w-]{1,40})\/preview$/))) {
+    await previews.stop(m[1]);
+    core.registry.setMeta(m[1], 'ah.preview', undefined);
+    audit(req, 'preview.stop', { uid: m[1] });
+    return send(res, 200, { ok: true });
   }
 
   // Urgent follow-up: deliver one queued message now, stopping the live turn.
@@ -946,7 +997,7 @@ const MIME: Record<string, string> = {
   '.woff2': 'font/woff2',
 };
 
-const CSP = [
+const cspFor = () => [
   "default-src 'self'",
   "connect-src 'self'",
   "img-src 'self' data:",
@@ -955,6 +1006,8 @@ const CSP = [
   "font-src 'self'",
   "script-src 'self'",
   "frame-ancestors 'none'",
+  // Previews: a session's dev server, each on a port of its own (server/preview.ts).
+  `frame-src http://localhost:* http://127.0.0.1:*${gate.tailnet ? ` https://${gate.tailnet.dnsName}:*` : ''}`,
   "base-uri 'none'",
   "form-action 'self'",
 ].join('; ');
@@ -969,13 +1022,13 @@ async function serveStatic(res: ServerResponse, pathname: string) {
     body = await readFile(file).catch(() => null);
   }
   if (!body) {
-    res.writeHead(503, { 'content-type': 'text/plain', 'content-security-policy': CSP });
+    res.writeHead(503, { 'content-type': 'text/plain', 'content-security-policy': cspFor() });
     return res.end('UI not built. Run `pnpm build`, or use `pnpm dev`.');
   }
   res.writeHead(200, {
     'content-type': MIME[extname(file)] ?? 'application/octet-stream',
     'cache-control': rel.startsWith('assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
-    'content-security-policy': CSP,
+    'content-security-policy': cspFor(),
   });
   res.end(body);
 }
@@ -1121,6 +1174,9 @@ server.listen(PORT, HOST, async () => {
   const exposed = await serveStatus(port);
   console.log(exposed ? `Reachable on your tailnet at ${exposed} (tailscale serve)` : 'Not on your tailnet yet: run `node bin/ah.js setup tailscale` once.');
   console.log(`config: ${CONFIG_PATH}`);
+  if (process.env.AH_PREVIEW_PUBLISH !== '0') await removeStaleMappings(config.preview.ports);
+  await syncPreviews().catch((err) => console.warn('previews:', err));
+  setInterval(() => void syncPreviews().catch(() => {}), 15_000).unref();
 });
 
 let stopping = false;
@@ -1134,6 +1190,8 @@ async function shutdown(sig: string) {
   for (const ws of wss.clients) ws.close(1001, 'server shutting down');
   server.close();
   core.stop();
+  // Unpublish preview ports; a crash leaves them for removeStaleMappings at the next start.
+  await Promise.race([previews.stopAll(), new Promise((r) => setTimeout(r, 3000))]);
   const drain = (async () => {
     core.registry.flush();
     await core.registry.settled();

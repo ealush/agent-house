@@ -15,6 +15,8 @@
 import { createServer, request, type IncomingMessage, type Server, type ServerResponse, type IncomingHttpHeaders } from 'node:http';
 import { connect, type AddressInfo } from 'node:net';
 import type { Duplex } from 'node:stream';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 
 /** Cookies that are ah's own sign-in: never forwarded to, or set by, a previewed app. */
 export const AH_COOKIES = new Set(['ah_session', '__Host-ah_session']);
@@ -209,5 +211,45 @@ export class Previews {
     socket.on('error', end);
     up.on('close', () => socket.destroy());
     socket.on('close', () => up.destroy());
+  }
+}
+
+const exec = promisify(execFile);
+
+/**
+ * Publishes preview ports with `tailscale serve`, next to ah's own 443 mapping
+ * (needs Tailscale's operator permission, as `tailscale serve` for ah itself does).
+ */
+export const tailscalePublish = {
+  add: async (port: number) => {
+    await exec('tailscale', ['serve', '--bg', '--yes', `--https=${port}`, `http://127.0.0.1:${port}`], { timeout: 15_000 });
+  },
+  remove: async (port: number) => {
+    await exec('tailscale', ['serve', '--yes', `--https=${port}`, 'off'], { timeout: 15_000 });
+  },
+};
+
+/**
+ * Preview mappings a previous ah left behind (a crash skips stop()): a port in
+ * the preview range proxied to the same loopback port is ours. Anything else in
+ * the Serve config is left alone.
+ */
+export function staleMappings(status: unknown, range: [number, number]): number[] {
+  const web = (status as { Web?: Record<string, { Handlers?: Record<string, { Proxy?: string }> }> })?.Web ?? {};
+  const out: number[] = [];
+  for (const [hostPort, cfg] of Object.entries(web)) {
+    const port = Number(hostPort.split(':').pop());
+    if (!(port >= range[0] && port <= range[1])) continue;
+    if (cfg.Handlers?.['/']?.Proxy === `http://127.0.0.1:${port}`) out.push(port);
+  }
+  return out;
+}
+
+export async function removeStaleMappings(range: [number, number]): Promise<void> {
+  try {
+    const { stdout } = await exec('tailscale', ['serve', 'status', '--json'], { timeout: 5000 });
+    for (const port of staleMappings(JSON.parse(stdout || '{}'), range)) await tailscalePublish.remove(port).catch(() => {});
+  } catch {
+    // No tailscale, or no Serve config: nothing to clean.
   }
 }
