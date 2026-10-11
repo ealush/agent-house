@@ -310,3 +310,8 @@ export function parseLayout(v: unknown): LayoutNode | null {
   }
   return null;
 }
+
+/** The same layout with every pane's session key passed through `fn`. */
+export function mapKeys(node: LayoutNode, fn: (key: string) => string): LayoutNode {
+  return node.type === 'session' ? { ...node, sessionKey: fn(node.sessionKey) } : { ...node, first: mapKeys(node.first, fn), second: mapKeys(node.second, fn) };
+}

@@ -74,7 +74,7 @@ export class Push {
         title: event === 'waiting' ? `${w.name} needs you` : `${w.name} finished`,
         body: `${w.project} · ${w.agent ?? w.command}`,
         tag: w.uid,
-        url: `/#${w.id}`,
+        url: `/#${w.uid}`,
       });
     }
     this.primed = true;

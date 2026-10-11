@@ -10,7 +10,7 @@ type Props = {
   target: ForkTarget;
   onClose: () => void;
   /** The new session's window id on the target host. */
-  onForked: (id: string) => void;
+  onForked: (uid: string) => void;
 };
 
 /**
@@ -70,7 +70,7 @@ export function ForkDialog({ client, target, onClose, onForked }: Props) {
         ...(pick.model !== inherited.model ? { model: pick.model ?? 'default' } : {}),
         ...(pick.effort !== inherited.effort ? { effort: pick.effort ?? 'default' } : {}),
       });
-      onForked(out.id);
+      onForked(out.uid);
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);

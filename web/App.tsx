@@ -9,6 +9,7 @@ import { look } from './agents.ts';
 import { loadSpaces, occupied, saveSpaces, sendTo, switchTo, type Slot, type Spaces } from './workspaces.ts';
 import { useTheme } from './useTheme.ts';
 import { setOmarchyPalette } from './theme.ts';
+import { hasLegacy, isLegacyKey, upgradeKey, upgradeLayout, upgradeSpaces } from './sessionKeys.ts';
 
 const STATUS_WORD = { waiting: 'Needs you', busy: 'Working', attention: 'Done', idle: 'Idle' } as const;
 import { cycleKey } from './keyboard.ts';
@@ -31,6 +32,14 @@ import { Icon } from './icons.tsx';
 import { trackViewport } from './viewport.ts';
 import { runCommand } from './shortcuts.ts';
 import { CommandPalette, Shortcuts, ShortcutsDialog, shortcutTitle, useCommand, usePaletteProvider } from './shortcuts.tsx';
+
+function scratchKey(): string | null {
+  try {
+    return localStorage.getItem('ah.scratch');
+  } catch {
+    return null;
+  }
+}
 
 function useMedia(query: string) {
   const [match, setMatch] = useState(() => matchMedia(query).matches);
@@ -62,15 +71,17 @@ function stored<T extends string>(key: string, fallback: T): [T, (v: T) => void]
   ];
 }
 
-// URL hash: "#@12" (local session), "#<host>/@12" (peer session), "#history", "#sessions".
-// "#security" still lands on settings, where Security lives now.
+// URL hash: "#<uid>" (local session), "#<host>/<uid>" (peer session), "#history", "#sessions".
+// "#security" still lands on settings, where Security lives now. Old links
+// ("#@12", a tmux window id) still open: App upgrades them once windows are known.
+const PAGES = ['history', 'sessions', 'settings', 'search'] as const;
 function fromHash(): { page: Page; selected: string | null } {
   let h = '';
   try { h = decodeURIComponent(location.hash.slice(1)); } catch {}
-  if (h.includes('@')) return { page: 'inbox', selected: h };
-  if (h === 'security') h = 'settings';
-  if (h.startsWith('settings/')) h = 'settings';
-  return { page: h === 'history' || h === 'sessions' || h === 'settings' || h === 'search' ? h : 'inbox', selected: null };
+  if (h === 'security' || h.startsWith('settings/')) h = 'settings';
+  if ((PAGES as readonly string[]).includes(h)) return { page: h as Page, selected: null };
+  if (/^(?:[\w.-]+\/)?(?:@\d+|[\w-]{4,40})$/.test(h)) return { page: 'inbox', selected: h };
+  return { page: 'inbox', selected: null };
 }
 
 export function App({ onLock }: { onLock: () => void }) {
@@ -389,7 +400,7 @@ export function App({ onLock }: { onLock: () => void }) {
       try {
         const out = await clientFor(host).create({ preset: 'shell', cwd: '~', session: state.defaultSession, label: 'scratch', resume: false });
         await waitForWindow(() => refresh(host), { id: out.id, uid: out.uid });
-        key = keyFor(host, out.id);
+        key = keyFor(host, out.uid);
         localStorage.setItem('ah.scratch', key);
       } catch (e) {
         return showError(e, "Couldn't start the scratchpad shell");
@@ -397,7 +408,7 @@ export function App({ onLock }: { onLock: () => void }) {
     }
     setScratch(true);
   }
-  const scratchWin = scratch ? (state?.windows.find((w) => w.key === (() => { try { return localStorage.getItem('ah.scratch'); } catch { return null; } })()) ?? null) : null;
+  const scratchWin = scratch ? (state?.windows.find((w) => w.key === scratchKey()) ?? null) : null;
 
   // Palette → Workspace → Open as a new pane: every session not already on screen.
   usePaletteProvider(
@@ -431,7 +442,7 @@ export function App({ onLock }: { onLock: () => void }) {
               .create({ preset: p.id, cwd: path, session: state.defaultSession, label: '', resume: false })
               .then(async (out) => {
                 await waitForWindow(() => refresh(host), { id: out.id, uid: out.uid });
-                open(keyFor(host, out.id));
+                open(keyFor(host, out.uid));
               })
               .catch((e) => showError(e, `Couldn't start ${p.name}`)),
         })),
@@ -515,7 +526,7 @@ export function App({ onLock }: { onLock: () => void }) {
     try {
       const out = await clientFor(host).create({ preset: 'shell', cwd: near?.projectPath ?? '~', session: near?.session ?? state?.defaultSession ?? '', label: '', resume: false });
       await waitForWindow(() => refresh(host), { id: out.id, uid: out.uid });
-      fillPane(path, keyFor(host, out.id));
+      fillPane(path, keyFor(host, out.uid));
     } catch (e) {
       showError(e, "Couldn't open a shell");
     }
@@ -573,13 +584,30 @@ export function App({ onLock }: { onLock: () => void }) {
     go({ selected: key });
   }, []);
 
+  // Links, layouts and workspaces saved under tmux window ids: point them at the uid once.
+  useEffect(() => {
+    if (!state || !hasLegacy(layout, spaces, selected, scratchKey())) return;
+    if (layout) setLayout(upgradeLayout(layout, state.windows));
+    setSpaces(upgradeSpaces(spaces, state.windows));
+    const scratchWas = scratchKey();
+    if (scratchWas && isLegacyKey(scratchWas)) {
+      try {
+        const next = upgradeKey(scratchWas, state.windows);
+        if (next) localStorage.setItem('ah.scratch', next);
+        else localStorage.removeItem('ah.scratch');
+      } catch {}
+    }
+    if (selected && isLegacyKey(selected)) go({ selected: upgradeKey(selected, state.windows) });
+  }, [state]);
+
   const current = state?.windows.find((w) => w.key === selected) ?? null;
   // A session killed elsewhere: fall back to where we were (split panes show an ended state instead).
   useEffect(() => {
-    if (state && selected && !current && !layout) open(null);
+    if (state && selected && !current && !layout && !isLegacyKey(selected)) open(null);
   }, [state, selected, current]);
 
-  const keyFor = (host: string, id: string) => (host === state?.hostname ? id : `${host}/${id}`);
+  // Sessions are keyed by their uid, which survives resume and tmux restarts (a window id does not).
+  const keyFor = (host: string, uid: string) => (host === state?.hostname ? uid : `${host}/${uid}`);
 
   async function answer(w: Win, a: 'approve' | 'deny') {
     try {
@@ -595,7 +623,7 @@ export function App({ onLock }: { onLock: () => void }) {
     try {
       const out = await clientFor(host).resume(ref);
       await refresh(host);
-      open(keyFor(host, out.id));
+      open(keyFor(host, out.uid));
       if (out.resumed) flash('Resuming…');
     } catch (e) {
       showError(e, "Couldn't resume");
@@ -649,7 +677,7 @@ export function App({ onLock }: { onLock: () => void }) {
           localStorage.setItem('ah.view', 'gui');
         } catch {}
       }
-      open(keyFor(host, out.id));
+      open(keyFor(host, out.uid));
       if (out.resumed) flash('Resuming…');
     } catch (e) {
       showError(e, "Couldn't open that session");
@@ -669,7 +697,7 @@ export function App({ onLock }: { onLock: () => void }) {
     try {
       const out = await clientFor(host).create({ preset: 'shell', cwd: path, session: current?.session ?? state?.defaultSession ?? '', label: '', resume: false });
       await refresh(host);
-      open(keyFor(host, out.id));
+      open(keyFor(host, out.uid));
     } catch (e) {
       showError(e, "Couldn't open a shell");
     }
@@ -780,7 +808,7 @@ export function App({ onLock }: { onLock: () => void }) {
                 onSent={sent}
                 onCreated={async (host, id, uid) => {
                   await waitForWindow(() => refresh(host), { id, uid });
-                  fillPane(path, keyFor(host, id));
+                  fillPane(path, keyFor(host, uid));
                 }}
               />
             )}
@@ -873,7 +901,7 @@ export function App({ onLock }: { onLock: () => void }) {
             // selects a key nothing matches and the missing-selection
             // fallback bounces to the inbox. Wait until state lists it.
             await waitForWindow(() => refresh(host), { id, uid });
-            open(keyFor(host, id));
+            open(keyFor(host, uid));
           }}
         />
       )}
@@ -885,11 +913,11 @@ export function App({ onLock }: { onLock: () => void }) {
           client={clientFor(forking.host)}
           target={forking}
           onClose={() => setForking(null)}
-          onForked={async (id) => {
+          onForked={async (uid) => {
             const host = forking.host;
             setForking(null);
             await refresh(host);
-            open(keyFor(host, id));
+            open(keyFor(host, uid));
           }}
         />
       )}

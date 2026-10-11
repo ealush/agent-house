@@ -15,9 +15,10 @@ export default defineConfig({
   },
   server: {
     host: '127.0.0.1',
+    // Anchored: a bare '/api' prefix also matches the page's own /api.ts module.
     proxy: {
-      '/api': { target: api, changeOrigin: false },
-      '/ws': { target: api, ws: true, changeOrigin: false },
+      '^/api/': { target: api, changeOrigin: false },
+      '^/ws/': { target: api, ws: true, changeOrigin: false },
     },
   },
 });

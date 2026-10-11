@@ -4,7 +4,9 @@ import { api, hostApi, normalize, subscribe, type HostApi, type State } from './
 /**
  * Live state for every host: the local daemon plus each online peer it proxies.
  * Windows and history are merged, each tagged with its host; window keys are
- * unique across machines ("@12" locally, "mac/@12" on a peer).
+ * unique across machines: the session uid locally, "mac/<uid>" on a peer.
+ * A uid outlives its tmux window (resume, a restarted tmux server), so links
+ * and saved layouts keep pointing at the same session.
  */
 export function useHosts(onState: (merged: State) => void) {
   const [local, setLocal] = useState<State | null>(null);
@@ -40,7 +42,7 @@ export function useHosts(onState: (merged: State) => void) {
   const merged = useMemo<State | null>(() => {
     if (!local) return null;
     const tag = (s: State, self: boolean) => ({
-      windows: s.windows.map((w) => ({ ...w, host: s.hostname, key: self ? w.id : `${s.hostname}/${w.id}` })),
+      windows: s.windows.map((w) => ({ ...w, host: s.hostname, key: self ? w.uid : `${s.hostname}/${w.uid}` })),
       history: s.history.map((h) => ({ ...h, host: s.hostname })),
     });
     const parts = [tag(local, true), ...peerNames.filter((n) => peers[n]).map((n) => tag({ ...peers[n], hostname: n }, false))];
