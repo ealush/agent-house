@@ -1,5 +1,6 @@
 import { browserSupportsWebAuthn, startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import { deviceName } from './api.ts';
+import { clearFeedCache } from './gui/feedCache.ts';
 
 export type AuthStatus = { enabled: boolean; enrolled: boolean; authenticated: boolean; password: boolean };
 
@@ -56,7 +57,10 @@ export const authApi = {
   },
 
   passwordSignIn: (password: string, label = deviceLabel()) => call('POST', '/api/auth/password/login', { password, label }),
-  signOut: () => call('POST', '/api/auth/logout'),
+  async signOut() {
+    await clearFeedCache();
+    return call('POST', '/api/auth/logout');
+  },
   overview: () => call<Overview>('GET', '/api/auth/overview'),
   newCode: () => call<{ code: string; ttlMinutes: number }>('POST', '/api/auth/code'),
   revoke: (id: string) => call('DELETE', `/api/auth/sessions/${encodeURIComponent(id)}`),

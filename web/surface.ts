@@ -1,6 +1,6 @@
 // A session is rendered by exactly one surface at a time. Each is its own component
 // tree with its own transport: the terminal attaches to the tmux window, the GUI
-// reads typed transcript events. Session.tsx picks one from SURFACES and shares
+// reads typed transcript events. Session.tsx picks one with surfaceFor and shares
 // only what both have: the header and side panels. The graphical composer lives
 // only in the GUI view; the terminal supplies its own input.
 import { lazy, type ComponentType, type RefAttributes } from 'react';
@@ -37,11 +37,27 @@ export type SurfaceProps = {
 
 export type View = 'terminal' | 'gui';
 
-export const SURFACES: Record<View, ComponentType<SurfaceProps & RefAttributes<SurfaceHandle>>> = {
-  terminal: TerminalSurface,
-  // Loaded on first use: the terminal-only path never downloads the GUI tree.
-  gui: lazy(() => import('./gui/GuiSurface.tsx')),
-};
+type Surface = ComponentType<SurfaceProps & RefAttributes<SurfaceHandle>>;
+
+// Loaded on first use: the terminal-only path never downloads the GUI tree.
+let gui: Surface | null = null;
+const loadGui = () =>
+  import('./gui/GuiSurface.tsx').then((m) => {
+    gui = m.default;
+    return m;
+  });
+const LazyGui = lazy(loadGui);
+
+// Someone who reads in the GUI gets it fetched at boot, next to the session list.
+// Once loaded it is used directly: a lazy component suspends on every first mount,
+// and React holds a suspended reveal back for a moment, which a reload would show.
+try {
+  if (localStorage.getItem('ah.view') === 'gui') void loadGui();
+} catch {}
+
+export function surfaceFor(view: View): Surface {
+  return view === 'gui' ? (gui ?? LazyGui) : TerminalSurface;
+}
 
 export const VIEW_LABEL: Record<View, string> = { terminal: 'Terminal', gui: 'GUI' };
 

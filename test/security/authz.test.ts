@@ -50,6 +50,7 @@ const PROTECTED: Array<[string, string, unknown?]> = [
   ['PATCH', '/api/windows/@1', { name: 'x' }],
   ['DELETE', '/api/windows/@1'],
   ['GET', '/api/auth/overview'],
+  ['POST', '/api/auth/cache-key', {}],
   ['POST', '/api/auth/code', {}],
   ['DELETE', '/api/auth/sessions/abc'],
   ['POST', '/api/auth/signout-all', {}],
@@ -127,6 +128,22 @@ test('a revoked browser session is anonymous again', async () => {
   const mine = sessions.find((s: any) => s.label === 'to revoke');
   assert.equal((await http(ah, 'DELETE', `/api/auth/sessions/${mine.id}`, { token: ah.localToken() })).status, 200);
   assert.equal((await http(ah, 'GET', '/api/state', { cookie })).status, 401);
+});
+
+test('the conversation cache key belongs to one sign-in and dies with it', async () => {
+  const a = await signIn(ah, 'cache a');
+  const b = await signIn(ah, 'cache b');
+  const key = async (cookie: string) => (await http(ah, 'POST', '/api/auth/cache-key', { cookie, body: {} })).json().key as string;
+  const ka = await key(a);
+  assert.match(ka, /^[\w-]{43}$/);
+  assert.equal(await key(a), ka, 'stable for the same sign-in');
+  assert.notEqual(await key(b), ka, 'another device gets another key');
+  assert.equal((await http(ah, 'POST', '/api/auth/cache-key', { token: ah.localToken(), body: {} })).status, 404, 'the host CLI has no cache');
+  const sessions = (await http(ah, 'GET', '/api/auth/overview', { token: ah.localToken() })).json().sessions;
+  const mine = sessions.find((s: any) => s.label === 'cache a');
+  await http(ah, 'DELETE', `/api/auth/sessions/${mine.id}`, { token: ah.localToken() });
+  assert.equal((await http(ah, 'POST', '/api/auth/cache-key', { cookie: a, body: {} })).status, 401, 'revoked: no key');
+  assert.equal((await http(ah, 'POST', '/api/auth/cache-key', { cookie: a, body: {}, csrf: false })).status, 403, 'a write: needs X-AH');
 });
 
 test('CSRF: writes need X-AH and a same-site Origin, even with a valid session', async () => {

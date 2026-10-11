@@ -1,7 +1,7 @@
 // The session as a GUI: a separate component tree that never touches the terminal.
 // It renders the agent's typed event stream (server/feed) and talks back through
 // the same send/answer API the terminal path uses.
-import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, startTransition, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ToolResult } from '../../server/feed/schema.ts';
 import { AskPanel, type AskHandle } from '../AskPanel.tsx';
 import type { SurfaceHandle, SurfaceProps } from '../surface.ts';
@@ -24,6 +24,14 @@ const UNAVAILABLE: Record<string, string> = {
   'no-adapter': 'This agent has no GUI view yet. Use the terminal.',
   'not-found': 'This session is gone.',
 };
+
+/**
+ * A mount (reload, split, moving a pane) draws the newest blocks first and the
+ * older ones in the background, so what is on screen paints without waiting for
+ * markdown that is scrolled out of view.
+ */
+const FIRST_BLOCKS = 16;
+const MORE_BLOCKS = 40;
 
 const time = (at: number) => (at ? new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
 
@@ -213,6 +221,14 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
     const t = setTimeout(() => setPending((p) => p.filter((x) => Date.now() - x.at < 30_000)), 30_000);
     return () => clearTimeout(t);
   }, [blocks, pending]);
+  const [shownCount, setShownCount] = useState(FIRST_BLOCKS);
+  const shown = useMemo(() => (shownCount >= blocks.length ? blocks : blocks.slice(-shownCount)), [blocks, shownCount]);
+  const allShown = shown.length === blocks.length;
+  useEffect(() => {
+    if (allShown) return;
+    const t = setTimeout(() => startTransition(() => setShownCount((n) => (n + MORE_BLOCKS >= blocks.length ? Infinity : n + MORE_BLOCKS))), 0);
+    return () => clearTimeout(t);
+  }, [allShown, shownCount, blocks.length]);
   const blocksRef = useRef(blocks);
   blocksRef.current = blocks;
   const scroller = useRef<HTMLDivElement>(null);
@@ -288,6 +304,8 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
     // Folded tool results and consecutive tool calls share the preceding rendered group.
     const loaded = state.entries.some((e) => e.seq === target);
     const candidates = Array.from(scroller.current?.querySelectorAll<HTMLElement>('[data-seq]') ?? []);
+    // Loaded but still waiting to be drawn: draw everything, then look again.
+    if (loaded && !allShown) return setShownCount(Infinity);
     const el = loaded ? candidates.filter((el) => Number(el.dataset.seq) <= target).sort((a, b) => Number(b.dataset.seq) - Number(a.dataset.seq))[0] : undefined;
     if (el) {
       jumpSeq.current = null;
@@ -303,14 +321,14 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
     } else if (!state.hasOlder && state.entries.length) {
       jumpSeq.current = null; // older than anything retained; give up quietly
     }
-  }, [state.entries, state.hasOlder, state.status, loadOlder, loadingOlder, jumpVersion]);
+  }, [state.entries, state.hasOlder, state.status, loadOlder, loadingOlder, jumpVersion, allShown]);
 
   // Follow new output while you're at the bottom; keep your place when you scrolled up,
-  // and when older entries are prepended.
+  // and when older blocks are prepended (a page from the server, or the backlog drawn in).
   useLayoutEffect(() => {
     const el = scroller.current;
     if (!el) return;
-    const first = state.entries[0]?.seq;
+    const first = shown[0] ? parseInt(shown[0].key, 10) : undefined;
     if (prevFirst.current !== undefined && first !== undefined && first < prevFirst.current && !stick.current) {
       el.scrollTop += el.scrollHeight - prevHeight.current;
     } else if (stick.current) {
@@ -318,14 +336,14 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
     }
     prevHeight.current = el.scrollHeight;
     prevFirst.current = first;
-  }, [state.entries, w.status, hidden]);
+  }, [shown, w.status, hidden]);
 
   const onScroll = () => {
     const el = scroller.current!;
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
     stick.current = atBottom;
     setAway(!atBottom);
-    if (el.scrollTop < 200 && state.hasOlder && !loadingOlder) loadOlder();
+    if (el.scrollTop < 200 && allShown && state.hasOlder && !loadingOlder) loadOlder();
   };
 
   const waiting = w.status === 'waiting' && w.ask;
@@ -360,7 +378,7 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
               e.preventDefault();
             }}
           >
-            {state.hasOlder && (
+            {state.hasOlder && allShown && (
               <button className="btn ghost small gui-older" onClick={loadOlder} disabled={loadingOlder}>
                 {loadingOlder ? 'Loading…' : 'Load earlier'}
               </button>
@@ -376,7 +394,7 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
             )}
             {empty && <div className="gui-empty muted">{state.status === 'connecting' ? 'Connecting…' : 'No messages yet.'}</div>}
 
-            {blocks.map((b) => {
+            {shown.map((b) => {
               // Snapshot numbers include safety captures and start when ah first
               // runs the session, so a visible-page ordinal is not a turn id.
               const prompt = b.kind === 'user' ? b.parts.filter((p) => p.type === 'text').map((p) => p.text).join('\n').replace(/\s+/g, ' ').trim().slice(0, 120) : '';

@@ -33,6 +33,19 @@ test('older pages merge in front; a reconnect snapshot is not a rebuild, a rotat
   assert.deepEqual(rotated.entries.map((e) => e.seq), [1]);
 });
 
+test('a cached copy fills an empty, waiting view and never overrides the stream', () => {
+  const cached = { type: 'cached', harness: 'claude', entries: [user(1, 'hi'), call(2, 't1'), result(3, 't1')], hasOlder: true } as const;
+  const s = reduce(initialFeed, cached);
+  assert.equal(s.status, 'connecting', 'still waiting for the stream');
+  assert.deepEqual(s.entries.map((e) => e.seq), [1, 2, 3]);
+  assert.equal(s.results.t1.text, 'ok');
+  const live = reduce(s, snapshot([user(1, 'hi'), say(4, 'new')]));
+  assert.deepEqual(live.entries.map((e) => e.seq), [1, 4], 'the snapshot replaces the copy');
+  assert.equal(live.epoch, s.epoch, 'and is not a rebuild');
+  assert.equal(reduce(live, cached), live, 'late cache loses to live');
+  assert.equal(reduce(reduce(initialFeed, { type: 'unavailable', reason: 'not-found' }), cached).entries.length, 0);
+});
+
 test('projection: agent turns group text and consecutive tool calls; results never show alone', () => {
   const blocks = project([user(1, 'go'), say(2, 'on it'), call(3, 'a'), result(4, 'a'), call(5, 'b'), say(6, 'done'), user(7, 'thanks')]);
   assert.deepEqual(

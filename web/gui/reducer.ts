@@ -15,7 +15,10 @@ export type FeedState = {
   epoch: number;
 };
 
-export type Action = FeedMessage | ({ type: 'older' } & FeedPage) | { type: 'disconnected' };
+/** What this browser kept of a conversation (web/gui/feedCache.ts), shown until the stream catches up. */
+export type CachedFeed = { harness: string; entries: Entry[]; hasOlder: boolean };
+
+export type Action = FeedMessage | ({ type: 'older' } & FeedPage) | ({ type: 'cached' } & CachedFeed) | { type: 'disconnected' };
 
 export const initialFeed: FeedState = { status: 'connecting', reason: null, harness: '', entries: [], results: {}, hasOlder: false, epoch: 0 };
 
@@ -57,6 +60,10 @@ export function reduce(s: FeedState, a: Action): FeedState {
       return { ...s, entries: merge(s.entries, a.entries), results: withResults(s.results, a.entries), hasOlder: a.hasOlder };
     case 'unavailable':
       return { ...initialFeed, status: 'unavailable', reason: a.reason, epoch: s.epoch + 1 };
+    case 'cached':
+      // Only into an empty view that is still waiting: the stream always wins.
+      if (s.entries.length || s.status !== 'connecting') return s;
+      return { ...s, harness: a.harness, entries: merge([], a.entries), results: withResults({}, a.entries), hasOlder: a.hasOlder };
     case 'disconnected':
       return s.status === 'live' ? { ...s, status: 'connecting' } : s;
   }

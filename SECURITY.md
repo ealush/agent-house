@@ -63,7 +63,7 @@ All under `~/.local/state/ah/` (mode 0700 directory, 0600 files):
 
 | File | Contains |
 |---|---|
-| `auth.json` | passkey public keys, hashed session and token secrets, scrypt password hash |
+| `auth.json` | passkey public keys, hashed session and token secrets, scrypt password hash, the browser cache secret |
 | `local-token` | the host CLI's bearer token (regenerated each start) |
 | `peer-tokens.json` | tokens other hosts issued to this one |
 | `ah.db` (SQLite via Prisma) | the session registry (titles, directories, conversation ids, queued messages), recent prompts (may contain anything you pasted — `promptHistory: 0` keeps none; Security → Clear prompt history), chat API keys and side-chat history (keys are never returned by the API), and loose settings. First boot imports `sessions.json`/`prompts.json`/`sidechat.json` once when present; those legacy files are then unused |
@@ -71,6 +71,13 @@ All under `~/.local/state/ah/` (mode 0700 directory, 0600 files):
 | `push.json`, `vapid.json` | Web Push subscriptions and keys |
 
 Uploads go to `~/.cache/ah/uploads/` (0600).
+
+In the browser, the GUI keeps the newest page of recently viewed conversations in
+IndexedDB (`ah-feed-cache`) so a reload paints at once. Every record is AES-GCM
+encrypted with a key the server derives from that device's sign-in (`cacheSecret` in
+`auth.json`, HMAC'd with the session); the key is fetched after sign-in and never
+stored. Signing out deletes the cache; a revoked or expired sign-in leaves only
+ciphertext nobody can read, and the next sign-in clears it.
 
 ## Hardening checklist for your tailnet
 

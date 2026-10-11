@@ -9,7 +9,7 @@ import { Icon } from './icons.tsx';
 import { deviceName, type HostApi, type SendResult, type Win } from './api.ts';
 import { look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
-import { SURFACES, VIEW_LABEL, viewsFor, type SurfaceHandle, type View } from './surface.ts';
+import { surfaceFor, VIEW_LABEL, viewsFor, type SurfaceHandle, type View } from './surface.ts';
 import { ComposerBar } from './Composer.tsx';
 import { BranchPicker, ChangesPanel, PrLink } from './Git.tsx';
 import { SideChat } from './SideChat.tsx';
@@ -274,7 +274,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   const abs = (p: string) => (p.startsWith('~') ? home + p.slice(1) : p);
   const views = viewsFor(w);
   const view: View = views.includes(viewPref) ? viewPref : 'terminal';
-  const Surface = SURFACES[view];
+  const Surface = surfaceFor(view);
 
   useEffect(() => {
     setTab('main');

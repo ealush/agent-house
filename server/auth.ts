@@ -8,7 +8,7 @@
 //   commands on the host is already trusted.
 // - An optional master password (scrypt) for browsers without passkeys, set on the host.
 // - Machine tokens for the local CLI and for peers that proxy through each other.
-import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'node:fs';
 import { homedir, hostname } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -53,7 +53,15 @@ export type AuthConfig = {
 type Passkey = { id: string; publicKey: string; counter: number; transports?: string[]; rpID: string; label: string; createdAt: number; lastUsedAt: number };
 type Session = { id: string; hash: string; label: string; via: string; createdAt: number; lastSeenAt: number; expiresAt: number };
 type Token = { id: string; hash: string; name: string; createdAt: number; lastUsedAt: number };
-type Store = { userId: string; passkeys: Passkey[]; sessions: Session[]; tokens: Token[]; password?: { salt: string; hash: string } };
+type Store = {
+  userId: string;
+  passkeys: Passkey[];
+  sessions: Session[];
+  tokens: Token[];
+  password?: { salt: string; hash: string };
+  /** Keys the browser's encrypted conversation cache, one key per sign-in (see cacheKey). */
+  cacheSecret?: string;
+};
 
 export type Caller = { kind: 'session'; session: Session } | { kind: 'token'; token: Token } | { kind: 'open' };
 
@@ -101,6 +109,7 @@ export class Auth {
       this.store = { userId: newSecret(), passkeys: [], sessions: [], tokens: [] };
     }
     this.store.tokens ??= [];
+    this.store.cacheSecret ??= newSecret();
     // A fresh local token every start; the CLI reads it from a 0600 file.
     this.localToken = newSecret();
     mkdirSync(DIR, { recursive: true, mode: 0o700 });
@@ -225,6 +234,18 @@ export class Auth {
     this.save();
     this.audit('auth.signin', { via, device: session.label, session: session.id, from: who(req) });
     return { cookie: setCookie(req, secret, this.config.maxDays * 86400), session };
+  }
+
+  /**
+   * The key a browser encrypts its local conversation cache with. It is derived
+   * from this sign-in, so it is gone once the device signs out, is revoked, or
+   * expires, and what the browser stored is unreadable without signing in again.
+   * The host CLI has no cache; with auth off there is no sign-in to tie it to.
+   */
+  cacheKey(caller: Caller): string | null {
+    if (caller.kind === 'token') return null;
+    const subject = caller.kind === 'session' ? `session:${caller.session.hash}` : 'open';
+    return createHmac('sha256', this.store.cacheSecret!).update(subject).digest('base64url');
   }
 
   endSession(id: string, reason: string) {

@@ -874,6 +874,12 @@ async function authApi(req: IncomingMessage, res: ServerResponse, path: string, 
   // Management: signed-in devices and the host's own CLI only.
   if (!caller) throw new HttpError(401, 'sign in required');
 
+  if (route('POST', /^\/api\/auth\/cache-key$/)) {
+    const key = auth.cacheKey(caller);
+    if (!key) throw new HttpError(404, 'no cache for this caller');
+    res.setHeader('cache-control', 'no-store');
+    return send(res, 200, { key });
+  }
   if (route('GET', /^\/api\/auth\/overview$/)) return send(res, 200, { ...auth.overview(caller), audit: auth.recentAudit(50) });
   if (route('POST', /^\/api\/auth\/code$/)) {
     return send(res, 200, { code: auth.issueCode(caller.kind === 'session' ? `device ${caller.session.label}` : 'host CLI'), ttlMinutes: 10 });
