@@ -703,7 +703,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
           )}
           {narrow && (
             <span className="eyebrow">
-              {[w.agent ? agentName : w.cwd, multiHost ? w.host : null, elsewhere ? `also open on ${elsewhere}` : null].filter(Boolean).join(' · ')}
+              {[w.agent ? agentName : 'Shell', w.project, multiHost ? w.host : null, elsewhere ? `also open on ${elsewhere}` : null].filter(Boolean).join(' · ')}
             </span>
           )}
         </div>
@@ -957,9 +957,12 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
           <button role="tab" aria-selected={tab === 'chat'} className={tab === 'chat' ? 'on' : ''} onClick={() => setTab('chat')}>
             Chat
           </button>
-          <button role="tab" aria-selected={tab === 'queue'} className={tab === 'queue' ? 'on' : ''} onClick={() => setTab('queue')}>
-            Queue{w.queued > 0 ? ` (${w.queued})` : ''}
-          </button>
+          {/* Nothing queued: the tab steps aside (the menu and palette still open it). */}
+          {(w.queued > 0 || tab === 'queue') && (
+            <button role="tab" aria-selected={tab === 'queue'} className={tab === 'queue' ? 'on' : ''} onClick={() => setTab('queue')}>
+              Queue{w.queued > 0 ? ` (${w.queued})` : ''}
+            </button>
+          )}
           <button role="tab" aria-selected={tab === 'snapshots'} className={tab === 'snapshots' ? 'on' : ''} onClick={() => setTab('snapshots')}>
             Snapshots
           </button>

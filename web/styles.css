@@ -5730,3 +5730,33 @@ button.tool-chip:hover {
   padding: 0;
   border-radius: 7px;
 }
+
+/* Phone panel tabs and the key bar: a soft fade at the edge while more is off screen. */
+@property --tabs-fade {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+.seg-tabs,
+.keybar {
+  mask-image: linear-gradient(to right, #000 calc(100% - var(--tabs-fade)), transparent);
+}
+
+@supports (animation-timeline: scroll()) {
+  .seg-tabs,
+  .keybar {
+    animation: tabs-fade linear both;
+    animation-timeline: scroll(self inline);
+  }
+}
+
+@keyframes tabs-fade {
+  from,
+  92% {
+    --tabs-fade: 32px;
+  }
+  to {
+    --tabs-fade: 0px;
+  }
+}
