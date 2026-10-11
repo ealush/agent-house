@@ -543,6 +543,8 @@ export async function buildHistory(registry: Registry, windows: WindowView[]): P
   }
   for (const t of transcripts) {
     if (running.has(t.harnessId) || claimed.has(t.harnessId)) continue;
+    // One conversation can span several files (Codex writes a new rollout on resume): newest wins.
+    claimed.add(t.harnessId);
     items.push({
       ref: `${t.harness}:${t.harnessId}`,
       kind: 'saved',
