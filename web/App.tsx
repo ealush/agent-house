@@ -58,7 +58,7 @@ import { Icon } from './icons.tsx';
 import { trackViewport } from './viewport.ts';
 import { transition } from './motion.ts';
 import { runCommand } from './shortcuts.ts';
-import { CommandPalette, Keycaps, Shortcuts, ShortcutsDialog, shortcutTitle, useCommand, usePaletteProvider } from './shortcuts.tsx';
+import { CommandPalette, Keycaps, Shortcuts, ShortcutsDialog, WhichKey, shortcutTitle, useCommand, usePaletteProvider } from './shortcuts.tsx';
 
 function scratchKey(): string | null {
   try {
@@ -805,6 +805,7 @@ export function App({ onLock }: { onLock: () => void }) {
     <HostPresetsContext.Provider value={(host) => hostState(host)?.presets ?? []}>
     <div className={`app ${narrow ? 'narrow' : ''}`}>
       <Shortcuts />
+      <WhichKey />
       {sideOpen ? (
         <Sidebar
           workspaces={{

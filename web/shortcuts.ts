@@ -1003,6 +1003,22 @@ export function searchCommands(query: string, opts: { active?: (id: CommandId) =
 }
 
 /** Run the most recently registered handler. False when nothing is listening. */
+type Mods = { ctrl: boolean; alt: boolean; shift: boolean; meta: boolean };
+
+/**
+ * What answers these held modifiers right now (plus one key): the which-key
+ * overlay. Only commands something mounted can run, by their current binding.
+ */
+export function chordsFor(mods: Mods, mac: boolean, overrides: Overrides = {}): Array<{ id: CommandId; label: string; key: string }> {
+  const out: Array<{ id: CommandId; label: string; key: string }> = [];
+  for (const cmd of COMMANDS) {
+    if (!handlers.get(cmd.id)?.size) continue;
+    const c = resolveChords(cmd.id, overrides).find((c) => (mac ? true : !c.meta) && !!c.ctrl === mods.ctrl && !!c.alt === mods.alt && !!c.shift === mods.shift && !!c.meta === mods.meta);
+    if (c) out.push({ id: cmd.id, label: cmd.label, key: chordParts(c).at(-1)! });
+  }
+  return out.sort((a, b) => a.key.localeCompare(b.key, undefined, { numeric: true }));
+}
+
 export function runCommand(id: CommandId): boolean {
   const set = handlers.get(id);
   const fn = set && [...set].at(-1);

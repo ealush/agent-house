@@ -122,7 +122,8 @@ to terminal rules and output activity, and matches live agents to their transcri
   with the arrow keys; Ctrl+Shift+0 focuses the sidebar and Escape (or
   Ctrl+Shift+9) returns to the session. Alt+↑ / Alt+↓ moves through sessions in
   sidebar order; in a split, Ctrl+Shift+arrows moves between panes.
-  Ctrl+Shift+/ opens the shortcut table (also under Settings → Shortcuts), where
+  Hold Ctrl+Alt or Ctrl+Shift (⌘⇧ on a Mac) for a moment and a which-key overlay shows
+  what each key does there right now. Ctrl+Shift+/ opens the shortcut table (also under Settings → Shortcuts), where
   each binding can be changed on this device. ⌘↵ (Ctrl+↵) presses the main
   button wherever you are — Start, Terminate, Fork, Send, Unlock — and each such
   button shows it.

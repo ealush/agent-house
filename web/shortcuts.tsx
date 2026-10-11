@@ -7,6 +7,7 @@ import {
   bindingError,
   chordFromEvent,
   chordParts,
+  chordsFor,
   formatChord,
   handleShortcutKey,
   hintChord,
@@ -577,5 +578,63 @@ export function ConfirmKeys() {
       <kbd>{MOD()}</kbd>
       <kbd>↵</kbd>
     </span>
+  );
+}
+
+/**
+ * Which-key, like Omarchy's: hold ⌃⌥ or ⌃⇧ (⌘⇧ on a Mac) for a moment and the
+ * chords that work right now appear, each with its key. Any other key, or
+ * letting go, hides it; the chord itself still runs as usual.
+ */
+export function WhichKey() {
+  const [shown, setShown] = useState<{ mods: string[]; items: ReturnType<typeof chordsFor> } | null>(null);
+  useEffect(() => {
+    let timer: number | undefined;
+    const reset = () => {
+      window.clearTimeout(timer);
+      timer = undefined;
+      setShown(null);
+    };
+    const down = (e: KeyboardEvent) => {
+      const modOnly = ['Control', 'Alt', 'Shift', 'Meta'].includes(e.key);
+      if (!modOnly || e.repeat) {
+        if (!modOnly) reset();
+        return;
+      }
+      const mods = { ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey, meta: e.metaKey };
+      const pair = Object.values(mods).filter(Boolean).length === 2 && (mods.ctrl || mods.meta);
+      window.clearTimeout(timer);
+      if (!pair) return setShown(null);
+      timer = window.setTimeout(() => {
+        const items = chordsFor(mods, isMac(), loadOverrides());
+        const caps = [mods.ctrl && '⌃', mods.shift && '⇧', mods.alt && '⌥', mods.meta && '⌘'].filter(Boolean) as string[];
+        if (items.length) setShown({ mods: caps, items });
+      }, 650);
+    };
+    window.addEventListener('keydown', down, true);
+    window.addEventListener('keyup', reset, true);
+    window.addEventListener('blur', reset);
+    return () => {
+      window.removeEventListener('keydown', down, true);
+      window.removeEventListener('keyup', reset, true);
+      window.removeEventListener('blur', reset);
+      window.clearTimeout(timer);
+    };
+  }, []);
+  if (!shown) return null;
+  return (
+    <div className="whichkey" role="status" aria-label="Shortcuts for these keys">
+      <div className="whichkey-head">
+        <Keycaps keys={shown.mods} /> <span>+</span>
+      </div>
+      <ul>
+        {shown.items.map((it) => (
+          <li key={it.id}>
+            <kbd>{it.key}</kbd>
+            <span>{it.label}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
