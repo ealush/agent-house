@@ -271,6 +271,9 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   const [focus, setFocus] = useState(0);
   const { color, name: agentName } = look(w.agent);
   const modelLabel = shortModel(w.model);
+  // The launch summary repeats the model ("Haiku 4.5 · high · Plan"): keep only what it adds.
+  const launchExtras = (w.launch ?? '').split(' · ').filter((p) => p && p.toLowerCase() !== modelLabel?.toLowerCase() && shortModel(p) !== modelLabel);
+  const eyebrow = [w.project, w.agent ? agentName : null, modelLabel, ...launchExtras].filter(Boolean).join(' · ');
 
   const abs = (p: string) => (p.startsWith('~') ? home + p.slice(1) : p);
   const views = viewsFor(w);
@@ -645,12 +648,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
         )}
         <div className="session-title">
           {!narrow && (
-            <span className="eyebrow">
-              {w.project}
-              {w.agent ? ` · ${agentName}` : ''}
-              {modelLabel ? ` · ${modelLabel}` : ''}
-              {w.launch ? ` · ${w.launch}` : ''}
-            </span>
+            <span className="eyebrow">{eyebrow}</span>
           )}
           {renaming ? (
             <input

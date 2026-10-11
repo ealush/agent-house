@@ -195,7 +195,7 @@ test('a chord drawn for the palette is one glyph per key', () => {
   assert.deepEqual(chordParts({ key: 'k', ctrl: true, shift: true }), ['⌃', '⇧', 'K']);
   assert.deepEqual(chordParts({ key: 'p', meta: true, shift: true }), ['⇧', '⌘', 'P']);
   assert.deepEqual(chordParts({ key: 'ArrowUp', alt: true }), ['⌥', '↑']);
-  assert.deepEqual(chordParts({ key: 'Enter', ctrl: true, alt: true }), ['⌃', '⌥', 'Enter']);
+  assert.deepEqual(chordParts({ key: 'Enter', ctrl: true, alt: true }), ['⌃', '⌥', '↵']);
   assert.deepEqual(chordParts({ key: 'Backspace', ctrl: true, shift: true }), ['⌃', '⇧', 'Backspace']);
 });
 

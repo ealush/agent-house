@@ -12,6 +12,30 @@ import { setOmarchyPalette } from './theme.ts';
 import { hasLegacy, isLegacyKey, upgradeKey, upgradeLayout, upgradeSpaces } from './sessionKeys.ts';
 
 const STATUS_WORD = { waiting: 'Needs you', busy: 'Working', attention: 'Done', idle: 'Idle' } as const;
+
+const SUBMAP_KEYS: Record<'resize' | 'pane', Array<[string[], string]>> = {
+  resize: [
+    [['←', '↓', '↑', '→'], 'move the divider'],
+    [['H', 'J', 'K', 'L'], 'same'],
+    [['⇧'], 'bigger steps'],
+    [['Esc'], 'done'],
+  ],
+  pane: [
+    [['H', 'J', 'K', 'L'], 'focus'],
+    [['⇧', 'HJKL'], 'move'],
+    [['V'], 'split right'],
+    [['S'], 'split below'],
+    [['P'], 'replace'],
+    [['X'], 'close'],
+    [['F'], 'maximize'],
+    [['T'], 'flip'],
+    [['R'], 'resize'],
+    [['O'], 'open here'],
+    [['N'], 'new session'],
+    [['1–9'], 'workspace'],
+    [['Esc'], 'done'],
+  ],
+};
 import { cycleKey } from './keyboard.ts';
 import { Inbox, type InboxGroup } from './Inbox.tsx';
 import { HistoryView, SessionsView } from './HistoryView.tsx';
@@ -32,7 +56,7 @@ import { showError } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { trackViewport } from './viewport.ts';
 import { runCommand } from './shortcuts.ts';
-import { CommandPalette, Shortcuts, ShortcutsDialog, shortcutTitle, useCommand, usePaletteProvider } from './shortcuts.tsx';
+import { CommandPalette, Keycaps, Shortcuts, ShortcutsDialog, shortcutTitle, useCommand, usePaletteProvider } from './shortcuts.tsx';
 
 function scratchKey(): string | null {
   try {
@@ -948,27 +972,16 @@ export function App({ onLock }: { onLock: () => void }) {
 
       {keymap && <ShortcutsDialog onClose={() => setKeymap(false)} />}
       {submap && (
+        // Which-key, like Hyprland submaps in Omarchy: every key the mode answers, as keycaps.
         <div className="submap" role="status">
           <strong>{submap === 'resize' ? 'Resize' : 'Pane'}</strong>
-          {submap === 'resize' ? (
-            <span>
-              <kbd>←</kbd>
-              <kbd>↓</kbd>
-              <kbd>↑</kbd>
-              <kbd>→</kbd> or <kbd>h</kbd>
-              <kbd>j</kbd>
-              <kbd>k</kbd>
-              <kbd>l</kbd> move the divider · <kbd>Shift</kbd> bigger · <kbd>Esc</kbd> done
-            </span>
-          ) : (
-            <span>
-              <kbd>h</kbd>
-              <kbd>j</kbd>
-              <kbd>k</kbd>
-              <kbd>l</kbd> focus · <kbd>⇧</kbd>+them move · <kbd>v</kbd>
-              <kbd>s</kbd> split · <kbd>p</kbd> replace · <kbd>x</kbd> close · <kbd>f</kbd> maximize · <kbd>t</kbd> flip · <kbd>r</kbd> resize · <kbd>o</kbd> open here · <kbd>1</kbd>–<kbd>9</kbd> workspace · <kbd>Esc</kbd> done
-            </span>
-          )}
+          <ul>
+            {SUBMAP_KEYS[submap].map(([keys, label]) => (
+              <li key={label}>
+                <Keycaps keys={keys} /> {label}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

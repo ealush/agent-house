@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { HistoryItem, SearchHit, SearchQuery, SearchResponse, Win } from './api.ts';
-import { isMac } from './shortcuts.ts';
+import { Keycaps, MOD } from './shortcuts.tsx';
 import { look } from './agents.ts';
 import { age as ago } from './agents.ts';
 import { AgentLogo } from './logos.tsx';
@@ -289,18 +289,18 @@ export function Switcher({ windows, history, hosts, onSearchContent, onPick, onR
       )}
       <div className="switch-foot" aria-hidden>
         <span>
-          <kbd>↑↓</kbd> move
+          <Keycaps keys={['↑', '↓']} /> move
         </span>
         <span>
-          <kbd>↵</kbd> {tile ? 'open as a new pane' : `open${onSplit ? ' or resume' : ''}`}
+          <Keycaps keys={['↵']} /> {tile ? 'open as a new pane' : `open${onSplit ? ' or resume' : ''}`}
         </span>
         {onSplit && !tile && (
           <span>
-            <kbd>{isMac() ? '⌘↵' : 'Ctrl+↵'}</kbd> open as a new pane
+            <Keycaps keys={[MOD(), '↵']} /> open as a new pane
           </span>
         )}
         <span>
-          <kbd>esc</kbd>
+          <Keycaps keys={['Esc']} /> close
         </span>
       </div>
     </dialog>

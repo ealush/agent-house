@@ -824,6 +824,7 @@ export function formatChord(c: Chord, mac: boolean): string {
 /** One label per key, in the order VS Code draws a chord: Ctrl, Shift, Alt, Super, then the key. */
 const PART_LABEL: Record<string, string> = {
   ...KEY_LABEL,
+  Enter: '↵',
   Backspace: 'Backspace',
   Tab: 'Tab',
 };

@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useRef, useState } from 'react';
 import type { HistoryItem, HostApi, Win } from './api.ts';
-import { age, look } from './agents.ts';
+import { age, look, shortModel } from './agents.ts';
 import { AgentLogo } from './logos.tsx';
 import { Icon } from './icons.tsx';
 import { ConfirmButton } from './ConfirmButton.tsx';
@@ -82,7 +82,7 @@ export function EndedSession({ item, client, feed, narrow, onResume, onClose, cl
           </span>
         )}
         <div className="session-title">
-          <span className="eyebrow">{[item.project, agent ? name : item.cwd, item.model].filter(Boolean).join(' · ')}</span>
+          <span className="eyebrow">{[item.project, agent ? name : item.cwd, shortModel(item.model)].filter(Boolean).join(' · ')}</span>
           <span className="name static">{item.title}</span>
         </div>
         <div className="session-pills">

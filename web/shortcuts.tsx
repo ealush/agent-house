@@ -43,16 +43,23 @@ export function useCommand(id: CommandId, fn: () => void, enabled = true) {
   }, [id, enabled]);
 }
 
-/** One raised cap per key. Tooltips and search still use the `formatChord` string. */
-function Keycaps({ chord }: { chord: Chord }) {
+/**
+ * One raised cap per key, the only way a key is drawn anywhere in ah: ⌃ ⇧ ⌥ ⌘,
+ * ↵ ⌫ Esc and arrows as glyphs. Tooltips and search still use the `formatChord` string.
+ */
+export function Keycaps({ chord, keys }: { chord?: Chord; keys?: string[] }) {
+  const parts = chord ? chordParts(chord) : (keys ?? []);
   return (
     <span className="keycaps">
-      {chordParts(chord).map((part) => (
-        <kbd key={part}>{part}</kbd>
+      {parts.map((part, i) => (
+        <kbd key={i}>{part}</kbd>
       ))}
     </span>
   );
 }
+
+/** The main modifier as drawn on a keycap: ⌘ on Apple devices, ⌃ elsewhere. */
+export const MOD = () => (isMac() ? '⌘' : '⌃');
 
 export function ShortcutHint({ id }: { id: CommandId }) {
   useShortcutRevision();
@@ -291,9 +298,9 @@ export function ShortcutsPanel({ focusSearch = false }: { focusSearch?: boolean 
                         <div className="keymap-record">
                           {pending ? <Keycaps chord={pending} /> : <span className="hint">Press a shortcut, then Enter</span>}
                           <span className="hint keymap-how">
-                            <span className="keycaps"><kbd>Enter</kbd></span> saves
-                            <span className="keycaps"><kbd>Esc</kbd></span> cancels
-                            <span className="keycaps"><kbd>Backspace</kbd></span> clears
+                            <Keycaps keys={['↵']} /> saves
+                            <Keycaps keys={['Esc']} /> cancels
+                            <Keycaps keys={['Backspace']} /> clears
                           </span>
                           {error && <span className="keymap-error">{error}</span>}
                         </div>
@@ -534,11 +541,11 @@ export function CommandPalette({ onClose, onRun }: { onClose: () => void; onRun:
       {root && rows.length === 0 && <p className="cmd-empty">{query ? `Nothing in ${here?.label ?? 'here'} matches “${query}”.` : 'Nothing to run here right now.'}</p>}
       {!root && <p className="cmd-empty">Loading…</p>}
       <footer className="palette-keys" aria-hidden>
-        <span><kbd>↑</kbd><kbd>↓</kbd> move</span>
-        <span><kbd>→</kbd> open</span>
-        <span><kbd>←</kbd> back</span>
-        <span><kbd>Enter</kbd> run</span>
-        <span><kbd>Esc</kbd> {query ? 'clear' : 'close'}</span>
+        <span><Keycaps keys={['↑', '↓']} /> move</span>
+        <span><Keycaps keys={['→']} /> open</span>
+        <span><Keycaps keys={['←']} /> back</span>
+        <span><Keycaps keys={['↵']} /> run</span>
+        <span><Keycaps keys={['Esc']} /> {query ? 'clear' : 'close'}</span>
       </footer>
     </dialog>
   );
@@ -567,7 +574,7 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
 export function ConfirmKeys() {
   return (
     <span className="keycaps confirm-keys" aria-hidden>
-      <kbd>{isMac() ? '⌘' : 'Ctrl'}</kbd>
+      <kbd>{MOD()}</kbd>
       <kbd>↵</kbd>
     </span>
   );
