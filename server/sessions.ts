@@ -211,17 +211,26 @@ export type StatusInput = {
   dialog?: boolean;
   /** A live shell command below the agent, even when it prints no output. */
   toolRunning?: boolean;
+  /**
+   * Precomputed quiet (no new output AND no visible screen change for
+   * `idleAfter`). tmux activity alone cannot prove work, because agent TUIs
+   * repaint on a timer even while idle at their prompt. When set, it replaces
+   * the activity-based check.
+   */
+  quiet?: boolean;
 };
 
 export function computeStatus(s: StatusInput): { status: Status; source: WindowView['statusSource'] } {
-  const quiet = s.now - s.activity >= s.idleAfter;
+  const quiet = s.quiet ?? s.now - s.activity >= s.idleAfter;
   const unread = (t: number) => t > s.seen && s.viewers === 0;
   if (s.hook) {
     const { state, at } = s.hook;
     if (state === 'waiting') return { status: 'waiting', source: 'hook' };
     // An interrupted turn may never send Stop; long silence overrides "working".
     if (state === 'working') return { status: s.toolRunning || s.now - Math.max(s.activity, at) < 30 ? 'busy' : unread(s.activity) ? 'attention' : 'idle', source: 'hook' };
-    if (state === 'done' || state === 'idle') return { status: unread(at) ? 'attention' : quiet ? 'idle' : 'busy', source: 'hook' };
+    // A finished turn stays finished: trailing tmux output is the TUI repainting
+    // its idle screen, not more work (its next turn opens with a fresh hook).
+    if (state === 'done' || state === 'idle') return { status: unread(at) ? 'attention' : 'idle', source: 'hook' };
   }
   if (s.dialog || (quiet && s.screenWaiting)) return { status: 'waiting', source: 'screen' };
   if (s.toolRunning) return { status: 'busy', source: 'activity' };
@@ -241,6 +250,20 @@ export function hasToolWork(procs: Awaited<ReturnType<typeof snapshot>>, agentPi
 export function screenAsks(lines: string[], patterns: RegExp[]): boolean {
   const tail = lines.filter((l) => l.trim()).slice(-12).join('\n');
   return patterns.some((re) => re.test(tail));
+}
+
+/**
+ * When the screen's visible text last changed, per window. tmux activity alone
+ * cannot prove work: agent TUIs repaint on a timer while idle at their prompt,
+ * so a finished session keeps looking "recent". A screen whose text has not
+ * changed for `idleAfter` is quiet even while its activity ticks.
+ */
+const contentClock = new Map<string, { text: string; at: number }>();
+
+export function trackContent(prev: { text: string; at: number } | undefined, text: string, activity: number, now: number): { text: string; at: number } {
+  if (!prev) return { text, at: activity };
+  if (prev.text === text) return prev;
+  return { text, at: now };
 }
 
 /** Last non-empty lines of a window's visible screen, re-captured only when it printed something. */
@@ -298,8 +321,12 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
       const agent = detected?.id ?? null;
       // Hook state is trusted only while that agent is still running in the window.
       const hooked = !!w.hookState && w.hookState !== 'ended' && agent === w.harness;
-      const quiet = now - w.activity >= config.idleAfter;
       const tail = await screenTail(w.windowId, w.activity);
+      // A repaint without a visible change is not work: the clock advances only
+      // when the text does, so an idle TUI's timer repaints go quiet on time.
+      const content = trackContent(contentClock.get(w.windowId), tail.join('\n'), w.activity, now);
+      contentClock.set(w.windowId, content);
+      const quiet = now - w.activity >= config.idleAfter || now - content.at >= config.idleAfter;
       const hookAsk = hooked ? parseJson<Ask>(w.hookAsk) : null;
       // A question recorded at PreToolUse counts as waiting only while its dialog is
       // drawn: cancelling it with Esc sends no hook, and must not leave "needs you" stuck.
@@ -317,6 +344,7 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
         seen,
         viewers,
         idleAfter: config.idleAfter,
+        quiet,
         hook: hooked ? { state: hookState, at: w.hookAt } : null,
         screenWaiting: asks,
         // A drawn picker is unambiguous, so it needs no quiet period (Claude redraws
@@ -422,6 +450,9 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
     }),
   );
   registry.reconcile(alive);
+  // Screens of dead windows never change again; drop their clocks.
+  const liveIds = new Set(raw.map((w) => w.windowId));
+  for (const id of contentClock.keys()) if (!liveIds.has(id)) contentClock.delete(id);
   return views;
 }
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeStatus, screenAsks, adoptTranscripts, hasToolWork, type StatusInput, type WindowView } from './sessions.ts';
+import { computeStatus, screenAsks, adoptTranscripts, hasToolWork, trackContent, type StatusInput, type WindowView } from './sessions.ts';
 import { loadConfig } from './config.ts';
 
 const base: StatusInput = { now: 1000, activity: 900, seen: 900, viewers: 0, idleAfter: 4, hook: null, screenWaiting: false };
@@ -20,6 +20,27 @@ test('hooks win over heuristics', () => {
   assert.equal(status({ activity: 900, hook: { state: 'working', at: 900 } }), 'idle', 'silent "working" is stale');
   assert.equal(status({ hook: { state: 'done', at: 950 } }), 'attention');
   assert.equal(status({ hook: { state: 'done', at: 850 } }), 'idle', 'already seen');
+});
+
+test('a finished turn never reads busy from trailing activity', () => {
+  // Agent TUIs repaint their idle screen on a timer, so tmux activity stays
+  // fresh after Stop: the reply on screen means idle/done, not working.
+  assert.equal(status({ activity: 999, seen: 999, viewers: 1, hook: { state: 'done', at: 950 } }), 'idle');
+  assert.equal(status({ activity: 999, seen: 999, hook: { state: 'idle', at: 950 } }), 'idle');
+  assert.equal(status({ activity: 999, hook: { state: 'done', at: 999 } }), 'attention', 'an unseen finish still pings');
+});
+
+test('a static screen goes quiet even while activity ticks', () => {
+  assert.equal(status({ activity: 999, seen: 999, viewers: 1, quiet: true }), 'idle', 'an idle repaint is not work');
+  assert.equal(status({ activity: 999, seen: 999, viewers: 1, quiet: false }), 'busy', 'a changing screen is work');
+  assert.equal(status({ quiet: true, screenWaiting: true }), 'waiting', 'questions still surface once quiet');
+});
+
+test('content clock advances only on visible change', () => {
+  const first = trackContent(undefined, 'a\nb', 900, 1000);
+  assert.equal(first.at, 900, 'first sight inherits activity');
+  assert.equal(trackContent(first, 'a\nb', 900, 1000).at, 900, 'a repaint keeps the old time');
+  assert.equal(trackContent(first, 'a\nc', 999, 1000).at, 1000, 'new text restarts the clock');
 });
 
 test('screen rules only apply to quiet windows', () => {
