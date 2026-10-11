@@ -11,11 +11,14 @@ import { CACHE_PAGE, dropCached, loadCached, saveCached } from './feedCache.ts';
  * The state lives here, not in the component: splitting, moving a pane, or
  * sending a session to another workspace remounts the GUI, and it should come
  * back with the conversation already on screen and its stream still open.
- * A stream nobody shows is closed after LINGER_MS; its entries are kept (the
- * newest KEEP sessions) so coming back paints at once while a snapshot catches up.
+ * A stream nobody shows is closed after LINGER_MS, long enough to bridge a
+ * remount and no longer: over HTTP/1.1 a browser has six connections per host,
+ * and streams left open for sessions you walked past would take all of them,
+ * stalling every other request. Their entries are kept (the newest KEEP
+ * sessions), so coming back paints at once while a snapshot catches up.
  * A reload starts from this browser's encrypted copy (feedCache.ts) the same way.
  */
-const LINGER_MS = 60_000;
+const LINGER_MS = 2000;
 const KEEP = 16;
 
 type Feed = {
