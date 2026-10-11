@@ -7,15 +7,18 @@ self.addEventListener('push', (event) => {
   try {
     data = event.data ? event.data.json() : {};
   } catch {}
+  // The home-screen icon carries the needs-you count, even with ah closed.
+  const badge = Number(data.badge);
+  const badged = !Number.isFinite(badge) || !('setAppBadge' in self.navigator) ? Promise.resolve() : (badge > 0 ? self.navigator.setAppBadge(badge) : self.navigator.clearAppBadge()).catch(() => {});
   event.waitUntil(
-    self.registration.showNotification(data.title || 'ah', {
+    badged.then(() => self.registration.showNotification(data.title || 'ah', {
       body: data.body || '',
       tag: data.tag,
       renotify: true,
       icon: '/icon-512.png',
       badge: '/icon-512.png',
       data: { url: data.url || '/' },
-    }),
+    })),
   );
 });
 

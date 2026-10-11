@@ -586,6 +586,11 @@ export function App({ onLock }: { onLock: () => void }) {
     prevStatus.current = new Map(windows.map((w) => [w.key, w.status]));
     const waiting = windows.filter((w) => w.status === 'waiting').length;
     document.title = waiting ? `(${waiting}) ah` : 'ah';
+    // An installed app's icon (dock, home screen) shows the same count.
+    try {
+      if (waiting) void navigator.setAppBadge?.(waiting).catch(() => {});
+      else void navigator.clearAppBadge?.().catch(() => {});
+    } catch {}
   }
 
   useEffect(() => {

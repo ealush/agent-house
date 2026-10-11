@@ -62,6 +62,8 @@ export class Push {
   /** Called every tick: notify on transitions into needs-you / done. */
   observe(windows: WindowView[]) {
     const now = Date.now() / 1000;
+    // The app icon's badge (sw.js): how many sessions need you as of this alert.
+    const waiting = String(windows.filter((w) => w.status === 'waiting').length);
     for (const w of windows) {
       const prev = this.last.get(w.uid);
       this.last.set(w.uid, w.status);
@@ -75,6 +77,7 @@ export class Push {
         body: `${w.project} · ${w.agent ?? w.command}`,
         tag: w.uid,
         url: `/#${w.uid}`,
+        badge: waiting,
       });
     }
     this.primed = true;
