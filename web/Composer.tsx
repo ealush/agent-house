@@ -7,8 +7,8 @@ import { ModelPicker, EffortPicker, Popover, effectiveModel, effortsFor, usePres
 import { shortModel } from './logos.tsx';
 import { SuggestList, triggerAt, useSuggestions } from './Suggest.tsx';
 import { useLaunch, useLaunchPalette } from './useLaunch.ts';
-import { addOutgoing, removeOutgoing, updateOutgoing } from './outbox.ts';
-import { QueueTray } from './QueueTray.tsx';
+import { addOutgoing, removeOutgoing, updateOutgoing, useOutbox } from './outbox.ts';
+import { QueueTray, type QueueTrayHandle } from './QueueTray.tsx';
 
 // The message bar under a GUI session. It goes through the server, which types the text
 // in now (idle agent, or any shell), queues it while an agent works, or resumes a dead
@@ -51,6 +51,7 @@ const toast = (msg: string) => window.dispatchEvent(new CustomEvent('ah:toast', 
 
 export function ComposerBar({ client, target, agent, w, onSent, onChange, onNotice = toast, onSettingsOpen, onRelaunched, focusKey, active = false }: Props) {
   const area = useRef<HTMLTextAreaElement>(null);
+  const tray = useRef<QueueTrayHandle>(null);
   const [text, setText] = useState(() => drafts.get(target) ?? '');
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
@@ -62,6 +63,7 @@ export function ComposerBar({ client, target, agent, w, onSent, onChange, onNoti
   const isShell = !agent;
   const preset = usePreset(w?.host ?? '', agent);
   const working = !!w && w.status === 'busy';
+  const outbox = useOutbox(target);
 
   // Autocomplete: "/" commands and "@" files, for agents (a shell has its own completion).
   const [caret, setCaret] = useState(0);
@@ -130,8 +132,10 @@ export function ComposerBar({ client, target, agent, w, onSent, onChange, onNoti
     const draft = text;
     if (!draft.trim() || busy) return;
     // A working agent queues it; anything else types it in now. The server decides,
-    // this only picks where it shows until the server says.
-    const id = addOutgoing(target, draft, working && !isShell ? 'queued' : 'sending');
+    // this only picks where it shows until the server says. Right after a send the
+    // session list may not say "working" yet, so a message still landing counts too.
+    const landing = outbox.some((o) => o.state === 'queued' || (Date.now() - o.at < 5000 && (o.state === 'sending' || o.state === 'sent')));
+    const id = addOutgoing(target, draft, (working || landing) && !isShell ? 'queued' : 'sending');
     recent.current = [draft, ...recent.current.filter((r) => r !== draft)];
     cursor.current = -1;
     setText('');
@@ -216,6 +220,7 @@ export function ComposerBar({ client, target, agent, w, onSent, onChange, onNoti
     <>
     {w && (
       <QueueTray
+        ref={tray}
         client={client}
         uid={target}
         queued={w.queued}
@@ -244,7 +249,7 @@ export function ComposerBar({ client, target, agent, w, onSent, onChange, onNoti
           autoCapitalize={isShell ? 'off' : 'sentences'}
           autoCorrect={isShell ? 'off' : 'on'}
           spellCheck={!isShell}
-          placeholder={isShell ? 'Type or paste a command' : working ? 'Add to this… (queued until it’s free · Esc stops)' : 'Send a follow-up · / commands · @ files'}
+          placeholder={isShell ? 'Type or paste a command' : working && (w?.queued ?? 0) > 0 ? 'Add to the queue · Enter steers the next one · Esc stops' : working ? 'Add to this… (queued until it’s free · Esc stops)' : 'Send a follow-up · / commands · @ files'}
           onChange={(e) => {
             setText(e.target.value);
             setCaret(e.target.selectionStart ?? e.target.value.length);
@@ -275,7 +280,9 @@ export function ComposerBar({ client, target, agent, w, onSent, onChange, onNoti
               stop();
             } else if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
-              submit();
+              // An empty box steers the next queued message, like its Steer button.
+              if (!text.trim()) tray.current?.steerFirst();
+              else submit();
             } else if (e.key === 'ArrowUp' && (!text || cursor.current >= 0)) {
               e.preventDefault();
               recall(1);

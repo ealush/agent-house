@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { HostApi, QueueItem } from './api.ts';
 import { showError } from './ask.tsx';
 import { Icon } from './icons.tsx';
@@ -9,9 +9,16 @@ import { shortcutTitle } from './shortcuts.tsx';
  * Follow-ups waiting for a working agent, stacked on top of the composer (the way
  * Codex shows its queue). Steer stops the turn and sends one now; edit takes it
  * back into the box. What you just queued shows here at once, before the server
- * has answered.
+ * has answered. Enter in an empty composer steers the top row (steerFirst).
  */
-export function QueueTray({ client, uid, queued, onEdit, onChange }: { client: HostApi; uid: string; queued: number; onEdit: (text: string) => void; onChange: () => void }) {
+export type QueueTrayHandle = {
+  /** Steer the first queued message. False when there is none to steer yet. */
+  steerFirst: () => boolean;
+};
+
+type Props = { client: HostApi; uid: string; queued: number; onEdit: (text: string) => void; onChange: () => void };
+
+export const QueueTray = forwardRef<QueueTrayHandle, Props>(function QueueTray({ client, uid, queued, onEdit, onChange }, ref) {
   const [items, setItems] = useState<QueueItem[]>([]);
   const outbox = useOutbox(uid);
   const mine = outbox.filter((o) => o.state === 'queued');
@@ -36,13 +43,16 @@ export function QueueTray({ client, uid, queued, onEdit, onChange }: { client: H
       live.current = false;
     };
   }, []);
+  // Rows on screen keep the poll going: the session list's count can lag a moment
+  // behind the server, and the tray must not blink empty while it catches up.
+  const showing = items.length > 0;
   useEffect(() => {
-    if (!queued && !waiting) return setItems([]);
+    if (!queued && !waiting && !showing) return;
     void load();
     const timer = setInterval(load, 3000);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client, uid, queued, waiting, mine.some((o) => o.confirmedAt)]);
+  }, [client, uid, queued, waiting, showing, mine.some((o) => o.confirmedAt)]);
 
   const act = async (fn: () => Promise<unknown>, what: string) => {
     try {
@@ -54,6 +64,15 @@ export function QueueTray({ client, uid, queued, onEdit, onChange }: { client: H
     onChange();
   };
 
+  const steer = (q: QueueItem) => act(() => client.sendNow(uid, q.id), 'send it now');
+  useImperativeHandle(ref, () => ({
+    steerFirst: () => {
+      if (!items[0]) return false;
+      void steer(items[0]);
+      return true;
+    },
+  }));
+
   const pendingRows = mine.filter((o) => o.confirmedAt === undefined || !items.some((i) => i.text === o.text));
   if (!items.length && !pendingRows.length) return null;
   return (
@@ -62,7 +81,7 @@ export function QueueTray({ client, uid, queued, onEdit, onChange }: { client: H
         <li key={q.id} className="queue-row">
           <Icon name="queue" size={15} />
           <span className="queue-text" title={q.text}>{q.text}</span>
-          <button type="button" className="queue-steer" title={shortcutTitle('Stop the current turn and send this now', 'send-now')} onClick={() => act(() => client.sendNow(uid, q.id), 'send it now')}>
+          <button type="button" className="queue-steer" title={shortcutTitle('Stop the current turn and send this now', 'send-now')} onClick={() => steer(q)}>
             <Icon name="reply" size={14} /> Steer
           </button>
           <button
@@ -93,4 +112,4 @@ export function QueueTray({ client, uid, queued, onEdit, onChange }: { client: H
       ))}
     </ul>
   );
-}
+});
