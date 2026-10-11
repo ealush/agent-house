@@ -48,11 +48,23 @@ const loadGui = () =>
   });
 const LazyGui = lazy(loadGui);
 
+/**
+ * The view a device starts in until you pick one: the GUI on touch screens,
+ * where it reads and answers better than a terminal; the terminal elsewhere.
+ */
+export function defaultView(): View {
+  try {
+    return matchMedia('(pointer: coarse)').matches ? 'gui' : 'terminal';
+  } catch {
+    return 'terminal';
+  }
+}
+
 // Someone who reads in the GUI gets it fetched at boot, next to the session list.
 // Once loaded it is used directly: a lazy component suspends on every first mount,
 // and React holds a suspended reveal back for a moment, which a reload would show.
 try {
-  if (localStorage.getItem('ah.view') === 'gui') void loadGui();
+  if ((localStorage.getItem('ah.view') ?? defaultView()) === 'gui') void loadGui();
 } catch {}
 
 export function surfaceFor(view: View): Surface {

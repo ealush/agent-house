@@ -9,7 +9,7 @@ import { Icon } from './icons.tsx';
 import { deviceName, type HostApi, type SendResult, type Win } from './api.ts';
 import { look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
-import { surfaceFor, VIEW_LABEL, viewsFor, type SurfaceHandle, type View } from './surface.ts';
+import { defaultView, surfaceFor, VIEW_LABEL, viewsFor, type SurfaceHandle, type View } from './surface.ts';
 import { ComposerBar } from './Composer.tsx';
 import { BranchPicker, ChangesPanel, PrLink } from './Git.tsx';
 import { SideChat } from './SideChat.tsx';
@@ -175,7 +175,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   // A search result can ask for one chat at one message (issue #9).
   const [chatJump, setChatJump] = useState<{ uid: string; msgId: number } | null>(null);
   const [keysPref, setKeysPref] = stored<'auto' | 'on' | 'off'>('ah.keys', 'auto');
-  const [viewPref, setViewPref] = stored<View>('ah.view', 'terminal');
+  const [viewPref, setViewPref] = stored<View>('ah.view', defaultView());
   const [menu, setMenu] = useState(false);
   const menuBtn = useRef<HTMLButtonElement>(null);
   const menuEl = useRef<HTMLDivElement>(null);
