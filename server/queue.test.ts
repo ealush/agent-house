@@ -53,6 +53,19 @@ test('a delivered follow-up leaves the queue', async () => {
   assert.equal(typed.length, 1);
 });
 
+test('a taken item that fails before anything is typed goes back first in line', async () => {
+  const { q } = await setup(async () => {});
+  // send-now takes the item out before typing; an early failure (the agent
+  // would not stop, the window went away, nothing reached it) must put the
+  // follow-up back first — never lost, never duplicated.
+  const taken = q.take('u1', 'b');
+  assert.ok(taken);
+  assert.deepEqual(q.items('u1').map((i) => i.id), ['a']);
+  q.requeue('u1', taken.next);
+  assert.deepEqual(q.items('u1').map((i) => i.id), ['b', 'a']);
+  assert.equal(q.items('u1')[0].text, 'say b');
+});
+
 test('a queued item moves to a new position; the rest keep their order', async () => {
   const { q } = await setup(async () => {});
   q.enqueue('u1', { id: 'c', text: 'say c', enter: true, at: 0 });

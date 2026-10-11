@@ -935,21 +935,65 @@ export class Core {
       const taken = this.queues.take(uid, itemId);
       if (!taken) throw new CoreError(404, 'queued message not found');
       const { next, rest } = taken;
-      // Stop the live turn so the urgent message replaces it; idle sessions
-      // need no interruption (a stray Esc/C-c could hit the wrong thing).
-      if (w.status === 'busy' || w.status === 'waiting') {
-        await t.tmux('send-keys', '-t', w.id, ...this.interruptKeys(w));
+      // The snapshot above can predate a delivery that ran while this call
+      // waited for the lock. Decide the interrupt from a fresh read inside
+      // the lock: pasting onto that stale input state appends this message
+      // to the previous text instead of starting a new turn. Nothing is
+      // typed before this point, so an early failure puts the follow-up
+      // back first in line (at-most-once, never lost, never twice).
+      let live;
+      try {
+        live = (await buildWindows(this.config, this.viewers, this.registry)).find((x) => x.uid === uid);
+      } catch (err) {
+        this.queues.requeue(uid, next);
+        throw err;
       }
-      if (w.agent) {
+      if (!live) {
+        this.queues.requeue(uid, next);
+        throw new CoreError(404, 'session is not running');
+      }
+      const stopping = live.status === 'busy' || live.status === 'waiting' || this.justSent(uid);
+      if (stopping && live.agent) {
+        // Stop the live turn so the urgent message replaces it, then wait
+        // for the stop to land: pasting into the teardown redraw drops the
+        // submit and strands this text behind the previous one. Shells
+        // clear their own line on Ctrl-C, so they need no settle wait.
+        await t.tmux('send-keys', '-t', live.id, ...this.interruptKeys(live));
+        this.sentAt.delete(uid);
+        for (let i = 0; i < 12; i++) {
+          const cur = (await buildWindows(this.config, this.viewers, this.registry)).find((x) => x.uid === uid);
+          if (!cur) {
+            this.queues.requeue(uid, next);
+            throw new CoreError(404, 'session is not running');
+          }
+          if (cur.status !== 'busy' && cur.status !== 'waiting') break;
+          if (i === 11) {
+            this.queues.requeue(uid, next);
+            throw new CoreError(409, 'the agent is working; it did not stop after the interrupt');
+          }
+          await sleep(500);
+        }
+      } else if (stopping) {
+        await t.tmux('send-keys', '-t', live.id, ...this.interruptKeys(live));
+      }
+      if (live.agent) {
         this.sentAt.set(uid, Date.now());
         // The interrupted turn is over; this delivery starts a new one (F39).
         this.turnPeriod.delete(uid);
         if (next.enter) await this.captureTurnStart(uid, next.text);
       }
-      await t.pasteText(w.id, next.text, next.enter);
+      try {
+        await t.pasteText(live.id, next.text, next.enter);
+      } catch (err) {
+        // Nothing reached the window: the follow-up is still owed, so it
+        // goes back first in line. Once any text landed it stays delivered
+        // (never twice).
+        if (err instanceof t.PasteError && !err.typed) this.queues.requeue(uid, next);
+        throw err;
+      }
       if (next.launchChange) this.applyLaunchChange(uid, next.launchChange);
       this.tick().catch(() => {});
-      return { outcome: 'delivered', windowId: w.id, resumed: false, queued: rest.length };
+      return { outcome: 'delivered', windowId: live.id, resumed: false, queued: rest.length };
     });
   }
 

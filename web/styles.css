@@ -2855,6 +2855,83 @@ a.btn {
   font-size: 12.5px;
 }
 
+/* A reply on its way: the bubble sits slightly dimmed until the server
+   confirms it, so sending feels instant even on a slow provider. */
+.sidechat-msg.sending .sidechat-bubble,
+.sidechat-msg.queued .sidechat-bubble {
+  opacity: 0.72;
+}
+
+.sidechat-msg .msg-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.sidechat-msg.user .msg-meta {
+  justify-content: flex-end;
+}
+
+.sidechat-msg .msg-meta.failed {
+  color: var(--danger);
+}
+
+/* The live reply indicator: three dots plus an elapsed count, rendered where
+   the answer will land. */
+.sidechat-thinking {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px;
+  color: var(--faint);
+  font-size: 12.5px;
+}
+
+.thinking-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.thinking-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--faint);
+  animation: thinking-pulse 1.2s ease-in-out infinite;
+}
+
+.thinking-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.thinking-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes thinking-pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thinking-dots i {
+    animation: none;
+    opacity: 0.7;
+  }
+  .sidechat-msg.sending .sidechat-bubble,
+  .sidechat-msg.queued .sidechat-bubble {
+    opacity: 1;
+  }
+}
+
 .sidechat-msg {
   position: relative;
   flex: none;

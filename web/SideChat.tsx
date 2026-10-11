@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ChatMsg, Followup, HostApi, SendResult, Subscription, Win } from './api.ts';
 import { askConfirm, showError, showNotice } from './ask.tsx';
 import { Icon } from './icons.tsx';
@@ -7,20 +7,53 @@ import { Markdown } from './Markdown.tsx';
 // Side chat: talk about the session's change without polluting the agent's
 // context. The server answers with the working diff, branch and PR attached.
 // Anything worth acting on goes to the session through the normal send path.
+//
+// Sends are optimistic and chained: your bubble appears the moment you press
+// send, with its answer's slot reserved right below it, and while one reply
+// is still on its way you can keep typing — the next send waits its turn
+// behind the in-flight one, so the server (which rewrites the turn log per
+// reply) never sees two concurrent writes from this panel. Each answer keeps
+// its own follow-ups until a newer message supersedes them.
+type RowState = 'queued' | 'sending' | 'sent' | 'failed';
+type Row = ChatMsg & { key: string; state: RowState; error?: string; followups?: Followup[] };
+
+function Thinking({ since }: { since: number }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => tick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const s = Math.max(0, Math.floor((Date.now() - since) / 1000));
+  return (
+    <div className="sidechat-thinking" aria-live="polite">
+      <span className="thinking-dots" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+      </span>
+      Thinking{s > 2 ? ` · ${s}s` : '…'}
+    </div>
+  );
+}
+
 export function SideChat({ client, w, onSent }: { client: HostApi; w: Win; onSent: (r: SendResult) => void }) {
-  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [messages, setMessages] = useState<Row[]>([]);
   const [subs, setSubs] = useState<Subscription[] | null>(null);
   const [subId, setSubId] = useState<string | undefined>(undefined);
   const [draft, setDraft] = useState('');
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Premade next steps under the latest answer; gone once used or superseded.
-  const [followups, setFollowups] = useState<Followup[]>([]);
   const logRef = useRef<HTMLDivElement>(null);
   const areaRef = useRef<HTMLTextAreaElement>(null);
-  const msgRefs = useRef(new Map<number, HTMLDivElement>());
+  const msgRefs = useRef(new Map<string, HTMLDivElement>());
   const seenRef = useRef(0);
   const prevLenRef = useRef(0);
+  // Serializes sends so concurrent replies can't interleave the server log.
+  const tailRef = useRef<Promise<void>>(Promise.resolve());
+  // Bumped on session switch and on clear: late completions apply nothing.
+  const genRef = useRef(0);
+  const localRef = useRef(0);
+  const widRef = useRef(w.id);
+  widRef.current = w.id;
 
   // Grow with the draft, up to the CSS max-height, same as the session composer.
   useLayoutEffect(() => {
@@ -31,13 +64,15 @@ export function SideChat({ client, w, onSent }: { client: HostApi; w: Win; onSen
   }, [draft]);
 
   useEffect(() => {
-    setFollowups([]);
+    genRef.current += 1;
+    tailRef.current = Promise.resolve();
+    setError(null);
     seenRef.current = 0;
     prevLenRef.current = 0;
     client
       .chat(w.id)
       .then((r) => {
-        setMessages(r.messages);
+        setMessages(r.messages.map((m, i) => ({ ...m, key: m.id != null ? `m${m.id}` : `i${i}`, state: 'sent' as RowState })));
         setSubId((cur) => cur ?? r.subscriptionId ?? undefined);
       })
       .catch((e) => setError(e.message));
@@ -48,49 +83,101 @@ export function SideChat({ client, w, onSent }: { client: HostApi; w: Win; onSen
   // that means the first new message's top; scrolled up, it means the first
   // message since the user last saw the bottom. Jumping to the very bottom
   // would hide a long answer's beginning. Layout, not passive, so a short
-  // thread doesn't flash from the top of the spacer.
+  // thread doesn't flash from the top of the spacer. Same-length updates are
+  // always this panel's own latest activity, so they settle at the bottom —
+  // but only when already there, never yanking away from reading history.
   useLayoutEffect(() => {
     const el = logRef.current;
     if (!el) {
       prevLenRef.current = messages.length;
       return;
     }
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
     if (messages.length > prevLenRef.current) {
-      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
       const firstNew = Math.min(prevLenRef.current, messages.length - 1);
       if (atBottom || prevLenRef.current === 0) {
-        msgRefs.current.get(firstNew)?.scrollIntoView({ block: 'start' });
+        const key = messages[firstNew]?.key;
+        if (key) msgRefs.current.get(key)?.scrollIntoView({ block: 'start' });
         seenRef.current = messages.length;
       } else {
-        msgRefs.current.get(Math.min(seenRef.current, messages.length - 1))?.scrollIntoView({ block: 'start' });
+        const key = messages[Math.min(seenRef.current, messages.length - 1)]?.key;
+        if (key) msgRefs.current.get(key)?.scrollIntoView({ block: 'start' });
       }
+    } else if (atBottom) {
+      el.scrollTo({ top: el.scrollHeight });
     }
     prevLenRef.current = messages.length;
   }, [messages]);
 
-  async function submit(text: string) {
+  function enqueue(userKey: string, asstKey: string, text: string, sub: string | undefined) {
+    const wid = widRef.current;
+    const gen = genRef.current;
+    tailRef.current = tailRef.current.then(async () => {
+      if (gen !== genRef.current) return;
+      setMessages((ms) =>
+        ms.map((m) => (m.key === userKey || m.key === asstKey ? { ...m, state: 'sending' as RowState, error: undefined } : m)),
+      );
+      try {
+        const reply = await client.sendChat(wid, text, sub);
+        if (gen !== genRef.current) return;
+        setMessages((ms) => {
+          if (!ms.some((m) => m.key === userKey)) return ms;
+          return ms.map((m) => {
+            if (m.key === userKey) return { ...m, state: 'sent' as RowState };
+            if (m.key === asstKey) return { ...m, ...reply.message, key: asstKey, state: 'sent' as RowState, followups: reply.followups };
+            return m;
+          });
+        });
+      } catch (e) {
+        if (gen !== genRef.current) return;
+        // The answer's slot goes away with it; the question stays with a retry.
+        setMessages((ms) =>
+          ms
+            .filter((m) => m.key !== asstKey)
+            .map((m) => (m.key === userKey ? { ...m, state: 'failed' as RowState, error: (e as Error).message } : m)),
+        );
+      }
+    });
+  }
+
+  function submit(text: string) {
     const trimmed = text.trim();
-    if (!trimmed || busy) return;
-    setBusy(true);
-    setError(null);
-    setFollowups([]);
+    if (!trimmed || noSub) return;
+    const n = ++localRef.current;
+    const userKey = `l${n}`;
+    const asstKey = `a${n}`;
+    const at = Math.floor(Date.now() / 1000);
     setDraft('');
-    try {
-      const reply = await client.sendChat(w.id, trimmed, subId);
-      setMessages((await client.chat(w.id)).messages);
-      if (reply.followups.length) setFollowups(reply.followups);
-    } catch (e) {
-      setError((e as Error).message);
-      setDraft(trimmed);
-    } finally {
-      setBusy(false);
-    }
+    setMessages((ms) => [
+      // A newer question supersedes older answers' suggestions.
+      ...ms.map((m) => (m.followups?.length ? { ...m, followups: undefined } : m)),
+      { role: 'user', text: trimmed, at, key: userKey, state: 'queued' as RowState },
+      { role: 'assistant', text: '', at, key: asstKey, state: 'queued' as RowState },
+    ]);
+    enqueue(userKey, asstKey, trimmed, subId);
+  }
+
+  function retry(key: string) {
+    const row = messages.find((m) => m.key === key);
+    if (!row || row.state !== 'failed') return;
+    const asstKey = `a${key}`;
+    const at = Math.floor(Date.now() / 1000);
+    setMessages((ms) => {
+      const out: Row[] = [];
+      for (const m of ms) {
+        if (m.key === asstKey) continue;
+        out.push(m.key === key ? { ...m, state: 'queued' as RowState, error: undefined } : m);
+        if (m.key === key) out.push({ role: 'assistant', text: '', at, key: asstKey, state: 'queued' as RowState });
+      }
+      return out;
+    });
+    enqueue(key, asstKey, row.text, subId);
   }
 
   async function fireFollowup(f: Followup) {
-    setFollowups([]);
+    setMessages((ms) => ms.map((m) => (m.followups?.length ? { ...m, followups: undefined } : m)));
     if (f.kind === 'session') await sendToSession(f.text);
-    else await submit(f.text);
+    else submit(f.text);
   }
 
   async function sendToSession(text: string) {
@@ -113,18 +200,13 @@ export function SideChat({ client, w, onSent }: { client: HostApi; w: Win; onSen
     if (!messages.length) return;
     if (!(await askConfirm({ title: 'Clear this side chat?', body: 'The agent never saw it.', confirm: 'Clear', danger: true }))) return;
     try {
+      genRef.current += 1;
       await client.clearChat(w.id);
       setMessages([]);
-      setFollowups([]);
     } catch (e) {
       showError(e, "Couldn't clear the chat");
     }
   }
-
-  const lastAssistant = (() => {
-    for (let i = messages.length - 1; i >= 0; i--) if (messages[i].role === 'assistant') return i;
-    return -1;
-  })();
 
   const noSub = subs !== null && subs.length === 0;
   const showEmpty = !messages.length && !noSub && !error;
@@ -170,38 +252,59 @@ export function SideChat({ client, w, onSent }: { client: HostApi; w: Win; onSen
           </div>
         )}
         {messages.length > 0 && <div className="sidechat-spacer" aria-hidden />}
-        {messages.map((m, i) => (
-          <div
-            key={i}
-            className={`sidechat-msg ${m.role}`}
-            ref={(el) => {
-              if (el) msgRefs.current.set(i, el);
-              else msgRefs.current.delete(i);
-            }}
-          >
-            <div className="sidechat-bubble">{m.role === 'assistant' ? <Markdown text={m.text} /> : m.text}</div>
-            <div className="msg-actions">
-              <button className="btn ghost small" onClick={() => copy(m.text)}>
-                Copy
-              </button>
-              {m.role === 'assistant' && (
-                <button className="btn ghost small" onClick={() => sendToSession(m.text)} title="Send this to the session (queued if it's busy)">
-                  Send to session
-                </button>
-              )}
-            </div>
-            {i === lastAssistant && followups.length > 0 && (
-              <div className="suggestions">
-                {followups.map((f) => (
-                  <button key={f.title + f.text} className="sugg" onClick={() => fireFollowup(f)} title={f.kind === 'session' ? 'Send to the session' : 'Ask side chat'}>
-                    {f.title}
-                  </button>
-                ))}
+        {messages.map((m) => (
+          <Fragment key={m.key}>
+            <div
+              className={`sidechat-msg ${m.role}${m.state !== 'sent' ? ` ${m.state}` : ''}`}
+              ref={(el) => {
+                if (el) msgRefs.current.set(m.key, el);
+                else msgRefs.current.delete(m.key);
+              }}
+            >
+              <div className="sidechat-bubble">
+                {m.role === 'assistant' ? (
+                  m.state === 'sent' ? (
+                    <Markdown text={m.text} />
+                  ) : (
+                    <Thinking since={m.at * 1000} />
+                  )
+                ) : (
+                  m.text
+                )}
               </div>
-            )}
-          </div>
+              {m.role === 'user' && m.state === 'queued' && <div className="msg-meta">Queued</div>}
+              {m.role === 'user' && m.state === 'failed' && (
+                <div className="msg-meta failed">
+                  <span>Couldn't send{m.error ? `: ${m.error}` : ''}</span>
+                  <button className="btn ghost small" onClick={() => retry(m.key)}>
+                    Retry
+                  </button>
+                </div>
+              )}
+              {m.state === 'sent' && (
+                <div className="msg-actions">
+                  <button className="btn ghost small" onClick={() => copy(m.text)}>
+                    Copy
+                  </button>
+                  {m.role === 'assistant' && (
+                    <button className="btn ghost small" onClick={() => sendToSession(m.text)} title="Send this to the session (queued if it's busy)">
+                      Send to session
+                    </button>
+                  )}
+                </div>
+              )}
+              {m.followups?.length ? (
+                <div className="suggestions">
+                  {m.followups.map((f) => (
+                    <button key={f.title + f.text} className="sugg" onClick={() => fireFollowup(f)} title={f.kind === 'session' ? 'Send to the session' : 'Ask side chat'}>
+                      {f.title}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </Fragment>
         ))}
-        {busy && <p className="sidechat-status">Thinking…</p>}
       </div>
 
       <form
@@ -212,7 +315,7 @@ export function SideChat({ client, w, onSent }: { client: HostApi; w: Win; onSen
         }}
       >
         {subs && subs.length > 1 && (
-          <select aria-label="Chat subscription" value={subId ?? ''} disabled={busy} onChange={(e) => setSubId(e.target.value || undefined)}>
+          <select aria-label="Chat subscription" value={subId ?? ''} onChange={(e) => setSubId(e.target.value || undefined)}>
             {subs.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name} · {s.model}
@@ -224,7 +327,7 @@ export function SideChat({ client, w, onSent }: { client: HostApi; w: Win; onSen
           <textarea
             ref={areaRef}
             value={draft}
-            disabled={busy || noSub}
+            disabled={noSub}
             rows={1}
             enterKeyHint="send"
             placeholder="Ask about this change…"
@@ -237,7 +340,7 @@ export function SideChat({ client, w, onSent }: { client: HostApi; w: Win; onSen
               }
             }}
           />
-          <button type="submit" className="send-btn" disabled={!draft.trim() || busy} aria-label={busy ? 'Sending' : 'Send'} title={busy ? 'Sending' : 'Send'}>
+          <button type="submit" className="send-btn" disabled={!draft.trim() || noSub} aria-label="Send" title="Send">
             <Icon name="up" />
           </button>
         </div>
