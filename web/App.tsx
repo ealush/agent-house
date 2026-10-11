@@ -656,9 +656,10 @@ export function App({ onLock }: { onLock: () => void }) {
     }
   }
 
-  function sent(r: SendResult) {
-    if (r.outcome === 'delivered') flash('Sent');
-    else flash(r.resumed ? 'Resuming the session; your message goes in once it is ready' : `Queued (${r.queued}) — sent when the agent is free`);
+  function sent(r: SendResult, opts: { quiet?: boolean } = {}) {
+    // The GUI composer shows the message itself (in the feed, or the queue tray).
+    if (r.resumed) flash('Resuming the session; your message goes in once it is ready');
+    else if (!opts.quiet) flash(r.outcome === 'delivered' ? 'Sent' : `Queued (${r.queued}) — sent when the agent is free`);
     refresh(current?.host);
   }
 

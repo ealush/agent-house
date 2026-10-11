@@ -821,20 +821,9 @@
   }
 }
 
-/* Your messages not in the transcript yet: typed in a moment ago, or queued. */
+/* Your messages not in the transcript yet: sent from here a moment ago. */
 .gui .msg.user.pending .bubble {
   opacity: 0.7;
-}
-
-.gui .msg.user.queued .bubble {
-  background: transparent;
-  border-style: dashed;
-  color: var(--text-2, var(--text));
-  white-space: pre-wrap;
-}
-
-.gui .msg.user.queued .msg-snap {
-  visibility: visible;
 }
 
 .gui .gui-latest {

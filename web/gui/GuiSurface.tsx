@@ -5,13 +5,13 @@ import { forwardRef, startTransition, useEffect, useImperativeHandle, useLayoutE
 import type { ToolResult } from '../../server/feed/schema.ts';
 import { AskPanel, type AskHandle } from '../AskPanel.tsx';
 import type { SurfaceHandle, SurfaceProps } from '../surface.ts';
-import type { QueueItem, SnapshotInfo } from '../api.ts';
+import type { SnapshotInfo } from '../api.ts';
 import { askConfirm, showError, showNotice } from '../ask.tsx';
 import { look } from '../agents.ts';
 import { AgentLogo } from '../logos.tsx';
 import { Icon } from '../icons.tsx';
 import { copyText } from '../selection.ts';
-import { shortcutTitle } from '../shortcuts.tsx';
+import { removeOutgoing, sameText, useOutbox } from '../outbox.ts';
 import { blockText } from './reducer.ts';
 import { useFeed } from './useFeed.ts';
 import { project, type Block } from './reducer.ts';
@@ -175,52 +175,21 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
       showError(e, "Couldn't restore");
     }
   };
-  // Follow-ups waiting for this conversation, drawn under the feed where they will land.
-  const [queue, setQueue] = useState<QueueItem[]>([]);
-  const loadQueue = () =>
-    client
-      .queue(w.uid)
-      .then(setQueue)
-      .catch(() => {});
-  useEffect(() => {
-    if (!w.queued) return setQueue([]);
-    void loadQueue();
-    const timer = setInterval(loadQueue, 3000);
-    return () => clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client, w.uid, w.queued]);
-  const queueAct = async (fn: () => Promise<unknown>, what: string) => {
-    try {
-      await fn();
-    } catch (e) {
-      showError(e, `Couldn't ${what}`);
-    }
-    await loadQueue();
-    refresh();
-  };
-
-  // Sent from this device and typed in, but not in the transcript yet.
-  const [pending, setPending] = useState<Array<{ text: string; at: number }>>([]);
-  useEffect(() => {
-    const onSent = (e: Event) => {
-      const d = (e as CustomEvent<{ uid: string; text: string; outcome: string }>).detail;
-      if (d.uid === w.uid && d.outcome === 'delivered') setPending((p) => [...p, { text: d.text, at: Date.now() }]);
-    };
-    window.addEventListener('ah:sent', onSent);
-    return () => window.removeEventListener('ah:sent', onSent);
-  }, [w.uid]);
-
   const blocks = useMemo(() => project(state.entries), [state.entries]);
-  // A pending message is done once the transcript has it (or after a while, if it never shows).
+  // What you sent from here, drawn as your bubble until the transcript has it (or a
+  // while passes, for input the agent never records). Queued ones live in the tray.
+  const outbox = useOutbox(w.uid);
+  const outgoing = useMemo(() => outbox.filter((o) => o.state !== 'queued'), [outbox]);
   useEffect(() => {
-    if (!pending.length) return;
-    const norm = (t: string) => t.replace(/\s+/g, ' ').trim();
-    const seen = new Set(blocks.filter((b) => b.kind === 'user').map((b) => norm(blockText(b))));
-    const left = pending.filter((p) => !seen.has(norm(p.text)) && Date.now() - p.at < 30_000);
-    if (left.length !== pending.length) setPending(left);
-    const t = setTimeout(() => setPending((p) => p.filter((x) => Date.now() - x.at < 30_000)), 30_000);
+    const sent = outgoing.filter((o) => o.state === 'sent');
+    if (!sent.length) return;
+    // Only user turns from around then on: an older identical message is not this one.
+    const users = blocks.filter((b) => b.kind === 'user');
+    const done = sent.filter((o) => Date.now() - o.at > 30_000 || users.some((b) => (!b.at || b.at >= o.at - 10_000) && sameText(blockText(b), o.text)));
+    removeOutgoing(done.map((o) => o.id));
+    const t = setTimeout(() => removeOutgoing(sent.filter((o) => Date.now() - o.at > 30_000).map((o) => o.id)), 30_000);
     return () => clearTimeout(t);
-  }, [blocks, pending]);
+  }, [blocks, outgoing]);
   const [shownCount, setShownCount] = useState(FIRST_BLOCKS);
   const shown = useMemo(() => (shownCount >= blocks.length ? blocks : blocks.slice(-shownCount)), [blocks, shownCount]);
   const allShown = shown.length === blocks.length;
@@ -236,6 +205,7 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
   const [away, setAway] = useState(false);
   const prevHeight = useRef(0);
   const prevFirst = useRef<number | undefined>(undefined);
+  const prevOut = useRef(0);
 
   const askRef = useRef<AskHandle>(null);
   // Typing into the agent's input goes through the same path as the terminal.
@@ -329,6 +299,9 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
     const el = scroller.current;
     if (!el) return;
     const first = shown[0] ? parseInt(shown[0].key, 10) : undefined;
+    // Your own message brings you back down to it.
+    if (outgoing.length > prevOut.current) stick.current = true;
+    prevOut.current = outgoing.length;
     if (prevFirst.current !== undefined && first !== undefined && first < prevFirst.current && !stick.current) {
       el.scrollTop += el.scrollHeight - prevHeight.current;
     } else if (stick.current) {
@@ -336,7 +309,7 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
     }
     prevHeight.current = el.scrollHeight;
     prevFirst.current = first;
-  }, [shown, w.status, hidden]);
+  }, [shown, outgoing.length, w.status, hidden]);
 
   const onScroll = () => {
     const el = scroller.current!;
@@ -402,11 +375,11 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
               return <BlockView key={b.key} block={b} results={state.results} agent={w.agent} snap={snap} onRestore={restoreSnap} />;
             })}
 
-            {pending.map((p) => (
-              <div key={`pending-${p.at}`} className="msg user pending">
-                <div className="bubble">{p.text}</div>
+            {outgoing.map((o) => (
+              <div key={o.id} className="msg user pending">
+                <div className="bubble">{o.text}</div>
                 <div className="msg-meta">
-                  <span className="msg-time">Sending…</span>
+                  <span className="msg-time">{o.state === 'sending' ? 'Sending…' : time(o.at)}</span>
                 </div>
               </div>
             ))}
@@ -417,34 +390,6 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
               </div>
             )}
             {w.status === 'busy' && <Working detail={w.detail} />}
-
-            {/* After the live turn: these are sent when it ends. */}
-            {queue.map((q, i) => (
-              <div key={`queued-${q.id}`} className="msg user queued" tabIndex={-1}>
-                <div className="bubble">{q.text}</div>
-                <div className="msg-meta">
-                  <button className="msg-snap" title={shortcutTitle('Stop the current turn and send this now', 'send-now')} onClick={() => queueAct(() => client.sendNow(w.uid, q.id), 'send it now')}>
-                    Send now
-                  </button>
-                  <button
-                    className="msg-snap"
-                    title="Take it out of the queue and back into the composer"
-                    onClick={() =>
-                      queueAct(async () => {
-                        await client.clearQueue(w.uid, q.id);
-                        window.dispatchEvent(new CustomEvent('ah:compose', { detail: { uid: w.uid, text: q.text } }));
-                      }, 'edit it')
-                    }
-                  >
-                    Edit
-                  </button>
-                  <button className="msg-snap" onClick={() => queueAct(() => client.clearQueue(w.uid, q.id), 'cancel it')}>
-                    Cancel
-                  </button>
-                  <span className="msg-time">{i === 0 ? 'Queued · next' : 'Queued'}</span>
-                </div>
-              </div>
-            ))}
 
           </div>
         </div>

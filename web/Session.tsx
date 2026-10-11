@@ -40,7 +40,7 @@ type Props = {
   replyKey: number;
   onBack: () => void;
   onAnswer: (w: Win, answer: 'approve' | 'deny') => void;
-  onSent: (r: SendResult) => void;
+  onSent: (r: SendResult, opts?: { quiet?: boolean }) => void;
   onKilled: () => void;
   refresh: () => void;
   /** Navigate to another session by key (fork focus, fork family). */
@@ -943,7 +943,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
           </Suspense>
           {tab !== 'main' && <div className="session-main" style={{ minHeight: 0 }}>{panelView(tab)}</div>}
           {view === 'gui' && (
-            <ComposerBar client={client} target={w.uid} agent={w.agent} w={w} onSent={onSent} focusKey={focus} active={active}
+            <ComposerBar client={client} target={w.uid} agent={w.agent} w={w} onSent={onSent} onChange={refresh} focusKey={focus} active={active}
               onSettingsOpen={() => switchView('terminal', true)}
               onRelaunched={(id) => {
                 refresh();

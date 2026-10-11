@@ -3728,6 +3728,90 @@ a.btn {
   padding: 10px 10px calc(4px + var(--safe-pad)) 14px;
 }
 
+/* Queued follow-ups, tucked under the top of the composer (like Codex). */
+.queue-tray {
+  flex: none;
+  list-style: none;
+  margin: 10px 26px -14px;
+  padding: 4px 6px 18px;
+  max-height: min(40vh, 260px);
+  overflow-y: auto;
+  border: 1px solid var(--line-2);
+  border-bottom: 0;
+  border-radius: 14px 14px 0 0;
+  background: var(--surface);
+}
+
+.queue-tray + .composer {
+  margin-top: 0;
+}
+
+.queue-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 4px 0 8px;
+  border-radius: 8px;
+  color: var(--muted);
+}
+
+.queue-row:hover {
+  background: var(--raised);
+}
+
+.queue-row > svg {
+  flex: none;
+  color: var(--faint);
+}
+
+.queue-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.queue-row.pending .queue-text {
+  opacity: 0.6;
+}
+
+.queue-steer,
+.queue-state {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.queue-steer {
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.queue-steer:hover {
+  color: var(--text);
+  background: var(--line);
+}
+
+.queue-state {
+  padding-right: 8px;
+}
+
+.narrow .queue-tray {
+  margin: 0 10px -1px;
+  padding-bottom: 6px;
+}
+
 .composer-input {
   display: flex;
   align-items: flex-start;

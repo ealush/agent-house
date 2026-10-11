@@ -7,11 +7,17 @@ import { ModelPicker, EffortPicker, Popover, effectiveModel, effortsFor, usePres
 import { shortModel } from './logos.tsx';
 import { SuggestList, triggerAt, useSuggestions } from './Suggest.tsx';
 import { useLaunch, useLaunchPalette } from './useLaunch.ts';
+import { addOutgoing, removeOutgoing, updateOutgoing } from './outbox.ts';
+import { QueueTray } from './QueueTray.tsx';
 
 // The message bar under a GUI session. It goes through the server, which types the text
 // in now (idle agent, or any shell), queues it while an agent works, or resumes a dead
 // session first. A native text box keeps dictation, autocorrect and selection working.
 // The terminal view has no composer: its input comes from the shell itself.
+//
+// Sending is optimistic: the message shows in the feed (or the queue tray above the
+// box, while the agent works) the moment you press send, and comes back into the box
+// if the server refuses it.
 //
 // The toolbar under the text: the session's model and effort (switchable live where the
 // agent supports it), its mode, recall, attach, voice, and send — or stop while it works.
@@ -22,7 +28,10 @@ type Props = {
   agent: string | null;
   /** The session, for its model/effort/mode and working state. */
   w?: Win;
-  onSent: (r: SendResult) => void;
+  /** `quiet`: the GUI already shows the message, so no toast for it. */
+  onSent: (r: SendResult, opts?: { quiet?: boolean }) => void;
+  /** Reload the session list (the queue count) after a queue change here. */
+  onChange?: () => void;
   onNotice?: (msg: string) => void;
   onSettingsOpen?: () => void;
   /** Hot swap finished: open the replacement window id on this host. */
@@ -40,13 +49,15 @@ const SpeechRecognition: (new () => Recognition) | undefined = (window as any).S
 
 const toast = (msg: string) => window.dispatchEvent(new CustomEvent('ah:toast', { detail: msg }));
 
-export function ComposerBar({ client, target, agent, w, onSent, onNotice = toast, onSettingsOpen, onRelaunched, focusKey, active = false }: Props) {
+export function ComposerBar({ client, target, agent, w, onSent, onChange, onNotice = toast, onSettingsOpen, onRelaunched, focusKey, active = false }: Props) {
   const area = useRef<HTMLTextAreaElement>(null);
   const [text, setText] = useState(() => drafts.get(target) ?? '');
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
   const recognition = useRef<Recognition | null>(null);
   const recent = useRef<string[]>([]);
+  // Sends go out one after another, so fast follow-ups keep their order.
+  const sending = useRef<Promise<void>>(Promise.resolve());
   const cursor = useRef(-1);
   const isShell = !agent;
   const preset = usePreset(w?.host ?? '', agent);
@@ -115,22 +126,27 @@ export function ComposerBar({ client, target, agent, w, onSent, onNotice = toast
     el.style.height = `${el.scrollHeight}px`;
   }, [text]);
 
-  async function submit() {
-    if (!text.trim() || busy) return;
-    setBusy(true);
-    try {
-      const result = await client.send(target, text, true);
-      // The GUI shows it at once ("sending…") until the transcript records it.
-      window.dispatchEvent(new CustomEvent('ah:sent', { detail: { uid: target, text, outcome: result.outcome } }));
-      recent.current = [text, ...recent.current.filter((r) => r !== text)];
-      cursor.current = -1;
-      setText('');
-      onSent(result);
-    } catch (e) {
-      showError(e, "Couldn't send");
-    } finally {
-      setBusy(false);
-    }
+  function submit() {
+    const draft = text;
+    if (!draft.trim() || busy) return;
+    // A working agent queues it; anything else types it in now. The server decides,
+    // this only picks where it shows until the server says.
+    const id = addOutgoing(target, draft, working && !isShell ? 'queued' : 'sending');
+    recent.current = [draft, ...recent.current.filter((r) => r !== draft)];
+    cursor.current = -1;
+    setText('');
+    sending.current = sending.current.then(async () => {
+      try {
+        const result = await client.send(target, draft, true);
+        updateOutgoing(id, { state: result.outcome === 'queued' ? 'queued' : 'sent', confirmedAt: Date.now() });
+        onSent(result, { quiet: true });
+      } catch (e) {
+        removeOutgoing([id]);
+        // Back into the box, unless something new was typed there meanwhile.
+        setText((t) => t || draft);
+        showError(e, "Couldn't send");
+      }
+    });
   }
 
   async function stop() {
@@ -197,6 +213,19 @@ export function ComposerBar({ client, target, agent, w, onSent, onNotice = toast
   const showStop = !isShell && working && !text.trim();
 
   return (
+    <>
+    {w && (
+      <QueueTray
+        client={client}
+        uid={target}
+        queued={w.queued}
+        onChange={() => onChange?.()}
+        onEdit={(t) => {
+          setText(t);
+          requestAnimationFrame(() => area.current?.focus());
+        }}
+      />
+    )}
     <form
       className={`composer ${isShell ? 'cmd' : ''} ${listening ? 'listening' : ''}`}
       onSubmit={(e) => {
@@ -325,7 +354,6 @@ export function ComposerBar({ client, target, agent, w, onSent, onNotice = toast
               )}
             </Popover>
           )}
-          {w && w.queued > 0 && <span className="tool-chip static">⇥ {w.queued} queued</span>}
 
         </div>
 
@@ -354,5 +382,6 @@ export function ComposerBar({ client, target, agent, w, onSent, onNotice = toast
         </div>
       </div>
     </form>
+    </>
   );
 }
