@@ -494,12 +494,29 @@ const DISCOVERERS: Record<string, () => Promise<Transcript[]>> = {
 let last: { at: number; value: Transcript[] } | null = null;
 let running: Promise<Transcript[]> | null = null;
 
+/**
+ * A title from a first prompt reads like a title: no "[Image #1]" or
+ * "[Pasted text #2 +40 lines]" placeholders, no markup tags, one line.
+ * Falls back to the raw text when nothing else is left.
+ */
+export function cleanTitle(raw: string): string {
+  const t = raw
+    .replace(/\[(?:Image|Pasted text|Pasted image)\s*#\d+[^\]]*\]/gi, ' ')
+    .replace(/<\/?[a-z][\w-]*(?:\s[^>]*)?>/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return t || raw.trim();
+}
+
 /** All discoverable transcripts, newest first. Rescans at most every `maxAgeMs`. */
 export async function discover(maxAgeMs = 15_000): Promise<Transcript[]> {
   if (last && Date.now() - last.at < maxAgeMs) return last.value;
   running ??= Promise.all(Object.values(DISCOVERERS).map((d) => d().catch(() => [])))
     .then((lists) => {
-      const value = lists.flat().sort((a, b) => b.updatedAt - a.updatedAt);
+      const value = lists
+        .flat()
+        .map((t) => ({ ...t, title: cleanTitle(t.title) }))
+        .sort((a, b) => b.updatedAt - a.updatedAt);
       last = { at: Date.now(), value };
       return value;
     })

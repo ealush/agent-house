@@ -55,3 +55,11 @@ test('prompt titles skip injected context and keep the first line', () => {
   assert.equal(promptTitle('\n  fix it\nmore'), 'fix it');
   assert.equal(promptTitle('x'.repeat(200))?.length, 88);
 });
+
+test('titles drop paste placeholders and markup', async () => {
+  const { cleanTitle } = await import('./discovery.ts');
+  assert.equal(cleanTitle('[Image #1] working indicator is out of sync'), 'working indicator is out of sync');
+  assert.equal(cleanTitle('fix this [Pasted text #2 +40 lines] please'), 'fix this please');
+  assert.equal(cleanTitle('<command-name>/review</command-name> the diff'), '/review the diff');
+  assert.equal(cleanTitle('[Image #1]'), '[Image #1]', 'nothing left: keep the raw text');
+});
