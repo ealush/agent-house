@@ -148,6 +148,12 @@ that follows you across devices, harnesses, restarts and resumes.
 | P30 | Controls | ✅ | Chips, segments and send dip when pressed. Send is the primary pink. Selects share one chevron and checkboxes take the brand. The Files toolbar uses icons instead of emoji. Side panel tabs are in sentence case so six fit. |
 | P31 | Lists | ✅ | History times are flush right and swap to actions on hover. Idle dots are gone. Status pills read the same in the header and the inbox. The question card's "Something else" row is aligned. |
 | P32 | Phone and light | ✅ | The OpenAI and Grok marks show on the light theme. Light menus are near-solid. New session shows an even agent grid. Phone menus fit on screen. |
+| P33 | Touch | ✅ | History rows resume on tap and keep Fork and Hide behind ···. Menus close on an outside tap or Esc (useDismiss). Sidebar grips hide on touch, and ··· shows on the current row only. Rows darken under the finger. Small icon buttons get 44px targets. A narrow page drops the inbox Detail column (an iPad in portrait). |
+| P34 | Phone shell | ✅ | The tab bar has icons over labels on frosted glass, and lists scroll under it. Settings' highlight is fixed on narrow screens. Rows show "needs you" and "working" status. |
+| P35 | Action sheet | ✅ | On a phone the session ··· menu rises from the bottom with 48px rows. Tapping the scrim closes it without the tap reaching what's underneath. |
+| P36 | Large titles | ✅ | Scrolling a root page reveals a compact frosted bar with its name. It is a sticky `::before` driven by a scroll timeline, with no script, and hidden when the page can't scroll. |
+| P37 | Swipe back | ✅ | On a phone, an edge swipe leaves a session (useSwipeBack): the view follows the finger, commits past ⅓ or on a flick, and the list comes forward. It never starts in the terminal or a text field. |
+| P38 | Touch sizing | ✅ | Touch-only devices drop key hints. Segments and chips are 36px, question options 48px, iPad menu rows 44px. The switcher has a short prompt on touch. Links use the accent color. |
 
 Next candidates: rate-limit auto-resume (F40, opt-in, needs each CLI's reset
 message), quota display (F41), keyboard reordering in the sidebar.
