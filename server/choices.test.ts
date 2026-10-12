@@ -196,3 +196,15 @@ test('each question is answered only once the dialog is on it, and the submit on
   assert.equal(dialogAt(q2, Q2, 2), false, 'no submit before the review');
   assert.deepEqual(claudeQuestionGroups(Q2, [{ picked: [1] }, { picked: [0] }]), [[{ keys: ['2'] }], [{ keys: ['1'] }, { keys: ['Right'] }], [{ keys: ['1'] }]]);
 });
+
+test("an option the window wrapped inside a path rejoins without a space", () => {
+  const screen = [
+    ' Do you want to proceed?',
+    ' ❯ 1. Yes',
+    '   2. Yes, and always allow access to /tmp/claude-1000/-home-me-code-ah/e566',
+    '      4374-cf7c-4a39-b47e/code/demo from this project',
+    '   3. No',
+  ];
+  const labels = parsePicker(screen)?.options.map((o) => o.label);
+  assert.deepEqual(labels, ['Yes', 'Yes, and always allow access to /tmp/claude-1000/-home-me-code-ah/e5664374-cf7c-4a39-b47e/code/demo from this project', 'No']);
+});

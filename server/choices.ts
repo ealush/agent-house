@@ -113,7 +113,9 @@ function parseNumbered(lines: string[], max: number): { options: ScreenOption[];
     // ("2. Yes, and switch to accept edits (… common file" / "   commands) …").
     const last = run.at(-1);
     if (wrapping && last && line.trim() && line.length - line.trimStart().length === last.col) {
-      last.label += ` ${line.trim()}`;
+      // A break inside a token longer than the line (a path) was the window's, not a space.
+      const token = last.label.slice(last.label.lastIndexOf(' ') + 1);
+      last.label += `${token.length > 24 ? '' : ' '}${line.trim()}`;
       continue;
     }
     wrapping = false;
