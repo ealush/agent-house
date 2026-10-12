@@ -6975,4 +6975,9 @@ select:not([multiple]) {
   .ask-option {
     min-height: 48px;
   }
+
+  /* An iPad's menus are dropdowns, not sheets, but a finger still needs 44px rows. */
+  .menu button {
+    min-height: 44px;
+  }
 }
