@@ -128,6 +128,8 @@ export function App({ onLock }: { onLock: () => void }) {
   const [pastChatJump, setPastChatJump] = useState<{ host: string; uid: string; msgId: number } | null>(null);
   const [dialog, setDialog] = useState<'worktrees' | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [toastOut, setToastOut] = useState(false);
+  const toastNow = useRef<string | null>(null);
   const [replyKey, setReplyKey] = useState(0);
   // Portrait phones, and a phone turned sideways: short, coarse, and still
   // narrower than an iPad. The same query is in web/styles.css. A sideways
@@ -602,7 +604,11 @@ export function App({ onLock }: { onLock: () => void }) {
   }
 
   function flash(msg: string) {
+    toastNow.current = msg;
     setToast(msg);
+    setToastOut(false);
+    // It sinks away before it goes, instead of vanishing mid-read.
+    window.setTimeout(() => toastNow.current === msg && setToastOut(true), 3300);
     window.setTimeout(() => setToast((t) => (t === msg ? null : t)), 3500);
   }
 
@@ -1160,7 +1166,7 @@ export function App({ onLock }: { onLock: () => void }) {
       {dialog === 'worktrees' && <WorktreesDialog client={clientFor(current?.host)} onClose={() => setDialog(null)} onShell={shellIn} />}
 
       {toast && (
-        <div className="toast" role="status">
+        <div key={toast} className={`toast ${toastOut ? 'out' : ''}`} role="status">
           {toast}
         </div>
       )}

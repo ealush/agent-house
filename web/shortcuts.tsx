@@ -387,6 +387,7 @@ export function CommandPalette({ onClose, onRun }: { onClose: () => void; onRun:
   const listRef = useRef<HTMLUListElement>(null);
   const [root, setRoot] = useState<PaletteNode | null>(null);
   const [stack, setStack] = useState<PaletteNode[]>([]);
+  const [drill, setDrill] = useState<'in' | 'out' | null>(null);
   const [query, setQuery] = useState('');
   const [i, setI] = useState(0);
   useShortcutRevision();
@@ -417,6 +418,7 @@ export function CommandPalette({ onClose, onRun }: { onClose: () => void; onRun:
   }, [index, rows.length, here]);
 
   const enter = (node: PaletteNode, trail: PaletteNode[] = []) => {
+    setDrill('in');
     setStack((st) => [...st, ...trail, node]);
     setQuery('');
     setI(0);
@@ -425,6 +427,7 @@ export function CommandPalette({ onClose, onRun }: { onClose: () => void; onRun:
     if (stack.length < 2) return;
     const next = stack.slice(0, Math.max(1, stack.length - levels));
     const leaving = stack[next.length];
+    setDrill('out');
     setStack(next);
     setQuery('');
     // Land on the category you came out of.
@@ -503,7 +506,8 @@ export function CommandPalette({ onClose, onRun }: { onClose: () => void; onRun:
           setI(0);
         }}
       />
-      <ul ref={listRef} id="palette-list" role="listbox">
+      {/* A new level slides in from the side it lives on: deeper from the right, back from the left. */}
+      <ul ref={listRef} id="palette-list" role="listbox" key={stack.map((n) => n.key).join('/')} className={drill ? `drill-${drill}` : ''}>
         {rows.map((row, idx) => {
           const { node, trail } = row;
           const chord = node.command ? hintChord(node.command, mac, overrides) : null;

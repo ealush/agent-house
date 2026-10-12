@@ -488,6 +488,23 @@
   min-width: 0;
 }
 
+/* Opening a step unfolds it: the rows below move down with it instead of jumping. */
+@media (prefers-reduced-motion: no-preference) {
+  .gui .tool-body {
+    interpolate-size: allow-keywords;
+    overflow: clip;
+    animation: unfold var(--dur-2) var(--ease);
+  }
+}
+
+@keyframes unfold {
+  from {
+    height: 0;
+    padding-bottom: 0;
+    opacity: 0;
+  }
+}
+
 /* Status: running → blue pulse, done → green, failed → red. Each also has a label. */
 .gui .tool-dot {
   flex: none;
@@ -922,4 +939,19 @@
 
 .gui .ask-raw[open] summary {
   margin-bottom: 6px;
+}
+
+/* New in the conversation (GuiSurface freshAfter): your message as you send it, and each step the agent adds, rise into place. */
+@media (prefers-reduced-motion: no-preference) {
+  .gui .msg.user.pending,
+  .gui .turn > .fresh {
+    animation: msg-in var(--dur-2) var(--ease);
+  }
+}
+
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
 }

@@ -64,7 +64,7 @@ function MsgCopy({ text, bare = false }: { text: string; bare?: boolean }) {
   return bare ? button : <div className="msg-actions">{button}</div>;
 }
 
-function BlockView({ block, results, agent, snap, onRestore }: { block: Block; results: Record<string, ToolResult>; agent: string | null; snap?: SnapshotInfo; onRestore?: (snap: SnapshotInfo) => void }) {
+function BlockView({ block, results, agent, snap, onRestore, freshAfter }: { block: Block; results: Record<string, ToolResult>; agent: string | null; snap?: SnapshotInfo; onRestore?: (snap: SnapshotInfo) => void; freshAfter: number }) {
   // data-seq is the search jump target (issue #9): the block key starts with
   // the seq of its first entry.
   const seq = parseInt(block.key, 10);
@@ -101,7 +101,7 @@ function BlockView({ block, results, agent, snap, onRestore }: { block: Block; r
       </span>
       <div className="turn">
         {block.items.map((item) => (
-          <div key={item.key} data-seq={parseInt(item.key, 10)}><ItemView item={item} results={results} /></div>
+          <div key={item.key} data-seq={parseInt(item.key, 10)} className={parseInt(item.key, 10) > freshAfter ? 'fresh' : undefined}><ItemView item={item} results={results} /></div>
         ))}
         <MsgCopy text={blockText(block)} />
       </div>
@@ -131,6 +131,9 @@ function Working({ detail }: { detail: string | null }) {
 
 const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({ w, client, hidden, onAnswer, onReply, onUseTerminal, refresh }, ref) {
   const { state, loadOlder, loadingOlder } = useFeed(client, w.uid);
+  // What was already there when the conversation opened draws still; what arrives after rises in.
+  const freshAfter = useRef<number | null>(null);
+  if (freshAfter.current === null && state.entries.length) freshAfter.current = state.entries.reduce((m, e) => Math.max(m, e.seq), 0);
   const [snaps, setSnaps] = useState<SnapshotInfo[]>([]);
   useEffect(() => {
     let stopped = false;
@@ -390,7 +393,7 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
               // runs the session, so a visible-page ordinal is not a turn id.
               const prompt = b.kind === 'user' ? b.parts.filter((p) => p.type === 'text').map((p) => p.text).join('\n').replace(/\s+/g, ' ').trim().slice(0, 120) : '';
               const snap = b.kind === 'user' && b.at ? snaps.filter((s) => s.kind === 'turn' && Math.abs(s.createdAt * 1000 - b.at) < 15_000 && (!s.promptExcerpt || s.promptExcerpt === prompt)).sort((a, c) => Math.abs(a.createdAt * 1000 - b.at) - Math.abs(c.createdAt * 1000 - b.at))[0] : undefined;
-              return <BlockView key={b.key} block={b} results={state.results} agent={w.agent} snap={snap} onRestore={restoreSnap} />;
+              return <BlockView key={b.key} block={b} results={state.results} agent={w.agent} snap={snap} onRestore={restoreSnap} freshAfter={freshAfter.current ?? Infinity} />;
             })}
 
             {outgoing.map((o) => (

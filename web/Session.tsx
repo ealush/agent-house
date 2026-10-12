@@ -174,6 +174,9 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   // ah.panel, but collapsed is not, so the panel would expand in every pane
   // just as the space gets tighter. Start collapsed; the toggle still opens it.
   const [panelCollapsed, setPanelCollapsed] = useState(() => !!panePath);
+  // Open when the session opened: there already. Opened later: it slides out from the edge.
+  const panelAtOpen = useRef(!!panel && !panelCollapsed);
+  if (!panel || panelCollapsed) panelAtOpen.current = false;
   // Past-chats browser inside the chat panel; resets with the session.
   const [chatHistory, setChatHistory] = useState(false);
   // A search result can ask for one chat at one message (issue #9).
@@ -183,7 +186,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   const [menu, setMenu] = useState(false);
   const menuBtn = useRef<HTMLButtonElement>(null);
   const menuEl = useRef<HTMLDivElement>(null);
-  const [menuPos, setMenuPos] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number; maxHeight: number; above: boolean } | null>(null);
 
   // Opened from the keyboard or with a click, the first item takes focus once the
   // menu is placed (it is invisible until then, and can't take focus), so arrows work at once.
@@ -218,10 +221,9 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       const maxHeight = Math.max(0, view.height - 16);
       el.style.maxHeight = `${maxHeight}px`;
       const body = el.getBoundingClientRect();
-      const next = {
-        ...placeFloatingMenu(anchor, { width: body.width, height: body.height }, view),
-        maxHeight,
-      };
+      const at = placeFloatingMenu(anchor, { width: body.width, height: body.height }, view);
+      // Flipped above the button when there is no room below: it grows from there instead.
+      const next = { ...at, maxHeight, above: at.top < anchor.top };
       setMenuPos((prev) =>
         prev && prev.top === next.top && prev.left === next.left && prev.maxHeight === next.maxHeight ? prev : next,
       );
@@ -800,7 +802,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
                 }}
                 style={
                   menuPos
-                    ? { position: 'fixed', right: 'auto', top: menuPos.top, left: menuPos.left, maxHeight: menuPos.maxHeight, zIndex: 90, margin: 0 }
+                    ? { position: 'fixed', right: 'auto', top: menuPos.top, left: menuPos.left, maxHeight: menuPos.maxHeight, zIndex: 90, margin: 0, transformOrigin: menuPos.above ? 'bottom right' : 'top right' }
                     : { position: 'fixed', right: 'auto', visibility: 'hidden', zIndex: 90, margin: 0 }
                 }
               >
@@ -1015,7 +1017,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
                 </button>
               </div>
             ) : (
-              <aside className="side-panel" style={{ width: panelWidth }}>
+              <aside className={`side-panel ${panelAtOpen.current ? '' : 'arrive'}`} style={{ width: panelWidth }}>
                 <div className="tabs" data-rove>
                   {/* The tabs scroll sideways in a narrow panel; the buttons on the right always stay. */}
                   <div className="tabs-scroll">
