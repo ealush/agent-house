@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { Icon, type IconName } from './icons.tsx';
-import { roveKey } from './rove.ts';
+import { keepListFocus, roveKey } from './rove.ts';
 import { leafCount, registerProvider, resolveTree, searchTree, type PaletteNode, type ProviderId } from './palette.ts';
 import {
   COMMANDS,
@@ -81,9 +81,11 @@ export function Shortcuts() {
     window.addEventListener('keydown', handleShortcutKey, true);
     // Bubble phase: lists with their own arrow handling get the key first.
     window.addEventListener('keydown', roveKey);
+    const stopKeeping = keepListFocus();
     return () => {
       window.removeEventListener('keydown', handleShortcutKey, true);
       window.removeEventListener('keydown', roveKey);
+      stopKeeping();
     };
   }, []);
   return null;

@@ -85,3 +85,42 @@ export function focusFirst(box: HTMLElement | null) {
     if (box) items(box)[0]?.focus();
   });
 }
+
+/**
+ * When the focused item of a list goes away (an answered card, a hidden conversation),
+ * focus moves to the item that took its place, as in a native list, instead of falling
+ * to the page where the next key does nothing. Returns the uninstaller.
+ */
+export function keepListFocus(): () => void {
+  // The last list item focused. Removing a focused element fires no focusout in every
+  // browser, so removals are noticed by watching the page change.
+  let last: { el: HTMLElement; box: HTMLElement; index: number } | null = null;
+  const onIn = (e: FocusEvent) => {
+    const el = e.target as HTMLElement;
+    const box = el.closest<HTMLElement>('[data-rove]');
+    if (!box) return void (last = null);
+    // Its place in the list: the item it is, or the nearest one before it (a card's
+    // option buttons sit under the card's title, which is the list item).
+    const list = items(box);
+    let index = -1;
+    list.forEach((item, i) => {
+      if (item === el || item.contains(el) || item.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) index = i;
+    });
+    last = { el, box, index };
+  };
+  const mo = new MutationObserver(() => {
+    if (!last || last.el.isConnected) return;
+    const { box, index } = last;
+    last = null;
+    if (!box.isConnected || index < 0) return;
+    if (document.activeElement && document.activeElement !== document.body) return;
+    const list = items(box);
+    list[Math.min(index, list.length - 1)]?.focus();
+  });
+  mo.observe(document.body, { childList: true, subtree: true });
+  document.addEventListener('focusin', onIn);
+  return () => {
+    mo.disconnect();
+    document.removeEventListener('focusin', onIn);
+  };
+}
