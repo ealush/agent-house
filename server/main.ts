@@ -1210,6 +1210,15 @@ await importLegacyJson(getDb()).then(
   (c) => console.log('imported legacy state:', JSON.stringify(c)),
   (err) => console.error('legacy import failed:', err),
 );
+// Only now, with the schema current and legacy rows imported, read the
+// sessions: fail closed rather than start with an empty registry, which would
+// re-register live windows under new ids and orphan their links, queues and meta.
+try {
+  await core.registry.load();
+} catch (err) {
+  console.error(`Can't read ah's session registry: ${(err as Error).message}`);
+  process.exit(1);
+}
 await core.loadPrompts();
 core.start();
 search.start();

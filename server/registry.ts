@@ -148,20 +148,26 @@ export class Registry {
   private removed = new Set<string>();
   private dirty = false;
   private writing: Promise<void> = Promise.resolve();
-  private loaded: Promise<void>;
+  private loaded: Promise<void> | null = null;
   private db: PrismaClient;
   private dbPath: string;
 
   constructor(dbPath = defaultDbPath()) {
     this.dbPath = dbPath;
     this.db = getDb(dbPath);
-    // In-memory writes made before the load lands win over stored rows.
-    this.loaded = this.db.session
-      .findMany()
-      .then((rows) => {
-        for (const row of rows) if (!this.records.has(row.uid)) this.records.set(row.uid, fromRow(row));
-      })
-      .catch((err) => console.error(`registry load failed (${dbPath}):`, err));
+  }
+
+  /**
+   * Merge stored rows into memory. The server calls this once its schema is
+   * migrated: reading earlier would miss rows (or fail on a new column), and
+   * live windows would then re-register under new uids. A failed load rejects
+   * instead of leaving an empty registry. In-memory writes made before the
+   * load lands win over stored rows.
+   */
+  load(): Promise<void> {
+    return (this.loaded ??= this.db.session.findMany().then((rows) => {
+      for (const row of rows) if (!this.records.has(row.uid)) this.records.set(row.uid, fromRow(row));
+    }));
   }
 
   static newId(): string {
@@ -170,7 +176,7 @@ export class Registry {
 
   /** Resolves once stored rows have merged into memory. Tests only. */
   ready(): Promise<void> {
-    return this.loaded.then(() => {});
+    return this.load();
   }
 
   /** Resolves once every queued write has landed. Tests and the shutdown drain. */
@@ -330,7 +336,7 @@ export class Registry {
     // Capture the in-flight write first: reading this.writing inside the
     // callback below would observe the reassigned (self) promise and deadlock.
     const prev = this.writing;
-    this.writing = this.loaded
+    this.writing = this.load()
       .catch(() => {})
       .then(() => prev.catch(() => {}))
       .then(() => this.persist(records, removed))

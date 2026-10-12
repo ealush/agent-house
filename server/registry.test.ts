@@ -56,3 +56,21 @@ test('a forked copy keeps no queue from its parent conversation', async () => {
   assert.equal((r.get('parent')?.meta['ah.queue'] as unknown[])?.length, 1);
   await r.settled();
 });
+
+test('the registry reads nothing until loaded, so it can be built before migrations run', async () => {
+  const path = db();
+  const before = new Registry(path); // no schema yet: building it must not query
+  await ensureMigrated(path);
+  const seed = new Registry(path);
+  await seed.ready();
+  seed.starting('kept', { harness: 'shell', cwd: '/p', title: 'kept', tmux });
+  seed.flush();
+  await seed.settled();
+  await before.load();
+  assert.equal(before.get('kept')?.title, 'kept', 'rows written before the load are read by it');
+});
+
+test('a failed load rejects instead of leaving an empty registry', async () => {
+  const r = new Registry(db()); // never migrated: the Session table is missing
+  await assert.rejects(r.load());
+});
