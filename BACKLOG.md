@@ -160,8 +160,27 @@ that follows you across devices, harnesses, restarts and resumes.
 | P42 | 44pt targets | ✅ | Every phone control is at least Apple's 44pt minimum: nav-bar circles, view tabs, Settings' sections, agent choices and keys. Chips keep their size with larger hit areas. Nav icons are 22px and tab icons 24px. |
 | P43 | Action sheet, iPhone style | ✅ | The session menu is grouped, with Cancel apart in the tint color. It drags down to close, and slides away on Cancel or a scrim tap. |
 
-Next candidates: rate-limit auto-resume (F40, opt-in, needs each CLI's reset
-message), quota display (F41), keyboard reordering in the sidebar.
+### Trust and coherence pass (12 October 2026)
+
+From a product review and a live run of real Claude Code sessions through a
+throwaway ah, on desktop and phone.
+
+| # | Item | | Notes |
+|---|---|---|---|
+| T1 | Registry after migrations | ✅ | Sessions load once the schema is migrated and legacy state imported; a failed load stops ah instead of starting empty (which would re-register live windows under new uids). |
+| T2 | Screen-rule audit (F18) | ✅ | Every prompt a hook reports also tests the screen rules hookless sessions use (`server/audit.ts`); Settings → System shows caught/missed per harness with the last missed screen. |
+| T3 | Usage limits | ✅ | Claude's session/weekly and Codex's usage-limit notices read as a "limited" pill with the reset time, and notify as such; the notice counts only until the reset. Auto-resume (F40) stays open. |
+| T4 | One status vocabulary | ✅ | needs you / working / done (new output for shells) / idle / limited, from `web/status.ts`, in rows, headers, sections and taglines. |
+| T5 | No terminal leakage | ✅ | Idle shells show the command they last ran, not their prompt (foreground process group, a little scrollback). Screen prompts are unwrapped prose; picker labels rejoin wrapped paths; tool names, upload paths and tool-call JSON read as words. |
+| T6 | Back | ✅ | Pages and sessions are history entries; the chevron, edge swipe and Settings sheet go through history.back(). |
+| T7 | Shells vs agents | ✅ | Shells don't offer Fork, Queue or Snapshots. |
+| T8 | Devices | ✅ | Name this device (Security); the GUI counts as viewing (seen state, "On Desk too"). Sign-in off is stated, not half-shown. |
+| T9 | GUI honesty | ✅ | Pending calls in the present tense (Edit, Run), project-relative paths, the feed stays pinned when the queue tray or a diff resizes it, the model chip shows the running model, a new turn clears the last turn's detail. |
+| T10 | Snapshot restore | ✅ | A failed restore says whether files are back or half-restored (and which safety snapshot to use); an agent that wasn't told about a rollback is flagged. |
+| T11 | Browser smoke suite | ✅ | `pnpm test:ui` (test/ui): the built page on desktop and phone against a throwaway ah, including a stand-in claude's prompt answered from the inbox; its own CI job. |
+
+Next candidates: rate-limit auto-resume (F40, opt-in; the reset times are
+now parsed), quota display (F41), keyboard reordering in the sidebar.
 
 Remaining larger work: conversation transfer between hosts (including files),
 worktree disk usage, and richer adapters for agents without hooks. These require explicit
