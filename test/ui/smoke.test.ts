@@ -166,3 +166,44 @@ test('a prompt on an agent screen is answered from the inbox, without hooks', { 
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+const focused = (page: Page) => page.evaluate(() => {
+  const a = document.activeElement as HTMLElement | null;
+  return a ? `${a.tagName.toLowerCase()}.${a.className}` : 'none';
+});
+
+test('desktop: the keyboard lands where you are, and comes back after the palette', { skip, timeout: 60_000 }, async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const { page, errors } = await open(ctx);
+  await page.locator('.side-session', { hasText: 'zz-idle' }).first().click();
+  await page.waitForFunction(() => document.activeElement?.classList.contains('xterm-helper-textarea'));
+  await page.keyboard.press('Control+Shift+P');
+  await page.locator('.palette-tree input').waitFor();
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => document.activeElement?.classList.contains('xterm-helper-textarea'), null, { timeout: 2000 });
+  // Arrows from a page with nothing focused enter its list.
+  await page.keyboard.press('Control+Shift+1');
+  await page.locator('h1.page-title', { hasText: 'Inbox' }).waitFor();
+  await page.waitForTimeout(400);
+  await page.keyboard.press('ArrowDown');
+  assert.match(await focused(page), /button\.(row|card-title)/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('desktop: New session works from the keyboard alone', { skip, timeout: 60_000 }, async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const { page, errors } = await open(ctx);
+  await page.keyboard.press('Control+Shift+Enter');
+  await page.waitForFunction(() => document.activeElement?.classList.contains('agent-pill'));
+  const before = await page.evaluate(() => document.activeElement?.textContent);
+  await page.keyboard.press('ArrowRight');
+  const after = await page.evaluate(() => ({ text: document.activeElement?.textContent, on: document.activeElement?.classList.contains('on') }));
+  assert.notEqual(after.text, before, 'the arrows move across the agents');
+  assert.ok(after.on, 'and choose as they go');
+  await page.keyboard.press('Tab');
+  assert.match(await focused(page), /^input/, 'one Tab stop for the agents, then the project');
+  await page.keyboard.press('Escape');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
