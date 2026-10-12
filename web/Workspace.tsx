@@ -8,6 +8,7 @@ import { closeLeaf, dockLeaf, isPick, moveLeafTo, paneLeaves, pickKey, pickPrevi
 import { glide, popIn } from './motion.ts';
 import { PanePicker } from './PanePicker.tsx';
 import { ShortcutHint } from './shortcuts.tsx';
+import { Glide } from './Glide.tsx';
 
 type Props = {
   layout: LayoutNode;
@@ -333,6 +334,7 @@ export function Workspace(props: Props) {
       {props.narrow ? (
         <div className="ws-tabs">
           <div className="seg-tabs" role="tablist">
+            <Glide match=".on" className="thumb" />
             {panes.map((p) => (
               <button key={p.path.join('/')} role="tab" aria-selected={p === activeTab} className={p === activeTab ? 'on' : ''} onClick={() => {
                 setTab(p.path.join('/'));

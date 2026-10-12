@@ -54,9 +54,10 @@ import { API_VERSION } from './api.ts';
 import { showError } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { trackViewport } from './viewport.ts';
-import { glide, transition } from './motion.ts';
+import { glide, transition, type Heading } from './motion.ts';
 import { runCommand } from './shortcuts.ts';
 import { CommandPalette, Keycaps, Shortcuts, ShortcutsDialog, WhichKey, shortcutTitle, useCommand, usePaletteProvider } from './shortcuts.tsx';
+import { Glide } from './Glide.tsx';
 
 // Pages and dialogs most visits never open load on first use.
 const Settings = lazy(() => import('./Settings.tsx').then((m) => ({ default: m.Settings })));
@@ -104,6 +105,8 @@ function stored<T extends string>(key: string, fallback: T): [T, (v: T) => void]
 // "#security" still lands on settings, where Security lives now. Old links
 // ("#@12", a tmux window id) still open: App upgrades them once windows are known.
 const PAGES = ['history', 'sessions', 'settings', 'search'] as const;
+/** The sidebar's pages, top to bottom (its sessions follow), so navigation knows which way it goes. */
+const NAV_PAGES = ['inbox', 'history', 'settings'] as const;
 function fromHash(): { page: Page; selected: string | null } {
   let h = '';
   try { h = decodeURIComponent(location.hash.slice(1)); } catch {}
@@ -227,7 +230,19 @@ export function App({ onLock }: { onLock: () => void }) {
     const hash = route.selected ?? (route.page === 'inbox' ? '' : route.page);
     history.replaceState(null, '', hash ? `#${hash}` : location.pathname);
     if (how.still || (route.page === page && route.selected === selected)) setRoute(route);
-    else transition(() => setRoute(route));
+    else transition(() => setRoute(route), heading(route));
+  }
+  /** Where the next view sits relative to this one: further down the sidebar, or deeper on a phone. */
+  function heading(to: { page: Page; selected: string | null }): Heading | null {
+    if (narrow) return to.selected && !selected ? 'push' : !to.selected && selected ? 'pop' : null;
+    const keys = sidebarOrder(state?.windows ?? [], (state?.hosts.length ?? 0) > 1, savedGroups).map((w) => w.key);
+    const place = (r: { page: Page; selected: string | null }) => {
+      if (r.selected) return keys.includes(r.selected) ? NAV_PAGES.length + keys.indexOf(r.selected) : -1;
+      return NAV_PAGES.indexOf(r.page as (typeof NAV_PAGES)[number]);
+    };
+    const from = place({ page, selected });
+    const next = place(to);
+    return from < 0 || next < 0 || from === next ? null : next > from ? 'down' : 'up';
   }
   const open = (key: string | null) => {
     // In split view the sidebar points the focused pane at the session (F46);
@@ -991,6 +1006,7 @@ export function App({ onLock }: { onLock: () => void }) {
             )}
             {narrow && (
               <nav className="tabbar" data-rove>
+                <Glide match=".on" className="thumb" />
                 {(['inbox', 'sessions', 'history'] as const).map((p) => (
                   <button key={p} className={page === p ? 'on' : ''} onClick={() => go({ page: p, selected: null })}>
                     {p[0].toUpperCase() + p.slice(1)}

@@ -26,6 +26,7 @@ import { SnapshotsPanel } from './Snapshots.tsx';
 import { ShortcutHint, shortcutTitle, useCommand, usePaletteProvider, useShortcutRevision } from './shortcuts.tsx';
 import { runCommand } from './shortcuts.ts';
 import { useLaunch, useLaunchPalette } from './useLaunch.ts';
+import { Glide } from './Glide.tsx';
 
 type Panel = 'diff' | 'files' | 'chat' | 'queue' | 'snapshots' | 'preview';
 
@@ -750,6 +751,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
         )}
         {views.length > 1 && (
           <div className={narrow ? 'view-toggle' : 'view-tabs'} role="group" aria-label="View">
+            <Glide match="[aria-pressed='true']" className={narrow ? 'thumb' : 'underline'} />
             {views.map((v) => (
               narrow ? (
                 <button key={v} className={v === view ? 'on' : ''} aria-pressed={v === view} title={shortcutTitle(`${VIEW_LABEL[v]} view`, 'toggle-view')} onClick={() => switchView(v)}>
@@ -946,6 +948,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
 
       {narrow && (
         <div className="seg-tabs" role="tablist" data-rove>
+          <Glide match=".on" className="thumb" />
           <button role="tab" aria-selected={tab === 'main'} className={tab === 'main' ? 'on' : ''} onClick={() => setTab('main')}>
             {VIEW_LABEL[view]}
           </button>
@@ -1016,6 +1019,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
                 <div className="tabs" data-rove>
                   {/* The tabs scroll sideways in a narrow panel; the buttons on the right always stay. */}
                   <div className="tabs-scroll">
+                  <Glide match="[aria-selected='true']" className="underline" />
                   {diffTab && (
                     <button role="tab" aria-selected={panel === 'diff'} className="tab-underline" onClick={() => setPanel('diff')}>
                       Diff

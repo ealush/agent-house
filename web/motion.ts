@@ -1,19 +1,33 @@
 import { flushSync } from 'react-dom';
 
 /**
- * Run a navigation as a quick cross-fade of the main area (View Transitions,
- * where the browser has them). Skipped for reduced motion, a hidden tab, or
- * another transition still running, so rapid switching never queues fades.
+ * Which way a navigation goes, so the new view arrives from there: down or up
+ * the sidebar's list on a desktop, and on a phone a push into a session and a
+ * pop back out of it, like an iOS navigation stack (styles.css `data-vt`).
+ */
+export type Heading = 'down' | 'up' | 'push' | 'pop';
+
+/**
+ * Run a navigation as a quick move of the main area (View Transitions, where
+ * the browser has them): a cross-fade, or a slide when `heading` says which
+ * way. Skipped for reduced motion, a hidden tab, or another transition still
+ * running, so rapid switching never queues animations.
  */
 let running = false;
-export function transition(fn: () => void) {
+export function transition(fn: () => void, heading?: Heading | null) {
   const d = document as Document & { startViewTransition?: (cb: () => void) => { finished: Promise<void> } };
-  if (!d.startViewTransition || running || document.hidden || matchMedia('(prefers-reduced-motion: reduce)').matches) return fn();
+  if (!d.startViewTransition || running || document.hidden || calm()) return fn();
   running = true;
-  try {
-    d.startViewTransition(() => flushSync(fn)).finished.finally(() => (running = false));
-  } catch {
+  const root = document.documentElement;
+  if (heading) root.dataset.vt = heading;
+  const done = () => {
     running = false;
+    delete root.dataset.vt;
+  };
+  try {
+    d.startViewTransition(() => flushSync(fn)).finished.finally(done);
+  } catch {
+    done();
     fn();
   }
 }

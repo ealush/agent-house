@@ -8,6 +8,7 @@ import { useSavedGroups, setGroupList } from './groupOrder.ts';
 import { movedSessionOrders, saveGroupMove, sidebarSections } from './sessionOrder.ts';
 import { runCommand, type CommandId } from './shortcuts.ts';
 import { ShortcutHint, shortcutTitle, useShortcutRevision } from './shortcuts.tsx';
+import { Glide } from './Glide.tsx';
 
 export type Page = 'inbox' | 'history' | 'sessions' | 'settings' | 'search';
 
@@ -281,6 +282,8 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
 
       {handoff}
 
+      <div className="side-nav">
+      <Glide match=".nav-item.on" className="side-glide" />
       <button className={`nav-item ${page === 'inbox' && !selected ? 'on' : ''}`} title={shortcutTitle('Inbox', 'go-inbox')} onClick={() => onPage('inbox')}>
         <Icon name="inbox" />
         <span className="grow">Inbox</span>
@@ -296,8 +299,10 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
         <Icon name="gear" />
         <span className="grow">Settings</span>
       </button>
+      </div>
 
       <div className="side-scroll">
+        <Glide match=".side-session.on" className="side-glide accent" />
         {error && <div className="side-error">Can't reach server: {error}</div>}
         {multiHost && (
           <>

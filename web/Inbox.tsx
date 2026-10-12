@@ -6,6 +6,7 @@ import { age, look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
 import { useSavedGroups } from './groupOrder.ts';
 import { sidebarSections } from './sessionOrder.ts';
+import { Glide } from './Glide.tsx';
 
 export type InboxGroup = 'status' | 'host' | 'project';
 
@@ -73,6 +74,7 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, cl
         ) : (
           <>
             <div className="seg" role="tablist">
+              <Glide match=".on" className="thumb" />
               {(['status', 'host', 'project'] as const).map((g) => (
                 <button key={g} role="tab" aria-selected={groupBy === g} className={groupBy === g ? 'on' : ''} onClick={() => setGroupBy(g)}>
                   {g[0].toUpperCase() + g.slice(1)}

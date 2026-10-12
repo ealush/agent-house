@@ -10,6 +10,7 @@ import { SearchSettingsPanel } from './SearchSettings.tsx';
 import { AppearancePanel } from './Appearance.tsx';
 import { SystemPanel } from './System.tsx';
 import { ShortcutsPanel } from './shortcuts.tsx';
+import { Glide } from './Glide.tsx';
 const SECTIONS = [
   { id: 'security', label: 'Security' },
   { id: 'appearance', label: 'Appearance' },
@@ -52,6 +53,7 @@ export function Settings({ onLocked, onNotifyChange }: { onLocked: () => void; o
 
       <div className="settings-body">
         <nav className="settings-nav" aria-label="Settings sections" data-rove>
+          <Glide match=".nav-item.on" className="side-glide" />
           {SECTIONS.map((s) => (
             <button key={s.id} className={`nav-item ${section === s.id ? 'on' : ''}`} aria-current={section === s.id ? 'page' : undefined} onClick={() => go(s.id)}>
               <span className="grow">{s.label}</span>
