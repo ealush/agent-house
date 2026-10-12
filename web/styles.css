@@ -1400,9 +1400,12 @@ a.pill:hover {
   padding: 0 14px;
   border-radius: 10px;
   border: 0;
-  background: var(--text);
-  color: var(--bg);
+  /* The composer's one primary action wears the primary color, like every
+     other primary button; with nothing to send it steps back to a quiet cap. */
+  background: var(--accent-strong, var(--accent));
+  color: var(--accent-ink);
   font-weight: 600;
+  transition: background-color var(--dur-1), color var(--dur-1), transform var(--dur-1) var(--ease);
 }
 
 .narrow .send-btn {
@@ -1413,7 +1416,13 @@ a.pill:hover {
 }
 
 .send-btn:disabled {
-  opacity: 0.35;
+  background: var(--line-2);
+  color: var(--faint);
+  cursor: default;
+}
+
+.send-btn:not(.stop):hover:not(:disabled) {
+  background: var(--accent-hover, var(--accent));
 }
 
 .icon-btn {
@@ -6228,7 +6237,7 @@ button.tool-chip:hover {
   border-radius: 8px;
 }
 
-/* Phone panel tabs and the key bar: a soft fade at the edge while more is off screen. */
+/* Panel tabs and the key bar: a soft fade at the edge while more is off screen. */
 @property --tabs-fade {
   syntax: '<length>';
   inherits: false;
@@ -6236,13 +6245,15 @@ button.tool-chip:hover {
 }
 
 .seg-tabs,
-.keybar {
+.keybar,
+.side-panel .tabs-scroll {
   mask-image: linear-gradient(to right, #000 calc(100% - var(--tabs-fade)), transparent);
 }
 
 @supports (animation-timeline: scroll()) {
   .seg-tabs,
-  .keybar {
+  .keybar,
+  .side-panel .tabs-scroll {
     animation: tabs-fade linear both;
     animation-timeline: scroll(self inline);
   }
@@ -6404,6 +6415,76 @@ button.tool-chip:hover {
 .btn:active:not(:disabled),
 .icon-btn:active:not(:disabled) {
   transform: scale(0.97);
+}
+
+/* Everything else you press gives a little too: chips, segments, the send
+   button, the view switch. Small controls dip further than wide ones. */
+.tool-chip,
+.seg button,
+.seg-tabs button,
+.view-toggle button,
+.view-tabs button,
+.tabbar button {
+  transition: transform var(--dur-1) var(--ease), color var(--dur-1), border-color var(--dur-1), background-color var(--dur-1);
+}
+
+button.tool-chip:active,
+.seg button:active,
+.seg-tabs button:active,
+.view-toggle button:active,
+.tabbar button:active {
+  transform: scale(0.96);
+}
+
+.send-btn:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.icon-btn:disabled:hover {
+  background: none;
+  color: var(--muted);
+}
+
+/* Native controls take the brand: checkboxes, radios and range thumbs fill
+   pink, and every select draws the same chevron instead of the OS arrow. */
+:root {
+  accent-color: var(--brand, var(--accent));
+}
+
+select:not([multiple]) {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 26px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none' stroke='%238c8e9a' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1l4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  background-size: 10px 6px;
+  cursor: pointer;
+}
+
+/* A long path scrolls under a soft left edge instead of being cut mid-letter. */
+.crumbs {
+  padding-left: 8px;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8px);
+  mask-image: linear-gradient(90deg, transparent, #000 8px);
+}
+
+/* Six labels in a 420px panel don't fit as tracked capitals without touching.
+   Sentence case, as the same tabs read on a phone, with a floor under the
+   space between them. */
+.side-panel .tabs-scroll {
+  gap: 8px;
+}
+
+.side-panel .tab-underline {
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

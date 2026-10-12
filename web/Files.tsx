@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { shellQuote, type FsEntry, type FsListing, type HostApi } from './api.ts';
 import { askText } from './ask.tsx';
+import { Icon } from './icons.tsx';
 
 // File explorer + transfer. Browse the host from the session's folder, pull files
 // down to this device, push files up into any folder, and hand a path to the
@@ -125,8 +126,8 @@ export function FilesPanel({ fs, start, cwd, agent, onInsert }: Props) {
       }}
     >
       <div className="fs-bar">
-        <button className="btn ghost small" disabled={!listing?.parent} onClick={() => listing?.parent && setPath(listing.parent)} title="Up">
-          ↑
+        <button className="icon-btn small" disabled={!listing?.parent} onClick={() => listing?.parent && setPath(listing.parent)} title="Up" aria-label="Up">
+          <Icon name="up" size={14} />
         </button>
         <nav className="crumbs" aria-label="Path" ref={crumbsRef}>
           <button className="linkish" onClick={() => setPath('/')}>
@@ -151,14 +152,14 @@ export function FilesPanel({ fs, start, cwd, agent, onInsert }: Props) {
             ))}
           </select>
         )}
-        <button className="btn ghost small" onClick={() => setPath(cwd)} title="Session folder">
-          ⌂ session
+        <button className="icon-btn small" onClick={() => setPath(cwd)} title="Session folder" aria-label="Session folder">
+          <Icon name="home" size={15} />
         </button>
         <button className={`btn ghost small ${hidden ? 'on' : ''}`} onClick={() => setHidden(!hidden)} title="Show dotfiles">
           .*
         </button>
-        <button className="btn ghost small" onClick={newFolder} title="New folder">
-          ＋📁
+        <button className="icon-btn small" onClick={newFolder} title="New folder" aria-label="New folder">
+          <Icon name="folder-plus" size={15} />
         </button>
       </div>
 
