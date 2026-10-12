@@ -260,7 +260,14 @@ function create(windowId: string, host: HTMLElement, on: Handlers): Live {
     document.removeEventListener('visibilitychange', wake);
     window.removeEventListener('online', wake);
     window.removeEventListener('focus', wake);
-    ws?.close();
+    // A socket still connecting is closed once it opens: closing it mid-handshake is an error in the console.
+    const sock = ws;
+    if (sock) {
+      sock.onmessage = null;
+      sock.onclose = null;
+      if (sock.readyState === WebSocket.CONNECTING) sock.onopen = () => sock.close();
+      else sock.close();
+    }
     ws = null;
     ro.disconnect();
     stopTheme();
