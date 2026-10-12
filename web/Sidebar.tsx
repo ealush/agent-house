@@ -53,7 +53,10 @@ export function confirmTerminate(w: Win) {
   const why = w.status === 'waiting' ? 'is waiting for your input' : w.status === 'busy' ? 'is currently working' : `has ${w.queued} queued message${w.queued === 1 ? '' : 's'}`;
   return askConfirm({
     title: `Terminate "${w.title}"?`,
-    body: hot ? `It ${why}. The running process will be stopped.` : 'The session will be stopped.',
+    // Say what survives: an agent's conversation can be picked up again; a shell's processes can't.
+    body: w.agent
+      ? `${hot ? `It ${why}, and will be stopped.` : 'The agent will be stopped.'} Its conversation stays in History, and Resume picks it up again.`
+      : `${hot ? `It ${why}. ` : ''}The shell and anything running in it will be stopped.`,
     confirm: 'Terminate',
     danger: true,
   });
