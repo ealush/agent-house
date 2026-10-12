@@ -4057,12 +4057,17 @@ a.btn {
   border-top: 0;
 }
 
+ul.queue-items {
+  list-style: none;
+}
+
+/* Queued messages and snapshot prompts are what you wrote: prose, as in the composer. */
 .queue-items pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   max-height: 180px;
   overflow: auto;
-  font: 13px/1.5 var(--mono);
+  font: 14px/1.5 var(--ui);
 }
 
 /* Logos fill their chip: app-icon logos edge to edge (no tinted mat), marks large. */

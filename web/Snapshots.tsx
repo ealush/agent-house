@@ -118,7 +118,8 @@ export function SnapshotsPanel({ client, w, onChange }: { client: HostApi; w: Wi
       )}
       {data === null && !error && <p className="hint">Loading…</p>}
       {data?.snapshots.length === 0 && data.available && <p className="hint">No snapshots yet. The next turn will take the first one.</p>}
-      <ol className="queue-items">
+      {/* Each row names its turn: no list numbers beside "Before turn 4". */}
+      <ul className="queue-items">
         {data?.snapshots.map((s) => (
           <li key={s.id}>
             <div className="snapshot-row">
@@ -141,7 +142,7 @@ export function SnapshotsPanel({ client, w, onChange }: { client: HostApi; w: Wi
             </div>
           </li>
         ))}
-      </ol>
+      </ul>
       {data && data.snapshots.length > 0 && (
         <p className="hint">Snapshot commits are kept by refs under refs/ah-snapshots, so your own git gc cannot collect them while they are listed here.</p>
       )}

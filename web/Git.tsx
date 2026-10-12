@@ -164,7 +164,7 @@ export function ChangesPanel({ client, windowId, onComment }: { client: HostApi;
       <div className="panel-foot">
         {data ? (
           <>
-            ⎇ {data.branch} · {files.length} file{files.length === 1 ? '' : 's'} <span className="add-n">+{totals.add}</span> <span className="del-n">-{totals.del}</span>
+            ⎇ {data.branch} · {files.length + untracked.length} file{files.length + untracked.length === 1 ? '' : 's'}{untracked.length ? ` (${untracked.length} new)` : ''} <span className="add-n">+{totals.add}</span> <span className="del-n">-{totals.del}</span>
             {onComment ? ' · click a line to comment for the agent' : ''}
           </>
         ) : (
