@@ -6883,3 +6883,51 @@ select:not([multiple]) {
     transform: translateY(calc(100% + 24px));
   }
 }
+
+/* ---------- large titles: scroll a page and its name settles into a compact bar at the top */
+
+/* The bar is the page's own ::before, sticky at the top of its scroll: it takes
+   no room (negative margins give back its height and the page's padding), and
+   it shows only once the large title has scrolled under it. Without
+   scroll-driven animations it never shows, and the page is as before. */
+@supports (animation-timeline: scroll()) {
+  .page[data-title]::before {
+    content: attr(data-title);
+    position: sticky;
+    /* Sticky measures from inside the page's padding: reach past it to the edge. */
+    top: -28px;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 44px;
+    margin: -28px -32px -16px;
+    border-bottom: 1px solid var(--line);
+    background: var(--glass);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--text);
+    pointer-events: none;
+    animation: page-bar linear both;
+    animation-timeline: scroll(nearest block);
+    animation-range: 56px 88px;
+  }
+
+  .narrow .page[data-title]::before {
+    top: -18px;
+    margin: -18px -16px -26px;
+  }
+}
+
+@keyframes page-bar {
+  from {
+    opacity: 0;
+    border-bottom-color: transparent;
+  }
+  to {
+    opacity: 1;
+  }
+}

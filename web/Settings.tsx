@@ -43,7 +43,7 @@ export function Settings({ onLocked, onNotifyChange }: { onLocked: () => void; o
   };
 
   return (
-    <div className="page settings">
+    <div className="page settings" data-title="Settings">
       <header className="page-head">
         <div className="grow">
           <h1 className="page-title">Settings<span className="period">.</span></h1>

@@ -69,7 +69,7 @@ export function SearchView({
   const loaded = (resp?.results.length ?? 0) + extra.length;
 
   return (
-    <div className="page search-page">
+    <div className="page search-page" data-title="Search">
       <header className="page-head">
         <div className="grow">
           <h1 className="page-title">Search<span className="period">.</span></h1>

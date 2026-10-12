@@ -26,7 +26,7 @@ export function HistoryView({ state, onResume, onForget, onFork, touch = false }
       })
     : state.history;
   return (
-    <div className="page" data-rove="button.resume">
+    <div className="page" data-title="History" data-rove="button.resume">
       <header className="page-head">
         <div className="grow">
           <h1 className="page-title">History<span className="period">.</span></h1>
@@ -146,7 +146,7 @@ export function SessionsView({ state, onOpen, onNew }: { state: State; onOpen: (
   const sections = sidebarSections(state.windows, multiHost, useSavedGroups(multiHost));
   const flip = useFlip<HTMLDivElement>(sections.map((s) => `${s.id}:${s.windows.map((w) => w.key).join(',')}`).join('|'));
   return (
-    <div className="page" ref={flip} data-rove="button.row">
+    <div className="page" data-title="Sessions" ref={flip} data-rove="button.row">
       <header className="page-head">
         <div className="grow">
           <h1 className="page-title">Sessions<span className="period">.</span></h1>
