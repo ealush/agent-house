@@ -5937,6 +5937,61 @@ button.tool-chip:hover {
   }
 }
 
+/* Workspaces sit side by side, like Hyprland's: the next number slides in from the right. */
+:root[data-vt='next']::view-transition-old(ah-main),
+:root[data-vt='next']::view-transition-new(ah-main),
+:root[data-vt='prev']::view-transition-old(ah-main),
+:root[data-vt='prev']::view-transition-new(ah-main) {
+  mix-blend-mode: normal;
+  animation-duration: 260ms;
+  animation-timing-function: var(--ease);
+  animation-fill-mode: both;
+}
+
+:root[data-vt='next']::view-transition-old(ah-main) {
+  animation-name: vt-out-left;
+}
+
+:root[data-vt='next']::view-transition-new(ah-main) {
+  animation-name: vt-in-right;
+}
+
+:root[data-vt='prev']::view-transition-old(ah-main) {
+  animation-name: vt-out-right;
+}
+
+:root[data-vt='prev']::view-transition-new(ah-main) {
+  animation-name: vt-in-left;
+}
+
+@keyframes vt-out-left {
+  to {
+    opacity: 0;
+    transform: translateX(-48px);
+  }
+}
+
+@keyframes vt-out-right {
+  to {
+    opacity: 0;
+    transform: translateX(48px);
+  }
+}
+
+@keyframes vt-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(48px);
+  }
+}
+
+@keyframes vt-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-48px);
+  }
+}
+
 /* Phone: a session pushes in from the right over the list, and Back pops it off. */
 :root[data-vt='push']::view-transition-old(ah-main),
 :root[data-vt='push']::view-transition-new(ah-main),
@@ -6370,4 +6425,14 @@ button.tool-chip:hover {
     opacity: 0;
     transform: translateX(16px);
   }
+}
+
+/* The current workspace's fill slides to the number you went to. */
+.ws-glide {
+  border-radius: 6px;
+  background: var(--accent);
+}
+
+.glides.glides > .ws-glide ~ button.on {
+  border-color: transparent;
 }

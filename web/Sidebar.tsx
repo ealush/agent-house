@@ -64,7 +64,6 @@ function subdir(w: Win): string {
 }
 
 export function Sidebar({ workspaces, onWorkspace, state, error, page, selected, visibleKeys, device, onPage, onSelect, onSearch, onNew, onWorktrees, onReorder, onKill, onFork, onDragSession, onCollapse, handoff }: Props) {
-  const flip = useFlip<HTMLDivElement>();
   useShortcutRevision();
   const windows = state?.windows ?? [];
   const visible = new Set(visibleKeys);
@@ -78,6 +77,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
   const [menuKey, setMenuKey] = useState<string | null>(null);
 
   const sections = sidebarSections(windows, multiHost, savedGroups);
+  const flip = useFlip<HTMLDivElement>(sections.map((s) => `${s.id}:${s.windows.map((w) => w.key).join(',')}`).join('|'));
 
   function lowerHalf(e: React.DragEvent<HTMLElement>) {
     const box = e.currentTarget.getBoundingClientRect();
@@ -261,6 +261,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
       {/* Like Omarchy's bar: shown once a second workspace is in use. */}
       {workspaces && (workspaces.current !== 1 || workspaces.used.some((n) => n !== workspaces.current)) && (
         <div className="ws-dots" role="group" aria-label="Workspaces">
+          <Glide match=".on" className="ws-glide" />
           {[1, 2, 3, 4, 5, 6, 7, 8, 9]
             .filter((n) => n === workspaces.current || workspaces.used.includes(n))
             .map((n) => (

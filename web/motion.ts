@@ -3,9 +3,10 @@ import { flushSync } from 'react-dom';
 /**
  * Which way a navigation goes, so the new view arrives from there: down or up
  * the sidebar's list on a desktop, and on a phone a push into a session and a
- * pop back out of it, like an iOS navigation stack (styles.css `data-vt`).
+ * pop back out of it, like an iOS navigation stack. Workspaces slide sideways
+ * to the next or previous number, like Hyprland's (styles.css `data-vt`).
  */
-export type Heading = 'down' | 'up' | 'push' | 'pop';
+export type Heading = 'down' | 'up' | 'push' | 'pop' | 'next' | 'prev';
 
 /**
  * Run a navigation as a quick move of the main area (View Transitions, where

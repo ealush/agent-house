@@ -330,24 +330,28 @@ export function App({ onLock }: { onLock: () => void }) {
     saveSpaces(next);
   };
   const nowSlot = (): Slot => ({ layout, selected: layout ? null : selected });
-  const showSlot = (slot: Slot) => {
+  const showSlot = (slot: Slot, how: { still?: boolean } = {}) => {
     setZoom(false);
     setLayout(slot.layout);
-    if (!slot.layout) go({ page: 'inbox', selected: slot.selected });
+    if (!slot.layout) go({ page: 'inbox', selected: slot.selected }, how);
   };
   const switchWorkspace = (n: number) => {
     if (n === spaces.current) return;
     const r = switchTo(spaces, n, nowSlot());
-    setSpaces(r.spaces);
-    showSlot(r.show);
+    transition(() => {
+      setSpaces(r.spaces);
+      showSlot(r.show, { still: true });
+    }, n > spaces.current ? 'next' : 'prev');
     flash(`Workspace ${n}`);
   };
   const sendToWorkspace = (n: number) => {
     const key = layout ? focusKey : selected;
     if (!key || n === spaces.current) return;
     const r = sendTo(spaces, n, key, nowSlot(), layout ? (focusPath ?? paneLeaves(layout)[0]?.path ?? null) : null);
-    setSpaces(r.spaces);
-    showSlot(r.show);
+    transition(() => {
+      setSpaces(r.spaces);
+      showSlot(r.show, { still: true });
+    }, n > spaces.current ? 'next' : 'prev');
     flash(`Sent to workspace ${n}`);
   };
   for (const d of [1, 2, 3, 4, 5, 6, 7, 8, 9] as const) {

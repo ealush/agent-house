@@ -276,7 +276,8 @@ export function Workspace(props: Props) {
     const next = new Map(placed.filter((t) => !t.hidden).map((t) => [t.id, t.box]));
     const prev = shown.current ?? (props.origin ? new Map([[`${props.origin}#0`, FULL]]) : null);
     shown.current = next;
-    if (!prev || resizing.current) return;
+    // A wholly different set of panes (another workspace) is a switch, not a move: the page slides instead.
+    if (!prev || resizing.current || ![...next.keys()].some((id) => prev.has(id))) return;
     const { width, height } = root.getBoundingClientRect();
     const px = (b: Box) => ({ x: b.x * width, y: b.y * height, w: b.w * width, h: b.h * height });
     for (const el of root.querySelectorAll<HTMLElement>(':scope > .pane[data-tile]')) {
