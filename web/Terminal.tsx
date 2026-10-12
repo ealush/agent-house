@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -29,213 +29,300 @@ type Props = {
 
 type Conn = 'connecting' | 'open' | 'retrying' | 'gone';
 
+/** What the component showing a live terminal tells it; swapped when another adopts it. */
+type Handlers = {
+  wsUrl: Props['wsUrl'];
+  transform?: (data: string) => string;
+  gone: () => void;
+  conn: (c: Conn) => void;
+};
+
+/**
+ * A live terminal: xterm in a container of its own, attached to one tmux window, with
+ * its socket, reconnects, resizing and touch handling. It outlives the component showing
+ * it by a few seconds (parked), so the same window shown again (a split forming around
+ * it, switching back to it) adopts it already painted, instead of a blank terminal
+ * attaching and measuring again.
+ */
+type Live = {
+  windowId: string;
+  el: HTMLDivElement;
+  t: XTerm;
+  conn: Conn;
+  on: Handlers;
+  pasting: boolean;
+  ws: () => WebSocket | null;
+  send: (data: string) => void;
+  dispose: () => void;
+  timer?: number;
+};
+
+const PARK_MS = 4000;
+const PARK_MAX = 3;
+const parked = new Map<string, Live>();
+
+function park(l: Live) {
+  l.el.remove();
+  l.on = { ...l.on, transform: undefined, gone: () => {}, conn: (c) => void (l.conn = c) };
+  const old = parked.get(l.windowId);
+  if (old && old !== l) old.dispose();
+  parked.delete(l.windowId);
+  parked.set(l.windowId, l);
+  l.timer = window.setTimeout(() => {
+    if (parked.get(l.windowId) !== l) return;
+    parked.delete(l.windowId);
+    l.dispose();
+  }, PARK_MS);
+  for (const [id, oldest] of parked) {
+    if (parked.size <= PARK_MAX) break;
+    parked.delete(id);
+    clearTimeout(oldest.timer);
+    oldest.dispose();
+  }
+}
+
+function adopt(windowId: string): Live | null {
+  const l = parked.get(windowId);
+  if (!l) return null;
+  parked.delete(windowId);
+  clearTimeout(l.timer);
+  return l;
+}
+
+/** A new live terminal, opened inside `host` (xterm measures on open, so it must be in the page). */
+function create(windowId: string, host: HTMLElement, on: Handlers): Live {
+  const el = document.createElement('div');
+  el.className = 'term-live';
+  host.appendChild(el);
+  const t = new XTerm({
+    allowProposedApi: true,
+    cursorBlink: true,
+    fontFamily: terminalFont(),
+    fontSize: storedFontSize(),
+    lineHeight: 1.15,
+    scrollback: 0, // tmux owns scrollback
+    macOptionIsMeta: true,
+    macOptionClickForcesSelection: true,
+    theme: terminalTheme(),
+  });
+  const f = new FitAddon();
+  t.loadAddon(f);
+  t.loadAddon(new WebLinksAddon());
+  t.loadAddon(new ClipboardAddon());
+  t.loadAddon(new Unicode11Addon());
+  t.unicode.activeVersion = '11';
+  t.open(el);
+  // WebGL is fastest on desktop, but mobile Safari drops GL contexts when backgrounded
+  // and headless browsers paint it unreliably; the DOM renderer is the safe default there.
+  if (matchMedia('(pointer: fine)').matches && !navigator.webdriver) {
+    try {
+      const gl = new WebglAddon();
+      gl.onContextLoss(() => gl.dispose());
+      t.loadAddon(gl);
+    } catch {
+      // DOM renderer fallback
+    }
+  }
+
+  let ws: WebSocket | null = null;
+  const live: Live = {
+    windowId,
+    el,
+    t,
+    conn: 'connecting',
+    on,
+    pasting: false,
+    ws: () => ws,
+    send: (data) => {
+      if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'i', d: data }));
+    },
+    dispose: () => {},
+  };
+  const setConn = (c: Conn) => {
+    live.conn = c;
+    live.on.conn(c);
+  };
+
+  // Copy a local (shift/option-drag) selection instead of sending ^C.
+  t.attachCustomKeyEventHandler((e) => {
+    const copy = (e.metaKey && e.key === 'c') || (e.ctrlKey && e.shiftKey && e.key === 'C');
+    if (e.type === 'keydown' && copy && t.hasSelection()) {
+      void copyText(t.getSelection());
+      return false;
+    }
+    // Cmd/Option arrows go to the pty with terminal-native encodings (and
+    // never reach the browser as Back/Forward navigation). Returning false
+    // prevents xterm's default handling of the same event.
+    if (e.type === 'keydown') {
+      const action = terminalArrow(e.key, { meta: e.metaKey, alt: e.altKey, ctrl: e.ctrlKey, shift: e.shiftKey });
+      if (action && ws?.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ t: 'i', d: action.send }));
+        return false;
+      }
+    }
+    return true;
+  });
+
+  const stopSelectionCopy = autoCopySelection(el, t, () => navigator.clipboard);
+  t.onData((d) => live.send(!live.pasting && live.on.transform ? live.on.transform(d) : d));
+  t.onBinary((d) => live.send(d));
+
+  const safeFit = () => {
+    if (!el.offsetWidth) return;
+    f.fit();
+    if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'r', c: t.cols, r: t.rows }));
+  };
+  document.fonts?.ready.then(() => safeFit());
+  let timer: number | undefined;
+  const refit = (ms: number) => {
+    clearTimeout(timer);
+    timer = window.setTimeout(safeFit, ms);
+  };
+  // Also fires when an adopted terminal lands in a pane of another size.
+  const ro = new ResizeObserver(() => refit(40));
+  ro.observe(el);
+
+  // Follow the theme live (Omarchy's palette changes with the desktop).
+  const stopTheme = subscribeTheme(() => {
+    t.options.theme = terminalTheme();
+    const font = terminalFont();
+    if (t.options.fontFamily !== font) {
+      t.options.fontFamily = font;
+      refit(40);
+    }
+  });
+  const stopTouch = touchScroll(
+    el,
+    t,
+    (n, c, r) => {
+      if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 's', n, c, r }));
+    },
+    () => refit(30),
+  );
+
+  // The connection, with reconnect after sleep / network loss.
+  let disposed = false;
+  let attempt = 0;
+  let retryTimer: number | undefined;
+  const connect = () => {
+    if (disposed) return;
+    safeFit();
+    setConn(attempt ? 'retrying' : 'connecting');
+    const sock = new WebSocket(live.on.wsUrl(windowId, t.cols, t.rows));
+    sock.binaryType = 'arraybuffer';
+    ws = sock;
+    sock.onopen = () => {
+      attempt = 0;
+      // tmux repaints the whole screen on attach, so start from a clean slate.
+      t.reset();
+      setConn('open');
+      // Only when nothing else has the keyboard: a split's other pane (or its
+      // chooser), or a reconnect in the background, must not steal it.
+      const idle = !document.activeElement || document.activeElement === document.body;
+      if (idle && el.isConnected && !matchMedia('(pointer: coarse)').matches) t.focus();
+    };
+    sock.onmessage = (e) => t.write(new Uint8Array(e.data as ArrayBuffer));
+    sock.onclose = (e) => {
+      if (ws === sock) ws = null;
+      if (disposed) return;
+      if (e.code === 4401) {
+        // This device was signed out elsewhere: back to the lock screen.
+        window.dispatchEvent(new Event('ah:unauthorized'));
+        return;
+      }
+      if (e.code === 4404) {
+        setConn('gone');
+        live.on.gone();
+        return;
+      }
+      attempt++;
+      setConn('retrying');
+      retryTimer = window.setTimeout(connect, Math.min(5000, 300 * 2 ** attempt));
+    };
+  };
+  const wake = () => {
+    if (document.visibilityState !== 'visible' || disposed) return;
+    if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+      clearTimeout(retryTimer);
+      attempt = 0;
+      connect();
+    }
+  };
+  connect();
+  document.addEventListener('visibilitychange', wake);
+  window.addEventListener('online', wake);
+  window.addEventListener('focus', wake);
+
+  live.dispose = () => {
+    disposed = true;
+    clearTimeout(retryTimer);
+    clearTimeout(timer);
+    document.removeEventListener('visibilitychange', wake);
+    window.removeEventListener('online', wake);
+    window.removeEventListener('focus', wake);
+    ws?.close();
+    ws = null;
+    ro.disconnect();
+    stopTheme();
+    stopTouch();
+    stopSelectionCopy();
+    t.dispose();
+    el.remove();
+  };
+  return live;
+}
 
 export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ windowId, hidden, wsUrl, transformInput, onGone }, ref) {
   const host = useRef<HTMLDivElement>(null);
-  const term = useRef<XTerm | null>(null);
-  const fit = useRef<FitAddon | null>(null);
-  const ws = useRef<WebSocket | null>(null);
-  const transform = useRef(transformInput);
-  const pasting = useRef(false);
-  const gone = useRef(onGone);
+  const live = useRef<Live | null>(null);
   const [conn, setConn] = useState<Conn>('connecting');
-  transform.current = transformInput;
-  gone.current = onGone;
+  const handlers: Handlers = { wsUrl, transform: transformInput, gone: onGone, conn: setConn };
+  if (live.current) live.current.on = handlers;
 
-  const send = (data: string) => {
-    if (ws.current?.readyState === WebSocket.OPEN) ws.current.send(JSON.stringify({ t: 'i', d: data }));
-  };
+  // "Attaching…" only when it is slow: a local attach takes a few frames, and a pill that
+  // flashes on every session switch reads as a hiccup.
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    setSlow(false);
+    if (conn === 'open' || conn === 'gone') return;
+    const t = window.setTimeout(() => setSlow(true), 400);
+    return () => clearTimeout(t);
+  }, [conn]);
 
   useImperativeHandle(ref, () => ({
-    send,
+    send: (data) => live.current?.send(data),
     paste: (data) => {
       // xterm normalizes line endings and honors the app's bracketed-paste mode.
       // Clipboard content must not be changed by a pending one-shot modifier.
-      pasting.current = true;
-      try { term.current?.paste(data); } finally { pasting.current = false; }
+      const l = live.current;
+      if (!l) return;
+      l.pasting = true;
+      try { l.t.paste(data); } finally { l.pasting = false; }
     },
-    focus: () => term.current?.focus(),
+    focus: () => live.current?.t.focus(),
   }), []);
 
-  // One xterm instance for the component's lifetime; windows swap underneath it.
-  useEffect(() => {
-    const t = new XTerm({
-      allowProposedApi: true,
-      cursorBlink: true,
-      fontFamily: terminalFont(),
-      fontSize: storedFontSize(),
-      lineHeight: 1.15,
-      scrollback: 0, // tmux owns scrollback
-      macOptionIsMeta: true,
-      macOptionClickForcesSelection: true,
-      theme: terminalTheme(),
-    });
-    const f = new FitAddon();
-    t.loadAddon(f);
-    t.loadAddon(new WebLinksAddon());
-    t.loadAddon(new ClipboardAddon());
-    t.loadAddon(new Unicode11Addon());
-    t.unicode.activeVersion = '11';
-    t.open(host.current!);
-    // WebGL is fastest on desktop, but mobile Safari drops GL contexts when backgrounded
-    // and headless browsers paint it unreliably; the DOM renderer is the safe default there.
-    if (matchMedia('(pointer: fine)').matches && !navigator.webdriver) {
-      try {
-        const gl = new WebglAddon();
-        gl.onContextLoss(() => gl.dispose());
-        t.loadAddon(gl);
-      } catch {
-        // DOM renderer fallback
-      }
+  // The window's live terminal: the one parked for it if it was just shown, else a new one.
+  useLayoutEffect(() => {
+    const target = host.current!;
+    const was = adopt(windowId);
+    const l = was ?? create(windowId, target, handlers);
+    if (was) {
+      target.appendChild(was.el);
+      was.on = handlers;
+      setConn(was.conn);
     }
-
-    // Copy a local (shift/option-drag) selection instead of sending ^C.
-    t.attachCustomKeyEventHandler((e) => {
-      const copy = (e.metaKey && e.key === 'c') || (e.ctrlKey && e.shiftKey && e.key === 'C');
-      if (e.type === 'keydown' && copy && t.hasSelection()) {
-        void copyText(t.getSelection());
-        return false;
-      }
-      // Cmd/Option arrows go to the pty with terminal-native encodings (and
-      // never reach the browser as Back/Forward navigation). Returning false
-      // prevents xterm's default handling of the same event.
-      if (e.type === 'keydown') {
-        const action = terminalArrow(e.key, { meta: e.metaKey, alt: e.altKey, ctrl: e.ctrlKey, shift: e.shiftKey });
-        if (action && ws.current?.readyState === WebSocket.OPEN) {
-          ws.current.send(JSON.stringify({ t: 'i', d: action.send }));
-          return false;
-        }
-      }
-      return true;
-    });
-
-    const stopSelectionCopy = autoCopySelection(host.current!, t, () => navigator.clipboard);
-
-    t.onData((d) => send(!pasting.current && transform.current ? transform.current(d) : d));
-    t.onBinary((d) => send(d));
-    term.current = t;
-    fit.current = f;
-    document.fonts?.ready.then(() => safeFit());
-
-    let timer: number | undefined;
-    const ro = new ResizeObserver(() => {
-      clearTimeout(timer);
-      timer = window.setTimeout(safeFit, 40);
-    });
-    ro.observe(host.current!);
-
-    // Follow the theme live (Omarchy's palette changes with the desktop).
-    const stopTheme = subscribeTheme(() => {
-      t.options.theme = terminalTheme();
-      const font = terminalFont();
-      if (t.options.fontFamily !== font) {
-        t.options.fontFamily = font;
-        clearTimeout(timer);
-        timer = window.setTimeout(safeFit, 40);
-      }
-    });
-    const stopTouch = touchScroll(
-      host.current!,
-      t,
-      (n, c, r) => {
-        if (ws.current?.readyState === WebSocket.OPEN) ws.current.send(JSON.stringify({ t: 's', n, c, r }));
-      },
-      () => {
-        clearTimeout(timer);
-        timer = window.setTimeout(safeFit, 30);
-      },
-    );
-
+    live.current = l;
     return () => {
-      ro.disconnect();
-      stopTheme();
-      stopTouch();
-      stopSelectionCopy();
-      t.dispose();
-      term.current = null;
-    };
-  }, []);
-
-  function safeFit() {
-    const t = term.current;
-    if (!t || !host.current?.offsetWidth) return;
-    fit.current?.fit();
-    if (ws.current?.readyState === WebSocket.OPEN) ws.current.send(JSON.stringify({ t: 'r', c: t.cols, r: t.rows }));
-  }
-
-  // Connection lifecycle per window, with reconnect after sleep / network loss.
-  useEffect(() => {
-    const t = term.current!;
-    let disposed = false;
-    let attempt = 0;
-    let retryTimer: number | undefined;
-
-    const connect = () => {
-      if (disposed) return;
-      safeFit();
-      setConn(attempt ? 'retrying' : 'connecting');
-      const sock = new WebSocket(wsUrl(windowId, t.cols, t.rows));
-      sock.binaryType = 'arraybuffer';
-      ws.current = sock;
-      sock.onopen = () => {
-        attempt = 0;
-        // tmux repaints the whole screen on attach, so start from a clean slate.
-        t.reset();
-        setConn('open');
-        // Only when nothing else has the keyboard: a split's other pane (or its
-        // chooser), or a reconnect in the background, must not steal it.
-        const idle = !document.activeElement || document.activeElement === document.body;
-        if (idle && !matchMedia('(pointer: coarse)').matches) t.focus();
-      };
-      sock.onmessage = (e) => t.write(new Uint8Array(e.data as ArrayBuffer));
-      sock.onclose = (e) => {
-        if (ws.current === sock) ws.current = null;
-        if (disposed) return;
-        if (e.code === 4401) {
-          // This device was signed out elsewhere: back to the lock screen.
-          window.dispatchEvent(new Event('ah:unauthorized'));
-          return;
-        }
-        if (e.code === 4404) {
-          setConn('gone');
-          gone.current();
-          return;
-        }
-        attempt++;
-        setConn('retrying');
-        retryTimer = window.setTimeout(connect, Math.min(5000, 300 * 2 ** attempt));
-      };
-    };
-
-    const wake = () => {
-      if (document.visibilityState !== 'visible' || disposed) return;
-      const s = ws.current;
-      if (!s || s.readyState === WebSocket.CLOSED || s.readyState === WebSocket.CLOSING) {
-        clearTimeout(retryTimer);
-        attempt = 0;
-        connect();
-      }
-    };
-
-    connect();
-    document.addEventListener('visibilitychange', wake);
-    window.addEventListener('online', wake);
-    window.addEventListener('focus', wake);
-    return () => {
-      disposed = true;
-      clearTimeout(retryTimer);
-      document.removeEventListener('visibilitychange', wake);
-      window.removeEventListener('online', wake);
-      window.removeEventListener('focus', wake);
-      ws.current?.close();
-      ws.current = null;
+      live.current = null;
+      park(l);
     };
   }, [windowId]);
 
   return (
     <div className={`term-wrap ${hidden ? 'hidden' : ''}`}>
       <div ref={host} className="term" />
-      {conn !== 'open' && (
+      {conn !== 'open' && (conn === 'gone' || slow) && (
         <div className="term-overlay">
           <span className={`pill ${conn}`}>
             {conn === 'connecting' ? 'Attaching…' : conn === 'retrying' ? 'Reconnecting…' : 'This window has closed'}
