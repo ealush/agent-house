@@ -48,6 +48,8 @@ let id = '';
 let model = '';
 /** What the agent is doing right now ("Editing src/x.ts", "$ pnpm test"). */
 let detail = null;
+/** A new turn: what the last one was doing no longer describes it. */
+let freshTurn = false;
 /** What it's blocked on, shown on the Inbox card: { kind: 'command' | 'tool' | 'question', text }. */
 let ask = undefined; // undefined = leave as is, null = clear
 
@@ -117,6 +119,7 @@ if (harness === 'claude') {
     }
   } else if (['PostToolUse', 'UserPromptSubmit', 'Stop', 'SessionStart', 'SessionEnd'].includes(p.hook_event_name)) {
     ask = null;
+    freshTurn = p.hook_event_name === 'UserPromptSubmit' || p.hook_event_name === 'SessionStart';
   }
   id = p.session_id ?? '';
   model = typeof p.model === 'string' ? p.model : (p.model?.id ?? '');
@@ -138,6 +141,7 @@ if (state) args.push(';', 'set-option', '-w', '-q', '-t', pane, '@ah-state', sta
 if (id) args.push(';', 'set-option', '-w', '-q', '-t', pane, '@ah-harness-id', id);
 if (model) args.push(';', 'set-option', '-w', '-q', '-t', pane, '@ah-model', model);
 if (detail) args.push(';', 'set-option', '-w', '-q', '-t', pane, '@ah-detail', JSON.stringify(detail));
+else if (freshTurn) args.push(';', 'set-option', '-w', '-q', '-u', '-t', pane, '@ah-detail');
 if (ask === 'pending' || ask?.kind === 'question') {
   // Promote the last tool call to the question; needs a read, so do it as a second step.
   // A question dialog recorded at PreToolUse is richer than either, so it stays.

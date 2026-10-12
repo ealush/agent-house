@@ -37,6 +37,9 @@ test('the Claude hook records each step of a turn, and clears the ask when it en
     hook({ hook_event_name: 'Stop' });
     assert.equal(opt('@ah-state'), 'done');
     assert.equal(opt('@ah-harness-id'), 'c1');
+    assert.match(opt('@ah-detail'), /rm -rf build/, 'a finished turn still says what it did last');
+    hook({ hook_event_name: 'UserPromptSubmit' });
+    assert.equal(opt('@ah-detail'), '', "a new turn isn't described by the last one's command");
   } finally {
     try {
       tmux('kill-server');
