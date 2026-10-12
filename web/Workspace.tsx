@@ -402,8 +402,11 @@ const FULL: Box = { x: 0, y: 0, w: 1, h: 1 };
 
 type Frame = { 'data-tile'?: string; 'data-pane'?: string; className?: string; style?: React.CSSProperties; inert?: boolean };
 
-/** What takes the keyboard in a pane, best first: a field asked for, a chooser's filter, a composer, a terminal. */
-const PANE_FOCUS = ['[data-autofocus]', '.pane-picker-filter', '.gui .composer textarea', '.xterm-helper-textarea', 'input:not([type="hidden"])', 'textarea', 'button'];
+/**
+ * What takes the keyboard in a pane, best first: a field asked for, a chooser's filter,
+ * then the session's view: its terminal when that shows, else (the GUI) its composer.
+ */
+const PANE_FOCUS = ['[data-autofocus]', '.pane-picker-filter', '.xterm-helper-textarea', '.composer textarea', 'input:not([type="hidden"])', 'textarea', 'button'];
 
 const pct = (n: number) => `${+(n * 100).toFixed(4)}%`;
 const place = (b: Box): React.CSSProperties => ({ left: pct(b.x), top: pct(b.y), right: pct(1 - b.x - b.w), bottom: pct(1 - b.y - b.h) });
