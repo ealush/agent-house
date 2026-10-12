@@ -127,6 +127,12 @@ button {
   cursor: pointer;
 }
 
+/* Links take the theme's accent, never the browser's blue and visited purple. */
+a {
+  color: var(--accent);
+  text-underline-offset: 3px;
+}
+
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
