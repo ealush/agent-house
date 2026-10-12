@@ -1475,20 +1475,20 @@ a.pill:hover {
   font-size: 15px;
 }
 
-/* ---------- bottom tab bar (phone) */
+/* ---------- bottom tab bar (phone): a glass capsule floating over the list, as on iOS 26 */
 
 .tabbar {
   flex: none;
   margin: 0;
   display: flex;
   gap: 2px;
-  padding: 6px 8px calc(4px + var(--safe-pad));
-  border-radius: 16px 16px 0 0;
+  padding: 4px;
+  border-radius: 999px;
   border: 1px solid var(--line-2);
-  border-bottom: 0;
   background: var(--glass);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
+  box-shadow: var(--elev-2);
   z-index: 10;
 }
 
@@ -1498,10 +1498,10 @@ a.pill:hover {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
-  padding: 7px 0 5px;
+  gap: 2px;
+  padding: 6px 0 5px;
   border: 0;
-  border-radius: 12px;
+  border-radius: 999px;
   background: none;
   color: var(--muted);
   font-size: 11px;
@@ -6674,7 +6674,7 @@ select:not([multiple]) {
 }
 
 .tabbar > .glide {
-  border-radius: 12px;
+  border-radius: 999px;
   background: var(--accent-bg);
 }
 
@@ -6945,14 +6945,15 @@ select:not([multiple]) {
 
 .narrow :is(.main, .under) > .tabbar {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  left: 16px;
+  right: 16px;
+  /* Just above the home indicator; a phone without one still keeps it off the edge. */
+  bottom: max(var(--safe-pad), 12px);
 }
 
-/* The last row scrolls clear of the bar (its 66px and the home indicator's strip). */
+/* The last row scrolls clear of the bar (its 58px, the gap under it, and the home indicator's strip). */
 .narrow :is(.main, .under):has(> .tabbar) > .page {
-  padding-bottom: calc(90px + var(--safe-pad));
+  padding-bottom: calc(96px + var(--safe-pad));
 }
 
 /* The page a swipe back uncovers (useSwipeBack): where the session is, dimmed and set
@@ -6998,3 +6999,4 @@ select:not([multiple]) {
     min-height: 44px;
   }
 }
+
