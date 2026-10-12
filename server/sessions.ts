@@ -9,6 +9,7 @@ import { Registry, forkMetaOf, type SessionRecord } from './registry.ts';
 import { snapshot, descendants } from './procs.ts';
 import { discover, type Transcript } from './discovery.ts';
 import type { Config, Preset } from './config.ts';
+import { screenAudit } from './audit.ts';
 import { parsePicker, parseQuestionDialog, pickerAtStart, type Question, type ScreenOption, type ScreenQuestion } from './choices.ts';
 
 // busy: working · waiting: needs your input/permission · attention: finished since
@@ -359,6 +360,7 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
   const waitingRules = new Map(config.presets.map((p) => [p.id, (p.waitingPatterns ?? []).map((s) => new RegExp(s, 'm'))]));
   const now = Date.now() / 1000;
   const alive = new Set<string>();
+  const waitingEpisodes = new Set<string>();
 
   const views = await Promise.all(
     raw.map(async (w): Promise<WindowView> => {
@@ -392,6 +394,14 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
       if (hooked && hookState === 'waiting' && (hookAsk?.kind === 'tool' || hookAsk?.kind === 'command') && quiet && !parsePicker(tail) && !isQuestionDialog(tail)) hookState = 'done';
       const rules = agent ? (waitingRules.get(agent) ?? []) : [];
       const asks = !hooked && !!agent && quiet && rules.length > 0 && screenAsks(tail, rules);
+      // A prompt the hook reports is a free test of the screen rules hookless sessions use
+      // (server/audit.ts). Its first moments are skipped: the TUI may not have drawn it yet.
+      if (hooked && agent && hookState === 'waiting' && now - w.hookAt >= 1.5) {
+        const key = `${w.windowId}:${w.hookAt}`;
+        const sees = rules.length > 0 && (isQuestionDialog(tail) || isQuestionReview(tail) || (screenAsks(tail, rules) && !!parsePicker(tail)) || (quiet && screenAsks(tail, rules)));
+        screenAudit.observe(key, agent, sees, hookAsk?.kind ?? 'prompt', tail.join('\n'));
+        waitingEpisodes.add(key);
+      }
       const { status, source } = computeStatus({
         now,
         activity: w.activity,
@@ -507,6 +517,7 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
     }),
   );
   registry.reconcile(alive);
+  screenAudit.sweep(waitingEpisodes);
   // Screens of dead windows never change again; drop their clocks.
   const liveIds = new Set(raw.map((w) => w.windowId));
   for (const id of contentClock.keys()) if (!liveIds.has(id)) contentClock.delete(id);

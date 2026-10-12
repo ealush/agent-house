@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, type DesktopStatus, type HooksStatus } from './api.ts';
 import { copyText } from './selection.ts';
 import { askConfirm, showError } from './ask.tsx';
+import { age, look } from './agents.ts';
 
 // Settings → System: host-level actions. A restart bounces the daemon while
 // tmux and the sessions keep running; this page reconnects on its own.
@@ -167,6 +168,7 @@ function HooksCard() {
           {n}
         </p>
       ))}
+      <ScreenRules audit={status?.audit} onReset={() => void api.resetScreenAudit().then(() => api.hooks().then(setStatus), (e) => showError(e, "Couldn't reset the check"))} />
       <div className="system-actions">
         <button className="btn primary" disabled={busy} onClick={() => void change('install')}>
           {on ? 'Reinstall hooks' : 'Install hooks'}
@@ -177,6 +179,45 @@ function HooksCard() {
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * How well the screen rules (what sessions without hooks rely on) kept up with
+ * the prompts hooks reported. A miss means a hookless session would have read
+ * "done" while it waited for you: the agent's TUI changed under the rules.
+ */
+function ScreenRules({ audit, onReset }: { audit: HooksStatus['audit']; onReset: () => void }) {
+  const rows = Object.entries(audit ?? {}).filter(([, a]) => a.checked > 0);
+  if (!rows.length) return null;
+  return (
+    <div className="screen-rules">
+      <h3>Screen rules</h3>
+      <p className="hint">Every prompt a hook reports also tests the screen reading that sessions without hooks rely on.</p>
+      <ul className="hook-status">
+        {rows.map(([id, a]) => (
+          <li key={id}>
+            <span className={`dot ${a.missed ? 'offline' : 'online'}`} /> {look(id).name}:{' '}
+            {a.missed
+              ? `missed ${a.missed} of ${a.checked} prompt${a.checked === 1 ? '' : 's'}, last ${age(a.last?.at ?? 0)} ago. Without hooks, these would have shown as done while waiting for you.`
+              : `caught all ${a.checked} prompt${a.checked === 1 ? '' : 's'}`}
+          </li>
+        ))}
+      </ul>
+      {rows.map(([id, a]) =>
+        a.last ? (
+          <details key={id} className="screen-miss">
+            <summary>The last {look(id).name} prompt the rules missed</summary>
+            <pre>{a.last.screen}</pre>
+          </details>
+        ) : null,
+      )}
+      {rows.some(([, a]) => a.missed) && (
+        <button className="btn" onClick={onReset}>
+          Start counting again
+        </button>
+      )}
     </div>
   );
 }

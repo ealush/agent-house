@@ -42,6 +42,7 @@ import { HttpError, send, readBody, readJson, str, safeDecode } from './http.ts'
 import { rebuildFailure, rebuildWeb } from './rebuild.ts';
 import { slashCommands, projectFiles } from './complete.ts';
 import { omarchyTheme } from './omarchy.ts';
+import { screenAudit } from './audit.ts';
 import { hooksStatus, installClaude, installCodex, uninstallClaude, uninstallCodex } from './hooks.ts';
 
 let config: Config;
@@ -544,7 +545,11 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
 
   // ---------- system: host-level actions behind Settings → System
 
-  if (route('GET', /^\/api\/system\/hooks$/)) return send(res, 200, hooksStatus());
+  if (route('GET', /^\/api\/system\/hooks$/)) return send(res, 200, { ...hooksStatus(), audit: screenAudit.summary() });
+  if (route('DELETE', /^\/api\/system\/screen-audit$/)) {
+    screenAudit.reset();
+    return send(res, 200, { ok: true });
+  }
 
   // ah in the host's app launcher, in its own window (server/desktop.ts), like the hooks card.
   if (route('GET', /^\/api\/system\/desktop$/)) return send(res, 200, desktopStatus(config.port));

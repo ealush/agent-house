@@ -5197,6 +5197,31 @@ button.tool-chip:hover {
   flex-wrap: wrap;
 }
 
+.screen-rules {
+  margin: 4px 0 12px;
+}
+
+.screen-rules h3 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.screen-miss summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.screen-miss pre {
+  max-height: 240px;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--sunken);
+  font-size: 12px;
+}
+
 /* ---------- command palette as a tree (palette.ts) */
 
 .commands.palette-tree {

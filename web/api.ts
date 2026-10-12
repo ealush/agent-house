@@ -82,6 +82,8 @@ export type DesktopStatus = { installed: boolean; omarchy: boolean; url: string;
 export type HooksStatus = {
   claude: { wired: number; of: number; file: string };
   codex: { wired: boolean; otherNotify: boolean; file: string };
+  /** Per harness: prompts its hooks reported, and how many the screen rules missed (server/audit.ts). */
+  audit?: Record<string, { checked: number; missed: number; last?: { at: number; ask: string; screen: string } }>;
 };
 export type SlashCommand = { name: string; description: string; source: 'built-in' | 'project' | 'user' | 'skill' };
 export type Ask = {
@@ -400,6 +402,7 @@ export function hostApi(base: string) {
     /** Settings → System: delete everything in ~/.cache/ah/uploads. */
     clearUploads: () => r<{ ok: true; removed: number }>('POST', '/api/system/uploads/clear', {}),
     hooks: () => r<HooksStatus>('GET', '/api/system/hooks'),
+    resetScreenAudit: () => r('DELETE', '/api/system/screen-audit'),
     omarchyTheme: () => r<OmarchyTheme | null>('GET', '/api/omarchy/theme'),
     desktop: () => r<DesktopStatus>('GET', '/api/system/desktop'),
     setDesktop: (action: 'install' | 'uninstall') => r<{ messages: string[]; status: DesktopStatus }>('POST', '/api/system/desktop', { action }),
