@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeStatus, screenAsks, adoptTranscripts, hasToolWork, trackContent, type StatusInput, type WindowView } from './sessions.ts';
+import { computeStatus, screenAsks, adoptTranscripts, hasToolWork, shellDetail, trackContent, type StatusInput, type WindowView } from './sessions.ts';
 import { loadConfig } from './config.ts';
 
 const base: StatusInput = { now: 1000, activity: 900, seen: 900, viewers: 0, idleAfter: 4, hook: null, screenWaiting: false };
@@ -217,4 +217,16 @@ test('tmux output parses with raw (≥3.5) and escaped (3.4) separators', async 
   const { fields } = await import('./tmux.ts');
   assert.deepEqual(fields('agents\x1f@1\x1f/home/u'), ['agents', '@1', '/home/u']);
   assert.deepEqual(fields('agents\\037@1\\037/home/u'), ['agents', '@1', '/home/u']);
+});
+
+test("a shell's one-liner is the command it last ran, never its prompt", () => {
+  const screen = ['demo master ? ❱ git status; ls -la', 'On branch master', 'index.js', 'demo master ? ❱'];
+  assert.equal(shellDetail(screen, 'bash'), '$ git status; ls -la');
+  // The prompt changed since (a new git state): first word and final symbol still match.
+  assert.equal(shellDetail(['demo master ❱ touch a', 'demo master ? ❱'], 'zsh'), '$ touch a');
+  // A cleared screen has nothing to show but the prompt: show nothing.
+  assert.equal(shellDetail(['demo master ? ❱'], 'fish'), null);
+  // Running something: its latest output.
+  assert.equal(shellDetail(['building step 3'], 'node'), 'building step 3');
+  assert.equal(shellDetail([], 'bash'), null);
 });

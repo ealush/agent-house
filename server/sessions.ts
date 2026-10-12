@@ -266,6 +266,33 @@ export function trackContent(prev: { text: string; at: number } | undefined, tex
   return { text, at: now };
 }
 
+const SHELLS = /^-?(bash|zsh|fish|sh|dash|ksh|mksh|tcsh|nu|xonsh|elvish)$/;
+
+/**
+ * A shell's one-liner: its latest output while a command runs, or, at the
+ * prompt, the command it last ran ("$ git status") — never the prompt itself.
+ * The previous prompt line carries what was typed at it; a prompt that changed
+ * since (a new git state, a clock) matches by its first word and final symbol.
+ */
+export function shellDetail(tail: string[], command: string): string | null {
+  if (!tail.length) return null;
+  const prompt = tail[tail.length - 1].trim();
+  if (!SHELLS.test(command)) return clip(prompt);
+  const first = prompt.split(/\s+/)[0];
+  const symbol = prompt.split(/\s+/).pop()!;
+  for (let i = tail.length - 2; i >= 0; i--) {
+    const line = tail[i].trim();
+    let typed: string | null = null;
+    if (line.startsWith(`${prompt} `)) typed = line.slice(prompt.length);
+    else if (prompt.includes(' ') && line.startsWith(`${first} `)) {
+      const at = line.indexOf(` ${symbol} `);
+      if (at >= 0) typed = line.slice(at + symbol.length + 2);
+    }
+    if (typed?.trim()) return clip(`$ ${typed.trim()}`);
+  }
+  return null;
+}
+
 /** Last non-empty lines of a window's visible screen, re-captured only when it printed something. */
 const screenCache = new Map<string, { activity: number; at: number; lines: string[] }>();
 
@@ -398,7 +425,7 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
       }
       const preset = agent ? config.presets.find((p) => p.id === agent) : undefined;
       // Agents' own TUIs make poor one-liners; for them only hook activity is shown.
-      const detail = hookDetail ? (hookDetail.kind === 'command' ? `$ ${hookDetail.text}` : hookDetail.text) : agent ? null : tail.length ? clip(tail[tail.length - 1].trim()) : null;
+      const detail = hookDetail ? (hookDetail.kind === 'command' ? `$ ${hookDetail.text}` : hookDetail.text) : agent ? null : shellDetail(tail, w.command);
       const launch = launchSummary(rec, preset);
       return {
         id: w.windowId,
