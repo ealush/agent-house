@@ -8,6 +8,7 @@ import { useSavedGroups } from './groupOrder.ts';
 import { sidebarSections } from './sessionOrder.ts';
 import { Glide } from './Glide.tsx';
 import { useFlip } from './useFlip.ts';
+import { statusCounts, statusWord } from './status.ts';
 
 export type InboxGroup = 'status' | 'host' | 'project';
 
@@ -42,17 +43,9 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, cl
   const flip = useFlip<HTMLDivElement>([groupBy, waiting, running, rest].map((l) => (typeof l === 'string' ? l : l.map((w) => w.key).join(','))).join('|'));
   const online = state.hosts.filter((h) => h.online).length;
 
-  // The design's tagline reads as live counts ("1 session needs you. 3 working. 6 idle.").
-  const counts = [
-    waiting.length ? `${waiting.length} session${waiting.length === 1 ? ' needs' : 's need'} you` : null,
-    running.length ? `${running.length} working` : null,
-    rest.length ? `${rest.length} idle` : null,
-  ].filter(Boolean);
-  const subtitle = narrow
-    ? `${online} host${online === 1 ? '' : 's'} online · ${counts.join('. ') || 'all quiet'}.`
-    : counts.length
-      ? `${counts.join('. ')}.`
-      : 'All quiet.';
+  // A phone has no sidebar to show hosts in: it says how many are up, when there is more than one.
+  const hosts = narrow && state.hosts.length > 1 ? `${online} of ${state.hosts.length} hosts online. ` : '';
+  const subtitle = hosts + statusCounts(state.windows);
 
   return (
     <div className="page" data-title="Inbox" ref={flip} data-rove="button.card-title, button.row, button.empty-recent-row">
@@ -136,7 +129,7 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, cl
           {running.length > 0 && (
             <>
               <h2 className={`section-label busy ${waiting.length ? '' : 'first'}`} data-flip="h:running">
-                Running <span className="count">{running.length}</span>
+                Working <span className="count">{running.length}</span>
               </h2>
               {!narrow && <ListHead flip="lh:running" />}
               <Rows windows={running} multiHost={multiHost} narrow={narrow} onOpen={onOpen} />
@@ -248,12 +241,7 @@ export function Rows({ windows, multiHost, narrow, onOpen, quiet }: { windows: W
     <ul className="rows">
       {windows.map((w) => {
         const { color } = look(w.agent);
-        const pill =
-          w.status === 'attention' ? <span className="pill attention">{w.agent ? 'done' : 'new output'}</span>
-          : w.status === 'idle' ? <span className="pill">idle</span>
-          : w.status === 'waiting' ? <span className="pill waiting">needs you</span>
-          : w.agent ? <span className="pill busy">working</span>
-          : null;
+        const pill = <span className={`pill ${w.status === 'idle' ? '' : w.status}`}>{statusWord(w)}</span>;
         return (
           <li key={w.key} data-flip={w.key}>
             <button className={`row ${quiet ? 'quiet' : ''}`} style={{ '--agent': color } as React.CSSProperties} onClick={() => onOpen(w)}>
@@ -266,7 +254,7 @@ export function Rows({ windows, multiHost, narrow, onOpen, quiet }: { windows: W
                     <span className="name">{w.title}</span>
                     <span className="sub">{[w.detail ?? (w.panes > 1 ? `${w.panes} panes` : w.command), where(w, multiHost)].filter(Boolean).join(' · ')}</span>
                   </span>
-                  <span className="when">{pill ?? age(w.activity)}</span>
+                  <span className="when">{pill}</span>
                 </>
               ) : (
                 <>

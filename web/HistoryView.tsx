@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { statusCounts } from './status.ts';
 import type { HistoryItem, State, Win } from './api.ts';
 import { Icon } from './icons.tsx';
 import { age, look } from './agents.ts';
@@ -150,7 +151,7 @@ export function SessionsView({ state, onOpen, onNew }: { state: State; onOpen: (
       <header className="page-head">
         <div className="grow">
           <h1 className="page-title">Sessions<span className="period">.</span></h1>
-          <p className="tagline">{state.windows.length} live.</p>
+          <p className="tagline">{statusCounts(state.windows)}</p>
         </div>
         <button className="icon-btn round light" onClick={onNew} aria-label="New session">
           <Icon name="plus" size={22} />

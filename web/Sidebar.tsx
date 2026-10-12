@@ -323,7 +323,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
               <div key={h.name} className="nav-item" style={{ cursor: 'default' }}>
                 <span className={`dot ${h.online ? 'online' : 'offline'}`} />
                 <span className="grow mono">{h.name}</span>
-                <span className="count">{h.online ? `${windows.filter((w) => w.host === h.name).length} live` : 'offline'}</span>
+                <span className="count">{h.online ? windows.filter((w) => w.host === h.name).length : 'offline'}</span>
               </div>
             ))}
           </>
