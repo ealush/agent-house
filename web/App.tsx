@@ -53,6 +53,7 @@ import { pushStatus, pushSupport, registerWorker } from './notify.ts';
 import { API_VERSION } from './api.ts';
 import { showError } from './ask.tsx';
 import { Icon } from './icons.tsx';
+import { useSwipeBack } from './useSwipeBack.ts';
 import { trackViewport } from './viewport.ts';
 import { glide, transition, type Heading } from './motion.ts';
 import { runCommand } from './shortcuts.ts';
@@ -736,6 +737,9 @@ export function App({ onLock }: { onLock: () => void }) {
   );
 
   const current = state?.windows.find((w) => w.key === selected) ?? null;
+  // A phone leaves a session the iPhone way too: swipe in from the left edge.
+  const mainRef = useRef<HTMLElement>(null);
+  useSwipeBack(mainRef, narrow && !!current && !layout, () => go({ selected: null }, { still: true }));
   const ended = current ? null : endedFor(selected);
   // A session that is neither live nor in history (removed, or a bad link): fall back to the
   // inbox. One state update of grace: a window can leave the list a tick before history has it.
@@ -912,7 +916,7 @@ export function App({ onLock }: { onLock: () => void }) {
         )
       )}
 
-      <main className="main">
+      <main className="main" ref={mainRef}>
         {state && (state.api ?? 0) < API_VERSION && (
           <div className="stale-banner">
             This page is newer than the running ah server. Restart it (<code>pnpm serve</code>) to finish updating.
