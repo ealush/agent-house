@@ -116,21 +116,30 @@ export function nudgeDivider(root: LayoutNode, path: Path, dir: PaneDir, step = 
   return root;
 }
 
-type Box = { x: number; y: number; w: number; h: number };
+export type Box = { x: number; y: number; w: number; h: number };
 
-function layoutBoxes(node: LayoutNode, box: Box, path: Path, out: Array<{ path: Path; box: Box }>): void {
-  if (node.type === 'session') {
-    out.push({ path, box });
-    return;
-  }
-  const across = node.direction === 'horizontal';
-  const span = (across ? box.w : box.h) * node.ratio;
-  const first: Box = across ? { x: box.x, y: box.y, w: span, h: box.h } : { x: box.x, y: box.y, w: box.w, h: span };
-  const second: Box = across
-    ? { x: box.x + span, y: box.y, w: box.w - span, h: box.h }
-    : { x: box.x, y: box.y + span, w: box.w, h: box.h - span };
-  layoutBoxes(node.first, first, [...path, 'first'], out);
-  layoutBoxes(node.second, second, [...path, 'second'], out);
+export type Tile = { sessionKey: string; path: Path; box: Box };
+export type Seam = { path: Path; row: boolean; ratio: number; box: Box };
+
+/**
+ * Where everything sits, as fractions of the workspace: each pane's box and
+ * each split's box (its divider goes at `ratio` across it). Rendering panes
+ * flat from this, instead of nesting them, keeps a session mounted while the
+ * tree around it changes, so splitting never reconnects its terminal.
+ */
+export function tileBoxes(root: LayoutNode): { tiles: Tile[]; seams: Seam[] } {
+  const tiles: Tile[] = [];
+  const seams: Seam[] = [];
+  const walk = (node: LayoutNode, box: Box, path: Path) => {
+    if (node.type === 'session') return void tiles.push({ sessionKey: node.sessionKey, path, box });
+    const row = node.direction === 'horizontal';
+    seams.push({ path, row, ratio: node.ratio, box });
+    const span = (row ? box.w : box.h) * node.ratio;
+    walk(node.first, row ? { ...box, w: span } : { ...box, h: span }, [...path, 'first']);
+    walk(node.second, row ? { ...box, x: box.x + span, w: box.w - span } : { ...box, y: box.y + span, h: box.h - span }, [...path, 'second']);
+  };
+  walk(root, { x: 0, y: 0, w: 1, h: 1 }, []);
+  return { tiles, seams };
 }
 
 function samePath(a: Path, b: Path): boolean {
@@ -144,8 +153,7 @@ function samePath(a: Path, b: Path): boolean {
  * right from a full-height pane into a stack lands on the top one.
  */
 export function neighborPane(root: LayoutNode, from: Path, dir: PaneDir): Path | null {
-  const panes: Array<{ path: Path; box: Box }> = [];
-  layoutBoxes(root, { x: 0, y: 0, w: 1, h: 1 }, [], panes);
+  const panes = tileBoxes(root).tiles;
   const origin = panes.find((p) => samePath(p.path, from));
   if (!origin) return null;
   const o = origin.box;

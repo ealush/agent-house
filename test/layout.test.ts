@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { splitLeaf, replaceLeaf, closeLeaf, setRatio, parseLayout, leaves, paneLeaves, nodeAt, neighborPane, moveLeaf, toggleSplit, dockLeaf, moveLeafTo, normalizeSplit, type LayoutNode, type Path } from '../web/layout.ts';
+import { splitLeaf, replaceLeaf, closeLeaf, setRatio, parseLayout, leaves, paneLeaves, nodeAt, neighborPane, moveLeaf, toggleSplit, dockLeaf, moveLeafTo, normalizeSplit, tileBoxes, type LayoutNode, type Path } from '../web/layout.ts';
 
 const leaf = (k: string): LayoutNode => ({ type: 'session', sessionKey: k });
 
@@ -177,4 +177,18 @@ test('a chooser pane remembers what it replaced, and a split’s chooser nothing
   assert.equal(pickPrevious(pickKey()), null, 'a new split closes on cancel');
   assert.equal(pickPrevious(pickKey('@4')), '@4', 'Replace pane puts the session back on cancel');
   assert.equal(isPick('@4'), false);
+});
+
+test('tileBoxes places panes and seams as fractions of the workspace', () => {
+  const l: LayoutNode = { type: 'split', direction: 'horizontal', ratio: 0.25, first: leaf('a'), second: { type: 'split', direction: 'vertical', ratio: 0.5, first: leaf('b'), second: leaf('c') } };
+  const { tiles, seams } = tileBoxes(l);
+  assert.deepEqual(tiles, [
+    { sessionKey: 'a', path: ['first'], box: { x: 0, y: 0, w: 0.25, h: 1 } },
+    { sessionKey: 'b', path: ['second', 'first'], box: { x: 0.25, y: 0, w: 0.75, h: 0.5 } },
+    { sessionKey: 'c', path: ['second', 'second'], box: { x: 0.25, y: 0.5, w: 0.75, h: 0.5 } },
+  ]);
+  assert.deepEqual(seams, [
+    { path: [], row: true, ratio: 0.25, box: { x: 0, y: 0, w: 1, h: 1 } },
+    { path: ['second'], row: false, ratio: 0.5, box: { x: 0.25, y: 0, w: 0.75, h: 1 } },
+  ]);
 });

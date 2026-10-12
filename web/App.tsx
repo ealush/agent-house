@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { HostPresetsContext, PresetsContext } from './ModelPicker.tsx';
 import { CLIENT_ID, deviceName, waitForWindow, type HistoryItem, type SearchHit, type SendResult, type State, type Win } from './api.ts';
 import { useHosts } from './useHosts.ts';
@@ -54,7 +54,7 @@ import { API_VERSION } from './api.ts';
 import { showError } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { trackViewport } from './viewport.ts';
-import { transition } from './motion.ts';
+import { glide, transition } from './motion.ts';
 import { runCommand } from './shortcuts.ts';
 import { CommandPalette, Keycaps, Shortcuts, ShortcutsDialog, WhichKey, shortcutTitle, useCommand, usePaletteProvider } from './shortcuts.tsx';
 
@@ -153,6 +153,18 @@ export function App({ onLock }: { onLock: () => void }) {
     }
   });
   const [focusPath, setFocusPath] = useState<Path | null>(null);
+  // The single session a split was just made from, so its pane grows out of the full view.
+  const splitOrigin = useRef<string | null>(null);
+  // Where the last pane of a closing split was, so the single view can grow out of it.
+  const collapseFrom = useRef<DOMRect | null>(null);
+  useLayoutEffect(() => {
+    const from = collapseFrom.current;
+    const main = document.querySelector<HTMLElement>('.main');
+    collapseFrom.current = null;
+    if (!from || !main) return;
+    const to = main.getBoundingClientRect();
+    glide(main, { x: from.left, y: from.top, w: from.width, h: from.height }, { x: to.left, y: to.top, w: to.width, h: to.height });
+  });
   const [zoom, setZoom] = useState(false);
   // Hyprland-style submaps: while one is on, it owns the keyboard (Esc leaves).
   const [submap, setSubmap] = useState<null | 'resize' | 'pane'>(null);
@@ -186,13 +198,19 @@ export function App({ onLock }: { onLock: () => void }) {
   }
 
   function setLayout(next: LayoutNode | null) {
+    splitOrigin.current = null;
     // Closing the second-to-last pane leaves one session. That is the normal view, not a split of one.
     const split = normalizeSplit(next);
     setLayoutState(split);
     if (!split) {
       setFocusPath(null);
       const solo = next ? paneLeaves(next) : [];
-      if (solo.length === 1) go({ selected: solo[0].sessionKey });
+      if (solo.length === 1) {
+        // The last pane grows into the full view, from where it sat.
+        const at = document.querySelector(`.ws-root.tiled > .pane[data-tile="${CSS.escape(solo[0].sessionKey)}#0"]`);
+        collapseFrom.current = at?.getBoundingClientRect() ?? null;
+        go({ selected: solo[0].sessionKey }, { still: !!at });
+      }
     } else {
       const at = focusPath ? nodeAt(split, focusPath) : null;
       if (at?.type === 'split') setFocusPath([...focusPath!, ...paneLeaves(at)[0].path]);
@@ -204,11 +222,11 @@ export function App({ onLock }: { onLock: () => void }) {
     } catch {}
   }
 
-  function go(next: { page?: Page; selected?: string | null }) {
+  function go(next: { page?: Page; selected?: string | null }, how: { still?: boolean } = {}) {
     const route = { page: next.page ?? page, selected: next.selected === undefined ? selected : next.selected };
     const hash = route.selected ?? (route.page === 'inbox' ? '' : route.page);
     history.replaceState(null, '', hash ? `#${hash}` : location.pathname);
-    if (route.page === page && route.selected === selected) setRoute(route);
+    if (how.still || (route.page === page && route.selected === selected)) setRoute(route);
     else transition(() => setRoute(route));
   }
   const open = (key: string | null) => {
@@ -533,6 +551,7 @@ export function App({ onLock }: { onLock: () => void }) {
   function splitFrom(key: string, dir: 'right' | 'below', otherKey?: string) {
     const other = otherKey ?? pickKey();
     setLayout(splitLeaf({ type: 'session', sessionKey: key }, key, dir === 'right' ? 'horizontal' : 'vertical', other));
+    splitOrigin.current = key;
     setFocusPath(otherKey ? ['first'] : ['second']);
   }
 
@@ -882,6 +901,7 @@ export function App({ onLock }: { onLock: () => void }) {
             refresh={refresh}
             onExit={exitSplit}
             zoom={zoom}
+            origin={splitOrigin.current}
             onUnzoom={() => setZoom(false)}
             onNewShell={(path) => void newShellInto(path)}
             renderNew={(path, onCancel) => (

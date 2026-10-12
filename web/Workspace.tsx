@@ -1,10 +1,11 @@
-import { useRef, useState } from 'react';
+import { Fragment, useLayoutEffect, useRef, useState } from 'react';
 import type { HistoryItem, HostApi, SendResult, Win } from './api.ts';
 import { Session } from './Session.tsx';
 import { EndedSession } from './Ended.tsx';
 import { useSavedGroups } from './groupOrder.ts';
 import { sidebarOrder } from './sessionOrder.ts';
-import { closeLeaf, dockLeaf, isPick, moveLeafTo, paneLeaves, pickKey, pickPrevious, replaceLeaf, setRatio, splitLeaf, toggleSplit, type LayoutNode, type Path } from './layout.ts';
+import { closeLeaf, dockLeaf, isPick, moveLeafTo, paneLeaves, pickKey, pickPrevious, replaceLeaf, setRatio, splitLeaf, tileBoxes, toggleSplit, type Box, type LayoutNode, type Path, type Seam } from './layout.ts';
+import { glide, popIn } from './motion.ts';
 import { PanePicker } from './PanePicker.tsx';
 import { ShortcutHint } from './shortcuts.tsx';
 
@@ -35,6 +36,8 @@ type Props = {
   renderNew: (path: Path, onCancel: () => void) => React.ReactNode;
   /** Send to… → New session, in this pane's project. */
   onStartSession: (w: Win, prompt: string, preset?: string) => void;
+  /** The single session this split was made from: it shrinks into its half instead of reappearing there. */
+  origin?: string | null;
   /** History for a pane whose session ended, so it can offer Resume in place. */
   endedFor: (key: string) => HistoryItem | null;
   feedFor: (host: string, harness: string) => string | null;
@@ -99,7 +102,7 @@ export function Workspace(props: Props) {
     else props.onLayout(splitLeaf(layout, target, 'vertical', key, 'after'));
   }
 
-  function pane(sessionKey: string, path: Path) {
+  function pane(sessionKey: string, path: Path, frame: Frame = {}) {
     const w = byKey.get(sessionKey);
     const paneId = path.join('/');
     const focused = props.focusPath?.join('/') === paneId;
@@ -107,7 +110,7 @@ export function Workspace(props: Props) {
       const previous = pickPrevious(sessionKey);
       const cancel = () => props.onLayout(previous ? replaceLeaf(layout, path, previous) : closeLeaf(layout, path));
       return (
-        <div className={`pane chooser ${focused ? 'focused' : ''}`} onClick={() => props.onFocus(path)}>
+        <div {...frame} className={`pane chooser ${focused ? 'focused' : ''} ${frame.className ?? ''}`} onClick={() => props.onFocus(path)}>
           {newIn === paneId ? (
             props.renderNew(path, () => setNewIn(null))
           ) : (
@@ -132,7 +135,7 @@ export function Workspace(props: Props) {
     if (ended) {
       // Ended (or gone with a reboot): the conversation and Resume, in the pane it was in.
       return (
-        <div className={`pane ${focused ? 'focused' : ''}`} onClick={() => props.onFocus(path)}>
+        <div {...frame} className={`pane ${focused ? 'focused' : ''} ${frame.className ?? ''}`} onClick={() => props.onFocus(path)}>
           <EndedSession
             key={sessionKey}
             item={ended}
@@ -149,7 +152,7 @@ export function Workspace(props: Props) {
     if (!w) {
       // The session was terminated elsewhere: show the end state, keep history resumable.
       return (
-        <div className="pane terminated" onClick={() => props.onFocus(path)}>
+        <div {...frame} className={`pane terminated ${frame.className ?? ''}`} onClick={() => props.onFocus(path)}>
           <p className="hint">This session ended.</p>
           <div className="actions">
             <button className="btn small" onClick={() => props.onLayout(closeLeaf(layout, path))}>
@@ -161,7 +164,8 @@ export function Workspace(props: Props) {
     }
     return (
       <div
-        className={`pane ${focused ? 'focused' : ''} ${dropPane === paneId ? 'dropping' : ''} ${paneDrag && paneDrag.join('/') === paneId ? 'dragging' : ''}`}
+        {...frame}
+        className={`pane ${focused ? 'focused' : ''} ${dropPane === paneId ? 'dropping' : ''} ${paneDrag && paneDrag.join('/') === paneId ? 'dragging' : ''} ${frame.className ?? ''}`}
         onClick={() => props.onFocus(path)}
         onDragOver={(e) => {
           if (e.dataTransfer.types.includes('text/ah-pane') || e.dataTransfer.types.includes('text/ah-session') || e.dataTransfer.types.includes('text/plain')) {
@@ -250,21 +254,63 @@ export function Workspace(props: Props) {
     );
   }
 
-  function node(n: LayoutNode, path: Path): React.ReactNode {
-    if (n.type === 'session') return pane(n.sessionKey, path);
-    const row = n.direction === 'horizontal';
-    return (
-      <div className={`split ${row ? 'horizontal' : 'vertical'}`}>
-        <div className="split-first" style={{ flexGrow: n.ratio, flexBasis: 0 }}>
-          {node(n.first, [...path, 'first'])}
-        </div>
-        <Divider row={row} ratio={n.ratio} onRatio={(ratio) => props.onLayout(setRatio(layout, path, ratio))} />
-        <div className="split-second" style={{ flexGrow: 1 - n.ratio, flexBasis: 0 }}>
-          {node(n.second, [...path, 'second'])}
-        </div>
-      </div>
-    );
-  }
+  // Panes are drawn flat, each placed by its box, so one stays mounted (terminal
+  // and all) while splits open and close around it. Every change of place
+  // plays from where the pane was, like windows on a tiling desktop.
+  const { tiles, seams } = tileBoxes(layout);
+  const seen = new Map<string, number>();
+  const placed = tiles.map((t) => {
+    const n = seen.get(t.sessionKey) ?? 0;
+    seen.set(t.sessionKey, n + 1);
+    const zoom = zoomed && t.path.join('/') === zoomed.path.join('/');
+    return { ...t, id: `${t.sessionKey}#${n}`, box: zoom ? FULL : t.box, zoom, hidden: !!zoomed && !zoom };
+  });
+  const rootRef = useRef<HTMLDivElement>(null);
+  const shown = useRef<Map<string, Box> | null>(null);
+  const resizing = useRef(false);
+  const geometry = JSON.stringify(placed.map((t) => [t.id, t.box, t.hidden]));
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const next = new Map(placed.filter((t) => !t.hidden).map((t) => [t.id, t.box]));
+    const prev = shown.current ?? (props.origin ? new Map([[`${props.origin}#0`, FULL]]) : null);
+    shown.current = next;
+    if (!prev || resizing.current) return;
+    const { width, height } = root.getBoundingClientRect();
+    const px = (b: Box) => ({ x: b.x * width, y: b.y * height, w: b.w * width, h: b.h * height });
+    for (const el of root.querySelectorAll<HTMLElement>(':scope > .pane[data-tile]')) {
+      const to = next.get(el.dataset.tile!);
+      if (!to) continue;
+      const from = prev.get(el.dataset.tile!);
+      if (from) glide(el, px(from), px(to));
+      else popIn(el);
+    }
+  }, [geometry]);
+
+  const tiled = () => (
+    <>
+      {placed.map((t) =>
+        <Fragment key={t.id}>
+          {pane(t.sessionKey, t.path, {
+            'data-tile': t.id,
+            className: `${t.zoom ? 'zoomed' : ''} ${t.hidden ? 'stowed' : ''}`,
+            style: place(t.box),
+            inert: t.hidden || undefined,
+          })}
+        </Fragment>
+      )}
+      {!zoomed &&
+        seams.map((s) => (
+          <Divider
+            key={s.path.join('/') || 'root'}
+            seam={s}
+            root={rootRef}
+            onDrag={(on) => (resizing.current = on)}
+            onRatio={(ratio) => props.onLayout(setRatio(layout, s.path, ratio))}
+          />
+        ))}
+    </>
+  );
 
   return (
     <div className="workspace">
@@ -299,8 +345,8 @@ export function Workspace(props: Props) {
           <div className="ws-tab-body">{activeTab && pane(activeTab.sessionKey, activeTab.path)}</div>
         </div>
       ) : (
-        <div className="ws-root">
-          {zoomed ? pane(zoomed.sessionKey, zoomed.path) : node(layout, [])}
+        <div className="ws-root tiled" ref={rootRef}>
+          {tiled()}
           {paneDrag && (
             <div className="dock-frame">
               {(['left', 'right', 'top', 'bottom'] as const).map((where) => (
@@ -329,12 +375,27 @@ export function Workspace(props: Props) {
 }
 
 
-// Keep the component identity stable while a drag updates the layout.
-function Divider({ row, ratio, onRatio }: { row: boolean; ratio: number; onRatio: (ratio: number) => void }) {
+const FULL: Box = { x: 0, y: 0, w: 1, h: 1 };
+
+type Frame = { 'data-tile'?: string; className?: string; style?: React.CSSProperties; inert?: boolean };
+
+const pct = (n: number) => `${+(n * 100).toFixed(4)}%`;
+const place = (b: Box): React.CSSProperties => ({ left: pct(b.x), top: pct(b.y), right: pct(1 - b.x - b.w), bottom: pct(1 - b.y - b.h) });
+
+// Keyed by its split's path, so a drag keeps the same element while the layout updates.
+function Divider({ seam, root, onDrag, onRatio }: { seam: Seam; root: React.RefObject<HTMLDivElement | null>; onDrag: (on: boolean) => void; onRatio: (ratio: number) => void }) {
+  const { row, ratio, box } = seam;
   const dragging = useRef<number | null>(null);
+  const at = row ? box.x + box.w * ratio : box.y + box.h * ratio;
+  const style: React.CSSProperties = row ? { left: pct(at), top: pct(box.y), height: pct(box.h) } : { top: pct(at), left: pct(box.x), width: pct(box.w) };
+  const stop = () => {
+    dragging.current = null;
+    onDrag(false);
+  };
   return (
     <div
       className={`divider ${row ? 'v' : 'h'}`}
+      style={style}
       // Focusable, so Tab reaches it and the arrows move it (Shift for big steps).
       tabIndex={0}
       role="separator"
@@ -352,18 +413,21 @@ function Divider({ row, ratio, onRatio }: { row: boolean; ratio: number; onRatio
       }}
       onPointerDown={(e) => {
         dragging.current = e.pointerId;
+        onDrag(true);
         e.currentTarget.setPointerCapture(e.pointerId);
         e.preventDefault();
       }}
       onPointerMove={(e) => {
-        if (dragging.current !== e.pointerId) return;
-        const rect = e.currentTarget.parentElement!.getBoundingClientRect();
-        const size = row ? rect.width : rect.height;
-        if (size > 0) onRatio(row ? (e.clientX - rect.left) / size : (e.clientY - rect.top) / size);
+        if (dragging.current !== e.pointerId || !root.current) return;
+        // The pointer, as a fraction of the workspace, then of this split.
+        const r = root.current.getBoundingClientRect();
+        const along = row ? (e.clientX - r.left) / r.width : (e.clientY - r.top) / r.height;
+        const span = row ? box.w : box.h;
+        if (span > 0 && Number.isFinite(along)) onRatio((along - (row ? box.x : box.y)) / span);
       }}
-      onPointerUp={() => { dragging.current = null; }}
-      onPointerCancel={() => { dragging.current = null; }}
-      onLostPointerCapture={() => { dragging.current = null; }}
+      onPointerUp={stop}
+      onPointerCancel={stop}
+      onLostPointerCapture={stop}
     />
   );
 }

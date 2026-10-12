@@ -5276,12 +5276,46 @@ button.tool-chip:hover {
   box-shadow: 0 0 0 1px var(--accent-line);
 }
 
+/* Panes are placed, not nested (Workspace.tsx): each sits at its box, with the
+   divider over the gap between neighbors. */
+.ws-root.tiled > .pane {
+  position: absolute;
+}
+
+.ws-root.tiled > .divider {
+  position: absolute;
+  z-index: 5;
+  background: transparent;
+}
+
+.ws-root.tiled > .divider:hover {
+  background: var(--accent-line);
+}
+
+.ws-root.tiled > .divider:focus-visible {
+  background: var(--accent);
+}
+
+.ws-root.tiled > .divider.v {
+  transform: translateX(-50%);
+}
+
+.ws-root.tiled > .divider.h {
+  transform: translateY(-50%);
+}
+
+/* While one pane is maximized the others stay put underneath, live but out of sight. */
+.ws-root > .pane.stowed {
+  visibility: hidden;
+}
+
 /* One pane maximized: no frame needed. */
-.ws-root > .pane {
+.ws-root > .pane.zoomed {
   margin: 0;
   border-color: transparent;
   box-shadow: none;
   border-radius: 0;
+  z-index: 1;
 }
 
 /* Workspaces 1–9 in the sidebar, like Omarchy's bar. */
