@@ -357,11 +357,34 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   const showKeys = (keysPref === 'on' || (keysPref === 'auto' && touch)) && tab === 'main' && view === 'terminal';
   const elsewhere = others(w.devices);
 
-  /** Switch surfaces; the next one mounts fresh, so focus waits a frame. */
+  /**
+   * Give the session the keyboard: its terminal, or in the GUI its composer. Claimed every
+   * frame until it lands, because surfaces are lazy (the GUI may not be loaded yet, the
+   * ref empty) and, during a view transition, the session you left still holds focus.
+   * Never from a dialog or a field outside the workspace, which someone chose.
+   */
+  function claimKeyboard(ms = 1500): () => void {
+    const until = performance.now() + ms;
+    let raf = 0;
+    const claim = () => {
+      const a = document.activeElement as HTMLElement | null;
+      const mine = body.current;
+      // Landed: inside this session, and not in a surface that is hidden now.
+      if (mine && a && mine.contains(a) && a.getClientRects().length > 0) return;
+      const elsewhere = a && a !== document.body && a.isConnected && (a.closest('dialog[open]') || (a.matches('input, textarea, select, [contenteditable="true"]') && !a.closest('.session-body, .pane')));
+      if (elsewhere) return;
+      surface.current?.focus();
+      if (performance.now() < until) raf = requestAnimationFrame(claim);
+    };
+    raf = requestAnimationFrame(claim);
+    return () => cancelAnimationFrame(raf);
+  }
+
+  /** Switch surfaces; the next one mounts fresh (and may still be loading). */
   const switchView = (next: View, focusAfter = false) => {
     setViewPref(next);
     setTab('main');
-    if (focusAfter) requestAnimationFrame(() => requestAnimationFrame(() => surface.current?.focus()));
+    if (focusAfter && !touch) claimKeyboard();
   };
 
   /** Open a side panel tab, expanding the panel when it was collapsed. */
@@ -430,7 +453,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   useEffect(() => {
     if (pendingName !== null && w.name === pendingName) setPendingName(null);
   }, [w.name, pendingName]);
-  const backToSession = () => requestAnimationFrame(() => surface.current?.focus());
+  const backToSession = () => void claimKeyboard(600);
 
   async function commitRename() {
     const name = nameDraft.trim();
@@ -494,20 +517,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   // somewhere else, which someone chose.
   useEffect(() => {
     if (!active || touch) return;
-    const until = performance.now() + 1500;
-    let raf = 0;
-    const claim = () => {
-      const a = document.activeElement as HTMLElement | null;
-      const mine = body.current;
-      if (mine && a && mine.contains(a)) return;
-      // A dialog, or a field outside the workspace (a pane's own filter or terminal doesn't count).
-      const elsewhere = a && a !== document.body && a.isConnected && (a.closest('dialog[open]') || (a.matches('input, textarea, select, [contenteditable="true"]') && !a.closest('.session-body, .pane')));
-      if (elsewhere) return;
-      surface.current?.focus();
-      if (performance.now() < until) raf = requestAnimationFrame(claim);
-    };
-    raf = requestAnimationFrame(claim);
-    return () => cancelAnimationFrame(raf);
+    return claimKeyboard();
   }, [active, w.key, touch]);
   useCommand('toggle-view', () => switchView(view === 'gui' ? 'terminal' : 'gui', true), active && views.length > 1);
   useCommand(
