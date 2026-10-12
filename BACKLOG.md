@@ -179,6 +179,23 @@ throwaway ah, on desktop and phone.
 | T10 | Snapshot restore | ✅ | A failed restore says whether files are back or half-restored (and which safety snapshot to use); an agent that wasn't told about a rollback is flagged. |
 | T11 | Browser smoke suite | ✅ | `pnpm test:ui` (test/ui): the built page on desktop and phone against a throwaway ah, including a stand-in claude's prompt answered from the inbox; its own CI job. |
 
+### Test-drive pass (13 October 2026)
+
+The production page driven in a headless browser by keystroke, click and
+touch, with in-page instrumentation (focus after every action, toasts,
+animations, long tasks, layout shifts, Event Timing), at 1x and 4x CPU.
+
+| # | Item | | Notes |
+|---|---|---|---|
+| D1 | Focus lands where you are | ✅ | Dialogs give focus back; a session claims the keyboard until it lands (lazy surfaces, view transitions), including the GUI composer on first load (14ms, was ~320); split panes take it whatever they hold; arrows enter an unfocused page's list; lists keep your place when an item goes; pickers open on the current choice. |
+| D2 | Keyboard everywhere | ✅ | Pane commands on chooser panes; New session as a radio group with arrows; History "/" and Escape; Ctrl+Shift+9 on pages; optimistic rename. |
+| D3 | Terminal pool | ✅ | A terminal you leave is parked 4s; showing that window again adopts it: no blank pane mid-split, switching back paints in ~15ms; "Attaching…" only after 400ms. |
+| D4 | Calm | ✅ | Toasts at the top, timed by length, only for what you can't see; status dots and pills pop on change only; no workspace toast with the sidebar open. |
+| D5 | Speed | ✅ | No full-screen scrim blur (search keystroke to paint 40 → 16–24ms); one date formatter and content-visibility for History (reopen long task 65ms → none); palette scrolls its list only when needed; reduced motion creates no transitions. |
+
+Measured, not changed: a new session's xterm costs ~12ms at 1x (~47 at 4x)
+to measure and lay out; palette and switcher filtering ~40ms per key at 4x.
+
 Next candidates: rate-limit auto-resume (F40, opt-in; the reset times are
 now parsed), quota display (F41), keyboard reordering in the sidebar.
 
