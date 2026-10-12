@@ -159,7 +159,11 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   const body = useRef<HTMLDivElement>(null);
   // 'main' is the session itself, drawn by whichever surface is chosen.
   const [tab, setTab] = useState<'main' | Panel>('main');
-  const [panel, setPanel] = stored<Panel | ''>('ah.panel', '');
+  const [storedPanel, setPanel] = stored<Panel | ''>('ah.panel', '');
+  // Turns, a queue and forks belong to agents: a plain shell has none. The open
+  // panel is remembered per device, so on a shell an agent-only one shows Files.
+  const turns = !!w.agent;
+  const panel: Panel | '' = !turns && (storedPanel === 'queue' || storedPanel === 'snapshots') ? 'files' : storedPanel;
   // Last non-empty panel, so the single header toggle reopens where you left off.
   const [lastPanel, setLastPanel] = useState<Panel>('files');
   useEffect(() => {
@@ -528,7 +532,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
     active && w.queued > 0,
   );
   useCommand('rename', startRename, active && !renaming);
-  useCommand('fork', () => setForking(true), active);
+  useCommand('fork', () => setForking(true), active && turns);
   useCommand('send-to', () => setSending(true), active && !!w.feed);
   useCommand('pin', () => void act(() => client.pin(w.uid, !w.pinned)), active);
   const togglePanel = (p: Panel) => {
@@ -538,8 +542,8 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   useCommand('panel-diff', () => togglePanel('diff'), active && !!diffTab);
   useCommand('panel-files', () => togglePanel('files'), active);
   useCommand('panel-chat', () => togglePanel('chat'), active);
-  useCommand('panel-queue', () => togglePanel('queue'), active);
-  useCommand('panel-snapshots', () => togglePanel('snapshots'), active);
+  useCommand('panel-queue', () => togglePanel('queue'), active && turns);
+  useCommand('panel-snapshots', () => togglePanel('snapshots'), active && turns);
   useCommand('panel-preview', () => togglePanel('preview'), active);
   useCommand('copy-last', () => surface.current?.copyLast?.(), active && view === 'gui');
   useCommand('jump-latest', () => surface.current?.jumpLatest?.(), active && view === 'gui');
@@ -675,15 +679,17 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       }
     >
       <button onClick={startRename}><span className="grow">Rename</span><ShortcutHint id="rename" /></button>
-      <button
-        onClick={() => {
-          setMenu(false);
-          setForking(true);
-        }}
-      >
-        <span className="grow">Fork session…</span>
-        <ShortcutHint id="fork" />
-      </button>
+      {turns && (
+        <button
+          onClick={() => {
+            setMenu(false);
+            setForking(true);
+          }}
+        >
+          <span className="grow">Fork session…</span>
+          <ShortcutHint id="fork" />
+        </button>
+      )}
       {w.feed && (
         <button
           onClick={() => {
@@ -719,9 +725,9 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       {diffTab && <button onClick={() => { setMenu(false); togglePanel('diff'); }}><span className="grow">Diff</span><ShortcutHint id="panel-diff" /></button>}
       <button onClick={() => { setMenu(false); togglePanel('files'); }}><span className="grow">Files</span><ShortcutHint id="panel-files" /></button>
       <button onClick={() => { setMenu(false); togglePanel('chat'); }}><span className="grow">Chat</span><ShortcutHint id="panel-chat" /></button>
-      <button onClick={() => { setMenu(false); togglePanel('queue'); }}><span className="grow">Queued messages ({w.queued})</span><ShortcutHint id="panel-queue" /></button>
+      {turns && <button onClick={() => { setMenu(false); togglePanel('queue'); }}><span className="grow">Queued messages{w.queued > 0 ? ` (${w.queued})` : ''}</span><ShortcutHint id="panel-queue" /></button>}
       {w.queued > 0 && <button onClick={() => { setMenu(false); runCommand('send-now'); }}><span className="grow">Send next queued now</span><ShortcutHint id="send-now" /></button>}
-      <button onClick={() => { setMenu(false); togglePanel('snapshots'); }}><span className="grow">Snapshots</span><ShortcutHint id="panel-snapshots" /></button>
+      {turns && <button onClick={() => { setMenu(false); togglePanel('snapshots'); }}><span className="grow">Snapshots</span><ShortcutHint id="panel-snapshots" /></button>}
       <button onClick={() => { setMenu(false); togglePanel('preview'); }}><span className="grow">Preview</span><ShortcutHint id="panel-preview" /></button>
       {(onSplit || onReplace || onClosePane) && <hr />}
       {onSplit && (
@@ -991,14 +997,16 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
             Chat
           </button>
           {/* Nothing queued: the tab steps aside (the menu and palette still open it). */}
-          {(w.queued > 0 || tab === 'queue') && (
+          {turns && (w.queued > 0 || tab === 'queue') && (
             <button role="tab" aria-selected={tab === 'queue'} className={tab === 'queue' ? 'on' : ''} onClick={() => setTab('queue')}>
               Queue{w.queued > 0 ? ` (${w.queued})` : ''}
             </button>
           )}
-          <button role="tab" aria-selected={tab === 'snapshots'} className={tab === 'snapshots' ? 'on' : ''} onClick={() => setTab('snapshots')}>
-            Snapshots
-          </button>
+          {turns && (
+            <button role="tab" aria-selected={tab === 'snapshots'} className={tab === 'snapshots' ? 'on' : ''} onClick={() => setTab('snapshots')}>
+              Snapshots
+            </button>
+          )}
           <button role="tab" aria-selected={tab === 'preview'} className={tab === 'preview' ? 'on' : ''} onClick={() => setTab('preview')}>
             Preview
           </button>
@@ -1059,12 +1067,16 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
                   <button role="tab" aria-selected={panel === 'chat'} className="tab-underline" onClick={() => setPanel('chat')}>
                     Chat
                   </button>
-                  <button role="tab" aria-selected={panel === 'queue'} className="tab-underline" onClick={() => setPanel('queue')}>
-                    Queue{w.queued > 0 ? ` (${w.queued})` : ''}
-                  </button>
-                  <button role="tab" aria-selected={panel === 'snapshots'} className="tab-underline" onClick={() => setPanel('snapshots')}>
-                    Snapshots
-                  </button>
+                  {turns && (
+                    <button role="tab" aria-selected={panel === 'queue'} className="tab-underline" onClick={() => setPanel('queue')}>
+                      Queue{w.queued > 0 ? ` (${w.queued})` : ''}
+                    </button>
+                  )}
+                  {turns && (
+                    <button role="tab" aria-selected={panel === 'snapshots'} className="tab-underline" onClick={() => setPanel('snapshots')}>
+                      Snapshots
+                    </button>
+                  )}
                   <button role="tab" aria-selected={panel === 'preview'} className="tab-underline" onClick={() => setPanel('preview')}>
                     Preview
                   </button>
