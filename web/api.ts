@@ -342,7 +342,7 @@ export function hostApi(base: string) {
     /** Hot swap: restart an idle session with a new model/effort, same conversation. */
     relaunch: (uid: string, change: { model?: string; effort?: string }) => r<{ uid: string; id: string }>('POST', `/api/sessions/${enc(uid)}/relaunch`, change),
     /** GUI view: typed transcript events (server/feed). */
-    feedUrl: (ref: string) => `${base}/api/sessions/${enc(ref)}/feed/stream`,
+    feedUrl: (ref: string) => `${base}/api/sessions/${enc(ref)}/feed/stream?device=${enc(deviceName())}`,
     feedPage: (ref: string, before: number, limit = 200) => r<FeedPage>('GET', `/api/sessions/${enc(ref)}/feed?before=${before}&limit=${limit}`),
     interrupt: (uid: string) => r('POST', `/api/sessions/${enc(uid)}/interrupt`, {}),
     clearQueue: (uid: string, itemId?: string) => r('DELETE', `/api/sessions/${enc(uid)}/queue${itemId ? `/${enc(itemId)}` : ''}`),

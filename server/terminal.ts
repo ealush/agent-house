@@ -11,6 +11,27 @@ import { cleanEnv, tmux, VIEWER_PREFIX, windowExists, setWindowOption } from './
 /** windowId → labels of the devices currently looking at it ("iPad", "Mac"). */
 export const viewers = new Map<string, string[]>();
 
+/**
+ * A device is looking at a window, in its terminal or its GUI: what it prints
+ * meanwhile counts as read, and other devices see it as "also open on …".
+ * The returned function ends the visit; whatever was on screen counts as read.
+ */
+export function addViewer(windowId: string, device: string): () => void {
+  viewers.set(windowId, [...(viewers.get(windowId) ?? []), device]);
+  let left = false;
+  return () => {
+    if (left) return;
+    left = true;
+    const rest = [...(viewers.get(windowId) ?? [])];
+    rest.splice(rest.indexOf(device), 1);
+    if (rest.length) viewers.set(windowId, rest);
+    else viewers.delete(windowId);
+    tmux('display-message', '-p', '-t', windowId, '#{window_activity}')
+      .then((a) => setWindowOption(windowId, '@ah-seen', a.trim()))
+      .catch(() => {});
+  };
+}
+
 const HIGH_WATER = 4 * 1024 * 1024;
 const LOW_WATER = 512 * 1024;
 
@@ -71,7 +92,7 @@ export async function attach(ws: WebSocket, windowId: string, cols: number, rows
     },
   );
 
-  viewers.set(windowId, [...(viewers.get(windowId) ?? []), device]);
+  const leave = addViewer(windowId, device);
   let closed = false;
 
   // Coalesce output into fewer frames; full-screen TUIs emit many tiny writes.
@@ -150,14 +171,7 @@ export async function attach(ws: WebSocket, windowId: string, cols: number, rows
   function cleanup() {
     if (closed) return;
     closed = true;
-    const rest = [...(viewers.get(windowId) ?? [])];
-    rest.splice(rest.indexOf(device), 1);
-    if (rest.length) viewers.set(windowId, rest);
-    else viewers.delete(windowId);
-    // Whatever was on screen when you left counts as read.
-    tmux('display-message', '-p', '-t', windowId, '#{window_activity}')
-      .then((a) => setWindowOption(windowId, '@ah-seen', a.trim()))
-      .catch(() => {});
+    leave();
     tmux('kill-session', '-t', `=${viewer}`).catch(() => {});
   }
 }

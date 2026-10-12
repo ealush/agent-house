@@ -22,7 +22,7 @@ import { shortPath } from './sessions.ts';
 import { Core, CoreError, resolveDir, defaultName } from './core.ts';
 import { buildLaunch, LaunchError } from './launch.ts';
 import { withCatalog } from './catalog.ts';
-import { attach, viewers } from './terminal.ts';
+import { addViewer, attach, viewers } from './terminal.ts';
 import { desktopStatus, installDesktop, removeDesktop } from './desktop.ts';
 import { Drafts } from './drafts.ts';
 import { feedPage, streamFeed, SNAPSHOT } from './feed/stream.ts';
@@ -422,10 +422,18 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     const done = new AbortController();
     const ping = setInterval(() => res.write(': ping\n\n'), 25_000);
     const untrack = auth.track(caller, { close: () => res.end() });
+    // Reading the GUI is looking at the session, the same as its terminal.
+    const device = (url.searchParams.get('device') ?? '').slice(0, 60) || 'browser';
+    let leave: (() => void) | null = null;
+    void core.current().then((st) => {
+      const win = st.windows.find((w) => w.uid === ref);
+      if (win && !done.signal.aborted) leave = addViewer(win.id, device);
+    });
     req.on('close', () => {
       done.abort();
       clearInterval(ping);
       untrack();
+      leave?.();
     });
     streamFeed((fresh) => core.feedSource(ref, fresh ? 3000 : 15_000), (msg) => res.write(`event: ${msg.type}\ndata: ${JSON.stringify(msg)}\n\n`), done.signal);
     return;
