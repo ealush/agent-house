@@ -24,12 +24,14 @@ const FILE: Record<string, string> = {
 
 /** Logos that are full app icons (their own background): drawn edge to edge, no mat. */
 const TILE = new Set(['hermes']);
+/** White single-color marks (their dark-ground artwork): drawn in ink on a light theme. */
+const WHITE = new Set(['codex', 'grok']);
 
 export function AgentLogo({ id, size = 15 }: { id: string | null; size?: number }) {
   const key = (id ?? 'shell').toLowerCase();
   const file = FILE[key];
   if (file) {
-    return <img src={file} width={size} height={size} alt="" draggable={false} className={TILE.has(key) ? 'tile' : undefined} />;
+    return <img src={file} width={size} height={size} alt="" draggable={false} className={TILE.has(key) ? 'tile' : WHITE.has(key) ? 'ink' : undefined} />;
   }
   // Shell (and any unknown agent) has no brand mark: generic terminal glyph.
   return (

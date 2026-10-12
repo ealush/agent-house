@@ -81,6 +81,8 @@
   --elev-0: 0 1px 2px rgb(35 42 54 / 0.06), 0 10px 28px -14px rgb(35 42 54 / 0.18);
   --elev-1: 0 0 0 0.5px rgb(35 42 54 / 0.04), 0 1px 2px rgb(35 42 54 / 0.08), 0 12px 32px -8px rgb(35 42 54 / 0.2);
   --elev-2: 0 2px 6px rgb(35 42 54 / 0.08), 0 32px 80px -16px rgb(35 42 54 / 0.32);
+  /* Light frost over a dark terminal turns muddy; light layers stay nearly solid. */
+  --glass: color-mix(in srgb, var(--raised) 95%, transparent);
 
   --c-shell: #5b6570;
   --c-claude: #a8511f;
@@ -1675,12 +1677,13 @@ a.btn {
   right: 0;
   top: calc(100% + 6px);
   min-width: 200px;
+  max-width: calc(100vw - 16px);
   /* A sideways phone is shorter than this list. Scroll inside the screen. */
   max-height: calc(var(--vh) - 16px);
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  padding: 5px;
+  padding: 4px;
   border-radius: 12px;
   border: 1px solid var(--line-2);
   background: var(--glass);
@@ -1697,7 +1700,8 @@ a.btn {
   width: 100%;
   padding: 8px 10px;
   border: 0;
-  border-radius: 7px;
+  /* Concentric with the card: 12px corner less its 4px inset. */
+  border-radius: 8px;
   background: none;
   text-align: left;
   font-size: 14px;
@@ -3462,7 +3466,7 @@ a.btn {
 .sidechat-bubble .md code {
   font: 0.86em var(--mono);
   padding: 0.12em 0.36em;
-  border-radius: 5px;
+  border-radius: 4px;
   background: var(--raised);
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
@@ -4596,9 +4600,10 @@ button.tool-chip:hover {
   gap: 12px;
 }
 
+/* Agents as an even grid: rows of equal choices, never one stranded on a line of its own. */
 .agents {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
   gap: 6px;
 }
 
@@ -4623,6 +4628,23 @@ button.tool-chip:hover {
   color: var(--text);
   border-color: var(--agent);
   box-shadow: inset 0 0 0 1px var(--agent);
+}
+
+.agent-pill {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color var(--dur-1), border-color var(--dur-1), box-shadow var(--dur-1), transform var(--dur-1) var(--ease);
+}
+
+.agent-pill:active {
+  transform: scale(0.97);
+}
+
+/* OpenAI's and Grok's marks are white artwork for dark grounds. */
+:root[data-theme='light'] img.ink {
+  filter: invert(0.8);
 }
 
 .launch-row {
@@ -5189,6 +5211,14 @@ button.tool-chip:hover {
   .switch-foot,
   .menu .keycaps {
     display: none;
+  }
+}
+
+/* Touch type is larger: "Continue in" takes a line of its own and the agent
+   marks sit together under it, instead of one mark wrapping alone. */
+@media (hover: none) {
+  .menu .menu-agents-label {
+    flex-basis: 100%;
   }
 }
 
@@ -6251,6 +6281,7 @@ button.tool-chip:hover {
 /* Session menu: Continue in another agent, as a row of agent marks. */
 .menu-agents {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 2px;
   padding: 4px 8px 4px 12px;
