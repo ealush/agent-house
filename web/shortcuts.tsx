@@ -418,8 +418,16 @@ export function CommandPalette({ onClose, onRun }: { onClose: () => void; onRun:
   const index = rows.length ? Math.min(i, rows.length - 1) : 0;
   const selected = rows[index];
 
+  // Keep the selected row in view by scrolling the list only, and only when it is out of
+  // view: scrollIntoView walked every scrolling ancestor on each keystroke.
   useEffect(() => {
-    listRef.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' });
+    const list = listRef.current;
+    const row = list?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (!list || !row) return;
+    const r = row.getBoundingClientRect();
+    const l = list.getBoundingClientRect();
+    if (r.top < l.top) list.scrollTop -= l.top - r.top;
+    else if (r.bottom > l.bottom) list.scrollTop += r.bottom - l.bottom;
   }, [index, rows.length, here]);
 
   const enter = (node: PaletteNode, trail: PaletteNode[] = []) => {
