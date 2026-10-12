@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import { askConfirm, showError, showNotice } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { shellQuote, type HostApi, type SendResult, type Win } from './api.ts';
@@ -10,6 +10,7 @@ import { useLaunch, useLaunchPalette } from './useLaunch.ts';
 import { addOutgoing, removeOutgoing, updateOutgoing, useOutbox } from './outbox.ts';
 import { QueueTray, type QueueTrayHandle } from './QueueTray.tsx';
 import { useDraftSync } from './useDraftSync.ts';
+import { splitUploads } from './uploads.ts';
 
 // The message bar under a GUI session. It goes through the server, which types the text
 // in now (idle agent, or any shell), queues it while an agent works, or resumes a dead
@@ -22,6 +23,10 @@ import { useDraftSync } from './useDraftSync.ts';
 //
 // The toolbar under the text: the session's model and effort (switchable live where the
 // agent supports it), its mode, recall, attach, voice, and send — or stop while it works.
+//
+// Pasted, picked or dropped files upload to the host at once and wait above the text as
+// tiles (a thumbnail for an image), not as paths in it; sending puts their paths in front
+// of the message. A shell composer still types the path in, where a command can use it.
 type Props = {
   client: HostApi;
   /** Registry id of the session. */
@@ -43,14 +48,34 @@ type Props = {
   active?: boolean;
 };
 
+export type ComposerHandle = { attach: (files: File[]) => void };
+
+/** A file on its way into the message. `path` is set once it is on the host. */
+type Attachment = { id: number; name: string; image: boolean; src?: string; path?: string };
+
+/** A small data: URL of an image, for its tile. The CSP allows data: images but not blob:. */
+async function thumbnail(file: File): Promise<string> {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, 192 / Math.min(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  return canvas.toDataURL('image/png');
+}
+
 const drafts = new Map<string, string>();
+// Per session, like the text, so switching away and back keeps them.
+const attachments = new Map<string, Attachment[]>();
+let attachmentId = 0;
 
 type Recognition = { start(): void; stop(): void; onresult: ((e: any) => void) | null; onend: (() => void) | null; onerror: ((e: any) => void) | null; continuous: boolean; interimResults: boolean; lang: string };
 const SpeechRecognition: (new () => Recognition) | undefined = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
 
 const toast = (msg: string) => window.dispatchEvent(new CustomEvent('ah:toast', { detail: msg }));
 
-export function ComposerBar({ client, target, agent, w, onSent, onChange, onNotice = toast, onSettingsOpen, onRelaunched, focusKey, active = false }: Props) {
+export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBar({ client, target, agent, w, onSent, onChange, onNotice = toast, onSettingsOpen, onRelaunched, focusKey, active = false }, ref) {
   const area = useRef<HTMLTextAreaElement>(null);
   const tray = useRef<QueueTrayHandle>(null);
   const [text, setText] = useState(() => drafts.get(target) ?? '');
@@ -67,6 +92,29 @@ export function ComposerBar({ client, target, agent, w, onSent, onChange, onNoti
   const preset = usePreset(w?.host ?? '', agent);
   const working = !!w && w.status === 'busy';
   const outbox = useOutbox(target);
+
+  // An upload can finish after you've moved to another session: it lands in that
+  // session's list, which this box shows only while it's the one open.
+  const [files, setFiles] = useState(() => attachments.get(target) ?? []);
+  const current = useRef(target);
+  current.current = target;
+  function editFiles(uid: string, edit: (list: Attachment[]) => Attachment[]) {
+    const next = edit(attachments.get(uid) ?? []);
+    attachments.set(uid, next);
+    if (uid === current.current) setFiles(next);
+  }
+  function removeFile(id: number) {
+    editFiles(target, (list) => list.filter((f) => f.id !== id));
+    area.current?.focus();
+  }
+  const uploading = files.some((f) => !f.path);
+  /** A message coming back to the box (Edit on a queued one): its uploads as tiles again. */
+  function compose(message: string) {
+    const { uploads, rest } = splitUploads(message);
+    setText(rest);
+    if (uploads.length) editFiles(target, (l) => [...l, ...uploads.map((u) => ({ id: ++attachmentId, name: u.name, image: u.image, path: u.path, src: u.image ? client.fs.url(u.path) : undefined }))]);
+    requestAnimationFrame(() => area.current?.focus());
+  }
 
   // Autocomplete: "/" commands and "@" files, for agents (a shell has its own completion).
   const [caret, setCaret] = useState(0);
@@ -98,8 +146,7 @@ export function ComposerBar({ client, target, agent, w, onSent, onChange, onNoti
     const onCompose = (e: Event) => {
       const d = (e as CustomEvent<{ uid: string; text: string }>).detail;
       if (d.uid !== target) return;
-      setText(d.text);
-      requestAnimationFrame(() => area.current?.focus());
+      compose(d.text);
     };
     window.addEventListener('ah:compose', onCompose);
     return () => window.removeEventListener('ah:compose', onCompose);
@@ -107,6 +154,7 @@ export function ComposerBar({ client, target, agent, w, onSent, onChange, onNoti
 
   useEffect(() => {
     setText(drafts.get(target) ?? '');
+    setFiles(attachments.get(target) ?? []);
     cursor.current = -1;
   }, [target]);
   useEffect(() => {
@@ -132,8 +180,10 @@ export function ComposerBar({ client, target, agent, w, onSent, onChange, onNoti
   }, [text]);
 
   function submit() {
-    const draft = text;
-    if (!draft.trim() || busy) return;
+    const typed = text;
+    const sentFiles = files;
+    if ((!typed.trim() && !sentFiles.length) || busy || uploading) return;
+    const draft = [...sentFiles.map((f) => shellQuote(f.path!)), typed.trim() ? typed : ''].filter(Boolean).join(' ');
     // A working agent queues it; anything else types it in now. The server decides,
     // this only picks where it shows until the server says. Right after a send the
     // session list may not say "working" yet, so a message still landing counts too.
@@ -142,6 +192,7 @@ export function ComposerBar({ client, target, agent, w, onSent, onChange, onNoti
     recent.current = [draft, ...recent.current.filter((r) => r !== draft)];
     cursor.current = -1;
     setText('');
+    editFiles(target, () => []);
     draftSync.saveNow('');
     sending.current = sending.current.then(async () => {
       try {
@@ -150,8 +201,9 @@ export function ComposerBar({ client, target, agent, w, onSent, onChange, onNoti
         onSent(result, { quiet: true });
       } catch (e) {
         removeOutgoing([id]);
-        // Back into the box, unless something new was typed there meanwhile.
-        setText((t) => t || draft);
+        // Back into the box, unless something new was typed or attached there meanwhile.
+        if (target === current.current) setText((t) => t || typed);
+        editFiles(target, (list) => (list.length ? list : sentFiles));
         showError(e, "Couldn't send");
       }
     });
@@ -173,20 +225,43 @@ export function ComposerBar({ client, target, agent, w, onSent, onChange, onNoti
     setText(cursor.current < 0 ? '' : list[cursor.current]);
   }
 
-  async function attach(files: FileList | File[] | null) {
-    const list = !files ? [] : Array.isArray(files) ? files : [...files];
+  async function attach(picked: FileList | File[] | null) {
+    const list = !picked ? [] : Array.isArray(picked) ? picked : [...picked];
     if (!list.length) return;
-    setBusy(true);
-    try {
-      const paths = await Promise.all(list.map((f) => client.upload(f)));
-      setText((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}${paths.map(shellQuote).join(' ')} `);
-      area.current?.focus();
-    } catch (e) {
-      showError(e, "Couldn't attach that file");
-    } finally {
-      setBusy(false);
+    if (isShell) {
+      setBusy(true);
+      try {
+        const paths = await Promise.all(list.map((f) => client.upload(f)));
+        setText((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}${paths.map(shellQuote).join(' ')} `);
+        area.current?.focus();
+      } catch (e) {
+        showError(e, "Couldn't attach that file");
+      } finally {
+        setBusy(false);
+      }
+      return;
     }
+    // The tile shows at once, from the local file; the upload runs behind it.
+    const uid = target;
+    const added = list.map((f) => ({ id: ++attachmentId, name: f.name || 'paste', image: f.type.startsWith('image/') }));
+    editFiles(uid, (l) => [...l, ...added]);
+    area.current?.focus();
+    const set = (id: number, patch: Partial<Attachment>) => editFiles(uid, (l) => l.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+    await Promise.all(
+      list.map(async (f, i) => {
+        const { id, image } = added[i];
+        if (image) thumbnail(f).then((src) => set(id, { src }), () => {});
+        try {
+          set(id, { path: await client.upload(f) });
+        } catch (e) {
+          editFiles(uid, (l) => l.filter((x) => x.id !== id));
+          showError(e, `Couldn't attach ${added[i].name}`);
+        }
+      }),
+    );
   }
+
+  useImperativeHandle(ref, () => ({ attach: (f) => void attach(f) }));
 
   /** Voice input via the browser's speech recognition; text lands in the box for review. */
   function toggleMic() {
@@ -217,8 +292,9 @@ export function ComposerBar({ client, target, agent, w, onSent, onChange, onNoti
   const { models, model, modelLabel, effort, mode, levels, openSettings, pickLive, relaunchWith } = launch;
   useLaunchPalette(launch, active && !!w);
 
-  const canSend = !!text.trim() && !busy;
-  const showStop = !isShell && working && !text.trim();
+  const empty = !text.trim() && !files.length;
+  const canSend = !empty && !busy && !uploading;
+  const showStop = !isShell && working && empty;
 
   return (
     <>
@@ -229,10 +305,7 @@ export function ComposerBar({ client, target, agent, w, onSent, onChange, onNoti
         uid={target}
         queued={w.queued}
         onChange={() => onChange?.()}
-        onEdit={(t) => {
-          setText(t);
-          requestAnimationFrame(() => area.current?.focus());
-        }}
+        onEdit={compose}
       />
     )}
     <form
@@ -246,6 +319,25 @@ export function ComposerBar({ client, target, agent, w, onSent, onChange, onNoti
       {draftSync.from && (
         <div className="composer-from" role="status">
           <Icon name="send" size={11} /> Continued from {draftSync.from}
+        </div>
+      )}
+      {files.length > 0 && (
+        <div className="composer-files">
+          {files.map((f) => (
+            <div key={f.id} className={`composer-file ${f.image ? 'image' : ''} ${f.path ? '' : 'uploading'}`} title={f.path ?? `Uploading ${f.name}…`}>
+              {f.image ? (
+                f.src && <img src={f.src} alt={f.name} />
+              ) : (
+                <>
+                  <Icon name="files" size={16} />
+                  <span className="composer-file-name">{f.name}</span>
+                </>
+              )}
+              <button type="button" className="composer-file-remove" aria-label={`Remove ${f.name}`} title="Remove" onClick={() => removeFile(f.id)}>
+                <Icon name="close" size={10} />
+              </button>
+            </div>
+          ))}
         </div>
       )}
       <div className="composer-input">
@@ -283,14 +375,14 @@ export function ComposerBar({ client, target, agent, w, onSent, onChange, onNoti
                 return;
               }
             }
-            if (e.key === 'Escape' && !text && working && !isShell) {
+            if (e.key === 'Escape' && !text && !files.length && working && !isShell) {
               // Like the agent's own Esc: an empty composer stops the turn.
               e.preventDefault();
               stop();
             } else if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               // An empty box steers the next queued message, like its Steer button.
-              if (!text.trim()) tray.current?.steerFirst();
+              if (empty) tray.current?.steerFirst();
               else submit();
             } else if (e.key === 'ArrowUp' && (!text || cursor.current >= 0)) {
               e.preventDefault();
@@ -377,9 +469,13 @@ export function ComposerBar({ client, target, agent, w, onSent, onChange, onNoti
           <button type="button" className="icon-btn" title="Previous messages (↑)" onClick={() => recall(1)}>
             <Icon name="recall" />
           </button>
-          <label className="icon-btn" title="Attach a file (uploaded to the host, path inserted)">
+          <label className="icon-btn" title={isShell ? 'Attach a file (uploaded to the host, path inserted)' : 'Attach a file (uploaded to the host, sent with the message)'}>
             <Icon name="attach" />
-            <input type="file" multiple hidden onChange={(e) => attach(e.target.files)} />
+            <input type="file" multiple hidden onChange={(e) => {
+              attach(e.target.files);
+              // Picking the same file again should attach it again.
+              e.target.value = '';
+            }} />
           </label>
           {SpeechRecognition && !isShell && (
             <button type="button" className={`icon-btn ${listening ? 'live' : ''}`} title={listening ? 'Stop dictation' : 'Dictate'} aria-pressed={listening} onClick={toggleMic}>
@@ -400,4 +496,4 @@ export function ComposerBar({ client, target, agent, w, onSent, onChange, onNoti
     </form>
     </>
   );
-}
+});

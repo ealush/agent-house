@@ -16,7 +16,7 @@ import { blockText } from './reducer.ts';
 import { useFeed } from './useFeed.ts';
 import { project, type Block } from './reducer.ts';
 import { GuiContext, type GuiActions } from './context.ts';
-import { ItemView, PartView } from './router.tsx';
+import { ItemView, PartView, UserText } from './router.tsx';
 import { AwaitingTool, TurnLive } from './tools.tsx';
 import './gui.css';
 
@@ -78,9 +78,7 @@ function BlockView({ block, results, agent, snap, onRestore, freshAfter }: { blo
     return (
       <div className="msg user" data-seq={seq} tabIndex={-1}>
         <div className="bubble">
-          {block.parts.map((p, i) => (
-            <PartView key={i} part={p} />
-          ))}
+          {block.parts.map((p, i) => (p.type === 'text' ? <UserText key={i} text={p.text} /> : <PartView key={i} part={p} />))}
         </div>
         <div className="msg-meta">
           {snap && (
@@ -399,7 +397,7 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
 
             {outgoing.map((o) => (
               <div key={o.id} className="msg user pending">
-                <div className="bubble">{o.text}</div>
+                <div className="bubble"><UserText text={o.text} /></div>
                 <div className="msg-meta">
                   <span className="msg-time">{o.state === 'sending' ? 'Sending…' : time(o.at)}</span>
                 </div>

@@ -6,6 +6,9 @@ import type { Item } from './reducer.ts';
 import { Markdown } from './Markdown.tsx';
 import { WidgetView } from './widgets.tsx';
 import { ToolGroup } from './tools.tsx';
+import { useGui } from './context.ts';
+import { splitUploads } from '../uploads.ts';
+import { Icon } from '../icons.tsx';
 
 type PartOf<T extends Part['type']> = Extract<Part, { type: T }>;
 type PartRenderers = { [T in Part['type']]: (p: PartOf<T>) => ReactNode };
@@ -32,6 +35,25 @@ const PARTS: PartRenderers = {
   tool_result: () => null,
   tool_call: () => null,
 };
+
+/** Your message's text, with what you attached drawn above it instead of its paths. */
+export function UserText({ text }: { text: string }) {
+  const gui = useGui();
+  const { uploads, rest } = splitUploads(text);
+  if (!uploads.length) return <Markdown text={text} />;
+  return (
+    <>
+      <div className="user-images">
+        {uploads.map((u, i) => (
+          <a key={i} className={u.image ? undefined : 'user-file'} href={gui.fileUrl(u.path)} target="_blank" rel="noreferrer noopener" title={u.path}>
+            {u.image ? <img src={gui.fileUrl(u.path)} alt={u.name} loading="lazy" /> : <><Icon name="files" size={14} /> {u.name}</>}
+          </a>
+        ))}
+      </div>
+      {rest && <Markdown text={rest} />}
+    </>
+  );
+}
 
 export function PartView({ part }: { part: Part }) {
   return <>{(PARTS[part.type] as (p: Part) => ReactNode)(part)}</>;

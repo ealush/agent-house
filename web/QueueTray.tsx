@@ -4,6 +4,7 @@ import { showError } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { removeOutgoing, useOutbox } from './outbox.ts';
 import { shortcutTitle } from './shortcuts.tsx';
+import { uploadSummary } from './uploads.ts';
 
 /**
  * Follow-ups waiting for a working agent, stacked on top of the composer (the way
@@ -152,7 +153,7 @@ export const QueueTray = forwardRef<QueueTrayHandle, Props>(function QueueTray({
           ) : (
             <span className="queue-grip-slot" />
           )}
-          <span className="queue-text" title={q.text}>{q.text}</span>
+          <span className="queue-text" title={q.text}>{uploadSummary(q.text)}</span>
           <button type="button" className="queue-steer" title={shortcutTitle('Stop the current turn and send this now', 'send-now')} onClick={() => steer(q)}>
             <Icon name="reply" size={14} /> Steer
           </button>
@@ -178,7 +179,7 @@ export const QueueTray = forwardRef<QueueTrayHandle, Props>(function QueueTray({
       {pendingRows.map((o) => (
         <li key={o.id} className="queue-row pending">
           <span className="queue-grip-slot" />
-          <span className="queue-text" title={o.text}>{o.text}</span>
+          <span className="queue-text" title={o.text}>{uploadSummary(o.text)}</span>
           <span className="queue-state">Queuing…</span>
         </li>
       ))}

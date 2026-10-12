@@ -12,7 +12,8 @@ import { AgentLogo, shortModel } from './logos.tsx';
 import { continuePrompt } from './handoff.ts';
 import { HostPresetsContext } from './ModelPicker.tsx';
 import { defaultView, surfaceFor, VIEW_LABEL, viewsFor, type SurfaceHandle, type View } from './surface.ts';
-import { ComposerBar } from './Composer.tsx';
+import { ComposerBar, type ComposerHandle } from './Composer.tsx';
+import { useFileDrop } from './useFileDrop.ts';
 import { BranchPicker, ChangesPanel, PrLink } from './Git.tsx';
 // Side chat and past chats (with the markdown renderer) load when the Chat panel first opens.
 const SideChat = lazy(() => import('./SideChat.tsx').then((m) => ({ default: m.SideChat })));
@@ -292,6 +293,9 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   const abs = (p: string) => (p.startsWith('~') ? home + p.slice(1) : p);
   const views = viewsFor(w);
   const view: View = views.includes(viewPref) ? viewPref : 'terminal';
+  // Files dropped anywhere on the conversation wait in the composer, as pasted ones do.
+  const composer = useRef<ComposerHandle>(null);
+  const fileDrop = useFileDrop((files) => composer.current?.attach(files), view === 'gui');
   const Surface = surfaceFor(view);
 
   useEffect(() => {
@@ -1002,7 +1006,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       )}
 
       <div className="session-body" ref={body}>
-        <div className="session-main">
+        <div className="session-main" {...fileDrop.handlers}>
           <Suspense fallback={<div className="surface" />}>
             <Surface
               key={`${view}:${w.key}`}
@@ -1019,13 +1023,14 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
           </Suspense>
           {tab !== 'main' && <div className="session-main" style={{ minHeight: 0 }}>{panelView(tab)}</div>}
           {view === 'gui' && (
-            <ComposerBar client={client} target={w.uid} agent={w.agent} w={w} onSent={onSent} onChange={refresh} focusKey={focus} active={active}
+            <ComposerBar ref={composer} client={client} target={w.uid} agent={w.agent} w={w} onSent={onSent} onChange={refresh} focusKey={focus} active={active}
               onSettingsOpen={() => switchView('terminal', true)}
               onRelaunched={(uid) => {
                 refresh();
                 if (onOpenKey) onOpenKey(keyOnThisHost(uid));
               }} />
           )}
+          {fileDrop.over && <div className="drop-hint">Drop to attach to your message</div>}
         </div>
 
         {!narrow && panel && (panel === 'files' || panel === 'chat' || panel === 'queue' || panel === 'snapshots' || panel === 'preview' || diffTab) && (

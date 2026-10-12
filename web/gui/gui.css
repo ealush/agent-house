@@ -101,6 +101,41 @@
   overflow-wrap: anywhere;
 }
 
+.gui .user-images {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  margin: 2px 0 6px;
+}
+
+.gui .user-images:last-child {
+  margin-bottom: 2px;
+}
+
+.gui .user-images .user-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line-2);
+  background: var(--sunken);
+  color: var(--text);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.gui .user-images img {
+  display: block;
+  width: 120px;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--line-2);
+  background: var(--sunken);
+}
+
 .gui .msg-time {
   font-size: 11px;
   color: var(--faint);
