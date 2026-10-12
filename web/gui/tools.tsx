@@ -18,8 +18,10 @@ export const AwaitingTool = createContext<string | null>(null);
 export const TurnLive = createContext(true);
 
 type ToolView = {
-  /** What the agent is doing, e.g. "Ran", "Edited". */
+  /** What the agent did, e.g. "Ran", "Edited". */
   label: string;
+  /** The same while the call has no result yet (running, or waiting for you): "Run", "Edit". */
+  now?: string;
   /** The one thing that identifies this call: a command, a path, a query. */
   summary: (call: ToolCall, result?: ToolResult) => string;
   /** Expanded content; defaults to the arguments and the output. */
@@ -50,14 +52,15 @@ function Output({ result, empty = 'No output' }: { result: ToolResult | undefine
 function FileLink({ path }: { path: string }) {
   const gui = useGui();
   return (
-    <a className="mono file-link" href={gui.fileUrl(gui.resolvePath(path))} target="_blank" rel="noreferrer noopener">
-      {path}
+    <a className="mono file-link" href={gui.fileUrl(gui.resolvePath(path))} target="_blank" rel="noreferrer noopener" title={path}>
+      {gui.displayPath(path)}
     </a>
   );
 }
 
 const Shell: ToolView = {
   label: 'Ran',
+  now: 'Run',
   summary: (c) => firstLine(s(c.args.command ?? c.args.cmd ?? c.args.input)),
   Body: ({ call, result }) => {
     const cmd = s(call.args.command ?? call.args.cmd ?? call.args.input);
@@ -75,6 +78,7 @@ const Shell: ToolView = {
 
 const Edit: ToolView = {
   label: 'Edited',
+  now: 'Edit',
   summary: (c) => base(s(c.args.file_path ?? c.args.path)),
   Body: ({ call, result }) => {
     const lines = structuredLines(result?.data?.structuredPatch) ?? replaceLines(s(call.args.old_string), s(call.args.new_string));
@@ -90,6 +94,7 @@ const Edit: ToolView = {
 
 const Write: ToolView = {
   label: 'Wrote',
+  now: 'Write',
   summary: (c) => base(s(c.args.file_path ?? c.args.path)),
   Body: ({ call, result }) => {
     const patch = structuredLines(result?.data?.structuredPatch);
@@ -105,6 +110,7 @@ const Write: ToolView = {
 
 const Patch: ToolView = {
   label: 'Patched',
+  now: 'Patch',
   summary: (c) => {
     const files = patchLines(s(c.args.input ?? c.args.patch)).filter((l) => l.kind === 'file').map((l) => base(l.text));
     return files.length ? files.join(', ') : 'files';
@@ -130,6 +136,7 @@ const Read: ToolView = {
 
 const Search: ToolView = {
   label: 'Searched',
+  now: 'Search',
   summary: (c) => s(c.args.pattern ?? c.args.query),
   Body: ({ call, result }) => (
     <>
@@ -141,6 +148,7 @@ const Search: ToolView = {
 
 const Web: ToolView = {
   label: 'Fetched',
+  now: 'Fetch',
   summary: (c) => s(c.args.url ?? c.args.query),
   Body: ({ call, result }) => (
     <>
@@ -156,6 +164,7 @@ const WebSearch: ToolView = { ...Web, label: 'Searched the web', summary: (c) =>
 /** Claude's TodoWrite and Codex's update_plan are the same idea: a live checklist. */
 const Todos: ToolView = {
   label: 'Updated the plan',
+  now: 'Update the plan',
   summary: (c) => {
     const items = (c.args.todos ?? c.args.plan) as any[] | undefined;
     const done = items?.filter((t) => t?.status === 'completed').length ?? 0;
@@ -212,6 +221,7 @@ const Question: ToolView = {
 
 const Agent: ToolView = {
   label: 'Delegated',
+  now: 'Delegate',
   summary: (c) => s(c.args.description ?? c.args.subagent_type),
   Body: ({ call, result }) => (
     <>
@@ -310,7 +320,7 @@ export function ToolRow({ call, result }: ToolProps) {
     <div className={`tool ${status} ${open ? 'open' : ''}`}>
       <button className="tool-head" onClick={() => setOpen(!open)} aria-expanded={open}>
         <span className={`tool-dot ${status}`} aria-label={awaiting ? 'Waiting for you' : stopped ? 'No result' : running ? 'Running' : result.isError ? 'Failed' : 'Completed'} />
-        <span className="tool-label">{view.label || displayName(call.name)}</span>
+        <span className="tool-label">{(running && view.now) || view.label || displayName(call.name)}</span>
         <span className="tool-summary mono">{view.summary(call, result)}</span>
         {running && <span className="tool-state">{awaiting ? 'Waiting for you' : stopped ? 'No result' : 'Running…'}</span>}
         {result?.truncated && <span className="tool-state">trimmed</span>}

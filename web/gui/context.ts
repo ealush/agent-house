@@ -9,7 +9,9 @@ export type GuiActions = {
   fileUrl: (path: string) => string;
   /** Absolute form of a path the agent wrote relative to its cwd or ~. */
   resolvePath: (path: string) => string;
+  /** A path as a person reads it: relative to the project when it is inside it. */
+  displayPath: (path: string) => string;
 };
 
-export const GuiContext = createContext<GuiActions>({ reply: () => {}, fileUrl: () => '#', resolvePath: (p) => p });
+export const GuiContext = createContext<GuiActions>({ reply: () => {}, fileUrl: () => '#', resolvePath: (p) => p, displayPath: (p) => p });
 export const useGui = () => useContext(GuiContext);
