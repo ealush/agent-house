@@ -535,7 +535,29 @@ export type FsEntry = { name: string; type: 'dir' | 'file' | 'other'; size: numb
 export type FsListing = { path: string; parent: string | null; entries: FsEntry[]; roots?: string[] };
 
 /** A short label for this device, shown to others as "also open on …". */
+const DEVICE_KEY = 'ah.deviceName';
+
+/**
+ * What other devices call this one: "Continue from …", "also open on …", a
+ * draft's origin. The name chosen in Settings → Security, else the platform.
+ */
 export function deviceName(): string {
+  try {
+    const own = localStorage.getItem(DEVICE_KEY)?.trim();
+    if (own) return own;
+  } catch {}
+  return platformName();
+}
+
+/** Name this device; an empty name goes back to the platform's. */
+export function setDeviceName(name: string) {
+  try {
+    if (name.trim()) localStorage.setItem(DEVICE_KEY, name.trim().slice(0, 40));
+    else localStorage.removeItem(DEVICE_KEY);
+  } catch {}
+}
+
+export function platformName(): string {
   const ua = navigator.userAgent;
   if (/iPhone/.test(ua)) return 'iPhone';
   if (/iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return 'iPad';

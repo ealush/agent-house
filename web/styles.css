@@ -4760,6 +4760,14 @@ button.tool-chip:hover {
   flex-wrap: wrap;
 }
 
+/* Settings → Security → This device: the name and its button on one line. */
+.device-name {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  max-width: 420px;
+}
+
 .field.compact {
   flex: 0 1 auto;
 }

@@ -10,6 +10,8 @@ export type Overview = {
   sessions: Array<{ id: string; label: string; via: string; createdAt: number; lastSeenAt: number; expiresAt: number; current: boolean }>;
   tokens: Array<{ id: string; name: string; createdAt: number; lastUsedAt: number }>;
   password: boolean;
+  /** false when the host's config turns sign-in off. */
+  enabled: boolean;
   idleHours: number;
   maxDays: number;
   audit: Array<{ at: string; event: string; [k: string]: unknown }>;

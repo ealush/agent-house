@@ -431,6 +431,7 @@ export class Auth {
         .map(({ id, label, via, createdAt, lastSeenAt, expiresAt }) => ({ id, label, via, createdAt, lastSeenAt, expiresAt, current: current?.kind === 'session' && current.session.id === id })),
       tokens: this.store.tokens.map(({ id, name, createdAt, lastUsedAt }) => ({ id, name, createdAt, lastUsedAt })),
       password: !!this.store.password,
+      enabled: this.enabled,
       idleHours: this.config.idleHours,
       maxDays: this.config.maxDays,
     };

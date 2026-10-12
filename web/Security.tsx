@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { askConfirm } from './ask.tsx';
 import { authApi, explain, passkeysAvailable, type Overview } from './auth.ts';
 import { age } from './agents.ts';
-import { api } from './api.ts';
+import { api, deviceName, platformName, setDeviceName } from './api.ts';
 
 const sec = (ms: number) => Math.floor(ms / 1000);
 
@@ -83,31 +83,63 @@ export function Security({ onLocked }: { onLocked: () => void }) {
 
   const pk = passkeysAvailable();
   const current = o?.sessions.find((s) => s.current);
+  // Sign-in turned off in the host's config: passkeys, devices and locking mean nothing.
+  const signin = o?.enabled !== false;
+  const [name, setName] = useState(deviceName);
 
   return (
     <div className="security">
       {/* Settings is the page; this is its first section, introduced in a line. */}
       <div className="settings-intro">
-        <p className="hint">
-          Tailscale decides which devices can reach ah; signing in decides who can use it. Devices sign out after {o?.idleHours ?? '…'}h unused, and after {o?.maxDays ?? '…'} days
-          regardless.
-        </p>
-        <button
-          className="btn"
-          onClick={() =>
-            act(async () => {
-              await authApi.signOut();
-              onLocked();
-            })
-          }
-        >
-          Lock now
-        </button>
+        {signin ? (
+          <>
+            <p className="hint">
+              Tailscale decides which devices can reach ah; signing in decides who can use it. Devices sign out after {o?.idleHours ?? '…'}h unused, and after {o?.maxDays ?? '…'} days
+              regardless.
+            </p>
+            <button
+              className="btn"
+              onClick={() =>
+                act(async () => {
+                  await authApi.signOut();
+                  onLocked();
+                })
+              }
+            >
+              Lock now
+            </button>
+          </>
+        ) : (
+          <p className="hint">
+            Sign-in is off on this host (<code>"auth": {'{'} "mode": "off" {'}'}</code> in its config), so anyone who can reach ah gets a shell. Remove that line and restart ah to require passkeys again.
+          </p>
+        )}
       </div>
 
       {error && <p className="form-error">{error}</p>}
       {notice && <p className="hint">{notice}</p>}
 
+      <section className="sec-card">
+        <h2>This device</h2>
+        <p className="hint">Other devices call it this: in “Continue from …”, on a draft you started here, and when it is viewing a session.</p>
+        <form
+          className="device-name"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setDeviceName(name);
+            setName(deviceName());
+            setNotice('Device renamed.');
+          }}
+        >
+          <label className="field">
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder={platformName()} aria-label="Device name" maxLength={40} autoCapitalize="words" />
+          </label>
+          <button className="btn" disabled={name.trim() === deviceName()}>Rename</button>
+        </form>
+      </section>
+
+      {signin && (
+      <>
       <section className="sec-card">
         <h2>Add a device</h2>
         {code && code.until > Date.now() ? (
@@ -236,6 +268,9 @@ export function Security({ onLocked }: { onLocked: () => void }) {
         </p>
       </section>
 
+      </>
+      )}
+
       <section className="sec-card">
         <h2>Prompt history</h2>
         <p className="hint">
@@ -271,6 +306,7 @@ export function Security({ onLocked }: { onLocked: () => void }) {
           </li>
         ))}
       </ul>
+      {o && !o.audit.length && <p className="hint">Nothing yet. Sign-ins, failures and session actions show here.</p>}
       </section>
     </div>
   );
