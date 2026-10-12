@@ -6845,20 +6845,51 @@ select:not([multiple]) {
   animation: scrim-in var(--dur-2) var(--ease);
 }
 
-/* The desktop placement writes top/left/max-height inline; a sheet docks instead. */
-.menu.sheet {
-  top: auto !important;
-  left: 8px !important;
-  right: 8px !important;
+/* The choices and Cancel, docked above the home indicator as one thing that rises and drags (sheet.tsx). */
+.action-sheet {
+  position: fixed;
+  z-index: 90;
+  left: 8px;
+  right: 8px;
   bottom: calc(10px + var(--safe-pad));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: calc(var(--vh) - 72px);
+  animation: sheet-up 320ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.menu.sheet {
+  position: relative;
+  inset: auto;
   width: auto;
   min-width: 0;
   max-width: none;
-  max-height: min(72dvh, calc(var(--vh) - 96px)) !important;
+  min-height: 0;
+  flex: 0 1 auto;
   padding: 6px;
   border-radius: 16px;
   box-shadow: var(--elev-2);
-  animation: sheet-up 320ms cubic-bezier(0.32, 0.72, 0, 1);
+  animation: none;
+}
+
+/* Cancel stands apart, the way an iPhone's action sheet ends. */
+.sheet-cancel {
+  flex: none;
+  min-height: 56px;
+  border: 1px solid var(--line-2);
+  border-radius: 16px;
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--elev-2);
+  color: var(--accent);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.sheet-cancel:active {
+  background: var(--raised);
 }
 
 /* Rows a thumb can hit: 48px, concentric with the 16px card and its 6px inset. */

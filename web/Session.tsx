@@ -27,7 +27,7 @@ import { ShortcutHint, shortcutTitle, useCommand, usePaletteProvider, useShortcu
 import { runCommand } from './shortcuts.ts';
 import { useLaunch, useLaunchPalette } from './useLaunch.ts';
 import { Glide } from './Glide.tsx';
-import { SheetBar, useSheet } from './sheet.tsx';
+import { ActionSheet, SheetBar, useSheet } from './sheet.tsx';
 
 type Panel = 'diff' | 'files' | 'chat' | 'queue' | 'snapshots' | 'preview';
 
@@ -249,6 +249,8 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       // The sheet's scrim closes on its click, so the tap that closes the
       // sheet can't land on whatever was under it.
       if (menuScrim.current?.contains(e.target as Node)) return;
+      // A phone's action sheet closes itself, sliding down (Cancel, a drag).
+      if ((e.target as Element | null)?.closest?.('.action-sheet')) return;
       setMenu(false);
     };
     const onKey = (e: KeyboardEvent) => {
@@ -650,6 +652,166 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       />
     );
 
+  const menuBody = (
+    <div
+      ref={menuEl}
+      data-rove
+      role="menu"
+      className={narrow ? 'menu sheet' : 'menu'}
+      onPointerLeave={(e) => {
+        if (e.pointerType === 'touch') return;
+        setMenu(false);
+      }}
+      style={
+        narrow
+          ? { margin: 0 }
+          : menuPos
+          ? { position: 'fixed', right: 'auto', top: menuPos.top, left: menuPos.left, maxHeight: menuPos.maxHeight, zIndex: 90, margin: 0, transformOrigin: menuPos.above ? 'bottom right' : 'top right' }
+          : { position: 'fixed', right: 'auto', visibility: 'hidden', zIndex: 90, margin: 0 }
+      }
+    >
+      <button onClick={startRename}><span className="grow">Rename</span><ShortcutHint id="rename" /></button>
+      <button
+        onClick={() => {
+          setMenu(false);
+          setForking(true);
+        }}
+      >
+        <span className="grow">Fork session…</span>
+        <ShortcutHint id="fork" />
+      </button>
+      {w.feed && (
+        <button
+          onClick={() => {
+            setMenu(false);
+            setSending(true);
+          }}
+        >
+          <span className="grow">Send to…</span>
+          <ShortcutHint id="send-to" />
+        </button>
+      )}
+      {w.feed && onStartSession && otherAgents.length > 0 && (
+        <div className="menu-agents" role="group" aria-label="Continue in another agent">
+          <span className="menu-agents-label">Continue in</span>
+          {otherAgents.map((p) => (
+            <button
+              key={p.id}
+              className="menu-agent"
+              title={`Continue this conversation in ${p.name}`}
+              aria-label={`Continue in ${p.name}`}
+              onClick={() => {
+                setMenu(false);
+                void continueIn(p.id);
+              }}
+            >
+              <AgentLogo id={p.id} size={16} />
+            </button>
+          ))}
+        </div>
+      )}
+      <button onClick={() => act(() => client.pin(w.uid, !w.pinned))}>{w.pinned ? 'Unpin' : 'Pin to top'}</button>
+      <hr />
+      {diffTab && <button onClick={() => { setMenu(false); togglePanel('diff'); }}><span className="grow">Diff</span><ShortcutHint id="panel-diff" /></button>}
+      <button onClick={() => { setMenu(false); togglePanel('files'); }}><span className="grow">Files</span><ShortcutHint id="panel-files" /></button>
+      <button onClick={() => { setMenu(false); togglePanel('chat'); }}><span className="grow">Chat</span><ShortcutHint id="panel-chat" /></button>
+      <button onClick={() => { setMenu(false); togglePanel('queue'); }}><span className="grow">Queued messages ({w.queued})</span><ShortcutHint id="panel-queue" /></button>
+      {w.queued > 0 && <button onClick={() => { setMenu(false); runCommand('send-now'); }}><span className="grow">Send next queued now</span><ShortcutHint id="send-now" /></button>}
+      <button onClick={() => { setMenu(false); togglePanel('snapshots'); }}><span className="grow">Snapshots</span><ShortcutHint id="panel-snapshots" /></button>
+      <button onClick={() => { setMenu(false); togglePanel('preview'); }}><span className="grow">Preview</span><ShortcutHint id="panel-preview" /></button>
+      {(onSplit || onReplace || onClosePane) && <hr />}
+      {onSplit && (
+        <>
+          <button
+            onClick={() => {
+              setMenu(false);
+              onSplit('right');
+            }}
+          >
+            <span className="grow">Split right</span>
+            <ShortcutHint id="split-right" />
+          </button>
+          <button
+            onClick={() => {
+              setMenu(false);
+              onSplit('below');
+            }}
+          >
+            <span className="grow">Split below</span>
+            <ShortcutHint id="split-below" />
+          </button>
+          {onFlipSplit && (
+            <button
+              onClick={() => {
+                setMenu(false);
+                onFlipSplit();
+              }}
+            >
+              <span className="grow">Flip split</span>
+              <ShortcutHint id="toggle-split" />
+            </button>
+          )}
+        </>
+      )}
+      {onReplace && (
+        <button
+          onClick={() => {
+            setMenu(false);
+            onReplace();
+          }}
+        >
+          <span className="grow">Replace pane…</span>
+          <ShortcutHint id="replace-pane" />
+        </button>
+      )}
+      {onClosePane && (
+        <button
+          onClick={() => {
+            setMenu(false);
+            onClosePane();
+          }}
+        >
+          <span className="grow">Close pane</span>
+          <ShortcutHint id="close-pane" />
+        </button>
+      )}
+      <hr />
+      <button
+        onClick={() =>
+          act(async () => {
+            setCapture(await client.capture(w.id));
+          })
+        }
+      >
+        Scrollback as text
+      </button>
+      {view === 'terminal' && (
+        <button
+          onClick={() => {
+            setKeysPref(showKeys ? 'off' : 'on');
+            setMenu(false);
+          }}
+        >
+          <span className="grow">{showKeys ? 'Hide' : 'Show'} on-screen keys</span>
+          <ShortcutHint id="toggle-keys" />
+        </button>
+      )}
+      <button
+        onClick={() => {
+          navigator.clipboard?.writeText(`ah attach ${w.uid}`).catch(() => {});
+          setMenu(false);
+        }}
+      >
+        Copy “ah attach {w.uid}”
+      </button>
+      <hr />
+      <button className="danger" onClick={kill}>
+        <span className="grow">Terminate session</span>
+        <ShortcutHint id="terminate" />
+      </button>
+    </div>
+  );
+
   return (
     <>
       <header className="session-head">
@@ -795,164 +957,13 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
           </button>
           {menu &&
             createPortal(
-              <>
-              {/* A phone gets an action sheet: up from the bottom edge, in thumb's reach, over a scrim. */}
-              {narrow && <div ref={menuScrim} className="sheet-scrim" onClick={() => setMenu(false)} />}
-              <div
-                ref={menuEl}
-                data-rove
-                role="menu"
-                className={narrow ? 'menu sheet' : 'menu'}
-                onPointerLeave={(e) => {
-                  if (e.pointerType === 'touch') return;
-                  setMenu(false);
-                }}
-                style={
-                  narrow
-                    ? { position: 'fixed', zIndex: 90, margin: 0 }
-                    : menuPos
-                    ? { position: 'fixed', right: 'auto', top: menuPos.top, left: menuPos.left, maxHeight: menuPos.maxHeight, zIndex: 90, margin: 0, transformOrigin: menuPos.above ? 'bottom right' : 'top right' }
-                    : { position: 'fixed', right: 'auto', visibility: 'hidden', zIndex: 90, margin: 0 }
-                }
-              >
-              <button onClick={startRename}><span className="grow">Rename</span><ShortcutHint id="rename" /></button>
-              <button
-                onClick={() => {
-                  setMenu(false);
-                  setForking(true);
-                }}
-              >
-                <span className="grow">Fork session…</span>
-                <ShortcutHint id="fork" />
-              </button>
-              {w.feed && (
-                <button
-                  onClick={() => {
-                    setMenu(false);
-                    setSending(true);
-                  }}
-                >
-                  <span className="grow">Send to…</span>
-                  <ShortcutHint id="send-to" />
-                </button>
-              )}
-              {w.feed && onStartSession && otherAgents.length > 0 && (
-                <div className="menu-agents" role="group" aria-label="Continue in another agent">
-                  <span className="menu-agents-label">Continue in</span>
-                  {otherAgents.map((p) => (
-                    <button
-                      key={p.id}
-                      className="menu-agent"
-                      title={`Continue this conversation in ${p.name}`}
-                      aria-label={`Continue in ${p.name}`}
-                      onClick={() => {
-                        setMenu(false);
-                        void continueIn(p.id);
-                      }}
-                    >
-                      <AgentLogo id={p.id} size={16} />
-                    </button>
-                  ))}
-                </div>
-              )}
-              <button onClick={() => act(() => client.pin(w.uid, !w.pinned))}>{w.pinned ? 'Unpin' : 'Pin to top'}</button>
-              {diffTab && <button onClick={() => { setMenu(false); togglePanel('diff'); }}><span className="grow">Diff</span><ShortcutHint id="panel-diff" /></button>}
-              <button onClick={() => { setMenu(false); togglePanel('files'); }}><span className="grow">Files</span><ShortcutHint id="panel-files" /></button>
-              <button onClick={() => { setMenu(false); togglePanel('chat'); }}><span className="grow">Chat</span><ShortcutHint id="panel-chat" /></button>
-              <button onClick={() => { setMenu(false); togglePanel('queue'); }}><span className="grow">Queued messages ({w.queued})</span><ShortcutHint id="panel-queue" /></button>
-              {w.queued > 0 && <button onClick={() => { setMenu(false); runCommand('send-now'); }}><span className="grow">Send next queued now</span><ShortcutHint id="send-now" /></button>}
-              <button onClick={() => { setMenu(false); togglePanel('snapshots'); }}><span className="grow">Snapshots</span><ShortcutHint id="panel-snapshots" /></button>
-              <button onClick={() => { setMenu(false); togglePanel('preview'); }}><span className="grow">Preview</span><ShortcutHint id="panel-preview" /></button>
-              {onSplit && (
-                <>
-                  <button
-                    onClick={() => {
-                      setMenu(false);
-                      onSplit('right');
-                    }}
-                  >
-                    <span className="grow">Split right</span>
-                    <ShortcutHint id="split-right" />
-                  </button>
-                  <button
-                    onClick={() => {
-                      setMenu(false);
-                      onSplit('below');
-                    }}
-                  >
-                    <span className="grow">Split below</span>
-                    <ShortcutHint id="split-below" />
-                  </button>
-                  {onFlipSplit && (
-                    <button
-                      onClick={() => {
-                        setMenu(false);
-                        onFlipSplit();
-                      }}
-                    >
-                      <span className="grow">Flip split</span>
-                      <ShortcutHint id="toggle-split" />
-                    </button>
-                  )}
-                </>
-              )}
-              {onReplace && (
-                <button
-                  onClick={() => {
-                    setMenu(false);
-                    onReplace();
-                  }}
-                >
-                  <span className="grow">Replace pane…</span>
-                  <ShortcutHint id="replace-pane" />
-                </button>
-              )}
-              {onClosePane && (
-                <button
-                  onClick={() => {
-                    setMenu(false);
-                    onClosePane();
-                  }}
-                >
-                  <span className="grow">Close pane</span>
-                  <ShortcutHint id="close-pane" />
-                </button>
-              )}
-              <button
-                onClick={() =>
-                  act(async () => {
-                    setCapture(await client.capture(w.id));
-                  })
-                }
-              >
-                Scrollback as text
-              </button>
-              {view === 'terminal' && (
-                <button
-                  onClick={() => {
-                    setKeysPref(showKeys ? 'off' : 'on');
-                    setMenu(false);
-                  }}
-                >
-                  <span className="grow">{showKeys ? 'Hide' : 'Show'} on-screen keys</span>
-                  <ShortcutHint id="toggle-keys" />
-                </button>
-              )}
-              <button
-                onClick={() => {
-                  navigator.clipboard?.writeText(`ah attach ${w.uid}`).catch(() => {});
-                  setMenu(false);
-                }}
-              >
-                Copy “ah attach {w.uid}”
-              </button>
-              <hr />
-              <button className="danger" onClick={kill}>
-                <span className="grow">Terminate session</span>
-                <ShortcutHint id="terminate" />
-              </button>
-              </div>
-              </>,
+              narrow ? (
+                <ActionSheet scrim={menuScrim} onClose={() => setMenu(false)}>
+                  {menuBody}
+                </ActionSheet>
+              ) : (
+                menuBody
+              ),
               document.body,
             )}
         </div>

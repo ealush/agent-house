@@ -29,7 +29,9 @@ export function useSheet(ref: RefObject<HTMLElement | null>, onClose: () => void
     if (!el || !phone() || calm()) return close.current();
     leaving.current = true;
     const from = getComputedStyle(el).transform;
-    const a = el.animate([{ transform: from === 'none' ? 'translate3d(0, 0, 0)' : from }, { transform: 'translate3d(0, 100%, 0)' }], { duration: 280, easing: EASE, fill: 'forwards' });
+    // All the way off: a sheet that floats above the bottom edge has further to go than its height.
+    const away = Math.max(el.getBoundingClientRect().height, innerHeight - el.getBoundingClientRect().top);
+    const a = el.animate([{ transform: from === 'none' ? 'translate3d(0, 0, 0)' : from }, { transform: `translate3d(0, ${away}px, 0)` }], { duration: 280, easing: EASE, fill: 'forwards' });
     el.style.setProperty('--drag', '1');
     a.finished.then(() => close.current(), () => close.current());
   };
@@ -163,5 +165,26 @@ export function Sheet({ label, className = '', onClose, children }: { label: str
       <SheetBar onClose={dismiss} title={label} />
       {children}
     </dialog>
+  );
+}
+
+/**
+ * A phone's menu as an iPhone action sheet: the choices in one rounded group
+ * near the thumb, Cancel apart under them, over a scrim. Drags down to close
+ * like any sheet.
+ */
+export function ActionSheet({ onClose, scrim, children }: { onClose: () => void; scrim?: RefObject<HTMLDivElement | null>; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const { dismiss } = useSheet(ref, onClose);
+  return (
+    <>
+      <div ref={scrim} className="sheet-scrim" onClick={dismiss} />
+      <div ref={ref} className="action-sheet">
+        {children}
+        <button type="button" className="sheet-cancel" onClick={dismiss}>
+          Cancel
+        </button>
+      </div>
+    </>
   );
 }
