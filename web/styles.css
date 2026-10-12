@@ -7146,3 +7146,54 @@ select:not([multiple]) {
     animation: none;
   }
 }
+
+/* ---------- phone: everything a finger hits is at least 44pt, Apple's minimum (HIG),
+   and the navigation bar's icons are one size */
+
+@media (max-width: 760px), ((pointer: coarse) and (max-height: 500px) and (max-width: 1000px)) {
+  .session-head > .icon-btn,
+  .session-head .menu-wrap > .icon-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 999px;
+  }
+
+  .session-head > .icon-btn svg,
+  .session-head .menu-wrap > .icon-btn svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .seg-tabs button {
+    min-height: 40px;
+  }
+
+  .settings-nav .nav-item,
+  .agent-pill,
+  .disclosure {
+    min-height: 44px;
+  }
+
+  .key {
+    height: 44px;
+  }
+
+  /* Small chips and segments keep their look; the target reaches past them to 44. */
+  .seg button,
+  .sugg {
+    position: relative;
+  }
+
+  .sugg {
+    min-height: 34px;
+    padding: 5px 12px;
+    font-size: 13px;
+  }
+
+  .seg button::after,
+  .sugg::after {
+    content: '';
+    position: absolute;
+    inset: -5px -3px;
+  }
+}

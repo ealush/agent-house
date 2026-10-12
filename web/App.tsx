@@ -920,7 +920,7 @@ export function App({ onLock }: { onLock: () => void }) {
           {(['inbox', 'sessions', 'history'] as const).map((p) => (
             <button key={p} className={shown === p ? 'on' : ''} aria-current={shown === p ? 'page' : undefined} onClick={() => go({ page: p, selected: null })}>
               <span className="tab-icon">
-                <Icon name={p} size={22} />
+                <Icon name={p} size={24} />
                 {p === 'inbox' && waiting > 0 && <span className="badge">{waiting}</span>}
               </span>
               <span className="tab-label">{p[0].toUpperCase() + p.slice(1)}</span>

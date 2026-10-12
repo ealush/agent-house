@@ -144,13 +144,17 @@ export function Sheet({ label, className = '', onClose, children }: { label: str
   const { dismiss } = useSheet(ref, onClose);
   useEffect(() => {
     const d = ref.current;
-    if (d && !d.open) d.showModal();
+    if (!d || d.open) return;
+    d.showModal();
+    // The sheet itself, not its first control: a phone has no keyboard to move focus with.
+    d.focus({ preventScroll: true });
   }, []);
   return (
     <dialog
       ref={ref}
       className={`dialog sheet-view ${className}`}
       aria-label={label}
+      tabIndex={-1}
       onCancel={(e) => {
         e.preventDefault();
         dismiss();
