@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { State, Win } from './api.ts';
 import { askConfirm } from './ask.tsx';
 import { Icon } from './icons.tsx';
@@ -102,6 +102,14 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
     }
   }
 
+  // Each session's status as last drawn, so a dot can tell a change from a first draw.
+  const shown = useRef(new Map<string, string>());
+  // The status each dot last popped for: kept while it lasts, so a re-render can't cut the pop short.
+  const popped = useRef(new Map<string, string>());
+  useEffect(() => {
+    for (const w of state?.windows ?? []) shown.current.set(w.key, w.status);
+  });
+
   /** Keyboard reorder (Alt+Shift+↑/↓ on a focused row): one place up or down within its group. */
   function nudgeSession(group: Win[], w: Win, dir: -1 | 1) {
     const at = group.findIndex((x) => x.key === w.key);
@@ -120,6 +128,9 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
 
   function row(w: Win, group: Win[]) {
     const menu = menuKey === w.key;
+    // The dot pops when the status changes, not every time the sidebar draws it.
+    if (shown.current.has(w.key) && shown.current.get(w.key) !== w.status) popped.current.set(w.key, w.status);
+    const pop = popped.current.get(w.key) === w.status;
     const { color } = look(w.agent);
     const modelLabel = shortModel(w.model);
     const active = w.key === selected;
@@ -175,7 +186,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
           <span className="chip sm">
             <AgentLogo id={w.agent} size={13} />
           </span>
-          <span key={w.status} className={`dot ${w.status}`} />
+          <span key={w.status} className={`dot ${w.status} ${pop ? 'pop' : ''}`} />
           <span className="name">
             {w.pinned ? '★ ' : ''}
             {w.agent ? w.title : w.title === 'shell' ? w.command : w.title}

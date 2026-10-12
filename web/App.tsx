@@ -400,7 +400,9 @@ export function App({ onLock }: { onLock: () => void }) {
       setSpaces(r.spaces);
       showSlot(r.show, { still: true });
     }, n > spaces.current ? 'next' : 'prev');
-    flash(`Workspace ${n}`);
+    // The sidebar's workspace row and the slide already say where you are; only a
+    // collapsed sidebar leaves the number unsaid.
+    if (!sideOpen || narrow) flash(`Workspace ${n}`);
   };
   const sendToWorkspace = (n: number) => {
     const key = layout ? focusKey : selected;
@@ -685,9 +687,11 @@ export function App({ onLock }: { onLock: () => void }) {
     toastNow.current = msg;
     setToast(msg);
     setToastOut(false);
-    // It sinks away before it goes, instead of vanishing mid-read.
-    window.setTimeout(() => toastNow.current === msg && setToastOut(true), 3300);
-    window.setTimeout(() => setToast((t) => (t === msg ? null : t)), 3500);
+    // As long as it takes to read: a short confirmation goes quickly, an error stays.
+    // It rises away before it goes, instead of vanishing mid-read.
+    const ms = Math.min(4500, Math.max(1600, 1200 + msg.length * 55));
+    window.setTimeout(() => toastNow.current === msg && setToastOut(true), ms - 200);
+    window.setTimeout(() => setToast((t) => (t === msg ? null : t)), ms);
   }
 
   // In-page notifications are the fallback when Web Push isn't on (plain http).
@@ -826,7 +830,8 @@ export function App({ onLock }: { onLock: () => void }) {
   async function answer(w: Win, a: 'approve' | 'deny') {
     try {
       await clientFor(w.host).answer(w.uid, a);
-      flash(a === 'approve' ? `Approved · ${w.title}` : `Denied · ${w.title}`);
+      // On screen, the session itself shows the answer land; elsewhere (the inbox) say so.
+      if (!visibleKeys.includes(w.key)) flash(a === 'approve' ? `Approved · ${w.title}` : `Denied · ${w.title}`);
     } catch (e) {
       flash((e as Error).message);
     }
@@ -903,7 +908,8 @@ export function App({ onLock }: { onLock: () => void }) {
     // The GUI composer shows the message itself (in the feed, or the queue tray).
     if (r.resumed) flash('Resuming the session; your message goes in once it is ready');
     else if (r.starting) flash('Your message goes in once the agent is ready');
-    else if (!opts.quiet) flash(r.outcome === 'delivered' ? 'Sent' : `Queued (${r.queued}) — sent when the agent is free`);
+    // Delivered shows itself where it lands; a queued message needs saying.
+    else if (!opts.quiet && r.outcome !== 'delivered') flash(`Queued (${r.queued}) — sent when the agent is free`);
     refresh(current?.host);
   }
 

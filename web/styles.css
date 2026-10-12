@@ -594,18 +594,25 @@ kbd {
 
 /* ---------- status dots & pills */
 
-/* A dot is drawn fresh when its status changes (keyed on it), so the change
-   shows as a small pop where the eye can catch it. */
+/* A dot that changed status is drawn fresh with .pop, so the change shows as a
+   small pop where the eye can catch it; a dot drawn for the first time is still. */
 .dot {
   flex: none;
   width: 8px;
   height: 8px;
   border-radius: 50%;
+}
+
+.dot.pop {
   animation: dot-in var(--dur-2) var(--ease);
 }
 
 .dot.waiting {
   background: var(--accent);
+  animation: ring 1.8s ease-out infinite;
+}
+
+.dot.waiting.pop {
   animation:
     dot-in var(--dur-2) var(--ease),
     ring 1.8s ease-out var(--dur-2) infinite;
@@ -1760,9 +1767,11 @@ a.btn {
   box-shadow: var(--elev-2);
 }
 
+/* Dimmed, not blurred: a full-screen blur re-renders every frame anything changes in or
+   under the dialog (a busy terminal, each keystroke in a search), for a 3px softening
+   the dim already hides. The panels keep their own frosted glass. */
 .dialog::backdrop {
   background: var(--scrim);
-  backdrop-filter: blur(3px);
 }
 
 .dialog form {
@@ -2351,10 +2360,12 @@ a.btn {
   }
 }
 
+/* A banner at the top, as macOS and iOS place them: clear of the composer and the
+   tab bar, where a toast at the bottom covered the controls you were using. */
 .toast {
   position: fixed;
   left: 50%;
-  bottom: calc(90px + var(--safe-bottom));
+  top: calc(14px + env(safe-area-inset-top, 0px));
   transform: translateX(-50%);
   max-width: calc(100vw - 32px);
   padding: 10px 16px;
@@ -2377,13 +2388,13 @@ a.btn {
 
 .toast.out {
   opacity: 0;
-  translate: 0 6px;
+  translate: 0 -6px;
 }
 
 @keyframes toast-in {
   from {
     opacity: 0;
-    translate: 0 10px;
+    translate: 0 -10px;
     scale: 0.96;
   }
 }
@@ -6957,8 +6968,6 @@ select:not([multiple]) {
   inset: 0;
   z-index: 89;
   background: var(--scrim);
-  -webkit-backdrop-filter: blur(3px);
-  backdrop-filter: blur(3px);
   animation: scrim-in var(--dur-2) var(--ease);
 }
 
