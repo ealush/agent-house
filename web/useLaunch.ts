@@ -1,7 +1,7 @@
 import type { HostApi, SendResult, Win } from './api.ts';
 import { askConfirm, showError } from './ask.tsx';
 import { effectiveModel, effortsFor, usePreset } from './ModelPicker.tsx';
-import { shortModel } from './logos.tsx';
+import { runningModel, shortModel } from './agents.ts';
 import type { PaletteNode } from './palette.ts';
 import { usePaletteProvider } from './shortcuts.tsx';
 
@@ -25,7 +25,10 @@ type Opts = {
 export function useLaunch({ client, w, agent, onNotice, onSent, onSettingsOpen, onRelaunched }: Opts) {
   const preset = usePreset(w?.host ?? '', agent);
   const models = preset?.models ?? [];
-  const model = preset ? effectiveModel(preset, w?.launchModel) : undefined;
+  // What the agent reports it runs beats what it was launched with: a /model in its
+  // terminal, or a session ah didn't start, would otherwise show the default.
+  const live = runningModel(models, w?.model);
+  const model = preset ? (live ?? (w?.model ? undefined : effectiveModel(preset, w?.launchModel))) : undefined;
   const modelLabel = model?.name ?? shortModel(w?.model) ?? null;
   const effort = w?.launchEffort ?? (w?.launchModel ? undefined : preset?.defaultEffort);
   const mode = preset?.modes?.find((m) => m.id === (w?.launchMode ?? 'default'));

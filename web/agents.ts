@@ -30,6 +30,17 @@ export function age(ts: number): string {
 
 const VENDOR = new Set(['claude', 'codex', 'openai', 'gpt', 'gemini', 'google', 'grok', 'xai', 'muse', 'meta', 'hermes', 'opencode', 'anthropic']);
 
+/**
+ * The preset's choice for the model a session is running ("claude-haiku-4-5-20251001"
+ * is the "haiku" alias), so the composer shows what the agent really uses, even when
+ * it was started outside ah or switched in its own terminal.
+ */
+export function runningModel<M extends { id: string }>(models: M[], running: string | null | undefined): M | undefined {
+  if (!running) return undefined;
+  const id = running.toLowerCase();
+  return models.find((m) => m.id.toLowerCase() === id) ?? models.find((m) => m.id.length >= 4 && m.id !== 'default' && id.includes(m.id.toLowerCase()));
+}
+
 /** A model id as people say it ("claude-haiku-4-5-20251001" → "Haiku 4.5", "gpt-6.1-sol" → "6.1 Sol"). */
 export function shortModel(model: string | null | undefined): string | null {
   if (!model) return null;
