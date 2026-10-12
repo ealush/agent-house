@@ -9,16 +9,19 @@ import { useSavedGroups } from './groupOrder.ts';
 import { sidebarSections } from './sessionOrder.ts';
 import { useFlip } from './useFlip.ts';
 import { useDismiss } from './useDismiss.ts';
+import { ActionSheet } from './sheet.tsx';
+import { createPortal } from 'react-dom';
 
 /** Ended and saved conversations from every host; one tap resumes on the host that has it. */
-export function HistoryView({ state, onResume, onForget, onFork, touch = false }: { state: State; onResume: (h: HistoryItem) => void; onForget: (h: HistoryItem) => void; onFork?: (h: HistoryItem) => void; touch?: boolean }) {
+export function HistoryView({ state, onResume, onForget, onFork, touch = false, narrow = false }: { state: State; onResume: (h: HistoryItem) => void; onForget: (h: HistoryItem) => void; onFork?: (h: HistoryItem) => void; touch?: boolean; narrow?: boolean }) {
   const multiHost = state.hosts.length > 1;
   const [filter, setFilter] = useState('');
   // Touch: the row itself resumes (like any list on a phone), and Fork and
   // Hide wait behind ··· so the title keeps the width.
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const menuRow = useRef<HTMLSpanElement>(null);
-  useDismiss(menuFor !== null, menuRow, () => setMenuFor(null));
+  // A phone's menu is an action sheet, which closes itself (scrim, Cancel, a drag down).
+  useDismiss(menuFor !== null && !narrow, menuRow, () => setMenuFor(null));
   const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
   const shown = words.length
     ? state.history.filter((h) => {
@@ -109,13 +112,31 @@ export function HistoryView({ state, onResume, onForget, onFork, touch = false }
                     <button className="icon-btn small" aria-label={`More for ${h.title}`} aria-expanded={open} onClick={() => setMenuFor(open ? null : key)}>
                       <Icon name="more" size={16} />
                     </button>
-                    {open && (
-                      <div className="menu row-menu" role="menu">
-                        <button onClick={() => { setMenuFor(null); onResume(h); }}>Resume</button>
-                        {canFork && <button onClick={() => { setMenuFor(null); onFork?.(h); }}>Fork…</button>}
-                        <button className="danger" onClick={() => { setMenuFor(null); onForget(h); }}>Hide</button>
-                      </div>
-                    )}
+                    {open &&
+                      (() => {
+                        const items = (
+                          <>
+                            <button onClick={() => { setMenuFor(null); onResume(h); }}>Resume</button>
+                            {canFork && <button onClick={() => { setMenuFor(null); onFork?.(h); }}>Fork…</button>}
+                            <button className="danger" onClick={() => { setMenuFor(null); onForget(h); }}>Hide</button>
+                          </>
+                        );
+                        // On a phone, the same action sheet as a session's menu.
+                        return narrow ? (
+                          createPortal(
+                            <ActionSheet onClose={() => setMenuFor(null)}>
+                              <div className="menu sheet" role="menu" aria-label={h.title} style={{ margin: 0 }}>
+                                {items}
+                              </div>
+                            </ActionSheet>,
+                            document.body,
+                          )
+                        ) : (
+                          <div className="menu row-menu" role="menu">
+                            {items}
+                          </div>
+                        );
+                      })()}
                   </span>
                 ) : (
                 <span className="row-actions">

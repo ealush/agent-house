@@ -925,6 +925,7 @@ export function App({ onLock }: { onLock: () => void }) {
       ) : shown === 'history' ? (
         <HistoryView
           touch={touch}
+          narrow={narrow}
           state={state}
           onResume={(h) => resume(h.host, h.ref)}
           onForget={forget}
