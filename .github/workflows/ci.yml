@@ -28,6 +28,26 @@ jobs:
       - run: pnpm build
       - run: pnpm test
 
+  # The real page in a browser (Chrome ships on the runner), against a throwaway ah.
+  ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: sudo apt-get update && sudo apt-get install -y tmux build-essential python3
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test:ui
+        env:
+          AH_UI_DIST: dist
+
   # One auth mistake here is a remote shell: the security suite is its own required gate.
   security-regression:
     runs-on: ubuntu-latest

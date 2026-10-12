@@ -38,7 +38,7 @@ newer than the running server shows a "restart ah" banner.
 it, and create a passkey. See [Security model](#security-model).
 
 Keep it running with the systemd user units in [`contrib/ah.service`](contrib/ah.service) and [`contrib/ah-tmux.service`](contrib/ah-tmux.service) (the second owns the tmux server, so ah restarts never touch live sessions).
-Development: `pnpm dev`. Tests: `pnpm test`.
+Development: `pnpm dev`. Tests: `pnpm test`; the page in a real browser (Chromium or Chrome): `pnpm test:ui`.
 
 ### Agent hooks (recommended)
 

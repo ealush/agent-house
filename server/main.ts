@@ -59,7 +59,8 @@ const flag = (name: string) => {
 };
 const PORT = Number(flag('port') ?? process.env.AH_PORT ?? config.port);
 const HOST = String(flag('host') ?? process.env.AH_HOST ?? config.host);
-const DIST = fileURLToPath(new URL('../dist', import.meta.url));
+// AH_DIST: serve another build of the page (the browser tests build their own, never touching dist/).
+const DIST = process.env.AH_DIST ? resolve(process.env.AH_DIST) : fileURLToPath(new URL('../dist', import.meta.url));
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 // Invariant 1. No flag turns this off: exposure belongs to Tailscale, not to ah.

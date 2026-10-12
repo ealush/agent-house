@@ -15,7 +15,8 @@
     "setup:tailscale": "node bin/ah.js setup tailscale",
     "typecheck": "tsc --noEmit",
     "test": "node --test server/*.test.ts test/*.test.ts test/security/*.test.ts",
-    "test:security": "node --test test/security/*.test.ts"
+    "test:security": "node --test test/security/*.test.ts",
+    "test:ui": "node --test test/ui/*.test.ts"
   },
   "engines": {
     "node": ">=23.6"
@@ -44,6 +45,7 @@
     "@xterm/addon-web-links": "^0.12.0",
     "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^6.0.0",
+    "playwright-core": "1.64.0",
     "prisma": "^6.19.3",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
