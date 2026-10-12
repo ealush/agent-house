@@ -6826,3 +6826,60 @@ select:not([multiple]) {
     flex-basis: 100%;
   }
 }
+
+/* ---------- action sheet: a phone's menus rise from the bottom edge, in reach of the thumb */
+
+.sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 89;
+  background: var(--scrim);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  animation: scrim-in var(--dur-2) var(--ease);
+}
+
+/* The desktop placement writes top/left/max-height inline; a sheet docks instead. */
+.menu.sheet {
+  top: auto !important;
+  left: 8px !important;
+  right: 8px !important;
+  bottom: calc(10px + var(--safe-pad));
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  max-height: min(72dvh, calc(var(--vh) - 96px)) !important;
+  padding: 6px;
+  border-radius: 16px;
+  box-shadow: var(--elev-2);
+  animation: sheet-up 320ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Rows a thumb can hit: 48px, concentric with the 16px card and its 6px inset. */
+.menu.sheet button {
+  min-height: 48px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 16px;
+}
+
+.menu.sheet .menu-agents {
+  padding: 8px 14px 6px;
+}
+
+.menu.sheet .menu-agent {
+  width: 40px;
+  height: 40px;
+  min-height: 0;
+  padding: 0;
+}
+
+.menu.sheet hr {
+  margin: 6px 4px;
+}
+
+@keyframes sheet-up {
+  from {
+    transform: translateY(calc(100% + 24px));
+  }
+}

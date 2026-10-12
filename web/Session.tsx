@@ -187,6 +187,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   const [menu, setMenu] = useState(false);
   const menuBtn = useRef<HTMLButtonElement>(null);
   const menuEl = useRef<HTMLDivElement>(null);
+  const menuScrim = useRef<HTMLDivElement>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number; maxHeight: number; above: boolean } | null>(null);
 
   // Opened from the keyboard or with a click, the first item takes focus once the
@@ -244,6 +245,9 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
     const onDown = (e: PointerEvent) => {
       if (menuEl.current?.contains(e.target as Node)) return;
       if (menuBtn.current?.contains(e.target as Node)) return;
+      // The sheet's scrim closes on its click, so the tap that closes the
+      // sheet can't land on whatever was under it.
+      if (menuScrim.current?.contains(e.target as Node)) return;
       setMenu(false);
     };
     const onKey = (e: KeyboardEvent) => {
@@ -790,17 +794,22 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
           </button>
           {menu &&
             createPortal(
+              <>
+              {/* A phone gets an action sheet: up from the bottom edge, in thumb's reach, over a scrim. */}
+              {narrow && <div ref={menuScrim} className="sheet-scrim" onClick={() => setMenu(false)} />}
               <div
                 ref={menuEl}
                 data-rove
                 role="menu"
-                className="menu"
+                className={narrow ? 'menu sheet' : 'menu'}
                 onPointerLeave={(e) => {
                   if (e.pointerType === 'touch') return;
                   setMenu(false);
                 }}
                 style={
-                  menuPos
+                  narrow
+                    ? { position: 'fixed', zIndex: 90, margin: 0 }
+                    : menuPos
                     ? { position: 'fixed', right: 'auto', top: menuPos.top, left: menuPos.left, maxHeight: menuPos.maxHeight, zIndex: 90, margin: 0, transformOrigin: menuPos.above ? 'bottom right' : 'top right' }
                     : { position: 'fixed', right: 'auto', visibility: 'hidden', zIndex: 90, margin: 0 }
                 }
@@ -941,7 +950,8 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
                 <span className="grow">Terminate session</span>
                 <ShortcutHint id="terminate" />
               </button>
-              </div>,
+              </div>
+              </>,
               document.body,
             )}
         </div>
