@@ -434,8 +434,6 @@ button.tag:hover {
 }
 
 .menu {
-  border-radius: 8px;
-  background: var(--raised);
   border-color: var(--line-2);
 }
 

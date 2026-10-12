@@ -5,6 +5,11 @@
   background: var(--bg);
 }
 
+/* The composer sits on the conversation's ground, not on a band of its own. */
+.session-main:has(> .gui) {
+  background: var(--bg);
+}
+
 :root[data-theme='light'] .gui {
   --gui-bar: #e91e63;
 }
@@ -872,7 +877,7 @@
   bottom: 12px;
   left: 50%;
   transform: translateX(-50%);
-  box-shadow: 0 4px 16px #0008;
+  box-shadow: var(--elev-1);
 }
 
 .gui .gui-conn {
