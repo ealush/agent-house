@@ -357,7 +357,7 @@ export function hostApi(base: string) {
     saveDraft: (uid: string, text: string) => r<{ draft: Draft | null }>('PUT', `/api/sessions/${enc(uid)}/draft`, { text, device: deviceName(), client: CLIENT_ID }),
     snapshots: (uid: string) => r<SnapshotList>('GET', `/api/sessions/${enc(uid)}/snapshots`),
     restoreSnapshot: (uid: string, turn: number, interrupt = false) =>
-      r<{ safety: SnapshotInfo; restored: SnapshotInfo }>('POST', `/api/sessions/${enc(uid)}/snapshots/${turn}/restore`, { interrupt }),
+      r<{ safety: SnapshotInfo; restored: SnapshotInfo; notified: boolean }>('POST', `/api/sessions/${enc(uid)}/snapshots/${turn}/restore`, { interrupt }),
     toggleSnapshots: (uid: string, enabled: boolean) => r('POST', `/api/sessions/${enc(uid)}/snapshots/toggle`, { enabled }),
     forget: (ref: string) => r('DELETE', `/api/sessions/${enc(ref)}`),
     changes: (id: string) => r<Changes>('GET', `/api/windows/${enc(id)}/changes`),

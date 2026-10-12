@@ -64,8 +64,9 @@ export function SnapshotsPanel({ client, w, onChange }: { client: HostApi; w: Wi
     if (!ok) return;
     setBusy(true);
     try {
+      let out;
       try {
-        await client.restoreSnapshot(uid, snap.turn);
+        out = await client.restoreSnapshot(uid, snap.turn);
       } catch (e) {
         // A working agent must be stopped first; offer the interrupt once, plainly.
         if (!/agent is working/i.test((e as Error).message)) throw e;
@@ -76,9 +77,11 @@ export function SnapshotsPanel({ client, w, onChange }: { client: HostApi; w: Wi
           danger: true,
         });
         if (!stop) return;
-        await client.restoreSnapshot(uid, snap.turn, true);
+        out = await client.restoreSnapshot(uid, snap.turn, true);
       }
       await refresh();
+      // The files are back; only the agent's picture of them may be stale.
+      if (!out.notified) setError('Restored, but the agent could not be told. Ask it to run git status and re-read changed files before it continues.');
     } catch (e) {
       setError((e as Error).message);
     } finally {
