@@ -160,6 +160,7 @@ export function App({ onLock }: { onLock: () => void }) {
   const splitOrigin = useRef<string | null>(null);
   // Where the last pane of a closing split was, so the single view can grow out of it.
   const collapseFrom = useRef<DOMRect | null>(null);
+  const reorders = useRef<Record<string, Promise<unknown>[]>>({});
   useLayoutEffect(() => {
     const from = collapseFrom.current;
     const main = document.querySelector<HTMLElement>('.main');
@@ -863,10 +864,15 @@ export function App({ onLock }: { onLock: () => void }) {
           onNew={(where) => setCreating(where ?? {})}
           onWorktrees={() => setDialog('worktrees')}
           onReorder={(uid, host, order) => {
-            clientFor(host)
-              .order(uid, order)
-              .catch((e) => flash((e as Error).message));
-            refresh(host);
+            // One move can save several rows: refresh once they are all saved,
+            // so the list never shows a half-applied order (and rows don't bounce).
+            const batch = (reorders.current[host] ??= []);
+            batch.push(clientFor(host).order(uid, order).catch((e) => flash((e as Error).message)));
+            if (batch.length > 1) return;
+            queueMicrotask(() => {
+              delete reorders.current[host];
+              void Promise.all(batch).then(() => refresh(host));
+            });
           }}
           onKill={(w) => {
             clientFor(w.host)

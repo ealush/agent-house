@@ -1219,12 +1219,16 @@ export class Core {
    * Manual sidebar order (F43). Sparse keys: existing orders keep their gaps,
    * so inserting between two sessions never rewrites every record.
    */
-  setOrder(uid: string, order: number) {
+  /** Resolves once the new order is in state, so a fetch right after the request never sees the old one. */
+  setOrder(uid: string, order: number): Promise<void> {
     const rec = this.registry.get(uid);
     if (!rec) throw new CoreError(404, 'only sessions ah has run can be reordered');
     if (!Number.isFinite(order)) throw new CoreError(400, 'invalid order');
     this.registry.setMeta(uid, 'ah.order', order);
-    this.tick().catch(() => {});
+    return this.tick().then(
+      () => {},
+      () => {},
+    );
   }
 
   /** Next order key: max existing + 100, so new sessions land at the end. */

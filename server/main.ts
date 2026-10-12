@@ -613,7 +613,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     const order = Number(body.order);
     if (!Number.isFinite(order)) throw new HttpError(400, 'invalid order');
     try {
-      core.setOrder(m[1], order);
+      await core.setOrder(m[1], order);
     } catch (err) {
       if (err instanceof CoreError) throw new HttpError(err.status, err.message);
       throw err;
