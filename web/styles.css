@@ -6734,7 +6734,11 @@ select:not([multiple]) {
   ::backdrop {
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 1ms !important;
+    /* 0s, not 1ms: transition-property defaults to "all", so a 1ms duration on every
+       element turned every style change into a transition (hundreds per frame in a busy
+       terminal). Nothing waits on transitionend without a timer backstop. */
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
   }
 }
 
