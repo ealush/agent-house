@@ -152,7 +152,7 @@ function AskCard({ w, client, multiHost, narrow, onOpen, onAnswer }: { w: Win; c
   const { color, name } = look(w.agent);
   const modelLabel = shortModel(w.model);
   const ask = w.ask;
-  const code = ask?.kind === 'command' || ask?.kind === 'screen';
+  const code = ask?.kind === 'command';
   // Answerable right here: the agent's questions, or the rows of its picker.
   const inline = !!ask && ((ask.kind === 'choice' && (!!ask.questions?.length || !!ask.dialog)) || !!ask.options?.length);
   // Lead with the prompt's question; the rest of the screen is context, without the TUI's rules.
@@ -174,7 +174,7 @@ function AskCard({ w, client, multiHost, narrow, onOpen, onAnswer }: { w: Win; c
       </div>
       {!narrow && ask && <div className="card-kind">{KIND_LABEL[ask.kind]}</div>}
       {question && <p className="card-question">{question}</p>}
-      {context && <pre className={`ask-box ${code ? 'code' : ''}`}>{context}</pre>}
+      {context && (code ? <pre className="ask-box code">{context}</pre> : <div className="ask-box">{context}</div>)}
       {inline && <AskPanel w={w} client={client} onAnswer={onAnswer} compact />}
       {!narrow && (
         <div className="card-where">
