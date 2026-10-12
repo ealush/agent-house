@@ -8,6 +8,7 @@ import { applyModifiers } from './keyboard.ts';
 import type { SurfaceHandle, SurfaceProps } from './surface.ts';
 import { shortcutTitle } from './shortcuts.tsx';
 import { AskPanel, type AskHandle } from './AskPanel.tsx';
+import { useFileDrop } from './useFileDrop.ts';
 
 const KIND_LABEL = { command: 'Wants to run a command', tool: 'Wants to use a tool', question: 'Asked a question', screen: 'Waiting for you', choice: 'Asked you' };
 const coarse = () => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
@@ -16,7 +17,6 @@ const coarse = () => typeof matchMedia === 'function' && matchMedia('(pointer: c
  *  touch key bar, file paste/drop, and the screen-scraped permission banner. */
 export const TerminalSurface = forwardRef<SurfaceHandle, SurfaceProps>(function TerminalSurface({ w, client, hidden, showKeys, onAnswer, onReply, refresh }, ref) {
   const term = useRef<TerminalHandle>(null);
-  const [dragging, setDragging] = useState(false);
   const [ctrl, setCtrl] = useState(false);
   const [alt, setAlt] = useState(false);
   const [shift, setShift] = useState(false);
@@ -56,6 +56,8 @@ export const TerminalSurface = forwardRef<SurfaceHandle, SurfaceProps>(function 
     }
   }
 
+  const drop = useFileDrop(sendFiles);
+
   async function pasteClipboard() {
     if (pasting) return;
     setPasting(true);
@@ -82,23 +84,10 @@ export const TerminalSurface = forwardRef<SurfaceHandle, SurfaceProps>(function 
           sendFiles(pasted);
         }
       }}
-      onDragOver={(e) => {
-        if (e.dataTransfer.types.includes('Files')) {
-          e.preventDefault();
-          setDragging(true);
-        }
-      }}
-      onDragLeave={(e) => e.currentTarget === e.target && setDragging(false)}
-      onDrop={(e) => {
-        setDragging(false);
-        if (e.dataTransfer.files.length) {
-          e.preventDefault();
-          sendFiles(e.dataTransfer.files);
-        }
-      }}
+      {...drop.handlers}
     >
       <Terminal ref={term} key={w.key} hidden={hidden} windowId={w.id} wsUrl={client.wsUrl} transformInput={transform} onGone={refresh} />
-      {dragging && <div className="drop-hint">Drop to upload to {w.host} and insert the path</div>}
+      {drop.over && <div className="drop-hint">Drop to upload to {w.host} and insert the path</div>}
 
       {w.status === 'waiting' && w.ask && (
         <div className="ask-banner">
