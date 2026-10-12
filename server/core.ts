@@ -20,7 +20,7 @@ import { descendants, snapshot as procSnapshot } from './procs.ts';
 import { createSnapshot, restoreSnapshot as restoreSnapshotFiles, snapshotDiff, deleteSnapshotRef, createWorktree, headInfo, listWorktrees, mainRepo, removeWorktree, removeWorktreesBulk, GitError, type Worktree } from './git.ts';
 import { invalidateSize } from './size.ts';
 import { SnapshotStore, type SnapshotInfo } from './snapshots.ts';
-import { QueueManager, type LaunchChange, type QueueItem } from './queue.ts';
+import { QueueManager, starting, type LaunchChange, type QueueItem } from './queue.ts';
 import { Push } from './push.ts';
 import { omarchyStamp } from './omarchy.ts';
 import { claudeQuestionGroups, cursorKeys, dialogAt, dialogSteps, parsePicker, parseQuestionDialog, type Answer, type Step } from './choices.ts';
@@ -53,7 +53,8 @@ export type State = {
 /** `key` is the client's session key (a uid, or "<host>/<uid>" for a peer's session). */
 export type Focus = { key: string; device: string; client: string; at: number };
 
-export type SendResult = { outcome: 'delivered' | 'queued'; windowId: string; resumed: boolean; queued: number; queueId?: string };
+/** `starting`: queued only because the agent just launched; it goes in once its UI is up. */
+export type SendResult = { outcome: 'delivered' | 'queued'; windowId: string; resumed: boolean; queued: number; queueId?: string; starting?: boolean };
 
 export type ForkInfo = {
   canFork: boolean;
@@ -576,8 +577,13 @@ export class Core {
       // instead of queued behind the turn that asked. (The ticker never flushes
       // the queue into a waiting session, so queueing here would strand it.)
       // Shells take input immediately (a dev server is always "busy"); agents get queued while working.
+      // A just-launched agent (a new session's first prompt) waits for the queue until
+      // its UI is up: before that, Enter doesn't submit. Its process may not exist yet
+      // (the window still looks like a shell), so the launch record says what it is.
+      const settled = !!w?.agent && w.status !== 'busy';
+      const fresh = !!w && starting(w) && !settled && (!!w.agent || (this.registry.get(w.uid)?.harness ?? 'shell') !== 'shell');
       const answering = !!w?.agent && w.status === 'waiting';
-      const ready = !target.resumed && !!w && (answering || queued.length === 0) && (answering || !w.agent || (!this.justSent(w.uid) && (w.status === 'idle' || w.status === 'attention')));
+      const ready = !target.resumed && !!w && !fresh && (answering || queued.length === 0) && (answering || !w.agent || (!this.justSent(w.uid) && (w.status === 'idle' || w.status === 'attention')));
       if (ready) {
         if (w.agent) {
           this.sentAt.set(w.uid, Date.now());
@@ -596,7 +602,7 @@ export class Core {
         ...(launchChange ? { launchChange } : {}),
       };
       const queuedCount = this.queues.enqueue(target.uid, item);
-      return { outcome: 'queued', windowId: target.windowId, resumed: target.resumed, queued: queuedCount, queueId: item.id };
+      return { outcome: 'queued', windowId: target.windowId, resumed: target.resumed, queued: queuedCount, queueId: item.id, ...(fresh ? { starting: true } : {}) };
     });
   }
 
@@ -1128,7 +1134,7 @@ export class Core {
    * Serialized with sends through the per-session input lock; a working agent
    * must be stopped first, or the caller confirms the interrupt.
    */
-  async restoreSnapshot(uid: string, turn: number, opts: { interrupt?: boolean } = {}): Promise<{ safety: SnapshotInfo; restored: SnapshotInfo }> {
+  async restoreSnapshot(uid: string, turn: number, opts: { interrupt?: boolean } = {}): Promise<{ safety: SnapshotInfo; restored: SnapshotInfo; notified: boolean }> {
     const rec = this.registry.get(uid);
     if (!rec) throw new CoreError(404, 'session not found');
     const target = await this.snapshotStore.get(uid, turn).catch(() => null);
@@ -1161,18 +1167,29 @@ export class Core {
       try {
         await restoreSnapshotFiles(cwd, { target: target.commit, current: safety.commit, indexFile: join(STATE_DIR, 'snapshots', uid, 'index-restore') });
       } catch (err) {
-        // Undo a partial checkout using the safety snapshot before reporting failure.
-        await restoreSnapshotFiles(cwd, { target: safety.commit, current: target.commit, indexFile: join(STATE_DIR, 'snapshots', uid, 'index-recover') }).catch(() => {});
-        throw new CoreError(400, `restore failed: ${(err as Error).message}`);
+        // Undo a partial checkout using the safety snapshot before reporting failure,
+        // and say which state the files are in: back as they were, or half-restored.
+        const why = (err as Error).message;
+        try {
+          await restoreSnapshotFiles(cwd, { target: safety.commit, current: target.commit, indexFile: join(STATE_DIR, 'snapshots', uid, 'index-recover') });
+        } catch (undo) {
+          throw new CoreError(500, `restore failed (${why}), and putting your files back failed too (${(undo as Error).message}). Your files may be partly restored: restore the safety snapshot "${safety.promptExcerpt}" to get back to where you were.`);
+        }
+        throw new CoreError(400, `restore failed: ${why}. Your files are as they were.`);
       }
       return { safety, restored: target };
     });
     // Told after the input lock is released (send takes the same lock): the
-    // agent's picture of its files must not silently diverge from disk.
+    // agent's picture of its files must not silently diverge from disk, so a
+    // failure to tell it is reported rather than dropped.
+    let notified = true;
     if (w?.agent) {
-      await this.send(uid, `Your files were rolled back to the state before turn ${turn} by the user. Run git status and re-read changed files before continuing.`, true).catch(() => {});
+      notified = await this.send(uid, `Your files were rolled back to the state before turn ${turn} by the user. Run git status and re-read changed files before continuing.`, true).then(
+        () => true,
+        (err) => (console.warn(`telling ${uid} about its rollback failed:`, err), false),
+      );
     }
-    return out;
+    return { ...out, notified };
   }
 
   /**

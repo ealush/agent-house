@@ -113,3 +113,26 @@ test('send-now interrupts the live turn and delivers one queued message', async 
     await cleanup(ah);
   }
 });
+
+test("a new session's first prompt waits for the agent to start, then goes in", async () => {
+  const ah = await startAh({
+    auth: { mode: 'off' },
+    idleAfter: 1,
+    presets: [{ id: 'test-agent', name: 'Test agent', command: `exec ${process.execPath} ${fixture}`, match: '^node$' }],
+  });
+  try {
+    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'test-agent', cwd: `${ah.dir}/files` } });
+    assert.equal(created.status, 201, created.body);
+    const { id, uid } = created.json();
+    // Sent the moment the window exists, as the new-session dialog does: the agent
+    // isn't running yet, and typing now would leave the prompt unsubmitted.
+    const first = await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'kickoff' } });
+    assert.equal(first.status, 200, first.body);
+    assert.equal(first.json().outcome, 'queued');
+    assert.equal(first.json().starting, true);
+    await until(() => ah.tmux('capture-pane', '-p', '-t', id).includes('FINISHED:kickoff'), 15000, 'first prompt submitted once the agent is up');
+    assert.equal((await http(ah, 'GET', `/api/sessions/${uid}/queue`)).json().length, 0);
+  } finally {
+    await cleanup(ah);
+  }
+});

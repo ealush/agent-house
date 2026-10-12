@@ -20,6 +20,15 @@ export type QueueItem = {
 
 const now = () => Math.floor(Date.now() / 1000);
 
+/**
+ * A freshly (re)started agent is still drawing its UI, and its terminal may not
+ * be in raw mode yet: typed text lands in the input but Enter arrives as a bare
+ * newline and never submits. Input waits until it has settled.
+ */
+export function starting(w: Pick<WindowView, 'createdAt'>, t = now()): boolean {
+  return t - (w.createdAt || 0) < 5;
+}
+
 /** The Core input operations a queue delivery needs. */
 export type QueueRuntime = {
   /** Serialize paste + Enter as one operation per session. */
@@ -115,8 +124,7 @@ export class QueueManager {
     const t0 = now();
     for (const w of windows) {
       if (!w.queued || (w.status !== 'idle' && w.status !== 'attention')) continue;
-      // Freshly (re)started agents render their UI first; don't type into a half-drawn TUI.
-      if (t0 - (w.createdAt || 0) < 5) continue;
+      if (starting(w, t0)) continue;
       await this.rt.withInput(w.uid, async () => {
         if (this.rt.justSent(w.uid)) return;
         const taken = this.take(w.uid);
