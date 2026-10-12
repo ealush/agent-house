@@ -297,6 +297,9 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   const abs = (p: string) => (p.startsWith('~') ? home + p.slice(1) : p);
   const views = viewsFor(w);
   const view: View = views.includes(viewPref) ? viewPref : 'terminal';
+  // For callbacks that outlive this render (the keyboard claim runs across frames).
+  const live = useRef({ view, status: w.status });
+  live.current = { view, status: w.status };
   // Files dropped anywhere on the conversation wait in the composer, as pasted ones do.
   const composer = useRef<ComposerHandle>(null);
   const fileDrop = useFileDrop((files) => composer.current?.attach(files), view === 'gui');
@@ -366,14 +369,21 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   function claimKeyboard(ms = 1500): () => void {
     const until = performance.now() + ms;
     let raf = 0;
+    // Watched until the deadline, not just until it lands: a surface still loading can
+    // replace the element that took focus (the composer remounts once the feed is in).
     const claim = () => {
       const a = document.activeElement as HTMLElement | null;
       const mine = body.current;
-      // Landed: inside this session, and not in a surface that is hidden now.
-      if (mine && a && mine.contains(a) && a.getClientRects().length > 0) return;
-      const elsewhere = a && a !== document.body && a.isConnected && (a.closest('dialog[open]') || (a.matches('input, textarea, select, [contenteditable="true"]') && !a.closest('.session-body, .pane')));
-      if (elsewhere) return;
-      surface.current?.focus();
+      const landed = !!mine && !!a && mine.contains(a) && a.getClientRects().length > 0;
+      if (!landed) {
+        const elsewhere = a && a !== document.body && a.isConnected && (a.closest('dialog[open]') || (a.matches('input, textarea, select, [contenteditable="true"]') && !a.closest('.session-body, .pane')));
+        if (elsewhere) return;
+        // In the GUI the composer is on the page before the (lazy) feed surface has loaded:
+        // focus it directly, so keys typed right after the switch aren't lost. A waiting
+        // session's answer controls come first, as Reply does.
+        if (live.current.view === 'gui' && !(live.current.status === 'waiting' && surface.current?.focusAsk?.())) composer.current?.focus();
+        else surface.current?.focus();
+      }
       if (performance.now() < until) raf = requestAnimationFrame(claim);
     };
     raf = requestAnimationFrame(claim);

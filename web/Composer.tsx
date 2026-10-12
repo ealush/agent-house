@@ -48,7 +48,7 @@ type Props = {
   active?: boolean;
 };
 
-export type ComposerHandle = { attach: (files: File[]) => void };
+export type ComposerHandle = { attach: (files: File[]) => void; focus: () => void };
 
 /** A file on its way into the message. `path` is set once it is on the host. */
 type Attachment = { id: number; name: string; image: boolean; src?: string; path?: string };
@@ -261,7 +261,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
     );
   }
 
-  useImperativeHandle(ref, () => ({ attach: (f) => void attach(f) }));
+  useImperativeHandle(ref, () => ({ attach: (f) => void attach(f), focus: () => area.current?.focus() }));
 
   /** Voice input via the browser's speech recognition; text lands in the box for review. */
   function toggleMic() {
