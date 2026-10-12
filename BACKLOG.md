@@ -138,6 +138,10 @@ that follows you across devices, harnesses, restarts and resumes.
 | P20 | One scale | ✅ | Type ramp, radius scale, four weights, one scrim, enforced by test/design.test.ts. |
 | P21 | One motion | ✅ | One curve, two durations; sheets and menus arrive, buttons press in; one reduced-motion rule. |
 | P22 | Settings as one system | ✅ | Titled cards everywhere, readable activity log, honest host chip. |
+| P23 | Tiling that moves | ✅ | Split panes placed flat (no remount: terminals stay live through split/close/maximize) and animated from their old tile (FLIP); split grows out of the single view, closing grows the last pane into it. |
+| P24 | Direction | ✅ | One gliding selection highlight per list (Glide.tsx); views arrive from where they are: down/up the sidebar, iOS push/pop on phones, workspaces slide sideways. |
+| P25 | Lists that move | ✅ | useFlip: rows glide between sections as status changes, new rows fade in; status dots pop on change. Fixed a reorder race that could restore the old sidebar order. |
+| P26 | Surfaces with an origin | ✅ | Menus/popovers grow from their button, steps and disclosures unfold, toasts rise and sink, palette levels slide by depth, new GUI steps rise in. |
 
 Next candidates: rate-limit auto-resume (F40, opt-in, needs each CLI's reset
 message), quota display (F41), keyboard reordering in the sidebar.
