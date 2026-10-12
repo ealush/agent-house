@@ -1038,9 +1038,12 @@ export function App({ onLock }: { onLock: () => void }) {
               <nav className="tabbar" data-rove>
                 <Glide match=".on" className="thumb" />
                 {(['inbox', 'sessions', 'history'] as const).map((p) => (
-                  <button key={p} className={page === p ? 'on' : ''} onClick={() => go({ page: p, selected: null })}>
-                    {p[0].toUpperCase() + p.slice(1)}
-                    {p === 'inbox' && waiting > 0 && <span className="badge">{waiting}</span>}
+                  <button key={p} className={page === p ? 'on' : ''} aria-current={page === p ? 'page' : undefined} onClick={() => go({ page: p, selected: null })}>
+                    <span className="tab-icon">
+                      <Icon name={p} size={22} />
+                      {p === 'inbox' && waiting > 0 && <span className="badge">{waiting}</span>}
+                    </span>
+                    <span className="tab-label">{p[0].toUpperCase() + p.slice(1)}</span>
                   </button>
                 ))}
               </nav>

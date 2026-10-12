@@ -248,7 +248,12 @@ export function Rows({ windows, multiHost, narrow, onOpen, quiet }: { windows: W
     <ul className="rows">
       {windows.map((w) => {
         const { color } = look(w.agent);
-        const pill = w.status === 'attention' ? <span className="pill attention">{w.agent ? 'done' : 'new output'}</span> : w.status === 'idle' ? <span className="pill">idle</span> : null;
+        const pill =
+          w.status === 'attention' ? <span className="pill attention">{w.agent ? 'done' : 'new output'}</span>
+          : w.status === 'idle' ? <span className="pill">idle</span>
+          : w.status === 'waiting' ? <span className="pill waiting">needs you</span>
+          : w.agent ? <span className="pill busy">working</span>
+          : null;
         return (
           <li key={w.key} data-flip={w.key}>
             <button className={`row ${quiet ? 'quiet' : ''}`} style={{ '--agent': color } as React.CSSProperties} onClick={() => onOpen(w)}>

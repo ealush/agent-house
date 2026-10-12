@@ -516,6 +516,13 @@ button.tag:hover {
 .narrow .card-needs {
   padding: 1rem;
 }
+/* A phone's sections sit closer: the underline already separates them. */
+.narrow .section-label {
+  margin-top: 28px;
+}
+.narrow .section-label.first {
+  margin-top: 0;
+}
 .tabbar button.on {
   background: var(--accent-bg);
   color: var(--accent);
