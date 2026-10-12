@@ -885,7 +885,8 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
           )}
           {narrow && (
             <span className="eyebrow">
-              {[w.agent ? agentName : 'Shell', w.project, multiHost ? w.host : null, elsewhere ? `also open on ${elsewhere}` : null].filter(Boolean).join(' · ')}
+              {/* A phone's header has room for two things: another device viewing it leads, in place of the agent's name. */}
+              {[elsewhere ? `On ${elsewhere} too` : w.agent ? agentName : 'Shell', w.project, multiHost ? w.host : null].filter(Boolean).join(' · ')}
             </span>
           )}
         </div>
