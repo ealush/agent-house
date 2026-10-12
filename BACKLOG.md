@@ -154,6 +154,11 @@ that follows you across devices, harnesses, restarts and resumes.
 | P36 | Large titles | ✅ | Scrolling a root page reveals a compact frosted bar with its name. It is a sticky `::before` driven by a scroll timeline, with no script, and hidden when the page can't scroll. |
 | P37 | Swipe back | ✅ | On a phone, an edge swipe leaves a session (useSwipeBack): the view follows the finger, commits past ⅓ or on a flick, and the list comes forward. It never starts in the terminal or a text field. |
 | P38 | Touch sizing | ✅ | Touch-only devices drop key hints. Segments and chips are 36px, question options 48px, iPad menu rows 44px. The switcher has a short prompt on touch. Links use the accent color. |
+| P39 | Swipe back, underneath | ✅ | Swiping back shows the page under the session, set back and dimmed like the pop transition, and moves it with the finger, so the swipe and the slide are one motion. It also works over a full-screen terminal: the hook listens in the capture phase and keeps a swipe's moves from the terminal. |
+| P40 | Floating tab bar | ✅ | The phone's tab bar is an iOS 26 glass capsule, inset from the sides and floating just above the home indicator. |
+| P41 | Sheets | ✅ | On a phone every modal except confirmations covers the screen, rises from the bottom, scrolls inside, and has a grabber and an X (sheet.tsx). Drag it down by the bar, or by its content once scrolled to the top, to close it. New session rises the same way. Settings is a sheet over the page it was opened from. |
+| P42 | 44pt targets | ✅ | Every phone control is at least Apple's 44pt minimum: nav-bar circles, view tabs, Settings' sections, agent choices and keys. Chips keep their size with larger hit areas. Nav icons are 22px and tab icons 24px. |
+| P43 | Action sheet, iPhone style | ✅ | The session menu is grouped, with Cancel apart in the tint color. It drags down to close, and slides away on Cancel or a scrim tap. |
 
 Next candidates: rate-limit auto-resume (F40, opt-in, needs each CLI's reset
 message), quota display (F41), keyboard reordering in the sidebar.
