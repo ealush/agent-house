@@ -14,6 +14,8 @@ export function useHosts(onState: (merged: State) => void) {
   const [peers, setPeers] = useState<Record<string, State>>({});
   const [error, setError] = useState<string | null>(null);
   const clients = useRef(new Map<string, HostApi>());
+  // Windows we are terminating: gone from the UI at once, back if the kill fails.
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
 
   // The last session list paints at once (sealed per sign-in, gui/feedCache.ts); the stream replaces it.
   useEffect(() => {
@@ -56,7 +58,7 @@ export function useHosts(onState: (merged: State) => void) {
     return c;
   }
 
-  const merged = useMemo<State | null>(() => {
+  const all = useMemo<State | null>(() => {
     if (!local) return null;
     const tag = (s: State, self: boolean) => ({
       windows: s.windows.map((w) => ({ ...w, host: s.hostname, key: self ? w.uid : `${s.hostname}/${w.uid}` })),
@@ -69,6 +71,26 @@ export function useHosts(onState: (merged: State) => void) {
       history: parts.flatMap((p) => p.history).sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.at - a.at),
     };
   }, [local, peers, peerKey]);
+
+  const merged = useMemo<State | null>(() => (all && hidden.size ? { ...all, windows: all.windows.filter((w) => !hidden.has(w.key)) } : all), [all, hidden]);
+
+  // Forget a hidden key once the host stops listing it, so a resume under the same uid shows up.
+  useEffect(() => {
+    if (!all || !hidden.size) return;
+    const live = new Set(all.windows.map((w) => w.key));
+    if ([...hidden].some((k) => !live.has(k))) setHidden((h) => new Set([...h].filter((k) => live.has(k))));
+  }, [all, hidden]);
+
+  /** Optimistically drop a window from the merged state (or bring it back). */
+  const hide = useCallback((key: string, on: boolean) => {
+    setHidden((h) => {
+      if (h.has(key) === on) return h;
+      const next = new Set(h);
+      if (on) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     if (merged) onState(merged);
@@ -95,5 +117,5 @@ export function useHosts(onState: (merged: State) => void) {
   /** Per-host data a dialog needs (presets, sessions) for starting things there. */
   const hostState = (host: string): State | null => (!local ? null : host === local.hostname ? local : (peers[host] ?? null));
 
-  return { state: merged, error, refresh, clientFor, hostState };
+  return { state: merged, error, refresh, clientFor, hostState, hide };
 }

@@ -25,7 +25,7 @@ type Props = {
   onLayout: (l: LayoutNode | null) => void;
   onAnswer: (w: Win, a: 'approve' | 'deny') => void;
   onSent: (r: SendResult, opts?: { quiet?: boolean }) => void;
-  onKilledSession: () => void;
+  onTerminate: (w: Win) => void;
   refresh: (host?: string) => void;
   onExit: () => void;
   /** Maximize pane: show the focused pane alone until this is cleared. */
@@ -203,10 +203,7 @@ export function Workspace(props: Props) {
           onBack={() => props.onLayout(closeLeaf(layout, path))}
           onAnswer={props.onAnswer}
           onSent={props.onSent}
-          onKilled={() => {
-            props.onKilledSession();
-            props.refresh(w.host);
-          }}
+          onTerminate={() => props.onTerminate(w)}
           refresh={() => props.refresh(w.host)}
           onSplit={(dir) => {
             // The new half asks what goes in it: never the same session twice.

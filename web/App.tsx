@@ -187,11 +187,24 @@ export function App({ onLock }: { onLock: () => void }) {
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
 
-  const { state, error, refresh, clientFor, hostState } = useHosts((s: State) => announce(s.windows));
+  const { state, error, refresh, clientFor, hostState, hide } = useHosts((s: State) => announce(s.windows));
   const savedGroups = useSavedGroups((state?.hosts.length ?? 0) > 1);
   // Sessions are keyed by their uid, which survives resume and tmux restarts (a window id does not).
   const keyFor = (host: string, uid: string) => (host === state?.hostname ? uid : `${host}/${uid}`);
   /** A session that ended, by key: it stays on screen with Resume instead of disappearing. */
+  /** Terminate optimistically: the session leaves the UI now and comes back if tmux refuses. */
+  const terminate = (w: Win) => {
+    hide(w.key, true);
+    clientFor(w.host)
+      .kill(w.id)
+      .then(
+        () => refresh(w.host),
+        (e) => {
+          hide(w.key, false);
+          showError(e, "Couldn't terminate");
+        },
+      );
+  };
   const endedFor = (key: string | null) => (key && state?.history.find((h) => h.kind === 'ended' && keyFor(h.host, h.ref) === key)) || null;
 
   function toggleSide() {
@@ -886,12 +899,7 @@ export function App({ onLock }: { onLock: () => void }) {
               void Promise.all(batch).then(() => refresh(host));
             });
           }}
-          onKill={(w) => {
-            clientFor(w.host)
-              .kill(w.id)
-              .then(() => refresh(w.host))
-              .catch((e) => showError(e, "Couldn't terminate"));
-          }}
+          onKill={terminate}
           onFork={(w) => setForking({ ref: w.uid, host: w.host, harness: w.agent, title: w.title })}
         />
       ) : (
@@ -926,7 +934,7 @@ export function App({ onLock }: { onLock: () => void }) {
             onLayout={setLayout}
             onAnswer={answer}
             onSent={sent}
-            onKilledSession={() => {}}
+            onTerminate={terminate}
             endedFor={endedFor}
             feedFor={(host, harness) => presetFor(host, harness)?.feed ?? null}
             onResume={(h) => resume(h.host, h.ref, { navigate: false })}
@@ -969,7 +977,10 @@ export function App({ onLock }: { onLock: () => void }) {
             onBack={() => open(null)}
             onAnswer={answer}
             onSent={sent}
-            onKilled={() => open(null)}
+            onTerminate={() => {
+              open(null);
+              terminate(current);
+            }}
             refresh={() => refresh(current.host)}
             onStartSession={(prompt, preset) => setCreating({ cwd: current.projectPath, host: current.host, prompt, preset })}
             onSplit={(dir) => splitFrom(current.key, dir)}
@@ -1113,7 +1124,10 @@ export function App({ onLock }: { onLock: () => void }) {
             onBack={() => setScratch(false)}
             onAnswer={answer}
             onSent={sent}
-            onKilled={() => setScratch(false)}
+            onTerminate={() => {
+              setScratch(false);
+              terminate(scratchWin);
+            }}
             refresh={() => refresh(scratchWin.host)}
           />
         </div>

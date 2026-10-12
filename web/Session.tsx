@@ -46,7 +46,8 @@ type Props = {
   onBack: () => void;
   onAnswer: (w: Win, answer: 'approve' | 'deny') => void;
   onSent: (r: SendResult, opts?: { quiet?: boolean }) => void;
-  onKilled: () => void;
+  /** Confirmed: the parent closes this view and kills the window (optimistically). */
+  onTerminate: () => void;
   refresh: () => void;
   /** Navigate to another session by key (fork focus, fork family). */
   onOpenKey?: (key: string) => void;
@@ -151,7 +152,7 @@ function PanelDivider({ onResize, onReset }: { onResize: (dx: number) => void; o
 
 const DEFAULT_PANEL_WIDTH = 420;
 
-export function Session({ w, client, windows, clientFor, narrow, touch, multiHost, home, replyKey, onBack, onAnswer, onSent, onKilled, refresh, onSplit, onReplace, onClosePane, onFlipSplit, panePath, onPaneDrag, onOpenKey, onSplitWith, onStartSession, active = true }: Props) {
+export function Session({ w, client, windows, clientFor, narrow, touch, multiHost, home, replyKey, onBack, onAnswer, onSent, onTerminate, refresh, onSplit, onReplace, onClosePane, onFlipSplit, panePath, onPaneDrag, onOpenKey, onSplitWith, onStartSession, active = true }: Props) {
   const surface = useRef<SurfaceHandle>(null);
   const body = useRef<HTMLDivElement>(null);
   // 'main' is the session itself, drawn by whichever surface is chosen.
@@ -435,12 +436,10 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
 
   // Terminate kills the tmux window; stronger wording while it is working,
   // waiting, or holding queued prompts (F44).
-  const kill = () =>
-    act(async () => {
-      if (!(await confirmTerminate(w))) return;
-      await client.kill(w.id);
-      onKilled();
-    });
+  const kill = async () => {
+    setMenu(false);
+    if (await confirmTerminate(w)) onTerminate();
+  };
 
   const comment = async (text: string) => onSent(await client.send(w.uid, text, true));
 
