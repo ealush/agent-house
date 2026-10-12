@@ -43,3 +43,16 @@ test('rejects malformed subscriptions', () => {
   assert.throws(() => push.subscribe({ endpoint: 'http://insecure', keys: { p256dh: 'x', auth: 'y' } }, { waiting: true, done: false }, ''));
   assert.throws(() => push.subscribe({} as any, { waiting: true, done: false }, ''));
 });
+
+test('alerts name the agent, and a turn that stopped on its limit says so', () => {
+  const push = new Push();
+  const sent: Array<{ title: string; body: string }> = [];
+  (push as any).send = (_event: string, p: { title: string; body: string }) => sent.push(p);
+  const name = (id: string) => (id === 'claude' ? 'Claude Code' : id);
+  push.observe([win('d', 'busy'), win('e', 'busy')], name);
+  push.observe([win('d', 'attention'), { ...win('e', 'attention'), limit: 'Session limit · resets 12am' }], name);
+  assert.deepEqual(sent, [
+    { title: 'd finished', body: 'p · Claude Code', tag: 'd', url: '/#d', badge: '0' },
+    { title: 'e hit its usage limit', body: 'p · Session limit · resets 12am', tag: 'e', url: '/#e', badge: '0' },
+  ]);
+});

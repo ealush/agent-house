@@ -60,7 +60,8 @@ export class Push {
   }
 
   /** Called every tick: notify on transitions into needs-you / done. */
-  observe(windows: WindowView[]) {
+  /** `name`: an agent's display name ("Claude Code"), from its preset. */
+  observe(windows: WindowView[], name: (agent: string) => string = (a) => a) {
     const now = Date.now() / 1000;
     // The app icon's badge (sw.js): how many sessions need you as of this alert.
     const waiting = String(windows.filter((w) => w.status === 'waiting').length);
@@ -75,7 +76,7 @@ export class Push {
       this.send(event, {
         // A turn that ended on the plan's usage limit didn't finish: say so, and when it resets.
         title: event === 'waiting' ? `${w.name} needs you` : w.limit ? `${w.name} hit its usage limit` : `${w.name} finished`,
-        body: `${w.project} · ${w.limit ?? w.agent ?? w.command}`,
+        body: `${w.project} · ${w.limit ?? (w.agent ? name(w.agent) : 'Shell')}`,
         tag: w.uid,
         url: `/#${w.uid}`,
         badge: waiting,

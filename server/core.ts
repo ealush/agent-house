@@ -203,7 +203,7 @@ export class Core {
         void this.pruneSnapshots().catch((err) => console.error('snapshot prune failed:', err));
       }
       await this.queues.deliverDue(windows);
-      this.push.observe(windows);
+      this.push.observe(windows, (id) => this.config.presets.find((p) => p.id === id)?.name ?? id);
       const history = (await buildHistory(this.registry, windows)).filter((h) => !this.hidden.has(h.ref));
       const state: State = {
         api: API_VERSION,
