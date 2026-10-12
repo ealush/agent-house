@@ -172,7 +172,8 @@ export function launchSummary(rec: SessionRecord, preset?: Preset): string | nul
 function projectOf(dir: string): { project: string; projectPath: string } {
   const repo = repoInfo(dir);
   const path = repo?.root ?? dir;
-  return { project: repo?.project ?? (path === HOME ? '~' : basename(path)), projectPath: shortPath(path) };
+  // Home is a place, not a folder name: "~" read as a dash in small caps in the sidebar.
+  return { project: repo?.project ?? (path === HOME ? 'Home' : basename(path)), projectPath: shortPath(path) };
 }
 
 // ---------- agent detection

@@ -235,7 +235,7 @@ export function App({ onLock }: { onLock: () => void }) {
         const at = document.querySelector(`.ws-root.tiled > .pane[data-tile="${CSS.escape(solo[0].sessionKey)}#0"]`);
         collapseFrom.current = at?.getBoundingClientRect() ?? null;
         go({ selected: solo[0].sessionKey }, { still: !!at, history: 'replace' });
-      }
+      } else if (next && !solo.length) go({ selected: null }, { history: 'replace' }); // only a chooser was left
     } else {
       const at = focusPath ? nodeAt(split, focusPath) : null;
       if (at?.type === 'split') setFocusPath([...focusPath!, ...paneLeaves(at)[0].path]);
