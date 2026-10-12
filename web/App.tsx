@@ -739,7 +739,9 @@ export function App({ onLock }: { onLock: () => void }) {
   const current = state?.windows.find((w) => w.key === selected) ?? null;
   // A phone leaves a session the iPhone way too: swipe in from the left edge.
   const mainRef = useRef<HTMLElement>(null);
-  useSwipeBack(mainRef, narrow && !!current && !layout, () => go({ selected: null }, { still: true }));
+  const underRef = useRef<HTMLDivElement>(null);
+  const [peek, setPeek] = useState(false);
+  useSwipeBack(mainRef, narrow && !!selected && !layout, () => go({ selected: null }, { still: true }), { ref: underRef, show: setPeek });
   const ended = current ? null : endedFor(selected);
   // A session that is neither live nor in history (removed, or a bad link): fall back to the
   // inbox. One state update of grace: a window can leave the list a tick before history has it.
@@ -865,6 +867,62 @@ export function App({ onLock }: { onLock: () => void }) {
 
   const presetFor = (host: string, id: string | null) => (id ? hostState(host)?.presets.find((p) => p.id === id) : undefined);
 
+  // The top-level page (and, on a phone, its tab bar). On a phone it also lies under a
+  // session while a swipe from the edge pulls the session away (useSwipeBack).
+  const pages = state && (
+    <>
+      {page === 'search' ? (
+        <SearchView key={searchQuery} initialQuery={searchQuery} client={clientFor(state.hostname)} onOpenHit={openSearchHit} />
+      ) : page === 'settings' ? (
+        <Suspense fallback={<div className="page" />}>
+          <Settings onLocked={onLock} onNotifyChange={(on) => (pushActive.current = on)} />
+        </Suspense>
+      ) : page === 'history' ? (
+        <HistoryView
+          touch={touch}
+          state={state}
+          onResume={(h) => resume(h.host, h.ref)}
+          onForget={forget}
+          onFork={(h) => setForking({ ref: h.ref, host: h.host, harness: h.harness, title: h.title })}
+        />
+      ) : page === 'sessions' && narrow ? (
+        <SessionsView state={state} onOpen={(w) => open(w.key)} onNew={() => setCreating({})} />
+      ) : (
+        <Inbox
+          state={state}
+          narrow={narrow}
+          groupBy={inboxGroup}
+          setGroupBy={setInboxGroup}
+          onOpen={(w, reply) => {
+            open(w.key);
+            if (reply) setReplyKey((n) => n + 1);
+          }}
+          onAnswer={answer}
+          clientFor={clientFor}
+          onNew={() => setCreating({})}
+          onSearch={() => setSwitching(true)}
+          onSettings={() => go({ page: 'settings', selected: null })}
+          handoff={narrow ? handoff : null}
+          onResume={(h) => resume(h.host, h.ref)}
+        />
+      )}
+      {narrow && (
+        <nav className="tabbar" data-rove>
+          <Glide match=".on" className="thumb" />
+          {(['inbox', 'sessions', 'history'] as const).map((p) => (
+            <button key={p} className={page === p ? 'on' : ''} aria-current={page === p ? 'page' : undefined} onClick={() => go({ page: p, selected: null })}>
+              <span className="tab-icon">
+                <Icon name={p} size={22} />
+                {p === 'inbox' && waiting > 0 && <span className="badge">{waiting}</span>}
+              </span>
+              <span className="tab-label">{p[0].toUpperCase() + p.slice(1)}</span>
+            </button>
+          ))}
+        </nav>
+      )}
+    </>
+  );
+
   return (
     <PresetsContext.Provider value={presetFor}>
     <HostPresetsContext.Provider value={(host) => hostState(host)?.presets ?? []}>
@@ -916,6 +974,11 @@ export function App({ onLock }: { onLock: () => void }) {
         )
       )}
 
+      {peek && pages && (
+        <div className="under" ref={underRef} aria-hidden inert>
+          {pages}
+        </div>
+      )}
       <main className="main" ref={mainRef}>
         {state && (state.api ?? 0) < API_VERSION && (
           <div className="stale-banner">
@@ -1002,57 +1065,7 @@ export function App({ onLock }: { onLock: () => void }) {
             onClose={() => open(null)}
           />
         ) : state ? (
-          <>
-            {page === 'search' ? (
-              <SearchView key={searchQuery} initialQuery={searchQuery} client={clientFor(state.hostname)} onOpenHit={openSearchHit} />
-            ) : page === 'settings' ? (
-              <Suspense fallback={<div className="page" />}>
-                <Settings onLocked={onLock} onNotifyChange={(on) => (pushActive.current = on)} />
-              </Suspense>
-            ) : page === 'history' ? (
-              <HistoryView
-                touch={touch}
-                state={state}
-                onResume={(h) => resume(h.host, h.ref)}
-                onForget={forget}
-                onFork={(h) => setForking({ ref: h.ref, host: h.host, harness: h.harness, title: h.title })}
-              />
-            ) : page === 'sessions' && narrow ? (
-              <SessionsView state={state} onOpen={(w) => open(w.key)} onNew={() => setCreating({})} />
-            ) : (
-              <Inbox
-                state={state}
-                narrow={narrow}
-                groupBy={inboxGroup}
-                setGroupBy={setInboxGroup}
-                onOpen={(w, reply) => {
-                  open(w.key);
-                  if (reply) setReplyKey((n) => n + 1);
-                }}
-                onAnswer={answer}
-                clientFor={clientFor}
-                onNew={() => setCreating({})}
-                onSearch={() => setSwitching(true)}
-                onSettings={() => go({ page: 'settings', selected: null })}
-                handoff={narrow ? handoff : null}
-                onResume={(h) => resume(h.host, h.ref)}
-              />
-            )}
-            {narrow && (
-              <nav className="tabbar" data-rove>
-                <Glide match=".on" className="thumb" />
-                {(['inbox', 'sessions', 'history'] as const).map((p) => (
-                  <button key={p} className={page === p ? 'on' : ''} aria-current={page === p ? 'page' : undefined} onClick={() => go({ page: p, selected: null })}>
-                    <span className="tab-icon">
-                      <Icon name={p} size={22} />
-                      {p === 'inbox' && waiting > 0 && <span className="badge">{waiting}</span>}
-                    </span>
-                    <span className="tab-label">{p[0].toUpperCase() + p.slice(1)}</span>
-                  </button>
-                ))}
-              </nav>
-            )}
-          </>
+          pages
         ) : (
           <div className="page">
             <p className="hint">{error ? `Can't reach the server: ${error}` : 'Connecting…'}</p>
