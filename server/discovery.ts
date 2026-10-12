@@ -500,12 +500,18 @@ let running: Promise<Transcript[]> | null = null;
  * Falls back to the raw text when nothing else is left.
  */
 export function cleanTitle(raw: string): string {
+  // A file attached from ah reaches the agent as its path in ah's uploads, quoted or not.
+  const uploads: string[] = [];
   const t = raw
+    .replace(/'([^']*\/ah\/uploads\/[^'/]+)'|"([^"]*\/ah\/uploads\/[^"/]+)"|(\/\S*\/ah\/uploads\/[^\s/]+)/g, (_m, a?: string, b?: string, c?: string) => (uploads.push((a ?? b ?? c)!), ' '))
     .replace(/\[(?:Image|Pasted text|Pasted image)\s*#\d+[^\]]*\]/gi, ' ')
     .replace(/<\/?[a-z][\w-]*(?:\s[^>]*)?>/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  return t || raw.trim();
+  if (t) return t;
+  // Nothing but attachments: name them as you did ("<timestamp>-<name>" on disk).
+  if (uploads.length) return uploads.map((p) => p.slice(p.lastIndexOf('/') + 1).replace(/^\d{4}-\d\d-\d\dT[\d-]+Z-/, '')).join(', ');
+  return raw.trim();
 }
 
 /** All discoverable transcripts, newest first. Rescans at most every `maxAgeMs`. */

@@ -62,4 +62,7 @@ test('titles drop paste placeholders and markup', async () => {
   assert.equal(cleanTitle('fix this [Pasted text #2 +40 lines] please'), 'fix this please');
   assert.equal(cleanTitle('<command-name>/review</command-name> the diff'), '/review the diff');
   assert.equal(cleanTitle('[Image #1]'), '[Image #1]', 'nothing left: keep the raw text');
+  assert.equal(cleanTitle('"/home/u/.cache/ah/uploads/2026-10-10T00-27-46-540Z-shot.png" why is this red?'), 'why is this red?');
+  assert.equal(cleanTitle("'/home/u/.cache/ah/uploads/2026-10-10T00-27-46-540Z-my shot.png'"), 'my shot.png', 'quoted, with a space');
+  assert.equal(cleanTitle('/home/u/.cache/ah/uploads/2026-10-10T00-27-46-540Z-shot.png'), 'shot.png', 'only an attachment: its name');
 });
