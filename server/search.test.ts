@@ -4,7 +4,7 @@ import { appendFile, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ensureMigrated, getDb } from './db.ts';
-import { SearchIndexer, buildFtsMatch, combineResponses, tokenizeQuery, type SearchHit, type TranscriptSource } from './search.ts';
+import { SearchIndexer, buildFtsMatch, combineResponses, entryText, tokenizeQuery, type SearchHit, type TranscriptSource } from './search.ts';
 
 async function freshDb() {
   const path = join(tmpdir(), `ah-search-test-${process.pid}-${Math.random().toString(36).slice(2)}.db`);
@@ -250,4 +250,12 @@ test('opencode SQLite transcripts are indexed and rewritten tool output replaces
     assert.equal((await ix.search({ q: 'walnut' })).total, 0);
     assert.equal((await ix.search({ q: 'quokka' })).results[0].excerpts[0].seq, 1);
   } finally { doc.close(); }
+});
+
+test('a tool call is indexed as the words in it, not its JSON', () => {
+  const text = entryText({
+    seq: 1, id: '1', role: 'assistant', step: 'message', at: 0,
+    parts: [{ type: 'tool_call', call: { id: 't', name: 'Bash', args: { command: 'echo hi > hello.txt', description: 'Create hello.txt with the word "hi"', timeout: 5 } } }],
+  } as never);
+  assert.equal(text, 'Bash: echo hi > hello.txt · Create hello.txt with the word "hi" · 5');
 });

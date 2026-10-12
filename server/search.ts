@@ -123,15 +123,31 @@ export function buildFtsMatch(raw: string): string | null {
 
 // ---------- entry text
 
-/** The searchable text of one feed entry: prose, reasoning, tool calls and results. */
+/**
+ * Bump when entryText changes what it produces: every transcript is indexed
+ * again once, so old rows don't keep the old text (2: calls as words, not JSON).
+ */
+const TEXT_VERSION = 2;
+
+/** The words in a value: its strings, at any depth, without the JSON around them ("echo hi · Create hello.txt"). */
+function words(value: unknown, out: string[] = []): string[] {
+  if (typeof value === 'string') {
+    if (value.trim()) out.push(value.trim());
+  } else if (typeof value === 'number' || typeof value === 'boolean') out.push(String(value));
+  else if (Array.isArray(value)) for (const v of value) words(v, out);
+  else if (value && typeof value === 'object') for (const v of Object.values(value)) words(v, out);
+  return out;
+}
+
+/** The searchable text of one feed entry: prose, reasoning, tool calls and results, as words a person reads. */
 export function entryText(entry: Entry): string {
   const out: string[] = [];
   for (const part of entry.parts) {
     if (part.type === 'text' || part.type === 'reasoning') out.push(part.text);
-    else if (part.type === 'tool_call') out.push(`${part.call.name} ${JSON.stringify(part.call.args)}`);
+    else if (part.type === 'tool_call') out.push(`${part.call.name}: ${words(part.call.args).join(' · ')}`);
     else if (part.type === 'tool_result') out.push(part.result.text);
     else if (part.type === 'notice') out.push(part.text);
-    else if (part.type === 'widget') out.push(JSON.stringify(part.widget));
+    else if (part.type === 'widget') out.push(words(part.widget).join(' · '));
   }
   const text = out.join('\n').trim();
   return text.length > CLIP ? text.slice(0, CLIP) : text;
@@ -317,7 +333,7 @@ export class SearchIndexer {
     if (!parse) return;
     const s = await stat(src.file).catch(() => null);
     if (!s) return;
-    const meta = createHash('sha256').update(JSON.stringify([src.ref, src.uid, src.title, src.cwd, src.model])).digest('hex');
+    const meta = createHash('sha256').update(JSON.stringify([TEXT_VERSION, src.ref, src.uid, src.title, src.cwd, src.model])).digest('hex');
     const sig = `${s.ino}:${s.size}:${Math.floor(s.mtimeMs)}:${meta}`;
     const key = `t:${src.file}`;
     const prev = await this.sourceRow(key);
@@ -394,7 +410,7 @@ export class SearchIndexer {
     const entries = await load(src.file);
     if (!entries) return;
     const key = `t:${src.file}`;
-    const sig = createHash('sha256').update(JSON.stringify([src, entries])).digest('hex');
+    const sig = createHash('sha256').update(JSON.stringify([TEXT_VERSION, src, entries])).digest('hex');
     const prev = await this.sourceRow(key);
     if (!force && prev?.sig === sig) return;
     if (prev && prev.ref !== src.ref) await this.db.$executeRaw`DELETE FROM transcript_fts WHERE ref = ${prev.ref}`;
