@@ -9,6 +9,7 @@ import { movedSessionOrders, saveGroupMove, sidebarSections } from './sessionOrd
 import { runCommand, type CommandId } from './shortcuts.ts';
 import { ShortcutHint, shortcutTitle, useShortcutRevision } from './shortcuts.tsx';
 import { Glide } from './Glide.tsx';
+import { useFlip } from './useFlip.ts';
 
 export type Page = 'inbox' | 'history' | 'sessions' | 'settings' | 'search';
 
@@ -63,6 +64,7 @@ function subdir(w: Win): string {
 }
 
 export function Sidebar({ workspaces, onWorkspace, state, error, page, selected, visibleKeys, device, onPage, onSelect, onSearch, onNew, onWorktrees, onReorder, onKill, onFork, onDragSession, onCollapse, handoff }: Props) {
+  const flip = useFlip<HTMLDivElement>();
   useShortcutRevision();
   const windows = state?.windows ?? [];
   const visible = new Set(visibleKeys);
@@ -117,6 +119,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
     return (
       <div
         key={w.key}
+        data-flip={w.key}
         className={`side-row ${overKey === w.key ? (overAfter ? 'drop-after' : 'drop') : ''} ${drag?.kind === 'session' && drag.key === w.key ? 'dragging' : ''}`}
         draggable
         onDragStart={(e) => {
@@ -163,7 +166,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
           <span className="chip sm">
             <AgentLogo id={w.agent} size={13} />
           </span>
-          <span className={`dot ${w.status}`} />
+          <span key={w.status} className={`dot ${w.status}`} />
           <span className="name">
             {w.pinned ? '★ ' : ''}
             {w.agent ? w.title : w.title === 'shell' ? w.command : w.title}
@@ -248,7 +251,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
         <span className="brand-name">ah</span>
         {/* The machine ah runs on, and whether this device is connected to it right now. */}
         <span className="host-pill" title={error ? `Can't reach ${state?.hostname ?? 'the host'}: ${error}` : `Connected to ${state?.hostname ?? 'the host'} from this ${device}`}>
-          <span className={`dot ${error ? 'offline' : 'online'}`} /> {state?.hostname ?? device}
+          <span key={error ? 'off' : 'on'} className={`dot ${error ? 'offline' : 'online'}`} /> {state?.hostname ?? device}
         </span>
         <button className="icon-btn small" onClick={onCollapse} title={shortcutTitle('Hide sidebar', 'toggle-sidebar')} aria-label="Hide sidebar">
           <Icon name="panel-hide" />
@@ -301,7 +304,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
       </button>
       </div>
 
-      <div className="side-scroll">
+      <div className="side-scroll" ref={flip}>
         <Glide match=".side-session.on" className="side-glide accent" />
         {error && <div className="side-error">Can't reach server: {error}</div>}
         {multiHost && (
@@ -342,6 +345,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
             >
               <div
                 className={`side-label ${multiHost ? 'host' : ''}`}
+                data-flip={`g:${group}`}
                 draggable
                 onDragStart={(e) => {
                   setDrag({ kind: 'group', id: group });

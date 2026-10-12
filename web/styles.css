@@ -541,16 +541,31 @@ kbd {
 
 /* ---------- status dots & pills */
 
+/* A dot is drawn fresh when its status changes (keyed on it), so the change
+   shows as a small pop where the eye can catch it. */
 .dot {
   flex: none;
   width: 8px;
   height: 8px;
   border-radius: 50%;
+  animation: dot-in var(--dur-2) var(--ease);
 }
 
 .dot.waiting {
   background: var(--accent);
-  animation: ring 1.8s ease-out infinite;
+  animation:
+    dot-in var(--dur-2) var(--ease),
+    ring 1.8s ease-out var(--dur-2) infinite;
+}
+
+@keyframes dot-in {
+  from {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.35);
+  }
 }
 
 .dot.busy {
@@ -6238,4 +6253,16 @@ button.tool-chip:hover {
 .tabbar > .glide {
   border-radius: 12px;
   background: var(--accent-bg);
+}
+
+/* The session's status pill, redrawn when the status changes: it settles in. */
+.pill-change {
+  animation: pill-in var(--dur-2) var(--ease);
+}
+
+@keyframes pill-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
 }

@@ -7,6 +7,7 @@ import { AgentLogo, shortModel } from './logos.tsx';
 import { useSavedGroups } from './groupOrder.ts';
 import { sidebarSections } from './sessionOrder.ts';
 import { Glide } from './Glide.tsx';
+import { useFlip } from './useFlip.ts';
 
 export type InboxGroup = 'status' | 'host' | 'project';
 
@@ -33,6 +34,7 @@ const where = (w: Win, multiHost: boolean) => [multiHost ? w.host : null, w.proj
 
 /** The home screen: what's blocked on you first, then what's working, then the rest. */
 export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, clientFor, onNew, onSearch, onSettings, handoff, onResume }: Props) {
+  const flip = useFlip<HTMLDivElement>();
   const recent = state.windows.length ? [] : state.history.slice(0, 3);
   const multiHost = state.hosts.length > 1;
   const waiting = state.windows.filter((w) => w.status === 'waiting');
@@ -53,7 +55,7 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, cl
       : 'All quiet.';
 
   return (
-    <div className="page" data-rove="button.card-title, button.row, button.empty-recent-row">
+    <div className="page" ref={flip} data-rove="button.card-title, button.row, button.empty-recent-row">
       <header className="page-head">
         <div className="grow">
           <h1 className="page-title">Inbox<span className="period">.</span></h1>
@@ -121,7 +123,7 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, cl
         <>
           {waiting.length > 0 && (
             <>
-              <h2 className="section-label waiting first">
+              <h2 className="section-label waiting first" data-flip="h:waiting">
                 Needs you <span className="count">{waiting.length}</span>
               </h2>
               <div className="cards">
@@ -133,17 +135,17 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, cl
           )}
           {running.length > 0 && (
             <>
-              <h2 className={`section-label busy ${waiting.length ? '' : 'first'}`}>
+              <h2 className={`section-label busy ${waiting.length ? '' : 'first'}`} data-flip="h:running">
                 Running <span className="count">{running.length}</span>
               </h2>
-              {!narrow && <ListHead />}
+              {!narrow && <ListHead flip="lh:running" />}
               <Rows windows={running} multiHost={multiHost} narrow={narrow} onOpen={onOpen} />
             </>
           )}
           {rest.length > 0 && (
             <>
-              <h2 className={`section-label ${waiting.length || running.length ? '' : 'first'}`}>Idle and done <span className="count">{rest.length}</span></h2>
-              {!narrow && <ListHead />}
+              <h2 className={`section-label ${waiting.length || running.length ? '' : 'first'}`} data-flip="h:rest">Idle and done <span className="count">{rest.length}</span></h2>
+              {!narrow && <ListHead flip="lh:rest" />}
               <Rows windows={rest} multiHost={multiHost} narrow={narrow} onOpen={onOpen} quiet />
             </>
           )}
@@ -165,7 +167,7 @@ function AskCard({ w, client, multiHost, narrow, onOpen, onAnswer }: { w: Win; c
   const question = showText && ask!.kind !== 'command' ? questionLine(ask!.text) : null;
   const context = showText ? cleanScreen(ask!.text, question) : '';
   return (
-    <article className="card card-needs" style={{ '--agent': color } as React.CSSProperties}>
+    <article className="card card-needs" data-flip={w.key} style={{ '--agent': color } as React.CSSProperties}>
       <div className="card-head">
         <span className="glow">
           <span className="chip">
@@ -228,9 +230,9 @@ function AskCard({ w, client, multiHost, narrow, onOpen, onAnswer }: { w: Win; c
 }
 
 /** Column headers over desktop session rows. */
-function ListHead() {
+function ListHead({ flip }: { flip: string }) {
   return (
-    <div className="list-head" aria-hidden="true">
+    <div className="list-head" data-flip={flip} aria-hidden="true">
       {/* The first column is the agent's icon: too narrow for a word. */}
       <span />
       <span>Session</span>
@@ -248,7 +250,7 @@ export function Rows({ windows, multiHost, narrow, onOpen, quiet }: { windows: W
         const { color } = look(w.agent);
         const pill = w.status === 'attention' ? <span className="pill attention">{w.agent ? 'done' : 'new output'}</span> : w.status === 'idle' ? <span className="pill">idle</span> : null;
         return (
-          <li key={w.key}>
+          <li key={w.key} data-flip={w.key}>
             <button className={`row ${quiet ? 'quiet' : ''}`} style={{ '--agent': color } as React.CSSProperties} onClick={() => onOpen(w)}>
               <span className="chip">
                 <AgentLogo id={w.agent} />
@@ -287,7 +289,7 @@ function Grouped({ windows, by, multiHost, onOpen }: { windows: Win[]; by: 'host
     <>
       {sections.map((section, i) => (
         <section key={section.id}>
-          <h2 className={`section-label ${i === 0 ? 'first' : ''}`}>{section.id} <span className="count">{section.windows.length}</span></h2>
+          <h2 className={`section-label ${i === 0 ? 'first' : ''}`} data-flip={`h:${section.id}`}>{section.id} <span className="count">{section.windows.length}</span></h2>
           <Rows windows={section.windows} multiHost={multiHost && by !== 'host'} narrow={false} onOpen={onOpen} />
         </section>
       ))}

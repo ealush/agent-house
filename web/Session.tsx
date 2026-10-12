@@ -723,7 +723,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
         ) : (
           <>
             <div className="session-pills">
-              <span className={`pill ${w.status}`}>
+              <span key={w.status} className={`pill ${w.status} pill-change`}>
                 {w.status === 'waiting' && <span className="dot waiting" />} {STATUS_PILL[w.status]}
               </span>
               {multiHost && <span className="pill mono">{w.host}</span>}

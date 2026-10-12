@@ -6,6 +6,7 @@ import { AgentLogo, shortModel } from './logos.tsx';
 import { Rows } from './Inbox.tsx';
 import { useSavedGroups } from './groupOrder.ts';
 import { sidebarSections } from './sessionOrder.ts';
+import { useFlip } from './useFlip.ts';
 
 /** Ended and saved conversations from every host; one tap resumes on the host that has it. */
 export function HistoryView({ state, onResume, onForget, onFork }: { state: State; onResume: (h: HistoryItem) => void; onForget: (h: HistoryItem) => void; onFork?: (h: HistoryItem) => void }) {
@@ -111,8 +112,9 @@ export function HistoryView({ state, onResume, onForget, onFork }: { state: Stat
 export function SessionsView({ state, onOpen, onNew }: { state: State; onOpen: (w: Win) => void; onNew: () => void }) {
   const multiHost = state.hosts.length > 1;
   const sections = sidebarSections(state.windows, multiHost, useSavedGroups(multiHost));
+  const flip = useFlip<HTMLDivElement>();
   return (
-    <div className="page" data-rove="button.row">
+    <div className="page" ref={flip} data-rove="button.row">
       <header className="page-head">
         <div className="grow">
           <h1>Sessions</h1>
@@ -124,7 +126,7 @@ export function SessionsView({ state, onOpen, onNew }: { state: State; onOpen: (
       </header>
       {sections.map((section, i) => (
         <section key={section.id}>
-          <h2 className={`section-label ${i === 0 ? 'first' : ''}`}>{section.id}</h2>
+          <h2 className={`section-label ${i === 0 ? 'first' : ''}`} data-flip={`h:${section.id}`}>{section.id}</h2>
           <Rows windows={section.windows} multiHost={false} narrow onOpen={onOpen} />
         </section>
       ))}
