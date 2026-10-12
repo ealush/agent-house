@@ -4760,6 +4760,11 @@ button.tool-chip:hover {
   flex-wrap: wrap;
 }
 
+/* A prompt for an agent is prose, as in the composer: not a code field. */
+.field textarea.prose {
+  font-family: var(--ui);
+}
+
 /* Settings → Security → This device: the name and its button on one line. */
 .device-name {
   display: flex;

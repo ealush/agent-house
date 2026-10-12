@@ -5,7 +5,7 @@ import type { DirState, HostApi, SendResult, State } from './api.ts';
 import { showError } from './ask.tsx';
 import { look } from './agents.ts';
 import { AgentLogo } from './logos.tsx';
-import { ModelPicker, Popover, effectiveModel, effortsFor, type Pick } from './ModelPicker.tsx';
+import { EffortPicker, ModelPicker, Popover, effectiveModel, effortsFor, type Pick } from './ModelPicker.tsx';
 import { SheetBar, useSheet } from './sheet.tsx';
 
 type Props = {
@@ -57,6 +57,8 @@ export function lastCwd(host: string): string {
     return '~';
   }
 }
+
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd, initialPrompt = '', initialPreset, newProject = false, onClose, onCreated, onSent, screen = false }: Props) {
   const [host, setHost] = useState(initialHost);
@@ -355,13 +357,33 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
               </div>
             )}
             {levels.length > 0 && (
-              <label className="field compact">
+              <div className="field compact">
                 <span>Effort</span>
-                <select aria-label="Reasoning effort" value={pick.effort ?? ''} onChange={(e) => setPick({ ...pick, effort: e.target.value || undefined })}>
-                  <option value="">Default{preset.defaultEffort ? ` · ${preset.defaultEffort}` : ''}</option>
-                  {levels.map((level) => <option key={level} value={level}>{level}</option>)}
-                </select>
-              </label>
+                {/* The same kind of control as Model beside it, not a native select. */}
+                <Popover
+                  up={false}
+                  className="select-btn"
+                  label={
+                    <>
+                      <span className="grow">{pick.effort ? cap(pick.effort) : `Default${preset.defaultEffort ? ` · ${preset.defaultEffort}` : ''}`}</span>
+                      <span className="caret" aria-hidden>
+                        ▾
+                      </span>
+                    </>
+                  }
+                >
+                  {(close) => (
+                    <EffortPicker
+                      levels={levels}
+                      value={pick.effort}
+                      onPick={(effort) => {
+                        setPick({ ...pick, effort });
+                        close();
+                      }}
+                    />
+                  )}
+                </Popover>
+              </div>
             )}
             {modes.length > 1 && (
               <div className="field compact">
@@ -382,7 +404,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
 
         <label className="field">
           <span>Prompt</span>
-          <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={initialPrompt ? 8 : 3} placeholder="Optional. Sent once the session starts." />
+          <textarea className="prose" value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={initialPrompt ? 8 : 3} placeholder="Optional. Sent once the session starts." />
         </label>
 
         <button type="button" className="disclosure" aria-expanded={more} onClick={() => setMore(!more)}>
