@@ -27,6 +27,7 @@ import { ShortcutHint, shortcutTitle, useCommand, usePaletteProvider, useShortcu
 import { runCommand } from './shortcuts.ts';
 import { useLaunch, useLaunchPalette } from './useLaunch.ts';
 import { Glide } from './Glide.tsx';
+import { SheetBar, useSheet } from './sheet.tsx';
 
 type Panel = 'diff' | 'files' | 'chat' | 'queue' | 'snapshots' | 'preview';
 
@@ -1122,6 +1123,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
 
 function CaptureDialog({ text, onClose }: { text: string; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const { dismiss } = useSheet(ref, onClose);
   const pre = useRef<HTMLPreElement>(null);
   const [copied, setCopied] = useState(false);
   useEffect(() => {
@@ -1130,6 +1132,7 @@ function CaptureDialog({ text, onClose }: { text: string; onClose: () => void })
   }, []);
   return (
     <dialog ref={ref} className="dialog capture" onClose={onClose} onClick={(e) => e.target === ref.current && onClose()}>
+      <SheetBar onClose={dismiss} />
       <div className="capture-head">
         <h2>Scrollback</h2>
         <button
@@ -1143,7 +1146,7 @@ function CaptureDialog({ text, onClose }: { text: string; onClose: () => void })
         >
           {copied ? 'Copied' : 'Copy all'}
         </button>
-        <button className="btn ghost small" onClick={onClose}>
+        <button className="btn ghost small desk-close" onClick={onClose}>
           Close
         </button>
       </div>

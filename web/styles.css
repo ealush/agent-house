@@ -7000,3 +7000,149 @@ select:not([multiple]) {
   }
 }
 
+/* ---------- phone: modals are sheets (web/sheet.tsx) — they cover the screen, rise from
+   the bottom, scroll inside, and go back down by the grabber, a drag, or the close button.
+   Confirmations (.ask) stay small and centered, as an iPhone's alerts do. */
+
+.sheet-bar {
+  display: none;
+}
+
+@media (max-width: 760px), ((pointer: coarse) and (max-height: 500px) and (max-width: 1000px)) {
+  .dialog:not(.ask) {
+    inset: 0;
+    width: 100%;
+    max-width: none;
+    height: var(--vh);
+    max-height: none;
+    margin: 0;
+    border: 0;
+    /* Hidden by the screen's own corners once it is up; seen as it rises and as you drag it. */
+    border-radius: 16px 16px 0 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: var(--safe-bottom);
+  }
+
+  .dialog:not(.ask)[open],
+  .ns-screen {
+    animation: sheet-rise 380ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  /* Dragging the sheet down uncovers what it was over. */
+  .dialog:not(.ask)::backdrop {
+    opacity: calc(1 - var(--drag, 0));
+  }
+
+  .sheet-bar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: grid;
+    grid-template-columns: 44px 1fr 44px;
+    align-items: center;
+    gap: 8px;
+    min-height: 52px;
+    padding: var(--sheet-safe, env(safe-area-inset-top)) 12px 0;
+    background: var(--glass);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    touch-action: none;
+  }
+
+  .sheet-bar .grabber {
+    position: absolute;
+    top: calc(var(--sheet-safe, env(safe-area-inset-top)) + 6px);
+    left: 50%;
+    width: 36px;
+    height: 5px;
+    margin-left: -18px;
+    border-radius: 999px;
+    background: var(--line-2);
+  }
+
+  .sheet-bar .sheet-title {
+    grid-column: 2;
+    text-align: center;
+    font-size: 17px;
+    font-weight: 600;
+  }
+
+  .sheet-bar .sheet-x {
+    grid-column: 3;
+    width: 36px;
+    height: 36px;
+    justify-self: end;
+    border-radius: 999px;
+    background: var(--raised);
+    color: var(--text);
+    position: relative;
+  }
+
+  /* A 36px circle you can see, a 44px target you hit. */
+  .sheet-bar .sheet-x::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+  }
+
+  /* The sheet's own close button stands in for each dialog's. */
+  .dialog .desk-close,
+  .ns-screen .ns-back {
+    display: none;
+  }
+
+  /* A form's top padding sits under the bar instead. */
+  .dialog:not(.ask) .sheet-bar + form {
+    padding-top: 4px;
+  }
+
+  /* New session is inside the app, which already clears the status bar. */
+  .ns-screen {
+    --sheet-safe: 0px;
+  }
+
+  .ns-screen .ns-head {
+    padding-top: 0;
+  }
+
+  /* Settings as a sheet: one scroll, the dialog's; the page's own sticky bar would double the sheet's. */
+  .dialog.sheet-view {
+    background: var(--bg);
+  }
+
+  .sheet-view .page {
+    overflow: visible;
+    flex: none;
+    min-height: 0;
+    padding-top: 4px;
+  }
+
+  .dialog.sheet-view .page[data-title]::before {
+    content: none;
+  }
+}
+
+/* A sheet with a large title of its own names itself in the bar only once that title scrolls away. */
+@supports (animation-timeline: scroll()) {
+  .sheet-view .sheet-title {
+    opacity: 0;
+    animation: page-bar linear both;
+    animation-timeline: scroll(nearest block);
+    animation-range: 40px 72px;
+  }
+}
+
+@keyframes sheet-rise {
+  from {
+    transform: translate3d(0, 100%, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dialog:not(.ask)[open],
+  .ns-screen {
+    animation: none;
+  }
+}

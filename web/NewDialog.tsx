@@ -6,6 +6,7 @@ import { showError } from './ask.tsx';
 import { look } from './agents.ts';
 import { AgentLogo } from './logos.tsx';
 import { ModelPicker, Popover, effectiveModel, effortsFor, type Pick } from './ModelPicker.tsx';
+import { SheetBar, useSheet } from './sheet.tsx';
 
 type Props = {
   /** Online machines; starting "here or there" is the same code path (F4). */
@@ -86,6 +87,8 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
+  const screenRef = useRef<HTMLElement>(null);
+  const { dismiss } = useSheet(screen ? screenRef : dialog, onClose);
 
   useEffect(() => {
     if (!screen) {
@@ -234,7 +237,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
       <form onSubmit={submit}>
         <header className="ns-head">
           {screen && (
-            <button type="button" className="icon-btn" onClick={onClose} aria-label="Back">
+            <button type="button" className="icon-btn ns-back" onClick={onClose} aria-label="Back">
               <Icon name="back" size={22} />
             </button>
           )}
@@ -456,13 +459,15 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
 
   if (screen)
     return (
-      <section className="ns-screen new-session" aria-label="New session" data-confirm>
+      <section ref={screenRef} className="ns-screen new-session" aria-label="New session" data-confirm>
+        <SheetBar onClose={dismiss} />
         {form}
       </section>
     );
 
   return (
     <dialog ref={dialog} className="dialog new-session" onClose={onClose} onClick={(e) => e.target === dialog.current && onClose()}>
+      <SheetBar onClose={dismiss} />
       {form}
     </dialog>
   );

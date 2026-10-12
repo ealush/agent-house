@@ -54,6 +54,7 @@ import { API_VERSION } from './api.ts';
 import { showError } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { useSwipeBack } from './useSwipeBack.ts';
+import { Sheet } from './sheet.tsx';
 import { trackViewport } from './viewport.ts';
 import { glide, transition, type Heading } from './motion.ts';
 import { runCommand } from './shortcuts.ts';
@@ -246,7 +247,9 @@ export function App({ onLock }: { onLock: () => void }) {
     const route = { page: next.page ?? page, selected: next.selected === undefined ? selected : next.selected };
     const hash = route.selected ?? (route.page === 'inbox' ? '' : route.page);
     history.replaceState(null, '', hash ? `#${hash}` : location.pathname);
-    if (how.still || (route.page === page && route.selected === selected)) setRoute(route);
+    // A phone's Settings is a sheet that rises over the page (sheet.tsx), not a page to fade to.
+    const sheet = narrow && (route.page === 'settings') !== (page === 'settings');
+    if (how.still || sheet || (route.page === page && route.selected === selected)) setRoute(route);
     else transition(() => setRoute(route), heading(route));
   }
   /** Where the next view sits relative to this one: further down the sidebar, or deeper on a phone. */
@@ -741,7 +744,7 @@ export function App({ onLock }: { onLock: () => void }) {
   const mainRef = useRef<HTMLElement>(null);
   const underRef = useRef<HTMLDivElement>(null);
   const [peek, setPeek] = useState(false);
-  useSwipeBack(mainRef, narrow && !!selected && !layout, () => go({ selected: null }, { still: true }), { ref: underRef, show: setPeek });
+  useSwipeBack(mainRef, narrow && !!selected && !layout && !creating, () => go({ selected: null }, { still: true }), { ref: underRef, show: setPeek });
   const ended = current ? null : endedFor(selected);
   // A session that is neither live nor in history (removed, or a bad link): fall back to the
   // inbox. One state update of grace: a window can leave the list a tick before history has it.
@@ -867,17 +870,22 @@ export function App({ onLock }: { onLock: () => void }) {
 
   const presetFor = (host: string, id: string | null) => (id ? hostState(host)?.presets.find((p) => p.id === id) : undefined);
 
+  // On a phone Settings is a sheet over the page it was opened from, which stays put under it.
+  const sheetBase = useRef<Page>('inbox');
+  if (page !== 'settings') sheetBase.current = page;
+  const shown = narrow && page === 'settings' ? sheetBase.current : page;
+
   // The top-level page (and, on a phone, its tab bar). On a phone it also lies under a
   // session while a swipe from the edge pulls the session away (useSwipeBack).
   const pages = state && (
     <>
-      {page === 'search' ? (
+      {shown === 'search' ? (
         <SearchView key={searchQuery} initialQuery={searchQuery} client={clientFor(state.hostname)} onOpenHit={openSearchHit} />
-      ) : page === 'settings' ? (
+      ) : shown === 'settings' ? (
         <Suspense fallback={<div className="page" />}>
           <Settings onLocked={onLock} onNotifyChange={(on) => (pushActive.current = on)} />
         </Suspense>
-      ) : page === 'history' ? (
+      ) : shown === 'history' ? (
         <HistoryView
           touch={touch}
           state={state}
@@ -885,7 +893,7 @@ export function App({ onLock }: { onLock: () => void }) {
           onForget={forget}
           onFork={(h) => setForking({ ref: h.ref, host: h.host, harness: h.harness, title: h.title })}
         />
-      ) : page === 'sessions' && narrow ? (
+      ) : shown === 'sessions' && narrow ? (
         <SessionsView state={state} onOpen={(w) => open(w.key)} onNew={() => setCreating({})} />
       ) : (
         <Inbox
@@ -910,7 +918,7 @@ export function App({ onLock }: { onLock: () => void }) {
         <nav className="tabbar" data-rove>
           <Glide match=".on" className="thumb" />
           {(['inbox', 'sessions', 'history'] as const).map((p) => (
-            <button key={p} className={page === p ? 'on' : ''} aria-current={page === p ? 'page' : undefined} onClick={() => go({ page: p, selected: null })}>
+            <button key={p} className={shown === p ? 'on' : ''} aria-current={shown === p ? 'page' : undefined} onClick={() => go({ page: p, selected: null })}>
               <span className="tab-icon">
                 <Icon name={p} size={22} />
                 {p === 'inbox' && waiting > 0 && <span className="badge">{waiting}</span>}
@@ -1098,6 +1106,14 @@ export function App({ onLock }: { onLock: () => void }) {
       )}
       </main>
 
+
+      {narrow && page === 'settings' && state && (
+        <Sheet label="Settings" className="settings-sheet" onClose={() => go({ page: sheetBase.current }, { still: true })}>
+          <Suspense fallback={<div className="page" />}>
+            <Settings onLocked={onLock} onNotifyChange={(on) => (pushActive.current = on)} />
+          </Suspense>
+        </Sheet>
+      )}
 
       {forking && state && (
         <ForkDialog

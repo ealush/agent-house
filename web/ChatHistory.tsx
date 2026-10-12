@@ -3,6 +3,7 @@ import type { ChatMsg, ChatSummary, HostApi } from './api.ts';
 import { showNotice } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { Markdown } from './Markdown.tsx';
+import { SheetBar, useSheet } from './sheet.tsx';
 
 function fmtDate(at: number): string {
   const d = new Date(at * 1000);
@@ -131,9 +132,11 @@ export function ChatHistory({ client, jump }: { client: HostApi; jump?: { uid: s
 /** Opens search hits from ended sessions without launching an agent. */
 export function ChatSearchDialog({ client, jump, onClose }: { client: HostApi; jump: { uid: string; msgId: number }; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const { dismiss } = useSheet(dialog, onClose);
   useEffect(() => { dialog.current?.showModal(); }, []);
   return <dialog ref={dialog} className="dialog" onClose={onClose} onClick={(e) => e.target === dialog.current && onClose()}>
-    <header className="dialog-head"><h2>Past chat</h2><button className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="close" /></button></header>
+  return   <SheetBar onClose={dismiss} />
+    <header className="dialog-head"><h2>Past chat</h2><button className="icon-btn desk-close" onClick={onClose} aria-label="Close"><Icon name="close" /></button></header>
     <ChatHistory client={client} jump={jump} />
   </dialog>;
 }

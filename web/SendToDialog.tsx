@@ -3,6 +3,7 @@ import { ConfirmButton } from './ConfirmButton.tsx';
 import type { HostApi, SendResult, Subscription, Win } from './api.ts';
 import { look } from './agents.ts';
 import { handoffText, readHandoff } from './gui/reducer.ts';
+import { SheetBar, useSheet } from './sheet.tsx';
 
 const STATUS = { waiting: 'Needs you', busy: 'Working', attention: 'Done', idle: 'Idle' } as const;
 /** Select value for starting a session instead of delivering into a live one. */
@@ -44,6 +45,7 @@ function groupsOf(list: Win[], multiHost: boolean): { id: string; windows: Win[]
  */
 export function SendToDialog({ client, clientFor, source, windows, multiHost, onClose, onSent, onNewSession }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const { dismiss } = useSheet(dialog, onClose);
   const box = useRef<HTMLTextAreaElement>(null);
   const transcriptRef = useRef('');
   const latestRef = useRef('');
@@ -166,6 +168,7 @@ export function SendToDialog({ client, clientFor, source, windows, multiHost, on
 
   return (
     <dialog ref={dialog} className="dialog wide send-to" onClose={onClose} onClick={(e) => e.target === dialog.current && onClose()}>
+      <SheetBar onClose={dismiss} />
       <form onSubmit={submit}>
         <header className="ns-head">
           <h2>Send to…</h2>

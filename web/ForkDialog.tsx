@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ConfirmButton } from './ConfirmButton.tsx';
 import type { ForkInfo, HostApi, Win } from './api.ts';
 import { ModelPicker, Popover, effectiveModel, effortsFor, usePreset, type Pick } from './ModelPicker.tsx';
+import { SheetBar, useSheet } from './sheet.tsx';
 
 export type ForkTarget = { ref: string; host: string; harness: string | null; title: string };
 
@@ -20,6 +21,7 @@ type Props = {
  */
 export function ForkDialog({ client, target, onClose, onForked }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const { dismiss } = useSheet(dialog, onClose);
   const [info, setInfo] = useState<ForkInfo | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -79,6 +81,7 @@ export function ForkDialog({ client, target, onClose, onForked }: Props) {
 
   return (
     <dialog ref={dialog} className="dialog new-session" onClose={onClose} onClick={(e) => e.target === dialog.current && onClose()}>
+      <SheetBar onClose={dismiss} />
       <form onSubmit={submit}>
         <header className="ns-head">
           <h2>Fork session</h2>
@@ -217,6 +220,7 @@ export function ForksDialog({
   onSplitWith?: (key: string) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const { dismiss } = useSheet(dialog, onClose);
   const [lines, setLines] = useState<Line[]>([]);
 
   useEffect(() => dialog.current?.showModal(), []);
@@ -248,6 +252,7 @@ export function ForksDialog({
 
   return (
     <dialog ref={dialog} className="dialog" onClose={onClose} onClick={(e) => e.target === dialog.current && onClose()}>
+      <SheetBar onClose={dismiss} />
       <form method="dialog">
         <header className="ns-head">
           <h2>Forks</h2>

@@ -27,6 +27,7 @@ import {
   type CommandId,
   type Overrides,
 } from './shortcuts.ts';
+import { SheetBar, useSheet } from './sheet.tsx';
 
 export function useShortcutRevision() {
   const [n, setN] = useState(0);
@@ -384,6 +385,7 @@ function nodeIcon(node: PaletteNode): IconName {
  */
 export function CommandPalette({ onClose, onRun }: { onClose: () => void; onRun: (node: PaletteNode) => void }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const { dismiss } = useSheet(ref, onClose);
   const input = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const [root, setRoot] = useState<PaletteNode | null>(null);
@@ -482,6 +484,7 @@ export function CommandPalette({ onClose, onRun }: { onClose: () => void; onRun:
         e.preventDefault();
       }}
     >
+      <SheetBar onClose={dismiss} />
       <nav className="palette-crumbs" aria-label="Where you are">
         {stack.map((n, at) => (
           <Fragment key={n.key + at}>
@@ -560,14 +563,16 @@ export function CommandPalette({ onClose, onRun }: { onClose: () => void; onRun:
 /** The shortcut table as a dialog, opened from its own shortcut. */
 export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const { dismiss } = useSheet(ref, onClose);
   useEffect(() => {
     ref.current?.showModal();
   }, []);
   return (
     <dialog ref={ref} className="dialog keymap-dialog" onClose={onClose} onClick={(e) => e.target === ref.current && onClose()}>
+      <SheetBar onClose={dismiss} />
       <header className="keymap-head">
         <h2>Keyboard shortcuts</h2>
-        <button type="button" className="btn ghost small" onClick={onClose}>
+        <button type="button" className="btn ghost small desk-close" onClick={onClose}>
           Close
         </button>
       </header>

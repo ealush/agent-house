@@ -6,6 +6,7 @@ import { age as ago } from './agents.ts';
 import { AgentLogo } from './logos.tsx';
 import { useSavedGroups } from './groupOrder.ts';
 import { sidebarOrder } from './sessionOrder.ts';
+import { SheetBar, useSheet } from './sheet.tsx';
 
 type Props = {
   windows: Win[];
@@ -92,6 +93,7 @@ const hitDate = (at: number) => (at ? new Date(at).toLocaleDateString([], { mont
 
 export function Switcher({ windows, history, hosts, onSearchContent, onPick, onResume, onContent, onShowAll, onSplit, onClose, tile = false }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
+  const { dismiss } = useSheet(ref, onClose);
   const [q, setQ] = useState('');
   const [i, setI] = useState(0);
   const [content, setContent] = useState<SearchHit[]>([]);
@@ -174,6 +176,7 @@ export function Switcher({ windows, history, hosts, onSearchContent, onPick, onR
 
   return (
     <dialog ref={ref} className="dialog switcher" onClose={onClose} onClick={(e) => e.target === ref.current && onClose()}>
+      <SheetBar onClose={dismiss} />
       <input
         autoFocus
         value={q}

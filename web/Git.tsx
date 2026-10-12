@@ -4,6 +4,7 @@ import type { BranchList, Changes, HostApi, PullInfo, WorktreeInfo } from './api
 import { askConfirm, showError } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { Popover } from './ModelPicker.tsx';
+import { SheetBar, useSheet } from './sheet.tsx';
 
 // ---------- unified diff → files / lines with real line numbers
 
@@ -366,6 +367,7 @@ function sizeLabel(wt: WorktreeInfo): { text: string; title: string } {
 
 export function WorktreesDialog({ client, onClose, onShell }: { client: HostApi; onClose: () => void; onShell: (path: string) => void }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const { dismiss } = useSheet(ref, onClose);
   const [list, setList] = useState<WorktreeInfo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [bySize, setBySize] = useState(false);
@@ -465,9 +467,10 @@ export function WorktreesDialog({ client, onClose, onShell }: { client: HostApi;
 
   return (
     <dialog ref={ref} className="dialog wide" onClose={onClose} onClick={(e) => e.target === ref.current && onClose()}>
+      <SheetBar onClose={dismiss} />
       <div className="capture-head">
         <h2>Worktrees</h2>
-        <button className="btn ghost small" onClick={onClose}>
+        <button className="btn ghost small desk-close" onClick={onClose}>
           Close
         </button>
       </div>
