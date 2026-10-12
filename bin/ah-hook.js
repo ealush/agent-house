@@ -71,6 +71,16 @@ function choiceAsk(input = {}) {
   return questions.length ? { kind: 'choice', text: questions[0].question, questions } : null;
 }
 
+/** A tool's name as words: "mcp__github__create_issue" → "github: create issue", "NotebookRead" → "Notebook read". */
+function toolWords(tool) {
+  if (!tool) return 'Working';
+  const mcp = tool.match(/^mcp__(.+?)__(.+)$/);
+  const words = (t) => t.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').trim().toLowerCase();
+  if (mcp) return `${mcp[1]}: ${words(mcp[2])}`;
+  const w = words(tool);
+  return w.charAt(0).toUpperCase() + w.slice(1);
+}
+
 /** One line describing a tool call, relative to the session's directory. */
 function describe(tool, input = {}, cwd = '') {
   const rel = (p) => (typeof p === 'string' && cwd && p.startsWith(cwd + '/') ? p.slice(cwd.length + 1) : p);
@@ -91,9 +101,16 @@ function describe(tool, input = {}, cwd = '') {
     case 'WebSearch':
       return { kind: 'tool', text: `Browsing ${short(String(input.url ?? input.query ?? ''), 80)}` };
     case 'Task':
+    case 'Agent':
       return { kind: 'tool', text: `Subagent: ${short(String(input.description ?? ''), 80)}` };
+    case 'AskUserQuestion':
+      return { kind: 'tool', text: `Asking: ${short(String(input.questions?.[0]?.question ?? ''), 80)}` };
+    case 'TodoWrite':
+      return { kind: 'tool', text: 'Updating the plan' };
+    case 'ExitPlanMode':
+      return { kind: 'tool', text: 'Proposing a plan' };
     default:
-      return { kind: 'tool', text: tool ?? 'Working' };
+      return { kind: 'tool', text: toolWords(tool) };
   }
 }
 

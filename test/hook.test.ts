@@ -40,6 +40,8 @@ test('the Claude hook records each step of a turn, and clears the ask when it en
     assert.match(opt('@ah-detail'), /rm -rf build/, 'a finished turn still says what it did last');
     hook({ hook_event_name: 'UserPromptSubmit' });
     assert.equal(opt('@ah-detail'), '', "a new turn isn't described by the last one's command");
+    hook({ hook_event_name: 'PreToolUse', tool_name: 'mcp__github__create_issue', tool_input: {} });
+    assert.match(opt('@ah-detail'), /github: create issue/, 'tool names read as words');
   } finally {
     try {
       tmux('kill-server');
