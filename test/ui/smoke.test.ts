@@ -62,7 +62,9 @@ before(async () => {
     if (saved.dist === undefined) delete process.env.AH_DIST;
   }
   ah.tmux('new-session', '-d', '-s', 'it', '-n', 'zz-idle');
-  ah.tmux('new-window', '-t', 'it', '-n', 'zz-busy', 'bash -c "while true; do echo tick $RANDOM; sleep 0.5; done"');
+  // Single-quoted for tmux's sh, and a counter: a screen whose text stops changing
+  // (one line printed over and over) rightly reads as idle.
+  ah.tmux('new-window', '-t', 'it', '-n', 'zz-busy', "bash -c 'i=0; while true; do i=$((i+1)); echo tick $i; sleep 0.5; done'");
   url = `http://localhost:${ah.port}/`;
   browser = await chromium.launch({ executablePath: CHROME });
 });
