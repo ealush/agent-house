@@ -6911,6 +6911,9 @@ select:not([multiple]) {
     letter-spacing: -0.01em;
     color: var(--text);
     pointer-events: none;
+    /* Hidden unless the scroll says otherwise: a page too short to scroll has
+       no timeline, and the bar must not cover its title. */
+    opacity: 0;
     animation: page-bar linear both;
     animation-timeline: scroll(nearest block);
     animation-range: 56px 88px;
@@ -6929,5 +6932,41 @@ select:not([multiple]) {
   }
   to {
     opacity: 1;
+  }
+}
+
+/* ---------- phone: content runs under the frosted tab bar, the way an iPhone's lists do */
+
+.narrow .main > .tabbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+/* The last row scrolls clear of the bar (its 66px and the home indicator's strip). */
+.narrow .main:has(> .tabbar) > .page {
+  padding-bottom: calc(90px + var(--safe-pad));
+}
+
+/* ---------- touch without a keyboard: no key hints; controls a finger can hit */
+
+@media (hover: none) {
+  .sidebar .keycaps,
+  .confirm-keys,
+  .empty-state .keycaps {
+    display: none;
+  }
+}
+
+@media (pointer: coarse) {
+  .seg button,
+  .tool-chip {
+    min-height: 36px;
+  }
+
+  .ask-row,
+  .ask-option {
+    min-height: 48px;
   }
 }
