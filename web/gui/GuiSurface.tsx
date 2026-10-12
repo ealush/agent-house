@@ -242,8 +242,12 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
       reply: (text) => void client.send(w.uid, text, true).catch((e) => showError(e, "Couldn't send")),
       fileUrl: (path) => client.fs.url(path),
       resolvePath: (p) => (p.startsWith('/') || p.startsWith('~') ? p : `${w.cwd.replace(/\/$/, '')}/${p.replace(/^\.\//, '')}`),
+      displayPath: (p) => {
+        const root = w.projectPath.replace(/\/$/, '');
+        return root && p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p;
+      },
     }),
-    [client, w.uid, w.cwd],
+    [client, w.uid, w.cwd, w.projectPath],
   );
 
   // Search jump (issue #9): a result asked for one entry by seq. Page older
@@ -324,6 +328,19 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
 
   const waiting = w.status === 'waiting' && w.ask;
   const empty = state.status !== 'unavailable' && !blocks.length;
+
+  // Staying at the bottom also holds when the space changes under the feed: the queue
+  // tray or a phone keyboard shortens it, and a waiting call opens its diff after render.
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const follow = new ResizeObserver(() => {
+      if (stick.current) el.scrollTop = el.scrollHeight;
+    });
+    follow.observe(el);
+    for (const child of Array.from(el.children)) follow.observe(child);
+    return () => follow.disconnect();
+  }, [empty]);
   // A permission prompt is about the newest call still without a result in this turn.
   const awaitingCall = useMemo(() => {
     if (!waiting || (w.ask!.kind !== 'tool' && w.ask!.kind !== 'command')) return null;
