@@ -122,8 +122,9 @@ function Working({ detail }: { detail: string | null }) {
   return (
     <div className="working" aria-live="polite">
       <span className="tool-dot running" />
-      <span>Working · {elapsed}</span>
-      {detail && <span className="working-detail mono">{detail}</span>}
+      <span className="working-label">Working · {elapsed}</span>
+      {/* A heredoc or a chained script is many lines; its first says what it is. */}
+      {detail && <span className="working-detail mono" title={detail}>{detail.split('\n')[0].trim()}</span>}
       <span className="working-hint">Esc stops</span>
     </div>
   );

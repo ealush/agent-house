@@ -845,6 +845,12 @@
   padding-left: 34px;
 }
 
+.gui .working-label {
+  flex: none;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 .gui .working-detail {
   min-width: 0;
   overflow: hidden;
