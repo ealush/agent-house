@@ -24,6 +24,8 @@ export type Win = {
   worktree: boolean;
   status: Status;
   detail: string | null;
+  /** The agent hit its usage limit: "Session limit · resets 12am". */
+  limit?: string | null;
   ask: Ask | null;
   answerable: boolean;
   viewers: number;

@@ -9,6 +9,8 @@ test('one word per status, shells and agents alike', () => {
   assert.equal(statusWord({ status: 'attention', agent: 'codex' }), 'done');
   assert.equal(statusWord({ status: 'attention', agent: null }), 'new output');
   assert.equal(statusWord({ status: 'idle', agent: null }), 'idle');
+  assert.equal(statusWord({ status: 'attention', agent: 'claude', limit: 'Session limit · resets 12am' }), 'limited');
+  assert.equal(statusWord({ status: 'busy', agent: 'claude', limit: 'Session limit · resets 12am' }), 'working', 'working again: the limit is over');
 });
 
 test('counts read as one sentence per status', () => {

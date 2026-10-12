@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeStatus, screenAsks, adoptTranscripts, hasToolWork, atShellPrompt, shellDetail, trackContent, type StatusInput, type WindowView } from './sessions.ts';
+import { computeStatus, screenAsks, adoptTranscripts, hasToolWork, atShellPrompt, resetTime, screenLimit, shellDetail, trackContent, type StatusInput, type WindowView } from './sessions.ts';
 import { loadConfig } from './config.ts';
 
 const base: StatusInput = { now: 1000, activity: 900, seen: 900, viewers: 0, idleAfter: 4, hook: null, screenWaiting: false };
@@ -239,4 +239,17 @@ test('a shell is at its prompt when it holds the foreground and runs no script',
   assert.equal(atShellPrompt('bash', procs({ argv: ['/bin/bash', '-lc', 'make'], fg: true }), 10, true), false);
   assert.equal(atShellPrompt('node', procs({ argv: ['node'], fg: true }), 10, true), false);
   assert.equal(atShellPrompt('bash', new Map(), 10, true), true, 'no process table: quiet means idle');
+});
+
+test("an agent's usage-limit notice reads as the limit and when it resets, until then", () => {
+  const at = new Date(2026, 9, 12, 22, 30).getTime() / 1000; // 10:30pm
+  const claude = ['● Working on it', "  ⎿  You've hit your session limit · resets 12am (Asia/Jerusalem)", '❯ '];
+  assert.equal(screenLimit(claude, at, at + 60), 'Session limit · resets 12am');
+  assert.equal(screenLimit(claude, at, at + 2 * 3600), null, 'past midnight it no longer holds');
+  const codex = ["■ You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), or try again at 11:33 PM.", '› '];
+  assert.equal(screenLimit(codex, at, at + 60), 'Usage limit · resets 11:33 PM');
+  assert.equal(screenLimit(['all good'], at, at), null);
+  assert.equal(resetTime('1:50am', at), new Date(2026, 9, 13, 1, 50).getTime() / 1000, 'the next 1:50am');
+  assert.equal(resetTime('Oct 16, 7am', at), new Date(2026, 9, 16, 7, 0).getTime() / 1000);
+  assert.equal(resetTime('soon', at), null);
 });

@@ -340,6 +340,13 @@ button.tag:hover {
   border-color: transparent;
   color: var(--done);
 }
+/* Stopped on the plan's usage limit: it can't go on until the reset. */
+.pill.limit {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border-color: transparent;
+  color: var(--danger);
+  text-transform: lowercase;
+}
 
 /* "Needs you" card. */
 .card-needs {

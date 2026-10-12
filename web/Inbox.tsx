@@ -8,7 +8,7 @@ import { useSavedGroups } from './groupOrder.ts';
 import { sidebarSections } from './sessionOrder.ts';
 import { Glide } from './Glide.tsx';
 import { useFlip } from './useFlip.ts';
-import { statusCounts, statusWord } from './status.ts';
+import { statusClass, statusCounts, statusWord } from './status.ts';
 
 export type InboxGroup = 'status' | 'host' | 'project';
 
@@ -241,7 +241,7 @@ export function Rows({ windows, multiHost, narrow, onOpen, quiet }: { windows: W
     <ul className="rows">
       {windows.map((w) => {
         const { color } = look(w.agent);
-        const pill = <span className={`pill ${w.status === 'idle' ? '' : w.status}`}>{statusWord(w)}</span>;
+        const pill = <span className={`pill ${statusClass(w) === 'idle' ? '' : statusClass(w)}`}>{statusWord(w)}</span>;
         return (
           <li key={w.key} data-flip={w.key}>
             <button className={`row ${quiet ? 'quiet' : ''}`} style={{ '--agent': color } as React.CSSProperties} onClick={() => onOpen(w)}>

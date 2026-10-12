@@ -8,7 +8,7 @@ import { confirmTerminate } from './Sidebar.tsx';
 import { Icon } from './icons.tsx';
 import { deviceName, type HostApi, type SendResult, type Win } from './api.ts';
 import { look } from './agents.ts';
-import { statusWord } from './status.ts';
+import { statusClass, statusWord } from './status.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
 import { continuePrompt } from './handoff.ts';
 import { HostPresetsContext } from './ModelPicker.tsx';
@@ -891,7 +891,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
         </div>
         {narrow ? (
           <>
-            <span className={`pill ${w.status}`}>{statusWord(w)}</span>
+            <span className={`pill ${statusClass(w)}`}>{statusWord(w)}</span>
             {(w.fork?.parentTitle || (w.fork?.forks ?? 0) > 0) && (
               <button className="pill" onClick={() => setForksOpen(true)} title="Show the fork family">
                 ⑂{w.fork!.forks > 0 ? ` ${w.fork!.forks}` : ''}
@@ -901,7 +901,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
         ) : (
           <>
             <div className="session-pills">
-              <span key={w.status} className={`pill ${w.status} pill-change`}>
+              <span key={statusClass(w)} className={`pill ${statusClass(w)} pill-change`}>
                 {w.status === 'waiting' && <span className="dot waiting" />} {statusWord(w)}
               </span>
               {multiHost && <span className="pill mono">{w.host}</span>}

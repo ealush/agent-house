@@ -73,8 +73,9 @@ export class Push {
       if (!event || now - (this.lastSent.get(w.uid) ?? 0) < COOLDOWN_S) continue;
       this.lastSent.set(w.uid, now);
       this.send(event, {
-        title: event === 'waiting' ? `${w.name} needs you` : `${w.name} finished`,
-        body: `${w.project} · ${w.agent ?? w.command}`,
+        // A turn that ended on the plan's usage limit didn't finish: say so, and when it resets.
+        title: event === 'waiting' ? `${w.name} needs you` : w.limit ? `${w.name} hit its usage limit` : `${w.name} finished`,
+        body: `${w.project} · ${w.limit ?? w.agent ?? w.command}`,
         tag: w.uid,
         url: `/#${w.uid}`,
         badge: waiting,

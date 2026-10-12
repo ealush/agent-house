@@ -38,6 +38,8 @@ export type WindowView = {
   status: Status;
   /** One line of what's happening: hook activity, or the last line on screen. */
   detail: string | null;
+  /** The agent hit its plan's usage limit: "Session limit · resets 12am", until that time passes. */
+  limit: string | null;
   /** What a waiting session is blocked on, for the Inbox card. */
   ask: Ask | null;
   /** Whether one-tap Approve/Deny applies (a permission prompt with known keys). */
@@ -321,6 +323,43 @@ async function promptScroll(windowId: string, activity: number): Promise<string[
   return lines;
 }
 
+/**
+ * An agent's usage-limit notice at the bottom of its screen, as the CLIs word it:
+ * Claude "You've hit your session limit · resets 12am (Asia/Jerusalem)", Codex
+ * "You've hit your usage limit. … try again at 11:33 AM." `at`: when ah first saw
+ * it; the notice stays on screen after the reset, so it counts only until then.
+ */
+export function screenLimit(tail: string[], at: number, now: number): string | null {
+  const text = tail.slice(-15).join(' ');
+  const claude = text.match(/You['’]ve hit your (\w+) limit\s*·\s*resets\s+([^(·]+?)\s*(?:\(|·|$)/i);
+  const codex = text.match(/You['’]ve hit your usage limit\b.*?try again at\s+((?:[A-Z][a-z]{2} \d{1,2},? )?\d{1,2}(?::\d{2})?\s*[ap]\.?m)/i);
+  const kind = claude ? `${claude[1][0].toUpperCase()}${claude[1].slice(1).toLowerCase()} limit` : codex ? 'Usage limit' : null;
+  const when = (claude?.[2] ?? codex?.[1])?.trim();
+  if (!kind || !when) return null;
+  const resets = resetTime(when, at);
+  if (resets !== null && now >= resets) return null;
+  return `${kind} · resets ${when}`;
+}
+
+/** The first moment after `from` (epoch seconds) that reads "12am", "1:50am", "11:33 AM" or "Oct 16, 7am"; null if unreadable. */
+export function resetTime(when: string, from: number): number | null {
+  const clock = when.match(/(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\b/i);
+  if (!clock) return null;
+  const h = (Number(clock[1]) % 12) + (clock[3].toLowerCase() === 'p' ? 12 : 0);
+  const m = Number(clock[2] ?? 0);
+  const day = when.match(/\b([A-Z][a-z]{2})\s+(\d{1,2})\b/);
+  const t = new Date(from * 1000);
+  if (day) {
+    const month = 'JanFebMarAprMayJunJulAugSepOctNovDec'.indexOf(day[1]) / 3;
+    if (month >= 0 && Number.isInteger(month)) t.setMonth(month, Number(day[2]));
+  }
+  t.setHours(h, m, 0, 0);
+  if (!day && t.getTime() / 1000 <= from) t.setDate(t.getDate() + 1);
+  return t.getTime() / 1000;
+}
+
+const limitSeen = new Map<string, { text: string; at: number }>();
+
 /** Last non-empty lines of a window's visible screen, re-captured only when it printed something. */
 const screenCache = new Map<string, { activity: number; at: number; lines: string[] }>();
 
@@ -462,8 +501,19 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
       }
       const preset = agent ? config.presets.find((p) => p.id === agent) : undefined;
       // Agents' own TUIs make poor one-liners; for them only hook activity is shown.
+      // A limit notice is what a stopped agent is waiting on; ah first saw it at `at`.
+      let limit: string | null = null;
+      if (agent) {
+        const notice = tail.slice(-15).find((l) => /You['’]ve hit your/.test(l)) ?? '';
+        const seenAt = notice ? (limitSeen.get(w.windowId)?.text === notice ? limitSeen.get(w.windowId)!.at : now) : 0;
+        if (notice) limitSeen.set(w.windowId, { text: notice, at: seenAt });
+        else limitSeen.delete(w.windowId);
+        limit = notice ? screenLimit(tail, seenAt, now) : null;
+      }
       const prompt = !agent && !hookDetail && atShellPrompt(w.command, procs, w.panePid, quiet);
-      const detail = hookDetail
+      const detail = limit && status !== 'busy' && status !== 'waiting'
+        ? limit
+        : hookDetail
         ? hookDetail.kind === 'command' ? `$ ${hookDetail.text}` : hookDetail.text
         : agent ? null : shellDetail(prompt ? await promptScroll(w.windowId, w.activity) : tail, prompt);
       const launch = launchSummary(rec, preset);
@@ -485,6 +535,7 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
         worktree: repo?.worktree ?? false,
         status,
         detail,
+        limit: status === 'busy' || status === 'waiting' ? null : limit,
         ask,
         answerable: status === 'waiting' && ask?.kind !== 'question' && ask?.kind !== 'choice' && !!preset?.approveKeys?.length,
         viewers,
@@ -521,6 +572,7 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
   // Screens of dead windows never change again; drop their clocks.
   const liveIds = new Set(raw.map((w) => w.windowId));
   for (const id of contentClock.keys()) if (!liveIds.has(id)) contentClock.delete(id);
+  for (const id of limitSeen.keys()) if (!liveIds.has(id)) limitSeen.delete(id);
   return views;
 }
 
