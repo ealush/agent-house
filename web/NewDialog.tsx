@@ -264,6 +264,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
               role="radio"
               aria-checked={p.id === preset?.id}
               className={`agent-pill ${p.id === preset?.id ? 'on' : ''}`}
+              data-autofocus={p.id === preset?.id || undefined}
               style={{ '--agent': look(p.id).color } as React.CSSProperties}
               onClick={() => setPresetId(p.id)}
             >

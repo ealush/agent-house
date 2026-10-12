@@ -59,8 +59,8 @@ export function ModelPicker({ preset, value, onPick, footer, disabled = false }:
       {shown.map((m) => (
         <div key={m.id} className={`picker-row ${m.id === current?.id ? 'on' : ''}`}>
           <button type="button" className="picker-name" disabled={disabled} onClick={() => choose(m.id)} title={m.description}>
+            {/* The Default row above already names the default; no "(default)" twice. */}
             <span>{m.name}</span>
-            {m.isDefault && <span className="hint"> (default)</span>}
             {value.model === m.id && <span className="check">✓</span>}
           </button>
         </div>
@@ -113,21 +113,29 @@ export function Popover({ label, className, children, up = true, align = 'left',
   useCommand(command ?? 'pick-model', () => setOpen((v) => !v), !!command && active);
   useEffect(() => {
     if (!open) return;
-    // Arrows move through the rows from the start, whether it opened by key or click.
-    focusFirst(body.current);
+    // Opens on the current choice, as a native menu does; arrows move from there.
+    const before = document.activeElement as HTMLElement | null;
+    const current = body.current?.querySelector<HTMLElement>('.check')?.closest<HTMLElement>('button');
+    if (current) current.focus();
+    else focusFirst(body.current);
     const away = (e: Event) => !ref.current?.contains(e.target as Node) && setOpen(false);
     const esc = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       // Claimed: whatever holds the picker (a screen, a composer) doesn't also close.
       e.preventDefault();
       setOpen(false);
-      button.current?.focus();
     };
     document.addEventListener('pointerdown', away);
     document.addEventListener('keydown', esc);
     return () => {
       document.removeEventListener('pointerdown', away);
       document.removeEventListener('keydown', esc);
+      // Closed by a choice or Escape: the keyboard goes back where it was (the composer,
+      // when the picker came from a shortcut there), or to the button that opened it.
+      const a = document.activeElement;
+      if (a && a !== document.body && a.isConnected && !body.current?.contains(a) && a !== button.current) return;
+      const back = before && before.isConnected && !body.current?.contains(before) ? before : button.current;
+      requestAnimationFrame(() => back?.focus({ preventScroll: true }));
     };
   }, [open]);
   return (

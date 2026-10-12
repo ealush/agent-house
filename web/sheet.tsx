@@ -38,6 +38,18 @@ export function useSheet(ref: RefObject<HTMLElement | null>, onClose: () => void
   const out = useRef(dismiss);
   out.current = dismiss;
 
+  // A dialog that goes away gives focus back to what had it, as a native one does when
+  // closed: React removes the element instead of closing it, which would leave focus on
+  // the page. Not when what follows has already taken focus (a command that opened a session).
+  useEffect(() => {
+    const before = document.activeElement as HTMLElement | null;
+    return () => {
+      const now = document.activeElement;
+      const lost = !now || now === document.body || !now.isConnected || !!ref.current?.contains(now);
+      if (lost && before && before !== document.body && before.isConnected) before.focus({ preventScroll: true });
+    };
+  }, []);
+
   useEffect(() => {
     const el = ref.current;
     if (!el) return;

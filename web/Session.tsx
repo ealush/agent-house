@@ -424,29 +424,37 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
     setMenu(false);
   };
 
+  // The new name shows at once (the server confirms it on its next state) and goes back
+  // if saving fails; either way the keyboard returns to the session.
+  const [pendingName, setPendingName] = useState<string | null>(null);
+  useEffect(() => {
+    if (pendingName !== null && w.name === pendingName) setPendingName(null);
+  }, [w.name, pendingName]);
+  const backToSession = () => requestAnimationFrame(() => surface.current?.focus());
+
   async function commitRename() {
     const name = nameDraft.trim();
     if (nameSaving) return;
-    if (!name || name === w.name) {
-      setRenaming(false);
-      return;
-    }
+    setRenaming(false);
+    backToSession();
+    if (!name || name === w.name) return;
+    setPendingName(name);
     setNameSaving(true);
     try {
       await client.rename(w.id, name);
+      refresh();
     } catch (e) {
+      setPendingName(null);
       showError(e, "Couldn't rename");
+    } finally {
       setNameSaving(false);
-      return;
     }
-    setNameSaving(false);
-    setRenaming(false);
-    refresh();
   }
 
   const cancelRename = () => {
     renameCancelled.current = true;
     setRenaming(false);
+    backToSession();
   };
 
   // Terminate kills the tmux window; stronger wording while it is working,
@@ -470,18 +478,36 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
 
   useShortcutRevision();
   const diffTab = w.branch ? 'Diff' : null;
+  // The header's status settles in when it changes here, not when the session opens.
+  // Sticky for as long as that status lasts, so a re-render can't cut the animation short.
+  const lastStatus = useRef<{ key: string; status: string } | null>(null);
+  const popped = useRef<{ key: string; status: string } | null>(null);
+  if (lastStatus.current?.key === w.key && lastStatus.current.status !== statusClass(w)) popped.current = { key: w.key, status: statusClass(w) };
+  const changed = popped.current?.key === w.key && popped.current.status === statusClass(w);
+  useEffect(() => {
+    lastStatus.current = { key: w.key, status: statusClass(w) };
+  });
   // Desktop only: a phone would pop the software keyboard every time a session opens.
-  // Two frames, because the GUI surface is lazy and the ref is empty on the first.
+  // The keyboard belongs here once a session opens, so it is claimed every frame until it
+  // lands: the surfaces are lazy (their ref is empty at first), and during the view
+  // transition the session you left still holds focus. Never from a dialog or a field
+  // somewhere else, which someone chose.
   useEffect(() => {
     if (!active || touch) return;
-    let inner = 0;
-    const outer = requestAnimationFrame(() => {
-      inner = requestAnimationFrame(() => surface.current?.focus());
-    });
-    return () => {
-      cancelAnimationFrame(outer);
-      cancelAnimationFrame(inner);
+    const until = performance.now() + 1500;
+    let raf = 0;
+    const claim = () => {
+      const a = document.activeElement as HTMLElement | null;
+      const mine = body.current;
+      if (mine && a && mine.contains(a)) return;
+      // A dialog, or a field outside the workspace (a pane's own filter or terminal doesn't count).
+      const elsewhere = a && a !== document.body && a.isConnected && (a.closest('dialog[open]') || (a.matches('input, textarea, select, [contenteditable="true"]') && !a.closest('.session-body, .pane')));
+      if (elsewhere) return;
+      surface.current?.focus();
+      if (performance.now() < until) raf = requestAnimationFrame(claim);
     };
+    raf = requestAnimationFrame(claim);
+    return () => cancelAnimationFrame(raf);
   }, [active, w.key, touch]);
   useCommand('toggle-view', () => switchView(view === 'gui' ? 'terminal' : 'gui', true), active && views.length > 1);
   useCommand(
@@ -880,7 +906,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
             />
           ) : (
             <button className="name" onClick={startRename} title="Rename">
-              {w.title}
+              {pendingName ?? w.title}
             </button>
           )}
           {narrow && (
@@ -902,7 +928,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
         ) : (
           <>
             <div className="session-pills">
-              <span key={statusClass(w)} className={`pill ${statusClass(w)} pill-change`}>
+              <span key={statusClass(w)} className={`pill ${statusClass(w)} ${changed ? 'pill-change' : ''}`}>
                 {w.status === 'waiting' && <span className="dot waiting" />} {statusWord(w)}
               </span>
               {multiHost && <span className="pill mono">{w.host}</span>}

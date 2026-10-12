@@ -9,6 +9,7 @@ import { look } from './agents.ts';
 import { loadSpaces, occupied, saveSpaces, sendTo, switchTo, type Slot, type Spaces } from './workspaces.ts';
 import { useTheme } from './useTheme.ts';
 import { setOmarchyPalette } from './theme.ts';
+import { focusPage } from './rove.ts';
 import { hasLegacy, isLegacyKey, upgradeKey, upgradeLayout, upgradeSpaces } from './sessionKeys.ts';
 
 const STATUS_WORD = { waiting: 'Needs you', busy: 'Working', attention: 'Done', idle: 'Idle' } as const;
@@ -43,7 +44,7 @@ import { Session } from './Session.tsx';
 import { EndedSession } from './Ended.tsx';
 import { HandoffOffer } from './Handoff.tsx';
 import { Workspace } from './Workspace.tsx';
-import { isPick, pickKey, leaves, moveLeaf, nudgeDivider, neighborPane, nodeAt, normalizeSplit, paneLeaves, parseLayout, replaceLeaf, splitLeaf, toggleSplit, type LayoutNode, type PaneDir, type Path } from './layout.ts';
+import { closeLeaf, isPick, pickKey, leaves, moveLeaf, nudgeDivider, neighborPane, nodeAt, normalizeSplit, paneLeaves, parseLayout, replaceLeaf, splitLeaf, toggleSplit, type LayoutNode, type PaneDir, type Path } from './layout.ts';
 import { lastCwd, NewDialog } from './NewDialog.tsx';
 import { ForkDialog, type ForkTarget } from './ForkDialog.tsx';
 import { Switcher } from './Switcher.tsx';
@@ -227,7 +228,8 @@ export function App({ onLock }: { onLock: () => void }) {
     setLayoutState(split);
     if (!split) {
       setFocusPath(null);
-      const solo = next ? paneLeaves(next) : [];
+      // A lone chooser is no session to grow into: the split simply ends.
+      const solo = next ? paneLeaves(next).filter((p) => !isPick(p.sessionKey)) : [];
       if (solo.length === 1) {
         // The last pane grows into the full view, from where it sat.
         const at = document.querySelector(`.ws-root.tiled > .pane[data-tile="${CSS.escape(solo[0].sessionKey)}#0"]`);
@@ -367,6 +369,17 @@ export function App({ onLock }: { onLock: () => void }) {
   useCommand('move-pane-down', () => movePane('down'), splitOpen);
   useCommand('toggle-split', flipSplit, splitOpen);
   useCommand('exit-split', exitSplit, !!layout);
+  // A chooser pane holds no session, so nothing in it answers the pane commands a session
+  // does: split, close (and pane mode's v, s, x) act on it here instead of doing nothing.
+  const chooserFocused = !!layout && focused?.type === 'session' && isPick(focused.sessionKey);
+  const splitChooser = (dir: 'horizontal' | 'vertical') => {
+    if (!layout || !focusPath) return;
+    setLayout(splitLeaf(layout, focusPath, dir, pickKey()));
+    setFocusPath([...focusPath, 'second']);
+  };
+  useCommand('split-right', () => splitChooser('horizontal'), chooserFocused);
+  useCommand('split-below', () => splitChooser('vertical'), chooserFocused);
+  useCommand('close-pane', () => layout && focusPath && setLayout(closeLeaf(layout, focusPath)), chooserFocused);
 
   // Workspaces 1–9 (workspaces.ts): Alt+N goes there, Alt+Shift+N sends the focused session.
   const [spaces, setSpacesState] = useState(loadSpaces);
@@ -508,7 +521,12 @@ export function App({ onLock }: { onLock: () => void }) {
 
   // The scratchpad: one shell of its own, shown floating over everything.
   async function toggleScratch() {
-    if (scratch) return setScratch(false);
+    if (scratch) {
+      setScratch(false);
+      // The keyboard goes back to whatever the scratchpad floated over.
+      requestAnimationFrame(() => requestAnimationFrame(() => runCommand('focus-main')));
+      return;
+    }
     if (!state) return;
     let key: string | null = null;
     try {
@@ -613,6 +631,17 @@ export function App({ onLock }: { onLock: () => void }) {
       row?.scrollIntoView({ block: 'nearest' });
     });
   });
+
+  // Back to the main view from the sidebar when no session is open: the page's list, or its first control.
+  useCommand(
+    'focus-main',
+    () => {
+      if (chooserFocused) return document.querySelector<HTMLElement>('.pane.focused [data-autofocus], .pane.focused .pane-picker-filter')?.focus();
+      if (focusPage()) return;
+      document.querySelector<HTMLElement>('.page')?.querySelector<HTMLElement>('button, input, a[href]')?.focus();
+    },
+    (!selected && !layout) || chooserFocused,
+  );
 
   /** Enter split view from the single session. Without a session to show, the new half asks what goes there. */
   function splitFrom(key: string, dir: 'right' | 'below', otherKey?: string) {

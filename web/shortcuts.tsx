@@ -566,6 +566,8 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
   const { dismiss } = useSheet(ref, onClose);
   useEffect(() => {
     ref.current?.showModal();
+    // showModal focuses the first button (Close); the table opens to be searched.
+    ref.current?.querySelector<HTMLInputElement>('.keymap-search input')?.focus();
   }, []);
   return (
     <dialog ref={ref} className="dialog keymap-dialog" onClose={onClose} onClick={(e) => e.target === ref.current && onClose()}>

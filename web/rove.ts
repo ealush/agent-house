@@ -19,7 +19,8 @@ export function roveKey(e: KeyboardEvent) {
   if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Home' && e.key !== 'End') return;
   const target = e.target as HTMLElement | null;
   if (!target || target.closest('input, textarea, select, [contenteditable="true"], .xterm')) return;
-  const box = target.closest<HTMLElement>('[data-rove]');
+  // Nothing focused (a page just opened from the keyboard): the arrows go into the page's list.
+  const box = target === document.body ? pageList() : target.closest<HTMLElement>('[data-rove]');
   if (!box) return;
   const list = items(box);
   if (!list.length) return;
@@ -27,6 +28,19 @@ export function roveKey(e: KeyboardEvent) {
   const next = e.key === 'Home' ? 0 : e.key === 'End' ? list.length - 1 : Math.max(0, Math.min(list.length - 1, at + (e.key === 'ArrowDown' ? 1 : -1)));
   e.preventDefault();
   list[at < 0 && e.key === 'ArrowUp' ? list.length - 1 : at < 0 && e.key === 'ArrowDown' ? 0 : next]?.focus();
+}
+
+/** The list of the page in view (Inbox, History, Sessions), if it has one. */
+export function pageList(): HTMLElement | null {
+  return [...document.querySelectorAll<HTMLElement>('.page[data-rove]')].find((el) => el.getClientRects().length > 0) ?? null;
+}
+
+/** Focus a page's first item: the keyboard into the main view when no session is open. */
+export function focusPage(): boolean {
+  const box = pageList();
+  const first = box ? items(box)[0] : null;
+  first?.focus();
+  return !!first;
 }
 
 /** Focus the first item of a list once it is drawn (a menu opened from the keyboard). */

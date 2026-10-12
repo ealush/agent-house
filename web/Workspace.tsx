@@ -1,4 +1,4 @@
-import { Fragment, useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { HistoryItem, HostApi, SendResult, Win } from './api.ts';
 import { Session } from './Session.tsx';
 import { EndedSession } from './Ended.tsx';
@@ -70,6 +70,28 @@ export function Workspace(props: Props) {
   // Maximized: the focused pane (or the first) fills the workspace; the others stay mounted in the layout.
   const zoomed = props.zoom && !props.narrow ? (panes.find((p) => p.path.join('/') === focusId) ?? panes[0]) : null;
 
+  // The keyboard follows the focused pane, whatever it holds: a chooser or a New session
+  // form takes it as a session does, and so does a pane that was just maximized, restored
+  // or moved. Claimed every frame until it lands (pane contents are lazy), never from a dialog.
+  const shape = JSON.stringify(layout);
+  useEffect(() => {
+    if (!keyboardId || props.touch) return;
+    const until = performance.now() + 1000;
+    let raf = 0;
+    const claim = () => {
+      const el = document.querySelector<HTMLElement>(`.pane[data-pane="${CSS.escape(keyboardId)}"]`);
+      const a = document.activeElement as HTMLElement | null;
+      // Not from a dialog or a floating layer over the workspace (the scratchpad).
+      if (a?.closest('dialog[open], [role="dialog"]') || document.querySelector('.scratchpad')) return;
+      if (el && a && a !== el && el.contains(a)) return;
+      const target = el && PANE_FOCUS.map((q) => [...el.querySelectorAll<HTMLElement>(q)].find((x) => x.getClientRects().length > 0)).find(Boolean);
+      target?.focus({ preventScroll: true });
+      if (performance.now() < until) raf = requestAnimationFrame(claim);
+    };
+    raf = requestAnimationFrame(claim);
+    return () => cancelAnimationFrame(raf);
+  }, [keyboardId, props.zoom, newIn, shape, props.touch]);
+
   function dropKey(e: React.DragEvent): string | null {
     // Sidebar rows set text/ah-session; fall back to plain text for other sources.
     return e.dataTransfer.getData('text/ah-session') || e.dataTransfer.getData('text/plain') || null;
@@ -106,6 +128,7 @@ export function Workspace(props: Props) {
   function pane(sessionKey: string, path: Path, frame: Frame = {}) {
     const w = byKey.get(sessionKey);
     const paneId = path.join('/');
+    frame = { ...frame, 'data-pane': paneId };
     const focused = props.focusPath?.join('/') === paneId;
     if (isPick(sessionKey)) {
       const previous = pickPrevious(sessionKey);
@@ -377,7 +400,10 @@ export function Workspace(props: Props) {
 
 const FULL: Box = { x: 0, y: 0, w: 1, h: 1 };
 
-type Frame = { 'data-tile'?: string; className?: string; style?: React.CSSProperties; inert?: boolean };
+type Frame = { 'data-tile'?: string; 'data-pane'?: string; className?: string; style?: React.CSSProperties; inert?: boolean };
+
+/** What takes the keyboard in a pane, best first: a field asked for, a chooser's filter, a composer, a terminal. */
+const PANE_FOCUS = ['[data-autofocus]', '.pane-picker-filter', '.gui .composer textarea', '.xterm-helper-textarea', 'input:not([type="hidden"])', 'textarea', 'button'];
 
 const pct = (n: number) => `${+(n * 100).toFixed(4)}%`;
 const place = (b: Box): React.CSSProperties => ({ left: pct(b.x), top: pct(b.y), right: pct(1 - b.x - b.w), bottom: pct(1 - b.y - b.h) });
