@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeStatus, screenAsks, adoptTranscripts, hasToolWork, shellDetail, trackContent, type StatusInput, type WindowView } from './sessions.ts';
+import { computeStatus, screenAsks, adoptTranscripts, hasToolWork, atShellPrompt, shellDetail, trackContent, type StatusInput, type WindowView } from './sessions.ts';
 import { loadConfig } from './config.ts';
 
 const base: StatusInput = { now: 1000, activity: 900, seen: 900, viewers: 0, idleAfter: 4, hook: null, screenWaiting: false };
@@ -221,12 +221,22 @@ test('tmux output parses with raw (≥3.5) and escaped (3.4) separators', async 
 
 test("a shell's one-liner is the command it last ran, never its prompt", () => {
   const screen = ['demo master ? ❱ git status; ls -la', 'On branch master', 'index.js', 'demo master ? ❱'];
-  assert.equal(shellDetail(screen, 'bash'), '$ git status; ls -la');
+  assert.equal(shellDetail(screen, true), '$ git status; ls -la');
   // The prompt changed since (a new git state): first word and final symbol still match.
-  assert.equal(shellDetail(['demo master ❱ touch a', 'demo master ? ❱'], 'zsh'), '$ touch a');
-  // A cleared screen has nothing to show but the prompt: show nothing.
-  assert.equal(shellDetail(['demo master ? ❱'], 'fish'), null);
+  assert.equal(shellDetail(['demo master ❱ touch a', 'demo master ? ❱'], true), '$ touch a');
+  // Nothing typed in reach: show nothing rather than the prompt.
+  assert.equal(shellDetail(['demo master ? ❱'], true), null);
   // Running something: its latest output.
-  assert.equal(shellDetail(['building step 3'], 'node'), 'building step 3');
-  assert.equal(shellDetail([], 'bash'), null);
+  assert.equal(shellDetail(['building step 3'], false), 'building step 3');
+  assert.equal(shellDetail([], true), null);
+});
+
+test('a shell is at its prompt when it holds the foreground and runs no script', () => {
+  const procs = (root: { argv: string[]; fg?: boolean }) => new Map([[0, [{ pid: 10, ppid: 0, ...root }]]]);
+  assert.equal(atShellPrompt('zsh', procs({ argv: ['-zsh'], fg: true }), 10, false), true);
+  assert.equal(atShellPrompt('zsh', procs({ argv: ['-zsh'], fg: false }), 10, true), false, 'a command holds the foreground');
+  assert.equal(atShellPrompt('bash', procs({ argv: ['bash', '-c', 'for i in 1 2; do sleep 1; done'], fg: true }), 10, true), false, 'a script is not a prompt');
+  assert.equal(atShellPrompt('bash', procs({ argv: ['/bin/bash', '-lc', 'make'], fg: true }), 10, true), false);
+  assert.equal(atShellPrompt('node', procs({ argv: ['node'], fg: true }), 10, true), false);
+  assert.equal(atShellPrompt('bash', new Map(), 10, true), true, 'no process table: quiet means idle');
 });

@@ -2,7 +2,8 @@
 // running inside a pane (node-based CLIs all show up as "node" in tmux).
 import { readdir, readFile, readlink } from 'node:fs/promises';
 
-export type Proc = { pid: number; ppid: number; argv: string[] };
+/** `fg`: the process's group holds its terminal's foreground (a shell at its prompt, or the command it runs). */
+export type Proc = { pid: number; ppid: number; argv: string[]; fg?: boolean };
 
 export async function snapshot(): Promise<Map<number, Proc[]>> {
   const children = new Map<number, Proc[]>();
@@ -22,10 +23,12 @@ export async function snapshot(): Promise<Map<number, Proc[]>> {
           readFile(`/proc/${pid}/cmdline`, 'utf8'),
         ]);
         // comm may contain spaces/parens, so parse from the last ')'.
-        const ppid = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[1]);
+        // After comm: state ppid pgrp session tty_nr tpgid.
+        const f = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+        const ppid = Number(f[1]);
         const argv = cmdline.split('\0').filter(Boolean);
         const list = children.get(ppid) ?? [];
-        list.push({ pid, ppid, argv });
+        list.push({ pid, ppid, argv, fg: Number(f[5]) > 0 && f[2] === f[5] });
         children.set(ppid, list);
       } catch {
         // process exited mid-scan

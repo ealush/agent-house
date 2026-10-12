@@ -269,19 +269,31 @@ export function trackContent(prev: { text: string; at: number } | undefined, tex
 const SHELLS = /^-?(bash|zsh|fish|sh|dash|ksh|mksh|tcsh|nu|xonsh|elvish)$/;
 
 /**
+ * Is the pane's shell sitting at its prompt? It is when it holds the
+ * terminal's foreground and runs no script (`bash -c …` is a program, not a
+ * prompt). Without a process table (not Linux), a quiet shell counts as idle.
+ */
+export function atShellPrompt(command: string, procs: Awaited<ReturnType<typeof snapshot>>, panePid: number, quiet: boolean): boolean {
+  if (!SHELLS.test(command)) return false;
+  const root = descendants(procs, panePid, true).find((p) => p.pid === panePid);
+  if (!root || root.fg === undefined) return quiet;
+  return root.fg && !root.argv.slice(1).some((a) => /^-\w*c\w*$/.test(a));
+}
+
+/**
  * A shell's one-liner: its latest output while a command runs, or, at the
  * prompt, the command it last ran ("$ git status") — never the prompt itself.
  * The previous prompt line carries what was typed at it; a prompt that changed
  * since (a new git state, a clock) matches by its first word and final symbol.
  */
-export function shellDetail(tail: string[], command: string): string | null {
-  if (!tail.length) return null;
-  const prompt = tail[tail.length - 1].trim();
-  if (!SHELLS.test(command)) return clip(prompt);
+export function shellDetail(lines: string[], atPrompt: boolean): string | null {
+  if (!lines.length) return null;
+  const prompt = lines[lines.length - 1].trim();
+  if (!atPrompt) return clip(prompt);
   const first = prompt.split(/\s+/)[0];
   const symbol = prompt.split(/\s+/).pop()!;
-  for (let i = tail.length - 2; i >= 0; i--) {
-    const line = tail[i].trim();
+  for (let i = lines.length - 2; i >= 0; i--) {
+    const line = lines[i].trim();
     let typed: string | null = null;
     if (line.startsWith(`${prompt} `)) typed = line.slice(prompt.length);
     else if (prompt.includes(' ') && line.startsWith(`${first} `)) {
@@ -291,6 +303,21 @@ export function shellDetail(tail: string[], command: string): string | null {
     if (typed?.trim()) return clip(`$ ${typed.trim()}`);
   }
   return null;
+}
+
+/**
+ * The scrollback a shell's last command is looked for in. Kept apart from
+ * screenTail on purpose: status reads only the visible screen, so an old
+ * prompt in the scrollback can never make a session look like it needs you.
+ */
+const scrollCache = new Map<string, { activity: number; lines: string[] }>();
+async function promptScroll(windowId: string, activity: number): Promise<string[]> {
+  const hit = scrollCache.get(windowId);
+  if (hit?.activity === activity) return hit.lines;
+  const text = await capturePane(windowId, 200).catch(() => '');
+  const lines = text.split('\n').map((l) => l.trimEnd()).filter((l) => l.trim());
+  scrollCache.set(windowId, { activity, lines });
+  return lines;
 }
 
 /** Last non-empty lines of a window's visible screen, re-captured only when it printed something. */
@@ -425,7 +452,10 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
       }
       const preset = agent ? config.presets.find((p) => p.id === agent) : undefined;
       // Agents' own TUIs make poor one-liners; for them only hook activity is shown.
-      const detail = hookDetail ? (hookDetail.kind === 'command' ? `$ ${hookDetail.text}` : hookDetail.text) : agent ? null : shellDetail(tail, w.command);
+      const prompt = !agent && !hookDetail && atShellPrompt(w.command, procs, w.panePid, quiet);
+      const detail = hookDetail
+        ? hookDetail.kind === 'command' ? `$ ${hookDetail.text}` : hookDetail.text
+        : agent ? null : shellDetail(prompt ? await promptScroll(w.windowId, w.activity) : tail, prompt);
       const launch = launchSummary(rec, preset);
       return {
         id: w.windowId,

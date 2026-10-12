@@ -252,7 +252,7 @@ export function Rows({ windows, multiHost, narrow, onOpen, quiet }: { windows: W
                 <>
                   <span className="stack">
                     <span className="name">{w.title}</span>
-                    <span className="sub">{[w.detail ?? (w.panes > 1 ? `${w.panes} panes` : w.command), where(w, multiHost)].filter(Boolean).join(' · ')}</span>
+                    <span className="sub">{[w.detail ?? (w.panes > 1 ? `${w.panes} panes` : null), where(w, multiHost)].filter(Boolean).join(' · ')}</span>
                   </span>
                   <span className="when">{pill}</span>
                 </>

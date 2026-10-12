@@ -669,7 +669,7 @@ export function App({ onLock }: { onLock: () => void }) {
       const alerting = w.status === 'waiting' || (w.status === 'attention' && was === 'busy');
       if (was && was !== w.status && alerting && !pushActive.current && 'Notification' in window && Notification.permission === 'granted') {
         if (document.hidden || w.key !== selectedRef.current) {
-          const n = new Notification(w.status === 'waiting' ? `${w.title} needs you` : `${w.title} finished`, { body: `${w.project} · ${w.agent ?? w.command}`, tag: w.key, icon: '/icon-512.png' });
+          const n = new Notification(w.status === 'waiting' ? `${w.title} needs you` : `${w.title} finished`, { body: `${w.project} · ${look(w.agent).name}`, tag: w.key, icon: '/icon-512.png' });
           n.onclick = () => {
             window.focus();
             open(w.key);
