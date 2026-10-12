@@ -620,8 +620,10 @@ kbd {
   background: var(--done);
 }
 
+/* Idle is the resting state: no mark at all, so the dots that do show
+   (working, needs you, done) stand out. The slot stays, so names don't shift. */
 .dot.idle {
-  box-shadow: inset 0 0 0 1.5px var(--faint);
+  box-shadow: none;
 }
 
 .dot.online {
@@ -4937,6 +4939,16 @@ button.tool-chip:hover {
   padding: 6px 10px;
 }
 
+/* "Something else" pads its inner button, not itself, so its number lines up
+   with the options above it and the row keeps their height. */
+.ask-panel.compact .ask-other {
+  padding: 0 10px 0 0;
+}
+
+.ask-panel.compact .ask-other-row {
+  padding: 6px 0 6px 10px;
+}
+
 .ask-banner .ask-panel {
   max-height: 45vh;
   overflow: auto;
@@ -5995,14 +6007,38 @@ button.tool-chip:hover {
 }
 
 @media (hover: hover) {
+  /* The time and the actions share the last column: the time sits flush right
+     on every row (shells have no Fork, so a column of its own would wobble),
+     and hovering trades it for Resume, Fork and Hide. */
+  .history-row {
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+  }
+
+  .history-row .when,
+  .history-row .row-actions {
+    grid-area: 1 / 3;
+    justify-self: end;
+  }
+
+  .history-row .when {
+    transition: opacity var(--dur-1);
+  }
+
   .history-row .row-actions {
     opacity: 0;
+    pointer-events: none;
     transition: opacity var(--dur-1);
   }
 
   .history-row:hover .row-actions,
   .history-row:focus-within .row-actions {
     opacity: 1;
+    pointer-events: auto;
+  }
+
+  .history-row:hover .when,
+  .history-row:focus-within .when {
+    opacity: 0;
   }
 }
 

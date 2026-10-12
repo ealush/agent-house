@@ -317,6 +317,14 @@ button.tag:hover {
   font-family: var(--mono);
   font-size: 12px;
 }
+/* Status reads the same in a session's header as in the inbox: "idle", "done". */
+.pill.idle,
+.pill.busy,
+.pill.attention,
+.pill.waiting,
+.pill.ended {
+  text-transform: lowercase;
+}
 .pill.waiting {
   background: var(--accent-strong);
   border-color: transparent;
