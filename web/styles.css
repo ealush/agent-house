@@ -4781,6 +4781,13 @@ button.tool-chip:hover {
   font-family: var(--ui);
 }
 
+/* History can hold hundreds of conversations: rows below the fold aren't laid out or
+   painted until they near the screen, so the page opens (and slides in) without a stall. */
+.history-list > li {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 64px;
+}
+
 /* Settings → Security → This device: the name and its button on one line. */
 .device-name {
   display: flex;

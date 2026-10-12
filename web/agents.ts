@@ -15,17 +15,22 @@ export function look(agent: string | null) {
 }
 
 /** "4m", "2h", "yesterday", "11:20". */
-export function age(ts: number): string {
+// One formatter for every row: building one per call made a long list slow to draw.
+let monthDay: Intl.DateTimeFormat | null = null;
+
+export function age(ts: number, now = Date.now()): string {
   if (!ts) return '';
-  const s = Date.now() / 1000 - ts;
+  const s = now / 1000 - ts;
   if (s < 60) return 'now';
   if (s < 3600) return `${Math.round(s / 60)}m`;
   if (s < 6 * 3600) return `${Math.round(s / 3600)}h`;
   const d = new Date(ts * 1000);
-  const today = new Date();
+  const today = new Date(now);
   if (d.toDateString() === today.toDateString()) return d.toTimeString().slice(0, 5);
-  if (Date.now() - d.getTime() < 2 * 86400_000) return 'yesterday';
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  // The calendar day before today, not "within 48 hours".
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return 'yesterday';
+  return (monthDay ??= new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' })).format(d);
 }
 
 const VENDOR = new Set(['claude', 'codex', 'openai', 'gpt', 'gemini', 'google', 'grok', 'xai', 'muse', 'meta', 'hermes', 'opencode', 'anthropic']);

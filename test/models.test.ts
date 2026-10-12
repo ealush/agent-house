@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { runningModel, shortModel } from '../web/agents.ts';
+import { age, runningModel, shortModel } from '../web/agents.ts';
 
 test('model ids read as people say them', () => {
   assert.equal(shortModel('claude-haiku-4-5-20251001'), 'Haiku 4.5');
@@ -19,4 +19,13 @@ test('the running model maps onto the preset choice that names it', () => {
   assert.equal(runningModel(models, 'gpt-6.1-sol')?.id, 'gpt-6.1-sol');
   assert.equal(runningModel(models, 'muse-spark-1.3'), undefined);
   assert.equal(runningModel(models, null), undefined);
+});
+
+test('ages read as people say them, and yesterday is the calendar day before', () => {
+  const now = new Date(2026, 9, 13, 0, 30).getTime();
+  const at = (y: number, mo: number, d: number, h: number, mi = 0) => new Date(y, mo, d, h, mi).getTime() / 1000;
+  assert.equal(age(now / 1000 - 30, now), 'now');
+  assert.equal(age(now / 1000 - 600, now), '10m');
+  assert.equal(age(at(2026, 9, 12, 12), now), 'yesterday');
+  assert.equal(age(at(2026, 9, 11, 23), now), new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(new Date(2026, 9, 11)), '25.5h ago but two days back');
 });
