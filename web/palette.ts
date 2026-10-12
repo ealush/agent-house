@@ -35,6 +35,7 @@ export const TREE: Spec = {
   icon: 'commands',
   children: [
     'new-session',
+    'new-project',
     'switcher',
     'scratchpad',
     { key: 'run', label: 'Run in project', icon: 'files', detail: 'Start an agent or a shell in one of your projects', children: [{ provider: 'projects' }] },

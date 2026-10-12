@@ -29,11 +29,11 @@ import { feedPage, streamFeed, SNAPSHOT } from './feed/stream.ts';
 import { Previews, removeStaleMappings, tailscalePublish } from './preview.ts';
 import { listeningPorts } from './procs.ts';
 import * as t from './tmux.ts';
-import { createWorktree, changes, listBranches, switchBranch, pullRequest, GitError } from './git.ts';
+import { createWorktree, initRepo, changes, listBranches, switchBranch, pullRequest, GitError } from './git.ts';
 import { SideChatStore, SideChatError, changeContext } from './sidechat.ts';
 import { ensureMigrated, getDb } from './db.ts';
 import { importLegacyJson } from './migrate.ts';
-import { FsError, list, makeDir, receive, sendFile, setRoots, roots, clearUploadDir } from './files.ts';
+import { FsError, dirStatus, list, makeDir, receive, sendFile, setRoots, roots, clearUploadDir } from './files.ts';
 import { Peers, proxyHttp, proxyWs, peerUrlAllowed } from './peers.ts';
 import { SearchIndexer, combineResponses, type SearchParams } from './search.ts';
 import { Auth, AuthError, clearCookies, type Caller } from './auth.ts';
@@ -229,10 +229,25 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     return send(res, 200, await projectSuggestions([...new Set(state.windows.map((w) => w.projectPath))]));
   }
 
+  // The new-session form asks before it offers to create a folder.
+  if (route('GET', /^\/api\/dir$/)) {
+    const path = (url.searchParams.get('path') ?? '').trim().slice(0, 1024) || '~';
+    return send(res, 200, { state: await dirStatus(path), root: shortPath(expandHome(config.projectRoots[0] ?? '~')) });
+  }
+
   if (route('POST', /^\/api\/windows$/)) {
     const body = await readJson(req);
     const preset = await withCatalog(core.preset(str(body.preset, 'preset', 40)));
-    const cwd = await resolveDir(str(body.cwd ?? '~', 'cwd', 1024));
+    const asked = str(body.cwd ?? '~', 'cwd', 1024).trim() || '~';
+    // A new project: one new folder inside an existing one, within the file roots.
+    let created = false;
+    if (body.create && (await dirStatus(asked)) === 'new') {
+      const dir = await makeDir(asked);
+      created = true;
+      if (body.git) await initRepo(dir);
+      audit(req, 'project.create', { path: dir, git: !!body.git });
+    }
+    const cwd = await resolveDir(asked);
     const session = t.sanitizeSessionName(str(body.session || config.defaultSession, 'session', 64));
     if (!session) throw new HttpError(400, 'invalid session');
     const name = str(body.label ?? '', 'label', 80).trim() || defaultName(preset, cwd);
@@ -258,7 +273,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
       throw err;
     }
     // One writing agent per checkout (F29): optionally start in a fresh worktree + branch.
-    const wt = body.worktree ? await createWorktree(cwd, name) : null;
+    const wt = body.worktree && !created ? await createWorktree(cwd, name) : null;
     const order = core.nextOrder();
     const out = await core.launch({
       preset,

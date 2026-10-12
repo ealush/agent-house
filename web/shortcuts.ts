@@ -25,6 +25,7 @@ export type CommandId =
   | 'command-palette'
   | 'switcher'
   | 'new-session'
+  | 'new-project'
   | 'cycle-prev'
   | 'cycle-next'
   | 'toggle-sidebar'
@@ -157,6 +158,14 @@ export const COMMANDS: Command[] = [
     label: 'New session',
     detail: 'Open the new-session dialog.',
     chords: [{ key: 'Enter', ctrl: true, shift: true }],
+    scopes: nav,
+  },
+  {
+    id: 'new-project',
+    group: 'Navigate',
+    label: 'New project',
+    detail: 'Create a folder and start a session in it.',
+    chords: [],
     scopes: nav,
   },
   {

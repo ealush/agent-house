@@ -75,6 +75,11 @@ export function slugify(s: string): string {
   );
 }
 
+/** A fresh repository for a folder ah just created. */
+export async function initRepo(dir: string): Promise<void> {
+  await git(dir, 'init', '--quiet');
+}
+
 export type Worktree = { path: string; branch: string; repo: string };
 
 export async function createWorktree(dir: string, name: string, fromRef?: string): Promise<Worktree> {

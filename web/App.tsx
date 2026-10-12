@@ -119,7 +119,7 @@ function fromHash(): { page: Page; selected: string | null } {
 export function App({ onLock }: { onLock: () => void }) {
   const [{ page, selected }, setRoute] = useState(fromHash);
   const [inboxGroup, setInboxGroup] = stored<InboxGroup>('ah.inboxGroup', 'status');
-  const [creating, setCreating] = useState<{ cwd?: string; host?: string; prompt?: string; preset?: string } | null>(null);
+  const [creating, setCreating] = useState<{ cwd?: string; host?: string; prompt?: string; preset?: string; project?: boolean } | null>(null);
   const [forking, setForking] = useState<ForkTarget | null>(null);
   const [switching, setSwitching] = useState(false);
   const [palette, setPalette] = useState(false);
@@ -304,6 +304,7 @@ export function App({ onLock }: { onLock: () => void }) {
   useCommand('command-palette', () => setPalette((v) => !v));
   useCommand('switcher', () => setSwitching((v) => !v));
   useCommand('new-session', () => setCreating({}));
+  useCommand('new-project', () => setCreating({ project: true }));
   useCommand('toggle-sidebar', toggleSide);
   useCommand('cycle-prev', () => cycleSession(-1));
   useCommand('cycle-next', () => cycleSession(1));
@@ -872,6 +873,7 @@ export function App({ onLock }: { onLock: () => void }) {
           onSelect={open}
           onSearch={() => setSwitching(true)}
           onNew={(where) => setCreating(where ?? {})}
+          onNewProject={() => setCreating({ project: true })}
           onWorktrees={() => setDialog('worktrees')}
           onReorder={(uid, host, order) => {
             // One move can save several rows: refresh once they are all saved,
@@ -1040,6 +1042,7 @@ export function App({ onLock }: { onLock: () => void }) {
       {/* Never a modal: the form takes the space a session would (phone and desktop alike). */}
       {creating && state && (
         <NewDialog
+          key={creating.project ? 'project' : 'session'}
           screen
           hosts={state.hosts.filter((h) => h.online).map((h) => h.name)}
           initialHost={creating.host ?? current?.host ?? state.hostname}
@@ -1048,6 +1051,7 @@ export function App({ onLock }: { onLock: () => void }) {
           initialCwd={creating.cwd ?? current?.projectPath ?? lastCwd(creating.host ?? current?.host ?? state.hostname)}
           initialPrompt={creating.prompt}
           initialPreset={creating.preset}
+          newProject={creating.project}
           onClose={() => setCreating(null)}
           onSent={sent}
           onCreated={async (host, id, uid) => {

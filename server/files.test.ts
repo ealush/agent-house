@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
-import { safePath, list, receive, FsError, setRoots, clearUploadDir } from './files.ts';
+import { safePath, list, receive, FsError, setRoots, clearUploadDir, dirStatus } from './files.ts';
 
 // Tests browse under the system temp dir; nothing else is a root.
 setRoots([tmpdir()]);
@@ -17,6 +17,18 @@ test('paths are confined to the configured roots, symlinks included', async () =
   await assert.rejects(safePath(join(dir, 'escape/passwd')), (e: FsError) => e.status === 403);
   await assert.rejects(safePath('relative/path'), (e: FsError) => e.status === 400);
   assert.equal(await safePath(dir), dir);
+});
+
+test('dirStatus offers a new folder only inside the roots, under an existing parent', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ah-fs-'));
+  await writeFile(join(dir, 'notes.txt'), 'n');
+  assert.equal(await dirStatus(dir), 'dir');
+  assert.equal(await dirStatus(join(dir, 'fresh')), 'new');
+  assert.equal(await dirStatus(join(dir, 'a', 'b')), 'missing');
+  assert.equal(await dirStatus(join(dir, 'notes.txt')), 'file');
+  assert.equal(await dirStatus('/etc/ah-nope'), 'outside');
+  assert.equal(await dirStatus('/etc'), 'dir'); // starting in any existing folder stays allowed
+  assert.equal(await dirStatus('relative'), 'missing');
 });
 
 test('listing hides dotfiles unless asked, folders first', async () => {

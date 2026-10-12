@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ConfirmButton } from './ConfirmButton.tsx';
 import { Icon } from './icons.tsx';
-import type { HostApi, SendResult, State } from './api.ts';
+import type { DirState, HostApi, SendResult, State } from './api.ts';
 import { showError } from './ask.tsx';
 import { look } from './agents.ts';
 import { AgentLogo } from './logos.tsx';
@@ -19,6 +19,8 @@ type Props = {
   initialPrompt?: string;
   /** Preselect an agent (Continue in…). */
   initialPreset?: string;
+  /** Opened as "New project": start by naming a new folder in the projects root. */
+  newProject?: boolean;
   onClose: () => void;
   /** Phones: a full screen inside the app shell (its own scrolling), not a modal over it. */
   screen?: boolean;
@@ -28,6 +30,13 @@ type Props = {
 };
 
 const NEW_SESSION = '\u0000new';
+
+/** Why the typed path can't be used; a new folder gets its own row instead. */
+const DIR_PROBLEM: Partial<Record<DirState, string>> = {
+  file: 'That’s a file, not a folder.',
+  missing: 'No such folder. A new one goes inside a folder that exists.',
+  outside: 'ah creates folders only inside the browsable folders (files.roots in the config).',
+};
 
 type Remembered = { mode?: string; model?: string; effort?: string };
 const memKey = (preset: string) => `ah.launch.${preset}`;
@@ -48,14 +57,14 @@ export function lastCwd(host: string): string {
   }
 }
 
-export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd, initialPrompt = '', initialPreset, onClose, onCreated, onSent, screen = false }: Props) {
+export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd, initialPrompt = '', initialPreset, newProject = false, onClose, onCreated, onSent, screen = false }: Props) {
   const [host, setHost] = useState(initialHost);
   const state = hostState(host) ?? hostState(hosts[0])!;
   const client = clientFor(host);
   const presets = state.presets.filter((p) => p.available);
   const [presetId, setPresetId] = useState(() => initialPreset ?? localStorage.getItem('ah.lastPreset') ?? presets[0]?.id ?? 'shell');
   const preset = presets.find((p) => p.id === presetId) ?? presets[0];
-  const [cwd, setCwd] = useState(initialCwd);
+  const [cwd, setCwd] = useState(newProject ? '' : initialCwd);
   const [label, setLabel] = useState('');
   const [session, setSession] = useState(state.sessions.includes(state.defaultSession) ? state.defaultSession : (state.sessions[0] ?? NEW_SESSION));
   const [newSession, setNewSession] = useState(state.sessions.length ? '' : state.defaultSession);
@@ -67,6 +76,13 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
   const [extraArgs, setExtraArgs] = useState('');
   const [more, setMore] = useState(false);
   const [projects, setProjects] = useState<string[]>([]);
+  // What the typed path is, for the host it was asked of; `root` is where new projects go.
+  const [place, setPlace] = useState<{ host: string; cwd: string; state: DirState } | null>(null);
+  const [root, setRoot] = useState<string | null>(null);
+  const [gitInit, setGitInit] = useState(() => localStorage.getItem('ah.newGit') !== '0');
+  const cwdInput = useRef<HTMLInputElement>(null);
+  const caretToEnd = useRef(false);
+  const projectPending = useRef(newProject);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -88,7 +104,31 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
   }, [screen, onClose]);
   useEffect(() => {
     client.projects().then(setProjects).catch(() => setProjects([]));
+    setRoot(null);
   }, [host]);
+  useEffect(() => {
+    let live = true;
+    const check = () =>
+      client
+        .dir(cwd)
+        .then((d) => {
+          if (!live) return;
+          setPlace({ host, cwd, state: d.state });
+          setRoot(d.root);
+          // New project: once the host says where projects live, prefill it and wait for a name.
+          if (projectPending.current) {
+            projectPending.current = false;
+            caretToEnd.current = true;
+            setCwd(`${d.root.replace(/\/$/, '')}/`);
+          }
+        })
+        .catch(() => live && setPlace(null)); // an older peer can't say
+    const t = setTimeout(check, place ? 150 : 0);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [host, cwd]);
 
   // Per-agent memory of the last launch choices. A dangerous mode is never restored.
   useEffect(() => {
@@ -110,6 +150,29 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
   const chosen = preset ? effectiveModel(preset, pick.model) : undefined;
   const levels = preset ? effortsFor(preset, chosen) : [];
   const recent = projects.slice(0, 6);
+  // Shown: the last answer for this host, kept while the next check is in flight so nothing flickers.
+  // Acted on: only an answer for exactly what is typed.
+  const shown = place?.host === host ? place.state : null;
+  const known = place?.host === host && place.cwd === cwd ? place.state : null;
+  const isNew = shown === 'new';
+  const trimmed = cwd.trim().replace(/\/+$/, '');
+  const newName = trimmed.slice(trimmed.lastIndexOf('/') + 1);
+  const newParent = trimmed.slice(0, trimmed.lastIndexOf('/')) || '/';
+  const naming = !!root && cwd === `${root.replace(/\/$/, '')}/`;
+
+  function newFolder() {
+    if (!root) return;
+    caretToEnd.current = true;
+    setCwd(`${root.replace(/\/$/, '')}/`);
+  }
+  // After the prefill lands, before the next keystroke: focus with the caret after the slash.
+  useLayoutEffect(() => {
+    const input = cwdInput.current;
+    if (!caretToEnd.current || !input) return;
+    caretToEnd.current = false;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }, [cwd]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -117,8 +180,20 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
     setBusy(true);
     setError(null);
     try {
+      // Pressed Start before the path was checked: if it means a new folder, say so first.
+      let state = known;
+      if (!state) {
+        state = (await client.dir(cwd).catch(() => null))?.state ?? null;
+        if (state) setPlace({ host, cwd, state });
+        if (state === 'new') {
+          setBusy(false);
+          return;
+        }
+      }
+      const create = state === 'new';
       localStorage.setItem('ah.lastPreset', preset.id);
       localStorage.setItem(`ah.lastCwd.${host}`, cwd);
+      if (create) localStorage.setItem('ah.newGit', gitInit ? '1' : '0');
       localStorage.setItem(memKey(preset.id), JSON.stringify({ mode, model: pick.model, effort: pick.effort }));
       // Only send what differs from the harness's own defaults: fewer flags, same result.
       const model = pick.model && pick.model !== preset.defaultModel ? pick.model : undefined;
@@ -126,9 +201,10 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
       const { id, uid } = await client.create({
         preset: preset.id,
         cwd,
+        ...(create ? { create: true, git: gitInit } : {}),
         label,
         session: session === NEW_SESSION ? newSession : session,
-        worktree,
+        worktree: worktree && !create,
         resume: resume && !!preset.resume,
         ...(mode !== 'default' ? { mode } : {}),
         ...(model ? { model } : {}),
@@ -162,7 +238,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
               <Icon name="back" size={22} />
             </button>
           )}
-          <h2>New session</h2>
+          <h2>{newProject || isNew || naming ? 'New project' : 'New session'}</h2>
           {hosts.length > 1 && (
             <div className="seg" role="radiogroup" aria-label="Machine">
               {hosts.map((h) => (
@@ -196,21 +272,43 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
 
         <label className="field">
           <span>Project</span>
-          <input value={cwd} onChange={(e) => setCwd(e.target.value)} list="ah-projects" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="~/code/project" />
+          <input ref={cwdInput} value={cwd} onChange={(e) => setCwd(e.target.value)} list="ah-projects" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="~/code/project" />
           <datalist id="ah-projects">
             {projects.map((p) => (
               <option key={p} value={p} />
             ))}
           </datalist>
         </label>
-        {recent.length > 0 && (
+        {(recent.length > 0 || root) && (
           <div className="suggestions">
             {recent.map((p) => (
               <button type="button" key={p} className={`sugg ${p === cwd ? 'on' : ''}`} onClick={() => setCwd(p)}>
                 {p.split('/').pop() || p}
               </button>
             ))}
+            {root && (
+              <button type="button" className={`sugg add ${naming || isNew ? 'on' : ''}`} onClick={newFolder}>
+                <Icon name="plus" size={12} />
+                New folder
+              </button>
+            )}
           </div>
+        )}
+        {isNew ? (
+          <div className="new-dir">
+            <Icon name="folder-plus" size={16} />
+            <span className="grow">
+              Creates <b>{newName}</b> in {newParent}
+            </span>
+            <label className="check">
+              <input type="checkbox" checked={gitInit} onChange={(e) => setGitInit(e.target.checked)} />
+              <span>git init</span>
+            </label>
+          </div>
+        ) : naming ? (
+          <p className="hint dir-note">Type a name for the new folder.</p>
+        ) : (
+          shown && DIR_PROBLEM[shown] && <p className="hint dir-note">{DIR_PROBLEM[shown]}</p>
         )}
 
         {preset && (models.length > 0 || preset.modelArgs || levels.length > 0 || modes.length > 1) && (
@@ -313,12 +411,14 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
                 <input value={newSession} onChange={(e) => setNewSession(e.target.value)} required autoCapitalize="off" />
               </label>
             )}
-            <label className="check">
-              <input type="checkbox" checked={worktree} onChange={(e) => setWorktree(e.target.checked)} />
-              <span>
-                Isolated git worktree <span className="hint">— its own branch and checkout</span>
-              </span>
-            </label>
+            {!isNew && (
+              <label className="check">
+                <input type="checkbox" checked={worktree} onChange={(e) => setWorktree(e.target.checked)} />
+                <span>
+                  Isolated git worktree <span className="hint">— its own branch and checkout</span>
+                </span>
+              </label>
+            )}
             {preset?.resume && (
               <label className="check">
                 <input type="checkbox" checked={resume} onChange={(e) => setResume(e.target.checked)} />
@@ -348,7 +448,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
             className={`btn ${activeMode?.dangerous ? 'danger-solid' : 'primary'}`}
             disabled={busy || !preset}
           >
-            {busy ? 'Starting…' : `Start ${preset?.name ?? ''}`}
+            {busy ? 'Starting…' : `${isNew ? 'Create & start' : 'Start'} ${preset?.name ?? ''}`}
           </ConfirmButton>
         </div>
       </form>

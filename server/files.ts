@@ -152,6 +152,25 @@ export async function makeDir(input: string): Promise<string> {
   return path;
 }
 
+export type DirState = 'dir' | 'new' | 'file' | 'missing' | 'outside';
+
+/**
+ * What starting a session in `input` would mean: an existing folder, a new one
+ * ah may create (its parent exists, inside the roots), or something it can't use.
+ */
+export async function dirStatus(input: string): Promise<DirState> {
+  const expanded = input === '~' ? homedir() : input.startsWith('~/') ? join(homedir(), input.slice(2)) : input;
+  if (!expanded.startsWith('/')) return 'missing';
+  const found = await stat(resolve(expanded)).catch(() => null);
+  if (found) return found.isDirectory() ? 'dir' : 'file';
+  try {
+    await safePath(input, { mustExist: false });
+    return 'new';
+  } catch (err) {
+    return err instanceof FsError && err.status === 403 ? 'outside' : 'missing';
+  }
+}
+
 const UPLOADS_SUFFIX = `${sep}ah${sep}uploads`;
 
 /**

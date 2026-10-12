@@ -472,6 +472,12 @@ kbd {
   pointer-events: auto;
 }
 
+/* "New project" is the way in, not a shortcut: always shown. */
+.projects-label .label-add {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .label-add:hover {
   color: var(--text);
   background: var(--raised);
@@ -1828,6 +1834,57 @@ a.btn {
 .sugg:hover {
   color: var(--text);
   border-color: var(--faint);
+}
+
+.sugg.add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-style: dashed;
+  font-family: inherit;
+}
+
+/* The typed path is a folder that doesn't exist yet: say what Start will do. */
+.new-dir {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  font-size: 13px;
+  color: var(--muted);
+  min-width: 0;
+  animation: fade-in 0.16s ease-out;
+}
+
+.new-dir > svg {
+  flex: none;
+  color: var(--accent);
+}
+
+.new-dir .grow {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.new-dir b {
+  color: var(--text);
+  font: 500 12px var(--mono);
+}
+
+.new-dir .check {
+  flex: none;
+  align-items: center;
+  color: var(--text);
+}
+
+.dir-note {
+  margin: -4px 0 0;
 }
 
 .check {

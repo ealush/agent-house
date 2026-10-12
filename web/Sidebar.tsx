@@ -29,6 +29,8 @@ type Props = {
   onSearch: () => void;
   /** Open the new-session dialog. A project passes its directory and machine. */
   onNew: (where?: { cwd: string; host: string }) => void;
+  /** Create a folder and start a session in it. */
+  onNewProject: () => void;
   onWorktrees: () => void;
   /** Persist a sparse order key (F43). */
   onReorder: (uid: string, host: string, order: number) => void;
@@ -63,7 +65,7 @@ function subdir(w: Win): string {
   return w.cwd.startsWith(`${w.projectPath}/`) ? w.cwd.slice(w.projectPath.length + 1) : w.cwd;
 }
 
-export function Sidebar({ workspaces, onWorkspace, state, error, page, selected, visibleKeys, device, onPage, onSelect, onSearch, onNew, onWorktrees, onReorder, onKill, onFork, onDragSession, onCollapse, handoff }: Props) {
+export function Sidebar({ workspaces, onWorkspace, state, error, page, selected, visibleKeys, device, onPage, onSelect, onSearch, onNew, onNewProject, onWorktrees, onReorder, onKill, onFork, onDragSession, onCollapse, handoff }: Props) {
   useShortcutRevision();
   const windows = state?.windows ?? [];
   const visible = new Set(visibleKeys);
@@ -322,6 +324,12 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
             ))}
           </>
         )}
+        <div className="side-label projects-label">
+          <span className="grow">Projects</span>
+          <button type="button" className="label-add" title={shortcutTitle('New project', 'new-project')} aria-label="New project" onClick={onNewProject}>
+            <Icon name="plus" size={12} />
+          </button>
+        </div>
         {sections.map((section) => {
           const group = section.id;
           const ws = section.windows;

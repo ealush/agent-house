@@ -142,6 +142,7 @@ that follows you across devices, harnesses, restarts and resumes.
 | P24 | Direction | ✅ | One gliding selection highlight per list (Glide.tsx); views arrive from where they are: down/up the sidebar, iOS push/pop on phones, workspaces slide sideways. |
 | P25 | Lists that move | ✅ | useFlip: rows glide between sections as status changes, new rows fade in; status dots pop on change. Fixed a reorder race that could restore the old sidebar order. |
 | P26 | Surfaces with an origin | ✅ | Menus/popovers grow from their button, steps and disclosures unfold, toasts rise and sink, palette levels slide by depth, new GUI steps rise in. |
+| P27 | New project | ✅ | Sidebar "Projects +", palette and the dialog's New folder chip: name a folder in the projects root, optional `git init`, and start any agent in it. A path that doesn't exist yet says what Start will create; ah only creates one level, inside `files.roots`. |
 
 Next candidates: rate-limit auto-resume (F40, opt-in, needs each CLI's reset
 message), quota display (F41), keyboard reordering in the sidebar.

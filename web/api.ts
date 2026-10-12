@@ -198,6 +198,8 @@ export type State = {
   focus?: { key: string; device: string; client: string; at: number } | null;
 };
 
+export type DirState = 'dir' | 'new' | 'file' | 'missing' | 'outside';
+
 export type OmarchyTheme = { name: string; mode: 'dark' | 'light'; colors: Record<string, string>; font?: string | null };
 
 export type Changes = {
@@ -314,7 +316,9 @@ export function hostApi(base: string) {
     base,
     state: () => r<State>('GET', '/api/state'),
     projects: () => r<string[]>('GET', '/api/projects'),
-    create: (body: { preset: string; cwd: string; session: string; label: string; resume: boolean; worktree?: boolean; mode?: string; model?: string; effort?: string; extraArgs?: string }) =>
+    /** Whether a path is a folder, a folder ah would create, or unusable; `root` is where new projects go. */
+    dir: (path: string) => r<{ state: DirState; root: string }>('GET', `/api/dir?path=${encodeURIComponent(path)}`),
+    create: (body: { preset: string; cwd: string; session: string; label: string; resume: boolean; worktree?: boolean; create?: boolean; git?: boolean; mode?: string; model?: string; effort?: string; extraArgs?: string }) =>
       r<{ id: string; uid: string }>('POST', '/api/windows', body),
     order: (uid: string, order: number) => r('POST', `/api/sessions/${enc(uid)}/order`, { order }),
     rename: (id: string, name: string) => r('PATCH', `/api/windows/${enc(id)}`, { name }),

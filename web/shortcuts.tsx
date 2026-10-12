@@ -95,6 +95,7 @@ const BASE_ICONS = {
   'cycle-prev': 'chevron-up',
   'cycle-next': 'chevron-down',
   'new-session': 'plus',
+  'new-project': 'folder-plus',
   'toggle-sidebar': 'panel',
   'go-inbox': 'inbox',
   'go-history': 'history',
