@@ -23,8 +23,8 @@ export function HistoryView({ state, onResume, onForget, onFork }: { state: Stat
     <div className="page" data-rove="button.resume">
       <header className="page-head">
         <div className="grow">
-          <h1>History</h1>
-          <p>Ended sessions and past conversations. Resuming continues the same conversation.</p>
+          <h1 className="page-title">History<span className="period">.</span></h1>
+          <p className="tagline">Ended sessions and past conversations. Resuming continues the same conversation.</p>
         </div>
       </header>
       {state.history.length > 0 && (
@@ -117,8 +117,8 @@ export function SessionsView({ state, onOpen, onNew }: { state: State; onOpen: (
     <div className="page" ref={flip} data-rove="button.row">
       <header className="page-head">
         <div className="grow">
-          <h1>Sessions</h1>
-          <p>{state.windows.length} live</p>
+          <h1 className="page-title">Sessions<span className="period">.</span></h1>
+          <p className="tagline">{state.windows.length} live.</p>
         </div>
         <button className="icon-btn round light" onClick={onNew} aria-label="New session">
           <Icon name="plus" size={22} />

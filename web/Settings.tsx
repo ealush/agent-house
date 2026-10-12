@@ -46,8 +46,8 @@ export function Settings({ onLocked, onNotifyChange }: { onLocked: () => void; o
     <div className="page settings">
       <header className="page-head">
         <div className="grow">
-          <h1>Settings</h1>
-          <p>Devices and sign-in, shortcuts on this device, notifications, and chat subscriptions for side chat.</p>
+          <h1 className="page-title">Settings<span className="period">.</span></h1>
+          <p className="tagline">Devices and sign-in, shortcuts on this device, notifications, and chat subscriptions for side chat.</p>
         </div>
       </header>
 

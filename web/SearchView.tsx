@@ -72,8 +72,8 @@ export function SearchView({
     <div className="page search-page">
       <header className="page-head">
         <div className="grow">
-          <h1>Search conversations</h1>
-          <p>Full text across agent transcripts and side chats, on every host. Results open at the matching turn.</p>
+          <h1 className="page-title">Search<span className="period">.</span></h1>
+          <p className="tagline">Full text across agent transcripts and side chats, on every host. Results open at the matching turn.</p>
         </div>
       </header>
 
