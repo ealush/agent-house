@@ -109,6 +109,8 @@ function stored<T extends string>(key: string, fallback: T): [T, (v: T) => void]
 const PAGES = ['history', 'sessions', 'settings', 'search'] as const;
 /** The sidebar's pages, top to bottom (its sessions follow), so navigation knows which way it goes. */
 const NAV_PAGES = ['inbox', 'history', 'settings'] as const;
+const sameRoute = (a: { page: Page; selected: string | null }, b: { page: Page; selected: string | null }) => a.page === b.page && a.selected === b.selected;
+
 function fromHash(): { page: Page; selected: string | null } {
   let h = '';
   try { h = decodeURIComponent(location.hash.slice(1)); } catch {}
@@ -230,7 +232,7 @@ export function App({ onLock }: { onLock: () => void }) {
         // The last pane grows into the full view, from where it sat.
         const at = document.querySelector(`.ws-root.tiled > .pane[data-tile="${CSS.escape(solo[0].sessionKey)}#0"]`);
         collapseFrom.current = at?.getBoundingClientRect() ?? null;
-        go({ selected: solo[0].sessionKey }, { still: !!at });
+        go({ selected: solo[0].sessionKey }, { still: !!at, history: 'replace' });
       }
     } else {
       const at = focusPath ? nodeAt(split, focusPath) : null;
@@ -243,15 +245,40 @@ export function App({ onLock }: { onLock: () => void }) {
     } catch {}
   }
 
-  function go(next: { page?: Page; selected?: string | null }, how: { still?: boolean } = {}) {
+  /**
+   * Navigate. A new place is a browser history entry, so Back (the browser's,
+   * a mouse's, Alt+←, Android's) walks back through pages and sessions; fixing
+   * up the current place (an upgraded link) replaces it, and a popstate has
+   * already moved the URL.
+   */
+  function go(next: { page?: Page; selected?: string | null }, how: { still?: boolean; history?: 'push' | 'replace' | 'none' } = {}) {
     const route = { page: next.page ?? page, selected: next.selected === undefined ? selected : next.selected };
     const hash = route.selected ?? (route.page === 'inbox' ? '' : route.page);
-    history.replaceState(null, '', hash ? `#${hash}` : location.pathname);
+    const mode = how.history ?? (sameRoute(route, { page, selected }) ? 'replace' : 'push');
+    const url = hash ? `#${hash}` : location.pathname;
+    if (mode === 'push') history.pushState({ ah: route, back: { page, selected } }, '', url);
+    else if (mode === 'replace') history.replaceState({ ...history.state, ah: route }, '', url);
     // A phone's Settings is a sheet that rises over the page (sheet.tsx), not a page to fade to.
     const sheet = narrow && (route.page === 'settings') !== (page === 'settings');
     if (how.still || sheet || (route.page === page && route.selected === selected)) setRoute(route);
     else transition(() => setRoute(route), heading(route));
   }
+  /**
+   * A view's own Back (the chevron, an edge swipe, closing Settings): the
+   * browser's Back when it leads to the same place, so the two never disagree
+   * and Forward still works; otherwise a replacing step to that place.
+   */
+  function goBack(to: { page?: Page; selected?: string | null }, how: { still?: boolean } = {}) {
+    const target = { page: to.page ?? page, selected: to.selected === undefined ? selected : to.selected };
+    const prev = history.state?.back as { page: Page; selected: string | null } | undefined;
+    if (prev && sameRoute(prev, target)) {
+      popStill.current = !!how.still;
+      history.back();
+    } else go(target, { ...how, history: 'replace' });
+  }
+  const popStill = useRef(false);
+  const goRef = useRef(go);
+  goRef.current = go;
   /** Where the next view sits relative to this one: further down the sidebar, or deeper on a phone. */
   function heading(to: { page: Page; selected: string | null }): Heading | null {
     if (narrow) return to.selected && !selected ? 'push' : !to.selected && selected ? 'pop' : null;
@@ -662,7 +689,13 @@ export function App({ onLock }: { onLock: () => void }) {
   }
 
   useEffect(() => {
-    const onHash = () => setRoute(fromHash()); // e.g. opened from a push notification
+    // Back/Forward, or a hash set from outside (a push notification): the URL has moved already.
+    const onHash = () => {
+      const still = popStill.current;
+      popStill.current = false;
+      goRef.current(fromHash(), { history: 'none', still });
+    };
+    window.addEventListener('popstate', onHash);
     window.addEventListener('hashchange', onHash);
     if (pushSupport() === 'ok') {
       registerWorker();
@@ -670,7 +703,10 @@ export function App({ onLock }: { onLock: () => void }) {
         .then((e) => (pushActive.current = !!e))
         .catch(() => {});
     }
-    return () => window.removeEventListener('hashchange', onHash);
+    return () => {
+      window.removeEventListener('popstate', onHash);
+      window.removeEventListener('hashchange', onHash);
+    };
   }, []);
 
   // Fill the screen normally; shrink only while the software keyboard is open.
@@ -699,7 +735,7 @@ export function App({ onLock }: { onLock: () => void }) {
         else localStorage.removeItem('ah.scratch');
       } catch {}
     }
-    if (selected && isLegacyKey(selected)) go({ selected: upgradeKey(selected, state.windows) });
+    if (selected && isLegacyKey(selected)) go({ selected: upgradeKey(selected, state.windows) }, { history: 'replace' });
   }, [state]);
 
   // Handoff: tell the host which session this device is on whenever it is in use…
@@ -744,7 +780,7 @@ export function App({ onLock }: { onLock: () => void }) {
   const mainRef = useRef<HTMLElement>(null);
   const underRef = useRef<HTMLDivElement>(null);
   const [peek, setPeek] = useState(false);
-  useSwipeBack(mainRef, narrow && !!selected && !layout && !creating, () => go({ selected: null }, { still: true }), { ref: underRef, show: setPeek });
+  useSwipeBack(mainRef, narrow && !!selected && !layout && !creating, () => goBack({ selected: null }, { still: true }), { ref: underRef, show: setPeek });
   const ended = current ? null : endedFor(selected);
   // A session that is neither live nor in history (removed, or a bad link): fall back to the
   // inbox. One state update of grace: a window can leave the list a tick before history has it.
@@ -1050,7 +1086,7 @@ export function App({ onLock }: { onLock: () => void }) {
             multiHost={state.hosts.length > 1}
             home={hostState(current.host)?.home ?? state.home}
             replyKey={replyKey}
-            onBack={() => open(null)}
+            onBack={() => goBack({ selected: null })}
             onAnswer={answer}
             onSent={sent}
             onTerminate={() => {
@@ -1109,7 +1145,7 @@ export function App({ onLock }: { onLock: () => void }) {
 
 
       {narrow && page === 'settings' && state && (
-        <Sheet label="Settings" className="settings-sheet" onClose={() => go({ page: sheetBase.current }, { still: true })}>
+        <Sheet label="Settings" className="settings-sheet" onClose={() => goBack({ page: sheetBase.current }, { still: true })}>
           <Suspense fallback={<div className="page" />}>
             <Settings onLocked={onLock} onNotifyChange={(on) => (pushActive.current = on)} />
           </Suspense>
