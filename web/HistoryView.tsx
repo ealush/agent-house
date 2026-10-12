@@ -112,7 +112,7 @@ export function HistoryView({ state, onResume, onForget, onFork }: { state: Stat
 export function SessionsView({ state, onOpen, onNew }: { state: State; onOpen: (w: Win) => void; onNew: () => void }) {
   const multiHost = state.hosts.length > 1;
   const sections = sidebarSections(state.windows, multiHost, useSavedGroups(multiHost));
-  const flip = useFlip<HTMLDivElement>();
+  const flip = useFlip<HTMLDivElement>(sections.map((s) => `${s.id}:${s.windows.map((w) => w.key).join(',')}`).join('|'));
   return (
     <div className="page" ref={flip} data-rove="button.row">
       <header className="page-head">

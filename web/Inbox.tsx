@@ -34,12 +34,12 @@ const where = (w: Win, multiHost: boolean) => [multiHost ? w.host : null, w.proj
 
 /** The home screen: what's blocked on you first, then what's working, then the rest. */
 export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, clientFor, onNew, onSearch, onSettings, handoff, onResume }: Props) {
-  const flip = useFlip<HTMLDivElement>();
   const recent = state.windows.length ? [] : state.history.slice(0, 3);
   const multiHost = state.hosts.length > 1;
   const waiting = state.windows.filter((w) => w.status === 'waiting');
   const running = state.windows.filter((w) => w.status === 'busy');
   const rest = state.windows.filter((w) => w.status === 'attention' || w.status === 'idle').sort((a, b) => b.activity - a.activity);
+  const flip = useFlip<HTMLDivElement>([groupBy, waiting, running, rest].map((l) => (typeof l === 'string' ? l : l.map((w) => w.key).join(','))).join('|'));
   const online = state.hosts.filter((h) => h.online).length;
 
   // The design's tagline reads as live counts ("1 session needs you. 3 working. 6 idle.").
