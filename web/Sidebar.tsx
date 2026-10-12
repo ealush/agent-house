@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { State, Win } from './api.ts';
 import { askConfirm } from './ask.tsx';
 import { Icon } from './icons.tsx';
@@ -10,6 +10,7 @@ import { runCommand, type CommandId } from './shortcuts.ts';
 import { ShortcutHint, shortcutTitle, useShortcutRevision } from './shortcuts.tsx';
 import { Glide } from './Glide.tsx';
 import { useFlip } from './useFlip.ts';
+import { useDismiss } from './useDismiss.ts';
 
 export type Page = 'inbox' | 'history' | 'sessions' | 'settings' | 'search';
 
@@ -77,6 +78,8 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
   const [overAfter, setOverAfter] = useState(false);
   const [overGroup, setOverGroup] = useState<string | null>(null);
   const [menuKey, setMenuKey] = useState<string | null>(null);
+  const menuRow = useRef<HTMLDivElement>(null);
+  useDismiss(menuKey !== null, menuRow, () => setMenuKey(null));
 
   const sections = sidebarSections(windows, multiHost, savedGroups);
   const flip = useFlip<HTMLDivElement>(sections.map((s) => `${s.id}:${s.windows.map((w) => w.key).join(',')}`).join('|'));
@@ -121,6 +124,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
     return (
       <div
         key={w.key}
+        ref={menu ? menuRow : undefined}
         data-flip={w.key}
         className={`side-row ${overKey === w.key ? (overAfter ? 'drop-after' : 'drop') : ''} ${drag?.kind === 'session' && drag.key === w.key ? 'dragging' : ''}`}
         draggable

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { HistoryItem, State, Win } from './api.ts';
 import { Icon } from './icons.tsx';
 import { age, look } from './agents.ts';
@@ -7,11 +7,17 @@ import { Rows } from './Inbox.tsx';
 import { useSavedGroups } from './groupOrder.ts';
 import { sidebarSections } from './sessionOrder.ts';
 import { useFlip } from './useFlip.ts';
+import { useDismiss } from './useDismiss.ts';
 
 /** Ended and saved conversations from every host; one tap resumes on the host that has it. */
-export function HistoryView({ state, onResume, onForget, onFork }: { state: State; onResume: (h: HistoryItem) => void; onForget: (h: HistoryItem) => void; onFork?: (h: HistoryItem) => void }) {
+export function HistoryView({ state, onResume, onForget, onFork, touch = false }: { state: State; onResume: (h: HistoryItem) => void; onForget: (h: HistoryItem) => void; onFork?: (h: HistoryItem) => void; touch?: boolean }) {
   const multiHost = state.hosts.length > 1;
   const [filter, setFilter] = useState('');
+  // Touch: the row itself resumes (like any list on a phone), and Fork and
+  // Hide wait behind ··· so the title keeps the width.
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const menuRow = useRef<HTMLSpanElement>(null);
+  useDismiss(menuFor !== null, menuRow, () => setMenuFor(null));
   const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
   const shown = words.length
     ? state.history.filter((h) => {
@@ -57,11 +63,22 @@ export function HistoryView({ state, onResume, onForget, onFork }: { state: Stat
         {shown.map((h) => {
           const { color, name } = look(h.harness);
           const modelLabel = shortModel(h.model);
+          const key = `${h.host}:${h.ref}`;
+          const canFork = !!onFork && (h.harness === 'claude' || h.harness === 'codex' || h.harness === 'muse');
+          const open = menuFor === key;
           return (
-            <li key={`${h.host}:${h.ref}`}>
+            <li key={key} className={open ? 'open' : undefined}>
               <div
-                className="row quiet history-row"
+                className={`row quiet history-row ${touch ? 'tap' : ''}`}
                 style={{ '--agent': color } as React.CSSProperties}
+                onClick={
+                  touch
+                    ? (e) => {
+                        if ((e.target as HTMLElement).closest('button, .menu')) return;
+                        onResume(h);
+                      }
+                    : undefined
+                }
                 onKeyDown={(e) => {
                   // Up and down move between conversations (the Resume buttons).
                   // Left and right reach Fork and Hide on this row.
@@ -86,11 +103,25 @@ export function HistoryView({ state, onResume, onForget, onFork }: { state: Stat
                   </span>
                 </span>
                 <span className="when">{age(h.at)}</span>
+                {touch ? (
+                  <span className="row-actions" ref={open ? menuRow : undefined}>
+                    <button className="icon-btn small" aria-label={`More for ${h.title}`} aria-expanded={open} onClick={() => setMenuFor(open ? null : key)}>
+                      <Icon name="more" size={16} />
+                    </button>
+                    {open && (
+                      <div className="menu row-menu" role="menu">
+                        <button onClick={() => { setMenuFor(null); onResume(h); }}>Resume</button>
+                        {canFork && <button onClick={() => { setMenuFor(null); onFork?.(h); }}>Fork…</button>}
+                        <button className="danger" onClick={() => { setMenuFor(null); onForget(h); }}>Hide</button>
+                      </div>
+                    )}
+                  </span>
+                ) : (
                 <span className="row-actions">
                   <button className="btn small resume" onClick={() => onResume(h)}>
                     Resume
                   </button>
-                  {onFork && (h.harness === 'claude' || h.harness === 'codex' || h.harness === 'muse') && (
+                  {canFork && (
                     <button className="btn small ghost" onClick={() => onFork(h)}>
                       Fork
                     </button>
@@ -99,6 +130,7 @@ export function HistoryView({ state, onResume, onForget, onFork }: { state: Stat
                     <Icon name="close" size={14} />
                   </button>
                 </span>
+                )}
               </div>
             </li>
           );
