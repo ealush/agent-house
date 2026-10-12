@@ -143,6 +143,11 @@ that follows you across devices, harnesses, restarts and resumes.
 | P25 | Lists that move | ✅ | useFlip: rows glide between sections as status changes, new rows fade in; status dots pop on change. Fixed a reorder race that could restore the old sidebar order. |
 | P26 | Surfaces with an origin | ✅ | Menus/popovers grow from their button, steps and disclosures unfold, toasts rise and sink, palette levels slide by depth, new GUI steps rise in. |
 | P27 | New project | ✅ | Sidebar "Projects +", palette and the dialog's New folder chip: name a folder in the projects root, optional `git init`, and start any agent in it. A path that doesn't exist yet says what Start will create; ah only creates one level, inside `files.roots`. |
+| P28 | Type | ✅ | Every root page has the large title with the pink full stop. Inline code is smaller and keeps its corners when it wraps. Counts and times use tabular figures. Headings balance. Touch devices drop keycap hints. |
+| P29 | Depth | ✅ | Floating layers share one frosted surface and two elevation steps (`--elev-1/2`, `--glass`). The GUI composer lines up with the conversation column on the same ground. |
+| P30 | Controls | ✅ | Chips, segments and send dip when pressed. Send is the primary pink. Selects share one chevron and checkboxes take the brand. The Files toolbar uses icons instead of emoji. Side panel tabs are in sentence case so six fit. |
+| P31 | Lists | ✅ | History times are flush right and swap to actions on hover. Idle dots are gone. Status pills read the same in the header and the inbox. The question card's "Something else" row is aligned. |
+| P32 | Phone and light | ✅ | The OpenAI and Grok marks show on the light theme. Light menus are near-solid. New session shows an even agent grid. Phone menus fit on screen. |
 
 Next candidates: rate-limit auto-resume (F40, opt-in, needs each CLI's reset
 message), quota display (F41), keyboard reordering in the sidebar.
