@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { statusCounts } from './status.ts';
 import type { HistoryItem, State, Win } from './api.ts';
 import { Icon } from './icons.tsx';
@@ -22,6 +22,19 @@ export function HistoryView({ state, onResume, onForget, onFork, touch = false, 
   const menuRow = useRef<HTMLSpanElement>(null);
   // A phone's menu is an action sheet, which closes itself (scrim, Cancel, a drag down).
   useDismiss(menuFor !== null && !narrow, menuRow, () => setMenuFor(null));
+  // "/" filters, as in most lists a power user knows (GitHub, Gmail), unless you are typing.
+  const filterRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const slash = (e: KeyboardEvent) => {
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest('input, textarea, select, [contenteditable="true"], .xterm, dialog')) return;
+      e.preventDefault();
+      filterRef.current?.focus();
+    };
+    window.addEventListener('keydown', slash);
+    return () => window.removeEventListener('keydown', slash);
+  }, []);
   const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
   const shown = words.length
     ? state.history.filter((h) => {
@@ -40,6 +53,7 @@ export function HistoryView({ state, onResume, onForget, onFork, touch = false, 
       {state.history.length > 0 && (
         <label className="field history-filter">
           <input
+            ref={filterRef}
             type="search"
             value={filter}
             placeholder={`Filter ${state.history.length} conversations by title, project or agent`}
@@ -53,9 +67,11 @@ export function HistoryView({ state, onResume, onForget, onFork, touch = false, 
               if (e.key === 'ArrowDown' || (e.key === 'Enter' && shown.length)) {
                 e.preventDefault();
                 (e.currentTarget.closest('.page')?.querySelector('button.resume') as HTMLElement | null)?.[e.key === 'Enter' ? 'click' : 'focus']();
-              } else if (e.key === 'Escape' && filter) {
+              } else if (e.key === 'Escape') {
+                // Clears first; an empty filter lets go, back to the list.
                 e.preventDefault();
-                setFilter('');
+                if (filter) setFilter('');
+                else e.currentTarget.blur();
               }
             }}
           />

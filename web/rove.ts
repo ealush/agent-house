@@ -30,9 +30,45 @@ export function roveKey(e: KeyboardEvent) {
   list[at < 0 && e.key === 'ArrowUp' ? list.length - 1 : at < 0 && e.key === 'ArrowDown' ? 0 : next]?.focus();
 }
 
-/** The list of the page in view (Inbox, History, Sessions), if it has one. */
+/** The list of the page in view (Inbox, History, Sessions), if it has one: on top, not under New session. */
 export function pageList(): HTMLElement | null {
-  return [...document.querySelectorAll<HTMLElement>('.page[data-rove]')].find((el) => el.getClientRects().length > 0) ?? null;
+  return (
+    [...document.querySelectorAll<HTMLElement>('.page[data-rove]')].find((el) => {
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) return false;
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + Math.min(r.height / 2, 200));
+      return !!top && el.contains(top);
+    }) ?? null
+  );
+}
+
+/**
+ * Arrow keys across a grid of buttons (the agent picker): the nearest item in that
+ * direction, by where they sit on screen, so it follows however the grid wraps.
+ */
+export function gridMove(box: HTMLElement, from: HTMLElement, key: string): HTMLElement | null {
+  const dir = ({ ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] } as Record<string, [number, number]>)[key];
+  if (!dir) return null;
+  const c = (el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  };
+  const a = c(from);
+  let best: HTMLElement | null = null;
+  let score = Infinity;
+  const all = [...box.querySelectorAll<HTMLElement>('button:not([disabled])')].filter((el) => el.getClientRects().length > 0);
+  for (const el of all) {
+    if (el === from) continue;
+    const b = c(el);
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const along = dx * dir[0] + dy * dir[1];
+    if (along <= 1) continue;
+    const across = Math.abs(dx * dir[1]) + Math.abs(dy * dir[0]);
+    const d = along + across * 2;
+    if (d < score) [score, best] = [d, el];
+  }
+  return best;
 }
 
 /** Focus a page's first item: the keyboard into the main view when no session is open. */

@@ -1,3 +1,4 @@
+import { gridMove } from './rove.ts';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ConfirmButton } from './ConfirmButton.tsx';
 import { Icon } from './icons.tsx';
@@ -92,6 +93,13 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
   const screenRef = useRef<HTMLElement>(null);
   const { dismiss } = useSheet(screen ? screenRef : dialog, onClose);
 
+  // A screen is no dialog, so nothing moves the keyboard into it: start on the agent
+  // chosen, where the arrows pick another (and never on the page underneath). Once.
+  useEffect(() => {
+    if (!screen) return;
+    const raf = requestAnimationFrame(() => screenRef.current?.querySelector<HTMLElement>('[data-autofocus]')?.focus({ preventScroll: true }));
+    return () => cancelAnimationFrame(raf);
+  }, []);
   useEffect(() => {
     if (!screen) {
       dialog.current?.showModal();
@@ -256,7 +264,19 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
         </header>
 
         <div className="ns-body">
-        <div className="agents" role="radiogroup" aria-label="Agent">
+        <div
+          className="agents"
+          role="radiogroup"
+          aria-label="Agent"
+          onKeyDown={(e) => {
+            // A radio group: the arrows move across the grid and choose as they go.
+            const next = gridMove(e.currentTarget, e.target as HTMLElement, e.key);
+            if (!next) return;
+            e.preventDefault();
+            next.focus();
+            next.click();
+          }}
+        >
           {presets.map((p) => (
             <button
               type="button"
@@ -265,6 +285,8 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
               aria-checked={p.id === preset?.id}
               className={`agent-pill ${p.id === preset?.id ? 'on' : ''}`}
               data-autofocus={p.id === preset?.id || undefined}
+              // One Tab stop for the group, on the chosen agent; the arrows move within it.
+              tabIndex={p.id === preset?.id ? 0 : -1}
               style={{ '--agent': look(p.id).color } as React.CSSProperties}
               onClick={() => setPresetId(p.id)}
             >
