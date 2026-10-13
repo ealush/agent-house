@@ -506,7 +506,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
 
   if (screen)
     return (
-      <section ref={screenRef} className="ns-screen new-session" aria-label="New session" data-confirm>
+      <section ref={screenRef} className="ns-screen new-session" aria-label="New session" data-confirm data-focus-owner>
         <SheetBar onClose={dismiss} />
         {form}
       </section>

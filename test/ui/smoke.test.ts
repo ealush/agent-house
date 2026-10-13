@@ -232,3 +232,18 @@ test('desktop: ↓ then a choice key answers a prompt from the inbox, and focus 
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+test('desktop: New session right after opening a session keeps the keyboard', { skip, timeout: 60_000 }, async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const { page, errors } = await open(ctx);
+  await page.locator('.side-session', { hasText: 'zz-idle' }).first().click();
+  await page.waitForFunction(() => document.activeElement?.classList.contains('xterm-helper-textarea'));
+  // While the session is still claiming the keyboard (its first moments), New session
+  // must keep it: keys typed there would otherwise go into the hidden terminal.
+  await page.keyboard.press('Control+Shift+Enter');
+  await page.waitForTimeout(500);
+  assert.match(await focused(page), /agent-pill/);
+  await page.keyboard.press('Escape');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});

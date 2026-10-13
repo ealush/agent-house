@@ -384,6 +384,9 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
     // Watched until the deadline, not just until it lands: a surface still loading can
     // replace the element that took focus (the composer remounts once the feed is in).
     const claim = () => {
+      // A screen over the session (New session) owns the keyboard: stop, or keys
+      // typed into it would land in this session's hidden terminal.
+      if (document.querySelector('[data-focus-owner]')) return;
       const a = document.activeElement as HTMLElement | null;
       const mine = body.current;
       const landed = !!mine && !!a && mine.contains(a) && a.getClientRects().length > 0;
