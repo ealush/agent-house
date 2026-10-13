@@ -8,7 +8,9 @@ import { usePaletteProvider } from './shortcuts.tsx';
 // A session's model, effort and mode, and how to change them: live where the
 // agent has a command for it, else a relaunch of the same conversation, else
 // the agent's own picker in its terminal. Shared by the GUI composer's chips
-// and, in either view, the palette's Model and effort branch.
+// and, in either view, the palette's Model, effort and Permissions branches.
+
+type Change = { model?: string; effort?: string; mode?: string };
 
 type Opts = {
   client: HostApi;
@@ -50,15 +52,23 @@ export function useLaunch({ client, w, agent, onNotice, onSent, onSettingsOpen, 
     }
   }
 
+  /** A choice in words, for notices and confirms. */
+  function describe(change: Change): string {
+    if (change.model === 'default') return 'the default model';
+    if (change.model) return models.find((m) => m.id === change.model)?.name ?? change.model;
+    if (change.mode) return `${preset?.modes?.find((m) => m.id === change.mode)?.name ?? change.mode} mode`;
+    return change.effort === 'default' ? 'default effort' : `${change.effort} effort`;
+  }
+
   async function pickLive(change: { model?: string; effort?: string }, close: () => void = () => {}) {
     if (!w) return;
-    const switching = change.model && change.model !== model?.id ? { model: change.model } : change.effort && change.effort !== effort ? { effort: change.effort } : null;
+    const switching = change.model && change.model !== model?.id ? { model: change.model } : change.effort && change.effort !== (effort ?? 'default') ? { effort: change.effort } : null;
     close();
     if (!switching) return;
     try {
       const r = await client.switchLaunch(w.uid, switching);
-      const what = switching.model ? (models.find((m) => m.id === switching.model)?.name ?? switching.model) : `${switching.effort} effort`;
-      onNotice(r.outcome === 'queued' ? `Switching to ${what} when the agent is free` : `Requested ${what}; check the terminal for confirmation`);
+      const what = describe(switching);
+      onNotice(r.outcome === 'queued' ? `Switching to ${what} when the agent is free` : `Switched to ${what}`);
     } catch (e) {
       showError(e, "Couldn't switch");
     }
@@ -66,9 +76,9 @@ export function useLaunch({ client, w, agent, onNotice, onSent, onSettingsOpen, 
 
   /** Hot swap for agents with no live-switch command: restart this idle
    *  session with the new setting, keeping the same conversation. */
-  async function relaunchWith(change: { model?: string; effort?: string }, close: () => void = () => {}) {
+  async function relaunchWith(change: Change, close: () => void = () => {}, confirmed = false) {
     if (!w) return;
-    const same = change.model ? change.model === model?.id : change.effort === effort;
+    const same = change.model ? change.model === model?.id : change.mode ? change.mode === mode?.id : change.effort === (effort ?? 'default');
     close();
     if (same) return;
     // Mirror the server's idle check (busy, waiting, queued) so the confirm
@@ -77,11 +87,13 @@ export function useLaunch({ client, w, agent, onNotice, onSent, onSettingsOpen, 
       onNotice('Wait until the session is idle to relaunch');
       return;
     }
-    const what = change.model ? (models.find((m) => m.id === change.model)?.name ?? change.model) : `${change.effort} effort`;
-    const ok = await askConfirm({
+    const what = describe(change);
+    const danger = !!change.mode && !!preset?.modes?.find((m) => m.id === change.mode)?.dangerous;
+    const ok = confirmed || await askConfirm({
       title: `Relaunch with ${what}?`,
-      body: 'The session restarts with the new setting; the conversation, queue and snapshots carry over.',
+      body: `${danger ? 'It will run any command and edit any file without asking. ' : ''}The session restarts with the new setting; the conversation, queue and snapshots carry over.`,
       confirm: 'Relaunch',
+      danger,
     });
     if (!ok) return;
     try {
@@ -93,18 +105,72 @@ export function useLaunch({ client, w, agent, onNotice, onSent, onSettingsOpen, 
     }
   }
 
-  /** Apply a choice the best way this agent allows. */
-  const choose = (change: { model?: string; effort?: string }) =>
-    change.model !== undefined ? (preset?.switchModel ? pickLive(change) : relaunchWith(change)) : preset?.switchEffort ? pickLive(change) : relaunchWith(change);
+  /**
+   * Apply a model or effort choice the best way this agent allows. "default" is the
+   * agent's own default: its reset command live, a relaunch without the flag, or the
+   * default it reports by name; its terminal picker only when none of those exist.
+   */
+  function choose(change: { model?: string; effort?: string }, close: () => void = () => {}) {
+    const isModel = change.model !== undefined;
+    const live = isModel ? preset?.switchModel : preset?.switchEffort;
+    if ((isModel ? change.model : change.effort) === 'default' && live && !(isModel ? preset?.resetModel : preset?.resetEffort)) {
+      const named = isModel ? preset?.defaultModel : preset?.defaultEffort;
+      if (!named) return openSettings(isModel ? 'model' : 'effort', close);
+      change = isModel ? { model: named } : { effort: named };
+    }
+    return live ? pickLive(change, close) : relaunchWith(change, close);
+  }
 
-  return { preset, models, model, modelLabel, effort, mode, levels, working, openSettings, pickLive, relaunchWith, choose };
+  /**
+   * Permission mode: live where the agent cycles modes (Claude's Shift+Tab), else,
+   * or for a mode outside this session's cycle, a relaunch of the conversation in it.
+   */
+  async function chooseMode(id: string, close: () => void = () => {}) {
+    close();
+    const target = preset?.modes?.find((m) => m.id === id);
+    if (!w || !target || id === mode?.id) return;
+    if (!preset?.modeCycle) return relaunchWith({ mode: id });
+    // One confirm covers both ways there: the switch, or the restart it may take.
+    const confirmed = !!target.dangerous;
+    if (confirmed && !(await askConfirm({ title: `Switch to ${target.name}?`, body: `${preset.name} will run any command and edit any file without asking. If this session can't switch to it live, it restarts in it; the conversation carries over.`, confirm: 'Switch', danger: true }))) return;
+    try {
+      if ((await client.switchMode(w.uid, id)).switched) return onNotice(`Switched to ${describe({ mode: id })}`);
+    } catch (e) {
+      return showError(e, "Couldn't change permissions");
+    }
+    return relaunchWith({ mode: id }, undefined, confirmed);
+  }
+
+  return { preset, models, model, modelLabel, effort, mode, levels, working, openSettings, pickLive, relaunchWith, choose, chooseMode };
 }
 
 export type Launch = ReturnType<typeof useLaunch>;
 
 /** Palette → Session → Model and effort: every choice as a row, while `enabled`. */
 export function useLaunchPalette(l: Launch, enabled: boolean) {
-  const { preset, models, model, modelLabel, effort, levels } = l;
+  const { preset, models, model, modelLabel, effort, mode, levels } = l;
+  usePaletteProvider(
+    'modes',
+    (): PaletteNode[] =>
+      preset && (preset.modes?.length ?? 0) > 1
+        ? [
+            {
+              key: 'modes',
+              label: 'Permissions',
+              icon: 'shield',
+              detail: `Now ${mode?.name ?? 'default'}`,
+              children: preset.modes!.map((m) => ({
+                key: m.id,
+                label: `${m.dangerous ? '⚠ ' : ''}${m.name}`,
+                icon: 'shield',
+                detail: [m.id === mode?.id ? 'current' : '', m.description ?? ''].filter(Boolean).join(' · '),
+                run: () => void l.chooseMode(m.id),
+              })),
+            },
+          ]
+        : [],
+    enabled,
+  );
   usePaletteProvider(
     'models',
     (): PaletteNode[] =>

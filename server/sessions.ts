@@ -251,6 +251,16 @@ export function hasToolWork(procs: Awaited<ReturnType<typeof snapshot>>, agentPi
 }
 
 /** Terminal rules (F18): does the bottom of the screen look like a question? */
+/**
+ * The permission mode an agent's footer says is on ("⏵⏵ accept edits on"), from its
+ * bottom lines only, where the conversation above can't put the same words.
+ */
+export function footerMode(tail: string[], detect: Record<string, string>): string | null {
+  const bottom = tail.filter((l) => l.trim()).slice(-8).reverse();
+  for (const line of bottom) for (const [id, text] of Object.entries(detect)) if (line.includes(text)) return id;
+  return null;
+}
+
 export function screenAsks(lines: string[], patterns: RegExp[]): boolean {
   const tail = lines.filter((l) => l.trim()).slice(-12).join('\n');
   return patterns.some((re) => re.test(tail));
@@ -501,6 +511,10 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
         }
       }
       const preset = agent ? config.presets.find((p) => p.id === agent) : undefined;
+      // The mode on screen beats the launch flag: Shift+Tab in the terminal, or a
+      // default mode from the agent's own settings, changes it without ah.
+      const liveMode = preset?.modeCycle && status !== 'waiting' ? footerMode(tail, preset.modeCycle.detect) : null;
+      if (liveMode && liveMode !== (rec.meta['ah.launch.mode'] ?? 'default')) registry.setMeta(uid, 'ah.launch.mode', liveMode === 'default' ? undefined : liveMode);
       // Agents' own TUIs make poor one-liners; for them only hook activity is shown.
       // A limit notice is what a stopped agent is waiting on; ah first saw it at `at`.
       let limit: string | null = null;

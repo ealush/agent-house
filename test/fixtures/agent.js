@@ -11,6 +11,8 @@ function state(value) {
 // long a turn runs.
 const claudeInterrupt = process.argv.includes('--claude-interrupt');
 const turnMs = Number(process.argv.find((a) => a.startsWith('--turn='))?.slice(7)) || 600;
+// --modes: Shift+Tab cycles a permission mode, shown in a footer line like Claude's.
+const modes = process.argv.includes('--modes');
 let spinner;
 const spin = () => {
   let i = 0;
@@ -24,10 +26,19 @@ const stopSpin = () => {
 process.stdin.setRawMode(true);
 state('idle');
 console.log('READY');
+const MODES = ['manual mode on', 'accept edits on', 'plan mode on'];
+let mode = 0;
+if (modes) console.log(`  ⏸ ${MODES[mode]}`);
 let text = '';
 let turnTimer;
 process.stdin.on('data', (chunk) => {
-  for (const char of chunk.toString()) {
+  let input = chunk.toString();
+  if (modes && input.includes('\x1b[Z')) {
+    for (const _ of input.matchAll(/\x1b\[Z/g)) mode = (mode + 1) % MODES.length;
+    console.log(`  ⏸ ${MODES[mode]}`);
+    input = input.replaceAll('\x1b[Z', '');
+  }
+  for (const char of input) {
     if (char === '\x1b' || char === '\x03') {
       clearTimeout(turnTimer);
       stopSpin();

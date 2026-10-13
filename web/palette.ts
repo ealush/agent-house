@@ -25,7 +25,7 @@ export type PaletteNode = {
 };
 
 /** Where a provider's nodes go in the static tree. */
-export type ProviderId = 'sessions' | 'queue' | 'models' | 'efforts' | 'tiles' | 'projects' | 'agents';
+export type ProviderId = 'sessions' | 'queue' | 'models' | 'efforts' | 'modes' | 'tiles' | 'projects' | 'agents';
 
 type Spec = { key: string; label: string; icon: IconName; detail?: string; terms?: SearchTerms; children: Array<Spec | CommandId | { provider: ProviderId }> };
 
@@ -60,7 +60,7 @@ export const TREE: Spec = {
           detail: 'Stop, send queued messages now, cancel them',
           children: ['interrupt', 'send-now', { provider: 'queue' }, 'clear-queue'],
         },
-        { key: 'model', label: 'Model and effort', icon: 'model', detail: 'Switch what runs this session', children: [{ provider: 'models' }, { provider: 'efforts' }, 'pick-model', 'pick-effort'] },
+        { key: 'model', label: 'Model and effort', icon: 'model', detail: 'Switch what runs this session, and its permissions', terms: ['permissions', 'mode'], children: [{ provider: 'models' }, { provider: 'efforts' }, { provider: 'modes' }, 'pick-model', 'pick-effort'] },
         {
           key: 'panels',
           label: 'Panels',

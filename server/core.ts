@@ -7,7 +7,7 @@ import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { buildWindows, buildHistory, adoptTranscripts, type WindowView, type HistoryItem } from './sessions.ts';
+import { buildWindows, buildHistory, adoptTranscripts, footerMode, type WindowView, type HistoryItem } from './sessions.ts';
 import { Registry, forkMetaOf, type ForkMeta, type SessionRecord } from './registry.ts';
 import { copyTranscript, forkUnavailableReason, removeCopiedTranscript, ForkError } from './fork.ts';
 import { PromptStore } from './prompts.ts';
@@ -33,7 +33,7 @@ export type { LaunchChange, QueueItem } from './queue.ts';
 export type Host = { name: string; self: boolean; online: boolean };
 
 /** Bumped when the state shape or API routes change, so a newer page can tell an older server apart. */
-export const API_VERSION = 21;
+export const API_VERSION = 22;
 
 export type State = {
   api: number;
@@ -637,8 +637,8 @@ export class Core {
   }
 
   private applyLaunchChange(uid: string, change: LaunchChange) {
-    if (change.model !== undefined) this.registry.setMeta(uid, 'ah.launch.model', change.model);
-    if (change.effort !== undefined) this.registry.setMeta(uid, 'ah.launch.effort', change.effort);
+    if (change.model !== undefined) this.registry.setMeta(uid, 'ah.launch.model', change.model === 'default' ? undefined : change.model);
+    if (change.effort !== undefined) this.registry.setMeta(uid, 'ah.launch.effort', change.effort === 'default' ? undefined : change.effort);
   }
 
   private justSent(uid: string): boolean {
@@ -846,7 +846,10 @@ export class Core {
     if (!w?.agent) throw new CoreError(404, 'no agent session');
     const preset = await withCatalog(this.preset(w.agent));
     let text: string;
-    if (change.model !== undefined) {
+    // "default" goes back to the agent's own default, where it has a command for that.
+    if (change.model === 'default' && preset.resetModel) text = preset.resetModel;
+    else if (change.effort === 'default' && preset.resetEffort) text = preset.resetEffort;
+    else if (change.model !== undefined) {
       const model = preset.models?.find((m) => m.id === change.model) ?? customModel(preset, change.model);
       if (!model) throw new CoreError(400, `unknown model: ${change.model}`);
       if (!preset.switchModel) throw new CoreError(400, `${preset.name} can't switch models mid-session; start a new one`);
@@ -861,6 +864,48 @@ export class Core {
       throw new CoreError(400, 'nothing to switch');
     }
     return this.send(uid, text, true, change);
+  }
+
+  /**
+   * Changes a live session's permission mode. An agent that cycles modes with a key
+   * (Claude: Shift+Tab) gets it pressed until its footer shows the chosen mode, the
+   * screen re-read after every press. `switched: false` means this session can't get
+   * there live (Claude cycles to bypass only when launched with it, and some agents
+   * have no cycle): a relaunch with the mode is the way. Nothing is left changed then.
+   */
+  async switchMode(uid: string, mode: string): Promise<{ switched: boolean }> {
+    const w = (await this.current()).windows.find((w) => w.uid === uid);
+    if (!w?.agent) throw new CoreError(404, 'no agent session');
+    const preset = this.preset(w.agent);
+    if (!preset.modes?.some((m) => m.id === mode)) throw new CoreError(400, `unknown mode: ${mode}`);
+    const cycle = preset.modeCycle;
+    if (!cycle) return { switched: false };
+    // The key means something else in a prompt (Claude: "allow all edits").
+    if (w.status === 'waiting') throw new CoreError(409, 'answer the prompt on screen first');
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const read = async () => footerMode((await t.capturePane(w.id, 0).catch(() => '')).split('\n'), cycle.detect);
+    const switched = await this.withInput(uid, async () => {
+      const start = await read();
+      if (!start) throw new CoreError(409, `${preset.name} isn't showing its mode right now; try again in a moment`);
+      let now = start;
+      for (let press = 0; now !== mode && press < Object.keys(cycle.detect).length; press++) {
+        await t.tmux('send-keys', '-t', w.id, cycle.key);
+        let next = now;
+        for (let tries = 0; tries < 12 && next === now; tries++) {
+          await sleep(90);
+          next = (await read()) ?? now;
+        }
+        // No visible change: stop rather than press into something else on screen.
+        if (next === now) throw new CoreError(409, `${preset.name} didn't change mode`);
+        now = next;
+        // Round the whole cycle: the mode isn't in it, and we're back where we started.
+        if (now === start) break;
+      }
+      return now === mode;
+    });
+    if (switched) this.registry.setMeta(uid, 'ah.launch.mode', mode === 'default' ? undefined : mode);
+    this.tick().catch(() => {});
+    return { switched };
   }
 
   async openSettings(uid: string, setting: 'model' | 'effort' | 'mode'): Promise<SendResult> {
@@ -880,9 +925,9 @@ export class Core {
    * live-switch command. The queue follows the conversation id via
    * inheritQueue; snapshots are rekeyed to the replacement session.
    */
-  async relaunch(uid: string, change: { model?: string; effort?: string }): Promise<{ uid: string; id: string }> {
+  async relaunch(uid: string, change: { model?: string; effort?: string; mode?: string }): Promise<{ uid: string; id: string }> {
     // No change is a plain restart: same flags, a fresh process (new environment).
-    if (change.model !== undefined && change.effort !== undefined) throw new CoreError(400, 'choose one setting to relaunch with');
+    if (Number(change.model !== undefined) + Number(change.effort !== undefined) + Number(change.mode !== undefined) > 1) throw new CoreError(400, 'choose one setting to relaunch with');
     const state = await this.current();
     const w = state.windows.find((w) => w.uid === uid);
     if (!w?.agent) throw new CoreError(404, 'no agent session');
@@ -895,7 +940,9 @@ export class Core {
     const preset = await withCatalog(this.preset(w.agent));
     let model: string | undefined;
     let effort: string | undefined;
-    if (change.model !== undefined) {
+    let mode: string | undefined;
+    // "default" relaunches without the flag, so the agent's own default applies.
+    if (change.model !== undefined && change.model !== 'default') {
       // customModel throws LaunchError on malformed ids; the HTTP layer only
       // maps CoreError, so convert here instead of leaking a 500.
       let found;
@@ -906,16 +953,23 @@ export class Core {
       }
       if (!found) throw new CoreError(400, `unknown model: ${change.model}`);
       model = found.id;
-    } else if (change.effort !== undefined) {
+    } else if (change.effort !== undefined && change.effort !== 'default') {
       const current = preset.models?.find((m) => m.id === (w.launchModel ?? preset.defaultModel));
       const levels = current?.efforts ?? preset.effort?.levels ?? [];
-      if (!preset.effort || !levels.includes(change.effort!)) {
+      if (!preset.effort || !levels.includes(change.effort)) {
         throw new CoreError(400, preset.effort ? `unsupported effort: ${change.effort}` : `${preset.name} has no effort setting`);
       }
       effort = change.effort;
+    } else if (change.mode !== undefined) {
+      if (!preset.modes?.some((m) => m.id === change.mode)) throw new CoreError(400, `unknown mode: ${change.mode}`);
+      mode = change.mode;
     }
-    const inherited = rec ? resumeSelection(rec.meta as Record<string, unknown>) : {};
-    const sel = { ...inherited, ...(model !== undefined ? { model } : {}), ...(effort !== undefined ? { effort } : {}) };
+    const sel: ReturnType<typeof resumeSelection> = rec ? resumeSelection(rec.meta as Record<string, unknown>) : {};
+    if (change.model === 'default') delete sel.model;
+    if (change.effort === 'default') delete sel.effort;
+    if (model !== undefined) sel.model = model;
+    if (effort !== undefined) sel.effort = effort;
+    if (mode !== undefined) sel.mode = mode;
     let plan;
     try {
       plan = buildLaunch(preset, { ...sel, resume: harnessId });

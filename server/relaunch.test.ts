@@ -131,3 +131,8 @@ test('relaunch creates the new window before stopping the old one, and keeps the
   // An old window that is already gone is fine (no tmux server here at all).
   await launched.beforeCommand();
 });
+
+test('relaunch takes a permission mode, one setting at a time, from the preset only', async () => {
+  assert.equal(await statusOf(core([idle()]).relaunch('u1', { mode: 'auto', model: 'x' })), 400);
+  assert.equal(await statusOf(core([idle()]).relaunch('u1', { mode: 'nope' })), 400);
+});

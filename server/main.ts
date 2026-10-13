@@ -393,6 +393,13 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     return send(res, 200, out);
   }
 
+  if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/mode$/))) {
+    const mode = str((await readJson(req)).mode, 'mode', 40);
+    const out = await core.switchMode(m[1], mode);
+    audit(req, 'session.mode', { uid: m[1], mode, switched: out.switched });
+    return send(res, 200, out);
+  }
+
   if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/settings$/))) {
     const setting = (await readJson(req)).setting;
     if (setting !== 'model' && setting !== 'effort' && setting !== 'mode') throw new HttpError(400, 'unknown setting');
@@ -406,6 +413,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     const change = {
       ...(body.model !== undefined ? { model: str(body.model, 'model', 80) } : {}),
       ...(body.effort !== undefined ? { effort: str(body.effort, 'effort', 20) } : {}),
+      ...(body.mode !== undefined ? { mode: str(body.mode, 'mode', 40) } : {}),
     };
     const out = await core.relaunch(m[1], change);
     audit(req, 'session.relaunch', { uid: m[1], ...change, window: out.id });

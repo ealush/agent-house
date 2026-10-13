@@ -289,7 +289,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
   // ---------- model / effort / mode chip
 
   const launch = useLaunch({ client, w, agent, onNotice, onSent, onSettingsOpen, onRelaunched });
-  const { models, model, modelLabel, effort, mode, levels, openSettings, pickLive, relaunchWith } = launch;
+  const { models, model, modelLabel, effort, mode, levels, openSettings, choose, chooseMode } = launch;
   useLaunchPalette(launch, active && !!w);
 
   const empty = !text.trim() && !files.length;
@@ -410,14 +410,10 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
               {(close) => (
                 <ModelPicker preset={preset} value={{ model: model?.id, effort }}
                   disabled={!preset.switchModel && !preset.modelArgs}
-                  onPick={(p) => {
-                    const id = p.model ?? preset.defaultModel;
-                    if (id) (preset.switchModel ? pickLive({ model: id }, close) : relaunchWith({ model: id }, close));
-                    else openSettings('model', close);
-                  }}
-                  footer={preset.settingsCommands?.model
+                  onPick={(p) => void choose({ model: p.model ?? 'default' }, close)}
+                  footer={!models.length && preset.settingsCommands?.model
                     ? <button type="button" className="picker-native" onClick={() => openSettings('model', close)}>Choose model in terminal…</button>
-                    : <span>{preset.switchModel ? 'Changes this session' : 'Set when starting a session'}</span>} />
+                    : <span>{preset.switchModel ? 'Changes this session' : 'Restarts this session with it'}</span>} />
               )}
             </Popover>
           )}
@@ -425,39 +421,30 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
             <Popover className="tool-chip" title="Reasoning effort" label={`Effort: ${effort ? effort.charAt(0).toUpperCase() + effort.slice(1) : 'Default'}`} command="pick-effort" active={active}>
               {(close) => (
                 <EffortPicker levels={levels} value={effort} disabled={!preset.switchEffort && !preset.effort}
-                  onPick={(level) => {
-                    const next = level ?? preset.defaultEffort;
-                    if (next) (preset.switchEffort ? pickLive({ effort: next }, close) : relaunchWith({ effort: next }, close));
-                    else openSettings('effort', close);
-                  }}
-                  footer={preset.settingsCommands?.effort
+                  onPick={(level) => void choose({ effort: level ?? 'default' }, close)}
+                  footer={!levels.length && preset.settingsCommands?.effort
                     ? <button type="button" className="picker-native" onClick={() => openSettings('effort', close)}>Choose effort in terminal…</button>
-                    : <span>Set when starting a session</span>} />
+                    : <span>{preset.switchEffort ? 'Changes this session' : 'Restarts this session with it'}</span>} />
               )}
             </Popover>
           )}
           {preset && (preset.modes?.length ?? 0) > 1 && (
             <Popover className={`tool-chip ${mode?.dangerous ? 'danger' : ''}`} title="Permission level" label={`Permissions${mode?.dangerous ? ': ⚠' : ''}`}>
               {(close) => (
-                <div className="picker">
+                <div className="picker" aria-label="Permissions">
                   <div className="picker-title">Permissions</div>
-                  {preset.modes!.map((m) => {
-                    const current = m.id === (w?.launchMode ?? 'default');
-                    return (
-                      <div key={m.id} className={`picker-row static ${current ? 'on' : ''}`}>
-                        <span className="picker-name" title={m.description}>
-                          <span>
-                            {m.dangerous ? '⚠ ' : ''}{m.name}
-                            {m.description ? <span className="hint"> — {m.description}</span> : null}
-                          </span>
-                          {current && <span className="check">✓</span>}
+                  {preset.modes!.map((m) => (
+                    <div key={m.id} className={`picker-row ${m.id === mode?.id ? 'on' : ''}`}>
+                      <button type="button" className="picker-name" title={m.description} onClick={() => void chooseMode(m.id, close)}>
+                        <span>
+                          {m.dangerous ? '⚠ ' : ''}{m.name}
+                          {m.description ? <span className="hint"> — {m.description}</span> : null}
                         </span>
-                      </div>
-                    );
-                  })}
-                {preset.settingsCommands?.mode
-                    ? <button type="button" className="picker-name" onClick={() => openSettings('mode', close)}>Change permissions in terminal…</button>
-                    : <div className="picker-foot">Set when starting a session</div>}
+                        {m.id === mode?.id && <span className="check">✓</span>}
+                      </button>
+                    </div>
+                  ))}
+                  <div className="picker-foot"><span>{preset.modeCycle ? 'Changes this session' : 'Restarts this session with it'}</span></div>
                 </div>
               )}
             </Popover>

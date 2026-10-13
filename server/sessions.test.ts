@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeStatus, screenAsks, adoptTranscripts, hasToolWork, atShellPrompt, resetTime, screenLimit, shellDetail, trackContent, type StatusInput, type WindowView } from './sessions.ts';
+import { computeStatus, footerMode, screenAsks, adoptTranscripts, hasToolWork, atShellPrompt, resetTime, screenLimit, shellDetail, trackContent, type StatusInput, type WindowView } from './sessions.ts';
 import { loadConfig } from './config.ts';
 
 const base: StatusInput = { now: 1000, activity: 900, seen: 900, viewers: 0, idleAfter: 4, hook: null, screenWaiting: false };
@@ -252,4 +252,14 @@ test("an agent's usage-limit notice reads as the limit and when it resets, until
   assert.equal(resetTime('1:50am', at), new Date(2026, 9, 13, 1, 50).getTime() / 1000, 'the next 1:50am');
   assert.equal(resetTime('Oct 16, 7am', at), new Date(2026, 9, 16, 7, 0).getTime() / 1000);
   assert.equal(resetTime('soon', at), null);
+});
+
+test('footerMode reads the mode from the footer, not from the conversation above it', () => {
+  const detect = loadConfig().presets.find((p) => p.id === 'claude')!.modeCycle!.detect;
+  const box = ['─'.repeat(40), '❯ ', '─'.repeat(40)];
+  assert.equal(footerMode([...box, '  ⏵⏵ accept edits on (shift+tab to cycle) · ← for agents'], detect), 'accept-edits');
+  assert.equal(footerMode([...box, '  ⏸ manual mode on · ? for shortcuts'], detect), 'default');
+  const talk = ['● I turned plan mode on earlier.', ...Array(10).fill('  more prose')];
+  assert.equal(footerMode([...talk, ...box, '  ⏵⏵ auto mode on (shift+tab to cycle)'], detect), 'auto');
+  assert.equal(footerMode([...talk, ...box], detect), null, 'no footer: unknown, not the mode the prose names');
 });

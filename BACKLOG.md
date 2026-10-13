@@ -80,7 +80,7 @@
 | F44 | Session termination | ✅ | Sidebar and session controls, with confirmation for stopping a session. |
 | F45 | Split workspace | ✅ | Independent terminal viewers, resizable horizontal/vertical splits, device-local persistence, phone tabs. Duplicate viewers have independent pane controls. |
 | F46 | Workspace navigation | ✅ | Replace the focused pane from the sidebar or picker; drag sessions onto pane edges to split. |
-| F47 | GUI view | ✅ | Transcript adapters (Claude Code, Codex, Gemini, Grok, Muse, opencode, Hermes) → typed events over SSE → separate React tree with tool and widget dispatch. Agents' pickers (permission prompts, Claude's question dialog, cursor lists like folder trust) are answered from the GUI, inbox and phone; other TUI-only pickers (`/model`) hand off to the terminal. |
+| F47 | GUI view | ✅ | Transcript adapters (Claude Code, Codex, Gemini, Grok, Muse, opencode, Hermes) → typed events over SSE → separate React tree with tool and widget dispatch. Agents' pickers (permission prompts, Claude's question dialog, cursor lists like folder trust) are answered from the GUI, inbox and phone; model, effort and permission mode change from the composer's chips (P45). |
 | F48 | Session environment | ✅ | Settings → Environment: variables every session window starts with (`tmux new-window -e`; new, resumed, relaunched, forked). Secrets are write-only like chat keys. A chat subscription can hand its key to sessions under a name (OPENAI_API_KEY), so one key serves side chat and agents. Sessions on older values are listed with a Restart (relaunch with no change: same conversation, fresh process). `server/env.ts`. |
 
 ## Reliability pass — October 2026
@@ -161,6 +161,7 @@ that follows you across devices, harnesses, restarts and resumes.
 | P42 | 44pt targets | ✅ | Every phone control is at least Apple's 44pt minimum: nav-bar circles, view tabs, Settings' sections, agent choices and keys. Chips keep their size with larger hit areas. Nav icons are 22px and tab icons 24px. |
 | P43 | Action sheet, iPhone style | ✅ | The session menu is grouped, with Cancel apart in the tint color. It drags down to close, and slides away on Cancel or a scrim tap. |
 | P44 | Your messages rail | ✅ | The GUI's left edge has a tick per message you sent; the lit one is the turn in view. A tick scrolls its message to the top (hover or arrow keys show its text). Past 15 the rail becomes a window that follows the scroll, its edges fading. Hidden on a phone. |
+| P45 | Settings without the terminal | ✅ | The GUI's Permissions rows switch the mode: live on Claude Code (Shift+Tab pressed until its footer shows the mode), else, or for bypass in a session not launched with it, a relaunch of the conversation in it. The check shows the mode the footer says is on, not the launch flag. Default model and effort reset with `/model default` and `/effort auto`; the terminal picker shows only when ah has no list. Also in the palette. |
 
 ### Trust and coherence pass (12 October 2026)
 

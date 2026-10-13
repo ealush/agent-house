@@ -4598,12 +4598,6 @@ button.tool-chip:hover {
   background: var(--line);
 }
 
-/* Read-only mode list (composer permissions): no click affordance. */
-.picker-row.static:hover {
-  background: none;
-  cursor: default;
-}
-
 .picker-name {
   flex: 1;
   min-width: 0;

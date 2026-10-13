@@ -132,6 +132,11 @@ export type Preset = {
   /** Present when the agent can switch model / effort mid-session. */
   switchModel?: string;
   switchEffort?: string;
+  /** Present when the agent has a command back to its own default. */
+  resetModel?: string;
+  resetEffort?: string;
+  /** Present when the agent switches permission mode live. */
+  modeCycle?: { key: string };
   modelArgs?: string[];
   settingsCommands?: { model?: string; effort?: string; mode?: string };
   /** Transcript adapter for the GUI view; absent for terminal-only presets. */
@@ -141,7 +146,7 @@ export type Preset = {
 
 export type Host = { name: string; self: boolean; online: boolean };
 
-export const API_VERSION = 21;
+export const API_VERSION = 22;
 
 export type PullInfo = { number: number | null; url: string | null };
 
@@ -349,8 +354,10 @@ export function hostApi(base: string) {
     queue: (uid: string) => r<QueueItem[]>('GET', `/api/sessions/${enc(uid)}/queue`),
     switchLaunch: (uid: string, change: { model?: string; effort?: string }) => r<SendResult>('POST', `/api/sessions/${enc(uid)}/switch`, change),
     openSettings: (uid: string, setting: 'model' | 'effort' | 'mode') => r<SendResult>('POST', `/api/sessions/${enc(uid)}/settings`, { setting }),
-    /** Hot swap: restart an idle session with a new model/effort, same conversation; no change restarts it as is. */
-    relaunch: (uid: string, change: { model?: string; effort?: string }) => r<{ uid: string; id: string }>('POST', `/api/sessions/${enc(uid)}/relaunch`, change),
+    /** Permission mode, live where the agent cycles modes; `switched: false` means relaunch with it. */
+    switchMode: (uid: string, mode: string) => r<{ switched: boolean }>('POST', `/api/sessions/${enc(uid)}/mode`, { mode }),
+    /** Hot swap: restart an idle session with a new model/effort/mode, same conversation; no change restarts it as is. */
+    relaunch: (uid: string, change: { model?: string; effort?: string; mode?: string }) => r<{ uid: string; id: string }>('POST', `/api/sessions/${enc(uid)}/relaunch`, change),
     /** GUI view: typed transcript events (server/feed). */
     feedUrl: (ref: string) => `${base}/api/sessions/${enc(ref)}/feed/stream?device=${enc(deviceName())}`,
     feedPage: (ref: string, before: number, limit = 200) => r<FeedPage>('GET', `/api/sessions/${enc(ref)}/feed?before=${before}&limit=${limit}`),

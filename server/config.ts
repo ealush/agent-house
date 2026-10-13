@@ -61,6 +61,9 @@ export type Preset = {
   /** Typed into a live session to switch model / effort, e.g. "/model {model}". */
   switchModel?: string;
   switchEffort?: string;
+  /** Typed to go back to the agent's own default model / effort, e.g. "/effort auto". */
+  resetModel?: string;
+  resetEffort?: string;
   /** Native TUI pickers used when a setting cannot be changed by a direct command. */
   settingsCommands?: { model?: string; effort?: string; mode?: string };
   /** argv for a model id that isn't in the list ("Other model…"), e.g. ["--model", "{model}"]. */
@@ -168,12 +171,15 @@ const DEFAULT_PRESETS: Preset[] = [
     interruptKeys: ['Escape'],
     switchModel: '/model {model}',
     switchEffort: '/effort {level}',
+    resetModel: '/model default',
+    resetEffort: '/effort auto',
     settingsCommands: { model: '/model', effort: '/effort', mode: '/permissions' },
     modelArgs: ['--model', '{model}'],
-    // Shift+Tab cycles Claude's permission mode; its footer says which one is on.
+    // Shift+Tab cycles Claude's permission mode (manual → accept edits → plan → auto;
+    // bypass only when launched with it); its footer says which one is on.
     modeCycle: {
       key: 'BTab',
-      detect: { 'accept-edits': 'accept edits on', plan: 'plan mode on', auto: 'auto mode on', dangerous: 'bypass permissions on' },
+      detect: { default: 'manual mode on', 'accept-edits': 'accept edits on', plan: 'plan mode on', auto: 'auto mode on', dangerous: 'bypass permissions on' },
     },
   },
   {
