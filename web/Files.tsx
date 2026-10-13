@@ -105,7 +105,10 @@ export function FilesPanel({ fs, start, cwd, agent, onInsert }: Props) {
   // Long paths: keep the current folder in view, not the root.
   useEffect(() => {
     const el = crumbsRef.current;
-    if (el) el.scrollLeft = el.scrollWidth;
+    if (!el) return;
+    el.scrollLeft = el.scrollWidth;
+    // The start is cut off: fade it, as the phone's tabs and key bar do, so it reads as more.
+    el.classList.toggle('clipped', el.scrollWidth > el.clientWidth + 1);
   }, [listing]);
 
   return (

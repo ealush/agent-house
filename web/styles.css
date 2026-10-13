@@ -2632,6 +2632,10 @@ a.btn {
   scrollbar-width: none;
 }
 
+.crumbs.clipped {
+  mask-image: linear-gradient(to right, transparent, #000 24px);
+}
+
 .crumbs button:hover {
   color: var(--text);
 }
