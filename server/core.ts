@@ -7,7 +7,7 @@ import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { buildWindows, buildHistory, adoptTranscripts, footerMode, type WindowView, type HistoryItem } from './sessions.ts';
+import { buildWindows, buildHistory, adoptTranscripts, footerMode, isQuestionDialog, type WindowView, type HistoryItem } from './sessions.ts';
 import { Registry, forkMetaOf, type ForkMeta, type SessionRecord } from './registry.ts';
 import { copyTranscript, forkUnavailableReason, removeCopiedTranscript, ForkError } from './fork.ts';
 import { PromptStore } from './prompts.ts';
@@ -880,15 +880,20 @@ export class Core {
     if (!preset.modes?.some((m) => m.id === mode)) throw new CoreError(400, `unknown mode: ${mode}`);
     const cycle = preset.modeCycle;
     if (!cycle) return { switched: false };
-    // The key means something else in a prompt (Claude: "allow all edits").
+    // The key means something else in a prompt (Claude: "allow all edits"), and a
+    // working agent can open one at any moment: the screen is checked before every press.
     if (w.status === 'waiting') throw new CoreError(409, 'answer the prompt on screen first');
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-    const read = async () => footerMode((await t.capturePane(w.id, 0).catch(() => '')).split('\n'), cycle.detect);
+    const screen = async () => (await t.capturePane(w.id, 0).catch(() => '')).split('\n');
+    const read = async () => footerMode(await screen(), cycle.detect);
     const switched = await this.withInput(uid, async () => {
       const start = await read();
       if (!start) throw new CoreError(409, `${preset.name} isn't showing its mode right now; try again in a moment`);
       let now = start;
       for (let press = 0; now !== mode && press < Object.keys(cycle.detect).length; press++) {
+        const lines = await screen();
+        if (parsePicker(lines) || isQuestionDialog(lines)) throw new CoreError(409, `${preset.name} is asking something; answer it, then switch`);
+        if (footerMode(lines, cycle.detect) !== now) throw new CoreError(409, `${preset.name}'s mode changed under ah; try again`);
         await t.tmux('send-keys', '-t', w.id, cycle.key);
         let next = now;
         for (let tries = 0; tries < 12 && next === now; tries++) {
@@ -1001,7 +1006,8 @@ export class Core {
         try {
           await t.killWindow(w.id);
         } catch {
-          if (await t.windowExists(w.id).catch(() => null)) throw new CoreError(409, "the old window wouldn't stop, so the relaunch was cancelled; nothing changed");
+          // A check that fails can't say it's gone: cancel rather than risk two agents.
+          if (await t.windowExists(w.id).catch(() => true)) throw new CoreError(409, "the old window wouldn't stop, so the relaunch was cancelled; nothing changed");
         }
       },
     });

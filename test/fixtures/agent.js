@@ -50,6 +50,8 @@ process.stdin.on('data', (chunk) => {
       text = '';
       state('working');
       console.log(`RECEIVED:${prompt}`);
+      // --modes: "PICKER" draws a permission prompt over the footer, as a turn can.
+      if (modes && prompt === 'PICKER') console.log(` Do you want to proceed?\n ❯ 1. Yes\n   2. No\n  ⏸ ${MODES[mode]}`);
       if (claudeInterrupt) spin();
       turnTimer = setTimeout(() => { stopSpin(); state('done'); console.log(`FINISHED:${prompt}`); }, turnMs);
     } else text += char;

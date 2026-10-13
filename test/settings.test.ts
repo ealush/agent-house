@@ -80,6 +80,14 @@ test('permission modes switch live by cycling the key the footer answers to, and
     assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/switch`, { body: { effort: 'default' } })).status, 200);
     await until(() => ah.tmux('capture-pane', '-p', '-t', id).includes('RECEIVED:/effort auto'), 12000);
     await until(async () => (await window()).launchEffort === null);
+
+    // A prompt that opened mid-turn takes no key: Shift+Tab would answer it.
+    ah.tmux('send-keys', '-t', id, '-l', 'PICKER');
+    ah.tmux('send-keys', '-t', id, 'Enter');
+    await until(() => ah.tmux('capture-pane', '-p', '-t', id).includes('2. No'));
+    const asked = await http(ah, 'POST', `/api/sessions/${uid}/mode`, { body: { mode: 'plan' } });
+    assert.equal(asked.status, 409, asked.body);
+    assert.match(footer(), /manual mode on/, 'nothing pressed');
   } finally {
     await cleanup(ah);
   }
