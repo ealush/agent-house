@@ -160,6 +160,7 @@ that follows you across devices, harnesses, restarts and resumes.
 | P41 | Sheets | ✅ | On a phone every modal except confirmations covers the screen, rises from the bottom, scrolls inside, and has a grabber and an X (sheet.tsx). Drag it down by the bar, or by its content once scrolled to the top, to close it. New session rises the same way. Settings is a sheet over the page it was opened from. |
 | P42 | 44pt targets | ✅ | Every phone control is at least Apple's 44pt minimum: nav-bar circles, view tabs, Settings' sections, agent choices and keys. Chips keep their size with larger hit areas. Nav icons are 22px and tab icons 24px. |
 | P43 | Action sheet, iPhone style | ✅ | The session menu is grouped, with Cancel apart in the tint color. It drags down to close, and slides away on Cancel or a scrim tap. |
+| P44 | Your messages rail | ✅ | The GUI's left edge has a tick per message you sent; the lit one is the turn in view. A tick scrolls its message to the top (hover or arrow keys show its text). Past 15 the rail becomes a window that follows the scroll, its edges fading. Hidden on a phone. |
 
 ### Trust and coherence pass (12 October 2026)
 

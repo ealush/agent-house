@@ -18,6 +18,7 @@ import { project, type Block } from './reducer.ts';
 import { GuiContext, type GuiActions } from './context.ts';
 import { ItemView, PartView, UserText } from './router.tsx';
 import { AwaitingTool, TurnLive } from './tools.tsx';
+import { MessageRail, type RailItem } from './MessageRail.tsx';
 import './gui.css';
 
 const UNAVAILABLE: Record<string, string> = {
@@ -230,6 +231,10 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
     const t = setTimeout(() => startTransition(() => setShownCount((n) => (n + MORE_BLOCKS >= blocks.length ? Infinity : n + MORE_BLOCKS))), 0);
     return () => clearTimeout(t);
   }, [allShown, shownCount, blocks.length]);
+  const railItems = useMemo<RailItem[]>(
+    () => [...shown.flatMap((b) => (b.kind === 'user' ? [{ key: b.key, text: blockText(b) }] : [])), ...outgoing.map((o) => ({ key: o.id, text: o.text }))],
+    [shown, outgoing],
+  );
   const blocksRef = useRef(blocks);
   blocksRef.current = blocks;
   const scroller = useRef<HTMLDivElement>(null);
@@ -464,6 +469,7 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
 
           </div>
         </div>
+        {railItems.length > 1 && <MessageRail items={railItems} scroller={scroller} onJump={() => (stick.current = false)} />}
         {away && (
           <button
             className="btn small gui-latest"
