@@ -1,4 +1,5 @@
 import { radioGridMove } from './rove.ts';
+import { bareProject } from './projectPath.ts';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ConfirmButton } from './ConfirmButton.tsx';
 import { Icon } from './icons.tsx';
@@ -120,14 +121,17 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
     client.projects().then(setProjects).catch(() => setProjects([]));
     setRoot(null);
   }, [host]);
+  // A bare name that is one of the chips' projects ("acme-web") means that project, not
+  // a folder of that name in the home directory: check and start there, chip lit.
+  const path = bareProject(cwd, projects) ?? cwd;
   useEffect(() => {
     let live = true;
     const check = () =>
       client
-        .dir(cwd)
+        .dir(path)
         .then((d) => {
           if (!live) return;
-          setPlace({ host, cwd, state: d.state });
+          setPlace({ host, cwd: path, state: d.state });
           setRoot(d.root);
           // New project: once the host says where projects live, prefill it and wait for a name.
           if (projectPending.current) {
@@ -142,7 +146,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
       live = false;
       clearTimeout(t);
     };
-  }, [host, cwd]);
+  }, [host, path]);
 
   // Per-agent memory of the last launch choices. A dangerous mode is never restored.
   useEffect(() => {
@@ -167,9 +171,9 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
   // Shown: the last answer for this host, kept while the next check is in flight so nothing flickers.
   // Acted on: only an answer for exactly what is typed.
   const shown = place?.host === host ? place.state : null;
-  const known = place?.host === host && place.cwd === cwd ? place.state : null;
+  const known = place?.host === host && place.cwd === path ? place.state : null;
   const isNew = shown === 'new';
-  const trimmed = cwd.trim().replace(/\/+$/, '');
+  const trimmed = path.trim().replace(/\/+$/, '');
   const newName = trimmed.slice(trimmed.lastIndexOf('/') + 1);
   const newParent = trimmed.slice(0, trimmed.lastIndexOf('/')) || '/';
   const naming = !!root && cwd === `${root.replace(/\/$/, '')}/`;
@@ -197,8 +201,8 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
       // Pressed Start before the path was checked: if it means a new folder, say so first.
       let state = known;
       if (!state) {
-        state = (await client.dir(cwd).catch(() => null))?.state ?? null;
-        if (state) setPlace({ host, cwd, state });
+        state = (await client.dir(path).catch(() => null))?.state ?? null;
+        if (state) setPlace({ host, cwd: path, state });
         if (state === 'new') {
           setBusy(false);
           return;
@@ -206,7 +210,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
       }
       const create = state === 'new';
       localStorage.setItem('ah.lastPreset', preset.id);
-      localStorage.setItem(`ah.lastCwd.${host}`, cwd);
+      localStorage.setItem(`ah.lastCwd.${host}`, path);
       if (create) localStorage.setItem('ah.newGit', gitInit ? '1' : '0');
       localStorage.setItem(memKey(preset.id), JSON.stringify({ mode, model: pick.model, effort: pick.effort }));
       // Only send what differs from the harness's own defaults: fewer flags, same result.
@@ -214,7 +218,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
       const eff = pick.effort && (pick.effort !== preset.defaultEffort || model) ? pick.effort : undefined;
       const { id, uid } = await client.create({
         preset: preset.id,
-        cwd,
+        cwd: path,
         ...(create ? { create: true, git: gitInit } : {}),
         label,
         session: session === NEW_SESSION ? newSession : session,
@@ -312,7 +316,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
         {(recent.length > 0 || root) && (
           <div className="suggestions">
             {recent.map((p) => (
-              <button type="button" key={p} className={`sugg ${p === cwd ? 'on' : ''}`} onClick={() => setCwd(p)}>
+              <button type="button" key={p} className={`sugg ${p === path ? 'on' : ''}`} onClick={() => setCwd(p)}>
                 {p.split('/').pop() || p}
               </button>
             ))}
