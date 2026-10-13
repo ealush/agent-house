@@ -89,8 +89,10 @@
 
   --text: #333333;
   --text-2: #555555;
-  --muted: #757575;
-  --faint: #757575;
+  /* #757575 read 4.4:1 on the #fafafa page, under AA for the 12px times and
+     details that use it; this is 4.9:1 there, 4.7:1 on a hovered row. */
+  --muted: #6e6e6e;
+  --faint: #6e6e6e;
 
   --accent: #d81b60;
   --accent-strong: #d81b60;

@@ -29,3 +29,27 @@ for (const file of FILES) {
     assert.deepEqual([...where(/font-weight:\s*(\d{3})/g, (n) => WEIGHT.has(n)), ...where(/font:\s*(\d{3})\s/g, (n) => WEIGHT.has(n))], []);
   });
 }
+
+// Secondary text (times, details, column heads, model names) is small, so it
+// keeps WCAG AA's 4.5:1 on the grounds it sits on, in both themes.
+test('muted and faint text read at 4.5:1 on the page and the sidebar', () => {
+  const css = readFileSync(new URL('../web/site-theme.css', import.meta.url), 'utf8');
+  const block = (sel: string) => css.slice(css.indexOf(`${sel} {`), css.indexOf('}', css.indexOf(`${sel} {`)));
+  const token = (b: string, name: string) => /#[0-9a-f]{6}/i.exec(new RegExp(`--${name}:\\s*([^;]+);`).exec(b)?.[1] ?? '')?.[0];
+  const lum = (hex: string) => {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const ratio = (a: string, b: string) => {
+    const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+    return (x + 0.05) / (y + 0.05);
+  };
+  for (const sel of [':root', ":root[data-theme='light']"]) {
+    const b = block(sel);
+    for (const fg of ['muted', 'faint'])
+      for (const bg of ['bg', 'surface']) {
+        const r = ratio(token(b, fg)!, token(b, bg)!);
+        assert.ok(r >= 4.5, `${sel} --${fg} on --${bg} is ${r.toFixed(2)}:1`);
+      }
+  }
+});
