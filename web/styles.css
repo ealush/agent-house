@@ -2695,6 +2695,24 @@ a.btn {
   color: var(--muted);
 }
 
+/* In a settings card the list runs the card's width, like .rows, so a long
+   value truncates instead of pushing the row's buttons out of the card. */
+.sec-card > .worktrees {
+  align-self: stretch;
+  padding: 0;
+}
+
+.sec-card > .worktrees li:last-child {
+  border-bottom: 0;
+}
+
+/* Settings → Environment: a long value stays on one line. */
+.worktrees .env-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .worktrees li.dim {
   opacity: 0.55;
 }
@@ -2843,7 +2861,8 @@ a.btn {
   margin: 0;
 }
 
-.system-panels {
+.system-panels,
+.env-panels {
   display: flex;
   flex-direction: column;
   gap: 14px;

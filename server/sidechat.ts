@@ -8,6 +8,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { join, sep } from 'node:path';
 import type { PrismaClient } from '@prisma/client';
 import { defaultDbPath, getDb } from './db.ts';
+import { checkName } from './env.ts';
 import { changes, toplevel, prPatch, prMeta, workingPatch, workingStat, mergeBase, showAtRef, commitShow, type PrMeta } from './git.ts';
 import { conversationKey } from './registry.ts';
 
@@ -21,8 +22,8 @@ export class SideChatError extends Error {
   }
 }
 
-export type Subscription = { id: string; name: string; baseUrl: string; model: string; apiKey: string };
-export type SubscriptionInfo = { id: string; name: string; baseUrl: string; model: string; hasKey: boolean; isDefault: boolean };
+export type Subscription = { id: string; name: string; baseUrl: string; model: string; apiKey: string; envName?: string | null };
+export type SubscriptionInfo = { id: string; name: string; baseUrl: string; model: string; hasKey: boolean; isDefault: boolean; envName: string | null };
 export type ChatMessage = { role: 'user' | 'assistant'; text: string; at: number; /** ChatMessage row id, so search results can jump to one message (issue #9). */ id?: number };
 export type ChatContext = {
   title: string;
@@ -521,7 +522,7 @@ export class SideChatStore {
   }
 
   private redact(s: Subscription, defaultId: string | null): SubscriptionInfo {
-    return { id: s.id, name: s.name, baseUrl: s.baseUrl, model: s.model, hasKey: !!s.apiKey, isDefault: s.id === defaultId };
+    return { id: s.id, name: s.name, baseUrl: s.baseUrl, model: s.model, hasKey: !!s.apiKey, isDefault: s.id === defaultId, envName: s.envName ?? null };
   }
 
   async list(): Promise<SubscriptionInfo[]> {
@@ -541,27 +542,46 @@ export class SideChatStore {
     return ids[0]?.id ?? null;
   }
 
-  async put(input: { id?: string; name: string; baseUrl: string; model: string; apiKey?: string }): Promise<SubscriptionInfo> {
+  /** `envName` hands the key to sessions as that variable; '' stops it, undefined leaves it as is. */
+  async put(input: { id?: string; name: string; baseUrl: string; model: string; apiKey?: string; envName?: string }): Promise<SubscriptionInfo> {
     const name = input.name.trim();
     const model = input.model.trim();
     const baseUrl = input.baseUrl.trim().replace(/\/+$/, '');
     if (!name) throw new SideChatError(400, 'name required');
     if (!model) throw new SideChatError(400, 'model required');
     if (!/^https?:\/\/[^/]+/.test(baseUrl)) throw new SideChatError(400, 'base URL must be http(s)');
+    const envName = input.envName === undefined ? undefined : await this.checkEnvName(input.envName.trim(), input.id);
     if (input.id) {
       const s = await this.db.subscription.findUnique({ where: { id: input.id } });
       if (!s) throw new SideChatError(404, 'subscription not found');
       const apiKey = input.apiKey !== undefined && input.apiKey !== '' ? input.apiKey : s.apiKey;
       if (!apiKey) throw new SideChatError(400, 'API key required');
-      const updated = await this.db.subscription.update({ where: { id: input.id }, data: { name, baseUrl, model, apiKey } });
+      const updated = await this.db.subscription.update({ where: { id: input.id }, data: { name, baseUrl, model, apiKey, ...(envName !== undefined ? { envName } : {}) } });
       return this.redact(updated, await this.defaultId());
     }
     if (!input.apiKey) throw new SideChatError(400, 'API key required');
-    const created = await this.db.subscription.create({ data: { id: randomUUID(), name, baseUrl, model, apiKey: input.apiKey } });
+    const created = await this.db.subscription.create({ data: { id: randomUUID(), name, baseUrl, model, apiKey: input.apiKey, envName: envName ?? null } });
     if (!(await this.db.setting.findUnique({ where: { key: DEFAULT_SETTING } }))) {
       await this.db.setting.create({ data: { key: DEFAULT_SETTING, value: created.id } });
     }
     return this.redact(created, await this.defaultId());
+  }
+
+  /** A session variable name no other subscription or saved variable already uses; null for ''. */
+  private async checkEnvName(envName: string, id: string | undefined): Promise<string | null> {
+    if (!envName) return null;
+    try {
+      checkName(envName);
+    } catch (err) {
+      throw new SideChatError(400, `variable name: ${(err as Error).message}`);
+    }
+    const [other, saved] = await Promise.all([
+      this.db.subscription.findFirst({ where: { envName, ...(id ? { id: { not: id } } : {}) }, select: { name: true } }),
+      this.db.envVar.findUnique({ where: { name: envName }, select: { name: true } }),
+    ]);
+    if (other) throw new SideChatError(409, `the "${other.name}" subscription already sets ${envName}`);
+    if (saved) throw new SideChatError(409, `${envName} is already set under Settings → Environment`);
+    return envName;
   }
 
   async remove(id: string): Promise<void> {

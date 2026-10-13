@@ -160,12 +160,19 @@ export async function hasSession(name: string): Promise<boolean> {
   return (await listSessions()).includes(name);
 }
 
-/** Creates a window (and its session if needed) running the user's default shell. */
-export async function createWindow(opts: { session: string; cwd: string; name: string }): Promise<string> {
-  const fmt = ['-P', '-F', '#{window_id}'];
-  const out = (await hasSession(opts.session))
-    ? await tmux('new-window', '-d', '-t', `=${opts.session}:`, '-n', opts.name, '-c', opts.cwd, ...fmt)
-    : await tmux('new-session', '-d', '-s', opts.session, '-n', opts.name, '-c', opts.cwd, ...fmt);
+/**
+ * Creates a window (and its session if needed) running the user's default shell.
+ * `env` is set for that window's shell only (tmux -e), not tmux's global environment.
+ */
+export async function createWindow(opts: { session: string; cwd: string; name: string; env?: Record<string, string> }): Promise<string> {
+  const env = Object.entries(opts.env ?? {});
+  const fmt = ['-P', '-F', '#{window_id}', ...env.flatMap(([k, v]) => ['-e', `${k}=${v}`])];
+  if (await hasSession(opts.session)) return (await tmux('new-window', '-d', '-t', `=${opts.session}:`, '-n', opts.name, '-c', opts.cwd, ...fmt)).trim();
+  const out = await tmux('new-session', '-d', '-s', opts.session, '-n', opts.name, '-c', opts.cwd, ...fmt);
+  // new-session -e also sets the session's environment, which later windows
+  // inherit: once the first shell has started with it, take it back off the
+  // session so a variable removed in Settings doesn't linger there.
+  for (const [k] of env) await tmux('set-environment', '-t', `=${opts.session}`, '-u', k).catch(() => {});
   return out.trim();
 }
 

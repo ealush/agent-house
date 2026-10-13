@@ -25,6 +25,7 @@ import { Push } from './push.ts';
 import { omarchyStamp } from './omarchy.ts';
 import { claudeQuestionGroups, cursorKeys, dialogAt, dialogSteps, parsePicker, parseQuestionDialog, type Answer, type Step } from './choices.ts';
 import type { Peers } from './peers.ts';
+import { fingerprint } from './env.ts';
 import type { TranscriptSource } from './search.ts';
 
 export type { LaunchChange, QueueItem } from './queue.ts';
@@ -125,6 +126,8 @@ export class Core {
   private turnPeriod = new Set<string>();
   private lastPrune = 0;
   peers: Peers | null = null;
+  /** Variables each new session window starts with (Settings → Environment); main.ts wires the store. */
+  launchEnv: () => Promise<Record<string, string>> = async () => ({});
 
   constructor(config: Config, viewers: Map<string, string[]>, registry = new Registry(), prompts = new PromptStore(), snapshots = new SnapshotStore()) {
     this.registry = registry;
@@ -306,7 +309,15 @@ export class Core {
         meta = { ...meta, 'ah.knownTranscripts': known };
       } catch {}
     }
-    const windowId = await t.createWindow({ session: o.session, cwd: o.cwd, name: o.name });
+    // What the window starts with, and its fingerprint so Settings can tell
+    // which running sessions predate a change. A store failure launches
+    // without it rather than not at all.
+    const env = await this.launchEnv().catch((err) => {
+      console.error('session environment unavailable:', err);
+      return {};
+    });
+    meta = { ...meta, 'ah.env': fingerprint(env) };
+    const windowId = await t.createWindow({ session: o.session, cwd: o.cwd, name: o.name, env });
     try {
       const ts = String(now());
       await t.setWindowOption(windowId, '@ah-uid', uid);
@@ -851,7 +862,8 @@ export class Core {
    * inheritQueue; snapshots are rekeyed to the replacement session.
    */
   async relaunch(uid: string, change: { model?: string; effort?: string }): Promise<{ uid: string; id: string }> {
-    if (Number(change.model !== undefined) + Number(change.effort !== undefined) !== 1) throw new CoreError(400, 'choose one setting to relaunch with');
+    // No change is a plain restart: same flags, a fresh process (new environment).
+    if (change.model !== undefined && change.effort !== undefined) throw new CoreError(400, 'choose one setting to relaunch with');
     const state = await this.current();
     const w = state.windows.find((w) => w.uid === uid);
     if (!w?.agent) throw new CoreError(404, 'no agent session');
@@ -867,8 +879,6 @@ export class Core {
     if (change.model !== undefined) {
       // customModel throws LaunchError on malformed ids; the HTTP layer only
       // maps CoreError, so convert here instead of leaking a 500.
-      // customModel throws LaunchError on malformed ids; the HTTP layer only
-      // maps CoreError, so convert here instead of leaking a 500.
       let found;
       try {
         found = preset.models?.find((m) => m.id === change.model) ?? customModel(preset, change.model);
@@ -877,7 +887,7 @@ export class Core {
       }
       if (!found) throw new CoreError(400, `unknown model: ${change.model}`);
       model = found.id;
-    } else {
+    } else if (change.effort !== undefined) {
       const current = preset.models?.find((m) => m.id === (w.launchModel ?? preset.defaultModel));
       const levels = current?.efforts ?? preset.effort?.levels ?? [];
       if (!preset.effort || !levels.includes(change.effort!)) {
@@ -927,6 +937,30 @@ export class Core {
     if (snap !== undefined) this.registry.setMeta(out.uid, 'ah.snapshots', snap);
     this.tick().catch(() => {});
     return { uid: out.uid, id: out.windowId };
+  }
+
+  /**
+   * Running agent sessions that started with a different environment than
+   * `env`, so Settings → Environment can offer to restart them. `restart` is
+   * null when a restart can go ahead now, else why not (relaunch's rules).
+   */
+  async envStale(env: Record<string, string>): Promise<Array<{ uid: string; title: string; agent: string; restart: string | null }>> {
+    const want = fingerprint(env);
+    // A fresh scan, not the cached state: asked right after a restart, the
+    // cache can still hold the window that restart just replaced.
+    const state = await this.tick();
+    return state.windows
+      .filter((w) => w.agent && ((this.registry.get(w.uid)?.meta['ah.env'] as string | undefined) ?? '') !== want)
+      .map((w) => ({
+        uid: w.uid,
+        title: w.title,
+        agent: w.agent!,
+        restart: !(w.harnessId ?? this.registry.get(w.uid)?.harnessId)
+          ? 'no conversation to resume yet'
+          : w.status === 'busy' || w.status === 'waiting' || w.queued > 0
+            ? 'working; restart when idle'
+            : null,
+      }));
   }
 
   /** A live session's agent preset and absolute working directory (composer autocomplete). */

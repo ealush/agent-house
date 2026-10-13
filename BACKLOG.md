@@ -81,6 +81,7 @@
 | F45 | Split workspace | ✅ | Independent terminal viewers, resizable horizontal/vertical splits, device-local persistence, phone tabs. Duplicate viewers have independent pane controls. |
 | F46 | Workspace navigation | ✅ | Replace the focused pane from the sidebar or picker; drag sessions onto pane edges to split. |
 | F47 | GUI view | ✅ | Transcript adapters (Claude Code, Codex, Gemini, Grok, Muse, opencode, Hermes) → typed events over SSE → separate React tree with tool and widget dispatch. Agents' pickers (permission prompts, Claude's question dialog, cursor lists like folder trust) are answered from the GUI, inbox and phone; other TUI-only pickers (`/model`) hand off to the terminal. |
+| F48 | Session environment | ✅ | Settings → Environment: variables every session window starts with (`tmux new-window -e`; new, resumed, relaunched, forked). Secrets are write-only like chat keys. A chat subscription can hand its key to sessions under a name (OPENAI_API_KEY), so one key serves side chat and agents. Sessions on older values are listed with a Restart (relaunch with no change: same conversation, fresh process). `server/env.ts`. |
 
 ## Reliability pass — October 2026
 

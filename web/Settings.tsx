@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { NotifySettings } from './NotifyDialog.tsx';
 import { Security } from './Security.tsx';
 import { SubscriptionsPanel } from './Subscriptions.tsx';
+import { EnvironmentPanel } from './Environment.tsx';
 
 // Settings with a side panel: Security, Appearance, Shortcuts, Notifications,
-// Subscriptions, Search, System. Sections are hash-addressable
+// Subscriptions, Environment, Search, System. Sections are hash-addressable
 // (#settings/subscriptions) so anything in the app can link straight at one.
 import { SearchSettingsPanel } from './SearchSettings.tsx';
 import { AppearancePanel } from './Appearance.tsx';
@@ -17,6 +18,7 @@ const SECTIONS = [
   { id: 'shortcuts', label: 'Shortcuts' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'subscriptions', label: 'Subscriptions' },
+  { id: 'environment', label: 'Environment' },
   { id: 'search', label: 'Search' },
   { id: 'system', label: 'System' },
 ] as const;
@@ -47,7 +49,7 @@ export function Settings({ onLocked, onNotifyChange }: { onLocked: () => void; o
       <header className="page-head">
         <div className="grow">
           <h1 className="page-title">Settings<span className="period">.</span></h1>
-          <p className="tagline">Devices and sign-in, shortcuts on this device, notifications, and chat subscriptions for side chat.</p>
+          <p className="tagline">Devices and sign-in, shortcuts on this device, notifications, chat subscriptions, and what your sessions start with.</p>
         </div>
       </header>
 
@@ -72,6 +74,7 @@ export function Settings({ onLocked, onNotifyChange }: { onLocked: () => void; o
             </div>
           )}
           {section === 'subscriptions' && <SubscriptionsPanel />}
+          {section === 'environment' && <EnvironmentPanel />}
           {section === 'search' && <SearchSettingsPanel />}
           {section === 'system' && <SystemPanel />}
         </div>

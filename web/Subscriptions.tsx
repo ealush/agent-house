@@ -5,11 +5,12 @@ import { askConfirm, showError } from './ask.tsx';
 
 // Chat subscriptions (BYOK): named OpenAI-compatible endpoints whose keys
 // live on the host beside ah's other secrets. Listed without keys; blank key
-// on edit keeps the stored one.
+// on edit keeps the stored one. A subscription can also hand its key to
+// sessions as an environment variable (Settings → Environment).
 export function SubscriptionsPanel() {
   const [list, setList] = useState<Subscription[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState<{ id?: string; name: string; baseUrl: string; model: string; apiKey: string } | null>(null);
+  const [form, setForm] = useState<{ id?: string; name: string; baseUrl: string; model: string; apiKey: string; envName: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = () => api.subscriptions().then(setList).catch((e) => setError(e.message));
@@ -28,6 +29,7 @@ export function SubscriptionsPanel() {
         baseUrl: form.baseUrl.trim(),
         model: form.model.trim(),
         ...(form.apiKey ? { apiKey: form.apiKey } : {}),
+        envName: form.envName.trim(),
       });
       setForm(null);
       load();
@@ -76,6 +78,7 @@ export function SubscriptionsPanel() {
                 </span>
                 <span className="sub">
                   {s.model} · {s.baseUrl.replace(/^https?:\/\//, '').split('/')[0]} · {s.hasKey ? 'key set' : 'no key'}
+                  {s.envName && <> · sessions get it as <span className="mono">{s.envName}</span></>}
                 </span>
               </div>
               {!s.isDefault && (
@@ -86,7 +89,7 @@ export function SubscriptionsPanel() {
               <button
                 className="btn small"
                 disabled={busy}
-                onClick={() => setForm({ id: s.id, name: s.name, baseUrl: s.baseUrl, model: s.model, apiKey: '' })}
+                onClick={() => setForm({ id: s.id, name: s.name, baseUrl: s.baseUrl, model: s.model, apiKey: '', envName: s.envName ?? '' })}
               >
                 Edit
               </button>
@@ -98,37 +101,54 @@ export function SubscriptionsPanel() {
         </ul>
       )}
       {form ? (
-        <div className="fields">
-          <label className="field">
-            <span>Name</span>
-            <input value={form.name} disabled={busy} maxLength={80} placeholder="OpenAI" onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          </label>
-          <label className="field">
-            <span>Base URL</span>
-            <input
-              value={form.baseUrl}
-              disabled={busy}
-              maxLength={200}
-              placeholder="https://api.openai.com/v1"
-              autoCapitalize="off"
-              autoCorrect="off"
-              spellCheck={false}
-              onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
-            />
-          </label>
-          <label className="field">
-            <span>Model</span>
-            <input value={form.model} disabled={busy} maxLength={80} placeholder="gpt-4o" autoCapitalize="off" autoCorrect="off" spellCheck={false} onChange={(e) => setForm({ ...form, model: e.target.value })} />
-          </label>
-          <label className="field">
-            <span>API key{form.id ? ' (blank keeps the stored one)' : ''}</span>
-            <input type="password" value={form.apiKey} disabled={busy} maxLength={500} autoComplete="off" onChange={(e) => setForm({ ...form, apiKey: e.target.value })} />
-          </label>
-        </div>
+        <>
+          <div className="fields">
+            <label className="field">
+              <span>Name</span>
+              <input value={form.name} disabled={busy} maxLength={80} placeholder="OpenAI" onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </label>
+            <label className="field">
+              <span>Base URL</span>
+              <input
+                value={form.baseUrl}
+                disabled={busy}
+                maxLength={200}
+                placeholder="https://api.openai.com/v1"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
+              />
+            </label>
+            <label className="field">
+              <span>Model</span>
+              <input value={form.model} disabled={busy} maxLength={80} placeholder="gpt-4o" autoCapitalize="off" autoCorrect="off" spellCheck={false} onChange={(e) => setForm({ ...form, model: e.target.value })} />
+            </label>
+            <label className="field">
+              <span>API key{form.id ? ' (blank keeps the stored one)' : ''}</span>
+              <input type="password" value={form.apiKey} disabled={busy} maxLength={500} autoComplete="off" onChange={(e) => setForm({ ...form, apiKey: e.target.value })} />
+            </label>
+          </div>
+          <div className="fields">
+            <label className="field">
+              <span>Give sessions the key as (optional)</span>
+              <input
+                value={form.envName}
+                disabled={busy}
+                maxLength={128}
+                placeholder="OPENAI_API_KEY"
+                autoCapitalize="characters"
+                autoCorrect="off"
+                spellCheck={false}
+                onChange={(e) => setForm({ ...form, envName: e.target.value })}
+              />
+            </label>
+          </div>
+        </>
       ) : (
         <button
           className="btn small"
-          onClick={() => setForm({ name: '', baseUrl: 'https://api.openai.com/v1', model: '', apiKey: '' })}
+          onClick={() => setForm({ name: '', baseUrl: 'https://api.openai.com/v1', model: '', apiKey: '', envName: '' })}
         >
           Add subscription
         </button>

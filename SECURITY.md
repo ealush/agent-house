@@ -66,8 +66,8 @@ All under `~/.local/state/ah/` (mode 0700 directory, 0600 files):
 | `auth.json` | passkey public keys, hashed session and token secrets, scrypt password hash, the browser cache secret |
 | `local-token` | the host CLI's bearer token (regenerated each start) |
 | `peer-tokens.json` | tokens other hosts issued to this one |
-| `ah.db` (SQLite via Prisma) | the session registry (titles, directories, conversation ids, queued messages), recent prompts (may contain anything you pasted — `promptHistory: 0` keeps none; Security → Clear prompt history), chat API keys and side-chat history (keys are never returned by the API), and loose settings. First boot imports `sessions.json`/`prompts.json`/`sidechat.json` once when present; those legacy files are then unused |
-| `audit.log` | sign-ins, failures, enrollments, and session actions (create, send, approve, kill, upload, subscription save/remove) |
+| `ah.db` (SQLite via Prisma) | the session registry (titles, directories, conversation ids, queued messages), recent prompts (may contain anything you pasted — `promptHistory: 0` keeps none; Security → Clear prompt history), chat API keys and side-chat history (keys are never returned by the API), session environment variables (Settings → Environment; secret values are never returned by the API, and every window ah starts gets them, so any agent you run can read them), and loose settings. First boot imports `sessions.json`/`prompts.json`/`sidechat.json` once when present; those legacy files are then unused |
+| `audit.log` | sign-ins, failures, enrollments, and session actions (create, send, approve, kill, upload, subscription save/remove, environment variable save/remove by name, never value) |
 | `push.json`, `vapid.json` | Web Push subscriptions and keys |
 | `drafts.json` | unsent composer text per session (may contain anything you typed or pasted), so it follows you between devices; cleared when sent or emptied, dropped after 14 days untouched |
 

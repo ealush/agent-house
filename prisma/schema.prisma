@@ -1,6 +1,6 @@
 // ah's durable state: sessions (the registry), side-chat subscriptions and
-// history, recent prompts, and loose settings. One SQLite file per host at
-// ~/.local/state/ah/ah.db (0600). Chat history is keyed by session uid with
+// history, recent prompts, session environment variables, and loose
+// settings. One SQLite file per host at ~/.local/state/ah/ah.db (0600). Chat history is keyed by session uid with
 // no foreign key, so it outlives the session's own row on purpose.
 //
 // Full-text search (issue #9) adds FTS5 virtual tables (transcript_fts,
@@ -78,6 +78,16 @@ model Subscription {
   baseUrl String
   model   String
   apiKey  String
+  /** Also handed to sessions as this environment variable (Settings → Environment). */
+  envName String?
+}
+
+// Environment variables every session window starts with (tmux new-window -e).
+// Secret values are never returned by the API once saved.
+model EnvVar {
+  name   String  @id
+  value  String
+  secret Boolean @default(true)
 }
 
 model Setting {

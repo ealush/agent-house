@@ -50,10 +50,29 @@ const statusOf = async (p: Promise<unknown>) => (await p.then(
   (e: any) => e.status ?? `threw:${e.message}`,
 ));
 
-test('relaunch needs exactly one of model/effort', async () => {
+test('relaunch takes at most one of model/effort; neither is a plain restart', async () => {
   const c = core([idle()]);
   assert.equal(await statusOf(c.relaunch('u1', { model: 'x', effort: 'high' })), 400);
-  assert.equal(await statusOf(c.relaunch('u1', {})), 400);
+  // A restart passes the change check and meets the same guards as a swap.
+  assert.equal(await statusOf(core([idle({ harnessId: null })]).relaunch('u1', {})), 422);
+  assert.equal(await statusOf(core([idle({ status: 'busy' })]).relaunch('u1', {})), 409);
+});
+
+test('envStale lists agent sessions on other values, with why one cannot restart yet', async () => {
+  const windows = [idle(), idle({ uid: 'u2', status: 'busy' }), idle({ uid: 'u3', harnessId: null }), idle({ uid: 'u4', agent: null })];
+  const c = core(windows);
+  c.tick = c.current;
+  // Nothing in the registry recorded an environment: matches an empty one.
+  assert.deepEqual(await c.envStale({}), []);
+  const stale = await c.envStale({ IMAGE_KEY: 'k' });
+  assert.deepEqual(
+    stale.map((s: any) => [s.uid, s.restart]),
+    [
+      ['u1', null],
+      ['u2', 'working; restart when idle'],
+      ['u3', 'no conversation to resume yet'],
+    ],
+  );
 });
 
 test('relaunch 404s unknown and non-agent sessions', async () => {

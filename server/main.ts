@@ -43,6 +43,7 @@ import { rebuildFailure, rebuildWeb } from './rebuild.ts';
 import { slashCommands, projectFiles } from './complete.ts';
 import { omarchyTheme } from './omarchy.ts';
 import { screenAudit } from './audit.ts';
+import { EnvStore } from './env.ts';
 import { hooksStatus, installClaude, installCodex, uninstallClaude, uninstallCodex } from './hooks.ts';
 
 let config: Config;
@@ -81,6 +82,8 @@ try {
 const core = new Core(config, viewers);
 const drafts = new Drafts();
 const sidechat = new SideChatStore();
+const envStore = new EnvStore();
+core.launchEnv = () => envStore.forLaunch();
 const search = new SearchIndexer(getDb(), () => core.searchSources());
 const gate = new Gate();
 
@@ -785,8 +788,9 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
       baseUrl: str(body.baseUrl ?? '', 'baseUrl', 200),
       model: str(body.model ?? '', 'model', 80),
       ...(body.apiKey === undefined ? {} : { apiKey: str(body.apiKey, 'apiKey', 500) }),
+      ...(body.envName === undefined ? {} : { envName: str(body.envName, 'envName', 128) }),
     });
-    audit(req, 'subscription.save', { id: out.id, name: out.name });
+    audit(req, 'subscription.save', { id: out.id, name: out.name, ...(out.envName ? { env: out.envName } : {}) });
     return send(res, 200, out);
   }
 
@@ -800,6 +804,32 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     const id = str((await readJson(req)).id, 'id', 40);
     await sidechat.setDefault(id);
     audit(req, 'subscription.default', { id });
+    return send(res, 200, { ok: true });
+  }
+
+  // ---------- session environment (Settings → Environment)
+
+  if (route('GET', /^\/api\/env$/)) {
+    const [list, env] = await Promise.all([envStore.list(), envStore.forLaunch()]);
+    return send(res, 200, { ...list, stale: await core.envStale(env) });
+  }
+
+  if (route('POST', /^\/api\/env$/)) {
+    const body = await readJson(req);
+    if (typeof body.secret !== 'boolean') throw new HttpError(400, 'invalid secret');
+    const out = await envStore.put({
+      name: str(body.name, 'name', 128),
+      ...(body.value === undefined ? {} : { value: str(body.value, 'value', 8192) }),
+      secret: body.secret,
+    });
+    // Names only: values (secret or not) stay out of the activity log.
+    audit(req, 'env.save', { name: out.name });
+    return send(res, 200, out);
+  }
+
+  if ((m = route('DELETE', /^\/api\/env\/([A-Za-z_][A-Za-z0-9_]{0,127})$/))) {
+    await envStore.remove(m[1]);
+    audit(req, 'env.remove', { name: m[1] });
     return send(res, 200, { ok: true });
   }
 
@@ -1150,7 +1180,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     if (method !== 'GET' && method !== 'HEAD') throw new HttpError(405, 'method not allowed');
     await serveStatic(res, url.pathname);
   } catch (err) {
-    const status = err instanceof HttpError || err instanceof CoreError || err instanceof AuthError || err instanceof FsError ? err.status : err instanceof GitError ? 400 : 500;
+    const status = err instanceof HttpError || err instanceof CoreError || err instanceof AuthError || err instanceof FsError || err instanceof SideChatError ? err.status : err instanceof GitError ? 400 : 500;
     if (status === 500) console.error(err);
     // A failure mid-stream (e.g. a download) can't be turned into a JSON error any more.
     if (res.headersSent) return res.destroy();

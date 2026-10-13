@@ -145,7 +145,15 @@ export const API_VERSION = 21;
 
 export type PullInfo = { number: number | null; url: string | null };
 
-export type Subscription = { id: string; name: string; baseUrl: string; model: string; hasKey: boolean; isDefault: boolean };
+export type Subscription = { id: string; name: string; baseUrl: string; model: string; hasKey: boolean; isDefault: boolean; envName: string | null };
+/** Settings → Environment: what new session windows start with (server/env.ts). */
+export type EnvVar = { name: string; value: string | null; secret: boolean };
+export type EnvState = {
+  vars: EnvVar[];
+  exports: { name: string; subscriptionId: string; subscription: string }[];
+  /** Running agent sessions on older values; restart is null when it can go ahead now. */
+  stale: { uid: string; title: string; agent: string; restart: string | null }[];
+};
 export type ChatMsg = { role: 'user' | 'assistant'; text: string; at: number; id?: number };
 
 /** Full-text search (issue #9): one grouped hit per session or chat. */
@@ -341,7 +349,7 @@ export function hostApi(base: string) {
     queue: (uid: string) => r<QueueItem[]>('GET', `/api/sessions/${enc(uid)}/queue`),
     switchLaunch: (uid: string, change: { model?: string; effort?: string }) => r<SendResult>('POST', `/api/sessions/${enc(uid)}/switch`, change),
     openSettings: (uid: string, setting: 'model' | 'effort' | 'mode') => r<SendResult>('POST', `/api/sessions/${enc(uid)}/settings`, { setting }),
-    /** Hot swap: restart an idle session with a new model/effort, same conversation. */
+    /** Hot swap: restart an idle session with a new model/effort, same conversation; no change restarts it as is. */
     relaunch: (uid: string, change: { model?: string; effort?: string }) => r<{ uid: string; id: string }>('POST', `/api/sessions/${enc(uid)}/relaunch`, change),
     /** GUI view: typed transcript events (server/feed). */
     feedUrl: (ref: string) => `${base}/api/sessions/${enc(ref)}/feed/stream?device=${enc(deviceName())}`,
@@ -369,8 +377,11 @@ export function hostApi(base: string) {
     switchBranch: (id: string, branch: string) => r<{ branch: string }>('POST', `/api/windows/${enc(id)}/branches`, { branch }),
     pull: (id: string) => r<PullInfo>('GET', `/api/windows/${enc(id)}/pull`),
     subscriptions: () => r<Subscription[]>('GET', '/api/subscriptions'),
-    saveSubscription: (body: { id?: string; name: string; baseUrl: string; model: string; apiKey?: string }) =>
+    saveSubscription: (body: { id?: string; name: string; baseUrl: string; model: string; apiKey?: string; envName?: string }) =>
       r<Subscription>('POST', '/api/subscriptions', body),
+    env: () => r<EnvState>('GET', '/api/env'),
+    saveEnv: (body: { name: string; value?: string; secret: boolean }) => r<EnvVar>('POST', '/api/env', body),
+    removeEnv: (name: string) => r('DELETE', `/api/env/${enc(name)}`),
     removeSubscription: (id: string) => r('DELETE', `/api/subscriptions/${enc(id)}`),
     defaultSubscription: (id: string) => r('POST', '/api/subscriptions/default', { id }),
     /** One-shot handoff brief from a chat subscription. Not stored as side chat. */

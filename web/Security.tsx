@@ -41,6 +41,8 @@ const EVENT_TEXT: Record<string, string> = {
   'subscription.save': 'Saved a chat subscription',
   'subscription.remove': 'Removed a chat subscription',
   'subscription.default': 'Changed the default subscription',
+  'env.save': 'Saved a session variable',
+  'env.remove': 'Removed a session variable',
   'system.restart': 'Restarted the server',
   'system.rebuild': 'Rebuilt and restarted',
   'system.uploads.clear': 'Cleared the uploads folder',
