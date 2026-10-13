@@ -418,7 +418,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
             </Popover>
           )}
           {preset && (levels.length > 0 || preset.settingsCommands?.effort) && (
-            <Popover className="tool-chip" title="Reasoning effort" label={`Effort: ${effort ? effort.charAt(0).toUpperCase() + effort.slice(1) : 'Default'}`} command="pick-effort" active={active}>
+            <Popover className="tool-chip" title="Reasoning effort" label={effort ? `Effort: ${effort.charAt(0).toUpperCase() + effort.slice(1)}` : 'Effort'} command="pick-effort" active={active}>
               {(close) => (
                 <EffortPicker levels={levels} value={effort} disabled={!preset.switchEffort && !preset.effort}
                   onPick={(level) => void choose({ effort: level ?? 'default' }, close)}

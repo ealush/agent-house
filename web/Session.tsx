@@ -959,6 +959,8 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
           )}
           {narrow && (
             <span className="eyebrow">
+              {/* The status leads the second line, so the title keeps the first line's width. */}
+              <span className={`pill ${statusClass(w)}`}>{statusWord(w)}</span>
               {/* A phone's header has room for two things: another device viewing it leads, in place of the agent's name. */}
               {[elsewhere ? `On ${elsewhere} too` : w.agent ? agentName : 'Shell', w.project, multiHost ? w.host : null].filter(Boolean).join(' · ')}
             </span>
@@ -966,7 +968,6 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
         </div>
         {narrow ? (
           <>
-            <span className={`pill ${statusClass(w)}`}>{statusWord(w)}</span>
             {(w.fork?.parentTitle || (w.fork?.forks ?? 0) > 0) && (
               <button className="pill" onClick={() => setForksOpen(true)} title="Show the fork family">
                 ⑂{w.fork!.forks > 0 ? ` ${w.fork!.forks}` : ''}

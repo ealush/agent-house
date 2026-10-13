@@ -1177,6 +1177,14 @@ a.pill:hover {
   font-size: 17px;
 }
 
+.narrow .session-title .eyebrow .pill {
+  margin-right: 6px;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 16px;
+  vertical-align: 1px;
+}
+
 .session-pills {
   display: flex;
   align-items: center;
@@ -4519,11 +4527,20 @@ ul.queue-items {
   min-width: 0;
 }
 
-/* Chips wrap onto a second line instead of scrolling under the send button.
-   A sideways scroll hid the scrollbar and left "Permissions" as "Per". */
+/* Chips wrap instead of scrolling under the send button (a sideways scroll hid
+   the scrollbar and left "Permissions" as "Per"). The chips and the actions
+   share a line when they fit; otherwise the actions take the next one, right
+   under the thumb, and the chips get the full width instead of stacking one
+   per line beside them. */
 .narrow .composer-tools {
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   align-items: center;
+}
+
+.narrow .composer-actions {
+  margin-left: auto;
 }
 
 .narrow .composer-settings > * {

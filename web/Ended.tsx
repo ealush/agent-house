@@ -71,6 +71,8 @@ export function EndedSession({ item, client, feed, narrow, onResume, onClose, cl
     }
   }
 
+  const endedWord = `Ended ${age(item.at) === 'now' ? 'just now' : `· ${age(item.at)}`}`;
+
   return (
     // A screen for ⌘↵ (confirm.ts): Resume answers it from anywhere in the view.
     <div className="ended-session" data-confirm>
@@ -84,13 +86,26 @@ export function EndedSession({ item, client, feed, narrow, onResume, onClose, cl
             <AgentLogo id={agent} size={17} />
           </span>
         )}
-        <div className="session-title">
-          <span className="eyebrow">{[item.project, agent ? name : item.cwd, shortModel(item.model)].filter(Boolean).join(' · ')}</span>
-          <span className="name static">{item.title}</span>
-        </div>
-        <div className="session-pills">
-          <span className="pill ended">Ended {age(item.at) === 'now' ? 'just now' : `· ${age(item.at)}`}</span>
-        </div>
+        {narrow ? (
+          // As a live session's phone header: the title first, the status leading the line under it.
+          <div className="session-title">
+            <span className="name static">{item.title}</span>
+            <span className="eyebrow">
+              <span className="pill ended">{endedWord}</span>
+              {[agent ? name : 'Shell', item.project].filter(Boolean).join(' · ')}
+            </span>
+          </div>
+        ) : (
+          <>
+            <div className="session-title">
+              <span className="eyebrow">{[item.project, agent ? name : item.cwd, shortModel(item.model)].filter(Boolean).join(' · ')}</span>
+              <span className="name static">{item.title}</span>
+            </div>
+            <div className="session-pills">
+              <span className="pill ended">{endedWord}</span>
+            </div>
+          </>
+        )}
         {!narrow && (
           <button className="btn ghost small" onClick={onClose}>
             {closeLabel}
