@@ -429,7 +429,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
             </Popover>
           )}
           {preset && (preset.modes?.length ?? 0) > 1 && (
-            <Popover className={`tool-chip ${mode?.dangerous ? 'danger' : ''}`} title="Permission level" label={`Permissions${mode?.dangerous ? ': ⚠' : ''}`}>
+            <Popover className={`tool-chip ${mode?.dangerous ? 'danger' : ''}`} title="Permission level" label={mode && mode.id !== 'default' ? `${mode.dangerous ? '⚠ ' : ''}${mode.name}` : 'Permissions'}>
               {(close) => (
                 <div className="picker" aria-label="Permissions">
                   <div className="picker-title">Permissions</div>

@@ -196,8 +196,10 @@ export function SessionsView({ state, onOpen, onNew }: { state: State; onOpen: (
       </header>
       {sections.map((section, i) => (
         <section key={section.id}>
-          <h2 className={`section-label ${i === 0 ? 'first' : ''}`} data-flip={`h:${section.id}`}>{section.id}</h2>
-          <Rows windows={section.windows} multiHost={false} narrow onOpen={onOpen} />
+          <h2 className={`section-label ${i === 0 ? 'first' : ''}`} data-flip={`h:${section.id}`}>
+            <span className="section-name" title={section.id}>{section.id}</span>
+          </h2>
+          <Rows windows={section.windows} multiHost={false} narrow onOpen={onOpen} inProject={!multiHost} />
         </section>
       ))}
     </div>

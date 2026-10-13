@@ -236,11 +236,13 @@ function ListHead({ flip }: { flip: string }) {
   );
 }
 
-export function Rows({ windows, multiHost, narrow, onOpen, quiet }: { windows: Win[]; multiHost: boolean; narrow: boolean; onOpen: Props['onOpen']; quiet?: boolean }) {
+/** `inProject`: the rows sit under their project's heading, so they don't repeat it. */
+export function Rows({ windows, multiHost, narrow, onOpen, quiet, inProject }: { windows: Win[]; multiHost: boolean; narrow: boolean; onOpen: Props['onOpen']; quiet?: boolean; inProject?: boolean }) {
   return (
     <ul className="rows">
       {windows.map((w) => {
-        const { color } = look(w.agent);
+        const { color, name } = look(w.agent);
+        const place = inProject ? (multiHost ? w.host : '') : where(w, multiHost);
         const pill = <span className={`pill ${statusClass(w) === 'idle' ? '' : statusClass(w)}`}>{statusWord(w)}</span>;
         return (
           <li key={w.key} data-flip={w.key}>
@@ -252,18 +254,19 @@ export function Rows({ windows, multiHost, narrow, onOpen, quiet }: { windows: W
                 <>
                   <span className="stack">
                     <span className="name">{w.title}</span>
-                    <span className="sub">{[w.detail ?? (w.panes > 1 ? `${w.panes} panes` : null), where(w, multiHost)].filter(Boolean).join(' · ')}</span>
+                    <span className="sub">{[w.detail ?? (w.panes > 1 ? `${w.panes} panes` : inProject ? name : null), place].filter(Boolean).join(' · ')}</span>
                   </span>
                   <span className="when">{pill}</span>
                 </>
               ) : (
                 <>
-                  <span className="name">{w.title}</span>
-                  <span className="detail">{w.detail ?? ''}</span>
+                  {/* With nothing to say in Detail, the title takes its column. */}
+                  <span className={`name ${w.detail ? '' : 'solo'}`}>{w.title}</span>
+                  {w.detail && <span className="detail">{w.detail}</span>}
                   <span className="meta">
                     {pill}
                     {w.queued > 0 && <span className="pill waiting">⇥ {w.queued} queued</span>}
-                    <span className="where" title={where(w, multiHost)}>{where(w, multiHost)}</span>
+                    <span className="where" title={place}>{place}</span>
                   </span>
                   <span className="when">{age(w.activity)}</span>
                 </>
@@ -282,8 +285,10 @@ function Grouped({ windows, by, multiHost, onOpen }: { windows: Win[]; by: 'host
     <>
       {sections.map((section, i) => (
         <section key={section.id}>
-          <h2 className={`section-label ${i === 0 ? 'first' : ''}`} data-flip={`h:${section.id}`}>{section.id} <span className="count">{section.windows.length}</span></h2>
-          <Rows windows={section.windows} multiHost={multiHost && by !== 'host'} narrow={false} onOpen={onOpen} />
+          <h2 className={`section-label ${i === 0 ? 'first' : ''}`} data-flip={`h:${section.id}`}>
+            <span className="section-name" title={section.id}>{section.id}</span> <span className="count">{section.windows.length}</span>
+          </h2>
+          <Rows windows={section.windows} multiHost={multiHost && by !== 'host'} narrow={false} onOpen={onOpen} inProject={by === 'project'} />
         </section>
       ))}
     </>

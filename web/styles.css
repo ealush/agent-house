@@ -788,6 +788,18 @@ a.pill:hover {
   margin-top: 0;
 }
 
+/* A long project name keeps its heading to one line. */
+.section-label {
+  max-width: 100%;
+}
+
+.section-label .section-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .section-label.waiting {
   color: var(--accent);
 }
@@ -920,7 +932,7 @@ a.pill:hover {
 
 .row {
   display: grid;
-  grid-template-columns: 24px minmax(160px, 1.1fr) minmax(0, 1.4fr) 11rem 72px;
+  grid-template-columns: 24px minmax(160px, 1.1fr) minmax(0, 1.4fr) 13rem 72px;
   align-items: center;
   gap: 14px;
   width: 100%;
@@ -940,6 +952,10 @@ a.pill:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.row .name.solo {
+  grid-column: span 2;
 }
 
 .row.quiet .name {
@@ -7032,6 +7048,10 @@ select:not([multiple]) {
   .app:not(.narrow) .rows .row .detail,
   .app:not(.narrow) .list-head > :nth-child(3) {
     display: none;
+  }
+
+  .app:not(.narrow) .rows .row .name.solo {
+    grid-column: auto;
   }
   /* The title keeps its line; the page's controls drop below it. */
   .app:not(.narrow) .page-head {
