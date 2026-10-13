@@ -201,6 +201,12 @@ test('desktop: New session works from the keyboard alone', { skip, timeout: 60_0
   const after = await page.evaluate(() => ({ text: document.activeElement?.textContent, on: document.activeElement?.classList.contains('on') }));
   assert.notEqual(after.text, before, 'the arrows move across the agents');
   assert.ok(after.on, 'and choose as they go');
+  // Like any radio group, Home and End reach the ends, and ← from the first wraps to the last.
+  const pills = await page.locator('.agent-pill').allInnerTexts();
+  await page.keyboard.press('Home');
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent), pills[0]);
+  await page.keyboard.press('ArrowLeft');
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent), pills.at(-1));
   await page.keyboard.press('Tab');
   assert.match(await focused(page), /^input/, 'one Tab stop for the agents, then the project');
   await page.keyboard.press('Escape');

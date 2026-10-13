@@ -1,4 +1,4 @@
-import { gridMove } from './rove.ts';
+import { radioGridMove } from './rove.ts';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ConfirmButton } from './ConfirmButton.tsx';
 import { Icon } from './icons.tsx';
@@ -270,8 +270,9 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
           aria-label="Agent"
           onKeyDown={(e) => {
             // A radio group: the arrows move across the grid and choose as they go.
-            const next = gridMove(e.currentTarget, e.target as HTMLElement, e.key);
-            if (!next) return;
+            if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+            const next = radioGridMove(e.currentTarget, e.target as HTMLElement, e.key);
+            if (!next || next === e.target) return;
             e.preventDefault();
             next.focus();
             next.click();

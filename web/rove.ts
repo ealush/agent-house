@@ -71,6 +71,20 @@ export function gridMove(box: HTMLElement, from: HTMLElement, key: string): HTML
   return best;
 }
 
+/**
+ * A radio group laid out as a grid: ←/→ step through the choices in reading
+ * order and wrap, ↑/↓ move between rows (gridMove), Home/End go to the ends.
+ */
+export function radioGridMove(box: HTMLElement, from: HTMLElement, key: string): HTMLElement | null {
+  const all = [...box.querySelectorAll<HTMLElement>('button:not([disabled])')].filter((el) => el.getClientRects().length > 0);
+  if (!all.length) return null;
+  const at = all.indexOf(from);
+  if (key === 'Home') return all[0];
+  if (key === 'End') return all.at(-1)!;
+  if (key === 'ArrowLeft' || key === 'ArrowRight') return all[(at + (key === 'ArrowRight' ? 1 : -1) + all.length) % all.length];
+  return gridMove(box, from, key);
+}
+
 /** Focus a page's first item: the keyboard into the main view when no session is open. */
 export function focusPage(): boolean {
   const box = pageList();
