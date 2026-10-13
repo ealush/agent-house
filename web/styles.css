@@ -4753,6 +4753,11 @@ button.tool-chip:hover {
   color: var(--text);
 }
 
+.ask-option[aria-disabled='true']:not(.on) {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .picker-name:disabled {
   opacity: .55;
   cursor: default;

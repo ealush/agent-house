@@ -213,3 +213,22 @@ test('desktop: New session works from the keyboard alone', { skip, timeout: 60_0
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+test('desktop: ↓ then a choice key answers a prompt from the inbox, and focus stays put', { skip, timeout: 90_000 }, async () => {
+  ah.tmux('new-window', '-t', 'it', '-n', 'zz-agent-keys', 'claude');
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const { page, errors } = await open(ctx);
+  const card = page.locator('.card-needs', { hasText: 'zz-agent-keys' });
+  await card.waitFor({ timeout: 30_000 });
+  await card.locator('.card-title').focus();
+  // The keys drawn on the choices work from the card's title, where ↓ lands.
+  await page.keyboard.press('1');
+  assert.match(await focused(page), /button\.ask-option/, 'the answer keeps focus, not the page');
+  const deadline = Date.now() + 20_000;
+  while (!/answered/.test(ah.tmux('capture-pane', '-p', '-t', 'it:zz-agent-keys'))) {
+    assert.ok(Date.now() < deadline, 'the agent never got the answer');
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});

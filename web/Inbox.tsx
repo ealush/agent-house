@@ -160,7 +160,22 @@ function AskCard({ w, client, multiHost, narrow, onOpen, onAnswer }: { w: Win; c
   const question = showText && ask!.kind !== 'command' ? questionLine(ask!.text) : null;
   const context = showText ? cleanScreen(ask!.text, question) : '';
   return (
-    <article className="card card-needs" data-flip={w.key} style={{ '--agent': color } as React.CSSProperties}>
+    <article
+      className="card card-needs"
+      data-flip={w.key}
+      style={{ '--agent': color } as React.CSSProperties}
+      onKeyDown={(e) => {
+        // The keys drawn on the choices answer from anywhere on the card, the title
+        // included (where ↓ lands), not only once Tab has reached the choices.
+        if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || !/^[1-9]$/.test(e.key)) return;
+        if ((e.target as HTMLElement).closest('.ask-options, input, textarea, [contenteditable="true"]')) return;
+        const option = e.currentTarget.querySelectorAll<HTMLButtonElement>('.ask-options .ask-option')[Number(e.key) - 1];
+        if (!option || option.getAttribute('aria-disabled') === 'true') return;
+        e.preventDefault();
+        option.focus();
+        option.click();
+      }}
+    >
       <div className="card-head">
         <span className="glow">
           <span className="chip">

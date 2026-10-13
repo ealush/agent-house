@@ -109,7 +109,11 @@ export const AskPanel = forwardRef<AskHandle, Props>(function AskPanel({ w, clie
   );
 });
 
-/** A permission picker's rows as buttons. Digits (or the row's own hotkey) pick while focus is here. */
+/**
+ * A permission picker's rows as buttons. Digits (or the row's own hotkey) pick while focus is here.
+ * Once one is sent the rows are aria-disabled, not disabled: focus stays on the answer
+ * instead of falling to the page until the prompt goes.
+ */
 function ScreenChoices({ w, client, options }: { w: Win; client: HostApi; options: Array<{ key: string; label: string }> }) {
   const [sent, setSent] = useState<string | null>(null);
   // If the same prompt is still up a while later, the key didn't take: allow another try.
@@ -146,7 +150,7 @@ function ScreenChoices({ w, client, options }: { w: Win; client: HostApi; option
       }}
     >
       {options.map((o, i) => (
-        <button key={o.key} className={`ask-option ${i === 0 ? 'first' : ''} ${sent === o.key ? 'on' : ''}`} data-ask-first={i === 0 || undefined} disabled={!!sent} onClick={() => void pick(o.key)}>
+        <button key={o.key} className={`ask-option ${i === 0 ? 'first' : ''} ${sent === o.key ? 'on' : ''}`} data-ask-first={i === 0 || undefined} aria-disabled={!!sent || undefined} onClick={() => void pick(o.key)}>
           <kbd>{o.key.startsWith('nav:') ? i + 1 : o.key.toUpperCase()}</kbd>
           <span>{o.label}</span>
         </button>
