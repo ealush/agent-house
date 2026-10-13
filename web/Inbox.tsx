@@ -263,7 +263,7 @@ export function Rows({ windows, multiHost, narrow, onOpen, quiet }: { windows: W
                   <span className="meta">
                     {pill}
                     {w.queued > 0 && <span className="pill waiting">⇥ {w.queued} queued</span>}
-                    {where(w, multiHost)}
+                    <span className="where" title={where(w, multiHost)}>{where(w, multiHost)}</span>
                   </span>
                   <span className="when">{age(w.activity)}</span>
                 </>

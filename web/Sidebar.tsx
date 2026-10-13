@@ -388,7 +388,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
                   ⠿
                 </span>
                 {multiHost && <span className="dot online" />}
-                <span className="grow">{group}</span>
+                <span className="grow" title={group}>{group}</span>
                 {!multiHost && (
                   <button
                     type="button"

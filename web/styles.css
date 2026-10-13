@@ -488,6 +488,10 @@ kbd {
 
 .side-label .grow {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .side-label.host {
@@ -956,6 +960,7 @@ a.pill:hover {
 }
 
 .row .meta {
+  min-width: 0;
   font-size: 12px;
   color: var(--muted);
   white-space: nowrap;
@@ -963,6 +968,16 @@ a.pill:hover {
   gap: 10px;
   align-items: center;
   justify-content: flex-end;
+}
+
+.row .meta .where {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row .meta .pill {
+  flex: none;
 }
 
 .row .when {
@@ -3813,6 +3828,13 @@ a.btn {
   display: inline-flex;
 }
 
+/* The actions take the model's place, like History's times, so the title
+   keeps its width under the pointer. */
+.side-row:hover .side-model,
+.side-row:focus-within .side-model {
+  display: none;
+}
+
 /* Touch: a long press already drags a row (iPadOS), so grips would only be
    noise. ··· shows on the row you're on; any other row's actions are a tap
    on it, then ···. */
@@ -3820,6 +3842,10 @@ a.btn {
   .side-row:has(> .side-session.on) .row-more,
   .side-row:focus-within .row-more {
     display: inline-flex;
+  }
+
+  .side-row:has(> .side-session.on) .side-model {
+    display: none;
   }
 
   .label-add {
@@ -7000,7 +7026,7 @@ select:not([multiple]) {
 @container page (max-width: 640px) {
   .app:not(.narrow) .rows .row:not(.history-row),
   .app:not(.narrow) .list-head {
-    grid-template-columns: 24px minmax(0, 1fr) auto 56px;
+    grid-template-columns: 24px minmax(0, 1fr) minmax(auto, 12rem) 56px;
   }
 
   .app:not(.narrow) .rows .row .detail,
