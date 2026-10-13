@@ -114,6 +114,64 @@ test('send-now interrupts the live turn and delivers one queued message', async 
   }
 });
 
+test('send-now steers a hooked agent whose interrupt sends no Stop hook (Claude Code)', async () => {
+  const ah = await startAh({
+    auth: { mode: 'off' },
+    idleAfter: 1,
+    presets: [{ id: 'test-agent', name: 'Test agent', command: `exec ${process.execPath} ${fixture} --claude-interrupt --turn=60000`, match: '^node$' }],
+  });
+  try {
+    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'test-agent', cwd: `${ah.dir}/files` } });
+    assert.equal(created.status, 201, created.body);
+    const { id, uid } = created.json();
+    const window = async () => (await http(ah, 'GET', '/api/state')).json().windows.find((w: any) => w.uid === uid);
+    await until(async () => {
+      const w = await window();
+      return w?.agent === 'test-agent' && ['idle', 'attention'].includes(w.status);
+    }, 15000, 'root agent detected');
+    assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'routine' } })).json().outcome, 'delivered');
+    // Well past the submit grace: busy only because the hook still says "working".
+    await sleep(3000);
+    assert.equal((await window()).status, 'busy');
+    assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'urgent' } })).json().outcome, 'queued');
+    const queued = (await http(ah, 'GET', `/api/sessions/${uid}/queue`)).json();
+    const started = Date.now();
+    const now = await http(ah, 'POST', `/api/sessions/${uid}/queue/${queued[0].id}/send-now`, {});
+    assert.equal(now.status, 200, now.body);
+    assert.equal(now.json().outcome, 'delivered');
+    assert.ok(Date.now() - started < 3000, `steering took ${Date.now() - started}ms`);
+    await until(() => ah.tmux('capture-pane', '-p', '-t', id).includes('RECEIVED:urgent'), 10000, 'urgent delivered');
+    assert.ok(ah.tmux('capture-pane', '-p', '-t', id).includes('INTERRUPTED'), 'live turn was interrupted');
+  } finally {
+    await cleanup(ah);
+  }
+});
+
+test('Stop clears "working" on a hooked agent whose interrupt sends no Stop hook', async () => {
+  const ah = await startAh({
+    auth: { mode: 'off' },
+    idleAfter: 1,
+    presets: [{ id: 'test-agent', name: 'Test agent', command: `exec ${process.execPath} ${fixture} --claude-interrupt --turn=60000`, match: '^node$' }],
+  });
+  try {
+    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'test-agent', cwd: `${ah.dir}/files` } });
+    assert.equal(created.status, 201, created.body);
+    const { uid } = created.json();
+    const window = async () => (await http(ah, 'GET', '/api/state')).json().windows.find((w: any) => w.uid === uid);
+    await until(async () => {
+      const w = await window();
+      return w?.agent === 'test-agent' && ['idle', 'attention'].includes(w.status);
+    }, 15000, 'root agent detected');
+    assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'routine' } })).json().outcome, 'delivered');
+    await sleep(3000);
+    assert.equal((await window()).status, 'busy');
+    assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/interrupt`, {})).status, 200);
+    await until(async () => ['idle', 'attention'].includes((await window()).status), 5000, 'not working after Stop');
+  } finally {
+    await cleanup(ah);
+  }
+});
+
 test("a new session's first prompt waits for the agent to start, then goes in", async () => {
   const ah = await startAh({
     auth: { mode: 'off' },

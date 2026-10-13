@@ -85,6 +85,25 @@ export type ForkResult = {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Has the window's visible screen held still for `quietMs` (within `ms`)? A
+ * working agent's spinner and clock keep it moving; `quietMs` outlasts a
+ * once-a-second clock, for agents whose spinner holds still (reduced motion).
+ */
+async function screenSettles(target: string, quietMs: number, ms: number): Promise<boolean> {
+  const until = Date.now() + ms;
+  let last: string | null = null;
+  let since = Date.now();
+  while (Date.now() < until) {
+    const text = await t.tmux('capture-pane', '-p', '-t', target).catch(() => null);
+    if (text === null) return false;
+    if (text !== last) [last, since] = [text, Date.now()];
+    else if (Date.now() - since >= quietMs) return true;
+    await sleep(100);
+  }
+  return false;
+}
+
 export class CoreError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -975,8 +994,32 @@ export class Core {
     const state = await this.current();
     const w = state.windows.find((w) => w.uid === uid);
     if (!w) throw new CoreError(404, 'session not found');
+    const sent = Math.floor(Date.now() / 1000);
     await t.tmux('send-keys', '-t', w.id, ...this.interruptKeys(w));
     this.tick().catch(() => {});
+    void this.recordStop(w, sent).then(() => this.tick()).catch(() => {});
+  }
+
+  /** Sends the interrupt keys; resolves once a hooked turn has visibly stopped. */
+  private async sendInterrupt(w: WindowView): Promise<void> {
+    const sent = Math.floor(Date.now() / 1000);
+    await t.tmux('send-keys', '-t', w.id, ...this.interruptKeys(w));
+    await this.recordStop(w, sent);
+  }
+
+  /**
+   * Claude Code ends an interrupted turn without a Stop hook, so its hook state
+   * would say "working" until the 30s silence fallback, and a steer would give
+   * up waiting first. Its spinner animates while it works: once the screen holds
+   * still, ah records the stop the hook never sent, unless a newer hook spoke.
+   */
+  private async recordStop(w: WindowView, sent: number): Promise<void> {
+    if (!w.agent || w.statusSource !== 'hook') return;
+    if (!(await screenSettles(w.id, 1200, 5000))) return;
+    const [state, at] = (await t.tmux('display-message', '-p', '-t', w.id, '#{@ah-state} #{@ah-state-at}')).trim().split(' ');
+    if ((state === 'working' || state === 'waiting') && Number(at) <= sent) {
+      await t.tmux('set-option', '-w', '-q', '-t', w.id, '@ah-state', 'idle', ';', 'set-option', '-w', '-q', '-t', w.id, '@ah-state-at', String(Math.floor(Date.now() / 1000)));
+    }
   }
 
   private interruptKeys(w: WindowView): string[] {
@@ -1018,7 +1061,7 @@ export class Core {
         // for the stop to land: pasting into the teardown redraw drops the
         // submit and strands this text behind the previous one. Shells
         // clear their own line on Ctrl-C, so they need no settle wait.
-        await t.tmux('send-keys', '-t', live.id, ...this.interruptKeys(live));
+        await this.sendInterrupt(live);
         this.sentAt.delete(uid);
         for (let i = 0; i < 12; i++) {
           const cur = (await buildWindows(this.config, this.viewers, this.registry)).find((x) => x.uid === uid);
@@ -1185,7 +1228,7 @@ export class Core {
       w = (await buildWindows(this.config, this.viewers, this.registry)).find((x) => x.uid === uid);
       if (w && (w.status === 'busy' || w.status === 'waiting' || this.justSent(uid))) {
         if (!opts.interrupt) throw new CoreError(409, 'the agent is working; stop it first or confirm the interrupt');
-        await t.tmux('send-keys', '-t', w.id, ...this.interruptKeys(w));
+        await this.sendInterrupt(w);
         this.sentAt.delete(uid);
         for (let i = 0; i < 12; i++) {
           await sleep(500);
