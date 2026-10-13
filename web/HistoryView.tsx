@@ -77,7 +77,12 @@ export function HistoryView({ state, onResume, onForget, onFork, touch = false, 
           />
         </label>
       )}
-      {state.history.length === 0 && <p className="empty-state">Nothing here yet.</p>}
+      {state.history.length === 0 && (
+        <div className="empty-state">
+          <p className="empty-title">No past conversations yet.</p>
+          <p className="hint">When a session ends, its conversation waits here to be resumed.</p>
+        </div>
+      )}
       {state.history.length > 0 && shown.length === 0 && <p className="empty-state">No conversations match “{filter}”.</p>}
       <ul className="rows history-list">
         {shown.map((h) => {
@@ -194,6 +199,16 @@ export function SessionsView({ state, onOpen, onNew }: { state: State; onOpen: (
           <Icon name="plus" size={22} />
         </button>
       </header>
+      {/* The Inbox's empty state, so this tab is never a blank page on a first run. */}
+      {sections.length === 0 && (
+        <div className="empty-state">
+          <p className="empty-title">Nothing running.</p>
+          <p className="hint">Start something new, or pick a conversation back up from History.</p>
+          <button className="btn light" onClick={onNew}>
+            Start a session
+          </button>
+        </div>
+      )}
       {sections.map((section, i) => (
         <section key={section.id}>
           <h2 className={`section-label ${i === 0 ? 'first' : ''}`} data-flip={`h:${section.id}`}>
