@@ -83,7 +83,7 @@ export function ChatHistory({ client, jump }: { client: HostApi; jump?: { uid: s
             <Icon name="back" size={14} />
           </button>
           <span className="hint">
-            {open.title} · {open.count} messages · {fmtDate(open.lastAt)}
+            {open.title} · {open.count} message{open.count === 1 ? '' : 's'} · {fmtDate(open.lastAt)}
           </span>
         </div>
         {error && <p className="panel-msg">{error}</p>}
@@ -119,7 +119,7 @@ export function ChatHistory({ client, jump }: { client: HostApi; jump?: { uid: s
           <button key={c.uid} className="past-row" onClick={() => enter(c)}>
             <span className="past-title">{c.title}</span>
             <span className="past-meta">
-              {fmtDate(c.lastAt)} · {c.count} messages
+              {fmtDate(c.lastAt)} · {c.count} message{c.count === 1 ? '' : 's'}
             </span>
             {c.preview && <span className="past-preview">{c.preview}</span>}
           </button>
