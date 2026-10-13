@@ -8,28 +8,50 @@ import * as pty from 'node-pty';
 import type { WebSocket } from 'ws';
 import { cleanEnv, tmux, VIEWER_PREFIX, windowExists, setWindowOption } from './tmux.ts';
 
-/** windowId → labels of the devices currently looking at it ("iPad", "Mac"). */
+/** windowId → labels of the devices currently looking at it ("iPad", "Mac"), one per page. */
 export const viewers = new Map<string, string[]>();
+/** windowId → page (client id) → its label and how many of its connections are open. */
+const pages = new Map<string, Map<string, { device: string; open: number }>>();
+
+/** A page's id as sent with its connections, or null when missing or malformed. */
+export function clientId(raw: string | null): string | null {
+  return raw && /^[\w-]{1,40}$/.test(raw) ? raw : null;
+}
 
 /**
  * A device is looking at a window, in its terminal or its GUI: what it prints
  * meanwhile counts as read, and other devices see it as "also open on …".
+ * One page counts once however many connections it holds (a GUI stream and a
+ * terminal kept warm after switching views), so it never reads as another device
+ * with the same name; a connection without a page id counts on its own.
  * The returned function ends the visit; whatever was on screen counts as read.
  */
-export function addViewer(windowId: string, device: string): () => void {
-  viewers.set(windowId, [...(viewers.get(windowId) ?? []), device]);
+export function addViewer(windowId: string, device: string, client: string | null = null): () => void {
+  const page = client ?? `conn-${randomBytes(6).toString('hex')}`;
+  const here = pages.get(windowId) ?? new Map<string, { device: string; open: number }>();
+  pages.set(windowId, here);
+  const entry = here.get(page);
+  if (entry) entry.open++;
+  else here.set(page, { device, open: 1 });
+  syncViewers(windowId);
   let left = false;
   return () => {
     if (left) return;
     left = true;
-    const rest = [...(viewers.get(windowId) ?? [])];
-    rest.splice(rest.indexOf(device), 1);
-    if (rest.length) viewers.set(windowId, rest);
-    else viewers.delete(windowId);
+    const e = here.get(page);
+    if (e && --e.open <= 0) here.delete(page);
+    if (!here.size && pages.get(windowId) === here) pages.delete(windowId);
+    syncViewers(windowId);
     tmux('display-message', '-p', '-t', windowId, '#{window_activity}')
       .then((a) => setWindowOption(windowId, '@ah-seen', a.trim()))
       .catch(() => {});
   };
+}
+
+function syncViewers(windowId: string) {
+  const here = pages.get(windowId);
+  if (here?.size) viewers.set(windowId, [...here.values()].map((e) => e.device));
+  else viewers.delete(windowId);
 }
 
 const HIGH_WATER = 4 * 1024 * 1024;
@@ -61,7 +83,7 @@ function clamp(n: number, min: number, max: number, fallback: number): number {
   return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.floor(n))) : fallback;
 }
 
-export async function attach(ws: WebSocket, windowId: string, cols: number, rows: number, device: string): Promise<void> {
+export async function attach(ws: WebSocket, windowId: string, cols: number, rows: number, device: string, client: string | null = null): Promise<void> {
   const target = await windowExists(windowId);
   if (!target) {
     ws.close(4404, 'window not found');
@@ -92,7 +114,7 @@ export async function attach(ws: WebSocket, windowId: string, cols: number, rows
     },
   );
 
-  const leave = addViewer(windowId, device);
+  const leave = addViewer(windowId, device, client);
   let closed = false;
 
   // Coalesce output into fewer frames; full-screen TUIs emit many tiny writes.

@@ -12,6 +12,9 @@ import { QueueTray, type QueueTrayHandle } from './QueueTray.tsx';
 import { useDraftSync } from './useDraftSync.ts';
 import { splitUploads } from './uploads.ts';
 
+/** Touch only (a phone, an iPad without a pointer): no keys to name in hints, as keycaps drop there. */
+const TOUCH = typeof matchMedia === 'function' && matchMedia('(hover: none) and (pointer: coarse)').matches;
+
 // The message bar under a GUI session. It goes through the server, which types the text
 // in now (idle agent, or any shell), queues it while an agent works, or resumes a dead
 // session first. A native text box keeps dictation, autocorrect and selection working.
@@ -350,7 +353,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
           autoCapitalize={isShell ? 'off' : 'sentences'}
           autoCorrect={isShell ? 'off' : 'on'}
           spellCheck={!isShell}
-          placeholder={isShell ? 'Type or paste a command' : working && (w?.queued ?? 0) > 0 ? 'Add to the queue · Enter steers the next one · Esc stops' : working ? 'Add to this… (queued until it’s free · Esc stops)' : 'Send a follow-up · / commands · @ files'}
+          placeholder={isShell ? 'Type or paste a command' : working && (w?.queued ?? 0) > 0 ? (TOUCH ? 'Add to the queue' : 'Add to the queue · Enter steers the next one · Esc stops') : working ? (TOUCH ? 'Add to this… (queued until it’s free)' : 'Add to this… (queued until it’s free · Esc stops)') : 'Send a follow-up · / commands · @ files'}
           onChange={(e) => {
             setText(e.target.value);
             setCaret(e.target.selectionStart ?? e.target.value.length);

@@ -359,7 +359,7 @@ export function hostApi(base: string) {
     /** Hot swap: restart an idle session with a new model/effort/mode, same conversation; no change restarts it as is. */
     relaunch: (uid: string, change: { model?: string; effort?: string; mode?: string }) => r<{ uid: string; id: string }>('POST', `/api/sessions/${enc(uid)}/relaunch`, change),
     /** GUI view: typed transcript events (server/feed). */
-    feedUrl: (ref: string) => `${base}/api/sessions/${enc(ref)}/feed/stream?device=${enc(deviceName())}`,
+    feedUrl: (ref: string) => `${base}/api/sessions/${enc(ref)}/feed/stream?device=${enc(deviceName())}&client=${CLIENT_ID}`,
     feedPage: (ref: string, before: number, limit = 200) => r<FeedPage>('GET', `/api/sessions/${enc(ref)}/feed?before=${before}&limit=${limit}`),
     feedPrompts: (ref: string) => r<{ prompts: FeedPrompt[] }>('GET', `/api/sessions/${enc(ref)}/feed/prompts`),
     interrupt: (uid: string) => r('POST', `/api/sessions/${enc(uid)}/interrupt`, {}),
@@ -443,7 +443,7 @@ export function hostApi(base: string) {
       upload: (dir: string, file: File) => postFile(`${base}/api/fs/upload?dir=${enc(dir)}&name=${enc(file.name || 'upload')}`, file),
     },
     wsUrl: (windowId: string, cols: number, rows: number) =>
-      `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${base}/ws/${enc(windowId)}?cols=${cols}&rows=${rows}&device=${enc(deviceName())}`,
+      `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${base}/ws/${enc(windowId)}?cols=${cols}&rows=${rows}&device=${enc(deviceName())}&client=${CLIENT_ID}`,
   };
 }
 

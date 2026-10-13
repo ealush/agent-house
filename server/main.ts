@@ -22,7 +22,7 @@ import { shortPath } from './sessions.ts';
 import { Core, CoreError, resolveDir, defaultName } from './core.ts';
 import { buildLaunch, LaunchError } from './launch.ts';
 import { withCatalog } from './catalog.ts';
-import { addViewer, attach, viewers } from './terminal.ts';
+import { addViewer, attach, clientId, viewers } from './terminal.ts';
 import { desktopStatus, installDesktop, removeDesktop } from './desktop.ts';
 import { Drafts } from './drafts.ts';
 import { feedPage, feedPrompts, streamFeed, SNAPSHOT } from './feed/stream.ts';
@@ -439,7 +439,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     let leave: (() => void) | null = null;
     void core.current().then((st) => {
       const win = st.windows.find((w) => w.uid === ref);
-      if (win && !done.signal.aborted) leave = addViewer(win.id, device);
+      if (win && !done.signal.aborted) leave = addViewer(win.id, device, clientId(url.searchParams.get('client')));
     });
     req.on('close', () => {
       done.abort();
@@ -1237,7 +1237,7 @@ function upgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
     const cols = Number(url.searchParams.get('cols'));
     const rows = Number(url.searchParams.get('rows'));
     const device = (url.searchParams.get('device') ?? '').replace(/[^\w .-]/g, '').slice(0, 24) || 'browser';
-    attach(ws, windowId, cols, rows, device).catch((err) => {
+    attach(ws, windowId, cols, rows, device, clientId(url.searchParams.get('client'))).catch((err) => {
       console.error(err);
       ws.close(1011, 'attach failed');
     });
