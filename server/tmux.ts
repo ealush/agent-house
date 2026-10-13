@@ -229,10 +229,6 @@ export function sanitizeSessionName(name: string): string {
   return name.replace(/[.:]/g, '-').trim();
 }
 
-/**
- * Types text into a window as one paste (bracketed if the app asked for it), so a
- * multi-line prompt arrives as a single message instead of one submit per line.
- */
 /** A paste that failed. `typed` says whether any of the text reached the window. */
 export class PasteError extends Error {
   typed: boolean;
@@ -242,6 +238,41 @@ export class PasteError extends Error {
   }
 }
 
+/**
+ * What sits unsent in an agent's input box. Claude Code draws the box between two
+ * rules, "❯ " first: '' when it is empty (or shows its "Try …" hint), null when
+ * the screen has no such box (a shell, a dialog, another TUI): then nobody knows.
+ */
+export function pendingInput(screen: string): string | null {
+  const lines = screen.split('\n');
+  const rules = lines.flatMap((l, i) => (/^\s*─{8,}\s*$/.test(l) ? [i] : []));
+  if (rules.length < 2) return null;
+  const box = lines.slice(rules[rules.length - 2] + 1, rules[rules.length - 1]);
+  // A picker's cursor ("❯ 1. Yes") is not the input.
+  if (!box.length || !/^❯(\s|$)/.test(box[0]) || /^❯\s*\d+\.\s/.test(box[0])) return null;
+  const text = [box[0].slice(1), ...box.slice(1)].map((l) => l.trim()).join(' ').trim();
+  return /^Try ".*"$/.test(text) ? '' : text;
+}
+
+const screen = (target: string) => tmux('capture-pane', '-p', '-t', target).then(pendingInput, () => null);
+
+/** Polls the input box until `done` says so, or `ms` pass; returns the last reading. */
+async function watchInput(target: string, done: (s: string | null) => boolean, ms: number): Promise<string | null> {
+  const until = Date.now() + ms;
+  for (;;) {
+    const s = await screen(target);
+    if (done(s) || Date.now() >= until) return s;
+    await new Promise((r) => setTimeout(r, 40));
+  }
+}
+
+/**
+ * Types text into a window as one paste (bracketed if the app asked for it), so a
+ * multi-line prompt arrives as a single message instead of one submit per line.
+ * With `enter`, an agent that shows its input box gets the Enter once the text is
+ * in it, and again if the text is still there after: an Enter can be lost (taken as
+ * a newline in the paste), leaving the prompt typed but never sent.
+ */
 export async function pasteText(target: string, text: string, enter: boolean): Promise<void> {
   const buffer = `ah-${process.pid}-${randomUUID()}`;
   const fail = (typed: boolean) => (err: unknown) => {
@@ -256,11 +287,25 @@ export async function pasteText(target: string, text: string, enter: boolean): P
     p.stdin.end(text);
   }).catch(fail(false));
   try {
+    const boxed = enter && (await screen(target)) !== null;
     await tmux('paste-buffer', '-p', '-d', '-b', buffer, '-t', target).catch(fail(false));
-    if (enter) {
+    if (!enter) return;
+    const press = () => tmux('send-keys', '-t', target, 'Enter').catch(fail(true));
+    if (!boxed) {
       // Give TUIs a beat to finish ingesting the paste before submitting it.
       await new Promise((r) => setTimeout(r, 150));
-      await tmux('send-keys', '-t', target, 'Enter').catch(fail(true));
+      await press();
+      return;
+    }
+    const typed = await watchInput(target, (s) => s !== '', 1000);
+    if (typed === '') console.warn(`${target}: the paste didn't show in the input box within 1s; pressing Enter anyway`);
+    await press();
+    // A slash command may open a picker, where a second Enter would choose for you.
+    for (let retry = 0; retry < 2 && !text.trimStart().startsWith('/'); retry++) {
+      const left = await watchInput(target, (s) => !s, 1500);
+      if (!left) return;
+      console.warn(`${target}: Enter didn't submit the prompt (still in the input box); pressing it again`);
+      await press();
     }
   } finally {
     await tmux('delete-buffer', '-b', buffer).catch(() => {});

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { startAh, cleanup, http, until } from './helpers.ts';
+import { startAh, cleanup, http, until, sleep } from './helpers.ts';
 
 const fixture = fileURLToPath(new URL('./fixtures/agent.js', import.meta.url));
 
@@ -132,6 +132,32 @@ test("a new session's first prompt waits for the agent to start, then goes in", 
     assert.equal(first.json().starting, true);
     await until(() => ah.tmux('capture-pane', '-p', '-t', id).includes('FINISHED:kickoff'), 15000, 'first prompt submitted once the agent is up');
     assert.equal((await http(ah, 'GET', `/api/sessions/${uid}/queue`)).json().length, 0);
+  } finally {
+    await cleanup(ah);
+  }
+});
+
+test('a prompt left in the input box by a lost Enter is submitted with another', async () => {
+  const boxed = fileURLToPath(new URL('./fixtures/boxed-agent.js', import.meta.url));
+  const ah = await startAh({
+    auth: { mode: 'off' },
+    idleAfter: 1,
+    presets: [{ id: 'test-agent', name: 'Test agent', command: `exec ${process.execPath} ${boxed}`, match: '^node$' }],
+  });
+  try {
+    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'test-agent', cwd: `${ah.dir}/files` } });
+    assert.equal(created.status, 201, created.body);
+    const { id, uid } = created.json();
+    // Past the launch hold, so it is typed in now rather than queued.
+    await until(() => ah.tmux('capture-pane', '-p', '-t', id).includes('Try "something"'), 10000, 'the agent draws its input box');
+    await sleep(5500);
+    const sent = await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'first line\nsecond line' } });
+    assert.equal(sent.status, 200, sent.body);
+    assert.equal(sent.json().outcome, 'delivered');
+    // The fixture took the first Enter as a newline; ah saw the prompt still waiting and pressed Enter again.
+    const screen = ah.tmux('capture-pane', '-p', '-t', id);
+    assert.match(screen, /RECEIVED:first line second line/, screen);
+    assert.match(screen, /❯ Try "something"/, 'the input box is empty again');
   } finally {
     await cleanup(ah);
   }
