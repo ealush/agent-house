@@ -86,6 +86,14 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
   const draftSync = useDraftSync(client, target, text, setText);
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
+  // Just sent: Stop waits a moment before taking Send's place, so a second click or
+  // tap meant for Send never lands on Stop and interrupts the turn it just started.
+  const [justSent, setJustSent] = useState(false);
+  useEffect(() => {
+    if (!justSent) return;
+    const t = setTimeout(() => setJustSent(false), 700);
+    return () => clearTimeout(t);
+  }, [justSent]);
   const recognition = useRef<Recognition | null>(null);
   const recent = useRef<string[]>([]);
   // Sends go out one after another, so fast follow-ups keep their order.
@@ -195,6 +203,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
     recent.current = [draft, ...recent.current.filter((r) => r !== draft)];
     cursor.current = -1;
     setText('');
+    setJustSent(true);
     editFiles(target, () => []);
     draftSync.saveNow('');
     sending.current = sending.current.then(async () => {
@@ -297,7 +306,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
 
   const empty = !text.trim() && !files.length;
   const canSend = !empty && !busy && !uploading;
-  const showStop = !isShell && working && empty;
+  const showStop = !isShell && working && empty && !justSent;
 
   return (
     <>
@@ -477,7 +486,8 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
               <span className="stop-square" />
             </button>
           ) : (
-            <button type="submit" className="send-btn" disabled={!canSend} aria-label={isShell ? 'Run' : 'Send'}>
+            // Pressing it leaves focus (and a phone's keyboard) in the box, as a messaging app does.
+            <button type="submit" className="send-btn" disabled={!canSend} aria-label={isShell ? 'Run' : 'Send'} onMouseDown={(e) => e.preventDefault()}>
               {isShell ? 'Run' : <Icon name="up" />}
             </button>
           )}
