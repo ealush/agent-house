@@ -2,7 +2,7 @@
 // It renders the agent's typed event stream (server/feed) and talks back through
 // the same send/answer API the terminal path uses.
 import { forwardRef, startTransition, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { ToolResult } from '../../server/feed/schema.ts';
+import type { FeedPrompt, ToolResult } from '../../server/feed/schema.ts';
 import { AskPanel, type AskHandle } from '../AskPanel.tsx';
 import type { SurfaceHandle, SurfaceProps } from '../surface.ts';
 import type { HistoryItem, SnapshotInfo } from '../api.ts';
@@ -231,10 +231,29 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
     const t = setTimeout(() => startTransition(() => setShownCount((n) => (n + MORE_BLOCKS >= blocks.length ? Infinity : n + MORE_BLOCKS))), 0);
     return () => clearTimeout(t);
   }, [allShown, shownCount, blocks.length]);
-  const railItems = useMemo<RailItem[]>(
-    () => [...shown.flatMap((b) => (b.kind === 'user' ? [{ key: b.key, text: blockText(b) }] : [])), ...outgoing.map((o) => ({ key: o.id, text: o.text }))],
-    [shown, outgoing],
-  );
+  // The rail lists every message you sent: the server's full list (a reload draws
+  // only the newest page, which one long turn can fill), plus what arrived since.
+  const [prompts, setPrompts] = useState<FeedPrompt[]>([]);
+  useEffect(() => {
+    let stopped = false;
+    client
+      .feedPrompts(w.uid)
+      .then((r) => {
+        if (!stopped) setPrompts(r.prompts);
+      })
+      .catch(() => {
+        if (!stopped) setPrompts([]);
+      });
+    return () => {
+      stopped = true;
+    };
+  }, [client, w.uid, state.epoch]);
+  const railItems = useMemo<RailItem[]>(() => {
+    const bySeq = new Map(prompts.map((p) => [p.seq, p.text]));
+    for (const b of blocks) if (b.kind === 'user') bySeq.set(parseInt(b.key, 10), blockText(b));
+    const sent = [...bySeq].sort((a, b) => a[0] - b[0]).map(([seq, text]) => ({ key: String(seq), seq, text }));
+    return [...sent, ...outgoing.map((o) => ({ key: o.id, text: o.text }))];
+  }, [prompts, blocks, outgoing]);
   const blocksRef = useRef(blocks);
   blocksRef.current = blocks;
   const scroller = useRef<HTMLDivElement>(null);
@@ -288,6 +307,8 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
   // entries in until it is loaded, then scroll to it and flash it, once.
   const jumpSeq = useRef<number | null>(null);
   const jumpTries = useRef(0);
+  // The rail's jumps put your message at the top, quietly; search results flash in the middle.
+  const jumpTop = useRef(false);
   const [jumpVersion, setJumpVersion] = useState(0);
   // A rebuilt projection is a new conversation: start at its end.
   useEffect(() => {
@@ -298,7 +319,7 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
     const accept = (jump: { host?: string; uid?: string; seq?: number }) => {
       if (jump.host !== w.host || jump.uid !== w.uid || typeof jump.seq !== 'number') return;
       sessionStorage.removeItem('ah.seqJump');
-      jumpSeq.current = jump.seq; jumpTries.current = 0; stick.current = false;
+      jumpSeq.current = jump.seq; jumpTries.current = 0; jumpTop.current = false; stick.current = false;
       setJumpVersion((n) => n + 1);
     };
     try {
@@ -320,6 +341,11 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
     const el = loaded ? candidates.filter((el) => Number(el.dataset.seq) <= target).sort((a, b) => Number(b.dataset.seq) - Number(a.dataset.seq))[0] : undefined;
     if (el) {
       jumpSeq.current = null;
+      const box = scroller.current;
+      if (jumpTop.current && box) {
+        box.scrollTop += el.getBoundingClientRect().top - box.getBoundingClientRect().top - 16;
+        return;
+      }
       el.scrollIntoView({ block: 'center' });
       el.classList.add('jump-flash');
       setTimeout(() => el.classList.remove('jump-flash'), 2400);
@@ -452,7 +478,7 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
             })}
 
             {outgoing.map((o) => (
-              <div key={o.id} className="msg user pending">
+              <div key={o.id} className="msg user pending" data-out={o.id}>
                 <div className="bubble"><UserText text={o.text} /></div>
                 <div className="msg-meta">
                   <span className="msg-time">{o.state === 'sending' ? 'Sending…' : time(o.at)}</span>
@@ -469,7 +495,17 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
 
           </div>
         </div>
-        {railItems.length > 1 && <MessageRail items={railItems} scroller={scroller} onJump={() => (stick.current = false)} />}
+        {railItems.length > 1 && (
+          <MessageRail
+            items={railItems}
+            scroller={scroller}
+            onJump={() => (stick.current = false)}
+            onSeek={(seq) => {
+              jumpSeq.current = seq; jumpTries.current = 0; jumpTop.current = true;
+              setJumpVersion((n) => n + 1);
+            }}
+          />
+        )}
         {away && (
           <button
             className="btn small gui-latest"

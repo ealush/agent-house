@@ -25,7 +25,7 @@ import { withCatalog } from './catalog.ts';
 import { addViewer, attach, viewers } from './terminal.ts';
 import { desktopStatus, installDesktop, removeDesktop } from './desktop.ts';
 import { Drafts } from './drafts.ts';
-import { feedPage, streamFeed, SNAPSHOT } from './feed/stream.ts';
+import { feedPage, feedPrompts, streamFeed, SNAPSHOT } from './feed/stream.ts';
 import { Previews, removeStaleMappings, tailscalePublish } from './preview.ts';
 import { listeningPorts } from './procs.ts';
 import * as t from './tmux.ts';
@@ -441,6 +441,12 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     });
     streamFeed((fresh) => core.feedSource(ref, fresh ? 3000 : 15_000), (msg) => res.write(`event: ${msg.type}\ndata: ${JSON.stringify(msg)}\n\n`), done.signal);
     return;
+  }
+
+  if ((m = route('GET', /^\/api\/sessions\/([\w:.-]{1,80})\/feed\/prompts$/))) {
+    const prompts = await feedPrompts(() => core.feedSource(m![1]));
+    if (!prompts) throw new HttpError(404, 'no transcript');
+    return send(res, 200, { prompts });
   }
 
   if ((m = route('GET', /^\/api\/sessions\/([\w:.-]{1,80})\/feed$/))) {

@@ -1,4 +1,4 @@
-import type { FeedPage } from '../server/feed/schema.ts';
+import type { FeedPage, FeedPrompt } from '../server/feed/schema.ts';
 
 export type Status = 'busy' | 'idle' | 'waiting' | 'attention';
 
@@ -354,6 +354,7 @@ export function hostApi(base: string) {
     /** GUI view: typed transcript events (server/feed). */
     feedUrl: (ref: string) => `${base}/api/sessions/${enc(ref)}/feed/stream?device=${enc(deviceName())}`,
     feedPage: (ref: string, before: number, limit = 200) => r<FeedPage>('GET', `/api/sessions/${enc(ref)}/feed?before=${before}&limit=${limit}`),
+    feedPrompts: (ref: string) => r<{ prompts: FeedPrompt[] }>('GET', `/api/sessions/${enc(ref)}/feed/prompts`),
     interrupt: (uid: string) => r('POST', `/api/sessions/${enc(uid)}/interrupt`, {}),
     clearQueue: (uid: string, itemId?: string) => r('DELETE', `/api/sessions/${enc(uid)}/queue${itemId ? `/${enc(itemId)}` : ''}`),
     preview: (uid: string) => r<PreviewInfo>('GET', `/api/sessions/${enc(uid)}/preview`),

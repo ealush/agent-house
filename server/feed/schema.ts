@@ -65,3 +65,6 @@ export type FeedMessage =
 
 /** GET /feed?before=seq: one page of older entries. */
 export type FeedPage = { entries: Entry[]; hasOlder: boolean };
+
+/** GET /feed/prompts: every message you sent (each one the GUI draws as your bubble), oldest first. */
+export type FeedPrompt = { seq: number; at: number; text: string };

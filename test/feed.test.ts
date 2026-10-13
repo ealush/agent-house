@@ -74,6 +74,11 @@ test('a live agent streams its transcript as typed events; sends arrive as appen
     const seqs = [...snap.data.entries, ...appended].map((e: any) => e.seq);
     assert.deepEqual(seqs, [...seqs].sort((a, b) => a - b));
 
+    // Every message you sent, for the GUI's rail, however many pages back.
+    const prompts = (await http(ah, 'GET', `/api/sessions/${uid}/feed/prompts`)).json().prompts;
+    assert.deepEqual(prompts.map((p: any) => p.text), ['Start the fixture', 'ping']);
+    assert.equal(prompts[1].seq, appended.find((e: any) => e.role === 'user' && e.parts[0].type === 'text').seq);
+
     const page = (await http(ah, 'GET', `/api/sessions/${uid}/feed?before=${appended[0].seq}`)).json();
     assert.deepEqual(texts(page.entries), ['Start the fixture', 'Ready.']);
     assert.equal(page.hasOlder, false);

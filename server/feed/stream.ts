@@ -1,7 +1,7 @@
 // One GUI viewer's stream: a snapshot, then appends. The session's transcript is
 // re-resolved every few seconds, so a fresh session whose transcript appears later,
 // or a /clear that starts a new one, turns into a new snapshot rather than a stall.
-import type { FeedMessage, FeedPage } from './schema.ts';
+import type { FeedMessage, FeedPage, FeedPrompt } from './schema.ts';
 import { feedFor, type AnyFeed } from './feed.ts';
 
 export type Source = { adapter: string; harness: string; file: string | null } | 'no-adapter' | null;
@@ -75,4 +75,19 @@ export async function feedPage(resolve: Resolve, before: number, limit: number):
   if ('reason' in open) return null;
   await open.feed.update();
   return open.feed.page(before, limit);
+}
+
+/** The GUI's rail of your messages needs all of them, not just the pages loaded so far. */
+export async function feedPrompts(resolve: Resolve): Promise<FeedPrompt[] | null> {
+  const open = await openFeed(resolve, false);
+  if ('reason' in open) return null;
+  await open.feed.update();
+  // The same test the GUI's projection uses for a user block: a user entry with more than notices and tool results.
+  return open.feed.entries
+    .filter((e) => e.role === 'user' && e.parts.some((p) => p.type !== 'notice' && p.type !== 'tool_result'))
+    .map((e) => ({
+      seq: e.seq,
+      at: e.at,
+      text: e.parts.flatMap((p) => (p.type === 'text' ? [p.text] : [])).join('\n').slice(0, 300),
+    }));
 }
