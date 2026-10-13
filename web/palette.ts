@@ -12,6 +12,8 @@ export type PaletteNode = {
   key: string;
   label: string;
   icon?: IconName;
+  /** A session or agent: its logo, as in the sidebar, instead of `icon` (null is a shell). */
+  agent?: string | null;
   /** One line under the label (a description, a session's project). */
   detail?: string;
   /** Related words. A query that hits only these ranks under one that hits the name. */

@@ -556,7 +556,7 @@ export function App({ onLock }: { onLock: () => void }) {
     () =>
       sidebarOrder(state?.windows ?? [], (state?.hosts.length ?? 0) > 1, savedGroups)
         .filter((w) => !visibleKeys.includes(w.key))
-        .map((w) => ({ key: `tile:${w.key}`, label: w.title, icon: 'split-right' as const, detail: [STATUS_WORD[w.status], w.project].join(' · '), run: () => openTile(w.key) })),
+        .map((w) => ({ key: `tile:${w.key}`, label: w.title, agent: w.agent, detail: [STATUS_WORD[w.status], w.project].join(' · '), run: () => openTile(w.key) })),
     !!selected || !!layout,
   );
 
@@ -575,7 +575,7 @@ export function App({ onLock }: { onLock: () => void }) {
         ...presets.map((p) => ({
           key: `run:${p.id}`,
           label: `New ${p.name}`,
-          icon: (p.id === 'shell' ? 'terminal' : 'plus') as 'terminal' | 'plus',
+          agent: p.id === 'shell' ? null : p.id,
           detail: 'Starts at once with its defaults',
           run: () =>
             void clientFor(host)
@@ -609,7 +609,7 @@ export function App({ onLock }: { onLock: () => void }) {
     return sidebarOrder(state?.windows ?? [], multi, savedGroups).map((w) => ({
       key: `session:${w.key}`,
       label: w.title,
-      icon: 'sessions' as const,
+      agent: w.agent,
       detail: [STATUS_WORD[w.status], w.agent ? look(w.agent).name : 'Shell', multi ? w.host : null, w.project].filter(Boolean).join(' · '),
       run: () => open(w.key),
     }));

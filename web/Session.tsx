@@ -652,7 +652,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   }
   usePaletteProvider(
     'agents',
-    () => otherAgents.map((p) => ({ key: `continue:${p.id}`, label: `Continue in ${p.name}`, icon: 'send' as const, detail: 'A new session here, primed with this conversation', run: () => void continueIn(p.id) })),
+    () => otherAgents.map((p) => ({ key: `continue:${p.id}`, label: `Continue in ${p.name}`, agent: p.id, detail: 'A new session here, primed with this conversation', run: () => void continueIn(p.id) })),
     active && !!w.feed && !!onStartSession,
   );
 

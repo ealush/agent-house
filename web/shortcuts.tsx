@@ -28,6 +28,7 @@ import {
   type Overrides,
 } from './shortcuts.ts';
 import { SheetBar, useSheet } from './sheet.tsx';
+import { AgentLogo } from './logos.tsx';
 
 export function useShortcutRevision() {
   const [n, setN] = useState(0);
@@ -279,8 +280,11 @@ export function ShortcutsPanel({ focusSearch = false }: { focusSearch?: boolean 
             {rows.map((cmd) => {
               const head = cmd.group !== group;
               group = cmd.group;
-              const chords = resolved(cmd.id, overrides);
               const user = isOverridden(cmd.id, overrides);
+              // Off a Mac, ⌘ is the window manager's Super key: show the chords that work here.
+              const all = resolved(cmd.id, overrides);
+              const here = mac || user ? all : all.filter((c) => !c.meta);
+              const chords = here.length ? here : all;
               const live = recording === cmd.id;
               return (
                 <Fragment key={cmd.id}>
@@ -539,7 +543,7 @@ export function CommandPalette({ onClose, onRun }: { onClose: () => void; onRun:
                 onClick={() => choose(row)}
               >
                 <span className="cmd-icon">
-                  <Icon name={nodeIcon(node)} size={16} />
+                  {node.agent !== undefined ? <AgentLogo id={node.agent} size={16} /> : <Icon name={nodeIcon(node)} size={16} />}
                 </span>
                 <span className="cmd-text">
                   {trail.length > 0 && <span className="cmd-trail">{trail.map((t) => t.label).join(' › ')} ›</span>}
