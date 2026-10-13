@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { HostPresetsContext, PresetsContext } from './ModelPicker.tsx';
+import { ResumeContext } from './recent.ts';
 import { CLIENT_ID, deviceName, waitForWindow, type HistoryItem, type SearchHit, type SendResult, type State, type Win } from './api.ts';
 import { useHosts } from './useHosts.ts';
 import { Sidebar, type Page } from './Sidebar.tsx';
@@ -838,16 +839,24 @@ export function App({ onLock }: { onLock: () => void }) {
     refresh(w.host);
   }
 
-  async function resume(host: string, ref: string, opts: { navigate?: boolean } = {}) {
+  /** The key the session came back under; null when it failed (already reported). */
+  async function resumeKey(host: string, ref: string) {
     try {
       const out = await clientFor(host).resume(ref);
-      await refresh(host);
-      // A pane resuming its own session keeps its key; it turns live where it is.
-      if (opts.navigate !== false) open(keyFor(host, out.uid));
+      // Listed before it's shown: a key the state doesn't have yet reads as gone.
+      await waitForWindow(() => refresh(host), out);
       if (out.resumed) flash('Resuming…');
+      return keyFor(host, out.uid);
     } catch (e) {
       showError(e, "Couldn't resume");
+      return null;
     }
+  }
+
+  async function resume(host: string, ref: string, opts: { navigate?: boolean } = {}) {
+    const key = await resumeKey(host, ref);
+    // A pane resuming its own session keeps its key; it turns live where it is.
+    if (key && opts.navigate !== false) open(key);
   }
 
   /**
@@ -1007,6 +1016,7 @@ export function App({ onLock }: { onLock: () => void }) {
   return (
     <PresetsContext.Provider value={presetFor}>
     <HostPresetsContext.Provider value={(host) => hostState(host)?.presets ?? []}>
+    <ResumeContext.Provider value={state ? { history: state.history, resume: (h) => resumeKey(h.host, h.ref), discard: terminate } : null}>
     <div className={`app ${narrow ? 'narrow' : ''}`}>
       <Shortcuts />
       <WhichKey />
@@ -1303,6 +1313,7 @@ export function App({ onLock }: { onLock: () => void }) {
         </div>
       )}
     </div>
+    </ResumeContext.Provider>
     </HostPresetsContext.Provider>
     </PresetsContext.Provider>
   );

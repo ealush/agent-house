@@ -5,9 +5,9 @@ import { forwardRef, startTransition, useEffect, useImperativeHandle, useLayoutE
 import type { ToolResult } from '../../server/feed/schema.ts';
 import { AskPanel, type AskHandle } from '../AskPanel.tsx';
 import type { SurfaceHandle, SurfaceProps } from '../surface.ts';
-import type { SnapshotInfo } from '../api.ts';
+import type { HistoryItem, SnapshotInfo } from '../api.ts';
 import { askConfirm, showError, showNotice } from '../ask.tsx';
-import { look } from '../agents.ts';
+import { age, look } from '../agents.ts';
 import { AgentLogo } from '../logos.tsx';
 import { Icon } from '../icons.tsx';
 import { copyText } from '../selection.ts';
@@ -128,7 +128,36 @@ function Working({ detail }: { detail: string | null }) {
   );
 }
 
-const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({ w, client, hidden, onAnswer, onReply, onUseTerminal, refresh }, ref) {
+/** A new session: who's listening, and the project's recent sessions to pick back up instead. */
+function Blank({ agent, project, recent, onResume }: { agent: string | null; project: string; recent: HistoryItem[]; onResume: (h: HistoryItem) => void }) {
+  return (
+    <div className="gui-blank">
+      <span className="chip xl" style={{ '--agent': look(agent).color } as React.CSSProperties}>
+        <AgentLogo id={agent} size={28} />
+      </span>
+      <p className="gui-blank-title">New conversation{project ? ` in ${project}` : ''}</p>
+      <p className="hint">{recent.length ? 'Type below to start, or pick up where you left off.' : 'Type below to start.'}</p>
+      {recent.length > 0 && (
+        <ul className="empty-recent" data-rove="button.empty-recent-row" aria-label="Pick up where you left off">
+          {recent.map((h) => (
+            <li key={h.ref}>
+              <button className="empty-recent-row" onClick={() => onResume(h)} title={`Resume ${h.title}`}>
+                <span className="chip sm" style={{ '--agent': look(h.harness).color } as React.CSSProperties}>
+                  <AgentLogo id={h.harness} size={13} />
+                </span>
+                <span className="grow">{h.title}</span>
+                <span className="when">{age(h.at) === 'now' ? 'just now' : age(h.at)}</span>
+                <span className="resume-word">Resume</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({ w, client, hidden, onAnswer, onReply, onUseTerminal, refresh, recent, onResume }, ref) {
   const { state, loadOlder, loadingOlder } = useFeed(client, w.uid);
   // What was already there when the conversation opened draws still; what arrives after rises in.
   const freshAfter = useRef<number | null>(null);
@@ -328,6 +357,8 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
 
   const waiting = w.status === 'waiting' && w.ask;
   const empty = state.status !== 'unavailable' && !blocks.length;
+  // A session nothing has been said in yet (its transcript starts with the first message).
+  const blank = !!recent && !blocks.length && !outgoing.length && w.status === 'idle' && (state.status === 'live' || state.reason === 'no-transcript');
 
   // Staying at the bottom also holds when the space changes under the feed: the queue
   // tray or a phone keyboard shortens it, and a waiting call opens its diff after render.
@@ -394,15 +425,18 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
               </button>
             )}
 
-            {state.status === 'unavailable' && (
+            {blank ? (
+              <Blank agent={w.agent} project={w.project} recent={onResume ? recent : []} onResume={(h) => onResume?.(h)} />
+            ) : state.status === 'unavailable' ? (
               <div className="gui-empty">
                 <p>{UNAVAILABLE[state.reason ?? ''] ?? 'Nothing to show yet.'}</p>
                 <button className="btn small" onClick={onUseTerminal}>
                   Open terminal
                 </button>
               </div>
+            ) : (
+              empty && <div className="gui-empty muted">{state.status === 'connecting' ? 'Connecting…' : 'No messages yet.'}</div>
             )}
-            {empty && <div className="gui-empty muted">{state.status === 'connecting' ? 'Connecting…' : 'No messages yet.'}</div>}
 
             {shown.map((b) => {
               // Snapshot numbers include safety captures and start when ah first

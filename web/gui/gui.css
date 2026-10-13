@@ -1004,3 +1004,44 @@
     transform: translateY(6px);
   }
 }
+
+/* A new session: centred in the space above the composer, the project's recent sessions under it. */
+.gui .gui-scroll:has(.gui-blank) {
+  display: flex;
+  flex-direction: column;
+}
+
+.gui .gui-scroll:has(.gui-blank) > .gui-feed {
+  flex: 1;
+  width: 100%;
+  justify-content: center;
+}
+
+.gui .gui-blank {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 24px 0 8vh;
+  text-align: center;
+  color: var(--muted);
+}
+
+.gui .gui-blank > .chip {
+  margin-bottom: 10px;
+}
+
+.gui .gui-blank-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.gui .gui-blank .hint {
+  margin: 0;
+}
+
+.gui .gui-blank .empty-recent {
+  margin-top: 24px;
+}

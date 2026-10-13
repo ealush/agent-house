@@ -6,12 +6,13 @@ import { copyText } from './selection.ts';
 import { focusFirst } from './rove.ts';
 import { confirmTerminate } from './Sidebar.tsx';
 import { Icon } from './icons.tsx';
-import { deviceName, type HostApi, type SendResult, type Win } from './api.ts';
+import { deviceName, type HistoryItem, type HostApi, type SendResult, type Win } from './api.ts';
 import { look } from './agents.ts';
 import { statusClass, statusWord } from './status.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
 import { continuePrompt } from './handoff.ts';
 import { HostPresetsContext } from './ModelPicker.tsx';
+import { recentFor, ResumeContext } from './recent.ts';
 import { defaultView, surfaceFor, VIEW_LABEL, viewsFor, type SurfaceHandle, type View } from './surface.ts';
 import { ComposerBar, type ComposerHandle } from './Composer.tsx';
 import { useFileDrop } from './useFileDrop.ts';
@@ -304,6 +305,16 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   const composer = useRef<ComposerHandle>(null);
   const fileDrop = useFileDrop((files) => composer.current?.attach(files), view === 'gui');
   const Surface = surfaceFor(view);
+  // A blank session offers the project's past ones; the one you pick takes its place.
+  const resumer = useContext(ResumeContext);
+  const recent = resumer && onOpenKey && w.agent && !w.launch ? recentFor(resumer.history, w) : [];
+  const resumeRecent = async (h: HistoryItem) => {
+    const key = await resumer!.resume(h);
+    if (!key) return;
+    onOpenKey!(key);
+    // Nothing was said in it in the meantime: it would only be left behind, empty.
+    if (live.current.status === 'idle' && !w.queued) resumer!.discard(w);
+  };
 
   useEffect(() => {
     setTab('main');
@@ -1074,6 +1085,8 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
               onReply={focusInput}
               onUseTerminal={() => switchView('terminal', true)}
               refresh={refresh}
+              recent={recent}
+              onResume={recent.length ? (h) => void resumeRecent(h) : undefined}
             />
           </Suspense>
           {tab !== 'main' && <div className="session-main" style={{ minHeight: 0 }}>{panelView(tab)}</div>}

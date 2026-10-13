@@ -4,7 +4,7 @@
 // only what both have: the header and side panels. The graphical composer lives
 // only in the GUI view; the terminal supplies its own input.
 import { lazy, type ComponentType, type RefAttributes } from 'react';
-import type { HostApi, Win } from './api.ts';
+import type { HistoryItem, HostApi, Win } from './api.ts';
 
 export type SurfaceHandle = {
   /** Put text in the agent's input without submitting it (a file path, a snippet). */
@@ -32,6 +32,10 @@ export type SurfaceProps = {
   /** Some interactions exist only in the agent's TUI (its own pickers). */
   onUseTerminal: () => void;
   refresh: () => void;
+  /** Past sessions in this project a blank session offers to pick back up (GUI). Only a live session has a list, even an empty one. */
+  recent?: HistoryItem[];
+  /** Resume one of them in place of this blank session. */
+  onResume?: (h: HistoryItem) => void;
 };
 
 export type View = 'terminal' | 'gui';
