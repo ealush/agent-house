@@ -1986,6 +1986,14 @@ a.btn {
   color: var(--muted);
 }
 
+/* A project's folder name stays on one line, its full path on hover. */
+.sugg.project {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sugg.on,
 .sugg:hover {
   color: var(--text);

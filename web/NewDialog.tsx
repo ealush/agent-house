@@ -316,7 +316,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
         {(recent.length > 0 || root) && (
           <div className="suggestions">
             {recent.map((p) => (
-              <button type="button" key={p} className={`sugg ${p === path ? 'on' : ''}`} onClick={() => setCwd(p)}>
+              <button type="button" key={p} className={`sugg project ${p === path ? 'on' : ''}`} title={p} onClick={() => setCwd(p)}>
                 {p.split('/').pop() || p}
               </button>
             ))}
