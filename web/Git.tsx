@@ -5,6 +5,7 @@ import { askConfirm, showError } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { Popover } from './ModelPicker.tsx';
 import { SheetBar, useSheet } from './sheet.tsx';
+import { errorText } from './errors.ts';
 
 // ---------- unified diff → files / lines with real line numbers
 
@@ -212,7 +213,7 @@ function BranchMenu({ client, windowId, close, onSwitched }: { client: HostApi; 
   const [active, setActive] = useState(0);
 
   useEffect(() => {
-    client.branches(windowId).then(setList).catch((e) => setLoadError((e as Error).message));
+    client.branches(windowId).then(setList).catch((e) => setLoadError(errorText(e)));
   }, [client, windowId]);
 
   const rows = useMemo(() => {
@@ -245,7 +246,7 @@ function BranchMenu({ client, windowId, close, onSwitched }: { client: HostApi; 
       close();
       onSwitched();
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorText(e));
     } finally {
       setBusy(null);
     }

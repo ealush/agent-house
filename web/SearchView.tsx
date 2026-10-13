@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { HostApi, SearchHit, SearchResponse } from './api.ts';
 import { AgentLogo } from './logos.tsx';
 import { Highlighted } from './Switcher.tsx';
+import { errorText } from './errors.ts';
 
 // Full-page content search (issue #9): the thorough path behind Cmd-K's
 // "See all results". One call to the hub's /api/search/all fans out to every
@@ -52,7 +53,7 @@ export function SearchView({
           setExtra((prev) => [...prev, ...out.results]);
         }
       } catch (e) {
-        if (runId.current === id) setError((e as Error).message);
+        if (runId.current === id) setError(errorText(e));
       } finally {
         if (runId.current === id) setBusy(false);
       }

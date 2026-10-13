@@ -1,4 +1,5 @@
 import type { FeedPage, FeedPrompt } from '../server/feed/schema.ts';
+import { reachText } from './errors.ts';
 
 export type Status = 'busy' | 'idle' | 'waiting' | 'attention';
 
@@ -515,7 +516,7 @@ export function subscribe(onState: (s: State) => void, onError: (msg: string | n
         onState(normalize(s));
         onError(null);
       })
-      .catch((e) => onError((e as Error).message));
+      .catch((e) => onError(reachText(e)));
   const open = () => {
     if (closed) return;
     es = new EventSource(`${client.base}/api/events`);

@@ -4,6 +4,7 @@ import type { HostApi, SendResult, Subscription, Win } from './api.ts';
 import { look } from './agents.ts';
 import { handoffText, readHandoff } from './gui/reducer.ts';
 import { SheetBar, useSheet } from './sheet.tsx';
+import { errorText } from './errors.ts';
 
 const STATUS = { waiting: 'Needs you', busy: 'Working', attention: 'Done', idle: 'Idle' } as const;
 /** Select value for starting a session instead of delivering into a live one. */
@@ -154,7 +155,7 @@ export function SendToDialog({ client, clientFor, source, windows, multiHost, on
       onSent(await clientFor(target.host).send(target.uid, body, true));
       onClose();
     } catch (err) {
-      setError((err as Error).message);
+      setError(errorText(err));
       setBusy(false);
     }
   }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { HostApi, QueueItem } from './api.ts';
 import { shortcutTitle } from './shortcuts.tsx';
+import { errorText } from './errors.ts';
 
 /** This conversation's queue, as a side panel: review, send now, or cancel follow-ups. */
 export function QueuePanel({ client, uid, onChange }: {
@@ -19,7 +20,7 @@ export function QueuePanel({ client, uid, onChange }: {
         const next = await client.queue(uid);
         if (!stopped && current === version.current) { setItems(next); setError(null); }
       } catch (e) {
-        if (!stopped && current === version.current) setError((e as Error).message);
+        if (!stopped && current === version.current) setError(errorText(e));
       }
     };
     load();
@@ -36,7 +37,7 @@ export function QueuePanel({ client, uid, onChange }: {
       setError(null);
       onChange();
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorText(e));
     }
   }
 
@@ -47,7 +48,7 @@ export function QueuePanel({ client, uid, onChange }: {
       await client.clearQueue(uid, id);
       await refresh();
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorText(e));
     } finally { setBusy(false); }
   }
 
@@ -59,7 +60,7 @@ export function QueuePanel({ client, uid, onChange }: {
       await client.sendNow(uid, item.id);
       await refresh();
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorText(e));
     } finally { setBusy(false); }
   }
 

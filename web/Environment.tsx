@@ -3,6 +3,7 @@ import { ConfirmButton } from './ConfirmButton.tsx';
 import { look } from './agents.ts';
 import { api, type EnvState, type EnvVar } from './api.ts';
 import { askConfirm, showError } from './ask.tsx';
+import { errorText } from './errors.ts';
 
 // Session environment (server/env.ts): variables every session window starts
 // with, and chat subscriptions whose key sessions get too. A running process
@@ -41,7 +42,7 @@ export function EnvironmentPanel() {
       setForm(null);
       await load();
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorText(e));
     } finally {
       setBusy(false);
     }

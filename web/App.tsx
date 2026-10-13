@@ -62,6 +62,7 @@ import { glide, transition, type Heading } from './motion.ts';
 import { runCommand } from './shortcuts.ts';
 import { CommandPalette, Keycaps, Shortcuts, ShortcutsDialog, WhichKey, shortcutTitle, useCommand, usePaletteProvider } from './shortcuts.tsx';
 import { Glide } from './Glide.tsx';
+import { errorText } from './errors.ts';
 
 // Pages and dialogs most visits never open load on first use.
 const Settings = lazy(() => import('./Settings.tsx').then((m) => ({ default: m.Settings })));
@@ -834,7 +835,7 @@ export function App({ onLock }: { onLock: () => void }) {
       // On screen, the session itself shows the answer land; elsewhere (the inbox) say so.
       if (!visibleKeys.includes(w.key)) flash(a === 'approve' ? `Approved · ${w.title}` : `Denied · ${w.title}`);
     } catch (e) {
-      flash((e as Error).message);
+      flash(errorText(e));
     }
     refresh(w.host);
   }
@@ -1045,7 +1046,7 @@ export function App({ onLock }: { onLock: () => void }) {
             // One move can save several rows: refresh once they are all saved,
             // so the list never shows a half-applied order (and rows don't bounce).
             const batch = (reorders.current[host] ??= []);
-            batch.push(clientFor(host).order(uid, order).catch((e) => flash((e as Error).message)));
+            batch.push(clientFor(host).order(uid, order).catch((e) => flash(errorText(e))));
             if (batch.length > 1) return;
             queueMicrotask(() => {
               delete reorders.current[host];

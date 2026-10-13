@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, hostApi, normalize, subscribe, type HostApi, type State } from './api.ts';
 import { loadSealed, saveSealed } from './gui/feedCache.ts';
+import { reachText } from './errors.ts';
 
 /**
  * Live state for every host: the local daemon plus each online peer it proxies.
@@ -107,7 +108,7 @@ export function useHosts(onState: (merged: State) => void) {
         setError(null);
         return s;
       } catch (e) {
-        setError((e as Error).message);
+        setError(reachText(e));
         return null;
       }
     },

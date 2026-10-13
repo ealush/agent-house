@@ -327,7 +327,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
 
       <div className="side-scroll" ref={flip}>
         <Glide match=".side-session.on" className="side-glide accent" />
-        {error && <div className="side-error">Can't reach server: {error}</div>}
+        {error && <div className="side-error" role="status">{error}</div>}
         {multiHost && (
           <>
             <div className="side-label">

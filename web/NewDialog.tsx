@@ -8,6 +8,7 @@ import { look } from './agents.ts';
 import { AgentLogo } from './logos.tsx';
 import { EffortPicker, ModelPicker, Popover, effectiveModel, effortsFor, type Pick } from './ModelPicker.tsx';
 import { SheetBar, useSheet } from './sheet.tsx';
+import { errorText } from './errors.ts';
 
 type Props = {
   /** Online machines; starting "here or there" is the same code path (F4). */
@@ -238,7 +239,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
       if (sent) onSent?.(sent);
       if (sendError) showError(sendError, 'Session started. The first message did not send.');
     } catch (err) {
-      setError((err as Error).message);
+      setError(errorText(err));
       setBusy(false);
     }
   }

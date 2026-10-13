@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { shellQuote, type FsEntry, type FsListing, type HostApi } from './api.ts';
 import { askText } from './ask.tsx';
 import { Icon } from './icons.tsx';
+import { errorText } from './errors.ts';
 
 // File explorer + transfer. Browse the host from the session's folder, pull files
 // down to this device, push files up into any folder, and hand a path to the
@@ -84,7 +85,7 @@ export function FilesPanel({ fs, start, cwd, agent, onInsert }: Props) {
         done.push(await fs.upload(listing.path, f));
       }
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorText(e));
     } finally {
       setUploading(null);
       load();

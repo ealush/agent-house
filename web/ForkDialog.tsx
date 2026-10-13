@@ -3,6 +3,7 @@ import { ConfirmButton } from './ConfirmButton.tsx';
 import type { ForkInfo, HostApi, Win } from './api.ts';
 import { ModelPicker, Popover, effectiveModel, effortsFor, usePreset, type Pick } from './ModelPicker.tsx';
 import { SheetBar, useSheet } from './sheet.tsx';
+import { errorText } from './errors.ts';
 
 export type ForkTarget = { ref: string; host: string; harness: string | null; title: string };
 
@@ -47,7 +48,7 @@ export function ForkDialog({ client, target, onClose, onForked }: Props) {
         setPick(inh);
         setInherited(inh);
       })
-      .catch((e) => live && setLoadError((e as Error).message));
+      .catch((e) => live && setLoadError(errorText(e)));
     return () => {
       live = false;
     };
@@ -74,7 +75,7 @@ export function ForkDialog({ client, target, onClose, onForked }: Props) {
       });
       onForked(out.uid);
     } catch (err) {
-      setError((err as Error).message);
+      setError(errorText(err));
       setBusy(false);
     }
   }

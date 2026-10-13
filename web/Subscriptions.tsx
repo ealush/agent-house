@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ConfirmButton } from './ConfirmButton.tsx';
 import { api, type Subscription } from './api.ts';
 import { askConfirm, showError } from './ask.tsx';
+import { errorText } from './errors.ts';
 
 // Chat subscriptions (BYOK): named OpenAI-compatible endpoints whose keys
 // live on the host beside ah's other secrets. Listed without keys; blank key
@@ -35,7 +36,7 @@ export function SubscriptionsPanel() {
       setForm(null);
       load();
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorText(e));
     } finally {
       setBusy(false);
     }

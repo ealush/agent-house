@@ -4,6 +4,7 @@ import { showNotice } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { Markdown } from './Markdown.tsx';
 import { SheetBar, useSheet } from './sheet.tsx';
+import { errorText } from './errors.ts';
 
 function fmtDate(at: number): string {
   const d = new Date(at * 1000);
@@ -63,7 +64,7 @@ export function ChatHistory({ client, jump }: { client: HostApi; jump?: { uid: s
       setMessages((await client.pastChat(c.uid)).messages);
       setOpen(c);
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorText(e));
     }
   }
 

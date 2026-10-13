@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { disablePush, enablePush, pushStatus, pushSupport, type PushEvents } from './notify.ts';
+import { errorText } from './errors.ts';
 
 // Per-device notification opt-in (F25), rendered flat wherever it is needed.
 // Push arrives even when ah isn't open.
@@ -30,7 +31,7 @@ export function NotifySettings({ onChange }: { onChange: (active: boolean) => vo
       setActive(next.waiting || next.done);
       onChange(next.waiting || next.done);
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorText(e));
     } finally {
       setBusy(false);
     }

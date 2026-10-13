@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { ConfirmButton } from './ConfirmButton.tsx';
+import { errorText } from './errors.ts';
 
 // In-app stand-in for alert, confirm, and prompt. One dialog at a time,
 // drawn with the same chrome as the other dialogs.
@@ -47,8 +48,7 @@ export function showNotice(title: string, body?: string) {
 
 /** An error from a failed request. The title says what failed; the body is the reason. */
 export function showError(error: unknown, title = "Couldn't do that") {
-  const body = error instanceof Error ? error.message : String(error || 'Unknown error');
-  return showNotice(title, body);
+  return showNotice(title, errorText(error));
 }
 
 export function askConfirm(opts: { title: string; body?: string; confirm?: string; cancel?: string; danger?: boolean }) {

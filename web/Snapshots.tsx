@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { HostApi, SnapshotInfo, SnapshotList, Win } from './api.ts';
 import { askConfirm } from './ask.tsx';
+import { errorText } from './errors.ts';
 
 const time = (at: number) => (at ? new Date(at * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
 
@@ -28,7 +29,7 @@ export function SnapshotsPanel({ client, w, onChange }: { client: HostApi; w: Wi
           setError(null);
         }
       } catch (e) {
-        if (!stopped && current === version.current) setError((e as Error).message);
+        if (!stopped && current === version.current) setError(errorText(e));
       }
     };
     load();
@@ -46,7 +47,7 @@ export function SnapshotsPanel({ client, w, onChange }: { client: HostApi; w: Wi
       setError(null);
       onChange();
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorText(e));
     }
   }
 
@@ -69,7 +70,7 @@ export function SnapshotsPanel({ client, w, onChange }: { client: HostApi; w: Wi
         out = await client.restoreSnapshot(uid, snap.turn);
       } catch (e) {
         // A working agent must be stopped first; offer the interrupt once, plainly.
-        if (!/agent is working/i.test((e as Error).message)) throw e;
+        if (!/agent is working/i.test(errorText(e))) throw e;
         const stop = await askConfirm({
           title: 'The agent is working',
           body: 'Stop the current turn and restore now? The turn is interrupted; the restore still takes a safety snapshot first.',
@@ -83,7 +84,7 @@ export function SnapshotsPanel({ client, w, onChange }: { client: HostApi; w: Wi
       // The files are back; only the agent's picture of them may be stale.
       if (!out.notified) setError('Restored, but the agent could not be told. Ask it to run git status and re-read changed files before it continues.');
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorText(e));
     } finally {
       setBusy(false);
     }
@@ -96,7 +97,7 @@ export function SnapshotsPanel({ client, w, onChange }: { client: HostApi; w: Wi
       await client.toggleSnapshots(uid, enabled);
       await refresh();
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorText(e));
     } finally {
       setBusy(false);
     }
