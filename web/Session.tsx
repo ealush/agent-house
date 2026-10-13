@@ -765,7 +765,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
         </button>
       )}
       {w.feed && onStartSession && otherAgents.length > 0 && (
-        <div className="menu-agents" role="group" aria-label="Continue in another agent">
+        <div className="menu-agents" role="group" aria-label="Continue in another agent" style={{ '--agents': otherAgents.length } as React.CSSProperties}>
           <span className="menu-agents-label">Continue in</span>
           {otherAgents.map((p) => (
             <button
@@ -779,6 +779,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
               }}
             >
               <AgentLogo id={p.id} size={16} />
+              <span className="menu-agent-name" aria-hidden>{p.name}</span>
             </button>
           ))}
         </div>

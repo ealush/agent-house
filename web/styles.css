@@ -6583,6 +6583,10 @@ button.tool-chip:hover {
   color: var(--muted);
 }
 
+.menu-agent-name {
+  display: none;
+}
+
 .menu .menu-agent,
 .menu-agents .menu-agent {
   display: inline-grid;
@@ -7167,11 +7171,39 @@ select:not([multiple]) {
   padding: 8px 14px 6px;
 }
 
+/* A finger has no tooltips: under each mark, its name. The marks share one
+   row evenly, however many agents there are. */
+.menu.sheet .menu-agents {
+  display: grid;
+  grid-template-columns: repeat(var(--agents, 6), minmax(0, 1fr));
+  gap: 4px;
+}
+
+.menu.sheet .menu-agents-label {
+  grid-column: 1 / -1;
+}
+
 .menu.sheet .menu-agent {
-  width: 40px;
-  height: 40px;
-  min-height: 0;
-  padding: 0;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: auto;
+  min-width: 0;
+  height: auto;
+  min-height: 48px;
+  padding: 6px 0 4px;
+}
+
+.menu.sheet .menu-agent-name {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--muted);
 }
 
 .menu.sheet hr {
