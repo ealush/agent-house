@@ -21,6 +21,8 @@ export type EnvVarInfo = {
   /** Null for a secret: it is never sent back once saved. */
   value: string | null;
   secret: boolean;
+  /** A secret's masked form ("LLM_1116…5vJQ"), so you can tell it's there and which one it is. */
+  hint: string | null;
 };
 /** A variable a chat subscription hands to sessions: its key, under envName. */
 export type EnvExport = { name: string; subscriptionId: string; subscription: string };
@@ -43,6 +45,19 @@ export function looksSecret(name: string): boolean {
   return /KEY|TOKEN|SECRET|PASSWORD|PASS|CREDENTIAL|AUTH/i.test(name);
 }
 
+/**
+ * A stored secret as key pages show one: its first and last few characters
+ * around an ellipsis ("LLM_1116…5vJQ"). It reveals at most a third of the
+ * value, so a short secret shows dots only.
+ */
+export function maskSecret(value: string): string {
+  if (!value) return '';
+  if (value.length < 12) return '••••••';
+  const head = Math.min(8, Math.floor(value.length / 4));
+  const tail = Math.min(4, Math.floor(value.length / 12));
+  return `${value.slice(0, head)}…${value.slice(-tail)}`;
+}
+
 /** Short, order-independent digest of an environment; '' when empty. */
 export function fingerprint(env: Record<string, string>): string {
   const names = Object.keys(env).sort();
@@ -50,6 +65,10 @@ export function fingerprint(env: Record<string, string>): string {
   const h = createHash('sha256');
   for (const n of names) h.update(`${n}\0${env[n]}\0`);
   return h.digest('hex').slice(0, 16);
+}
+
+function info(v: { name: string; value: string; secret: boolean }): EnvVarInfo {
+  return { name: v.name, value: v.secret ? null : v.value, secret: v.secret, hint: v.secret ? maskSecret(v.value) : null };
 }
 
 export class EnvStore {
@@ -65,7 +84,7 @@ export class EnvStore {
       this.db.subscription.findMany({ where: { envName: { not: null } }, select: { id: true, name: true, envName: true }, orderBy: { envName: 'asc' } }),
     ]);
     return {
-      vars: vars.map((v) => ({ name: v.name, value: v.secret ? null : v.value, secret: v.secret })),
+      vars: vars.map((v) => info(v)),
       exports: subs.map((s) => ({ name: s.envName!, subscriptionId: s.id, subscription: s.name })),
     };
   }
@@ -89,7 +108,7 @@ export class EnvStore {
     }
     if (!existing && (await this.db.envVar.count()) >= MAX_VARS) throw new EnvError(400, `at most ${MAX_VARS} variables`);
     const row = await this.db.envVar.upsert({ where: { name }, create: { name, value, secret: input.secret }, update: { value, secret: input.secret } });
-    return { name: row.name, value: row.secret ? null : row.value, secret: row.secret };
+    return info(row);
   }
 
   async remove(name: string): Promise<void> {

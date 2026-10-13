@@ -8,7 +8,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { join, sep } from 'node:path';
 import type { PrismaClient } from '@prisma/client';
 import { defaultDbPath, getDb } from './db.ts';
-import { checkName } from './env.ts';
+import { checkName, maskSecret } from './env.ts';
 import { changes, toplevel, prPatch, prMeta, workingPatch, workingStat, mergeBase, showAtRef, commitShow, type PrMeta } from './git.ts';
 import { conversationKey } from './registry.ts';
 
@@ -23,7 +23,17 @@ export class SideChatError extends Error {
 }
 
 export type Subscription = { id: string; name: string; baseUrl: string; model: string; apiKey: string; envName?: string | null };
-export type SubscriptionInfo = { id: string; name: string; baseUrl: string; model: string; hasKey: boolean; isDefault: boolean; envName: string | null };
+export type SubscriptionInfo = {
+  id: string;
+  name: string;
+  baseUrl: string;
+  model: string;
+  hasKey: boolean;
+  /** The stored key masked ("LLM_1116…5vJQ"); the key itself is never returned. */
+  keyHint: string;
+  isDefault: boolean;
+  envName: string | null;
+};
 export type ChatMessage = { role: 'user' | 'assistant'; text: string; at: number; /** ChatMessage row id, so search results can jump to one message (issue #9). */ id?: number };
 export type ChatContext = {
   title: string;
@@ -522,7 +532,7 @@ export class SideChatStore {
   }
 
   private redact(s: Subscription, defaultId: string | null): SubscriptionInfo {
-    return { id: s.id, name: s.name, baseUrl: s.baseUrl, model: s.model, hasKey: !!s.apiKey, isDefault: s.id === defaultId, envName: s.envName ?? null };
+    return { id: s.id, name: s.name, baseUrl: s.baseUrl, model: s.model, hasKey: !!s.apiKey, keyHint: maskSecret(s.apiKey), isDefault: s.id === defaultId, envName: s.envName ?? null };
   }
 
   async list(): Promise<SubscriptionInfo[]> {

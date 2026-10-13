@@ -31,8 +31,8 @@ test('session environment: new windows start with it, secrets stay out of respon
     const listed = await http(ah, 'GET', '/api/env');
     assert.ok(!listed.body.includes(SECRET));
     assert.deepEqual(listed.json().vars, [
-      { name: 'IMAGE_API_KEY', value: null, secret: true },
-      { name: 'IMAGE_MODEL', value: "it's \"quoted\" $HOME", secret: false },
+      { name: 'IMAGE_API_KEY', value: null, secret: true, hint: 'sk-e…c' },
+      { name: 'IMAGE_MODEL', value: "it's \"quoted\" $HOME", secret: false, hint: null },
     ]);
     const stale = listed.json().stale;
     assert.deepEqual(stale.map((s: any) => [s.uid, s.restart]), [[before.json().uid, 'no conversation to resume yet']]);

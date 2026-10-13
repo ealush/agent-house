@@ -8,7 +8,8 @@ import { askConfirm, showError } from './ask.tsx';
 // with, and chat subscriptions whose key sessions get too. A running process
 // keeps the environment it started with, so the sessions that predate a
 // change are listed with a restart.
-type Form = { editing: boolean; name: string; value: string; secret: boolean; secretTouched: boolean };
+/** hint: a stored secret, masked, shown in the empty value field while editing. */
+type Form = { editing: boolean; name: string; value: string; hint: string; secret: boolean; secretTouched: boolean };
 
 const SECRET_NAME = /KEY|TOKEN|SECRET|PASSWORD|PASS|CREDENTIAL|AUTH/i;
 
@@ -86,7 +87,7 @@ export function EnvironmentPanel() {
         <h2>Session environment</h2>
         <p className="hint">
           Every session ah starts on this host gets these variables: new sessions, resumes and restarts. Use them for keys and settings your agents' tools need, like an
-          image API key for a CLI the agent runs. Secret values stay on this host, alongside ah's other secrets, and are never shown again after saving.
+          image API key for a CLI the agent runs. Secret values stay on this host, alongside ah's other secrets, and once saved show only their first and last few characters.
         </p>
         {error && <p className="form-error">{error}</p>}
         {!state && !error && <p className="hint">Loading…</p>}
@@ -97,12 +98,22 @@ export function EnvironmentPanel() {
               <li key={v.name}>
                 <div className="stack">
                   <span className="mono">{v.name}</span>
-                  <span className={`sub env-value${v.secret || !v.value ? '' : ' mono'}`}>{v.secret ? 'Secret' : v.value || 'Empty'}</span>
+                  <span className="sub env-value">
+                    {v.secret ? (
+                      <>
+                        Secret · <span className="mono">{v.hint}</span>
+                      </>
+                    ) : v.value ? (
+                      <span className="mono">{v.value}</span>
+                    ) : (
+                      'Empty'
+                    )}
+                  </span>
                 </div>
                 <button
                   className="btn small"
                   disabled={busy}
-                  onClick={() => setForm({ editing: true, name: v.name, value: v.value ?? '', secret: v.secret, secretTouched: true })}
+                  onClick={() => setForm({ editing: true, name: v.name, value: v.value ?? '', hint: v.hint ?? '', secret: v.secret, secretTouched: true })}
                 >
                   Edit
                 </button>
@@ -125,7 +136,7 @@ export function EnvironmentPanel() {
           </ul>
         )}
         {form ? (
-          <div className="fields">
+          <div className="form-grid">
             <label className="field">
               <span>Name</span>
               <input
@@ -143,22 +154,24 @@ export function EnvironmentPanel() {
               />
             </label>
             <label className="field">
-              <span>Value{form.editing && form.secret ? ' (blank keeps the stored one)' : ''}</span>
+              <span>Value</span>
               <input
                 type={form.secret ? 'password' : 'text'}
                 value={form.value}
                 disabled={busy}
                 maxLength={8192}
+                placeholder={(form.secret && form.hint) || undefined}
                 autoComplete="off"
                 autoCapitalize="off"
                 autoCorrect="off"
                 spellCheck={false}
                 onChange={(e) => setForm({ ...form, value: e.target.value })}
               />
+              {form.secret && form.hint && <small className="field-hint">Saved. Type a new value to replace it.</small>}
             </label>
           </div>
         ) : (
-          <button className="btn small" onClick={() => setForm({ editing: false, name: '', value: '', secret: false, secretTouched: false })}>
+          <button className="btn small" onClick={() => setForm({ editing: false, name: '', value: '', hint: '', secret: false, secretTouched: false })}>
             Add variable
           </button>
         )}

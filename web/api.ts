@@ -145,9 +145,9 @@ export const API_VERSION = 21;
 
 export type PullInfo = { number: number | null; url: string | null };
 
-export type Subscription = { id: string; name: string; baseUrl: string; model: string; hasKey: boolean; isDefault: boolean; envName: string | null };
+export type Subscription = { id: string; name: string; baseUrl: string; model: string; hasKey: boolean; keyHint: string; isDefault: boolean; envName: string | null };
 /** Settings → Environment: what new session windows start with (server/env.ts). */
-export type EnvVar = { name: string; value: string | null; secret: boolean };
+export type EnvVar = { name: string; value: string | null; secret: boolean; hint: string | null };
 export type EnvState = {
   vars: EnvVar[];
   exports: { name: string; subscriptionId: string; subscription: string }[];

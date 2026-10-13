@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { EnvStore, checkName, fingerprint } from './env.ts';
+import { EnvStore, checkName, fingerprint, maskSecret } from './env.ts';
 import { SideChatStore } from './sidechat.ts';
 import { ensureMigrated } from './db.ts';
 
@@ -16,15 +16,16 @@ async function fresh() {
 
 test('env: secrets are never listed, visible values are; both reach a launch', async () => {
   const { env } = await fresh();
-  await env.put({ name: 'IMAGE_API_KEY', value: 'sk-1', secret: true });
+  const key = 'LLM_1116abcdefghijklmnopqrstuvwxyz5vJQ';
+  await env.put({ name: 'IMAGE_API_KEY', value: key, secret: true });
   await env.put({ name: 'IMAGE_MODEL', value: 'gpt-image-2', secret: false });
   const { vars } = await env.list();
   assert.deepEqual(vars, [
-    { name: 'IMAGE_API_KEY', value: null, secret: true },
-    { name: 'IMAGE_MODEL', value: 'gpt-image-2', secret: false },
+    { name: 'IMAGE_API_KEY', value: null, secret: true, hint: 'LLM_1116…vJQ' },
+    { name: 'IMAGE_MODEL', value: 'gpt-image-2', secret: false, hint: null },
   ]);
-  assert.ok(!JSON.stringify(vars).includes('sk-1'));
-  assert.deepEqual(await env.forLaunch(), { IMAGE_API_KEY: 'sk-1', IMAGE_MODEL: 'gpt-image-2' });
+  assert.ok(!JSON.stringify(vars).includes(key));
+  assert.deepEqual(await env.forLaunch(), { IMAGE_API_KEY: key, IMAGE_MODEL: 'gpt-image-2' });
 });
 
 test('env: a blank value keeps a stored secret, but revealing one needs the value', async () => {
@@ -80,4 +81,16 @@ test('fingerprint: empty is empty, order does not matter, values do', () => {
   assert.equal(fingerprint({ A: '1', B: '2' }), fingerprint({ B: '2', A: '1' }));
   assert.notEqual(fingerprint({ A: '1' }), fingerprint({ A: '2' }));
   assert.notEqual(fingerprint({ AB: '' }), fingerprint({ A: 'B' }));
+});
+
+test('maskSecret: ends around an ellipsis, never more than a third of the secret', () => {
+  assert.equal(maskSecret(''), '');
+  assert.equal(maskSecret('short-pass1'), '••••••');
+  assert.equal(maskSecret('sk-proj-abcdefghijklmnopqrstuvwxyz0123456789WXYZ'), 'sk-proj-…WXYZ');
+  for (const n of [12, 13, 16, 20, 24, 31, 40, 100]) {
+    const v = 'x'.repeat(n);
+    const shown = maskSecret(v).replace('…', '').length;
+    assert.ok(shown * 3 <= n, `${n} chars shows ${shown}`);
+    assert.ok(shown >= 4, `${n} chars shows only ${shown}`);
+  }
 });

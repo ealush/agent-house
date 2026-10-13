@@ -45,6 +45,7 @@ test('subscriptions: trimmed, redacted, first is default, persisted', async () =
   assert.equal(listed.baseUrl, 'https://api.example.com/v1');
   assert.equal(listed.model, 'model');
   assert.equal(listed.hasKey, true);
+  assert.equal(listed.keyHint, '••••••', 'a short key shows dots only');
   assert.equal(listed.isDefault, true);
   assert.ok(!('apiKey' in listed));
   assert.deepEqual((await new SideChatStore(path).list()).map((s) => s.id), [id]);
