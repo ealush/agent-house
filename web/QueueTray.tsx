@@ -72,11 +72,25 @@ export const QueueTray = forwardRef<QueueTrayHandle, Props>(function QueueTray({
     onChange();
   };
 
-  const steer = (q: QueueItem) => act(() => client.sendNow(uid, q.id), 'send it now');
+  // Messages on their way out. A steer can take seconds (the server stops the turn
+  // and waits for it to settle) while the list still shows them, so a second Enter
+  // must go to the next row, not resend one the server already took. A ref, so two
+  // presses before a render still see each other.
+  const sending = useRef(new Set<string>());
+  const [, rerender] = useState(0);
+  const steer = async (q: QueueItem) => {
+    if (sending.current.has(q.id)) return;
+    sending.current.add(q.id);
+    rerender((n) => n + 1);
+    await act(() => client.sendNow(uid, q.id), 'send it now');
+    sending.current.delete(q.id);
+    rerender((n) => n + 1);
+  };
   useImperativeHandle(ref, () => ({
     steerFirst: () => {
-      if (!items[0]) return false;
-      void steer(items[0]);
+      const next = items.find((q) => !sending.current.has(q.id));
+      if (!next) return false;
+      void steer(next);
       return true;
     },
   }));
@@ -154,9 +168,13 @@ export const QueueTray = forwardRef<QueueTrayHandle, Props>(function QueueTray({
             <span className="queue-grip-slot" />
           )}
           <span className="queue-text" title={q.text}>{uploadSummary(q.text)}</span>
-          <button type="button" className="queue-steer" title={shortcutTitle('Stop the current turn and send this now', 'send-now')} onClick={() => steer(q)}>
-            <Icon name="reply" size={14} /> Steer
-          </button>
+          {sending.current.has(q.id) ? (
+            <span className="queue-state">Sending…</span>
+          ) : (
+            <button type="button" className="queue-steer" title={shortcutTitle('Stop the current turn and send this now', 'send-now')} onClick={() => steer(q)}>
+              <Icon name="reply" size={14} /> Steer
+            </button>
+          )}
           <button
             type="button"
             className="icon-btn small"
