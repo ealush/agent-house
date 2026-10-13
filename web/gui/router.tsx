@@ -9,12 +9,15 @@ import { ToolGroup } from './tools.tsx';
 import { useGui } from './context.ts';
 import { splitUploads } from '../uploads.ts';
 import { Icon } from '../icons.tsx';
+import { useStepsHidden } from './steps.ts';
 
 type PartOf<T extends Part['type']> = Extract<Part, { type: T }>;
 type PartRenderers = { [T in Part['type']]: (p: PartOf<T>) => ReactNode };
 
 function Reasoning({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
+  // Thinking is a step too: with steps hidden it isn't drawn at all.
+  if (useStepsHidden()) return null;
   return (
     <div className={`reasoning ${open ? 'open' : ''}`}>
       <button className="reasoning-head" onClick={() => setOpen(!open)} aria-expanded={open}>

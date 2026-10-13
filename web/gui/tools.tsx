@@ -9,6 +9,7 @@ import { Checklist } from './widgets.tsx';
 import { CodeBlock } from './CodeBlock.tsx';
 import { Markdown } from './Markdown.tsx';
 import { useGui } from './context.ts';
+import { useStepsHidden } from './steps.ts';
 
 export type ToolProps = { call: ToolCall; result: ToolResult | undefined };
 
@@ -337,10 +338,33 @@ export function ToolRow({ call, result }: ToolProps) {
   );
 }
 
-/** Consecutive calls: a long run collapses to its last few, with the rest a click away. */
+/** Consecutive calls: a long run collapses to its last few, with the rest a click away.
+ *  With steps hidden, the whole run is one line, unless something in it is asking you. */
 export function ToolGroup({ calls, results }: { calls: ToolCall[]; results: Record<string, ToolResult> }) {
   const [all, setAll] = useState(false);
+  const [unfolded, setUnfolded] = useState(false);
+  const stepsHidden = useStepsHidden();
+  const awaiting = useContext(AwaitingTool);
+  const turnLive = useContext(TurnLive);
+  const asking = calls.some((c) => c.id === awaiting || (TOOLS[c.name] === Question && !results[c.id] && turnLive));
   const KEEP = 3;
+  if (stepsHidden && !asking) {
+    const running = turnLive && calls.some((c) => !results[c.id]);
+    const failed = calls.filter((c) => results[c.id]?.isError).length;
+    return (
+      <div className={`tool-group ${unfolded ? 'unfolded' : 'folded'}`}>
+        <button className="tool-fold" onClick={() => setUnfolded(!unfolded)} aria-expanded={unfolded}>
+          {running && <span className="tool-dot running" aria-label="Running" />}
+          {calls.length} step{calls.length === 1 ? '' : 's'}
+          {failed > 0 && <span className="tool-fold-failed">· {failed} failed</span>}
+          <span className="tool-caret" aria-hidden>
+            ›
+          </span>
+        </button>
+        {unfolded && calls.map((c) => <ToolRow key={c.id} call={c} result={results[c.id]} />)}
+      </div>
+    );
+  }
   const hidden = all ? 0 : Math.max(0, calls.length - KEEP);
   return (
     <div className="tool-group">

@@ -68,7 +68,7 @@ export const TREE: Spec = {
           detail: 'Diff, files, chat, queue, snapshots',
           children: ['panel-diff', 'panel-files', 'panel-chat', 'panel-queue', 'panel-snapshots', 'panel-preview', 'toggle-panel'],
         },
-        { key: 'view', label: 'View', icon: 'view', detail: 'GUI or terminal, copy, scroll', children: ['toggle-view', 'browse-messages', 'copy-last', 'jump-latest', 'scrollback', 'toggle-keys'] },
+        { key: 'view', label: 'View', icon: 'view', detail: 'GUI or terminal, steps, copy, scroll', children: ['toggle-view', 'toggle-steps', 'browse-messages', 'copy-last', 'jump-latest', 'scrollback', 'toggle-keys'] },
         { key: 'manage', label: 'Manage', icon: 'edit', detail: 'Rename, fork, hand off, pin, stop', children: ['rename', 'fork', 'send-to', 'pin', 'copy-attach', 'session-menu', 'terminate'] },
         { key: 'continue', label: 'Continue in…', icon: 'send', detail: 'This conversation, in another agent', terms: ['handoff', 'switch agent', 'harness'], children: [{ provider: 'agents' }] },
       ],

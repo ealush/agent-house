@@ -30,6 +30,7 @@ import { ShortcutHint, shortcutTitle, useCommand, usePaletteProvider, useShortcu
 import { runCommand } from './shortcuts.ts';
 import { useLaunch, useLaunchPalette } from './useLaunch.ts';
 import { Glide } from './Glide.tsx';
+import { toggleSteps, useStepsHidden } from './gui/steps.ts';
 import { ActionSheet, SheetBar, useSheet } from './sheet.tsx';
 
 type Panel = 'diff' | 'files' | 'chat' | 'queue' | 'snapshots' | 'preview';
@@ -605,6 +606,11 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   useCommand('copy-last', () => surface.current?.copyLast?.(), active && view === 'gui');
   useCommand('jump-latest', () => surface.current?.jumpLatest?.(), active && view === 'gui');
   useCommand('browse-messages', () => void surface.current?.browse?.(), active && view === 'gui');
+  const stepsHidden = useStepsHidden();
+  useCommand('toggle-steps', () => {
+    toggleSteps();
+    onToast(stepsHidden ? 'Showing steps' : 'Steps hidden: each run of tool calls is one line');
+  }, active && view === 'gui');
 
   // Model and effort in the terminal view (the GUI's composer covers its own view).
   const launch = useLaunch({
@@ -852,6 +858,17 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       >
         Scrollback as text
       </button>
+      {view === 'gui' && (
+        <button
+          onClick={() => {
+            toggleSteps();
+            setMenu(false);
+          }}
+        >
+          <span className="grow">{stepsHidden ? 'Show' : 'Hide'} steps</span>
+          <ShortcutHint id="toggle-steps" />
+        </button>
+      )}
       {view === 'terminal' && (
         <button
           onClick={() => {

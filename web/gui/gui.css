@@ -513,6 +513,30 @@
   color: var(--faint);
 }
 
+/* Steps hidden: a run of calls is one quiet line between the prose. */
+.gui .tool-fold {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--faint);
+  font-size: 13px;
+}
+
+.gui .tool-fold:hover {
+  color: var(--muted);
+}
+
+.gui .tool-fold-failed {
+  color: var(--danger);
+}
+
+.gui .tool-group.unfolded .tool-fold .tool-caret {
+  transform: rotate(90deg);
+}
+
 .gui .tool-caret {
   flex: none;
   color: var(--faint);

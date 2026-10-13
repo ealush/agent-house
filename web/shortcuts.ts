@@ -33,6 +33,7 @@ export type CommandId =
   | 'go-history'
   | 'go-settings'
   | 'toggle-view'
+  | 'toggle-steps'
   | 'toggle-panel'
   | 'reply'
   | 'approve'
@@ -239,6 +240,15 @@ export const COMMANDS: Command[] = [
     detail: 'Switch the focused session between the terminal and the transcript GUI.',
     chords: [{ key: 'g', ctrl: true, shift: true }],
     scopes: session,
+  },
+  {
+    id: 'toggle-steps',
+    group: 'Session',
+    label: 'Hide / show steps',
+    detail: 'In the GUI, fold tool calls and thinking to one line per run, so the conversation reads as prose. Applies to every session on this device.',
+    chords: [{ key: 'h', ctrl: true, alt: true }],
+    scopes: act,
+    terms: ['tool calls', 'collapse', 'thinking'],
   },
   {
     id: 'toggle-panel',

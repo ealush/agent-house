@@ -105,6 +105,7 @@ const BASE_ICONS = {
   'go-settings': 'gear',
   'show-shortcuts': 'keyboard',
   'toggle-view': 'view',
+  'toggle-steps': 'queue',
   'toggle-panel': 'panel-right',
   reply: 'reply',
   approve: 'check',
