@@ -54,6 +54,7 @@ test('prompt titles skip injected context and keep the first line', () => {
   assert.equal(promptTitle('/clear'), null);
   assert.equal(promptTitle('\n  fix it\nmore'), 'fix it');
   assert.equal(promptTitle('x'.repeat(200))?.length, 88);
+  assert.equal(promptTitle('\n\n<pasted_content id="e3ce">\n# Mission\nmore\n</pasted_content>'), '# Mission', 'a paste is a prompt');
 });
 
 test('titles drop paste placeholders and markup', async () => {

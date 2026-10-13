@@ -85,7 +85,9 @@ function json(line: string): any {
 /** First meaningful line of a user prompt; skips injected <tags> and slash-command noise. */
 export function promptTitle(text: unknown): string | null {
   if (typeof text !== 'string') return null;
-  const t = text.trim();
+  // A paste is yours, not injected: Claude Code wraps it in <pasted_content>. Without
+  // this, a session opened with a paste is never discovered and its GUI stays empty.
+  const t = text.replace(/<\/?pasted_content\b[^>]*>/g, '').trim();
   if (!t || t.startsWith('<') || t.startsWith('/') || t.startsWith('Caveat:')) return null;
   const first = t.split('\n').find((l) => l.trim()) ?? '';
   return first.length > 90 ? first.slice(0, 87) + '…' : first;
