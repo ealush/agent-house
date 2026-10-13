@@ -3078,6 +3078,15 @@ a.btn {
   text-align: right;
 }
 
+/* Clear and Reset on every row read as a column of noise: like History's
+   actions, they show on the row under the pointer or holding focus. They stay
+   in the tab order (opacity, not display), and always show on touch. */
+@media (hover: hover) {
+  .keymap-table tbody tr:not(:hover):not(:focus-within) .keymap-actions .btn {
+    opacity: 0;
+  }
+}
+
 .keymap-dialog {
   width: min(920px, calc(100vw - 24px));
   padding: 16px 18px 18px;
