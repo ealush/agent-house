@@ -199,6 +199,30 @@ animations, long tasks, layout shifts, Event Timing), at 1x and 4x CPU.
 Measured, not changed: a new session's xterm costs ~12ms at 1x (~47 at 4x)
 to measure and lay out; palette and switcher filtering ~40ms per key at 4x.
 
+### Polish pass (14 October 2026)
+
+A throwaway ah with fake Claude agents (long transcripts, a permission prompt,
+busy, resume), driven in Chromium on desktop, iPad and iPhone emulation by
+keyboard, mouse and touch, plus two low-cost model testers on scripted
+journeys. Details and repros: `docs/polish-audit.md`.
+
+| # | Item | | Notes |
+|---|---|---|---|
+| Q1 | Long names | ✅ | Project names ellipsize in Inbox columns, sidebar groups, section headings and New session chips; hover actions replace the sidebar's model label. |
+| Q2 | No repeated context | ✅ | Rows under a project heading don't name it again; a row without detail gives its title the Detail column; the permission chip names the mode that's on. |
+| Q3 | Keyboard | ✅ | Palette rows carry agent logos; the shortcut table shows this platform's keys and per-row actions on hover; New session's agent grid wraps with Home/End; a project's bare name picks it. |
+| Q4 | Answer from the Inbox | ✅ | The keys drawn on a prompt's choices work from anywhere on its card; focus stays on the answer. |
+| Q5 | Phone header and composer | ✅ | The status leads the subtitle so the title keeps the row (live and ended alike); chips and actions share a line when they fit; touch placeholders name no keys; Continue in labels its agents. |
+| Q6 | Truthful presence | ✅ | A page counts once among a session's viewers, however many connections it holds: switching views no longer shows "On <this device>". |
+| Q7 | Plain errors | ✅ | An unreachable host reads as such ("Failed to fetch" before), in every browser's wording. |
+| Q8 | Keys go where you look | ✅ | New session keeps the keyboard when opened right after a session (keys went into the hidden terminal); Send keeps focus in the composer; a double tap on Send can't stop the turn it queued. |
+| Q9 | Safe defaults | ✅ | Send to… never preselects a shell. |
+| Q10 | Contrast and empty states | ✅ | Light theme secondary text meets AA (guarded by test/design.test.ts); phone Sessions and History say what to do when empty; a clipped Files path fades. |
+
+Measured, not changed: switching GUI sessions shows the new title in 10–20ms
+at 1x and 40–90ms at 4x CPU, CLS 0; 40 sessions at 4x load in ~0.9s with
+switcher filtering at 20–30ms per key.
+
 Next candidates: rate-limit auto-resume (F40, opt-in; the reset times are
 now parsed), quota display (F41), keyboard reordering in the sidebar.
 
