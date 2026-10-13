@@ -65,8 +65,12 @@ export function SendToDialog({ client, clientFor, source, windows, multiHost, on
   const [error, setError] = useState<string | null>(null);
 
   const others = windows.filter((w) => w.key !== source.key);
-  const creatingNew = targetKey === NEW_SESSION || (!targetKey && others.length === 0);
-  const target = creatingNew ? null : (others.find((w) => w.key === targetKey) ?? others[0] ?? null);
+  // Until you pick one: another agent, in this project if there is one. Never a
+  // shell, which would run a reply's lines as commands; with no agent, a new session.
+  const agents = others.filter((w) => w.agent);
+  const preferred = agents.find((w) => w.host === source.host && w.project === source.project) ?? agents[0] ?? null;
+  const creatingNew = targetKey === NEW_SESSION || (!targetKey && !preferred);
+  const target = creatingNew ? null : (others.find((w) => w.key === targetKey) ?? preferred);
   const groups = groupsOf(others, multiHost);
 
   useEffect(() => dialog.current?.showModal(), []);
