@@ -61,7 +61,7 @@ import { trackViewport } from './viewport.ts';
 import { glide, transition, type Heading } from './motion.ts';
 import { runCommand } from './shortcuts.ts';
 import { CommandPalette, Keycaps, Shortcuts, ShortcutsDialog, WhichKey, shortcutTitle, useCommand, usePaletteProvider } from './shortcuts.tsx';
-import { Glide } from './Glide.tsx';
+import { TabBar } from './TabBar.tsx';
 import { errorText } from './errors.ts';
 
 // Pages and dialogs most visits never open load on first use.
@@ -1001,18 +1001,7 @@ export function App({ onLock }: { onLock: () => void }) {
         />
       )}
       {narrow && (
-        <nav className="tabbar" data-rove>
-          <Glide match=".on" className="thumb" />
-          {(['inbox', 'sessions', 'history'] as const).map((p) => (
-            <button key={p} className={shown === p ? 'on' : ''} aria-current={shown === p ? 'page' : undefined} onClick={() => go({ page: p, selected: null })}>
-              <span className="tab-icon">
-                <Icon name={p} size={24} />
-                {p === 'inbox' && waiting > 0 && <span className="badge">{waiting}</span>}
-              </span>
-              <span className="tab-label">{p[0].toUpperCase() + p.slice(1)}</span>
-            </button>
-          ))}
-        </nav>
+        <TabBar shown={shown} waiting={waiting} onPick={(p) => go({ page: p, selected: null })} />
       )}
     </>
   );

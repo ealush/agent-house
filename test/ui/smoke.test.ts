@@ -150,6 +150,57 @@ test("phone: a shell's menu offers no agent-only actions, and the chevron goes b
   await ctx.close();
 });
 
+test('phone: a finger slides along the tab bar to pick a tab, and off it to pick none', { skip, timeout: 60_000 }, async () => {
+  const ctx = await browser.newContext({ ...devices['iPhone 15 Pro'] });
+  const { page, errors } = await open(ctx);
+  const bar = page.locator('.tabbar');
+  const tab = (name: string) => bar.getByRole('button', { name });
+  await tab('Inbox').waitFor();
+  const at = async (name: string) => {
+    const b = (await tab(name).boundingBox())!;
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+  };
+  // Real touches (CDP), so the page sees the pointer events a finger makes.
+  const cdp = await ctx.newCDPSession(page);
+  const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', p?: { x: number; y: number }) =>
+    cdp.send('Input.dispatchTouchEvent', { type, touchPoints: p ? [{ x: p.x, y: p.y }] : [] });
+  const slide = async (path: { x: number; y: number }[], mid?: () => Promise<void>) => {
+    await touch('touchStart', path[0]);
+    for (const p of path.slice(1)) await touch('touchMove', p);
+    await mid?.();
+    await touch('touchEnd');
+  };
+
+  // A page and its fade: a touch that lands during the fade reaches the snapshot, not the bar.
+  const landed = async (name: string) => {
+    await page.locator('h1.page-title', { hasText: name }).waitFor();
+    await page.waitForFunction(() => !document.getAnimations().some((a) => String((a.effect as KeyframeEffect | null)?.pseudoElement).startsWith('::view-transition')));
+  };
+
+  await tab('Sessions').tap();
+  await landed('Sessions');
+
+  // Inbox → across Sessions → History: the thumb follows, and lifting picks the tab under it.
+  await tab('Inbox').tap();
+  await landed('Inbox');
+  const [inbox, sessions, history] = [await at('Inbox'), await at('Sessions'), await at('History')];
+  await slide([inbox, sessions], async () => {
+    assert.equal(await bar.locator('button.on').innerText(), 'Sessions');
+    assert.equal(await tab('Inbox').getAttribute('aria-current'), 'page');
+  });
+  await landed('Sessions');
+  await slide([sessions, history]);
+  await landed('History');
+
+  // Slid well off the bar before lifting: nothing is picked, and the thumb goes home.
+  await slide([history, inbox, { x: inbox.x, y: inbox.y - 200 }]);
+  await page.waitForTimeout(300);
+  assert.equal(await tab('History').getAttribute('aria-current'), 'page');
+  assert.match(await bar.locator('button.on').innerText(), /History/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('a prompt on an agent screen is answered from the inbox, without hooks', { skip, timeout: 90_000 }, async () => {
   ah.tmux('new-window', '-t', 'it', '-n', 'zz-agent', 'claude');
   const ctx = await browser.newContext({ ...devices['iPhone 15 Pro'] });

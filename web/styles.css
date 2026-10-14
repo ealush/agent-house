@@ -1543,6 +1543,8 @@ a.pill:hover {
   backdrop-filter: var(--glass-blur);
   box-shadow: var(--elev-2);
   z-index: 10;
+  /* A finger on the bar slides between tabs (web/TabBar.tsx); it never scrolls or zooms. */
+  touch-action: none;
 }
 
 /* Icon over label, like every phone's tab bar: the icon finds the tab, the label confirms it. */
@@ -6380,6 +6382,21 @@ button.tool-chip:hover {
   animation: none;
 }
 
+/* A phone's tab bar stays put through the fade, live: its thumb glides to the new
+   tab as it does outside one, instead of fading with the page. */
+.narrow .main > .tabbar {
+  view-transition-name: ah-tabbar;
+}
+
+::view-transition-old(ah-tabbar) {
+  display: none;
+}
+
+::view-transition-new(ah-tabbar),
+::view-transition-group(ah-tabbar) {
+  animation: none;
+}
+
 ::view-transition-old(ah-main) {
   animation: 90ms ease-in both vt-out;
 }
@@ -6801,6 +6818,15 @@ button.tool-chip:active,
 .seg-tabs button:active,
 .view-toggle button:active,
 .tabbar button:active {
+  transform: scale(0.96);
+}
+
+/* While a finger slides along the tab bar, the dip follows it to the tab under it. */
+.tabbar.held button:active {
+  transform: none;
+}
+
+.tabbar.held button.on {
   transform: scale(0.96);
 }
 
