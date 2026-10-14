@@ -135,12 +135,18 @@ export function useSheet(ref: RefObject<HTMLElement | null>, onClose: () => void
 
 /**
  * The top of a phone sheet: a grabber to drag it down by, and a close button.
+ * A sheet with levels (the command palette) also gets a back button.
  * Desktop dialogs have their own Cancel, so it shows only on a phone (styles.css).
  */
-export function SheetBar({ onClose, title }: { onClose: () => void; title?: string }) {
+export function SheetBar({ onClose, title, onBack, backLabel }: { onClose: () => void; title?: string; onBack?: () => void; backLabel?: string }) {
   return (
     <div className="sheet-bar">
       <span className="grabber" aria-hidden />
+      {onBack && (
+        <button type="button" className="icon-btn sheet-back" onClick={onBack} aria-label={backLabel ? `Back to ${backLabel}` : 'Back'}>
+          <Icon name="back" size={22} />
+        </button>
+      )}
       {title && <span className="sheet-title">{title}</span>}
       <button type="button" className="icon-btn sheet-x" onClick={onClose} aria-label="Close">
         <Icon name="close" size={18} />

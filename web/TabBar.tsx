@@ -24,8 +24,11 @@ function tabAt(bar: DOMRect, tabs: { left: number; right: number }[], x: number,
  * The phone's tab bar. Tap a tab, or press anywhere on the bar and slide: the thumb
  * follows the finger from tab to tab, and lifting it picks the tab under it, as on
  * iOS. Sliding well off the bar puts the thumb back and picks nothing.
+ *
+ * Beside it, apart, a round button opens the command palette: a phone has no
+ * keyboard for its chord. iOS 26 sets its search tab apart the same way.
  */
-export function TabBar({ shown, waiting, onPick }: { shown: string; waiting: number; onPick: (tab: Tab) => void }) {
+export function TabBar({ shown, waiting, onPick, onCommands }: { shown: string; waiting: number; onPick: (tab: Tab) => void; onCommands: () => void }) {
   const nav = useRef<HTMLElement>(null);
   // The tab under the finger while it is down; the thumb shows it until the finger lifts.
   const [held, setHeld] = useState<Tab | null>(null);
@@ -81,17 +84,22 @@ export function TabBar({ shown, waiting, onPick }: { shown: string; waiting: num
 
   const on = held ?? shown;
   return (
-    <nav ref={nav} className={`tabbar ${held ? 'held' : ''}`} data-rove onPointerDown={press}>
-      <Glide match=".on" className="thumb" />
-      {TABS.map((p) => (
-        <button key={p} className={on === p ? 'on' : ''} aria-current={shown === p ? 'page' : undefined} onClick={(e) => click(e, p)}>
-          <span className="tab-icon">
-            <Icon name={p} size={24} />
-            {p === 'inbox' && waiting > 0 && <span className="badge">{waiting}</span>}
-          </span>
-          <span className="tab-label">{p[0].toUpperCase() + p.slice(1)}</span>
-        </button>
-      ))}
-    </nav>
+    <div className="tabdock">
+      <nav ref={nav} className={`tabbar ${held ? 'held' : ''}`} data-rove onPointerDown={press}>
+        <Glide match=".on" className="thumb" />
+        {TABS.map((p) => (
+          <button key={p} className={on === p ? 'on' : ''} aria-current={shown === p ? 'page' : undefined} onClick={(e) => click(e, p)}>
+            <span className="tab-icon">
+              <Icon name={p} size={24} />
+              {p === 'inbox' && waiting > 0 && <span className="badge">{waiting}</span>}
+            </span>
+            <span className="tab-label">{p[0].toUpperCase() + p.slice(1)}</span>
+          </button>
+        ))}
+      </nav>
+      <button type="button" className="tabdock-cmd" onClick={onCommands} aria-label="Commands">
+        <Icon name="commands" size={24} />
+      </button>
+    </div>
   );
 }

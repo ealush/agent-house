@@ -892,6 +892,16 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       >
         Copy “ah attach {w.uid}”
       </button>
+      {/* Everything else this session can do; on a touch screen, the palette's only way in. */}
+      <button
+        onClick={() => {
+          setMenu(false);
+          runCommand('command-palette');
+        }}
+      >
+        <span className="grow">All commands…</span>
+        <ShortcutHint id="command-palette" />
+      </button>
       <hr />
       <button className="danger" onClick={kill}>
         <span className="grow">Terminate session</span>

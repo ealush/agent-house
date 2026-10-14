@@ -1587,6 +1587,40 @@ a.pill:hover {
   box-shadow: 0 0 0 2px var(--surface);
 }
 
+/* The bar and, apart from it, the command palette's round button (TabBar.tsx). */
+.tabdock {
+  display: flex;
+  gap: 8px;
+  z-index: 10;
+}
+
+.tabdock > .tabbar {
+  flex: 1;
+  min-width: 0;
+}
+
+/* As tall as the bar it sits beside, and round. */
+.tabdock-cmd {
+  flex: none;
+  width: 60px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--elev-2);
+  color: var(--muted);
+  transition: transform var(--dur-1) var(--ease), color var(--dur-1);
+}
+
+.tabdock-cmd:active {
+  transform: scale(0.94);
+  color: var(--text);
+}
+
 /* ---------- key bar */
 
 .keybar {
@@ -5508,7 +5542,8 @@ button.tool-chip:hover {
 @media (hover: none) {
   .palette-keys,
   .switch-foot,
-  .menu .keycaps {
+  .menu .keycaps,
+  .palette-tree .cmd-row .keycaps {
     display: none;
   }
 }
@@ -6384,7 +6419,7 @@ button.tool-chip:hover {
 
 /* A phone's tab bar stays put through the fade, live: its thumb glides to the new
    tab as it does outside one, instead of fading with the page. */
-.narrow .main > .tabbar {
+.narrow .main > .tabdock {
   view-transition-name: ah-tabbar;
 }
 
@@ -7307,7 +7342,7 @@ select:not([multiple]) {
 
 /* ---------- phone: content runs under the frosted tab bar, the way an iPhone's lists do */
 
-.narrow :is(.main, .under) > .tabbar {
+.narrow :is(.main, .under) > .tabdock {
   position: absolute;
   left: 16px;
   right: 16px;
@@ -7316,7 +7351,7 @@ select:not([multiple]) {
 }
 
 /* The last row scrolls clear of the bar (its 58px, the gap under it, and the home indicator's strip). */
-.narrow :is(.main, .under):has(> .tabbar) > .page {
+.narrow :is(.main, .under):has(> .tabdock) > .page {
   padding-bottom: calc(96px + var(--safe-pad));
 }
 
@@ -7455,6 +7490,73 @@ select:not([multiple]) {
   .dialog .desk-close,
   .ns-screen .ns-back {
     display: none;
+  }
+
+  .sheet-bar .sheet-back {
+    grid-column: 1;
+    width: 44px;
+    height: 44px;
+    margin-left: -6px;
+    color: var(--accent);
+  }
+
+  /* The command palette as a full-screen drawer: the bar names the level and steps back
+     out of it (so no breadcrumb), search under it, and the rest is the list. */
+  .commands.palette-tree[open] {
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .palette-tree .palette-crumbs {
+    display: none;
+  }
+
+  .commands.palette-tree > input {
+    flex: none;
+    width: auto;
+    margin: 4px 16px 8px;
+    padding: 10px 14px;
+    border-radius: 10px;
+  }
+
+  .palette-tree ul {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+    padding: 0 8px 8px;
+    overscroll-behavior: contain;
+  }
+
+  .palette-tree .cmd-row {
+    min-height: 52px;
+    padding: 8px 10px;
+    gap: 14px;
+  }
+
+  .palette-tree .cmd-row:active {
+    background: var(--raised);
+  }
+
+  .palette-tree .cmd-empty {
+    padding: 16px 24px;
+  }
+
+  /* Without a keyboard there is no row to move: the highlight shows only while you type,
+     marking the row the keyboard's Go key runs. */
+  .palette-tree:not(:has(> input:focus)) .cmd-row.on {
+    background: none;
+  }
+
+  .palette-tree:not(:has(> input:focus)) .cmd-row.on:active {
+    background: var(--raised);
+  }
+
+  .palette-tree:not(:has(> input:focus)) .cmd-row.on,
+  .palette-tree:not(:has(> input:focus)) .cmd-row.on .cmd-icon,
+  .palette-tree:not(:has(> input:focus)) .cmd-row.on .cmd-more {
+    color: var(--muted);
   }
 
   /* A form's top padding sits under the bar instead. */

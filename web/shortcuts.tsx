@@ -27,7 +27,7 @@ import {
   type CommandId,
   type Overrides,
 } from './shortcuts.ts';
-import { SheetBar, useSheet } from './sheet.tsx';
+import { PHONE, SheetBar, useSheet } from './sheet.tsx';
 import { AgentLogo } from './logos.tsx';
 
 export function useShortcutRevision() {
@@ -389,10 +389,16 @@ function nodeIcon(node: PaletteNode): IconName {
  * or Enter and out of with ← or Backspace; typing searches everything below where
  * you are, categories included, each hit with its breadcrumb. A command's chord
  * sits on its row.
+ *
+ * On a phone it is a full-screen sheet you browse with a finger: the bar names the
+ * level you are on and steps back out of it, and the keyboard stays down until you
+ * tap the search field. A command runs once the sheet has gone down.
  */
 export function CommandPalette({ onClose, onRun }: { onClose: () => void; onRun: (node: PaletteNode) => void }) {
   const ref = useRef<HTMLDialogElement>(null);
-  const { dismiss } = useSheet(ref, onClose);
+  // The command chosen, run when the sheet is gone; nothing, when it was just closed.
+  const chosen = useRef<PaletteNode | null>(null);
+  const { dismiss } = useSheet(ref, () => (chosen.current ? onRun(chosen.current) : onClose()));
   const input = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const [root, setRoot] = useState<PaletteNode | null>(null);
@@ -406,6 +412,10 @@ export function CommandPalette({ onClose, onRun }: { onClose: () => void; onRun:
 
   useEffect(() => {
     ref.current?.showModal();
+    // Focus after showModal, which would otherwise take it to the sheet's first button.
+    // A phone gets the whole tree to look at, not a keyboard over half of it.
+    if (matchMedia(PHONE).matches) ref.current?.focus({ preventScroll: true });
+    else input.current?.focus();
     let live = true;
     void resolveTree().then((tree) => {
       if (!live) return;
@@ -453,8 +463,9 @@ export function CommandPalette({ onClose, onRun }: { onClose: () => void; onRun:
   };
   const choose = (row: { node: PaletteNode; trail: PaletteNode[] } | undefined) => {
     if (!row) return;
-    if (row.node.children) enter(row.node, row.trail);
-    else onRun(row.node);
+    if (row.node.children) return enter(row.node, row.trail);
+    chosen.current = row.node;
+    dismiss();
   };
   const caretAt = (pos: 'start' | 'end') => {
     const el = input.current;
@@ -467,9 +478,15 @@ export function CommandPalette({ onClose, onRun }: { onClose: () => void; onRun:
       ref={ref}
       className="dialog switcher commands palette-tree"
       aria-label="Command palette"
+      tabIndex={-1}
       onClose={onClose}
       onClick={(e) => e.target === ref.current && onClose()}
       onKeyDown={(e) => {
+        // A key typed with focus on the sheet itself (a phone's, opened with a tap) searches.
+        if (e.target !== input.current && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          input.current?.focus();
+          return;
+        }
         // The palette is a dialog, so its own chord is not stolen by the global listener. Pressing it again closes.
         if (matchShortcut(e, 'app', overrides) === 'command-palette') {
           e.preventDefault();
@@ -499,7 +516,7 @@ export function CommandPalette({ onClose, onRun }: { onClose: () => void; onRun:
         e.preventDefault();
       }}
     >
-      <SheetBar onClose={dismiss} />
+      <SheetBar onClose={dismiss} title={here?.label ?? 'Commands'} onBack={stack.length > 1 ? () => up() : undefined} backLabel={stack.at(-2)?.label} />
       <nav className="palette-crumbs" aria-label="Where you are">
         {stack.map((n, at) => (
           <Fragment key={n.key + at}>
@@ -512,7 +529,6 @@ export function CommandPalette({ onClose, onRun }: { onClose: () => void; onRun:
       </nav>
       <input
         ref={input}
-        autoFocus
         value={query}
         placeholder={here && stack.length > 1 ? `Search ${here.label}…` : 'Search commands and categories…'}
         aria-label="Search"

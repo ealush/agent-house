@@ -357,7 +357,8 @@ export function App({ onLock }: { onLock: () => void }) {
   useCommand('switcher', () => setSwitching((v) => !v));
   useCommand('new-session', () => setCreating({}));
   useCommand('new-project', () => setCreating({ project: true }));
-  useCommand('toggle-sidebar', toggleSide);
+  // A phone has no sidebar; toggling it there would only flip the desktop's setting.
+  useCommand('toggle-sidebar', toggleSide, !narrow);
   useCommand('cycle-prev', () => cycleSession(-1));
   useCommand('cycle-next', () => cycleSession(1));
   useCommand('go-inbox', () => showPage('inbox'));
@@ -1011,7 +1012,7 @@ export function App({ onLock }: { onLock: () => void }) {
         />
       )}
       {narrow && (
-        <TabBar shown={shown} waiting={waiting} onPick={(p) => go({ page: p, selected: null })} />
+        <TabBar shown={shown} waiting={waiting} onPick={(p) => go({ page: p, selected: null })} onCommands={() => setPalette(true)} />
       )}
     </>
   );

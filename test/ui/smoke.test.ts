@@ -201,6 +201,28 @@ test('phone: a finger slides along the tab bar to pick a tab, and off it to pick
   await ctx.close();
 });
 
+test('phone: the round button by the tab bar opens the palette as a sheet you walk with a finger', { skip, timeout: 60_000 }, async () => {
+  const ctx = await browser.newContext({ ...devices['iPhone 15 Pro'] });
+  const { page, errors } = await open(ctx);
+  await page.getByRole('button', { name: 'Commands' }).tap();
+  const sheet = page.locator('.palette-tree');
+  const title = sheet.locator('.sheet-title');
+  await title.filter({ hasText: 'Commands' }).waitFor();
+  // No keyboard over the tree until you ask for one.
+  assert.equal(await page.evaluate(() => document.activeElement?.tagName), 'DIALOG');
+  await sheet.getByRole('option', { name: /^Go to/ }).tap();
+  await title.filter({ hasText: 'Go to' }).waitFor();
+  await sheet.getByRole('button', { name: 'Back to Commands' }).tap();
+  await title.filter({ hasText: 'Commands' }).waitFor();
+  // A command runs once the sheet is down.
+  await sheet.getByRole('option', { name: /^Go to/ }).tap();
+  await sheet.getByRole('option', { name: /^History/ }).tap();
+  await sheet.waitFor({ state: 'detached' });
+  await page.locator('h1.page-title', { hasText: 'History' }).waitFor();
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('a prompt on an agent screen is answered from the inbox, without hooks', { skip, timeout: 90_000 }, async () => {
   ah.tmux('new-window', '-t', 'it', '-n', 'zz-agent', 'claude');
   const ctx = await browser.newContext({ ...devices['iPhone 15 Pro'] });
