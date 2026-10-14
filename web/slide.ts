@@ -9,7 +9,7 @@
 // it. A drag that is mostly up or down is the page's.
 
 /** The controls that slide: their direct child buttons are the segments. */
-const SLIDERS = '.seg, .seg-tabs, .view-toggle, .side-panel .tabs-scroll';
+const SLIDERS = '.seg, .seg-tabs, .view-toggle, .side-panel .tabs-scroll, .settings-nav';
 /** How far a press moves sideways before it is a slide and not a tap. */
 const START = 6;
 /** How far above or below the control a finger can stray and still pick. */

@@ -29,6 +29,11 @@ export function Settings({ onLocked, onNotifyChange }: { onLocked: () => void; o
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
 
+  // On a phone the sections are one row that scrolls: the one you're on stays in view.
+  useEffect(() => {
+    document.querySelector('.settings-nav .nav-item.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [section]);
+
   const go = (id: Section) => {
     location.hash = sectionHash(id);
   };

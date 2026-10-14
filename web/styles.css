@@ -1985,14 +1985,16 @@ a.btn {
   background: var(--scrim);
 }
 
-.dialog form {
+/* A dialog's own form and title. Not a whole page shown as a sheet (Settings on a
+   phone): its forms and cards keep their own layout. */
+.dialog:not(.sheet-view) form {
   display: flex;
   flex-direction: column;
   gap: 14px;
   padding: 20px;
 }
 
-.dialog h2 {
+.dialog:not(.sheet-view) h2 {
   margin: 0;
   font-size: 16px;
   font-weight: 600;
@@ -3077,10 +3079,15 @@ a.btn {
   margin: 0;
 }
 
-/* Lists inside a card run its full width, rows separated by hairlines. */
-.sec-card > .rows {
+/* Lists inside a card run its full width, rows separated by hairlines, their text in
+   line with the card's. Not the boxed list a phone draws elsewhere: a box in a card. */
+.sec-card > .rows.rows {
   align-self: stretch;
   margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  overflow: visible;
 }
 
 .sec-card > .rows .sec-row {
@@ -3090,6 +3097,17 @@ a.btn {
 
 .sec-card > .rows .sec-row:last-child {
   border-bottom: 0;
+}
+
+/* A card that ends in a list: the last row's own padding is the card's bottom edge. */
+.sec-card:has(> .rows:last-child) {
+  padding-bottom: 6px;
+}
+
+/* A row's action reads as text at its trailing edge, in line with the times and the
+   hairlines, its button padding hanging past. */
+.sec-row > .btn.ghost:last-child {
+  margin-right: -10px;
 }
 
 .security {
@@ -3102,6 +3120,14 @@ a.btn {
   display: flex;
   align-items: flex-start;
   gap: 16px;
+}
+
+/* Too narrow for the intro and its button side by side: the button goes under it. */
+@container settings (max-width: 520px) {
+  .settings-intro {
+    flex-direction: column;
+    gap: 10px;
+  }
 }
 
 .settings-intro .hint {
@@ -3320,18 +3346,38 @@ a.btn {
     align-items: stretch;
   }
 
+  /* One row, as iOS's scrolling tabs: a capsule strip with a capsule thumb that
+     scrolls sideways, fading at the edge while more is hidden, and slides under a
+     finger (slide.ts). */
   .settings-nav {
     width: 100%;
     flex-direction: row;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    padding: 3px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface);
     /* Not static: the selection highlight (Glide) places itself in this box. */
     position: relative;
     top: auto;
   }
 
+  .settings-nav::-webkit-scrollbar {
+    display: none;
+  }
+
   .settings-nav .nav-item {
+    flex: none;
     width: auto;
+    padding: 7px 14px;
+    border-radius: 999px;
     white-space: nowrap;
+  }
+
+  .settings-nav > .glide {
+    border-radius: 999px;
   }
 }
 
@@ -3351,19 +3397,38 @@ a.btn {
     align-items: stretch;
   }
 
-  /* Wrap, not scroll: all seven sections stay in sight. */
+  /* One row, as iOS's scrolling tabs: a capsule strip with a capsule thumb that
+     scrolls sideways, fading at the edge while more is hidden, and slides under a
+     finger (slide.ts). */
   .settings-nav {
     width: 100%;
     flex-direction: row;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    padding: 3px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface);
     /* Not static: the selection highlight (Glide) places itself in this box. */
     position: relative;
     top: auto;
   }
 
+  .settings-nav::-webkit-scrollbar {
+    display: none;
+  }
+
   .settings-nav .nav-item {
+    flex: none;
     width: auto;
+    padding: 7px 14px;
+    border-radius: 999px;
     white-space: nowrap;
+  }
+
+  .settings-nav > .glide {
+    border-radius: 999px;
   }
 }
 
@@ -6814,6 +6879,7 @@ button.tool-chip:hover {
 .seg-tabs,
 .keybar,
 .side-panel .tabs-scroll,
+.settings-nav,
 .bind-line code {
   mask-image: linear-gradient(to right, #000 calc(100% - var(--tabs-fade)), transparent);
 }
@@ -6822,6 +6888,7 @@ button.tool-chip:hover {
   .seg-tabs,
   .keybar,
   .side-panel .tabs-scroll,
+  .settings-nav,
   .bind-line code {
     animation: tabs-fade linear both;
     animation-timeline: scroll(self inline);
