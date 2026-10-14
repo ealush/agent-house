@@ -10,6 +10,11 @@
 // - Meta loop: Simple Icons `meta` (CC0; Meta blue #0082FB)
 // - opencode mark: sst/opencode brand assets (opencode-logo-light-square.svg)
 // - Hermes portrait: Nous Research Hermes Desktop app icon (hermes-desktop.png)
+// - Cursor cube, GitHub Copilot, pi, Cline: Simple Icons (CC0; Copilot's from Primer, MIT)
+// - Amp, Goose, Kilo Code, Kimi, Kiro, OpenHands, Qwen: LobeHub icons (MIT)
+// - Crush heart: Charm's Crush artwork (stuff.charm.sh/crush/charm-crush.png, cropped)
+// - Aider, Codebuff, Jules, Augment (Auggie), Factory (Droid): each site's own icon
+// - Plandex: the plandex-ai GitHub avatar
 // All trademarks belong to their owners; each mark is used only to identify
 // the tool it stands for.
 const FILE: Record<string, string> = {
@@ -20,15 +25,53 @@ const FILE: Record<string, string> = {
   muse: '/logos/meta.svg',
   hermes: '/logos/hermes-logo.png',
   opencode: '/logos/opencode.svg',
+  cursor: '/logos/cursor.svg',
+  copilot: '/logos/copilot.svg',
+  crush: '/logos/crush.png',
+  pi: '/logos/pi.svg',
+  // Agents added in Settings → Agents (custom-<name>), by their usual names.
+  aider: '/logos/aider.png',
+  amp: '/logos/amp.svg',
+  auggie: '/logos/augment.svg',
+  cline: '/logos/cline.svg',
+  codebuff: '/logos/codebuff.png',
+  droid: '/logos/factory.svg',
+  goose: '/logos/goose.svg',
+  jules: '/logos/jules.svg',
+  kilocode: '/logos/kilocode.svg',
+  kimi: '/logos/kimi.svg',
+  kiro: '/logos/kiro.svg',
+  openhands: '/logos/openhands.svg',
+  plandex: '/logos/plandex.png',
+  qwen: '/logos/qwen.svg',
+};
+
+/** Other names the same agents go by (a command, a company, a longer name). */
+const ALIAS: Record<string, string> = {
+  'cursor-agent': 'cursor',
+  'github-copilot': 'copilot',
+  augment: 'auggie',
+  factory: 'droid',
+  'kilo-code': 'kilocode',
+  kilo: 'kilocode',
+  'kiro-cli': 'kiro',
+  'qwen-code': 'qwen',
 };
 
 /** Logos that are full app icons (their own background): drawn edge to edge, no mat. */
-const TILE = new Set(['hermes']);
+const TILE = new Set(['hermes', 'aider', 'codebuff', 'crush', 'droid', 'kiro']);
 /** White single-color marks (their dark-ground artwork): drawn in ink on a light theme. */
-const WHITE = new Set(['codex', 'grok']);
+const WHITE = new Set(['codex', 'grok', 'cursor', 'copilot', 'pi', 'cline', 'goose', 'kilocode', 'kimi', 'openhands', 'auggie']);
+
+/** The logo an agent id draws: its own, or, for one added here ("custom-qwen-code"), the one its name matches. */
+function logoKey(id: string): string {
+  const bare = id.replace(/^custom-/, '');
+  for (const k of [id, bare, ALIAS[bare], bare.split('-')[0]]) if (k && FILE[k]) return k;
+  return id;
+}
 
 export function AgentLogo({ id, size = 15 }: { id: string | null; size?: number }) {
-  const key = (id ?? 'shell').toLowerCase();
+  const key = logoKey((id ?? 'shell').toLowerCase());
   const file = FILE[key];
   if (file) {
     return <img src={file} width={size} height={size} alt="" draggable={false} className={TILE.has(key) ? 'tile' : WHITE.has(key) ? 'ink' : undefined} />;

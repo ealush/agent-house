@@ -18,6 +18,22 @@ export function look(agent: string | null) {
   return LOOK[agent ?? 'shell'] ?? { color: 'var(--c-other)', glyph: (agent ?? '?').slice(0, 1).toUpperCase(), name: agent ?? 'Shell' };
 }
 
+/**
+ * The agents most used, in their usual order: sessions started here, plus the ones
+ * running on the host now (so a new device starts from what you already run).
+ * Ties keep the presets' order, and so do the three once chosen, so a button
+ * doesn't move under a finger from one session to the next.
+ */
+export function frontAgents<P extends { id: string }>(agents: P[], running: Array<string | null>, use: Record<string, number>, n: number): P[] {
+  const score = new Map(agents.map((a) => [a.id, use[a.id] ?? 0]));
+  for (const id of running) if (id && score.has(id)) score.set(id, score.get(id)! + 1);
+  const ranked = agents.map((a, i) => ({ a, i })).sort((x, y) => score.get(y.a.id)! - score.get(x.a.id)! || x.i - y.i);
+  return ranked
+    .slice(0, n)
+    .sort((x, y) => x.i - y.i)
+    .map((x) => x.a);
+}
+
 /** "4m", "2h", "yesterday", "11:20". */
 // One formatter for every row: building one per call made a long list slow to draw.
 let monthDay: Intl.DateTimeFormat | null = null;

@@ -105,7 +105,7 @@ export function EffortPicker({ levels, value, onPick, disabled = false, footer }
 }
 
 /** A button that opens a popover; closes on outside click or Escape. */
-export function Popover({ label, className, children, up = true, align = 'left', title, command, active = false }: { label: React.ReactNode; className?: string; children: (close: () => void) => React.ReactNode; up?: boolean; align?: 'left' | 'right'; title?: string; command?: CommandId; active?: boolean }) {
+export function Popover({ label, className, children, up = true, align = 'left', title, command, active = false, tabIndex }: { label: React.ReactNode; className?: string; children: (close: () => void) => React.ReactNode; up?: boolean; align?: 'left' | 'right'; title?: string; command?: CommandId; active?: boolean; tabIndex?: number }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
@@ -140,7 +140,7 @@ export function Popover({ label, className, children, up = true, align = 'left',
   }, [open]);
   return (
     <div className="popover-wrap" ref={ref}>
-      <button ref={button} type="button" className={className} aria-expanded={open} title={command ? shortcutTitle(title ?? '', command) : title} onClick={() => setOpen(!open)}>
+      <button ref={button} type="button" className={className} tabIndex={tabIndex} aria-expanded={open} title={command ? shortcutTitle(title ?? '', command) : title} onClick={() => setOpen(!open)}>
         {label}
       </button>
       {open && (

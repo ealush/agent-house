@@ -3,10 +3,11 @@ import { bareProject } from './projectPath.ts';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ConfirmButton } from './ConfirmButton.tsx';
 import { Icon } from './icons.tsx';
-import type { DirState, HostApi, SendResult, State } from './api.ts';
+import type { DirState, HostApi, Preset, SendResult, State } from './api.ts';
 import { showError } from './ask.tsx';
-import { look } from './agents.ts';
+import { frontAgents, look } from './agents.ts';
 import { AgentLogo } from './logos.tsx';
+import { Glide } from './Glide.tsx';
 import { EffortPicker, ModelPicker, Popover, effectiveModel, effortsFor, type Pick } from './ModelPicker.tsx';
 import { SheetBar, useSheet } from './sheet.tsx';
 import { errorText } from './errors.ts';
@@ -63,6 +64,30 @@ export function lastCwd(host: string): string {
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
+/** How many agents get a button of their own; the rest wait in the menu beside them. */
+const FRONT = 3;
+const USE_KEY = 'ah.agentUse';
+
+/** Sessions started per agent from this device. */
+function launches(): Record<string, number> {
+  try {
+    const v = JSON.parse(localStorage.getItem(USE_KEY) ?? '{}');
+    return v && typeof v === 'object' ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+function countLaunch(id: string) {
+  try {
+    const use = launches();
+    localStorage.setItem(USE_KEY, JSON.stringify({ ...use, [id]: (use[id] ?? 0) + 1 }));
+  } catch {
+    // private mode: the order just doesn't learn
+  }
+}
+
+
 export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd, initialPrompt = '', initialPreset, newProject = false, onClose, onCreated, onSent, screen = false }: Props) {
   const [host, setHost] = useState(initialHost);
   const state = hostState(host) ?? hostState(hosts[0])!;
@@ -71,6 +96,17 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
   const presets = state.presets.filter((p) => p.available && !p.hidden);
   const [presetId, setPresetId] = useState(() => initialPreset ?? localStorage.getItem('ah.lastPreset') ?? presets[0]?.id ?? 'shell');
   const preset = presets.find((p) => p.id === presetId) ?? presets[0];
+  // Shell or agent first; then which agent: the most used have buttons, the rest a menu.
+  const shellPreset = presets.find((p) => !p.command);
+  const agents = presets.filter((p) => p.command);
+  const [use] = useState(launches);
+  const front = frontAgents(agents, state.windows.map((w) => w.agent), use, FRONT);
+  const rest = agents.filter((a) => !front.includes(a));
+  const [lastAgent, setLastAgent] = useState(() => (preset?.command ? preset.id : (localStorage.getItem('ah.lastAgent') ?? front[0]?.id)));
+  const pickAgent = (id: string) => {
+    setPresetId(id);
+    setLastAgent(id);
+  };
   const [cwd, setCwd] = useState(newProject ? '' : initialCwd);
   const [label, setLabel] = useState('');
   const [session, setSession] = useState(state.sessions.includes(state.defaultSession) ? state.defaultSession : (state.sessions[0] ?? NEW_SESSION));
@@ -211,6 +247,10 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
       }
       const create = state === 'new';
       localStorage.setItem('ah.lastPreset', preset.id);
+      if (preset.command) {
+        localStorage.setItem('ah.lastAgent', preset.id);
+        countLaunch(preset.id);
+      }
       localStorage.setItem(`ah.lastCwd.${host}`, path);
       if (create) localStorage.setItem('ah.newGit', gitInit ? '1' : '0');
       localStorage.setItem(memKey(preset.id), JSON.stringify({ mode, model: pick.model, effort: pick.effort }));
@@ -270,40 +310,88 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
         </header>
 
         <div className="ns-body">
-        <div
-          className="agents"
-          role="radiogroup"
-          aria-label="Agent"
-          onKeyDown={(e) => {
-            // A radio group: the arrows move across the grid and choose as they go.
-            if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
-            const next = radioGridMove(e.currentTarget, e.target as HTMLElement, e.key);
-            if (!next || next === e.target) return;
-            e.preventDefault();
-            next.focus();
-            next.click();
-          }}
-        >
-          {presets.map((p) => (
+        {shellPreset && agents.length > 0 && (
+          <div
+            className="seg kind"
+            role="radiogroup"
+            aria-label="Start"
+            onKeyDown={(e) => {
+              if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+              const next = radioGridMove(e.currentTarget, e.target as HTMLElement, e.key);
+              if (!next || next === e.target) return;
+              e.preventDefault();
+              next.focus();
+              next.click();
+            }}
+          >
+            <Glide match=".on" className="thumb" />
             <button
               type="button"
-              key={p.id}
               role="radio"
-              aria-checked={p.id === preset?.id}
-              className={`agent-pill ${p.id === preset?.id ? 'on' : ''}`}
-              data-autofocus={p.id === preset?.id || undefined}
-              // One Tab stop for the group, on the chosen agent; the arrows move within it.
-              tabIndex={p.id === preset?.id ? 0 : -1}
-              style={{ '--agent': look(p.id).color } as React.CSSProperties}
-              onClick={() => setPresetId(p.id)}
+              aria-checked={isShell}
+              className={isShell ? 'on' : ''}
+              data-autofocus={isShell || undefined}
+              tabIndex={isShell ? 0 : -1}
+              onClick={() => setPresetId(shellPreset.id)}
             >
-              <span className="chip sm">
-                <AgentLogo id={p.id} size={13} />
-              </span>
-              {p.name}
+              <AgentLogo id="shell" size={15} />
+              Shell
             </button>
-          ))}
-        </div>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={!isShell}
+              className={isShell ? '' : 'on'}
+              tabIndex={isShell ? -1 : 0}
+              // Focus starts on the agent chosen; on this when that one waits in the menu.
+              data-autofocus={(!isShell && !front.some((p) => p.id === preset?.id)) || undefined}
+              onClick={() => setPresetId(agents.find((a) => a.id === lastAgent)?.id ?? front[0].id)}
+            >
+              <Icon name="sparkle" size={15} />
+              Agent
+            </button>
+          </div>
+        )}
+        {!isShell && agents.length > 0 && (
+          <div className="agent-pick">
+            <div
+              className="agents"
+              role="radiogroup"
+              aria-label="Agent"
+              onKeyDown={(e) => {
+                // A radio group: the arrows move across the agents and choose as they go. The
+                // menu's button takes focus without opening; its open menu has arrows of its own.
+                if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || (e.target as HTMLElement).closest('.popover')) return;
+                const next = radioGridMove(e.currentTarget, e.target as HTMLElement, e.key);
+                if (!next || next === e.target) return;
+                e.preventDefault();
+                next.focus();
+                if (next.getAttribute('role') === 'radio') next.click();
+              }}
+            >
+              {front.map((p) => (
+                <button
+                  type="button"
+                  key={p.id}
+                  role="radio"
+                  aria-checked={p.id === preset?.id}
+                  className={`agent-pill ${p.id === preset?.id ? 'on' : ''}`}
+                  data-autofocus={p.id === preset?.id || undefined}
+                  // One Tab stop for the group, on the chosen agent; the arrows move within it.
+                  tabIndex={p.id === preset?.id ? 0 : -1}
+                  style={{ '--agent': look(p.id).color } as React.CSSProperties}
+                  onClick={() => pickAgent(p.id)}
+                >
+                  <span className="chip sm">
+                    <AgentLogo id={p.id} size={13} />
+                  </span>
+                  {p.name}
+                </button>
+              ))}
+              {rest.length > 0 && <MoreAgents agents={rest} chosen={rest.find((p) => p.id === preset?.id)} onPick={pickAgent} />}
+            </div>
+          </div>
+        )}
 
         <label className="field">
           <span>Project</span>
@@ -522,5 +610,55 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
       <SheetBar onClose={dismiss} />
       {form}
     </dialog>
+  );
+}
+
+/** The agents used less: one button, showing the chosen one when it's among them, and a menu of the rest. */
+function MoreAgents({ agents, chosen, onPick }: { agents: Preset[]; chosen?: Preset; onPick: (id: string) => void }) {
+  return (
+    <div className="more-agents" style={{ '--agent': look(chosen?.id ?? null).color } as React.CSSProperties}>
+      <Popover
+        up={false}
+        align="right"
+        title="More agents"
+        // Part of the agents' one Tab stop: reached by the arrows, unless it holds the agent chosen.
+        tabIndex={chosen ? 0 : -1}
+        className={`agent-pill others ${chosen ? 'on' : ''}`}
+        label={
+          <>
+            {chosen && (
+              <span className="chip sm">
+                <AgentLogo id={chosen.id} size={13} />
+              </span>
+            )}
+            <span className="grow">{chosen ? chosen.name : `${agents.length} more`}</span>
+            <Icon name="chevron-down" size={14} />
+          </>
+        }
+      >
+        {(close) => (
+          <div className="picker" aria-label="More agents">
+            <div className="picker-title">More agents</div>
+            {agents.map((a) => (
+              <button
+                type="button"
+                key={a.id}
+                className="picker-name agent-option"
+                onClick={() => {
+                  onPick(a.id);
+                  close();
+                }}
+              >
+                <span className="chip sm" style={{ '--agent': look(a.id).color } as React.CSSProperties}>
+                  <AgentLogo id={a.id} size={13} />
+                </span>
+                {a.name}
+                {a.id === chosen?.id && <span className="check">✓</span>}
+              </button>
+            ))}
+          </div>
+        )}
+      </Popover>
+    </div>
   );
 }

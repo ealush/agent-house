@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { age, runningModel, shortModel } from '../web/agents.ts';
+import { age, frontAgents, runningModel, shortModel } from '../web/agents.ts';
 
 test('model ids read as people say them', () => {
   assert.equal(shortModel('claude-haiku-4-5-20251001'), 'Haiku 4.5');
@@ -28,4 +28,15 @@ test('ages read as people say them, and yesterday is the calendar day before', (
   assert.equal(age(now / 1000 - 600, now), '10m');
   assert.equal(age(at(2026, 9, 12, 12), now), 'yesterday');
   assert.equal(age(at(2026, 9, 11, 23), now), new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(new Date(2026, 9, 11)), '25.5h ago but two days back');
+});
+
+test('New session gives buttons to the three agents used most, in their usual order', () => {
+  const agents = ['claude', 'codex', 'gemini', 'grok', 'cursor', 'pi'].map((id) => ({ id }));
+  const ids = (xs: { id: string }[]) => xs.map((x) => x.id);
+  // Nothing known yet: the presets' own order.
+  assert.deepEqual(ids(frontAgents(agents, [], {}, 3)), ['claude', 'codex', 'gemini']);
+  // Started here most, but drawn in the presets' order, so buttons don't move about.
+  assert.deepEqual(ids(frontAgents(agents, [], { pi: 9, grok: 4, claude: 2, codex: 1 }, 3)), ['claude', 'grok', 'pi']);
+  // A new device starts from what the host runs; shells and unknown agents don't count.
+  assert.deepEqual(ids(frontAgents(agents, ['cursor', 'cursor', null, 'aider', 'codex'], {}, 3)), ['claude', 'codex', 'cursor']);
 });

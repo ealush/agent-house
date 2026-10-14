@@ -51,6 +51,11 @@ before(async () => {
   execFileSync('mkdir', ['-p', bin]);
   writeFileSync(join(bin, 'claude'), FAKE_CLAUDE);
   chmodSync(join(bin, 'claude'), 0o755);
+  // More agents than New session has buttons for, wherever the tests run.
+  for (const name of ['cursor-agent', 'crush', 'pi']) {
+    writeFileSync(join(bin, name), '#!/bin/sh\nexec sleep 600\n');
+    chmodSync(join(bin, name), 0o755);
+  }
   const saved = { dist: process.env.AH_DIST, path: process.env.PATH };
   process.env.AH_DIST = dist;
   process.env.PATH = `${bin}:${process.env.PATH}`;
@@ -268,6 +273,12 @@ test('desktop: New session works from the keyboard alone', { skip, timeout: 60_0
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const { page, errors } = await open(ctx);
   await page.keyboard.press('Control+Shift+Enter');
+  // Shell or agent first: a fresh device starts on Shell, and → picks Agent.
+  await page.waitForFunction(() => document.activeElement?.closest('.seg.kind') && document.activeElement.textContent === 'Shell');
+  await page.keyboard.press('ArrowRight');
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-checked')), 'true', 'the arrows choose as they go');
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Agent');
+  await page.keyboard.press('Tab');
   await page.waitForFunction(() => document.activeElement?.classList.contains('agent-pill'));
   const before = await page.evaluate(() => document.activeElement?.textContent);
   await page.keyboard.press('ArrowRight');
@@ -282,6 +293,30 @@ test('desktop: New session works from the keyboard alone', { skip, timeout: 60_0
   assert.equal(await page.evaluate(() => document.activeElement?.textContent), pills.at(-1));
   await page.keyboard.press('Tab');
   assert.match(await focused(page), /^input/, 'one Tab stop for the agents, then the project');
+  await page.keyboard.press('Escape');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('desktop: New session keeps three agents in front and the rest in a menu', { skip, timeout: 60_000 }, async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const { page, errors } = await open(ctx);
+  await page.keyboard.press('Control+Shift+Enter');
+  await page.locator('.seg.kind button', { hasText: 'Agent' }).click();
+  assert.equal(await page.locator('.agents > button.agent-pill').count(), 3);
+  const more = page.locator('.agent-pill.others');
+  await more.click();
+  const pick = page.locator('.agent-option', { hasText: 'Crush' });
+  await pick.click();
+  // The menu's button now stands for the agent picked, and Start says so.
+  await page.waitForFunction(() => document.querySelector('.agent-pill.others')?.classList.contains('on'));
+  assert.match((await more.textContent()) ?? '', /Crush/);
+  assert.match((await page.locator('.actions button[type="submit"]').textContent()) ?? '', /Start Crush/);
+  // Shell and back: the agent picked comes back with it.
+  await page.locator('.seg.kind button', { hasText: 'Shell' }).click();
+  assert.equal(await page.locator('.agents').count(), 0);
+  await page.locator('.seg.kind button', { hasText: 'Agent' }).click();
+  assert.match((await page.locator('.actions button[type="submit"]').textContent()) ?? '', /Start Crush/);
   await page.keyboard.press('Escape');
   assert.deepEqual(errors, []);
   await ctx.close();
@@ -315,7 +350,7 @@ test('desktop: New session right after opening a session keeps the keyboard', { 
   // must keep it: keys typed there would otherwise go into the hidden terminal.
   await page.keyboard.press('Control+Shift+Enter');
   await page.waitForTimeout(500);
-  assert.match(await focused(page), /agent-pill/);
+  assert.ok(await page.evaluate(() => !!document.activeElement?.closest('.new-session [role="radiogroup"]')), 'on the choice of shell or agent');
   await page.keyboard.press('Escape');
   assert.deepEqual(errors, []);
   await ctx.close();
