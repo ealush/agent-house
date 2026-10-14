@@ -84,8 +84,7 @@ export function Workspace(props: Props) {
       // Not from a dialog or a floating layer over the workspace (the scratchpad).
       if (a?.closest('dialog[open], [role="dialog"]') || document.querySelector('.scratchpad')) return;
       if (el && a && a !== el && el.contains(a)) return;
-      const target = el && PANE_FOCUS.map((q) => [...el.querySelectorAll<HTMLElement>(q)].find((x) => x.getClientRects().length > 0)).find(Boolean);
-      target?.focus({ preventScroll: true });
+      if (el) focusIn(el);
       if (performance.now() < until) raf = requestAnimationFrame(claim);
     };
     raf = requestAnimationFrame(claim);
@@ -407,6 +406,28 @@ type Frame = { 'data-tile'?: string; 'data-pane'?: string; className?: string; s
  * then the session's view: its terminal when that shows, else (the GUI) its composer.
  */
 const PANE_FOCUS = ['[data-autofocus]', '.pane-picker-filter', '.xterm-helper-textarea', '.composer textarea', 'input:not([type="hidden"])', 'textarea', 'button'];
+
+function focusIn(pane: HTMLElement) {
+  const target = PANE_FOCUS.map((q) => [...pane.querySelectorAll<HTMLElement>(q)].find((x) => x.getClientRects().length > 0)).find(Boolean);
+  target?.focus({ preventScroll: true });
+}
+
+/**
+ * Give a pane the keyboard at once, inside the keystroke that moved to it, so the next
+ * key typed lands there and not in the pane just left. A session pane picks its own input
+ * (Session.tsx: composer, question or terminal); a chooser, its first field. The
+ * Workspace's per-frame claim follows up for anything still loading.
+ */
+export function focusPaneNow(paneId: string) {
+  const el = document.querySelector<HTMLElement>(`.pane[data-pane="${CSS.escape(paneId)}"]`);
+  if (!el || !el.getClientRects().length) return;
+  const a = document.activeElement;
+  if (a?.closest('dialog[open], [role="dialog"]') || document.querySelector('.scratchpad')) return;
+  const body = el.querySelector('.session-body');
+  const asked = new Event('ah:take-keyboard', { cancelable: true });
+  if (body && !body.dispatchEvent(asked)) return;
+  focusIn(el);
+}
 
 const pct = (n: number) => `${+(n * 100).toFixed(4)}%`;
 const place = (b: Box): React.CSSProperties => ({ left: pct(b.x), top: pct(b.y), right: pct(1 - b.x - b.w), bottom: pct(1 - b.y - b.h) });

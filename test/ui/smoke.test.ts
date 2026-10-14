@@ -322,6 +322,32 @@ test('desktop: New session keeps three agents in front and the rest in a menu', 
   await ctx.close();
 });
 
+test('desktop: a key typed right after Ctrl+Shift+arrow goes to the pane moved to', { skip, timeout: 60_000 }, async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const { page, errors } = await open(ctx);
+  await page.locator('.side-session', { hasText: 'zz-idle' }).first().click();
+  await page.waitForFunction(() => document.activeElement?.classList.contains('xterm-helper-textarea'));
+  await page.keyboard.press('Control+Shift+\\');
+  await page.locator('.pane-picker-filter').waitFor();
+  await page.keyboard.type('zz-busy');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => document.querySelectorAll('.pane .xterm').length === 2);
+  await page.waitForTimeout(600);
+  // Where each key lands, in the keystroke itself: a terminal sends it on at once.
+  await page.evaluate(() => {
+    (window as any).landed = [];
+    document.addEventListener('keydown', (e) => e.key.length === 1 && !e.ctrlKey && (window as any).landed.push(document.activeElement?.closest('.pane')?.getAttribute('data-pane')), true);
+  });
+  for (const dir of ['ArrowLeft', 'ArrowRight', 'ArrowLeft']) {
+    await page.keyboard.press(`Control+Shift+${dir}`);
+    await page.keyboard.type('x');
+    await page.waitForTimeout(300);
+  }
+  assert.deepEqual(await page.evaluate(() => (window as any).landed), ['first', 'second', 'first']);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('desktop: ↓ then a choice key answers a prompt from the inbox, and focus stays put', { skip, timeout: 90_000 }, async () => {
   ah.tmux('new-window', '-t', 'it', '-n', 'zz-agent-keys', 'claude');
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });

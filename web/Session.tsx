@@ -397,17 +397,37 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       if (!landed) {
         const elsewhere = a && a !== document.body && a.isConnected && (a.closest('dialog[open]') || (a.matches('input, textarea, select, [contenteditable="true"]') && !a.closest('.session-body, .pane')));
         if (elsewhere) return;
-        // In the GUI the composer is on the page before the (lazy) feed surface has loaded:
-        // focus it directly, so keys typed right after the switch aren't lost. A waiting
-        // session's answer controls come first, as Reply does.
-        if (live.current.view === 'gui' && !(live.current.status === 'waiting' && surface.current?.focusAsk?.())) composer.current?.focus();
-        else surface.current?.focus();
+        focusSurface();
       }
       if (performance.now() < until) raf = requestAnimationFrame(claim);
     };
     raf = requestAnimationFrame(claim);
     return () => cancelAnimationFrame(raf);
   }
+
+  /** The session's input, now: true when the keyboard is in it. */
+  function focusSurface(): boolean {
+    // In the GUI the composer is on the page before the (lazy) feed surface has loaded:
+    // focus it directly, so keys typed right after the switch aren't lost. A waiting
+    // session's answer controls come first, as Reply does.
+    if (live.current.view === 'gui' && !(live.current.status === 'waiting' && surface.current?.focusAsk?.())) composer.current?.focus();
+    else surface.current?.focus();
+    const a = document.activeElement;
+    return !!a && !!body.current?.contains(a);
+  }
+
+  // Moving between panes (App's focusPane) hands the keyboard over within the keystroke:
+  // a key typed straight after it would otherwise reach the pane just left (its terminal)
+  // before the next frame's claim.
+  useEffect(() => {
+    const el = body.current;
+    if (!el || touch) return;
+    const take = (e: Event) => {
+      if (focusSurface()) e.preventDefault();
+    };
+    el.addEventListener('ah:take-keyboard', take);
+    return () => el.removeEventListener('ah:take-keyboard', take);
+  });
 
   /** Switch surfaces; the next one mounts fresh (and may still be loading). */
   const switchView = (next: View, focusAfter = false) => {

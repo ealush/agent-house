@@ -44,7 +44,7 @@ import { HistoryView, SessionsView } from './HistoryView.tsx';
 import { Session } from './Session.tsx';
 import { EndedSession } from './Ended.tsx';
 import { HandoffOffer } from './Handoff.tsx';
-import { Workspace } from './Workspace.tsx';
+import { Workspace, focusPaneNow } from './Workspace.tsx';
 import { closeLeaf, isPick, pickKey, leaves, moveLeaf, nudgeDivider, neighborPane, nodeAt, normalizeSplit, paneLeaves, parseLayout, replaceLeaf, splitLeaf, toggleSplit, type LayoutNode, type PaneDir, type Path } from './layout.ts';
 import { lastCwd, NewDialog } from './NewDialog.tsx';
 import { ForkDialog, type ForkTarget } from './ForkDialog.tsx';
@@ -330,7 +330,9 @@ export function App({ onLock }: { onLock: () => void }) {
     if (!layout) return;
     const from = focusPath ?? paneLeaves(layout)[0]?.path ?? [];
     const next = neighborPane(layout, from, dir);
-    if (next) setFocusPath(next);
+    if (!next) return;
+    focusPaneNow(next.join('/'));
+    setFocusPath(next);
   };
 
   const movePane = (dir: PaneDir) => {
