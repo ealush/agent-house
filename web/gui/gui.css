@@ -205,8 +205,9 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 22px;
-  padding: 0 7px;
+  height: 32px;
+  margin: -5px 0;
+  padding: 0 8px;
   border: 0;
   border-radius: 6px;
   background: none;
@@ -230,15 +231,17 @@
   }
 }
 
+/* 32px targets in a 22px line: the margins give the room back. */
 .gui .msg-copy {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 32px;
+  height: 32px;
+  margin: -5px 0;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: none;
   color: var(--faint);
   cursor: pointer;
@@ -345,22 +348,22 @@
 
 .gui .code-snippet > pre {
   margin: 0;
-  padding-right: 36px;
+  padding-right: 44px;
 }
 
 .gui .code-copy {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 4px;
+  right: 4px;
   z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--raised);
   color: var(--faint);
   cursor: pointer;
@@ -438,8 +441,11 @@
 
 /* ---------- reasoning */
 
+/* Text-only, but a 32px target: the margins keep the line where it was. */
 .gui .reasoning-head,
 .gui .tool-more {
+  min-height: 32px;
+  margin: -6px 0;
   padding: 0;
   border: 0;
   background: none;
@@ -952,6 +958,8 @@
   top: 50%;
   transform: translateY(-50%);
   z-index: 2;
+  /* A finger slides along the rail, not the page. */
+  touch-action: none;
 }
 
 .gui .gui-rail-window {
@@ -976,7 +984,7 @@
 
 .gui .gui-rail-tick {
   flex: none;
-  width: 24px;
+  width: 32px;
   height: 12px; /* MessageRail's PITCH */
   padding: 0 0 0 6px;
   border: 0;
@@ -1014,7 +1022,7 @@
 
 .gui .gui-rail-tip {
   position: absolute;
-  left: 30px;
+  left: 38px;
   transform: translateY(-50%);
   max-width: min(320px, 60vw);
   padding: 4px 10px;

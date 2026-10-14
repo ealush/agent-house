@@ -504,12 +504,13 @@ kbd {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  margin-left: auto;
+  /* A 32px target over an 18px slot: the label row keeps its height. */
+  width: 32px;
+  height: 32px;
+  margin: -7px -7px -7px auto;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: none;
   color: var(--faint);
   cursor: pointer;
@@ -691,6 +692,13 @@ a.pill {
   text-decoration: none;
 }
 
+/* A pill you can press (a branch, a pull request) is a 32px control; a status pill is a label. */
+a.pill,
+button.pill {
+  min-height: 32px;
+  padding: 3px 10px;
+}
+
 a.pill:hover {
   color: var(--text);
   border-color: var(--faint);
@@ -838,6 +846,7 @@ a.pill:hover {
 .card-title {
   flex: 1;
   min-width: 0;
+  min-height: 32px;
   border: 0;
   background: none;
   padding: 0;
@@ -1153,6 +1162,7 @@ a.pill:hover {
 }
 
 .session-title .name {
+  min-height: 32px;
   border: 1px solid transparent;
   border-radius: 8px;
   background: none;
@@ -1235,6 +1245,9 @@ a.pill:hover {
 .view-toggle button {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
   gap: 5px;
   padding: 4px 8px;
   border: 0;
@@ -1523,8 +1536,8 @@ a.pill:hover {
 }
 
 .icon-btn.small {
-  width: 26px;
-  height: 26px;
+  width: 32px;
+  height: 32px;
   font-size: 15px;
 }
 
@@ -1718,6 +1731,7 @@ a.pill:hover {
 }
 
 .btn.small {
+  min-height: 32px;
   padding: 4px 10px;
   font-size: 13px;
 }
@@ -1744,6 +1758,7 @@ a.btn {
 }
 
 .seg button {
+  min-height: 32px;
   border: 0;
   background: none;
   padding: 5px 12px;
@@ -2014,7 +2029,8 @@ a.btn {
 }
 
 .sugg {
-  padding: 3px 10px;
+  min-height: 32px;
+  padding: 3px 12px;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: none;
@@ -3884,8 +3900,9 @@ a.btn {
   display: none;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 32px;
+  height: 32px;
+  margin: -3px 0;
   border: 0;
   border-radius: 8px;
   background: none;
@@ -4523,7 +4540,8 @@ ul.queue-items {
   border: 0;
   outline: none;
   background: none;
-  padding: 4px 0;
+  min-height: 32px;
+  padding: 5px 0;
   max-height: 200px;
   font-size: 15px;
   line-height: 1.45;
@@ -5021,6 +5039,7 @@ button.tool-chip:hover {
 
 .disclosure {
   align-self: flex-start;
+  min-height: 32px;
   border: 0;
   background: none;
   padding: 2px 0;
@@ -5434,10 +5453,11 @@ button.tool-chip:hover {
 }
 
 .palette-crumbs button {
+  min-height: 32px;
   border: 0;
   background: none;
-  padding: 2px 6px;
-  border-radius: 6px;
+  padding: 2px 8px;
+  border-radius: 8px;
   color: var(--muted);
   font: inherit;
   cursor: pointer;
@@ -6651,8 +6671,8 @@ button.tool-chip:hover {
 .menu-agents .menu-agent {
   display: inline-grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   border-radius: 8px;
 }

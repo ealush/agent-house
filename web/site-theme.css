@@ -224,6 +224,7 @@ body,
    the button and aria-selected / aria-pressed does the rest. */
 .tab-underline {
   height: 36px;
+  min-width: 32px;
   padding: 0 2px;
   border: 0;
   background: none;

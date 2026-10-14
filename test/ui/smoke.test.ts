@@ -358,3 +358,39 @@ test('phone: a swipe back lands on the inbox once, even when the browser is slow
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+/** Every visible control smaller than 32px either way. The message rail's ticks are one
+ *  control together (a scrubber, like an iPhone's section index), so they don't count. */
+const SMALL = () => {
+  const sel = 'button, a[href], [role=button], [role=tab], [role=menuitem], [role=option], [role=radio], [role=switch], input:not([type=hidden]), select, textarea, summary';
+  return [...document.querySelectorAll<HTMLElement>(sel)]
+    .filter((el) => !el.closest('.xterm, [inert], [aria-hidden=true], .gui-rail'))
+    .filter((el) => {
+      const r = el.getBoundingClientRect();
+      const st = getComputedStyle(el);
+      const shown = r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight && st.visibility !== 'hidden' && st.opacity !== '0' && st.pointerEvents !== 'none';
+      return shown && (r.width < 31.5 || r.height < 31.5);
+    })
+    .map((el) => `${Math.round(el.getBoundingClientRect().width)}x${Math.round(el.getBoundingClientRect().height)} ${el.className} "${el.getAttribute('aria-label') ?? el.textContent?.trim().slice(0, 30)}"`);
+};
+
+test('no control is smaller than 32px, on a desktop or a phone', { skip, timeout: 90_000 }, async () => {
+  for (const opts of [{ viewport: { width: 1440, height: 900 } }, { ...devices['iPhone 15 Pro'] }, { ...devices['iPad Pro 11'] }]) {
+    const ctx = await browser.newContext(opts);
+    const { page, errors } = await open(ctx);
+    const found: string[] = [];
+    const look = async (where: string) => found.push(...(await page.evaluate(SMALL)).map((s) => `${where}: ${s}`));
+    await page.locator('.rows .row').first().waitFor();
+    await look('inbox');
+    await page.locator('.rows .row', { hasText: 'zz-idle' }).first().click();
+    await page.locator('main.main .session-head').first().waitFor();
+    await look('session');
+    await page.getByRole('button', { name: /menu|more/i }).last().click();
+    await page.locator('.menu, [role="menu"]').last().getByText('Rename').waitFor();
+    await look('session menu');
+    await page.keyboard.press('Escape');
+    assert.deepEqual(found, [], `${opts.viewport?.width}px wide`);
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  }
+});

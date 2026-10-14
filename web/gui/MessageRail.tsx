@@ -1,7 +1,8 @@
 // The conversation's outline: one tick per message you sent, on the feed's left
 // edge. The bright tick is the turn in view; a tick takes you to its message.
 // Past MAX ticks the rail becomes a window that slides with the scroll, its
-// edges fading where more messages lie beyond.
+// edges fading where more messages lie beyond. Like an iPhone's section index,
+// the rail is one control: press, slide to the message you want, let go.
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { calm } from '../motion.ts';
 
@@ -31,6 +32,8 @@ export function MessageRail({ items, scroller, onJump, onSeek }: { items: RailIt
   // The tick you clicked stays lit while its message is on screen, even when the
   // feed can't scroll it to the top (it's near the end).
   const chosen = useRef<string | null>(null);
+  const windowRef = useRef<HTMLDivElement>(null);
+  const scrub = useRef<number | null>(null);
 
   useEffect(() => {
     const el = scroller.current;
@@ -98,10 +101,47 @@ export function MessageRail({ items, scroller, onJump, onSeek }: { items: RailIt
   const lead = focused ?? lit;
   const first = n > MAX ? Math.max(0, Math.min(n - MAX, lead - Math.floor(MAX / 2))) : 0;
   const tip = hover ?? focused;
+  const at = (y: number) => {
+    const box = windowRef.current?.getBoundingClientRect();
+    if (!box) return null;
+    return Math.max(0, Math.min(n - 1, first + Math.floor((y - box.top) / PITCH)));
+  };
+  const onScrub = (e: React.PointerEvent) => {
+    if (scrub.current === null) return;
+    const i = at(e.clientY);
+    if (i !== null && i !== scrub.current) {
+      scrub.current = i;
+      setHover(i);
+    }
+  };
 
   return (
-    <nav className="gui-rail" aria-label="Your messages" data-rove>
-      <div className={`gui-rail-window${first > 0 ? ' more-above' : ''}${first + MAX < n ? ' more-below' : ''}`} style={{ height: Math.min(n, MAX) * PITCH }}>
+    <nav
+      className="gui-rail"
+      aria-label="Your messages"
+      data-rove
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        const i = at(e.clientY);
+        if (i === null) return;
+        e.preventDefault();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        scrub.current = i;
+        setHover(i);
+      }}
+      onPointerMove={onScrub}
+      onPointerUp={() => {
+        const i = scrub.current;
+        scrub.current = null;
+        setHover(null);
+        if (i !== null) jump(i);
+      }}
+      onPointerCancel={() => {
+        scrub.current = null;
+        setHover(null);
+      }}
+    >
+      <div ref={windowRef} className={`gui-rail-window${first > 0 ? ' more-above' : ''}${first + MAX < n ? ' more-below' : ''}`} style={{ height: Math.min(n, MAX) * PITCH }}>
         <div className="gui-rail-ticks" style={{ transform: `translateY(${-first * PITCH}px)` }}>
           {items.map((it, i) => (
             <button
@@ -110,11 +150,12 @@ export function MessageRail({ items, scroller, onJump, onSeek }: { items: RailIt
               tabIndex={i === lit ? 0 : -1}
               aria-current={i === lit ? 'true' : undefined}
               aria-label={`Message ${i + 1} of ${n}: ${it.text.slice(0, 120)}`}
-              onClick={() => jump(i)}
-              // A click leaves focus where it was (the composer, usually); only the keyboard moves onto the rail.
+              // A press is the rail's (above); Enter and Space still take you there. A press leaves
+              // focus where it was (the composer, usually); only the keyboard moves onto the rail.
+              onClick={(e) => e.detail === 0 && jump(i)}
               onMouseDown={(e) => e.preventDefault()}
-              onMouseEnter={() => setHover(i)}
-              onMouseLeave={() => setHover(null)}
+              onMouseEnter={() => scrub.current === null && setHover(i)}
+              onMouseLeave={() => scrub.current === null && setHover(null)}
               onFocus={() => setFocused(i)}
               onBlur={() => setFocused(null)}
             />
