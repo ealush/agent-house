@@ -5047,6 +5047,36 @@ button.tool-chip:hover {
   font-size: 13px;
 }
 
+/* A phone's branch sheet (Git.tsx BranchSheet): the branch you're on and its pull
+   request, then the same switcher the desktop's pill opens, the sheet's full width. */
+.branch-sheet .branch-now {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 4px 20px 0;
+  color: var(--muted);
+}
+
+.branch-sheet .branch-now .btn {
+  margin-left: auto;
+}
+
+.branch-sheet .branch-picker {
+  min-width: 0;
+  max-height: none;
+  padding: 6px 12px 20px;
+}
+
+.branch-sheet .picker-title {
+  display: none;
+}
+
+.branch-sheet .branch-rows {
+  max-height: none;
+}
+
 /* Shell-style dirty marker: `main*` when the checkout has uncommitted changes. */
 .dirty-marker {
   color: var(--accent);
@@ -6834,6 +6864,17 @@ button.tool-chip:hover {
   font-size: 12px;
   overflow-x: auto;
   white-space: nowrap;
+}
+
+/* A menu row's current value, after its label (a phone's Branch). */
+.menu-value {
+  min-width: 0;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--muted);
 }
 
 /* Session menu: Continue in another agent, as a row of agent marks. */

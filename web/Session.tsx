@@ -16,7 +16,7 @@ import { recentFor, ResumeContext } from './recent.ts';
 import { defaultView, surfaceFor, VIEW_LABEL, viewsFor, type SurfaceHandle, type View } from './surface.ts';
 import { ComposerBar, type ComposerHandle } from './Composer.tsx';
 import { useFileDrop } from './useFileDrop.ts';
-import { BranchPicker, ChangesPanel, PrLink } from './Git.tsx';
+import { BranchPicker, BranchSheet, ChangesPanel, PrLink } from './Git.tsx';
 // Side chat and past chats (with the markdown renderer) load when the Chat panel first opens.
 const SideChat = lazy(() => import('./SideChat.tsx').then((m) => ({ default: m.SideChat })));
 const ChatHistory = lazy(() => import('./ChatHistory.tsx').then((m) => ({ default: m.ChatHistory })));
@@ -287,6 +287,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
     };
   }, [menu]);
   const [forking, setForking] = useState(false);
+  const [branching, setBranching] = useState(false);
   const [sending, setSending] = useState(false);
   const [forksOpen, setForksOpen] = useState(false);
   const [capture, setCapture] = useState<string | null>(null);
@@ -296,6 +297,8 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   // The launch summary repeats the model ("Haiku 4.5 · high · Plan"): keep only what it adds.
   const launchExtras = (w.launch ?? '').split(' · ').filter((p) => p && p.toLowerCase() !== modelLabel?.toLowerCase() && shortModel(p) !== modelLabel);
   const eyebrow = [w.project, w.agent ? agentName : null, modelLabel, ...launchExtras].filter(Boolean).join(' · ');
+  // Where the session works, on a phone's second line: the project and its branch.
+  const place = [w.project, w.branch ? `⎇ ${w.branch}` : null].filter(Boolean).join(' ') || null;
 
   const abs = (p: string) => (p.startsWith('~') ? home + p.slice(1) : p);
   const views = viewsFor(w);
@@ -746,6 +749,18 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       }
     >
       <button onClick={startRename}><span className="grow">Rename</span><ShortcutHint id="rename" /></button>
+      {/* A phone's header has no room for the branch pill: switching is here. */}
+      {narrow && w.branch && (
+        <button
+          onClick={() => {
+            setMenu(false);
+            setBranching(true);
+          }}
+        >
+          <span className="grow">Branch</span>
+          <span className="menu-value mono">{w.branch}</span>
+        </button>
+      )}
       {turns && (
         <button
           onClick={() => {
@@ -976,8 +991,9 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
             <span className="eyebrow">
               {/* The status leads the second line, so the title keeps the first line's width. */}
               <span className={`pill ${statusClass(w)}`}>{statusWord(w)}</span>
-              {/* A phone's header has room for two things: another device viewing it leads, in place of the agent's name. */}
-              {[elsewhere ? `On ${elsewhere} too` : w.agent ? agentName : 'Shell', w.project, multiHost ? w.host : null].filter(Boolean).join(' · ')}
+              {/* A phone's header has room for two things: another device viewing it leads, then
+                  where the session works (its project and branch), then which agent it is. */}
+              {[elsewhere ? `On ${elsewhere} too` : null, place, elsewhere ? null : w.agent ? agentName : 'Shell', multiHost ? w.host : null].filter(Boolean).join(' · ')}
             </span>
           )}
         </div>
@@ -1203,6 +1219,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       </div>
 
       {capture !== null && <CaptureDialog text={capture} onClose={() => setCapture(null)} />}
+      {branching && w.branch && <BranchSheet client={client} windowId={w.id} branch={w.branch} onSwitched={refresh} onClose={() => setBranching(false)} />}
       {forking && (
         <ForkDialog client={client} target={{ ref: w.uid, host: w.host, harness: w.agent, title: w.title }} onClose={() => setForking(false)} onForked={forked} />
       )}

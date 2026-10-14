@@ -317,6 +317,39 @@ function BranchMenu({ client, windowId, close, onSwitched }: { client: HostApi; 
   );
 }
 
+/**
+ * A phone's way to the branch: its header has no room for the pill, so the session's
+ * ··· menu opens this sheet, the same switcher, with the pull request when there is one.
+ */
+export function BranchSheet({ client, windowId, branch, onSwitched, onClose }: { client: HostApi; windowId: string; branch: string; onSwitched: () => void; onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const { dismiss } = useSheet(ref, onClose);
+  const [pr, setPr] = useState<PullInfo | null>(null);
+  useEffect(() => {
+    ref.current?.showModal();
+  }, []);
+  useEffect(() => {
+    client
+      .pull(windowId)
+      .then((p) => setPr(p.number && p.url ? p : null))
+      .catch(() => {});
+  }, [client, windowId, branch]);
+  return (
+    <dialog ref={ref} className="dialog branch-sheet" aria-label="Branch" onClose={onClose} onClick={(e) => e.target === ref.current && onClose()}>
+      <SheetBar onClose={dismiss} title="Branch" />
+      <p className="branch-now">
+        <Icon name="branch" size={14} /> <span className="mono">{branch}</span>
+        {pr?.url && (
+          <a className="btn small" href={pr.url} target="_blank" rel="noreferrer">
+            Pull request #{pr.number}
+          </a>
+        )}
+      </p>
+      <BranchMenu client={client} windowId={windowId} close={dismiss} onSwitched={onSwitched} />
+    </dialog>
+  );
+}
+
 /** PR number for the session's branch, linked when one exists. Otherwise nothing. */
 export function PrLink({ client, windowId, branch }: { client: HostApi; windowId: string; branch: string }) {
   const [pr, setPr] = useState<PullInfo | null>(null);
