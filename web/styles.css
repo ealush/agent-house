@@ -6982,12 +6982,14 @@ button.tool-chip:active,
 /* Glass answers a press as iOS 26 and 27's does: it lights up under the finger
    and swells a little, then springs back past its size and settles. */
 .icon-btn.round,
-.narrow .session-head > .icon-btn {
+.narrow .session-head > .icon-btn,
+.sheet-bar .sheet-x {
   transition: transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow var(--dur-1);
 }
 
 .icon-btn.round:active:not(:disabled),
-.narrow .session-head > .icon-btn:active:not(:disabled) {
+.narrow .session-head > .icon-btn:active:not(:disabled),
+.sheet-bar .sheet-x:active {
   transform: scale(1.08);
   box-shadow: inset 0 0 0 44px var(--glass-press), var(--elev-1);
   transition-duration: 160ms, var(--dur-1);
@@ -7000,7 +7002,8 @@ button.tool-chip:active,
 
 @media (prefers-reduced-motion: reduce) {
   .icon-btn.round:active:not(:disabled),
-  .narrow .session-head > .icon-btn:active:not(:disabled) {
+  .narrow .session-head > .icon-btn:active:not(:disabled),
+  .sheet-bar .sheet-x:active {
     transform: none;
   }
 }
@@ -7612,22 +7615,19 @@ select:not([multiple]) {
     font-weight: 600;
   }
 
+  /* Close is a glass circle, as on an iOS 26 sheet: a navigation bar's Back, mirrored. */
   .sheet-bar .sheet-x {
     grid-column: 3;
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
     justify-self: end;
+    border: 1px solid transparent;
     border-radius: 999px;
-    background: var(--raised);
+    background: var(--glass-fill);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    box-shadow: var(--elev-0);
     color: var(--text);
-    position: relative;
-  }
-
-  /* A 36px circle you can see, a 44px target you hit. */
-  .sheet-bar .sheet-x::after {
-    content: '';
-    position: absolute;
-    inset: -4px;
   }
 
   /* The sheet's own close button stands in for each dialog's. */
