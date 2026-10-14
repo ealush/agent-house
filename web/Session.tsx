@@ -647,7 +647,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   useCommand('session-menu', () => setMenu(true), active);
 
   // Continue in…: the same conversation, handed to another agent in a new session here.
-  const otherAgents = useContext(HostPresetsContext)(w.host).filter((p) => p.available && p.command && p.id !== 'shell' && p.id !== w.agent);
+  const otherAgents = useContext(HostPresetsContext)(w.host).filter((p) => p.available && !p.hidden && p.command && p.id !== 'shell' && p.id !== w.agent);
   async function continueIn(preset: string) {
     if (!onStartSession) return;
     onToast('Reading the conversation…');

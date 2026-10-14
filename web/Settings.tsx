@@ -10,6 +10,7 @@ import { EnvironmentPanel } from './Environment.tsx';
 import { SearchSettingsPanel } from './SearchSettings.tsx';
 import { AppearancePanel } from './Appearance.tsx';
 import { SystemPanel } from './System.tsx';
+import { AgentsPanel } from './AgentsSettings.tsx';
 import { ShortcutsPanel } from './shortcuts.tsx';
 import { Glide } from './Glide.tsx';
 import { SECTIONS, sectionHash, type Section } from './settingsMenu.ts';
@@ -67,6 +68,7 @@ export function Settings({ onLocked, onNotifyChange }: { onLocked: () => void; o
               <NotifySettings onChange={onNotifyChange} />
             </div>
           )}
+          {section === 'agents' && <AgentsPanel />}
           {section === 'subscriptions' && <SubscriptionsPanel />}
           {section === 'environment' && <EnvironmentPanel />}
           {section === 'search' && <SearchSettingsPanel />}

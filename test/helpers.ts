@@ -47,6 +47,8 @@ export async function startAh(config: Record<string, unknown> = {}, dir = mkdtem
     AH_TAILNET_OWNER: OWNER,
     // Never touch the developer's real `tailscale serve` config from a test.
     AH_PREVIEW_PUBLISH: '0',
+    // Nor run the developer's real agent CLIs to read their versions.
+    AH_HARNESS_CHECK: process.env.AH_HARNESS_CHECK ?? '0',
     TMUX: '',
   };
   delete env.TMUX;

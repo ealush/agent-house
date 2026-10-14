@@ -67,7 +67,8 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
   const [host, setHost] = useState(initialHost);
   const state = hostState(host) ?? hostState(hosts[0])!;
   const client = clientFor(host);
-  const presets = state.presets.filter((p) => p.available);
+  // What's installed here, less what Settings → Agents keeps out of the way.
+  const presets = state.presets.filter((p) => p.available && !p.hidden);
   const [presetId, setPresetId] = useState(() => initialPreset ?? localStorage.getItem('ah.lastPreset') ?? presets[0]?.id ?? 'shell');
   const preset = presets.find((p) => p.id === presetId) ?? presets[0];
   const [cwd, setCwd] = useState(newProject ? '' : initialCwd);

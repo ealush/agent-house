@@ -15,6 +15,7 @@ import { discover } from './discovery.ts';
 import { expandHome, isExecutableOnPath, type Config, type Preset } from './config.ts';
 import { buildLaunch, customModel, resumeSelection, LaunchError } from './launch.ts';
 import { withCatalog } from './catalog.ts';
+import { Harnesses, adjust, suggestions } from './harnesses.ts';
 import * as t from './tmux.ts';
 import { descendants, snapshot as procSnapshot } from './procs.ts';
 import { createSnapshot, restoreSnapshot as restoreSnapshotFiles, snapshotDiff, deleteSnapshotRef, createWorktree, headInfo, listWorktrees, mainRepo, removeWorktree, removeWorktreesBulk, GitError, type Worktree } from './git.ts';
@@ -33,7 +34,7 @@ export type { LaunchChange, QueueItem } from './queue.ts';
 export type Host = { name: string; self: boolean; online: boolean };
 
 /** Bumped when the state shape or API routes change, so a newer page can tell an older server apart. */
-export const API_VERSION = 22;
+export const API_VERSION = 23;
 
 export type State = {
   api: number;
@@ -44,7 +45,8 @@ export type State = {
   sessions: string[];
   windows: WindowView[];
   history: HistoryItem[];
-  presets: Array<Preset & { available: boolean }>;
+  /** `hidden`: kept out of New session on this host (Settings → Agents). */
+  presets: Array<Preset & { available: boolean; hidden?: boolean }>;
   /** The desktop's Omarchy theme (name and change time), for clients that follow it. */
   omarchy: { name: string; at: number; font: string | null } | null;
   /** The session you were last using, and on which device: other devices offer to continue it. */
@@ -145,6 +147,10 @@ export class Core {
   private turnPeriod = new Set<string>();
   private lastPrune = 0;
   peers: Peers | null = null;
+  /** Each agent CLI's current choices, and the host's hidden and added agents; main.ts wires the store. */
+  harnesses: Harnesses | null = null;
+  /** The presets as written (config or built in), before each CLI's current version adjusts them. */
+  private basePresets: Preset[];
   /** Variables each new session window starts with (Settings → Environment); main.ts wires the store. */
   launchEnv: () => Promise<Record<string, string>> = async () => ({});
 
@@ -153,6 +159,7 @@ export class Core {
     this.promptStore = prompts;
     this.snapshotStore = snapshots;
     this.config = config;
+    this.basePresets = config.presets;
     this.viewers = viewers;
     this.queues = new QueueManager(this.registry, {
       withInput: (uid, fn) => this.withInput(uid, fn),
@@ -239,7 +246,9 @@ export class Core {
         sessions: await t.listSessions(),
         windows,
         history,
-        presets: await Promise.all(this.config.presets.map(async (p) => ({ ...(await withCatalog(p)), available: isExecutableOnPath(p.command, this.tmuxPath) }))),
+        presets: await Promise.all(
+          this.config.presets.map(async (p) => ({ ...(await withCatalog(p)), available: isExecutableOnPath(p.command, this.tmuxPath), ...(this.harnesses?.hidden(p.id) ? { hidden: true } : {}) })),
+        ),
         omarchy: omarchyStamp(),
         focus: this.focus,
       };
@@ -263,6 +272,45 @@ export class Core {
       return state;
     })().finally(() => (this.ticking = null));
     return this.ticking;
+  }
+
+  /** The presets as each CLI's installed version describes them, then the agents added on this host. */
+  applyHarnesses() {
+    const h = this.harnesses;
+    if (!h) return;
+    this.config.presets = [...this.basePresets.map((p) => adjust(p, h.probe(p.id))), ...h.custom().map(Harnesses.preset)];
+  }
+
+  /** Settings → Agents: every agent this host knows, built in or added, with what its CLI said last. */
+  harnessList() {
+    const agents = this.config.presets
+      .filter((p) => p.command.trim())
+      .map((p) => {
+        const probe = this.harnesses?.probe(p.id);
+        return {
+          id: p.id,
+          name: p.name,
+          command: p.command,
+          custom: !!this.harnesses?.custom().some((c) => c.id === p.id),
+          installed: isExecutableOnPath(p.command, this.tmuxPath),
+          hidden: !!this.harnesses?.hidden(p.id),
+          version: probe?.version ?? null,
+          checkedAt: probe?.checkedAt ?? null,
+          changes: probe?.changes ?? [],
+        };
+      });
+    return { agents, suggestions: suggestions(this.config.presets, (c) => isExecutableOnPath(c, this.tmuxPath)) };
+  }
+
+  /** Asks each installed agent CLI its version, reading a new one's --help (server/harnesses.ts). */
+  async checkHarnesses(force = false) {
+    const h = this.harnesses;
+    if (!h) return;
+    await this.refreshTmuxPath();
+    const all = [...this.basePresets, ...h.custom().map(Harnesses.preset)];
+    await h.check(all, { ...process.env, PATH: this.tmuxPath }, (p) => isExecutableOnPath(p.command, this.tmuxPath), force);
+    this.applyHarnesses();
+    await this.tick();
   }
 
   async refreshTmuxPath() {

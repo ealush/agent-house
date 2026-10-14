@@ -82,6 +82,20 @@ export type Question = {
 export type QuestionAnswer = { picked: number[]; text?: string };
 export type DesktopStatus = { installed: boolean; omarchy: boolean; url: string; file: string; bind: string };
 
+/** Settings → Agents: an agent this host knows, and what its CLI said when last asked (server/harnesses.ts). */
+export type HarnessInfo = {
+  id: string;
+  name: string;
+  command: string;
+  custom: boolean;
+  installed: boolean;
+  hidden: boolean;
+  version: string | null;
+  checkedAt: number | null;
+  changes: string[];
+};
+export type Harnesses = { agents: HarnessInfo[]; suggestions: Array<{ command: string; name: string }> };
+
 export type HooksStatus = {
   claude: { wired: number; of: number; file: string };
   codex: { wired: boolean; otherNotify: boolean; file: string };
@@ -143,11 +157,13 @@ export type Preset = {
   /** Transcript adapter for the GUI view; absent for terminal-only presets. */
   feed?: string;
   available: boolean;
+  /** Kept out of New session on this host (Settings → Agents). */
+  hidden?: boolean;
 };
 
 export type Host = { name: string; self: boolean; online: boolean };
 
-export const API_VERSION = 22;
+export const API_VERSION = 23;
 
 export type PullInfo = { number: number | null; url: string | null };
 
@@ -427,6 +443,11 @@ export function hostApi(base: string) {
     resetScreenAudit: () => r('DELETE', '/api/system/screen-audit'),
     omarchyTheme: () => r<OmarchyTheme | null>('GET', '/api/omarchy/theme'),
     desktop: () => r<DesktopStatus>('GET', '/api/system/desktop'),
+    harnesses: () => r<Harnesses>('GET', '/api/harnesses'),
+    checkHarnesses: () => r<Harnesses>('POST', '/api/harnesses/check', {}),
+    setHarnessHidden: (id: string, hidden: boolean) => r<Harnesses>('POST', `/api/harnesses/${enc(id)}`, { hidden }),
+    addHarness: (agent: { name: string; command: string; resume?: string }) => r<Harnesses>('POST', '/api/harnesses/custom', agent),
+    removeHarness: (id: string) => r<Harnesses>('DELETE', `/api/harnesses/custom/${enc(id)}`),
     setDesktop: (action: 'install' | 'uninstall') => r<{ messages: string[]; status: DesktopStatus }>('POST', '/api/system/desktop', { action }),
     setHooks: (action: 'install' | 'uninstall') => r<{ messages: string[]; status: HooksStatus }>('POST', '/api/system/hooks', { action }),
     pastChat: (uid: string, msgId?: number) => r<{ messages: ChatMsg[] }>('GET', `/api/chats/${enc(uid)}${msgId ? `?msgId=${msgId}` : ''}`),

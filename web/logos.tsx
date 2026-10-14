@@ -33,7 +33,15 @@ export function AgentLogo({ id, size = 15 }: { id: string | null; size?: number 
   if (file) {
     return <img src={file} width={size} height={size} alt="" draggable={false} className={TILE.has(key) ? 'tile' : WHITE.has(key) ? 'ink' : undefined} />;
   }
-  // Shell (and any unknown agent) has no brand mark: generic terminal glyph.
+  // An agent without a brand mark (one added on this host): its initial, in its tint.
+  if (key !== 'shell') {
+    return (
+      <span className="letter-mark" style={{ width: size, height: size, fontSize: Math.round(size * 0.68) }} aria-hidden>
+        {key.replace(/^custom-/, '').replace(/[^a-z0-9]/g, '').slice(0, 1).toUpperCase() || '?'}
+      </span>
+    );
+  }
+  // Shell: the terminal glyph.
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M2.5 4.5 5.5 8l-3 3.5" />

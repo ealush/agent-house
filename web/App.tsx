@@ -571,7 +571,7 @@ export function App({ onLock }: { onLock: () => void }) {
     if (!state) return [];
     const host = state.hostname;
     const projects = await clientFor(host).projects().catch(() => [] as string[]);
-    const presets = state.presets.filter((p) => p.available !== false);
+    const presets = state.presets.filter((p) => p.available !== false && !p.hidden);
     return projects.slice(0, 30).map((path) => ({
       key: `project:${path}`,
       label: path.replace(/\/$/, '').split('/').pop() || path,

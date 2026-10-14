@@ -14,6 +14,7 @@ export const SECTIONS = [
   { id: 'appearance', label: 'Appearance', icon: 'view', detail: 'Theme on this device' },
   { id: 'shortcuts', label: 'Shortcuts', icon: 'keyboard', detail: 'Rebind keys on this device' },
   { id: 'notifications', label: 'Notifications', icon: 'bell', detail: 'Push alerts on this device' },
+  { id: 'agents', label: 'Agents', icon: 'model', detail: 'Which agents New session offers, kept current with their CLIs' },
   { id: 'subscriptions', label: 'Subscriptions', icon: 'chat', detail: 'Chat providers for side chats' },
   { id: 'environment', label: 'Environment', icon: 'terminal', detail: 'Variables every session starts with' },
   { id: 'search', label: 'Search', icon: 'search', detail: 'Content search and its index' },

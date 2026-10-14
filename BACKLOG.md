@@ -226,6 +226,17 @@ switcher filtering at 20–30ms per key.
 Next candidates: rate-limit auto-resume (F40, opt-in; the reset times are
 now parsed), quota display (F41), keyboard reordering in the sidebar.
 
+### Agents that keep up (14 October 2026)
+
+| # | Item | | Notes |
+|---|---|---|---|
+| A1 | More agents | ✅ | Cursor Agent, Copilot, Crush and pi, from their own `--help`; terminal-only (no transcript adapters yet). New session offers what's installed. |
+| A2 | Settings that follow the CLI | ✅ | `server/harnesses.ts`: a new CLI version has its `--help` read; the choices for the preset's mode and effort flags replace the written ones (new appear, dropped go, known keep their words). Checked at start and hourly; Settings → Agents shows what changed and checks on demand. |
+| A3 | The host's own list | ✅ | Settings → Agents hides an agent from New session, and adds any agent CLI by its command (a dropdown offers known ones found on PATH). |
+
+Next: transcript adapters (GUI view) for the new agents; live model lists for
+Cursor (needs sign-in), Crush (configured providers only) and opencode.
+
 Remaining larger work: conversation transfer between hosts (including files),
 worktree disk usage, and richer adapters for agents without hooks. These require explicit
 product decisions rather than guessing at conversation or workspace ownership.

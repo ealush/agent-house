@@ -275,7 +275,7 @@ test('desktop: New session works from the keyboard alone', { skip, timeout: 60_0
   assert.notEqual(after.text, before, 'the arrows move across the agents');
   assert.ok(after.on, 'and choose as they go');
   // Like any radio group, Home and End reach the ends, and ← from the first wraps to the last.
-  const pills = await page.locator('.agent-pill').allInnerTexts();
+  const pills = await page.locator('.agent-pill').allTextContents();
   await page.keyboard.press('Home');
   assert.equal(await page.evaluate(() => document.activeElement?.textContent), pills[0]);
   await page.keyboard.press('ArrowLeft');

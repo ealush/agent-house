@@ -44,6 +44,7 @@ import { slashCommands, projectFiles } from './complete.ts';
 import { omarchyTheme } from './omarchy.ts';
 import { screenAudit } from './audit.ts';
 import { EnvStore } from './env.ts';
+import { Harnesses } from './harnesses.ts';
 import { hooksStatus, installClaude, installCodex, uninstallClaude, uninstallCodex } from './hooks.ts';
 
 let config: Config;
@@ -80,6 +81,9 @@ try {
   process.exit(1);
 }
 const core = new Core(config, viewers);
+// Each agent CLI's current modes and efforts, and the host's hidden and added agents.
+core.harnesses = new Harnesses();
+core.applyHarnesses();
 const drafts = new Drafts();
 const sidechat = new SideChatStore();
 const envStore = new EnvStore();
@@ -593,6 +597,43 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   }
 
   if (route('GET', /^\/api\/omarchy\/theme$/)) return send(res, 200, omarchyTheme());
+
+  // Settings → Agents (server/harnesses.ts): what each CLI's installed version offers,
+  // which agents New session shows, and agents added by hand.
+  if (route('GET', /^\/api\/harnesses$/)) return send(res, 200, core.harnessList());
+  if (route('POST', /^\/api\/harnesses\/check$/)) {
+    audit(req, 'harnesses.check');
+    await core.checkHarnesses(true);
+    return send(res, 200, core.harnessList());
+  }
+  if (route('POST', /^\/api\/harnesses\/custom$/)) {
+    const body = await readJson(req);
+    let added;
+    try {
+      added = core.harnesses!.addCustom(body, config.presets.map((p) => p.id));
+    } catch (err) {
+      throw new HttpError(400, `An added agent needs ${(err as Error).message}.`);
+    }
+    audit(req, 'harnesses.add', { id: added.id, command: added.command });
+    core.applyHarnesses();
+    await core.checkHarnesses();
+    return send(res, 200, core.harnessList());
+  }
+  if ((m = route('DELETE', /^\/api\/harnesses\/custom\/([\w-]{1,48})$/))) {
+    if (!core.harnesses!.removeCustom(m[1])) throw new HttpError(404, 'no such agent');
+    audit(req, 'harnesses.remove', { id: m[1] });
+    core.applyHarnesses();
+    await core.tick();
+    return send(res, 200, core.harnessList());
+  }
+  if ((m = route('POST', /^\/api\/harnesses\/([\w-]{1,48})$/))) {
+    const hidden = (await readJson(req)).hidden;
+    if (typeof hidden !== 'boolean') throw new HttpError(400, 'hidden must be true or false');
+    if (!config.presets.some((p) => p.id === m![1] && p.command.trim())) throw new HttpError(404, 'no such agent');
+    core.harnesses!.setHidden(m[1], hidden);
+    await core.tick();
+    return send(res, 200, core.harnessList());
+  }
 
   if (route('POST', /^\/api\/system\/hooks$/)) {
     const action = (await readJson(req)).action;
@@ -1300,6 +1341,12 @@ server.listen(PORT, HOST, async () => {
   if (process.env.AH_PREVIEW_PUBLISH !== '0') await removeStaleMappings(config.preview.ports);
   await syncPreviews().catch((err) => console.warn('previews:', err));
   setInterval(() => void syncPreviews().catch(() => {}), 15_000).unref();
+  // An agent CLI updated since last time shows its new modes and efforts; then hourly
+  // (an unchanged version isn't read again). Off in tests: they don't run real CLIs.
+  if (process.env.AH_HARNESS_CHECK !== '0') {
+    setTimeout(() => void core.checkHarnesses().catch((err) => console.warn('agents:', err)), 3000).unref();
+    setInterval(() => void core.checkHarnesses().catch(() => {}), 3600_000).unref();
+  }
 });
 
 let stopping = false;

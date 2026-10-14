@@ -64,6 +64,10 @@
   --c-muse: #c3a6f5;
   --c-hermes: #eed27a;
   --c-opencode: #6fd3bf;
+  --c-cursor: #c9cdd4;
+  --c-copilot: #a5b4fc;
+  --c-crush: #f2a3c7;
+  --c-pi: #f0c674;
   --c-other: #9e9e9e;
 
   /* type and shape */
@@ -118,6 +122,10 @@
   --c-muse: #6d3fd4;
   --c-hermes: #8a6300;
   --c-opencode: #14705e;
+  --c-cursor: #3f4650;
+  --c-copilot: #4f46b8;
+  --c-crush: #a3336b;
+  --c-pi: #8a6300;
   --c-other: #757575;
 
   --glow-opacity: 0.25;

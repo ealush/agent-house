@@ -53,6 +53,10 @@
   --c-muse: #b18cf2;
   --c-hermes: #e8c45a;
   --c-opencode: #5fc4b0;
+  --c-cursor: #c9cdd4;
+  --c-copilot: #a5b4fc;
+  --c-crush: #f2a3c7;
+  --c-pi: #f0c674;
   --c-other: #9a9ea6;
 
   --ui: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -118,6 +122,10 @@
   --c-muse: #6d3fd4;
   --c-hermes: #8a6300;
   --c-opencode: #14705e;
+  --c-cursor: #3f4650;
+  --c-copilot: #4f46b8;
+  --c-crush: #a3336b;
+  --c-pi: #8a6300;
   --c-other: #6e7480;
 
   color-scheme: light;
@@ -1653,6 +1661,15 @@ a.pill:hover {
   width: 32px;
   height: 32px;
   font-size: 15px;
+}
+
+/* An agent without a brand mark: its initial, set in the chip it sits in. */
+.letter-mark {
+  display: inline-grid;
+  place-items: center;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--agent, currentColor);
 }
 
 /* ---------- bottom tab bar (phone): a glass capsule floating over the list, as on iOS 26 */
@@ -5045,6 +5062,48 @@ button.tool-chip:hover {
   white-space: nowrap;
   font-family: var(--mono);
   font-size: 13px;
+}
+
+/* Settings → Agents (AgentsSettings.tsx): a row per agent, its mark, what its CLI
+   said last, and whether New session offers it. */
+.agent-rows .sec-row.absent {
+  opacity: 0.6;
+}
+
+.agent-rows .sub.changes {
+  color: var(--accent);
+  white-space: normal;
+}
+
+.agent-shown {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.agents-check {
+  align-items: center;
+}
+
+.add-agent {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  width: 100%;
+}
+
+.add-agent .field {
+  flex: 1 1 160px;
+}
+
+.add-agent .field select {
+  min-height: 38px;
 }
 
 /* A phone's branch sheet (Git.tsx BranchSheet): the branch you're on and its pull

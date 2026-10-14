@@ -8,6 +8,10 @@ const LOOK: Record<string, { color: string; glyph: string; name: string }> = {
   muse: { color: 'var(--c-muse)', glyph: 'M', name: 'Muse' },
   hermes: { color: 'var(--c-hermes)', glyph: 'H', name: 'Hermes' },
   opencode: { color: 'var(--c-opencode)', glyph: 'O', name: 'opencode' },
+  cursor: { color: 'var(--c-cursor)', glyph: 'C', name: 'Cursor Agent' },
+  copilot: { color: 'var(--c-copilot)', glyph: 'C', name: 'Copilot' },
+  crush: { color: 'var(--c-crush)', glyph: 'C', name: 'Crush' },
+  pi: { color: 'var(--c-pi)', glyph: 'P', name: 'pi' },
 };
 
 export function look(agent: string | null) {
