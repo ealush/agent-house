@@ -156,6 +156,11 @@ function PanelDivider({ onResize, onReset }: { onResize: (dx: number) => void; o
 
 const DEFAULT_PANEL_WIDTH = 420;
 
+/** A phone's trailing bar buttons share one glass capsule, as iOS groups them; elsewhere they stand alone. */
+function NavGroup({ on, children }: { on: boolean; children: React.ReactNode }) {
+  return on ? <div className="nav-group">{children}</div> : <>{children}</>;
+}
+
 export function Session({ w, client, windows, clientFor, narrow, touch, multiHost, home, replyKey, onBack, onAnswer, onSent, onTerminate, refresh, onSplit, onReplace, onClosePane, onFlipSplit, panePath, onPaneDrag, onOpenKey, onSplitWith, onStartSession, active = true }: Props) {
   const surface = useRef<SurfaceHandle>(null);
   const body = useRef<HTMLDivElement>(null);
@@ -1017,56 +1022,58 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
             {w.branch && <PrLink client={client} windowId={w.id} branch={w.branch} />}
           </>
         )}
-        {views.length > 1 && (
-          <div className={narrow ? 'view-toggle' : 'view-tabs'} role="group" aria-label="View">
-            <Glide match="[aria-pressed='true']" className={narrow ? 'thumb' : 'underline'} />
-            {views.map((v) => (
-              narrow ? (
-                <button key={v} className={v === view ? 'on' : ''} aria-pressed={v === view} title={shortcutTitle(`${VIEW_LABEL[v]} view`, 'toggle-view')} onClick={() => switchView(v)}>
-                  <Icon name={v === 'gui' ? 'chat' : 'terminal'} size={15} />
-                </button>
-              ) : (
-                <button key={v} className="tab-underline" aria-pressed={v === view} title={shortcutTitle(`${VIEW_LABEL[v]} view`, 'toggle-view')} onClick={() => switchView(v)}>
-                  {VIEW_LABEL[v]}
-                </button>
-              )
-            ))}
+        <NavGroup on={narrow}>
+          {views.length > 1 && (
+            <div className={narrow ? 'view-toggle' : 'view-tabs'} role="group" aria-label="View">
+              <Glide match="[aria-pressed='true']" className={narrow ? 'thumb' : 'underline'} />
+              {views.map((v) => (
+                narrow ? (
+                  <button key={v} className={v === view ? 'on' : ''} aria-pressed={v === view} title={shortcutTitle(`${VIEW_LABEL[v]} view`, 'toggle-view')} onClick={() => switchView(v)}>
+                    <Icon name={v === 'gui' ? 'chat' : 'terminal'} size={15} />
+                  </button>
+                ) : (
+                  <button key={v} className="tab-underline" aria-pressed={v === view} title={shortcutTitle(`${VIEW_LABEL[v]} view`, 'toggle-view')} onClick={() => switchView(v)}>
+                    {VIEW_LABEL[v]}
+                  </button>
+                )
+              ))}
+            </div>
+          )}
+          {!narrow && (
+            <button
+              className="icon-btn"
+              onClick={() => {
+                if (panel && !panelCollapsed) setPanelCollapsed(true);
+                else if (panel) setPanelCollapsed(false);
+                else {
+                  setPanel(lastPanel);
+                  setPanelCollapsed(false);
+                }
+              }}
+              aria-label="Toggle panel"
+              aria-pressed={!!panel && !panelCollapsed}
+              title={shortcutTitle(`Panel: ${lastPanel}${w.queued > 0 ? ` (Queue ${w.queued})` : ''}`, 'toggle-panel')}
+            >
+              <Icon name={panel && !panelCollapsed ? 'panel-hide' : 'panel'} size={16} />
+            </button>
+          )}
+          <div className="menu-wrap">
+            <button ref={menuBtn} className="icon-btn" onClick={() => setMenu(!menu)} aria-label="More" aria-expanded={menu}>
+              <Icon name="more" />
+            </button>
+            {menu &&
+              createPortal(
+                narrow ? (
+                  <ActionSheet scrim={menuScrim} onClose={() => setMenu(false)}>
+                    {menuBody}
+                  </ActionSheet>
+                ) : (
+                  menuBody
+                ),
+                document.body,
+              )}
           </div>
-        )}
-        {!narrow && (
-          <button
-            className="icon-btn"
-            onClick={() => {
-              if (panel && !panelCollapsed) setPanelCollapsed(true);
-              else if (panel) setPanelCollapsed(false);
-              else {
-                setPanel(lastPanel);
-                setPanelCollapsed(false);
-              }
-            }}
-            aria-label="Toggle panel"
-            aria-pressed={!!panel && !panelCollapsed}
-            title={shortcutTitle(`Panel: ${lastPanel}${w.queued > 0 ? ` (Queue ${w.queued})` : ''}`, 'toggle-panel')}
-          >
-            <Icon name={panel && !panelCollapsed ? 'panel-hide' : 'panel'} size={16} />
-          </button>
-        )}
-        <div className="menu-wrap">
-          <button ref={menuBtn} className="icon-btn" onClick={() => setMenu(!menu)} aria-label="More" aria-expanded={menu}>
-            <Icon name="more" />
-          </button>
-          {menu &&
-            createPortal(
-              narrow ? (
-                <ActionSheet scrim={menuScrim} onClose={() => setMenu(false)}>
-                  {menuBody}
-                </ActionSheet>
-              ) : (
-                menuBody
-              ),
-              document.body,
-            )}
-        </div>
+        </NavGroup>
       </header>
 
       {narrow && (

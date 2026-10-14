@@ -1328,7 +1328,8 @@ a.pill:hover {
   gap: 2px;
   margin: 0 8px 6px;
   padding: 3px;
-  border-radius: 12px;
+  /* A capsule with a capsule thumb, iOS 26's segmented control. */
+  border-radius: 999px;
   background: var(--surface);
   border: 1px solid var(--line);
   overflow-x: auto;
@@ -1344,7 +1345,7 @@ a.pill:hover {
   padding: 6px 10px;
   white-space: nowrap;
   border: 0;
-  border-radius: 10px;
+  border-radius: 999px;
   background: none;
   color: var(--muted);
   font-size: 14px;
@@ -1552,15 +1553,21 @@ a.pill:hover {
   width: 44px;
   height: 44px;
   border-radius: 999px;
-  background: var(--raised);
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--elev-0);
+  color: var(--text);
   font-size: 20px;
 }
 
+/* The one prominent action: solid, its rim still catching the light. */
 .icon-btn.round.light {
-  background: var(--text);
+  background:
+    linear-gradient(var(--text), var(--text)) padding-box,
+    var(--glass-rim) border-box;
   color: var(--bg);
-  border-color: var(--text);
 }
 
 .icon-btn.small {
@@ -7050,6 +7057,10 @@ select:not([multiple]) {
   border-radius: 8px;
 }
 
+.seg-tabs > .glide {
+  border-radius: 999px;
+}
+
 .seg > .glide {
   box-shadow: inset 0 0 0 1px var(--line-2);
 }
@@ -7666,6 +7677,53 @@ select:not([multiple]) {
     width: 44px;
     height: 44px;
     border-radius: 999px;
+  }
+
+  /* The navigation bar, as iOS 26 and 27 draw it: Back is a glass circle, and
+     the trailing buttons share one glass capsule, a lens marking the view. */
+  .session-head > .icon-btn,
+  .nav-group {
+    border: 1px solid transparent;
+    background: var(--glass-fill);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    box-shadow: var(--elev-0);
+    color: var(--text);
+  }
+
+  .nav-group {
+    flex: none;
+    display: flex;
+    align-items: center;
+    height: 44px;
+    padding: 0 2px;
+    border-radius: 999px;
+  }
+
+  .nav-group .view-toggle {
+    padding: 0;
+    gap: 0;
+    border: 0;
+    border-radius: 999px;
+    background: none;
+  }
+
+  .nav-group .view-toggle button {
+    width: 36px;
+    height: 40px;
+    padding: 0;
+    border-radius: 999px;
+  }
+
+  .nav-group .view-toggle > .glide {
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--text) 12%, transparent);
+  }
+
+  .session-head .nav-group .menu-wrap > .icon-btn {
+    width: 36px;
+    height: 40px;
+    color: var(--text);
   }
 
   .session-head > .icon-btn svg,
