@@ -7,8 +7,11 @@ import { authApi, type AuthStatus } from './auth.ts';
 import { setUnauthorizedHandler } from './api.ts';
 import { initTheme } from './theme.ts';
 import { confirmKey } from './confirm.ts';
+import { installSlide } from './slide.ts';
 
 initTheme();
+// Every segmented control and toggle slides under a finger, as on iOS (slide.ts).
+installSlide();
 // ⌘↵ / Ctrl+↵ presses the main button, signed in or on the lock screen (confirm.ts).
 window.addEventListener('keydown', confirmKey);
 // Fonts ship with the app: nothing loads from third parties.

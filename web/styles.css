@@ -7121,6 +7121,7 @@ select:not([multiple]) {
     transform var(--dur-2) var(--ease),
     width var(--dur-2) var(--ease),
     height var(--dur-2) var(--ease),
+    filter var(--dur-1),
     opacity var(--dur-1);
 }
 
@@ -7134,6 +7135,31 @@ select:not([multiple]) {
 
 .glide.still {
   transition: none;
+}
+
+/* Slide to choose (slide.ts): a sideways drag on a control is the control's, up and
+   down the page's. While a finger slides, the segment under it reads as chosen, the
+   one that's on lets go, and the thumb, a lens under the finger, lights up. */
+.seg,
+.view-toggle {
+  touch-action: pan-y;
+}
+
+.sliding > button[data-held] {
+  color: var(--text);
+}
+
+.sliding > button:is(.on, [aria-pressed='true'], [aria-selected='true'], [aria-checked='true']):not([data-held]) {
+  color: var(--muted);
+}
+
+.sliding.sliding > button:active {
+  transform: none;
+}
+
+.sliding > .glide,
+.tabbar.held > .glide {
+  filter: brightness(1.35);
 }
 
 /* The item draws only its text: the glide is its background. */

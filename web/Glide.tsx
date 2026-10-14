@@ -19,7 +19,8 @@ export function Glide({ match, className = '' }: { match: string; className?: st
     // A list that mounts with an item already on (a page swiped back to) shows it at once.
     const first = !mounted.current;
     mounted.current = true;
-    const el = box.querySelector<HTMLElement>(match);
+    // A finger sliding along the control (slide.ts) holds the thumb under it until it lifts.
+    const el = box.querySelector<HTMLElement>(':scope > [data-held]') ?? box.querySelector<HTMLElement>(match);
     if (!el || el.offsetParent === null) {
       m.classList.remove('shown');
       return;
@@ -51,8 +52,10 @@ export function Glide({ match, className = '' }: { match: string; className?: st
     box.classList.add('glides');
     const ro = new ResizeObserver(() => place());
     ro.observe(box);
+    box.addEventListener('ah:held', place);
     return () => {
       ro.disconnect();
+      box.removeEventListener('ah:held', place);
       box.classList.remove('glides');
     };
   }, []);

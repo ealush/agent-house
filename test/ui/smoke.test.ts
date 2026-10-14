@@ -394,3 +394,34 @@ test('no control is smaller than 32px, on a desktop or a phone', { skip, timeout
     await ctx.close();
   }
 });
+
+test('phone: a finger slides along a segmented control to pick, and a tap still taps', { skip, timeout: 60_000 }, async () => {
+  const ctx = await browser.newContext({ ...devices['iPhone 15 Pro'] });
+  const { page, errors } = await open(ctx);
+  await page.locator('.rows .row', { hasText: 'zz-idle' }).first().tap();
+  const strip = page.locator('.seg-tabs');
+  await strip.waitFor();
+  // A touch during the page's fade lands on the transition, not the page: let it finish.
+  await page.waitForFunction(() => !document.documentElement.dataset.vt);
+  await page.waitForTimeout(300);
+  const at = async (name: string) => {
+    const b = (await strip.getByRole('tab', { name }).boundingBox())!;
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+  };
+  const cdp = await ctx.newCDPSession(page);
+  const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', p?: { x: number; y: number }) =>
+    cdp.send('Input.dispatchTouchEvent', { type, touchPoints: p ? [p] : [] });
+  const from = await at((await strip.locator('[aria-selected=true]').textContent())!.trim());
+  const to = await at('Chat');
+  await touch('touchStart', from);
+  for (let i = 1; i <= 8; i++) await touch('touchMove', { x: from.x + ((to.x - from.x) * i) / 8, y: from.y });
+  // Mid-slide the thumb is under the finger; nothing is picked until it lifts.
+  assert.equal(await strip.locator('[data-held]').textContent(), 'Chat');
+  await touch('touchEnd');
+  await page.waitForFunction(() => document.querySelector('.seg-tabs [aria-selected=true]')?.textContent === 'Chat');
+  await page.waitForTimeout(150);
+  await strip.getByRole('tab', { name: 'Files' }).tap();
+  await page.waitForFunction(() => document.querySelector('.seg-tabs [aria-selected=true]')?.textContent === 'Files');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
