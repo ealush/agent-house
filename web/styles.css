@@ -264,7 +264,7 @@ code,
   margin: 8px 8px 8px 0;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: 16px;
   overflow: hidden;
 }
 
@@ -318,14 +318,21 @@ code,
 
 /* ---------- sidebar */
 
+/* The sidebar floats beside the page as a glass panel, its corners the page's,
+   the way iPadOS and macOS 27 draw one. */
 .sidebar {
   width: 264px;
   flex: none;
   display: flex;
   flex-direction: column;
   min-height: 0;
+  margin: 8px;
   padding: 14px 10px 10px;
   gap: 4px;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  background: var(--glass-fill);
+  box-shadow: var(--elev-0);
 }
 
 .narrow .sidebar {
@@ -1263,6 +1270,54 @@ a.pill:hover {
   position: relative;
 }
 
+/* A bar's trailing controls share one glass capsule (macOS and iOS 26): the view
+   switch as a segmented control with a lens for a thumb, then the bar's buttons. */
+.nav-group {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 40px;
+  padding: 0 2px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--elev-0);
+}
+
+.nav-group .view-toggle {
+  padding: 0;
+  gap: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+}
+
+.nav-group .view-toggle button {
+  height: 34px;
+  min-width: 34px;
+  border-radius: 999px;
+}
+
+.nav-group .view-toggle.labels button {
+  padding: 0 14px;
+  font-weight: 500;
+}
+
+.nav-group .view-toggle > .glide {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+.nav-group .icon-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  color: var(--text);
+}
+
 /* Terminal | GUI: which surface draws the session. */
 .view-toggle {
   display: flex;
@@ -1790,7 +1845,7 @@ a.btn {
 .seg {
   display: inline-flex;
   padding: 3px;
-  border-radius: 10px;
+  border-radius: 999px;
   background: var(--sunken);
   border: 1px solid var(--line);
 }
@@ -1799,8 +1854,8 @@ a.btn {
   min-height: 32px;
   border: 0;
   background: none;
-  padding: 5px 12px;
-  border-radius: 8px;
+  padding: 5px 14px;
+  border-radius: 999px;
   font-size: 13px;
   color: var(--muted);
 }
@@ -5059,6 +5114,8 @@ button.tool-chip:hover {
   height: auto;
   min-height: 38px;
   align-items: center;
+  /* It may wrap to a second line: a rounded box, not a stretched capsule. */
+  border-radius: 16px;
 }
 
 .seg.modes button {
@@ -6118,7 +6175,7 @@ button.tool-chip:hover {
 
 @container (max-width: 380px) {
   .session-head .session-pills,
-  .session-head .view-tabs,
+  .session-head .view-toggle.labels,
   .session-head .chip.lg {
     display: none;
   }
@@ -7081,9 +7138,12 @@ select:not([multiple]) {
   background: var(--raised);
 }
 
-.view-toggle > .glide,
-.seg > .glide {
+.view-toggle > .glide {
   border-radius: 8px;
+}
+
+.seg > .glide {
+  border-radius: 999px;
 }
 
 .seg-tabs > .glide {
@@ -7710,8 +7770,7 @@ select:not([multiple]) {
 
   /* The navigation bar, as iOS 26 and 27 draw it: Back is a glass circle, and
      the trailing buttons share one glass capsule, a lens marking the view. */
-  .session-head > .icon-btn,
-  .nav-group {
+  .session-head > .icon-btn {
     border: 1px solid transparent;
     background: var(--glass-fill);
     -webkit-backdrop-filter: var(--glass-blur);
@@ -7721,38 +7780,15 @@ select:not([multiple]) {
   }
 
   .nav-group {
-    flex: none;
-    display: flex;
-    align-items: center;
     height: 44px;
-    padding: 0 2px;
-    border-radius: 999px;
-  }
-
-  .nav-group .view-toggle {
-    padding: 0;
     gap: 0;
-    border: 0;
-    border-radius: 999px;
-    background: none;
   }
 
-  .nav-group .view-toggle button {
-    width: 36px;
-    height: 40px;
-    padding: 0;
-    border-radius: 999px;
-  }
-
-  .nav-group .view-toggle > .glide {
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--text) 12%, transparent);
-  }
-
+  .nav-group .view-toggle button,
   .session-head .nav-group .menu-wrap > .icon-btn {
     width: 36px;
     height: 40px;
-    color: var(--text);
+    padding: 0;
   }
 
   .session-head > .icon-btn svg,

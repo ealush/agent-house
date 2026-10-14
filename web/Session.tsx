@@ -156,10 +156,6 @@ function PanelDivider({ onResize, onReset }: { onResize: (dx: number) => void; o
 
 const DEFAULT_PANEL_WIDTH = 420;
 
-/** A phone's trailing bar buttons share one glass capsule, as iOS groups them; elsewhere they stand alone. */
-function NavGroup({ on, children }: { on: boolean; children: React.ReactNode }) {
-  return on ? <div className="nav-group">{children}</div> : <>{children}</>;
-}
 
 export function Session({ w, client, windows, clientFor, narrow, touch, multiHost, home, replyKey, onBack, onAnswer, onSent, onTerminate, refresh, onSplit, onReplace, onClosePane, onFlipSplit, panePath, onPaneDrag, onOpenKey, onSplitWith, onStartSession, active = true }: Props) {
   const surface = useRef<SurfaceHandle>(null);
@@ -1022,17 +1018,18 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
             {w.branch && <PrLink client={client} windowId={w.id} branch={w.branch} />}
           </>
         )}
-        <NavGroup on={narrow}>
+        {/* The trailing controls share one glass capsule, as iOS and macOS 26 group a bar's buttons. */}
+        <div className="nav-group">
           {views.length > 1 && (
-            <div className={narrow ? 'view-toggle' : 'view-tabs'} role="group" aria-label="View">
-              <Glide match="[aria-pressed='true']" className={narrow ? 'thumb' : 'underline'} />
+            <div className={narrow ? 'view-toggle' : 'view-toggle labels'} role="group" aria-label="View">
+              <Glide match="[aria-pressed='true']" className="thumb" />
               {views.map((v) => (
                 narrow ? (
                   <button key={v} className={v === view ? 'on' : ''} aria-pressed={v === view} title={shortcutTitle(`${VIEW_LABEL[v]} view`, 'toggle-view')} onClick={() => switchView(v)}>
                     <Icon name={v === 'gui' ? 'chat' : 'terminal'} size={15} />
                   </button>
                 ) : (
-                  <button key={v} className="tab-underline" aria-pressed={v === view} title={shortcutTitle(`${VIEW_LABEL[v]} view`, 'toggle-view')} onClick={() => switchView(v)}>
+                  <button key={v} className={v === view ? 'on' : ''} aria-pressed={v === view} title={shortcutTitle(`${VIEW_LABEL[v]} view`, 'toggle-view')} onClick={() => switchView(v)}>
                     {VIEW_LABEL[v]}
                   </button>
                 )
@@ -1073,7 +1070,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
                 document.body,
               )}
           </div>
-        </NavGroup>
+        </div>
       </header>
 
       {narrow && (
