@@ -451,10 +451,6 @@ button.tag:hover {
   border-color: var(--accent-hover);
 }
 
-.menu {
-  border-color: var(--line-2);
-}
-
 .gui {
   --gui-bar: var(--accent);
 }
