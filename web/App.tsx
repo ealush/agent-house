@@ -276,6 +276,9 @@ export function App({ onLock }: { onLock: () => void }) {
     const target = { page: to.page ?? page, selected: to.selected === undefined ? selected : to.selected };
     const prev = history.state?.back as { page: Page; selected: string | null } | undefined;
     if (prev && sameRoute(prev, target)) {
+      // A still step (a swipe that has already carried the view off) lands now: the
+      // popstate comes a beat later (longer on iOS), and the old view would be back in between.
+      if (how.still) setRoute(target);
       popStill.current = !!how.still;
       history.back();
     } else go(target, { ...how, history: 'replace' });

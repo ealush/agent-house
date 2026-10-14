@@ -6902,6 +6902,10 @@ select:not([multiple]) {
   transition: opacity var(--dur-1);
 }
 
+.glide.still {
+  transition: none;
+}
+
 /* The item draws only its text: the glide is its background. */
 /* Doubled class: these beat the site theme's own active backgrounds. */
 .glides.glides > button.on,

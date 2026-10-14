@@ -247,3 +247,41 @@ test('desktop: New session right after opening a session keeps the keyboard', { 
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+test('phone: a swipe back lands on the inbox once, even when the browser is slow to go back', { skip, timeout: 60_000 }, async () => {
+  const ctx = await browser.newContext({ ...devices['iPhone 15 Pro'] });
+  const { page, errors } = await open(ctx);
+  await page.locator('.rows .row', { hasText: 'zz-idle' }).first().tap();
+  await page.locator('main.main .session-head').first().waitFor();
+  await page.waitForTimeout(600);
+  // iOS answers history.back() late. Every frame from here on is recorded: once the
+  // session has gone, it must not come back, and no second transition may play.
+  await page.evaluate(() => {
+    const back = history.back.bind(history);
+    history.back = () => void setTimeout(back, 400);
+    const w = window as unknown as { frames_: string[] };
+    w.frames_ = [];
+    const vt = document.startViewTransition?.bind(document);
+    if (vt) document.startViewTransition = ((cb: () => void) => (w.frames_.push('transition'), vt(cb))) as typeof document.startViewTransition;
+    const frame = () => {
+      const main = document.querySelector<HTMLElement>('main.main');
+      const s = !main?.querySelector('.session-head') ? 'page' : main.style.transform ? 'leaving' : 'session';
+      if (w.frames_.at(-1) !== s) w.frames_.push(s);
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  });
+  const cdp = await ctx.newCDPSession(page);
+  const at = (x: number) => [{ x, y: 400, id: 1 }];
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(6) });
+  for (let x = 20; x <= 260; x += 20) {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: at(x) });
+    await page.waitForTimeout(16);
+  }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await page.waitForFunction(() => location.hash === '');
+  await page.waitForTimeout(300);
+  assert.deepEqual(await page.evaluate(() => (window as unknown as { frames_: string[] }).frames_), ['session', 'leaving', 'page']);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});

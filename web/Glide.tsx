@@ -11,10 +11,14 @@ import { useLayoutEffect, useRef } from 'react';
  */
 export function Glide({ match, className = '' }: { match: string; className?: string }) {
   const ref = useRef<HTMLSpanElement>(null);
+  const mounted = useRef(false);
   const place = () => {
     const m = ref.current;
     const box = m?.parentElement;
     if (!m || !box) return;
+    // A list that mounts with an item already on (a page swiped back to) shows it at once.
+    const first = !mounted.current;
+    mounted.current = true;
     const el = box.querySelector<HTMLElement>(match);
     if (!el || el.offsetParent === null) {
       m.classList.remove('shown');
@@ -29,14 +33,14 @@ export function Glide({ match, className = '' }: { match: string; className?: st
     if (m.style.transform === next && m.style.width === size[0] && m.style.height === size[1] && m.classList.contains('shown')) return;
     // Appearing (nothing was selected here): start where the item is, and only fade in.
     const arriving = !m.classList.contains('shown');
-    if (arriving) m.classList.add('placing');
+    if (arriving) m.classList.add(first ? 'still' : 'placing');
     m.style.transform = next;
     m.style.width = size[0];
     m.style.height = size[1];
     m.classList.add('shown');
     if (arriving) {
       void m.offsetWidth;
-      m.classList.remove('placing');
+      m.classList.remove('placing', 'still');
     }
   };
   // Every render of the list: the selection, order or contents may have moved.
