@@ -52,6 +52,9 @@ test('opencode legacy tree metadata', async () => {
 test('prompt titles skip injected context and keep the first line', () => {
   assert.equal(promptTitle('<system-reminder>x</system-reminder>'), null);
   assert.equal(promptTitle('/clear'), null);
+  assert.equal(promptTitle('/plugin:skill args'), null);
+  assert.equal(promptTitle('/home/u/.cache/ah/uploads/a.png /tmp/b.png fix this menu'), 'fix this menu', 'a prompt opened with an upload is a prompt');
+  assert.equal(promptTitle('/home/u/.cache/ah/uploads/a.png'), 'a.png');
   assert.equal(promptTitle('\n  fix it\nmore'), 'fix it');
   assert.equal(promptTitle('x'.repeat(200))?.length, 88);
   assert.equal(promptTitle('\n\n<pasted_content id="e3ce">\n# Mission\nmore\n</pasted_content>'), '# Mission', 'a paste is a prompt');

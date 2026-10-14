@@ -88,8 +88,12 @@ export function promptTitle(text: unknown): string | null {
   // A paste is yours, not injected: Claude Code wraps it in <pasted_content>. Without
   // this, a session opened with a paste is never discovered and its GUI stays empty.
   const t = text.replace(/<\/?pasted_content\b[^>]*>/g, '').trim();
-  if (!t || t.startsWith('<') || t.startsWith('/') || t.startsWith('Caveat:')) return null;
-  const first = t.split('\n').find((l) => l.trim()) ?? '';
+  // A leading absolute path (an attached screenshot) is yours too, not a slash command:
+  // it's left out of the title, but the prompt still counts.
+  const path = /^\/[^\s/]*\//.test(t);
+  if (!t || t.startsWith('<') || (t.startsWith('/') && !path) || t.startsWith('Caveat:')) return null;
+  const line = t.split('\n').find((l) => l.trim()) ?? '';
+  const first = path ? line.replace(/^(\/\S+\s*)+/, '').trim() || line.trim().split(/\s/)[0].split('/').pop()! : line;
   return first.length > 90 ? first.slice(0, 87) + '…' : first;
 }
 
