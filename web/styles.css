@@ -34,6 +34,8 @@
   --glass-blur: blur(28px) saturate(1.8);
   --glass-rim: linear-gradient(150deg, rgb(255 255 255 / 0.3), rgb(255 255 255 / 0.08) 30%, rgb(255 255 255 / 0.04) 65%, rgb(255 255 255 / 0.16));
   --glass-fill: linear-gradient(var(--glass-tint), var(--glass-tint)) padding-box, var(--glass-rim) border-box;
+  /* What lights a pressed glass control. */
+  --glass-press: rgb(255 255 255 / 0.1);
 
   --c-shell: #9aa3ae;
   --c-claude: #e08a5f;
@@ -92,6 +94,7 @@
      its rim a bright top edge over a hairline. */
   --glass-tint: color-mix(in srgb, var(--raised) 90%, transparent);
   --glass-rim: linear-gradient(150deg, rgb(255 255 255 / 0.95), rgb(35 42 54 / 0.1) 30%, rgb(35 42 54 / 0.12) 70%, rgb(35 42 54 / 0.06));
+  --glass-press: rgb(35 42 54 / 0.06);
 
   --c-shell: #5b6570;
   --c-claude: #a8511f;
@@ -6917,6 +6920,32 @@ button.tool-chip:active,
 
 .send-btn:active:not(:disabled) {
   transform: scale(0.92);
+}
+
+/* Glass answers a press as iOS 26 and 27's does: it lights up under the finger
+   and swells a little, then springs back past its size and settles. */
+.icon-btn.round,
+.narrow .session-head > .icon-btn {
+  transition: transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow var(--dur-1);
+}
+
+.icon-btn.round:active:not(:disabled),
+.narrow .session-head > .icon-btn:active:not(:disabled) {
+  transform: scale(1.08);
+  box-shadow: inset 0 0 0 44px var(--glass-press), var(--elev-1);
+  transition-duration: 160ms, var(--dur-1);
+}
+
+/* Inside a glass capsule, the button you press gets the lens. */
+.nav-group button:active:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon-btn.round:active:not(:disabled),
+  .narrow .session-head > .icon-btn:active:not(:disabled) {
+    transform: none;
+  }
 }
 
 .icon-btn:disabled {
