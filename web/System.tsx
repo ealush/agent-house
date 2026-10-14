@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, type DesktopStatus, type HooksStatus } from './api.ts';
 import { copyText } from './selection.ts';
 import { askConfirm, showError } from './ask.tsx';
+import { clearUploads, rebuildServer, restartServer } from './settingsMenu.ts';
 import { age, look } from './agents.ts';
 
 // Settings → System: host-level actions. A restart bounces the daemon while
@@ -13,69 +14,24 @@ export function SystemPanel() {
   const [uploadsNote, setUploadsNote] = useState<string | null>(null);
 
   async function restart() {
-    if (
-      !(await askConfirm({
-        title: 'Restart the ah server?',
-        body: 'The page disconnects for a few seconds while the server restarts. Sessions keep running.',
-        confirm: 'Restart',
-        danger: true,
-      }))
-    )
-      return;
     setBusy(true);
-    try {
-      await api.restart();
-      setPhase('restart');
-    } catch (e) {
-      showError(e, "Couldn't restart the server");
-    } finally {
-      setBusy(false);
-    }
+    if (await restartServer()) setPhase('restart');
+    setBusy(false);
   }
 
   async function rebuild() {
-    if (
-      !(await askConfirm({
-        title: 'Rebuild and restart?',
-        body: 'The old build is deleted, the UI is built again from this checkout, and then the server restarts. This takes longer than a restart. Sessions keep running.',
-        confirm: 'Rebuild and restart',
-        danger: true,
-      }))
-    )
-      return;
     setBusy(true);
-    setPhase('rebuild');
-    try {
-      await api.rebuild();
-      setPhase('restart');
-    } catch (e) {
-      setPhase(null);
-      showError(e, "Couldn't rebuild the server");
-    } finally {
-      setBusy(false);
-    }
+    const ok = await rebuildServer(() => setPhase('rebuild'));
+    setPhase(ok ? 'restart' : null);
+    setBusy(false);
   }
 
-  async function clearUploads() {
-    if (
-      !(await askConfirm({
-        title: 'Clear the uploads folder?',
-        body: 'Everything in ~/.cache/ah/uploads is deleted.',
-        confirm: 'Clear uploads',
-        danger: true,
-      }))
-    )
-      return;
+  async function clear() {
     setBusy(true);
     setUploadsNote(null);
-    try {
-      const { removed } = await api.clearUploads();
-      setUploadsNote(removed === 0 ? 'Uploads folder is already empty.' : removed === 1 ? 'Cleared 1 file from the uploads folder.' : `Cleared ${removed} files from the uploads folder.`);
-    } catch (e) {
-      showError(e, "Couldn't clear the uploads folder");
-    } finally {
-      setBusy(false);
-    }
+    const note = await clearUploads();
+    if (note) setUploadsNote(note);
+    setBusy(false);
   }
 
   return (
@@ -109,7 +65,7 @@ export function SystemPanel() {
         <h2>Uploads</h2>
         <p className="hint">Pasted and dropped files are stored in ~/.cache/ah/uploads on this host.</p>
         {uploadsNote && <p className="hint">{uploadsNote}</p>}
-        <button className="btn" disabled={busy || phase !== null} onClick={() => void clearUploads()}>
+        <button className="btn" disabled={busy || phase !== null} onClick={() => void clear()}>
           Clear uploads folder
         </button>
       </div>

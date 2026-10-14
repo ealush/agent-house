@@ -63,6 +63,7 @@ import { runCommand } from './shortcuts.ts';
 import { CommandPalette, Keycaps, Shortcuts, ShortcutsDialog, WhichKey, shortcutTitle, useCommand, usePaletteProvider } from './shortcuts.tsx';
 import { TabBar } from './TabBar.tsx';
 import { errorText } from './errors.ts';
+import { sectionHash, settingsNodes } from './settingsMenu.ts';
 
 // Pages and dialogs most visits never open load on first use.
 const Settings = lazy(() => import('./Settings.tsx').then((m) => ({ default: m.Settings })));
@@ -618,6 +619,15 @@ export function App({ onLock }: { onLock: () => void }) {
       run: () => open(w.key),
     }));
   });
+
+  // Palette → Settings: one-click settings run from there, the rest open their page.
+  usePaletteProvider('settings', () =>
+    settingsNodes((id) => {
+      setLayout(null);
+      setFocusPath(null);
+      location.hash = sectionHash(id);
+    }),
+  );
 
   // Keyboard into the session list: the sidebar, or the Sessions tab on a phone
   // (there is no sidebar there, and this command used to be absent).

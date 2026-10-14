@@ -27,7 +27,7 @@ export type PaletteNode = {
 };
 
 /** Where a provider's nodes go in the static tree. */
-export type ProviderId = 'sessions' | 'queue' | 'models' | 'efforts' | 'modes' | 'tiles' | 'projects' | 'agents';
+export type ProviderId = 'sessions' | 'queue' | 'models' | 'efforts' | 'modes' | 'tiles' | 'projects' | 'agents' | 'settings';
 
 type Spec = { key: string; label: string; icon: IconName; detail?: string; terms?: SearchTerms; children: Array<Spec | CommandId | { provider: ProviderId }> };
 
@@ -96,6 +96,14 @@ export const TREE: Spec = {
         { key: 'resize', label: 'Resize', icon: 'split-right', detail: 'Dividers and the side panel, by key', children: ['resize-mode', 'resize-left', 'resize-right', 'resize-up', 'resize-down', 'maximize-pane'] },
         'toggle-sidebar',
       ],
+    },
+    {
+      key: 'settings',
+      label: 'Settings',
+      icon: 'gear',
+      detail: 'Theme, reload, restart, rebuild, and every settings page',
+      terms: ['preferences', 'server'],
+      children: [{ provider: 'settings' }],
     },
     { key: 'help', label: 'Help', icon: 'keyboard', children: ['show-shortcuts', 'reload-page'] },
   ],

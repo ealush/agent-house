@@ -82,3 +82,22 @@ test('every command in the catalog has a place in the palette tree', async () =>
   const missing = COMMANDS.map((c) => c.id).filter((id) => id !== 'command-palette' && !placed.has(id));
   assert.deepEqual(missing, []);
 });
+
+test('settings live under their own category, searchable from the top', async () => {
+  const tree = await resolveTree(undefined, {
+    active: all,
+    provide: async (id) =>
+      id === 'settings'
+        ? [
+            { key: 'restart-server', label: 'Restart server', run: () => {} },
+            { key: 'pages', label: 'Open settings', children: [{ key: 'settings:environment', label: 'Environment', detail: 'Variables every session starts with', run: () => {} }] },
+          ]
+        : [],
+  });
+  const settings = tree.children!.find((c) => c.key === 'settings')!;
+  assert.deepEqual(settings.children!.map((c) => c.key), ['restart-server', 'pages']);
+  assert.equal(searchTree(tree, 'restart server')[0].node.key, 'restart-server');
+  const env = searchTree(tree, 'environment')[0];
+  assert.equal(env.node.key, 'settings:environment');
+  assert.deepEqual(env.trail.map((t) => t.key), ['settings', 'pages']);
+});

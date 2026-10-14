@@ -12,18 +12,7 @@ import { AppearancePanel } from './Appearance.tsx';
 import { SystemPanel } from './System.tsx';
 import { ShortcutsPanel } from './shortcuts.tsx';
 import { Glide } from './Glide.tsx';
-const SECTIONS = [
-  { id: 'security', label: 'Security' },
-  { id: 'appearance', label: 'Appearance' },
-  { id: 'shortcuts', label: 'Shortcuts' },
-  { id: 'notifications', label: 'Notifications' },
-  { id: 'subscriptions', label: 'Subscriptions' },
-  { id: 'environment', label: 'Environment' },
-  { id: 'search', label: 'Search' },
-  { id: 'system', label: 'System' },
-] as const;
-
-type Section = (typeof SECTIONS)[number]['id'];
+import { SECTIONS, sectionHash, type Section } from './settingsMenu.ts';
 
 function sectionFromHash(): Section {
   const h = location.hash.slice(1);
@@ -41,7 +30,7 @@ export function Settings({ onLocked, onNotifyChange }: { onLocked: () => void; o
   }, []);
 
   const go = (id: Section) => {
-    location.hash = id === 'security' ? 'settings' : `settings/${id}`;
+    location.hash = sectionHash(id);
   };
 
   return (

@@ -1,12 +1,6 @@
-import { getOmarchyPalette, setThemeMode, type ThemeMode } from './theme.ts';
+import { getOmarchyPalette, setThemeMode } from './theme.ts';
 import { useTheme } from './useTheme.ts';
-
-const OPTIONS: { id: ThemeMode; label: string; hint: string }[] = [
-  { id: 'system', label: 'System', hint: 'Follow the OS' },
-  { id: 'dark', label: 'Dark', hint: 'Always dark' },
-  { id: 'light', label: 'Light', hint: 'Always light' },
-  { id: 'omarchy', label: 'Omarchy', hint: "Wear the host's Omarchy theme, and change with it" },
-];
+import { THEMES } from './settingsMenu.ts';
 
 /** Settings → Appearance: theme mode picker. Device-local, like layout. */
 export function AppearancePanel() {
@@ -15,7 +9,7 @@ export function AppearancePanel() {
     <div className="sec-card">
       <h2>Theme</h2>
       <div className="seg" role="radiogroup" aria-label="Appearance">
-        {OPTIONS.map((o) => (
+        {THEMES.map((o) => (
           <button
             key={o.id}
             role="radio"
