@@ -3061,6 +3061,11 @@ a.btn {
   background: var(--raised);
 }
 
+/* A card lines its contents up at the start without stretching them; none may grow past it. */
+.sec-card > * {
+  max-width: 100%;
+}
+
 /* A card's title is a section label, not a page heading: no browser margins. */
 .sec-card > h2 {
   margin: 0;
@@ -6746,7 +6751,9 @@ button.tool-chip:hover {
   }
 }
 
+/* The card's width, not the command's: the command scrolls inside it and Copy stays in view. */
 .bind-line {
+  align-self: stretch;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -6797,7 +6804,7 @@ button.tool-chip:hover {
   border-radius: 8px;
 }
 
-/* Panel tabs and the key bar: a soft fade at the edge while more is off screen. */
+/* Panel tabs, the key bar and a long command: a soft fade at the edge while more is off screen. */
 @property --tabs-fade {
   syntax: '<length>';
   inherits: false;
@@ -6806,14 +6813,16 @@ button.tool-chip:hover {
 
 .seg-tabs,
 .keybar,
-.side-panel .tabs-scroll {
+.side-panel .tabs-scroll,
+.bind-line code {
   mask-image: linear-gradient(to right, #000 calc(100% - var(--tabs-fade)), transparent);
 }
 
 @supports (animation-timeline: scroll()) {
   .seg-tabs,
   .keybar,
-  .side-panel .tabs-scroll {
+  .side-panel .tabs-scroll,
+  .bind-line code {
     animation: tabs-fade linear both;
     animation-timeline: scroll(self inline);
   }
