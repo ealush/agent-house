@@ -2,9 +2,13 @@
 
 Reviewing, fixing and merging your own pull requests in ah, one layer at a
 time. It reviews the whole stack together but merges one PR at a time.
-Status: R0–R3 built on 16 October 2026 (`server/review/`, `web/review/`);
+Status: R0–R3 built on 16 October 2026 (`server/review/`, `web/review/`),
+then taken off `main` until it's ready; it lives on the `stack-review` branch.
+Hand-picked stacks and the redesign (below) were added on 17 October, then
+built to the canvas, with the spec's waivers, finding history and follow-ups.
 R4–R5 open. Where the build differs from the first proposal, this document
-says what was built. Backlog: "Stack review" in `BACKLOG.md`.
+says what was built. Backlog: "Stack review" in `BACKLOG.md`. The screens were
+designed on a Claude Design canvas first: https://claude.ai/artifact/Ff8Aqv3XSLzTiGQ1e2dUca
 
 ## Why it belongs in ah
 
@@ -79,6 +83,42 @@ What this means for the design:
 | **Thread** | A reviewer conversation: one per stack and one per layer. | `ChatMessage` under `review:` keys |
 
 A single PR is a stack of one, so nothing in this design is stack-only.
+
+## Two ways to make a stack
+
+**From GitHub's chain.** Pick the bottom PR and the stack is it plus every PR
+whose base branch is another's head (`source: "tree"`). New PRs opened on a
+layer's branch join by themselves.
+
+**By hand, like a stack of diffs.** *New stack* opens a project's open PRs with
+checkboxes (`source: "manual"`). You tick the PRs, put them in review-and-merge
+order and start. This is the Meta-style stack without the tooling: at Meta a
+stack is commits in one branch, each one a diff (Phabricator, then Sapling's
+`sl`), reviewed on its own and landed bottom-up. Here a stack is PRs you group
+yourself, and they needn't sit on each other's branches. A docs PR, a fix and
+a feature can be reviewed and merged as one ordered stack.
+
+- PRs built on each other's branches are grouped in the picker as a chain, and
+  *Select the chain* takes all of them. A PR ticked after its base goes right
+  under it.
+- A PR placed above the PR its branch is built on is flagged, and Start stays
+  off until it moves (or *Order by bases* fixes it). The server checks the same
+  rule. A PR built on one that isn't in the stack is only noted.
+- A picked stack never takes PRs in by itself. *Add pull requests* (the stack's
+  ··· menu, or under the merge order) opens the same picker and appends.
+- *Take out of the stack* removes a PR and its findings, nothing on GitHub. A
+  GitHub-chain stack you trim becomes a picked one, so the PR doesn't rejoin.
+- Merging is the same either way: one layer at a time, only at the reviewed
+  head. PRs on a merged layer's branch are retargeted to the trunk. Independent
+  PRs need no retarget; GitHub's mergeability shows when an earlier merge
+  conflicts with a later one.
+
+*Supporting the real thing.* Sapling and ghstack aren't installed here. Each
+already pushes one PR per commit with stacked branches, which is the GitHub
+chain above. The part ah could add is what Sapling writes into each PR's
+description: the list of the stack with the current one marked, so the stack
+is visible on GitHub too. That edits PR bodies, so it would be an explicit
+action, not a side effect. It's in the backlog.
 
 ## Reading at a pinned revision
 
@@ -165,10 +205,15 @@ It proposes. You decide by pressing a button.
   merged, the finding becomes a follow-up item on the stack (a new PR or the
   next open layer), never a rewrite of merged history.
 - **States:** `open → sent → addressed | not addressed`, plus
-  `won't fix` and `dismissed`. Every change records who made it and at
-  which revision.
+  `won't fix` and `dismissed`. Every change records who made it (you, the
+  reviewer, GitHub) and at which revision (`stateBy`, `stateRevId`); a card
+  shows it when opened ("Fixed by the reviewer at f9b99cc, 4m ago").
+- **Follow-ups:** a finding still open when its layer merges shows on the next
+  open layer as a follow-up, selectable there. Sending it moves it to that
+  layer, and the message says it was found on the merged one.
 - **Severity:** `blocking` / `should` / `nit`. Only blocking findings stop
-  Merge & next, and you can waive one with a reason that is recorded.
+  Merge & next. *Waive…* on a blocking one asks why; the server refuses a
+  waiver without a reason, and the reason stays on the finding.
 - **Thread sync:** when a finding imported from GitHub is closed, its card
   offers **Reply & resolve on GitHub** with the text prefilled. It doesn't happen
   automatically. This is the "three Codex bot threads still unresolved"
@@ -296,8 +341,23 @@ that against a preview API.
 
 ## Where it shows up
 
-**Desktop.** It's a page in the sidebar, *Review*, listing open stacks per
-project. In the palette it's *Go to → Review*. The page has three columns:
+*As built after the redesign (17 October).* The list shows stacks in review,
+each as a card with a bar of one segment per layer and what needs you, then
+*Start from a project*: one card per project with its open PRs counted and its
+chains not yet in review named. *New stack* opens the picker. A stack opens on
+its overview: a spine of layers down the left, trunk on top, one status dot each,
+and beside it **Up next** (the one thing to do, with ⌘↵ on its button), the
+merge order as a table, and cards for who gets the fixes, the plan and the
+decisions. *Ask the reviewer* opens the stack's reviewer in a drawer instead of a
+fixed third column. A layer folds the spine into a column of labels so the
+diff gets the room. Its header carries the breadcrumb, previous and next, and
+the one primary action. A band says what's new (a fix came back, with the
+reviewer's verdict per finding as chips). The briefing sits behind a toggle on
+the diff bar, and the merge gates are a row of marks under the diff. On a phone
+the stack is the spine under Up next. A layer has Findings, Diff and Reviewer tabs
+and a glass bar: previous, the action, ···, next.
+
+The first proposal's layout, kept for the record:
 
 ```
 ┌ Stack ───────────┬ #1354 F2 · Dependency planner ─────────┬ Thread ─────────────┐
@@ -468,3 +528,10 @@ with cited nodes, and a completion report when a stack closes.
 5. **A cheaper model for the background work.** Settings → Subscriptions picks
    the subscription that writes briefings and re-checks; the reviewer chat uses
    the default (or the one picked in the thread).
+6. **A picked stack keeps its shape.** Only you add PRs to it; trimming a
+   GitHub-chain stack turns it into a picked one. The alternative, a picked
+   stack that also takes in children of its layers, makes the list change
+   under you.
+7. **Up next opens; it doesn't act.** The overview's button goes to the layer
+   where the action is (Re-review, Open, Review). Merging and sending stay on
+   the layer, next to the diff and the gates they depend on.

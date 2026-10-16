@@ -1,8 +1,11 @@
 import { useMemo, useState } from 'react';
 import { parsePatch } from '../Git.tsx';
+import { Icon } from '../icons.tsx';
 import type { Finding } from '../reviewApi.ts';
 
 export type Severity = 'blocking' | 'should' | 'nit';
+
+const STATE_WORD: Record<string, string> = { sent: 'with the agent', addressed: 'fixed', wontfix: "won't fix" };
 
 /** A finding's first line is its title; the rest is the why. */
 export function splitNote(text: string): { title: string; body: string } {
@@ -66,7 +69,7 @@ export function ReviewDiff({ patch, findings, onFile }: { patch: string; finding
 
   return (
     <div className="diff review-diff" data-rove=".dl.pickable">
-      {files.map((f) => {
+      {files.map((f, fi) => {
         const big = f.lines.length > 400;
         const shut = folded.has(f.path) || (big && !unfolded.has(f.path));
         const toggle = () => {
@@ -76,9 +79,13 @@ export function ReviewDiff({ patch, findings, onFile }: { patch: string; finding
         return (
           <section key={f.path} className="diff-block">
             <button type="button" className="diff-file" onClick={toggle} aria-expanded={!shut}>
+              <span className={`fold-mark ${shut ? 'shut' : ''}`} aria-hidden>
+                <Icon name="chevron-down" size={14} />
+              </span>
               <span className="grow">{f.path}</span>
               <span className="add-n">+{f.add}</span>
               <span className="del-n">−{f.del}</span>
+              {files.length > 1 && <span className="file-n">{`${fi + 1} of ${files.length}`}</span>}
             </button>
             {shut ? (
               <button type="button" className="diff-fold" onClick={toggle}>
@@ -105,13 +112,19 @@ export function ReviewDiff({ patch, findings, onFile }: { patch: string; finding
                       <span className="ln">{here ? <span className={`mark sev-${here[0].severity}`} aria-label={`${here.length} finding${here.length > 1 ? 's' : ''}`} /> : null}{l.n ?? ''}</span>
                       <span className="code">{l.text || ' '}</span>
                     </div>
-                    {here?.map((x) => (
-                      <div key={x.id} className={`finding-inline sev-${x.severity} ${x.state}`}>
-                        <span className="dot" />
-                        <span className="grow">{x.title}</span>
-                        <span className="hint">{x.state === 'open' ? x.severity : x.state}</span>
-                      </div>
-                    ))}
+                    {here?.map((x) => {
+                      const why = (x.note && x.state !== 'open' ? x.note : x.body.split('\n---\n')[0]).split('\n')[0].trim();
+                      return (
+                        <div key={x.id} className={`finding-inline sev-${x.severity} ${x.state}`}>
+                          <span className="fi-head">
+                            <span className={`sev-chip sev-${x.severity}`}>{x.severity}</span>
+                            <span className="grow">{x.title}</span>
+                            {x.state !== 'open' && <span className="hint">{STATE_WORD[x.state] ?? x.state}</span>}
+                          </span>
+                          {why && <span className="fi-body">{why.length > 200 ? `${why.slice(0, 199)}…` : why}</span>}
+                        </div>
+                      );
+                    })}
                     {isOpen && (
                       <form
                         className="comment-box"

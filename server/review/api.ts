@@ -40,8 +40,9 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
 
     if (route('POST', '/stacks')) {
       const body = await readJson(req);
-      const v = await svc.create(str(body.root, 'root', 1000), int(body.pr, 'pr'), opt(body.title, (x) => str(x, 'title', 120)));
-      audit(req, 'review.stack', { stack: v.id, repo: v.repo, root: v.layers[0]?.pr });
+      const input = Array.isArray(body.prs) ? { prs: body.prs.slice(0, 61).map((n) => int(n, 'prs')) } : { pr: int(body.pr, 'pr') };
+      const v = await svc.create(str(body.root, 'root', 1000), input, opt(body.title, (x) => str(x, 'title', 120)));
+      audit(req, 'review.stack', { stack: v.id, repo: v.repo, source: v.source, prs: v.layers.map((l) => l.pr) });
       return send(res, 200, v);
     }
 
@@ -78,6 +79,18 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
     if ((m = route('GET', `/stacks/${ID}/owners`))) return send(res, 200, await svc.ownerSuggestions(m[1]));
 
     if ((m = route('GET', `/stacks/${ID}/plan`))) return send(res, 200, await svc.plan(m[1]));
+
+    if ((m = route('POST', `/stacks/${ID}/layers`))) {
+      const body = await readJson(req);
+      if (!Array.isArray(body.prs)) throw new HttpError(400, 'prs required');
+      return send(res, 200, await svc.addLayers(m[1], body.prs.slice(0, 61).map((n) => int(n, 'prs'))));
+    }
+
+    if ((m = route('DELETE', `/stacks/${ID}/layers/${PR}`))) {
+      const v = await svc.removeLayer(m[1], Number(m[2]));
+      audit(req, 'review.removeLayer', { stack: m[1], pr: Number(m[2]) });
+      return send(res, 200, v);
+    }
 
     if ((m = route('PATCH', `/stacks/${ID}/layers/${PR}`))) {
       const body = await readJson(req);

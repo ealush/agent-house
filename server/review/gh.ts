@@ -71,9 +71,12 @@ export type GhPr = {
   mergeState: string | null;
   author: string;
   checks: Checks;
+  additions: number;
+  deletions: number;
+  updatedAt: string;
 };
 
-const FIELDS = 'number,title,url,body,state,isDraft,headRefName,baseRefName,headRefOid,baseRefOid,isCrossRepository,mergeable,mergeStateStatus,author,statusCheckRollup';
+const FIELDS = 'number,title,url,body,state,isDraft,headRefName,baseRefName,headRefOid,baseRefOid,isCrossRepository,mergeable,mergeStateStatus,author,statusCheckRollup,additions,deletions,updatedAt';
 
 /** Check rollup as GitHub reports it: check runs (status + conclusion) and commit statuses (state). */
 export function rollup(items: unknown): Checks {
@@ -113,6 +116,9 @@ function toPr(v: Record<string, unknown>): GhPr | null {
     mergeState: s('mergeStateStatus') || null,
     author: typeof v.author === 'object' && v.author ? String((v.author as { login?: unknown }).login ?? '') : '',
     checks: rollup(v.statusCheckRollup),
+    additions: typeof v.additions === 'number' ? v.additions : 0,
+    deletions: typeof v.deletions === 'number' ? v.deletions : 0,
+    updatedAt: s('updatedAt'),
   };
 }
 
