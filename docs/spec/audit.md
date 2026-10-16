@@ -89,6 +89,7 @@ sidebar, header and History say "Claude Code" and "Opus 5.5" (A-20).
 | A-25 | S3 | The composer's Effort chip shows no value at the default, while Model shows the model in use. | `Composer.tsx` | **fix** ("Effort: auto" or the level) |
 | A-26 | S3 | New session opens on Shell for a device with no history, though agents are the product's point; the Project field starts at the projects root on desktop and `~` on a phone. | `NewDialog.tsx` | **call** |
 | A-27 | S3 | Files panel: the toolbar's icons are unlabeled, the roots select truncates to "Roots…", Insert sits beside every row. | `Files.tsx` | **design** |
+| A-29 | S3 | The app icon, manifest and apple-touch icon are still in the retired amber palette while the app is pink. | `web/public/icon.svg` | **design** (redrawn in the design system's Logo group) |
 | A-28 | S3 | Settings sections have icons in the palette but none in the page's section list. | `Settings.tsx` | **design** |
 
 ## Already open (from earlier passes, still true)
@@ -104,6 +105,8 @@ sidebar, header and History say "Claude Code" and "Opus 5.5" (A-20).
 1. **Fix now** (behaviour, no design needed): A-14, A-15, A-05, A-07, A-08,
    A-21, A-02, A-12, A-16, A-18, A-25, A-01, A-10's palette entry.
 2. **Redesign** in Claude Design, one system for every screen: A-03, A-04,
-   A-06, A-10, A-11, A-17, A-19, A-20, A-22, A-24, A-27, A-28.
+   A-06, A-10, A-11, A-17, A-19, A-20, A-22, A-24, A-27, A-28, A-29.
+   Design system: https://claude.ai/artifact/2T5PJyjouhLem3Gmh6JFtz ·
+   canvas: https://claude.ai/artifact/XKVpwYoyvXQ8299qmPE4Sx
 3. **Owner calls**: A-09 (CLI parity during the freeze), A-13 (keycap glyphs
    off Mac), A-26 (New session's default).

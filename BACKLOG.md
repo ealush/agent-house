@@ -251,9 +251,9 @@ DS). Work until the freeze lifts:
 | # | Item | | Notes |
 |---|---|---|---|
 | Z1 | Specification | ✅ | `docs/spec/`: vocabulary, invariants, 11 domain files. |
-| Z2 | Consistency audit | ✅ | `docs/spec/audit.md`: parity matrix, vocabulary drift, 28 findings (A-01…A-28) with severity and resolution. |
+| Z2 | Consistency audit | ✅ | `docs/spec/audit.md`: parity matrix, vocabulary drift, 29 findings (A-01…A-29) with severity and resolution. |
 | Z3 | Behaviour fixes | ✗ | The audit's "fix now" list. |
-| Z4 | Redesign | ◐ | One visual system for every screen and device, in Claude Design; then one token file (A-17). |
+| Z4 | Redesign | ◐ | Designed: the ah design system (28 components, both themes) and a canvas of every screen on desktop and phone, in Claude Design (links in `docs/spec/11-design-system.md`). Next: implement it, one token file (A-17). |
 | Z5 | Owner calls | ✗ | A-09 CLI parity, A-13 keycaps off Mac, A-26 New session's default. |
 
 Stack review landed on 17 October at the owner's call, outside the freeze; its spec is `docs/stack-review.md`.

@@ -82,8 +82,21 @@ devices never name keys.
 
 ## DS-8 · Redesign (October 2026)
 
-The full system — every screen, on desktop, iPad and phone, in dark and
-light — is being redesigned in Claude Design as one cohesive, functional,
-premium look. The canvas is the source for the next values of DS-2 to DS-6;
-when it lands, this file is rewritten from it and the two token layers become
-one.
+The full system is redesigned in Claude Design as one cohesive, functional,
+premium look:
+
+- **Design system "ah"** — https://claude.ai/artifact/2T5PJyjouhLem3Gmh6JFtz:
+  one token set for both themes (contrast-checked), Rubik and JetBrains Mono,
+  the icon set, the agents' marks, the app icon in the brand colors, and 28
+  components (`ah-` classes in one stylesheet) that settle the audit's design
+  findings: one SessionRow, one AskCard, one OptionList, one ToolRow, one
+  session Menu, Notice, styled Fields, PanelTabs that always fit.
+- **Redesign canvas** — https://claude.ai/artifact/XKVpwYoyvXQ8299qmPE4Sx:
+  every screen built from those components: 12 desktop screens (Inbox,
+  session needing you with Diff, working with a queue, terminal with the ask
+  bar, split workspace, palette, switcher, New session, Fork, History, Search,
+  Settings), 7 phone screens (Inbox, session, action sheet, Sessions, New
+  session, History, Settings), and the light theme.
+
+The design system is the source for DS-2 to DS-6; implementing it replaces
+`styles.css` + `site-theme.css` with one token file (A-17).

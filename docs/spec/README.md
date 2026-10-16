@@ -19,6 +19,7 @@ behave as one product:
 | **Agents** | Claude Code, Codex, Gemini, Grok, Muse, Hermes, opencode, Cursor, Copilot, Crush, pi, any shell | [02 Sessions](02-sessions.md) |
 | **Hooks** | `bin/ah-hook.js` in each agent, writing status into tmux | [01 Foundation](01-foundation.md) |
 | **Push** | Web Push to every opted-in device, app badge | [07 Continuity](07-continuity.md) |
+| **Review** | PR stacks reviewed layer by layer, with agents fixing findings | [stack-review.md](../stack-review.md) |
 | **Other hosts** | the same daemon elsewhere on the tailnet, proxied under `/h/<host>/` | [01 Foundation](01-foundation.md) |
 
 ## Feature freeze (from 17 October 2026)
@@ -31,7 +32,9 @@ No new features. Work is limited to:
 3. **Finish**: bugs, polish, and the redesign (one visual system for every
    screen; [11 Design system](11-design-system.md)).
 
-Stack review (the Review page) stays on its branch and is outside the freeze.
+Review (stack review) landed on main on 17 October at the owner's call,
+outside the freeze; it is specified in [docs/stack-review.md](../stack-review.md)
+and joins the redesign when the design system replaces its own styles.
 A change that adds a capability needs the freeze lifted, and an entry here first.
 
 ## Spec files
