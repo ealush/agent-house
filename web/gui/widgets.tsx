@@ -57,21 +57,53 @@ const Card: Renderer = ({ w }) => (
   </section>
 );
 
-const Choices: Renderer = ({ w }) => (
-  <Frame kind="choices" title={str(w.prompt ?? w.title)}>
-    <div className="widget-choices">
-      {arr(w.options).map((o, i) => {
-        const label = typeof o === 'string' ? o : str(o?.label);
-        return (
-          <div key={i} className="widget-choice">
-            <ReplyButton label={label || `Option ${i + 1}`} reply={typeof o === 'string' ? o : str(o?.reply)} />
-            {o?.description && <span className="muted">{str(o.description)}</span>}
-          </div>
-        );
-      })}
-    </div>
-  </Frame>
-);
+/** An agent's "choose one", drawn as every other choice in ah: numbered option rows (OptionList). */
+const Choices: Renderer = ({ w }) => {
+  const gui = useGui();
+  const [picked, setPicked] = useState<number | null>(null);
+  return (
+    <Frame kind="choices" title={str(w.prompt ?? w.title)}>
+      <div
+        className="ask-options widget-choices"
+        role="group"
+        aria-label={str(w.prompt ?? w.title) || 'Choices'}
+        onKeyDown={(e) => {
+          // The digits drawn on the rows pick, as on an agent's own question.
+          if (e.metaKey || e.ctrlKey || e.altKey || !/^[1-9]$/.test(e.key)) return;
+          const row = e.currentTarget.querySelectorAll<HTMLButtonElement>('.ask-option')[Number(e.key) - 1];
+          if (!row) return;
+          e.preventDefault();
+          row.focus();
+          row.click();
+        }}
+      >
+        {arr(w.options).map((o, i) => {
+          const label = (typeof o === 'string' ? o : str(o?.label)) || `Option ${i + 1}`;
+          const description = typeof o === 'string' ? '' : str(o?.description);
+          return (
+            <button
+              key={i}
+              type="button"
+              className={`ask-option ${picked === i ? 'on' : ''}`}
+              aria-disabled={picked !== null || undefined}
+              onClick={() => {
+                if (picked !== null) return;
+                setPicked(i);
+                gui.reply((typeof o === 'string' ? o : str(o?.reply)) || label);
+              }}
+            >
+              {i < 9 && <kbd>{i + 1}</kbd>}
+              <span className="ask-row-text">
+                <span className="ask-label">{label}</span>
+                {description && <span className="ask-desc">{description}</span>}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </Frame>
+  );
+};
 
 const Table: Renderer = ({ w }) => {
   const columns = arr(w.columns).map(str);

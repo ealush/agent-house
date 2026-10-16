@@ -489,7 +489,7 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
 
             {waiting && (
               <div className="approval">
-                <AskPanel ref={askRef} w={w} client={client} onAnswer={onAnswer} onReply={onReply} onUseTerminal={onUseTerminal} drawn={!!awaitingCall} />
+                <AskPanel ref={askRef} w={w} client={client} onAnswer={onAnswer} onReply={onReply} onUseTerminal={onUseTerminal} />
               </div>
             )}
             {w.status === 'busy' && <Working detail={w.detail} />}

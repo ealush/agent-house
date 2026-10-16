@@ -711,14 +711,8 @@
 
 .gui .widget-choices {
   flex-direction: column;
-  align-items: flex-start;
-}
-
-.gui .widget-choice {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: stretch;
 }
 
 .gui .widget-toggle {
@@ -1095,29 +1089,6 @@
 .gui .msg:focus-visible .msg-snap,
 .gui .msg:focus-visible .msg-actions {
   visibility: visible;
-}
-
-/* The approval card under a natively drawn call: the question, the screen text folded away. */
-.gui .ask-question {
-  margin: 2px 0 4px;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.gui .ask-raw summary {
-  width: fit-content;
-  cursor: pointer;
-  font-size: 12px;
-  color: var(--faint);
-}
-
-.gui .ask-raw summary:hover {
-  color: var(--muted);
-}
-
-.gui .ask-raw[open] summary {
-  margin-bottom: 6px;
 }
 
 /* New in the conversation (GuiSurface freshAfter): your message as you send it, and each step the agent adds, rise into place. */

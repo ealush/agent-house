@@ -30,20 +30,17 @@ The home page. Large title "Inbox." and the status tagline.
 
 - **Group by** Status | Host | Project (segmented, per device). Status is
   the default and the only one on a phone.
-- **Needs you**: one card per waiting session: title, agent mark, time; what
-  it wants ("Wants to run a command", "Asked you"); the command or question;
-  the options as numbered rows (digits work from anywhere on the card); where
-  it runs; agent, model and project chips; **Open**. Answering keeps focus on
-  the card (SES-7).
+- **Needs you**: one card per waiting session: title, agent mark, time; the
+  ask's summary (VIEW-6: what it wants, the command as code with its
+  description, or the question; "Show terminal text" on request); the
+  options as numbered rows (digits work from anywhere on the card); agent,
+  model and project tags; **Open**. Answering keeps focus on the card (SES-7).
 - **Working**: a table: Session, Detail (what it is doing now), Status ·
   Project, Active (time).
 - **Idle and done**: the same table, quieter.
 - Empty: "All quiet." and the most recent conversations to resume.
 - Rows glide between sections as status changes (P25).
 
-→ A-03: a card renders the ask from raw screen text in monospace, while the
-session's own ask panel renders the same ask as a question with a "Terminal
-text" disclosure.
 
 ## ATT-3 · Sessions (phone) — shipped
 

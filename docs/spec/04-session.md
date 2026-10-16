@@ -48,8 +48,8 @@ the TUI captures the mouse); links open; Unicode 11 widths.
   tab, arrows) with edge fades.
 - **Scrollback as text** (session menu): the window's scrollback as
   selectable text, for phones.
-- **Answer card** under the terminal while it waits, with the picker's
-  options as buttons (SES-7).
+- **Answer card** under the terminal while it waits: the ask summary and the
+  picker's options as rows (SES-7, VIEW-6).
 - **Terminal pool:** a terminal you leave is parked 4 s and adopted if you come
   back; "Attaching…" shows only after 400 ms.
 - Omarchy theme and font when Appearance is Omarchy (SET-2).
@@ -76,7 +76,8 @@ edit, a question) marks the call it is about.
 - **Working line**: "Working · 12s" and what it is doing, "Esc stops".
 - **Widgets** (generative UI): an agent's ```` ```ah-widget ```` block renders as
   card, choices, table, checklist, stats, bar chart, progress, links, image,
-  code or diff ([docs/gui.md](../gui.md)). → A-06.
+  code or diff ([docs/gui.md](../gui.md)). Choices are the same numbered
+  option rows as an agent's own question; digits pick.
 - **Answered questions** fold to one line.
 - **Hide steps** (per device): tool calls and thinking fold to one line per
   run, so the conversation reads as prose.
@@ -94,7 +95,15 @@ A waiting agent's ask, answered without the terminal (`AskPanel.tsx`):
 Claude's question dialog as a form (whole set from hooks, else one question at
 a time from the screen), a numbered picker as buttons, or Approve / Deny.
 Digits pick, arrows move, Space toggles, ⌃↵ submits. Edit approvals render
-with the GUI's own diff. "Terminal text" discloses the screen; "Answer in
+with the GUI's own diff.
+
+It opens with the **ask summary** (`AskSummary`, `web/askView.ts`), the same in
+the Inbox card, the GUI and the bar under the terminal: what it wants ("Wants
+to run a command"), then the command as code with the agent's own description
+(the hook's detail when there is one, so a wrapped command reads whole), or
+the question; "Show terminal text" discloses the screen. Options are one row
+style everywhere (OptionList): a number, the label, a description. A waiting
+command's tool row stays folded, since the card shows the command. "Answer in
 terminal" switches view when ah can't drive the picker.
 
 ### VIEW-7 · Composer — shipped

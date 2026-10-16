@@ -1,5 +1,6 @@
 import type { HistoryItem, HostApi, ReviewAlert, State, Win } from './api.ts';
-import { AskPanel, cleanScreen, questionLine } from './AskPanel.tsx';
+import { AskPanel, AskSummary } from './AskPanel.tsx';
+import { KIND_LABEL } from './askView.ts';
 import { ShortcutHint, shortcutTitle } from './shortcuts.tsx';
 import { Icon } from './icons.tsx';
 import { age, look } from './agents.ts';
@@ -31,7 +32,6 @@ type Props = {
   onResume?: (h: HistoryItem) => void;
 };
 
-const KIND_LABEL = { command: 'Wants to run a command', tool: 'Wants to use a tool', question: 'Asked a question', screen: 'Waiting for you', choice: 'Asked you' };
 
 const where = (w: Win, multiHost: boolean) => [multiHost ? w.host : null, w.project].filter(Boolean).join(' · ');
 
@@ -158,13 +158,9 @@ function AskCard({ w, client, multiHost, narrow, onOpen, onAnswer }: { w: Win; c
   const { color, name } = look(w.agent);
   const modelLabel = shortModel(w.model);
   const ask = w.ask;
-  const code = ask?.kind === 'command';
   // Answerable right here: the agent's questions, or the rows of its picker.
   const inline = !!ask && ((ask.kind === 'choice' && (!!ask.questions?.length || !!ask.dialog)) || !!ask.options?.length);
-  // Lead with the prompt's question; the rest of the screen is context, without the TUI's rules.
-  const showText = !!ask?.text && !(ask.kind === 'choice' && inline);
-  const question = showText && ask!.kind !== 'command' ? questionLine(ask!.text) : null;
-  const context = showText ? cleanScreen(ask!.text, question) : '';
+  const form = ask?.kind === 'choice' && inline;
   return (
     <article
       className="card card-needs"
@@ -193,15 +189,9 @@ function AskCard({ w, client, multiHost, narrow, onOpen, onAnswer }: { w: Win; c
         </button>
         <span className="card-age">{age(w.activity)}</span>
       </div>
-      {!narrow && ask && <div className="card-kind">{KIND_LABEL[ask.kind]}</div>}
-      {question && <p className="card-question">{question}</p>}
-      {context && (code ? <pre className="ask-box code">{context}</pre> : <div className="ask-box">{context}</div>)}
+      {/* The same summary the session shows: what it wants, the command or the question, the screen on request. */}
+      {ask && (form ? <div className="card-kind">{KIND_LABEL[ask.kind]}</div> : <AskSummary w={w} terminalText={!narrow} />)}
       {inline && <AskPanel w={w} client={client} onAnswer={onAnswer} compact />}
-      {!narrow && (
-        <div className="card-where">
-          Where <span className="mono">{multiHost ? `${w.host}:` : ''}{w.projectPath}</span>
-        </div>
-      )}
       <div className="card-foot">
         {inline ? (
           <button className="btn" onClick={() => onOpen(w)}>

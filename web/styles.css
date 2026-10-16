@@ -5329,27 +5329,30 @@ button.tool-chip:hover {
   gap: 6px;
 }
 
+/* Every "choose one" in ah (the design system's OptionList): a permission picker,
+   an agent's question, a widget's choices. 44px rows, a number, the label, a description. */
 .ask-row,
 .ask-option {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
-  min-height: 40px;
-  padding: 8px 12px;
+  min-height: 44px;
+  padding: 9px 12px;
   text-align: left;
   font: inherit;
+  font-weight: 500;
   color: var(--text);
   background: var(--raised);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
   cursor: pointer;
   transition: border-color var(--dur-1), background var(--dur-1);
 }
 
 .ask-row:hover,
 .ask-option:hover {
-  border-color: var(--line-2);
+  border-color: var(--accent-line);
 }
 
 .ask-row:focus-visible,
@@ -5387,12 +5390,61 @@ button.tool-chip:hover {
 
 .ask-label {
   overflow-wrap: anywhere;
+  font-weight: 500;
 }
 
 .ask-desc {
   color: var(--muted);
   font-size: 13px;
+  font-weight: 400;
   line-height: 1.4;
+}
+
+/* What a waiting agent asks (AskSummary), the same in the Inbox, the GUI and under
+   the terminal: what it wants, the command as code (with the agent's own
+   description) or its question, and the screen text only on request. */
+.ask-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.ask-command {
+  margin: 2px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  font: 13px/1.55 var(--mono);
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 160px;
+  overflow: auto;
+}
+.ask-command .prompt {
+  color: var(--faint);
+  user-select: none;
+}
+.ask-asked {
+  margin: 2px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text);
+  text-wrap: pretty;
+}
+.ask-raw summary {
+  width: fit-content;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--muted);
+}
+.ask-raw summary:hover {
+  color: var(--text);
+}
+.ask-raw[open] summary {
+  margin-bottom: 6px;
 }
 
 .ask-mark {

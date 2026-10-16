@@ -18,21 +18,43 @@ type Props = {
   onUseTerminal?: () => void;
   /** Inbox cards: no headings, tighter rows. */
   compact?: boolean;
-  /** The call it asks about is drawn natively right above (GUI): lead with the question, fold the screen text. */
-  drawn?: boolean;
 };
 
 export { cleanScreen, questionLine } from './screenText.ts';
-import { cleanScreen, questionLine } from './screenText.ts';
+import { KIND_LABEL, readAsk } from './askView.ts';
 
-/** A command reads as code; a prompt read off the screen reads as the sentences it is. */
-function ScreenText({ command, text }: { command: boolean; text: string }) {
-  return command ? <pre className="ask-box ask-context code">{text}</pre> : <div className="ask-box ask-context">{text}</div>;
+/**
+ * What a waiting agent asks, the same everywhere (the Inbox card, the GUI, the bar
+ * under the terminal): what it wants, then the command it wants to run (as code,
+ * with its own description) or its question, and the screen text only on request.
+ */
+export function AskSummary({ w, terminalText = true }: { w: Win; terminalText?: boolean }) {
+  if (!w.ask) return null;
+  const parts = readAsk(w.ask, w.detail);
+  return (
+    <div className="ask-summary">
+      <span className="card-kind">{parts.kind}</span>
+      {parts.command && (
+        <pre className="ask-command">
+          <span className="prompt" aria-hidden>
+            ${' '}
+          </span>
+          {parts.command}
+        </pre>
+      )}
+      {parts.description && <span className="ask-desc">{parts.description}</span>}
+      {parts.question && <p className="ask-asked">{parts.question}</p>}
+      {terminalText && parts.context && (parts.command || parts.context !== parts.question) && (
+        <details className="ask-raw">
+          <summary>Show terminal text</summary>
+          <pre className="ask-box ask-context code">{parts.context}</pre>
+        </details>
+      )}
+    </div>
+  );
 }
 
-const KIND_LABEL = { command: 'Wants to run a command', tool: 'Wants to use a tool', question: 'Asked a question', screen: 'Waiting for you', choice: 'Asked you' };
-
-export const AskPanel = forwardRef<AskHandle, Props>(function AskPanel({ w, client, onAnswer, onReply, onUseTerminal, compact, drawn }, ref) {
+export const AskPanel = forwardRef<AskHandle, Props>(function AskPanel({ w, client, onAnswer, onReply, onUseTerminal, compact }, ref) {
   const ask = w.ask;
   const root = useRef<HTMLDivElement>(null);
   useImperativeHandle(ref, () => ({
@@ -48,7 +70,8 @@ export const AskPanel = forwardRef<AskHandle, Props>(function AskPanel({ w, clie
 
   return (
     <div className={`ask-panel ${compact ? 'compact' : ''}`} ref={root}>
-      {!compact && <span className="card-kind">{KIND_LABEL[ask.kind]}</span>}
+      {!compact && !(ask.kind === 'choice' && (ask.questions?.length || dialog)) && <AskSummary w={w} />}
+      {!compact && ask.kind === 'choice' && (ask.questions?.length || dialog) && <span className="card-kind">{KIND_LABEL[ask.kind]}</span>}
       {ask.kind === 'choice' && ask.questions?.length ? (
         <QuestionForm key={ask.questions.map((q) => q.question).join('\n')} questions={ask.questions} onSubmit={(answers) => client.answerQuestions(w.uid, answers)} onUseTerminal={onUseTerminal} compact={compact} />
       ) : dialog ? (
@@ -63,18 +86,6 @@ export const AskPanel = forwardRef<AskHandle, Props>(function AskPanel({ w, clie
         />
       ) : (
         <>
-          {!compact && ask.text && (ask.kind !== 'screen' || options.length > 0) &&
-            (drawn ? (
-              <>
-                {questionLine(ask.text) && <p className="ask-question">{questionLine(ask.text)}</p>}
-                <details className="ask-raw">
-                  <summary>Terminal text</summary>
-                  <ScreenText command={ask.kind === 'command'} text={cleanScreen(ask.text)} />
-                </details>
-              </>
-            ) : (
-              <ScreenText command={ask.kind === 'command'} text={cleanScreen(ask.text)} />
-            ))}
           {options.length > 0 ? (
             // Keyed by the prompt: the next prompt is a fresh set of buttons, never the last one's "sent" state.
             <ScreenChoices key={`${ask.text}\n${options.map((o) => o.label).join('\n')}`} w={w} client={client} options={options} />
