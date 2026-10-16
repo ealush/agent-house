@@ -63,7 +63,10 @@ export function FindingRow({
     <li className={`finding sev-${f.severity} ${f.state} ${selected ? 'selected' : ''}`}>
       <div className="finding-head">
         {onSelect && f.state === 'open' ? (
-          <input type="checkbox" checked={!!selected} onChange={(e) => onSelect(e.target.checked)} aria-label={`Select "${f.title}"`} />
+          <label className="pick">
+            <input type="checkbox" checked={!!selected} onChange={(e) => onSelect(e.target.checked)} aria-label={`Select "${f.title}"`} />
+            <span className="box" aria-hidden />
+          </label>
         ) : (
           <span className="dot" aria-hidden />
         )}
@@ -277,7 +280,7 @@ export function FindingsList({
             </h3>
             <ul className="finding-list">
               {list.map((f) => (
-                <FindingRow key={f.id} f={f} api={api} stackId={stackId} layers={layers} selected={selected.has(f.id)} onSelect={(on) => toggle(f.id, on)} onChanged={onChanged} />
+                <FindingRow key={f.id} f={f} api={api} stackId={stackId} layers={layers} selected={selected.has(f.id)} onSelect={f.ownerPr === layer.pr ? (on) => toggle(f.id, on) : undefined} onChanged={onChanged} />
               ))}
             </ul>
           </section>

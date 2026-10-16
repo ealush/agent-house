@@ -51,6 +51,9 @@ before(async () => {
   execFileSync('mkdir', ['-p', bin]);
   writeFileSync(join(bin, 'claude'), FAKE_CLAUDE);
   chmodSync(join(bin, 'claude'), 0o755);
+  // Review asks gh about the sessions' repos: never the real GitHub from a test.
+  writeFileSync(join(bin, 'gh'), '#!/bin/sh\necho "gh: not signed in (stand-in)" >&2\nexit 1\n');
+  chmodSync(join(bin, 'gh'), 0o755);
   // More agents than New session has buttons for, wherever the tests run.
   for (const name of ['cursor-agent', 'crush', 'pi']) {
     writeFileSync(join(bin, name), '#!/bin/sh\nexec sleep 600\n');
@@ -115,6 +118,23 @@ test('desktop: a session opens its terminal, and Back returns to the inbox', { s
   await page.goForward();
   await page.locator('.term .xterm').first().waitFor();
   assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('desktop: Review opens from the keyboard and says what it needs', { skip, timeout: 60_000 }, async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const { page, errors } = await open(ctx);
+  await page.locator('.rows .row').first().waitFor();
+  await page.keyboard.press('Control+Shift+4');
+  await page.locator('h1.page-title', { hasText: 'Review' }).waitFor();
+  assert.equal(await page.evaluate(() => location.hash), '#review');
+  await page.getByText(/No GitHub repository among your sessions' projects/).waitFor();
+  // A link to a stack that isn't there says so, with a way back.
+  await page.goto(`${url}#review/nope1234/7`);
+  await page.getByText('stack not found').waitFor();
+  await page.getByRole('button', { name: 'All stacks' }).click();
+  await page.locator('h1.page-title', { hasText: 'Review' }).waitFor();
+  assert.deepEqual(errors.filter((e) => !/404/.test(e)), []);
   await ctx.close();
 });
 
@@ -450,6 +470,9 @@ test('no control is smaller than 32px, on a desktop or a phone', { skip, timeout
     await page.locator('.menu, [role="menu"]').last().getByText('Rename').waitFor();
     await look('session menu');
     await page.keyboard.press('Escape');
+    await page.goto(`${url}#review`);
+    await page.locator('h1.page-title', { hasText: 'Review' }).waitFor();
+    await look('review');
     assert.deepEqual(found, [], `${opts.viewport?.width}px wide`);
     assert.deepEqual(errors, []);
     await ctx.close();

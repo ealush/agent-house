@@ -320,8 +320,9 @@ export class ReviewService {
     if (sugg.length && sugg[0].reason === 'branch' && sugg.filter((s) => s.reason === 'branch').length === 1) {
       await this.db.reviewStack.update({ where: { id }, data: { ownerUid: sugg[0].uid, ownerKey: sugg[0].key } });
     }
-    await this.sync(id, true);
-    return this.view(id);
+    // The first fetch of every layer can take a while on a big stack: the page opens now and fills in.
+    void this.sync(id, true).catch((err) => console.error(`review sync ${id}:`, (err as Error).message));
+    return this.view(id, { autoSync: false });
   }
 
   async list(): Promise<StackSummary[]> {

@@ -171,6 +171,8 @@ test('review: stack from a PR tree, fix loop through the owner, re-review, merge
     assert.deepEqual(cands.trees.map((x) => x.pr.number), [9, 1]);
 
     let v = await t.svc.create(t.w.local, 1, 'Feature');
+    await t.svc.sync(v.id);
+    v = await t.svc.view(v.id);
     assert.deepEqual(v.layers.map((l) => l.pr), [1, 4, 2, 3], 'the fix before the longer chain');
     assert.equal(v.owner?.uid, 'u-agent', 'the one agent on a stack branch owns it');
     assert.equal(v.trunk, 'main');
@@ -263,6 +265,7 @@ test('review: the reviewer reads pinned revisions through tools and proposes fin
   await withGh(t.w, async () => {
     await t.chat.put({ name: 'm', baseUrl: 'https://x.test/v1', model: 'm', apiKey: 'k' });
     const v = await t.svc.create(t.w.local, 1);
+    await t.svc.sync(v.id);
     // The agent is mid-edit on another branch: the reviewer must not see it.
     await writeFile(join(t.w.local, 'c.ts'), 'WORKING TREE\n');
     let calls = 0;
@@ -317,6 +320,7 @@ test('review: GitHub threads become findings once; resolving replies and resolve
   });
   await withGh(t.w, async () => {
     const v = await t.svc.create(t.w.local, 1);
+    await t.svc.sync(v.id);
     assert.deepEqual(await t.svc.importThreads(v.id, 2), { added: 2 });
     assert.deepEqual(await t.svc.importThreads(v.id, 2), { added: 0 }, 'once each');
     const fs = await t.svc.findings(v.id, 2);
@@ -344,6 +348,8 @@ test('review: plan labels, merge order rules, skipped layers', async () => {
   const t = await setup();
   await withGh(t.w, async () => {
     let v = await t.svc.create(t.w.local, 1);
+    await t.svc.sync(v.id);
+    v = await t.svc.view(v.id);
     const plan = join(t.w.parent, 'plan.md');
     await writeFile(plan, '# Schema relationships: current feature plan\n\n| Owner | PR |\n|---|---|\n| H0 | #1 |\n| F1 | #2 |\n');
     v = await t.svc.update(v.id, { planPath: plan });
