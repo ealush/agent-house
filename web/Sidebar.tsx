@@ -6,7 +6,7 @@ import { look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
 import { useSavedGroups, setGroupList } from './groupOrder.ts';
 import { movedSessionOrders, saveGroupMove, sidebarSections } from './sessionOrder.ts';
-import { runCommand, type CommandId } from './shortcuts.ts';
+import { commandLabel, isMac, runCommand, type CommandId } from './shortcuts.ts';
 import { ShortcutHint, shortcutTitle, useShortcutRevision } from './shortcuts.tsx';
 import { Glide } from './Glide.tsx';
 import { useFlip } from './useFlip.ts';
@@ -298,9 +298,10 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
         </div>
       )}
 
-      <button className="search" onClick={onSearch}>
+      {/* Off a Mac the chord is three worded caps: they show when the field is reached for, so the label keeps its room. */}
+      <button className="search" data-wordy={!isMac() || undefined} title={shortcutTitle(commandLabel('switcher'), 'switcher')} onClick={onSearch}>
         <Icon name="search" size={15} />
-        <span>Search or jump to</span>
+        <span>{commandLabel('switcher')}</span>
         <ShortcutHint id="switcher" />
       </button>
 

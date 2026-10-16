@@ -293,10 +293,15 @@ test('desktop: New session works from the keyboard alone', { skip, timeout: 60_0
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const { page, errors } = await open(ctx);
   await page.keyboard.press('Control+Shift+Enter');
-  // Shell or agent first: a fresh device starts on Shell, and → picks Agent.
-  await page.waitForFunction(() => document.activeElement?.closest('.seg.kind') && document.activeElement.textContent === 'Shell');
-  await page.keyboard.press('ArrowRight');
+  // A fresh device starts on an agent (ah is for agents), with the keyboard on it.
+  await page.waitForFunction(() => document.activeElement?.classList.contains('agent-pill') && document.activeElement.classList.contains('on'));
+  // Shell or agent comes first: ← picks Shell and → comes back.
+  await page.keyboard.press('Shift+Tab');
+  await page.waitForFunction(() => document.activeElement?.closest('.seg.kind') && document.activeElement.textContent === 'Agent');
+  await page.keyboard.press('ArrowLeft');
   assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-checked')), 'true', 'the arrows choose as they go');
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Shell');
+  await page.keyboard.press('ArrowRight');
   assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Agent');
   await page.keyboard.press('Tab');
   await page.waitForFunction(() => document.activeElement?.classList.contains('agent-pill'));

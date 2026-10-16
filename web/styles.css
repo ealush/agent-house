@@ -428,6 +428,13 @@ code,
   text-align: left;
 }
 
+.search[data-wordy] .keycaps {
+  display: none;
+}
+.search[data-wordy]:is(:hover, :focus-visible) .keycaps {
+  display: inline-flex;
+}
+
 .search span:nth-child(2) {
   flex: 1;
   min-width: 0;

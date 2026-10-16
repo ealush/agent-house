@@ -13,18 +13,17 @@ import { setOmarchyPalette } from './theme.ts';
 import { focusPage } from './rove.ts';
 import { hasLegacy, isLegacyKey, upgradeKey, upgradeLayout, upgradeSpaces } from './sessionKeys.ts';
 
-const STATUS_WORD = { waiting: 'Needs you', busy: 'Working', attention: 'Done', idle: 'Idle' } as const;
 
 const SUBMAP_KEYS: Record<'resize' | 'pane', Array<[string[], string]>> = {
   resize: [
     [['←', '↓', '↑', '→'], 'move the divider'],
     [['H', 'J', 'K', 'L'], 'same'],
-    [['⇧'], 'bigger steps'],
+    [[modLabel('shift')], 'bigger steps'],
     [['Esc'], 'done'],
   ],
   pane: [
     [['H', 'J', 'K', 'L'], 'focus'],
-    [['⇧', 'HJKL'], 'move'],
+    [[modLabel('shift'), 'HJKL'], 'move'],
     [['V'], 'split right'],
     [['S'], 'split below'],
     [['P'], 'replace'],
@@ -60,7 +59,8 @@ import { edgeGesture } from './edges.ts';
 import { Sheet } from './sheet.tsx';
 import { trackViewport } from './viewport.ts';
 import { glide, transition, type Heading } from './motion.ts';
-import { runCommand } from './shortcuts.ts';
+import { modLabel, runCommand } from './shortcuts.ts';
+import { statusWord } from './status.ts';
 import { CommandPalette, Keycaps, Shortcuts, ShortcutsDialog, WhichKey, shortcutTitle, useCommand, usePaletteProvider } from './shortcuts.tsx';
 import { TabBar } from './TabBar.tsx';
 import { errorText } from './errors.ts';
@@ -593,7 +593,7 @@ export function App({ onLock }: { onLock: () => void }) {
     () =>
       sidebarOrder(state?.windows ?? [], (state?.hosts.length ?? 0) > 1, savedGroups)
         .filter((w) => !visibleKeys.includes(w.key))
-        .map((w) => ({ key: `tile:${w.key}`, label: w.title, agent: w.agent, detail: [STATUS_WORD[w.status], w.project].join(' · '), run: () => openTile(w.key) })),
+        .map((w) => ({ key: `tile:${w.key}`, label: w.title, agent: w.agent, detail: [statusWord(w), w.project].join(' · '), run: () => openTile(w.key) })),
     !!selected || !!layout,
   );
 
@@ -647,7 +647,7 @@ export function App({ onLock }: { onLock: () => void }) {
       key: `session:${w.key}`,
       label: w.title,
       agent: w.agent,
-      detail: [STATUS_WORD[w.status], w.agent ? look(w.agent).name : 'Shell', multi ? w.host : null, w.project].filter(Boolean).join(' · '),
+      detail: [statusWord(w), w.agent ? look(w.agent).name : 'Shell', multi ? w.host : null, w.project].filter(Boolean).join(' · '),
       run: () => open(w.key),
     }));
   });

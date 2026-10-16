@@ -892,12 +892,17 @@ const PART_LABEL: Record<string, string> = {
   Tab: 'Tab',
 };
 
-export function chordParts(c: Chord): string[] {
+/** A modifier as a keycap shows it: Apple's glyphs on a Mac, its printed name elsewhere (as on the key itself). */
+export function modLabel(mod: 'ctrl' | 'shift' | 'alt' | 'meta', mac = isMac()): string {
+  return mac ? { ctrl: '⌃', shift: '⇧', alt: '⌥', meta: '⌘' }[mod] : { ctrl: 'Ctrl', shift: 'Shift', alt: 'Alt', meta: 'Super' }[mod];
+}
+
+export function chordParts(c: Chord, mac = isMac()): string[] {
   const parts: string[] = [];
-  if (c.ctrl) parts.push('⌃');
-  if (c.shift) parts.push('⇧');
-  if (c.alt) parts.push('⌥');
-  if (c.meta) parts.push('⌘');
+  if (c.ctrl) parts.push(modLabel('ctrl', mac));
+  if (c.shift) parts.push(modLabel('shift', mac));
+  if (c.alt) parts.push(modLabel('alt', mac));
+  if (c.meta) parts.push(modLabel('meta', mac));
   parts.push(PART_LABEL[c.key] ?? (c.key.length === 1 ? c.key.toUpperCase() : c.key));
   return parts;
 }

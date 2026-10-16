@@ -18,8 +18,9 @@ Rules:
   digits and punctuation, which stay on the physical key.
 - **Scopes**: `app`, `terminal`, `field`, `dialog`, `ask`. Ctrl+Alt session
   chords work from the composer too; a question form owns its keys.
-- Platform-aware keycaps: ⌘ ⌥ ⌃ ⇧ on a Mac, Ctrl Alt Shift elsewhere.
-  Touch-only devices show no key hints. → A-13.
+- Platform-aware keycaps: ⌘ ⌥ ⌃ ⇧ on a Mac; Ctrl, Alt, Shift and Super
+  elsewhere, as the keys and tooltips say. ↵, Esc and arrows are glyphs
+  everywhere. Touch-only devices show no key hints.
 
 ## KEY-2 · Command palette — shipped
 

@@ -7,6 +7,7 @@ import {
   bindingError,
   chordFromEvent,
   chordParts,
+  modLabel,
   chordsFor,
   formatChord,
   handleShortcutKey,
@@ -47,8 +48,9 @@ export function useCommand(id: CommandId, fn: () => void, enabled = true) {
 }
 
 /**
- * One raised cap per key, the only way a key is drawn anywhere in ah: ⌃ ⇧ ⌥ ⌘,
- * ↵ ⌫ Esc and arrows as glyphs. Tooltips and search still use the `formatChord` string.
+ * One raised cap per key, the only way a key is drawn anywhere in ah: modifiers as
+ * this platform prints them (⌃ ⇧ ⌥ ⌘ on a Mac, Ctrl Shift Alt Super elsewhere), and
+ * ↵ Esc and arrows as glyphs. Tooltips and search use the `formatChord` string, which agrees.
  */
 export function Keycaps({ chord, keys }: { chord?: Chord; keys?: string[] }) {
   const parts = chord ? chordParts(chord) : (keys ?? []);
@@ -61,8 +63,8 @@ export function Keycaps({ chord, keys }: { chord?: Chord; keys?: string[] }) {
   );
 }
 
-/** The main modifier as drawn on a keycap: ⌘ on Apple devices, ⌃ elsewhere. */
-export const MOD = () => (isMac() ? '⌘' : '⌃');
+/** The main modifier as drawn on a keycap: ⌘ on Apple devices, Ctrl elsewhere. */
+export const MOD = () => (isMac() ? '⌘' : 'Ctrl');
 
 export function ShortcutHint({ id }: { id: CommandId }) {
   useShortcutRevision();
@@ -654,7 +656,7 @@ export function WhichKey() {
       if (!pair) return setShown(null);
       timer = window.setTimeout(() => {
         const items = chordsFor(mods, isMac(), loadOverrides());
-        const caps = [mods.ctrl && '⌃', mods.shift && '⇧', mods.alt && '⌥', mods.meta && '⌘'].filter(Boolean) as string[];
+        const caps = (['ctrl', 'shift', 'alt', 'meta'] as const).filter((m) => mods[m]).map((m) => modLabel(m));
         if (items.length) setShown({ mods: caps, items });
       }, 650);
     };

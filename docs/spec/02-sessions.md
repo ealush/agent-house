@@ -34,8 +34,10 @@ Fields, in order:
    arguments (quoted, never concatenated into a shell string), tmux session,
    machine (multi-host). "· changed" shows when any is set.
 
-Defaults: the focused session's project, and the last agent and model used
-(P11). Start is the ⌘↵ button. ah starts sessions only from presets.
+Defaults: the focused session's project (else the last one started from this
+device, else the most recently active session's), and the last agent and
+model used (P11). A device that has started nothing opens on Agent, with its
+most-used agent (or one running on the host) chosen and the keyboard on it. Start is the ⌘↵ button. ah starts sessions only from presets.
 
 ## SES-3 · New project — shipped
 

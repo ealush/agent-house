@@ -192,11 +192,14 @@ test('formatChord speaks Mac symbols and Linux words', () => {
 });
 
 test('a chord drawn for the palette is one glyph per key', () => {
-  assert.deepEqual(chordParts({ key: 'k', ctrl: true, shift: true }), ['⌃', '⇧', 'K']);
-  assert.deepEqual(chordParts({ key: 'p', meta: true, shift: true }), ['⇧', '⌘', 'P']);
-  assert.deepEqual(chordParts({ key: 'ArrowUp', alt: true }), ['⌥', '↑']);
-  assert.deepEqual(chordParts({ key: 'Enter', ctrl: true, alt: true }), ['⌃', '⌥', '↵']);
-  assert.deepEqual(chordParts({ key: 'Backspace', ctrl: true, shift: true }), ['⌃', '⇧', 'Backspace']);
+  assert.deepEqual(chordParts({ key: 'k', ctrl: true, shift: true }, true), ['⌃', '⇧', 'K']);
+  assert.deepEqual(chordParts({ key: 'p', meta: true, shift: true }, true), ['⇧', '⌘', 'P']);
+  assert.deepEqual(chordParts({ key: 'ArrowUp', alt: true }, true), ['⌥', '↑']);
+  assert.deepEqual(chordParts({ key: 'Enter', ctrl: true, alt: true }, true), ['⌃', '⌥', '↵']);
+  assert.deepEqual(chordParts({ key: 'Backspace', ctrl: true, shift: true }, true), ['⌃', '⇧', 'Backspace']);
+  // Off a Mac, the caps say what the keys say, the way the tooltips and README do.
+  assert.deepEqual(chordParts({ key: 'k', ctrl: true, shift: true }, false), ['Ctrl', 'Shift', 'K']);
+  assert.deepEqual(chordParts({ key: 'Enter', ctrl: true, alt: true }, false), ['Ctrl', 'Alt', '↵']);
 });
 
 test('the listener runs the newest handler and lets an unbound chord through', () => {
