@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { HostApi } from '../api.ts';
-import { STATUS_PILL, STATUS_WORD, type DiffOut, type Finding, type Layer, type ReviewApi, type Stack } from '../reviewApi.ts';
+import { STATUS_WORD, type DiffOut, type Finding, type Layer, type ReviewApi, type Stack } from '../reviewApi.ts';
 import { askConfirm, askText, showError } from '../ask.tsx';
 import { ConfirmButton } from '../ConfirmButton.tsx';
 import { Glide } from '../Glide.tsx';
 import { Popover } from '../ModelPicker.tsx';
 import { Icon } from '../icons.tsx';
 import { Markdown } from '../Markdown.tsx';
-import { age } from '../agents.ts';
+import { age, look } from '../agents.ts';
 import { ReviewDiff } from './Diff.tsx';
 import { FindingsList } from './Findings.tsx';
 import { Thread } from './Thread.tsx';
@@ -15,7 +15,7 @@ import { DispatchDialog } from './Dispatch.tsx';
 
 type Mode = 'this' | 'since' | 'cumulative';
 type Side = 'findings' | 'thread';
-type PhoneTab = 'overview' | 'diff' | 'findings' | 'thread';
+type PhoneTab = 'diff' | 'findings' | 'thread';
 
 const toast = (text: string) => window.dispatchEvent(new CustomEvent('ah:toast', { detail: text }));
 
@@ -69,7 +69,7 @@ function Banner({ stack, layer, findings, api, onChanged, onOpenSession, onResta
   if (layer.state !== 'open') return null;
   if (d && (d.state === 'sent' || d.state === 'working'))
     return (
-      <div className="review-banner busy">
+      <div className="layer-band busy">
         <span className="pulse" aria-hidden />
         <span className="grow">
           {d.findings.length ? `${d.findings.length} finding${d.findings.length > 1 ? 's' : ''}` : 'Your message'} with {d.targetTitle ?? 'the agent'} · {d.state === 'working' ? 'working on it' : 'queued'} · sent {age(d.sentAt)} ago
@@ -79,43 +79,47 @@ function Banner({ stack, layer, findings, api, onChanged, onOpenSession, onResta
         </button>
       </div>
     );
-  if (layer.status === 'rereview' && verdict)
+  if (layer.status === 'rereview') {
+    const delta = layer.current && layer.reviewed ? ` (${layer.reviewed.headSha.slice(0, 7)} → ${layer.current.headSha.slice(0, 7)})` : '';
     return (
-      <div className="review-banner needs verdict">
-        <div className="grow">
-          <p className="banner-title">Since your review{verdict.summary ? `: ${verdict.summary}` : ''}</p>
+      <div className="layer-band needs">
+        <div className="band-line">
+          <Icon name="reload" size={16} />
+          <span className="grow">
+            {d?.targetTitle ? `${d.targetTitle} pushed` : 'Pushed'}
+            {d?.doneAt ? ` ${age(d.doneAt) === 'now' ? 'just now' : `${age(d.doneAt)} ago`}` : ''} · changed since your review<span className="band-sha">{delta}</span>
+          </span>
+          {verdict && <span className="hint">Checked by the reviewer</span>}
+        </div>
+        {verdict?.summary && <p className="band-note">{verdict.summary}</p>}
+        {verdict && (verdict.items.length > 0 || verdict.unrequested.length > 0) && (
           <ul className="verdicts">
             {verdict.items.map((i) => (
-              <li key={i.id} className={`v-${i.verdict}`}>
-                <span className="v-mark" aria-hidden>{i.verdict === 'addressed' ? '✓' : i.verdict === 'partly' ? '◐' : '✗'}</span>
-                <span className="grow">
-                  {findings.find((f) => f.id === i.id)?.title ?? 'A finding'}: {i.verdict === 'addressed' ? 'addressed' : i.verdict === 'partly' ? 'partly addressed' : 'not addressed'}
-                  {i.evidence && <span className="hint"> — {i.evidence}</span>}
+              <li key={i.id} className={`v-${i.verdict}`} title={i.evidence || undefined}>
+                <span className="v-mark" aria-hidden>
+                  {i.verdict === 'addressed' ? '✓' : i.verdict === 'partly' ? '◐' : '✗'}
                 </span>
+                {findings.find((f) => f.id === i.id)?.title ?? 'A finding'}
+                <span className="sr-only">: {i.verdict === 'addressed' ? 'addressed' : i.verdict === 'partly' ? 'partly addressed' : 'not addressed'}</span>
+                {i.verdict !== 'addressed' && <span className="v-word"> · {i.verdict === 'partly' ? 'partly' : 'not fixed'}</span>}
               </li>
             ))}
             {verdict.unrequested.map((u, n) => (
-              <li key={`u${n}`} className="v-extra">
-                <span className="v-mark" aria-hidden>!</span>
-                <span className="grow">
-                  Unrequested: {u.title}
-                  {u.path && <span className="hint mono"> {u.path}{u.line ? `:${u.line}` : ''}</span>}
+              <li key={`u${n}`} className="v-extra" title={u.path ? `${u.path}${u.line ? `:${u.line}` : ''}` : undefined}>
+                <span className="v-mark" aria-hidden>
+                  !
                 </span>
+                Unrequested: {u.title}
               </li>
             ))}
           </ul>
-        </div>
+        )}
       </div>
     );
-  if (layer.status === 'rereview')
-    return (
-      <div className="review-banner needs">
-        <span className="grow">Changed since your review{layer.current && layer.reviewed ? ` (${layer.reviewed.headSha.slice(0, 7)} → ${layer.current.headSha.slice(0, 7)})` : ''}. The diff shows what's new.</span>
-      </div>
-    );
+  }
   if (d?.state === 'no-push')
     return (
-      <div className="review-banner needs">
+      <div className="layer-band needs">
         <span className="grow">{d.targetTitle ?? 'The agent'} finished without pushing {layer.headRef}.</span>
         <button className="btn small" onClick={() => onOpenSession(d.targetUid)}>
           Open session
@@ -127,7 +131,7 @@ function Banner({ stack, layer, findings, api, onChanged, onOpenSession, onResta
     );
   if (layer.needs === 'retarget')
     return (
-      <div className="review-banner needs">
+      <div className="layer-band needs">
         <span className="grow">
           The layer under it merged, but it still targets <span className="mono">{layer.baseRef}</span>.
         </span>
@@ -138,7 +142,7 @@ function Banner({ stack, layer, findings, api, onChanged, onOpenSession, onResta
     );
   if (layer.needs === 'restack')
     return (
-      <div className="review-banner needs">
+      <div className="layer-band needs">
         <span className="grow">It repeats the commits of the layer merged under it ({stack.mergeMethod}). Its own commits need moving onto {stack.trunk}.</span>
         <button className="btn small" onClick={onRestack}>
           Ask the agent to restack
@@ -147,7 +151,7 @@ function Banner({ stack, layer, findings, api, onChanged, onOpenSession, onResta
     );
   if (layer.needs === 'conflict')
     return (
-      <div className="review-banner needs">
+      <div className="layer-band needs">
         <span className="grow">Conflicts with {layer.baseRef}.</span>
         <button className="btn small" onClick={onResend}>
           Ask the agent to rebase
@@ -156,7 +160,7 @@ function Banner({ stack, layer, findings, api, onChanged, onOpenSession, onResta
     );
   if (layer.draft)
     return (
-      <div className="review-banner">
+      <div className="layer-band">
         <span className="grow">Draft on GitHub.</span>
         <button className="btn small" disabled={busy} onClick={() => act(() => api.ready(stack.id, layer.pr), "Couldn't mark it ready")}>
           Mark ready
@@ -166,14 +170,15 @@ function Banner({ stack, layer, findings, api, onChanged, onOpenSession, onResta
   return null;
 }
 
+/** What merging waits on, as a row of marks: green when it holds. */
 function Gates({ layer }: { layer: Layer }) {
   if (!layer.gates.length) return null;
   return (
     <ul className="gates" aria-label="Before merging">
       {layer.gates.map((g) => (
         <li key={g.key} className={g.ok ? 'ok' : 'no'} title={g.detail ?? g.label}>
-          <span className="g-mark" aria-hidden>{g.ok ? '✓' : '·'}</span>
-          <span>{g.ok ? (g.detail ?? g.label) : (g.detail ?? g.label)}</span>
+          <span className="g-mark" aria-hidden />
+          <span>{g.detail ?? g.label}</span>
         </li>
       ))}
     </ul>
@@ -191,6 +196,8 @@ export function LayerView({
   layer,
   findings,
   narrow,
+  menu,
+  onBack,
   onStack,
   onFindings,
   onNavigate,
@@ -202,6 +209,9 @@ export function LayerView({
   layer: Layer;
   findings: Finding[];
   narrow: boolean;
+  /** The layer's own menu items (label, order, skip, take out), from the stack page. */
+  menu: (close: () => void) => React.ReactNode;
+  onBack: () => void;
   onStack: (s?: Stack) => void;
   onFindings: () => void;
   onNavigate: (pr: number | null) => void;
@@ -210,8 +220,8 @@ export function LayerView({
   const [mode, setMode] = useState<Mode>(layer.status === 'rereview' && layer.reviewed ? 'since' : 'this');
   const [diff, setDiff] = useState<DiffOut | null>(null);
   const [diffError, setDiffError] = useState<string | null>(null);
-  const [side, setSide] = stored<Side>('ah.review.side', 'findings');
-  const [tab, setTab] = useState<PhoneTab>('overview');
+  const [sideTab, setSideTab] = stored<Side>('ah.review.side', 'findings');
+  const [tab, setTab] = useState<PhoneTab>('findings');
   const [selected, setSelected] = useState<Set<number>>(() => new Set());
   const [sending, setSending] = useState<{ ids: number[]; extra: string; kind?: 'restack' } | null>(null);
   const [summarizing, setSummarizing] = useState(false);
@@ -227,7 +237,7 @@ export function LayerView({
     setMode(layer.status === 'rereview' && layer.reviewed ? 'since' : 'this');
     setBriefOpen(layer.status === 'unreviewed' || layer.status === 'changes');
     setSelected(new Set());
-    setTab('overview');
+    setTab('findings');
   }, [layer.pr]);
 
   useEffect(() => {
@@ -353,41 +363,88 @@ export function LayerView({
   // The one button that moves the layer forward (⌘↵).
   let main: { text: string; act: () => void } | null = null;
   if (layer.state === 'open') {
-    if (chosen.length) main = { text: `Send ${chosen.length} to the agent`, act: () => setSending({ ids: chosen, extra: '' }) };
+    if (chosen.length) main = { text: `Send ${chosen.length} to ${stack.owner?.agent ? look(stack.owner.agent).name : 'the agent'}`, act: () => setSending({ ids: chosen, extra: '' }) };
     else if (sentWithVerdict) main = { text: 'Accept fixes', act: accept };
     else if (gatesOk) main = { text: 'Merge & next', act: () => void merge() };
     else if (!reviewedNow && rev) main = { text: 'Mark reviewed', act: () => void approve(true) };
   }
 
+  const order = stack.layers.filter((l) => l.state !== 'skipped' && l.state !== 'closed');
+  const at = order.findIndex((l) => l.pr === layer.pr);
+  const all = stack.layers.map((l) => l.pr);
+  const prev = stack.layers[all.indexOf(layer.pr) - 1] ?? null;
+  const next = stack.layers[all.indexOf(layer.pr) + 1] ?? null;
+  const agent = stack.owner?.agent ? look(stack.owner.agent).name : 'the agent';
+
+  // Second to the main action: on the bar beside it on a desktop, in the ··· menu on a phone.
+  const secondaryItems = (close: () => void) => (
+    <>
+      {narrow && !chosen.length && layer.state === 'open' && <button onClick={() => (close(), setSending({ ids: [], extra: '' }))}>Message {agent}</button>}
+      {rev && layer.state === 'open' && reviewedNow && <button onClick={() => (close(), approve(false))}>Take back the review</button>}
+      {rev && layer.state === 'open' && !reviewedNow && main?.text !== 'Mark reviewed' && <button onClick={() => (close(), approve(true))}>Mark reviewed</button>}
+      {onlyOrder && <button onClick={() => (close(), merge(true))}>Merge out of order</button>}
+      <a href={layer.url} target="_blank" rel="noreferrer" onClick={close}>
+        Open on GitHub
+      </a>
+    </>
+  );
+  const secondary = layer.state === 'open' && !chosen.length && (
+    <button className="btn" onClick={() => setSending({ ids: [], extra: '' })} title="Write to the agent that owns this stack">
+      Message agent
+    </button>
+  );
+
+  const nav = (l: Layer | null, dir: 'prev' | 'next', round = false) => (
+    <button className={round ? 'icon-btn round' : `btn nav-btn ${dir}`} disabled={!l} onClick={() => onNavigate(l?.pr ?? null)} aria-label={l ? `${dir === 'prev' ? 'Previous' : 'Next'} layer, ${l.role || `#${l.pr}`}` : dir === 'prev' ? 'No earlier layer' : 'No later layer'} title={l ? `${l.role || `#${l.pr}`} · ${l.title} (${dir === 'prev' ? 'k' : 'j'})` : undefined}>
+      <span className={dir === 'next' ? 'fwd' : ''} aria-hidden>
+        <Icon name="back" size={16} />
+      </span>
+      {!round && l && <span className="mono">{l.role || `#${l.pr}`}</span>}
+    </button>
+  );
+
+  const more = (close: () => void) => (
+    <div className="review-menu">
+      {secondaryItems(close)}
+      {menu(close)}
+    </div>
+  );
+
   const head = (
     <header className="layer-head">
-      <div className="layer-title">
-        {layer.role && <span className="role-chip">{layer.role}</span>}
-        <h2>{layer.title}</h2>
-        <a className="pill mono" href={layer.url} target="_blank" rel="noreferrer" title="Open on GitHub">
-          #{layer.pr} <Icon name="external" size={12} />
-        </a>
+      <button className="icon-btn round" onClick={onBack} aria-label="Stack overview">
+        <Icon name="back" size={20} />
+      </button>
+      <div className="grow layer-id">
+        <p className="crumb">
+          <span className="ellipsis">{stack.title}</span>
+          {at >= 0 && <span className="faint">{` / ${at + 1} of ${order.length}`}</span>}
+        </p>
+        <div className="layer-title">
+          {layer.role && <span className="role-chip">{layer.role}</span>}
+          <h2>{layer.title}</h2>
+          <a className="pr-link mono" href={layer.url} target="_blank" rel="noreferrer" title="Open on GitHub">
+            #{layer.pr}
+          </a>
+        </div>
       </div>
-      <div className="layer-meta">
-        <span className={`pill ${STATUS_PILL[layer.status]}`}>{STATUS_WORD[layer.status]}</span>
-        <span className="mono branchline" title={`${layer.headRef} into ${layer.baseRef}`}>
-          <Icon name="branch" size={13} /> {layer.headRef} <span className="faint">→</span> {layer.baseRef}
-        </span>
-        {rev && (
-          <span>
-            {rev.files} file{rev.files === 1 ? '' : 's'} <span className="add-n">+{rev.additions}</span> <span className="del-n">−{rev.deletions}</span>
-          </span>
-        )}
-        {layer.checks.fail > 0 ? (
-          <span className="pill bad" title={layer.checks.failing.join(', ')}>
-            {layer.checks.fail} failing
-          </span>
-        ) : layer.checks.pending > 0 ? (
-          <span className="pill busy">{layer.checks.pending} check{layer.checks.pending === 1 ? '' : 's'} running</span>
-        ) : layer.checks.pass > 0 ? (
-          <span className="pill attention">Checks pass</span>
-        ) : null}
-      </div>
+      {!narrow && (
+        <>
+          <div className="nav-pair">
+            {nav(prev, 'prev')}
+            {nav(next, 'next')}
+          </div>
+          <Popover label={<Icon name="more" size={18} />} className="icon-btn round" align="right" up={false} title="Layer">
+            {more}
+          </Popover>
+          {secondary}
+          {main && (
+            <ConfirmButton className="btn primary" disabled={busy} onClick={main.act}>
+              {main.text}
+            </ConfirmButton>
+          )}
+        </>
+      )}
     </header>
   );
 
@@ -404,9 +461,8 @@ export function LayerView({
     />
   );
 
-  const summary = (
-    <details className="summary-card" open={briefOpen} onToggle={(e) => setBriefOpen((e.currentTarget as HTMLDetailsElement).open)}>
-      <summary>Briefing</summary>
+  const summary = briefOpen && (
+    <section className="briefing" aria-label="Briefing">
       {rev?.summary ? (
         <Markdown text={rev.summary} />
       ) : summarizing ? (
@@ -416,10 +472,10 @@ export function LayerView({
       )}
       {rev?.summary && (
         <button className="btn ghost small" onClick={() => api.summarize(stack.id, layer.pr, true).then(() => setSummarizing(true)).then(() => onStack(), () => {})} title="Write the briefing again">
-          Refresh
+          Write it again
         </button>
       )}
-    </details>
+    </section>
   );
 
   const diffPane = (
@@ -429,10 +485,23 @@ export function LayerView({
           label="Diff"
           value={mode}
           onChange={setMode}
-          options={[['this', 'This PR'], ...(layer.reviewed ? ([['since', 'Since review']] as [Mode, string][]) : []), ['cumulative', `From ${stack.trunk}`]]}
+          options={[...(layer.reviewed ? ([['since', 'Since review']] as [Mode, string][]) : []), ['this', 'This PR'], ['cumulative', `From ${stack.trunk}`]]}
         />
-        {diff?.truncated && <span className="hint">Large: showing the first 400 KB</span>}
+        {rev && !narrow && (
+          <span className="diff-meta">
+            {rev.files} file{rev.files === 1 ? '' : 's'} <span className="add-n">+{rev.additions}</span> <span className="del-n">−{rev.deletions}</span>
+            <span className="mono faint branchline" title={`${layer.headRef} into ${layer.baseRef}`}>
+              {layer.headRef} → {layer.baseRef}
+            </span>
+          </span>
+        )}
+        <span className="spacer" />
+        {diff?.truncated && <span className="hint">First 400 KB</span>}
+        <button className={`btn ghost small brief-toggle ${briefOpen ? 'on' : ''}`} aria-pressed={briefOpen} onClick={() => setBriefOpen(!briefOpen)}>
+          <Icon name="files" size={15} /> Briefing{summarizing && !rev?.summary ? '…' : ''}
+        </button>
       </div>
+      {summary}
       {diffError ? (
         <p className="panel-msg">{diffError}</p>
       ) : !diff ? (
@@ -484,56 +553,29 @@ export function LayerView({
     />
   );
 
-  const secondary = (close: () => void = () => {}) => (
-    <>
-      {rev && (reviewedNow ? (
-        <button className="btn ghost small" disabled={busy} onClick={() => (close(), approve(false))} title="Take back the review">
-          Reviewed ✓
-        </button>
-      ) : main?.text !== 'Mark reviewed' ? (
-        <button className="btn small" disabled={busy} onClick={() => (close(), approve(true))}>
-          Mark reviewed
-        </button>
-      ) : null)}
-      {!chosen.length && (
-        <button className="btn small" onClick={() => (close(), setSending({ ids: [], extra: '' }))} title="Write to the agent that owns this stack">
-          Message agent
-        </button>
+  const side = (
+    <aside className="layer-side">
+      <Seg<Side>
+        label="Side"
+        value={sideTab}
+        onChange={setSideTab}
+        options={[
+          ['findings', <>Findings{layer.open + proposed ? <span className="count"> {layer.open + proposed}</span> : null}</>],
+          ['thread', 'Reviewer'],
+        ]}
+      />
+      <div className="side-pane">{sideTab === 'findings' ? findingsPane : threadPane}</div>
+      {sideTab === 'findings' && chosen.length > 0 && (
+        <footer className="side-foot">
+          <span className="grow hint">
+            {chosen.length} selected{layer.state === 'open' && stack.layers.some((l) => l.baseRef === layer.headRef && l.state === 'open') ? ' · the layers above restack after the fix' : ''}
+          </span>
+          <button className="btn ghost small" onClick={() => setSelected(new Set())}>
+            Clear
+          </button>
+        </footer>
       )}
-      {onlyOrder && (
-        <button className="btn small" disabled={busy} onClick={() => (close(), merge(true))}>
-          Merge out of order
-        </button>
-      )}
-    </>
-  );
-
-  const phoneBar = layer.state === 'open' && (
-    <footer className="merge-bar">
-      {main ? (
-        <button className="btn primary" disabled={busy} onClick={main.act}>
-          {main.text}
-        </button>
-      ) : (
-        <span className="grow hint">{layer.gates.find((g) => !g.ok)?.detail ?? ''}</span>
-      )}
-      <Popover label={<Icon name="more" size={18} />} className="icon-btn round" align="right" up title="More">
-        {(close) => <div className="review-menu bar-menu">{secondary(close)}</div>}
-      </Popover>
-    </footer>
-  );
-
-  const bar = layer.state === 'open' && (
-    <footer className="merge-bar">
-      <Gates layer={layer} />
-      <span className="spacer" />
-      {secondary()}
-      {main && (
-        <ConfirmButton className="btn primary" disabled={busy} onClick={main.act}>
-          {main.text}
-        </ConfirmButton>
-      )}
-    </footer>
+    </aside>
   );
 
   const dialog = sending && (
@@ -563,25 +605,36 @@ export function LayerView({
           value={tab}
           onChange={setTab}
           options={[
-            ['overview', 'Overview'],
-            ['diff', 'Diff'],
             ['findings', <>Findings{layer.open + proposed ? <span className="count"> {layer.open + proposed}</span> : null}</>],
+            ['diff', 'Diff'],
             ['thread', 'Reviewer'],
           ]}
         />
         <div className="layer-tab">
-          {tab === 'overview' && (
+          {tab === 'findings' && (
             <>
               {banner}
-              {summary}
+              {findingsPane}
               <Gates layer={layer} />
             </>
           )}
           {tab === 'diff' && diffPane}
-          {tab === 'findings' && findingsPane}
           {tab === 'thread' && threadPane}
         </div>
-        {phoneBar}
+        <footer className="merge-bar layer-bar">
+          {nav(prev, 'prev', true)}
+          {main ? (
+            <button className="btn primary" disabled={busy} onClick={main.act}>
+              {main.text}
+            </button>
+          ) : (
+            <span className="grow hint bar-why">{layer.state === 'open' ? (layer.gates.find((g) => !g.ok)?.detail ?? layer.gates.find((g) => !g.ok)?.label ?? '') : STATUS_WORD[layer.status]}</span>
+          )}
+          <Popover label={<Icon name="more" size={18} />} className="icon-btn round" align="right" up title="More">
+            {more}
+          </Popover>
+          {nav(next, 'next', true)}
+        </footer>
         {dialog}
       </div>
     );
@@ -592,33 +645,12 @@ export function LayerView({
       {banner}
       <div className="layer-body">
         <div className="layer-main">
-          {summary}
           {diffPane}
+          {layer.state === 'open' && <Gates layer={layer} />}
         </div>
-        <aside className="layer-side">
-          <Seg<Side>
-            label="Side"
-            value={side}
-            onChange={setSide}
-            options={[
-              ['findings', <>Findings{layer.open + proposed ? <span className="count"> {layer.open + proposed}</span> : null}</>],
-              ['thread', 'Reviewer'],
-            ]}
-          />
-          {side === 'findings' ? findingsPane : threadPane}
-        </aside>
+        {side}
       </div>
-      {bar}
       {dialog}
     </div>
   );
-}
-
-/** Scroll a rail row into view when it becomes current. */
-export function useScrollIntoView(on: boolean) {
-  const ref = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (on) ref.current?.scrollIntoView({ block: 'nearest' });
-  }, [on]);
-  return ref;
 }

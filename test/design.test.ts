@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 
 // One type ramp, one radius scale, four weights: the stylesheets may not drift
 // back to 12.5px text or 9px corners. Fluid sizes (em, rem, clamp) are exempt.
-const FILES = ['web/styles.css', 'web/site-theme.css', 'web/gui/gui.css'];
+const FILES = ['web/styles.css', 'web/site-theme.css', 'web/gui/gui.css', 'web/review/review.css'];
 const TYPE = new Set([11, 12, 13, 14, 15, 16, 17, 20, 22, 24, 28]);
 const RADIUS = new Set([0, 2, 4, 6, 8, 10, 12, 16, 999]);
 const WEIGHT = new Set([400, 500, 600, 700]);

@@ -62,6 +62,8 @@ export type Stack = {
   trunk: string;
   mergeMethod: 'merge' | 'squash' | 'rebase';
   methods: ('merge' | 'squash' | 'rebase')[];
+  /** "tree": GitHub's chain under one PR (new ones join); "manual": the PRs you picked, in your order. */
+  source: 'tree' | 'manual';
   planPath: string | null;
   state: string;
   syncedAt: number;
@@ -72,8 +74,9 @@ export type Stack = {
   next: number | null;
   decisions: { id: number; text: string; fromPr: number | null; at: number }[];
 };
-export type StackSummary = { id: string; title: string; repo: string; trunk: string; state: string; layers: number; merged: number; needsYou: number; next: number | null; syncedAt: number };
-export type Candidate = { number: number; title: string; headRefName: string; baseRefName: string; draft: boolean; author: string; inStack: string | null };
+export type StackSummary = { id: string; title: string; repo: string; trunk: string; state: string; source: 'tree' | 'manual'; layers: number; merged: number; needsYou: number; next: number | null; syncedAt: number; spine: { pr: number; role: string; status: LayerStatus }[] };
+export type Candidate = { number: number; title: string; headRefName: string; baseRefName: string; draft: boolean; author: string; additions: number; deletions: number; updatedAt: string; inStack: string | null };
+export type Candidates = { root: string; repo: string; trunk: string; trees: CandidateTree[]; stacks: { id: string; title: string }[] };
 export type CandidateTree = { pr: Candidate; children: CandidateTree[] };
 export type OwnerSuggestion = { uid: string; key: string; title: string; agent: string | null; status: string; cwd: string; branch: string | null; live: boolean; reason: 'branch' | 'repo' };
 export type ThreadMsg = { role: 'user' | 'assistant'; text: string; at: number; id: number };
@@ -89,11 +92,14 @@ export function reviewApi(base = '') {
   const l = (id: string, pr: number) => `${s(id)}/layers/${pr}`;
   return {
     repos: () => r<{ root: string; repo: string; trunk: string }[]>('GET', '/repos'),
-    candidates: (root: string) => r<{ root: string; repo: string; trunk: string; trees: CandidateTree[] }>('GET', `/candidates?root=${enc(root)}`),
+    candidates: (root: string) => r<Candidates>('GET', `/candidates?root=${enc(root)}`),
     stacks: () => r<StackSummary[]>('GET', '/stacks'),
     settings: () => r<{ summaryId: string | null }>('GET', '/settings'),
     setSummaryModel: (summaryId: string | null) => r<{ summaryId: string | null }>('PUT', '/settings', { summaryId }),
-    create: (root: string, pr: number, title?: string) => r<Stack>('POST', '/stacks', { root, pr, ...(title ? { title } : {}) }),
+    /** One PR takes GitHub's chain under it; a list is the PRs you picked, in review order. */
+    create: (root: string, pick: { pr: number } | { prs: number[] }, title?: string) => r<Stack>('POST', '/stacks', { root, ...pick, ...(title ? { title } : {}) }),
+    addLayers: (id: string, prs: number[]) => r<Stack>('POST', `${s(id)}/layers`, { prs }),
+    removeLayer: (id: string, pr: number) => r<Stack>('DELETE', l(id, pr)),
     stack: (id: string) => r<Stack>('GET', s(id)),
     update: (id: string, patch: { title?: string; planPath?: string | null; mergeMethod?: string; order?: number[]; ownerUid?: string | null; state?: string }) => r<Stack>('PATCH', s(id), patch),
     remove: (id: string) => r('DELETE', s(id)),
@@ -129,14 +135,19 @@ export function reviewApi(base = '') {
 
 export type ReviewApi = ReturnType<typeof reviewApi>;
 
-/** Where a review link points: the list, a stack, or one layer. */
-export function reviewHash(stack?: string | null, pr?: number | null): string {
+export type ReviewRoute = { stack: string | null; pr: number | null; pick: boolean };
+
+/** Where a review link points: the list, picking PRs (for a new stack, or to add to one), a stack, or one layer. */
+export function reviewHash(stack?: string | null, pr?: number | null, pick = false): string {
+  if (pick) return stack ? `review/${stack}/add` : 'review/new';
   return stack ? (pr ? `review/${stack}/${pr}` : `review/${stack}`) : 'review';
 }
 
-export function parseReviewHash(hash: string): { stack: string | null; pr: number | null } {
-  const m = hash.replace(/^#/, '').match(/^review(?:\/([\w-]{4,40})(?:\/(\d+))?)?$/);
-  return { stack: m?.[1] ?? null, pr: m?.[2] ? Number(m[2]) : null };
+export function parseReviewHash(hash: string): ReviewRoute {
+  const h = hash.replace(/^#/, '');
+  if (h === 'review/new') return { stack: null, pr: null, pick: true };
+  const m = h.match(/^review(?:\/([\w-]{4,40})(?:\/(\d+|add))?)?$/);
+  return { stack: m?.[1] ?? null, pr: m?.[2] && m[2] !== 'add' ? Number(m[2]) : null, pick: m?.[2] === 'add' };
 }
 
 export const STATUS_WORD: Record<LayerStatus, string> = {
@@ -163,3 +174,14 @@ export const STATUS_PILL: Record<LayerStatus, string> = {
 };
 
 export const layerName = (l: { role: string; pr: number }) => (l.role ? `${l.role}` : `#${l.pr}`);
+
+/** A layer's place in the shared status vocabulary: needs you, an agent working, reviewed, merged, waiting its turn. */
+export type Tone = 'todo' | 'needs' | 'busy' | 'ready' | 'merged' | 'off';
+export function toneOf(status: LayerStatus): Tone {
+  if (status === 'changes' || status === 'rereview') return 'needs';
+  if (status === 'fixing') return 'busy';
+  if (status === 'approved') return 'ready';
+  if (status === 'merged') return 'merged';
+  if (status === 'skipped' || status === 'closed') return 'off';
+  return 'todo';
+}

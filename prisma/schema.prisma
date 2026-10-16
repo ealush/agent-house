@@ -110,6 +110,8 @@ model ReviewStack {
   ownerUid    String?
   ownerKey    String?
   mergeMethod String  @default("merge")
+  /// "tree": the PRs GitHub's base links stack on the first one (new ones join); "manual": the PRs you picked, in your order.
+  source      String  @default("tree")
   state       String  @default("open")
   createdAt   Int     @default(0)
   syncedAt    Int     @default(0)

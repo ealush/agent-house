@@ -170,7 +170,7 @@ test('review: stack from a PR tree, fix loop through the owner, re-review, merge
     assert.equal(cands.repo, 'me/proj');
     assert.deepEqual(cands.trees.map((x) => x.pr.number), [9, 1]);
 
-    let v = await t.svc.create(t.w.local, 1, 'Feature');
+    let v = await t.svc.create(t.w.local, { pr: 1 }, 'Feature');
     await t.svc.sync(v.id);
     v = await t.svc.view(v.id);
     assert.deepEqual(v.layers.map((l) => l.pr), [1, 4, 2, 3], 'the fix before the longer chain');
@@ -264,7 +264,7 @@ test('review: the reviewer reads pinned revisions through tools and proposes fin
   const t = await setup();
   await withGh(t.w, async () => {
     await t.chat.put({ name: 'm', baseUrl: 'https://x.test/v1', model: 'm', apiKey: 'k' });
-    const v = await t.svc.create(t.w.local, 1);
+    const v = await t.svc.create(t.w.local, { pr: 1 });
     await t.svc.sync(v.id);
     // The agent is mid-edit on another branch: the reviewer must not see it.
     await writeFile(join(t.w.local, 'c.ts'), 'WORKING TREE\n');
@@ -319,7 +319,7 @@ test('review: GitHub threads become findings once; resolving replies and resolve
     ];
   });
   await withGh(t.w, async () => {
-    const v = await t.svc.create(t.w.local, 1);
+    const v = await t.svc.create(t.w.local, { pr: 1 });
     await t.svc.sync(v.id);
     assert.deepEqual(await t.svc.importThreads(v.id, 2), { added: 2 });
     assert.deepEqual(await t.svc.importThreads(v.id, 2), { added: 0 }, 'once each');
@@ -347,7 +347,7 @@ test('review: bot thread titles lose their badges and markup', () => {
 test('review: plan labels, merge order rules, skipped layers', async () => {
   const t = await setup();
   await withGh(t.w, async () => {
-    let v = await t.svc.create(t.w.local, 1);
+    let v = await t.svc.create(t.w.local, { pr: 1 });
     await t.svc.sync(v.id);
     v = await t.svc.view(v.id);
     const plan = join(t.w.parent, 'plan.md');
@@ -364,5 +364,47 @@ test('review: plan labels, merge order rules, skipped layers', async () => {
     assert.equal(v.layers.find((l) => l.pr === 2)!.status, 'skipped');
     await t.svc.remove(v.id);
     assert.equal(execFileSync('git', ['-C', t.w.local, 'for-each-ref', 'refs/ah-review/']).toString(), '', 'refs dropped with the stack');
+  });
+});
+
+test('review: a stack you pick keeps your PRs in your order; PRs join only when you add them', async () => {
+  const t = await setup();
+  await withGh(t.w, async () => {
+    // Built on #1's branch, #2 can't come before it.
+    await assert.rejects(t.svc.create(t.w.local, { prs: [2, 1] }), /#2 is built on #1/);
+    await assert.rejects(t.svc.create(t.w.local, { prs: [1, 1] }), /once/);
+    await assert.rejects(t.svc.create(t.w.local, { prs: [] }), /at least one/);
+    await assert.rejects(t.svc.create(t.w.local, { prs: [1, 77] }), /#77 is not an open pull request/);
+
+    let v = await t.svc.create(t.w.local, { prs: [1, 4, 9] }, 'Picked');
+    await t.svc.sync(v.id);
+    v = await t.svc.view(v.id);
+    assert.equal(v.source, 'manual');
+    assert.equal(v.title, 'Picked');
+    assert.equal(v.trunk, 'main');
+    // #2 sits on #1's branch, but a picked stack doesn't take it in by itself.
+    assert.deepEqual(v.layers.map((l) => l.pr), [1, 4, 9]);
+    const summary = (await t.svc.list()).find((s) => s.id === v.id)!;
+    assert.equal(summary.source, 'manual');
+    assert.deepEqual(summary.spine.map((x) => x.pr), [1, 4, 9]);
+
+    // Taken PRs are taken; the candidates say where.
+    await assert.rejects(t.svc.create(t.w.local, { prs: [4] }), /already in a stack/);
+    const cands = await t.svc.candidates(t.w.local);
+    assert.deepEqual(cands.stacks, [{ id: v.id, title: 'Picked' }]);
+    assert.equal(cands.trees.find((x) => x.pr.number === 9)!.pr.inStack, v.id);
+
+    v = await t.svc.addLayers(v.id, [2]);
+    assert.deepEqual(v.layers.map((l) => l.pr), [1, 4, 9, 2]);
+    await assert.rejects(t.svc.addLayers(v.id, [2]), /already in this stack/);
+
+    await t.svc.addFinding(v.id, { ownerPr: 4, title: 'Gone with its layer' });
+    v = await t.svc.removeLayer(v.id, 4);
+    assert.deepEqual(v.layers.map((l) => l.pr), [1, 9, 2]);
+    assert.equal((await t.svc.findings(v.id)).length, 0);
+
+    // A tree stack you trim becomes yours: new children stop joining.
+    const tree = await t.svc.create(t.w.local, { pr: 3 });
+    assert.equal(tree.source, 'tree');
   });
 });
