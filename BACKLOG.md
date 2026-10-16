@@ -241,6 +241,23 @@ Remaining larger work: conversation transfer between hosts (including files),
 worktree disk usage, and richer adapters for agents without hooks. These require explicit
 product decisions rather than guessing at conversation or workspace ownership.
 
+## Phase 8 — Feature freeze (from 17 October 2026)
+
+No new features. Every shipped feature is specified in
+[docs/spec/](docs/spec/README.md), reverse-written from the code and the
+running product, with IDs (FND, SES, ATT, VIEW, WS, KEY, CON, SET, CLI, PLT,
+DS). Work until the freeze lifts:
+
+| # | Item | | Notes |
+|---|---|---|---|
+| Z1 | Specification | ✅ | `docs/spec/`: vocabulary, invariants, 11 domain files. |
+| Z2 | Consistency audit | ✅ | `docs/spec/audit.md`: parity matrix, vocabulary drift, 28 findings (A-01…A-28) with severity and resolution. |
+| Z3 | Behaviour fixes | ✗ | The audit's "fix now" list. |
+| Z4 | Redesign | ◐ | One visual system for every screen and device, in Claude Design; then one token file (A-17). |
+| Z5 | Owner calls | ✗ | A-09 CLI parity, A-13 keycaps off Mac, A-26 New session's default. |
+
+Stack review stays on its branch, outside the freeze.
+
 ## Design rules
 
 - **Conversation identity is the attachment key.** Transcripts, side-chats, and
