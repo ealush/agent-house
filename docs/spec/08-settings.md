@@ -1,6 +1,6 @@
 # 08 · Settings and host
 
-Settings is a page on desktop (section list beside titled cards) and a sheet
+Settings is a page on desktop (section list, each with its icon, beside titled cards) and a sheet
 over the current page on a phone (sections as a sideways tab strip). Sections
 are addressable (`#settings/<section>`); things that take one click also run
 from the palette's Settings branch (`web/settingsMenu.ts`).

@@ -13,6 +13,7 @@ import { SystemPanel } from './System.tsx';
 import { AgentsPanel } from './AgentsSettings.tsx';
 import { ShortcutsPanel } from './shortcuts.tsx';
 import { Glide } from './Glide.tsx';
+import { Icon } from './icons.tsx';
 import { SECTIONS, sectionHash, type Section } from './settingsMenu.ts';
 
 function sectionFromHash(): Section {
@@ -44,7 +45,7 @@ export function Settings({ onLocked, onNotifyChange }: { onLocked: () => void; o
       <header className="page-head">
         <div className="grow">
           <h1 className="page-title">Settings<span className="period">.</span></h1>
-          <p className="tagline">Devices and sign-in, shortcuts on this device, notifications, chat subscriptions, and what your sessions start with.</p>
+          <p className="tagline">This host's agents, sessions and server; this device's theme, keys and notifications.</p>
         </div>
       </header>
 
@@ -52,7 +53,8 @@ export function Settings({ onLocked, onNotifyChange }: { onLocked: () => void; o
         <nav className="settings-nav" aria-label="Settings sections" data-rove>
           <Glide match=".nav-item.on" className="side-glide" />
           {SECTIONS.map((s) => (
-            <button key={s.id} className={`nav-item ${section === s.id ? 'on' : ''}`} aria-current={section === s.id ? 'page' : undefined} onClick={() => go(s.id)}>
+            <button key={s.id} className={`nav-item ${section === s.id ? 'on' : ''}`} aria-current={section === s.id ? 'page' : undefined} title={s.detail} onClick={() => go(s.id)}>
+              <Icon name={s.icon} />
               <span className="grow">{s.label}</span>
             </button>
           ))}

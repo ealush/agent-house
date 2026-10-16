@@ -16,8 +16,9 @@ A floating glass panel, top to bottom:
 5. **Projects +** (New project), then sessions grouped by project; with
    several hosts, by host. On a single host, tmux sessions can group instead.
    Each row: agent mark, status dot (needs you / working only), title (the
-   model and folder are in its tooltip); ··· with Fork session… and Terminate
-   session; hover ✕ terminates.
+   model and folder are in its tooltip); ··· with the session menu's own rows
+   (Open, Rename session, Pin, Send to…, Fork session…, Terminate session);
+   hover ✕ terminates.
    Pinned rows lead their group; rows drag to reorder (SES-13); a row dragged
    onto a pane's edge splits there (WS-3).
 6. **New session** (⌃⇧↵), **Worktrees**.
@@ -76,8 +77,8 @@ SQLite FTS, incremental, fingerprinted per source). The page: query, scope
 from and to dates; results grouped by session, paginated, each opening the
 conversation **at the matching turn**. Reached from the switcher's "See all
 results", the sidebar, the palette and ⌃⇧5. Can be switched off (drops the
-index) in Settings → Search. → A-10: its selects and date fields are unstyled
-native controls.
+index) in Settings → Search. Its filters are labelled fields like every other
+form: Search, In, Who, From, To.
 
 ## ATT-6 · Switcher (⌘K / ⌃⇧K) — shipped
 

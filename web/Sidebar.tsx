@@ -6,7 +6,7 @@ import { look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
 import { useSavedGroups, setGroupList } from './groupOrder.ts';
 import { movedSessionOrders, saveGroupMove, sidebarSections } from './sessionOrder.ts';
-import { commandLabel, isMac, runCommand, type CommandId } from './shortcuts.ts';
+import { commandLabel, isMac, runCommand, runCommandSoon, type CommandId } from './shortcuts.ts';
 import { ShortcutHint, shortcutTitle, useShortcutRevision } from './shortcuts.tsx';
 import { Glide } from './Glide.tsx';
 import { useFlip } from './useFlip.ts';
@@ -219,6 +219,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
         </button>
         {menu && (
           <div className="menu row-menu" onMouseLeave={() => setMenuKey(null)}>
+            {/* The session menu's own rows and words: opening the session, then the command, as its ··· would. */}
             <button
               onClick={() => {
                 setMenuKey(null);
@@ -227,6 +228,18 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
             >
               Open
             </button>
+            {(['rename', 'pin', ...(w.agent ? (['send-to'] as const) : [])] as const).map((id) => (
+              <button
+                key={id}
+                onClick={() => {
+                  setMenuKey(null);
+                  onSelect(w.key);
+                  runCommandSoon(id);
+                }}
+              >
+                {id === 'pin' && w.pinned ? 'Unpin' : commandLabel(id)}
+              </button>
+            ))}
             {onFork && w.agent && (
               <button
                 onClick={() => {
@@ -234,7 +247,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
                   onFork(w);
                 }}
               >
-                Fork session…
+                {commandLabel('fork')}
               </button>
             )}
             <button
@@ -246,7 +259,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
                 });
               }}
             >
-              Terminate session
+              {commandLabel('terminate')}
             </button>
           </div>
         )}

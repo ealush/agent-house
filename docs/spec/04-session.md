@@ -15,10 +15,10 @@ with a GUI adapter only) · side panel toggle · **···** session menu.
 ### VIEW-2 · Phone header — shipped
 
 Back (glass circle) · title over a subtitle that leads with the status pill
-(then project ⌥ branch · agent) · a glass capsule with the view icons and ···.
-Below it, the session's **tabs**: the view (GUI or Terminal), Diff, Files,
-Chat, Snapshots, Preview, scrolling sideways with edge fades.
-→ A-04: the view appears twice (capsule icons and the first tab).
+(then project ⌥ branch · agent) · a glass capsule with the view (GUI or
+terminal) and ···. Below it, the session's **tabs** pick what you look at:
+Session, Diff, Files, Chat, Queue, Snapshots, Preview, as icons with the open
+one named, so they all fit.
 
 ### VIEW-3 · Session menu — shipped
 
@@ -140,8 +140,9 @@ An ended session stays in place: its conversation (GUI) or last screen, and
 ## Side panels
 
 One panel at a time beside the session (desktop: resizable, collapsible,
-closable, ⌃⌥1–6; phone: tabs). → A-11: the tab strip does not fit six tabs at
-the default width, and its set changes between panels.
+closable, ⌃⌥1–6; phone: tabs). The tabs are the same set in the same order
+everywhere (agent-only ones absent for a shell), drawn as icons with the open
+one named; each tab's tooltip has its chord, and Queue carries its count.
 
 ### VIEW-9 · Diff — shipped
 
@@ -151,8 +152,8 @@ line and code. Footer: branch · files · +/−. Shells too (not agent-only).
 
 ### VIEW-10 · Files — shipped
 
-Browse the host from the session's folder, within `files.roots` (a root
-picker), go up, home, new folder; download a file, preview it (CSP sandboxed);
+Browse the host from the session's folder, within `files.roots` (Go to… a
+root), go up, the session folder, show hidden files, new folder; download a file, preview it (CSP sandboxed);
 **Upload here** from this device into any folder; **Insert** a file or folder
 path into the session (as an `@mention` for agents, quoted for shells).
 

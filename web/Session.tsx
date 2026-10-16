@@ -1135,39 +1135,29 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       {narrow && (
         <div className="seg-tabs" role="tablist" data-rove>
           <Glide match=".on" className="thumb" />
-          <button role="tab" aria-selected={tab === 'main'} className={tab === 'main' ? 'on' : ''} onClick={() => setTab('main')}>
-            {VIEW_LABEL[view]}
-          </button>
-          {diffTab && (
-            <button role="tab" aria-selected={tab === 'diff'} className={tab === 'diff' ? 'on' : ''} onClick={() => setTab('diff')}>
-              Diff
-            </button>
-          )}
-          <button role="tab" aria-selected={tab === 'files'} className={tab === 'files' ? 'on' : ''} onClick={() => setTab('files')}>
-            Files
-          </button>
-          <button role="tab" aria-selected={tab === 'chat'} className={tab === 'chat' ? 'on' : ''} onClick={() => setTab('chat')}>
-            Chat
-          </button>
-          {/* Nothing queued: the tab steps aside (the menu and palette still open it). */}
-          {turns && (w.queued > 0 || tab === 'queue') && (
-            <button role="tab" aria-selected={tab === 'queue'} className={tab === 'queue' ? 'on' : ''} onClick={() => setTab('queue')}>
-              Queue{w.queued > 0 ? ` (${w.queued})` : ''}
-            </button>
-          )}
-          {turns && (
-            <button role="tab" aria-selected={tab === 'snapshots'} className={tab === 'snapshots' ? 'on' : ''} onClick={() => setTab('snapshots')}>
-              Snapshots
-            </button>
-          )}
-          <button role="tab" aria-selected={tab === 'preview'} className={tab === 'preview' ? 'on' : ''} onClick={() => setTab('preview')}>
-            Preview
-          </button>
-          {/* Its branch in review, or open: otherwise the menu opens it. */}
-          {stackTab && (review?.layer || tab === 'stack') && (
-            <button role="tab" aria-selected={tab === 'stack'} className={tab === 'stack' ? 'on' : ''} onClick={() => setTab('stack')}>
-              Stack
-            </button>
+          {/* What you look at (the session, or one of its panels); the glass capsule above picks how (GUI
+              or terminal). Icons, the open one with its name, so every tab fits a phone (as on a desktop). */}
+          {(
+            [
+              ['main', 'sessions', 'Session', true],
+              ['diff', 'diff', L('panel-diff'), diffTab],
+              ['files', 'files', L('panel-files'), true],
+              ['chat', 'chat', L('panel-chat'), true],
+              // Nothing queued: the tab steps aside (the menu and palette still open it).
+              ['queue', 'queue', L('panel-queue'), turns && (w.queued > 0 || tab === 'queue')],
+              ['snapshots', 'history', L('panel-snapshots'), turns],
+              ['preview', 'globe', L('panel-preview'), true],
+              // Its branch in review, or open: otherwise the menu opens it.
+              ['stack', 'stack', 'Stack', stackTab && (!!review?.layer || tab === 'stack')],
+            ] as const
+          ).map(([id, icon, label, shown]) =>
+            shown ? (
+              <button key={id} role="tab" aria-selected={tab === id} aria-label={label} className={`tab-icon ${tab === id ? 'on' : ''}`} onClick={() => setTab(id)}>
+                <Icon name={icon} size={18} />
+                <span className="tab-label">{label}</span>
+                {id === 'queue' && w.queued > 0 && <span className="badge">{w.queued}</span>}
+              </button>
+            ) : null,
           )}
         </div>
       )}
@@ -1217,36 +1207,38 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
                   {/* The tabs scroll sideways in a narrow panel; the buttons on the right always stay. */}
                   <div className="tabs-scroll">
                   <Glide match="[aria-selected='true']" className="underline" />
-                  {diffTab && (
-                    <button role="tab" aria-selected={panel === 'diff'} className="tab-underline" onClick={() => setPanel('diff')}>
-                      Diff
-                    </button>
-                  )}
-                  {/* Beside Diff: both are about the branch. */}
-                  {stackTab && (
-                    <button role="tab" aria-selected={panel === 'stack'} className="tab-underline" onClick={() => setPanel('stack')}>
-                      Stack
-                    </button>
-                  )}
-                  <button role="tab" aria-selected={panel === 'files'} className="tab-underline" onClick={() => setPanel('files')}>
-                    Files
-                  </button>
-                  <button role="tab" aria-selected={panel === 'chat'} className="tab-underline" onClick={() => setPanel('chat')}>
-                    Chat
-                  </button>
-                  {turns && (
-                    <button role="tab" aria-selected={panel === 'queue'} className="tab-underline" onClick={() => setPanel('queue')}>
-                      Queue{w.queued > 0 ? ` (${w.queued})` : ''}
-                    </button>
-                  )}
-                  {turns && (
-                    <button role="tab" aria-selected={panel === 'snapshots'} className="tab-underline" onClick={() => setPanel('snapshots')}>
-                      Snapshots
-                    </button>
-                  )}
-                  <button role="tab" aria-selected={panel === 'preview'} className="tab-underline" onClick={() => setPanel('preview')}>
-                    Preview
-                  </button>
+                  {/* Always the same tabs in the same order (agent-only ones absent for a shell): icons,
+                      the open one with its label, so all six fit in the narrowest panel. */}
+                  {(
+                    [
+                      ['diff', 'diff', diffTab],
+                      // Beside Diff: both are about the branch.
+                      ['stack', 'stack', stackTab],
+                      ['files', 'files', true],
+                      ['chat', 'chat', true],
+                      ['queue', 'queue', turns],
+                      ['snapshots', 'history', turns],
+                      ['preview', 'globe', true],
+                    ] as const
+                  ).map(([id, icon, shown]) => {
+                    if (!shown) return null;
+                    const label = id === 'stack' ? 'Stack' : L(`panel-${id}`);
+                    return (
+                      <button
+                        key={id}
+                        role="tab"
+                        aria-selected={panel === id}
+                        aria-label={label}
+                        title={id === 'stack' ? label : shortcutTitle(label, `panel-${id}`)}
+                        className="tab-underline tab-icon"
+                        onClick={() => setPanel(id)}
+                      >
+                        <Icon name={icon} size={15} />
+                        <span className="tab-label">{label}</span>
+                        {id === 'queue' && w.queued > 0 && <span className="badge">{w.queued}</span>}
+                      </button>
+                    );
+                  })}
                   </div>
                   {panel === 'chat' && (
                     <button

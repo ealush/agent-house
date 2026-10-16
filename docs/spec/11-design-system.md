@@ -76,7 +76,10 @@ Buttons (primary pink, secondary outline, ghost, danger, icon, glass circle),
 segmented control (capsule, lens thumb, slide to choose), chips, status pill
 (the UI face, a capsule, one tint per status; only *needs you* filled), tags
 (agent, model, project: names in the UI face), status dot, keycap, agent mark,
-session row (four variants → A-19), cards
+session row (one line, `sessionLine.tsx`), the ask summary and option rows
+(`AskSummary`, OptionList), panel tabs (icons, the open one named), setting
+chips (a quiet name and the value), fields (words by default, `.mono` for
+paths, commands and keys), the info note (`.note`), cards
 (`sec-card`), the ask card / panel, tool row, widget set, composer, menu /
 action sheet, dialog / sheet, toast, empty state, large title, tab bar, side
 panel tabs.

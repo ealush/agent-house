@@ -1095,6 +1095,20 @@ export function runCommand(id: CommandId): boolean {
   return true;
 }
 
+/**
+ * Run a command as soon as something offers it: for an action on a session that is
+ * opening now (a sidebar row's menu opens the session, then renames it). Gives up
+ * after `ms` if nothing ever registers it.
+ */
+export function runCommandSoon(id: CommandId, ms = 1500): void {
+  const end = Date.now() + ms;
+  const attempt = () => {
+    if (runCommand(id) || Date.now() > end) return;
+    requestAnimationFrame(attempt);
+  };
+  requestAnimationFrame(attempt);
+}
+
 let capture: ((e: KeyboardEvent) => void) | null = null;
 
 /** While set, the shortcut listener hands the next key here instead of running a command. */

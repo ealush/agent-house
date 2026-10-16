@@ -418,7 +418,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
       <div className="composer-tools">
         <div className="composer-settings">
           {preset && (models.length > 0 || preset.modelArgs || preset.settingsCommands?.model) && (
-            <Popover className="tool-chip" title="Model version" label={modelLabel ?? 'Model: Default'} command="pick-model" active={active}>
+            <Popover className="tool-chip" title="Model version" label={<ChipLabel name="Model" value={modelLabel ?? 'Default'} />} command="pick-model" active={active}>
               {(close) => (
                 <ModelPicker preset={preset} value={{ model: model?.id, effort }}
                   disabled={!preset.switchModel && !preset.modelArgs}
@@ -430,7 +430,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
             </Popover>
           )}
           {preset && (levels.length > 0 || preset.settingsCommands?.effort) && (
-            <Popover className="tool-chip" title="Reasoning effort" label={effort ? `Effort: ${effort.charAt(0).toUpperCase() + effort.slice(1)}` : 'Effort: Default'} command="pick-effort" active={active}>
+            <Popover className="tool-chip" title="Reasoning effort" label={<ChipLabel name="Effort" value={effort ? effort.charAt(0).toUpperCase() + effort.slice(1) : 'Default'} />} command="pick-effort" active={active}>
               {(close) => (
                 <EffortPicker levels={levels} value={effort} disabled={!preset.switchEffort && !preset.effort}
                   onPick={(level) => void choose({ effort: level ?? 'default' }, close)}
@@ -441,7 +441,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
             </Popover>
           )}
           {preset && (preset.modes?.length ?? 0) > 1 && (
-            <Popover className={`tool-chip ${mode?.dangerous ? 'danger' : ''}`} title="Permission level" label={mode && mode.id !== 'default' ? `${mode.dangerous ? '⚠ ' : ''}${mode.name}` : 'Permissions: Default'}>
+            <Popover className={`tool-chip ${mode?.dangerous ? 'danger' : ''}`} title="Permission level" label={<ChipLabel name="Permissions" value={mode && mode.id !== 'default' ? `${mode.dangerous ? '⚠ ' : ''}${mode.name}` : 'Default'} />}>
               {(close) => (
                 <div className="picker" aria-label="Permissions">
                   <div className="picker-title">Permissions</div>
@@ -497,3 +497,12 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
     </>
   );
 });
+
+/** A setting chip says which setting and the value in force: "Model Opus 5.5", "Effort Default". */
+function ChipLabel({ name, value }: { name: string; value: string }) {
+  return (
+    <>
+      <span className="chip-key">{name}</span> {value}
+    </>
+  );
+}

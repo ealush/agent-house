@@ -614,7 +614,7 @@
 }
 
 .gui .tool-dot.awaiting {
-  background: var(--accent);
+  background: var(--brand);
   animation: gui-pulse 1.2s ease-in-out infinite;
 }
 

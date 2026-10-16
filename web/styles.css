@@ -236,7 +236,7 @@ code,
 }
 
 :root[data-theme='light'] .logo {
-  background: var(--accent);
+  background: var(--accent-strong);
   color: #fff;
 }
 
@@ -364,7 +364,7 @@ kbd {
   height: 20px;
   padding: 0 6px;
   border-radius: 999px;
-  background: var(--accent);
+  background: var(--accent-strong);
   color: var(--accent-ink);
   font-size: 12px;
   font-weight: 600;
@@ -530,7 +530,7 @@ kbd {
 }
 
 .dot.waiting {
-  background: var(--accent);
+  background: var(--brand);
   animation: ring 1.8s ease-out infinite;
 }
 
@@ -1959,8 +1959,14 @@ a.btn {
   border-radius: 10px;
   border: 1px solid var(--line-2);
   background: var(--sunken);
-  font-family: var(--mono);
+  font-family: var(--ui);
   font-size: 16px; /* prevents iOS zoom-on-focus */
+}
+/* Paths, commands, arguments, model ids, variable names and keys read as code;
+   names and messages read as words. */
+.field input.mono,
+.field textarea.mono {
+  font-family: var(--mono);
 }
 
 @media (pointer: fine) {
@@ -2346,30 +2352,24 @@ a.btn {
 
 /* Full-page search (issue #9) */
 .search-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  margin-bottom: 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 16px;
 }
 
-.search-controls > input {
-  flex: 1 1 260px;
-  padding: 10px 12px;
-  font-size: 15px;
+.search-controls .field {
+  margin: 0;
 }
 
-.search-controls select,
-.search-controls input[type='date'] {
-  padding: 9px 8px;
-}
-
-.search-date {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--muted);
+@media (max-width: 760px) {
+  .search-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .search-controls .search-q {
+    grid-column: 1 / -1;
+  }
 }
 
 .search-results {
@@ -3888,6 +3888,49 @@ a.btn {
   border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent);
   color: var(--danger);
   font-size: 13px;
+}
+
+/* A setting chip's name, quieter than its value (the design system's Chip). */
+.chip-key {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+/* A toggle drawn as an icon says when it is on. */
+.icon-btn[aria-pressed='true'] {
+  color: var(--accent);
+  background: var(--accent-bg);
+}
+
+/* Files: a row's actions show where a pointer is (hover or keyboard focus); on touch, always. */
+@media (hover: hover) {
+  .fs-row > .btn {
+    visibility: hidden;
+  }
+  .fs-row:hover > .btn,
+  .fs-row:focus-within > .btn {
+    visibility: visible;
+  }
+}
+
+/* A fact to know before confirming (the design system's Notice, info tone): not an error. */
+.note {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.note > svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--muted);
 }
 
 /* ---------- reorderable sidebar (F43/F44) */
@@ -6005,7 +6048,7 @@ button.tool-chip:hover {
 /* Keyboard-focused dividers light up like a hovered one. */
 .divider:focus-visible {
   outline: none;
-  background: var(--accent);
+  background: var(--brand);
 }
 
 /* Resize mode, like a Hyprland submap: says which keys mean what until you leave it. */
@@ -6099,7 +6142,7 @@ button.tool-chip:hover {
 }
 
 .ws-root.tiled > .divider:focus-visible {
-  background: var(--accent);
+  background: var(--brand);
 }
 
 .ws-root.tiled > .divider.v {
@@ -6149,8 +6192,8 @@ button.tool-chip:hover {
 
 .ws-dots button.on {
   color: var(--accent-ink);
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
 }
 
 /* Scratchpad shell (Ctrl+Shift+`): floats over everything, like Hyprland's special workspace. */
@@ -7226,6 +7269,47 @@ select:not([multiple]) {
   text-transform: none;
 }
 
+/* The design system's PanelTabs: an icon per panel, the open one with its name. */
+.seg-tabs .tab-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 1 1 auto;
+}
+.seg-tabs .tab-icon .tab-label {
+  display: none;
+}
+.seg-tabs .tab-icon.on .tab-label {
+  display: inline;
+}
+.seg-tabs .tab-icon .badge {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 11px;
+}
+.side-panel .tab-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 32px;
+  min-height: 32px;
+  justify-content: center;
+}
+.side-panel .tab-icon .tab-label {
+  display: none;
+}
+.side-panel .tab-icon[aria-selected='true'] .tab-label {
+  display: inline;
+}
+.side-panel .tab-icon .badge {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 11px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   ::before,
@@ -7430,7 +7514,7 @@ select:not([multiple]) {
 /* The current workspace's fill slides to the number you went to. */
 .ws-glide {
   border-radius: 6px;
-  background: var(--accent);
+  background: var(--brand);
 }
 
 .glides.glides > .ws-glide ~ button.on {

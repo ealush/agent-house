@@ -405,7 +405,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
 
         <label className="field">
           <span>Project</span>
-          <input ref={cwdInput} value={cwd} onChange={(e) => setCwd(e.target.value)} list="ah-projects" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="~/code/project" />
+          <input className="mono" ref={cwdInput} value={cwd} onChange={(e) => setCwd(e.target.value)} list="ah-projects" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="~/code/project" />
           <datalist id="ah-projects">
             {projects.map((p) => (
               <option key={p} value={p} />
@@ -583,7 +583,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
             {!isShell && (
               <label className="field">
                 <span>Additional arguments</span>
-                <input value={extraArgs} onChange={(e) => setExtraArgs(e.target.value)} placeholder="--flag value" autoCapitalize="off" autoCorrect="off" spellCheck={false} maxLength={2048} />
+                <input className="mono" value={extraArgs} onChange={(e) => setExtraArgs(e.target.value)} placeholder="--flag value" autoCapitalize="off" autoCorrect="off" spellCheck={false} maxLength={2048} />
               </label>
             )}
           </div>

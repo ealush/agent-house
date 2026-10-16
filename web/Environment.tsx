@@ -140,7 +140,7 @@ export function EnvironmentPanel() {
           <div className="form-grid">
             <label className="field">
               <span>Name</span>
-              <input
+              <input className="mono"
                 value={form.name}
                 disabled={busy || form.editing}
                 maxLength={128}
@@ -156,7 +156,7 @@ export function EnvironmentPanel() {
             </label>
             <label className="field">
               <span>Value</span>
-              <input
+              <input className="mono"
                 type={form.secret ? 'password' : 'text'}
                 value={form.value}
                 disabled={busy}
