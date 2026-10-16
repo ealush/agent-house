@@ -362,7 +362,7 @@ export function PrLink({ client, uid, branch }: { client: HostApi; uid: string; 
   }, [client, uid, branch]);
   if (!pr?.number || !pr.url) return null;
   return (
-    <a className="pill mono" href={pr.url} target="_blank" rel="noreferrer" title={`Pull request #${pr.number}`}>
+    <a className="pill" href={pr.url} target="_blank" rel="noreferrer" title={`Pull request #${pr.number}`}>
       #{pr.number}
     </a>
   );

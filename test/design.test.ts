@@ -33,7 +33,7 @@ for (const file of FILES) {
 // Secondary text (times, details, column heads, model names) is small, so it
 // keeps WCAG AA's 4.5:1 on the grounds it sits on, in both themes.
 test('muted and faint text read at 4.5:1 on the page and the sidebar', () => {
-  const css = readFileSync(new URL('../web/site-theme.css', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../web/tokens.css', import.meta.url), 'utf8');
   const block = (sel: string) => css.slice(css.indexOf(`${sel} {`), css.indexOf('}', css.indexOf(`${sel} {`)));
   const token = (b: string, name: string) => /#[0-9a-f]{6}/i.exec(new RegExp(`--${name}:\\s*([^;]+);`).exec(b)?.[1] ?? '')?.[0];
   const lum = (hex: string) => {

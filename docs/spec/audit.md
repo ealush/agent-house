@@ -77,7 +77,7 @@ sidebar, header and History say "Claude Code" and "Opus 5.5" (A-20).
 | A-21 | S2 | The fork dialog names the session by its window name ("Copies "claude"…", name "claude (fork)") instead of its title. | `ForkDialog.tsx` | **fix** → **fixed: the title everywhere** |
 | A-24 | S2 | Row menus disagree: the sidebar row's ··· has Fork and Terminate only; Rename and Pin are only in the session's own menu. | `Sidebar.tsx` | **design** (one session menu, everywhere) |
 | A-09 | S2 | The CLI can't answer a prompt, stop a turn, terminate, rename or pin, which agents driving agents need. | `bin/cli.js` | **call** (CLI parity is an addition during a freeze) → **decided: added answer, stop, terminate, rename, pin** |
-| A-17 | S2 | Two token layers: `styles.css` (amber, Inter, radius 12) and `site-theme.css` over it (pink, Rubik, radius 10); components are styled in both. | CSS | **design** → one token file |
+| A-17 | S2 | Two token layers: `styles.css` (amber, Inter, radius 12) and `site-theme.css` over it (pink, Rubik, radius 10); components are styled in both. | CSS | **design** → one token file → **fixed: web/tokens.css** |
 | A-01 | S3 | Part of the HTTP API is addressed by tmux window id (diff, branches, pull, side chat, rename, kill, capture), the rest by session uid. Invisible to users, but a resume between a request and its answer targets a dead window. | `server/main.ts` | **fix** (uid routes, keep window routes as aliases) → **fixed: /api/sessions/:uid/…** |
 | A-02 | S3 | The tagline folds done and limited into "idle" ("4 idle") while the section is "Idle and done". | `web/status.ts` | **fix** → **fixed: one count per word** |
 | A-04 | S3 | The phone header shows the view twice: icons in the glass capsule and the first tab. | `Session.tsx` | **design** |
@@ -86,12 +86,12 @@ sidebar, header and History say "Claude Code" and "Opus 5.5" (A-20).
 | A-13 | S3 | Keycaps draw Mac glyphs (⌃ ⌥) on Linux while tooltips, the README and the palette's search say "Ctrl+Alt". | `shortcuts.tsx` | **call** (glyphs everywhere, or words off Mac) → **decided: words off a Mac** |
 | A-16 | S3 | The stale-server banner says to run `pnpm serve` rather than offering Settings → System's Restart. | `App.tsx` | **fix** → **fixed: the banner restarts** |
 | A-18 | S3 | "This device" is a card in both Security (name) and System (reload). | `Security.tsx`, `System.tsx` | **fix** → **fixed: Reload joins Server** |
-| A-20 | S3 | Status pills and the Inbox card's agent / model / project chips are lowercase monospace; everywhere else these are sans and title case ("Opus 5.5"). | CSS | **design** |
+| A-20 | S3 | Status pills and the Inbox card's agent / model / project chips are lowercase monospace; everywhere else these are sans and title case ("Opus 5.5"). | CSS | **design** → **fixed: pills and tags in the UI face** |
 | A-22 | S3 | The fork dialog shows an informational note (uncommitted changes stay behind) as a red error. | `ForkDialog.tsx` | **design** |
 | A-25 | S3 | The composer's Effort chip shows no value at the default, while Model shows the model in use. | `Composer.tsx` | **fix** ("Effort: auto" or the level) → **fixed: Effort: Default** |
 | A-26 | S3 | New session opens on Shell for a device with no history, though agents are the product's point; the Project field starts at the projects root on desktop and `~` on a phone. | `NewDialog.tsx` | **call** → **decided: Agent, the latest project** |
 | A-27 | S3 | Files panel: the toolbar's icons are unlabeled, the roots select truncates to "Roots…", Insert sits beside every row. | `Files.tsx` | **design** |
-| A-29 | S3 | The app icon, manifest and apple-touch icon are still in the retired amber palette while the app is pink. | `web/public/icon.svg` | **design** (redrawn in the design system's Logo group) |
+| A-29 | S3 | The app icon, manifest and apple-touch icon are still in the retired amber palette while the app is pink. | `web/public/icon.svg` | **design** (redrawn in the design system's Logo group) → **fixed: icon, PNGs, theme color, terminal** |
 | A-28 | S3 | Settings sections have icons in the palette but none in the page's section list. | `Settings.tsx` | **design** |
 
 ## Already open (from earlier passes, still true)

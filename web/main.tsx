@@ -18,9 +18,9 @@ installEdges();
 // ⌘↵ / Ctrl+↵ presses the main button, signed in or on the lock screen (confirm.ts).
 window.addEventListener('keydown', confirmKey);
 // Fonts ship with the app: nothing loads from third parties.
-import '@fontsource-variable/inter';
 import '@fontsource-variable/jetbrains-mono';
 import '@fontsource-variable/rubik';
+import './tokens.css';
 import './styles.css';
 import './site-theme.css';
 

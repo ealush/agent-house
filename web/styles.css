@@ -1,160 +1,4 @@
-:root {
-  --bg: #0a0b0d;
-  --surface: #111316;
-  --raised: #171a1e;
-  --sunken: #0b0d10;
-  --line: #22252a;
-  --line-2: #2d3137;
-  --text: #ececed;
-  --muted: #9a9ea6;
-  --faint: #62666e;
-
-  --accent: #f2b44b;
-  --accent-ink: #1b1306;
-  --accent-bg: color-mix(in srgb, var(--accent) 6%, transparent);
-  --accent-line: color-mix(in srgb, var(--accent) 24%, transparent);
-  --run: #5b9cf6;
-  --done: #3fbf86;
-  --danger: #ef6b73;
-  --danger-ink: #1b0608;
-  /* Soft black for popover/dialog shadows; a cooler ink in light mode. */
-  --shadow: #000;
-  /* Depth, two steps. Each is a lit top edge, a tight contact shadow and a wide
-     soft one, so a layer reads as lifted, not outlined. Menus, popovers and
-     toasts take 1; dialogs take 2. Floating layers are frosted (--glass). */
-  --elev-0: 0 1px 2px rgb(0 0 0 / 0.2), 0 10px 28px -14px rgb(0 0 0 / 0.6);
-  --elev-1: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 1px 2px rgb(0 0 0 / 0.3), 0 12px 32px -8px rgb(0 0 0 / 0.55);
-  --elev-2: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 2px 6px rgb(0 0 0 / 0.3), 0 32px 80px -16px rgb(0 0 0 / 0.7);
-  /* Liquid glass. Clear enough to show what's behind it, blurred and its
-     color lifted; lit from above, so a sheen falls across the top and a rim
-     catches the light at the top left and again, fainter, at the bottom
-     right; thick, so its edges glow and its underside sits in shadow. A
-     surface takes --glass-fill over a transparent 1px border, and
-     --glass-depth ahead of its elevation shadow. */
-  --glass-tint: color-mix(in srgb, var(--raised) 62%, transparent);
-  --glass: var(--glass-tint);
-  --glass-blur: blur(22px) saturate(2) brightness(1.06);
-  --glass-sheen:
-    radial-gradient(130% 70% at 18% -12%, rgb(255 255 255 / 0.16), transparent 62%),
-    linear-gradient(180deg, rgb(255 255 255 / 0.06), transparent 40%, transparent 78%, rgb(255 255 255 / 0.04));
-  --glass-rim: linear-gradient(150deg, rgb(255 255 255 / 0.5), rgb(255 255 255 / 0.1) 28%, rgb(255 255 255 / 0.04) 62%, rgb(255 255 255 / 0.26));
-  --glass-fill: var(--glass-sheen), linear-gradient(var(--glass-tint), var(--glass-tint)) padding-box, var(--glass-rim) border-box;
-  --glass-depth: inset 0 1px 0 rgb(255 255 255 / 0.14), inset 0 10px 18px -14px rgb(255 255 255 / 0.22), inset 0 -12px 22px -16px rgb(0 0 0 / 0.4);
-  /* A tall panel (the sidebar) is the same glass, tinted denser. */
-  --glass-panel: color-mix(in srgb, var(--raised) 78%, var(--bg));
-  /* What lights a pressed glass control. */
-  --glass-press: rgb(255 255 255 / 0.1);
-
-  --c-shell: #9aa3ae;
-  --c-claude: #e08a5f;
-  --c-codex: #7aa7ff;
-  --c-gemini: #6f9ef8;
-  --c-grok: #b9bec7;
-  --c-muse: #b18cf2;
-  --c-hermes: #e8c45a;
-  --c-opencode: #5fc4b0;
-  --c-cursor: #c9cdd4;
-  --c-copilot: #a5b4fc;
-  --c-crush: #f2a3c7;
-  --c-pi: #f0c674;
-  --c-other: #9a9ea6;
-
-  --ui: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --mono: 'JetBrainsMono Nerd Font', 'JetBrains Mono Variable', 'SF Mono', Menlo, ui-monospace, monospace;
-  --vh: 100dvh;
-  --radius: 12px;
-  /* Motion: one curve, two speeds. Small state changes are fast; things that arrive take a beat longer. */
-  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
-  --dur-1: 120ms;
-  --dur-2: 200ms;
-  /* Behind every modal and sheet: one depth, one color. */
-  --scrim: #040507a0;
-  /* The home indicator's strip. Zero while the keyboard covers it. */
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
-  /* What a bottom bar actually needs: the indicator is a thin line ~8pt up, so
-     controls clear it with the inset less 14pt, not the whole 34pt. */
-  --safe-pad: max(calc(var(--safe-bottom) - 14px), 0px);
-
-  color-scheme: dark;
-}
-
-/* Light theme: flat white surfaces, hairline borders, and the site pink —
-   accented one step darker than the brand #E91E63 so text and white-on-fill
-   both keep contrast. */
-:root[data-theme='light'] {
-  --bg: #edeff2;
-  --surface: #ffffff;
-  --raised: #ffffff;
-  --sunken: #f2f4f6;
-  --line: #e6e8ec;
-  --line-2: #d4d8de;
-  --text: #333333;
-  --muted: #757575;
-  --faint: #6e7480;
-
-  --accent: #d81b60;
-  --accent-ink: #ffffff;
-  --run: #1f47c8;
-  --done: #1e7f4f;
-  --danger: #b93a0b;
-  --danger-ink: #ffffff;
-  --shadow: #232a36;
-  --elev-0: 0 1px 2px rgb(35 42 54 / 0.06), 0 10px 28px -14px rgb(35 42 54 / 0.18);
-  --elev-1: 0 0 0 0.5px rgb(35 42 54 / 0.04), 0 1px 2px rgb(35 42 54 / 0.08), 0 12px 32px -8px rgb(35 42 54 / 0.2);
-  --elev-2: 0 2px 6px rgb(35 42 54 / 0.08), 0 32px 80px -16px rgb(35 42 54 / 0.32);
-  /* Light glass is white frost: denser than dark (over a dark terminal a thin
-     frost turns muddy), brightened behind, with a white sheen and a white rim
-     over a hairline that keeps its edge on a white page. */
-  --glass-tint: color-mix(in srgb, #ffffff 70%, transparent);
-  --glass-blur: blur(22px) saturate(1.9) brightness(1.12);
-  --glass-sheen:
-    radial-gradient(130% 70% at 18% -12%, rgb(255 255 255 / 0.75), transparent 62%),
-    linear-gradient(180deg, rgb(255 255 255 / 0.35), transparent 45%);
-  --glass-rim: linear-gradient(150deg, #ffffff, rgb(255 255 255 / 0.55) 25%, rgb(35 42 54 / 0.12) 62%, rgb(255 255 255 / 0.85));
-  --glass-depth: inset 0 1px 0 rgb(255 255 255 / 0.95), inset 0 -12px 22px -18px rgb(35 42 54 / 0.18);
-  --glass-press: rgb(35 42 54 / 0.06);
-
-  --c-shell: #5b6570;
-  --c-claude: #a8511f;
-  --c-codex: #2f5fd0;
-  --c-gemini: #2b5fc7;
-  --c-grok: #67707a;
-  --c-muse: #6d3fd4;
-  --c-hermes: #8a6300;
-  --c-opencode: #14705e;
-  --c-cursor: #3f4650;
-  --c-copilot: #4f46b8;
-  --c-crush: #a3336b;
-  --c-pi: #8a6300;
-  --c-other: #6e7480;
-
-  color-scheme: light;
-}
-
-/* Reduce Transparency: glass becomes the solid surface it stands for. Increase
-   Contrast: solid too, with a real outline. */
-@media (prefers-reduced-transparency: reduce) {
-  :root,
-  :root[data-theme] {
-    --glass-tint: var(--raised);
-    --glass-panel: var(--raised);
-    --glass-blur: none;
-    --glass-sheen: linear-gradient(transparent, transparent);
-    --glass-depth: 0 0 transparent;
-  }
-}
-
-@media (prefers-contrast: more) {
-  :root,
-  :root[data-theme] {
-    --glass-tint: var(--raised);
-    --glass-panel: var(--raised);
-    --glass-blur: none;
-    --glass-sheen: linear-gradient(transparent, transparent);
-    --glass-depth: 0 0 transparent;
-    --glass-rim: linear-gradient(var(--muted), var(--muted));
-  }
-}
+/* Tokens live in tokens.css. */
 
 * {
   box-sizing: border-box;
@@ -1472,14 +1316,14 @@ a.pill:hover {
 
 /* The terminal itself stays dark in both UI themes, so its gutter does too. */
 :root[data-theme='light'] .term-wrap {
-  background: var(--term-bg, #0e1014);
+  background: var(--term-bg, var(--sunken));
 }
 
 /* A phone has no width to spare: the terminal runs edge to edge, in its own color. */
 .narrow .term-wrap {
   margin: 0;
   padding: 4px 2px 0 6px;
-  background: var(--term-bg, #0e1014);
+  background: var(--term-bg, var(--sunken));
   border-top: 1px solid var(--line);
 }
 

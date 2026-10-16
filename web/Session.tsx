@@ -1045,7 +1045,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
               <span key={statusClass(w)} className={`pill ${statusClass(w)} ${changed ? 'pill-change' : ''}`}>
                 {w.status === 'waiting' && <span className="dot waiting" />} {statusWord(w)}
               </span>
-              {multiHost && <span className="pill mono">{w.host}</span>}
+              {multiHost && <span className="pill">{w.host}</span>}
               {w.queued > 0 && (
                 <button className="pill waiting" onClick={() => openPanel('queue')} title="Review queued messages">
                   ⇥ {w.queued} queued
