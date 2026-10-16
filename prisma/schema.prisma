@@ -94,3 +94,123 @@ model Setting {
   key   String @id
   value String
 }
+
+// Stack review (docs/stack-review.md): a tree of PRs reviewed one layer at a
+// time. GitHub stays the source of truth for PR state; these rows hold what
+// GitHub doesn't: merge order, roles, revisions you reviewed, findings,
+// what was sent to which agent, and decisions you accepted. Threads are
+// ChatMessage rows keyed `review:<stack>` and `review:<stack>:<pr>`.
+model ReviewStack {
+  id          String  @id
+  repoRoot    String
+  repo        String
+  trunk       String
+  title       String
+  planPath    String?
+  ownerUid    String?
+  ownerKey    String?
+  mergeMethod String  @default("merge")
+  state       String  @default("open")
+  createdAt   Int     @default(0)
+  syncedAt    Int     @default(0)
+  syncError   String?
+}
+
+model ReviewLayer {
+  stackId       String
+  pr            Int
+  position      Int
+  role          String  @default("")
+  state         String  @default("open")
+  title         String  @default("")
+  url           String  @default("")
+  author        String  @default("")
+  headRef       String  @default("")
+  baseRef       String  @default("")
+  headSha       String  @default("")
+  baseSha       String  @default("")
+  draft         Boolean @default(false)
+  mergeable     String?
+  checksJson    String  @default("{}")
+  needs         String  @default("")
+  currentRevId  Int?
+  /// The revision you last reviewed (approved it, or sent findings against it): "since review" diffs from here.
+  reviewedRevId Int?
+  approved      Boolean @default(false)
+  ownerUid      String?
+  ownerKey      String?
+
+  @@id([stackId, pr])
+}
+
+model ReviewRevision {
+  id          Int     @id @default(autoincrement())
+  stackId     String
+  pr          Int
+  baseSha     String
+  headSha     String
+  patchId     String
+  files       Int     @default(0)
+  additions   Int     @default(0)
+  deletions   Int     @default(0)
+  summary     String?
+  summaryAt   Int?
+  verdictJson String?
+  createdAt   Int     @default(0)
+
+  @@unique([stackId, pr, baseSha, headSha])
+  @@index([stackId, pr])
+}
+
+model ReviewFinding {
+  id         Int     @id @default(autoincrement())
+  stackId    String
+  ownerPr    Int
+  foundOnPr  Int
+  revisionId Int?
+  messageId  Int?
+  path       String?
+  lineStart  Int?
+  lineEnd    Int?
+  title      String
+  body       String  @default("")
+  severity   String  @default("should")
+  source     String  @default("you")
+  ghThread   String?
+  ghUrl      String?
+  state      String  @default("open")
+  note       String?
+  dispatchId Int?
+  createdAt  Int     @default(0)
+  updatedAt  Int     @default(0)
+
+  @@index([stackId, ownerPr])
+}
+
+model ReviewDispatch {
+  id          Int     @id @default(autoincrement())
+  stackId     String
+  pr          Int
+  targetUid   String
+  targetKey   String
+  text        String
+  fromRevId   Int?
+  fromHead    String  @default("")
+  queueId     String?
+  state       String  @default("sent")
+  sawWork     Boolean @default(false)
+  sentAt      Int     @default(0)
+  doneAt      Int?
+
+  @@index([stackId, state])
+}
+
+model ReviewDecision {
+  id      Int    @id @default(autoincrement())
+  stackId String
+  text    String
+  fromPr  Int?
+  at      Int    @default(0)
+
+  @@index([stackId])
+}

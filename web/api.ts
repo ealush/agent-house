@@ -163,7 +163,7 @@ export type Preset = {
 
 export type Host = { name: string; self: boolean; online: boolean };
 
-export const API_VERSION = 23;
+export const API_VERSION = 24;
 
 export type PullInfo = { number: number | null; url: string | null };
 
