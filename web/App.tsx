@@ -64,9 +64,12 @@ import { CommandPalette, Keycaps, Shortcuts, ShortcutsDialog, WhichKey, shortcut
 import { TabBar } from './TabBar.tsx';
 import { errorText } from './errors.ts';
 import { sectionHash, settingsNodes } from './settingsMenu.ts';
+import { reviewHash } from './reviewApi.ts';
+import { ReviewContext } from './reviewContext.ts';
 
 // Pages and dialogs most visits never open load on first use.
 const Settings = lazy(() => import('./Settings.tsx').then((m) => ({ default: m.Settings })));
+const ReviewPage = lazy(() => import('./review/ReviewPage.tsx'));
 const ChatSearchDialog = lazy(() => import('./ChatHistory.tsx').then((m) => ({ default: m.ChatSearchDialog })));
 
 function scratchKey(): string | null {
@@ -110,15 +113,17 @@ function stored<T extends string>(key: string, fallback: T): [T, (v: T) => void]
 // URL hash: "#<uid>" (local session), "#<host>/<uid>" (peer session), "#history", "#sessions".
 // "#security" still lands on settings, where Security lives now. Old links
 // ("#@12", a tmux window id) still open: App upgrades them once windows are known.
-const PAGES = ['history', 'sessions', 'settings', 'search'] as const;
+const PAGES = ['history', 'sessions', 'settings', 'search', 'review'] as const;
 /** The sidebar's pages, top to bottom (its sessions follow), so navigation knows which way it goes. */
-const NAV_PAGES = ['inbox', 'history', 'settings'] as const;
+const NAV_PAGES = ['inbox', 'review', 'history', 'settings'] as const;
 const sameRoute = (a: { page: Page; selected: string | null }, b: { page: Page; selected: string | null }) => a.page === b.page && a.selected === b.selected;
 
 function fromHash(): { page: Page; selected: string | null } {
   let h = '';
   try { h = decodeURIComponent(location.hash.slice(1)); } catch {}
   if (h === 'security' || h.startsWith('settings/')) h = 'settings';
+  // Review keeps its own place after the page: #review/<stack>/<pr> (web/review/ReviewPage.tsx).
+  if (h.startsWith('review/')) h = 'review';
   if ((PAGES as readonly string[]).includes(h)) return { page: h as Page, selected: null };
   if (/^(?:[\w.-]+\/)?(?:@\d+|[\w-]{4,40})$/.test(h)) return { page: 'inbox', selected: h };
   return { page: 'inbox', selected: null };
@@ -256,9 +261,9 @@ export function App({ onLock }: { onLock: () => void }) {
    * up the current place (an upgraded link) replaces it, and a popstate has
    * already moved the URL.
    */
-  function go(next: { page?: Page; selected?: string | null }, how: { still?: boolean; history?: 'push' | 'replace' | 'none' } = {}) {
+  function go(next: { page?: Page; selected?: string | null }, how: { still?: boolean; history?: 'push' | 'replace' | 'none'; path?: string } = {}) {
     const route = { page: next.page ?? page, selected: next.selected === undefined ? selected : next.selected };
-    const hash = route.selected ?? (route.page === 'inbox' ? '' : route.page);
+    const hash = route.selected ?? (route.page === 'inbox' ? '' : (how.path ?? route.page));
     const mode = how.history ?? (sameRoute(route, { page, selected }) ? 'replace' : 'push');
     const url = hash ? `#${hash}` : location.pathname;
     if (mode === 'push') history.pushState({ ah: route, back: { page, selected } }, '', url);
@@ -325,6 +330,19 @@ export function App({ onLock }: { onLock: () => void }) {
     setFocusPath(null);
     go({ page: p, selected: null });
   };
+  /** A stack under review, or one of its layers (Inbox cards, session banners). */
+  const openReview = (stack: string, pr?: number | null) => {
+    const path = reviewHash(stack, pr);
+    if (page === 'review' && !selected) {
+      // Review already shows: a new place inside it, which it hears as a popstate.
+      history.pushState({ ah: { page: 'review', selected: null }, back: { page: 'review', selected: null } }, '', `#${path}`);
+      window.dispatchEvent(new PopStateEvent('popstate', { state: history.state }));
+      return;
+    }
+    setLayout(null);
+    setFocusPath(null);
+    go({ page: 'review', selected: null }, { path });
+  };
 
   const focusPane = (dir: PaneDir) => {
     if (!layout) return;
@@ -365,6 +383,7 @@ export function App({ onLock }: { onLock: () => void }) {
   useCommand('cycle-next', () => cycleSession(1));
   useCommand('go-inbox', () => showPage('inbox'));
   useCommand('go-history', () => showPage('history'));
+  useCommand('go-review', () => showPage('review'));
   useCommand('go-settings', () => showPage('settings'));
   useCommand('show-shortcuts', () => setKeymap(true));
   useCommand('reload-page', () => window.location.reload());
@@ -977,7 +996,11 @@ export function App({ onLock }: { onLock: () => void }) {
   // session while a swipe from the edge pulls the session away (useSwipeBack).
   const pages = state && (
     <>
-      {shown === 'search' ? (
+      {shown === 'review' ? (
+        <Suspense fallback={<div className="page" />}>
+          <ReviewPage client={clientFor(state.hostname)} state={state} narrow={narrow} onOpenSession={(uid) => open(uid)} />
+        </Suspense>
+      ) : shown === 'search' ? (
         <SearchView key={searchQuery} initialQuery={searchQuery} client={clientFor(state.hostname)} onOpenHit={openSearchHit} />
       ) : shown === 'settings' ? (
         <Suspense fallback={<div className="page" />}>
@@ -1009,6 +1032,7 @@ export function App({ onLock }: { onLock: () => void }) {
           onNew={() => setCreating({})}
           onSearch={() => setSwitching(true)}
           onSettings={() => go({ page: 'settings', selected: null })}
+          onReview={openReview}
           handoff={narrow ? handoff : null}
           onResume={(h) => resume(h.host, h.ref)}
         />
@@ -1023,6 +1047,7 @@ export function App({ onLock }: { onLock: () => void }) {
     <PresetsContext.Provider value={presetFor}>
     <HostPresetsContext.Provider value={(host) => hostState(host)?.presets ?? []}>
     <ResumeContext.Provider value={state ? { history: state.history, resume: (h) => resumeKey(h.host, h.ref), discard: terminate } : null}>
+    <ReviewContext.Provider value={{ host: state?.hostname ?? '', state: state?.review ?? null, open: openReview }}>
     <div className={`app ${narrow ? 'narrow' : ''}`}>
       <Shortcuts />
       <WhichKey />
@@ -1319,6 +1344,7 @@ export function App({ onLock }: { onLock: () => void }) {
         </div>
       )}
     </div>
+    </ReviewContext.Provider>
     </ResumeContext.Provider>
     </HostPresetsContext.Provider>
     </PresetsContext.Provider>

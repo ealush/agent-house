@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ensureMigrated, getDb } from './db.ts';
 import { SideChatStore } from './sidechat.ts';
-import { ReviewService, readTextFile, type SessionLite } from './review/service.ts';
+import { ReviewService, readTextFile, threadTitle, type SessionLite } from './review/service.ts';
 
 // A stand-in `gh`: PR state lives in a JSON file, and merge/edit/ready
 // change it the way GitHub would. Every call is logged.
@@ -323,7 +323,7 @@ test('review: GitHub threads become findings once; resolving replies and resolve
     const bot = fs.find((f) => f.source === 'bot:chatgpt-codex-connector')!;
     assert.equal(bot.severity, 'blocking');
     assert.equal(bot.state, 'open');
-    assert.equal(bot.title, 'P1 Badge Return value is wrong');
+    assert.equal(bot.title, 'Return value is wrong');
     assert.equal(fs.find((f) => f.source === 'gh:me')!.state, 'addressed');
     const done = await t.svc.resolveThread(v.id, bot.id, 'Fixed in abc.');
     assert.equal(done.state, 'addressed');
@@ -333,13 +333,21 @@ test('review: GitHub threads become findings once; resolving replies and resolve
   });
 });
 
+test('review: bot thread titles lose their badges and markup', () => {
+  const codex = threadTitle('**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Keep schema-only validity after rebuilds**\n\nAfter a passing run, resetField() flips valid.');
+  assert.deepEqual([codex.title, codex.level], ['Keep schema-only validity after rebuilds', 'should']);
+  const plain = threadTitle('nit: rename this. It reads oddly.');
+  assert.deepEqual([plain.title, plain.level], ['nit: rename this.', null]);
+});
+
 test('review: plan labels, merge order rules, skipped layers', async () => {
   const t = await setup();
   await withGh(t.w, async () => {
     let v = await t.svc.create(t.w.local, 1);
     const plan = join(t.w.parent, 'plan.md');
-    await writeFile(plan, '| Owner | PR |\n|---|---|\n| H0 | #1 |\n| F1 | #2 |\n');
+    await writeFile(plan, '# Schema relationships: current feature plan\n\n| Owner | PR |\n|---|---|\n| H0 | #1 |\n| F1 | #2 |\n');
     v = await t.svc.update(v.id, { planPath: plan });
+    assert.equal(v.title, 'Schema relationships', "a stack named after its bottom PR takes the plan's title");
     assert.equal(v.layers.find((l) => l.pr === 1)!.role, 'H0');
     assert.equal(v.layers.find((l) => l.pr === 2)!.role, 'F1');
     assert.match((await t.svc.plan(v.id)).text!, /H0/);

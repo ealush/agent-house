@@ -31,6 +31,7 @@ export type CommandId =
   | 'toggle-sidebar'
   | 'go-inbox'
   | 'go-history'
+  | 'go-review'
   | 'go-settings'
   | 'toggle-view'
   | 'toggle-steps'
@@ -191,6 +192,14 @@ export const COMMANDS: Command[] = [
     label: 'History',
     detail: 'Open the history page.',
     chords: [{ key: '2', ctrl: true, shift: true }],
+    scopes: nav,
+  },
+  {
+    id: 'go-review',
+    group: 'Navigate',
+    label: 'Review',
+    detail: 'Open Review: your pull request stacks, one layer at a time.',
+    chords: [{ key: '4', ctrl: true, shift: true }],
     scopes: nav,
   },
   {

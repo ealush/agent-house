@@ -413,7 +413,7 @@ export class ReviewService {
                 key: 'checks',
                 ok: checks.fail === 0 && checks.pending === 0,
                 label: 'Checks passed',
-                detail: checks.fail ? `Failing: ${checks.failing.join(', ')}` : checks.pending ? `${checks.pending} pending` : checks.pass ? undefined : 'No checks reported',
+                detail: checks.fail ? `Failing: ${checks.failing.join(', ')}` : checks.pending ? `${checks.pending} check${checks.pending === 1 ? '' : 's'} running` : checks.pass ? undefined : 'No checks reported',
               },
               { key: 'mergeable', ok: !l.draft && l.mergeable !== 'CONFLICTING', label: l.draft ? 'Draft' : 'Mergeable', detail: l.draft ? 'Mark it ready first' : l.mergeable === 'CONFLICTING' ? `Conflicts with ${l.baseRef}` : undefined },
               { key: 'base', ok: l.baseRef === s.trunk, label: `Targets ${s.trunk}`, detail: l.baseRef === s.trunk ? undefined : `Targets ${l.baseRef}` },
@@ -491,6 +491,10 @@ export class ReviewService {
           throw new ReviewError(400, `can't read the plan: ${(err as Error).message}`);
         });
         data.planPath = patch.planPath;
+        // A stack still named after its bottom PR takes the plan's own title.
+        const root = await this.db.reviewLayer.findFirst({ where: { stackId: id }, orderBy: { position: 'asc' } });
+        const h1 = text.match(/^#\s+(.+)$/m)?.[1].replace(/\s*[:\-–—]\s*(?:current\s+)?(?:feature\s+)?plan$/i, '').trim();
+        if (h1 && patch.title === undefined && (!root || s.title === root.title)) data.title = h1.slice(0, 120);
         // The plan's owner table labels the layers it names (H0, F1…); labels you set stay.
         const roles = planRoles(text);
         for (const l of await this.db.reviewLayer.findMany({ where: { stackId: id } })) {
@@ -772,8 +776,7 @@ export class ReviewService {
       if (known.has(t.id) || !t.comments.length) continue;
       const first = t.comments[0];
       const bot = /\[bot\]$|^chatgpt-codex-connector|^coderabbit/i.test(first.author);
-      const text = first.body.replace(/<!--[\s\S]*?-->/g, '').trim();
-      const title = (text.split('\n').map((x) => x.replace(/^[#>*\s-]+|\*\*/g, '').trim()).find((x) => x.length > 3) ?? 'Review comment').slice(0, 140);
+      const { title, text, level } = threadTitle(first.body);
       const reply = t.comments.slice(1).map((c) => `${c.author}: ${c.body}`).join('\n\n');
       await this.db.reviewFinding.create({
         data: {
@@ -783,7 +786,7 @@ export class ReviewService {
           revisionId: l.currentRevId,
           title,
           body: `${text}${reply ? `\n\n---\n${reply}` : ''}`.slice(0, 4000),
-          severity: /\bP[01]\b|critical|blocking/i.test(text.slice(0, 200)) ? 'blocking' : 'should',
+          severity: level ?? (/critical|blocking/i.test(text.slice(0, 200)) ? 'blocking' : 'should'),
           path: t.path,
           lineStart: t.startLine ?? t.line,
           lineEnd: t.line,
@@ -863,7 +866,7 @@ export class ReviewService {
     const lines: string[] = [`Review of ${label(l)} "${l.title}" (branch ${l.headRef}) at ${short}.${picked.length ? ' Please fix:' : ''}`, ''];
     picked.forEach((f, i) => {
       const where = f.path ? ` ${f.path}${f.lineStart ? `:${f.lineStart}${f.lineEnd && f.lineEnd !== f.lineStart ? `-${f.lineEnd}` : ''}` : ''}` : '';
-      lines.push(`${i + 1}. [${f.severity}] ${f.title}.${where}`);
+      lines.push(`${i + 1}. [${f.severity}] ${f.title.replace(/[.!?:;]+$/, '')}.${where}`);
       const body = f.body.split('\n---\n')[0].trim();
       if (body) lines.push(...body.split('\n').slice(0, 12).map((x) => `   ${x}`));
       if (f.ghUrl) lines.push(`   (GitHub thread: ${f.ghUrl})`);
@@ -1241,6 +1244,24 @@ export class ReviewService {
     }
   }
   private snapshotPrimed = false;
+}
+
+/**
+ * A review comment's title: its first sentence, without the badge images,
+ * HTML and markdown that bots wrap it in. Codex's P0–P3 badges set severity.
+ */
+export function threadTitle(body: string): { title: string; text: string; level: 'blocking' | 'should' | 'nit' | null } {
+  const badge = body.match(/\bP([0-3])\b(?:\s*Badge)?/);
+  const level = badge ? (badge[1] === '0' || badge[1] === '1' ? 'blocking' : badge[1] === '2' ? 'should' : 'nit') : null;
+  const text = body
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\bP[0-3]\s*Badge\b/g, '')
+    .trim();
+  const line = text.split('\n').map((x) => x.replace(/^[#>*\s-]+|\*\*|__/g, '').trim()).find((x) => x.length > 3) ?? 'Review comment';
+  const sentence = line.match(/^(.{8,}?[.!?])(\s|$)/)?.[1] ?? line;
+  return { title: sentence.slice(0, 140), text, level };
 }
 
 /** Read a plan file: a regular text file, capped. The caller decides which paths are allowed. */
