@@ -153,7 +153,8 @@ session's checkout; shows the pull request when there is one.
 Copies the conversation under a new id into a fresh `ah/<slug>` worktree, from
 the last commit (uncommitted changes are named, not carried), with an optional
 first message, model, effort and permissions. Claude Code, Codex, Muse.
-Lineage in `ah.fork` meta: a fork count on the parent, "Fork of …" on the
+The dialog, the default name ("Docs link audit (fork)") and the fork use the
+session's title. Lineage in `ah.fork` meta: a fork count on the parent, "Fork of …" on the
 child. From the session menu, sidebar row menu, History row menu, palette,
 ⌃⌥F, `ah fork`. Open: forking from a mid-transcript point.
 

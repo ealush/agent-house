@@ -266,7 +266,7 @@ export const COMMANDS: Command[] = [
   {
     id: 'toggle-view',
     group: 'Session',
-    label: 'Terminal / GUI',
+    label: 'GUI or terminal',
     detail: 'Switch the focused session between the terminal and the transcript GUI.',
     chords: [{ key: 'g', ctrl: true, shift: true }],
     scopes: session,
@@ -324,7 +324,7 @@ export const COMMANDS: Command[] = [
   {
     id: 'send-now',
     group: 'Session',
-    label: 'Send the next queued message now',
+    label: 'Send next queued now',
     detail: 'Stop the current turn and deliver the oldest queued follow-up right away.',
     chords: [{ key: 's', ctrl: true, alt: true }],
     scopes: act,
@@ -332,7 +332,7 @@ export const COMMANDS: Command[] = [
   {
     id: 'clear-queue',
     group: 'Session',
-    label: 'Cancel all queued messages',
+    label: 'Cancel all queued',
     detail: 'Drop every follow-up waiting for this session.',
     chords: [],
     scopes: act,
@@ -413,57 +413,62 @@ export const COMMANDS: Command[] = [
   {
     id: 'pin',
     group: 'Session',
-    label: 'Pin or unpin',
-    detail: 'Keep this session at the top of the sidebar.',
+    label: 'Pin',
+    detail: 'Keep the session at the top of its group, on every device; again to unpin.',
     chords: [],
     scopes: act,
   },
   {
     id: 'panel-diff',
     group: 'Session',
-    label: 'Panel: Diff',
+    label: 'Diff',
     detail: 'Show the git changes beside the session. Again to close.',
     chords: [{ key: '1', ctrl: true, alt: true }],
     scopes: act,
+    terms: ['panel'],
   },
   {
     id: 'panel-files',
     group: 'Session',
-    label: 'Panel: Files',
+    label: 'Files',
     detail: 'Browse files beside the session. Again to close.',
     chords: [{ key: '2', ctrl: true, alt: true }],
     scopes: act,
+    terms: ['panel'],
   },
   {
     id: 'panel-chat',
     group: 'Session',
-    label: 'Panel: Side chat',
+    label: 'Chat',
     detail: 'Discuss this work with another model. Again to close.',
     chords: [{ key: '3', ctrl: true, alt: true }],
     scopes: act,
+    terms: ['panel'],
   },
   {
     id: 'panel-queue',
     group: 'Session',
-    label: 'Panel: Queue',
+    label: 'Queue',
     detail: 'Review, send or cancel queued follow-ups. Again to close.',
     chords: [{ key: '4', ctrl: true, alt: true }],
     scopes: act,
+    terms: ['panel'],
   },
   {
     id: 'panel-snapshots',
     group: 'Session',
-    label: 'Panel: Snapshots',
+    label: 'Snapshots',
     detail: 'Per-turn snapshots and restore. Again to close.',
     chords: [{ key: '5', ctrl: true, alt: true }],
     scopes: act,
+    terms: ['panel'],
   },
   {
     id: 'panel-preview',
     group: 'Session',
-    label: 'Panel: Preview',
+    label: 'Preview',
     detail: 'A dev server running in this session (Storybook, Vite…), in a browser pane served from the host. Again to close.',
-    terms: ['browser', 'storybook', 'localhost'],
+    terms: ['browser', 'storybook', 'panel'],
     chords: [{ key: '6', ctrl: true, alt: true }],
     scopes: act,
   },
@@ -1107,4 +1112,9 @@ export function handleShortcutKey(e: KeyboardEvent) {
   if (!id || !runCommand(id)) return;
   e.preventDefault();
   e.stopPropagation();
+}
+
+/** A command's label, the same words wherever it is offered: menus, the palette, the shortcut table. */
+export function commandLabel(id: CommandId): string {
+  return COMMANDS.find((c) => c.id === id)?.label ?? id;
 }

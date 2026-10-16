@@ -7,7 +7,8 @@ detail, chords, scopes, search terms): 84 commands in three groups
 (Navigate, Session, Workspace; the last includes workspace 1–9 and send to
 workspace 1–9). Menus,
 the palette, the shortcut table, which-key and chord hints all read labels
-and chords from it, so a command reads the same everywhere. → A-12.
+and chords from it (`commandLabel`), so a command reads the same everywhere:
+"Diff", "Queue", "Pin", "Send next queued now", "Copy attach command".
 
 Rules:
 

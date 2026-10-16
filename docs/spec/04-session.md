@@ -25,14 +25,14 @@ Chat, Snapshots, Preview, scrolling sideways with edge fades.
 ··· or ⌃⌥. Desktop: a popover; phone: an iOS action sheet (grouped, 48 px rows,
 Cancel apart, drag down to close). Rows, each with its chord:
 
-- Rename · Branch (phone) · Fork session… · Send to… · **Continue in** (a row
-  of agent marks; names under them on a phone) · Pin to top
-- Diff · Files · Chat · Queued messages (n) · Send next queued now ·
+- Rename session · Switch branch… · Fork session… · Send to… · **Continue in** (a row
+  of agent marks; names under them on a phone) · Pin
+- Diff · Files · Chat · Queue (n) · Send next queued now ·
   Snapshots · Preview
 - Split right · Split below · Flip split · Replace pane… · Close pane
   (desktop, in a split)
-- Scrollback as text · Hide/Show steps · Show/Hide on-screen keys · Copy
-  "ah attach <id>" · All commands…
+- Scrollback as text · Hide/Show steps · Show/Hide on-screen keys · Copy attach command (
+  `ah attach <id>`) · All commands…
 - **Terminate session** (danger)
 
 ## Terminal surface
@@ -71,7 +71,8 @@ older pages on demand). Same live session; switching views restarts nothing.
   (Ran, Read, Edited, Asked, Updated the plan), expandable to the command and
   output, a diff, a checklist, the question. Pending calls are in the present
   tense (Run, Edit); a call waiting on you says **Waiting for you**; a call the
-  turn ended without says **No result**. → A-05.
+  turn ended without says **No result**. Every kind of ask (a command, an
+edit, a question) marks the call it is about.
 - **Working line**: "Working · 12s" and what it is doing, "Esc stops".
 - **Widgets** (generative UI): an agent's ```` ```ah-widget ```` block renders as
   card, choices, table, checklist, stats, bar chart, progress, links, image,

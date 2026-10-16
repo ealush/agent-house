@@ -515,12 +515,14 @@ export class Core {
     const sel = parent.rec ? resumeSelection(parent.rec.meta as Record<string, unknown>) : {};
     const preset = this.config.presets.find((p) => p.id === parent.harness);
     const mode = sel.mode ? preset?.modes?.find((m) => m.id === sel.mode) : undefined;
+    // The title every screen shows ("Docs link audit"), not the record's window name ("claude").
+    const title = live?.title || parent.title;
     return {
       canFork: !reason && !!head?.head,
       reason: reason ?? (head?.head ? null : 'forking needs a git repository with at least one commit: two sessions in one checkout would overwrite each other'),
       harness: parent.harness,
-      title: parent.title,
-      suggestedName: `${parent.title} (fork)`,
+      title,
+      suggestedName: `${title} (fork)`,
       branch: head?.branch ?? null,
       head: head?.head ? head.head.slice(0, 7) : null,
       dirty: head?.dirty ?? 0,
@@ -573,7 +575,7 @@ export class Core {
       if (!head?.head) throw new CoreError(422, 'forking needs a git repository with at least one commit: two sessions in one checkout would overwrite each other');
       if (live && (live.status === 'busy' || this.justSent(parent.uid))) throw new CoreError(409, 'the parent started another turn; try forking when it finishes');
 
-      const name = (o.name?.trim() || `${parent.title} (fork)`).slice(0, 80);
+      const name = (o.name?.trim() || `${live?.title || parent.title} (fork)`).slice(0, 80);
       let wt: Worktree;
       try {
         wt = await createWorktree(cwd, name, head.head);

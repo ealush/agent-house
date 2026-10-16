@@ -22,15 +22,22 @@ export function statusClass(w: Pick<Win, 'status' | 'limit'>): string {
   return w.limit && w.status !== 'busy' && w.status !== 'waiting' ? 'limit' : w.status;
 }
 
-/** "1 session needs you. 3 working. 6 idle." — or "All quiet." */
-export function statusCounts(windows: Pick<Win, 'status'>[]): string {
-  const waiting = windows.filter((w) => w.status === 'waiting').length;
-  const working = windows.filter((w) => w.status === 'busy').length;
-  const rest = windows.length - waiting - working;
+/**
+ * "1 session needs you. 3 working. 1 done. 6 idle." — or "All quiet." Each
+ * status counts under its own word (statusWord), so the sentence agrees with
+ * the sections and pills below it.
+ */
+export function statusCounts(windows: Pick<Win, 'status'>[] & Partial<Pick<Win, 'agent' | 'limit'>>[]): string {
+  const counts = new Map<string, number>();
+  for (const w of windows) {
+    const word = statusWord({ agent: null, limit: null, ...w } as Pick<Win, 'status' | 'agent' | 'limit'>);
+    counts.set(word, (counts.get(word) ?? 0) + 1);
+  }
+  const n = (word: string) => counts.get(word) ?? 0;
+  const waiting = n('needs you');
   const parts = [
     waiting ? `${waiting} session${waiting === 1 ? ' needs' : 's need'} you` : null,
-    working ? `${working} working` : null,
-    rest ? `${rest} idle` : null,
+    ...['working', 'limited', 'done', 'new output', 'idle'].map((word) => (n(word) ? `${n(word)} ${word}` : null)),
   ].filter(Boolean);
   return parts.length ? `${parts.join('. ')}.` : 'All quiet.';
 }

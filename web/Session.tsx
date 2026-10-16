@@ -29,6 +29,7 @@ import { ForkDialog, ForksDialog } from './ForkDialog.tsx';
 import { SendToDialog } from './SendToDialog.tsx';
 import { SnapshotsPanel } from './Snapshots.tsx';
 import { ShortcutHint, shortcutTitle, useCommand, usePaletteProvider, useShortcutRevision } from './shortcuts.tsx';
+import { commandLabel as L } from './shortcuts.ts';
 import { runCommand } from './shortcuts.ts';
 import { useLaunch, useLaunchPalette } from './useLaunch.ts';
 import { Glide } from './Glide.tsx';
@@ -779,7 +780,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
           : { position: 'fixed', right: 'auto', visibility: 'hidden', zIndex: 90, margin: 0 }
       }
     >
-      <button onClick={startRename}><span className="grow">Rename</span><ShortcutHint id="rename" /></button>
+      <button onClick={startRename}><span className="grow">{L('rename')}</span><ShortcutHint id="rename" /></button>
       {/* Here on every device, so the menu is the same wherever it opens (the desktop header's pill is a shortcut to it). */}
       {w.branch && (
         <button
@@ -788,7 +789,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
             setBranching(true);
           }}
         >
-          <span className="grow">Branch</span>
+          <span className="grow">{L('switch-branch')}</span>
           <span className="menu-value mono">{w.branch}</span>
         </button>
       )}
@@ -799,7 +800,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
             setForking(true);
           }}
         >
-          <span className="grow">Fork session…</span>
+          <span className="grow">{L('fork')}</span>
           <ShortcutHint id="fork" />
         </button>
       )}
@@ -810,7 +811,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
             setSending(true);
           }}
         >
-          <span className="grow">Send to…</span>
+          <span className="grow">{L('send-to')}</span>
           <ShortcutHint id="send-to" />
         </button>
       )}
@@ -834,15 +835,15 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
           ))}
         </div>
       )}
-      <button onClick={() => act(() => client.pin(w.uid, !w.pinned))}>{w.pinned ? 'Unpin' : 'Pin to top'}</button>
+      <button onClick={() => act(() => client.pin(w.uid, !w.pinned))}>{w.pinned ? 'Unpin' : L('pin')}</button>
       <hr />
-      {diffTab && <button onClick={() => { setMenu(false); togglePanel('diff'); }}><span className="grow">Diff</span><ShortcutHint id="panel-diff" /></button>}
-      <button onClick={() => { setMenu(false); togglePanel('files'); }}><span className="grow">Files</span><ShortcutHint id="panel-files" /></button>
-      <button onClick={() => { setMenu(false); togglePanel('chat'); }}><span className="grow">Chat</span><ShortcutHint id="panel-chat" /></button>
-      {turns && <button onClick={() => { setMenu(false); togglePanel('queue'); }}><span className="grow">Queued messages{w.queued > 0 ? ` (${w.queued})` : ''}</span><ShortcutHint id="panel-queue" /></button>}
-      {w.queued > 0 && <button onClick={() => { setMenu(false); runCommand('send-now'); }}><span className="grow">Send next queued now</span><ShortcutHint id="send-now" /></button>}
-      {turns && <button onClick={() => { setMenu(false); togglePanel('snapshots'); }}><span className="grow">Snapshots</span><ShortcutHint id="panel-snapshots" /></button>}
-      <button onClick={() => { setMenu(false); togglePanel('preview'); }}><span className="grow">Preview</span><ShortcutHint id="panel-preview" /></button>
+      {diffTab && <button onClick={() => { setMenu(false); togglePanel('diff'); }}><span className="grow">{L('panel-diff')}</span><ShortcutHint id="panel-diff" /></button>}
+      <button onClick={() => { setMenu(false); togglePanel('files'); }}><span className="grow">{L('panel-files')}</span><ShortcutHint id="panel-files" /></button>
+      <button onClick={() => { setMenu(false); togglePanel('chat'); }}><span className="grow">{L('panel-chat')}</span><ShortcutHint id="panel-chat" /></button>
+      {turns && <button onClick={() => { setMenu(false); togglePanel('queue'); }}><span className="grow">{L('panel-queue')}</span>{w.queued > 0 && <span className="menu-value">{w.queued}</span>}<ShortcutHint id="panel-queue" /></button>}
+      {w.queued > 0 && <button onClick={() => { setMenu(false); runCommand('send-now'); }}><span className="grow">{L('send-now')}</span><ShortcutHint id="send-now" /></button>}
+      {turns && <button onClick={() => { setMenu(false); togglePanel('snapshots'); }}><span className="grow">{L('panel-snapshots')}</span><ShortcutHint id="panel-snapshots" /></button>}
+      <button onClick={() => { setMenu(false); togglePanel('preview'); }}><span className="grow">{L('panel-preview')}</span><ShortcutHint id="panel-preview" /></button>
       {stackTab && <button onClick={() => { setMenu(false); togglePanel('stack'); }}><span className="grow">Stack</span></button>}
       {(onSplit || onReplace || onClosePane) && <hr />}
       {onSplit && (
@@ -938,7 +939,8 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
           setMenu(false);
         }}
       >
-        Copy “ah attach {w.uid}”
+        <span className="grow">{L('copy-attach')}</span>
+        <span className="menu-value mono">ah attach {w.uid}</span>
       </button>
       {/* Everything else this session can do; on a touch screen, the palette's only way in. */}
       <button
@@ -952,7 +954,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       </button>
       <hr />
       <button className="danger" onClick={kill}>
-        <span className="grow">Terminate session</span>
+        <span className="grow">{L('terminate')}</span>
         <ShortcutHint id="terminate" />
       </button>
     </div>
@@ -1106,7 +1108,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
               }}
               aria-label="Toggle panel"
               aria-pressed={!!panel && !panelCollapsed}
-              title={shortcutTitle(`Panel: ${lastPanel}${w.queued > 0 ? ` (Queue ${w.queued})` : ''}`, 'toggle-panel')}
+              title={shortcutTitle(`Side panel: ${lastPanel}${w.queued > 0 ? ` (Queue ${w.queued})` : ''}`, 'toggle-panel')}
             >
               <Icon name={panel && !panelCollapsed ? 'panel-hide' : 'panel'} size={16} />
             </button>

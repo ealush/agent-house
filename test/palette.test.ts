@@ -27,7 +27,7 @@ test('search finds categories and commands below the scope, with their breadcrum
   const [first] = searchTree(tree, 'panels');
   assert.equal(first.node.key, 'panels');
   assert.deepEqual(first.trail.map((t) => t.key), ['session']);
-  const diff = searchTree(tree, 'panel: diff')[0];
+  const diff = searchTree(tree, 'panels diff')[0];
   assert.equal(diff.node.command, 'panel-diff');
   assert.deepEqual(diff.trail.map((t) => t.key), ['session', 'panels']);
   // Scoped: inside Workspace, nothing from Session matches.

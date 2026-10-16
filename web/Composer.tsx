@@ -430,7 +430,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
             </Popover>
           )}
           {preset && (levels.length > 0 || preset.settingsCommands?.effort) && (
-            <Popover className="tool-chip" title="Reasoning effort" label={effort ? `Effort: ${effort.charAt(0).toUpperCase() + effort.slice(1)}` : 'Effort'} command="pick-effort" active={active}>
+            <Popover className="tool-chip" title="Reasoning effort" label={effort ? `Effort: ${effort.charAt(0).toUpperCase() + effort.slice(1)}` : 'Effort: Default'} command="pick-effort" active={active}>
               {(close) => (
                 <EffortPicker levels={levels} value={effort} disabled={!preset.switchEffort && !preset.effort}
                   onPick={(level) => void choose({ effort: level ?? 'default' }, close)}
@@ -441,7 +441,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
             </Popover>
           )}
           {preset && (preset.modes?.length ?? 0) > 1 && (
-            <Popover className={`tool-chip ${mode?.dangerous ? 'danger' : ''}`} title="Permission level" label={mode && mode.id !== 'default' ? `${mode.dangerous ? '⚠ ' : ''}${mode.name}` : 'Permissions'}>
+            <Popover className={`tool-chip ${mode?.dangerous ? 'danger' : ''}`} title="Permission level" label={mode && mode.id !== 'default' ? `${mode.dangerous ? '⚠ ' : ''}${mode.name}` : 'Permissions: Default'}>
               {(close) => (
                 <div className="picker" aria-label="Permissions">
                   <div className="picker-title">Permissions</div>

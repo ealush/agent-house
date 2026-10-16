@@ -71,15 +71,13 @@ Rebuild.
 
 ## SET-9 · System — shipped
 
-- **This device**: Reload page.
 - **Agent hooks**: per agent, how many events are wired and where; Install /
   Remove hooks; the screen-rule audit (caught / missed per agent with the
   last missed screen; Clear).
 - **Desktop app**: whether ah is in the app launcher; Add / Remove; the
   Hyprland bind to copy.
-- **Server**: Restart; Rebuild and restart (deletes dist, builds from this
-  checkout, restarts). Sessions keep running.
+- **Server**: Restart server; Rebuild and restart (deletes dist, builds from
+  this checkout, restarts); Reload page (this device only). Sessions keep
+  running.
 - **Uploads**: size of the uploads folder; Clear.
 
-→ A-18: "This device" is a card in both Security and System, holding
-different things.

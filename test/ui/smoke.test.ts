@@ -167,7 +167,7 @@ test("phone: a shell's menu offers no agent-only actions, and the chevron goes b
   await page.getByRole('button', { name: /menu|more/i }).last().tap();
   const menu = page.locator('.menu, [role="menu"]').last();
   await menu.getByText('Rename').waitFor();
-  for (const agentOnly of ['Fork session…', 'Snapshots', 'Queued messages']) assert.equal(await menu.getByText(agentOnly).count(), 0, agentOnly);
+  for (const agentOnly of ['Fork session…', 'Snapshots', 'Queue']) assert.equal(await menu.getByText(agentOnly, { exact: true }).count(), 0, agentOnly);
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: /back/i }).first().tap();
   await page.locator('h1.page-title', { hasText: 'Inbox' }).waitFor();
