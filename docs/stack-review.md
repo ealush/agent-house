@@ -3,7 +3,7 @@
 Reviewing, fixing and merging your own pull requests in ah, one layer at a
 time. It reviews the whole stack together but merges one PR at a time.
 Status: R0–R3 built on 16 October 2026 (`server/review/`, `web/review/`),
-then taken off `main` until it's ready; it lives on the `stack-review` branch.
+taken off `main` for a redesign, and landed again on 17 October.
 Hand-picked stacks and the redesign (below) were added on 17 October, then
 built to the canvas, with the spec's waivers, finding history and follow-ups.
 R4–R5 open. Where the build differs from the first proposal, this document
