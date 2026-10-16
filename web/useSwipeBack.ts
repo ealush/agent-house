@@ -1,6 +1,7 @@
 import { useEffect, useRef, type RefObject } from 'react';
 import { flushSync } from 'react-dom';
 import { calm } from './motion.ts';
+import { EDGE } from './edges.ts';
 
 /** The view a swipe uncovers: shown (`show(true)`) when a drag starts, moved by the finger. */
 export type Underlay = { ref: RefObject<HTMLElement | null>; show: (on: boolean) => void };
@@ -33,7 +34,6 @@ export function useSwipeBack(view: RefObject<HTMLElement | null>, enabled: boole
   useEffect(() => {
     const el = view.current;
     if (!enabled || !el) return;
-    const EDGE = 28;
     let start: { x: number; y: number; t: number } | null = null;
     let engaged = false;
     let settling = false;

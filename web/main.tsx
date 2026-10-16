@@ -8,10 +8,13 @@ import { setUnauthorizedHandler } from './api.ts';
 import { initTheme } from './theme.ts';
 import { confirmKey } from './confirm.ts';
 import { installSlide } from './slide.ts';
+import { installEdges } from './edges.ts';
 
 initTheme();
 // Every segmented control and toggle slides under a finger, as on iOS (slide.ts).
 installSlide();
+// The screen's side edges swipe ah's way, never the browser's Back on top of it (edges.ts).
+installEdges();
 // ⌘↵ / Ctrl+↵ presses the main button, signed in or on the lock screen (confirm.ts).
 window.addEventListener('keydown', confirmKey);
 // Fonts ship with the app: nothing loads from third parties.

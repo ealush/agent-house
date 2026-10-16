@@ -56,6 +56,7 @@ import { API_VERSION } from './api.ts';
 import { showError } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { useSwipeBack } from './useSwipeBack.ts';
+import { edgeGesture } from './edges.ts';
 import { Sheet } from './sheet.tsx';
 import { trackViewport } from './viewport.ts';
 import { glide, transition, type Heading } from './motion.ts';
@@ -742,7 +743,8 @@ export function App({ onLock }: { onLock: () => void }) {
   useEffect(() => {
     // Back/Forward, or a hash set from outside (a push notification): the URL has moved already.
     const onHash = () => {
-      const still = popStill.current;
+      // A step a swipe has already shown (ours, or the browser's own) lands without a second animation.
+      const still = popStill.current || edgeGesture();
       popStill.current = false;
       goRef.current(fromHash(), { history: 'none', still });
     };

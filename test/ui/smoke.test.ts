@@ -420,6 +420,53 @@ test('phone: a swipe back lands on the inbox once, even when the browser is slow
   await ctx.close();
 });
 
+test("phone: a touch from the screen's edge keeps the browser's own swipe off, and still taps and scrolls", { skip, timeout: 60_000 }, async () => {
+  const ctx = await browser.newContext({ ...devices['iPhone 15 Pro'] });
+  const { page, errors } = await open(ctx);
+  // What a later listener sees: iOS starts its Back/Forward swipe only from a touchstart left alone.
+  await page.evaluate(() => {
+    const w = window as unknown as { kept_: boolean[] };
+    w.kept_ = [];
+    addEventListener('touchstart', (e) => w.kept_.push(e.defaultPrevented));
+  });
+  const kept = () => page.evaluate(() => (window as unknown as { kept_: boolean[] }).kept_.splice(0));
+  const cdp = await ctx.newCDPSession(page);
+  const touch = async (points: { x: number; y: number }[]) => {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...points[0], id: 1 }] });
+    for (const p of points.slice(1)) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...p, id: 1 }] });
+      await page.waitForTimeout(16);
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  };
+
+  // A tap at the very edge of a row opens it, as anywhere else on it would.
+  const row = (await page.locator('.rows .row', { hasText: 'zz-idle' }).first().boundingBox())!;
+  await touch([{ x: 8, y: row.y + row.height / 2 }]);
+  await page.locator('main.main .session-head').first().waitFor();
+  assert.deepEqual(await kept(), [true]);
+  // A touch during the page's fade lands on <html>, not on what's drawn.
+  await page.waitForFunction(() => !document.getAnimations().some((a) => String((a.effect as KeyframeEffect | null)?.pseudoElement).startsWith('::view-transition')));
+
+  // The middle of the screen is the browser's, as before.
+  await touch([{ x: 200, y: 600 }]);
+  assert.deepEqual(await kept(), [false]);
+
+  // A drag up from the edge scrolls what it's on.
+  await page.evaluate(() => {
+    const box = document.createElement('div');
+    box.id = 'edge-scroll';
+    box.style.cssText = 'position:fixed;inset:120px 0 auto 0;height:300px;overflow-y:auto;z-index:9999;background:#000';
+    box.innerHTML = '<div style="height:3000px"></div>';
+    document.body.append(box);
+  });
+  await touch([350, 320, 290, 260, 230, 200].map((y) => ({ x: 6, y })));
+  assert.deepEqual(await kept(), [true]);
+  assert.ok((await page.evaluate(() => document.getElementById('edge-scroll')!.scrollTop)) >= 140);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 /** Every visible control smaller than 32px either way. The message rail's ticks are one
  *  control together (a scrubber, like an iPhone's section index), so they don't count. */
 const SMALL = () => {
