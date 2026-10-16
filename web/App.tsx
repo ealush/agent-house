@@ -64,7 +64,7 @@ import { runCommand } from './shortcuts.ts';
 import { CommandPalette, Keycaps, Shortcuts, ShortcutsDialog, WhichKey, shortcutTitle, useCommand, usePaletteProvider } from './shortcuts.tsx';
 import { TabBar } from './TabBar.tsx';
 import { errorText } from './errors.ts';
-import { sectionHash, settingsNodes } from './settingsMenu.ts';
+import { restartServer, sectionHash, settingsNodes } from './settingsMenu.ts';
 import { reviewHash } from './reviewApi.ts';
 import { ReviewContext } from './reviewContext.ts';
 
@@ -116,7 +116,7 @@ function stored<T extends string>(key: string, fallback: T): [T, (v: T) => void]
 // ("#@12", a tmux window id) still open: App upgrades them once windows are known.
 const PAGES = ['history', 'sessions', 'settings', 'search', 'review'] as const;
 /** The sidebar's pages, top to bottom (its sessions follow), so navigation knows which way it goes. */
-const NAV_PAGES = ['inbox', 'review', 'history', 'settings'] as const;
+const NAV_PAGES = ['inbox', 'review', 'history', 'search', 'settings'] as const;
 const sameRoute = (a: { page: Page; selected: string | null }, b: { page: Page; selected: string | null }) => a.page === b.page && a.selected === b.selected;
 
 function fromHash(): { page: Page; selected: string | null } {
@@ -293,6 +293,13 @@ export function App({ onLock }: { onLock: () => void }) {
   const popStill = useRef(false);
   const goRef = useRef(go);
   goRef.current = go;
+  /** A page reached by a link or Back leaves the split, as picking it in the sidebar does (showPage). */
+  const leaveSplitRef = useRef(() => {});
+  leaveSplitRef.current = () => {
+    if (!layout) return;
+    setLayout(null);
+    setFocusPath(null);
+  };
   /** Where the next view sits relative to this one: further down the sidebar, or deeper on a phone. */
   function heading(to: { page: Page; selected: string | null }): Heading | null {
     if (narrow) return to.selected && !selected ? 'push' : !to.selected && selected ? 'pop' : null;
@@ -386,6 +393,8 @@ export function App({ onLock }: { onLock: () => void }) {
   useCommand('go-history', () => showPage('history'));
   useCommand('go-review', () => showPage('review'));
   useCommand('go-settings', () => showPage('settings'));
+  useCommand('go-search', () => showPage('search'));
+  useCommand('worktrees', () => setDialog('worktrees'));
   useCommand('show-shortcuts', () => setKeymap(true));
   useCommand('reload-page', () => window.location.reload());
   useCommand('focus-pane-left', () => focusPane('left'), splitOpen);
@@ -765,7 +774,9 @@ export function App({ onLock }: { onLock: () => void }) {
       // A step a swipe has already shown (ours, or the browser's own) lands without a second animation.
       const still = popStill.current || edgeGesture();
       popStill.current = false;
-      goRef.current(fromHash(), { history: 'none', still });
+      const route = fromHash();
+      if (!route.selected) leaveSplitRef.current();
+      goRef.current(route, { history: 'none', still });
     };
     window.addEventListener('popstate', onHash);
     window.addEventListener('hashchange', onHash);
@@ -1106,7 +1117,10 @@ export function App({ onLock }: { onLock: () => void }) {
       <main className="main" ref={mainRef}>
         {state && (state.api ?? 0) < API_VERSION && (
           <div className="stale-banner">
-            This page is newer than the running ah server. Restart it (<code>pnpm serve</code>) to finish updating.
+            <span className="grow">This page is newer than the running ah server. Restart the server to finish updating; sessions keep running.</span>
+            <button className="btn small" onClick={() => void restartServer()}>
+              Restart
+            </button>
           </div>
         )}
         {layout && state ? (

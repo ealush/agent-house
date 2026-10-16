@@ -46,7 +46,7 @@ export const TREE: Spec = {
       label: 'Go to',
       icon: 'search',
       detail: 'Sessions, pages and focus',
-      children: [{ provider: 'sessions' }, 'go-inbox', 'go-review', 'go-history', 'go-settings', 'cycle-prev', 'cycle-next', 'focus-sidebar', 'focus-main'],
+      children: [{ provider: 'sessions' }, 'go-inbox', 'go-review', 'go-history', 'go-search', 'go-settings', 'worktrees', 'cycle-prev', 'cycle-next', 'focus-sidebar', 'focus-main'],
     },
     {
       key: 'session',
@@ -71,7 +71,7 @@ export const TREE: Spec = {
           children: ['panel-diff', 'panel-files', 'panel-chat', 'panel-queue', 'panel-snapshots', 'panel-preview', 'toggle-panel'],
         },
         { key: 'view', label: 'View', icon: 'view', detail: 'GUI or terminal, steps, copy, scroll', children: ['toggle-view', 'toggle-steps', 'browse-messages', 'copy-last', 'jump-latest', 'scrollback', 'toggle-keys'] },
-        { key: 'manage', label: 'Manage', icon: 'edit', detail: 'Rename, fork, hand off, pin, stop', children: ['rename', 'fork', 'send-to', 'pin', 'copy-attach', 'session-menu', 'terminate'] },
+        { key: 'manage', label: 'Manage', icon: 'edit', detail: 'Rename, fork, hand off, pin, stop', children: ['rename', 'switch-branch', 'fork', 'send-to', 'pin', 'copy-attach', 'session-menu', 'terminate'] },
         { key: 'continue', label: 'Continue in…', icon: 'send', detail: 'This conversation, in another agent', terms: ['handoff', 'switch agent', 'harness'], children: [{ provider: 'agents' }] },
       ],
     },

@@ -27,7 +27,7 @@ apply there.
 | Stop the turn | — | — | — | ✓ | ⌃⌥X, Esc | — | n/a | — **A-09** |
 | Rename | — **A-24** | ✓ | ✓ | ✓ | ⌃⌥N | — | — | — **A-09** |
 | Pin | — **A-24** | ✓ | ✓ | ✓ | — | — | — | — |
-| Branch | — | — **A-08** | ✓ | — **A-08** | — | — | — | — |
+| Branch | — | ✓ | ✓ | ✓ | — | — | — | — |
 | Fork | ✓ | ✓ | ✓ | ✓ | ⌃⌥F | — | ✓ | `fork` |
 | Continue in | — | ✓ | ✓ | ✓ | — | — | — | — |
 | Send to | — | ✓ | ✓ | ✓ | ⌃⌥T | — | — | — |
@@ -38,8 +38,8 @@ apply there.
 | Terminate | ✓ (+ hover ✕) | ✓ | ✓ | ✓ | — | — | — | — **A-09** |
 | Resume | n/a | Ended: Resume | Ended: Resume | Go to | ⌘↵ on ended | empty Inbox | ✓ (tap) | `resume` |
 | Hide from History | n/a | n/a | n/a | — | — | — | ✓ | — |
-| Worktrees | footer button | — | — **A-07** | — **A-07** | — | — | — | `worktrees` |
-| Search page | — | — | — **A-10** | — **A-10** | — | — | — | — |
+| Worktrees | footer button | — | palette | palette | — | — | — | `worktrees` |
+| Search page | sidebar | — | palette | palette | ⌃⇧5 | — | — | — |
 
 ## Vocabulary drift
 
@@ -63,13 +63,13 @@ sidebar, header and History say "Claude Code" and "Opus 5.5" (A-20).
 
 | # | Sev | Finding | Where | Resolution |
 |---|---|---|---|---|
-| A-14 | S1 | A hash link does nothing while a split is open: the URL becomes `#settings` (or `#history`), the split stays. Side chat's "Add one under Settings → Subscriptions" is such a link. | `App.tsx` route ↔ workspace | **fix** |
-| A-15 | S1 | Push notifications are titled with the tmux window name ("claude needs you") instead of the session title ("Fix Safari login flash needs you"), and the body doesn't say what it needs. | `server/push.ts` | **fix** |
+| A-14 | S1 | A hash link does nothing while a split is open: the URL becomes `#settings` (or `#history`), the split stays. Side chat's "Add one under Settings → Subscriptions" is such a link. | `App.tsx` route ↔ workspace | **fix** → **fixed: a page link leaves the split** |
+| A-15 | S1 | Push notifications are titled with the tmux window name ("claude needs you") instead of the session title ("Fix Safari login flash needs you"), and the body doesn't say what it needs. | `server/push.ts` | **fix** → **fixed: title, and what it asks** |
 | A-03 | S2 | One ask, three renderings: the Inbox card shows the raw screen in monospace ("Bash command / pnpm test… / Do you want to proceed?"); the GUI shows "Do you want to proceed?" with the command only in the tool row above and the screen behind "Terminal text"; the terminal's answer card shows "Wants to run a command" without the command. | `Inbox.tsx`, `AskPanel.tsx` | **design** (one Ask component: what, the command or question, options), then fix |
 | A-05 | S2 | A tool waiting on you reads differently by tool: the Bash row says "Waiting for you"; the AskUserQuestion row says "Running…" while the question waits below it. | `web/gui/tools.tsx` | **fix** |
-| A-07 | S2 | Worktrees is reachable only from the desktop sidebar's footer: not on a phone, not in the palette. | `Sidebar.tsx`, `palette.ts` | **fix** (palette command; Settings → System link) |
-| A-08 | S2 | Branch switching has no palette command, and the desktop session menu lacks the Branch row the phone has. | `Session.tsx`, `palette.ts` | **fix** |
-| A-10 | S2 | The Search page is reached only through the switcher's "See all results" (no sidebar, tab bar or palette entry), and its scope, speaker and date fields are unstyled native controls. | `SearchView.tsx` | **fix** (palette entry) + **design** |
+| A-07 | S2 | Worktrees is reachable only from the desktop sidebar's footer: not on a phone, not in the palette. | `Sidebar.tsx`, `palette.ts` | **fix** (palette command; Settings → System link) → **fixed: palette command** |
+| A-08 | S2 | Branch switching has no palette command, and the desktop session menu lacks the Branch row the phone has. | `Session.tsx`, `palette.ts` | **fix** → **fixed: palette command, desktop menu row** |
+| A-10 | S2 | The Search page is reached only through the switcher's "See all results" (no sidebar, tab bar or palette entry), and its scope, speaker and date fields are unstyled native controls. | `SearchView.tsx` | **fix** (palette entry) + **design** → **reach fixed: sidebar, palette, ⌃⇧5** |
 | A-11 | S2 | Side panel tabs don't fit six at the default width ("Previe" is clipped), and the strip changes with the panel (Chat drops Preview and adds a history icon). | `Session.tsx` side panel | **design** |
 | A-19 | S2 | Six renderings of "a session in a list", with different subtitles: sidebar (title + model label), Inbox table (detail column), switcher (monospace "project · detail"), pane chooser ("Agent · project · branch"), History ("Agent · Model · project"), phone Sessions (detail + pill). | many | **design** (one session row with defined slots) |
 | A-21 | S2 | The fork dialog names the session by its window name ("Copies "claude"…", name "claude (fork)") instead of its title. | `ForkDialog.tsx` | **fix** |
@@ -82,7 +82,7 @@ sidebar, header and History say "Claude Code" and "Opus 5.5" (A-20).
 | A-06 | S3 | Two looks for "choose one": a widget's choices are bold outlined buttons stacked loosely; an agent's question is numbered option rows. Question option descriptions are bold. | `widgets.tsx`, `AskPanel.tsx` | **design** |
 | A-12 | S3 | The same command is named differently in the catalog, the session menu and the panel tabs (table above). The menu repeats labels instead of reading the catalog. | `Session.tsx`, `shortcuts.ts` | **fix** |
 | A-13 | S3 | Keycaps draw Mac glyphs (⌃ ⌥) on Linux while tooltips, the README and the palette's search say "Ctrl+Alt". | `shortcuts.tsx` | **call** (glyphs everywhere, or words off Mac) |
-| A-16 | S3 | The stale-server banner says to run `pnpm serve` rather than offering Settings → System's Restart. | `App.tsx` | **fix** |
+| A-16 | S3 | The stale-server banner says to run `pnpm serve` rather than offering Settings → System's Restart. | `App.tsx` | **fix** → **fixed: the banner restarts** |
 | A-18 | S3 | "This device" is a card in both Security (name) and System (reload). | `Security.tsx`, `System.tsx` | **fix** |
 | A-20 | S3 | Status pills and the Inbox card's agent / model / project chips are lowercase monospace; everywhere else these are sans and title case ("Opus 5.5"). | CSS | **design** |
 | A-22 | S3 | The fork dialog shows an informational note (uncommitted changes stay behind) as a red error. | `ForkDialog.tsx` | **design** |

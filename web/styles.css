@@ -2986,12 +2986,18 @@ a.btn {
 }
 
 .stale-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   flex: none;
   padding: 8px 14px;
   background: var(--accent-bg);
   border-bottom: 1px solid var(--accent-line);
   color: var(--accent);
   font-size: 13px;
+}
+.stale-banner .grow {
+  flex: 1;
 }
 
 /* ---------- lock & security */

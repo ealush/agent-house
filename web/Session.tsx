@@ -623,6 +623,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
     active && w.queued > 0,
   );
   useCommand('rename', startRename, active && !renaming);
+  useCommand('switch-branch', () => setBranching(true), active && !!w.branch);
   useCommand('fork', () => setForking(true), active && turns);
   useCommand('send-to', () => setSending(true), active && !!w.feed);
   useCommand('pin', () => void act(() => client.pin(w.uid, !w.pinned)), active);
@@ -779,8 +780,8 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       }
     >
       <button onClick={startRename}><span className="grow">Rename</span><ShortcutHint id="rename" /></button>
-      {/* A phone's header has no room for the branch pill: switching is here. */}
-      {narrow && w.branch && (
+      {/* Here on every device, so the menu is the same wherever it opens (the desktop header's pill is a shortcut to it). */}
+      {w.branch && (
         <button
           onClick={() => {
             setMenu(false);

@@ -11,8 +11,8 @@ A floating glass panel, top to bottom:
    (⌃⇧E toggles the sidebar).
 2. **Search or jump to** (opens the switcher, ATT-6).
 3. **Handoff card** when another device was just using a session (CON-3).
-4. **Inbox** with the needs-you count, **History** with its count,
-   **Settings**.
+4. **Inbox** with the needs-you count, **Review**, **History** with its count,
+   **Search** (⌃⇧5), **Settings**.
 5. **Projects +** (New project), then sessions grouped by project; with
    several hosts, by host. On a single host, tmux sessions can group instead.
    Each row: agent mark, status dot (needs you / working only), title, model
@@ -66,9 +66,9 @@ SQLite FTS, incremental, fingerprinted per source). The page: query, scope
 (transcripts and chats / transcripts / chats), speaker (any / you / agent),
 from and to dates; results grouped by session, paginated, each opening the
 conversation **at the matching turn**. Reached from the switcher's "See all
-results". Can be switched off (drops the index) in Settings → Search.
-→ A-10: its selects and date fields are unstyled native controls; the page has
-no entry in the sidebar, tab bar or palette.
+results", the sidebar, the palette and ⌃⇧5. Can be switched off (drops the
+index) in Settings → Search. → A-10: its selects and date fields are unstyled
+native controls.
 
 ## ATT-6 · Switcher (⌘K / ⌃⇧K) — shipped
 

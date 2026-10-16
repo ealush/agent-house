@@ -10,7 +10,8 @@ layouts, workspaces, scratchpad, notifications and drafts point at a session
 uid, so they survive resume, relaunch, tmux restarts and reboots and never
 point at a different window. Pages and sessions are history entries: the Back
 chevron, the edge swipe and the Settings sheet go through `history.back()`.
-→ A-14: a hash link does nothing while a split is open.
+A link to a page (or Back to one) leaves a split, as picking the page in the
+sidebar does.
 
 ## CON-2 · Ended in place — shipped
 
@@ -43,8 +44,9 @@ Web Push per device, opt-in per event: **needs you** (high urgency) and
 **finished** (a working session that stopped while nobody watched; "hit its
 usage limit" when that is why). A 1-tap notification opens the session.
 Restarting ah never replays alerts; a cooldown stops repeats. HTTPS required;
-on iOS, the home-screen app. → A-15: notifications are titled with the tmux
-window name, not the session title.
+on iOS, the home-screen app. A notification is titled with the session's
+title ("Fix Safari login flash needs you") and says what it asks ("Wants to
+run pnpm test --filter auth").
 
 ## CON-7 · App badge — shipped
 
@@ -61,9 +63,8 @@ hosts read as such, in every browser's wording ("Can't reach the host").
 ## CON-9 · Updates — shipped
 
 The page is served fresh from `dist/`. A page newer than the running server
-shows a banner. Settings → System → Restart / Rebuild and restart; the page
-reconnects on its own. → A-16: the banner tells you to run `pnpm serve`
-instead of offering the Restart it links to.
+shows a banner with **Restart** (the same as Settings → System → Restart);
+Rebuild and restart is in Settings → System. The page reconnects on its own.
 
 ## CON-10 · What is whose — shipped
 

@@ -88,7 +88,10 @@ export type CommandId =
   | 'scratchpad'
   | 'maximize-pane'
   | 'exit-split'
-  | 'show-shortcuts';
+  | 'show-shortcuts'
+  | 'go-search'
+  | 'worktrees'
+  | 'switch-branch';
 
 export type CommandGroup = 'Navigate' | 'Session' | 'Workspace';
 
@@ -201,6 +204,24 @@ export const COMMANDS: Command[] = [
     detail: 'Open Review: your pull request stacks, one layer at a time.',
     chords: [{ key: '4', ctrl: true, shift: true }],
     scopes: nav,
+  },
+  {
+    id: 'go-search',
+    group: 'Navigate',
+    label: 'Search',
+    detail: 'Search every conversation and side chat, on every host.',
+    chords: [{ key: '5', ctrl: true, shift: true }],
+    scopes: nav,
+    terms: ['find', 'full text', 'transcripts'],
+  },
+  {
+    id: 'worktrees',
+    group: 'Navigate',
+    label: 'Worktrees',
+    detail: 'Managed worktrees: dirty, ahead, orphaned, and their size; clean up.',
+    chords: [],
+    scopes: nav,
+    terms: ['branches', 'checkouts', 'clean'],
   },
   {
     id: 'go-settings',
@@ -355,6 +376,15 @@ export const COMMANDS: Command[] = [
     detail: 'Put the keyboard on the newest message (GUI): ↑↓ or j/k move, c copies, r restores the files to before it, Esc returns to the composer.',
     chords: [{ key: 'b', ctrl: true, alt: true }],
     scopes: act,
+  },
+  {
+    id: 'switch-branch',
+    group: 'Session',
+    label: 'Switch branch…',
+    detail: "Switch the session's checkout to another branch, or create one.",
+    chords: [],
+    scopes: session,
+    terms: ['git', 'checkout'],
   },
   {
     id: 'rename',

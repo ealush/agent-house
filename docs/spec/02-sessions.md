@@ -139,13 +139,14 @@ Optimistic. Renames the tmux window; the title then wins over the agent's own.
 - **Worktrees** dialog (sidebar footer): every managed worktree with dirty /
   ahead / in-use, on-disk size (background), orphans, safe removal (branch
   kept), bulk clean-up, open a shell in one. `ah worktrees`.
-- → A-07: not reachable on a phone, nor from the palette.
+- Reached from the sidebar's footer and the palette (Go to → Worktrees), so
+  also from a phone.
 
 ## SES-15 · Branch — shipped
 
-The header's branch chip (desktop) or Branch in the action sheet (phone):
-switch to or create a branch in the session's checkout; shows the pull
-request when there is one. → A-08: no palette command.
+The header's branch chip (desktop), Branch in the session menu (every
+device), or the palette's Switch branch…: switch to or create a branch in the
+session's checkout; shows the pull request when there is one.
 
 ## SES-16 · Fork — shipped
 

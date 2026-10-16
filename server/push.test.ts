@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 process.env.XDG_STATE_HOME = mkdtempSync(join(tmpdir(), 'ah-push-'));
-const { Push } = await import('./push.ts');
+const { Push, askLine } = await import('./push.ts');
 
 const win = (uid: string, status: string) => ({ uid, id: '@1', name: uid, project: 'p', agent: 'claude', command: 'claude', status }) as any;
 
@@ -55,4 +55,21 @@ test('alerts name the agent, and a turn that stopped on its limit says so', () =
     { title: 'd finished', body: 'p · Claude Code', tag: 'd', url: '/#d', badge: '0' },
     { title: 'e hit its usage limit', body: 'p · Session limit · resets 12am', tag: 'e', url: '/#e', badge: '0' },
   ]);
+});
+
+test('alerts use the session title and say what a waiting session asks', () => {
+  const push = new Push();
+  const sent: Array<{ title: string; body: string }> = [];
+  (push as any).send = (_event: string, p: { title: string; body: string }) => sent.push(p);
+  const w = { ...win('f', 'busy'), name: 'claude', title: 'Fix Safari login flash' };
+  push.observe([w]);
+  push.observe([{ ...w, status: 'waiting', ask: { kind: 'command', text: 'Bash command\n  pnpm test --filter auth\n  Run the auth test suite\nDo you want to proceed?' } }]);
+  assert.equal(sent[0].title, 'Fix Safari login flash needs you');
+  assert.equal(sent[0].body, 'p · Wants to run pnpm test --filter auth');
+});
+
+test('askLine reads a question and a hook-reported command', () => {
+  assert.equal(askLine({ kind: 'command', text: 'pnpm test' } as any), 'Wants to run pnpm test');
+  assert.equal(askLine({ kind: 'choice', text: 'How should old names be handled?' } as any), 'Asks: How should old names be handled?');
+  assert.equal(askLine(null), '');
 });
