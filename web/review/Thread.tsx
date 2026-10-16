@@ -214,7 +214,7 @@ export function Thread({
                       api={api}
                       stackId={stackId}
                       layers={layers}
-                      compact
+                     
                       onChanged={() => {
                         void load();
                         onChanged();

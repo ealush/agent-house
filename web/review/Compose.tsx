@@ -340,6 +340,11 @@ export function Compose({ stack, narrow, onBack, onDone }: { stack: Stack | null
               </ul>
             </div>
           ))}
+          {elsewhere.length > 0 && (
+            <div className="pick-group-head">
+              <h2 className="section-label">Already in review</h2>
+            </div>
+          )}
           {elsewhere.map((e) => (
             <a key={e.id} className="pick-elsewhere" href={`#${reviewHash(e.id)}`}>
               <span className="grow">

@@ -1,18 +1,33 @@
 import { useState } from 'react';
-import type { Finding, Layer, ReviewApi } from '../reviewApi.ts';
-import { askConfirm, showError } from '../ask.tsx';
+import type { Finding, Layer, ReviewApi, Verdict } from '../reviewApi.ts';
+import { askConfirm, askText, showError } from '../ask.tsx';
+import { age } from '../agents.ts';
 import { Icon } from '../icons.tsx';
 import { SeveritySeg, splitNote, type Severity } from './Diff.tsx';
 
 const SOURCE = (s: string) => (s === 'you' ? 'You' : s === 'reviewer' ? 'Reviewer' : s.replace(/^(bot|gh):/, '').replace(/^chatgpt-codex-connector$/, 'Codex').replace(/\[bot\]$/, ''));
-const STATE_WORD: Record<Finding['state'], string> = { proposed: 'Proposed', open: 'Open', sent: 'Sent', addressed: 'Addressed', wontfix: "Won't fix", dismissed: 'Dismissed' };
 
 function where(f: Finding): string | null {
   if (!f.path) return null;
   return `${f.path}${f.lineStart ? `:${f.lineStart}${f.lineEnd && f.lineEnd !== f.lineStart ? `–${f.lineEnd}` : ''}` : ''}`;
 }
 
-/** One finding: what, where, who said it, and what you can do with it now. */
+const SEV_WORD: Record<string, string> = { blocking: 'Blocking', should: 'Should', nit: 'Nit' };
+const VERDICT_WORD = { addressed: 'Fixed', partly: 'Partly fixed', not: 'Not fixed' } as const;
+const BY: Record<string, string> = { you: 'you', reviewer: 'the reviewer', github: 'GitHub' };
+
+/** What the card says about where a finding stands: the reviewer's verdict on a fix, else its state. */
+function standing(f: Finding, verdict?: Verdict['items'][number]): { word: string; tone: string } | null {
+  if (f.state === 'sent' && verdict) return { word: VERDICT_WORD[verdict.verdict], tone: verdict.verdict === 'addressed' ? 'done' : 'needs' };
+  if (f.state === 'sent') return { word: 'With the agent', tone: 'busy' };
+  if (f.state === 'proposed') return { word: 'Proposed by the reviewer', tone: 'needs' };
+  if (f.state === 'addressed') return { word: 'Fixed', tone: 'done' };
+  if (f.state === 'wontfix') return { word: f.severity === 'blocking' ? 'Waived' : "Won't fix", tone: '' };
+  if (f.state === 'dismissed') return { word: 'Dismissed', tone: '' };
+  return null;
+}
+
+/** One finding as a card: severity, where it stands, what, where; tap the title for the why and what you can do. */
 export function FindingRow({
   f,
   api,
@@ -21,7 +36,8 @@ export function FindingRow({
   selected,
   onSelect,
   onChanged,
-  compact,
+  verdict,
+  followup,
 }: {
   f: Finding;
   api: ReviewApi;
@@ -30,7 +46,8 @@ export function FindingRow({
   selected?: boolean;
   onSelect?: (on: boolean) => void;
   onChanged: () => void;
-  compact?: boolean;
+  verdict?: Verdict['items'][number];
+  followup?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -46,6 +63,11 @@ export function FindingRow({
       setBusy(false);
     }
   };
+  const waive = async () => {
+    if (f.severity !== 'blocking') return set({ state: 'wontfix' });
+    const note = await askText({ title: 'Waive this blocking finding?', body: 'It stops blocking the merge. The reason stays on the finding.', label: 'Why', value: f.note ?? '', confirm: 'Waive' });
+    if (note?.trim()) await set({ state: 'wontfix', note: note.trim() });
+  };
   const resolve = async () => {
     const ok = await askConfirm({ title: 'Resolve the thread on GitHub?', body: f.note ? `Replies "${f.note.slice(0, 120)}", then resolves it.` : 'Resolves it without a reply.', confirm: 'Resolve' });
     if (!ok) return;
@@ -59,52 +81,53 @@ export function FindingRow({
       setBusy(false);
     }
   };
+  const st = standing(f, verdict);
+  const settled = st?.tone === 'done' || f.state === 'wontfix' || f.state === 'dismissed';
+  const history = f.stateBy && f.state !== 'open' && f.state !== 'proposed' ? `${st?.word ?? f.state} by ${BY[f.stateBy] ?? f.stateBy}${f.stateHead ? ` at ${f.stateHead}` : ''}${f.stateAt ? `, ${age(f.stateAt) === 'now' ? 'just now' : `${age(f.stateAt)} ago`}` : ''}` : null;
   return (
-    <li className={`finding sev-${f.severity} ${f.state} ${selected ? 'selected' : ''}`}>
+    <li className={`finding sev-${f.severity} ${f.state} ${st?.tone === 'needs' ? 'needs' : ''} ${settled ? 'settled' : ''} ${selected ? 'selected' : ''}`}>
       <div className="finding-head">
-        {onSelect && f.state === 'open' ? (
+        {onSelect && f.state === 'open' && (
           <label className="pick">
             <input type="checkbox" checked={!!selected} onChange={(e) => onSelect(e.target.checked)} aria-label={`Select "${f.title}"`} />
             <span className="box" aria-hidden />
           </label>
-        ) : (
-          <span className="dot" aria-hidden />
         )}
-        <button type="button" className="finding-title" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-          {f.title}
-        </button>
-        {f.state !== 'open' && <span className={`pill ${f.state === 'addressed' ? 'attention' : f.state === 'sent' ? 'busy' : f.state === 'proposed' ? 'waiting' : ''}`}>{STATE_WORD[f.state]}</span>}
+        <span className="finding-stack">
+          <span className="finding-tags">
+            <span className={`sev-chip sev-${f.severity}`}>{SEV_WORD[f.severity] ?? f.severity}</span>
+            {followup && owner && <span className="state-word">From {owner.role || `#${owner.pr}`}, merged</span>}
+            {st && <span className={`state-word ${st.tone}`}>{st.word}</span>}
+          </span>
+          <button type="button" className="finding-title" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+            {f.title}
+          </button>
+          <span className="finding-meta">
+            {where(f) && <span className="mono">{where(f)}</span>}
+            <span>{SOURCE(f.source)}</span>
+            {!followup && f.ownerPr !== f.foundOnPr && owner && <span>for {owner.role || `#${owner.pr}`}</span>}
+            {f.ghUrl && (
+              <a href={f.ghUrl} target="_blank" rel="noreferrer">
+                GitHub <Icon name="external" size={12} />
+              </a>
+            )}
+          </span>
+        </span>
       </div>
-      <div className="finding-meta">
-        <span className={`sev sev-${f.severity}`}>{f.severity}</span>
-        {where(f) && <span className="mono">{where(f)}</span>}
-        <span>{SOURCE(f.source)}</span>
-        {f.ownerPr !== f.foundOnPr && owner && <span>for {owner.role || `#${owner.pr}`}</span>}
-        {f.ghUrl && (
-          <a href={f.ghUrl} target="_blank" rel="noreferrer">
-            GitHub <Icon name="external" size={12} />
-          </a>
-        )}
-      </div>
-      {(open || (!compact && f.state === 'proposed')) && f.body && <p className="finding-body">{f.body}</p>}
-      {f.note && f.state !== 'open' && <p className="finding-note">{f.note}</p>}
+      {(open || f.state === 'proposed') && f.body && <p className="finding-body">{f.body}</p>}
+      {(verdict?.evidence || (f.note && f.state !== 'open')) && (open || st?.tone === 'needs' || f.state === 'wontfix') && <p className="finding-note">{verdict?.evidence || f.note}</p>}
+      {open && history && <p className="finding-history">{history}</p>}
       {open && (
         <div className="finding-actions">
           {f.state === 'open' && (
             <>
               <button className="btn ghost small" disabled={busy} onClick={() => set({ state: 'addressed' })}>
-                Addressed
+                Fixed
               </button>
-              <button className="btn ghost small" disabled={busy} onClick={() => set({ state: 'wontfix' })}>
-                Won't fix
+              <button className="btn ghost small" disabled={busy} onClick={waive}>
+                {f.severity === 'blocking' ? 'Waive…' : "Won't fix"}
               </button>
-              <select
-                className="review-select"
-                aria-label="Severity"
-                value={f.severity}
-                disabled={busy}
-                onChange={(e) => set({ severity: e.target.value })}
-              >
+              <select className="review-select" aria-label="Severity" value={f.severity} disabled={busy} onChange={(e) => set({ severity: e.target.value })}>
                 <option value="blocking">Blocking</option>
                 <option value="should">Should</option>
                 <option value="nit">Nit</option>
@@ -156,8 +179,8 @@ function NewFinding({ api, stackId, pr, onAdded }: { api: ReviewApi; stackId: st
   const [busy, setBusy] = useState(false);
   if (!open)
     return (
-      <button className="btn ghost small add-finding" onClick={() => setOpen(true)}>
-        <Icon name="plus" size={14} /> Finding
+      <button className="add-finding" onClick={() => setOpen(true)}>
+        <Icon name="plus" size={14} /> Add a finding, or click a line
       </button>
     );
   const submit = async () => {
@@ -215,8 +238,9 @@ function NewFinding({ api, stackId, pr, onAdded }: { api: ReviewApi; stackId: st
 
 /**
  * A layer's findings in the order you act on them: proposals to keep or
- * dismiss, open ones to select and send, sent ones the agent is on, then the
- * closed ones folded away.
+ * dismiss, then the ones to send and the ones with the agent (with the
+ * reviewer's verdict once a fix is back), follow-ups left by merged layers,
+ * other layers' findings made here, and the closed ones folded away.
  */
 export function FindingsList({
   api,
@@ -224,6 +248,7 @@ export function FindingsList({
   layer,
   layers,
   findings,
+  followups,
   selected,
   setSelected,
   onChanged,
@@ -235,6 +260,7 @@ export function FindingsList({
   layer: Layer;
   layers: Layer[];
   findings: Finding[];
+  followups: Finding[];
   selected: Set<number>;
   setSelected: (s: Set<number>) => void;
   onChanged: () => void;
@@ -243,63 +269,79 @@ export function FindingsList({
 }) {
   const [showClosed, setShowClosed] = useState(false);
   const mine = findings.filter((f) => f.ownerPr === layer.pr || f.foundOnPr === layer.pr);
-  const groups: [string, Finding[]][] = [
-    ['Proposed by the reviewer', mine.filter((f) => f.state === 'proposed')],
-    ['Open', mine.filter((f) => f.state === 'open' && f.ownerPr === layer.pr)],
-    ['Sent to the agent', mine.filter((f) => f.state === 'sent' && f.ownerPr === layer.pr)],
-    ['For other layers', mine.filter((f) => f.ownerPr !== layer.pr && f.state !== 'proposed' && f.state !== 'dismissed')],
-  ];
+  const verdicts = new Map((layer.status === 'rereview' ? (layer.current?.verdict?.items ?? []) : []).map((v) => [v.id, v]));
+  const proposed = mine.filter((f) => f.state === 'proposed');
+  const live = mine
+    .filter((f) => (f.state === 'open' || f.state === 'sent') && f.ownerPr === layer.pr)
+    .sort((a, b) => rank(a, verdicts) - rank(b, verdicts));
+  const others = mine.filter((f) => f.ownerPr !== layer.pr && f.state !== 'proposed' && f.state !== 'dismissed');
   const closed = mine.filter((f) => f.ownerPr === layer.pr && (f.state === 'addressed' || f.state === 'wontfix' || f.state === 'dismissed'));
-  const openIds = mine.filter((f) => f.state === 'open' && f.ownerPr === layer.pr).map((f) => f.id);
+  const openIds = [...live, ...followups].filter((f) => f.state === 'open').map((f) => f.id);
   const toggle = (id: number, on: boolean) => {
     const next = new Set(selected);
     if (on) next.add(id);
     else next.delete(id);
     setSelected(next);
   };
+  const row = (f: Finding, opts: { select?: boolean; followup?: boolean } = {}) => (
+    <FindingRow key={f.id} f={f} api={api} stackId={stackId} layers={layers} selected={selected.has(f.id)} onSelect={opts.select ? (on) => toggle(f.id, on) : undefined} onChanged={onChanged} verdict={verdicts.get(f.id)} followup={opts.followup} />
+  );
   return (
     <div className="findings">
-      <div className="findings-bar">
-        {openIds.length > 1 && (
+      {openIds.length > 1 && (
+        <div className="findings-bar">
           <button className="btn ghost small" onClick={() => setSelected(selected.size === openIds.length ? new Set() : new Set(openIds))}>
             {selected.size === openIds.length ? 'Select none' : 'Select all open'}
           </button>
-        )}
-        <span className="spacer" />
-        <button className="btn ghost small" onClick={onImport} disabled={importing} title="Bring in review threads from GitHub, bots included">
-          {importing ? 'Reading GitHub…' : 'GitHub threads'}
-        </button>
-        <NewFinding api={api} stackId={stackId} pr={layer.pr} onAdded={onChanged} />
-      </div>
-      {!mine.length && <p className="panel-msg">No findings yet. Click a line in the diff, ask the reviewer, or bring in GitHub's threads.</p>}
-      {groups.map(([title, list]) =>
-        list.length ? (
-          <section key={title}>
-            <h3 className="findings-label">
-              {title} <span className="count">{list.length}</span>
-            </h3>
-            <ul className="finding-list">
-              {list.map((f) => (
-                <FindingRow key={f.id} f={f} api={api} stackId={stackId} layers={layers} selected={selected.has(f.id)} onSelect={f.ownerPr === layer.pr ? (on) => toggle(f.id, on) : undefined} onChanged={onChanged} />
-              ))}
-            </ul>
-          </section>
-        ) : null,
+        </div>
+      )}
+      {!mine.length && !followups.length && <p className="panel-msg">No findings yet. Click a line in the diff, ask the reviewer, or bring in GitHub's threads.</p>}
+      {proposed.length > 0 && (
+        <section>
+          <h3 className="findings-label">
+            Proposed by the reviewer <span className="count">{proposed.length}</span>
+          </h3>
+          <ul className="finding-list">{proposed.map((f) => row(f))}</ul>
+        </section>
+      )}
+      {live.length > 0 && <ul className="finding-list">{live.map((f) => row(f, { select: true }))}</ul>}
+      {followups.length > 0 && (
+        <section>
+          <h3 className="findings-label">
+            Follow-ups from merged layers <span className="count">{followups.length}</span>
+          </h3>
+          <ul className="finding-list">{followups.map((f) => row(f, { select: true, followup: true }))}</ul>
+        </section>
+      )}
+      {others.length > 0 && (
+        <section>
+          <h3 className="findings-label">
+            For other layers <span className="count">{others.length}</span>
+          </h3>
+          <ul className="finding-list">{others.map((f) => row(f))}</ul>
+        </section>
       )}
       {closed.length > 0 && (
         <section>
           <button className="findings-label linkish" onClick={() => setShowClosed((v) => !v)} aria-expanded={showClosed}>
             Closed <span className="count">{closed.length}</span>
           </button>
-          {showClosed && (
-            <ul className="finding-list">
-              {closed.map((f) => (
-                <FindingRow key={f.id} f={f} api={api} stackId={stackId} layers={layers} onChanged={onChanged} />
-              ))}
-            </ul>
-          )}
+          {showClosed && <ul className="finding-list">{closed.map((f) => row(f))}</ul>}
         </section>
       )}
+      <div className="findings-add">
+        <NewFinding api={api} stackId={stackId} pr={layer.pr} onAdded={onChanged} />
+        <button className="btn ghost small import" onClick={onImport} disabled={importing} title="Bring in review threads from GitHub, bots included">
+          <Icon name="reply" size={14} /> {importing ? 'Reading GitHub…' : 'Bring in GitHub threads'}
+        </button>
+      </div>
     </div>
   );
+}
+
+/** What needs you first: a fix not fully made, then open, then with the agent, then fixed. */
+function rank(f: Finding, verdicts: Map<number, Verdict['items'][number]>): number {
+  const v = verdicts.get(f.id);
+  if (f.state === 'sent' && v) return v.verdict === 'addressed' ? 3 : 0;
+  return f.state === 'open' ? 1 : 2;
 }

@@ -408,3 +408,39 @@ test('review: a stack you pick keeps your PRs in your order; PRs join only when 
     assert.equal(tree.source, 'tree');
   });
 });
+
+test('review: waiving a blocking finding takes a reason; every state change says who and at which head; merged layers leave follow-ups', async () => {
+  const t = await setup();
+  await withGh(t.w, async () => {
+    let v = await t.svc.create(t.w.local, { pr: 1 });
+    await t.svc.sync(v.id);
+    const block = await t.svc.addFinding(v.id, { ownerPr: 2, title: 'Blocks it', severity: 'blocking' });
+    assert.equal(block.stateBy, 'you');
+    await assert.rejects(t.svc.updateFinding(v.id, block.id, { state: 'wontfix' }), /say why/);
+    const waived = await t.svc.updateFinding(v.id, block.id, { state: 'wontfix', note: 'Covered by the F3 refactor' });
+    assert.equal(waived.state, 'wontfix');
+    assert.equal(waived.note, 'Covered by the F3 refactor');
+    const listed = (await t.svc.findings(v.id)).find((f) => f.id === block.id)!;
+    assert.equal(listed.stateBy, 'you');
+    assert.equal(listed.stateHead, t.heads.h2.slice(0, 7));
+    // A non-blocking one needs no reason.
+    const nit = await t.svc.addFinding(v.id, { ownerPr: 2, title: 'Nit', severity: 'nit' });
+    assert.equal((await t.svc.updateFinding(v.id, nit.id, { state: 'wontfix' })).state, 'wontfix');
+
+    // #1 merges with a finding still open on it: the next open layer gets it as a follow-up.
+    const left = await t.svc.addFinding(v.id, { ownerPr: 1, title: 'Name the base type' });
+    await t.setState((st) => {
+      st.prs.find((p) => p.number === 1)!.state = 'MERGED';
+    });
+    await t.svc.sync(v.id);
+    v = await t.svc.view(v.id);
+    const next = v.layers.find((l) => l.pr === v.next)!;
+    assert.equal(next.followups, 1);
+    const text = await t.svc.dispatchText(v.id, next.pr, [left.id]);
+    assert.match(text, /Found on #1, already merged: fix it in this layer/);
+    await t.svc.dispatch(v.id, next.pr, { findingIds: [left.id], text, targetUid: 'u-agent' });
+    const moved = (await t.svc.findings(v.id)).find((f) => f.id === left.id)!;
+    assert.equal(moved.ownerPr, next.pr);
+    assert.equal(moved.state, 'sent');
+  });
+});

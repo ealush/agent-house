@@ -725,6 +725,8 @@
 .up-next .eyebrow {
   font-size: 12px;
   font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--muted);
 }
 
@@ -764,7 +766,7 @@
 .mt-row {
   width: 100%;
   display: grid;
-  grid-template-columns: 56px minmax(0, 1fr) 190px 84px 92px;
+  grid-template-columns: 56px minmax(0, 1fr) 132px 96px 104px;
   align-items: center;
   gap: 12px;
   min-height: 44px;
@@ -863,9 +865,16 @@ button.mt-row:hover {
 
 .card-label {
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--muted);
+}
+
+.cockpit-card .accent-link {
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .cockpit-card p {
@@ -912,6 +921,8 @@ button.mt-row:hover {
 }
 
 .plan-path {
+  font-size: 14px;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1337,6 +1348,13 @@ button.mt-row:hover {
   gap: 6px;
 }
 
+.head-sep {
+  flex: none;
+  width: 1px;
+  height: 28px;
+  background: var(--line-2);
+}
+
 .nav-btn {
   min-height: 40px;
   padding: 0 12px;
@@ -1625,16 +1643,30 @@ button.mt-row:hover {
 .side-foot {
   flex: none;
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 8px;
-  padding: 8px 10px 8px 16px;
+  padding: 10px 14px 14px;
   border-top: 1px solid var(--line);
 }
 
-.side-foot .grow {
+.side-why {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.side-why .grow {
   flex: 1;
   min-width: 0;
   font-size: 12px;
+}
+
+.side-foot .btn.send {
+  justify-content: center;
+  min-height: 40px;
+  border-radius: 12px;
+  background: var(--raised);
+  font-weight: 600;
 }
 
 /* ---- narrower windows: the cockpit stacks its cards, the side column goes under the diff */
@@ -1648,13 +1680,6 @@ button.mt-row:hover {
     grid-template-columns: 1fr 1fr;
   }
 
-  .mt-row {
-    grid-template-columns: 48px minmax(0, 1fr) 170px 84px;
-  }
-
-  .mt-c {
-    display: none;
-  }
 
 }
 
@@ -1690,12 +1715,12 @@ button.mt-row:hover {
     border-top: 1px solid var(--line);
   }
 
-  .mt-f {
+  .mt-c {
     display: none;
   }
 
   .mt-row {
-    grid-template-columns: 48px minmax(0, 1fr) 150px;
+    grid-template-columns: 48px minmax(0, 1fr) 132px 84px;
   }
 }
 
@@ -1767,9 +1792,7 @@ button.mt-row:hover {
 }
 
 .review-stack.phone .up-next .btn.primary {
-  flex: 1;
-  justify-content: center;
-  min-height: 44px;
+  min-height: 40px;
 }
 
 .layer.phone .band-sha,
@@ -2006,15 +2029,29 @@ button.mt-row:hover {
 }
 
 
-.review-diff .diff-file {
-  width: 100%;
-  border: 0;
-  border-top: 1px solid var(--line);
-  text-align: left;
+.review-diff .fold-mark {
+  display: inline-grid;
+  color: var(--muted);
+  transition: transform var(--dur-1) var(--ease);
 }
 
-.review-diff .diff-block:first-child .diff-file {
-  border-top: 0;
+.review-diff .fold-mark.shut {
+  transform: rotate(-90deg);
+}
+
+.review-diff .file-n {
+  margin-left: 10px;
+  font: 12px var(--ui);
+  color: var(--muted);
+}
+
+.review-diff .diff-file {
+  width: 100%;
+  min-height: 40px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  text-align: left;
 }
 
 .diff-fold {
@@ -2034,6 +2071,10 @@ button.mt-row:hover {
 }
 
 .review-diff .diff-block {
+  margin-bottom: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  overflow: hidden;
   content-visibility: auto;
   contain-intrinsic-size: auto 600px;
 }
@@ -2064,14 +2105,26 @@ button.mt-row:hover {
 
 .finding-inline {
   display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 14px 8px 56px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--accent-line);
+  background: var(--raised);
+  font: 13px/1.45 var(--ui);
+  white-space: normal;
+}
+
+.finding-inline .fi-head {
+  display: flex;
   align-items: center;
   gap: 8px;
-  margin: 2px 10px 6px 44px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--accent-line);
-  background: var(--accent-bg);
-  font: 13px var(--ui);
+  font-weight: 600;
+}
+
+.finding-inline .fi-body {
+  color: var(--muted);
 }
 
 .finding-inline .grow {
@@ -2079,40 +2132,16 @@ button.mt-row:hover {
   min-width: 0;
 }
 
-.finding-inline .dot {
-  flex: none;
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: var(--accent);
-}
-
 .finding-inline.sev-blocking {
-  border-color: color-mix(in srgb, var(--danger) 28%, transparent);
-  background: color-mix(in srgb, var(--danger) 7%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
 }
 
-.finding-inline.sev-blocking .dot {
-  background: var(--danger);
+.finding-inline.sev-nit {
+  border-color: var(--line-2);
 }
 
 .finding-inline:is(.addressed, .wontfix) {
   opacity: 0.6;
-}
-
-.range-note {
-  margin: 0 24px 8px;
-}
-
-.range-diff {
-  margin: 0 24px 24px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid var(--line);
-  background: var(--sunken);
-  font: 13px/1.6 var(--mono);
-  white-space: pre;
-  overflow: auto;
 }
 
 .row-actions {
@@ -2133,7 +2162,7 @@ button.mt-row:hover {
 /* ---- findings */
 
 .findings {
-  padding: 4px 12px 16px;
+  padding: 0 12px 16px;
 }
 
 .findings-bar {
@@ -2172,29 +2201,120 @@ button.findings-label {
 .finding {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 12px;
   border-radius: 12px;
   border: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.finding.needs {
+  border-color: var(--accent-line);
+  background: var(--raised);
 }
 
 .finding.selected {
-  border-color: var(--accent-line);
+  border-color: var(--accent);
   background: var(--accent-bg);
 }
 
-.finding.sev-blocking {
-  box-shadow: inset 3px 0 0 var(--danger);
-}
-
-.finding:is(.addressed, .wontfix, .dismissed) {
-  opacity: 0.7;
+.finding.settled {
+  opacity: 0.72;
 }
 
 .finding-head {
   display: flex;
   align-items: flex-start;
+  gap: 10px;
+}
+
+.finding-stack {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.finding-tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+
+.sev-chip {
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-bg);
+}
+
+.sev-chip.sev-blocking {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.sev-chip.sev-nit {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 12%, transparent);
+}
+
+.state-word {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.state-word.done {
+  color: var(--done);
+}
+
+.state-word.needs {
+  color: var(--accent);
+}
+
+.state-word.busy {
+  color: var(--run);
+}
+
+.finding-history {
+  margin: 0;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.findings-add {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.add-finding {
+  display: flex;
+  align-items: center;
   gap: 8px;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px dashed var(--line-2);
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.add-finding:hover {
+  color: var(--text);
+  border-color: var(--faint);
+}
+
+.findings-add .import {
+  align-self: flex-start;
+  min-height: 40px;
 }
 
 /* A 16px box with a 32px target: the input covers the whole label, unseen. */
@@ -2247,25 +2367,7 @@ button.findings-label {
   outline-offset: 2px;
 }
 
-.finding .dot {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  margin: 7px 4px 0;
-  border-radius: 999px;
-  background: var(--accent);
-}
-
-.finding.sev-blocking .dot {
-  background: var(--danger);
-}
-
-.finding.sev-nit .dot {
-  background: var(--faint);
-}
-
 .finding-title {
-  flex: 1;
   min-width: 0;
   min-height: 32px;
   margin: -6px 0;
@@ -2274,7 +2376,8 @@ button.findings-label {
   background: none;
   text-align: left;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
+  line-height: 1.35;
 }
 
 .finding-head .pill {
@@ -2287,7 +2390,6 @@ button.findings-label {
   display: flex;
   flex-wrap: wrap;
   gap: 2px 10px;
-  padding-left: 24px;
   font-size: 12px;
   color: var(--muted);
 }
@@ -2316,7 +2418,6 @@ button.findings-label {
 .finding-body,
 .finding-note {
   margin: 0;
-  padding-left: 24px;
   font-size: 13px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -2330,7 +2431,7 @@ button.findings-label {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  padding-left: 20px;
+  margin-left: -10px;
 }
 
 .comment-box.loose {
@@ -2441,3 +2542,10 @@ button.findings-label {
   text-overflow: clip;
 }
 
+
+.review-plan .plan-text {
+  max-height: 60vh;
+  overflow-y: auto;
+  font-size: 14px;
+  line-height: 1.55;
+}

@@ -3,6 +3,7 @@ import { ConfirmButton } from '../ConfirmButton.tsx';
 import type { Layer, OwnerSuggestion, ReviewApi, Stack } from '../reviewApi.ts';
 import { look } from '../agents.ts';
 import { SheetBar, useSheet } from '../sheet.tsx';
+import { Markdown } from '../Markdown.tsx';
 import { errorText } from '../errors.ts';
 
 const STATUS: Record<string, string> = { waiting: 'needs you', busy: 'working', attention: 'done', idle: 'idle', ended: 'ended; sending resumes it' };
@@ -119,6 +120,27 @@ export function DispatchDialog({
           </ConfirmButton>
         </div>
       </form>
+    </dialog>
+  );
+}
+
+/** The stack's plan, to read where you review. */
+export function PlanDialog({ path, text, onClose }: { path: string | null; text: string | null; onClose: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const { dismiss } = useSheet(dialog, onClose);
+  useEffect(() => dialog.current?.showModal(), []);
+  return (
+    <dialog ref={dialog} className="dialog wide review-plan" aria-label="Plan" onClose={onClose} onClick={(e) => e.target === dialog.current && onClose()}>
+      <SheetBar onClose={dismiss} title="Plan" />
+      <header className="ns-head">
+        <h2>{path ? path.split('/').pop() : "The first PR's description"}</h2>
+      </header>
+      <div className="plan-text">{text ? <Markdown text={text} /> : <p className="hint">The plan couldn't be read.</p>}</div>
+      <div className="actions">
+        <button type="button" className="btn" onClick={dismiss}>
+          Close
+        </button>
+      </div>
     </dialog>
   );
 }

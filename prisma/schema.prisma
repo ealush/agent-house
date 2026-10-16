@@ -181,6 +181,9 @@ model ReviewFinding {
   ghThread   String?
   ghUrl      String?
   state      String  @default("open")
+  /// Who moved it to its state ("you", "reviewer", "github") and at which revision.
+  stateBy    String?
+  stateRevId Int?
   note       String?
   dispatchId Int?
   createdAt  Int     @default(0)

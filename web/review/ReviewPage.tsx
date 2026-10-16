@@ -10,6 +10,7 @@ import { age, look } from '../agents.ts';
 import { AgentLogo } from '../logos.tsx';
 import { Thread } from './Thread.tsx';
 import { LayerView } from './Layer.tsx';
+import { PlanDialog } from './Dispatch.tsx';
 import { Compose, rememberRoot } from './Compose.tsx';
 import { Dot, Spine, SpineBar, SpineColumn, layerLine } from './Spine.tsx';
 import './review.css';
@@ -18,6 +19,7 @@ const api = reviewApi();
 const STATUS_WORDS: Record<string, string> = { busy: 'working', waiting: 'needs you', attention: 'done', idle: 'idle' };
 const toast = (text: string) => window.dispatchEvent(new CustomEvent('ah:toast', { detail: text }));
 const ago = (t: number) => (age(t) === 'now' ? 'just now' : `${age(t)} ago`);
+const SHORT: Record<Layer['status'], string> = { unreviewed: 'To review', changes: 'To send', fixing: 'Agent fixing', rereview: 'Came back', approved: 'Reviewed', merged: 'Merged', closed: 'Closed', skipped: 'Skipped' };
 const ALERT_WORD: Record<ReviewAlert['kind'], string> = { rereview: 'came back', nopush: 'finished without a push', restack: 'needs a restack', ready: 'is ready to merge' };
 
 function useRoute() {
@@ -251,7 +253,7 @@ function Owner({ stack, onStack, onOpenSession }: { stack: Stack; onStack: (s: S
         </span>
         <span className="stack">
           <span className="name">{o ? o.title : 'No agent yet'}</span>
-          <span className="sub">{o ? (o.live ? (STATUS_WORDS[o.status] ?? o.status) : 'Ended; sending resumes it') : 'The first findings you send choose it'}</span>
+          <span className="sub">{o ? [look(o.agent).name, o.live ? (STATUS_WORDS[o.status] ?? o.status) : 'ended; sending resumes it', o.branch ? `on ${o.branch}` : ''].filter(Boolean).join(' · ') : 'The first findings you send choose it'}</span>
         </span>
       </div>
       <div className="card-actions">
@@ -297,7 +299,8 @@ type Next = { tone: 'needs' | 'busy' | 'ready' | 'todo' | 'done'; eyebrow: strin
 function upNext(stack: Stack, alerts: ReviewAlert[]): Next {
   const name = (l: Layer) => l.role || `#${l.pr}`;
   const open = stack.layers.filter((l) => l.state === 'open');
-  const agent = stack.owner?.title ?? 'the agent';
+  const agent = stack.owner?.agent ? look(stack.owner.agent).name : 'the agent';
+  const who = (l: Layer) => (l.dispatch?.targetAgent ? look(l.dispatch.targetAgent).name : agent);
   const a = byRank(alerts)[0];
   const al = a && stack.layers.find((l) => l.pr === a.pr);
   if (a && al) {
@@ -308,13 +311,13 @@ function upNext(stack: Stack, alerts: ReviewAlert[]): Next {
       return {
         tone: 'needs',
         eyebrow: 'Up next',
-        title: `${name(al)} came back from ${al.dispatch?.targetTitle ?? agent}`,
+        title: `${name(al)} came back from ${who(al)}`,
         body: v ? `The reviewer checked the push: ${v.summary || `${fixed} fixed${partly ? `, ${partly} not fully` : ''}.`}` : "It changed since your review. The diff shows what's new.",
         pr: al.pr,
         action: `Re-review ${name(al)}`,
       };
     }
-    if (a.kind === 'nopush') return { tone: 'needs', eyebrow: 'Up next', title: `${al.dispatch?.targetTitle ?? agent} finished ${name(al)} without pushing`, body: 'Look at the session, or send the findings again.', pr: al.pr, action: `Open ${name(al)}` };
+    if (a.kind === 'nopush') return { tone: 'needs', eyebrow: 'Up next', title: `${who(al)} finished ${name(al)} without pushing`, body: 'Look at the session, or send the findings again.', pr: al.pr, action: `Open ${name(al)}` };
     if (a.kind === 'restack') return { tone: 'needs', eyebrow: 'Up next', title: `${name(al)} needs a restack`, body: `The layer under it merged. Its own commits need moving onto ${stack.trunk}.`, pr: al.pr, action: `Open ${name(al)}` };
     return { tone: 'ready', eyebrow: 'Up next', title: `${name(al)} is ready to merge`, body: al.title, pr: al.pr, action: `Open ${name(al)}` };
   }
@@ -328,7 +331,7 @@ function upNext(stack: Stack, alerts: ReviewAlert[]): Next {
     return { tone: 'todo', eyebrow: 'Up next', title: `Review ${name(todo)}`, body: `${todo.title}${r ? ` · ${r.files} file${r.files === 1 ? '' : 's'}, +${r.additions} −${r.deletions}` : ''}`, pr: todo.pr, action: `Review ${name(todo)}` };
   }
   const fixing = open.find((l) => l.status === 'fixing');
-  if (fixing) return { tone: 'busy', eyebrow: 'Waiting', title: `${fixing.dispatch?.targetTitle ?? agent} is fixing ${name(fixing)}`, body: 'You get a push and an Inbox card when it comes back.', pr: fixing.pr, action: null };
+  if (fixing) return { tone: 'busy', eyebrow: 'Waiting', title: `${who(fixing)} is fixing ${name(fixing)}`, body: 'You get a push and an Inbox card when it comes back.', pr: fixing.pr, action: null };
   if (first) return { tone: 'todo', eyebrow: 'Up next', title: `${name(first)}: ${STATUS_WORD[first.status].toLowerCase()}`, body: first.title, pr: first.pr, action: `Open ${name(first)}` };
   return { tone: 'done', eyebrow: 'Done', title: 'Every layer is merged or closed', body: `${stack.layers.filter((l) => l.state === 'merged').length} merged into ${stack.trunk}.`, pr: null, action: null };
 }
@@ -399,7 +402,7 @@ function MergeTable({ stack, onOpen }: { stack: Stack; onOpen: (pr: number) => v
               <span role="cell">
                 <span className={`tone-pill ${tone}`}>
                   <Dot tone={tone} size="sm" />
-                  {layerLine(l).split(' · ')[0]}
+                  {SHORT[l.status]}
                 </span>
               </span>
               <span className="mt-f" role="cell">
@@ -418,6 +421,7 @@ function MergeTable({ stack, onOpen }: { stack: Stack; onOpen: (pr: number) => v
 
 function Cockpit({ stack, alerts, narrow, onStack, onOpen, onOpenSession, onPick }: { stack: Stack; alerts: ReviewAlert[]; narrow: boolean; onStack: (s?: Stack) => void; onOpen: (pr: number | null) => void; onOpenSession: (uid: string) => void; onPick: () => void }) {
   const [plan, setPlan] = useState<{ path: string | null; text: string | null } | null>(null);
+  const [reading, setReading] = useState(false);
   useEffect(() => {
     api.plan(stack.id).then(setPlan, () => setPlan({ path: stack.planPath, text: null }));
   }, [stack.id, stack.planPath]);
@@ -442,6 +446,7 @@ function Cockpit({ stack, alerts, narrow, onStack, onOpen, onOpenSession, onPick
   const next = upNext(stack, alerts);
   return (
     <div className="cockpit">
+      {reading && <PlanDialog path={stack.planPath} text={plan?.text ?? null} onClose={() => setReading(false)} />}
       <UpNext next={next} onOpen={(pr) => onOpen(pr)} />
       {narrow ? (
         <Spine stack={stack} pr={null} onPick={onOpen} />
@@ -458,13 +463,21 @@ function Cockpit({ stack, alerts, narrow, onStack, onOpen, onOpenSession, onPick
         <section className="cockpit-card">
           <h3 className="card-label">Plan</h3>
           {stack.planPath ? (
-            <p className="mono plan-path" title={stack.planPath}>
-              {stack.planPath.split('/').pop()}
-            </p>
+            <>
+              <p className="plan-path" title={stack.planPath}>
+                {stack.planPath.split('/').pop()}
+              </p>
+              <p className="hint">Names the layers and their owners. The reviewer reads it with every question.</p>
+            </>
           ) : (
-            <p className="hint">{plan?.text ? "Using the first PR's description." : 'None yet. A plan gives the reviewer your contracts and labels the layers.'}</p>
+            <p className="hint">{plan?.text ? "Using the first PR's description. A plan file gives the reviewer your contracts and labels the layers." : 'None yet. A plan gives the reviewer your contracts and labels the layers.'}</p>
           )}
           <div className="card-actions">
+            {plan?.text && (
+              <button className="btn small" onClick={() => setReading(true)}>
+                Read
+              </button>
+            )}
             <button className="btn ghost small" onClick={choosePlan}>
               {stack.planPath ? 'Change' : 'Choose a file'}
             </button>
@@ -494,8 +507,8 @@ function Cockpit({ stack, alerts, narrow, onStack, onOpen, onOpenSession, onPick
             <p className="hint">What you've settled: an invariant, who owns what. The reviewer and the agent are held to it.</p>
           )}
           <div className="card-actions">
-            <button className="btn ghost small" onClick={addDecision}>
-              <Icon name="pin" size={14} /> Pin a decision
+            <button className="btn ghost small accent-link" onClick={addDecision}>
+              Pin a decision
             </button>
           </div>
         </section>
@@ -769,15 +782,12 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
           <Icon name="sparkle" size={16} />
           {!narrow && <span>Ask the reviewer</span>}
         </button>
-        {!narrow && (
-          <button className="icon-btn round" onClick={sync} disabled={syncing} aria-label="Refresh from GitHub" title="Refresh from GitHub">
-            <Icon name="reload" size={17} />
-          </button>
-        )}
         <Popover label={<Icon name="more" size={18} />} className="icon-btn round" align="right" up={false} title="Stack">
           {(close) => (
             <div className="review-menu">
-              {narrow && <button onClick={() => (close(), sync())}>Refresh from GitHub</button>}
+              <button disabled={syncing} onClick={() => (close(), sync())}>
+                Refresh from GitHub
+              </button>
               {stackItems(close)}
             </div>
           )}

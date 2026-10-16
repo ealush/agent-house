@@ -4,6 +4,7 @@
 import { useEffect, useRef } from 'react';
 import { toneOf, type Layer, type LayerStatus, type Stack, type Tone } from '../reviewApi.ts';
 import { Icon } from '../icons.tsx';
+import { look } from '../agents.ts';
 
 /** What a layer is waiting on, in a few words. */
 export function layerLine(l: Layer): string {
@@ -11,7 +12,7 @@ export function layerLine(l: Layer): string {
   if (l.status === 'merged') return 'Merged';
   if (l.status === 'closed') return 'Closed on GitHub';
   if (l.status === 'skipped') return "Skipped · won't merge";
-  if (l.status === 'fixing') return `${d?.targetTitle ?? 'The agent'} is fixing${d?.findings.length ? ` ${d.findings.length}` : ''}`;
+  if (l.status === 'fixing') return `${d?.targetAgent ? look(d.targetAgent).name : 'The agent'} is fixing${d?.findings.length ? ` ${d.findings.length}` : ''}`;
   if (l.status === 'rereview') return l.open ? `Came back · ${l.open} open` : 'Came back';
   if (d?.state === 'no-push') return 'Finished without a push';
   if (l.needs === 'retarget') return 'Needs retargeting';

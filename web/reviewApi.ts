@@ -6,7 +6,7 @@ export type Verdict = { items: { id: number; verdict: 'addressed' | 'partly' | '
 export type RevView = { id: number; baseSha: string; headSha: string; patchId: string; files: number; additions: number; deletions: number; summary: string | null; verdict: Verdict | null };
 export type LayerStatus = 'unreviewed' | 'changes' | 'fixing' | 'rereview' | 'approved' | 'merged' | 'closed' | 'skipped';
 export type Gate = { key: 'reviewed' | 'findings' | 'checks' | 'mergeable' | 'base' | 'order'; ok: boolean; label: string; detail?: string };
-export type DispatchView = { id: number; pr: number; state: string; targetUid: string; targetTitle: string | null; sentAt: number; doneAt: number | null; findings: number[]; text: string };
+export type DispatchView = { id: number; pr: number; state: string; targetUid: string; targetTitle: string | null; targetAgent: string | null; sentAt: number; doneAt: number | null; findings: number[]; text: string };
 export type Finding = {
   id: number;
   ownerPr: number;
@@ -25,6 +25,10 @@ export type Finding = {
   messageId: number | null;
   dispatchId: number | null;
   createdAt: number;
+  /** Who moved it to its state ("you", "reviewer", "github"), when, and at which head. */
+  stateBy: string | null;
+  stateAt: number;
+  stateHead: string | null;
 };
 export type Layer = {
   pr: number;
@@ -48,12 +52,14 @@ export type Layer = {
   current: RevView | null;
   reviewed: RevView | null;
   open: number;
+  /** Open findings whose layer already merged; they're fixed on this (the next open) layer. */
+  followups: number;
   blocking: number;
   dispatch: DispatchView | null;
   gates: Gate[];
   ownerUid: string | null;
 };
-export type Owner = { uid: string; key: string; title: string; agent: string | null; status: string; live: boolean } | null;
+export type Owner = { uid: string; key: string; title: string; agent: string | null; status: string; live: boolean; branch: string | null } | null;
 export type Stack = {
   id: string;
   title: string;

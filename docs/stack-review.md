@@ -4,7 +4,8 @@ Reviewing, fixing and merging your own pull requests in ah, one layer at a
 time. It reviews the whole stack together but merges one PR at a time.
 Status: R0–R3 built on 16 October 2026 (`server/review/`, `web/review/`),
 then taken off `main` until it's ready; it lives on the `stack-review` branch.
-Hand-picked stacks and the redesign (below) were added on 17 October.
+Hand-picked stacks and the redesign (below) were added on 17 October, then
+built to the canvas, with the spec's waivers, finding history and follow-ups.
 R4–R5 open. Where the build differs from the first proposal, this document
 says what was built. Backlog: "Stack review" in `BACKLOG.md`. The screens were
 designed on a Claude Design canvas first: https://claude.ai/artifact/Ff8Aqv3XSLzTiGQ1e2dUca
@@ -204,10 +205,15 @@ It proposes. You decide by pressing a button.
   merged, the finding becomes a follow-up item on the stack (a new PR or the
   next open layer), never a rewrite of merged history.
 - **States:** `open → sent → addressed | not addressed`, plus
-  `won't fix` and `dismissed`. Every change records who made it and at
-  which revision.
+  `won't fix` and `dismissed`. Every change records who made it (you, the
+  reviewer, GitHub) and at which revision (`stateBy`, `stateRevId`); a card
+  shows it when opened ("Fixed by the reviewer at f9b99cc, 4m ago").
+- **Follow-ups:** a finding still open when its layer merges shows on the next
+  open layer as a follow-up, selectable there. Sending it moves it to that
+  layer, and the message says it was found on the merged one.
 - **Severity:** `blocking` / `should` / `nit`. Only blocking findings stop
-  Merge & next, and you can waive one with a reason that is recorded.
+  Merge & next. *Waive…* on a blocking one asks why; the server refuses a
+  waiver without a reason, and the reason stays on the finding.
 - **Thread sync:** when a finding imported from GitHub is closed, its card
   offers **Reply & resolve on GitHub** with the text prefilled. It doesn't happen
   automatically. This is the "three Codex bot threads still unresolved"

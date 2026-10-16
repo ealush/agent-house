@@ -64,7 +64,7 @@ export type LayerStatus = 'unreviewed' | 'changes' | 'fixing' | 'rereview' | 'ap
 export type Gate = { key: 'reviewed' | 'findings' | 'checks' | 'mergeable' | 'base' | 'order'; ok: boolean; label: string; detail?: string };
 
 export type RevView = { id: number; baseSha: string; headSha: string; patchId: string; files: number; additions: number; deletions: number; summary: string | null; verdict: Verdict | null };
-export type DispatchView = { id: number; pr: number; state: string; targetUid: string; targetTitle: string | null; sentAt: number; doneAt: number | null; findings: number[]; text: string };
+export type DispatchView = { id: number; pr: number; state: string; targetUid: string; targetTitle: string | null; targetAgent: string | null; sentAt: number; doneAt: number | null; findings: number[]; text: string };
 export type FindingView = {
   id: number;
   ownerPr: number;
@@ -83,6 +83,10 @@ export type FindingView = {
   messageId: number | null;
   dispatchId: number | null;
   createdAt: number;
+  /** Who moved it to its state ("you", "reviewer", "github"), when, and at which head. */
+  stateBy: string | null;
+  stateAt: number;
+  stateHead: string | null;
 };
 export type LayerView = {
   pr: number;
@@ -107,12 +111,14 @@ export type LayerView = {
   current: RevView | null;
   reviewed: RevView | null;
   open: number;
+  /** Open findings whose layer already merged: they're fixed here, on the next open layer. */
+  followups: number;
   blocking: number;
   dispatch: DispatchView | null;
   gates: Gate[];
   ownerUid: string | null;
 };
-export type Owner = { uid: string; key: string; title: string; agent: string | null; status: string; live: boolean } | null;
+export type Owner = { uid: string; key: string; title: string; agent: string | null; status: string; live: boolean; branch: string | null } | null;
 export type StackView = {
   id: string;
   title: string;
@@ -162,7 +168,7 @@ function revView(r: ReviewRevision | undefined | null): RevView | null {
   return { id: r.id, baseSha: r.baseSha, headSha: r.headSha, patchId: r.patchId, files: r.files, additions: r.additions, deletions: r.deletions, summary: r.summary, verdict };
 }
 
-function findingView(f: ReviewFinding): FindingView {
+function findingView(f: ReviewFinding, heads?: Map<number, string>): FindingView {
   return {
     id: f.id,
     ownerPr: f.ownerPr,
@@ -181,6 +187,9 @@ function findingView(f: ReviewFinding): FindingView {
     messageId: f.messageId,
     dispatchId: f.dispatchId,
     createdAt: f.createdAt,
+    stateBy: f.stateBy,
+    stateAt: f.updatedAt,
+    stateHead: f.stateRevId ? (heads?.get(f.stateRevId) ?? null) : null,
   };
 }
 
@@ -448,7 +457,7 @@ export class ReviewService {
     const ownerOf = (uid: string | null, key: string | null): Owner => {
       if (!uid && !key) return null;
       const sess = sessions.find((x) => (key && x.key === key && x.live) || x.uid === uid) ?? sessions.find((x) => key && x.key === key);
-      return sess ? { uid: sess.uid, key: sess.key, title: sess.title, agent: sess.agent, status: sess.status, live: sess.live } : { uid: uid ?? '', key: key ?? '', title: 'Ended session', agent: null, status: 'ended', live: false };
+      return sess ? { uid: sess.uid, key: sess.key, title: sess.title, agent: sess.agent, status: sess.status, live: sess.live, branch: sess.branch } : { uid: uid ?? '', key: key ?? '', title: 'Ended session', agent: null, status: 'ended', live: false, branch: null };
     };
     const firstOpen = layers.find((l) => l.state === 'open')?.pr ?? null;
     const views: LayerView[] = layers.map((l) => {
@@ -495,7 +504,7 @@ export class ReviewService {
               { key: 'order', ok: firstOpen === l.pr, label: 'Next in merge order', detail: firstOpen === l.pr ? undefined : `#${firstOpen} comes first` },
             ];
       const dv: DispatchView | null = d
-        ? { id: d.id, pr: d.pr, state: d.state, targetUid: d.targetUid, targetTitle: ownerOf(d.targetUid, d.targetKey)?.title ?? null, sentAt: d.sentAt, doneAt: d.doneAt, findings: findings.filter((f) => f.dispatchId === d.id).map((f) => f.id), text: d.text }
+        ? { id: d.id, pr: d.pr, state: d.state, targetUid: d.targetUid, targetTitle: ownerOf(d.targetUid, d.targetKey)?.title ?? null, targetAgent: ownerOf(d.targetUid, d.targetKey)?.agent ?? null, sentAt: d.sentAt, doneAt: d.doneAt, findings: findings.filter((f) => f.dispatchId === d.id).map((f) => f.id), text: d.text }
         : null;
       return {
         pr: l.pr,
@@ -519,6 +528,7 @@ export class ReviewService {
         current: revView(current),
         reviewed: revView(reviewed),
         open: mine.length,
+        followups: l.pr === firstOpen ? findings.filter((f) => f.state === 'open' && layers.find((x) => x.pr === f.ownerPr)?.state === 'merged').length : 0,
         blocking,
         dispatch: dv,
         gates,
@@ -783,7 +793,9 @@ export class ReviewService {
 
   async findings(id: string, pr?: number): Promise<FindingView[]> {
     const rows = await this.db.reviewFinding.findMany({ where: { stackId: id, ...(pr === undefined ? {} : { OR: [{ ownerPr: pr }, { foundOnPr: pr }] }) }, orderBy: { id: 'asc' } });
-    return rows.map(findingView);
+    const revs = await this.db.reviewRevision.findMany({ where: { id: { in: rows.map((f) => f.stateRevId).filter((x): x is number => x !== null) } }, select: { id: true, headSha: true } });
+    const heads = new Map(revs.map((r) => [r.id, r.headSha.slice(0, 7)]));
+    return rows.map((f) => findingView(f, heads));
   }
 
   async addFinding(
@@ -809,6 +821,8 @@ export class ReviewService {
         lineEnd: input.lineEnd ?? input.lineStart ?? null,
         source: input.source ?? 'you',
         state: input.state ?? 'open',
+        stateBy: input.source === 'reviewer' ? 'reviewer' : 'you',
+        stateRevId: l.currentRevId,
         createdAt: now(),
         updatedAt: now(),
       },
@@ -823,7 +837,14 @@ export class ReviewService {
     const data: Partial<ReviewFinding> = { updatedAt: now() };
     if (patch.state !== undefined) {
       if (!['open', 'sent', 'addressed', 'wontfix', 'dismissed'].includes(patch.state)) throw new ReviewError(400, 'invalid state');
-      data.state = patch.state;
+      // Waiving a blocking finding lets the layer merge, so it takes a reason, kept on the finding.
+      const note = patch.note !== undefined ? patch.note : f.note;
+      if (patch.state === 'wontfix' && (patch.severity ?? f.severity) === 'blocking' && !note?.trim()) throw new ReviewError(400, 'say why to waive a blocking finding');
+      if (patch.state !== f.state) {
+        data.state = patch.state;
+        data.stateBy = 'you';
+        data.stateRevId = (await this.layer(id, f.ownerPr)).currentRevId;
+      }
     }
     if (patch.severity !== undefined) {
       if (!['blocking', 'should', 'nit'].includes(patch.severity)) throw new ReviewError(400, 'invalid severity');
@@ -870,6 +891,8 @@ export class ReviewService {
           ghThread: t.id,
           ghUrl: first.url || null,
           state: t.resolved ? 'addressed' : 'open',
+          stateBy: 'github',
+          stateRevId: l.currentRevId,
           createdAt: now(),
           updatedAt: now(),
         },
@@ -886,7 +909,7 @@ export class ReviewService {
     const f = await this.db.reviewFinding.findFirst({ where: { id: fid, stackId: id } });
     if (!f?.ghThread) throw new ReviewError(404, 'this finding has no GitHub thread');
     await this.gh(() => replyAndResolve(s.repoRoot, f.ghThread!, body));
-    const out = await this.db.reviewFinding.update({ where: { id: fid }, data: { note: f.note ?? (body.trim() || null), updatedAt: now(), ...(OPEN_FINDING.includes(f.state) ? { state: 'addressed' } : {}) } });
+    const out = await this.db.reviewFinding.update({ where: { id: fid }, data: { note: f.note ?? (body.trim() || null), updatedAt: now(), ...(OPEN_FINDING.includes(f.state) ? { state: 'addressed', stateBy: 'you', stateRevId: (await this.layer(id, f.ownerPr)).currentRevId } : {}) } });
     await this.refreshState();
     return findingView(out);
   }
@@ -942,7 +965,8 @@ export class ReviewService {
     const lines: string[] = [`Review of ${label(l)} "${l.title}" (branch ${l.headRef}) at ${short}.${picked.length ? ' Please fix:' : ''}`, ''];
     picked.forEach((f, i) => {
       const where = f.path ? ` ${f.path}${f.lineStart ? `:${f.lineStart}${f.lineEnd && f.lineEnd !== f.lineStart ? `-${f.lineEnd}` : ''}` : ''}` : '';
-      lines.push(`${i + 1}. [${f.severity}] ${f.title.replace(/[.!?:;]+$/, '')}.${where}`);
+      const from = f.ownerPr !== pr ? layers.find((x) => x.pr === f.ownerPr) : undefined;
+      lines.push(`${i + 1}. [${f.severity}] ${f.title.replace(/[.!?:;]+$/, '')}.${where}${from ? ` (Found on ${label(from)}, already merged: fix it in this layer.)` : ''}`);
       const body = f.body.split('\n---\n')[0].trim();
       if (body) lines.push(...body.split('\n').slice(0, 12).map((x) => `   ${x}`));
       if (f.ghUrl) lines.push(`   (GitHub thread: ${f.ghUrl})`);
@@ -986,7 +1010,8 @@ export class ReviewService {
     // The revision the findings were written against is the checkpoint the fix is compared with.
     await this.db.reviewLayer.update({ where: { stackId_pr: { stackId: id, pr } }, data: { reviewedRevId: l.currentRevId ?? l.reviewedRevId } });
     if (input.findingIds.length) {
-      await this.db.reviewFinding.updateMany({ where: { stackId: id, id: { in: input.findingIds } }, data: { state: 'sent', dispatchId: d.id, updatedAt: now() } });
+      // Sent to this layer, they're its to fix: a follow-up from a merged layer moves here.
+      await this.db.reviewFinding.updateMany({ where: { stackId: id, id: { in: input.findingIds } }, data: { state: 'sent', ownerPr: pr, dispatchId: d.id, stateBy: 'you', stateRevId: l.currentRevId, updatedAt: now() } });
     }
     await this.refreshState();
     const v = await this.view(id);
@@ -1162,7 +1187,7 @@ export class ReviewService {
     const rows = await this.db.chatMessage.findMany({ where: { uid: threadKey(id, pr) }, orderBy: { id: 'asc' } });
     const ids = rows.map((r) => r.id);
     const proposed = ids.length ? await this.db.reviewFinding.findMany({ where: { stackId: id, messageId: { in: ids } }, orderBy: { id: 'asc' } }) : [];
-    return { messages: rows.map((r) => ({ role: r.role, text: r.text, at: r.at, id: r.id })), findings: proposed.map(findingView) };
+    return { messages: rows.map((r) => ({ role: r.role, text: r.text, at: r.at, id: r.id })), findings: proposed.map((f) => findingView(f)) };
   }
 
   async clearThread(id: string, pr: number | null): Promise<void> {
@@ -1287,7 +1312,7 @@ export class ReviewService {
     for (const f of sent) {
       const v = verdict?.items.find((i) => i.id === f.id);
       const state = overrides[f.id] ?? (v?.verdict === 'addressed' ? 'addressed' : 'open');
-      await this.db.reviewFinding.update({ where: { id: f.id }, data: { state, note: v?.evidence || f.note, updatedAt: now() } });
+      await this.db.reviewFinding.update({ where: { id: f.id }, data: { state, note: v?.evidence || f.note, stateBy: overrides[f.id] ? 'you' : 'reviewer', stateRevId: cur?.id ?? null, updatedAt: now() } });
     }
     // Accepting the fixes reviews the new revision.
     const l = await this.layer(id, pr);
