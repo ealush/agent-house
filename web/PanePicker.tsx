@@ -4,6 +4,7 @@ import { look } from './agents.ts';
 import { AgentLogo } from './logos.tsx';
 import { Icon } from './icons.tsx';
 import { score } from './Switcher.tsx';
+import { sessionLine } from './sessionLine.tsx';
 
 // What goes in a new or replaced pane, chosen inside the pane itself (not a
 // modal): your other sessions, a new shell, or a new session with options.
@@ -142,7 +143,7 @@ export function PanePicker({
                 </span>
               </li>
             );
-          const { color, name } = look(r.w.agent);
+          const { color } = look(r.w.agent);
           return (
             <li key={r.w.key} {...common} style={{ '--agent': color } as React.CSSProperties}>
               <span className="chip sm">
@@ -150,7 +151,7 @@ export function PanePicker({
               </span>
               <span className="pane-picker-text">
                 <span className="name">{r.w.title}</span>
-                <span className="hint">{[r.w.agent ? name : 'Shell', r.w.project, r.w.branch].filter(Boolean).join(' · ')}</span>
+                <span className="hint">{sessionLine(r.w, { project: true })}</span>
               </span>
               <span className={`dot ${r.w.status}`} />
             </li>

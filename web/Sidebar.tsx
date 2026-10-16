@@ -191,7 +191,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
             {w.pinned ? '★ ' : ''}
             {w.agent ? w.title : w.title === 'shell' ? w.command : w.title}
           </span>
-          {modelLabel && <span className="side-model">{modelLabel}</span>}
+          {/* The model is in the title's tooltip and the session's header: the row keeps its room for the title. */}
           {/* The group already names the project; a shell elsewhere in it says where. */}
           {!w.agent && subdir(w) && <span className="side-model mono">{subdir(w)}</span>}
           {w.fork && (

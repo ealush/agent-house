@@ -73,7 +73,7 @@ sidebar, header and History say "Claude Code" and "Opus 5.5" (A-20).
 | A-08 | S2 | Branch switching has no palette command, and the desktop session menu lacks the Branch row the phone has. | `Session.tsx`, `palette.ts` | **fix** → **fixed: palette command, desktop menu row** |
 | A-10 | S2 | The Search page is reached only through the switcher's "See all results" (no sidebar, tab bar or palette entry), and its scope, speaker and date fields are unstyled native controls. | `SearchView.tsx` | **fix** (palette entry) + **design** → **reach fixed: sidebar, palette, ⌃⇧5** |
 | A-11 | S2 | Side panel tabs don't fit six at the default width ("Previe" is clipped), and the strip changes with the panel (Chat drops Preview and adds a history icon). | `Session.tsx` side panel | **design** |
-| A-19 | S2 | Six renderings of "a session in a list", with different subtitles: sidebar (title + model label), Inbox table (detail column), switcher (monospace "project · detail"), pane chooser ("Agent · project · branch"), History ("Agent · Model · project"), phone Sessions (detail + pill). | many | **design** (one session row with defined slots) |
+| A-19 | S2 | Six renderings of "a session in a list", with different subtitles: sidebar (title + model label), Inbox table (detail column), switcher (monospace "project · detail"), pane chooser ("Agent · project · branch"), History ("Agent · Model · project"), phone Sessions (detail + pill). | many | **design** (one session row with defined slots) → **fixed: one line (sessionLine), the same type; the sidebar row drops the model** |
 | A-21 | S2 | The fork dialog names the session by its window name ("Copies "claude"…", name "claude (fork)") instead of its title. | `ForkDialog.tsx` | **fix** → **fixed: the title everywhere** |
 | A-24 | S2 | Row menus disagree: the sidebar row's ··· has Fork and Terminate only; Rename and Pin are only in the session's own menu. | `Sidebar.tsx` | **design** (one session menu, everywhere) |
 | A-09 | S2 | The CLI can't answer a prompt, stop a turn, terminate, rename or pin, which agents driving agents need. | `bin/cli.js` | **call** (CLI parity is an addition during a freeze) → **decided: added answer, stop, terminate, rename, pin** |
@@ -96,7 +96,7 @@ sidebar, header and History say "Claude Code" and "Opus 5.5" (A-20).
 
 ## Already open (from earlier passes, still true)
 
-- Sidebar title vs model label width at 260 px (polish audit).
+- ~~Sidebar title vs model label width at 260 px~~: the model moved to the row's tooltip (A-19).
 - The Inbox permission card's Bash command isn't monospace after the screen
   loses its indentation (now part of A-03).
 - Real-device checks: iOS keyboard and safe areas, swipe back, iPad hardware

@@ -4,6 +4,7 @@ import { Keycaps, MOD } from './shortcuts.tsx';
 import { look } from './agents.ts';
 import { age as ago } from './agents.ts';
 import { AgentLogo } from './logos.tsx';
+import { historyLine, sessionLine } from './sessionLine.tsx';
 import { useSavedGroups } from './groupOrder.ts';
 import { sidebarOrder } from './sessionOrder.ts';
 import { SheetBar, useSheet } from './sheet.tsx';
@@ -215,7 +216,7 @@ export function Switcher({ windows, history, hosts, onSearchContent, onPick, onR
                         {r.w.title}
                         {r.w.fork ? ' ⑂' : ''}
                       </span>
-                      <span className="sub">{[hosts.length > 1 ? r.w.host : null, r.w.project, r.w.detail].filter(Boolean).join(' · ')}</span>
+                      <span className="sub">{sessionLine(r.w, { project: true, host: hosts.length > 1 })}</span>
                     </span>
                     <span className={`dot ${r.w.status}`} />
                   </button>
@@ -244,9 +245,11 @@ export function Switcher({ windows, history, hosts, onSearchContent, onPick, onR
                         {r.h.title}
                         {r.h.fork ? ' ⑂' : ''}
                       </span>
-                      <span className="sub">{[hosts.length > 1 ? r.h.host : null, r.h.project, ago(r.h.at)].filter(Boolean).join(' · ')}</span>
+                      <span className="sub">
+                        {historyLine(r.h, { project: true, host: hosts.length > 1 })} · {ago(r.h.at)}
+                      </span>
                     </span>
-                    <span className="pill">resume</span>
+                    <span className="pill">Resume</span>
                   </button>
                 </li>
               );

@@ -3,7 +3,7 @@ import { statusCounts } from './status.ts';
 import type { HistoryItem, State, Win } from './api.ts';
 import { Icon } from './icons.tsx';
 import { age, look } from './agents.ts';
-import { AgentLogo, shortModel } from './logos.tsx';
+import { AgentLogo } from './logos.tsx';
 import { Rows } from './Inbox.tsx';
 import { useSavedGroups } from './groupOrder.ts';
 import { sidebarSections } from './sessionOrder.ts';
@@ -11,6 +11,7 @@ import { useFlip } from './useFlip.ts';
 import { useDismiss } from './useDismiss.ts';
 import { ActionSheet } from './sheet.tsx';
 import { createPortal } from 'react-dom';
+import { historyLine } from './sessionLine.tsx';
 
 /** Ended and saved conversations from every host; one tap resumes on the host that has it. */
 export function HistoryView({ state, onResume, onForget, onFork, touch = false, narrow = false }: { state: State; onResume: (h: HistoryItem) => void; onForget: (h: HistoryItem) => void; onFork?: (h: HistoryItem) => void; touch?: boolean; narrow?: boolean }) {
@@ -86,8 +87,7 @@ export function HistoryView({ state, onResume, onForget, onFork, touch = false, 
       {state.history.length > 0 && shown.length === 0 && <p className="empty-state">No conversations match “{filter}”.</p>}
       <ul className="rows history-list">
         {shown.map((h) => {
-          const { color, name } = look(h.harness);
-          const modelLabel = shortModel(h.model);
+          const { color } = look(h.harness);
           const key = `${h.host}:${h.ref}`;
           const canFork = !!onFork && (h.harness === 'claude' || h.harness === 'codex' || h.harness === 'muse');
           const open = menuFor === key;
@@ -124,7 +124,7 @@ export function HistoryView({ state, onResume, onForget, onFork, touch = false, 
                     {h.title}
                   </span>
                   <span className="sub">
-                    {[name, modelLabel, multiHost ? h.host : null, h.project, h.kind === 'ended' ? 'ended' : null, h.worktree ? '⎇ worktree' : null, h.fork ? `⑂ fork of ${h.fork.parentTitle}` : null].filter(Boolean).join(' · ')}
+                    {historyLine(h, { project: true, host: multiHost })}
                   </span>
                 </span>
                 <span className="when">{age(h.at)}</span>

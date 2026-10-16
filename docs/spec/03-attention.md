@@ -15,14 +15,26 @@ A floating glass panel, top to bottom:
    **Search** (⌃⇧5), **Settings**.
 5. **Projects +** (New project), then sessions grouped by project; with
    several hosts, by host. On a single host, tmux sessions can group instead.
-   Each row: agent mark, status dot (needs you / working only), title, model
-   label; ··· with Fork session… and Terminate session; hover ✕ terminates.
+   Each row: agent mark, status dot (needs you / working only), title (the
+   model and folder are in its tooltip); ··· with Fork session… and Terminate
+   session; hover ✕ terminates.
    Pinned rows lead their group; rows drag to reorder (SES-13); a row dragged
    onto a pane's edge splits there (WS-3).
 6. **New session** (⌃⇧↵), **Worktrees**.
 
 Alt+↑ / Alt+↓ walk sessions in sidebar order; ⌃⇧0 focuses the list; arrows move;
 Esc or ⌃⇧9 returns to the session. One gliding highlight marks the current row.
+
+## ATT-0 · A session in a list — shipped
+
+Every list (the switcher, the pane chooser, the phone's Sessions and Inbox
+rows, History) gives a session the same line under its title
+(`web/sessionLine.tsx`), chosen by state: what it needs from you ("Wants to
+run `pnpm test`", or its question); else what it is doing now (a command as
+code, else the words on its screen); else its agent and model. Ended and
+saved conversations: agent · model · "ended". The project leads only where the
+list isn't grouped by project, the host only with several hosts. Words are in
+the UI face at 13px; commands are code.
 
 ## ATT-2 · Inbox — shipped
 

@@ -10,6 +10,7 @@ import { sidebarSections } from './sessionOrder.ts';
 import { Glide } from './Glide.tsx';
 import { useFlip } from './useFlip.ts';
 import { statusClass, statusCounts, statusWord } from './status.ts';
+import { sessionLine } from './sessionLine.tsx';
 
 export type InboxGroup = 'status' | 'host' | 'project';
 
@@ -290,7 +291,7 @@ export function Rows({ windows, multiHost, narrow, onOpen, quiet, inProject }: {
   return (
     <ul className="rows">
       {windows.map((w) => {
-        const { color, name } = look(w.agent);
+        const { color } = look(w.agent);
         const place = inProject ? (multiHost ? w.host : '') : where(w, multiHost);
         const pill = <span className={`pill ${statusClass(w) === 'idle' ? '' : statusClass(w)}`}>{statusWord(w)}</span>;
         return (
@@ -303,7 +304,7 @@ export function Rows({ windows, multiHost, narrow, onOpen, quiet, inProject }: {
                 <>
                   <span className="stack">
                     <span className="name">{w.title}</span>
-                    <span className="sub">{[w.detail ?? (w.panes > 1 ? `${w.panes} panes` : inProject ? name : null), place].filter(Boolean).join(' · ')}</span>
+                    <span className="sub">{sessionLine(w, { project: !inProject, host: multiHost })}</span>
                   </span>
                   <span className="when">{pill}</span>
                 </>

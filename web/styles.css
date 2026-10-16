@@ -2207,9 +2207,8 @@ a.btn {
 }
 
 .switch-item .sub {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
-  font-family: var(--mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -6290,7 +6289,16 @@ button.tool-chip:hover {
 }
 
 .pane-picker-text .hint {
+  font-size: 13px;
+}
+
+/* A session's line in any list (sessionLine.tsx): words in the UI face, a command as code. */
+.row .sub .mono,
+.switch-item .sub .mono,
+.pane-picker-text .hint .mono {
+  font-family: var(--mono);
   font-size: 12px;
+  color: var(--text-2);
 }
 
 .pane-picker-empty {
