@@ -1,7 +1,6 @@
 // The host daemon's brain: a ticker that re-derives everything from tmux, the
 // registry and the harnesses' own stores, plus the few verbs that change things
 // (launch, resume, send). HTTP, SSE and the CLI are all thin views over this.
-import type { ReviewState } from './review/service.ts';
 import { hostname } from 'node:os';
 import { readFileSync, existsSync } from 'node:fs';
 import { mkdir, stat, writeFile } from 'node:fs/promises';
@@ -35,7 +34,7 @@ export type { LaunchChange, QueueItem } from './queue.ts';
 export type Host = { name: string; self: boolean; online: boolean };
 
 /** Bumped when the state shape or API routes change, so a newer page can tell an older server apart. */
-export const API_VERSION = 24;
+export const API_VERSION = 23;
 
 export type State = {
   api: number;
@@ -52,8 +51,6 @@ export type State = {
   omarchy: { name: string; at: number; font: string | null } | null;
   /** The session you were last using, and on which device: other devices offer to continue it. */
   focus: Focus | null;
-  /** Stack review (server/review): Inbox alerts, sessions fixing findings, and which branches are layers. */
-  review: ReviewState | null;
 };
 
 /** `key` is the client's session key (a uid, or "<host>/<uid>" for a peer's session). */
@@ -156,8 +153,6 @@ export class Core {
   private basePresets: Preset[];
   /** Variables each new session window starts with (Settings → Environment); main.ts wires the store. */
   launchEnv: () => Promise<Record<string, string>> = async () => ({});
-  /** Stack review's alerts and banners for the stream; main.ts wires the service. */
-  reviewState: () => ReviewState | null = () => null;
 
   constructor(config: Config, viewers: Map<string, string[]>, registry = new Registry(), prompts = new PromptStore(), snapshots = new SnapshotStore()) {
     this.registry = registry;
@@ -256,7 +251,6 @@ export class Core {
         ),
         omarchy: omarchyStamp(),
         focus: this.focus,
-        review: this.reviewState(),
       };
       this.state = state;
       // Subscribers get only the top-level fields that changed: history and the

@@ -1,4 +1,4 @@
-import type { HistoryItem, HostApi, ReviewAlert, State, Win } from './api.ts';
+import type { HistoryItem, HostApi, State, Win } from './api.ts';
 import { AskPanel, cleanScreen, questionLine } from './AskPanel.tsx';
 import { ShortcutHint, shortcutTitle } from './shortcuts.tsx';
 import { Icon } from './icons.tsx';
@@ -23,8 +23,6 @@ type Props = {
   onNew: () => void;
   onSearch: () => void;
   onSettings: () => void;
-  /** Open a stack under review at a layer. */
-  onReview?: (stack: string, pr?: number | null) => void;
   /** Continue a session from another device (Handoff), when there is one. */
   handoff?: React.ReactNode;
   /** An empty inbox offers the latest conversations to resume. */
@@ -36,14 +34,13 @@ const KIND_LABEL = { command: 'Wants to run a command', tool: 'Wants to use a to
 const where = (w: Win, multiHost: boolean) => [multiHost ? w.host : null, w.project].filter(Boolean).join(' · ');
 
 /** The home screen: what's blocked on you first, then what's working, then the rest. */
-export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, clientFor, onNew, onSearch, onSettings, onReview, handoff, onResume }: Props) {
+export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, clientFor, onNew, onSearch, onSettings, handoff, onResume }: Props) {
   const recent = state.windows.length ? [] : state.history.slice(0, 3);
   const multiHost = state.hosts.length > 1;
   const waiting = state.windows.filter((w) => w.status === 'waiting');
-  const reviews = onReview ? (state.review?.alerts ?? []) : [];
   const running = state.windows.filter((w) => w.status === 'busy');
   const rest = state.windows.filter((w) => w.status === 'attention' || w.status === 'idle').sort((a, b) => b.activity - a.activity);
-  const flip = useFlip<HTMLDivElement>([groupBy, waiting, running, rest, reviews.map((r) => ({ key: `${r.stackId}:${r.pr}:${r.kind}` }))].map((l) => (typeof l === 'string' ? l : l.map((w) => w.key).join(','))).join('|'));
+  const flip = useFlip<HTMLDivElement>([groupBy, waiting, running, rest].map((l) => (typeof l === 'string' ? l : l.map((w) => w.key).join(','))).join('|'));
   const online = state.hosts.filter((h) => h.online).length;
 
   // A phone has no sidebar to show hosts in: it says how many are up, when there is more than one.
@@ -117,24 +114,21 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, cl
         <Grouped windows={state.windows} by={groupBy} multiHost={multiHost} onOpen={onOpen} />
       ) : (
         <>
-          {waiting.length + reviews.length > 0 && (
+          {waiting.length > 0 && (
             <>
               <h2 className="section-label waiting first" data-flip="h:waiting">
-                Needs you <span className="count">{waiting.length + reviews.length}</span>
+                Needs you <span className="count">{waiting.length}</span>
               </h2>
               <div className="cards">
                 {waiting.map((w) => (
                   <AskCard key={w.key} w={w} client={clientFor(w.host)} multiHost={multiHost} narrow={narrow} onOpen={onOpen} onAnswer={onAnswer} />
-                ))}
-                {reviews.map((r) => (
-                  <ReviewCard key={`${r.stackId}:${r.pr}:${r.kind}`} r={r} onOpen={() => onReview!(r.stackId, r.pr)} />
                 ))}
               </div>
             </>
           )}
           {running.length > 0 && (
             <>
-              <h2 className={`section-label busy ${waiting.length + reviews.length ? '' : 'first'}`} data-flip="h:running">
+              <h2 className={`section-label busy ${waiting.length ? '' : 'first'}`} data-flip="h:running">
                 Working <span className="count">{running.length}</span>
               </h2>
               {!narrow && <ListHead flip="lh:running" />}
@@ -143,7 +137,7 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, cl
           )}
           {rest.length > 0 && (
             <>
-              <h2 className={`section-label ${waiting.length || reviews.length || running.length ? '' : 'first'}`} data-flip="h:rest">Idle and done <span className="count">{rest.length}</span></h2>
+              <h2 className={`section-label ${waiting.length || running.length ? '' : 'first'}`} data-flip="h:rest">Idle and done <span className="count">{rest.length}</span></h2>
               {!narrow && <ListHead flip="lh:rest" />}
               <Rows windows={rest} multiHost={multiHost} narrow={narrow} onOpen={onOpen} quiet />
             </>
@@ -237,44 +231,6 @@ function AskCard({ w, client, multiHost, narrow, onOpen, onAnswer }: { w: Win; c
           {[name, modelLabel, where(w, multiHost)].filter(Boolean).map((t) => (
             <span key={t} className="tag">{t}</span>
           ))}
-        </span>
-      </div>
-    </article>
-  );
-}
-
-const REVIEW_KIND = {
-  rereview: { line: 'Updated since your review', action: 'Re-review' },
-  nopush: { line: 'The agent finished without pushing', action: 'Open' },
-  restack: { line: 'Needs a restack after a merge', action: 'Open' },
-  ready: { line: 'Reviewed, checks pass, next in line', action: 'Merge…' },
-} as const;
-
-/** A layer of a stack under review that's waiting on you (server/review). */
-function ReviewCard({ r, onOpen }: { r: ReviewAlert; onOpen: () => void }) {
-  const k = REVIEW_KIND[r.kind];
-  return (
-    <article className="card card-needs card-review" data-flip={`${r.stackId}:${r.pr}:${r.kind}`}>
-      <div className="card-head">
-        <span className="glow">
-          <span className="chip">
-            <Icon name="diff" size={14} />
-          </span>
-        </span>
-        <button className="card-title" onClick={onOpen}>
-          {r.role ? `${r.role} · ` : ''}
-          {r.title}
-        </button>
-        <span className="card-age">{r.at ? age(r.at) : ''}</span>
-      </div>
-      <div className="card-kind">{k.line}</div>
-      <div className="card-foot">
-        <button className="btn primary" onClick={onOpen}>
-          {k.action}
-        </button>
-        <span className="meta">
-          <span className="tag">{r.stackTitle}</span>
-          <span className="tag">#{r.pr}</span>
         </span>
       </div>
     </article>

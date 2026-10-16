@@ -91,20 +91,8 @@ to terminal rules and output activity, and matches live agents to their transcri
   listen on. ah proxies it on a port of its own behind the same sign-in, published on
   your tailnet as `https://<node>.ts.net:<port>`, so a phone sees what the host serves.
   Live reload works through it. One preview per session; it survives ah restarts.
-- **Diff.** Uncommitted changes per session; click a line to send the agent a comment
+- **Review.** Uncommitted changes per session; click a line to send the agent a comment
   anchored to that file and line.
-- **Review.** Your pull request stacks, one layer at a time (Ctrl+Shift+4). Review the
-  bottom PR of a tree and the whole stack comes along, in a merge order you can change;
-  a plan file labels the layers (H0, F1…) and holds the reviewer to its contracts. Each
-  layer has a briefing, its patch (this PR, since your review, or from the trunk), and a
-  reviewer that reads the exact revisions with read-only tools, on any subscription.
-  Turn what you disagree with into findings (on a line, from the reviewer, or from
-  GitHub's threads, bots included) and send them to the agent that owns the stack in one
-  drafted message, restack of the layers above included. When it pushes, the layer comes
-  back for a re-review of only what changed, with the reviewer's verdict on each finding.
-  Merge & next merges through GitHub only if the head is still the one you reviewed,
-  points the layers above at the trunk, and opens the next. The Inbox tells you when a
-  layer needs you. See [docs/stack-review.md](docs/stack-review.md).
 - **Worktrees.** Start a session on its own branch in its own checkout; see dirty/ahead
   state and clean up orphans.
 - **Notifications.** Web Push for "needs you" / "finished", per device, even with ah closed

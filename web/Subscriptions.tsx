@@ -3,9 +3,6 @@ import { ConfirmButton } from './ConfirmButton.tsx';
 import { api, type Subscription } from './api.ts';
 import { askConfirm, showError } from './ask.tsx';
 import { errorText } from './errors.ts';
-import { reviewApi } from './reviewApi.ts';
-
-const review = reviewApi();
 
 // Chat subscriptions (BYOK): named OpenAI-compatible endpoints whose keys
 // live on the host beside ah's other secrets. Listed without keys; blank key
@@ -17,12 +14,8 @@ export function SubscriptionsPanel() {
   /** keyHint: the stored key, masked, shown in the empty key field while editing. */
   const [form, setForm] = useState<{ id?: string; name: string; baseUrl: string; model: string; apiKey: string; keyHint: string; envName: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [summaryId, setSummaryId] = useState<string | null>(null);
 
-  const load = () => {
-    api.subscriptions().then(setList).catch((e) => setError(e.message));
-    review.settings().then((s) => setSummaryId(s.summaryId), () => {});
-  };
+  const load = () => api.subscriptions().then(setList).catch((e) => setError(e.message));
   useEffect(() => {
     load();
   }, []);
@@ -72,7 +65,7 @@ export function SubscriptionsPanel() {
     <div className="sec-card" data-confirm>
       <h2>Chat subscriptions</h2>
       <p className="hint">
-        Side chat and Review's reviewer talk to these endpoints. A cheaper model can write Review's briefings and re-checks. Keys are stored on this host only, alongside ah's other secrets, and once saved show
+        Side chat talks to these endpoints with the working diff attached. Keys are stored on this host only, alongside ah's other secrets, and once saved show
         only their first and last few characters. Any OpenAI-compatible API works: OpenAI, Grok, Gemini, DeepSeek, Ollama.
       </p>
       {error && <p className="form-error">{error}</p>}
@@ -111,27 +104,6 @@ export function SubscriptionsPanel() {
             </li>
           ))}
         </ul>
-      )}
-      {list && list.length > 1 && (
-        <label className="field">
-          <span>Review briefings and re-checks</span>
-          <select
-            value={summaryId ?? ''}
-            onChange={(e) =>
-              review
-                .setSummaryModel(e.target.value || null)
-                .then((s) => setSummaryId(s.summaryId))
-                .catch((err) => showError(err, "Couldn't change it"))
-            }
-          >
-            <option value="">The default</option>
-            {list.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name} · {s.model}
-              </option>
-            ))}
-          </select>
-        </label>
       )}
       {form ? (
         <div className="form-grid">

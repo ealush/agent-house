@@ -56,7 +56,7 @@ export type ChatReply = { message: ChatMessage; followups: Followup[] };
 export type ChatSummary = { uid: string; title: string; count: number; firstAt: number; lastAt: number; preview: string };
 
 /** First `{...}` in `text` when it is JSON; undefined when it is not. */
-export function parseObject(text: string): unknown | undefined {
+function parseObject(text: string): unknown | undefined {
   const start = text.indexOf('{');
   const end = text.lastIndexOf('}');
   if (start < 0 || end <= start) return undefined;
@@ -241,7 +241,7 @@ export async function changeContext(dir: string): Promise<ChangeContext> {
 const MAX_TOOL_ROUNDS = 6;
 const TOOL_RESULT_LIMIT = 12_000;
 
-export type ToolDef = { type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } };
+type ToolDef = { type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } };
 
 const PATHS_SCHEMA = {
   type: 'object',
@@ -703,8 +703,7 @@ export class SideChatStore {
     await this.db.chatMessage.deleteMany({ where: { uid } });
   }
 
-  /** The subscription to use: the one asked for, else the default. */
-  async subscription(subscriptionId?: string): Promise<Subscription> {
+  private async resolve(subscriptionId?: string): Promise<Subscription> {
     const id = subscriptionId ?? (await this.defaultId());
     const s = id ? await this.db.subscription.findUnique({ where: { id } }) : null;
     if (!s) throw new SideChatError(400, 'no chat subscription configured yet — add one under Settings → Subscriptions');
@@ -715,16 +714,15 @@ export class SideChatStore {
   private async complete(
     sub: Subscription,
     messages: Record<string, unknown>[],
-    tools: ToolDef[] | null,
+    withTools: boolean,
     signal: AbortSignal,
   ): Promise<{ content: unknown; toolCalls: Array<{ id: string; name: string; args: unknown; echoArgs: string }> }> {
-    const withTools = !!tools?.length;
     let res: Response;
     try {
       res = await fetch(`${sub.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${sub.apiKey}` },
-        body: JSON.stringify({ model: sub.model, messages, ...(withTools ? { tools, tool_choice: 'auto' } : {}) }),
+        body: JSON.stringify({ model: sub.model, messages, ...(withTools ? { tools: REPO_TOOLS, tool_choice: 'auto' } : {}) }),
         signal,
       });
     } catch (err) {
@@ -760,64 +758,8 @@ export class SideChatStore {
     return { content: msg.content, toolCalls };
   }
 
-  /**
-   * A conversation turn with read-only tools: the model calls `tools` (run by
-   * `exec`, whose failures it reads as notes) until it answers or the round
-   * budget is spent. Providers without function calling get one plain retry.
-   * Returns the final raw content; callers parse their own envelope.
-   */
-  async converse(
-    sub: Subscription,
-    messages: Record<string, unknown>[],
-    tools: ToolDef[] | null,
-    exec: (name: string, args: unknown) => Promise<string>,
-    opts: { rounds?: number; timeoutMs?: number; finalNudge?: string } = {},
-  ): Promise<string> {
-    const rounds = opts.rounds ?? MAX_TOOL_ROUNDS;
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? CHAT_TIMEOUT_MS);
-    let offer = tools?.length ? tools : null;
-    let retriedPlain = false;
-    try {
-      for (let round = 0; ; round++) {
-        let content: unknown;
-        let toolCalls: Array<{ id: string; name: string; args: unknown; echoArgs: string }>;
-        try {
-          ({ content, toolCalls } = await this.complete(sub, messages, offer, ctrl.signal));
-        } catch (err) {
-          if (offer && !retriedPlain && err instanceof SideChatError && /tool|function/i.test(err.message)) {
-            offer = null;
-            retriedPlain = true;
-            ({ content, toolCalls } = await this.complete(sub, messages, null, ctrl.signal));
-            toolCalls = [];
-          } else throw err;
-        }
-        if (offer && toolCalls.length && round < rounds) {
-          const results = await Promise.all(toolCalls.map((c) => exec(c.name, c.args)));
-          messages.push({
-            role: 'assistant',
-            content: typeof content === 'string' ? content : '',
-            tool_calls: toolCalls.map((c) => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.echoArgs } })),
-          });
-          toolCalls.forEach((c, i) => messages.push({ role: 'tool', tool_call_id: c.id, content: results[i] }));
-          continue;
-        }
-        if (offer && toolCalls.length) {
-          // Tool budget spent: one last answer without tools.
-          messages.push({ role: 'user', content: opts.finalNudge ?? 'Tool budget spent. Reply now with ONLY the JSON object, no tool calls.' });
-          offer = null;
-          continue;
-        }
-        if (typeof content !== 'string' || !content.trim()) throw new SideChatError(502, 'chat provider returned an empty reply');
-        return content;
-      }
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
   async chat(uid: string, text: string, ctx: ChatContext, subscriptionId?: string): Promise<ChatReply> {
-    const sub = await this.subscription(subscriptionId);
+    const sub = await this.resolve(subscriptionId);
     const prior = (await this.history(uid)).slice(-HISTORY_LIMIT);
     // Repo tools when the session lives in a checkout; otherwise the legacy one-shot.
     const env = await repoToolEnv(ctx.dir, ctx.pr, ctx.branch);
@@ -826,17 +768,56 @@ export class SideChatStore {
       ...prior.map((m) => ({ role: m.role, content: m.text })),
       { role: 'user', content: text },
     ];
-    const content = await this.converse(sub, messages, env ? REPO_TOOLS : null, (name, args) => runRepoTool(env!, name, args));
-    // Follow-ups and tool chatter are ephemeral UI; history keeps the answer text only.
-    const { content: answer, followups } = parseStructured(content);
-    const at = Math.floor(Date.now() / 1000);
-    const log = [...prior, { role: 'user' as const, text, at }, { role: 'assistant' as const, text: answer, at }].slice(-HISTORY_LIMIT);
-    await this.db.$transaction([
-      this.db.chatMessage.deleteMany({ where: { uid } }),
-      this.db.chatMessage.createMany({ data: log.map((m) => ({ uid, role: m.role, text: m.text, at: m.at })) }),
-    ]);
-    const saved = await this.db.chatMessage.findFirst({ where: { uid }, orderBy: { id: 'desc' }, select: { id: true } });
-    return { message: { role: 'assistant', text: answer, at, id: saved?.id }, followups };
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), CHAT_TIMEOUT_MS);
+    // Providers without function calling get the legacy shape on retry.
+    let offerTools = !!env;
+    let retriedPlain = false;
+    try {
+      for (let round = 0; ; round++) {
+        let content: unknown;
+        let toolCalls: Array<{ id: string; name: string; args: unknown; echoArgs: string }>;
+        try {
+          ({ content, toolCalls } = await this.complete(sub, messages, offerTools, ctrl.signal));
+        } catch (err) {
+          if (offerTools && !retriedPlain && err instanceof SideChatError && /tool|function/i.test(err.message)) {
+            offerTools = false;
+            retriedPlain = true;
+            ({ content, toolCalls } = await this.complete(sub, messages, false, ctrl.signal));
+            toolCalls = [];
+          } else throw err;
+        }
+        if (offerTools && toolCalls.length && round < MAX_TOOL_ROUNDS && env) {
+          const results = await Promise.all(toolCalls.map((c) => runRepoTool(env, c.name, c.args)));
+          messages.push({
+            role: 'assistant',
+            content: typeof content === 'string' ? content : '',
+            tool_calls: toolCalls.map((c) => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.echoArgs } })),
+          });
+          toolCalls.forEach((c, i) => messages.push({ role: 'tool', tool_call_id: c.id, content: results[i] }));
+          continue;
+        }
+        if (offerTools && toolCalls.length) {
+          // Tool budget spent: one last answer without tools.
+          messages.push({ role: 'user', content: 'Tool budget spent. Reply now with ONLY the JSON object, no tool calls.' });
+          offerTools = false;
+          continue;
+        }
+        if (typeof content !== 'string' || !content.trim()) throw new SideChatError(502, 'chat provider returned an empty reply');
+        // Follow-ups and tool chatter are ephemeral UI; history keeps the answer text only.
+        const { content: answer, followups } = parseStructured(content);
+        const at = Math.floor(Date.now() / 1000);
+        const log = [...prior, { role: 'user' as const, text, at }, { role: 'assistant' as const, text: answer, at }].slice(-HISTORY_LIMIT);
+        await this.db.$transaction([
+          this.db.chatMessage.deleteMany({ where: { uid } }),
+          this.db.chatMessage.createMany({ data: log.map((m) => ({ uid, role: m.role, text: m.text, at: m.at })) }),
+        ]);
+        const saved = await this.db.chatMessage.findFirst({ where: { uid }, orderBy: { id: 'desc' }, select: { id: true } });
+        return { message: { role: 'assistant', text: answer, at, id: saved?.id }, followups };
+      }
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /**
@@ -846,7 +827,7 @@ export class SideChatStore {
   async summarize(text: string, subscriptionId?: string): Promise<string> {
     const body = text.trim();
     if (!body) throw new SideChatError(400, 'text required');
-    const sub = await this.subscription(subscriptionId);
+    const sub = await this.resolve(subscriptionId);
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), CHAT_TIMEOUT_MS);
     try {
@@ -864,7 +845,7 @@ export class SideChatStore {
           },
           { role: 'user', content: body },
         ],
-        null,
+        false,
         ctrl.signal,
       );
       if (typeof content !== 'string' || !content.trim()) throw new SideChatError(502, 'chat provider returned an empty reply');

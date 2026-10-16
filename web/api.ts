@@ -163,7 +163,7 @@ export type Preset = {
 
 export type Host = { name: string; self: boolean; online: boolean };
 
-export const API_VERSION = 24;
+export const API_VERSION = 23;
 
 export type PullInfo = { number: number | null; url: string | null };
 
@@ -230,15 +230,6 @@ export type State = {
   omarchy?: { name: string; at: number; font?: string | null } | null;
   /** Handoff: the session last in use, and on which device (this page is `client === CLIENT_ID`). */
   focus?: { key: string; device: string; client: string; at: number } | null;
-  /** Stack review on this host: Inbox alerts, sessions fixing findings, branches that are layers. */
-  review?: ReviewState | null;
-};
-
-export type ReviewAlert = { kind: 'rereview' | 'nopush' | 'ready' | 'restack'; stackId: string; stackTitle: string; pr: number; role: string; title: string; at: number };
-export type ReviewState = {
-  alerts: ReviewAlert[];
-  fixing: { uid: string; stackId: string; pr: number; role: string; count: number }[];
-  branches: { repo: string; branch: string; stackId: string; pr: number; role: string; stackTitle: string }[];
 };
 
 export type DirState = 'dir' | 'new' | 'file' | 'missing' | 'outside';
@@ -320,7 +311,7 @@ export function setUnauthorizedHandler(fn: () => void) {
   onUnauthorized = fn;
 }
 
-export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
     method,
     headers: method === 'GET' ? {} : { 'content-type': 'application/json', 'x-ah': '1' },

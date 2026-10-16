@@ -17,7 +17,6 @@ import { defaultView, surfaceFor, VIEW_LABEL, viewsFor, type SurfaceHandle, type
 import { ComposerBar, type ComposerHandle } from './Composer.tsx';
 import { useFileDrop } from './useFileDrop.ts';
 import { BranchPicker, BranchSheet, ChangesPanel, PrLink } from './Git.tsx';
-import { useReviewFor } from './reviewContext.ts';
 // Side chat and past chats (with the markdown renderer) load when the Chat panel first opens.
 const SideChat = lazy(() => import('./SideChat.tsx').then((m) => ({ default: m.SideChat })));
 const ChatHistory = lazy(() => import('./ChatHistory.tsx').then((m) => ({ default: m.ChatHistory })));
@@ -161,7 +160,6 @@ const DEFAULT_PANEL_WIDTH = 420;
 export function Session({ w, client, windows, clientFor, narrow, touch, multiHost, home, replyKey, onBack, onAnswer, onSent, onTerminate, refresh, onSplit, onReplace, onClosePane, onFlipSplit, panePath, onPaneDrag, onOpenKey, onSplitWith, onStartSession, active = true }: Props) {
   const surface = useRef<SurfaceHandle>(null);
   const body = useRef<HTMLDivElement>(null);
-  const review = useReviewFor(w.host, w.uid, w.branch);
   // 'main' is the session itself, drawn by whichever surface is chosen.
   const [tab, setTab] = useState<'main' | Panel>('main');
   const [storedPanel, setPanel] = stored<Panel | ''>('ah.panel', '');
@@ -1054,15 +1052,6 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
             {/* Outside .session-pills: it clips overflow, which would cut off the dropdown. */}
             {w.branch && <BranchPicker client={client} windowId={w.id} current={w.branch} onSwitched={refresh} />}
             {w.branch && <PrLink client={client} windowId={w.id} branch={w.branch} />}
-            {review?.fixing ? (
-              <button type="button" className="pill busy review-pill" onClick={() => review.open(review.fixing!.stackId, review.fixing!.pr)} title="Findings from Review this session is working on">
-                {review.fixing.count ? `Fixing ${review.fixing.count} finding${review.fixing.count === 1 ? '' : 's'}` : 'On a review'} · {review.fixing.role || `#${review.fixing.pr}`}
-              </button>
-            ) : review?.layer ? (
-              <button type="button" className="pill review-pill" onClick={() => review.open(review.layer!.stackId, review.layer!.pr)} title={`${review.layer.stackTitle}, in Review`}>
-                {review.layer.role || `#${review.layer.pr}`} in review
-              </button>
-            ) : null}
           </>
         )}
         {/* The trailing controls share one glass capsule, as iOS and macOS 26 group a bar's buttons. */}

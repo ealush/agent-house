@@ -104,7 +104,6 @@ const BASE_ICONS = {
   'go-inbox': 'inbox',
   'go-history': 'history',
   'go-settings': 'gear',
-  'go-review': 'diff',
   'show-shortcuts': 'keyboard',
   'toggle-view': 'view',
   'toggle-steps': 'queue',
