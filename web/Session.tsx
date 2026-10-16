@@ -520,7 +520,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
     setPendingName(name);
     setNameSaving(true);
     try {
-      await client.rename(w.id, name);
+      await client.rename(w.uid, name);
       refresh();
     } catch (e) {
       setPendingName(null);
@@ -664,7 +664,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
     launch.preset?.settingsCommands?.[setting] ? launch.openSettings(setting) : onToast(`Palette → Session → Model and effort lists the ${setting === 'model' ? 'models' : 'effort levels'}`);
   useCommand('pick-model', () => void terminalPicker('model'), active && view !== 'gui' && !!w.agent);
   useCommand('pick-effort', () => void terminalPicker('effort'), active && view !== 'gui' && !!w.agent);
-  useCommand('scrollback', () => void act(async () => setCapture(await client.capture(w.id))), active);
+  useCommand('scrollback', () => void act(async () => setCapture(await client.capture(w.uid))), active);
   useCommand(
     'copy-attach',
     () =>
@@ -740,7 +740,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
     ) : p === 'preview' ? (
       <PreviewPanel client={client} uid={w.uid} />
     ) : p === 'diff' ? (
-      <ChangesPanel client={client} windowId={w.id} onComment={w.agent ? comment : undefined} />
+      <ChangesPanel client={client} uid={w.uid} onComment={w.agent ? comment : undefined} />
     ) : p === 'stack' ? (
       <Suspense fallback={<div className="panel-body" />}>
         <StackPanel uid={w.uid} />
@@ -905,7 +905,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       <button
         onClick={() =>
           act(async () => {
-            setCapture(await client.capture(w.id));
+            setCapture(await client.capture(w.uid));
           })
         }
       >
@@ -1064,8 +1064,8 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
               {elsewhere && <span className="devices">On {elsewhere}</span>}
             </div>
             {/* Outside .session-pills: it clips overflow, which would cut off the dropdown. */}
-            {w.branch && <BranchPicker client={client} windowId={w.id} current={w.branch} onSwitched={refresh} />}
-            {w.branch && <PrLink client={client} windowId={w.id} branch={w.branch} />}
+            {w.branch && <BranchPicker client={client} uid={w.uid} current={w.branch} onSwitched={refresh} />}
+            {w.branch && <PrLink client={client} uid={w.uid} branch={w.branch} />}
             {review?.fixing ? (
               <button type="button" className="pill busy review-pill" onClick={() => review.open(review.fixing!.stackId, review.fixing!.pr)} title="Findings from Review this session is working on">
                 {review.fixing.count ? `Fixing ${review.fixing.count} finding${review.fixing.count === 1 ? '' : 's'}` : 'On a review'} · {review.fixing.role || `#${review.fixing.pr}`}
@@ -1274,7 +1274,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       </div>
 
       {capture !== null && <CaptureDialog text={capture} onClose={() => setCapture(null)} />}
-      {branching && w.branch && <BranchSheet client={client} windowId={w.id} branch={w.branch} onSwitched={refresh} onClose={() => setBranching(false)} />}
+      {branching && w.branch && <BranchSheet client={client} uid={w.uid} branch={w.branch} onSwitched={refresh} onClose={() => setBranching(false)} />}
       {forking && (
         <ForkDialog client={client} target={{ ref: w.uid, host: w.host, harness: w.agent, title: w.title }} onClose={() => setForking(false)} onForked={forked} />
       )}

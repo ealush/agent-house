@@ -210,7 +210,7 @@ export function App({ onLock }: { onLock: () => void }) {
   const terminate = (w: Win) => {
     hide(w.key, true);
     clientFor(w.host)
-      .kill(w.id)
+      .kill(w.uid)
       .then(
         () => refresh(w.host),
         (e) => {

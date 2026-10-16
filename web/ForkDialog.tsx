@@ -239,7 +239,7 @@ export function ForksDialog({
         setLines(out);
         // Diff sizes are a per-window fetch; fill them in as they land.
         for (const x of family) {
-          const ch = await client.changes(x.id).catch(() => null);
+          const ch = await client.changes(x.uid).catch(() => null);
           if (!live) return;
           if (ch) setLines((prev) => prev.map((l) => (l.key === x.key ? { ...l, changed: ch.files.length } : l)));
         }

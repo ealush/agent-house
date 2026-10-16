@@ -225,7 +225,7 @@ export async function run(cmd, args) {
     case 'read': {
       const lines = Number(opt(args, '-n', '200'));
       const { live } = await find(args[0]);
-      process.stdout.write(await call('GET', `/api/windows/${encodeURIComponent(live.id)}/capture?lines=${lines}`));
+      process.stdout.write(await call('GET', `/api/sessions/${encodeURIComponent(live.uid)}/capture?lines=${lines}`));
       return;
     }
     case 'wait': {
