@@ -33,7 +33,7 @@ import { createWorktree, initRepo, changes, listBranches, switchBranch, pullRequ
 import { SideChatStore, SideChatError, changeContext } from './sidechat.ts';
 import { ensureMigrated, getDb } from './db.ts';
 import { importLegacyJson } from './migrate.ts';
-import { FsError, dirStatus, list, makeDir, receive, sendFile, setRoots, roots, clearUploadDir } from './files.ts';
+import { FsError, dirStatus, list, makeDir, receive, sendFile, setRoots, roots, clearUploadDir, safePath } from './files.ts';
 import { Peers, proxyHttp, proxyWs, peerUrlAllowed } from './peers.ts';
 import { SearchIndexer, combineResponses, type SearchParams } from './search.ts';
 import { Auth, AuthError, clearCookies, type Caller } from './auth.ts';
@@ -46,6 +46,9 @@ import { screenAudit } from './audit.ts';
 import { EnvStore } from './env.ts';
 import { Harnesses } from './harnesses.ts';
 import { hooksStatus, installClaude, installCodex, uninstallClaude, uninstallCodex } from './hooks.ts';
+import { ReviewService, readTextFile, type SessionLite } from './review/service.ts';
+import { reviewApi } from './review/api.ts';
+import { conversationKey } from './registry.ts';
 
 let config: Config;
 try {
@@ -89,6 +92,25 @@ const sidechat = new SideChatStore();
 const envStore = new EnvStore();
 core.launchEnv = () => envStore.forLaunch();
 const search = new SearchIndexer(getDb(), () => core.searchSources());
+// Stack review (docs/stack-review.md): sessions it can send findings to are the live
+// windows plus ended conversations that resume.
+const review = new ReviewService(getDb(), sidechat, {
+  sessions: async () => {
+    const windows = (await core.current()).windows;
+    const live = new Set(windows.map((w) => w.uid));
+    const out: SessionLite[] = windows.map((w) => ({ uid: w.uid, key: sidechat.chatKey(w.agent, w.harnessId, w.uid), title: w.title, agent: w.agent, status: w.status, cwd: expandHome(w.cwd), branch: w.branch, live: true }));
+    for (const r of core.registry.all()) {
+      if (live.has(r.id) || !r.harnessId || r.harness === 'shell') continue;
+      out.push({ uid: r.id, key: conversationKey(r.harness, r.harnessId, r.id), title: r.title || r.harness, agent: r.harness, status: 'ended', cwd: expandHome(r.cwd), branch: null, live: false });
+    }
+    return out;
+  },
+  send: (uid, text) => core.send(uid, text),
+  alert: (p) => core.push.alert(p),
+  changed: () => void core.tick().catch(() => {}),
+  readPlan: async (path) => readTextFile(await safePath(expandHome(path))),
+});
+core.reviewState = () => review.state();
 const gate = new Gate();
 
 // Browser previews (server/preview.ts): a session's dev server behind ah's own
@@ -210,6 +232,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   if (route('GET', /^\/api\/hello$/)) return send(res, 200, { ah: true, hostname: hostname(), auth: auth.enabled });
   if (path.startsWith('/api/auth/')) return authApi(req, res, path, method, caller);
   if (!caller) throw new HttpError(401, 'sign in required'); // belt and braces; handle() already denied
+  if (path.startsWith('/api/review/')) return reviewApi(req, res, url, path, review, audit);
 
   if (route('GET', /^\/api\/state$/)) return send(res, 200, await core.current());
 
@@ -1320,6 +1343,7 @@ try {
 }
 await core.loadPrompts();
 core.start();
+review.start();
 search.start();
 peers.start();
 
@@ -1360,6 +1384,7 @@ async function shutdown(sig: string) {
   for (const ws of wss.clients) ws.close(1001, 'server shutting down');
   server.close();
   core.stop();
+  review.stop();
   await drafts.save();
   // Unpublish preview ports; a crash leaves them for removeStaleMappings at the next start.
   await Promise.race([previews.stopAll(), new Promise((r) => setTimeout(r, 3000))]);

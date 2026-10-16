@@ -12,7 +12,7 @@ import { Glide } from './Glide.tsx';
 import { useFlip } from './useFlip.ts';
 import { useDismiss } from './useDismiss.ts';
 
-export type Page = 'inbox' | 'history' | 'sessions' | 'settings' | 'search';
+export type Page = 'inbox' | 'history' | 'sessions' | 'settings' | 'search' | 'review';
 
 type Props = {
   /** Workspaces 1–9: where you are, and which hold something. */
@@ -312,6 +312,11 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
         <Icon name="inbox" />
         <span className="grow">Inbox</span>
         {waiting > 0 ? <span className="badge">{waiting}</span> : <span className="count">{windows.length}</span>}
+      </button>
+      <button className={`nav-item ${page === 'review' && !selected ? 'on' : ''}`} title={shortcutTitle('Review', 'go-review')} onClick={() => onPage('review')}>
+        <Icon name="diff" />
+        <span className="grow">Review</span>
+        {(state?.review?.alerts.length ?? 0) > 0 && <span className="badge">{state!.review!.alerts.length}</span>}
       </button>
       <button className={`nav-item ${page === 'history' && !selected ? 'on' : ''}`} title={shortcutTitle('History', 'go-history')} onClick={() => onPage('history')}>
         <Icon name="history" />

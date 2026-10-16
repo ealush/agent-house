@@ -85,6 +85,11 @@ export class Push {
     this.primed = true;
   }
 
+  /** A needs-you alert that isn't a session's status (stack review): goes where "needs you" goes. */
+  alert(payload: { title: string; body: string; tag: string; url: string }) {
+    this.send('waiting', payload);
+  }
+
   private send(event: keyof PushEvents, payload: Record<string, string>) {
     for (const [endpoint, d] of this.devices) {
       if (!d.events[event]) continue;
