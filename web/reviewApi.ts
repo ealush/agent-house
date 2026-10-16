@@ -91,6 +91,8 @@ export function reviewApi(base = '') {
     repos: () => r<{ root: string; repo: string; trunk: string }[]>('GET', '/repos'),
     candidates: (root: string) => r<{ root: string; repo: string; trunk: string; trees: CandidateTree[] }>('GET', `/candidates?root=${enc(root)}`),
     stacks: () => r<StackSummary[]>('GET', '/stacks'),
+    settings: () => r<{ summaryId: string | null }>('GET', '/settings'),
+    setSummaryModel: (summaryId: string | null) => r<{ summaryId: string | null }>('PUT', '/settings', { summaryId }),
     create: (root: string, pr: number, title?: string) => r<Stack>('POST', '/stacks', { root, pr, ...(title ? { title } : {}) }),
     stack: (id: string) => r<Stack>('GET', s(id)),
     update: (id: string, patch: { title?: string; planPath?: string | null; mergeMethod?: string; order?: number[]; ownerUid?: string | null; state?: string }) => r<Stack>('PATCH', s(id), patch),

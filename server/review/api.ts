@@ -31,6 +31,13 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
 
     if (route('GET', '/stacks')) return send(res, 200, await svc.list());
 
+    if (route('GET', '/settings')) return send(res, 200, await svc.settings());
+
+    if (route('PUT', '/settings')) {
+      const body = await readJson(req);
+      return send(res, 200, await svc.setSummaryModel(body.summaryId === null ? null : str(body.summaryId, 'summaryId', 40)));
+    }
+
     if (route('POST', '/stacks')) {
       const body = await readJson(req);
       const v = await svc.create(str(body.root, 'root', 1000), int(body.pr, 'pr'), opt(body.title, (x) => str(x, 'title', 120)));

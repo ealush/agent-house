@@ -1,8 +1,10 @@
 # Stack review
 
-Design for reviewing, fixing and merging your own pull requests in ah, one
-layer at a time. It reviews the whole stack together but merges one PR at a time.
-Status: proposal, 16 October 2026. Nothing here is built yet.
+Reviewing, fixing and merging your own pull requests in ah, one layer at a
+time. It reviews the whole stack together but merges one PR at a time.
+Status: R0–R3 built on 16 October 2026 (`server/review/`, `web/review/`);
+R4–R5 open. Where the build differs from the first proposal, this document
+says what was built. Backlog: "Stack review" in `BACKLOG.md`.
 
 ## Why it belongs in ah
 
@@ -138,16 +140,16 @@ stay. What changes:
   send from a message is already built.
 - **Threads are records.** Side chat keeps only the last 30 messages and
   rewrites the log on every reply. Review threads keep everything, send the
-  model the last N plus a running summary, and are already indexed by
-  `chat_fts`, so search finds them.
+  model the last 24 messages (the stack's context, plan and decisions carry the
+  rest), and are already indexed by `chat_fts`, so search finds them.
 - **Long work runs in the background.** A layer's summary and a re-review
   can exceed the 90 s chat timeout. They run as jobs, store their result on the
   revision, and the page shows "Summarizing…" until they finish. The summary is
   cached per patch id. Reopening a layer, or opening it on a phone, is instant
   and costs nothing.
-- **Models per job.** Settings → Subscriptions gets two defaults: *Review
-  summaries* (cheap) and *Review chat* (strong). Each thread's model can still be changed from its
-  header.
+- **Models per job.** Settings → Subscriptions picks the subscription for
+  briefings and re-checks (a cheap one will do). The reviewer chat uses the
+  default, and each thread can switch to another from its composer.
 
 The reviewer can't merge, push, retarget, resolve threads or send to an agent.
 It proposes. You decide by pressing a button.
@@ -176,15 +178,18 @@ It proposes. You decide by pressing a button.
 
 **Ownership is an explicit binding, never a guess.** The design rules in
 `BACKLOG.md` say attachment follows conversation identity, never cwd or
-recency. So the first time you send findings from a stack, ah asks which
-session owns it, once, and binds the stack to that conversation's key
-(`harness:harnessId`). The binding survives resume and re-adoption the way queues and side chats
-do. You can override it per layer. Suggestions come from evidence, ranked:
+recency. A stack is bound to a conversation's key (`harness:harnessId`), and
+the binding survives resume and re-adoption the way queues and side chats do.
+It's set in one of three ways:
 
-1. a session whose `ah.worktree.branch` is the layer's head branch,
-2. a live session whose checkout has the branch checked out,
-3. full-text search hits for the branch name or `#<pr>` in transcripts (which
-   conversation ran `gh pr create` for it).
+1. when the stack is created and exactly one agent session has one of its
+   branches checked out (that is evidence, not a guess),
+2. by the first send, from the send dialog's session list,
+3. by Change on the overview's owner card.
+
+The session list ranks agents on one of the stack's branches first, then
+agents in the same repo. A layer can have its own owner (the server supports
+it). Transcript search as a third source of evidence is left for later.
 
 **The message.** Selected findings become one plain, short instruction:
 
@@ -241,8 +246,9 @@ When a layer has a reviewed revision and a new one arrives:
   > ✓ Cycle test: addressed, planner.test.ts:212
   > ! Unrequested: `describe()` output order changed, relationships.ts:140
 
-- **You accept the verdicts** with one action, or adjust them one by one.
-  Findings only change state when you accept.
+- **You accept the verdicts** with one action (Accept fixes): addressed
+  findings close and the rest go back to open. Findings only change state when
+  you accept, and any of them can be reopened after.
 
 ## Merge & next
 
@@ -316,9 +322,9 @@ project. In the palette it's *Go to → Review*. The page has three columns:
 - The stack's own thread opens from the rail's *Plan · Decisions*. It's the place for
   "does the overall shape hold up" before you start on the first layer.
 
-**Inside a session.** When a session's branch belongs to a stack, the
-session header's PR link reads `#1354 · F2 of Vest relationships`. While a dispatch is active, the
-session shows a thin bar, "Fixing 2 findings from review", that links back to the layer.
+**Inside a session.** When a session's branch is a layer, its header shows
+an "F2 in review" pill next to the PR link. While findings are with it, the
+pill reads "Fixing 2 findings · F2". Either one opens the layer.
 
 **Inbox.** Stack review adds three kinds of card: *re-review ready*, *agent
 finished without pushing*, and *ready to merge*. They're needs-you items, so
@@ -330,10 +336,11 @@ and Merge & next in a bottom bar. A typical phone session: open the Inbox card, 
 re-review list, accept, merge, go to the next layer. No fifth tab: Review is
 reached from the Inbox, from a session, and from History's search.
 
-**Keyboard.** `]` / `[` next/previous file, `n` / `p` next/previous finding,
-`f` file a finding on the focused line, `s` send selected, Alt+↓ / Alt+↑
-next/previous layer, ⌘↵ the main button (Send, Accept or Merge, whichever
-applies). Each one gets a row in the shortcut table and in which-key.
+**Keyboard.** Ctrl+Shift+4 opens Review. `j` / `k` walk the layers, and
+lists and diff lines move with the arrows. Enter on a diff line files a
+finding there, and ⌘↵ in its box adds it. ⌘↵ presses the main button: Send,
+Accept fixes, Mark reviewed or Merge & next, whichever applies. Keys for
+moving between files and findings are left for later.
 
 ## The plan file is the brief
 
@@ -355,100 +362,27 @@ Codex proposed an AI-built "Stack Brief". You already write a better one. So:
 
 ## Data model
 
-New Prisma models in `ah.db`, next to `Session`, `Snapshot` and `ChatMessage`:
-
-```prisma
-model ReviewStack {
-  id          String  @id
-  repoRoot    String            // main repo, not a worktree
-  repo        String            // owner/name
-  trunk       String            // "latest"
-  title       String
-  planPath    String?
-  ownerKey    String?           // harness:harnessId conversation key
-  mergeMethod String  @default("merge")
-  state       String  @default("open")   // open | done | archived
-  createdAt   Int
-}
-
-model ReviewLayer {
-  stackId     String
-  pr          Int
-  role        String  @default("")   // "F2"
-  position    Int                    // merge order
-  state       String  @default("open")  // open | merged | closed | skipped
-  ownerKey    String?                // per-layer override
-  reviewedRev Int?                   // ReviewRevision.id
-  @@id([stackId, pr])
-}
-
-model ReviewRevision {
-  id        Int    @id @default(autoincrement())
-  stackId   String
-  pr        Int
-  baseSha   String
-  headSha   String
-  patchId   String
-  checks    String @default("{}")
-  summary   String?              // cached per patchId
-  seenAt    Int
-  @@unique([stackId, pr, baseSha, headSha])
-}
-
-model ReviewFinding {
-  id         Int     @id @default(autoincrement())
-  stackId    String
-  ownerPr    Int
-  foundOnPr  Int
-  revisionId Int
-  path       String?
-  lineStart  Int?
-  lineEnd    Int?
-  title      String
-  body       String
-  severity   String              // blocking | should | nit
-  source     String              // you | reviewer | bot:<login> | gh:<login>
-  ghThread   String?
-  state      String  @default("open")
-  waiver     String?
-  dispatchId Int?
-  updatedAt  Int
-}
-
-model ReviewDispatch {
-  id         Int    @id @default(autoincrement())
-  stackId    String
-  pr         Int
-  targetKey  String
-  text       String
-  fromRev    Int
-  queueItem  String?
-  state      String @default("queued")  // queued | delivered | done | no-push
-  sentAt     Int
-}
-
-model ReviewDecision {
-  id      Int    @id @default(autoincrement())
-  stackId String
-  text    String
-  fromPr  Int?
-  at      Int
-}
-```
+Six Prisma models in `ah.db` (`prisma/schema.prisma`, migration
+`20261016120000_stack_review`): `ReviewStack` (repo, trunk, plan path, owner
+key, merge method), `ReviewLayer` (role, position, GitHub state, the current
+and reviewed revisions, `approved`, `needs`: retarget, restack or conflict),
+`ReviewRevision` (base, head, patch id, size, cached briefing, re-check
+verdict), `ReviewFinding`, `ReviewDispatch` and `ReviewDecision`.
 
 Threads reuse `ChatMessage` with keys `review:<stackId>` and
 `review:<stackId>:<pr>`, so `listChats`, History and search pick them up.
 
-**Refresh:** one `gh pr list --state all --json
-number,headRefName,baseRefName,headRefOid,state,isDraft,mergeable` per repo
-with an open stack. It runs when you open the page, every 60 s while a dispatch is
-active, and every 5 min otherwise. A new `headRefOid` triggers fetch, then patch id,
+**Refresh:** one `gh pr list --state all` per stack, with the check rollup
+in the same call. It runs when you open a stale stack, every 60 s while a
+dispatch is active, and every 5 min otherwise. Creating a stack returns at
+once and its first sync fills the layers in (Vest's ten layers took ~25 s
+the first time). A new `headRefOid` triggers fetch, then patch id,
 then a revision row. Checks come from `gh pr checks` only for layers that changed.
 **Discovery** builds the base→head forest from the same call. Roots are PRs whose base
 is the trunk. *Start review* on any PR takes in its descendants.
 
-**Multi-host:** a stack lives on the host that has the repo, and other hosts reach it
-through the existing `/h/<host>` proxy.
+**Multi-host:** a stack lives on the host that has the repo. The page shows the
+host you opened; a peer's stacks through `/h/<host>` are R4.
 
 ## What changed from the Codex draft, and why
 
@@ -472,25 +406,25 @@ through the existing `/h/<host>` proxy.
 
 Each phase is usable on its own and ships as small commits, like the rest of the backlog.
 
-**R0 — Pinned reading** (no UI). Revision-backed `ToolEnv`, fetch into
+**R0 — Pinned reading** (no UI). ✅ Revision-backed `ToolEnv`, fetch into
 `refs/ah-review/`, `patch-id` and `range-diff` helpers in `server/git.ts`, and
 the tool loop takes a tool set. *Done when* side-chat tests still pass and
 a test repo with a force-pushed PR still answers `layer_diff(mode:
 since_review)`.
 
-**R1 — Read and discuss.** Discovery, *Start review*, the Review page
+**R1 — Read and discuss.** ✅ Discovery, *Start review*, the Review page
 (rail, diff modes, threads), plan import, cached summaries, and the two
 subscription defaults. *Done when* the Vest stack shows up as the tree above,
 and a question about F2 that needs F3's diff is answered through tools, with nothing changed on
 disk.
 
-**R2 — Findings, fix, re-review.** Findings from you, the reviewer and bot threads; the
+**R2 — Findings, fix, re-review.** ✅ Findings from you, the reviewer and bot threads; the
 owner binding; dispatch through the queue; the turn-end and head-change
 watcher; Inbox cards; range-diff re-review; Reply & resolve on GitHub.
 *Done when* a stand-in agent receives a dispatch, pushes, and the layer moves to
 Re-review with verdicts, without anyone opening GitHub.
 
-**R3 — Merge & next.** The checklist, `--match-head-commit` merge,
+**R3 — Merge & next.** ✅ (tested against a stand-in GitHub; the real-repo run was read-only) The checklist, `--match-head-commit` merge,
 retargeting children, the needs-restack state, auto-advance, the activity log.
 *Done when* on a throwaway GitHub repo, H0 → O13 → F1 merges in order, each
 child keeps its review through the retarget, and a push made mid-review blocks
@@ -516,14 +450,21 @@ with cited nodes, and a completion report when a stack closes.
 - **UI:** the `test:ui` smoke suite gains a stack page on desktop and phone,
   run against a throwaway ah. It never runs against the live server or your tmux.
 
-## Open decisions
+## Decisions
 
-1. **Restack by ah or by the agent?** This design says agent, always, in v1.
-   ah could run a conflict-free `rebase --onto` itself in a temporary
-   worktree. That's faster, but it moves a branch under a checkout that may hold
-   unpushed work on it.
-2. **A Review tab on the phone?** This design reaches Review through the Inbox and sessions instead.
-3. **Who resolves bot threads?** You, through Reply & resolve, or the
-   agent as part of its fix (it already did this in the handoff)?
-4. **Stack thread scope:** keep it, or fold everything into layer threads plus
-   pinned decisions?
+1. **ah never rewrites branches.** Restacks and rebases are dispatches to the
+   agent that owns the checkout, and ah verifies the result by patch id. A
+   conflict-free `rebase --onto` in a scratch worktree would be faster, but it
+   would move a branch under a checkout that may have work on it.
+2. **No Review tab on the phone.** Review is one tap from its Inbox cards, a
+   session's "in review" pill, and the palette. A fifth tab would crowd the
+   capsule for something you visit when it needs you.
+3. **You resolve bot threads.** A finding from GitHub shows Resolve on GitHub,
+   which posts your note (if any) as the reply and resolves the thread. The
+   agent is never asked to touch the PR conversation.
+4. **Both thread scopes stay.** The stack's thread is on its overview and a
+   layer's thread is on the layer, so where you are decides the scope. Pinned
+   decisions carry what one thread settles into every other one.
+5. **A cheaper model for the background work.** Settings → Subscriptions picks
+   the subscription that writes briefings and re-checks; the reviewer chat uses
+   the default (or the one picked in the thread).

@@ -1160,6 +1160,20 @@ export class ReviewService {
     return { started: true };
   }
 
+  /** Settings → Subscriptions: which subscription writes briefings and re-checks (null: the default). */
+  async settings(): Promise<{ summaryId: string | null }> {
+    return { summaryId: (await this.summaryModel()) ?? null };
+  }
+
+  async setSummaryModel(id: string | null): Promise<{ summaryId: string | null }> {
+    if (id === null) await this.db.setting.deleteMany({ where: { key: 'review.summaryId' } });
+    else {
+      if (!(await this.chat.list()).some((s) => s.id === id)) throw new ReviewError(404, 'subscription not found');
+      await this.db.setting.upsert({ where: { key: 'review.summaryId' }, create: { key: 'review.summaryId', value: id }, update: { value: id } });
+    }
+    return this.settings();
+  }
+
   /** Settings → Subscriptions: the model for briefings and re-checks, when set apart from chat. */
   private async summaryModel(): Promise<string | undefined> {
     const row = await this.db.setting.findUnique({ where: { key: 'review.summaryId' } });

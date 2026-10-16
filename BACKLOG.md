@@ -241,6 +241,26 @@ Remaining larger work: conversation transfer between hosts (including files),
 worktree disk usage, and richer adapters for agents without hooks. These require explicit
 product decisions rather than guessing at conversation or workspace ownership.
 
+## Stack review (16 October 2026)
+
+PR stacks reviewed one layer at a time, fixed by the agent that wrote them,
+merged in order. Design and decisions: `docs/stack-review.md`. Server in
+`server/review/`, page in `web/review/`.
+
+| # | Item | | Notes |
+|---|---|---|---|
+| R0 | Pinned revisions | ✅ | PR heads and bases fetched into `refs/ah-review/<stack>/`, never a checkout; `patch-id` tells rebased from changed; `range-diff` shows what changed since a review; reviewed revisions pinned through force-pushes. |
+| R1 | Read and discuss | ✅ | Stacks are trees from GitHub's base→head links; a first merge order puts small branches before the long chain; a plan file's owner table labels layers. Briefings per patch (background, cached), a reviewer per layer and per stack on side chat's subscriptions and tool loop, with tools that read exact revisions. |
+| R2 | Findings → fix → re-review | ✅ | Findings from a diff line, the reviewer (proposals to keep) or GitHub threads (Codex's P-levels as severity). Sent as one drafted message to the stack's owning conversation through the normal send path (queue, resume), with the restack of the layers above. The watcher sees the turn end and the head move; a re-check judges each finding; Inbox card and push. |
+| R3 | Merge & next | ✅ | Gates re-checked on a fresh sync; `gh pr merge --match-head-commit`; layers on the merged branch retargeted to the trunk (squash/rebase marks them for a restack, an agent dispatch). Activity log entries for merge, retarget, ready, resolve, dispatch. |
+| R4 | Breadth | | Native GitHub stacks (public preview; no stack API yet): detect, merge the bottom only, verify. Peer hosts' stacks in the local page. |
+| R5 | Pictures and the record | | A cited `mermaid` widget for before/after flow; a completion report when a stack closes. |
+
+Measured against Vest's real ten-layer stack (read-only, in a scratch clone):
+the tree, merge order H0 → O13/O14/O15 → F1…O10, plan labels and Codex
+threads all came out right; the first fetch of ten layers takes ~25s, so a
+new stack opens at once and fills in.
+
 ## Design rules
 
 - **Conversation identity is the attachment key.** Transcripts, side-chats, and
