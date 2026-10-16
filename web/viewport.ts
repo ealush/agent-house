@@ -75,7 +75,10 @@ export function trackViewport(win: Window, doc: Document): () => void {
     const height = keyboardViewportHeight(root.clientHeight, viewport.height, viewport.scale, editing);
     // Kept across the keyboard too: while it is up the shell uses the keyboard height instead.
     shim = nextShim(shim, standaloneInfo(win));
-    const full = height === null ? (shim?.full ?? null) : null;
+    // Not while typing, even on a hardware keyboard: WebKit scrolls the page to reveal the
+    // caret after every keystroke unless the caret is inside position: fixed, and the shim's
+    // shell is absolute. pin() then snapped it back, so the page jumped for a frame per key.
+    const full = height === null && !editing ? (shim?.full ?? null) : null;
     if (full !== null) {
       root.style.setProperty('--app-h', `${full}px`);
       root.classList.add('ios-shim');

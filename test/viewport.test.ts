@@ -137,6 +137,51 @@ test('an iOS home-screen app fills the screen when the viewport is short by the 
   assert.equal(standaloneHeight({ ...iphone, portrait: false, inner: 340 }), 402, 'landscape uses the short side');
 });
 
+test('typing on a hardware keyboard puts the shim aside, so the caret is inside the fixed shell', () => {
+  const viewport = Object.assign(new EventTarget(), { height: 810, scale: 1 });
+  const frames: FrameRequestCallback[] = [];
+  const win = Object.assign(new EventTarget(), {
+    visualViewport: viewport,
+    innerHeight: 810,
+    screen: { width: 1194, height: 834 },
+    navigator: { standalone: true, userAgent: 'iPad', maxTouchPoints: 5 },
+    matchMedia: (q: string) => ({ matches: q.includes('standalone') }),
+    requestAnimationFrame(fn: FrameRequestCallback) { frames.push(fn); return frames.length; },
+    cancelAnimationFrame() {},
+    scrollY: 0,
+    scrollTo() {},
+  });
+  const classes = new Set<string>();
+  const style = new Map<string, string>();
+  const doc = Object.assign(new EventTarget(), {
+    activeElement: null as unknown,
+    documentElement: {
+      dataset: {} as Record<string, string>,
+      classList: { add: (c: string) => classes.add(c), remove: (c: string) => classes.delete(c), contains: (c: string) => classes.has(c) },
+      clientHeight: 810,
+      style: {
+        setProperty(key: string, value: string) { style.set(key, value); },
+        removeProperty(key: string) { style.delete(key); },
+      },
+    },
+  });
+  const flush = () => frames.splice(0).forEach((fn) => fn(0));
+  const stop = trackViewport(win as unknown as Window, doc as unknown as Document);
+  assert.ok(classes.has('ios-shim'), 'landscape iPad, 24pt short: stretched');
+  // A hardware keyboard: focus, but the visual viewport stays about the same.
+  doc.activeElement = { matches: () => true, isContentEditable: false };
+  doc.dispatchEvent(new Event('focusin'));
+  flush();
+  assert.equal(classes.has('ios-shim'), false, 'the shell is fixed while typing');
+  assert.equal(style.has('--keyboard-vh'), false, 'no software keyboard to fit');
+  doc.activeElement = null;
+  doc.dispatchEvent(new Event('focusout'));
+  flush();
+  assert.ok(classes.has('ios-shim'), 'and stretched again after');
+  assert.equal(style.get('--app-h'), '834px');
+  stop();
+});
+
 test('the measured shim is kept, so the stretched page does not switch it off again', async () => {
   const { nextShim } = await import('../web/viewport.ts');
   const iphone = { standalone: true, ios: true, portrait: true, screenW: 402, screenH: 874, inner: 812 };
