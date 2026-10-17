@@ -31,6 +31,8 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
 
     if (route('GET', '/stacks')) return send(res, 200, await svc.list());
 
+    if ((m = route('GET', '/sessions/([\\w-]{1,40})/stack'))) return send(res, 200, await svc.sessionStack(m[1]));
+
     if (route('GET', '/settings')) return send(res, 200, await svc.settings());
 
     if (route('PUT', '/settings')) {

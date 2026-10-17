@@ -17,10 +17,11 @@ import { defaultView, surfaceFor, VIEW_LABEL, viewsFor, type SurfaceHandle, type
 import { ComposerBar, type ComposerHandle } from './Composer.tsx';
 import { useFileDrop } from './useFileDrop.ts';
 import { BranchPicker, BranchSheet, ChangesPanel, PrLink } from './Git.tsx';
-import { useReviewFor } from './reviewContext.ts';
+import { ReviewContext, useReviewFor } from './reviewContext.ts';
 // Side chat and past chats (with the markdown renderer) load when the Chat panel first opens.
 const SideChat = lazy(() => import('./SideChat.tsx').then((m) => ({ default: m.SideChat })));
 const ChatHistory = lazy(() => import('./ChatHistory.tsx').then((m) => ({ default: m.ChatHistory })));
+const StackPanel = lazy(() => import('./review/SessionStack.tsx'));
 import { FilesPanel } from './Files.tsx';
 import { QueuePanel } from './Queue.tsx';
 import { PreviewPanel } from './Preview.tsx';
@@ -34,7 +35,7 @@ import { Glide } from './Glide.tsx';
 import { toggleSteps, useStepsHidden } from './gui/steps.ts';
 import { ActionSheet, SheetBar, useSheet } from './sheet.tsx';
 
-type Panel = 'diff' | 'files' | 'chat' | 'queue' | 'snapshots' | 'preview';
+type Panel = 'diff' | 'files' | 'chat' | 'queue' | 'snapshots' | 'preview' | 'stack';
 
 type Props = {
   w: Win;
@@ -168,7 +169,10 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   // Turns, a queue and forks belong to agents: a plain shell has none. The open
   // panel is remembered per device, so on a shell an agent-only one shows Files.
   const turns = !!w.agent;
-  const panel: Panel | '' = !turns && (storedPanel === 'queue' || storedPanel === 'snapshots') ? 'files' : storedPanel;
+  // The stack a session builds is read on the host Review lives on, in a git checkout.
+  const reviewHost = useContext(ReviewContext)?.host;
+  const stackTab = reviewHost === w.host && !!w.branch;
+  const panel: Panel | '' = (!turns && (storedPanel === 'queue' || storedPanel === 'snapshots')) || (!stackTab && storedPanel === 'stack') ? 'files' : storedPanel;
   // Last non-empty panel, so the single header toggle reopens where you left off.
   const [lastPanel, setLastPanel] = useState<Panel>('files');
   useEffect(() => {
@@ -735,6 +739,10 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       <PreviewPanel client={client} uid={w.uid} />
     ) : p === 'diff' ? (
       <ChangesPanel client={client} windowId={w.id} onComment={w.agent ? comment : undefined} />
+    ) : p === 'stack' ? (
+      <Suspense fallback={<div className="panel-body" />}>
+        <StackPanel uid={w.uid} />
+      </Suspense>
     ) : p === 'chat' ? (
       <Suspense fallback={<div className="panel-body" />}>
         {chatHistory ? <ChatHistory client={client} jump={chatJump} /> : <SideChat client={client} w={w} onSent={onSent} />}
@@ -834,6 +842,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       {w.queued > 0 && <button onClick={() => { setMenu(false); runCommand('send-now'); }}><span className="grow">Send next queued now</span><ShortcutHint id="send-now" /></button>}
       {turns && <button onClick={() => { setMenu(false); togglePanel('snapshots'); }}><span className="grow">Snapshots</span><ShortcutHint id="panel-snapshots" /></button>}
       <button onClick={() => { setMenu(false); togglePanel('preview'); }}><span className="grow">Preview</span><ShortcutHint id="panel-preview" /></button>
+      {stackTab && <button onClick={() => { setMenu(false); togglePanel('stack'); }}><span className="grow">Stack</span></button>}
       {(onSplit || onReplace || onClosePane) && <hr />}
       {onSplit && (
         <>
@@ -1151,6 +1160,12 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
           <button role="tab" aria-selected={tab === 'preview'} className={tab === 'preview' ? 'on' : ''} onClick={() => setTab('preview')}>
             Preview
           </button>
+          {/* Its branch in review, or open: otherwise the menu opens it. */}
+          {stackTab && (review?.layer || tab === 'stack') && (
+            <button role="tab" aria-selected={tab === 'stack'} className={tab === 'stack' ? 'on' : ''} onClick={() => setTab('stack')}>
+              Stack
+            </button>
+          )}
         </div>
       )}
 
@@ -1184,7 +1199,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
           {fileDrop.over && <div className="drop-hint">Drop to attach to your message</div>}
         </div>
 
-        {!narrow && panel && (panel === 'files' || panel === 'chat' || panel === 'queue' || panel === 'snapshots' || panel === 'preview' || diffTab) && (
+        {!narrow && panel && (panel === 'files' || panel === 'chat' || panel === 'queue' || panel === 'snapshots' || panel === 'preview' || panel === 'stack' || diffTab) && (
           <>
             {!panelCollapsed && <PanelDivider onResize={resizePanel} onReset={resetPanelWidth} />}
             {panelCollapsed ? (
@@ -1202,6 +1217,12 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
                   {diffTab && (
                     <button role="tab" aria-selected={panel === 'diff'} className="tab-underline" onClick={() => setPanel('diff')}>
                       Diff
+                    </button>
+                  )}
+                  {/* Beside Diff: both are about the branch. */}
+                  {stackTab && (
+                    <button role="tab" aria-selected={panel === 'stack'} className="tab-underline" onClick={() => setPanel('stack')}>
+                      Stack
                     </button>
                   )}
                   <button role="tab" aria-selected={panel === 'files'} className="tab-underline" onClick={() => setPanel('files')}>

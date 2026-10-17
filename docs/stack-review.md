@@ -154,6 +154,18 @@ it. Its conversation is the why behind the stack, so:
   sent that session, oldest first, or with a query, the transcript's passages
   (yours, the agent's, its tools') that mention it.
 
+**In the session, as it's built.** A session in a git checkout has a
+**Stack** tab in its side panel, beside Diff (on a phone, in the session
+menu, and as a tab while its branch is in review). It shows the stack the
+session is building, trunk first, then its branches bottom to top: the one
+gh stack tracks with the session's branch in it (gh stack keeps its stacks in
+the git common dir, shared by every worktree), else the line of open PRs
+based on each other through the session's branch, else the last one it was
+on. Each branch shows its PR as it appears (state, checks, size), and its
+status once in review. *Review this stack* starts the review from there,
+following the stack on GitHub when there is one, with this session recorded
+as where it was made; after that the tab offers *Open in Review*.
+
 ## Reading at a pinned revision
 
 This is the main technical change, and everything else depends on it.

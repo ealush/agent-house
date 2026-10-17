@@ -803,3 +803,48 @@ test('review: a stack remembers the session that made it, and the reviewer reads
     await assert.rejects(t.svc.create(t.w.local, { pr: 9 }, undefined, 'nope'), /session not found/);
   });
 });
+
+test("review: a session sees the stack it's building, from gh stack or its PRs, and starts its review", async () => {
+  const t = await setup();
+  await withGh(t.w, async () => {
+    // gh stack tracks four branches; the newest has no PR yet.
+    await writeFile(join(t.w.local, '.git', 'gh-stack'), JSON.stringify({ schemaVersion: 1, stacks: [{ trunk: { branch: 'main' }, branches: [{ branch: 'base' }, { branch: 'feat' }, { branch: 'docs' }, { branch: 'more' }] }] }));
+    let s = await t.svc.sessionStack('u-agent');
+    assert.equal(s.source, 'gh-stack');
+    assert.deepEqual(s.branches.map((b) => [b.branch, b.pr?.number ?? null, b.current]), [['base', 1, false], ['feat', 2, true], ['docs', 3, false], ['more', null, false]]);
+    assert.equal(s.review, null);
+    assert.deepEqual(s.start, { prs: [1, 2, 3] });
+
+    // Started from the panel: the session made it.
+    const v = await t.svc.create(t.w.local, s.start as { prs: number[] }, undefined, 'u-agent');
+    assert.equal(v.origin?.uid, 'u-agent');
+    await t.svc.approve(v.id, 1).catch(() => {});
+    s = await t.svc.sessionStack('u-agent');
+    assert.deepEqual(s.review, { id: v.id, title: 'PR 1' });
+    assert.equal(s.start, null);
+    assert.ok(s.branches[0].layer, 'each PR shows its status in review');
+    await t.svc.remove(v.id);
+
+    // Without gh stack: the chain of PRs the session's branch is in.
+    await writeFile(join(t.w.local, '.git', 'gh-stack'), JSON.stringify({ schemaVersion: 1, stacks: [] }));
+    s = await t.svc.sessionStack('u-agent');
+    assert.equal(s.source, 'chain');
+    assert.deepEqual(s.branches.map((b) => b.branch), ['base', 'feat', 'docs']);
+
+    // A stack on GitHub: the review starts from it.
+    await t.setState((st) => {
+      Object.assign(st, { stacks: [{ number: 7, prs: [1, 2, 3] }] });
+    });
+    (t.svc as unknown as { native: Map<string, unknown> }).native.clear();
+    s = await t.svc.sessionStack('u-agent');
+    assert.equal(s.ghStack, 7);
+    assert.deepEqual(s.start, { native: 7 });
+
+    // Back on main, it still shows what it built.
+    t.sessions[0].branch = 'main';
+    s = await t.svc.sessionStack('u-agent');
+    assert.deepEqual(s.branches.map((b) => [b.branch, b.current]), [['base', false], ['feat', false], ['docs', false]]);
+    // A shell elsewhere has nothing.
+    assert.deepEqual((await t.svc.sessionStack('u-shell')).branches, []);
+  });
+});

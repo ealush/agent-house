@@ -95,6 +95,23 @@ export type Candidate = { number: number; title: string; headRefName: string; ba
 export type CandidateStack = { number: number; base: string; prs: number[] };
 export type Candidates = { root: string; repo: string; trunk: string; trees: CandidateTree[]; stacks: { id: string; title: string }[]; native: CandidateStack[] };
 export type CandidateTree = { pr: Candidate; children: CandidateTree[] };
+/** The stack a session is building (server/review/service.ts SessionStack). */
+export type SessionStack = {
+  repo: string | null;
+  root: string;
+  trunk: string;
+  source: 'gh-stack' | 'chain' | null;
+  branch: string | null;
+  ghStack: number | null;
+  branches: {
+    branch: string;
+    current: boolean;
+    pr: { number: number; title: string; url: string; state: 'OPEN' | 'MERGED' | 'CLOSED'; draft: boolean; checks: Checks; additions: number; deletions: number } | null;
+    layer: { status: LayerStatus; role: string } | null;
+  }[];
+  review: { id: string; title: string } | null;
+  start: { native: number } | { prs: number[] } | null;
+};
 export type OwnerSuggestion = { uid: string; key: string; title: string; agent: string | null; status: string; cwd: string; branch: string | null; live: boolean; reason: 'branch' | 'repo'; origin: boolean };
 export type ThreadMsg = { role: 'user' | 'assistant'; text: string; at: number; id: number };
 export type Followup = { title: string; kind: 'session' | 'chat'; text: string };
@@ -111,6 +128,7 @@ export function reviewApi(base = '') {
     repos: () => r<{ root: string; repo: string; trunk: string }[]>('GET', '/repos'),
     candidates: (root: string) => r<Candidates>('GET', `/candidates?root=${enc(root)}`),
     stacks: () => r<StackSummary[]>('GET', '/stacks'),
+    sessionStack: (uid: string) => r<SessionStack>('GET', `/sessions/${enc(uid)}/stack`),
     settings: () => r<{ summaryId: string | null }>('GET', '/settings'),
     setSummaryModel: (summaryId: string | null) => r<{ summaryId: string | null }>('PUT', '/settings', { summaryId }),
     /** One PR takes GitHub's chain under it; a list is the PRs you picked, in review order. */

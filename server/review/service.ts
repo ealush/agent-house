@@ -30,7 +30,7 @@ import {
   type NativeStack,
   type ReviewThread,
 } from './gh.ts';
-import { branchRef, diff, diffStat, fetchStack, mergeBase, patchId, pin, prRef, remoteFor, resolve, sinceReview, unpinStack, validSha } from './git.ts';
+import { branchRef, diff, diffStat, fetchStack, localStacks, mergeBase, patchId, pin, prRef, remoteFor, resolve, sinceReview, unpinStack, validSha } from './git.ts';
 import {
   parseReply,
   parseVerdict,
@@ -187,6 +187,27 @@ export type ReviewState = {
   branches: { repo: string; branch: string; stackId: string; pr: number; role: string; stackTitle: string }[];
 };
 
+/** A stack as the session building it sees it: its branches bottom to top, each with its PR once there is one. */
+export type SessionStack = {
+  repo: string | null;
+  /** The repo's main checkout: where a review of it is started. */
+  root: string;
+  trunk: string;
+  /** Where the branches come from: gh stack's own tracking, or PRs based on each other. */
+  source: 'gh-stack' | 'chain' | null;
+  branch: string | null;
+  ghStack: number | null;
+  branches: {
+    branch: string;
+    current: boolean;
+    pr: { number: number; title: string; url: string; state: 'OPEN' | 'MERGED' | 'CLOSED'; draft: boolean; checks: Checks; additions: number; deletions: number } | null;
+    layer: { status: LayerStatus; role: string } | null;
+  }[];
+  review: { id: string; title: string } | null;
+  /** How a review would start from here; null when there are no PRs yet. */
+  start: { native: number } | { prs: number[] } | null;
+};
+
 type Candidate = { number: number; title: string; headRefName: string; baseRefName: string; draft: boolean; author: string; additions: number; deletions: number; updatedAt: string; inStack: string | null };
 export type CandidateTree = { pr: Candidate; children: CandidateTree[] };
 /** A stack on GitHub with open PRs, bottom to top. */
@@ -261,6 +282,9 @@ export class ReviewService {
   /** When ah last merged in a stack: GitHub's retarget and rebase of the rest follow it. */
   private settle = new Map<string, number>();
   private ghStackTool: boolean | null = null;
+  private prCache = new Map<string, { at: number; prs: Promise<GhPr[]> }>();
+  /** The branches each session last built a stack of, so it still shows once the agent is back on the trunk. */
+  private lastBuilt = new Map<string, { root: string; trunk: string; branches: string[]; source: 'gh-stack' | 'chain' }>();
   /** How long a merge request waits for GitHub before the watcher takes over. */
   private mergeWait = MERGE_WAIT_MS;
 
@@ -373,6 +397,80 @@ export class ReviewService {
       .map((n) => ({ number: n.number, base: n.base, prs: n.prs.filter((p) => open.has(p.number)).map((p) => p.number) }))
       .filter((n) => n.prs.length);
     return { root: main, repo, trunk, trees: forest(prs).map(toTree), stacks, native };
+  }
+
+  // ---------- the stack a session builds
+
+  /** Every PR in a repo, kept a few seconds: the session panels ask often. */
+  private recentPrs(root: string): Promise<GhPr[]> {
+    const hit = this.prCache.get(root);
+    if (hit && now() - hit.at < 10) return hit.prs;
+    const prs = listPrs(root, 'all', 200).catch(() => [] as GhPr[]);
+    this.prCache.set(root, { at: now(), prs });
+    return prs;
+  }
+
+  /**
+   * The stack a session is building: the gh stack its branch is in, else the
+   * chain of PRs its branch's PR is in, else the last one it was on. Each
+   * branch with its PR and, when it's in review, its status there.
+   */
+  async sessionStack(uid: string): Promise<SessionStack> {
+    const sess = (await this.deps.sessions()).find((x) => x.uid === uid);
+    if (!sess) throw new ReviewError(404, 'session not found');
+    const empty: SessionStack = { repo: null, root: '', trunk: 'main', source: null, branch: sess.branch, ghStack: null, branches: [], review: null, start: null };
+    const root = sess.cwd ? await this.mainOf(sess.cwd) : null;
+    if (!root) return empty;
+    const { repo, trunk } = await this.repoOf(root);
+    if (!repo) return empty;
+    const prs = await this.recentPrs(root);
+    const prOf = (branch: string) => prs.filter((p) => p.headRefName === branch && !p.crossRepo).sort((a, b) => Number(b.state === 'OPEN') - Number(a.state === 'OPEN') || b.number - a.number)[0] ?? null;
+    let found: { trunk: string; branches: string[]; source: 'gh-stack' | 'chain' } | null = null;
+    const local = (await localStacks(sess.cwd)).find((st) => sess.branch && st.branches.includes(sess.branch));
+    if (local) found = { trunk: local.trunk || trunk, branches: local.branches, source: 'gh-stack' };
+    else if (sess.branch && prOf(sess.branch)?.state === 'OPEN') {
+      // PRs based on each other: walk down to the one on a branch no PR has, then up the line through the session's branch.
+      const open = prs.filter((p) => p.state === 'OPEN' && !p.crossRepo);
+      const line: GhPr[] = [prOf(sess.branch)!];
+      for (let p = open.find((x) => x.headRefName === line[0].baseRefName); p && !line.includes(p); p = open.find((x) => x.headRefName === line[0].baseRefName)) line.unshift(p);
+      for (let p = open.find((x) => x.baseRefName === line.at(-1)!.headRefName); p && !line.includes(p); p = open.find((x) => x.baseRefName === line.at(-1)!.headRefName)) line.push(p);
+      if (line.length > 1) found = { trunk: line[0].baseRefName, branches: line.map((p) => p.headRefName), source: 'chain' };
+    }
+    if (found) this.lastBuilt.set(uid, { root, ...found });
+    else {
+      const last = this.lastBuilt.get(uid);
+      if (last?.root === root) found = last;
+    }
+    if (!found) return { ...empty, repo, root, trunk };
+    const rows = found.branches.map((b) => ({ branch: b, pr: prOf(b) }));
+    const numbers = rows.flatMap((r) => (r.pr ? [r.pr.number] : []));
+    const natives = (await this.nativeStacks(root, repo)) ?? [];
+    const ghStack = natives.find((n) => n.prs.some((p) => numbers.includes(p.number)))?.number ?? null;
+    // The review these PRs are in, if any: open first.
+    const layers = numbers.length ? await this.db.reviewLayer.findMany({ where: { pr: { in: numbers } } }) : [];
+    const stacks = layers.length ? await this.db.reviewStack.findMany({ where: { id: { in: [...new Set(layers.map((l) => l.stackId))] }, repoRoot: root, state: { not: 'archived' } }, orderBy: { createdAt: 'desc' } }) : [];
+    const rs = stacks.find((x) => x.state === 'open') ?? stacks[0] ?? null;
+    const view = rs ? await this.view(rs.id, { autoSync: false }) : null;
+    const open = rows.filter((r) => r.pr?.state === 'OPEN').map((r) => r.pr!.number);
+    return {
+      repo,
+      root,
+      trunk: found.trunk,
+      source: found.source,
+      branch: sess.branch,
+      ghStack,
+      branches: rows.map((r) => {
+        const l = r.pr ? view?.layers.find((x) => x.pr === r.pr!.number) : undefined;
+        return {
+          branch: r.branch,
+          current: r.branch === sess.branch,
+          pr: r.pr ? { number: r.pr.number, title: r.pr.title, url: r.pr.url, state: r.pr.state, draft: r.pr.isDraft, checks: r.pr.checks, additions: r.pr.additions, deletions: r.pr.deletions } : null,
+          layer: l ? { status: l.status, role: l.role } : null,
+        };
+      }),
+      review: rs ? { id: rs.id, title: rs.title } : null,
+      start: rs || !open.length ? null : ghStack !== null && natives.find((n) => n.number === ghStack)?.prs.some((p) => p.open) ? { native: ghStack } : { prs: open },
+    };
   }
 
   // ---------- stacks

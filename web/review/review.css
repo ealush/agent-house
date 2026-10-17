@@ -2549,3 +2549,138 @@ button.findings-label {
   font-size: 14px;
   line-height: 1.55;
 }
+
+/* ---- the stack a session is building, in its side panel (SessionStack.tsx) */
+
+.session-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.ss-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ss-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ss-trunk,
+.ss-row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 6px;
+  border-radius: 10px;
+}
+
+.ss-trunk {
+  align-items: center;
+  color: var(--faint);
+  font-size: 12px;
+}
+
+/* The rail: one line through the dots, trunk at the top. */
+.ss-rail {
+  flex: none;
+  width: 14px;
+  display: grid;
+  place-items: center;
+  padding-top: 3px;
+}
+
+.ss-rail {
+  position: relative;
+  z-index: 1;
+}
+
+/* One line down the rail, behind the dots: from the trunk's dot to the last layer's. */
+.ss-trunk::before,
+.ss-row::before {
+  content: '';
+  position: absolute;
+  left: 12px;
+  top: 0;
+  bottom: 0;
+  border-left: 2px solid var(--line-2);
+}
+
+.ss-trunk::before {
+  top: 50%;
+}
+
+.ss-row:last-child::before {
+  bottom: auto;
+  height: 14px;
+}
+
+.ss-row.here {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+.ss-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ss-top {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.ss-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+a.ss-title:hover {
+  text-decoration: underline;
+}
+
+.ss-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.ss-sub .bad {
+  color: var(--bad, var(--accent));
+}
+
+.ss-sub .run {
+  color: var(--run);
+}
+
+.ss-here {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.ss-foot {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding-top: 4px;
+}
