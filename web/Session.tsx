@@ -243,10 +243,12 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
       );
       const maxHeight = Math.max(0, view.height - 16);
       el.style.maxHeight = `${maxHeight}px`;
-      const body = el.getBoundingClientRect();
-      const at = placeFloatingMenu(anchor, { width: body.width, height: body.height }, view);
+      // Its layout size, not its box: the menu grows from the button as it opens, and a box
+      // read mid-grow is smaller than the menu, so a tall one was placed below and ran off
+      // the screen (an iPad's 44px rows).
+      const at = placeFloatingMenu(anchor, { width: el.offsetWidth, height: el.offsetHeight }, view);
       // Flipped above the button when there is no room below: it grows from there instead.
-      const next = { ...at, maxHeight, above: at.top < anchor.top };
+      const next = { ...at, maxHeight: at.maxHeight ?? maxHeight, above: at.top < anchor.top };
       setMenuPos((prev) =>
         prev && prev.top === next.top && prev.left === next.left && prev.maxHeight === next.maxHeight ? prev : next,
       );

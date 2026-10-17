@@ -34,6 +34,13 @@ in menus, the palette, the sidebar and buttons; a session takes the keyboard
 as it opens, as on a desktop; the terminal's on-screen key bar steps aside
 (the session menu still shows it). Every chord works either way.
 
+**Menus, as iPadOS's.** A finger held still on a session row, or a secondary
+click (two fingers on a trackpad, a right click), opens the row's menu; the
+lift opens nothing, and a drag that starts instead still reorders. Menus are
+placed against the screen: under their button when they fit, over it when
+that fits, else on the roomier side as tall as the room, scrolling inside
+(44 px rows make long menus).
+
 ## PLT-3 · Phone — shipped
 
 - Floating glass **tab bar**: Inbox, Sessions, History, and Commands (ATT-8).

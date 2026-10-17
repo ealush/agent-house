@@ -571,6 +571,41 @@ test('iPad with a hardware keyboard: the first key only it can send brings key h
   await ctx.close();
 });
 
+test('iPad: a finger held on a session row, or a secondary click, opens its menu, and menus stay on screen', { skip, timeout: 60_000 }, async () => {
+  const ctx = await browser.newContext({ ...devices['iPad Pro 11 landscape'] });
+  const { page, errors } = await open(ctx);
+  const row = page.locator('.side-row', { hasText: 'zz-idle' }).first();
+  await row.waitFor();
+  const before = await page.evaluate(() => location.hash);
+  // Held still: the menu, and the lift opens nothing.
+  const b = (await row.boundingBox())!;
+  const cdp = await ctx.newCDPSession(page);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: b.x + 80, y: b.y + b.height / 2, id: 1 }] });
+  await page.waitForTimeout(700);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await page.locator('.row-menu').waitFor();
+  assert.equal(await page.evaluate(() => location.hash), before, 'the hold opened no session');
+  await page.keyboard.press('Escape');
+  await page.mouse.click(900, 400);
+  // A secondary click (two fingers on a trackpad).
+  await row.click({ button: 'right' });
+  await page.locator('.row-menu').waitFor();
+  const inView = async (sel: string) => {
+    const r = (await page.locator(sel).first().boundingBox())!;
+    return r.y >= 0 && r.y + r.height <= 834 + 1;
+  };
+  assert.ok(await inView('.row-menu'), 'the row menu is on screen');
+  await page.mouse.click(900, 400);
+  // A plain tap still opens the session; its menu, long on an iPad, fits under its button.
+  await row.tap();
+  await page.locator('.term .xterm').first().waitFor();
+  await page.getByRole('button', { name: 'More' }).first().click();
+  await page.waitForTimeout(300);
+  assert.ok(await inView('.menu'), 'the session menu is on screen');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('no control is smaller than 32px, on a desktop or a phone', { skip, timeout: 90_000 }, async () => {
   for (const opts of [{ viewport: { width: 1440, height: 900 } }, { ...devices['iPhone 15 Pro'] }, { ...devices['iPad Pro 11'] }]) {
     const ctx = await browser.newContext(opts);

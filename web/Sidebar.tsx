@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { contextMenu, useFitMenu } from './contextMenu.ts';
 import type { State, Win } from './api.ts';
 import { askConfirm } from './ask.tsx';
 import { Icon } from './icons.tsx';
@@ -83,6 +84,8 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
   const [menuKey, setMenuKey] = useState<string | null>(null);
   const menuRow = useRef<HTMLDivElement>(null);
   useDismiss(menuKey !== null, menuRow, () => setMenuKey(null));
+  const rowMenuEl = useRef<HTMLDivElement>(null);
+  useFitMenu(rowMenuEl, menuKey !== null);
 
   const sections = sidebarSections(windows, multiHost, savedGroups);
   const flip = useFlip<HTMLDivElement>(sections.map((s) => `${s.id}:${s.windows.map((w) => w.key).join(',')}`).join('|'));
@@ -135,14 +138,19 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
     const modelLabel = shortModel(w.model);
     const active = w.key === selected;
     const seen = visible.has(w.key);
+    // Its ··· menu, from a secondary click or a finger held on the row too.
+    const press = contextMenu(() => setMenuKey(w.key));
     return (
       <div
         key={w.key}
         ref={menu ? menuRow : undefined}
         data-flip={w.key}
         className={`side-row ${overKey === w.key ? (overAfter ? 'drop-after' : 'drop') : ''} ${drag?.kind === 'session' && drag.key === w.key ? 'dragging' : ''}`}
+        {...press}
         draggable
         onDragStart={(e) => {
+          press.onDragStart();
+          setMenuKey(null);
           setDrag({ kind: 'session', key: w.key });
           onDragSession?.(w);
           e.dataTransfer.effectAllowed = 'move';
@@ -218,7 +226,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
           <Icon name="more" size={14} />
         </button>
         {menu && (
-          <div className="menu row-menu" onMouseLeave={() => setMenuKey(null)}>
+          <div className="menu row-menu" ref={rowMenuEl} onMouseLeave={() => setMenuKey(null)}>
             {/* The session menu's own rows and words: opening the session, then the command, as its ··· would. */}
             <button
               onClick={() => {
