@@ -638,6 +638,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   useCommand('panel-queue', () => togglePanel('queue'), active && turns);
   useCommand('panel-snapshots', () => togglePanel('snapshots'), active && turns);
   useCommand('panel-preview', () => togglePanel('preview'), active);
+  useCommand('panel-stack', () => togglePanel('stack'), active && stackTab);
   useCommand('copy-last', () => surface.current?.copyLast?.(), active && view === 'gui');
   useCommand('jump-latest', () => surface.current?.jumpLatest?.(), active && view === 'gui');
   useCommand('browse-messages', () => void surface.current?.browse?.(), active && view === 'gui');
@@ -844,7 +845,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       {w.queued > 0 && <button onClick={() => { setMenu(false); runCommand('send-now'); }}><span className="grow">{L('send-now')}</span><ShortcutHint id="send-now" /></button>}
       {turns && <button onClick={() => { setMenu(false); togglePanel('snapshots'); }}><span className="grow">{L('panel-snapshots')}</span><ShortcutHint id="panel-snapshots" /></button>}
       <button onClick={() => { setMenu(false); togglePanel('preview'); }}><span className="grow">{L('panel-preview')}</span><ShortcutHint id="panel-preview" /></button>
-      {stackTab && <button onClick={() => { setMenu(false); togglePanel('stack'); }}><span className="grow">Stack</span></button>}
+      {stackTab && <button onClick={() => { setMenu(false); togglePanel('stack'); }}><span className="grow">{L('panel-stack')}</span><ShortcutHint id="panel-stack" /></button>}
       {(onSplit || onReplace || onClosePane) && <hr />}
       {onSplit && (
         <>
@@ -1148,7 +1149,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
               ['snapshots', 'history', L('panel-snapshots'), turns],
               ['preview', 'globe', L('panel-preview'), true],
               // Its branch in review, or open: otherwise the menu opens it.
-              ['stack', 'stack', 'Stack', stackTab && (!!review?.layer || tab === 'stack')],
+              ['stack', 'stack', L('panel-stack'), stackTab && (!!review?.layer || tab === 'stack')],
             ] as const
           ).map(([id, icon, label, shown]) =>
             shown ? (
@@ -1222,14 +1223,14 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
                     ] as const
                   ).map(([id, icon, shown]) => {
                     if (!shown) return null;
-                    const label = id === 'stack' ? 'Stack' : L(`panel-${id}`);
+                    const label = L(`panel-${id}`);
                     return (
                       <button
                         key={id}
                         role="tab"
                         aria-selected={panel === id}
                         aria-label={label}
-                        title={id === 'stack' ? label : shortcutTitle(label, `panel-${id}`)}
+                        title={shortcutTitle(label, `panel-${id}`)}
                         className="tab-underline tab-icon"
                         onClick={() => setPanel(id)}
                       >

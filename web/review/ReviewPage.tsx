@@ -157,7 +157,7 @@ function StackList({ state, narrow, onOpen, onPick }: { state: State; narrow: bo
             )}
           </p>
         </div>
-        <button className="btn primary new-stack" onClick={onPick}>
+        <button className="btn light new-stack" onClick={onPick}>
           <Icon name="plus" size={16} /> New stack
         </button>
       </header>

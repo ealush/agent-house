@@ -328,7 +328,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
         {waiting > 0 ? <span className="badge">{waiting}</span> : <span className="count">{windows.length}</span>}
       </button>
       <button className={`nav-item ${page === 'review' && !selected ? 'on' : ''}`} title={shortcutTitle('Review', 'go-review')} onClick={() => onPage('review')}>
-        <Icon name="diff" />
+        <Icon name="stack" />
         <span className="grow">Review</span>
         {(state?.review?.alerts.length ?? 0) > 0 && <span className="badge">{state!.review!.alerts.length}</span>}
       </button>

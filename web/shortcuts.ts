@@ -53,6 +53,7 @@ export type CommandId =
   | 'panel-queue'
   | 'panel-snapshots'
   | 'panel-preview'
+  | 'panel-stack'
   | 'pick-model'
   | 'pick-effort'
   | 'copy-last'
@@ -470,6 +471,15 @@ export const COMMANDS: Command[] = [
     detail: 'A dev server running in this session (Storybook, Vite…), in a browser pane served from the host. Again to close.',
     terms: ['browser', 'storybook', 'panel'],
     chords: [{ key: '6', ctrl: true, alt: true }],
+    scopes: act,
+  },
+  {
+    id: 'panel-stack',
+    group: 'Session',
+    label: 'Stack',
+    detail: 'The stack this session is building: its branches bottom to top, each with its pull request, and Review. Again to close.',
+    terms: ['review', 'pull requests', 'gh stack'],
+    chords: [{ key: '7', ctrl: true, alt: true }],
     scopes: act,
   },
   {

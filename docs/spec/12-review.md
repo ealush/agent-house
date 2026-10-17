@@ -17,8 +17,8 @@ Large title "Review." with a tagline ("1 stack in review · 1 needs you").
 *In review*: one card per stack with a segment per layer and what needs you.
 *Start from a project*: one card per project with open PRs, its chains not yet
 in review named. *New stack* opens the picker (REV-2). Reached from the
-sidebar, the palette and Ctrl+Shift+4; on a phone from the Inbox, a session
-and Search (no tab). → A-33, A-36
+sidebar (a stack icon), the palette and Ctrl+Shift+4; on a phone from the
+Inbox, a session and Search (no tab). → A-33, A-36 (fixed)
 
 ## REV-2 · Making a stack — shipped
 
@@ -28,7 +28,7 @@ checkboxes, chains grouped with *Select the chain*, a PR above its base is
 refused), and **a stack on GitHub** (*Review this stack*; the review follows
 it). A chain that isn't a stack on GitHub can be made one (*Make it a stack on
 GitHub*, with a confirm). *Add pull requests* and *Take out of the stack*
-change a stack later; nothing on GitHub changes. → A-34
+change a stack later; nothing on GitHub changes. → A-34 (fixed)
 
 ## REV-3 · The stack — shipped
 
@@ -58,7 +58,7 @@ One thread per stack and per layer. It reads exact revisions, the plan, the
 decisions and the session that made the stack, and can propose findings (kept
 or dismissed by you). Starters on an empty thread; follow-ups under a reply
 (ask more, or send to the agent). The subscription it uses is picked in the
-thread's chip and kept per thread (SET-6). → A-35
+thread's chip and kept per thread (SET-6). → A-35 (fixed)
 
 ## REV-6 · Findings — shipped
 
@@ -90,7 +90,7 @@ as a link. → A-30, A-31, A-32 (fixed)
 the layers above, to the session that made the stack (listed first, resumed
 if ended), another session, or a new agent session in a worktree at the
 layer's head. Fixes always go through an agent session, never a subscription.
-The message uses `gh stack` when the host has it. → A-35
+The message uses `gh stack` when the host has it.
 
 ## REV-9 · Re-review — shipped
 
@@ -110,8 +110,8 @@ under it. A merge dialog says what lands and how.
 
 A session whose branch is a layer has an "F2 in review" pill in its header.
 A session in a git checkout has a **Stack** tab in its side panel, beside
-Diff: the stack it is building (gh stack's, else the PR chain, else the last
+Diff (the palette's *Stack*, ⌃⌥7): the stack it is building (gh stack's, else the PR chain, else the last
 seen), each branch with its PR, and *Review this stack* / *Open in Review*. On
 a phone the Stack tab shows while the branch is in review, else from the
 session menu. The Inbox has three Review cards (re-review ready, finished
-without pushing, ready to merge), which badge and notify. → A-36, A-37
+without pushing, ready to merge), which badge and notify. → A-37 (fixed)

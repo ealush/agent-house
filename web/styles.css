@@ -2024,8 +2024,14 @@ a.btn {
   border-radius: 999px;
   border: 1px solid var(--line);
   background: none;
-  font: 12px var(--mono);
+  font: 13px var(--ui);
   color: var(--muted);
+}
+
+/* A folder name is code. */
+.sugg.project,
+.sugg.add {
+  font: 12px var(--mono);
 }
 
 /* A project's folder name stays on one line, its full path on hover. */

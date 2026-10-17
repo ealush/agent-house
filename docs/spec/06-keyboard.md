@@ -40,7 +40,7 @@ carry agent marks. The palette only offers what can run now.
 Ctrl+Alt (⌃⌥) + R reply · ↵ approve · ⌫ deny · X stop · S send next queued now
 · M model · E effort · N rename · F fork · T send to · C copy last reply ·
 P replace pane · H hide steps · B browse messages · End jump to latest ·
-1–6 panels · `.` session menu. Esc in an empty composer
+1–7 panels · `.` session menu. Esc in an empty composer
 stops the turn.
 
 ## KEY-4 · Navigation chords — shipped

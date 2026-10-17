@@ -126,7 +126,7 @@ to terminal rules and output activity, and matches live agents to their transcri
   (into the agent's question or picker when it is waiting), Enter / Backspace
   approve / deny, X stop the turn (or Esc in an empty composer), S send the next
   queued message now, M / E model / effort, N rename, F fork, T send to, C copy
-  the last reply, 1–6 the Diff / Files / Chat / Queue / Snapshots / Preview panel, `.` the
+  the last reply, 1–7 the Diff / Files / Chat / Queue / Snapshots / Preview / Stack panel, `.` the
   session menu. Pane and workspace chords work from the composer too; the
   Ctrl+Shift+arrows still select words there and move to the next pane once the
   caret reaches the edge of the text. In a question form, digits pick, arrows move, Space toggles,

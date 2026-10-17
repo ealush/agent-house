@@ -75,7 +75,7 @@ One word per thing, everywhere: UI, CLI help, docs, notifications.
 | **History** | Ended sessions plus conversations found on disk. | archive |
 | **Queue** | Messages waiting for a working agent; delivered at its next idle. | outbox, scheduled |
 | **Terminal / GUI** | The two views of one session. | raw / rich, TUI |
-| **Side panel** | Diff, Files, Chat, Queue, Snapshots, Preview beside a session. | drawer, inspector |
+| **Side panel** | Diff, Stack, Files, Chat, Queue, Snapshots, Preview beside a session. | drawer, inspector |
 | **Pane** | A place in the split workspace showing one session. | tile, split (a split is the act) |
 | **Workspace** | One of nine saved arrangements on this device. | desktop, space |
 | **Fork** | A copy of a conversation in its own worktree and branch. | branch (that is git's) |

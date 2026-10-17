@@ -17,8 +17,8 @@ with a GUI adapter only) · side panel toggle · **···** session menu.
 Back (glass circle) · title over a subtitle that leads with the status pill
 (then project ⌥ branch · agent) · a glass capsule with the view (GUI or
 terminal) and ···. Below it, the session's **tabs** pick what you look at:
-Session, Diff, Files, Chat, Queue, Snapshots, Preview, as icons with the open
-one named, so they all fit.
+Session, Diff, Files, Chat, Queue, Snapshots, Preview (and Stack while the
+branch is in review), as icons with the open one named, so they all fit.
 
 ### VIEW-3 · Session menu — shipped
 
@@ -140,7 +140,8 @@ An ended session stays in place: its conversation (GUI) or last screen, and
 ## Side panels
 
 One panel at a time beside the session (desktop: resizable, collapsible,
-closable, ⌃⌥1–6; phone: tabs). The tabs are the same set in the same order
+closable, ⌃⌥1–7; phone: tabs). Stack (REV-11) sits beside Diff in a git
+checkout. The tabs are the same set in the same order
 everywhere (agent-only ones absent for a shell), drawn as icons with the open
 one named; each tab's tooltip has its chord, and Queue carries its count.
 
