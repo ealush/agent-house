@@ -24,8 +24,15 @@ the layout that fits:
   away.
 - **760 px and narrower** (Split View, Slide Over): the phone's layout.
 
-Touch sizing throughout: 44 px menu rows, 36 px segments and chips, no key
-hints on touch-only devices. Hardware keyboards get every chord.
+Touch sizing throughout: 44 px menu rows, 36 px segments and chips.
+
+**A hardware keyboard** (a Magic Keyboard) makes the iPad a keyboard device.
+ah notices one by the first key iPadOS's on-screen keyboard can't send
+(Escape, an arrow, Ctrl, ⌘ or Option) and forgets it when the on-screen
+keyboard rises over a field; this device remembers. With one: key hints show
+in menus, the palette, the sidebar and buttons; a session takes the keyboard
+as it opens, as on a desktop; the terminal's on-screen key bar steps aside
+(the session menu still shows it). Every chord works either way.
 
 ## PLT-3 · Phone — shipped
 

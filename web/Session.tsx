@@ -1,4 +1,5 @@
 import { lazy, Suspense, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useHardwareKeyboard } from './hardwareKeyboard.ts';
 import { createPortal } from 'react-dom';
 import { menuViewport, placeFloatingMenu } from './menuPlace.ts';
 import { askConfirm, showError, showNotice } from './ask.tsx';
@@ -160,7 +161,11 @@ function PanelDivider({ onResize, onReset }: { onResize: (dx: number) => void; o
 const DEFAULT_PANEL_WIDTH = 420;
 
 
-export function Session({ w, client, windows, clientFor, narrow, touch, multiHost, home, replyKey, onBack, onAnswer, onSent, onTerminate, refresh, onSplit, onReplace, onClosePane, onFlipSplit, panePath, onPaneDrag, onOpenKey, onSplitWith, onStartSession, active = true }: Props) {
+export function Session({ w, client, windows, clientFor, narrow, touch: touchScreen, multiHost, home, replyKey, onBack, onAnswer, onSent, onTerminate, refresh, onSplit, onReplace, onClosePane, onFlipSplit, panePath, onPaneDrag, onOpenKey, onSplitWith, onStartSession, active = true }: Props) {
+  // A touch screen with a hardware keyboard (an iPad on a Magic Keyboard) is a keyboard device:
+  // the session takes the keyboard as it opens, and the terminal needs no on-screen keys.
+  const hw = useHardwareKeyboard();
+  const touch = touchScreen && !hw;
   const surface = useRef<SurfaceHandle>(null);
   const body = useRef<HTMLDivElement>(null);
   const review = useReviewFor(w.host, w.uid, w.branch);

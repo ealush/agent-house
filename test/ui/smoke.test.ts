@@ -549,6 +549,28 @@ test('iPad in portrait: the sidebar slides over the page, by its button, a swipe
   await wide.close();
 });
 
+test('iPad with a hardware keyboard: the first key only it can send brings key hints back and puts the on-screen keys away', { skip, timeout: 60_000 }, async () => {
+  const ctx = await browser.newContext({ ...devices['iPad Pro 11 landscape'] });
+  const { page, errors } = await open(ctx);
+  await page.locator('.side-session', { hasText: 'zz-idle' }).first().click();
+  await page.locator('.term .xterm').first().waitFor();
+  // Touch alone: the terminal has its key bar, and menus name no keys.
+  await page.locator('.keybar').waitFor();
+  await page.getByRole('button', { name: 'More' }).first().click();
+  assert.equal(await page.locator('.menu .keycaps:visible').count(), 0);
+  // Escape: there is no Escape on iPadOS's on-screen keyboard.
+  await page.keyboard.press('Escape');
+  await page.locator('.keybar').waitFor({ state: 'detached' });
+  await page.getByRole('button', { name: 'More' }).first().click();
+  assert.ok((await page.locator('.menu .keycaps:visible').count()) > 0, 'menus show their keys');
+  // Remembered on this device.
+  await page.reload();
+  await page.locator('.term .xterm').first().waitFor();
+  assert.equal(await page.locator('.keybar').count(), 0);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('no control is smaller than 32px, on a desktop or a phone', { skip, timeout: 90_000 }, async () => {
   for (const opts of [{ viewport: { width: 1440, height: 900 } }, { ...devices['iPhone 15 Pro'] }, { ...devices['iPad Pro 11'] }]) {
     const ctx = await browser.newContext(opts);

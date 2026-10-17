@@ -5707,7 +5707,7 @@ button.tool-chip:hover {
 }
 
 @media (hover: none) {
-  .suggest li.suggest-hint {
+  :root:not([data-hw-keyboard]) .suggest li.suggest-hint {
     display: none;
   }
 }
@@ -5877,12 +5877,13 @@ button.tool-chip:hover {
 }
 
 /* Without a keyboard in reach, key hints are noise: menus, the palette and the
-   switcher keep their labels and drop the caps. */
+   switcher keep their labels and drop the caps. A touch screen with a hardware
+   keyboard (an iPad on a Magic Keyboard, web/hardwareKeyboard.ts) keeps them. */
 @media (hover: none) {
-  .palette-keys,
-  .switch-foot,
-  .menu .keycaps,
-  .palette-tree .cmd-row .keycaps {
+  :root:not([data-hw-keyboard]) .palette-keys,
+  :root:not([data-hw-keyboard]) .switch-foot,
+  :root:not([data-hw-keyboard]) .menu .keycaps,
+  :root:not([data-hw-keyboard]) .palette-tree .cmd-row .keycaps {
     display: none;
   }
 }
@@ -6433,7 +6434,7 @@ button.tool-chip:hover {
 }
 
 @media (hover: none) {
-  .btn .confirm-keys {
+  :root:not([data-hw-keyboard]) .btn .confirm-keys {
     display: none;
   }
 }
@@ -7849,9 +7850,9 @@ select:not([multiple]) {
 /* ---------- touch without a keyboard: no key hints; controls a finger can hit */
 
 @media (hover: none) {
-  .sidebar .keycaps,
-  .confirm-keys,
-  .empty-state .keycaps {
+  :root:not([data-hw-keyboard]) .sidebar .keycaps,
+  :root:not([data-hw-keyboard]) .confirm-keys,
+  :root:not([data-hw-keyboard]) .empty-state .keycaps {
     display: none;
   }
 }

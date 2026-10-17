@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
+import { keyboardFirst } from './hardwareKeyboard.ts';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -219,7 +220,7 @@ function create(windowId: string, host: HTMLElement, on: Handlers): Live {
       // Only when nothing else has the keyboard: a split's other pane (or its
       // chooser), or a reconnect in the background, must not steal it.
       const idle = !document.activeElement || document.activeElement === document.body;
-      if (idle && el.isConnected && !matchMedia('(pointer: coarse)').matches) t.focus();
+      if (idle && el.isConnected && keyboardFirst()) t.focus();
     };
     sock.onmessage = (e) => t.write(new Uint8Array(e.data as ArrayBuffer));
     sock.onclose = (e) => {
