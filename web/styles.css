@@ -8135,3 +8135,14 @@ select:not([multiple]) {
 .card-review .chip {
   color: var(--accent);
 }
+
+/* Settings → Subscriptions: the providers a new subscription starts from, in one row when there's room. */
+.agents.providers {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@container (min-width: 480px) {
+  .agents.providers {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}

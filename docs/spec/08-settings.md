@@ -46,7 +46,9 @@ added ones.
 Chat subscriptions (bring your own key): named OpenAI-compatible endpoints for
 side chat and Send to's summaries. Keys live on the host, masked; blank on edit
 keeps the stored one; a default; hand the key to sessions as an environment
-variable.
+variable. A new one starts from a provider — Claude, OpenAI, Gemini, Muse —
+that fills in its endpoint, name and a model and links to where keys are made;
+**Other** takes any OpenAI-compatible URL.
 
 ## SET-7 · Environment — shipped
 
