@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ConfirmButton } from './ConfirmButton.tsx';
 import { look } from './agents.ts';
 import { api, type Subscription } from './api.ts';
@@ -166,6 +166,10 @@ export function SubscriptionsPanel() {
 function SubscriptionForm({ form, busy, onChange }: { form: Form; busy: boolean; onChange: (f: Form) => void }) {
   const provider = PROVIDERS.find((p) => p.id === form.provider);
   const set = (patch: Partial<Form>) => onChange({ ...form, ...patch });
+  const models = useModels(form);
+  /** Typing a model id by hand instead of picking one the endpoint listed. */
+  const [typing, setTyping] = useState(false);
+  const picking = !!models.list?.length && !typing;
   return (
     <div className="form-grid">
       {!form.id && (
@@ -222,16 +226,38 @@ function SubscriptionForm({ form, busy, onChange }: { form: Form; busy: boolean;
       </label>
       <label className="field">
         <span>Model</span>
-        <input
-          value={form.model}
-          disabled={busy}
-          maxLength={80}
-          placeholder={provider?.model ?? 'model id'}
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          onChange={(e) => set({ model: e.target.value })}
-        />
+        {picking ? (
+          <select value={form.model} disabled={busy} onChange={(e) => (e.target.value === TYPE ? setTyping(true) : set({ model: e.target.value }))}>
+            {!models.list!.includes(form.model) && <option value={form.model}>{form.model || 'Choose a model'}</option>}
+            {models.list!.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+            <option value={TYPE}>Type a model id…</option>
+          </select>
+        ) : (
+          <input
+            value={form.model}
+            disabled={busy}
+            maxLength={80}
+            placeholder={provider?.model ?? 'model id'}
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            onChange={(e) => set({ model: e.target.value })}
+          />
+        )}
+        <small className="field-hint" aria-live="polite">
+          {models.state === 'loading' && <>Asking {host(form.baseUrl)} for its models…</>}
+          {models.state === 'error' && <>Couldn't list its models: {models.error}</>}
+          {models.state === 'idle' && !form.keyHint && <>Add the key to pick from its models.</>}
+          {models.state === 'done' && (models.list!.length === 0 ? <>It lists no chat models; type one.</> : picking ? <>{models.list!.length} from {host(form.baseUrl)}.</> : (
+            <button type="button" className="linkish" onClick={() => setTyping(false)}>
+              Pick from its {models.list!.length} models
+            </button>
+          ))}
+        </small>
       </label>
       {(!provider || form.id) && (
         <label className="field wide">
@@ -278,4 +304,33 @@ function SubscriptionForm({ form, busy, onChange }: { form: Form; busy: boolean;
       </label>
     </div>
   );
+}
+
+/** The model select's "type one by hand" option. */
+const TYPE = '\u0000type';
+
+type Models = { state: 'idle' | 'loading' | 'done' | 'error'; list: string[] | null; error?: string };
+
+/**
+ * The models the form's endpoint offers, asked for once a key is typed (or,
+ * editing, with the saved key at the saved URL), a moment after typing stops.
+ */
+function useModels(form: Form): Models {
+  const [models, setModels] = useState<Models>({ state: 'idle', list: null });
+  const seq = useRef(0);
+  const { baseUrl, apiKey, id } = form;
+  useEffect(() => {
+    const n = ++seq.current;
+    const ready = /^https?:\/\/[^/]+/.test(baseUrl.trim()) && (apiKey.length >= 8 || (!apiKey && !!id));
+    setModels({ state: ready ? 'loading' : 'idle', list: null });
+    if (!ready) return;
+    const t = setTimeout(() => {
+      api
+        .subscriptionModels({ baseUrl: baseUrl.trim(), ...(apiKey ? { apiKey } : { id }) })
+        .then((r) => n === seq.current && setModels({ state: 'done', list: r.models }))
+        .catch((e) => n === seq.current && setModels({ state: 'error', list: null, error: errorText(e) }));
+    }, 500);
+    return () => clearTimeout(t);
+  }, [baseUrl, apiKey, id]);
+  return models;
 }

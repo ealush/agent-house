@@ -413,3 +413,64 @@ test('historic search jumps include messages older than the latest chat window',
   assert.ok(!(await store.history('old')).some((m) => m.id === first.id));
   assert.ok((await store.history('old', first.id)).some((m) => m.id === first.id));
 });
+
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+
+test('models: chat models only, newest first, Gemini prefixes dropped', async () => {
+  const { store: s } = await freshStore();
+  await withFetch(
+    () =>
+      json({
+        data: [
+          { id: 'gpt-old', created: 100 },
+          { id: 'text-embedding-3-large', created: 900 },
+          { id: 'models/gemini-new', created: 300 },
+          { id: 'tts-1', created: 800 },
+          { id: 'grok-imagine-video', created: 700 },
+          { id: 'gpt-old', created: 100 },
+        ],
+      }),
+    async () => {
+      assert.deepEqual(await s.models({ baseUrl: 'https://api.example.com/v1/', apiKey: 'sk-typed' }), ['gemini-new', 'gpt-old']);
+    },
+  );
+});
+
+test('models: bearer for OpenAI-style APIs, x-api-key for Anthropic', async () => {
+  const { store: s } = await freshStore();
+  let calls: { url: unknown; init: unknown }[] = [];
+  await withFetch(
+    (seen) => {
+      calls = seen;
+      return json({ data: [{ id: 'claude-a', created_at: '2026-01-01T00:00:00Z' }, { id: 'claude-b', created_at: '2026-09-01T00:00:00Z' }] });
+    },
+    async () => {
+      assert.deepEqual(await s.models({ baseUrl: 'https://api.anthropic.com/v1', apiKey: 'sk-ant' }), ['claude-b', 'claude-a']);
+      await s.models({ baseUrl: 'https://api.openai.com/v1', apiKey: 'sk-oai' });
+    },
+  );
+  const [ant, oai] = calls.map((c) => ({ url: String(c.url), headers: (c.init as { headers: Record<string, string> }).headers }));
+  assert.equal(ant.url, 'https://api.anthropic.com/v1/models?limit=100');
+  assert.deepEqual(ant.headers, { 'x-api-key': 'sk-ant', 'anthropic-version': '2023-06-01' });
+  assert.equal(oai.url, 'https://api.openai.com/v1/models');
+  assert.deepEqual(oai.headers, { authorization: 'Bearer sk-oai' });
+});
+
+test('models: a saved key only goes to its own URL', async () => {
+  const { store: s, id } = await subscribed();
+  await withFetch(
+    () => json({ data: [{ id: 'm1' }] }),
+    async () => {
+      assert.deepEqual(await s.models({ baseUrl: 'https://api.example.com/v1', id }), ['m1']);
+      await assert.rejects(s.models({ baseUrl: 'https://evil.example/v1', id }), /type the key/);
+    },
+  );
+  await assert.rejects(s.models({ baseUrl: 'https://api.example.com/v1' }), /API key required/);
+  await assert.rejects(s.models({ baseUrl: 'ftp://x', apiKey: 'k' }), /base URL/);
+  await withFetch(
+    () => new Response('{"error":{"message":"invalid key"}}', { status: 401 }),
+    async () => {
+      await assert.rejects(s.models({ baseUrl: 'https://api.example.com/v1', apiKey: 'bad' }), /^Error: provider: 401 invalid key$/);
+    },
+  );
+});

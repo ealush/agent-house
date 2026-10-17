@@ -48,7 +48,9 @@ side chat and Send to's summaries. Keys live on the host, masked; blank on edit
 keeps the stored one; a default; hand the key to sessions as an environment
 variable. A new one starts from a provider — Claude, OpenAI, Gemini, Muse —
 that fills in its endpoint, name and a model and links to where keys are made;
-**Other** takes any OpenAI-compatible URL.
+**Other** takes any OpenAI-compatible URL. Once a key is in, Model lists the
+endpoint's chat models to pick from (a saved key is only sent to its own URL);
+one can still be typed by hand.
 
 ## SET-7 · Environment — shipped
 

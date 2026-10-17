@@ -8146,3 +8146,11 @@ select:not([multiple]) {
     grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 }
+
+/* A hint's action (Settings → Subscriptions: back to the listed models) reads as a link. */
+.field-hint .linkish {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
