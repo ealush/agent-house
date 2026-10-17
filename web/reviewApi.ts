@@ -75,6 +75,8 @@ export type Stack = {
   source: 'tree' | 'manual' | 'native';
   /** The stack on GitHub this one follows (source "native"). */
   ghStack: number | null;
+  /** The agent session that made it: its conversation is the why behind the stack. */
+  origin: Owner;
   /** Whether its open PRs can become a stack on GitHub (or go on top of one), and if not, why. null: nothing to link. */
   link: { ok: boolean; prs: number[]; onto: number | null; why: string | null } | null;
   planPath: string | null;
@@ -93,7 +95,7 @@ export type Candidate = { number: number; title: string; headRefName: string; ba
 export type CandidateStack = { number: number; base: string; prs: number[] };
 export type Candidates = { root: string; repo: string; trunk: string; trees: CandidateTree[]; stacks: { id: string; title: string }[]; native: CandidateStack[] };
 export type CandidateTree = { pr: Candidate; children: CandidateTree[] };
-export type OwnerSuggestion = { uid: string; key: string; title: string; agent: string | null; status: string; cwd: string; branch: string | null; live: boolean; reason: 'branch' | 'repo' };
+export type OwnerSuggestion = { uid: string; key: string; title: string; agent: string | null; status: string; cwd: string; branch: string | null; live: boolean; reason: 'branch' | 'repo'; origin: boolean };
 export type ThreadMsg = { role: 'user' | 'assistant'; text: string; at: number; id: number };
 export type Followup = { title: string; kind: 'session' | 'chat'; text: string };
 export type DiffOut = { kind: 'patch' | 'range'; text: string; truncated: boolean; from: string; to: string };
@@ -113,11 +115,11 @@ export function reviewApi(base = '') {
     setSummaryModel: (summaryId: string | null) => r<{ summaryId: string | null }>('PUT', '/settings', { summaryId }),
     /** One PR takes GitHub's chain under it; a list is the PRs you picked, in review order. */
     link: (id: string) => r<Stack>('POST', `${s(id)}/link`),
-    create: (root: string, pick: { pr: number } | { prs: number[] } | { native: number }, title?: string) => r<Stack>('POST', '/stacks', { root, ...pick, ...(title ? { title } : {}) }),
+    create: (root: string, pick: { pr: number } | { prs: number[] } | { native: number }, title?: string, from?: string) => r<Stack>('POST', '/stacks', { root, ...pick, ...(title ? { title } : {}), ...(from ? { from } : {}) }),
     addLayers: (id: string, prs: number[]) => r<Stack>('POST', `${s(id)}/layers`, { prs }),
     removeLayer: (id: string, pr: number) => r<Stack>('DELETE', l(id, pr)),
     stack: (id: string) => r<Stack>('GET', s(id)),
-    update: (id: string, patch: { title?: string; planPath?: string | null; mergeMethod?: string; order?: number[]; ownerUid?: string | null; state?: string }) => r<Stack>('PATCH', s(id), patch),
+    update: (id: string, patch: { title?: string; planPath?: string | null; mergeMethod?: string; order?: number[]; ownerUid?: string | null; originUid?: string | null; state?: string }) => r<Stack>('PATCH', s(id), patch),
     remove: (id: string) => r('DELETE', s(id)),
     sync: (id: string) => r<Stack>('POST', `${s(id)}/sync`),
     owners: (id: string) => r<OwnerSuggestion[]>('GET', `${s(id)}/owners`),

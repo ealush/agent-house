@@ -96,7 +96,7 @@ export function DispatchDialog({
             {!owners.length && <option value="">No agent works in {stack.repo.split('/')[1]} — start one first</option>}
             {owners.map((o) => (
               <option key={o.uid} value={o.uid}>
-                {o.title} · {look(o.agent).name} · {o.reason === 'branch' ? `on ${o.branch}` : 'same repo'} · {STATUS[o.status] ?? o.status}
+                {o.title} · {look(o.agent).name} · {o.origin ? 'made this stack' : o.reason === 'branch' ? `on ${o.branch}` : 'same repo'} · {STATUS[o.status] ?? o.status}
               </option>
             ))}
           </select>

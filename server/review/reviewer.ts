@@ -44,6 +44,10 @@ export type ReviewEnv = {
   findings: () => Promise<FindingLite[]>;
   decisions: () => Promise<string[]>;
   threads: (pr: number) => Promise<ReviewThread[]>;
+  /** The session that made the stack, if one is recorded. */
+  originTitle: string | null;
+  /** What you asked that session, or (with a query) its transcript's passages that mention it. */
+  origin: (query: string | null) => Promise<string | null>;
 };
 
 const num = { type: 'number' } as const;
@@ -120,6 +124,15 @@ export const REVIEW_TOOLS: ToolDef[] = [
       name: 'pr_threads',
       description: 'Review threads on a layer\'s PR on GitHub, from people and bots, with whether each is resolved.',
       parameters: { type: 'object', properties: { pr: PR }, required: ['pr'], additionalProperties: false },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'origin',
+      description:
+        "The agent session that made this stack. Without a query: every message the human sent it, oldest first, which is the why behind the stack. With a query: the transcript's passages that mention it (the human, the agent and its tools). Use it when a layer's intent or an earlier decision isn't in the plan, the PR or the decisions.",
+      parameters: { type: 'object', properties: { query: { type: 'string', description: 'Words to find in the transcript, case-insensitive.' }, max_chars: MAX }, additionalProperties: false },
     },
   },
 ];
@@ -237,6 +250,10 @@ export async function runReviewTool(env: ReviewEnv, name: string, raw: unknown):
         if (!pick.length) return 'No findings recorded.';
         return pick.map((f) => `F${f.id} [${f.severity}, ${f.state}] #${f.ownerPr} ${f.title}${f.path ? ` (${f.path}${f.lineStart ? `:${f.lineStart}` : ''})` : ''} — from ${f.source}${f.body ? `\n   ${f.body.slice(0, 400)}` : ''}`).join('\n');
       }
+      case 'origin': {
+        const t = await env.origin(typeof args.query === 'string' && args.query.trim() ? args.query.trim().slice(0, 200) : null);
+        return t ? clip(t, cap(args)) : 'No session is recorded as having made this stack, or its transcript is gone.';
+      }
       case 'pr_threads': {
         const l = layer();
         if (typeof l === 'string') return l;
@@ -279,6 +296,7 @@ async function contextBlock(env: ReviewEnv, scope: Scope, extra: { summary?: str
   const parts = [stackMap(env, findings)];
   if (decisions.length) parts.push(`Decisions the human accepted (hold the code to these):\n${decisions.map((d) => `- ${d}`).join('\n')}`);
   if (plan) parts.push(`Plan (first part; the plan tool has the rest):\n${plan.slice(0, PLAN_EXCERPT)}${plan.length > PLAN_EXCERPT ? '\n...' : ''}`);
+  if (env.originTitle) parts.push(`The stack was made in the agent session "${env.originTitle}". The origin tool reads what the human asked it, and searches its transcript.`);
   const l = scope.pr === null ? null : env.layers.find((x) => x.pr === scope.pr);
   if (l) {
     parts.push(`You are reviewing ${label(l)} "${l.title}" (${l.headRef} on ${l.baseRef}). Default scope is this layer's own change; widen only when the question needs it.`);

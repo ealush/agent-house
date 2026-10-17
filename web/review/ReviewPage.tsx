@@ -238,28 +238,33 @@ function StackList({ state, narrow, onOpen, onPick }: { state: State; narrow: bo
 
 // ---------- one stack
 
-function Owner({ stack, onStack, onOpenSession }: { stack: Stack; onStack: (s: Stack) => void; onOpenSession: (uid: string) => void }) {
+/**
+ * A session the stack is tied to: the one fixes go to, or the one that made it
+ * (whose conversation, live or ended, is the why behind the stack).
+ */
+function SessionCard({ kind, stack, onStack, onOpenSession }: { kind: 'owner' | 'origin'; stack: Stack; onStack: (s: Stack) => void; onOpenSession: (uid: string) => void }) {
   const [opts, setOpts] = useState<OwnerSuggestion[] | null>(null);
   useEffect(() => {
     api.owners(stack.id).then(setOpts, () => setOpts([]));
-  }, [stack.id]);
-  const o = stack.owner;
+  }, [stack.id, stack.origin?.key]);
+  const o = kind === 'owner' ? stack.owner : stack.origin;
+  const empty = kind === 'owner' ? { name: 'No agent yet', sub: 'The first findings you send choose it' } : { name: 'Not recorded', sub: 'Pick the session that built it: the reviewer reads its conversation' };
   return (
     <section className="cockpit-card">
-      <h3 className="card-label">Fixes go to</h3>
+      <h3 className="card-label">{kind === 'owner' ? 'Fixes go to' : 'Made in'}</h3>
       <div className="owner-line">
         <span className="chip" style={{ '--agent': look(o?.agent ?? null).color } as React.CSSProperties}>
           {o ? <AgentLogo id={o.agent} /> : <Icon name="sessions" size={14} />}
         </span>
         <span className="stack">
-          <span className="name">{o ? o.title : 'No agent yet'}</span>
-          <span className="sub">{o ? [look(o.agent).name, o.live ? (STATUS_WORDS[o.status] ?? o.status) : 'ended; sending resumes it', o.branch ? `on ${o.branch}` : ''].filter(Boolean).join(' · ') : 'The first findings you send choose it'}</span>
+          <span className="name">{o ? o.title : empty.name}</span>
+          <span className="sub">{o ? [look(o.agent).name, o.live ? (STATUS_WORDS[o.status] ?? o.status) : kind === 'owner' ? 'ended; sending resumes it' : 'ended', o.branch ? `on ${o.branch}` : ''].filter(Boolean).join(' · ') : empty.sub}</span>
         </span>
       </div>
       <div className="card-actions">
-        {o?.live && (
-          <button className="btn small" onClick={() => onOpenSession(o.uid)}>
-            Open session
+        {o && (o.live || kind === 'origin') && (
+          <button className="btn small" onClick={() => onOpenSession(o.uid)} title={o.live ? undefined : 'Its conversation, read-only; you can resume it there'}>
+            {o.live ? 'Open session' : 'Read the conversation'}
           </button>
         )}
         <Popover label="Change" className="btn ghost small" align="left" up={false}>
@@ -273,15 +278,15 @@ function Owner({ stack, onStack, onOpenSession }: { stack: Stack; onStack: (s: S
                   onClick={async () => {
                     close();
                     try {
-                      onStack(await api.update(stack.id, { ownerUid: s.uid }));
+                      onStack(await api.update(stack.id, kind === 'owner' ? { ownerUid: s.uid } : { originUid: s.uid }));
                     } catch (e) {
-                      showError(e, "Couldn't change the owner");
+                      showError(e, kind === 'owner' ? "Couldn't change the owner" : "Couldn't change it");
                     }
                   }}
                 >
                   <AgentLogo id={s.agent} size={14} />
                   <span className="grow">{s.title}</span>
-                  <span className="hint">{s.reason === 'branch' ? s.branch : 'same repo'}</span>
+                  <span className="hint">{s.origin && kind === 'owner' ? 'made it' : !s.live ? 'ended' : s.reason === 'branch' ? s.branch : 'same repo'}</span>
                   {o?.uid === s.uid && <Icon name="check" size={14} />}
                 </button>
               ))}
@@ -460,7 +465,8 @@ function Cockpit({ stack, alerts, narrow, onStack, onOpen, onOpenSession, onPick
         </button>
       )}
       <div className="cockpit-cards">
-        <Owner stack={stack} onStack={(s) => onStack(s)} onOpenSession={onOpenSession} />
+        <SessionCard kind="origin" stack={stack} onStack={(s) => onStack(s)} onOpenSession={onOpenSession} />
+        <SessionCard kind="owner" stack={stack} onStack={(s) => onStack(s)} onOpenSession={onOpenSession} />
         <section className="cockpit-card">
           <h3 className="card-label">Plan</h3>
           {stack.planPath ? (

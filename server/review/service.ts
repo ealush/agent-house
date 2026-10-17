@@ -85,6 +85,8 @@ export type ReviewDeps = {
   changed: () => void;
   /** Read a plan file the host allows (inside files.roots). */
   readPlan: (path: string) => Promise<string>;
+  /** A session's transcript as text: the human's messages, and the latest entries. null when there's none to read. */
+  transcript: (uid: string) => Promise<{ prompts: { at: number; text: string }[]; entries: { role: string; at: number; text: string }[] } | null>;
 };
 
 export type LayerStatus = 'unreviewed' | 'changes' | 'fixing' | 'rereview' | 'approved' | 'merged' | 'closed' | 'skipped';
@@ -160,6 +162,8 @@ export type StackView = {
   source: 'tree' | 'manual' | 'native';
   /** The stack on GitHub this one follows (source "native"). */
   ghStack: number | null;
+  /** The agent session that made it. */
+  origin: Owner;
   /** Whether its open PRs can become a stack on GitHub (or go on top of one), and if not, why. null: nothing to link. */
   link: { ok: boolean; prs: number[]; onto: number | null; why: string | null } | null;
   planPath: string | null;
@@ -378,7 +382,7 @@ export class ReviewService {
    * from PRs you pick, reviewed and merged in the order you give, or from a
    * stack on GitHub, whose PRs join and keep GitHub's order.
    */
-  async create(root: string, input: { pr: number } | { prs: number[] } | { native: number }, title?: string): Promise<StackView> {
+  async create(root: string, input: { pr: number } | { prs: number[] } | { native: number }, title?: string, from?: string): Promise<StackView> {
     const main = await this.mainOf(root);
     if (!main) throw new ReviewError(400, 'not a git repository');
     const { repo, trunk } = await this.repoOf(main);
@@ -414,11 +418,13 @@ export class ReviewService {
     await this.db.reviewStack.create({ data: { id, repoRoot: main, repo, trunk: base, source, ghStack, title: (title?.trim() || first.title).slice(0, 120), createdAt: now() } });
     await this.db.reviewLayer.createMany({ data: order.map((n, i) => this.layerRow(id, prs.find((x) => x.number === n)!, i)) });
     for (const p of prs) this.bodies.set(`${id}:${p.number}`, p.body);
-    // The owner is the one session working on these branches, if exactly one is.
+    // The session it's started from made it and owns it; else the one session working on these branches, if exactly one is.
+    const maker = from ? (await this.deps.sessions()).find((x) => x.uid === from) : undefined;
+    if (from && !maker) throw new ReviewError(404, 'session not found');
     const sugg = await this.ownerSuggestions(id);
-    if (sugg.length && sugg[0].reason === 'branch' && sugg.filter((s) => s.reason === 'branch').length === 1) {
-      await this.db.reviewStack.update({ where: { id }, data: { ownerUid: sugg[0].uid, ownerKey: sugg[0].key } });
-    }
+    const only = sugg.length && sugg[0].reason === 'branch' && sugg.filter((s) => s.reason === 'branch').length === 1 ? sugg[0] : null;
+    const who = maker ?? only;
+    if (who) await this.db.reviewStack.update({ where: { id }, data: { ownerUid: who.uid, ownerKey: who.key, originUid: who.uid, originKey: who.key } });
     // The first fetch of every layer can take a while on a big stack: the page opens now and fills in.
     void this.sync(id, true).catch((err) => console.error(`review sync ${id}:`, (err as Error).message));
     return this.view(id, { autoSync: false });
@@ -662,6 +668,7 @@ export class ReviewService {
       methods: this.methods.get(s.repoRoot) ?? ['merge'],
       source: sourceOf(s),
       ghStack: s.ghStack,
+      origin: ownerOf(s.originUid, s.originKey),
       link: linkPlan(views, natives),
       planPath: s.planPath,
       state: s.state,
@@ -675,7 +682,7 @@ export class ReviewService {
     };
   }
 
-  async update(id: string, patch: { title?: string; planPath?: string | null; mergeMethod?: string; order?: number[]; ownerUid?: string | null; state?: string }): Promise<StackView> {
+  async update(id: string, patch: { title?: string; planPath?: string | null; mergeMethod?: string; order?: number[]; ownerUid?: string | null; originUid?: string | null; state?: string }): Promise<StackView> {
     const s = await this.stack(id);
     const data: Partial<ReviewStack> = {};
     if (patch.title !== undefined) {
@@ -717,6 +724,17 @@ export class ReviewService {
       } else {
         data.ownerUid = null;
         data.ownerKey = null;
+      }
+    }
+    if (patch.originUid !== undefined) {
+      if (patch.originUid) {
+        const sess = (await this.deps.sessions()).find((x) => x.uid === patch.originUid);
+        if (!sess) throw new ReviewError(404, 'session not found');
+        data.originUid = sess.uid;
+        data.originKey = sess.key;
+      } else {
+        data.originUid = null;
+        data.originKey = null;
       }
     }
     if (patch.order !== undefined) {
@@ -1099,17 +1117,22 @@ export class ReviewService {
   // ---------- owner and dispatch
 
   /** Sessions that could own the stack, best first: on one of its branches, then in its repo. */
-  async ownerSuggestions(id: string): Promise<(SessionLite & { reason: 'branch' | 'repo' })[]> {
+  async ownerSuggestions(id: string): Promise<(SessionLite & { reason: 'branch' | 'repo'; origin: boolean })[]> {
     const s = await this.stack(id);
+    const made = (x: SessionLite) => !!((s.originKey && x.key === s.originKey) || (s.originUid && x.uid === s.originUid));
     const heads = new Set((await this.db.reviewLayer.findMany({ where: { stackId: id }, select: { headRef: true } })).map((l) => l.headRef));
-    const out: (SessionLite & { reason: 'branch' | 'repo' })[] = [];
+    const out: (SessionLite & { reason: 'branch' | 'repo'; origin: boolean })[] = [];
     for (const sess of await this.deps.sessions()) {
       if (!sess.agent) continue;
       const root = sess.cwd ? await this.mainOf(sess.cwd) : null;
-      if (root !== s.repoRoot) continue;
-      out.push({ ...sess, reason: sess.branch && heads.has(sess.branch) ? 'branch' : 'repo' });
+      // The session that made the stack counts even after it ended, or when it works elsewhere now.
+      if (root !== s.repoRoot && !made(sess)) continue;
+      out.push({ ...sess, reason: sess.branch && heads.has(sess.branch) ? 'branch' : 'repo', origin: made(sess) });
     }
-    return out.sort((a, b) => (a.reason === b.reason ? Number(b.live) - Number(a.live) : a.reason === 'branch' ? -1 : 1));
+    // The maker first (its live run before an ended one), then sessions on the stack's branches, then the rest of the repo.
+    return out
+      .filter((x, _, all) => !x.origin || x.live || !all.some((y) => y.origin && y.live))
+      .sort((a, b) => Number(b.origin) - Number(a.origin) || (a.reason === b.reason ? Number(b.live) - Number(a.live) : a.reason === 'branch' ? -1 : 1));
   }
 
   /** Who a layer's findings go to: its own owner, else the stack's. Follows the conversation across resumes. */
@@ -1428,7 +1451,36 @@ export class ReviewService {
         ),
       decisions: async () => (await this.db.reviewDecision.findMany({ where: { stackId: s.id }, orderBy: { id: 'asc' } })).map((d) => d.text),
       threads: (pr): Promise<ReviewThread[]> => reviewThreads(s.repoRoot, s.repo, pr),
+      originTitle: s.originUid || s.originKey ? ((await this.originSession(s))?.title ?? null) : null,
+      origin: (query) => this.originText(s, query),
     };
+  }
+
+  private async originSession(s: ReviewStack): Promise<SessionLite | null> {
+    if (!s.originUid && !s.originKey) return null;
+    const sessions = await this.deps.sessions();
+    return sessions.find((x) => s.originKey && x.key === s.originKey && x.live) ?? sessions.find((x) => s.originKey && x.key === s.originKey) ?? sessions.find((x) => x.uid === s.originUid) ?? null;
+  }
+
+  /** What the reviewer's origin tool reads: the human's messages to the session that made the stack, or passages that mention a query. */
+  private async originText(s: ReviewStack, query: string | null): Promise<string | null> {
+    const sess = await this.originSession(s);
+    const uid = sess?.uid ?? s.originUid;
+    if (!uid) return null;
+    const t = await this.deps.transcript(uid).catch(() => null);
+    if (!t) return null;
+    const when = (at: number) => (at ? new Date(at).toISOString().slice(0, 16).replace('T', ' ') : '');
+    const head = `Session "${sess?.title ?? 'ended session'}"${sess?.agent ? ` (${sess.agent})` : ''}.`;
+    if (!query) return [head, 'What the human asked it, oldest first:', ...t.prompts.map((p) => `- ${when(p.at)} ${p.text.replace(/\s+/g, ' ')}`)].join('\n');
+    const q = query.toLowerCase();
+    const hits = t.entries.filter((e) => e.text.toLowerCase().includes(q));
+    if (!hits.length) return `${head}\nNothing in its transcript mentions "${query}".`;
+    const near = (text: string) => {
+      const i = text.toLowerCase().indexOf(q);
+      const from = Math.max(0, i - 300);
+      return `${from ? '…' : ''}${text.slice(from, i + q.length + 300).replace(/\s+/g, ' ')}${i + q.length + 300 < text.length ? '…' : ''}`;
+    };
+    return [head, `${hits.length === 1 ? '1 passage mentions' : `${hits.length} passages mention`} "${query}"${hits.length > 20 ? '; the latest 20' : ''}:`, ...hits.slice(-20).map((e) => `[${e.role} ${when(e.at)}] ${near(e.text)}`)].join('\n\n');
   }
 
   /** The plan file, else the root layer's PR description. */

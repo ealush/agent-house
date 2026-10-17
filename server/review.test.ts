@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { ensureMigrated, getDb } from './db.ts';
 import { SideChatStore } from './sidechat.ts';
 import { ReviewService, readTextFile, threadTitle, type SessionLite } from './review/service.ts';
+import { runReviewTool } from './review/reviewer.ts';
 
 // A stand-in `gh`: PR state lives in a JSON file, and merge/edit/ready
 // change it the way GitHub would. Every call is logged.
@@ -194,6 +195,7 @@ async function setup() {
   ];
   const sent: { uid: string; text: string }[] = [];
   const alerts: string[] = [];
+  const transcripts = new Map<string, { prompts: { at: number; text: string }[]; entries: { role: string; at: number; text: string }[] }>();
   const svc = new ReviewService(getDb(dbPath), chat, {
     sessions: async () => sessions,
     send: async (uid, text) => {
@@ -203,13 +205,14 @@ async function setup() {
     alert: (p) => alerts.push(p.title),
     changed: () => {},
     readPlan: readTextFile,
+    transcript: async (uid) => transcripts.get(uid) ?? null,
   });
   const setState = async (fn: (s: typeof state) => void) => {
     const cur = JSON.parse(await readFile(w.stateFile, 'utf8'));
     fn(cur);
     await writeFile(w.stateFile, JSON.stringify(cur));
   };
-  return { w, svc, chat, sessions, sent, alerts, setState, heads: { h1, h2, h3, h4 } };
+  return { w, svc, chat, sessions, sent, alerts, transcripts, setState, heads: { h1, h2, h3, h4 } };
 }
 
 test('review: stack from a PR tree, fix loop through the owner, re-review, merge and next', async () => {
@@ -756,5 +759,47 @@ test('review: a chain in review becomes a stack on GitHub, or goes on top of one
     v = await t.svc.link(v.id);
     assert.deepEqual(v.layers.map((l) => [l.pr, l.ghStack]), [[1, 7], [2, 7], [3, 7]]);
     assert.match(await readFile(`${t.w.stateFile}.log`, 'utf8'), /--method POST repos\/me\/proj\/stacks\/7\/add -F pull_requests\[\]=3/);
+  });
+});
+
+test('review: a stack remembers the session that made it, and the reviewer reads its conversation', async () => {
+  const t = await setup();
+  t.sessions.push({ uid: 'u-old', key: 'claude:conv-0', title: 'Relationships stack', agent: 'claude', status: 'ended', cwd: t.w.local, branch: null, live: false });
+  t.transcripts.set('u-old', {
+    prompts: [
+      { at: Date.parse('2026-10-16T09:00:00Z'), text: 'Build schema relationships as a stack of small PRs.' },
+      { at: Date.parse('2026-10-16T10:00:00Z'), text: 'Keep the planner pure; no module state.' },
+    ],
+    entries: [
+      { role: 'user', at: 1, text: 'Build schema relationships as a stack of small PRs.' },
+      { role: 'assistant', at: 2, text: 'I split it in four. The planner stays pure, so it takes the graph as an argument.' },
+      { role: 'tool', at: 3, text: 'gh pr create --base base --head feat' },
+    ],
+  });
+  await withGh(t.w, async () => {
+    // Started from the session that built it: it made the stack and gets the fixes.
+    let v = await t.svc.create(t.w.local, { pr: 1 }, undefined, 'u-old');
+    assert.equal(v.origin?.uid, 'u-old');
+    assert.equal(v.origin?.live, false);
+    assert.equal(v.owner?.uid, 'u-old');
+    const owners = await t.svc.ownerSuggestions(v.id);
+    assert.equal(owners[0].uid, 'u-old', 'the maker comes first, ended or not');
+    assert.ok(owners[0].origin);
+
+    const env = await (t.svc as unknown as { env(s: unknown): Promise<Parameters<typeof runReviewTool>[0]> }).env(await (t.svc as unknown as { stack(id: string): Promise<unknown> }).stack(v.id));
+    assert.equal(env.originTitle, 'Relationships stack');
+    const asked = await runReviewTool(env, 'origin', {});
+    assert.match(asked, /Session "Relationships stack" \(claude\)\.\nWhat the human asked it, oldest first:\n- 2026-10-16 09:00 Build schema relationships as a stack of small PRs\.\n- 2026-10-16 10:00 Keep the planner pure/);
+    assert.match(await runReviewTool(env, 'origin', { query: 'PURE' }), /1 passage mentions "PURE"[\s\S]*\[assistant[^\]]*\] I split it in four\. The planner stays pure/);
+    assert.match(await runReviewTool(env, 'origin', { query: 'memoize' }), /Nothing in its transcript mentions "memoize"/);
+    await t.svc.remove(v.id);
+
+    // Not started from a session: the one agent on a stack branch made it.
+    v = await t.svc.create(t.w.local, { pr: 1 });
+    assert.equal(v.origin?.uid, 'u-agent');
+    v = await t.svc.update(v.id, { originUid: 'u-old' });
+    assert.equal(v.origin?.uid, 'u-old', 'you can say which session it was');
+    assert.equal(v.owner?.uid, 'u-agent', 'without moving the fixes');
+    await assert.rejects(t.svc.create(t.w.local, { pr: 9 }, undefined, 'nope'), /session not found/);
   });
 });

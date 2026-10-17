@@ -136,6 +136,24 @@ The part ah could add is what Sapling writes into each PR's description: the
 list of the stack with the current one marked. GitHub's own stacks show that
 in the PR page, so it matters less now. It's in the backlog.
 
+## The session that made it
+
+A stack remembers the agent session that built it (`originUid`, and its
+conversation key, which survives resumes): the session you start the review
+from, else the one agent session on the stack's branches, and you can change
+it. Its conversation is the why behind the stack, so:
+
+- **Made in** on the stack page names it, with *Open session* while it runs
+  and *Read the conversation* (the read-only transcript, which can resume it)
+  after it ended.
+- **Fixes go to it first.** The send dialog lists it first, marked "made
+  this stack", ended or not. Sending resumes an ended one: fixes always go
+  through a real agent session, the normal send path, never a subscription.
+  Subscriptions only run the reviewer's chat, briefings and re-checks.
+- **The reviewer can read it.** The `origin` tool returns every message you
+  sent that session, oldest first, or with a query, the transcript's passages
+  (yours, the agent's, its tools') that mention it.
+
 ## Reading at a pinned revision
 
 This is the main technical change, and everything else depends on it.
@@ -180,6 +198,7 @@ stay. What changes:
   - `plan`: the plan file, by section.
   - `findings(pr?)`, `decisions`
   - `pr_threads(pr)`: review threads from GitHub, bots included.
+  - `origin(query?)`: the conversation of the session that made the stack.
 - **Look-ahead is just a tool call.** "Does F2 hold up given how F3 and F5 use
   it?" means `layer_diff(1355, 'this')` and `layer_diff(1358, 'this')`. It doesn't need a
   mode or a button. A premade follow-up can ask for it.

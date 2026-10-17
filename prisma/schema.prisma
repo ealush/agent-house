@@ -114,6 +114,9 @@ model ReviewStack {
   /// "native": a stack on GitHub (`ghStack`), whose PRs join and keep GitHub's order.
   source      String  @default("tree")
   ghStack     Int?
+  /// The agent session that made the stack (uid, and its conversation key, which survives resumes): its transcript is the stack's why.
+  originUid   String?
+  originKey   String?
   state       String  @default("open")
   createdAt   Int     @default(0)
   syncedAt    Int     @default(0)
