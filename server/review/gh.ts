@@ -10,21 +10,47 @@ const GH_TIMEOUT_MS = 30_000;
 
 export class GhError extends Error {}
 
+const opts = (root: string, timeout: number) => ({
+  cwd: root,
+  maxBuffer: 32 * 1024 * 1024,
+  timeout,
+  env: { ...process.env, GH_PROMPT_DISABLED: '1', NO_COLOR: '1', GH_NO_UPDATE_NOTIFIER: '1' },
+});
+const lastWords = (text: string) => (text.trim().split('\n').filter(Boolean).pop() ?? 'gh failed').replace(/^(?:error|X|!)\s*[:]?\s*/i, '');
+
 async function gh(root: string, args: string[], timeout = GH_TIMEOUT_MS): Promise<string> {
   try {
-    const { stdout } = await exec('gh', args, {
-      cwd: root,
-      maxBuffer: 32 * 1024 * 1024,
-      timeout,
-      env: { ...process.env, GH_PROMPT_DISABLED: '1', NO_COLOR: '1', GH_NO_UPDATE_NOTIFIER: '1' },
-    });
+    const { stdout } = await exec('gh', args, opts(root, timeout));
     return stdout;
   } catch (err) {
     const e = err as { stderr?: string; stdout?: string; message: string; code?: string };
     if (e.code === 'ENOENT') throw new GhError('gh is not installed on this host');
-    const said = (e.stderr || e.stdout || e.message).trim().split('\n').filter(Boolean).pop() ?? 'gh failed';
-    throw new GhError(said.replace(/^(?:error|X|!)\s*[:]?\s*/i, ''));
+    throw new GhError(lastWords(e.stderr || e.stdout || e.message));
   }
+}
+
+/**
+ * `gh api` with the HTTP status. The stack endpoints say things with it: 404
+ * when stacks are off in a repo, 409 with the merge that's already running.
+ */
+async function ghApi(root: string, args: string[]): Promise<{ status: number; body: Record<string, unknown> | unknown[] | null }> {
+  let out: string;
+  try {
+    out = (await exec('gh', ['api', '--include', ...args], opts(root, GH_TIMEOUT_MS))).stdout;
+  } catch (err) {
+    const e = err as { stderr?: string; stdout?: string; message: string; code?: string };
+    if (e.code === 'ENOENT') throw new GhError('gh is not installed on this host');
+    if (!e.stdout?.startsWith('HTTP/')) throw new GhError(lastWords(e.stderr || e.stdout || e.message));
+    out = e.stdout;
+  }
+  const status = Number(out.match(/^HTTP\/[\d.]+ (\d{3})/)?.[1] ?? 0);
+  const at = out.search(/\r?\n\r?\n/);
+  const text = at < 0 ? '' : out.slice(at).trim();
+  let body: Record<string, unknown> | unknown[] | null = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {}
+  return { status, body };
 }
 
 async function ghJson<T>(root: string, args: string[]): Promise<T> {
@@ -74,9 +100,10 @@ export type GhPr = {
   additions: number;
   deletions: number;
   updatedAt: string;
+  mergedAt: string;
 };
 
-const FIELDS = 'number,title,url,body,state,isDraft,headRefName,baseRefName,headRefOid,baseRefOid,isCrossRepository,mergeable,mergeStateStatus,author,statusCheckRollup,additions,deletions,updatedAt';
+const FIELDS = 'number,title,url,body,state,isDraft,headRefName,baseRefName,headRefOid,baseRefOid,isCrossRepository,mergeable,mergeStateStatus,author,statusCheckRollup,additions,deletions,updatedAt,mergedAt';
 
 /** Check rollup as GitHub reports it: check runs (status + conclusion) and commit statuses (state). */
 export function rollup(items: unknown): Checks {
@@ -119,6 +146,7 @@ function toPr(v: Record<string, unknown>): GhPr | null {
     additions: typeof v.additions === 'number' ? v.additions : 0,
     deletions: typeof v.deletions === 'number' ? v.deletions : 0,
     updatedAt: s('updatedAt'),
+    mergedAt: s('mergedAt'),
   };
 }
 
@@ -145,6 +173,124 @@ export async function viewPr(root: string, n: number): Promise<GhPr | null> {
 export async function mergePr(root: string, n: number, method: MergeMethod, headSha: string): Promise<void> {
   if (!/^[0-9a-f]{40}$/i.test(headSha)) throw new GhError('merge needs the full head commit');
   await gh(root, ['pr', 'merge', String(n), `--${method}`, '--match-head-commit', headSha], 120_000);
+}
+
+// GitHub's own stacks (gh stack, or Stack in the PR page): a line of PRs, each
+// on the one below, that GitHub merges bottom-up, retargets and rebases itself.
+// Reference: https://github.github.com/gh-stack/reference/rest-api/
+
+export type NativePr = { number: number; open: boolean; merged: boolean; draft: boolean; headRef: string; headSha: string };
+/** A stack on GitHub, its PRs bottom to top. `number` is the one GitHub shows. */
+export type NativeStack = { number: number; base: string; open: boolean; prs: NativePr[] };
+
+function toStack(v: unknown): NativeStack | null {
+  if (!v || typeof v !== 'object') return null;
+  const x = v as { number?: unknown; base?: { ref?: unknown }; open?: unknown; pull_requests?: unknown };
+  if (typeof x.number !== 'number' || !Array.isArray(x.pull_requests)) return null;
+  const prs = x.pull_requests.flatMap((p): NativePr[] => {
+    if (!p || typeof p !== 'object') return [];
+    const y = p as { number?: unknown; state?: unknown; draft?: unknown; merged_at?: unknown; head?: { ref?: unknown; sha?: unknown } };
+    if (typeof y.number !== 'number') return [];
+    return [{ number: y.number, open: y.state === 'open', merged: typeof y.merged_at === 'string' && !!y.merged_at, draft: y.draft === true, headRef: String(y.head?.ref ?? ''), headSha: String(y.head?.sha ?? '') }];
+  });
+  return { number: x.number, base: String(x.base?.ref ?? ''), open: x.open !== false, prs };
+}
+
+/** The repo's stacks on GitHub. [] when stacks are off there; null when gh can't say. */
+export async function listStacks(root: string, repo: string): Promise<NativeStack[] | null> {
+  const out: NativeStack[] = [];
+  try {
+    for (let page = 1; page <= 5; page++) {
+      const r = await ghApi(root, [`repos/${repo}/stacks?per_page=100&page=${page}`]);
+      if (r.status === 404) return [];
+      if (r.status !== 200 || !Array.isArray(r.body)) return null;
+      out.push(...r.body.map(toStack).filter((x): x is NativeStack => !!x));
+      if (r.body.length < 100) break;
+    }
+  } catch {
+    return null;
+  }
+  return out;
+}
+
+/**
+ * Make a stack on GitHub of PRs, bottom to top, each based on the one before;
+ * or put them on top of stack `onto`. GitHub checks the chain.
+ */
+export async function linkStack(root: string, repo: string, prs: number[], onto: number | null): Promise<NativeStack> {
+  const r = await ghApi(root, ['--method', 'POST', onto === null ? `repos/${repo}/stacks` : `repos/${repo}/stacks/${onto}/add`, ...prs.flatMap((n) => ['-F', `pull_requests[]=${n}`])]);
+  const b = (r.body && typeof r.body === 'object' && !Array.isArray(r.body) ? r.body : {}) as { message?: unknown; errors?: { message?: unknown }[] };
+  if (r.status === 404) throw new GhError(onto === null ? `stacked pull requests are off in ${repo}` : `${repo} has no stack #${onto}`);
+  if (r.status >= 400) throw new GhError(String(b.errors?.[0]?.message ?? b.message ?? `GitHub refused the stack (${r.status})`));
+  const st = toStack(r.body);
+  if (!st) throw new GhError('GitHub answered without the stack');
+  return st;
+}
+
+export type MergeRequest = { status: 'merged' | 'enqueued' | 'pending'; uuid: string | null; message: string };
+
+function mergeReply(r: { status: number; body: unknown }, what: string): MergeRequest {
+  const b = (r.body && typeof r.body === 'object' && !Array.isArray(r.body) ? r.body : {}) as { status?: unknown; message?: unknown; details?: { message?: unknown; uuid?: unknown } };
+  const message = String(b.details?.message ?? b.message ?? '');
+  if (r.status === 404) throw new GhError(`GitHub has no stack merge for ${what}`);
+  if (b.status === 'failed' || (r.status >= 400 && r.status !== 409)) throw new GhError(message || `GitHub refused the merge (${r.status})`);
+  const status = b.status === 'merged' || b.status === 'enqueued' ? b.status : 'pending';
+  return { status, uuid: typeof b.details?.uuid === 'string' ? b.details.uuid : null, message };
+}
+
+/**
+ * Ask GitHub to merge a PR of a stack, and with it every unmerged PR under
+ * it, all or nothing. GitHub refuses unless the PR's head is still `headSha`.
+ * The legacy merge endpoint (gh pr merge) can't merge a stacked PR at all.
+ */
+export async function requestMerge(root: string, repo: string, n: number, method: MergeMethod, headSha: string): Promise<MergeRequest> {
+  if (!/^[0-9a-f]{40}$/i.test(headSha)) throw new GhError('merge needs the full head commit');
+  const r = await ghApi(root, ['--method', 'PUT', `repos/${repo}/pulls/${n}/merge-async`, '-f', `merge_method=${method}`, '-f', `sha=${headSha}`]);
+  // 409: a merge of this PR is already running, maybe asked for at another head.
+  const running = r.status === 409 && r.body && !Array.isArray(r.body) ? (r.body as { details?: { expected_head_sha?: unknown } }).details?.expected_head_sha : null;
+  if (typeof running === 'string' && running && running !== headSha) throw new GhError(`a merge of #${n} at ${running.slice(0, 7)} is already running on GitHub`);
+  return mergeReply(r, `#${n}`);
+}
+
+/** Where a merge request stands; null once GitHub forgot it (after a day). Throws GitHub's reason when it failed. */
+export async function mergeStatus(root: string, repo: string, n: number, uuid: string): Promise<MergeRequest | null> {
+  if (!/^[\w-]{8,64}$/.test(uuid)) throw new GhError('invalid merge request id');
+  const r = await ghApi(root, [`repos/${repo}/pulls/${n}/merge-async/${uuid}`]);
+  if (r.status === 404) return null;
+  return mergeReply(r, `#${n}`);
+}
+
+/** Whether a PR waits in its base branch's merge queue; null when gh can't say. */
+export async function inMergeQueue(root: string, repo: string, n: number): Promise<boolean | null> {
+  const [owner, name] = repo.split('/');
+  try {
+    const v = await ghJson<{ data?: { repository?: { pullRequest?: { isInMergeQueue?: boolean } } } }>(root, [
+      'api',
+      'graphql',
+      '-f',
+      'query=query($owner:String!,$name:String!,$n:Int!){repository(owner:$owner,name:$name){pullRequest(number:$n){isInMergeQueue}}}',
+      '-F',
+      `owner=${owner}`,
+      '-F',
+      `name=${name}`,
+      '-F',
+      `n=${n}`,
+    ]);
+    const q = v.data?.repository?.pullRequest?.isInMergeQueue;
+    return typeof q === 'boolean' ? q : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Whether the gh stack extension is installed here, so agents can be told to use it. */
+export async function hasGhStack(root: string): Promise<boolean> {
+  try {
+    await gh(root, ['stack', '--version'], 10_000);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Point a PR at another base branch. */

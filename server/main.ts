@@ -26,6 +26,7 @@ import { addViewer, attach, clientId, viewers } from './terminal.ts';
 import { desktopStatus, installDesktop, removeDesktop } from './desktop.ts';
 import { Drafts } from './drafts.ts';
 import { feedPage, feedPrompts, streamFeed, SNAPSHOT } from './feed/stream.ts';
+import type { Part } from './feed/schema.ts';
 import { Previews, removeStaleMappings, tailscalePublish } from './preview.ts';
 import { listeningPorts } from './procs.ts';
 import * as t from './tmux.ts';
@@ -109,6 +110,23 @@ const review = new ReviewService(getDb(), sidechat, {
   alert: (p) => core.push.alert(p),
   changed: () => void core.tick().catch(() => {}),
   readPlan: async (path) => readTextFile(await safePath(expandHome(path))),
+  launch: async ({ preset: id, root, label, fromRef }) => {
+    const preset = await withCatalog(core.preset(id));
+    const plan = buildLaunch(preset, {});
+    const wt = await createWorktree(root, label, fromRef);
+    const out = await core.launch({ preset, cwd: wt.path, session: config.defaultSession, name: label, command: plan.command, meta: { ...plan.meta, 'ah.worktree': wt, 'ah.order': core.nextOrder() } });
+    await core.refreshTmuxPath();
+    await core.tick();
+    return { uid: out.uid, key: sidechat.chatKey(preset.id, null, out.uid), title: label, agent: preset.id, status: 'idle', cwd: wt.path, branch: wt.branch, live: true };
+  },
+  // The reviewer's origin tool: the session's own transcript, as text (latest 1000 entries).
+  transcript: async (uid) => {
+    const resolve = () => core.feedSource(uid);
+    const [prompts, page] = await Promise.all([feedPrompts(resolve), feedPage(resolve, Infinity, 1000)]);
+    if (!prompts || !page) return null;
+    const text = (p: Part) => (p.type === 'text' || p.type === 'reasoning' ? p.text : p.type === 'tool_call' ? `${p.call.name} ${JSON.stringify(p.call.args).slice(0, 400)}` : p.type === 'tool_result' ? p.result.text.slice(0, 800) : '');
+    return { prompts, entries: page.entries.map((e) => ({ role: e.role, at: e.at, text: e.parts.map(text).filter(Boolean).join('\n') })).filter((e) => e.text) };
+  },
 });
 core.reviewState = () => review.state();
 const gate = new Gate();

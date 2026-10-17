@@ -174,7 +174,7 @@ function StackList({ state, narrow, onOpen, onPick }: { state: State; narrow: bo
                     <span className="stack">
                       <span className="name">{s.title}</span>
                       <span className="sub">
-                        {s.repo} · {s.source === 'manual' ? 'picked by hand' : `into ${s.trunk}`} · {s.merged} of {s.layers} merged
+                        {s.repo} · {s.source === 'manual' ? 'picked by hand' : s.source === 'native' ? `GitHub stack #${s.ghStack} into ${s.trunk}` : `into ${s.trunk}`} · {s.merged} of {s.layers} merged
                       </span>
                     </span>
                     {!narrow && (
@@ -238,28 +238,33 @@ function StackList({ state, narrow, onOpen, onPick }: { state: State; narrow: bo
 
 // ---------- one stack
 
-function Owner({ stack, onStack, onOpenSession }: { stack: Stack; onStack: (s: Stack) => void; onOpenSession: (uid: string) => void }) {
+/**
+ * A session the stack is tied to: the one fixes go to, or the one that made it
+ * (whose conversation, live or ended, is the why behind the stack).
+ */
+function SessionCard({ kind, stack, onStack, onOpenSession }: { kind: 'owner' | 'origin'; stack: Stack; onStack: (s: Stack) => void; onOpenSession: (uid: string) => void }) {
   const [opts, setOpts] = useState<OwnerSuggestion[] | null>(null);
   useEffect(() => {
     api.owners(stack.id).then(setOpts, () => setOpts([]));
-  }, [stack.id]);
-  const o = stack.owner;
+  }, [stack.id, stack.origin?.key]);
+  const o = kind === 'owner' ? stack.owner : stack.origin;
+  const empty = kind === 'owner' ? { name: 'No agent yet', sub: 'The first findings you send choose it' } : { name: 'Not recorded', sub: 'Pick the session that built it: the reviewer reads its conversation' };
   return (
     <section className="cockpit-card">
-      <h3 className="card-label">Fixes go to</h3>
+      <h3 className="card-label">{kind === 'owner' ? 'Fixes go to' : 'Made in'}</h3>
       <div className="owner-line">
         <span className="chip" style={{ '--agent': look(o?.agent ?? null).color } as React.CSSProperties}>
           {o ? <AgentLogo id={o.agent} /> : <Icon name="sessions" size={14} />}
         </span>
         <span className="stack">
-          <span className="name">{o ? o.title : 'No agent yet'}</span>
-          <span className="sub">{o ? [look(o.agent).name, o.live ? (STATUS_WORDS[o.status] ?? o.status) : 'ended; sending resumes it', o.branch ? `on ${o.branch}` : ''].filter(Boolean).join(' · ') : 'The first findings you send choose it'}</span>
+          <span className="name">{o ? o.title : empty.name}</span>
+          <span className="sub">{o ? [look(o.agent).name, o.live ? (STATUS_WORDS[o.status] ?? o.status) : kind === 'owner' ? 'ended; sending resumes it' : 'ended', o.branch ? `on ${o.branch}` : ''].filter(Boolean).join(' · ') : empty.sub}</span>
         </span>
       </div>
       <div className="card-actions">
-        {o?.live && (
-          <button className="btn small" onClick={() => onOpenSession(o.uid)}>
-            Open session
+        {o && (o.live || kind === 'origin') && (
+          <button className="btn small" onClick={() => onOpenSession(o.uid)} title={o.live ? undefined : 'Its conversation, read-only; you can resume it there'}>
+            {o.live ? 'Open session' : 'Read the conversation'}
           </button>
         )}
         <Popover label="Change" className="btn ghost small" align="left" up={false}>
@@ -273,15 +278,15 @@ function Owner({ stack, onStack, onOpenSession }: { stack: Stack; onStack: (s: S
                   onClick={async () => {
                     close();
                     try {
-                      onStack(await api.update(stack.id, { ownerUid: s.uid }));
+                      onStack(await api.update(stack.id, kind === 'owner' ? { ownerUid: s.uid } : { originUid: s.uid }));
                     } catch (e) {
-                      showError(e, "Couldn't change the owner");
+                      showError(e, kind === 'owner' ? "Couldn't change the owner" : "Couldn't change it");
                     }
                   }}
                 >
                   <AgentLogo id={s.agent} size={14} />
                   <span className="grow">{s.title}</span>
-                  <span className="hint">{s.reason === 'branch' ? s.branch : 'same repo'}</span>
+                  <span className="hint">{s.origin && kind === 'owner' ? 'made it' : !s.live ? 'ended' : s.reason === 'branch' ? s.branch : 'same repo'}</span>
                   {o?.uid === s.uid && <Icon name="check" size={14} />}
                 </button>
               ))}
@@ -318,7 +323,8 @@ function upNext(stack: Stack, alerts: ReviewAlert[]): Next {
       };
     }
     if (a.kind === 'nopush') return { tone: 'needs', eyebrow: 'Up next', title: `${who(al)} finished ${name(al)} without pushing`, body: 'Look at the session, or send the findings again.', pr: al.pr, action: `Open ${name(al)}` };
-    if (a.kind === 'restack') return { tone: 'needs', eyebrow: 'Up next', title: `${name(al)} needs a restack`, body: `The layer under it merged. Its own commits need moving onto ${stack.trunk}.`, pr: al.pr, action: `Open ${name(al)}` };
+    if (a.kind === 'restack')
+      return { tone: 'needs', eyebrow: 'Up next', title: `${name(al)} needs a restack`, body: al.ghStack !== null ? `It no longer sits on top of ${al.baseRef}. GitHub won't merge the stack until it does.` : `The layer under it merged. Its own commits need moving onto ${stack.trunk}.`, pr: al.pr, action: `Open ${name(al)}` };
     return { tone: 'ready', eyebrow: 'Up next', title: `${name(al)} is ready to merge`, body: al.title, pr: al.pr, action: `Open ${name(al)}` };
   }
   const changes = open.find((l) => l.status === 'changes');
@@ -459,7 +465,8 @@ function Cockpit({ stack, alerts, narrow, onStack, onOpen, onOpenSession, onPick
         </button>
       )}
       <div className="cockpit-cards">
-        <Owner stack={stack} onStack={(s) => onStack(s)} onOpenSession={onOpenSession} />
+        <SessionCard kind="origin" stack={stack} onStack={(s) => onStack(s)} onOpenSession={onOpenSession} />
+        <SessionCard kind="owner" stack={stack} onStack={(s) => onStack(s)} onOpenSession={onOpenSession} />
         <section className="cockpit-card">
           <h3 className="card-label">Plan</h3>
           {stack.planPath ? (
@@ -627,6 +634,7 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
     }
   };
   const merged = stack.layers.filter((l) => l.state === 'merged').length;
+  const ghStacks = [...new Set(stack.layers.filter((l) => l.state === 'open' && l.ghStack !== null).map((l) => l.ghStack!))];
   const counted = stack.layers.filter((l) => l.state !== 'skipped' && l.state !== 'closed').length;
   const alerts = (state.review?.alerts ?? []).filter((a) => a.stackId === stack.id);
 
@@ -642,6 +650,31 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
       >
         Rename…
       </button>
+      {stack.link && (
+        <button
+          disabled={!stack.link.ok}
+          title={stack.link.why ?? undefined}
+          onClick={async () => {
+            close();
+            const l = stack.link!;
+            const names = l.prs.map((n) => `#${n}`).join(', ');
+            const ok = await askConfirm({
+              title: l.onto === null ? 'Make these a stack on GitHub?' : `Add ${l.prs.length === 1 ? 'this' : 'these'} to stack #${l.onto} on GitHub?`,
+              body: `${names} ${l.onto === null ? 'become a stack on GitHub, bottom to top' : `go on top of stack #${l.onto}`}. GitHub then merges a PR with the PRs under it, and rebases the rest itself. Unstack it on GitHub to undo.`,
+              confirm: l.onto === null ? 'Make a stack' : 'Add to the stack',
+            });
+            if (!ok) return;
+            try {
+              setStack(await api.link(stack.id));
+              toast('A stack on GitHub now');
+            } catch (e) {
+              showError(e, "Couldn't make the stack on GitHub");
+            }
+          }}
+        >
+          {stack.link.ok ? (stack.link.onto === null ? 'Make it a stack on GitHub…' : `Add to stack #${stack.link.onto} on GitHub…`) : `Not a stack on GitHub: ${stack.link.why}`}
+        </button>
+      )}
       {stack.methods.length > 1 &&
         stack.methods.map((m) => (
           <button
@@ -709,7 +742,7 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
           className="danger"
           onClick={async () => {
             close();
-            if (!(await askConfirm({ title: `Take #${l.pr} out of the stack?`, body: `Its findings and threads go. Nothing changes on GitHub.${stack.source === 'tree' ? " New PRs on the stack's branches stop joining it." : ''}`, confirm: 'Take out', danger: true }))) return;
+            if (!(await askConfirm({ title: `Take #${l.pr} out of the stack?`, body: `Its findings and threads go. Nothing changes on GitHub.${stack.source === 'tree' ? " New PRs on the stack's branches stop joining it." : stack.source === 'native' ? ` It stops following GitHub's stack #${stack.ghStack}.` : ''}`, confirm: 'Take out', danger: true }))) return;
             try {
               setStack(await api.removeLayer(stack.id, l.pr));
               go(stack.id, null, { replace: true });
@@ -775,7 +808,8 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
         <div className="grow">
           <h1 className="review-title">{stack.title}</h1>
           <p className="tagline">
-            {stack.repo} · {stack.source === 'manual' ? 'picked by hand' : `into ${stack.trunk}`} · {merged} of {counted} merged · {stack.syncError ? <span className="bad">{stack.syncError}</span> : stack.syncing || syncing ? 'refreshing…' : `checked ${ago(stack.syncedAt)}`}
+            {stack.repo} · {stack.source === 'manual' ? 'picked by hand' : `into ${stack.trunk}`}
+            {ghStacks.length === 1 ? ` · GitHub stack #${ghStacks[0]}` : ghStacks.length > 1 ? ` · ${ghStacks.length} GitHub stacks` : ''} · {merged} of {counted} merged · {stack.syncError ? <span className="bad">{stack.syncError}</span> : stack.syncing || syncing ? 'refreshing…' : `checked ${ago(stack.syncedAt)}`}
           </p>
         </div>
         <button className={`btn ask ${asking ? 'on' : ''}`} onClick={() => setAsking((v) => !v)} aria-pressed={asking} aria-label="Ask the reviewer" title="Ask the reviewer about the whole stack">

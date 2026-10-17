@@ -31,6 +31,8 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
 
     if (route('GET', '/stacks')) return send(res, 200, await svc.list());
 
+    if ((m = route('GET', '/sessions/([\\w-]{1,40})/stack'))) return send(res, 200, await svc.sessionStack(m[1]));
+
     if (route('GET', '/settings')) return send(res, 200, await svc.settings());
 
     if (route('PUT', '/settings')) {
@@ -40,8 +42,8 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
 
     if (route('POST', '/stacks')) {
       const body = await readJson(req);
-      const input = Array.isArray(body.prs) ? { prs: body.prs.slice(0, 61).map((n) => int(n, 'prs')) } : { pr: int(body.pr, 'pr') };
-      const v = await svc.create(str(body.root, 'root', 1000), input, opt(body.title, (x) => str(x, 'title', 120)));
+      const input = Array.isArray(body.prs) ? { prs: body.prs.slice(0, 61).map((n) => int(n, 'prs')) } : body.native !== undefined ? { native: int(body.native, 'native') } : { pr: int(body.pr, 'pr') };
+      const v = await svc.create(str(body.root, 'root', 1000), input, opt(body.title, (x) => str(x, 'title', 120)), opt(body.from, (x) => str(x, 'from', 80)));
       audit(req, 'review.stack', { stack: v.id, repo: v.repo, source: v.source, prs: v.layers.map((l) => l.pr) });
       return send(res, 200, v);
     }
@@ -60,6 +62,7 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
           mergeMethod: opt(body.mergeMethod, (x) => str(x, 'mergeMethod', 10)),
           state: opt(body.state, (x) => str(x, 'state', 10)),
           ownerUid: body.ownerUid === null ? null : opt(body.ownerUid, (x) => str(x, 'ownerUid', 80)),
+          originUid: body.originUid === null ? null : opt(body.originUid, (x) => str(x, 'originUid', 80)),
           order,
         }),
       );
@@ -69,6 +72,12 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
       await svc.remove(m[1]);
       audit(req, 'review.remove', { stack: m[1] });
       return send(res, 200, { ok: true });
+    }
+
+    if ((m = route('POST', `/stacks/${ID}/link`))) {
+      const v = await svc.link(m[1]);
+      audit(req, 'review.link', { stack: m[1], ghStack: v.ghStack, prs: v.layers.filter((l) => l.ghStack === v.ghStack).map((l) => l.pr) });
+      return send(res, 200, v);
     }
 
     if ((m = route('POST', `/stacks/${ID}/sync`))) {
@@ -136,7 +145,7 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
     if ((m = route('POST', `/stacks/${ID}/layers/${PR}/merge`))) {
       const body = await readJson(req).catch(() => ({}) as Record<string, unknown>);
       const out = await svc.merge(m[1], Number(m[2]), { outOfOrder: body.outOfOrder === true });
-      audit(req, 'review.merge', { stack: m[1], pr: Number(m[2]), retargeted: out.retargeted });
+      audit(req, 'review.merge', { stack: m[1], pr: Number(m[2]), merged: out.merged, retargeted: out.retargeted, waiting: out.waiting });
       return send(res, 200, out);
     }
 
@@ -155,15 +164,17 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
     if ((m = route('GET', `/stacks/${ID}/layers/${PR}/dispatch`))) {
       const ids = (url.searchParams.get('findings') ?? '').split(',').filter(Boolean).slice(0, 50).map((x) => int(x, 'finding'));
       const kind = url.searchParams.get('kind');
-      const text = kind === 'restack' ? await svc.restackText(m[1], Number(m[2])) : await svc.dispatchText(m[1], Number(m[2]), ids, (url.searchParams.get('extra') ?? '').slice(0, 8000));
+      const text = kind === 'restack' ? await svc.restackText(m[1], Number(m[2])) : await svc.dispatchText(m[1], Number(m[2]), ids, (url.searchParams.get('extra') ?? '').slice(0, 8000), url.searchParams.get('fresh') === '1');
       return send(res, 200, { text });
     }
 
     if ((m = route('POST', `/stacks/${ID}/layers/${PR}/dispatch`))) {
       const body = await readJson(req);
       const ids = Array.isArray(body.findingIds) ? body.findingIds.slice(0, 50).map((x) => int(x, 'finding')) : [];
-      const out = await svc.dispatch(m[1], Number(m[2]), { findingIds: ids, text: str(body.text, 'text', 16_000), targetUid: opt(body.targetUid, (x) => str(x, 'targetUid', 80)) });
-      audit(req, 'review.dispatch', { stack: m[1], pr: Number(m[2]), to: out.dispatch.targetUid, findings: ids.length });
+      const fresh = body.newSession && typeof body.newSession === 'object' ? { preset: str((body.newSession as Record<string, unknown>).preset, 'preset', 40) } : undefined;
+      const out = await svc.dispatch(m[1], Number(m[2]), { findingIds: ids, text: str(body.text, 'text', 16_000), targetUid: opt(body.targetUid, (x) => str(x, 'targetUid', 80)), newSession: fresh });
+      if (fresh) audit(req, 'session.create', { uid: out.dispatch.targetUid, preset: fresh.preset, for: `review ${m[1]}/${m[2]}` });
+      audit(req, 'review.dispatch', { stack: m[1], pr: Number(m[2]), to: out.dispatch.targetUid, findings: ids.length, new: !!fresh });
       return send(res, 200, out);
     }
 

@@ -4,6 +4,8 @@
 // reviewed revisions alive through force-pushes and `git gc`, which
 // range-diff needs later.
 import { execFile, spawn } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 const exec = promisify(execFile);
@@ -188,4 +190,22 @@ export async function unpinStack(root: string, stack: string): Promise<void> {
     p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`update-ref exited ${code}`))));
     p.stdin.end(refs.map((r) => `delete ${r}\n`).join(''));
   });
+}
+
+/**
+ * The stacks gh stack tracks in a checkout's repo (it keeps them in the git
+ * common dir, shared by every worktree): each a trunk and its branches,
+ * bottom to top. [] when there are none or the file can't be read.
+ */
+export async function localStacks(cwd: string): Promise<{ trunk: string; branches: string[] }[]> {
+  try {
+    const dir = (await git(cwd, ['rev-parse', '--path-format=absolute', '--git-common-dir'], 10_000)).trim();
+    const v = JSON.parse(await readFile(join(dir, 'gh-stack'), 'utf8')) as { stacks?: { trunk?: { branch?: unknown }; branches?: { branch?: unknown }[] }[] };
+    return (v.stacks ?? []).map((st) => ({
+      trunk: typeof st.trunk?.branch === 'string' ? st.trunk.branch : '',
+      branches: (st.branches ?? []).map((b) => b.branch).filter((b): b is string => typeof b === 'string' && validBranch(b)),
+    })).filter((st) => st.branches.length);
+  } catch {
+    return [];
+  }
 }

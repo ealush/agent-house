@@ -5,7 +5,7 @@ export type Checks = { pass: number; fail: number; pending: number; failing: str
 export type Verdict = { items: { id: number; verdict: 'addressed' | 'partly' | 'not'; evidence: string }[]; unrequested: { title: string; path: string | null; line: number | null }[]; summary: string };
 export type RevView = { id: number; baseSha: string; headSha: string; patchId: string; files: number; additions: number; deletions: number; summary: string | null; verdict: Verdict | null };
 export type LayerStatus = 'unreviewed' | 'changes' | 'fixing' | 'rereview' | 'approved' | 'merged' | 'closed' | 'skipped';
-export type Gate = { key: 'reviewed' | 'findings' | 'checks' | 'mergeable' | 'base' | 'order'; ok: boolean; label: string; detail?: string };
+export type Gate = { key: 'reviewed' | 'findings' | 'checks' | 'mergeable' | 'base' | 'below' | 'order'; ok: boolean; label: string; detail?: string };
 export type DispatchView = { id: number; pr: number; state: string; targetUid: string; targetTitle: string | null; targetAgent: string | null; sentAt: number; doneAt: number | null; findings: number[]; text: string };
 export type Finding = {
   id: number;
@@ -58,6 +58,9 @@ export type Layer = {
   dispatch: DispatchView | null;
   gates: Gate[];
   ownerUid: string | null;
+  /** The GitHub stack the PR is in, and its place there (1 at the bottom): GitHub merges it with the PRs under it. */
+  ghStack: number | null;
+  ghPos: number | null;
 };
 export type Owner = { uid: string; key: string; title: string; agent: string | null; status: string; live: boolean; branch: string | null } | null;
 export type Stack = {
@@ -69,7 +72,13 @@ export type Stack = {
   mergeMethod: 'merge' | 'squash' | 'rebase';
   methods: ('merge' | 'squash' | 'rebase')[];
   /** "tree": GitHub's chain under one PR (new ones join); "manual": the PRs you picked, in your order. */
-  source: 'tree' | 'manual';
+  source: 'tree' | 'manual' | 'native';
+  /** The stack on GitHub this one follows (source "native"). */
+  ghStack: number | null;
+  /** The agent session that made it: its conversation is the why behind the stack. */
+  origin: Owner;
+  /** Whether its open PRs can become a stack on GitHub (or go on top of one), and if not, why. null: nothing to link. */
+  link: { ok: boolean; prs: number[]; onto: number | null; why: string | null } | null;
   planPath: string | null;
   state: string;
   syncedAt: number;
@@ -80,11 +89,30 @@ export type Stack = {
   next: number | null;
   decisions: { id: number; text: string; fromPr: number | null; at: number }[];
 };
-export type StackSummary = { id: string; title: string; repo: string; trunk: string; state: string; source: 'tree' | 'manual'; layers: number; merged: number; needsYou: number; next: number | null; syncedAt: number; spine: { pr: number; role: string; status: LayerStatus }[] };
+export type StackSummary = { id: string; title: string; repo: string; trunk: string; state: string; source: 'tree' | 'manual' | 'native'; ghStack: number | null; layers: number; merged: number; needsYou: number; next: number | null; syncedAt: number; spine: { pr: number; role: string; status: LayerStatus }[] };
 export type Candidate = { number: number; title: string; headRefName: string; baseRefName: string; draft: boolean; author: string; additions: number; deletions: number; updatedAt: string; inStack: string | null };
-export type Candidates = { root: string; repo: string; trunk: string; trees: CandidateTree[]; stacks: { id: string; title: string }[] };
+/** A stack on GitHub with open PRs, bottom to top. */
+export type CandidateStack = { number: number; base: string; prs: number[] };
+export type Candidates = { root: string; repo: string; trunk: string; trees: CandidateTree[]; stacks: { id: string; title: string }[]; native: CandidateStack[] };
 export type CandidateTree = { pr: Candidate; children: CandidateTree[] };
-export type OwnerSuggestion = { uid: string; key: string; title: string; agent: string | null; status: string; cwd: string; branch: string | null; live: boolean; reason: 'branch' | 'repo' };
+/** The stack a session is building (server/review/service.ts SessionStack). */
+export type SessionStack = {
+  repo: string | null;
+  root: string;
+  trunk: string;
+  source: 'gh-stack' | 'chain' | null;
+  branch: string | null;
+  ghStack: number | null;
+  branches: {
+    branch: string;
+    current: boolean;
+    pr: { number: number; title: string; url: string; state: 'OPEN' | 'MERGED' | 'CLOSED'; draft: boolean; checks: Checks; additions: number; deletions: number } | null;
+    layer: { status: LayerStatus; role: string } | null;
+  }[];
+  review: { id: string; title: string } | null;
+  start: { native: number } | { prs: number[] } | null;
+};
+export type OwnerSuggestion = { uid: string; key: string; title: string; agent: string | null; status: string; cwd: string; branch: string | null; live: boolean; reason: 'branch' | 'repo'; origin: boolean };
 export type ThreadMsg = { role: 'user' | 'assistant'; text: string; at: number; id: number };
 export type Followup = { title: string; kind: 'session' | 'chat'; text: string };
 export type DiffOut = { kind: 'patch' | 'range'; text: string; truncated: boolean; from: string; to: string };
@@ -100,14 +128,16 @@ export function reviewApi(base = '') {
     repos: () => r<{ root: string; repo: string; trunk: string }[]>('GET', '/repos'),
     candidates: (root: string) => r<Candidates>('GET', `/candidates?root=${enc(root)}`),
     stacks: () => r<StackSummary[]>('GET', '/stacks'),
+    sessionStack: (uid: string) => r<SessionStack>('GET', `/sessions/${enc(uid)}/stack`),
     settings: () => r<{ summaryId: string | null }>('GET', '/settings'),
     setSummaryModel: (summaryId: string | null) => r<{ summaryId: string | null }>('PUT', '/settings', { summaryId }),
     /** One PR takes GitHub's chain under it; a list is the PRs you picked, in review order. */
-    create: (root: string, pick: { pr: number } | { prs: number[] }, title?: string) => r<Stack>('POST', '/stacks', { root, ...pick, ...(title ? { title } : {}) }),
+    link: (id: string) => r<Stack>('POST', `${s(id)}/link`),
+    create: (root: string, pick: { pr: number } | { prs: number[] } | { native: number }, title?: string, from?: string) => r<Stack>('POST', '/stacks', { root, ...pick, ...(title ? { title } : {}), ...(from ? { from } : {}) }),
     addLayers: (id: string, prs: number[]) => r<Stack>('POST', `${s(id)}/layers`, { prs }),
     removeLayer: (id: string, pr: number) => r<Stack>('DELETE', l(id, pr)),
     stack: (id: string) => r<Stack>('GET', s(id)),
-    update: (id: string, patch: { title?: string; planPath?: string | null; mergeMethod?: string; order?: number[]; ownerUid?: string | null; state?: string }) => r<Stack>('PATCH', s(id), patch),
+    update: (id: string, patch: { title?: string; planPath?: string | null; mergeMethod?: string; order?: number[]; ownerUid?: string | null; originUid?: string | null; state?: string }) => r<Stack>('PATCH', s(id), patch),
     remove: (id: string) => r('DELETE', s(id)),
     sync: (id: string) => r<Stack>('POST', `${s(id)}/sync`),
     owners: (id: string) => r<OwnerSuggestion[]>('GET', `${s(id)}/owners`),
@@ -119,12 +149,13 @@ export function reviewApi(base = '') {
     approve: (id: string, pr: number, approved = true) => r<Stack>('POST', `${l(id, pr)}/approve`, { approved }),
     accept: (id: string, pr: number, overrides: Record<number, 'addressed' | 'open'> = {}) => r<Stack>('POST', `${l(id, pr)}/accept`, { overrides }),
     importThreads: (id: string, pr: number) => r<{ added: number }>('POST', `${l(id, pr)}/threads`),
-    merge: (id: string, pr: number, outOfOrder = false) => r<{ next: number | null; retargeted: number[]; restack: number[] }>('POST', `${l(id, pr)}/merge`, { outOfOrder }),
+    merge: (id: string, pr: number, outOfOrder = false) => r<{ next: number | null; retargeted: number[]; restack: number[]; merged: number[]; waiting: 'github' | 'queue' | null }>('POST', `${l(id, pr)}/merge`, { outOfOrder }),
     retarget: (id: string, pr: number) => r<Stack>('POST', `${l(id, pr)}/retarget`),
     ready: (id: string, pr: number) => r<Stack>('POST', `${l(id, pr)}/ready`),
-    dispatchText: (id: string, pr: number, findings: number[], extra = '', kind?: 'restack') =>
-      r<{ text: string }>('GET', `${l(id, pr)}/dispatch?findings=${findings.join(',')}&extra=${enc(extra)}${kind ? `&kind=${kind}` : ''}`),
-    dispatch: (id: string, pr: number, body: { findingIds: number[]; text: string; targetUid?: string }) => r<{ dispatch: DispatchView; outcome: string }>('POST', `${l(id, pr)}/dispatch`, body),
+    dispatchText: (id: string, pr: number, findings: number[], extra = '', kind?: 'restack', fresh = false) =>
+      r<{ text: string }>('GET', `${l(id, pr)}/dispatch?findings=${findings.join(',')}&extra=${enc(extra)}${kind ? `&kind=${kind}` : ''}${fresh ? '&fresh=1' : ''}`),
+    /** To a session (`targetUid`), or to a new one started for it (`newSession`). */
+    dispatch: (id: string, pr: number, body: { findingIds: number[]; text: string; targetUid?: string; newSession?: { preset: string } }) => r<{ dispatch: DispatchView; outcome: string }>('POST', `${l(id, pr)}/dispatch`, body),
     findings: (id: string, pr?: number) => r<Finding[]>('GET', `${s(id)}/findings${pr ? `?pr=${pr}` : ''}`),
     addFinding: (id: string, body: { ownerPr: number; foundOnPr?: number; title: string; body?: string; severity?: string; path?: string | null; lineStart?: number | null; lineEnd?: number | null }) =>
       r<Finding>('POST', `${s(id)}/findings`, body),

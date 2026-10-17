@@ -3,6 +3,7 @@
 // a stack you pick is reviewed and merged one at a time, in your order, the way
 // a stack of diffs lands. PRs that do sit on each other are grouped, so taking a
 // whole chain is one click, and ah warns when a PR would come before its base.
+// A stack on GitHub is its own group: reviewing it follows GitHub's stack.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { reviewApi, reviewHash, type Candidate, type CandidateTree, type Candidates, type Stack } from '../reviewApi.ts';
 import { showError } from '../ask.tsx';
@@ -27,22 +28,30 @@ function lastRoot(): string {
   }
 }
 
-type Group = { key: string; label: string; chain: boolean; rows: { pr: Candidate; depth: number }[] };
+type Group = { key: string; label: string; chain: boolean; native?: number; rows: { pr: Candidate; depth: number }[] };
 
-/** Chains (a PR with others built on it) first, then single PRs by the branch they target. */
-function groups(c: Candidates): Group[] {
+/** Stacks on GitHub first, then chains (a PR with others built on it), then single PRs by the branch they target. */
+function groups(c: Candidates, all: Map<number, Candidate>): Group[] {
+  const onGitHub = new Set(c.native.flatMap((n) => n.prs));
+  const native: Group[] = c.native.map((n) => ({
+    key: `gh-${n.number}`,
+    label: `GitHub stack #${n.number}`,
+    chain: true,
+    native: n.number,
+    rows: n.prs.filter((x) => all.has(x)).map((x, i) => ({ pr: all.get(x)!, depth: i })),
+  }));
   const flat = (t: CandidateTree, depth: number, out: { pr: Candidate; depth: number }[]) => {
-    out.push({ pr: t.pr, depth });
+    if (!onGitHub.has(t.pr.number)) out.push({ pr: t.pr, depth });
     for (const ch of t.children) flat(ch, depth + 1, out);
     return out;
   };
   const chains: Group[] = c.trees
     .filter((t) => t.children.length)
     .map((t) => ({ key: `chain-${t.pr.number}`, label: `Stacked on #${t.pr.number}`, chain: true, rows: flat(t, 0, []) }));
-  const single = c.trees.filter((t) => !t.children.length);
+  const single = c.trees.filter((t) => !t.children.length && !onGitHub.has(t.pr.number));
   const bases = [...new Set(single.map((t) => t.pr.baseRefName))].sort((a, b) => (a === c.trunk ? -1 : b === c.trunk ? 1 : a.localeCompare(b)));
   const loose: Group[] = bases.map((b) => ({ key: `on-${b}`, label: `On ${b}`, chain: false, rows: single.filter((t) => t.pr.baseRefName === b).map((t) => ({ pr: t.pr, depth: 0 })) }));
-  return [...chains, ...loose];
+  return [...native, ...chains, ...loose];
 }
 
 /** Bases before what's built on them; otherwise the order you gave. */
@@ -203,11 +212,11 @@ export function Compose({ stack, narrow, onBack, onDone }: { stack: Stack | null
   const shown = useMemo(
     () =>
       cands
-        ? groups(cands)
+        ? groups(cands, all)
             .map((g) => ({ ...g, rows: g.rows.filter((r) => !taken(r.pr) && (!q || `#${r.pr.number} ${r.pr.title} ${r.pr.headRefName}`.toLowerCase().includes(q))) }))
             .filter((g) => g.rows.length)
         : [],
-    [cands, q, stack?.id],
+    [cands, all, q, stack?.id],
   );
   const elsewhere = useMemo(() => {
     const out = new Map<string, number>();
@@ -246,6 +255,17 @@ export function Compose({ stack, narrow, onBack, onDone }: { stack: Stack | null
     });
   const heads = new Map(order.map((n, i) => [all.get(n)!.headRefName, i]));
   const blocked = order.some((n, i) => (heads.get(all.get(n)!.baseRefName) ?? -1) > i);
+
+  const startNative = async (n: number) => {
+    setBusy(true);
+    try {
+      onDone(await api.create(root, { native: n }, titled ? title.trim() : undefined));
+    } catch (e) {
+      showError(e, "Couldn't start the review");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const start = async () => {
     if (!order.length || blocked) return;
@@ -327,10 +347,16 @@ export function Compose({ stack, narrow, onBack, onDone }: { stack: Stack | null
             <div key={g.key} className="pick-group">
               <div className="pick-group-head">
                 <h2 className="section-label">{g.label}</h2>
-                {g.chain && (
-                  <button className="btn ghost small" onClick={() => pickAll(g)}>
-                    Select the chain
+                {g.native !== undefined && !stack ? (
+                  <button className="btn small" disabled={busy} onClick={() => startNative(g.native!)} title="Its PRs in GitHub's order. PRs added to it on GitHub join the review.">
+                    Review this stack
                   </button>
+                ) : (
+                  g.chain && (
+                    <button className="btn ghost small" onClick={() => pickAll(g)}>
+                      {g.native !== undefined ? 'Select the stack' : 'Select the chain'}
+                    </button>
+                  )
                 )}
               </div>
               <ul className="pick-rows">
