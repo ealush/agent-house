@@ -360,6 +360,14 @@ test('review: the reviewer reads pinned revisions through tools and proposes fin
     const thread = await t.svc.thread(v.id, 2);
     assert.deepEqual(thread.messages.map((m) => m.role), ['user', 'assistant']);
     assert.equal(thread.findings.length, 2);
+    assert.equal(thread.subscriptionId, await t.chat.defaultId(), 'nothing picked here: the active subscription answers');
+    const other = (await t.chat.put({ name: 'n', baseUrl: 'https://y.test/v1', model: 'n', apiKey: 'k' })).id;
+    await withFetch(
+      () => ({ content: JSON.stringify({ content: 'ok', followups: [], findings: [] }) }),
+      () => t.svc.ask(v.id, 2, 'Again?', other).then(() => {}),
+    );
+    assert.equal((await t.svc.thread(v.id, 2)).subscriptionId, other, 'a pick in the thread sticks to it');
+    assert.equal((await t.svc.thread(v.id, null)).subscriptionId, await t.chat.defaultId(), 'and only to it');
     // Proposals don't count until kept.
     let view = await t.svc.view(v.id);
     assert.equal(view.layers.find((l) => l.pr === 1)!.open, 0);

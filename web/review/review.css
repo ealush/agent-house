@@ -1557,8 +1557,13 @@ button.mt-row:hover {
   padding-left: 20px;
 }
 
-.briefing > .btn {
-  margin: 6px 0 -4px -10px;
+/* Who writes the briefing (a subscription menu) and Write it again. */
+.briefing-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 -2px;
 }
 
 .range-note {

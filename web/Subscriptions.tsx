@@ -9,6 +9,7 @@ import { AgentLogo } from './logos.tsx';
 import { blank, OTHER, PROVIDERS, providerFor, switchProvider, type Form } from './providers.ts';
 import { reviewApi } from './reviewApi.ts';
 import { radioGridMove } from './rove.ts';
+import { SubscriptionMark } from './SubscriptionPicker.tsx';
 
 const review = reviewApi();
 
@@ -72,7 +73,7 @@ export function SubscriptionsPanel() {
       await api.defaultSubscription(s.id);
       load();
     } catch (e) {
-      showError(e, "Couldn't change the default");
+      showError(e, "Couldn't change the active subscription");
     }
   }
 
@@ -83,29 +84,42 @@ export function SubscriptionsPanel() {
         Side chat and Review's reviewer talk to these endpoints. A cheaper model can write Review's briefings and re-checks. Keys are stored on this host only, alongside ah's other secrets, and once saved show
         only their first and last few characters. Pick Claude, OpenAI, Gemini or Muse and ah fills in the rest; Other takes any OpenAI-compatible API, such as Grok, DeepSeek or Ollama.
       </p>
+      {list && list.length > 1 && (
+        <p className="hint">
+          The <b>active</b> one answers everywhere you haven't picked another. A side chat or Review thread can switch from its own menu and keeps that pick.
+        </p>
+      )}
       {error && <p className="form-error">{error}</p>}
       {!list && !error && <p className="hint">Loading…</p>}
       {list && list.length > 0 && (
-        <ul className="worktrees">
+        <ul className="worktrees subs" role={list.length > 1 ? 'radiogroup' : undefined} aria-label="Active subscription">
           {list.map((s) => (
             <li key={s.id}>
-              <div className="stack">
-                <span>
-                  {s.name} {s.isDefault && <span className="hint">· default</span>}
+              {/* The row is the radio: the active one answers wherever nothing else is picked. */}
+              <button
+                type="button"
+                className={`sub-choose ${s.isDefault ? 'on' : ''}`}
+                role={list.length > 1 ? 'radio' : undefined}
+                aria-checked={list.length > 1 ? s.isDefault : undefined}
+                disabled={busy}
+                title={s.isDefault ? 'Active' : `Make ${s.name} active`}
+                onClick={() => !s.isDefault && makeDefault(s)}
+              >
+                {list.length > 1 && <span className="radio" aria-hidden />}
+                <SubscriptionMark s={s} size={15} />
+                <span className="stack">
+                  <span>
+                    {s.name} {s.isDefault && list.length > 1 && <span className="active-tag">Active</span>}
+                  </span>
+                  <span className="sub">
+                    {s.model} · {host(s.baseUrl)}
+                  </span>
+                  <span className="sub">
+                    {s.hasKey ? <span className="mono">{s.keyHint}</span> : 'No key'}
+                    {s.envName && <> · sessions get it as <span className="mono">{s.envName}</span></>}
+                  </span>
                 </span>
-                <span className="sub">
-                  {s.model} · {host(s.baseUrl)}
-                </span>
-                <span className="sub">
-                  {s.hasKey ? <span className="mono">{s.keyHint}</span> : 'No key'}
-                  {s.envName && <> · sessions get it as <span className="mono">{s.envName}</span></>}
-                </span>
-              </div>
-              {!s.isDefault && (
-                <button className="btn small" disabled={busy} onClick={() => makeDefault(s)}>
-                  Default
-                </button>
-              )}
+              </button>
               <button
                 className="btn small"
                 disabled={busy}
@@ -132,7 +146,7 @@ export function SubscriptionsPanel() {
                 .catch((err) => showError(err, "Couldn't change it"))
             }
           >
-            <option value="">The default</option>
+            <option value="">The active one</option>
             {list.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name} · {s.model}

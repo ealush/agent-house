@@ -246,6 +246,13 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
       return send(res, 200, await svc.ask(m[1], pr, text, opt(body.subscriptionId, (x) => str(x, 'subscriptionId', 40))));
     }
 
+    if ((m = route('PUT', `/stacks/${ID}/chat/subscription`))) {
+      const body = await readJson(req);
+      const pr = body.pr === undefined || body.pr === null ? null : int(body.pr, 'pr');
+      await svc.pickThread(m[1], pr, str(body.id, 'id', 40));
+      return send(res, 200, { ok: true });
+    }
+
     if ((m = route('DELETE', `/stacks/${ID}/chat`))) {
       const pr = url.searchParams.get('pr');
       await svc.clearThread(m[1], pr ? int(pr, 'pr') : null);

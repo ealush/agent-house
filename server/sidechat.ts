@@ -552,6 +552,8 @@ export function chatModels(rows: unknown[]): string[] {
 }
 
 const DEFAULT_SETTING = 'sidechat.defaultId';
+/** Setting key prefix: the subscription picked in one conversation (side chat or Review thread). */
+const PICKED = 'chat.picked:';
 
 export class SideChatStore {
   private db: PrismaClient;
@@ -703,6 +705,7 @@ export class SideChatStore {
     const legacy = await this.db.chatMessage.count({ where: { uid: fromUid } });
     if (!legacy) return;
     await this.db.chatMessage.updateMany({ where: { uid: fromUid }, data: { uid: toKey } });
+    await this.db.setting.updateMany({ where: { key: PICKED + fromUid }, data: { key: PICKED + toKey } }).catch(() => {});
   }
 
   async history(uid: string, aroundId?: number): Promise<ChatMessage[]> {
@@ -771,9 +774,28 @@ export class SideChatStore {
 
   async clear(uid: string): Promise<void> {
     await this.db.chatMessage.deleteMany({ where: { uid } });
+    await this.db.setting.deleteMany({ where: { key: PICKED + uid } });
   }
 
-  /** The subscription to use: the one asked for, else the default. */
+  /**
+   * The subscription a conversation (a side chat, a Review thread) answers
+   * with: the one last picked in it, else the active one. Null with none.
+   */
+  async picked(key: string): Promise<string | null> {
+    const [row, subs] = await Promise.all([
+      this.db.setting.findUnique({ where: { key: PICKED + key } }),
+      this.db.subscription.findMany({ select: { id: true } }),
+    ]);
+    return row && subs.some((s) => s.id === row.value) ? row.value : this.defaultId();
+  }
+
+  /** Remember the subscription picked in a conversation; it keeps answering there. */
+  async pick(key: string, id: string): Promise<void> {
+    if (!(await this.db.subscription.findUnique({ where: { id }, select: { id: true } }))) throw new SideChatError(404, 'subscription not found');
+    await this.db.setting.upsert({ where: { key: PICKED + key }, create: { key: PICKED + key, value: id }, update: { value: id } });
+  }
+
+  /** The subscription to use: the one asked for, else the active one. */
   async subscription(subscriptionId?: string): Promise<Subscription> {
     const id = subscriptionId ?? (await this.defaultId());
     const s = id ? await this.db.subscription.findUnique({ where: { id } }) : null;
@@ -887,7 +909,8 @@ export class SideChatStore {
   }
 
   async chat(uid: string, text: string, ctx: ChatContext, subscriptionId?: string): Promise<ChatReply> {
-    const sub = await this.subscription(subscriptionId);
+    const sub = await this.subscription(subscriptionId ?? (await this.picked(uid)) ?? undefined);
+    if (subscriptionId) await this.pick(uid, subscriptionId);
     const prior = (await this.history(uid)).slice(-HISTORY_LIMIT);
     // Repo tools when the session lives in a checkout; otherwise the legacy one-shot.
     const env = await repoToolEnv(ctx.dir, ctx.pr, ctx.branch);

@@ -474,3 +474,33 @@ test('models: a saved key only goes to its own URL', async () => {
     },
   );
 });
+
+test('picked: a conversation keeps the subscription picked in it; others follow the active one', async () => {
+  const { store: s, id: work } = await subscribed();
+  const other = (await s.put({ name: 'zeta', baseUrl: 'https://other.example/v1', model: 'z', apiKey: 'k2' })).id;
+  assert.equal(await s.picked('u1'), work, 'nothing picked: the active one');
+  const models: string[] = [];
+  await withFetch(
+    (seen) => {
+      models.push(JSON.parse(String((seen.at(-1)!.init as { body: string }).body)).model);
+      return ok(JSON.stringify({ content: 'ok', followups: [] }));
+    },
+    async () => {
+      await s.chat('u1', 'first', ctx, other);
+      await s.chat('u1', 'again', ctx);
+      await s.chat('u2', 'elsewhere', ctx);
+    },
+  );
+  assert.deepEqual(models, ['z', 'z', 'model'], 'u1 stays on its pick without asking again; u2 uses the active one');
+  assert.equal(await s.picked('u1'), other);
+  await s.setDefault(other);
+  assert.equal(await s.picked('u2'), other, 'a new active one reaches conversations without a pick');
+  await s.pick('u3', work);
+  await s.remove(work);
+  assert.equal(await s.picked('u3'), other, 'a deleted pick falls back to the active one');
+  const third = (await s.put({ name: 'alpha', baseUrl: 'https://third.example/v1', model: 'a', apiKey: 'k3' })).id;
+  await s.setDefault(third);
+  assert.equal(await s.picked('u1'), other, 'a pick outlasts a new active one');
+  await s.clear('u1');
+  assert.equal(await s.picked('u1'), third, 'clearing a chat forgets its pick');
+});

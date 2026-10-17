@@ -163,7 +163,7 @@ export type Preset = {
 
 export type Host = { name: string; self: boolean; online: boolean };
 
-export const API_VERSION = 25;
+export const API_VERSION = 26;
 
 export type PullInfo = { number: number | null; url: string | null };
 
@@ -423,6 +423,7 @@ export function hostApi(base: string) {
     summarize: (text: string, subscriptionId?: string) =>
       r<{ summary: string }>('POST', '/api/summarize', subscriptionId ? { text, subscriptionId } : { text }),
     chat: (id: string) => r<{ messages: ChatMsg[]; subscriptionId: string | null }>('GET', `/api/windows/${enc(id)}/chat`),
+    pickChatSubscription: (id: string, subscriptionId: string) => r('PUT', `/api/windows/${enc(id)}/chat/subscription`, { id: subscriptionId }),
     sendChat: (id: string, text: string, subscriptionId?: string) =>
       r<ChatReply>('POST', `/api/windows/${enc(id)}/chat`, subscriptionId ? { text, subscriptionId } : { text }),
     clearChat: (id: string) => r('DELETE', `/api/windows/${enc(id)}/chat`),

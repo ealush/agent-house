@@ -95,3 +95,19 @@ export function switchProvider(form: Form, to: string): Form {
     model: !form.model.trim() || form.model === was.model ? next.model : form.model,
   };
 }
+
+/**
+ * The mark a subscription shows (an AgentLogo id): its provider's, else one
+ * its model names (grok-5 on OpenRouter is still Grok), else null.
+ */
+export function logoFor(baseUrl: string, model: string): string | null {
+  const p = PROVIDERS.find((x) => x.id === providerFor(baseUrl));
+  if (p) return p.logo;
+  const m = model.toLowerCase();
+  if (m.includes('claude')) return 'claude';
+  if (m.includes('gemini')) return 'gemini';
+  if (m.includes('muse') || m.includes('spark')) return 'muse';
+  if (m.includes('grok')) return 'grok';
+  if (/(^|\/)(gpt|o\d)/.test(m)) return 'codex';
+  return null;
+}

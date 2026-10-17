@@ -966,8 +966,15 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
 
   if ((m = route('GET', /^\/api\/windows\/(@\d+)\/chat$/))) {
     const key = await chatKeyFor(m![1]);
-    const [messages, subscriptionId] = await Promise.all([sidechat.history(key), sidechat.defaultId()]);
+    const [messages, subscriptionId] = await Promise.all([sidechat.history(key), sidechat.picked(key)]);
     return send(res, 200, { messages, subscriptionId });
+  }
+
+  // The subscription this side chat answers with, picked before (or between) turns.
+  if ((m = route('PUT', /^\/api\/windows\/(@\d+)\/chat\/subscription$/))) {
+    const key = await chatKeyFor(m![1]);
+    await sidechat.pick(key, str((await readJson(req)).id, 'id', 40));
+    return send(res, 200, { ok: true });
   }
 
   if ((m = route('POST', /^\/api\/windows\/(@\d+)\/chat$/))) {

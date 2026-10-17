@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { blank, OTHER, PROVIDERS, providerFor, switchProvider } from '../web/providers.ts';
+import { blank, logoFor, OTHER, PROVIDERS, providerFor, switchProvider } from '../web/providers.ts';
 
 test('the common providers are there, each a full OpenAI-compatible setup', () => {
   assert.deepEqual(
@@ -36,4 +36,11 @@ test('a saved endpoint maps back to its provider', () => {
   assert.equal(providerFor('https://api.openai.com/v1/'), 'openai');
   assert.equal(providerFor('HTTPS://api.meta.ai/v1'), 'muse');
   assert.equal(providerFor('http://localhost:11434/v1'), OTHER);
+});
+
+test('a subscription shows its provider mark, or the one its model names', () => {
+  assert.equal(logoFor('https://api.anthropic.com/v1', 'anything'), 'claude');
+  assert.equal(logoFor('https://openrouter.ai/api/v1', 'x-ai/grok-5'), 'grok');
+  assert.equal(logoFor('https://openrouter.ai/api/v1', 'openai/gpt-6-luna'), 'codex');
+  assert.equal(logoFor('http://localhost:11434/v1', 'qwen3'), null);
 });
