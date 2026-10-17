@@ -7,7 +7,28 @@ import { readFile, stat } from 'node:fs/promises';
 import type { PrismaClient, ReviewFinding, ReviewLayer, ReviewRevision, ReviewStack } from '@prisma/client';
 import { mainRepo } from '../git.ts';
 import type { SideChatStore } from '../sidechat.ts';
-import { GhError, listPrs, markReady, mergePr, repoInfo, replyAndResolve, retarget, reviewThreads, viewPr, type Checks, type GhPr, type MergeMethod, type ReviewThread } from './gh.ts';
+import {
+  GhError,
+  hasGhStack,
+  inMergeQueue,
+  listPrs,
+  listStacks,
+  markReady,
+  mergePr,
+  mergeStatus,
+  repoInfo,
+  replyAndResolve,
+  requestMerge,
+  retarget,
+  reviewThreads,
+  viewPr,
+  type Checks,
+  type GhPr,
+  type MergeMethod,
+  type MergeRequest,
+  type NativeStack,
+  type ReviewThread,
+} from './gh.ts';
 import { branchRef, diff, diffStat, fetchStack, mergeBase, patchId, pin, prRef, remoteFor, resolve, sinceReview, unpinStack, validSha } from './git.ts';
 import {
   parseReply,
@@ -36,6 +57,11 @@ const now = () => Math.floor(Date.now() / 1000);
 const PLAN_MAX = 200_000;
 const THREAD_HISTORY = 24;
 const SYNC_STALE_S = 20;
+const NATIVE_STALE_S = 15;
+/** After a stack merge GitHub retargets and rebases what's left; until then a layer looks off its base. */
+const SETTLE_S = 180;
+const MERGE_WAIT_MS = 90_000;
+const MERGE_POLL_MS = 1000;
 
 export type SessionLite = {
   uid: string;
@@ -61,7 +87,7 @@ export type ReviewDeps = {
 };
 
 export type LayerStatus = 'unreviewed' | 'changes' | 'fixing' | 'rereview' | 'approved' | 'merged' | 'closed' | 'skipped';
-export type Gate = { key: 'reviewed' | 'findings' | 'checks' | 'mergeable' | 'base' | 'order'; ok: boolean; label: string; detail?: string };
+export type Gate = { key: 'reviewed' | 'findings' | 'checks' | 'mergeable' | 'base' | 'below' | 'order'; ok: boolean; label: string; detail?: string };
 
 export type RevView = { id: number; baseSha: string; headSha: string; patchId: string; files: number; additions: number; deletions: number; summary: string | null; verdict: Verdict | null };
 export type DispatchView = { id: number; pr: number; state: string; targetUid: string; targetTitle: string | null; targetAgent: string | null; sentAt: number; doneAt: number | null; findings: number[]; text: string };
@@ -117,6 +143,9 @@ export type LayerView = {
   dispatch: DispatchView | null;
   gates: Gate[];
   ownerUid: string | null;
+  /** The GitHub stack the PR is in, and its place there (1 at the bottom): GitHub merges it with the PRs under it. */
+  ghStack: number | null;
+  ghPos: number | null;
 };
 export type Owner = { uid: string; key: string; title: string; agent: string | null; status: string; live: boolean; branch: string | null } | null;
 export type StackView = {
@@ -138,6 +167,8 @@ export type StackView = {
   next: number | null;
   decisions: { id: number; text: string; fromPr: number | null; at: number }[];
 };
+/** What a merge did: the PRs that landed, those GitHub retargeted onto the trunk, and whether GitHub is still at it. */
+export type MergeOutcome = { next: number | null; retargeted: number[]; restack: number[]; merged: number[]; waiting: 'github' | 'queue' | null };
 export type StackSummary = { id: string; title: string; repo: string; trunk: string; state: string; source: 'tree' | 'manual'; layers: number; merged: number; needsYou: number; next: number | null; syncedAt: number; spine: { pr: number; role: string; status: LayerStatus }[] };
 export type ReviewAlert = { kind: 'rereview' | 'nopush' | 'ready' | 'restack'; stackId: string; stackTitle: string; pr: number; role: string; title: string; at: number };
 /** What the streamed state carries: Inbox alerts, session banners, and the PR → stack map for session headers. */
@@ -212,6 +243,14 @@ export class ReviewService {
   private timer: NodeJS.Timeout | null = null;
   private lastPoll = 0;
   private alerted = new Set<string>();
+  private native = new Map<string, { at: number; stacks: NativeStack[] }>();
+  /** Stack merges GitHub is still running, by `stackId:pr` of the PR asked for. */
+  private merging = new Map<string, { stackId: string; root: string; repo: string; pr: number; prs: number[]; uuid: string }>();
+  /** When ah last merged in a stack: GitHub's retarget and rebase of the rest follow it. */
+  private settle = new Map<string, number>();
+  private ghStackTool: boolean | null = null;
+  /** How long a merge request waits for GitHub before the watcher takes over. */
+  private mergeWait = MERGE_WAIT_MS;
 
   constructor(db: PrismaClient, chat: SideChatStore, deps: ReviewDeps) {
     this.db = db;
@@ -259,6 +298,24 @@ export class ReviewService {
     }
     this.repoCache.set(root, { ...out, at: now() });
     return out;
+  }
+
+  /** GitHub's stacks in a repo, kept a few seconds. What gh last said when it can't say now. */
+  private async nativeStacks(root: string, repo: string, force = false): Promise<NativeStack[] | null> {
+    const hit = this.native.get(root);
+    if (hit && !force && now() - hit.at < NATIVE_STALE_S) return hit.stacks;
+    const stacks = await listStacks(root, repo);
+    if (!stacks) return hit?.stacks ?? null;
+    this.native.set(root, { at: now(), stacks });
+    return stacks;
+  }
+
+  private async ghStackHere(root: string): Promise<boolean> {
+    return (this.ghStackTool ??= await hasGhStack(root));
+  }
+
+  private mergingOf(stackId: string, pr: number) {
+    return [...this.merging.values()].find((m) => m.stackId === stackId && m.prs.includes(pr)) ?? null;
   }
 
   private async mainOf(cwd: string): Promise<string | null> {
@@ -460,6 +517,7 @@ export class ReviewService {
       return sess ? { uid: sess.uid, key: sess.key, title: sess.title, agent: sess.agent, status: sess.status, live: sess.live, branch: sess.branch } : { uid: uid ?? '', key: key ?? '', title: 'Ended session', agent: null, status: 'ended', live: false, branch: null };
     };
     const firstOpen = layers.find((l) => l.state === 'open')?.pr ?? null;
+    const natives = this.native.get(s.repoRoot)?.stacks ?? [];
     const views: LayerView[] = layers.map((l) => {
       const current = l.currentRevId ? revById.get(l.currentRevId) : undefined;
       const reviewed = l.reviewedRevId ? revById.get(l.reviewedRevId) : undefined;
@@ -482,6 +540,17 @@ export class ReviewService {
                   ? 'changes'
                   : 'unreviewed';
       const checks = checksOf(l);
+      const lands = (l.ghStack !== null && natives.find((n) => n.number === l.ghStack)?.base) || null;
+      const blocked =
+        l.needs === 'merging'
+          ? 'GitHub is merging it'
+          : l.needs === 'queued'
+            ? 'In the merge queue'
+            : l.ghStack !== null && l.needs === 'restack'
+              ? `Not on top of ${l.baseRef}: needs a restack`
+              : l.mergeable === 'CONFLICTING'
+                ? `Conflicts with ${l.baseRef}`
+                : undefined;
       const gates: Gate[] =
         l.state !== 'open'
           ? []
@@ -499,8 +568,11 @@ export class ReviewService {
                 label: 'Checks passed',
                 detail: checks.fail ? `Failing: ${checks.failing.join(', ')}` : checks.pending ? `${checks.pending} check${checks.pending === 1 ? '' : 's'} running` : checks.pass ? undefined : 'No checks reported',
               },
-              { key: 'mergeable', ok: !l.draft && l.mergeable !== 'CONFLICTING', label: l.draft ? 'Draft' : 'Mergeable', detail: l.draft ? 'Mark it ready first' : l.mergeable === 'CONFLICTING' ? `Conflicts with ${l.baseRef}` : undefined },
-              { key: 'base', ok: l.baseRef === s.trunk, label: `Targets ${s.trunk}`, detail: l.baseRef === s.trunk ? undefined : `Targets ${l.baseRef}` },
+              { key: 'mergeable', ok: !l.draft && !blocked, label: l.draft ? 'Draft' : 'Mergeable', detail: l.draft ? 'Mark it ready first' : blocked },
+              // A PR in a GitHub stack lands in the stack's base, whatever branch it targets now.
+              l.ghStack !== null
+                ? { key: 'base', ok: (lands ?? s.trunk) === s.trunk, label: `Lands in ${s.trunk}`, detail: (lands ?? s.trunk) === s.trunk ? undefined : `GitHub's stack #${l.ghStack} lands in ${lands}` }
+                : { key: 'base', ok: l.baseRef === s.trunk, label: `Targets ${s.trunk}`, detail: l.baseRef === s.trunk ? undefined : `Targets ${l.baseRef}` },
               { key: 'order', ok: firstOpen === l.pr, label: 'Next in merge order', detail: firstOpen === l.pr ? undefined : `#${firstOpen} comes first` },
             ];
       const dv: DispatchView | null = d
@@ -533,8 +605,30 @@ export class ReviewService {
         dispatch: dv,
         gates,
         ownerUid: l.ownerUid,
+        ghStack: l.ghStack,
+        ghPos: l.ghPos,
       };
     });
+    // GitHub merges a PR of its stack with every unmerged PR under it, so those have to be ready too.
+    for (const v of views) {
+      if (v.state !== 'open' || v.ghStack === null || v.ghPos === null) continue;
+      const under = views.filter((x) => x.ghStack === v.ghStack && x.ghPos !== null && x.ghPos < v.ghPos! && (x.state === 'open' || x.state === 'skipped'));
+      const ns = natives.find((n) => n.number === v.ghStack);
+      const outside = (ns?.prs ?? []).filter((p, i) => i + 1 < v.ghPos! && p.open && !p.merged && !views.some((x) => x.pr === p.number));
+      if (!under.length && !outside.length) continue;
+      const why = (x: LayerView) => {
+        const g = x.gates.find((y) => !y.ok && y.key !== 'order' && y.key !== 'below');
+        return x.state === 'skipped' ? 'skipped here' : g ? (g.detail ?? g.label).replace(/^./, (c) => c.toLowerCase()) : null;
+      };
+      const unready = under.map((x) => ({ x, g: why(x) })).find((u) => u.g);
+      const names = under.map((x) => label(x)).join(', ');
+      v.gates.splice(v.gates.length - 1, 0, {
+        key: 'below',
+        ok: !outside.length && !unready,
+        label: 'The layers under it can merge',
+        detail: outside.length ? `#${outside[0].number} merges with it and isn't in this review` : unready ? `${label(unready.x)} merges with it: ${unready.g}` : `${names} merge${under.length === 1 ? 's' : ''} with it`,
+      });
+    }
     return {
       id: s.id,
       title: s.title,
@@ -710,8 +804,20 @@ export class ReviewService {
           data: { state, title: p.title, url: p.url, author: p.author, headRef: p.headRefName, baseRef: p.baseRefName, headSha: p.headRefOid, draft: p.isDraft, mergeable: p.mergeable, checksJson: JSON.stringify(p.checks) },
         });
       }
+      // GitHub's own stacks: which layers GitHub merges together, from the bottom up.
+      const natives = await this.nativeStacks(s.repoRoot, s.repo, _force);
+      if (natives) {
+        const at = new Map<number, { stack: number; pos: number }>();
+        for (const ns of natives) ns.prs.forEach((p, i) => at.set(p.number, { stack: ns.number, pos: i + 1 }));
+        for (const l of layers) {
+          const w = at.get(l.pr) ?? null;
+          if ((w?.stack ?? null) !== l.ghStack || (w?.pos ?? null) !== l.ghPos) await this.db.reviewLayer.updateMany({ where: { stackId: id, pr: l.pr }, data: { ghStack: w?.stack ?? null, ghPos: w?.pos ?? null } });
+        }
+      }
       layers = await this.db.reviewLayer.findMany({ where: { stackId: id }, orderBy: { position: 'asc' } });
       const open = layers.filter((l) => l.state === 'open' || l.state === 'skipped');
+      const mergedAt = layers.filter((l) => l.state === 'merged').map((l) => Math.floor(Date.parse(byNumber.get(l.pr)?.mergedAt ?? '') / 1000) || 0);
+      const settling = now() - Math.max(this.settle.get(id) ?? 0, ...mergedAt) < SETTLE_S;
       const remote = await remoteFor(s.repoRoot, s.repo);
       const branches = [...new Set([s.trunk, ...open.map((l) => l.baseRef)])];
       await fetchStack(s.repoRoot, remote, id, open.map((l) => l.pr), branches);
@@ -719,12 +825,21 @@ export class ReviewService {
       for (const l of open) {
         const head = (await resolve(s.repoRoot, prRef(id, l.pr))) ?? (validSha(l.headSha) ? await resolve(s.repoRoot, l.headSha) : null);
         const baseTip = await resolve(s.repoRoot, branchRef(id, l.baseRef));
-        const needs = mergedHeads.has(l.baseRef) ? 'retarget' : l.mergeable === 'CONFLICTING' ? 'conflict' : l.needs === 'restack' ? 'restack' : '';
+        const native = l.ghStack !== null;
+        let needs = '';
+        if (this.mergingOf(id, l.pr)) needs = 'merging';
+        else if (l.needs === 'queued' && (await inMergeQueue(s.repoRoot, s.repo, l.pr)) !== false) needs = 'queued';
+        // GitHub retargets what's left of its own stacks after a merge.
+        else if (mergedHeads.has(l.baseRef)) needs = native ? '' : 'retarget';
+        else if (l.mergeable === 'CONFLICTING') needs = 'conflict';
+        else if (!native && l.needs === 'restack') needs = 'restack';
         if (!head || !baseTip) {
           await this.db.reviewLayer.updateMany({ where: { stackId: id, pr: l.pr }, data: { needs } });
           continue;
         }
         const base = (await mergeBase(s.repoRoot, baseTip, head)) ?? baseTip;
+        // GitHub merges its stacks only when each branch sits on the one under it.
+        if (native && !needs && !settling && l.baseRef !== s.trunk && base !== baseTip) needs = 'restack';
         let rev = await this.db.reviewRevision.findUnique({ where: { stackId_pr_baseSha_headSha: { stackId: id, pr: l.pr, baseSha: base, headSha: head } } });
         const fresh = !rev;
         if (!rev) {
@@ -737,7 +852,7 @@ export class ReviewService {
           await pin(s.repoRoot, id, rev.id, head);
         }
         // A restack is done once the layer no longer repeats a merged parent: its patch is its own again.
-        const done = needs === 'restack' && l.reviewedRevId && fresh ? (await this.db.reviewRevision.findUnique({ where: { id: l.reviewedRevId } }))?.patchId === rev.patchId : false;
+        const done = !native && needs === 'restack' && l.reviewedRevId && fresh ? (await this.db.reviewRevision.findUnique({ where: { id: l.reviewedRevId } }))?.patchId === rev.patchId : false;
         await this.db.reviewLayer.updateMany({ where: { stackId: id, pr: l.pr }, data: { currentRevId: rev.id, baseSha: base, needs: done ? '' : needs } });
         if (fresh && l.reviewedRevId) {
           const reviewed = await this.db.reviewRevision.findUnique({ where: { id: l.reviewedRevId } });
@@ -980,10 +1095,18 @@ export class ReviewService {
       .map((n) => layers.find((x) => x.pr === n)!)
       .filter((x) => x.state === 'open');
     lines.push('', 'Constraints:', ...rules);
-    lines.push('', `Commit and push ${l.headRef}.`);
-    if (above.length) {
+    // A GitHub stack is restacked with gh stack, when this host has it; anything else above, by hand.
+    const stacked = l.ghStack !== null && (await this.ghStackHere(s.repoRoot)) ? above.filter((x) => x.ghStack === l.ghStack) : [];
+    const rest = above.filter((x) => !stacked.includes(x));
+    if (l.ghStack !== null && (await this.ghStackHere(s.repoRoot))) {
       lines.push(
-        `Then restack the layers above it, in this order, pushing each with --force-with-lease against the head shown: ${above.map((x) => `${x.headRef} (${label(x)}, ${x.headSha.slice(0, 8)}) on ${x.baseRef}`).join('; ')}.`,
+        '',
+        `Commit on ${l.headRef}, then push with gh stack: gh stack rebase --upstack, then gh stack push${stacked.length ? `, which restacks ${stacked.map((x) => label(x)).join(', ')} on it` : ''}. It's GitHub stack #${l.ghStack}; if this checkout doesn't track it, run gh stack checkout ${l.pr} first.`,
+      );
+    } else lines.push('', `Commit and push ${l.headRef}.`);
+    if (rest.length) {
+      lines.push(
+        `Then restack the layers above it${stacked.length ? ' that are outside the GitHub stack' : ''}, in this order, pushing each with --force-with-lease against the head shown: ${rest.map((x) => `${x.headRef} (${label(x)}, ${x.headSha.slice(0, 8)}) on ${x.baseRef}`).join('; ')}.`,
       );
     }
     lines.push('Reply with the new heads.', `(ah review ${s.id}/${pr})`);
@@ -1020,6 +1143,7 @@ export class ReviewService {
 
   /** Dispatches in flight: did the agent work, finish, and push? Runs every few seconds. */
   private async watch(): Promise<void> {
+    if (this.merging.size) await this.watchMerges();
     const active = await this.db.reviewDispatch.findMany({ where: { state: { in: ACTIVE_DISPATCH } } });
     const due = now() - this.lastPoll > (active.length ? 60 : 300);
     if (active.length) {
@@ -1056,7 +1180,7 @@ export class ReviewService {
    * merge --match-head-commit` with the head you reviewed, then the layers that
    * sat on it are pointed at the trunk. Returns the next layer in order.
    */
-  async merge(id: string, pr: number, opts: { outOfOrder?: boolean } = {}): Promise<{ next: number | null; retargeted: number[]; restack: number[] }> {
+  async merge(id: string, pr: number, opts: { outOfOrder?: boolean } = {}): Promise<MergeOutcome> {
     await this.sync(id, true);
     const s = await this.stack(id);
     const v = await this.view(id);
@@ -1067,27 +1191,88 @@ export class ReviewService {
     if (failing.length) throw new ReviewError(409, `${failing[0].label}: ${failing[0].detail ?? 'not yet'}`);
     const reviewedHead = l.current!.headSha;
     if (!/^[0-9a-f]{40}$/.test(reviewedHead)) throw new ReviewError(409, 'the reviewed head is unknown');
+    if (l.ghStack !== null) return this.mergeNative(s, v, l, reviewedHead);
     await this.gh(() => mergePr(s.repoRoot, pr, s.mergeMethod as MergeMethod, reviewedHead));
     await this.db.reviewLayer.update({ where: { stackId_pr: { stackId: id, pr } }, data: { state: 'merged' } });
-    // Layers that sat on the merged branch now target the trunk. With a merge commit their
-    // patch is unchanged; with squash or rebase they repeat the parent's commits until restacked.
+    const { retargeted, restack } = await this.retargetOnto(s, v.layers.filter((x) => x.state === 'open' && x.baseRef === l.headRef));
+    await this.sync(id, true).catch(() => {});
+    const after = await this.view(id);
+    return { next: after.next, retargeted, restack, merged: [pr], waiting: null };
+  }
+
+  /**
+   * Layers that sat on a merged branch now target the trunk. With a merge commit their
+   * patch is unchanged; with squash or rebase they repeat the parent's commits until restacked.
+   */
+  private async retargetOnto(s: ReviewStack, children: LayerView[]): Promise<{ retargeted: number[]; restack: number[] }> {
     const retargeted: number[] = [];
     const restack: number[] = [];
-    for (const c of v.layers.filter((x) => x.state === 'open' && x.baseRef === l.headRef)) {
+    for (const c of children) {
       try {
         await retarget(s.repoRoot, c.pr, s.trunk);
         retargeted.push(c.pr);
         if (s.mergeMethod !== 'merge') {
           restack.push(c.pr);
-          await this.db.reviewLayer.update({ where: { stackId_pr: { stackId: id, pr: c.pr } }, data: { needs: 'restack' } });
+          await this.db.reviewLayer.update({ where: { stackId_pr: { stackId: s.id, pr: c.pr } }, data: { needs: 'restack' } });
         }
       } catch (err) {
         console.error(`retarget #${c.pr}:`, err);
       }
     }
-    await this.sync(id, true).catch(() => {});
-    const after = await this.view(id);
-    return { next: after.next, retargeted, restack };
+    return { retargeted, restack };
+  }
+
+  /**
+   * A layer of a GitHub stack lands through GitHub's stack merge, with every
+   * unmerged layer under it, all or nothing (the gates held for each of them
+   * on the sync just before). GitHub checks the head of the PR asked for, then
+   * retargets and rebases what's left itself, so ah doesn't.
+   */
+  private async mergeNative(s: ReviewStack, v: StackView, l: LayerView, head: string): Promise<MergeOutcome> {
+    const prs = [...v.layers.filter((x) => x.ghStack === l.ghStack && x.ghPos! < l.ghPos! && x.state === 'open').map((x) => x.pr), l.pr];
+    let r: MergeRequest = await this.gh(() => requestMerge(s.repoRoot, s.repo, l.pr, s.mergeMethod as MergeMethod, head));
+    for (const until = Date.now() + this.mergeWait; r.status === 'pending' && r.uuid && Date.now() < until; ) {
+      await new Promise((res) => setTimeout(res, MERGE_POLL_MS));
+      const uuid = r.uuid;
+      r = (await this.gh(() => mergeStatus(s.repoRoot, s.repo, l.pr, uuid))) ?? { ...r, uuid: null };
+    }
+    this.settle.set(s.id, now());
+    let moved = { retargeted: [] as number[], restack: [] as number[] };
+    if (r.status === 'merged') {
+      await this.db.reviewLayer.updateMany({ where: { stackId: s.id, pr: { in: prs } }, data: { state: 'merged', needs: '' } });
+      // GitHub moves the rest of its stack; layers outside it that sat on what landed are ah's to move.
+      const heads = new Set(v.layers.filter((x) => prs.includes(x.pr)).map((x) => x.headRef));
+      moved = await this.retargetOnto(s, v.layers.filter((x) => x.state === 'open' && !prs.includes(x.pr) && heads.has(x.baseRef) && x.ghStack !== l.ghStack));
+    } else {
+      if (r.status === 'pending' && r.uuid) this.merging.set(`${s.id}:${l.pr}`, { stackId: s.id, root: s.repoRoot, repo: s.repo, pr: l.pr, prs, uuid: r.uuid });
+      await this.db.reviewLayer.updateMany({ where: { stackId: s.id, pr: { in: prs } }, data: { needs: r.status === 'enqueued' ? 'queued' : 'merging' } });
+    }
+    await this.sync(s.id, true).catch(() => {});
+    const after = await this.view(s.id);
+    return { next: after.next, ...moved, merged: r.status === 'merged' ? prs : [], waiting: r.status === 'merged' ? null : r.status === 'enqueued' ? 'queue' : 'github' };
+  }
+
+  /** Stack merges that outlasted the request: landed, queued, or failed (said in a push). */
+  private async watchMerges(): Promise<void> {
+    for (const [key, m] of this.merging) {
+      let r: MergeRequest | null;
+      let failed: string | null = null;
+      try {
+        r = await mergeStatus(m.root, m.repo, m.pr, m.uuid);
+      } catch (err) {
+        if (!(err instanceof GhError)) continue;
+        r = null;
+        failed = err.message;
+      }
+      if (r?.status === 'pending') continue;
+      this.merging.delete(key);
+      if (r?.status === 'enqueued') await this.db.reviewLayer.updateMany({ where: { stackId: m.stackId, pr: { in: m.prs } }, data: { needs: 'queued' } });
+      if (failed) {
+        const st = await this.db.reviewStack.findUnique({ where: { id: m.stackId } });
+        this.deps.alert({ title: `#${m.pr} didn't merge`, body: `${st?.title ?? 'Stack review'} · ${failed}`, tag: `review-${m.stackId}-${m.pr}`, url: `/#review/${m.stackId}/${m.pr}` });
+      }
+      await this.sync(m.stackId, true).catch(() => {});
+    }
   }
 
   /** Point a layer whose parent already merged at the trunk. */
@@ -1111,6 +1296,17 @@ export class ReviewService {
   async restackText(id: string, pr: number): Promise<string> {
     const s = await this.stack(id);
     const l = await this.layer(id, pr);
+    if (l.ghStack !== null) {
+      const tool = await this.ghStackHere(s.repoRoot);
+      return [
+        `${label(l)} (${l.headRef}) is in GitHub stack #${l.ghStack} but no longer sits on top of ${l.baseRef}, and GitHub merges a stack only when each branch is on the one under it.`,
+        tool
+          ? `Restack it with gh stack: gh stack checkout ${l.pr} if this checkout doesn't track the stack, then gh stack rebase and gh stack push. Resolve conflicts and run the tests on the way.`
+          : `Rebase its own commits onto ${l.baseRef}: git fetch, then git rebase --onto origin/${l.baseRef} ${l.baseSha.slice(0, 12)} ${l.headRef}. Resolve conflicts, run the tests, push with --force-with-lease, and restack the layers above it the same way.`,
+        'Reply with the new heads.',
+        `(ah review ${s.id}/${pr})`,
+      ].join('\n');
+    }
     const reviewed = l.reviewedRevId ? await this.db.reviewRevision.findUnique({ where: { id: l.reviewedRevId } }) : null;
     const old = reviewed?.baseSha ?? l.baseSha;
     return [

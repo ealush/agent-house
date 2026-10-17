@@ -15,6 +15,8 @@ export function layerLine(l: Layer): string {
   if (l.status === 'fixing') return `${d?.targetAgent ? look(d.targetAgent).name : 'The agent'} is fixing${d?.findings.length ? ` ${d.findings.length}` : ''}`;
   if (l.status === 'rereview') return l.open ? `Came back · ${l.open} open` : 'Came back';
   if (d?.state === 'no-push') return 'Finished without a push';
+  if (l.needs === 'merging') return 'Merging on GitHub';
+  if (l.needs === 'queued') return 'In the merge queue';
   if (l.needs === 'retarget') return 'Needs retargeting';
   if (l.needs === 'restack') return 'Needs a restack';
   if (l.needs === 'conflict') return 'Conflicts';

@@ -141,6 +141,9 @@ model ReviewLayer {
   approved      Boolean @default(false)
   ownerUid      String?
   ownerKey      String?
+  /// The GitHub stack this PR is in (the number GitHub shows) and its place there, 1 at the bottom. GitHub merges it with the PRs under it.
+  ghStack       Int?
+  ghPos         Int?
 
   @@id([stackId, pr])
 }

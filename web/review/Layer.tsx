@@ -133,6 +133,12 @@ function Banner({ stack, layer, findings, api, since, onChanged, onOpenSession, 
         </button>
       </div>
     );
+  if (layer.needs === 'merging' || layer.needs === 'queued')
+    return (
+      <div className="layer-band">
+        <span className="grow">{layer.needs === 'queued' ? `In ${stack.trunk}'s merge queue. It merges when the queue gets to it.` : 'GitHub is merging it. ah sees it land.'}</span>
+      </div>
+    );
   if (layer.needs === 'retarget')
     return (
       <div className="layer-band needs">
@@ -147,7 +153,15 @@ function Banner({ stack, layer, findings, api, since, onChanged, onOpenSession, 
   if (layer.needs === 'restack')
     return (
       <div className="layer-band needs">
-        <span className="grow">It repeats the commits of the layer merged under it ({stack.mergeMethod}). Its own commits need moving onto {stack.trunk}.</span>
+        <span className="grow">
+          {layer.ghStack !== null ? (
+            <>
+              It no longer sits on top of <span className="mono">{layer.baseRef}</span>, and GitHub merges a stack only when each branch is on the one under it.
+            </>
+          ) : (
+            `It repeats the commits of the layer merged under it (${stack.mergeMethod}). Its own commits need moving onto ${stack.trunk}.`
+          )}
+        </span>
         <button className="btn small" onClick={onRestack}>
           Ask the agent to restack
         </button>
@@ -310,6 +324,9 @@ export function LayerView({
   const sentWithVerdict = layer.status === 'rereview' && !!rev?.verdict && findings.some((f) => f.ownerPr === layer.pr && f.state === 'sent');
   const gatesOk = layer.gates.length > 0 && layer.gates.every((g) => g.ok);
   const onlyOrder = layer.gates.length > 0 && layer.gates.every((g) => g.ok || g.key === 'order') && !gatesOk;
+  // In a GitHub stack, GitHub merges the layers under it along with it.
+  const under = layer.ghStack !== null ? stack.layers.filter((l) => l.ghStack === layer.ghStack && (l.ghPos ?? 0) < (layer.ghPos ?? 0) && l.state === 'open') : [];
+  const names = (ls: Layer[]) => ls.map((l) => l.role || `#${l.pr}`).join(', ');
   const reviewedNow = layer.approved && layer.samePatch;
 
   const run = async (fn: () => Promise<void>, what: string) => {
@@ -332,16 +349,26 @@ export function LayerView({
     }, "Couldn't accept the fixes");
   const merge = (outOfOrder = false) =>
     run(async () => {
-      const ok = await askConfirm({
-        title: `Merge ${label} into ${stack.trunk}?`,
-        body: `${stack.mergeMethod === 'merge' ? 'A merge commit' : stack.mergeMethod === 'squash' ? 'Squashed' : 'Rebased'}, through GitHub, only if its head is still ${rev?.headSha.slice(0, 7)}. Layers on it will target ${stack.trunk}.${outOfOrder ? ' Out of merge order.' : ''}`,
-        confirm: 'Merge',
-      });
+      const how = stack.mergeMethod === 'merge' ? 'A merge commit' : stack.mergeMethod === 'squash' ? 'Squashed' : 'Rebased';
+      const ok = await askConfirm(
+        layer.ghStack !== null
+          ? {
+              title: under.length ? `Merge ${label} and the ${under.length === 1 ? 'layer' : `${under.length} layers`} under it into ${stack.trunk}?` : `Merge ${label} into ${stack.trunk}?`,
+              body: `${how}, through GitHub's stack merge, only if its head is still ${rev?.headSha.slice(0, 7)}.${under.length ? ` ${names(under)} ${under.length === 1 ? 'lands' : 'land'} with it, all or none.` : ''} GitHub retargets and rebases the layers above it.`,
+              confirm: under.length ? `Merge ${under.length + 1}` : 'Merge',
+            }
+          : {
+              title: `Merge ${label} into ${stack.trunk}?`,
+              body: `${how}, through GitHub, only if its head is still ${rev?.headSha.slice(0, 7)}. Layers on it will target ${stack.trunk}.${outOfOrder ? ' Out of merge order.' : ''}`,
+              confirm: 'Merge',
+            },
+      );
       if (!ok) return;
       const out = await api.merge(stack.id, layer.pr, outOfOrder);
       onStack(await api.stack(stack.id));
       const next = out.next ? stack.layers.find((l) => l.pr === out.next) : null;
-      toast(`Merged ${label}${out.restack.length ? ` · ${out.restack.length} to restack` : ''}${next ? ` · next: ${next.role || `#${next.pr}`}` : ''}`);
+      if (out.waiting) toast(out.waiting === 'queue' ? `${label} is in the merge queue` : `GitHub is merging ${label}`);
+      else toast(`Merged ${out.merged.length > 1 ? `${out.merged.length} layers` : label}${out.restack.length ? ` · ${out.restack.length} to restack` : ''}${next ? ` · next: ${next.role || `#${next.pr}`}` : ''}`);
       onNavigate(out.next);
     }, "Couldn't merge");
   const importThreads = async () => {
@@ -400,7 +427,7 @@ export function LayerView({
       {narrow && !chosen.length && layer.state === 'open' && <button onClick={() => (close(), setSending({ ids: [], extra: '' }))}>Message {agent}</button>}
       {rev && layer.state === 'open' && reviewedNow && <button onClick={() => (close(), approve(false))}>Take back the review</button>}
       {rev && layer.state === 'open' && !reviewedNow && main?.text !== 'Mark reviewed' && <button onClick={() => (close(), approve(true))}>Mark reviewed</button>}
-      {onlyOrder && <button onClick={() => (close(), merge(true))}>Merge out of order</button>}
+      {onlyOrder && <button onClick={() => (close(), merge(true))}>{under.length ? `Merge with ${names(under)}` : 'Merge out of order'}</button>}
       <a href={layer.url} target="_blank" rel="noreferrer" onClick={close}>
         Open on GitHub
       </a>

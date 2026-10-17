@@ -19,19 +19,59 @@ fs.appendFileSync(file + '.log', a.join(' ') + '\\n');
 const save = () => fs.writeFileSync(file, JSON.stringify(st));
 const out = (v) => process.stdout.write(JSON.stringify(v));
 const pr = (n) => st.prs.find((p) => p.number === Number(n));
+// GitHub's stacks: { number, base?, prs: [bottom…top] } in st.stacks.
+const stackOf = (n) => (st.stacks || []).find((s) => s.prs.includes(Number(n)));
+const stackView = (s) => ({ number: s.number, base: { ref: s.base || 'main' }, open: s.prs.some((n) => pr(n).state === 'OPEN'), pull_requests: s.prs.map((n) => { const p = pr(n); return { number: n, state: p.state === 'OPEN' ? 'open' : 'closed', draft: p.isDraft, merged_at: p.state === 'MERGED' ? '2026-10-17T10:00:00Z' : null, head: { ref: p.headRefName, sha: p.headRefOid } }; }) });
+// GitHub lands a stack up to a PR, points the next one at the base and moves the base there.
+const land = (n) => {
+  const s = stackOf(n); const upto = s.prs.indexOf(Number(n));
+  for (const x of s.prs.slice(0, upto + 1)) if (pr(x).state === 'OPEN') pr(x).state = 'MERGED';
+  const next = s.prs.slice(upto + 1).find((x) => pr(x).state === 'OPEN');
+  if (next) pr(next).baseRefName = s.base || 'main';
+  require('child_process').execFileSync('git', ['--git-dir', st.remote, 'update-ref', 'refs/heads/' + (s.base || 'main'), pr(n).headRefOid]);
+};
+const CRLF = String.fromCharCode(13, 10);
+const http = (code, body) => { process.stdout.write('HTTP/2.0 ' + code + ' X' + CRLF + 'Content-Type: application/json' + CRLF + CRLF + JSON.stringify(body)); process.exit(code >= 400 ? 1 : 0); };
 if (a[0] === 'repo' && a[1] === 'view') out({ nameWithOwner: 'me/proj', defaultBranchRef: { name: 'main' }, mergeCommitAllowed: true, squashMergeAllowed: true, rebaseMergeAllowed: false });
 else if (a[0] === 'pr' && a[1] === 'list') out(st.prs.filter((p) => a[3] === 'all' || p.state === 'OPEN'));
 else if (a[0] === 'pr' && a[1] === 'view') { const p = pr(a[2]); if (!p) { console.error('no pull requests found'); process.exit(1); } out(p); }
 else if (a[0] === 'pr' && a[1] === 'merge') {
   const p = pr(a[2]); const i = a.indexOf('--match-head-commit');
+  if (stackOf(p.number)) { console.error('X Pull request #' + p.number + ' is in a stack: merge it with the merge-async API'); process.exit(1); }
   if (p.headRefOid !== a[i + 1]) { console.error('X Head branch was modified. Review and try the merge again.'); process.exit(1); }
   p.state = 'MERGED'; save();
 }
 else if (a[0] === 'pr' && a[1] === 'edit') { pr(a[2]).baseRefName = a[a.indexOf('--base') + 1]; save(); }
 else if (a[0] === 'pr' && a[1] === 'ready') { pr(a[2]).isDraft = false; save(); }
+else if (a[0] === 'stack' && a[1] === '--version') { if (st.noGhStack) process.exit(1); process.stdout.write('gh stack version 0.2.1'); }
+else if (a[0] === 'api' && a[1] === '--include') {
+  const rest = a.slice(2);
+  const method = rest[0] === '--method' ? rest[1] : 'GET';
+  const url = rest[rest[0] === '--method' ? 2 : 0];
+  const f = {};
+  rest.forEach((x, i) => { if (x === '-f') { const [k, ...v] = rest[i + 1].split('='); f[k] = v.join('='); } });
+  const parts = url.split('?')[0].split('/');
+  if (parts[3] === 'stacks') { if (st.stacksOff) http(404, { message: 'Not Found' }); http(200, (st.stacks || []).map(stackView)); }
+  if (parts[3] === 'pulls' && parts[5] === 'merge-async' && method === 'PUT') {
+    const p = pr(parts[4]);
+    if (f.sha !== p.headRefOid) http(400, { status: 'failed', details: { message: 'Head branch was modified. Review and try the merge again.' } });
+    st.pending = { uuid: 'req-' + p.number + '-0001', n: p.number, method: f.merge_method }; save();
+    http(202, { status: 'pending', details: { message: 'Merge request enqueued.', uuid: st.pending.uuid, merge_method: f.merge_method, expected_head_sha: f.sha } });
+  }
+  if (parts[3] === 'pulls' && parts[5] === 'merge-async' && parts[6]) {
+    if (!st.pending || st.pending.uuid !== parts[6]) http(404, { message: 'Not Found' });
+    if (st.slow) http(200, { status: 'pending', details: { message: 'Merge request is in progress.', uuid: st.pending.uuid } });
+    const n = st.pending.n; st.pending = null;
+    if (st.mergeMode === 'enqueue') { const s = stackOf(n); st.queued = s.prs.slice(0, s.prs.indexOf(n) + 1).filter((x) => pr(x).state === 'OPEN'); save(); http(200, { status: 'enqueued', details: { message: 'Pull request was added to the merge queue.' } }); }
+    if (st.mergeMode === 'fail') { save(); http(200, { status: 'failed', details: { message: 'Merge conflict: the pull request could not be merged.' } }); }
+    land(n); save(); http(200, { status: 'merged', details: { message: 'Pull request was merged.', sha: pr(n).headRefOid } });
+  }
+  http(404, { message: 'Not Found' });
+}
 else if (a[0] === 'api' && a[1] === 'graphql') {
   const q = a.find((x) => x.startsWith('query=')) || '';
-  if (q.includes('reviewThreads')) out({ data: { repository: { pullRequest: { reviewThreads: { nodes: st.threads || [] } } } } });
+  if (q.includes('isInMergeQueue')) out({ data: { repository: { pullRequest: { isInMergeQueue: (st.queued || []).includes(Number(a.find((x) => x.startsWith('n=')).slice(2))) } } } });
+  else if (q.includes('reviewThreads')) out({ data: { repository: { pullRequest: { reviewThreads: { nodes: st.threads || [] } } } } });
   else { fs.appendFileSync(file + '.log', 'MUTATION ' + q + '\\n'); out({ data: {} }); }
 }
 else { console.error('unknown gh call: ' + a.join(' ')); process.exit(1); }
@@ -442,5 +482,190 @@ test('review: waiving a blocking finding takes a reason; every state change says
     const moved = (await t.svc.findings(v.id)).find((f) => f.id === left.id)!;
     assert.equal(moved.ownerPr, next.pr);
     assert.equal(moved.state, 'sent');
+  });
+});
+
+test('review: a GitHub stack merges through GitHub, with the layers under it, and gh stack restacks it', async () => {
+  const t = await setup();
+  await t.setState((s) => {
+    (s as Record<string, unknown>).remote = t.w.remote;
+    (s as Record<string, unknown>).stacks = [{ number: 7, prs: [1, 2, 3] }];
+  });
+  await withGh(t.w, async () => {
+    // A review that leaves out the bottom of GitHub's stack can't merge the layers above it.
+    let v = await t.svc.create(t.w.local, { prs: [2, 3] });
+    await t.svc.sync(v.id, true);
+    v = await t.svc.view(v.id);
+    assert.deepEqual(v.layers.map((l) => [l.pr, l.ghStack, l.ghPos]), [[2, 7, 2], [3, 7, 3]]);
+    assert.equal(v.layers[0].gates.find((g) => g.key === 'below')?.detail, "#1 merges with it and isn't in this review");
+    await t.svc.remove(v.id);
+
+    v = await t.svc.create(t.w.local, { pr: 1 });
+    await t.svc.sync(v.id, true);
+    v = await t.svc.view(v.id);
+    assert.deepEqual(v.layers.map((l) => [l.pr, l.ghStack]), [[1, 7], [4, null], [2, 7], [3, 7]]);
+    const g2 = v.layers.find((l) => l.pr === 2)!.gates;
+    assert.equal(g2.find((g) => g.key === 'base')?.label, 'Lands in main', 'a stacked PR lands in the stack base, whatever it targets');
+    assert.ok(g2.find((g) => g.key === 'base')!.ok);
+    assert.equal(g2.find((g) => g.key === 'below')?.ok, false, '#1 is not reviewed yet');
+    assert.equal(v.layers.find((l) => l.pr === 1)!.gates.find((g) => g.key === 'below'), undefined, 'the bottom merges alone');
+
+    // Fixing #2: gh stack restacks #3 on it; #4, outside GitHub's stack, isn't above #2.
+    let text = await t.svc.dispatchText(v.id, 2, []);
+    assert.match(text, /gh stack rebase --upstack, then gh stack push, which restacks #3 on it/);
+    assert.match(text, /GitHub stack #7; if this checkout doesn't track it, run gh stack checkout 2 first/);
+    assert.doesNotMatch(text, /--force-with-lease/);
+    // Fixing #1: #2 and #3 by gh stack, #4 by hand.
+    text = await t.svc.dispatchText(v.id, 1, []);
+    assert.match(text, /which restacks #2, #3 on it/);
+    assert.match(text, /layers above it that are outside the GitHub stack.*fix \(#4, [0-9a-f]{8}\) on base/);
+
+    // A push to #2 that leaves #3 behind: GitHub won't merge the stack until #3 is restacked.
+    t.w.g('checkout', '-q', 'feat');
+    await t.w.commit('c.ts', 'export const c = () => 3;\n', 'three');
+    const h2b = t.w.publish('feat', 2);
+    await t.setState((s) => {
+      s.prs.find((p) => p.number === 2)!.headRefOid = h2b;
+    });
+    await t.svc.sync(v.id, true);
+    v = await t.svc.view(v.id);
+    const l3 = v.layers.find((l) => l.pr === 3)!;
+    assert.equal(l3.needs, 'restack');
+    assert.equal(l3.gates.find((g) => g.key === 'mergeable')?.detail, 'Not on top of feat: needs a restack');
+    assert.match(await t.svc.restackText(v.id, 3), /no longer sits on top of feat.*\n.*gh stack checkout 3 .*gh stack rebase and gh stack push/);
+    t.w.g('checkout', '-q', 'docs');
+    t.w.g('rebase', '-q', 'feat');
+    const h3b = t.w.publish('docs', 3);
+    await t.setState((s) => {
+      s.prs.find((p) => p.number === 3)!.headRefOid = h3b;
+    });
+    await t.svc.sync(v.id, true);
+    v = await t.svc.view(v.id);
+    assert.equal(v.layers.find((l) => l.pr === 3)!.needs, '', 'restacked');
+
+    // Merge #2 ahead of #4: GitHub lands #1 with it, one request, at #2's reviewed head.
+    await t.svc.approve(v.id, 1);
+    v = await t.svc.approve(v.id, 2);
+    const l2 = v.layers.find((l) => l.pr === 2)!;
+    assert.ok(l2.gates.find((g) => g.key === 'below')!.ok, JSON.stringify(l2.gates));
+    assert.deepEqual(l2.gates.filter((g) => !g.ok).map((g) => g.key), ['order']);
+    const r = await t.svc.merge(v.id, 2, { outOfOrder: true });
+    assert.deepEqual(r.merged, [1, 2]);
+    assert.equal(r.waiting, null);
+    assert.deepEqual(r.retargeted, [4], 'ah retargets the layer outside the stack; GitHub moves #3');
+    const log = await readFile(`${t.w.stateFile}.log`, 'utf8');
+    assert.match(log, new RegExp(`api --include --method PUT repos/me/proj/pulls/2/merge-async -f merge_method=merge -f sha=${h2b}`));
+    assert.doesNotMatch(log, /pr merge/);
+    assert.doesNotMatch(log, /pr edit 3/);
+    v = await t.svc.view(v.id);
+    assert.deepEqual(v.layers.map((l) => [l.pr, l.state]), [[1, 'merged'], [4, 'open'], [2, 'merged'], [3, 'open']]);
+    const after3 = v.layers.find((l) => l.pr === 3)!;
+    assert.equal(after3.baseRef, 'main');
+    assert.equal(after3.needs, '');
+    assert.equal(after3.current!.files, 1, "#3's own patch on the new main");
+
+    // Through a merge queue: queued until the queue lets go of it.
+    await t.setState((s) => {
+      (s as Record<string, unknown>).mergeMode = 'enqueue';
+    });
+    await t.svc.approve(v.id, 4);
+    v = await t.svc.approve(v.id, 3);
+    const q = await t.svc.merge(v.id, 3, { outOfOrder: true });
+    assert.equal(q.waiting, 'queue');
+    v = await t.svc.view(v.id);
+    assert.equal(v.layers.find((l) => l.pr === 3)!.needs, 'queued');
+    assert.equal(v.layers.find((l) => l.pr === 3)!.gates.find((g) => g.key === 'mergeable')?.detail, 'In the merge queue');
+    await t.svc.sync(v.id, true);
+    assert.equal((await t.svc.view(v.id)).layers.find((l) => l.pr === 3)!.needs, 'queued', 'still in the queue');
+    await t.setState((s) => {
+      (s as Record<string, unknown>).queued = [];
+    });
+    await t.svc.sync(v.id, true);
+    assert.equal((await t.svc.view(v.id)).layers.find((l) => l.pr === 3)!.needs, '', 'ejected from the queue');
+
+    // GitHub's own refusal comes back as the error.
+    await t.setState((s) => {
+      (s as Record<string, unknown>).mergeMode = 'fail';
+    });
+    await assert.rejects(t.svc.merge(v.id, 3, { outOfOrder: true }), /Merge conflict: the pull request could not be merged/);
+  });
+});
+
+test('review: without gh stack on the host, a GitHub stack is restacked by hand', async () => {
+  const t = await setup();
+  await t.setState((s) => {
+    (s as Record<string, unknown>).stacks = [{ number: 7, prs: [1, 2, 3] }];
+    (s as Record<string, unknown>).noGhStack = true;
+  });
+  await withGh(t.w, async () => {
+    const v = await t.svc.create(t.w.local, { pr: 1 });
+    await t.svc.sync(v.id, true);
+    const text = await t.svc.dispatchText(v.id, 2, []);
+    assert.doesNotMatch(text, /gh stack/);
+    assert.match(text, /restack the layers above it, in this order.*docs \(#3/);
+    assert.match(await t.svc.restackText(v.id, 3), /git rebase --onto origin\/feat [0-9a-f]{12} docs/);
+  });
+});
+
+test('review: a repo without GitHub stacks merges the classic way', async () => {
+  const t = await setup();
+  await t.setState((s) => {
+    (s as Record<string, unknown>).stacksOff = true;
+  });
+  await withGh(t.w, async () => {
+    let v = await t.svc.create(t.w.local, { pr: 1 });
+    await t.svc.sync(v.id, true);
+    v = await t.svc.approve(v.id, 1);
+    assert.ok(v.layers.every((l) => l.ghStack === null));
+    const r = await t.svc.merge(v.id, 1);
+    assert.deepEqual(r.merged, [1]);
+    assert.deepEqual(r.retargeted.sort(), [2, 4]);
+    assert.match(await readFile(`${t.w.stateFile}.log`, 'utf8'), /pr merge 1 --merge --match-head-commit/);
+  });
+});
+
+test('review: a stack merge GitHub is still running is watched until it lands or fails', async () => {
+  const t = await setup();
+  await t.setState((s) => {
+    Object.assign(s, { remote: t.w.remote, stacks: [{ number: 7, prs: [1, 2, 3] }], slow: true });
+  });
+  await withGh(t.w, async () => {
+    const svc = t.svc as unknown as { mergeWait: number; watch(): Promise<void> };
+    svc.mergeWait = 0;
+    let v = await t.svc.create(t.w.local, { pr: 1 });
+    await t.svc.sync(v.id, true);
+    await t.svc.approve(v.id, 1);
+    const r = await t.svc.merge(v.id, 1);
+    assert.equal(r.waiting, 'github');
+    v = await t.svc.view(v.id);
+    assert.equal(v.layers.find((l) => l.pr === 1)!.needs, 'merging');
+    assert.equal(v.layers.find((l) => l.pr === 1)!.gates.find((g) => g.key === 'mergeable')?.detail, 'GitHub is merging it');
+    await t.svc.sync(v.id, true);
+    assert.equal((await t.svc.view(v.id)).layers.find((l) => l.pr === 1)!.needs, 'merging', 'kept across syncs');
+    await svc.watch();
+    assert.equal((await t.svc.view(v.id)).layers.find((l) => l.pr === 1)!.needs, 'merging', 'still running');
+    await t.setState((s) => {
+      Object.assign(s, { slow: false });
+    });
+    await svc.watch();
+    v = await t.svc.view(v.id);
+    assert.equal(v.layers.find((l) => l.pr === 1)!.state, 'merged');
+
+    // One that fails on GitHub comes back open, with a push saying why.
+    await t.setState((s) => {
+      Object.assign(s, { slow: true });
+    });
+    await t.svc.approve(v.id, 4);
+    await t.svc.merge(v.id, 4).catch(() => {});
+    v = await t.svc.approve(v.id, 2);
+    assert.equal((await t.svc.merge(v.id, 2, { outOfOrder: true })).waiting, 'github');
+    await t.setState((s) => {
+      Object.assign(s, { slow: false, mergeMode: 'fail' });
+    });
+    await svc.watch();
+    v = await t.svc.view(v.id);
+    assert.equal(v.layers.find((l) => l.pr === 2)!.needs, '');
+    assert.equal(v.layers.find((l) => l.pr === 2)!.state, 'open');
+    assert.ok(t.alerts.some((a) => a === "#2 didn't merge"), t.alerts.join(' | '));
   });
 });

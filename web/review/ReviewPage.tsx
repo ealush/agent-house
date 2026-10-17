@@ -318,7 +318,8 @@ function upNext(stack: Stack, alerts: ReviewAlert[]): Next {
       };
     }
     if (a.kind === 'nopush') return { tone: 'needs', eyebrow: 'Up next', title: `${who(al)} finished ${name(al)} without pushing`, body: 'Look at the session, or send the findings again.', pr: al.pr, action: `Open ${name(al)}` };
-    if (a.kind === 'restack') return { tone: 'needs', eyebrow: 'Up next', title: `${name(al)} needs a restack`, body: `The layer under it merged. Its own commits need moving onto ${stack.trunk}.`, pr: al.pr, action: `Open ${name(al)}` };
+    if (a.kind === 'restack')
+      return { tone: 'needs', eyebrow: 'Up next', title: `${name(al)} needs a restack`, body: al.ghStack !== null ? `It no longer sits on top of ${al.baseRef}. GitHub won't merge the stack until it does.` : `The layer under it merged. Its own commits need moving onto ${stack.trunk}.`, pr: al.pr, action: `Open ${name(al)}` };
     return { tone: 'ready', eyebrow: 'Up next', title: `${name(al)} is ready to merge`, body: al.title, pr: al.pr, action: `Open ${name(al)}` };
   }
   const changes = open.find((l) => l.status === 'changes');
@@ -627,6 +628,7 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
     }
   };
   const merged = stack.layers.filter((l) => l.state === 'merged').length;
+  const ghStacks = [...new Set(stack.layers.filter((l) => l.state === 'open' && l.ghStack !== null).map((l) => l.ghStack!))];
   const counted = stack.layers.filter((l) => l.state !== 'skipped' && l.state !== 'closed').length;
   const alerts = (state.review?.alerts ?? []).filter((a) => a.stackId === stack.id);
 
@@ -775,7 +777,8 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
         <div className="grow">
           <h1 className="review-title">{stack.title}</h1>
           <p className="tagline">
-            {stack.repo} · {stack.source === 'manual' ? 'picked by hand' : `into ${stack.trunk}`} · {merged} of {counted} merged · {stack.syncError ? <span className="bad">{stack.syncError}</span> : stack.syncing || syncing ? 'refreshing…' : `checked ${ago(stack.syncedAt)}`}
+            {stack.repo} · {stack.source === 'manual' ? 'picked by hand' : `into ${stack.trunk}`}
+            {ghStacks.length === 1 ? ` · GitHub stack #${ghStacks[0]}` : ghStacks.length > 1 ? ` · ${ghStacks.length} GitHub stacks` : ''} · {merged} of {counted} merged · {stack.syncError ? <span className="bad">{stack.syncError}</span> : stack.syncing || syncing ? 'refreshing…' : `checked ${ago(stack.syncedAt)}`}
           </p>
         </div>
         <button className={`btn ask ${asking ? 'on' : ''}`} onClick={() => setAsking((v) => !v)} aria-pressed={asking} aria-label="Ask the reviewer" title="Ask the reviewer about the whole stack">

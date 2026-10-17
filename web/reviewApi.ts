@@ -5,7 +5,7 @@ export type Checks = { pass: number; fail: number; pending: number; failing: str
 export type Verdict = { items: { id: number; verdict: 'addressed' | 'partly' | 'not'; evidence: string }[]; unrequested: { title: string; path: string | null; line: number | null }[]; summary: string };
 export type RevView = { id: number; baseSha: string; headSha: string; patchId: string; files: number; additions: number; deletions: number; summary: string | null; verdict: Verdict | null };
 export type LayerStatus = 'unreviewed' | 'changes' | 'fixing' | 'rereview' | 'approved' | 'merged' | 'closed' | 'skipped';
-export type Gate = { key: 'reviewed' | 'findings' | 'checks' | 'mergeable' | 'base' | 'order'; ok: boolean; label: string; detail?: string };
+export type Gate = { key: 'reviewed' | 'findings' | 'checks' | 'mergeable' | 'base' | 'below' | 'order'; ok: boolean; label: string; detail?: string };
 export type DispatchView = { id: number; pr: number; state: string; targetUid: string; targetTitle: string | null; targetAgent: string | null; sentAt: number; doneAt: number | null; findings: number[]; text: string };
 export type Finding = {
   id: number;
@@ -58,6 +58,9 @@ export type Layer = {
   dispatch: DispatchView | null;
   gates: Gate[];
   ownerUid: string | null;
+  /** The GitHub stack the PR is in, and its place there (1 at the bottom): GitHub merges it with the PRs under it. */
+  ghStack: number | null;
+  ghPos: number | null;
 };
 export type Owner = { uid: string; key: string; title: string; agent: string | null; status: string; live: boolean; branch: string | null } | null;
 export type Stack = {
@@ -119,7 +122,7 @@ export function reviewApi(base = '') {
     approve: (id: string, pr: number, approved = true) => r<Stack>('POST', `${l(id, pr)}/approve`, { approved }),
     accept: (id: string, pr: number, overrides: Record<number, 'addressed' | 'open'> = {}) => r<Stack>('POST', `${l(id, pr)}/accept`, { overrides }),
     importThreads: (id: string, pr: number) => r<{ added: number }>('POST', `${l(id, pr)}/threads`),
-    merge: (id: string, pr: number, outOfOrder = false) => r<{ next: number | null; retargeted: number[]; restack: number[] }>('POST', `${l(id, pr)}/merge`, { outOfOrder }),
+    merge: (id: string, pr: number, outOfOrder = false) => r<{ next: number | null; retargeted: number[]; restack: number[]; merged: number[]; waiting: 'github' | 'queue' | null }>('POST', `${l(id, pr)}/merge`, { outOfOrder }),
     retarget: (id: string, pr: number) => r<Stack>('POST', `${l(id, pr)}/retarget`),
     ready: (id: string, pr: number) => r<Stack>('POST', `${l(id, pr)}/ready`),
     dispatchText: (id: string, pr: number, findings: number[], extra = '', kind?: 'restack') =>

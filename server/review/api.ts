@@ -136,7 +136,7 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
     if ((m = route('POST', `/stacks/${ID}/layers/${PR}/merge`))) {
       const body = await readJson(req).catch(() => ({}) as Record<string, unknown>);
       const out = await svc.merge(m[1], Number(m[2]), { outOfOrder: body.outOfOrder === true });
-      audit(req, 'review.merge', { stack: m[1], pr: Number(m[2]), retargeted: out.retargeted });
+      audit(req, 'review.merge', { stack: m[1], pr: Number(m[2]), merged: out.merged, retargeted: out.retargeted, waiting: out.waiting });
       return send(res, 200, out);
     }
 

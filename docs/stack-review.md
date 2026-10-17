@@ -332,12 +332,41 @@ On confirm:
 Every step is written to the activity log (`review.merge`, `review.retarget`,
 `review.dispatch`), like the other actions there.
 
-**Native GitHub stacks** (public preview since July 2026) behave differently.
-Merging a higher layer merges everything below it as one operation, and GitHub
-rebases the rest itself. The docs show no stack API yet, and Vest doesn't use
-native stacks. ah should detect a native stack, merge only its bottom layer,
-let GitHub run the cascade, and then verify patch ids. Don't build more than
-that against a preview API.
+### GitHub's own stacks
+
+GitHub's stacked pull requests (generally available since 6 October 2026,
+made with `gh stack` or the PR page) are a line of PRs that GitHub knows
+about: it merges them bottom-up, retargets and rebases what's left after a
+merge, and refuses `gh pr merge` on them. ah reads them from the Stacks API
+(`GET /repos/{repo}/stacks`, reference: https://github.github.com/gh-stack/)
+on every sync and records each layer's stack number and place
+(`ghStack`, `ghPos`). A repo with stacks off answers 404, and nothing changes.
+
+- **Merging goes through GitHub's stack merge** (`PUT
+  /pulls/<n>/merge-async` with `sha` = the reviewed head, then polling). It
+  merges the layer and every unmerged layer of its stack under it, all or
+  none. ah doesn't retarget or restack the rest; GitHub does. Layers outside
+  the GitHub stack that sat on what landed are retargeted as before.
+- **One more gate: the layers under it can merge.** It appears on a layer with
+  unmerged layers under it in GitHub's stack, and holds when each of them
+  passes its own gates. A PR of the stack that isn't in this review fails it,
+  so nothing lands unreviewed. *Merge out of order* on such a layer becomes
+  *Merge with F1, F2*. GitHub only checks the head of the PR asked for; the
+  ones under it are checked by ah's sync just before.
+- **The base gate becomes "Lands in main"**: a stacked PR targets the branch
+  under it, but lands in the stack's base.
+- **Needs a restack** means something else here: the branch no longer sits on
+  top of the one under it (a lower layer was pushed and the rest weren't
+  restacked), and GitHub won't merge the stack until it does. ah doesn't
+  report it for three minutes after a merge, while GitHub rebases.
+- **Merging and queued.** GitHub's merge runs in the background. ah waits 90
+  seconds, then the watcher takes over and pushes if it fails. Through a merge
+  queue the layer shows *In the merge queue* until GitHub merges it or the
+  queue lets go of it.
+- **Messages to the agent use `gh stack`** when this host has it: commit on
+  the layer, then `gh stack rebase --upstack` and `gh stack push` (after
+  `gh stack checkout <pr>` if that checkout doesn't track the stack). Without
+  it, the old by-hand restack list.
 
 ## Where it shows up
 
@@ -456,7 +485,7 @@ host you opened; a peer's stacks through `/h/<host>` are R4.
 | Merge, then "reconcile downstream" | Retarget children with `gh pr edit --base`; restack is an agent dispatch | With merge commits, retargeting is all it takes. With squash, rebasing belongs to whoever owns the checkout. |
 | Two chat scopes plus a "Look ahead" action | Stack thread on the stack page, layer thread on the layer page; look-ahead is a tool | No mode to pick. Where you are decides the scope. |
 | "Send to agent" from chat as a new feature | Already exists (`followups` with `kind: 'session'`) | Reuse it. |
-| Native GitHub stacks via a stack-aware merge API | Detect, merge the bottom only, verify | The public docs show no such API. Don't build on a preview. |
+| Native GitHub stacks via a stack-aware merge API | GitHub's stack merge, with a gate for the layers under it | The Stacks and async merge APIs went GA on 6 October. GitHub owns the line; ah owns the review. |
 | — | Bot threads become findings, closed with Reply & resolve | That's half of the current handoff file. |
 | — | Inbox cards and pushes for re-review and ready | That's how ah gets your attention. |
 | Mermaid in a later phase | Same, as a lazy-loaded `ah-widget` type whose nodes cite file:line | Keeps the boot lean (P19). Uncited diagrams make things up. |
@@ -490,7 +519,8 @@ retargeting children, the needs-restack state, auto-advance, the activity log.
 child keeps its review through the retarget, and a push made mid-review blocks
 the merge.
 
-**R4 — Breadth.** Native GitHub stacks (bottom-only merge), squash and
+**R4 — Breadth.** GitHub's own stacks: merged through GitHub's stack merge
+with the layers under it, restacked with `gh stack` ✅ (17 October). Squash and
 rebase repos, phone polish, decisions in dispatch constraints.
 
 **R5 — Pictures and the record.** A `mermaid` widget for before/after flow
