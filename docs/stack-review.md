@@ -150,6 +150,12 @@ it. Its conversation is the why behind the stack, so:
   this stack", ended or not. Sending resumes an ended one: fixes always go
   through a real agent session, the normal send path, never a subscription.
   Subscriptions only run the reviewer's chat, briefings and re-checks.
+- **Or a new session.** The send dialog also offers *New <agent> session, in
+  a worktree at <branch>*: ah makes a worktree of the repo at the layer's
+  head, starts that agent there, and sends it the message, drafted for a
+  newcomer (where it is, how to push to the layer's branch, the restack by
+  hand, and what you asked the session that made the stack). The layer's
+  fixes go to it from then on; the stack keeps its owner.
 - **The reviewer can read it.** The `origin` tool returns every message you
   sent that session, oldest first, or with a query, the transcript's passages
   (yours, the agent's, its tools') that mention it.

@@ -195,6 +195,7 @@ async function setup() {
   ];
   const sent: { uid: string; text: string }[] = [];
   const alerts: string[] = [];
+  const launched: { preset: string; root: string; label: string; fromRef: string }[] = [];
   const transcripts = new Map<string, { prompts: { at: number; text: string }[]; entries: { role: string; at: number; text: string }[] }>();
   const svc = new ReviewService(getDb(dbPath), chat, {
     sessions: async () => sessions,
@@ -206,13 +207,19 @@ async function setup() {
     changed: () => {},
     readPlan: readTextFile,
     transcript: async (uid) => transcripts.get(uid) ?? null,
+    launch: async (p) => {
+      launched.push(p);
+      const sess: SessionLite = { uid: `u-new${launched.length}`, key: `u-new${launched.length}`, title: p.label, agent: p.preset, status: 'idle', cwd: w.local, branch: `ah/fix-${launched.length}`, live: true };
+      sessions.push(sess);
+      return sess;
+    },
   });
   const setState = async (fn: (s: typeof state) => void) => {
     const cur = JSON.parse(await readFile(w.stateFile, 'utf8'));
     fn(cur);
     await writeFile(w.stateFile, JSON.stringify(cur));
   };
-  return { w, svc, chat, sessions, sent, alerts, transcripts, setState, heads: { h1, h2, h3, h4 } };
+  return { w, svc, chat, sessions, sent, alerts, transcripts, launched, setState, heads: { h1, h2, h3, h4 } };
 }
 
 test('review: stack from a PR tree, fix loop through the owner, re-review, merge and next', async () => {
@@ -846,5 +853,38 @@ test("review: a session sees the stack it's building, from gh stack or its PRs, 
     assert.deepEqual(s.branches.map((b) => [b.branch, b.current]), [['base', false], ['feat', false], ['docs', false]]);
     // A shell elsewhere has nothing.
     assert.deepEqual((await t.svc.sessionStack('u-shell')).branches, []);
+  });
+});
+
+test('review: fixes can go to a new agent session, in a worktree at the layer, told why the stack exists', async () => {
+  const t = await setup();
+  t.transcripts.set('u-agent', { prompts: [{ at: Date.parse('2026-10-16T09:00:00Z'), text: 'Stack the relationships work; keep the planner pure.' }], entries: [] });
+  await withGh(t.w, async () => {
+    let v = await t.svc.create(t.w.local, { pr: 1 }, undefined, 'u-agent');
+    const f = await t.svc.addFinding(v.id, { ownerPr: 2, title: 'Return 2', severity: 'blocking', path: 'c.ts', lineStart: 1 });
+    const text = await t.svc.dispatchText(v.id, 2, [f.id], '', true);
+    assert.match(text, /^You're a new session, started to fix a pull request in me\/proj, in a fresh worktree at feat's head \([0-9a-f]{8}\)/);
+    assert.match(text, /git push --force-with-lease origin HEAD:feat/);
+    assert.match(text, /Background, from that conversation:\nSession "Feature work" \(claude\)\.\nWhat the human asked it, oldest first:\n- 2026-10-16 09:00 Stack the relationships work; keep the planner pure\./);
+    assert.match(text, /1\. \[blocking\] Return 2\. c\.ts:1/);
+    assert.doesNotMatch(await t.svc.dispatchText(v.id, 2, [f.id]), /new session/, 'not for a session that has the context');
+    // Even in a GitHub stack, a new worktree restacks by hand: gh stack would check out branches another checkout holds.
+    await t.setState((st) => {
+      Object.assign(st, { stacks: [{ number: 7, prs: [1, 2, 3] }] });
+    });
+    await t.svc.sync(v.id, true);
+    assert.match(await t.svc.dispatchText(v.id, 2, [f.id]), /gh stack rebase --upstack/);
+    const freshText = await t.svc.dispatchText(v.id, 2, [f.id], '', true);
+    assert.doesNotMatch(freshText, /gh stack/);
+    assert.match(freshText, /restack the layers above it, in this order.*docs \(#3/);
+
+    const out = await t.svc.dispatch(v.id, 2, { findingIds: [f.id], text, newSession: { preset: 'codex' } });
+    assert.deepEqual(t.launched, [{ preset: 'codex', root: t.w.local, label: 'Fix #2', fromRef: t.heads.h2 }]);
+    assert.equal(out.dispatch.targetUid, 'u-new1');
+    assert.deepEqual(t.sent.map((x) => x.uid), ['u-new1'], 'through the normal send path, not a subscription');
+    v = await t.svc.view(v.id);
+    assert.equal(v.owner?.uid, 'u-agent', 'the stack keeps its owner');
+    assert.equal(v.layers.find((l) => l.pr === 2)!.ownerUid, 'u-new1', "the layer's fixes go to the new session from now on");
+    assert.equal(v.layers.find((l) => l.pr === 2)!.status, 'fixing');
   });
 });

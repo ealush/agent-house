@@ -110,6 +110,15 @@ const review = new ReviewService(getDb(), sidechat, {
   alert: (p) => core.push.alert(p),
   changed: () => void core.tick().catch(() => {}),
   readPlan: async (path) => readTextFile(await safePath(expandHome(path))),
+  launch: async ({ preset: id, root, label, fromRef }) => {
+    const preset = await withCatalog(core.preset(id));
+    const plan = buildLaunch(preset, {});
+    const wt = await createWorktree(root, label, fromRef);
+    const out = await core.launch({ preset, cwd: wt.path, session: config.defaultSession, name: label, command: plan.command, meta: { ...plan.meta, 'ah.worktree': wt, 'ah.order': core.nextOrder() } });
+    await core.refreshTmuxPath();
+    await core.tick();
+    return { uid: out.uid, key: sidechat.chatKey(preset.id, null, out.uid), title: label, agent: preset.id, status: 'idle', cwd: wt.path, branch: wt.branch, live: true };
+  },
   // The reviewer's origin tool: the session's own transcript, as text (latest 1000 entries).
   transcript: async (uid) => {
     const resolve = () => core.feedSource(uid);

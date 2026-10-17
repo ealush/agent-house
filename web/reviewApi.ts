@@ -152,9 +152,10 @@ export function reviewApi(base = '') {
     merge: (id: string, pr: number, outOfOrder = false) => r<{ next: number | null; retargeted: number[]; restack: number[]; merged: number[]; waiting: 'github' | 'queue' | null }>('POST', `${l(id, pr)}/merge`, { outOfOrder }),
     retarget: (id: string, pr: number) => r<Stack>('POST', `${l(id, pr)}/retarget`),
     ready: (id: string, pr: number) => r<Stack>('POST', `${l(id, pr)}/ready`),
-    dispatchText: (id: string, pr: number, findings: number[], extra = '', kind?: 'restack') =>
-      r<{ text: string }>('GET', `${l(id, pr)}/dispatch?findings=${findings.join(',')}&extra=${enc(extra)}${kind ? `&kind=${kind}` : ''}`),
-    dispatch: (id: string, pr: number, body: { findingIds: number[]; text: string; targetUid?: string }) => r<{ dispatch: DispatchView; outcome: string }>('POST', `${l(id, pr)}/dispatch`, body),
+    dispatchText: (id: string, pr: number, findings: number[], extra = '', kind?: 'restack', fresh = false) =>
+      r<{ text: string }>('GET', `${l(id, pr)}/dispatch?findings=${findings.join(',')}&extra=${enc(extra)}${kind ? `&kind=${kind}` : ''}${fresh ? '&fresh=1' : ''}`),
+    /** To a session (`targetUid`), or to a new one started for it (`newSession`). */
+    dispatch: (id: string, pr: number, body: { findingIds: number[]; text: string; targetUid?: string; newSession?: { preset: string } }) => r<{ dispatch: DispatchView; outcome: string }>('POST', `${l(id, pr)}/dispatch`, body),
     findings: (id: string, pr?: number) => r<Finding[]>('GET', `${s(id)}/findings${pr ? `?pr=${pr}` : ''}`),
     addFinding: (id: string, body: { ownerPr: number; foundOnPr?: number; title: string; body?: string; severity?: string; path?: string | null; lineStart?: number | null; lineEnd?: number | null }) =>
       r<Finding>('POST', `${s(id)}/findings`, body),

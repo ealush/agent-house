@@ -85,6 +85,11 @@ export type ReviewDeps = {
   changed: () => void;
   /** Read a plan file the host allows (inside files.roots). */
   readPlan: (path: string) => Promise<string>;
+  /**
+   * Start an agent session for fixes: a new worktree of the repo at `fromRef`
+   * (the layer's head), so it never shares a checkout with another agent.
+   */
+  launch: (p: { preset: string; root: string; label: string; fromRef: string }) => Promise<SessionLite>;
   /** A session's transcript as text: the human's messages, and the latest entries. null when there's none to read. */
   transcript: (uid: string) => Promise<{ prompts: { at: number; text: string }[]; entries: { role: string; at: number; text: string }[] } | null>;
 };
@@ -1243,14 +1248,24 @@ export class ReviewService {
   }
 
   /** The message for the agent: findings with locations, the plan's constraints, and the restack of the layers above. */
-  async dispatchText(id: string, pr: number, findingIds: number[], extra = ''): Promise<string> {
+  async dispatchText(id: string, pr: number, findingIds: number[], extra = '', fresh = false): Promise<string> {
     const s = await this.stack(id);
     const l = await this.layer(id, pr);
     const layers = await this.db.reviewLayer.findMany({ where: { stackId: id }, orderBy: { position: 'asc' } });
     const picked = findingIds.length ? await this.db.reviewFinding.findMany({ where: { stackId: id, id: { in: findingIds } }, orderBy: { id: 'asc' } }) : [];
     const decisions = await this.db.reviewDecision.findMany({ where: { stackId: id }, orderBy: { id: 'asc' } });
     const short = l.headSha.slice(0, 8);
-    const lines: string[] = [`Review of ${label(l)} "${l.title}" (branch ${l.headRef}) at ${short}.${picked.length ? ' Please fix:' : ''}`, ''];
+    const lines: string[] = [];
+    // A session started for this knows nothing yet: where it is, how to push, and why the stack exists.
+    if (fresh) {
+      lines.push(
+        `You're a new session, started to fix a pull request in ${s.repo}, in a fresh worktree at ${l.headRef}'s head (${short}) on a branch of its own. When you've fixed it, push it to ${l.headRef}: git push --force-with-lease origin HEAD:${l.headRef}. If git says a stack branch is checked out in another worktree, work on a detached HEAD of origin/<branch> and push the same way.`,
+      );
+      const why = await this.originText(s, null).catch(() => null);
+      if (why) lines.push('', 'The stack was made in another session. Background, from that conversation:', why.split('\n').slice(0, 30).join('\n').slice(0, 4000));
+      lines.push('');
+    }
+    lines.push(`Review of ${label(l)} "${l.title}" (branch ${l.headRef}) at ${short}.${picked.length ? ' Please fix:' : ''}`, '');
     picked.forEach((f, i) => {
       const where = f.path ? ` ${f.path}${f.lineStart ? `:${f.lineStart}${f.lineEnd && f.lineEnd !== f.lineStart ? `-${f.lineEnd}` : ''}` : ''}` : '';
       const from = f.ownerPr !== pr ? layers.find((x) => x.pr === f.ownerPr) : undefined;
@@ -1269,9 +1284,11 @@ export class ReviewService {
       .filter((x) => x.state === 'open');
     lines.push('', 'Constraints:', ...rules);
     // A GitHub stack is restacked with gh stack, when this host has it; anything else above, by hand.
-    const stacked = l.ghStack !== null && (await this.ghStackHere(s.repoRoot)) ? above.filter((x) => x.ghStack === l.ghStack) : [];
+    // A new session's worktree can't check out branches another checkout has, so it goes by hand too.
+    const tool = !fresh && l.ghStack !== null && (await this.ghStackHere(s.repoRoot));
+    const stacked = tool ? above.filter((x) => x.ghStack === l.ghStack) : [];
     const rest = above.filter((x) => !stacked.includes(x));
-    if (l.ghStack !== null && (await this.ghStackHere(s.repoRoot))) {
+    if (tool) {
       lines.push(
         '',
         `Commit on ${l.headRef}, then push with gh stack: gh stack rebase --upstack, then gh stack push${stacked.length ? `, which restacks ${stacked.map((x) => label(x)).join(', ')} on it` : ''}. It's GitHub stack #${l.ghStack}; if this checkout doesn't track it, run gh stack checkout ${l.pr} first.`,
@@ -1286,13 +1303,21 @@ export class ReviewService {
     return lines.join('\n');
   }
 
-  async dispatch(id: string, pr: number, input: { findingIds: number[]; text: string; targetUid?: string }): Promise<{ dispatch: DispatchView; outcome: string }> {
+  async dispatch(id: string, pr: number, input: { findingIds: number[]; text: string; targetUid?: string; newSession?: { preset: string } }): Promise<{ dispatch: DispatchView; outcome: string }> {
     const s = await this.stack(id);
     const l = await this.layer(id, pr);
     const text = input.text.trim();
     if (!text) throw new ReviewError(400, 'text required');
     let target: SessionLite | null = null;
-    if (input.targetUid) {
+    if (input.newSession) {
+      // A new agent session for this layer's fixes: they go to it from now on, through the normal send path.
+      if (!validSha(l.headSha)) throw new ReviewError(409, `#${pr} has not been fetched yet`);
+      target = await this.deps.launch({ preset: input.newSession.preset, root: s.repoRoot, label: `Fix ${label(l)}`, fromRef: l.headSha }).catch((err) => {
+        throw new ReviewError(502, `couldn't start the session: ${(err as Error).message}`);
+      });
+      if (!s.ownerKey) await this.db.reviewStack.update({ where: { id }, data: { ownerUid: target.uid, ownerKey: target.key } });
+      else await this.db.reviewLayer.update({ where: { stackId_pr: { stackId: id, pr } }, data: { ownerUid: target.uid, ownerKey: target.key } });
+    } else if (input.targetUid) {
       target = (await this.deps.sessions()).find((x) => x.uid === input.targetUid) ?? null;
       if (!target) throw new ReviewError(404, 'session not found');
       // The first send binds the stack to that conversation.
