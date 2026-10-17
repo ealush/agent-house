@@ -40,7 +40,7 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
 
     if (route('POST', '/stacks')) {
       const body = await readJson(req);
-      const input = Array.isArray(body.prs) ? { prs: body.prs.slice(0, 61).map((n) => int(n, 'prs')) } : { pr: int(body.pr, 'pr') };
+      const input = Array.isArray(body.prs) ? { prs: body.prs.slice(0, 61).map((n) => int(n, 'prs')) } : body.native !== undefined ? { native: int(body.native, 'native') } : { pr: int(body.pr, 'pr') };
       const v = await svc.create(str(body.root, 'root', 1000), input, opt(body.title, (x) => str(x, 'title', 120)));
       audit(req, 'review.stack', { stack: v.id, repo: v.repo, source: v.source, prs: v.layers.map((l) => l.pr) });
       return send(res, 200, v);

@@ -174,7 +174,7 @@ function StackList({ state, narrow, onOpen, onPick }: { state: State; narrow: bo
                     <span className="stack">
                       <span className="name">{s.title}</span>
                       <span className="sub">
-                        {s.repo} · {s.source === 'manual' ? 'picked by hand' : `into ${s.trunk}`} · {s.merged} of {s.layers} merged
+                        {s.repo} · {s.source === 'manual' ? 'picked by hand' : s.source === 'native' ? `GitHub stack #${s.ghStack} into ${s.trunk}` : `into ${s.trunk}`} · {s.merged} of {s.layers} merged
                       </span>
                     </span>
                     {!narrow && (
@@ -711,7 +711,7 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
           className="danger"
           onClick={async () => {
             close();
-            if (!(await askConfirm({ title: `Take #${l.pr} out of the stack?`, body: `Its findings and threads go. Nothing changes on GitHub.${stack.source === 'tree' ? " New PRs on the stack's branches stop joining it." : ''}`, confirm: 'Take out', danger: true }))) return;
+            if (!(await askConfirm({ title: `Take #${l.pr} out of the stack?`, body: `Its findings and threads go. Nothing changes on GitHub.${stack.source === 'tree' ? " New PRs on the stack's branches stop joining it." : stack.source === 'native' ? ` It stops following GitHub's stack #${stack.ghStack}.` : ''}`, confirm: 'Take out', danger: true }))) return;
             try {
               setStack(await api.removeLayer(stack.id, l.pr));
               go(stack.id, null, { replace: true });

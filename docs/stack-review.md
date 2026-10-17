@@ -84,7 +84,7 @@ What this means for the design:
 
 A single PR is a stack of one, so nothing in this design is stack-only.
 
-## Two ways to make a stack
+## Three ways to make a stack
 
 **From GitHub's chain.** Pick the bottom PR and the stack is it plus every PR
 whose base branch is another's head (`source: "tree"`). New PRs opened on a
@@ -113,12 +113,20 @@ a feature can be reviewed and merged as one ordered stack.
   PRs need no retarget; GitHub's mergeability shows when an earlier merge
   conflicts with a later one.
 
+**From a stack on GitHub** (`source: "native"`). The picker lists each of
+the repo's stacks on GitHub (made with `gh stack submit`, or in the PR page)
+as its own group, above the chains, with *Review this stack*. The review takes
+its open PRs in GitHub's order and follows it: PRs added to it on GitHub join,
+each above the PR under it. If the stack is dissolved on GitHub the review
+keeps its layers and becomes a picked one, as it does when you take a PR out.
+How these merge is under *GitHub's own stacks* below.
+
 *Supporting the real thing.* Sapling and ghstack aren't installed here. Each
 already pushes one PR per commit with stacked branches, which is the GitHub
-chain above. The part ah could add is what Sapling writes into each PR's
-description: the list of the stack with the current one marked, so the stack
-is visible on GitHub too. That edits PR bodies, so it would be an explicit
-action, not a side effect. It's in the backlog.
+chain above, and `gh stack link` turns their branches into a stack on GitHub.
+The part ah could add is what Sapling writes into each PR's description: the
+list of the stack with the current one marked. GitHub's own stacks show that
+in the PR page, so it matters less now. It's in the backlog.
 
 ## Reading at a pinned revision
 

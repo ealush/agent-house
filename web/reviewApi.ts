@@ -72,7 +72,9 @@ export type Stack = {
   mergeMethod: 'merge' | 'squash' | 'rebase';
   methods: ('merge' | 'squash' | 'rebase')[];
   /** "tree": GitHub's chain under one PR (new ones join); "manual": the PRs you picked, in your order. */
-  source: 'tree' | 'manual';
+  source: 'tree' | 'manual' | 'native';
+  /** The stack on GitHub this one follows (source "native"). */
+  ghStack: number | null;
   planPath: string | null;
   state: string;
   syncedAt: number;
@@ -83,9 +85,11 @@ export type Stack = {
   next: number | null;
   decisions: { id: number; text: string; fromPr: number | null; at: number }[];
 };
-export type StackSummary = { id: string; title: string; repo: string; trunk: string; state: string; source: 'tree' | 'manual'; layers: number; merged: number; needsYou: number; next: number | null; syncedAt: number; spine: { pr: number; role: string; status: LayerStatus }[] };
+export type StackSummary = { id: string; title: string; repo: string; trunk: string; state: string; source: 'tree' | 'manual' | 'native'; ghStack: number | null; layers: number; merged: number; needsYou: number; next: number | null; syncedAt: number; spine: { pr: number; role: string; status: LayerStatus }[] };
 export type Candidate = { number: number; title: string; headRefName: string; baseRefName: string; draft: boolean; author: string; additions: number; deletions: number; updatedAt: string; inStack: string | null };
-export type Candidates = { root: string; repo: string; trunk: string; trees: CandidateTree[]; stacks: { id: string; title: string }[] };
+/** A stack on GitHub with open PRs, bottom to top. */
+export type CandidateStack = { number: number; base: string; prs: number[] };
+export type Candidates = { root: string; repo: string; trunk: string; trees: CandidateTree[]; stacks: { id: string; title: string }[]; native: CandidateStack[] };
 export type CandidateTree = { pr: Candidate; children: CandidateTree[] };
 export type OwnerSuggestion = { uid: string; key: string; title: string; agent: string | null; status: string; cwd: string; branch: string | null; live: boolean; reason: 'branch' | 'repo' };
 export type ThreadMsg = { role: 'user' | 'assistant'; text: string; at: number; id: number };
@@ -106,7 +110,7 @@ export function reviewApi(base = '') {
     settings: () => r<{ summaryId: string | null }>('GET', '/settings'),
     setSummaryModel: (summaryId: string | null) => r<{ summaryId: string | null }>('PUT', '/settings', { summaryId }),
     /** One PR takes GitHub's chain under it; a list is the PRs you picked, in review order. */
-    create: (root: string, pick: { pr: number } | { prs: number[] }, title?: string) => r<Stack>('POST', '/stacks', { root, ...pick, ...(title ? { title } : {}) }),
+    create: (root: string, pick: { pr: number } | { prs: number[] } | { native: number }, title?: string) => r<Stack>('POST', '/stacks', { root, ...pick, ...(title ? { title } : {}) }),
     addLayers: (id: string, prs: number[]) => r<Stack>('POST', `${s(id)}/layers`, { prs }),
     removeLayer: (id: string, pr: number) => r<Stack>('DELETE', l(id, pr)),
     stack: (id: string) => r<Stack>('GET', s(id)),

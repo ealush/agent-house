@@ -156,7 +156,9 @@ export type StackView = {
   trunk: string;
   mergeMethod: string;
   methods: MergeMethod[];
-  source: 'tree' | 'manual';
+  source: 'tree' | 'manual' | 'native';
+  /** The stack on GitHub this one follows (source "native"). */
+  ghStack: number | null;
   planPath: string | null;
   state: string;
   syncedAt: number;
@@ -169,7 +171,7 @@ export type StackView = {
 };
 /** What a merge did: the PRs that landed, those GitHub retargeted onto the trunk, and whether GitHub is still at it. */
 export type MergeOutcome = { next: number | null; retargeted: number[]; restack: number[]; merged: number[]; waiting: 'github' | 'queue' | null };
-export type StackSummary = { id: string; title: string; repo: string; trunk: string; state: string; source: 'tree' | 'manual'; layers: number; merged: number; needsYou: number; next: number | null; syncedAt: number; spine: { pr: number; role: string; status: LayerStatus }[] };
+export type StackSummary = { id: string; title: string; repo: string; trunk: string; state: string; source: 'tree' | 'manual' | 'native'; ghStack: number | null; layers: number; merged: number; needsYou: number; next: number | null; syncedAt: number; spine: { pr: number; role: string; status: LayerStatus }[] };
 export type ReviewAlert = { kind: 'rereview' | 'nopush' | 'ready' | 'restack'; stackId: string; stackTitle: string; pr: number; role: string; title: string; at: number };
 /** What the streamed state carries: Inbox alerts, session banners, and the PR → stack map for session headers. */
 export type ReviewState = {
@@ -180,6 +182,9 @@ export type ReviewState = {
 
 type Candidate = { number: number; title: string; headRefName: string; baseRefName: string; draft: boolean; author: string; additions: number; deletions: number; updatedAt: string; inStack: string | null };
 export type CandidateTree = { pr: Candidate; children: CandidateTree[] };
+/** A stack on GitHub with open PRs, bottom to top. */
+export type CandidateStack = { number: number; base: string; prs: number[] };
+const sourceOf = (s: ReviewStack): StackView['source'] => (s.source === 'manual' || s.source === 'native' ? s.source : 'tree');
 
 function checksOf(l: ReviewLayer): Checks {
   try {
@@ -343,7 +348,7 @@ export class ReviewService {
   }
 
   /** Open PRs in a repo as trees: each root and what's stacked on it. */
-  async candidates(root: string): Promise<{ root: string; repo: string; trunk: string; trees: CandidateTree[]; stacks: { id: string; title: string }[] }> {
+  async candidates(root: string): Promise<{ root: string; repo: string; trunk: string; trees: CandidateTree[]; stacks: { id: string; title: string }[]; native: CandidateStack[] }> {
     const main = await this.mainOf(root);
     if (!main) throw new ReviewError(400, 'not a git repository');
     const { repo, trunk } = await this.repoOf(main);
@@ -356,16 +361,21 @@ export class ReviewService {
       pr: { number: t.pr.number, title: t.pr.title, headRefName: t.pr.headRefName, baseRefName: t.pr.baseRefName, draft: t.pr.isDraft, author: t.pr.author, additions: t.pr.additions, deletions: t.pr.deletions, updatedAt: t.pr.updatedAt, inStack: taken.get(t.pr.number) ?? null },
       children: t.children.map(toTree),
     });
-    return { root: main, repo, trunk, trees: forest(prs).map(toTree), stacks };
+    const open = new Set(prs.map((p) => p.number));
+    const native = ((await this.nativeStacks(main, repo, true)) ?? [])
+      .map((n) => ({ number: n.number, base: n.base, prs: n.prs.filter((p) => open.has(p.number)).map((p) => p.number) }))
+      .filter((n) => n.prs.length);
+    return { root: main, repo, trunk, trees: forest(prs).map(toTree), stacks, native };
   }
 
   // ---------- stacks
 
   /**
-   * A stack from one PR (it and every PR GitHub stacks on it, which keep joining)
-   * or from PRs you pick, reviewed and merged in the order you give.
+   * A stack from one PR (it and every PR GitHub stacks on it, which keep joining),
+   * from PRs you pick, reviewed and merged in the order you give, or from a
+   * stack on GitHub, whose PRs join and keep GitHub's order.
    */
-  async create(root: string, input: { pr: number } | { prs: number[] }, title?: string): Promise<StackView> {
+  async create(root: string, input: { pr: number } | { prs: number[] } | { native: number }, title?: string): Promise<StackView> {
     const main = await this.mainOf(root);
     if (!main) throw new ReviewError(400, 'not a git repository');
     const { repo, trunk } = await this.repoOf(main);
@@ -373,8 +383,17 @@ export class ReviewService {
     const prs = (await this.gh(() => listPrs(main, 'open', 200))).filter((p) => !p.crossRepo);
     let order: number[];
     let base: string;
-    let source: 'tree' | 'manual';
-    if ('pr' in input) {
+    let source: 'tree' | 'manual' | 'native';
+    let ghStack: number | null = null;
+    if ('native' in input) {
+      const ns = ((await this.nativeStacks(main, repo, true)) ?? []).find((n) => n.number === input.native);
+      if (!ns) throw new ReviewError(404, `${repo} has no stack #${input.native} on GitHub`);
+      order = ns.prs.filter((p) => prs.some((x) => x.number === p.number)).map((p) => p.number);
+      if (!order.length) throw new ReviewError(409, `stack #${input.native} has no open pull requests`);
+      base = ns.base || trunk;
+      source = 'native';
+      ghStack = ns.number;
+    } else if ('pr' in input) {
       const tree = subtree(prs, input.pr);
       if (!tree) throw new ReviewError(404, `#${input.pr} is not an open pull request in ${repo}`);
       order = defaultOrder(tree);
@@ -389,7 +408,7 @@ export class ReviewService {
     await this.untaken(main, order);
     const first = prs.find((p) => p.number === order[0])!;
     const id = randomUUID().slice(0, 8);
-    await this.db.reviewStack.create({ data: { id, repoRoot: main, repo, trunk: base, source, title: (title?.trim() || first.title).slice(0, 120), createdAt: now() } });
+    await this.db.reviewStack.create({ data: { id, repoRoot: main, repo, trunk: base, source, ghStack, title: (title?.trim() || first.title).slice(0, 120), createdAt: now() } });
     await this.db.reviewLayer.createMany({ data: order.map((n, i) => this.layerRow(id, prs.find((x) => x.number === n)!, i)) });
     for (const p of prs) this.bodies.set(`${id}:${p.number}`, p.body);
     // The owner is the one session working on these branches, if exactly one is.
@@ -457,7 +476,7 @@ export class ReviewService {
       this.db.reviewRevision.deleteMany({ where: { stackId: id, pr } }),
       this.db.chatMessage.deleteMany({ where: { uid: `review:${id}:${pr}` } }),
       this.db.reviewLayer.delete({ where: { stackId_pr: { stackId: id, pr } } }),
-      this.db.reviewStack.update({ where: { id }, data: { source: 'manual' } }),
+      this.db.reviewStack.update({ where: { id }, data: { source: 'manual', ghStack: null } }),
     ]);
     await this.refreshState();
     return this.view(id);
@@ -475,6 +494,7 @@ export class ReviewService {
         trunk: s.trunk,
         state: s.state,
         source: v.source,
+        ghStack: v.ghStack,
         layers: v.layers.filter((l) => l.state !== 'skipped' && l.state !== 'closed').length,
         merged: v.layers.filter((l) => l.state === 'merged').length,
         needsYou: this.snapshot.alerts.filter((a) => a.stackId === s.id).length,
@@ -637,7 +657,8 @@ export class ReviewService {
       trunk: s.trunk,
       mergeMethod: s.mergeMethod,
       methods: this.methods.get(s.repoRoot) ?? ['merge'],
-      source: s.source === 'manual' ? 'manual' : 'tree',
+      source: sourceOf(s),
+      ghStack: s.ghStack,
       planPath: s.planPath,
       state: s.state,
       syncedAt: s.syncedAt,
@@ -775,7 +796,7 @@ export class ReviewService {
         if (p) byNumber.set(p.number, p);
       }
       // New PRs stacked on an open layer join the stack, right after their parent's line; a stack you picked stays as picked.
-      const heads = new Map(s.source === 'manual' ? [] : layers.filter((l) => l.state === 'open').map((l) => [l.headRef, l]));
+      const heads = new Map(s.source !== 'tree' ? [] : layers.filter((l) => l.state === 'open').map((l) => [l.headRef, l]));
       const others = await this.db.reviewLayer.findMany({ where: { pr: { in: all.map((p) => p.number) }, stackId: { not: id } }, select: { pr: true } });
       const elsewhere = new Set(others.map((o) => o.pr));
       for (const p of all) {
@@ -793,6 +814,8 @@ export class ReviewService {
         layers = await this.db.reviewLayer.findMany({ where: { stackId: id }, orderBy: { position: 'asc' } });
         heads.set(p.headRefName, layers.find((l) => l.pr === p.number)!);
       }
+      const natives = await this.nativeStacks(s.repoRoot, s.repo, _force);
+      if (natives && s.source === 'native') layers = await this.follow(s, natives, layers, all, elsewhere);
       // GitHub's view of each layer.
       for (const l of layers) {
         const p = byNumber.get(l.pr);
@@ -805,7 +828,6 @@ export class ReviewService {
         });
       }
       // GitHub's own stacks: which layers GitHub merges together, from the bottom up.
-      const natives = await this.nativeStacks(s.repoRoot, s.repo, _force);
       if (natives) {
         const at = new Map<number, { stack: number; pos: number }>();
         for (const ns of natives) ns.prs.forEach((p, i) => at.set(p.number, { stack: ns.number, pos: i + 1 }));
@@ -868,6 +890,32 @@ export class ReviewService {
     } finally {
       await this.refreshState();
     }
+  }
+
+  /**
+   * A stack that follows one on GitHub: PRs added there join here, each right
+   * above the PR under it in GitHub's order. One GitHub dissolved stops being
+   * followed, and keeps its layers.
+   */
+  private async follow(s: ReviewStack, natives: NativeStack[], layers: ReviewLayer[], all: GhPr[], elsewhere: Set<number>): Promise<ReviewLayer[]> {
+    const ns = natives.find((n) => n.number === s.ghStack);
+    if (!ns) {
+      await this.db.reviewStack.update({ where: { id: s.id }, data: { source: 'manual', ghStack: null } });
+      return layers;
+    }
+    const byNumber = new Map(all.map((p) => [p.number, p]));
+    for (const [i, np] of ns.prs.entries()) {
+      const p = byNumber.get(np.number);
+      if (!p || p.state !== 'OPEN' || p.crossRepo || elsewhere.has(p.number) || layers.some((l) => l.pr === p.number)) continue;
+      const below = new Set(ns.prs.slice(0, i).map((x) => x.number));
+      const at = Math.max(-1, ...layers.filter((l) => below.has(l.pr)).map((l) => l.position)) + 1;
+      await this.db.$transaction([
+        ...layers.filter((l) => l.position >= at).map((l) => this.db.reviewLayer.update({ where: { stackId_pr: { stackId: s.id, pr: l.pr } }, data: { position: l.position + 1 } })),
+        this.db.reviewLayer.create({ data: this.layerRow(s.id, p, at) }),
+      ]);
+      layers = await this.db.reviewLayer.findMany({ where: { stackId: s.id }, orderBy: { position: 'asc' } });
+    }
+    return layers;
   }
 
   // ---------- one layer

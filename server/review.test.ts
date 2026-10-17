@@ -669,3 +669,41 @@ test('review: a stack merge GitHub is still running is watched until it lands or
     assert.ok(t.alerts.some((a) => a === "#2 didn't merge"), t.alerts.join(' | '));
   });
 });
+
+test('review: a stack on GitHub is offered whole, and the review follows it', async () => {
+  const t = await setup();
+  await t.setState((s) => {
+    Object.assign(s, { stacks: [{ number: 7, prs: [1, 2] }] });
+  });
+  await withGh(t.w, async () => {
+    const c = await t.svc.candidates(t.w.local);
+    assert.deepEqual(c.native, [{ number: 7, base: 'main', prs: [1, 2] }]);
+
+    let v = await t.svc.create(t.w.local, { native: 7 });
+    await t.svc.sync(v.id, true);
+    v = await t.svc.view(v.id);
+    assert.equal(v.source, 'native');
+    assert.equal(v.ghStack, 7);
+    assert.deepEqual(v.layers.map((l) => l.pr), [1, 2], "GitHub's stack only: #4 sits on #1 but isn't in it");
+    await assert.rejects(t.svc.create(t.w.local, { native: 8 }), /has no stack #8 on GitHub/);
+
+    // #3 is added to the stack on GitHub: it joins, above #2.
+    await t.setState((s) => {
+      Object.assign(s, { stacks: [{ number: 7, prs: [1, 2, 3] }] });
+    });
+    await t.svc.sync(v.id, true);
+    v = await t.svc.view(v.id);
+    assert.deepEqual(v.layers.map((l) => [l.pr, l.ghPos]), [[1, 1], [2, 2], [3, 3]]);
+    assert.ok(v.layers.find((l) => l.pr === 3)!.current, 'fetched on the same sync');
+
+    // Unstacked on GitHub: the review keeps its layers and stops following.
+    await t.setState((s) => {
+      Object.assign(s, { stacks: [] });
+    });
+    await t.svc.sync(v.id, true);
+    v = await t.svc.view(v.id);
+    assert.equal(v.source, 'manual');
+    assert.equal(v.ghStack, null);
+    assert.deepEqual(v.layers.map((l) => [l.pr, l.ghStack]), [[1, null], [2, null], [3, null]]);
+  });
+});
