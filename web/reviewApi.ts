@@ -75,6 +75,8 @@ export type Stack = {
   source: 'tree' | 'manual' | 'native';
   /** The stack on GitHub this one follows (source "native"). */
   ghStack: number | null;
+  /** Whether its open PRs can become a stack on GitHub (or go on top of one), and if not, why. null: nothing to link. */
+  link: { ok: boolean; prs: number[]; onto: number | null; why: string | null } | null;
   planPath: string | null;
   state: string;
   syncedAt: number;
@@ -110,6 +112,7 @@ export function reviewApi(base = '') {
     settings: () => r<{ summaryId: string | null }>('GET', '/settings'),
     setSummaryModel: (summaryId: string | null) => r<{ summaryId: string | null }>('PUT', '/settings', { summaryId }),
     /** One PR takes GitHub's chain under it; a list is the PRs you picked, in review order. */
+    link: (id: string) => r<Stack>('POST', `${s(id)}/link`),
     create: (root: string, pick: { pr: number } | { prs: number[] } | { native: number }, title?: string) => r<Stack>('POST', '/stacks', { root, ...pick, ...(title ? { title } : {}) }),
     addLayers: (id: string, prs: number[]) => r<Stack>('POST', `${s(id)}/layers`, { prs }),
     removeLayer: (id: string, pr: number) => r<Stack>('DELETE', l(id, pr)),

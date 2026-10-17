@@ -71,6 +71,12 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
       return send(res, 200, { ok: true });
     }
 
+    if ((m = route('POST', `/stacks/${ID}/link`))) {
+      const v = await svc.link(m[1]);
+      audit(req, 'review.link', { stack: m[1], ghStack: v.ghStack, prs: v.layers.filter((l) => l.ghStack === v.ghStack).map((l) => l.pr) });
+      return send(res, 200, v);
+    }
+
     if ((m = route('POST', `/stacks/${ID}/sync`))) {
       await svc.sync(m[1], true);
       return send(res, 200, await svc.view(m[1]));

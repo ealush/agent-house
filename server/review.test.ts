@@ -51,6 +51,15 @@ else if (a[0] === 'api' && a[1] === '--include') {
   const f = {};
   rest.forEach((x, i) => { if (x === '-f') { const [k, ...v] = rest[i + 1].split('='); f[k] = v.join('='); } });
   const parts = url.split('?')[0].split('/');
+  if (parts[3] === 'stacks' && method === 'POST') {
+    if (st.stacksOff) http(404, { message: 'Not Found' });
+    const prs = rest.flatMap((x, i) => (rest[i - 1] === '-F' && x.startsWith('pull_requests[]=') ? [Number(x.split('=')[1])] : []));
+    const onto = parts[4] ? (st.stacks || []).find((s) => s.number === Number(parts[4])) : null;
+    const chain = [...(onto ? onto.prs.slice(-1) : []), ...prs];
+    for (let i = 1; i < chain.length; i++) if (pr(chain[i]).baseRefName !== pr(chain[i - 1]).headRefName) http(422, { message: 'Validation Failed', errors: [{ message: '#' + chain[i] + ' does not build on #' + chain[i - 1] }] });
+    if (onto) { onto.prs.push(...prs); save(); http(200, stackView(onto)); }
+    const s = { number: 40 + (st.stacks || []).length, prs }; st.stacks = [...(st.stacks || []), s]; save(); http(201, stackView(s));
+  }
   if (parts[3] === 'stacks') { if (st.stacksOff) http(404, { message: 'Not Found' }); http(200, (st.stacks || []).map(stackView)); }
   if (parts[3] === 'pulls' && parts[5] === 'merge-async' && method === 'PUT') {
     const p = pr(parts[4]);
@@ -705,5 +714,47 @@ test('review: a stack on GitHub is offered whole, and the review follows it', as
     assert.equal(v.source, 'manual');
     assert.equal(v.ghStack, null);
     assert.deepEqual(v.layers.map((l) => [l.pr, l.ghStack]), [[1, null], [2, null], [3, null]]);
+  });
+});
+
+test('review: a chain in review becomes a stack on GitHub, or goes on top of one', async () => {
+  const t = await setup();
+  await withGh(t.w, async () => {
+    // #1 ← #2 ← #3, picked: a chain, so it can be linked.
+    let v = await t.svc.create(t.w.local, { prs: [1, 2, 3] });
+    await t.svc.sync(v.id, true);
+    v = await t.svc.view(v.id);
+    assert.deepEqual(v.link, { ok: true, prs: [1, 2, 3], onto: null, why: null });
+    v = await t.svc.link(v.id);
+    assert.equal(v.source, 'native');
+    assert.equal(v.ghStack, 40);
+    assert.deepEqual(v.layers.map((l) => [l.pr, l.ghStack, l.ghPos]), [[1, 40, 1], [2, 40, 2], [3, 40, 3]]);
+    assert.equal(v.link, null, 'nothing left to link');
+    assert.match(await readFile(`${t.w.stateFile}.log`, 'utf8'), /api --include --method POST repos\/me\/proj\/stacks -F pull_requests\[\]=1 -F pull_requests\[\]=2 -F pull_requests\[\]=3/);
+    await t.svc.remove(v.id);
+
+    // #4 sits on #1, not on #3: not a chain.
+    await t.setState((s) => {
+      Object.assign(s, { stacks: [] });
+    });
+    v = await t.svc.create(t.w.local, { prs: [1, 2, 4] });
+    await t.svc.sync(v.id, true);
+    v = await t.svc.view(v.id);
+    assert.equal(v.link?.ok, false);
+    assert.equal(v.link?.why, "#4 isn't built on #2, the layer before it");
+    await assert.rejects(t.svc.link(v.id), /#4 isn't built on #2/);
+    await t.svc.remove(v.id);
+
+    // #1 ← #2 are a stack on GitHub already: #3 goes on top.
+    await t.setState((s) => {
+      Object.assign(s, { stacks: [{ number: 7, prs: [1, 2] }] });
+    });
+    v = await t.svc.create(t.w.local, { prs: [1, 2, 3] });
+    await t.svc.sync(v.id, true);
+    v = await t.svc.view(v.id);
+    assert.deepEqual(v.link, { ok: true, prs: [3], onto: 7, why: null });
+    v = await t.svc.link(v.id);
+    assert.deepEqual(v.layers.map((l) => [l.pr, l.ghStack]), [[1, 7], [2, 7], [3, 7]]);
+    assert.match(await readFile(`${t.w.stateFile}.log`, 'utf8'), /--method POST repos\/me\/proj\/stacks\/7\/add -F pull_requests\[\]=3/);
   });
 });

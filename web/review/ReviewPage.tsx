@@ -644,6 +644,31 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
       >
         Rename…
       </button>
+      {stack.link && (
+        <button
+          disabled={!stack.link.ok}
+          title={stack.link.why ?? undefined}
+          onClick={async () => {
+            close();
+            const l = stack.link!;
+            const names = l.prs.map((n) => `#${n}`).join(', ');
+            const ok = await askConfirm({
+              title: l.onto === null ? 'Make these a stack on GitHub?' : `Add ${l.prs.length === 1 ? 'this' : 'these'} to stack #${l.onto} on GitHub?`,
+              body: `${names} ${l.onto === null ? 'become a stack on GitHub, bottom to top' : `go on top of stack #${l.onto}`}. GitHub then merges a PR with the PRs under it, and rebases the rest itself. Unstack it on GitHub to undo.`,
+              confirm: l.onto === null ? 'Make a stack' : 'Add to the stack',
+            });
+            if (!ok) return;
+            try {
+              setStack(await api.link(stack.id));
+              toast('A stack on GitHub now');
+            } catch (e) {
+              showError(e, "Couldn't make the stack on GitHub");
+            }
+          }}
+        >
+          {stack.link.ok ? (stack.link.onto === null ? 'Make it a stack on GitHub…' : `Add to stack #${stack.link.onto} on GitHub…`) : `Not a stack on GitHub: ${stack.link.why}`}
+        </button>
+      )}
       {stack.methods.length > 1 &&
         stack.methods.map((m) => (
           <button

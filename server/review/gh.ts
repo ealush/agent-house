@@ -213,6 +213,20 @@ export async function listStacks(root: string, repo: string): Promise<NativeStac
   return out;
 }
 
+/**
+ * Make a stack on GitHub of PRs, bottom to top, each based on the one before;
+ * or put them on top of stack `onto`. GitHub checks the chain.
+ */
+export async function linkStack(root: string, repo: string, prs: number[], onto: number | null): Promise<NativeStack> {
+  const r = await ghApi(root, ['--method', 'POST', onto === null ? `repos/${repo}/stacks` : `repos/${repo}/stacks/${onto}/add`, ...prs.flatMap((n) => ['-F', `pull_requests[]=${n}`])]);
+  const b = (r.body && typeof r.body === 'object' && !Array.isArray(r.body) ? r.body : {}) as { message?: unknown; errors?: { message?: unknown }[] };
+  if (r.status === 404) throw new GhError(onto === null ? `stacked pull requests are off in ${repo}` : `${repo} has no stack #${onto}`);
+  if (r.status >= 400) throw new GhError(String(b.errors?.[0]?.message ?? b.message ?? `GitHub refused the stack (${r.status})`));
+  const st = toStack(r.body);
+  if (!st) throw new GhError('GitHub answered without the stack');
+  return st;
+}
+
 export type MergeRequest = { status: 'merged' | 'enqueued' | 'pending'; uuid: string | null; message: string };
 
 function mergeReply(r: { status: number; body: unknown }, what: string): MergeRequest {

@@ -12,6 +12,7 @@ import {
   hasGhStack,
   inMergeQueue,
   listPrs,
+  linkStack,
   listStacks,
   markReady,
   mergePr,
@@ -159,6 +160,8 @@ export type StackView = {
   source: 'tree' | 'manual' | 'native';
   /** The stack on GitHub this one follows (source "native"). */
   ghStack: number | null;
+  /** Whether its open PRs can become a stack on GitHub (or go on top of one), and if not, why. null: nothing to link. */
+  link: { ok: boolean; prs: number[]; onto: number | null; why: string | null } | null;
   planPath: string | null;
   state: string;
   syncedAt: number;
@@ -659,6 +662,7 @@ export class ReviewService {
       methods: this.methods.get(s.repoRoot) ?? ['merge'],
       source: sourceOf(s),
       ghStack: s.ghStack,
+      link: linkPlan(views, natives),
       planPath: s.planPath,
       state: s.state,
       syncedAt: s.syncedAt,
@@ -1323,6 +1327,24 @@ export class ReviewService {
     }
   }
 
+  /**
+   * Make the stack's open PRs a stack on GitHub (or put the rest on top of the
+   * one its bottom layers are in). Then GitHub merges them bottom-up and
+   * rebases them, and the review follows that stack.
+   */
+  async link(id: string): Promise<StackView> {
+    await this.sync(id, true);
+    const s = await this.stack(id);
+    const plan = (await this.view(id)).link;
+    if (!plan) throw new ReviewError(409, 'its open pull requests are a stack on GitHub already');
+    if (!plan.ok) throw new ReviewError(409, plan.why ?? "these pull requests can't be a stack on GitHub");
+    const ns = await this.gh(() => linkStack(s.repoRoot, s.repo, plan.prs, plan.onto));
+    await this.db.reviewStack.update({ where: { id }, data: { source: 'native', ghStack: ns.number } });
+    this.native.delete(s.repoRoot);
+    await this.sync(id, true).catch(() => {});
+    return this.view(id);
+  }
+
   /** Point a layer whose parent already merged at the trunk. */
   async retargetLayer(id: string, pr: number): Promise<StackView> {
     const s = await this.stack(id);
@@ -1603,6 +1625,31 @@ export class ReviewService {
     }
   }
   private snapshotPrimed = false;
+}
+
+/**
+ * How a stack's open layers would become a stack on GitHub: all of them, in
+ * order, each based on the one before; or, when its bottom layers already are
+ * the top of one, the rest on top of that.
+ */
+export function linkPlan(layers: Pick<LayerView, 'pr' | 'role' | 'state' | 'headRef' | 'baseRef' | 'ghStack'>[], natives: NativeStack[]): StackView['link'] {
+  const open = layers.filter((l) => l.state === 'open' || l.state === 'skipped');
+  const no = (why: string) => ({ ok: false, prs: [], onto: null, why });
+  const stacks = [...new Set(open.map((l) => l.ghStack).filter((n): n is number => n !== null))];
+  if (stacks.length === 1 && open.every((l) => l.ghStack === stacks[0])) return null;
+  if (open.length < 2) return null;
+  if (stacks.length > 1) return no(`its pull requests are in ${stacks.length} stacks on GitHub`);
+  const inStack = open.filter((l) => l.ghStack !== null).length;
+  if (open.slice(0, inStack).some((l) => l.ghStack === null)) return no('only its bottom layers can already be a stack on GitHub');
+  const ns = stacks.length ? natives.find((n) => n.number === stacks[0]) : undefined;
+  if (stacks.length && ns && ns.prs.filter((p) => p.open).at(-1)?.number !== open[inStack - 1].pr) return no(`stack #${stacks[0]} on GitHub goes on past #${open[inStack - 1].pr}`);
+  for (let i = Math.max(1, inStack); i < open.length; i++) {
+    if (open[i].baseRef !== open[i - 1].headRef) return no(`#${open[i].pr} isn't built on #${open[i - 1].pr}, the layer before it`);
+  }
+  const rest = open.slice(inStack);
+  const skipped = rest.find((l) => l.state === 'skipped');
+  if (skipped) return no(`#${skipped.pr} is skipped here`);
+  return { ok: true, prs: rest.map((l) => l.pr), onto: stacks[0] ?? null, why: null };
 }
 
 /**

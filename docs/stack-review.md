@@ -121,6 +121,14 @@ each above the PR under it. If the stack is dissolved on GitHub the review
 keeps its layers and becomes a picked one, as it does when you take a PR out.
 How these merge is under *GitHub's own stacks* below.
 
+**Making one.** A review whose open PRs are a chain (each built on the one
+before) but not a stack on GitHub offers *Make it a stack on GitHub* in its
+··· menu (`POST /repos/{repo}/stacks`). When its bottom layers already are the
+top of a stack on GitHub, it offers to add the rest on top (`…/stacks/<n>/add`).
+Either way it's an explicit action with a confirm, never a side effect, and
+the review follows that stack from then on. When it can't (two stacks, a PR
+not built on the one before, a skipped layer), the item says why.
+
 *Supporting the real thing.* Sapling and ghstack aren't installed here. Each
 already pushes one PR per commit with stacked branches, which is the GitHub
 chain above, and `gh stack link` turns their branches into a stack on GitHub.
