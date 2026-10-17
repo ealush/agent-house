@@ -413,3 +413,94 @@ test('historic search jumps include messages older than the latest chat window',
   assert.ok(!(await store.history('old')).some((m) => m.id === first.id));
   assert.ok((await store.history('old', first.id)).some((m) => m.id === first.id));
 });
+
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+
+test('models: chat models only, newest first, Gemini prefixes dropped', async () => {
+  const { store: s } = await freshStore();
+  await withFetch(
+    () =>
+      json({
+        data: [
+          { id: 'gpt-old', created: 100 },
+          { id: 'text-embedding-3-large', created: 900 },
+          { id: 'models/gemini-new', created: 300 },
+          { id: 'tts-1', created: 800 },
+          { id: 'grok-imagine-video', created: 700 },
+          { id: 'gpt-old', created: 100 },
+        ],
+      }),
+    async () => {
+      assert.deepEqual(await s.models({ baseUrl: 'https://api.example.com/v1/', apiKey: 'sk-typed' }), ['gemini-new', 'gpt-old']);
+    },
+  );
+});
+
+test('models: bearer for OpenAI-style APIs, x-api-key for Anthropic', async () => {
+  const { store: s } = await freshStore();
+  let calls: { url: unknown; init: unknown }[] = [];
+  await withFetch(
+    (seen) => {
+      calls = seen;
+      return json({ data: [{ id: 'claude-a', created_at: '2026-01-01T00:00:00Z' }, { id: 'claude-b', created_at: '2026-09-01T00:00:00Z' }] });
+    },
+    async () => {
+      assert.deepEqual(await s.models({ baseUrl: 'https://api.anthropic.com/v1', apiKey: 'sk-ant' }), ['claude-b', 'claude-a']);
+      await s.models({ baseUrl: 'https://api.openai.com/v1', apiKey: 'sk-oai' });
+    },
+  );
+  const [ant, oai] = calls.map((c) => ({ url: String(c.url), headers: (c.init as { headers: Record<string, string> }).headers }));
+  assert.equal(ant.url, 'https://api.anthropic.com/v1/models?limit=100');
+  assert.deepEqual(ant.headers, { 'x-api-key': 'sk-ant', 'anthropic-version': '2023-06-01' });
+  assert.equal(oai.url, 'https://api.openai.com/v1/models');
+  assert.deepEqual(oai.headers, { authorization: 'Bearer sk-oai' });
+});
+
+test('models: a saved key only goes to its own URL', async () => {
+  const { store: s, id } = await subscribed();
+  await withFetch(
+    () => json({ data: [{ id: 'm1' }] }),
+    async () => {
+      assert.deepEqual(await s.models({ baseUrl: 'https://api.example.com/v1', id }), ['m1']);
+      await assert.rejects(s.models({ baseUrl: 'https://evil.example/v1', id }), /type the key/);
+    },
+  );
+  await assert.rejects(s.models({ baseUrl: 'https://api.example.com/v1' }), /API key required/);
+  await assert.rejects(s.models({ baseUrl: 'ftp://x', apiKey: 'k' }), /base URL/);
+  await withFetch(
+    () => new Response('{"error":{"message":"invalid key"}}', { status: 401 }),
+    async () => {
+      await assert.rejects(s.models({ baseUrl: 'https://api.example.com/v1', apiKey: 'bad' }), /^Error: provider: 401 invalid key$/);
+    },
+  );
+});
+
+test('picked: a conversation keeps the subscription picked in it; others follow the active one', async () => {
+  const { store: s, id: work } = await subscribed();
+  const other = (await s.put({ name: 'zeta', baseUrl: 'https://other.example/v1', model: 'z', apiKey: 'k2' })).id;
+  assert.equal(await s.picked('u1'), work, 'nothing picked: the active one');
+  const models: string[] = [];
+  await withFetch(
+    (seen) => {
+      models.push(JSON.parse(String((seen.at(-1)!.init as { body: string }).body)).model);
+      return ok(JSON.stringify({ content: 'ok', followups: [] }));
+    },
+    async () => {
+      await s.chat('u1', 'first', ctx, other);
+      await s.chat('u1', 'again', ctx);
+      await s.chat('u2', 'elsewhere', ctx);
+    },
+  );
+  assert.deepEqual(models, ['z', 'z', 'model'], 'u1 stays on its pick without asking again; u2 uses the active one');
+  assert.equal(await s.picked('u1'), other);
+  await s.setDefault(other);
+  assert.equal(await s.picked('u2'), other, 'a new active one reaches conversations without a pick');
+  await s.pick('u3', work);
+  await s.remove(work);
+  assert.equal(await s.picked('u3'), other, 'a deleted pick falls back to the active one');
+  const third = (await s.put({ name: 'alpha', baseUrl: 'https://third.example/v1', model: 'a', apiKey: 'k3' })).id;
+  await s.setDefault(third);
+  assert.equal(await s.picked('u1'), other, 'a pick outlasts a new active one');
+  await s.clear('u1');
+  assert.equal(await s.picked('u1'), third, 'clearing a chat forgets its pick');
+});

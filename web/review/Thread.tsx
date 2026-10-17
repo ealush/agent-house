@@ -4,6 +4,7 @@ import type { Finding, Followup, Layer, ReviewApi, ThreadMsg } from '../reviewAp
 import { askConfirm, showError, showNotice } from '../ask.tsx';
 import { Icon } from '../icons.tsx';
 import { Markdown } from '../Markdown.tsx';
+import { SubscriptionPicker } from '../SubscriptionPicker.tsx';
 import { FindingRow } from './Findings.tsx';
 
 type Row = ThreadMsg & { key: string; pending?: boolean; failed?: string; followups?: Followup[] };
@@ -72,6 +73,8 @@ export function Thread({
       .then((t) => {
         setRows(t.messages.map((m) => ({ ...m, key: `m${m.id}` })));
         setCards(t.findings);
+        // This thread's own pick, else the active subscription.
+        setSubId(t.subscriptionId ?? undefined);
       })
       .catch((e) => setError(e.message));
 
@@ -80,11 +83,9 @@ export function Thread({
     setRows([]);
     setCards([]);
     setError(null);
+    setSubId(undefined);
     void load();
-    client.subscriptions().then((s) => {
-      setSubs(s);
-      setSubId((cur) => cur ?? s.find((x) => x.isDefault)?.id ?? s[0]?.id);
-    }, () => setSubs([]));
+    client.subscriptions().then(setSubs, () => setSubs([]));
   }, [stackId, pr]);
 
   useLayoutEffect(() => {
@@ -127,6 +128,7 @@ export function Thread({
       gen.current++;
       await api.clearThread(stackId, pr);
       setRows([]);
+      setSubId(undefined);
       setCards([]);
       onChanged();
     } catch (e) {
@@ -243,14 +245,17 @@ export function Thread({
           void ask(draft);
         }}
       >
-        {subs && subs.length > 1 && (
-          <select aria-label="Reviewer model" value={subId ?? ''} onChange={(e) => setSubId(e.target.value || undefined)}>
-            {subs.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name} · {s.model}
-              </option>
-            ))}
-          </select>
+        {subs && subs.length > 0 && (
+          <SubscriptionPicker
+            subs={subs}
+            value={subId}
+            title="Reviewer model"
+            note="This thread keeps it"
+            onPick={(id) => {
+              setSubId(id);
+              api.pickSubscription(stackId, pr, id).catch((e) => showError(e, "Couldn't switch the reviewer"));
+            }}
+          />
         )}
         <div className="sidechat-field">
           <textarea

@@ -35,7 +35,7 @@ export type { LaunchChange, QueueItem } from './queue.ts';
 export type Host = { name: string; self: boolean; online: boolean };
 
 /** Bumped when the state shape or API routes change, so a newer page can tell an older server apart. */
-export const API_VERSION = 24;
+export const API_VERSION = 26;
 
 export type State = {
   api: number;

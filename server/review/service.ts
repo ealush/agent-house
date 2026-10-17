@@ -1622,18 +1622,25 @@ export class ReviewService {
     return { path: s.planPath, text: await this.planText(s) };
   }
 
-  async thread(id: string, pr: number | null): Promise<{ messages: { role: string; text: string; at: number; id: number }[]; findings: FindingView[] }> {
+  async thread(id: string, pr: number | null): Promise<{ messages: { role: string; text: string; at: number; id: number }[]; findings: FindingView[]; subscriptionId: string | null }> {
     await this.stack(id);
     if (pr !== null) await this.layer(id, pr);
     const rows = await this.db.chatMessage.findMany({ where: { uid: threadKey(id, pr) }, orderBy: { id: 'asc' } });
     const ids = rows.map((r) => r.id);
     const proposed = ids.length ? await this.db.reviewFinding.findMany({ where: { stackId: id, messageId: { in: ids } }, orderBy: { id: 'asc' } }) : [];
-    return { messages: rows.map((r) => ({ role: r.role, text: r.text, at: r.at, id: r.id })), findings: proposed.map((f) => findingView(f)) };
+    return { messages: rows.map((r) => ({ role: r.role, text: r.text, at: r.at, id: r.id })), findings: proposed.map((f) => findingView(f)), subscriptionId: await this.chat.picked(threadKey(id, pr)) };
+  }
+
+  /** Pick the subscription a thread answers with, before asking it anything. */
+  async pickThread(id: string, pr: number | null, subscriptionId: string): Promise<void> {
+    await this.stack(id);
+    if (pr !== null) await this.layer(id, pr);
+    await this.chat.pick(threadKey(id, pr), subscriptionId);
   }
 
   async clearThread(id: string, pr: number | null): Promise<void> {
     await this.db.reviewFinding.deleteMany({ where: { stackId: id, state: 'proposed', messageId: { not: null } } });
-    await this.db.chatMessage.deleteMany({ where: { uid: threadKey(id, pr) } });
+    await this.chat.clear(threadKey(id, pr));
   }
 
   /**
@@ -1644,9 +1651,10 @@ export class ReviewService {
   async ask(id: string, pr: number | null, text: string, subscriptionId?: string) {
     const s = await this.stack(id);
     if (pr !== null) await this.layer(id, pr);
-    const sub = await this.chat.subscription(subscriptionId);
-    const env = await this.env(s);
     const key = threadKey(id, pr);
+    const sub = await this.chat.subscription(subscriptionId ?? (await this.chat.picked(key)) ?? undefined);
+    if (subscriptionId) await this.chat.pick(key, subscriptionId);
+    const env = await this.env(s);
     const prior = (await this.db.chatMessage.findMany({ where: { uid: key }, orderBy: { id: 'desc' }, take: THREAD_HISTORY })).reverse();
     const cur = pr === null ? null : await this.currentRev(id, pr);
     const messages = await reviewMessages(env, { pr }, prior.map((m) => ({ role: m.role as 'user' | 'assistant', text: m.text })), text, cur?.summary ?? null);

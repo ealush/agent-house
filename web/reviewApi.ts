@@ -163,7 +163,8 @@ export function reviewApi(base = '') {
     resolveThread: (id: string, fid: number, body: string) => r<Finding>('POST', `${s(id)}/findings/${fid}/resolve`, { body }),
     addDecision: (id: string, text: string, fromPr: number | null) => r<Stack>('POST', `${s(id)}/decisions`, { text, fromPr }),
     removeDecision: (id: string, did: number) => r<Stack>('DELETE', `${s(id)}/decisions/${did}`),
-    thread: (id: string, pr: number | null) => r<{ messages: ThreadMsg[]; findings: Finding[] }>('GET', `${s(id)}/chat${pr ? `?pr=${pr}` : ''}`),
+    thread: (id: string, pr: number | null) => r<{ messages: ThreadMsg[]; findings: Finding[]; subscriptionId: string | null }>('GET', `${s(id)}/chat${pr ? `?pr=${pr}` : ''}`),
+    pickSubscription: (id: string, pr: number | null, subscriptionId: string) => r<{ ok: true }>('PUT', `${s(id)}/chat/subscription`, { pr, id: subscriptionId }),
     ask: (id: string, pr: number | null, text: string, subscriptionId?: string) =>
       r<{ message: ThreadMsg; followups: Followup[]; findings: Finding[] }>('POST', `${s(id)}/chat`, { text, pr, ...(subscriptionId ? { subscriptionId } : {}) }),
     clearThread: (id: string, pr: number | null) => r('DELETE', `${s(id)}/chat${pr ? `?pr=${pr}` : ''}`),

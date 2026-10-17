@@ -890,6 +890,17 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     return send(res, 200, out);
   }
 
+  // The models an endpoint offers, so the form can offer them: a typed key, or a saved one at its own URL.
+  if (route('POST', /^\/api\/subscriptions\/models$/)) {
+    const body = await readJson(req);
+    const models = await sidechat.models({
+      baseUrl: str(body.baseUrl ?? '', 'baseUrl', 200),
+      ...(body.apiKey === undefined ? {} : { apiKey: str(body.apiKey, 'apiKey', 500) }),
+      ...(body.id === undefined ? {} : { id: str(body.id, 'id', 40) }),
+    });
+    return send(res, 200, { models });
+  }
+
   if ((m = route('DELETE', /^\/api\/subscriptions\/([\w-]{1,40})$/))) {
     await sidechat.remove(m[1]);
     audit(req, 'subscription.remove', { id: m[1] });
@@ -955,8 +966,15 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
 
   if ((m = route('GET', /^\/api\/windows\/(@\d+)\/chat$/))) {
     const key = await chatKeyFor(m![1]);
-    const [messages, subscriptionId] = await Promise.all([sidechat.history(key), sidechat.defaultId()]);
+    const [messages, subscriptionId] = await Promise.all([sidechat.history(key), sidechat.picked(key)]);
     return send(res, 200, { messages, subscriptionId });
+  }
+
+  // The subscription this side chat answers with, picked before (or between) turns.
+  if ((m = route('PUT', /^\/api\/windows\/(@\d+)\/chat\/subscription$/))) {
+    const key = await chatKeyFor(m![1]);
+    await sidechat.pick(key, str((await readJson(req)).id, 'id', 40));
+    return send(res, 200, { ok: true });
   }
 
   if ((m = route('POST', /^\/api\/windows\/(@\d+)\/chat$/))) {

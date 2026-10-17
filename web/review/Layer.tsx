@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { HostApi } from '../api.ts';
+import type { HostApi, Subscription } from '../api.ts';
 import { STATUS_WORD, type DiffOut, type Finding, type Layer, type ReviewApi, type Stack } from '../reviewApi.ts';
 import { askConfirm, askText, showError } from '../ask.tsx';
 import { ConfirmButton } from '../ConfirmButton.tsx';
@@ -7,6 +7,7 @@ import { Glide } from '../Glide.tsx';
 import { Popover } from '../ModelPicker.tsx';
 import { Icon } from '../icons.tsx';
 import { Markdown } from '../Markdown.tsx';
+import { SubscriptionPicker } from '../SubscriptionPicker.tsx';
 import { age, look } from '../agents.ts';
 import { ReviewDiff } from './Diff.tsx';
 import { FindingsList } from './Findings.tsx';
@@ -243,6 +244,13 @@ export function LayerView({
   const [selected, setSelected] = useState<Set<number>>(() => new Set());
   const [sending, setSending] = useState<{ ids: number[]; extra: string; kind?: 'restack' } | null>(null);
   const [summarizing, setSummarizing] = useState(false);
+  /** Who writes briefings and re-checks: Settings → Subscriptions' choice, else the active one. */
+  const [subs, setSubs] = useState<Subscription[]>([]);
+  const [summaryId, setSummaryId] = useState<string | null>(null);
+  useEffect(() => {
+    client.subscriptions().then(setSubs, () => {});
+    api.settings().then((s) => setSummaryId(s.summaryId), () => {});
+  }, []);
   const [importing, setImporting] = useState(false);
   // The briefing is for a first read; on a re-review, what changed comes first.
   const [briefOpen, setBriefOpen] = useState(layer.status === 'unreviewed' || layer.status === 'changes');
@@ -310,6 +318,8 @@ export function LayerView({
     return () => {
       live = false;
       clearTimeout(timer);
+      // Its poll stops here, so it can't clear the flag; this run's answer (a briefing, another layer) does.
+      setSummarizing(false);
     };
   }, [stack.id, layer.pr, rev?.id, !!rev?.summary]);
 
@@ -523,19 +533,57 @@ export function LayerView({
     />
   );
 
+  /** Write the briefing again (another model, or a fresh read) and watch it finish. */
+  const rewrite = () =>
+    api.summarize(stack.id, layer.pr, true).then(() => {
+      setSummarizing(true);
+      const poll = () =>
+        api.busy(stack.id, layer.pr).then(
+          (b) => {
+            if (b.summarizing) return void setTimeout(poll, 2000);
+            setSummarizing(false);
+            onStack();
+          },
+          () => setSummarizing(false),
+        );
+      setTimeout(poll, 2000);
+    });
+
   const summary = briefOpen && (
     <section className="briefing" aria-label="Briefing">
       {rev?.summary ? (
-        <Markdown text={rev.summary} />
+        <>
+          {summarizing && <p className="hint">Writing it again…</p>}
+          <Markdown text={rev.summary} />
+        </>
       ) : summarizing ? (
         <p className="hint">Reading the layer for a briefing…</p>
       ) : (
         <p className="hint">{rev ? 'No briefing yet. Add a model under Settings → Subscriptions for one.' : 'Fetching this layer…'}</p>
       )}
-      {rev?.summary && (
-        <button className="btn ghost small" onClick={() => api.summarize(stack.id, layer.pr, true).then(() => setSummarizing(true)).then(() => onStack(), () => {})} title="Write the briefing again">
-          Write it again
-        </button>
+      {rev && subs.length > 0 && (
+        <div className="briefing-foot">
+          <SubscriptionPicker
+            subs={subs}
+            value={summaryId}
+            up={false}
+            title="Briefings and re-checks"
+            note="For every stack; rewrites this one"
+            disabled={summarizing}
+            onPick={(id) =>
+              api
+                .setSummaryModel(id)
+                .then((s) => setSummaryId(s.summaryId))
+                .then(rewrite)
+                .catch((e) => showError(e, "Couldn't switch the model"))
+            }
+          />
+          {rev.summary && !summarizing && (
+            <button className="btn ghost small" onClick={() => void rewrite().catch(() => {})} title="Write the briefing again">
+              Write it again
+            </button>
+          )}
+        </div>
       )}
     </section>
   );

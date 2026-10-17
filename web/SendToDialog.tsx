@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ConfirmButton } from './ConfirmButton.tsx';
 import type { HostApi, SendResult, Subscription, Win } from './api.ts';
+import { SubscriptionPicker } from './SubscriptionPicker.tsx';
 import { look } from './agents.ts';
 import { handoffText, readHandoff } from './gui/reducer.ts';
 import { SheetBar, useSheet } from './sheet.tsx';
@@ -190,15 +191,17 @@ export function SendToDialog({ client, clientFor, source, windows, multiHost, on
           </p>
         )}
         {summaryError && <p className="form-error">{summaryError}</p>}
-        {subs.length > 1 && (
-          <label className="field">
-            <span>Subscription</span>
-            <select
-              aria-label="Chat subscription"
-              value={subId ?? ''}
+        {subs.length > 0 && (
+          <div className="field">
+            <span>Summary by</span>
+            <SubscriptionPicker
+              subs={subs}
+              value={subId}
+              up={false}
+              title="Chat subscription"
+              note="For this summary"
               disabled={busy || loading}
-              onChange={(e) => {
-                const id = e.target.value || undefined;
+              onPick={(id) => {
                 setSubId(id);
                 setLoading(true);
                 setSummaryError(null);
@@ -210,14 +213,8 @@ export function SendToDialog({ client, clientFor, source, windows, multiHost, on
                   })
                   .finally(() => setLoading(false));
               }}
-            >
-              {subs.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} · {s.model}
-                </option>
-              ))}
-            </select>
-          </label>
+            />
+          </div>
         )}
         {loading ? (
           <p className="hint">{status}</p>

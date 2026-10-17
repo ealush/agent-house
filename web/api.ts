@@ -163,7 +163,7 @@ export type Preset = {
 
 export type Host = { name: string; self: boolean; online: boolean };
 
-export const API_VERSION = 24;
+export const API_VERSION = 26;
 
 export type PullInfo = { number: number | null; url: string | null };
 
@@ -416,12 +416,14 @@ export function hostApi(base: string) {
     env: () => r<EnvState>('GET', '/api/env'),
     saveEnv: (body: { name: string; value?: string; secret: boolean }) => r<EnvVar>('POST', '/api/env', body),
     removeEnv: (name: string) => r('DELETE', `/api/env/${enc(name)}`),
+    subscriptionModels: (body: { baseUrl: string; apiKey?: string; id?: string }) => r<{ models: string[] }>('POST', '/api/subscriptions/models', body),
     removeSubscription: (id: string) => r('DELETE', `/api/subscriptions/${enc(id)}`),
     defaultSubscription: (id: string) => r('POST', '/api/subscriptions/default', { id }),
     /** One-shot handoff brief from a chat subscription. Not stored as side chat. */
     summarize: (text: string, subscriptionId?: string) =>
       r<{ summary: string }>('POST', '/api/summarize', subscriptionId ? { text, subscriptionId } : { text }),
     chat: (id: string) => r<{ messages: ChatMsg[]; subscriptionId: string | null }>('GET', `/api/windows/${enc(id)}/chat`),
+    pickChatSubscription: (id: string, subscriptionId: string) => r('PUT', `/api/windows/${enc(id)}/chat/subscription`, { id: subscriptionId }),
     sendChat: (id: string, text: string, subscriptionId?: string) =>
       r<ChatReply>('POST', `/api/windows/${enc(id)}/chat`, subscriptionId ? { text, subscriptionId } : { text }),
     clearChat: (id: string) => r('DELETE', `/api/windows/${enc(id)}/chat`),

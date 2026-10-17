@@ -44,9 +44,19 @@ added ones.
 ## SET-6 · Subscriptions — shipped
 
 Chat subscriptions (bring your own key): named OpenAI-compatible endpoints for
-side chat and Send to's summaries. Keys live on the host, masked; blank on edit
-keeps the stored one; a default; hand the key to sessions as an environment
-variable.
+side chat, Review and Send to's summaries. Keys live on the host, masked; blank
+on edit keeps the stored one; hand the key to sessions as an environment
+variable. One is **active** (a radio in the list): it answers wherever nothing
+else is picked. Every place a subscription answers — side chat, a Review thread,
+Review's briefings, Send to — shows the one in use in the same menu and can
+switch it; a side chat or thread keeps its pick, briefings and re-checks share
+one choice (also here).
+
+A new one starts from a provider — Claude, OpenAI, Gemini, Muse — that fills in
+its endpoint, name and a model and links to where keys are made; **Other** takes
+any OpenAI-compatible URL. Once a key is in, Model lists the endpoint's chat
+models to pick from (a saved key is only sent to its own URL); one can still be
+typed by hand.
 
 ## SET-7 · Environment — shipped
 

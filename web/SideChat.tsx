@@ -3,6 +3,7 @@ import type { ChatMsg, Followup, HostApi, SendResult, Subscription, Win } from '
 import { askConfirm, showError, showNotice } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { Markdown } from './Markdown.tsx';
+import { SubscriptionPicker } from './SubscriptionPicker.tsx';
 
 // Side chat: talk about the session's change without polluting the agent's
 // context. The server answers with the working diff, branch and PR attached.
@@ -69,11 +70,13 @@ export function SideChat({ client, w, onSent }: { client: HostApi; w: Win; onSen
     setError(null);
     seenRef.current = 0;
     prevLenRef.current = 0;
+    setSubId(undefined);
     client
       .chat(w.id)
       .then((r) => {
         setMessages(r.messages.map((m, i) => ({ ...m, key: m.id != null ? `m${m.id}` : `i${i}`, state: 'sent' as RowState })));
-        setSubId((cur) => cur ?? r.subscriptionId ?? undefined);
+        // This chat's own pick, else the active subscription.
+        setSubId(r.subscriptionId ?? undefined);
       })
       .catch((e) => setError(e.message));
     client.subscriptions().then(setSubs).catch(() => setSubs([]));
@@ -203,6 +206,7 @@ export function SideChat({ client, w, onSent }: { client: HostApi; w: Win; onSen
       genRef.current += 1;
       await client.clearChat(w.id);
       setMessages([]);
+      setSubId(undefined);
     } catch (e) {
       showError(e, "Couldn't clear the chat");
     }
@@ -314,14 +318,17 @@ export function SideChat({ client, w, onSent }: { client: HostApi; w: Win; onSen
           submit(draft);
         }}
       >
-        {subs && subs.length > 1 && (
-          <select aria-label="Chat subscription" value={subId ?? ''} onChange={(e) => setSubId(e.target.value || undefined)}>
-            {subs.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name} · {s.model}
-              </option>
-            ))}
-          </select>
+        {subs && subs.length > 0 && (
+          <SubscriptionPicker
+            subs={subs}
+            value={subId}
+            title="Chat subscription"
+            note="This chat keeps it"
+            onPick={(id) => {
+              setSubId(id);
+              client.pickChatSubscription(w.id, id).catch((e) => showError(e, "Couldn't switch the subscription"));
+            }}
+          />
         )}
         <div className="sidechat-field">
           <textarea

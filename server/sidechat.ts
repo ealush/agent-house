@@ -522,7 +522,38 @@ function firstLine(s: string): string {
   return s.trim().split('\n').map((l) => l.trim()).find(Boolean) ?? '';
 }
 
+/** A provider's error body as words: its JSON error's message (OpenAI, Anthropic, Gemini), else its first line. */
+function providerMessage(body: string): string {
+  try {
+    const j = JSON.parse(body) as { error?: { message?: unknown } | unknown; message?: unknown };
+    const e = j.error as { message?: unknown } | undefined;
+    const m = typeof e?.message === 'string' ? e.message : typeof j.error === 'string' ? j.error : typeof j.message === 'string' ? j.message : '';
+    if (m) return firstLine(m);
+  } catch {}
+  return firstLine(body);
+}
+
+/** Models a side chat can talk to, newest first: no embeddings, speech, images or video. */
+export function chatModels(rows: unknown[]): string[] {
+  const NOT_CHAT = /embed|tts|whisper|transcribe|dall-e|image|imagine|video|veo|audio|realtime|moderation|aqa/i;
+  const seen = new Set<string>();
+  return rows
+    .map((r, i) => {
+      const row = (r ?? {}) as { id?: unknown; created?: unknown; created_at?: unknown };
+      const id = typeof row.id === 'string' ? row.id.replace(/^models\//, '') : '';
+      const at = typeof row.created === 'number' ? row.created * 1000 : typeof row.created_at === 'string' ? Date.parse(row.created_at) : NaN;
+      return { id, at: Number.isFinite(at) ? at : null, i };
+    })
+    .filter((m) => m.id && m.id.length <= 80 && !NOT_CHAT.test(m.id) && !seen.has(m.id) && seen.add(m.id))
+    // Newest first where the provider dates them; otherwise its own order.
+    .sort((a, b) => (a.at !== null && b.at !== null ? b.at - a.at : a.i - b.i))
+    .slice(0, 200)
+    .map((m) => m.id);
+}
+
 const DEFAULT_SETTING = 'sidechat.defaultId';
+/** Setting key prefix: the subscription picked in one conversation (side chat or Review thread). */
+const PICKED = 'chat.picked:';
 
 export class SideChatStore {
   private db: PrismaClient;
@@ -575,6 +606,47 @@ export class SideChatStore {
       await this.db.setting.create({ data: { key: DEFAULT_SETTING, value: created.id } });
     }
     return this.redact(created, await this.defaultId());
+  }
+
+  /**
+   * The chat models an endpoint offers (GET {baseUrl}/models), newest first,
+   * for the form to pick from. With no key typed, a saved subscription's key
+   * is used, but only at the URL it was saved with: a stored key never goes to
+   * a new host.
+   */
+  async models(input: { baseUrl: string; apiKey?: string; id?: string }): Promise<string[]> {
+    const baseUrl = input.baseUrl.trim().replace(/\/+$/, '');
+    if (!/^https?:\/\/[^/]+/.test(baseUrl)) throw new SideChatError(400, 'base URL must be http(s)');
+    let apiKey = input.apiKey ?? '';
+    if (!apiKey && input.id) {
+      const s = await this.db.subscription.findUnique({ where: { id: input.id } });
+      if (!s) throw new SideChatError(404, 'subscription not found');
+      if (s.baseUrl !== baseUrl) throw new SideChatError(400, 'type the key to list models at a new URL');
+      apiKey = s.apiKey;
+    }
+    if (!apiKey) throw new SideChatError(400, 'API key required');
+    // Anthropic's model list takes its own key header, not a bearer token.
+    const anthropic = new URL(baseUrl).hostname === 'api.anthropic.com';
+    let res: Response;
+    try {
+      res = await fetch(`${baseUrl}/models${anthropic ? '?limit=100' : ''}`, {
+        headers: anthropic ? { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' } : { authorization: `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+    } catch (err) {
+      throw new SideChatError(502, err instanceof Error && err.name === 'TimeoutError' ? 'provider timed out' : 'provider unreachable');
+    }
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new SideChatError(502, `provider: ${res.status} ${providerMessage(body).slice(0, 200) || res.statusText}`.trim());
+    }
+    let data: { data?: unknown };
+    try {
+      data = await res.json();
+    } catch {
+      throw new SideChatError(502, 'provider returned invalid JSON');
+    }
+    return chatModels(Array.isArray(data.data) ? data.data : []);
   }
 
   /** A session variable name no other subscription or saved variable already uses; null for ''. */
@@ -633,6 +705,7 @@ export class SideChatStore {
     const legacy = await this.db.chatMessage.count({ where: { uid: fromUid } });
     if (!legacy) return;
     await this.db.chatMessage.updateMany({ where: { uid: fromUid }, data: { uid: toKey } });
+    await this.db.setting.updateMany({ where: { key: PICKED + fromUid }, data: { key: PICKED + toKey } }).catch(() => {});
   }
 
   async history(uid: string, aroundId?: number): Promise<ChatMessage[]> {
@@ -701,9 +774,28 @@ export class SideChatStore {
 
   async clear(uid: string): Promise<void> {
     await this.db.chatMessage.deleteMany({ where: { uid } });
+    await this.db.setting.deleteMany({ where: { key: PICKED + uid } });
   }
 
-  /** The subscription to use: the one asked for, else the default. */
+  /**
+   * The subscription a conversation (a side chat, a Review thread) answers
+   * with: the one last picked in it, else the active one. Null with none.
+   */
+  async picked(key: string): Promise<string | null> {
+    const [row, subs] = await Promise.all([
+      this.db.setting.findUnique({ where: { key: PICKED + key } }),
+      this.db.subscription.findMany({ select: { id: true } }),
+    ]);
+    return row && subs.some((s) => s.id === row.value) ? row.value : this.defaultId();
+  }
+
+  /** Remember the subscription picked in a conversation; it keeps answering there. */
+  async pick(key: string, id: string): Promise<void> {
+    if (!(await this.db.subscription.findUnique({ where: { id }, select: { id: true } }))) throw new SideChatError(404, 'subscription not found');
+    await this.db.setting.upsert({ where: { key: PICKED + key }, create: { key: PICKED + key, value: id }, update: { value: id } });
+  }
+
+  /** The subscription to use: the one asked for, else the active one. */
   async subscription(subscriptionId?: string): Promise<Subscription> {
     const id = subscriptionId ?? (await this.defaultId());
     const s = id ? await this.db.subscription.findUnique({ where: { id } }) : null;
@@ -817,7 +909,8 @@ export class SideChatStore {
   }
 
   async chat(uid: string, text: string, ctx: ChatContext, subscriptionId?: string): Promise<ChatReply> {
-    const sub = await this.subscription(subscriptionId);
+    const sub = await this.subscription(subscriptionId ?? (await this.picked(uid)) ?? undefined);
+    if (subscriptionId) await this.pick(uid, subscriptionId);
     const prior = (await this.history(uid)).slice(-HISTORY_LIMIT);
     // Repo tools when the session lives in a checkout; otherwise the legacy one-shot.
     const env = await repoToolEnv(ctx.dir, ctx.pr, ctx.branch);
