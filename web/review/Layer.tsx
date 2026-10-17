@@ -13,6 +13,7 @@ import { ReviewDiff } from './Diff.tsx';
 import { FindingsList } from './Findings.tsx';
 import { Thread } from './Thread.tsx';
 import { DispatchDialog } from './Dispatch.tsx';
+import { GitHubText } from './GitHubText.tsx';
 
 type Mode = 'this' | 'since' | 'cumulative';
 type Side = 'findings' | 'thread';
@@ -252,8 +253,11 @@ export function LayerView({
     api.settings().then((s) => setSummaryId(s.summaryId), () => {});
   }, []);
   const [importing, setImporting] = useState(false);
-  // The briefing is for a first read; on a re-review, what changed comes first.
-  const [briefOpen, setBriefOpen] = useState(layer.status === 'unreviewed' || layer.status === 'changes');
+  // Above the diff, one card at a time: the PR's description from GitHub, or the briefing. The
+  // briefing is for a first read; on a re-review, what changed comes first.
+  const [card, setCard] = useState<'description' | 'briefing' | null>(layer.status === 'unreviewed' || layer.status === 'changes' ? 'briefing' : null);
+  const briefOpen = card === 'briefing';
+  const [desc, setDesc] = useState<{ pr: number; body: string } | { pr: number; error: string } | null>(null);
   const [busy, setBusy] = useState(false);
   // How much changed since your review, counted from the since-review patch once it's loaded.
   const [since, setSince] = useState<{ pr: number; lines: number; files: number } | null>(null);
@@ -263,7 +267,7 @@ export function LayerView({
   // A new layer starts on what matters for it; a re-review starts on what changed.
   useEffect(() => {
     setMode(layer.status === 'rereview' && layer.reviewed ? 'since' : 'this');
-    setBriefOpen(layer.status === 'unreviewed' || layer.status === 'changes');
+    setCard(layer.status === 'unreviewed' || layer.status === 'changes' ? 'briefing' : null);
     setSelected(new Set());
     setTab('findings');
   }, [layer.pr]);
@@ -549,6 +553,39 @@ export function LayerView({
       setTimeout(poll, 2000);
     });
 
+  // The description is read when it's opened, fresh from GitHub.
+  useEffect(() => {
+    if (card !== 'description' || desc?.pr === layer.pr) return;
+    let live = true;
+    const pr = layer.pr;
+    api.description(stack.id, pr).then(
+      (d) => live && setDesc({ pr, body: d.body }),
+      (e) => live && setDesc({ pr, error: e instanceof Error ? e.message : String(e) }),
+    );
+    return () => {
+      live = false;
+    };
+  }, [card, layer.pr, stack.id]);
+
+  const description = card === 'description' && (
+    <section className="briefing pr-description" aria-label="Description">
+      {desc?.pr !== layer.pr ? (
+        <p className="hint">Reading the description on GitHub…</p>
+      ) : 'error' in desc ? (
+        <p className="hint">Couldn't read it: {desc.error}</p>
+      ) : desc.body.trim() ? (
+        <GitHubText text={desc.body} image={(src) => api.imageUrl(stack.id, src)} />
+      ) : (
+        <p className="hint">This pull request has no description.</p>
+      )}
+      <div className="briefing-foot">
+        <a className="btn ghost small" href={layer.url} target="_blank" rel="noreferrer">
+          #{layer.pr} on GitHub <Icon name="external" size={13} />
+        </a>
+      </div>
+    </section>
+  );
+
   const summary = briefOpen && (
     <section className="briefing" aria-label="Briefing">
       {rev?.summary ? (
@@ -607,10 +644,16 @@ export function LayerView({
         )}
         <span className="spacer" />
         {diff?.truncated && <span className="hint">First 400 KB</span>}
-        <button className={`btn ghost small brief-toggle ${briefOpen ? 'on' : ''}`} aria-pressed={briefOpen} onClick={() => setBriefOpen(!briefOpen)}>
-          <Icon name="files" size={15} /> Briefing{summarizing && !rev?.summary ? '…' : ''}
-        </button>
+        <span className="card-toggles">
+          <button className={`btn ghost small brief-toggle ${card === 'description' ? 'on' : ''}`} aria-pressed={card === 'description'} title="The pull request's description, from GitHub" onClick={() => setCard(card === 'description' ? null : 'description')}>
+            <Icon name="queue" size={15} /> Description
+          </button>
+          <button className={`btn ghost small brief-toggle ${briefOpen ? 'on' : ''}`} aria-pressed={briefOpen} title="What the layer does and where to look, written for this review" onClick={() => setCard(briefOpen ? null : 'briefing')}>
+            <Icon name="sparkle" size={15} /> Briefing{summarizing && !rev?.summary ? '…' : ''}
+          </button>
+        </span>
       </div>
+      {description}
       {summary}
       {diffError ? (
         <p className="panel-msg">{diffError}</p>

@@ -9,6 +9,7 @@ import { mainRepo } from '../git.ts';
 import type { SideChatStore } from '../sidechat.ts';
 import {
   GhError,
+  ghImage,
   hasGhStack,
   inMergeQueue,
   listPrs,
@@ -24,6 +25,7 @@ import {
   reviewThreads,
   viewPr,
   type Checks,
+  type GhImage,
   type GhPr,
   type MergeMethod,
   type MergeRequest,
@@ -1161,8 +1163,10 @@ export class ReviewService {
       if (known.has(t.id) || !t.comments.length) continue;
       const first = t.comments[0];
       const bot = /\[bot\]$|^chatgpt-codex-connector|^coderabbit/i.test(first.author);
-      const { title, text, level } = threadTitle(first.body);
-      const reply = t.comments.slice(1).map((c) => `${c.author}: ${c.body}`).join('\n\n');
+      const { title, text, level, markdown } = threadTitle(first.body);
+      // GitHub's markdown as written (the page renders it as GitHub does); each reply under a marker
+      // naming who wrote it and when, so it reads as its own comment.
+      const replies = t.comments.slice(1).map((c) => `${replyMark(c.author, c.at)}\n${c.body.replace(/<!--[\s\S]*?-->/g, '').trim()}`).join('\n\n');
       await this.db.reviewFinding.create({
         data: {
           stackId: id,
@@ -1170,7 +1174,7 @@ export class ReviewService {
           foundOnPr: pr,
           revisionId: l.currentRevId,
           title,
-          body: `${text}${reply ? `\n\n---\n${reply}` : ''}`.slice(0, 4000),
+          body: `${markdown}${replies ? `\n\n${replies}` : ''}`.slice(0, 12000),
           severity: level ?? (/critical|blocking/i.test(text.slice(0, 200)) ? 'blocking' : 'should'),
           path: t.path,
           lineStart: t.startLine ?? t.line,
@@ -1270,7 +1274,7 @@ export class ReviewService {
       const where = f.path ? ` ${f.path}${f.lineStart ? `:${f.lineStart}${f.lineEnd && f.lineEnd !== f.lineStart ? `-${f.lineEnd}` : ''}` : ''}` : '';
       const from = f.ownerPr !== pr ? layers.find((x) => x.pr === f.ownerPr) : undefined;
       lines.push(`${i + 1}. [${f.severity}] ${f.title.replace(/[.!?:;]+$/, '')}.${where}${from ? ` (Found on ${label(from)}, already merged: fix it in this layer.)` : ''}`);
-      const body = f.body.split('\n---\n')[0].trim();
+      const body = f.body.split(/\n---\n|<!-- ah:reply /)[0].trim(); // the comment, not its replies
       if (body) lines.push(...body.split('\n').slice(0, 12).map((x) => `   ${x}`));
       if (f.ghUrl) lines.push(`   (GitHub thread: ${f.ghUrl})`);
     });
@@ -1617,6 +1621,21 @@ export class ReviewService {
     return body.trim() ? `(No plan file; this is the root PR's description.)\n${body}` : null;
   }
 
+  /** A layer's pull request description, as GitHub has it now (the list keeps the last synced copy). */
+  async description(id: string, pr: number): Promise<{ body: string; url: string }> {
+    const s = await this.stack(id);
+    const l = await this.layer(id, pr);
+    const fresh = await viewPr(s.repoRoot, pr);
+    if (fresh) this.bodies.set(`${id}:${pr}`, fresh.body);
+    return { body: fresh?.body ?? this.bodies.get(`${id}:${pr}`) ?? '', url: l.url };
+  }
+
+  /** An image in GitHub's markdown for this stack's pages, read with this host's gh login (gh.ts ghImage). */
+  async image(id: string, src: string): Promise<GhImage | null> {
+    const s = await this.stack(id);
+    return ghImage(s.repoRoot, src);
+  }
+
   async plan(id: string): Promise<{ path: string | null; text: string | null }> {
     const s = await this.stack(id);
     return { path: s.planPath, text: await this.planText(s) };
@@ -1839,18 +1858,41 @@ export function linkPlan(layers: Pick<LayerView, 'pr' | 'role' | 'state' | 'head
  * A review comment's title: its first sentence, without the badge images,
  * HTML and markdown that bots wrap it in. Codex's P0–P3 badges set severity.
  */
-export function threadTitle(body: string): { title: string; text: string; level: 'blocking' | 'should' | 'nit' | null } {
+/** The line that starts a reply in an imported thread's body: who wrote it and when (web/review/GitHubText.tsx reads it). */
+export const replyMark = (author: string, at: string) => `<!-- ah:reply ${author.replace(/[^\w.[\]-]/g, '')} ${at.replace(/[^\w:.+-]/g, '')} -->`;
+
+/**
+ * A GitHub review comment as a finding: its title (the comment's own bold
+ * heading if it has one, as Codex and CodeRabbit write them, else its first
+ * sentence), a severity from a P0–P3 badge, the plain text (for matching), and
+ * the markdown to show, without the badge and the heading that became the title.
+ */
+export function threadTitle(body: string): { title: string; text: string; level: 'blocking' | 'should' | 'nit' | null; markdown: string } {
   const badge = body.match(/\bP([0-3])\b(?:\s*Badge)?/);
   const level = badge ? (badge[1] === '0' || badge[1] === '1' ? 'blocking' : badge[1] === '2' ? 'should' : 'nit') : null;
-  const text = body
+  let md = body
     .replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
-    .replace(/<[^>]+>/g, '')
-    .replace(/\bP[0-3]\s*Badge\b/g, '')
-    .trim();
-  const line = text.split('\n').map((x) => x.replace(/^[#>*\s-]+|\*\*|__/g, '').trim()).find((x) => x.length > 3) ?? 'Review comment';
-  const sentence = line.match(/^(.{8,}?[.!?])(\s|$)/)?.[1] ?? line;
-  return { title: sentence.slice(0, 140), text, level };
+    .replace(/!\[P[0-3] Badge\]\([^)]*\)/gi, '')
+    .replace(/(\*\*|__)P[0-3] Badge\1\s*/g, '');
+  for (let i = 0; i < 3; i++) md = md.replace(/<(sub|sup)>\s*<\/\1>/g, '');
+  const plain = (x: string) => x.replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/<[^>]+>/g, '').replace(/\bP[0-3]\s*Badge\b/g, '');
+  const text = plain(md).trim();
+  const lines = md.split('\n');
+  const heading = lines
+    .map((l, i) => ({ i, m: /^\s*(\*\*|__)(.+)\1\s*$/.exec(plain(l)) }))
+    .filter((x) => lines[x.i].trim())
+    .slice(0, 6)
+    .find((x) => x.m && x.m[2].replace(/[`*_]/g, '').trim().length > 3);
+  let title: string;
+  if (heading) {
+    title = heading.m![2].replace(/[`*_]/g, '').trim();
+    lines.splice(heading.i, lines[heading.i + 1]?.trim() === '' ? 2 : 1);
+    md = lines.join('\n');
+  } else {
+    const line = text.split('\n').map((x) => x.replace(/^[#>*\s-]+|\*\*|__|`/g, '').trim()).find((x) => x.length > 3) ?? 'Review comment';
+    title = line.match(/^(.{8,}?[.!?])(\s|$)/)?.[1] ?? line;
+  }
+  return { title: title.slice(0, 140), text, level, markdown: md.trim() };
 }
 
 /** Read a plan file: a regular text file, capped. The caller decides which paths are allowed. */

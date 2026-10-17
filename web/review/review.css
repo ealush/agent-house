@@ -1498,7 +1498,7 @@ button.mt-row:hover {
   z-index: 2;
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px 14px;
   margin: 0 -18px;
   padding: 12px 18px 10px;
@@ -1514,6 +1514,9 @@ button.mt-row:hover {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  white-space: nowrap;
   font-size: 13px;
   color: var(--muted);
 }
@@ -1523,6 +1526,29 @@ button.mt-row:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 280px;
+}
+
+/* The diff modes keep their size; the file count and branches give way first. */
+.diff-bar > .seg {
+  flex-shrink: 0;
+}
+
+.diff-bar > .seg button {
+  white-space: nowrap;
+}
+
+/* Description and Briefing: the cards above the diff, together, never wrapped apart. */
+.card-toggles {
+  display: inline-flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* A phone: the diff modes on one line, the cards' toggles under them. */
+@media (max-width: 760px) {
+  .diff-bar {
+    flex-wrap: wrap;
+  }
 }
 
 .add-n {
@@ -2420,12 +2446,18 @@ button.findings-label {
   color: var(--danger);
 }
 
-.finding-body,
 .finding-note {
   margin: 0;
   font-size: 13px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.finding-body {
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 .finding-note {
@@ -2688,4 +2720,241 @@ a.ss-title:hover {
   align-items: flex-start;
   gap: 8px;
   padding-top: 4px;
+}
+
+/* ---- GitHub's markdown (GitHubText.tsx): PR descriptions and review comments, as GitHub shows
+   them, in the page's own type and surfaces. */
+
+.gh-md > :first-child {
+  margin-top: 0;
+}
+
+.gh-md > :last-child {
+  margin-bottom: 0;
+}
+
+.gh-md p,
+.gh-md ul,
+.gh-md ol {
+  margin: 0.5em 0;
+}
+
+.gh-md ul,
+.gh-md ol {
+  padding-left: 20px;
+}
+
+.gh-md h1,
+.gh-md h2,
+.gh-md h3,
+.gh-md h4 {
+  margin: 0.9em 0 0.4em;
+  font-size: 1.08em;
+  font-weight: 600;
+  text-wrap: balance;
+}
+
+.gh-md h1 {
+  font-size: 1.2em;
+}
+
+.gh-md a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.gh-md a:hover {
+  text-decoration: underline;
+}
+
+.gh-md code {
+  font: 0.88em var(--mono);
+  padding: 0.12em 0.36em;
+  border-radius: 4px;
+  background: var(--raised);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.gh-md pre {
+  margin: 0.6em 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  font: 12px/1.55 var(--mono);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.gh-md pre code {
+  padding: 0;
+  background: none;
+  font-size: inherit;
+}
+
+.gh-md blockquote {
+  margin: 0.6em 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--line-2);
+  color: var(--muted);
+}
+
+.gh-md hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 0.9em 0;
+}
+
+.gh-md .md-table {
+  overflow-x: auto;
+  margin: 0.6em 0;
+  max-width: 100%;
+}
+
+.gh-md table {
+  border-collapse: collapse;
+  min-width: 100%;
+}
+
+.gh-md th,
+.gh-md td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.gh-md th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+/* Task lists: GitHub's checkboxes, read-only. */
+.gh-md li:has(> input[type='checkbox']) {
+  list-style: none;
+  margin-left: -20px;
+}
+
+.gh-md input[type='checkbox'] {
+  margin: 0 6px 0 0;
+  vertical-align: -1px;
+  accent-color: var(--accent-strong);
+}
+
+.gh-md details {
+  margin: 0.6em 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--raised);
+}
+
+.gh-md summary {
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.gh-md details[open] > summary {
+  margin-bottom: 6px;
+}
+
+.gh-md sub,
+.gh-md sup {
+  font-size: 0.8em;
+}
+
+/* Images on GitHub come through ah; a click opens the original. Screenshots in a table sit side by side. */
+.gh-md .gh-img {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: top;
+}
+
+.gh-md .gh-img img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--sunken);
+}
+
+.gh-md td .gh-img img {
+  width: 100%;
+}
+
+/* An image ah doesn't fetch (not GitHub's): its alt text, as a link. */
+.gh-md .gh-img-out {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* A ```suggestion block: the lines it would put in, as an addition. */
+.gh-suggestion {
+  margin: 0.6em 0;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.gh-suggestion-head {
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  background: var(--raised);
+  border-bottom: 1px solid var(--line);
+}
+
+.gh-md .gh-suggestion pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 6px 0;
+}
+
+.gh-suggestion .add {
+  display: block;
+  padding: 0 12px;
+  background: color-mix(in srgb, var(--done) 12%, transparent);
+}
+
+.gh-suggestion .add::before {
+  content: '+ ';
+  color: var(--done);
+}
+
+/* Replies in an imported thread: each its own comment, under who wrote it. */
+.gh-reply {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.gh-reply-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+
+.gh-reply-head .who {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.gh-reply-head .when {
+  color: var(--muted);
+}
+
+.pr-description .briefing-foot .btn {
+  gap: 6px;
 }

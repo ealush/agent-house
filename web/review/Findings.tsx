@@ -4,8 +4,9 @@ import { askConfirm, askText, showError } from '../ask.tsx';
 import { age } from '../agents.ts';
 import { Icon } from '../icons.tsx';
 import { SeveritySeg, splitNote, type Severity } from './Diff.tsx';
+import { GitHubThread, commenter } from './GitHubText.tsx';
 
-const SOURCE = (s: string) => (s === 'you' ? 'You' : s === 'reviewer' ? 'Reviewer' : s.replace(/^(bot|gh):/, '').replace(/^chatgpt-codex-connector$/, 'Codex').replace(/\[bot\]$/, ''));
+const SOURCE = (s: string) => (s === 'you' ? 'You' : s === 'reviewer' ? 'Reviewer' : commenter(s.replace(/^(bot|gh):/, '')));
 
 function where(f: Finding): string | null {
   if (!f.path) return null;
@@ -114,7 +115,11 @@ export function FindingRow({
           </span>
         </span>
       </div>
-      {(open || f.state === 'proposed') && f.body && <p className="finding-body">{f.body}</p>}
+      {(open || f.state === 'proposed') && f.body && (
+        <div className="finding-body">
+          <GitHubThread body={f.body} image={(src) => api.imageUrl(stackId, src)} />
+        </div>
+      )}
       {(verdict?.evidence || (f.note && f.state !== 'open')) && (open || st?.tone === 'needs' || f.state === 'wontfix') && <p className="finding-note">{verdict?.evidence || f.note}</p>}
       {open && history && <p className="finding-history">{history}</p>}
       {open && (

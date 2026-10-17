@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ensureMigrated, getDb } from './db.ts';
 import { SideChatStore } from './sidechat.ts';
-import { ReviewService, readTextFile, threadTitle, type SessionLite } from './review/service.ts';
+import { ReviewService, readTextFile, replyMark, threadTitle, type SessionLite } from './review/service.ts';
+import { imageSource } from './review/gh.ts';
 import { runReviewTool } from './review/reviewer.ts';
 
 // A stand-in `gh`: PR state lives in a JSON file, and merge/edit/ready
@@ -77,6 +78,11 @@ else if (a[0] === 'api' && a[1] === '--include') {
     land(n); save(); http(200, { status: 'merged', details: { message: 'Pull request was merged.', sha: pr(n).headRefOid } });
   }
   http(404, { message: 'Not Found' });
+}
+else if (a[0] === 'api' && a.includes('Accept: application/vnd.github.raw')) {
+  // Files in the repo for images in markdown: only docs/shot.png on feat/ui exists.
+  if (a[a.length - 1] !== 'repos/o/r/contents/docs/shot.png?ref=feat%2Fui') { console.error('gh: Not Found (HTTP 404)'); process.exit(1); }
+  process.stdout.write(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]));
 }
 else if (a[0] === 'api' && a[1] === 'graphql') {
   const q = a.find((x) => x.startsWith('query=')) || '';
@@ -395,6 +401,7 @@ test('review: GitHub threads become findings once; resolving replies and resolve
     assert.equal(bot.severity, 'blocking');
     assert.equal(bot.state, 'open');
     assert.equal(bot.title, 'Return value is wrong');
+    assert.doesNotMatch(bot.body, /Badge/);
     assert.equal(fs.find((f) => f.source === 'gh:me')!.state, 'addressed');
     const done = await t.svc.resolveThread(v.id, bot.id, 'Fixed in abc.');
     assert.equal(done.state, 'addressed');
@@ -409,6 +416,47 @@ test('review: bot thread titles lose their badges and markup', () => {
   assert.deepEqual([codex.title, codex.level], ['Keep schema-only validity after rebuilds', 'should']);
   const plain = threadTitle('nit: rename this. It reads oddly.');
   assert.deepEqual([plain.title, plain.level], ['nit: rename this.', null]);
+});
+
+test('review: a GitHub comment keeps its markdown, less the badge and the heading that became its title', () => {
+  const codex = threadTitle("**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Take the schema's graph**\n\n`dependents()` reads a module-level `Map`:\n\n```suggestion\nexport function plan(changed: string[], graph: Relationship[]) {\n```\n\n<details><summary>Why</summary>\n\nShared state.\n\n</details><!-- codex -->");
+  assert.equal(codex.title, "Take the schema's graph");
+  assert.equal(codex.level, 'blocking');
+  assert.ok(codex.markdown.startsWith('`dependents()` reads'), codex.markdown);
+  assert.match(codex.markdown, /```suggestion\n/);
+  assert.match(codex.markdown, /<details><summary>Why<\/summary>/);
+  assert.doesNotMatch(codex.markdown, /Badge|<!--/);
+  // CodeRabbit leads with a label; its bold line is the title.
+  const rabbit = threadTitle("_⚠️ Potential issue_\n\n**`changed()` runs rules for missing fields.**\n\n| Field | Runs |\n| --- | --- |\n| `confirm` | yes |");
+  assert.equal(rabbit.title, 'changed() runs rules for missing fields.');
+  assert.match(rabbit.markdown, /^_⚠️ Potential issue_\n\n\| Field/);
+  // A person's comment is all body; the title is its first sentence, as plain text.
+  const person = threadTitle('Agreed. Keep the walk **one hop** for now.');
+  assert.deepEqual([person.title, person.markdown], ['Agreed. Keep the walk one hop for now.', 'Agreed. Keep the walk **one hop** for now.']);
+  assert.equal(replyMark('coderabbitai[bot]', '2026-10-15T11:00:00Z'), '<!-- ah:reply coderabbitai[bot] 2026-10-15T11:00:00Z -->');
+  assert.doesNotMatch(replyMark('x --> <script>', 'now -->').slice(0, -4), />/, 'a login or time can\'t close the marker');
+});
+
+test('review: a GitHub image comes through gh, a ref with a slash included', async () => {
+  const t = await setup();
+  await withGh(t.w, async () => {
+    const v = await t.svc.create(t.w.local, { pr: 1 });
+    const img = await t.svc.image(v.id, 'https://github.com/o/r/blob/feat/ui/docs/shot.png?raw=true');
+    assert.equal(img?.type, 'image/png');
+    assert.equal(img?.body.length, 11);
+    assert.equal(await t.svc.image(v.id, 'https://github.com/o/r/blob/feat/ui/docs/missing.png?raw=true'), null);
+    assert.equal(await t.svc.image(v.id, 'https://img.shields.io/badge/P1-orange'), null, 'not GitHub: never fetched');
+  });
+});
+
+test('review: images ah reads from GitHub, and the ones it leaves alone', () => {
+  assert.deepEqual(imageSource('https://github.com/ealush/ah/blob/pr-screenshots/pr21/after.png?raw=true'), { kind: 'file', repo: 'ealush/ah', parts: ['pr-screenshots', 'pr21', 'after.png'] });
+  assert.deepEqual(imageSource('https://github.com/o/r/raw/main/docs/a%20b.png'), { kind: 'file', repo: 'o/r', parts: ['main', 'docs', 'a b.png'] });
+  assert.deepEqual(imageSource('https://raw.githubusercontent.com/o/r/refs/heads/feat/x/img.png'), { kind: 'file', repo: 'o/r', parts: ['feat', 'x', 'img.png'] });
+  assert.deepEqual(imageSource('https://github.com/user-attachments/assets/0b5e-11aa'), { kind: 'upload', url: 'https://github.com/user-attachments/assets/0b5e-11aa' });
+  assert.equal(imageSource('https://private-user-images.githubusercontent.com/1/2.png?jwt=x')?.kind, 'upload');
+  for (const bad of ['https://img.shields.io/badge/P1-orange', 'http://github.com/o/r/blob/main/a.png', 'https://github.com.evil.test/o/r/blob/main/a.png', 'https://user:pw@github.com/o/r/blob/main/a.png', 'https://github.com/o/r/blob/main/..%2F..%2Fsecret', 'https://github.com/o/r/pulls', 'file:///etc/passwd', 'not a url'])
+    assert.equal(imageSource(bad), null, bad);
 });
 
 test('review: plan labels, merge order rules, skipped layers', async () => {

@@ -452,7 +452,7 @@ function Cockpit({ stack, alerts, narrow, onStack, onOpen, onOpenSession, onPick
   const next = upNext(stack, alerts);
   return (
     <div className="cockpit">
-      {reading && <PlanDialog path={stack.planPath} text={plan?.text ?? null} onClose={() => setReading(false)} />}
+      {reading && <PlanDialog path={stack.planPath} text={plan?.text ?? null} image={(src) => api.imageUrl(stack.id, src)} onClose={() => setReading(false)} />}
       <UpNext next={next} onOpen={(pr) => onOpen(pr)} />
       {narrow ? (
         <Spine stack={stack} pr={null} onPick={onOpen} />

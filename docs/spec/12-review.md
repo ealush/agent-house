@@ -45,11 +45,12 @@ held to). *Ask the reviewer* opens the stack's thread in a drawer.
 Header: breadcrumb, previous / next, ···, *Message agent* and the one primary
 action (*Mark reviewed*, *Send*, *Accept fixes* or *Merge & next*). A band says
 what's new. The diff reads **This PR**, **Since review** or **From
-<trunk>**, at a pinned revision. The **briefing** (written by the briefing
-subscription: what it does, how it fits, what to look at, tests) sits behind
-a toggle. The merge gates are a row of marks under the diff. A side column
+<trunk>**, at a pinned revision. Two cards sit behind toggles on the diff bar, one at a
+time: the PR's **description**, read from GitHub when opened and shown as
+GitHub shows it (REV-7), and the **briefing** (written by the briefing
+subscription: what it does, how it fits, what to look at, tests). The merge gates are a row of marks under the diff. A side column
 holds Findings and the Reviewer. On a phone: Findings, Diff and Reviewer tabs
-and a glass bar. → A-31
+and a glass bar.
 
 ## REV-5 · The reviewer — shipped
 
@@ -67,14 +68,21 @@ not fixed, won't fix, dismissed) with who changed it and at which revision.
 Only blocking findings stop the merge; waiving one needs a reason. A finding
 open when its layer merges follows to the next open layer.
 
-## REV-7 · GitHub's review threads — partial
+## REV-7 · GitHub's words — shipped
 
 *Bring in GitHub threads* imports a layer's review threads once each (bots
-included; resolved ones arrive fixed). The first comment gives the title and
-severity (a P0–P3 badge), the rest is the body, replies under it, with a link
-to the thread. A closed finding offers *Reply & resolve on GitHub*.
-Gap: the body is shown as plain text, with GitHub's HTML and images removed.
-→ A-30, A-32
+included; resolved ones arrive fixed). The comment's own bold heading is the
+title (else its first sentence), a P0–P3 badge the severity; the rest stays
+GitHub's markdown, each reply its own comment under who wrote it and when, with
+a link to the thread. A closed finding offers *Reply & resolve on GitHub*.
+
+Everything from GitHub (these comments, a layer's description, the plan when
+it is the first PR's description) is shown as GitHub shows it: GFM and
+GitHub's safe HTML (`<details>`, `<sub>`, tables, task lists), a
+` ```suggestion ` block as the change it suggests. Images on GitHub (a
+repo's files, uploads) come through ah, read with the host's `gh` login,
+because the page only loads images from ah; any other image is its alt text
+as a link. → A-30, A-31, A-32 (fixed)
 
 ## REV-8 · Sending to the agent — shipped
 
