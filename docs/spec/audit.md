@@ -94,6 +94,29 @@ sidebar, header and History say "Claude Code" and "Opus 5.5" (A-20).
 | A-29 | S3 | The app icon, manifest and apple-touch icon are still in the retired amber palette while the app is pink. | `web/public/icon.svg` | **design** (redrawn in the design system's Logo group) → **fixed: icon, PNGs, theme color, terminal** |
 | A-28 | S3 | Settings sections have icons in the palette but none in the page's section list. | `Settings.tsx` | **design** → **fixed** |
 
+## Second pass — 18 October 2026
+
+What landed on main after the first pass, outside the freeze: Review, GitHub's
+own stacks, the session's Stack tab and subscription providers (12-review.md,
+SET-6). Method as above, against a throwaway ah with a stand-in GitHub (a
+stateful `gh`, a stack of five PRs, one a GitHub stack, review threads from
+Codex, CodeRabbit and a person), a stub model and a stand-in Claude, on top of
+this stack's tokens: 18 desktop screens and 2 iPhone screens, dark and light.
+
+Parity: the Stack panel is in the session menu and the panel tabs, but not in
+the palette and has no chord, unlike the other six panels (A-37).
+
+| # | Sev | Finding | Where | Resolution |
+|---|---|---|---|---|
+| A-30 | S1 | GitHub's words reach Review as raw text: an imported thread shows `**`, code fences and `suggestion` blocks as typed, its HTML (`<details>`, `<sub>`) and images are removed at import, and replies are run together as "login: text". Images in a private repo couldn't show anyway: the page only loads images from ah. | `service.ts` importThreads, `Findings.tsx` | **fix** (GitHub's markdown, its images through ah) |
+| A-31 | S2 | A layer never shows its pull request's description, so what changed (and its screenshots) is only on GitHub. The plan card falls back to the first PR's description, where HTML shows as text and images as "[image]". | `Layer.tsx`, `Dispatch.tsx` PlanDialog | **fix** |
+| A-32 | S3 | A bot comment that leads with a label (CodeRabbit's "_⚠️ Potential issue_") gives the finding that label as its title. | `threadTitle` | **fix** (the bold line is the title) |
+| A-33 | S3 | Two looks for a page's "make one" button: Inbox's *New session* is the light button, Review's *New stack* the pink one, which is for the screen's main action and *needs you*. | `ReviewPage.tsx` | **fix** (the light button) |
+| A-34 | S3 | The New stack picker draws its own section heads (a full-width pink rule) and labels its name field as an uppercase pink heading, where lists use the section head and forms use `.field`. | `Compose.tsx`, `review.css` | **fix** |
+| A-35 | S3 | Prose in monospace: the reviewer's starters and follow-ups (and side chat's), and the message drafted for the agent. | `.sugg`, `Dispatch.tsx` | **fix** (the UI face; folder names stay code) |
+| A-36 | S3 | The sidebar's Review item draws the Diff icon, the same as the Diff tab beside it. | `Sidebar.tsx` | **fix** (a stack icon, shared with the Stack tab) |
+| A-37 | S2 | The Stack panel isn't in the command catalog: no palette entry, no chord, and its name is typed in three places. | `shortcuts.ts`, `Session.tsx` | **fix** (Stack panel, ⌃⌥7) |
+
 ## Already open (from earlier passes, still true)
 
 - ~~Sidebar title vs model label width at 260 px~~: the model moved to the row's tooltip (A-19).
@@ -112,3 +135,5 @@ sidebar, header and History say "Claude Code" and "Opus 5.5" (A-20).
    canvas: https://claude.ai/artifact/XKVpwYoyvXQ8299qmPE4Sx
 3. **Owner calls**: A-09 (CLI parity during the freeze), A-13 (keycap glyphs
    off Mac), A-26 (New session's default).
+4. **Second pass** (18 October): A-30 to A-32 (GitHub's words in Review), then
+   A-33 to A-37 (Review and the Stack panel in the system's components).

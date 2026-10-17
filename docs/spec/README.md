@@ -19,7 +19,7 @@ behave as one product:
 | **Agents** | Claude Code, Codex, Gemini, Grok, Muse, Hermes, opencode, Cursor, Copilot, Crush, pi, any shell | [02 Sessions](02-sessions.md) |
 | **Hooks** | `bin/ah-hook.js` in each agent, writing status into tmux | [01 Foundation](01-foundation.md) |
 | **Push** | Web Push to every opted-in device, app badge | [07 Continuity](07-continuity.md) |
-| **Review** | PR stacks reviewed layer by layer, with agents fixing findings | [stack-review.md](../stack-review.md) |
+| **Review** | PR stacks reviewed layer by layer, with agents fixing findings; GitHub's own stacks | [12 Review](12-review.md) |
 | **Other hosts** | the same daemon elsewhere on the tailnet, proxied under `/h/<host>/` | [01 Foundation](01-foundation.md) |
 
 ## Feature freeze (from 17 October 2026)
@@ -32,9 +32,10 @@ No new features. Work is limited to:
 3. **Finish**: bugs, polish, and the redesign (one visual system for every
    screen; [11 Design system](11-design-system.md)).
 
-Review (stack review) landed on main on 17 October at the owner's call,
-outside the freeze; it is specified in [docs/stack-review.md](../stack-review.md)
-and joins the redesign when the design system replaces its own styles.
+Review (stack review), GitHub's own stacks and subscription providers landed
+on main on 17 October at the owner's call, outside the freeze. They are now in
+the spec ([12 Review](12-review.md), SET-6) and the audit's second pass
+(A-30 to A-37), and read the design system's tokens like everything else.
 A change that adds a capability needs the freeze lifted, and an entry here first.
 
 ## Spec files
@@ -52,6 +53,7 @@ A change that adds a capability needs the freeze lifted, and an entry here first
 | 09 | [CLI](09-cli.md) | `CLI` | every command |
 | 10 | [Platforms](10-platforms.md) | `PLT` | desktop, iPad, phone, desktop app, PWA, Omarchy |
 | 11 | [Design system](11-design-system.md) | `DS` | tokens, type, shape, material, motion, components, voice |
+| 12 | [Review](12-review.md) | `REV` | the Review page, making a stack, the stack, a layer, the reviewer, findings, GitHub's threads, sending, re-review, merging and GitHub's own stacks, the Stack tab |
 | — | [Security](../../SECURITY.md) | `SEC` | threat model and tested invariants (kept in SECURITY.md; summarised in 01) |
 | — | [Audit](audit.md) | `A` | parity matrix, vocabulary, findings, and their resolution |
 
@@ -81,6 +83,10 @@ One word per thing, everywhere: UI, CLI help, docs, notifications.
 | **Handoff** | Continuing on this device the session you were using on another. | — |
 | **Worktree** | A separate checkout on an `ah/<name>` branch for one session. | — |
 | **Snapshot** | The files as they were before a turn started. | checkpoint |
+| **Stack** | PRs in review-and-merge order on one trunk; on GitHub, a stack GitHub knows about. | chain (only for PRs based on each other), series |
+| **Layer** | One PR in a stack, labelled by its role (`F2`). | step, level |
+| **Finding** | A concern owned by the layer that should change. | comment (that is GitHub's), issue |
+| **Reviewer** | The model that reads a stack with you, on a chat subscription. | bot, assistant, agent (agents fix; the reviewer doesn't) |
 
 ## Invariants
 

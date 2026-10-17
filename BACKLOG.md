@@ -255,6 +255,7 @@ DS). Work until the freeze lifts:
 | Z3 | Behaviour fixes | ✅ | The audit's "fix now" list: page links and splits, notification titles, reach (Search, Worktrees, Branch), one set of words, uid API routes (stack `freeze/1-fixes`…`freeze/3-api`). |
 | Z4 | Redesign | ✅ | Designed in Claude Design (links in `docs/spec/11-design-system.md`) and built: one token file (`web/tokens.css`), pills and tags, the ask summary and option rows, one session line, tabs, menus, fields, notes, the pink icon (`freeze/5-tokens`…`freeze/8-chrome`). |
 | Z5 | Owner calls | ✅ | Delegated, decided conventionally: CLI answer/stop/terminate/rename/pin; keycaps in words off a Mac; New session starts on an agent (`freeze/4-calls`). |
+| Z6 | Second pass | ⏳ | What landed after the freeze began (Review, GitHub's own stacks, the Stack tab, subscription providers): specified in `docs/spec/12-review.md` and SET-6; findings A-30…A-37 (`freeze/9-spec`). |
 
 Stack review landed on 17 October at the owner's call, outside the freeze; its spec is `docs/stack-review.md`.
 
