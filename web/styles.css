@@ -4254,6 +4254,45 @@ a.btn {
 
 /* ---------- collapsible sidebar */
 
+/* An iPad in portrait, a Stage Manager window, a narrow desktop window (App's `tight`): the
+   sidebar slides over the page from the left, over a dimmed page, as iPadOS apps' sidebars do.
+   The rail keeps its button where the sidebar's own toggle is. */
+.side-over {
+  position: fixed;
+  z-index: 40;
+  top: env(safe-area-inset-top);
+  bottom: 0;
+  left: env(safe-area-inset-left);
+  display: flex;
+  animation: side-in var(--dur-2) var(--ease);
+}
+
+.side-over .sidebar {
+  box-shadow: var(--glass-depth), var(--elev-2);
+}
+
+.side-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 39;
+  background: var(--scrim);
+  animation: fade-in var(--dur-2) var(--ease);
+}
+
+@keyframes side-in {
+  from {
+    transform: translateX(-32px);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .side-over,
+  .side-scrim {
+    animation: none;
+  }
+}
+
 .rail {
   flex: none;
   width: 46px;

@@ -56,6 +56,7 @@ import { showError } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { useSwipeBack } from './useSwipeBack.ts';
 import { edgeGesture } from './edges.ts';
+import { useSideSwipe } from './useSideSwipe.ts';
 import { Sheet } from './sheet.tsx';
 import { trackViewport } from './viewport.ts';
 import { glide, transition, type Heading } from './motion.ts';
@@ -151,6 +152,14 @@ export function App({ onLock }: { onLock: () => void }) {
   // its height.
   const narrow = useMedia('(max-width: 760px), ((pointer: coarse) and (max-height: 500px) and (max-width: 1000px))');
   const touch = useMedia('(pointer: coarse)');
+  // Too narrow to keep the sidebar beside the page, too wide for the phone's layout: an iPad in
+  // portrait, a Stage Manager window, a narrow desktop window. The sidebar slides over the page
+  // instead, as iPadOS apps' do (the same widths are in web/styles.css).
+  const tight = useMedia('(min-width: 761px) and (max-width: 1099px)') && !narrow;
+  const [sideOver, setSideOver] = useState(false);
+  useEffect(() => {
+    if (!tight) setSideOver(false);
+  }, [tight]);
   const [sideOpen, setSideOpen] = useState(() => {
     try {
       return localStorage.getItem('ah.side') !== '0';
@@ -222,6 +231,7 @@ export function App({ onLock }: { onLock: () => void }) {
   const endedFor = (key: string | null) => (key && state?.history.find((h) => h.kind === 'ended' && keyFor(h.host, h.ref) === key)) || null;
 
   function toggleSide() {
+    if (tight) return setSideOver((v) => !v);
     setSideOpen((v) => {
       try {
         localStorage.setItem('ah.side', v ? '0' : '1');
@@ -1056,15 +1066,12 @@ export function App({ onLock }: { onLock: () => void }) {
     </>
   );
 
-  return (
-    <PresetsContext.Provider value={presetFor}>
-    <HostPresetsContext.Provider value={(host) => hostState(host)?.presets ?? []}>
-    <ResumeContext.Provider value={state ? { history: state.history, resume: (h) => resumeKey(h.host, h.ref), discard: terminate } : null}>
-    <ReviewContext.Provider value={{ host: state?.hostname ?? '', state: state?.review ?? null, open: openReview }}>
-    <div className={`app ${narrow ? 'narrow' : ''}`}>
-      <Shortcuts />
-      <WhichKey />
-      {sideOpen ? (
+  // Sliding over the page, picking anything puts it away (as iPadOS apps' sidebars do).
+  const over = <A extends unknown[]>(f: (...a: A) => void) => (...a: A) => {
+    if (tight) setSideOver(false);
+    f(...a);
+  };
+  const sidebar = (
         <Sidebar
           workspaces={{
             current: spaces.current,
@@ -1078,13 +1085,13 @@ export function App({ onLock }: { onLock: () => void }) {
           visibleKeys={visibleKeys}
           device={deviceName()}
           handoff={handoff}
-          onCollapse={toggleSide}
-          onPage={showPage}
-          onSelect={open}
-          onSearch={() => setSwitching(true)}
-          onNew={(where) => setCreating(where ?? {})}
-          onNewProject={() => setCreating({ project: true })}
-          onWorktrees={() => setDialog('worktrees')}
+          onCollapse={tight ? () => setSideOver(false) : toggleSide}
+          onPage={over(showPage)}
+          onSelect={over(open)}
+          onSearch={over(() => setSwitching(true))}
+          onNew={over((where?: Parameters<typeof setCreating>[0]) => setCreating(where ?? {}))}
+          onNewProject={over(() => setCreating({ project: true }))}
+          onWorktrees={over(() => setDialog('worktrees'))}
           onReorder={(uid, host, order) => {
             // One move can save several rows: refresh once they are all saved,
             // so the list never shows a half-applied order (and rows don't bounce).
@@ -1099,14 +1106,36 @@ export function App({ onLock }: { onLock: () => void }) {
           onKill={terminate}
           onFork={(w) => setForking({ ref: w.uid, host: w.host, harness: w.agent, title: w.title })}
         />
+  );
+  const sideOverRef = useRef<HTMLDivElement>(null);
+  useSideSwipe(tight, sideOver, setSideOver, sideOverRef);
+
+  return (
+    <PresetsContext.Provider value={presetFor}>
+    <HostPresetsContext.Provider value={(host) => hostState(host)?.presets ?? []}>
+    <ResumeContext.Provider value={state ? { history: state.history, resume: (h) => resumeKey(h.host, h.ref), discard: terminate } : null}>
+    <ReviewContext.Provider value={{ host: state?.hostname ?? '', state: state?.review ?? null, open: openReview }}>
+    <div className={`app ${narrow ? 'narrow' : ''}`}>
+      <Shortcuts />
+      <WhichKey />
+      {!tight && sideOpen ? (
+        sidebar
       ) : (
         !narrow && (
           <div className="rail">
-            <button className="icon-btn" onClick={toggleSide} title={shortcutTitle('Show sidebar', 'toggle-sidebar')} aria-label="Show sidebar">
+            <button className="icon-btn" onClick={toggleSide} title={shortcutTitle('Show sidebar', 'toggle-sidebar')} aria-label="Show sidebar" aria-expanded={tight ? sideOver : false}>
               <Icon name="panel" />
             </button>
           </div>
         )
+      )}
+      {tight && sideOver && (
+        <>
+          <div className="side-scrim" onClick={() => setSideOver(false)} aria-hidden />
+          <div className="side-over" role="dialog" aria-label="Sidebar" ref={sideOverRef}>
+            {sidebar}
+          </div>
+        </>
       )}
 
       {peek && pages && (

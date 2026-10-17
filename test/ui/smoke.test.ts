@@ -507,6 +507,48 @@ const SMALL = () => {
     .map((el) => `${Math.round(el.getBoundingClientRect().width)}x${Math.round(el.getBoundingClientRect().height)} ${el.className} "${el.getAttribute('aria-label') ?? el.textContent?.trim().slice(0, 30)}"`);
 };
 
+test('iPad in portrait: the sidebar slides over the page, by its button, a swipe from the edge, and goes away when you pick', { skip, timeout: 60_000 }, async () => {
+  const ctx = await browser.newContext({ ...devices['iPad Pro 11'] });
+  const { page, errors } = await open(ctx);
+  const over = page.locator('.side-over');
+  // Portrait leaves the page its width: no sidebar beside it, only its button.
+  await page.getByRole('button', { name: 'Show sidebar' }).waitFor();
+  assert.equal(await page.locator('.sidebar').count(), 0);
+  await page.getByRole('button', { name: 'Show sidebar' }).click();
+  await over.waitFor();
+  // Picking a session puts it away and opens the session.
+  await over.locator('.side-session', { hasText: 'zz-idle' }).first().click();
+  await over.waitFor({ state: 'detached' });
+  await page.locator('.term .xterm').first().waitFor();
+  // A drag in from the left edge brings it back, a drag to the left puts it away.
+  const cdp = await ctx.newCDPSession(page);
+  const drag = async (from: number, to: number) => {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: from, y: 500, id: 1 }] });
+    for (let i = 1; i <= 8; i++) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: from + ((to - from) * i) / 8, y: 500, id: 1 }] });
+      await page.waitForTimeout(16);
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  };
+  await drag(6, 220);
+  await over.waitFor();
+  await drag(220, 20);
+  await over.waitFor({ state: 'detached' });
+  // Escape, and the dimmed page, close it too.
+  await page.getByRole('button', { name: 'Show sidebar' }).click();
+  await over.waitFor();
+  await page.keyboard.press('Escape');
+  await over.waitFor({ state: 'detached' });
+  assert.deepEqual(errors, []);
+  await ctx.close();
+  // Landscape keeps it beside the page.
+  const wide = await browser.newContext({ ...devices['iPad Pro 11 landscape'] });
+  const { page: lp } = await open(wide);
+  await lp.locator('.sidebar').first().waitFor();
+  assert.equal(await lp.locator('.side-over').count(), 0);
+  await wide.close();
+});
+
 test('no control is smaller than 32px, on a desktop or a phone', { skip, timeout: 90_000 }, async () => {
   for (const opts of [{ viewport: { width: 1440, height: 900 } }, { ...devices['iPhone 15 Pro'] }, { ...devices['iPad Pro 11'] }]) {
     const ctx = await browser.newContext(opts);

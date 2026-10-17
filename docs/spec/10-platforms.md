@@ -11,9 +11,21 @@ button.
 
 ## PLT-2 · iPad — shipped
 
-The desktop layout with touch sizing: 44 px menu rows, 36 px segments and
-chips, no key hints on touch-only devices; a narrow page drops the Inbox's
-Detail column (portrait). Hardware keyboards get every chord.
+Laid out by the window's width, as iPadOS apps are by size class, so an 11"
+iPad in landscape, in portrait, in Stage Manager and in Split View each get
+the layout that fits:
+
+- **1100 px and wider** (landscape, a large window): the desktop layout, the
+  sidebar beside the page.
+- **761–1099 px** (portrait, a Stage Manager window, a narrow desktop window):
+  the page keeps the width; the sidebar **slides over it** from the rail's
+  button, Ctrl+Shift+E, or a drag in from the left edge, over a dimmed page.
+  Picking anything, a drag to the left, Escape or a tap on the page puts it
+  away.
+- **760 px and narrower** (Split View, Slide Over): the phone's layout.
+
+Touch sizing throughout: 44 px menu rows, 36 px segments and chips, no key
+hints on touch-only devices. Hardware keyboards get every chord.
 
 ## PLT-3 · Phone — shipped
 
