@@ -53,6 +53,7 @@ export type CommandId =
   | 'panel-queue'
   | 'panel-snapshots'
   | 'panel-preview'
+  | 'panel-stack'
   | 'pick-model'
   | 'pick-effort'
   | 'copy-last'
@@ -88,7 +89,10 @@ export type CommandId =
   | 'scratchpad'
   | 'maximize-pane'
   | 'exit-split'
-  | 'show-shortcuts';
+  | 'show-shortcuts'
+  | 'go-search'
+  | 'worktrees'
+  | 'switch-branch';
 
 export type CommandGroup = 'Navigate' | 'Session' | 'Workspace';
 
@@ -203,6 +207,24 @@ export const COMMANDS: Command[] = [
     scopes: nav,
   },
   {
+    id: 'go-search',
+    group: 'Navigate',
+    label: 'Search',
+    detail: 'Search every conversation and side chat, on every host.',
+    chords: [{ key: '5', ctrl: true, shift: true }],
+    scopes: nav,
+    terms: ['find', 'full text', 'transcripts'],
+  },
+  {
+    id: 'worktrees',
+    group: 'Navigate',
+    label: 'Worktrees',
+    detail: 'Managed worktrees: dirty, ahead, orphaned, and their size; clean up.',
+    chords: [],
+    scopes: nav,
+    terms: ['branches', 'checkouts', 'clean'],
+  },
+  {
     id: 'go-settings',
     group: 'Navigate',
     label: 'Settings',
@@ -245,7 +267,7 @@ export const COMMANDS: Command[] = [
   {
     id: 'toggle-view',
     group: 'Session',
-    label: 'Terminal / GUI',
+    label: 'GUI or terminal',
     detail: 'Switch the focused session between the terminal and the transcript GUI.',
     chords: [{ key: 'g', ctrl: true, shift: true }],
     scopes: session,
@@ -303,7 +325,7 @@ export const COMMANDS: Command[] = [
   {
     id: 'send-now',
     group: 'Session',
-    label: 'Send the next queued message now',
+    label: 'Send next queued now',
     detail: 'Stop the current turn and deliver the oldest queued follow-up right away.',
     chords: [{ key: 's', ctrl: true, alt: true }],
     scopes: act,
@@ -311,7 +333,7 @@ export const COMMANDS: Command[] = [
   {
     id: 'clear-queue',
     group: 'Session',
-    label: 'Cancel all queued messages',
+    label: 'Cancel all queued',
     detail: 'Drop every follow-up waiting for this session.',
     chords: [],
     scopes: act,
@@ -357,6 +379,15 @@ export const COMMANDS: Command[] = [
     scopes: act,
   },
   {
+    id: 'switch-branch',
+    group: 'Session',
+    label: 'Switch branch…',
+    detail: "Switch the session's checkout to another branch, or create one.",
+    chords: [],
+    scopes: session,
+    terms: ['git', 'checkout'],
+  },
+  {
     id: 'rename',
     group: 'Session',
     label: 'Rename session',
@@ -383,58 +414,72 @@ export const COMMANDS: Command[] = [
   {
     id: 'pin',
     group: 'Session',
-    label: 'Pin or unpin',
-    detail: 'Keep this session at the top of the sidebar.',
+    label: 'Pin',
+    detail: 'Keep the session at the top of its group, on every device; again to unpin.',
     chords: [],
     scopes: act,
   },
   {
     id: 'panel-diff',
     group: 'Session',
-    label: 'Panel: Diff',
+    label: 'Diff',
     detail: 'Show the git changes beside the session. Again to close.',
     chords: [{ key: '1', ctrl: true, alt: true }],
     scopes: act,
+    terms: ['panel'],
   },
   {
     id: 'panel-files',
     group: 'Session',
-    label: 'Panel: Files',
+    label: 'Files',
     detail: 'Browse files beside the session. Again to close.',
     chords: [{ key: '2', ctrl: true, alt: true }],
     scopes: act,
+    terms: ['panel'],
   },
   {
     id: 'panel-chat',
     group: 'Session',
-    label: 'Panel: Side chat',
+    label: 'Chat',
     detail: 'Discuss this work with another model. Again to close.',
     chords: [{ key: '3', ctrl: true, alt: true }],
     scopes: act,
+    terms: ['panel'],
   },
   {
     id: 'panel-queue',
     group: 'Session',
-    label: 'Panel: Queue',
+    label: 'Queue',
     detail: 'Review, send or cancel queued follow-ups. Again to close.',
     chords: [{ key: '4', ctrl: true, alt: true }],
     scopes: act,
+    terms: ['panel'],
   },
   {
     id: 'panel-snapshots',
     group: 'Session',
-    label: 'Panel: Snapshots',
+    label: 'Snapshots',
     detail: 'Per-turn snapshots and restore. Again to close.',
     chords: [{ key: '5', ctrl: true, alt: true }],
     scopes: act,
+    terms: ['panel'],
   },
   {
     id: 'panel-preview',
     group: 'Session',
-    label: 'Panel: Preview',
+    label: 'Preview',
     detail: 'A dev server running in this session (Storybook, Vite…), in a browser pane served from the host. Again to close.',
-    terms: ['browser', 'storybook', 'localhost'],
+    terms: ['browser', 'storybook', 'panel'],
     chords: [{ key: '6', ctrl: true, alt: true }],
+    scopes: act,
+  },
+  {
+    id: 'panel-stack',
+    group: 'Session',
+    label: 'Stack',
+    detail: 'The stack this session is building: its branches bottom to top, each with its pull request, and Review. Again to close.',
+    terms: ['review', 'pull requests', 'gh stack'],
+    chords: [{ key: '7', ctrl: true, alt: true }],
     scopes: act,
   },
   {
@@ -857,12 +902,17 @@ const PART_LABEL: Record<string, string> = {
   Tab: 'Tab',
 };
 
-export function chordParts(c: Chord): string[] {
+/** A modifier as a keycap shows it: Apple's glyphs on a Mac, its printed name elsewhere (as on the key itself). */
+export function modLabel(mod: 'ctrl' | 'shift' | 'alt' | 'meta', mac = isMac()): string {
+  return mac ? { ctrl: '⌃', shift: '⇧', alt: '⌥', meta: '⌘' }[mod] : { ctrl: 'Ctrl', shift: 'Shift', alt: 'Alt', meta: 'Super' }[mod];
+}
+
+export function chordParts(c: Chord, mac = isMac()): string[] {
   const parts: string[] = [];
-  if (c.ctrl) parts.push('⌃');
-  if (c.shift) parts.push('⇧');
-  if (c.alt) parts.push('⌥');
-  if (c.meta) parts.push('⌘');
+  if (c.ctrl) parts.push(modLabel('ctrl', mac));
+  if (c.shift) parts.push(modLabel('shift', mac));
+  if (c.alt) parts.push(modLabel('alt', mac));
+  if (c.meta) parts.push(modLabel('meta', mac));
   parts.push(PART_LABEL[c.key] ?? (c.key.length === 1 ? c.key.toUpperCase() : c.key));
   return parts;
 }
@@ -1055,6 +1105,20 @@ export function runCommand(id: CommandId): boolean {
   return true;
 }
 
+/**
+ * Run a command as soon as something offers it: for an action on a session that is
+ * opening now (a sidebar row's menu opens the session, then renames it). Gives up
+ * after `ms` if nothing ever registers it.
+ */
+export function runCommandSoon(id: CommandId, ms = 1500): void {
+  const end = Date.now() + ms;
+  const attempt = () => {
+    if (runCommand(id) || Date.now() > end) return;
+    requestAnimationFrame(attempt);
+  };
+  requestAnimationFrame(attempt);
+}
+
 let capture: ((e: KeyboardEvent) => void) | null = null;
 
 /** While set, the shortcut listener hands the next key here instead of running a command. */
@@ -1077,4 +1141,9 @@ export function handleShortcutKey(e: KeyboardEvent) {
   if (!id || !runCommand(id)) return;
   e.preventDefault();
   e.stopPropagation();
+}
+
+/** A command's label, the same words wherever it is offered: menus, the palette, the shortcut table. */
+export function commandLabel(id: CommandId): string {
+  return COMMANDS.find((c) => c.id === id)?.label ?? id;
 }

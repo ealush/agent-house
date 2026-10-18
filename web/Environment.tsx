@@ -140,7 +140,7 @@ export function EnvironmentPanel() {
           <div className="form-grid">
             <label className="field">
               <span>Name</span>
-              <input
+              <input className="mono"
                 value={form.name}
                 disabled={busy || form.editing}
                 maxLength={128}
@@ -156,7 +156,7 @@ export function EnvironmentPanel() {
             </label>
             <label className="field">
               <span>Value</span>
-              <input
+              <input className="mono"
                 type={form.secret ? 'password' : 'text'}
                 value={form.value}
                 disabled={busy}
@@ -179,7 +179,7 @@ export function EnvironmentPanel() {
         {form && (
           <>
             <label className="check">
-              <input type="checkbox" disabled={busy} checked={form.secret} onChange={(e) => setForm({ ...form, secret: e.target.checked, secretTouched: true })} />
+              <input type="checkbox" switch="" disabled={busy} checked={form.secret} onChange={(e) => setForm({ ...form, secret: e.target.checked, secretTouched: true })} />
               <span>Secret: hide the value once saved</span>
             </label>
             <div className="actions">

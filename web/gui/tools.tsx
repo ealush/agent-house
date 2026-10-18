@@ -311,10 +311,11 @@ export function ToolRow({ call, result }: ToolProps) {
   useEffect(() => {
     if (done && view.foldWhenDone) setOpen(false);
   }, [done, view.foldWhenDone]);
-  // What it wants to do is the question: show it (an edit as its diff) without a click.
+  // What it wants to do is the question: show it (an edit as its diff) without a click. A
+  // command stays folded: the ask card below shows it, with its description, in full.
   useEffect(() => {
-    if (awaiting) setOpen(true);
-  }, [awaiting]);
+    if (awaiting && view !== Shell) setOpen(true);
+  }, [awaiting, view]);
   const status = awaiting ? 'awaiting' : stopped ? 'stopped' : running ? 'running' : result.isError ? 'error' : 'done';
   const Body = view.Body ?? Default.Body!;
   return (

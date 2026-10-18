@@ -34,8 +34,10 @@ Fields, in order:
    arguments (quoted, never concatenated into a shell string), tmux session,
    machine (multi-host). "· changed" shows when any is set.
 
-Defaults: the focused session's project, and the last agent and model used
-(P11). Start is the ⌘↵ button. ah starts sessions only from presets.
+Defaults: the focused session's project (else the last one started from this
+device, else the most recently active session's), and the last agent and
+model used (P11). A device that has started nothing opens on Agent, with its
+most-used agent (or one running on the host) chosen and the keyboard on it. Start is the ⌘↵ button. ah starts sessions only from presets.
 
 ## SES-3 · New project — shipped
 
@@ -139,20 +141,22 @@ Optimistic. Renames the tmux window; the title then wins over the agent's own.
 - **Worktrees** dialog (sidebar footer): every managed worktree with dirty /
   ahead / in-use, on-disk size (background), orphans, safe removal (branch
   kept), bulk clean-up, open a shell in one. `ah worktrees`.
-- → A-07: not reachable on a phone, nor from the palette.
+- Reached from the sidebar's footer and the palette (Go to → Worktrees), so
+  also from a phone.
 
 ## SES-15 · Branch — shipped
 
-The header's branch chip (desktop) or Branch in the action sheet (phone):
-switch to or create a branch in the session's checkout; shows the pull
-request when there is one. → A-08: no palette command.
+The header's branch chip (desktop), Branch in the session menu (every
+device), or the palette's Switch branch…: switch to or create a branch in the
+session's checkout; shows the pull request when there is one.
 
 ## SES-16 · Fork — shipped
 
 Copies the conversation under a new id into a fresh `ah/<slug>` worktree, from
 the last commit (uncommitted changes are named, not carried), with an optional
 first message, model, effort and permissions. Claude Code, Codex, Muse.
-Lineage in `ah.fork` meta: a fork count on the parent, "Fork of …" on the
+The dialog, the default name ("Docs link audit (fork)") and the fork use the
+session's title. Lineage in `ah.fork` meta: a fork count on the parent, "Fork of …" on the
 child. From the session menu, sidebar row menu, History row menu, palette,
 ⌃⌥F, `ah fork`. Open: forking from a mid-transcript point.
 

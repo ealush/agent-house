@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Icon } from './icons.tsx';
 import { ConfirmButton } from './ConfirmButton.tsx';
 import type { ForkInfo, HostApi, Win } from './api.ts';
 import { ModelPicker, Popover, effectiveModel, effortsFor, usePreset, type Pick } from './ModelPicker.tsx';
@@ -105,8 +106,11 @@ export function ForkDialog({ client, target, onClose, onForked }: Props) {
               Copies “{info.title}” into its own worktree on a new branch, from {info.branch ?? 'HEAD'} @ {info.head}. The original keeps running untouched.
             </p>
             {info.dirty > 0 && (
-              <p className="warn">
-                Parent has {info.dirty} uncommitted change{info.dirty === 1 ? '' : 's'}; the fork starts from the last commit ({info.head}).
+              <p className="note">
+                <Icon name="branch" size={16} />
+                <span>
+                  {info.dirty} uncommitted change{info.dirty === 1 ? ' stays' : 's stay'} behind; the fork starts from the last commit ({info.head}).
+                </span>
               </p>
             )}
             {info.busy && <p className="hint">The parent is working; the fork will start when its current turn ends.</p>}
@@ -239,7 +243,7 @@ export function ForksDialog({
         setLines(out);
         // Diff sizes are a per-window fetch; fill them in as they land.
         for (const x of family) {
-          const ch = await client.changes(x.id).catch(() => null);
+          const ch = await client.changes(x.uid).catch(() => null);
           if (!live) return;
           if (ch) setLines((prev) => prev.map((l) => (l.key === x.key ? { ...l, changed: ch.files.length } : l)));
         }

@@ -1,5 +1,7 @@
+import { useContext } from 'react';
 import type { HistoryItem, HostApi, ReviewAlert, State, Win } from './api.ts';
-import { AskPanel, cleanScreen, questionLine } from './AskPanel.tsx';
+import { AskPanel, AskSummary } from './AskPanel.tsx';
+import { KIND_LABEL } from './askView.ts';
 import { ShortcutHint, shortcutTitle } from './shortcuts.tsx';
 import { Icon } from './icons.tsx';
 import { age, look } from './agents.ts';
@@ -9,6 +11,9 @@ import { sidebarSections } from './sessionOrder.ts';
 import { Glide } from './Glide.tsx';
 import { useFlip } from './useFlip.ts';
 import { statusClass, statusCounts, statusWord } from './status.ts';
+import { sessionLine } from './sessionLine.tsx';
+import { SessionActionsContext, sessionItems, sessionSwipes, usePressMenu } from './PressMenu.tsx';
+import { Swipe } from './Swipe.tsx';
 
 export type InboxGroup = 'status' | 'host' | 'project';
 
@@ -31,7 +36,6 @@ type Props = {
   onResume?: (h: HistoryItem) => void;
 };
 
-const KIND_LABEL = { command: 'Wants to run a command', tool: 'Wants to use a tool', question: 'Asked a question', screen: 'Waiting for you', choice: 'Asked you' };
 
 const where = (w: Win, multiHost: boolean) => [multiHost ? w.host : null, w.project].filter(Boolean).join(' · ');
 
@@ -158,13 +162,9 @@ function AskCard({ w, client, multiHost, narrow, onOpen, onAnswer }: { w: Win; c
   const { color, name } = look(w.agent);
   const modelLabel = shortModel(w.model);
   const ask = w.ask;
-  const code = ask?.kind === 'command';
   // Answerable right here: the agent's questions, or the rows of its picker.
   const inline = !!ask && ((ask.kind === 'choice' && (!!ask.questions?.length || !!ask.dialog)) || !!ask.options?.length);
-  // Lead with the prompt's question; the rest of the screen is context, without the TUI's rules.
-  const showText = !!ask?.text && !(ask.kind === 'choice' && inline);
-  const question = showText && ask!.kind !== 'command' ? questionLine(ask!.text) : null;
-  const context = showText ? cleanScreen(ask!.text, question) : '';
+  const form = ask?.kind === 'choice' && inline;
   return (
     <article
       className="card card-needs"
@@ -193,15 +193,9 @@ function AskCard({ w, client, multiHost, narrow, onOpen, onAnswer }: { w: Win; c
         </button>
         <span className="card-age">{age(w.activity)}</span>
       </div>
-      {!narrow && ask && <div className="card-kind">{KIND_LABEL[ask.kind]}</div>}
-      {question && <p className="card-question">{question}</p>}
-      {context && (code ? <pre className="ask-box code">{context}</pre> : <div className="ask-box">{context}</div>)}
+      {/* The same summary the session shows: what it wants, the command or the question, the screen on request. */}
+      {ask && (form ? <div className="card-kind">{KIND_LABEL[ask.kind]}</div> : <AskSummary w={w} terminalText={!narrow} />)}
       {inline && <AskPanel w={w} client={client} onAnswer={onAnswer} compact />}
-      {!narrow && (
-        <div className="card-where">
-          Where <span className="mono">{multiHost ? `${w.host}:` : ''}{w.projectPath}</span>
-        </div>
-      )}
       <div className="card-foot">
         {inline ? (
           <button className="btn" onClick={() => onOpen(w)}>
@@ -297,40 +291,46 @@ function ListHead({ flip }: { flip: string }) {
 
 /** `inProject`: the rows sit under their project's heading, so they don't repeat it. */
 export function Rows({ windows, multiHost, narrow, onOpen, quiet, inProject }: { windows: Win[]; multiHost: boolean; narrow: boolean; onOpen: Props['onOpen']; quiet?: boolean; inProject?: boolean }) {
+  // A finger held on a row: its menu, as iOS lists open one (PressMenu.tsx).
+  const actions = useContext(SessionActionsContext);
+  const { bind, menu } = usePressMenu();
   return (
     <ul className="rows">
+      {menu}
       {windows.map((w) => {
-        const { color, name } = look(w.agent);
+        const { color } = look(w.agent);
         const place = inProject ? (multiHost ? w.host : '') : where(w, multiHost);
         const pill = <span className={`pill ${statusClass(w) === 'idle' ? '' : statusClass(w)}`}>{statusWord(w)}</span>;
         return (
           <li key={w.key} data-flip={w.key}>
-            <button className={`row ${quiet ? 'quiet' : ''}`} style={{ '--agent': color } as React.CSSProperties} onClick={() => onOpen(w)}>
-              <span className="chip">
-                <AgentLogo id={w.agent} />
-              </span>
-              {narrow ? (
-                <>
-                  <span className="stack">
-                    <span className="name">{w.title}</span>
-                    <span className="sub">{[w.detail ?? (w.panes > 1 ? `${w.panes} panes` : inProject ? name : null), place].filter(Boolean).join(' · ')}</span>
-                  </span>
-                  <span className="when">{pill}</span>
-                </>
-              ) : (
-                <>
-                  {/* With nothing to say in Detail, the title takes its column. */}
-                  <span className={`name ${w.detail ? '' : 'solo'}`}>{w.title}</span>
-                  {w.detail && <span className="detail">{w.detail}</span>}
-                  <span className="meta">
-                    {pill}
-                    {w.queued > 0 && <span className="pill waiting">⇥ {w.queued} queued</span>}
-                    <span className="where" title={place}>{place}</span>
-                  </span>
-                  <span className="when">{age(w.activity)}</span>
-                </>
-              )}
-            </button>
+            <Swipe actions={actions ? sessionSwipes(w, actions) : []}>
+              <button className={`row ${quiet ? 'quiet' : ''}`} style={{ '--agent': color } as React.CSSProperties} onClick={() => onOpen(w)} {...(actions ? bind(() => sessionItems(w, actions)) : {})}>
+                <span className="chip">
+                  <AgentLogo id={w.agent} />
+                </span>
+                {narrow ? (
+                  <>
+                    <span className="stack">
+                      <span className="name">{w.title}</span>
+                      <span className="sub">{sessionLine(w, { project: !inProject, host: multiHost })}</span>
+                    </span>
+                    <span className="when">{pill}</span>
+                  </>
+                ) : (
+                  <>
+                    {/* With nothing to say in Detail, the title takes its column. */}
+                    <span className={`name ${w.detail ? '' : 'solo'}`}>{w.title}</span>
+                    {w.detail && <span className="detail">{w.detail}</span>}
+                    <span className="meta">
+                      {pill}
+                      {w.queued > 0 && <span className="pill waiting">⇥ {w.queued} queued</span>}
+                      <span className="where" title={place}>{place}</span>
+                    </span>
+                    <span className="when">{age(w.activity)}</span>
+                  </>
+                )}
+              </button>
+            </Swipe>
           </li>
         );
       })}

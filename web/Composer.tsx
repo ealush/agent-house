@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
+import { useHardwareKeyboard } from './hardwareKeyboard.ts';
 import { askConfirm, showError, showNotice } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { shellQuote, type HostApi, type SendResult, type Win } from './api.ts';
@@ -13,7 +14,7 @@ import { useDraftSync } from './useDraftSync.ts';
 import { splitUploads } from './uploads.ts';
 
 /** Touch only (a phone, an iPad without a pointer): no keys to name in hints, as keycaps drop there. */
-const TOUCH = typeof matchMedia === 'function' && matchMedia('(hover: none) and (pointer: coarse)').matches;
+const TOUCH_SCREEN = typeof matchMedia === 'function' && matchMedia('(hover: none) and (pointer: coarse)').matches;
 
 // The message bar under a GUI session. It goes through the server, which types the text
 // in now (idle agent, or any shell), queues it while an agent works, or resumes a dead
@@ -79,6 +80,8 @@ const SpeechRecognition: (new () => Recognition) | undefined = (window as any).S
 const toast = (msg: string) => window.dispatchEvent(new CustomEvent('ah:toast', { detail: msg }));
 
 export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBar({ client, target, agent, w, onSent, onChange, onNotice = toast, onSettingsOpen, onRelaunched, focusKey, active = false }, ref) {
+  // A hardware keyboard on a touch screen has keys to name.
+  const touchOnly = TOUCH_SCREEN && !useHardwareKeyboard();
   const area = useRef<HTMLTextAreaElement>(null);
   const tray = useRef<QueueTrayHandle>(null);
   const [text, setText] = useState(() => drafts.get(target) ?? '');
@@ -362,7 +365,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
           autoCapitalize={isShell ? 'off' : 'sentences'}
           autoCorrect={isShell ? 'off' : 'on'}
           spellCheck={!isShell}
-          placeholder={isShell ? 'Type or paste a command' : working && (w?.queued ?? 0) > 0 ? (TOUCH ? 'Add to the queue' : 'Add to the queue · Enter steers the next one · Esc stops') : working ? (TOUCH ? 'Add to this… (queued until it’s free)' : 'Add to this… (queued until it’s free · Esc stops)') : 'Send a follow-up · / commands · @ files'}
+          placeholder={isShell ? 'Type or paste a command' : working && (w?.queued ?? 0) > 0 ? (touchOnly ? 'Add to the queue' : 'Add to the queue · Enter steers the next one · Esc stops') : working ? (touchOnly ? 'Add to this… (queued until it’s free)' : 'Add to this… (queued until it’s free · Esc stops)') : 'Send a follow-up · / commands · @ files'}
           onChange={(e) => {
             setText(e.target.value);
             setCaret(e.target.selectionStart ?? e.target.value.length);
@@ -418,7 +421,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
       <div className="composer-tools">
         <div className="composer-settings">
           {preset && (models.length > 0 || preset.modelArgs || preset.settingsCommands?.model) && (
-            <Popover className="tool-chip" title="Model version" label={modelLabel ?? 'Model: Default'} command="pick-model" active={active}>
+            <Popover className="tool-chip" title="Model version" label={<ChipLabel name="Model" value={modelLabel ?? 'Default'} />} command="pick-model" active={active}>
               {(close) => (
                 <ModelPicker preset={preset} value={{ model: model?.id, effort }}
                   disabled={!preset.switchModel && !preset.modelArgs}
@@ -430,7 +433,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
             </Popover>
           )}
           {preset && (levels.length > 0 || preset.settingsCommands?.effort) && (
-            <Popover className="tool-chip" title="Reasoning effort" label={effort ? `Effort: ${effort.charAt(0).toUpperCase() + effort.slice(1)}` : 'Effort'} command="pick-effort" active={active}>
+            <Popover className="tool-chip" title="Reasoning effort" label={<ChipLabel name="Effort" value={effort ? effort.charAt(0).toUpperCase() + effort.slice(1) : 'Default'} />} command="pick-effort" active={active}>
               {(close) => (
                 <EffortPicker levels={levels} value={effort} disabled={!preset.switchEffort && !preset.effort}
                   onPick={(level) => void choose({ effort: level ?? 'default' }, close)}
@@ -441,7 +444,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
             </Popover>
           )}
           {preset && (preset.modes?.length ?? 0) > 1 && (
-            <Popover className={`tool-chip ${mode?.dangerous ? 'danger' : ''}`} title="Permission level" label={mode && mode.id !== 'default' ? `${mode.dangerous ? '⚠ ' : ''}${mode.name}` : 'Permissions'}>
+            <Popover className={`tool-chip ${mode?.dangerous ? 'danger' : ''}`} title="Permission level" label={<ChipLabel name="Permissions" value={mode && mode.id !== 'default' ? `${mode.dangerous ? '⚠ ' : ''}${mode.name}` : 'Default'} />}>
               {(close) => (
                 <div className="picker" aria-label="Permissions">
                   <div className="picker-title">Permissions</div>
@@ -497,3 +500,12 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
     </>
   );
 });
+
+/** A setting chip says which setting and the value in force: "Model Opus 5.5", "Effort Default". */
+function ChipLabel({ name, value }: { name: string; value: string }) {
+  return (
+    <>
+      <span className="chip-key">{name}</span> {value}
+    </>
+  );
+}

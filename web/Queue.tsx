@@ -75,7 +75,7 @@ export function QueuePanel({ client, uid, onChange }: {
           <QueueRow key={item.id} item={item} first={item === items[0]} busy={busy} onSendNow={() => sendNow(item)} onCancel={() => remove(item.id)} />
         ))}
       </ol>
-      {!!items?.length && <button className="btn ghost small danger queue-clear-all" disabled={busy} onClick={() => remove()}>Cancel all queued messages</button>}
+      {!!items?.length && <button className="btn ghost small danger queue-clear-all" disabled={busy} onClick={() => remove()}>Cancel all queued</button>}
     </div>
   );
 }

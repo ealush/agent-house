@@ -1,6 +1,6 @@
 # 08 · Settings and host
 
-Settings is a page on desktop (section list beside titled cards) and a sheet
+Settings is a page on desktop (section list, each with its icon, beside titled cards) and a sheet
 over the current page on a phone (sections as a sideways tab strip). Sections
 are addressable (`#settings/<section>`); things that take one click also run
 from the palette's Settings branch (`web/settingsMenu.ts`).
@@ -71,15 +71,13 @@ Rebuild.
 
 ## SET-9 · System — shipped
 
-- **This device**: Reload page.
 - **Agent hooks**: per agent, how many events are wired and where; Install /
   Remove hooks; the screen-rule audit (caught / missed per agent with the
   last missed screen; Clear).
 - **Desktop app**: whether ah is in the app launcher; Add / Remove; the
   Hyprland bind to copy.
-- **Server**: Restart; Rebuild and restart (deletes dist, builds from this
-  checkout, restarts). Sessions keep running.
+- **Server**: Restart server; Rebuild and restart (deletes dist, builds from
+  this checkout, restarts); Reload page (this device only). Sessions keep
+  running.
 - **Uploads**: size of the uploads folder; Clear.
 
-→ A-18: "This device" is a card in both Security and System, holding
-different things.

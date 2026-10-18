@@ -7,7 +7,8 @@ detail, chords, scopes, search terms): 84 commands in three groups
 (Navigate, Session, Workspace; the last includes workspace 1–9 and send to
 workspace 1–9). Menus,
 the palette, the shortcut table, which-key and chord hints all read labels
-and chords from it, so a command reads the same everywhere. → A-12.
+and chords from it (`commandLabel`), so a command reads the same everywhere:
+"Diff", "Queue", "Pin", "Send next queued now", "Copy attach command".
 
 Rules:
 
@@ -17,8 +18,9 @@ Rules:
   digits and punctuation, which stay on the physical key.
 - **Scopes**: `app`, `terminal`, `field`, `dialog`, `ask`. Ctrl+Alt session
   chords work from the composer too; a question form owns its keys.
-- Platform-aware keycaps: ⌘ ⌥ ⌃ ⇧ on a Mac, Ctrl Alt Shift elsewhere.
-  Touch-only devices show no key hints. → A-13.
+- Platform-aware keycaps: ⌘ ⌥ ⌃ ⇧ on a Mac; Ctrl, Alt, Shift and Super
+  elsewhere, as the keys and tooltips say. ↵, Esc and arrows are glyphs
+  everywhere. Touch-only devices show no key hints.
 
 ## KEY-2 · Command palette — shipped
 
@@ -38,13 +40,13 @@ carry agent marks. The palette only offers what can run now.
 Ctrl+Alt (⌃⌥) + R reply · ↵ approve · ⌫ deny · X stop · S send next queued now
 · M model · E effort · N rename · F fork · T send to · C copy last reply ·
 P replace pane · H hide steps · B browse messages · End jump to latest ·
-1–6 panels · `.` session menu. Esc in an empty composer
+1–7 panels · `.` session menu. Esc in an empty composer
 stops the turn.
 
 ## KEY-4 · Navigation chords — shipped
 
-⌃⇧P palette · ⌘K / ⌃⇧K switcher · ⌃⇧↵ new session · ⌃⇧1/2/3 Inbox / History /
-Settings · ⌃⇧0 sidebar · ⌃⇧9 or Esc back to the session · Alt+↑/↓ previous /
+⌃⇧P palette · ⌘K / ⌃⇧K switcher · ⌃⇧↵ new session · ⌃⇧1/2/3/4/5 Inbox / History /
+Settings / Review / Search · ⌃⇧0 sidebar · ⌃⇧9 or Esc back to the session · Alt+↑/↓ previous /
 next session · ⌃⇧E sidebar · ⌃⇧G Terminal / GUI · ⌃⇧J side panel · ⌃⇧/ shortcut
 table.
 

@@ -243,13 +243,28 @@ function scheduleRestart() {
 // ---------- API (reached only after the gate in handle())
 
 async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: string, caller: Caller | null) {
-  const method = req.method ?? 'GET';
+  let method = req.method ?? 'GET';
   const route = (verb: string, re: RegExp) => (method === verb ? path.match(re) : null);
   let m: RegExpMatchArray | null;
 
   if (route('GET', /^\/api\/hello$/)) return send(res, 200, { ah: true, hostname: hostname(), auth: auth.enabled });
   if (path.startsWith('/api/auth/')) return authApi(req, res, path, method, caller);
   if (!caller) throw new HttpError(401, 'sign in required'); // belt and braces; handle() already denied
+
+  // A session by its uid, which outlives tmux windows (resume, relaunch, a tmux restart): the
+  // window routes below, resolved to the window the session has now. Naming the session means a
+  // request can't land in a different window that took its place.
+  const bySession = path.match(/^\/api\/sessions\/([\w-]{1,40})\/(changes|branches|pull|chat|chat\/subscription|capture|name|terminate)$/);
+  if (bySession) {
+    const [, uid, what] = bySession;
+    const verb = what === 'name' ? 'PUT' : what === 'terminate' ? 'POST' : null;
+    if (verb && method !== verb) throw new HttpError(405, 'method not allowed');
+    const win = (await core.current()).windows.find((w) => w.uid === uid);
+    if (!win) throw new HttpError(404, "the session isn't running");
+    path = `/api/windows/${win.id}${verb ? '' : `/${what}`}`;
+    if (what === 'name') method = 'PATCH';
+    if (what === 'terminate') method = 'DELETE';
+  }
   if (path.startsWith('/api/review/')) return reviewApi(req, res, url, path, review, audit);
 
   if (route('GET', /^\/api\/state$/)) return send(res, 200, await core.current());
@@ -404,7 +419,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     const key = str((await readJson(req)).key, 'key', 8);
     const option = await core.choose(m[1], key);
     audit(req, 'session.choose', { uid: m[1], key, label: option.label.slice(0, 80) });
-    return send(res, 200, { ok: true });
+    return send(res, 200, { ok: true, label: option.label });
   }
 
   if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/questions$/))) {

@@ -159,7 +159,7 @@ export function SheetBar({ onClose, title, onBack, backLabel }: { onClose: () =>
  * A whole view presented as a phone sheet (Settings): a modal dialog of its
  * own that scrolls inside, with the sheet's bar on top.
  */
-export function Sheet({ label, className = '', onClose, children }: { label: string; className?: string; onClose: () => void; children: ReactNode }) {
+export function Sheet({ label, className = '', onClose, title, onBack, backLabel, children }: { label: string; className?: string; onClose: () => void; title?: string; onBack?: () => void; backLabel?: string; children: ReactNode }) {
   const ref = useRef<HTMLDialogElement>(null);
   const { dismiss } = useSheet(ref, onClose);
   useEffect(() => {
@@ -180,7 +180,7 @@ export function Sheet({ label, className = '', onClose, children }: { label: str
         dismiss();
       }}
     >
-      <SheetBar onClose={dismiss} title={label} />
+      <SheetBar onClose={dismiss} title={title ?? label} onBack={onBack} backLabel={backLabel} />
       {children}
     </dialog>
   );

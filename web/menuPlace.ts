@@ -1,10 +1,12 @@
 // Positioning for floating (portalled) menus: open below the anchor, flip
-// above it when there is no room, and clamp into the visible viewport.
+// above it when there is no room, and clamp into the visible viewport. A menu
+// that fits on neither side stays at its button, on the side with more room,
+// as tall as that room (it scrolls inside), as iPadOS's menus do.
 // A software keyboard offsets that viewport (visualViewport.offsetTop) and
 // shortens it; `top`/`left` on the box are that origin, defaulting to 0.
 export type AnchorRect = { top: number; right: number; bottom: number };
 export type Box = { width: number; height: number; top?: number; left?: number };
-export type PlacedPoint = { top: number; left: number };
+export type PlacedPoint = { top: number; left: number; maxHeight?: number };
 
 /** The band a menu must stay inside. Pinch-zoom keeps the layout viewport. */
 export function menuViewport(
@@ -39,9 +41,10 @@ export function placeFloatingMenu(
     Math.max(originLeft + margin, viewRight - menu.width - margin),
   );
   const below = anchor.bottom + gap;
-  const top =
-    below + menu.height <= viewBottom - margin
-      ? below
-      : Math.max(originTop + margin, anchor.top - gap - menu.height);
-  return { top, left };
+  const roomBelow = viewBottom - margin - below;
+  const roomAbove = anchor.top - gap - (originTop + margin);
+  if (menu.height <= roomBelow) return { top: below, left };
+  if (menu.height <= roomAbove) return { top: anchor.top - gap - menu.height, left };
+  if (roomBelow >= roomAbove) return { top: below, left, maxHeight: Math.max(0, roomBelow) };
+  return { top: originTop + margin, left, maxHeight: Math.max(0, roomAbove) };
 }

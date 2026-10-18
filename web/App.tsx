@@ -13,18 +13,17 @@ import { setOmarchyPalette } from './theme.ts';
 import { focusPage } from './rove.ts';
 import { hasLegacy, isLegacyKey, upgradeKey, upgradeLayout, upgradeSpaces } from './sessionKeys.ts';
 
-const STATUS_WORD = { waiting: 'Needs you', busy: 'Working', attention: 'Done', idle: 'Idle' } as const;
 
 const SUBMAP_KEYS: Record<'resize' | 'pane', Array<[string[], string]>> = {
   resize: [
     [['←', '↓', '↑', '→'], 'move the divider'],
     [['H', 'J', 'K', 'L'], 'same'],
-    [['⇧'], 'bigger steps'],
+    [[modLabel('shift')], 'bigger steps'],
     [['Esc'], 'done'],
   ],
   pane: [
     [['H', 'J', 'K', 'L'], 'focus'],
-    [['⇧', 'HJKL'], 'move'],
+    [[modLabel('shift'), 'HJKL'], 'move'],
     [['V'], 'split right'],
     [['S'], 'split below'],
     [['P'], 'replace'],
@@ -57,14 +56,17 @@ import { showError } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { useSwipeBack } from './useSwipeBack.ts';
 import { edgeGesture } from './edges.ts';
+import { useSideSwipe } from './useSideSwipe.ts';
+import { SessionActionsContext, type SessionActions } from './PressMenu.tsx';
 import { Sheet } from './sheet.tsx';
 import { trackViewport } from './viewport.ts';
 import { glide, transition, type Heading } from './motion.ts';
-import { runCommand } from './shortcuts.ts';
+import { modLabel, runCommand } from './shortcuts.ts';
+import { statusWord } from './status.ts';
 import { CommandPalette, Keycaps, Shortcuts, ShortcutsDialog, WhichKey, shortcutTitle, useCommand, usePaletteProvider } from './shortcuts.tsx';
 import { TabBar } from './TabBar.tsx';
 import { errorText } from './errors.ts';
-import { sectionHash, settingsNodes } from './settingsMenu.ts';
+import { backToList, restartServer, sectionHash, SECTIONS, settingsNodes, useSectionPart } from './settingsMenu.ts';
 import { reviewHash } from './reviewApi.ts';
 import { ReviewContext } from './reviewContext.ts';
 
@@ -116,7 +118,7 @@ function stored<T extends string>(key: string, fallback: T): [T, (v: T) => void]
 // ("#@12", a tmux window id) still open: App upgrades them once windows are known.
 const PAGES = ['history', 'sessions', 'settings', 'search', 'review'] as const;
 /** The sidebar's pages, top to bottom (its sessions follow), so navigation knows which way it goes. */
-const NAV_PAGES = ['inbox', 'review', 'history', 'settings'] as const;
+const NAV_PAGES = ['inbox', 'review', 'history', 'search', 'settings'] as const;
 const sameRoute = (a: { page: Page; selected: string | null }, b: { page: Page; selected: string | null }) => a.page === b.page && a.selected === b.selected;
 
 function fromHash(): { page: Page; selected: string | null } {
@@ -151,6 +153,14 @@ export function App({ onLock }: { onLock: () => void }) {
   // its height.
   const narrow = useMedia('(max-width: 760px), ((pointer: coarse) and (max-height: 500px) and (max-width: 1000px))');
   const touch = useMedia('(pointer: coarse)');
+  // Too narrow to keep the sidebar beside the page, too wide for the phone's layout: an iPad in
+  // portrait, a Stage Manager window, a narrow desktop window. The sidebar slides over the page
+  // instead, as iPadOS apps' do (the same widths are in web/styles.css).
+  const tight = useMedia('(min-width: 761px) and (max-width: 1099px)') && !narrow;
+  const [sideOver, setSideOver] = useState(false);
+  useEffect(() => {
+    if (!tight) setSideOver(false);
+  }, [tight]);
   const [sideOpen, setSideOpen] = useState(() => {
     try {
       return localStorage.getItem('ah.side') !== '0';
@@ -210,7 +220,7 @@ export function App({ onLock }: { onLock: () => void }) {
   const terminate = (w: Win) => {
     hide(w.key, true);
     clientFor(w.host)
-      .kill(w.id)
+      .kill(w.uid)
       .then(
         () => refresh(w.host),
         (e) => {
@@ -222,6 +232,7 @@ export function App({ onLock }: { onLock: () => void }) {
   const endedFor = (key: string | null) => (key && state?.history.find((h) => h.kind === 'ended' && keyFor(h.host, h.ref) === key)) || null;
 
   function toggleSide() {
+    if (tight) return setSideOver((v) => !v);
     setSideOpen((v) => {
       try {
         localStorage.setItem('ah.side', v ? '0' : '1');
@@ -293,6 +304,13 @@ export function App({ onLock }: { onLock: () => void }) {
   const popStill = useRef(false);
   const goRef = useRef(go);
   goRef.current = go;
+  /** A page reached by a link or Back leaves the split, as picking it in the sidebar does (showPage). */
+  const leaveSplitRef = useRef(() => {});
+  leaveSplitRef.current = () => {
+    if (!layout) return;
+    setLayout(null);
+    setFocusPath(null);
+  };
   /** Where the next view sits relative to this one: further down the sidebar, or deeper on a phone. */
   function heading(to: { page: Page; selected: string | null }): Heading | null {
     if (narrow) return to.selected && !selected ? 'push' : !to.selected && selected ? 'pop' : null;
@@ -386,6 +404,8 @@ export function App({ onLock }: { onLock: () => void }) {
   useCommand('go-history', () => showPage('history'));
   useCommand('go-review', () => showPage('review'));
   useCommand('go-settings', () => showPage('settings'));
+  useCommand('go-search', () => showPage('search'));
+  useCommand('worktrees', () => setDialog('worktrees'));
   useCommand('show-shortcuts', () => setKeymap(true));
   useCommand('reload-page', () => window.location.reload());
   useCommand('focus-pane-left', () => focusPane('left'), splitOpen);
@@ -584,7 +604,7 @@ export function App({ onLock }: { onLock: () => void }) {
     () =>
       sidebarOrder(state?.windows ?? [], (state?.hosts.length ?? 0) > 1, savedGroups)
         .filter((w) => !visibleKeys.includes(w.key))
-        .map((w) => ({ key: `tile:${w.key}`, label: w.title, agent: w.agent, detail: [STATUS_WORD[w.status], w.project].join(' · '), run: () => openTile(w.key) })),
+        .map((w) => ({ key: `tile:${w.key}`, label: w.title, agent: w.agent, detail: [statusWord(w), w.project].join(' · '), run: () => openTile(w.key) })),
     !!selected || !!layout,
   );
 
@@ -638,7 +658,7 @@ export function App({ onLock }: { onLock: () => void }) {
       key: `session:${w.key}`,
       label: w.title,
       agent: w.agent,
-      detail: [STATUS_WORD[w.status], w.agent ? look(w.agent).name : 'Shell', multi ? w.host : null, w.project].filter(Boolean).join(' · '),
+      detail: [statusWord(w), w.agent ? look(w.agent).name : 'Shell', multi ? w.host : null, w.project].filter(Boolean).join(' · '),
       run: () => open(w.key),
     }));
   });
@@ -765,7 +785,9 @@ export function App({ onLock }: { onLock: () => void }) {
       // A step a swipe has already shown (ours, or the browser's own) lands without a second animation.
       const still = popStill.current || edgeGesture();
       popStill.current = false;
-      goRef.current(fromHash(), { history: 'none', still });
+      const route = fromHash();
+      if (!route.selected) leaveSplitRef.current();
+      goRef.current(route, { history: 'none', still });
     };
     window.addEventListener('popstate', onHash);
     window.addEventListener('hashchange', onHash);
@@ -1045,15 +1067,12 @@ export function App({ onLock }: { onLock: () => void }) {
     </>
   );
 
-  return (
-    <PresetsContext.Provider value={presetFor}>
-    <HostPresetsContext.Provider value={(host) => hostState(host)?.presets ?? []}>
-    <ResumeContext.Provider value={state ? { history: state.history, resume: (h) => resumeKey(h.host, h.ref), discard: terminate } : null}>
-    <ReviewContext.Provider value={{ host: state?.hostname ?? '', state: state?.review ?? null, open: openReview }}>
-    <div className={`app ${narrow ? 'narrow' : ''}`}>
-      <Shortcuts />
-      <WhichKey />
-      {sideOpen ? (
+  // Sliding over the page, picking anything puts it away (as iPadOS apps' sidebars do).
+  const over = <A extends unknown[]>(f: (...a: A) => void) => (...a: A) => {
+    if (tight) setSideOver(false);
+    f(...a);
+  };
+  const sidebar = (
         <Sidebar
           workspaces={{
             current: spaces.current,
@@ -1067,13 +1086,13 @@ export function App({ onLock }: { onLock: () => void }) {
           visibleKeys={visibleKeys}
           device={deviceName()}
           handoff={handoff}
-          onCollapse={toggleSide}
-          onPage={showPage}
-          onSelect={open}
-          onSearch={() => setSwitching(true)}
-          onNew={(where) => setCreating(where ?? {})}
-          onNewProject={() => setCreating({ project: true })}
-          onWorktrees={() => setDialog('worktrees')}
+          onCollapse={tight ? () => setSideOver(false) : toggleSide}
+          onPage={over(showPage)}
+          onSelect={over(open)}
+          onSearch={over(() => setSwitching(true))}
+          onNew={over((where?: Parameters<typeof setCreating>[0]) => setCreating(where ?? {}))}
+          onNewProject={over(() => setCreating({ project: true }))}
+          onWorktrees={over(() => setDialog('worktrees'))}
           onReorder={(uid, host, order) => {
             // One move can save several rows: refresh once they are all saved,
             // so the list never shows a half-applied order (and rows don't bounce).
@@ -1088,14 +1107,47 @@ export function App({ onLock }: { onLock: () => void }) {
           onKill={terminate}
           onFork={(w) => setForking({ ref: w.uid, host: w.host, harness: w.agent, title: w.title })}
         />
+  );
+  // What a list row's held-finger menu does in place (PressMenu.tsx).
+  const sessionActions: SessionActions = {
+    open: (w) => open(w.key),
+    pin: (w) => void clientFor(w.host).pin(w.uid, !w.pinned).then(() => refresh(w.host), (e) => showError(e, "Couldn't pin")),
+    fork: (w) => setForking({ ref: w.uid, host: w.host, harness: w.agent, title: w.title }),
+    kill: terminate,
+  };
+  const settingsPart = useSectionPart();
+  const sideOverRef = useRef<HTMLDivElement>(null);
+  const sideScrimRef = useRef<HTMLDivElement>(null);
+  // A drag in from the edge shows the sidebar before it is open: it follows the finger.
+  const sidePeek = useSideSwipe(tight, sideOver, setSideOver, sideOverRef, sideScrimRef);
+
+  return (
+    <PresetsContext.Provider value={presetFor}>
+    <HostPresetsContext.Provider value={(host) => hostState(host)?.presets ?? []}>
+    <ResumeContext.Provider value={state ? { history: state.history, resume: (h) => resumeKey(h.host, h.ref), discard: terminate } : null}>
+    <ReviewContext.Provider value={{ host: state?.hostname ?? '', state: state?.review ?? null, open: openReview }}>
+    <SessionActionsContext.Provider value={sessionActions}>
+    <div className={`app ${narrow ? 'narrow' : ''}`}>
+      <Shortcuts />
+      <WhichKey />
+      {!tight && sideOpen ? (
+        sidebar
       ) : (
         !narrow && (
           <div className="rail">
-            <button className="icon-btn" onClick={toggleSide} title={shortcutTitle('Show sidebar', 'toggle-sidebar')} aria-label="Show sidebar">
+            <button className="icon-btn" onClick={toggleSide} title={shortcutTitle('Show sidebar', 'toggle-sidebar')} aria-label="Show sidebar" aria-expanded={tight ? sideOver : false}>
               <Icon name="panel" />
             </button>
           </div>
         )
+      )}
+      {tight && (sideOver || sidePeek) && (
+        <>
+          <div className="side-scrim" ref={sideScrimRef} onClick={() => setSideOver(false)} aria-hidden />
+          <div className="side-over" role="dialog" aria-label="Sidebar" ref={sideOverRef}>
+            {sidebar}
+          </div>
+        </>
       )}
 
       {peek && pages && (
@@ -1106,7 +1158,10 @@ export function App({ onLock }: { onLock: () => void }) {
       <main className="main" ref={mainRef}>
         {state && (state.api ?? 0) < API_VERSION && (
           <div className="stale-banner">
-            This page is newer than the running ah server. Restart it (<code>pnpm serve</code>) to finish updating.
+            <span className="grow">This page is newer than the running ah server. Restart the server to finish updating; sessions keep running.</span>
+            <button className="btn small" onClick={() => void restartServer()}>
+              Restart
+            </button>
           </div>
         )}
         {layout && state ? (
@@ -1224,9 +1279,17 @@ export function App({ onLock }: { onLock: () => void }) {
 
 
       {narrow && page === 'settings' && state && (
-        <Sheet label="Settings" className="settings-sheet" onClose={() => goBack({ page: sheetBase.current }, { still: true })}>
+        <Sheet
+          label="Settings"
+          className="settings-sheet"
+          onClose={() => goBack({ page: sheetBase.current }, { still: true })}
+          // A section is a page you went into, as in iOS Settings: its name, and Back to the list.
+          title={settingsPart ? SECTIONS.find((s) => s.id === settingsPart)?.label : undefined}
+          onBack={settingsPart ? backToList : undefined}
+          backLabel="Settings"
+        >
           <Suspense fallback={<div className="page" />}>
-            <Settings onLocked={onLock} onNotifyChange={(on) => (pushActive.current = on)} />
+            <Settings phone onLocked={onLock} onNotifyChange={(on) => (pushActive.current = on)} />
           </Suspense>
         </Sheet>
       )}
@@ -1346,6 +1409,7 @@ export function App({ onLock }: { onLock: () => void }) {
         </div>
       )}
     </div>
+    </SessionActionsContext.Provider>
     </ReviewContext.Provider>
     </ResumeContext.Provider>
     </HostPresetsContext.Provider>

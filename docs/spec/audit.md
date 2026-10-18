@@ -22,30 +22,32 @@ apply there.
 | Action | Sidebar row ··· | Session ··· (desktop) | Action sheet (phone) | Palette | Chord | Inbox | History ··· | CLI |
 |---|---|---|---|---|---|---|---|---|
 | Open | click | n/a | n/a | Go to | Alt+↑/↓ | Open | n/a | `attach` |
-| Answer (approve / deny / pick) | — | n/a | n/a | ✓ | ⌃⌥↵ ⌃⌥⌫ digits | ✓ | n/a | — **A-09** |
+| Answer (approve / deny / pick) | — | n/a | n/a | ✓ | ⌃⌥↵ ⌃⌥⌫ digits | ✓ | n/a | `answer` |
 | Reply | — | n/a | n/a | ✓ | ⌃⌥R | Open + reply | n/a | `send` |
-| Stop the turn | — | — | — | ✓ | ⌃⌥X, Esc | — | n/a | — **A-09** |
-| Rename | — **A-24** | ✓ | ✓ | ✓ | ⌃⌥N | — | — | — **A-09** |
-| Pin | — **A-24** | ✓ | ✓ | ✓ | — | — | — | — |
-| Branch | — | — **A-08** | ✓ | — **A-08** | — | — | — | — |
+| Stop the turn | — | — | — | ✓ | ⌃⌥X, Esc | — | n/a | `stop` |
+| Rename | ✓ | ✓ | ✓ | ✓ | ⌃⌥N | — | — | `rename` |
+| Pin | ✓ | ✓ | ✓ | ✓ | — | — | — | `pin` |
+| Branch | — | ✓ | ✓ | ✓ | — | — | — | — |
 | Fork | ✓ | ✓ | ✓ | ✓ | ⌃⌥F | — | ✓ | `fork` |
 | Continue in | — | ✓ | ✓ | ✓ | — | — | — | — |
-| Send to | — | ✓ | ✓ | ✓ | ⌃⌥T | — | — | — |
+| Send to | ✓ | ✓ | ✓ | ✓ | ⌃⌥T | — | — | — |
 | Model / effort / mode | — | — | — | ✓ | ⌃⌥M ⌃⌥E | — | — | `new --model` only |
 | Queue: send now / cancel | — | ✓ | ✓ | ✓ | ⌃⌥S | — | — | `queue --clear` |
-| Panels (diff…preview) | — | ✓ | tabs | ✓ | ⌃⌥1–6 | — | — | `snapshots`, `rollback` |
+| Panels (diff…stack) | — | ✓ | tabs | ✓ | ⌃⌥1–7 | — | — | `snapshots`, `rollback` |
 | Split / replace / close | drag to edge | ✓ | n/a | ✓ | ✓ | — | — | n/a |
-| Terminate | ✓ (+ hover ✕) | ✓ | ✓ | ✓ | — | — | — | — **A-09** |
+| Terminate | ✓ (+ hover ✕) | ✓ | ✓ | ✓ | — | — | — | `terminate` |
 | Resume | n/a | Ended: Resume | Ended: Resume | Go to | ⌘↵ on ended | empty Inbox | ✓ (tap) | `resume` |
 | Hide from History | n/a | n/a | n/a | — | — | — | ✓ | — |
-| Worktrees | footer button | — | — **A-07** | — **A-07** | — | — | — | `worktrees` |
-| Search page | — | — | — **A-10** | — **A-10** | — | — | — | — |
+| Worktrees | footer button | — | palette | palette | — | — | — | `worktrees` |
+| Search page | sidebar | — | palette | palette | ⌃⇧5 | — | — | — |
 
 ## Vocabulary drift
 
 The same command, named differently by the surfaces that show it (A-12):
 
-| Catalog / palette / shortcut table | Session menu | Side panel tab | Should be |
+Settled in the catalog; the session menu now reads its labels from it.
+
+| Catalog / palette / shortcut table (before) | Session menu (before) | Side panel tab | Now |
 |---|---|---|---|
 | Panel: Side chat | Chat | Chat | **Chat** |
 | Panel: Queue | Queued messages (n) | Queue | **Queue** |
@@ -63,38 +65,62 @@ sidebar, header and History say "Claude Code" and "Opus 5.5" (A-20).
 
 | # | Sev | Finding | Where | Resolution |
 |---|---|---|---|---|
-| A-14 | S1 | A hash link does nothing while a split is open: the URL becomes `#settings` (or `#history`), the split stays. Side chat's "Add one under Settings → Subscriptions" is such a link. | `App.tsx` route ↔ workspace | **fix** |
-| A-15 | S1 | Push notifications are titled with the tmux window name ("claude needs you") instead of the session title ("Fix Safari login flash needs you"), and the body doesn't say what it needs. | `server/push.ts` | **fix** |
-| A-03 | S2 | One ask, three renderings: the Inbox card shows the raw screen in monospace ("Bash command / pnpm test… / Do you want to proceed?"); the GUI shows "Do you want to proceed?" with the command only in the tool row above and the screen behind "Terminal text"; the terminal's answer card shows "Wants to run a command" without the command. | `Inbox.tsx`, `AskPanel.tsx` | **design** (one Ask component: what, the command or question, options), then fix |
-| A-05 | S2 | A tool waiting on you reads differently by tool: the Bash row says "Waiting for you"; the AskUserQuestion row says "Running…" while the question waits below it. | `web/gui/tools.tsx` | **fix** |
-| A-07 | S2 | Worktrees is reachable only from the desktop sidebar's footer: not on a phone, not in the palette. | `Sidebar.tsx`, `palette.ts` | **fix** (palette command; Settings → System link) |
-| A-08 | S2 | Branch switching has no palette command, and the desktop session menu lacks the Branch row the phone has. | `Session.tsx`, `palette.ts` | **fix** |
-| A-10 | S2 | The Search page is reached only through the switcher's "See all results" (no sidebar, tab bar or palette entry), and its scope, speaker and date fields are unstyled native controls. | `SearchView.tsx` | **fix** (palette entry) + **design** |
-| A-11 | S2 | Side panel tabs don't fit six at the default width ("Previe" is clipped), and the strip changes with the panel (Chat drops Preview and adds a history icon). | `Session.tsx` side panel | **design** |
-| A-19 | S2 | Six renderings of "a session in a list", with different subtitles: sidebar (title + model label), Inbox table (detail column), switcher (monospace "project · detail"), pane chooser ("Agent · project · branch"), History ("Agent · Model · project"), phone Sessions (detail + pill). | many | **design** (one session row with defined slots) |
-| A-21 | S2 | The fork dialog names the session by its window name ("Copies "claude"…", name "claude (fork)") instead of its title. | `ForkDialog.tsx` | **fix** |
-| A-24 | S2 | Row menus disagree: the sidebar row's ··· has Fork and Terminate only; Rename and Pin are only in the session's own menu. | `Sidebar.tsx` | **design** (one session menu, everywhere) |
-| A-09 | S2 | The CLI can't answer a prompt, stop a turn, terminate, rename or pin, which agents driving agents need. | `bin/cli.js` | **call** (CLI parity is an addition during a freeze) |
-| A-17 | S2 | Two token layers: `styles.css` (amber, Inter, radius 12) and `site-theme.css` over it (pink, Rubik, radius 10); components are styled in both. | CSS | **design** → one token file |
-| A-01 | S3 | Part of the HTTP API is addressed by tmux window id (diff, branches, pull, side chat, rename, kill, capture), the rest by session uid. Invisible to users, but a resume between a request and its answer targets a dead window. | `server/main.ts` | **fix** (uid routes, keep window routes as aliases) |
-| A-02 | S3 | The tagline folds done and limited into "idle" ("4 idle") while the section is "Idle and done". | `web/status.ts` | **fix** |
-| A-04 | S3 | The phone header shows the view twice: icons in the glass capsule and the first tab. | `Session.tsx` | **design** |
-| A-06 | S3 | Two looks for "choose one": a widget's choices are bold outlined buttons stacked loosely; an agent's question is numbered option rows. Question option descriptions are bold. | `widgets.tsx`, `AskPanel.tsx` | **design** |
-| A-12 | S3 | The same command is named differently in the catalog, the session menu and the panel tabs (table above). The menu repeats labels instead of reading the catalog. | `Session.tsx`, `shortcuts.ts` | **fix** |
-| A-13 | S3 | Keycaps draw Mac glyphs (⌃ ⌥) on Linux while tooltips, the README and the palette's search say "Ctrl+Alt". | `shortcuts.tsx` | **call** (glyphs everywhere, or words off Mac) |
-| A-16 | S3 | The stale-server banner says to run `pnpm serve` rather than offering Settings → System's Restart. | `App.tsx` | **fix** |
-| A-18 | S3 | "This device" is a card in both Security (name) and System (reload). | `Security.tsx`, `System.tsx` | **fix** |
-| A-20 | S3 | Status pills and the Inbox card's agent / model / project chips are lowercase monospace; everywhere else these are sans and title case ("Opus 5.5"). | CSS | **design** |
-| A-22 | S3 | The fork dialog shows an informational note (uncommitted changes stay behind) as a red error. | `ForkDialog.tsx` | **design** |
-| A-25 | S3 | The composer's Effort chip shows no value at the default, while Model shows the model in use. | `Composer.tsx` | **fix** ("Effort: auto" or the level) |
-| A-26 | S3 | New session opens on Shell for a device with no history, though agents are the product's point; the Project field starts at the projects root on desktop and `~` on a phone. | `NewDialog.tsx` | **call** |
-| A-27 | S3 | Files panel: the toolbar's icons are unlabeled, the roots select truncates to "Roots…", Insert sits beside every row. | `Files.tsx` | **design** |
-| A-29 | S3 | The app icon, manifest and apple-touch icon are still in the retired amber palette while the app is pink. | `web/public/icon.svg` | **design** (redrawn in the design system's Logo group) |
-| A-28 | S3 | Settings sections have icons in the palette but none in the page's section list. | `Settings.tsx` | **design** |
+| A-14 | S1 | A hash link does nothing while a split is open: the URL becomes `#settings` (or `#history`), the split stays. Side chat's "Add one under Settings → Subscriptions" is such a link. | `App.tsx` route ↔ workspace | **fix** → **fixed: a page link leaves the split** |
+| A-15 | S1 | Push notifications are titled with the tmux window name ("claude needs you") instead of the session title ("Fix Safari login flash needs you"), and the body doesn't say what it needs. | `server/push.ts` | **fix** → **fixed: title, and what it asks** |
+| A-03 | S2 | One ask, three renderings: the Inbox card shows the raw screen in monospace ("Bash command / pnpm test… / Do you want to proceed?"); the GUI shows "Do you want to proceed?" with the command only in the tool row above and the screen behind "Terminal text"; the terminal's answer card shows "Wants to run a command" without the command. | `Inbox.tsx`, `AskPanel.tsx` | **design** (one Ask component: what, the command or question, options), then fix → **fixed: AskSummary in all three** |
+| A-05 | S2 | A tool waiting on you reads differently by tool: the Bash row says "Waiting for you"; the AskUserQuestion row says "Running…" while the question waits below it. | `web/gui/tools.tsx` | **fix** → **fixed: every ask marks its call** |
+| A-07 | S2 | Worktrees is reachable only from the desktop sidebar's footer: not on a phone, not in the palette. | `Sidebar.tsx`, `palette.ts` | **fix** (palette command; Settings → System link) → **fixed: palette command** |
+| A-08 | S2 | Branch switching has no palette command, and the desktop session menu lacks the Branch row the phone has. | `Session.tsx`, `palette.ts` | **fix** → **fixed: palette command, desktop menu row** |
+| A-10 | S2 | The Search page is reached only through the switcher's "See all results" (no sidebar, tab bar or palette entry), and its scope, speaker and date fields are unstyled native controls. | `SearchView.tsx` | **fix** (palette entry) + **design** → **reach fixed: sidebar, palette, ⌃⇧5; fields styled** |
+| A-11 | S2 | Side panel tabs don't fit six at the default width ("Previe" is clipped), and the strip changes with the panel (Chat drops Preview and adds a history icon). | `Session.tsx` side panel | **design** → **fixed: icon tabs, the open one named** |
+| A-19 | S2 | Six renderings of "a session in a list", with different subtitles: sidebar (title + model label), Inbox table (detail column), switcher (monospace "project · detail"), pane chooser ("Agent · project · branch"), History ("Agent · Model · project"), phone Sessions (detail + pill). | many | **design** (one session row with defined slots) → **fixed: one line (sessionLine), the same type; the sidebar row drops the model** |
+| A-21 | S2 | The fork dialog names the session by its window name ("Copies "claude"…", name "claude (fork)") instead of its title. | `ForkDialog.tsx` | **fix** → **fixed: the title everywhere** |
+| A-24 | S2 | Row menus disagree: the sidebar row's ··· has Fork and Terminate only; Rename and Pin are only in the session's own menu. | `Sidebar.tsx` | **design** (one session menu, everywhere) → **fixed: the sidebar menu has the session menu's rows** |
+| A-09 | S2 | The CLI can't answer a prompt, stop a turn, terminate, rename or pin, which agents driving agents need. | `bin/cli.js` | **call** (CLI parity is an addition during a freeze) → **decided: added answer, stop, terminate, rename, pin** |
+| A-17 | S2 | Two token layers: `styles.css` (amber, Inter, radius 12) and `site-theme.css` over it (pink, Rubik, radius 10); components are styled in both. | CSS | **design** → one token file → **fixed: web/tokens.css** |
+| A-01 | S3 | Part of the HTTP API is addressed by tmux window id (diff, branches, pull, side chat, rename, kill, capture), the rest by session uid. Invisible to users, but a resume between a request and its answer targets a dead window. | `server/main.ts` | **fix** (uid routes, keep window routes as aliases) → **fixed: /api/sessions/:uid/…** |
+| A-02 | S3 | The tagline folds done and limited into "idle" ("4 idle") while the section is "Idle and done". | `web/status.ts` | **fix** → **fixed: one count per word** |
+| A-04 | S3 | The phone header shows the view twice: icons in the glass capsule and the first tab. | `Session.tsx` | **design** → **fixed: "Session" picks what, the capsule how** |
+| A-06 | S3 | Two looks for "choose one": a widget's choices are bold outlined buttons stacked loosely; an agent's question is numbered option rows. Question option descriptions are bold. | `widgets.tsx`, `AskPanel.tsx` | **design** → **fixed: one option row** |
+| A-12 | S3 | The same command is named differently in the catalog, the session menu and the panel tabs (table above). The menu repeats labels instead of reading the catalog. | `Session.tsx`, `shortcuts.ts` | **fix** → **fixed: menus read the catalog** |
+| A-13 | S3 | Keycaps draw Mac glyphs (⌃ ⌥) on Linux while tooltips, the README and the palette's search say "Ctrl+Alt". | `shortcuts.tsx` | **call** (glyphs everywhere, or words off Mac) → **decided: words off a Mac** |
+| A-16 | S3 | The stale-server banner says to run `pnpm serve` rather than offering Settings → System's Restart. | `App.tsx` | **fix** → **fixed: the banner restarts** |
+| A-18 | S3 | "This device" is a card in both Security (name) and System (reload). | `Security.tsx`, `System.tsx` | **fix** → **fixed: Reload joins Server** |
+| A-20 | S3 | Status pills and the Inbox card's agent / model / project chips are lowercase monospace; everywhere else these are sans and title case ("Opus 5.5"). | CSS | **design** → **fixed: pills and tags in the UI face** |
+| A-22 | S3 | The fork dialog shows an informational note (uncommitted changes stay behind) as a red error. | `ForkDialog.tsx` | **design** → **fixed: an info note** |
+| A-25 | S3 | The composer's Effort chip shows no value at the default, while Model shows the model in use. | `Composer.tsx` | **fix** ("Effort: auto" or the level) → **fixed: Effort: Default** |
+| A-26 | S3 | New session opens on Shell for a device with no history, though agents are the product's point; the Project field starts at the projects root on desktop and `~` on a phone. | `NewDialog.tsx` | **call** → **decided: Agent, the latest project** |
+| A-27 | S3 | Files panel: the toolbar's icons are unlabeled, the roots select truncates to "Roots…", Insert sits beside every row. | `Files.tsx` | **design** → **fixed: labels, Go to…, actions on hover** |
+| A-29 | S3 | The app icon, manifest and apple-touch icon are still in the retired amber palette while the app is pink. | `web/public/icon.svg` | **design** (redrawn in the design system's Logo group) → **fixed: icon, PNGs, theme color, terminal** |
+| A-28 | S3 | Settings sections have icons in the palette but none in the page's section list. | `Settings.tsx` | **design** → **fixed** |
+
+## Second pass — 18 October 2026
+
+What landed on main after the first pass, outside the freeze: Review, GitHub's
+own stacks, the session's Stack tab and subscription providers (12-review.md,
+SET-6). Method as above, against a throwaway ah with a stand-in GitHub (a
+stateful `gh`, a stack of five PRs, one a GitHub stack, review threads from
+Codex, CodeRabbit and a person), a stub model and a stand-in Claude, on top of
+this stack's tokens: 18 desktop screens and 2 iPhone screens, dark and light.
+
+Parity: the Stack panel was in the session menu and the panel tabs, but not in
+the palette and had no chord, unlike the other six panels (A-37, fixed: the
+matrix's Panels row now covers it).
+
+| # | Sev | Finding | Where | Resolution |
+|---|---|---|---|---|
+| A-30 | S1 | GitHub's words reach Review as raw text: an imported thread shows `**`, code fences and `suggestion` blocks as typed, its HTML (`<details>`, `<sub>`) and images are removed at import, and replies are run together as "login: text". Images in a private repo couldn't show anyway: the page only loads images from ah. | `service.ts` importThreads, `Findings.tsx` | **fix** (GitHub's markdown, its images through ah) → **fixed: GitHubText, replies as comments, images read with gh** |
+| A-31 | S2 | A layer never shows its pull request's description, so what changed (and its screenshots) is only on GitHub. The plan card falls back to the first PR's description, where HTML shows as text and images as "[image]", in a dialog with no padding. | `Layer.tsx`, `Dispatch.tsx` PlanDialog | **fix** → **fixed: Description beside Briefing; the plan dialog reads it as GitHub does** |
+| A-32 | S3 | A bot comment that leads with a label (CodeRabbit's "_⚠️ Potential issue_") gives the finding that label as its title. | `threadTitle` | **fix** (the bold line is the title) → **fixed** |
+| A-33 | S3 | Two looks for a page's "make one" button: Inbox's *New session* is the light button, Review's *New stack* the pink one, which is for the screen's main action and *needs you*. | `ReviewPage.tsx` | **fix** (the light button) → **fixed** |
+| A-34 | S3 | The New stack picker draws its own section heads (a full-width pink rule) and labels its name field as an uppercase pink heading, where lists use the section head and forms use `.field`. | `Compose.tsx`, `review.css` | **fix** → **fixed: heads sized to their words, Stack name a field** |
+| A-35 | S3 | Prose in monospace: the reviewer's starters and follow-ups (and side chat's), and the message drafted for the agent. | `.sugg`, `Dispatch.tsx` | **fix** (the UI face; folder names stay code) → **fixed** |
+| A-36 | S3 | The sidebar's Review item draws the Diff icon, the same as the Diff tab beside it. | `Sidebar.tsx` | **fix** (a stack icon, shared with the Stack tab) → **fixed** |
+| A-37 | S2 | The Stack panel isn't in the command catalog: no palette entry, no chord, and its name is typed in three places. | `shortcuts.ts`, `Session.tsx` | **fix** (Stack panel, ⌃⌥7) → **fixed: in the palette, ⌃⌥7, one label** |
 
 ## Already open (from earlier passes, still true)
 
-- Sidebar title vs model label width at 260 px (polish audit).
+- ~~Sidebar title vs model label width at 260 px~~: the model moved to the row's tooltip (A-19).
 - The Inbox permission card's Bash command isn't monospace after the screen
   loses its indentation (now part of A-03).
 - Real-device checks: iOS keyboard and safe areas, swipe back, iPad hardware
@@ -110,3 +136,5 @@ sidebar, header and History say "Claude Code" and "Opus 5.5" (A-20).
    canvas: https://claude.ai/artifact/XKVpwYoyvXQ8299qmPE4Sx
 3. **Owner calls**: A-09 (CLI parity during the freeze), A-13 (keycap glyphs
    off Mac), A-26 (New session's default).
+4. **Second pass** (18 October): A-30 to A-32 (GitHub's words in Review), then
+   A-33 to A-37 (Review and the Stack panel in the system's components).

@@ -6,6 +6,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { loadConfig } from '../server/config.ts';
+import { statusWord } from '../web/status.ts';
 
 const STATE = join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah');
 /** Written 0600 by the running server; proves we're on the host as its user. */
@@ -36,6 +37,11 @@ export const HELP = `usage: ah <command>
   wait <target> [--timeout SECS]              block until the agent stops working
   resume <target>                             bring an ended/saved conversation back
   fork <target> [--name N] [--prompt "TEXT"]  copy the conversation into a new worktree session
+  answer <target> <yes|no|N>                  answer what it's asking: approve, deny, or pick option N
+  stop <target>                               stop the agent's current turn
+  terminate <target>                          end the session (its conversation stays in history); also: kill
+  rename <target> <name…>                     rename the session
+  pin <target> [--off]                        pin the session to the top of its group (or unpin)
   queue <target> [--clear]                    show or drop queued messages
   worktrees [--json] [--orphans]              managed worktrees, with on-disk sizes
   worktrees clean --orphans [--force-dirty] [--yes]
@@ -49,7 +55,7 @@ export const HELP = `usage: ah <command>
   auth status                                 passkeys, signed-in devices, recent activity
   peers trust <peer> <token>                  use a token issued by <peer> (on the hub)
 
-<target> is a session id, a window id (@12), a name, or the start of a history title.`;
+<target> is a session id, a window id (@12), a title or name, or the start of one.`;
 
 async function call(method, path, body) {
   let res;
@@ -100,10 +106,12 @@ async function find(target, { history = false } = {}) {
   if (!target) fail('missing <target>');
   const state = await call('GET', '/api/state');
   const t = target.toLowerCase();
+  // Titles first ("Fix Safari login flash"), as every screen names a session, then tmux window names.
+  const names = (w) => [w.title, w.name].filter(Boolean).map((n) => n.toLowerCase());
   const live =
     state.windows.find((w) => w.uid === target || w.id === target) ??
-    state.windows.find((w) => w.name.toLowerCase() === t) ??
-    unique(state.windows.filter((w) => w.name.toLowerCase().startsWith(t)), target);
+    unique(state.windows.filter((w) => names(w).includes(t)), target) ??
+    unique(state.windows.filter((w) => names(w).some((n) => n.startsWith(t))), target);
   if (live) return { live, state };
   if (history) {
     const past =
@@ -115,11 +123,13 @@ async function find(target, { history = false } = {}) {
 }
 
 function unique(list, target) {
-  if (list.length > 1) fail(`"${target}" is ambiguous: ${list.map((x) => x.name ?? x.title).join(', ')}`);
+  if (list.length > 1) fail(`"${target}" is ambiguous: ${list.map((x) => x.title ?? x.name).join(', ')}`);
   return list[0];
 }
 
-const STATUS = { waiting: '● needs you', attention: '◆ done', busy: '◌ working', idle: '○ idle' };
+/** The status in the one vocabulary every surface uses (web/status.ts), with a mark for a terminal. */
+const MARK = { 'needs you': '●', working: '◌', done: '◆', 'new output': '◆', limited: '◑', idle: '○' };
+const status = (w) => `${MARK[statusWord(w)] ?? '○'} ${statusWord(w)}`;
 
 function fmtBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
@@ -145,8 +155,8 @@ export async function run(cmd, args) {
       if (flag(args, '--json')) return console.log(JSON.stringify(windows, null, 2));
       if (!windows.length) return console.log('nothing running');
       table([
-        ['ID', 'WINDOW', 'NAME', 'AGENT', 'STATUS', 'PROJECT', 'QUEUED'],
-        ...windows.map((w) => [w.uid, `${w.session}:${w.index}`, w.name, w.agent ?? w.command, STATUS[w.status], w.project, w.queued || '']),
+        ['ID', 'WINDOW', 'TITLE', 'AGENT', 'STATUS', 'PROJECT', 'QUEUED'],
+        ...windows.map((w) => [w.uid, `${w.session}:${w.index}`, w.title || w.name, w.agent ?? w.command, status(w), w.project, w.queued || '']),
       ]);
       return;
     }
@@ -225,7 +235,7 @@ export async function run(cmd, args) {
     case 'read': {
       const lines = Number(opt(args, '-n', '200'));
       const { live } = await find(args[0]);
-      process.stdout.write(await call('GET', `/api/windows/${encodeURIComponent(live.id)}/capture?lines=${lines}`));
+      process.stdout.write(await call('GET', `/api/sessions/${encodeURIComponent(live.uid)}/capture?lines=${lines}`));
       return;
     }
     case 'wait': {
@@ -245,6 +255,50 @@ export async function run(cmd, args) {
         if (timeout && Date.now() - start > timeout * 1000) fail('timed out');
         await new Promise((r) => setTimeout(r, 1500));
       }
+    }
+    case 'answer': {
+      const { live } = await find(args[0]);
+      const choice = (args[1] ?? '').toLowerCase();
+      if (!choice) fail('usage: ah answer <target> <yes|no|N>');
+      if (live.status !== 'waiting') fail(`"${live.title || live.name}" isn't waiting for an answer`);
+      const uid = encodeURIComponent(live.uid);
+      if (/^\d+$/.test(choice)) {
+        const picked = await call('POST', `/api/sessions/${uid}/choose`, { key: choice });
+        console.log(`answered: ${picked.label ?? choice}`);
+      } else if (['yes', 'y', 'approve'].includes(choice) || ['no', 'n', 'deny'].includes(choice)) {
+        const answer = ['no', 'n', 'deny'].includes(choice) ? 'deny' : 'approve';
+        await call('POST', `/api/sessions/${uid}/answer`, { answer });
+        console.log(answer === 'approve' ? 'approved' : 'denied');
+      } else fail(`"${choice}" isn't an answer: use yes, no, or an option number`);
+      return;
+    }
+    case 'stop': {
+      const { live } = await find(args[0]);
+      await call('POST', `/api/sessions/${encodeURIComponent(live.uid)}/interrupt`);
+      console.log('stopped');
+      return;
+    }
+    case 'kill':
+    case 'terminate': {
+      const { live } = await find(args[0]);
+      await call('POST', `/api/sessions/${encodeURIComponent(live.uid)}/terminate`);
+      console.log(`terminated "${live.title || live.name}"; \`ah resume ${live.uid}\` brings it back`);
+      return;
+    }
+    case 'rename': {
+      const { live } = await find(args[0]);
+      const name = args.slice(1).join(' ').trim();
+      if (!name) fail('usage: ah rename <target> <name…>');
+      await call('PUT', `/api/sessions/${encodeURIComponent(live.uid)}/name`, { name });
+      console.log(`renamed to "${name}"`);
+      return;
+    }
+    case 'pin': {
+      const off = flag(args, '--off');
+      const { live } = await find(args[0]);
+      await call('POST', `/api/sessions/${encodeURIComponent(live.uid)}/pin`, { pinned: !off });
+      console.log(off ? 'unpinned' : 'pinned');
+      return;
     }
     case 'queue': {
       const { live } = await find(args[0]);

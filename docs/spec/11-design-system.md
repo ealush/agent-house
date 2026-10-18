@@ -18,21 +18,27 @@ redesign (see the end) replaces its values, not its rules.
 5. **Motion explains.** Things arrive from where they come from; nothing moves
    for decoration.
 
-## DS-2 · Tokens (as built)
+## DS-2 · Tokens — shipped
 
-Two layers today: `web/styles.css` defines tokens and components;
-`web/site-theme.css` (loaded after it) redefines the tokens and restyles some
-components to the ealush.com look. → A-17.
+One file, `web/tokens.css`, sets every value from the design system: dark and
+light, the glass, depth, type stacks, radii and motion. `styles.css`,
+`site-theme.css` and `gui.css` only read it. The app's working names
+(`--bg`, `--raised`, `--text`, `--accent`…) carry the values, because
+Appearance → Omarchy overrides them at runtime; the design system's names
+(`--ground`, `--surface-raised`, `--ink`, `--accent-fill`…) are aliases of
+them for new code.
 
-| Role | Dark | Notes |
+| Role | Dark | Light |
 |---|---|---|
-| Ground | `--bg #222432`, `--surface #1e2030`, `--raised #2a2c3d`, `--sunken #1a1b27` | |
-| Lines | `--line` 8% white, `--line-2` 16% white | |
-| Text | `--text #fff`, `--text-2 #c8c8c8`, `--muted #9e9e9e`, `--faint #8c8e9a` | light theme secondary ≥ 4.5:1 (tested) |
-| Brand | `--brand #e91e63` (lines, dots), `--accent #f06292` (text), `--accent-strong #d81b60` (fills with white text) | |
-| Status | working `--run #4dd9ea`, done `--done #81d88a`, danger `--danger #ff8a80`, limited amber | |
-| Agents | `--c-<agent>`: one tint per agent | marks are the agents' real logos |
+| Ground / surface / raised / sunken | `#191a25` `#202231` `#2a2c3e` `#15161f` | `#eef0f4` `#ffffff` `#f5f6f9` `#eceef3` |
+| Text / text-2 / muted / faint | `#ffffff` `#c9cad3` `#a2a4b3` `#8d8fa3` | `#1c1d27` `#474a58` `#5f6272` `#686b7a` |
+| Brand (marks) / accent (text) / accent-strong (fills) | `#e91e63` `#f47199` `#d81b60` | `#e91e63` `#c2185b` `#d81b60` |
+| Working / done / limited / danger | `#4dd9ea` `#81d88a` `#f5b84b` `#ff8a80` | `#00737d` `#276b2b` `#8a5a00` `#c62828` |
+| Agents | `--c-<agent>`: one tint each, logos are the agents' own | darker tints |
 | Type | `--ui` Rubik Variable, `--mono` JetBrains Mono | bundled; no third-party fonts (CSP) |
+
+The app icon, the PWA's theme color and the terminal's palette (sunken
+ground, pink cursor) use the same values.
 
 ## DS-3 · Scales (enforced by `test/design.test.ts`)
 
@@ -67,8 +73,13 @@ motion leaves only a 1 ms scrim fade.
 ## DS-6 · Components (as built)
 
 Buttons (primary pink, secondary outline, ghost, danger, icon, glass circle),
-segmented control (capsule, lens thumb, slide to choose), chips, status pill,
-status dot, keycap, agent mark, session row (four variants → A-19), cards
+segmented control (capsule, lens thumb, slide to choose), chips, status pill
+(the UI face, a capsule, one tint per status; only *needs you* filled), tags
+(agent, model, project: names in the UI face), status dot, keycap, agent mark,
+session row (one line, `sessionLine.tsx`), the ask summary and option rows
+(`AskSummary`, OptionList), panel tabs (icons, the open one named), setting
+chips (a quiet name and the value), fields (words by default, `.mono` for
+paths, commands and keys), the info note (`.note`), cards
 (`sec-card`), the ask card / panel, tool row, widget set, composer, menu /
 action sheet, dialog / sheet, toast, empty state, large title, tab bar, side
 panel tabs.

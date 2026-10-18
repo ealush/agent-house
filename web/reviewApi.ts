@@ -142,6 +142,10 @@ export function reviewApi(base = '') {
     sync: (id: string) => r<Stack>('POST', `${s(id)}/sync`),
     owners: (id: string) => r<OwnerSuggestion[]>('GET', `${s(id)}/owners`),
     plan: (id: string) => r<{ path: string | null; text: string | null }>('GET', `${s(id)}/plan`),
+    /** A layer's PR description, as GitHub has it now. */
+    description: (id: string, pr: number) => r<{ body: string; url: string }>('GET', `${l(id, pr)}/description`),
+    /** Where the page loads a GitHub image from: through ah, which reads it with this host's gh login. */
+    imageUrl: (id: string, src: string) => `${base}/api/review${s(id)}/image?src=${enc(src)}`,
     setLayer: (id: string, pr: number, patch: { role?: string; skipped?: boolean; ownerUid?: string | null }) => r<Stack>('PATCH', l(id, pr), patch),
     diff: (id: string, pr: number, mode: 'this' | 'since' | 'cumulative') => r<DiffOut>('GET', `${l(id, pr)}/diff?mode=${mode}`),
     busy: (id: string, pr: number) => r<{ summarizing: boolean; rechecking: boolean }>('GET', `${l(id, pr)}/busy`),

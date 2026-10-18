@@ -6,6 +6,7 @@ import type { Layer, OwnerSuggestion, ReviewApi, Stack } from '../reviewApi.ts';
 import { look } from '../agents.ts';
 import { SheetBar, useSheet } from '../sheet.tsx';
 import { Markdown } from '../Markdown.tsx';
+import { GitHubText, type ImageUrl } from './GitHubText.tsx';
 import { errorText } from '../errors.ts';
 
 const STATUS: Record<string, string> = { waiting: 'needs you', busy: 'working', attention: 'done', idle: 'idle', ended: 'ended; sending resumes it' };
@@ -160,22 +161,26 @@ export function DispatchDialog({
 }
 
 /** The stack's plan, to read where you review. */
-export function PlanDialog({ path, text, onClose }: { path: string | null; text: string | null; onClose: () => void }) {
+export function PlanDialog({ path, text, image, onClose }: { path: string | null; text: string | null; image: ImageUrl; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const { dismiss } = useSheet(dialog, onClose);
   useEffect(() => dialog.current?.showModal(), []);
   return (
     <dialog ref={dialog} className="dialog wide review-plan" aria-label="Plan" onClose={onClose} onClick={(e) => e.target === dialog.current && onClose()}>
       <SheetBar onClose={dismiss} title="Plan" />
-      <header className="ns-head">
-        <h2>{path ? path.split('/').pop() : "The first PR's description"}</h2>
-      </header>
-      <div className="plan-text">{text ? <Markdown text={text} /> : <p className="hint">The plan couldn't be read.</p>}</div>
-      <div className="actions">
-        <button type="button" className="btn" onClick={dismiss}>
-          Close
-        </button>
-      </div>
+      {/* A form, like every dialog, for its padding and layout; it has nothing to submit. */}
+      <form method="dialog" onSubmit={(e) => (e.preventDefault(), dismiss())}>
+        <header className="ns-head">
+          <h2>{path ? path.split('/').pop() : "The first PR's description"}</h2>
+        </header>
+        {/* A plan file is yours; without one it's the first PR's description, as GitHub shows it. */}
+        <div className="plan-text">{!text ? <p className="hint">The plan couldn't be read.</p> : path ? <Markdown text={text} /> : <GitHubText text={text.replace(/^\(No plan file; this is the root PR's description\.\)\n/, '')} image={image} />}</div>
+        <div className="actions">
+          <button type="submit" className="btn">
+            Close
+          </button>
+        </div>
+      </form>
     </dialog>
   );
 }

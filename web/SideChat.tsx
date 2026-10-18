@@ -53,8 +53,8 @@ export function SideChat({ client, w, onSent }: { client: HostApi; w: Win; onSen
   // Bumped on session switch and on clear: late completions apply nothing.
   const genRef = useRef(0);
   const localRef = useRef(0);
-  const widRef = useRef(w.id);
-  widRef.current = w.id;
+  const widRef = useRef(w.uid);
+  widRef.current = w.uid;
 
   // Grow with the draft, up to the CSS max-height, same as the session composer.
   useLayoutEffect(() => {
@@ -72,7 +72,7 @@ export function SideChat({ client, w, onSent }: { client: HostApi; w: Win; onSen
     prevLenRef.current = 0;
     setSubId(undefined);
     client
-      .chat(w.id)
+      .chat(w.uid)
       .then((r) => {
         setMessages(r.messages.map((m, i) => ({ ...m, key: m.id != null ? `m${m.id}` : `i${i}`, state: 'sent' as RowState })));
         // This chat's own pick, else the active subscription.
@@ -80,7 +80,7 @@ export function SideChat({ client, w, onSent }: { client: HostApi; w: Win; onSen
       })
       .catch((e) => setError(e.message));
     client.subscriptions().then(setSubs).catch(() => setSubs([]));
-  }, [w.id, w.key, client]);
+  }, [w.uid, w.key, client]);
 
   // Keep new arrivals readable from their top: at the bottom (or first load)
   // that means the first new message's top; scrolled up, it means the first
@@ -204,7 +204,7 @@ export function SideChat({ client, w, onSent }: { client: HostApi; w: Win; onSen
     if (!(await askConfirm({ title: 'Clear this side chat?', body: 'The agent never saw it.', confirm: 'Clear', danger: true }))) return;
     try {
       genRef.current += 1;
-      await client.clearChat(w.id);
+      await client.clearChat(w.uid);
       setMessages([]);
       setSubId(undefined);
     } catch (e) {
@@ -326,7 +326,7 @@ export function SideChat({ client, w, onSent }: { client: HostApi; w: Win; onSen
             note="This chat keeps it"
             onPick={(id) => {
               setSubId(id);
-              client.pickChatSubscription(w.id, id).catch((e) => showError(e, "Couldn't switch the subscription"));
+              client.pickChatSubscription(w.uid, id).catch((e) => showError(e, "Couldn't switch the subscription"));
             }}
           />
         )}

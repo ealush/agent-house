@@ -176,7 +176,7 @@
   visibility: hidden;
 }
 
-.gui .msg:hover .msg-actions,
+:where(:root:not([data-touch])) .gui .msg:hover .msg-actions,
 .gui .msg:focus-within .msg-actions {
   visibility: visible;
 }
@@ -195,8 +195,8 @@
   visibility: hidden;
 }
 
-.gui .msg:hover .msg-meta .msg-copy,
-.gui .msg:hover .msg-snap,
+:where(:root:not([data-touch])) .gui .msg:hover .msg-meta .msg-copy,
+:where(:root:not([data-touch])) .gui .msg:hover .msg-snap,
 .gui .msg-meta :focus-visible {
   visibility: visible;
 }
@@ -217,7 +217,7 @@
   cursor: pointer;
 }
 
-.gui .msg-snap:hover {
+:where(:root:not([data-touch])) .gui .msg-snap:hover {
   background: var(--line);
   color: var(--text);
 }
@@ -247,7 +247,7 @@
   cursor: pointer;
 }
 
-.gui .msg-copy:hover {
+:where(:root:not([data-touch])) .gui .msg-copy:hover {
   background: var(--line);
   color: var(--text);
 }
@@ -305,8 +305,8 @@
   text-decoration: none;
 }
 
-.gui .md a:hover,
-.gui .file-link:hover {
+:where(:root:not([data-touch])) .gui .md a:hover,
+:where(:root:not([data-touch])) .gui .file-link:hover {
   text-decoration: underline;
 }
 
@@ -370,12 +370,12 @@
   visibility: hidden;
 }
 
-.gui .code-snippet:hover .code-copy,
+:where(:root:not([data-touch])) .gui .code-snippet:hover .code-copy,
 .gui .code-snippet:focus-within .code-copy {
   visibility: visible;
 }
 
-.gui .code-copy:hover {
+:where(:root:not([data-touch])) .gui .code-copy:hover {
   background: var(--line);
   color: var(--text);
 }
@@ -531,7 +531,7 @@
   font-size: 13px;
 }
 
-.gui .tool-fold:hover {
+:where(:root:not([data-touch])) .gui .tool-fold:hover {
   color: var(--muted);
 }
 
@@ -614,7 +614,7 @@
 }
 
 .gui .tool-dot.awaiting {
-  background: var(--accent);
+  background: var(--brand);
   animation: gui-pulse 1.2s ease-in-out infinite;
 }
 
@@ -640,7 +640,7 @@
   cursor: default;
 }
 
-.gui .gui-diff .dl:hover {
+:where(:root:not([data-touch])) .gui .gui-diff .dl:hover {
   box-shadow: none;
 }
 
@@ -711,14 +711,8 @@
 
 .gui .widget-choices {
   flex-direction: column;
-  align-items: flex-start;
-}
-
-.gui .widget-choice {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: stretch;
 }
 
 .gui .widget-toggle {
@@ -847,7 +841,7 @@
   border-radius: 0 4px 4px 0;
 }
 
-.gui .bar-row:hover .bar {
+:where(:root:not([data-touch])) .gui .bar-row:hover .bar {
   filter: brightness(1.15);
 }
 
@@ -1002,7 +996,7 @@
   background: var(--faint);
 }
 
-.gui .gui-rail-tick:hover::before,
+:where(:root:not([data-touch])) .gui .gui-rail-tick:hover::before,
 .gui .gui-rail-tick:focus-visible::before {
   background: var(--muted);
 }
@@ -1095,29 +1089,6 @@
 .gui .msg:focus-visible .msg-snap,
 .gui .msg:focus-visible .msg-actions {
   visibility: visible;
-}
-
-/* The approval card under a natively drawn call: the question, the screen text folded away. */
-.gui .ask-question {
-  margin: 2px 0 4px;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.gui .ask-raw summary {
-  width: fit-content;
-  cursor: pointer;
-  font-size: 12px;
-  color: var(--faint);
-}
-
-.gui .ask-raw summary:hover {
-  color: var(--muted);
-}
-
-.gui .ask-raw[open] summary {
-  margin-bottom: 6px;
 }
 
 /* New in the conversation (GuiSurface freshAfter): your message as you send it, and each step the agent adds, rise into place. */

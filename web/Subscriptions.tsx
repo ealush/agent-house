@@ -241,7 +241,7 @@ function SubscriptionForm({ form, busy, onChange }: { form: Form; busy: boolean;
       <label className="field">
         <span>Model</span>
         {picking ? (
-          <select value={form.model} disabled={busy} onChange={(e) => (e.target.value === TYPE ? setTyping(true) : set({ model: e.target.value }))}>
+          <select className="mono" value={form.model} disabled={busy} onChange={(e) => (e.target.value === TYPE ? setTyping(true) : set({ model: e.target.value }))}>
             {!models.list!.includes(form.model) && <option value={form.model}>{form.model || 'Choose a model'}</option>}
             {models.list!.map((m) => (
               <option key={m} value={m}>
@@ -252,6 +252,7 @@ function SubscriptionForm({ form, busy, onChange }: { form: Form; busy: boolean;
           </select>
         ) : (
           <input
+            className="mono"
             value={form.model}
             disabled={busy}
             maxLength={80}
@@ -277,6 +278,7 @@ function SubscriptionForm({ form, busy, onChange }: { form: Form; busy: boolean;
         <label className="field wide">
           <span>Base URL</span>
           <input
+            className="mono"
             value={form.baseUrl}
             disabled={busy}
             maxLength={200}
@@ -292,6 +294,7 @@ function SubscriptionForm({ form, busy, onChange }: { form: Form; busy: boolean;
       <label className="field">
         <span>API key</span>
         <input
+          className="mono"
           type="password"
           value={form.apiKey}
           disabled={busy}
@@ -305,6 +308,7 @@ function SubscriptionForm({ form, busy, onChange }: { form: Form; busy: boolean;
       <label className="field">
         <span>Session variable</span>
         <input
+          className="mono"
           value={form.envName}
           disabled={busy}
           maxLength={128}

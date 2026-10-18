@@ -11,12 +11,14 @@ A floating glass panel, top to bottom:
    (⌃⇧E toggles the sidebar).
 2. **Search or jump to** (opens the switcher, ATT-6).
 3. **Handoff card** when another device was just using a session (CON-3).
-4. **Inbox** with the needs-you count, **History** with its count,
-   **Settings**.
+4. **Inbox** with the needs-you count, **Review**, **History** with its count,
+   **Search** (⌃⇧5), **Settings**.
 5. **Projects +** (New project), then sessions grouped by project; with
    several hosts, by host. On a single host, tmux sessions can group instead.
-   Each row: agent mark, status dot (needs you / working only), title, model
-   label; ··· with Fork session… and Terminate session; hover ✕ terminates.
+   Each row: agent mark, status dot (needs you / working only), title (the
+   model and folder are in its tooltip); ··· with the session menu's own rows
+   (Open, Rename session, Pin, Send to…, Fork session…, Terminate session);
+   hover ✕ terminates.
    Pinned rows lead their group; rows drag to reorder (SES-13); a row dragged
    onto a pane's edge splits there (WS-3).
 6. **New session** (⌃⇧↵), **Worktrees**.
@@ -24,26 +26,34 @@ A floating glass panel, top to bottom:
 Alt+↑ / Alt+↓ walk sessions in sidebar order; ⌃⇧0 focuses the list; arrows move;
 Esc or ⌃⇧9 returns to the session. One gliding highlight marks the current row.
 
+## ATT-0 · A session in a list — shipped
+
+Every list (the switcher, the pane chooser, the phone's Sessions and Inbox
+rows, History) gives a session the same line under its title
+(`web/sessionLine.tsx`), chosen by state: what it needs from you ("Wants to
+run `pnpm test`", or its question); else what it is doing now (a command as
+code, else the words on its screen); else its agent and model. Ended and
+saved conversations: agent · model · "ended". The project leads only where the
+list isn't grouped by project, the host only with several hosts. Words are in
+the UI face at 13px; commands are code.
+
 ## ATT-2 · Inbox — shipped
 
 The home page. Large title "Inbox." and the status tagline.
 
 - **Group by** Status | Host | Project (segmented, per device). Status is
   the default and the only one on a phone.
-- **Needs you**: one card per waiting session: title, agent mark, time; what
-  it wants ("Wants to run a command", "Asked you"); the command or question;
-  the options as numbered rows (digits work from anywhere on the card); where
-  it runs; agent, model and project chips; **Open**. Answering keeps focus on
-  the card (SES-7).
+- **Needs you**: one card per waiting session: title, agent mark, time; the
+  ask's summary (VIEW-6: what it wants, the command as code with its
+  description, or the question; "Show terminal text" on request); the
+  options as numbered rows (digits work from anywhere on the card); agent,
+  model and project tags; **Open**. Answering keeps focus on the card (SES-7).
 - **Working**: a table: Session, Detail (what it is doing now), Status ·
   Project, Active (time).
 - **Idle and done**: the same table, quieter.
 - Empty: "All quiet." and the most recent conversations to resume.
 - Rows glide between sections as status changes (P25).
 
-→ A-03: a card renders the ask from raw screen text in monospace, while the
-session's own ask panel renders the same ask as a question with a "Terminal
-text" disclosure.
 
 ## ATT-3 · Sessions (phone) — shipped
 
@@ -66,9 +76,9 @@ SQLite FTS, incremental, fingerprinted per source). The page: query, scope
 (transcripts and chats / transcripts / chats), speaker (any / you / agent),
 from and to dates; results grouped by session, paginated, each opening the
 conversation **at the matching turn**. Reached from the switcher's "See all
-results". Can be switched off (drops the index) in Settings → Search.
-→ A-10: its selects and date fields are unstyled native controls; the page has
-no entry in the sidebar, tab bar or palette.
+results", the sidebar, the palette and ⌃⇧5. Can be switched off (drops the
+index) in Settings → Search. Its filters are labelled fields like every other
+form: Search, In, Who, From, To.
 
 ## ATT-6 · Switcher (⌘K / ⌃⇧K) — shipped
 

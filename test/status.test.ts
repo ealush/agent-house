@@ -15,6 +15,11 @@ test('one word per status, shells and agents alike', () => {
 
 test('counts read as one sentence per status', () => {
   assert.equal(statusCounts([]), 'All quiet.');
-  assert.equal(statusCounts([{ status: 'busy' }, { status: 'idle' }, { status: 'attention' }, { status: 'idle' }]), '1 working. 3 idle.');
+  assert.equal(statusCounts([{ status: 'busy' }, { status: 'idle' }, { status: 'attention' }, { status: 'idle' }]), '1 working. 1 new output. 2 idle.');
+  assert.equal(
+    statusCounts([{ status: 'attention', agent: 'claude' }, { status: 'attention', agent: 'codex', limit: 'Weekly limit · resets Mon' }, { status: 'idle', agent: null }]),
+    '1 limited. 1 done. 1 idle.',
+    'the tagline uses the same words as the sections below it',
+  );
   assert.equal(statusCounts([{ status: 'waiting' }, { status: 'waiting' }]), '2 sessions need you.');
 });

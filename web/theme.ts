@@ -184,7 +184,7 @@ export function applyTheme(resolved: ResolvedTheme, mode: ThemeMode): void {
     // The terminal's gutter matches its canvas, whichever palette it has.
     root.style.setProperty('--term-bg', terminalTheme().background);
     const meta = doc.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', vars ? vars['--bg'] : resolved === 'light' ? '#ffffff' : '#0e1014');
+    if (meta) meta.setAttribute('content', vars ? vars['--bg'] : resolved === 'light' ? '#eef0f4' : '#191a25');
   }
   for (const fn of listeners) fn(resolved, mode);
 }
@@ -256,11 +256,11 @@ export const MODES_IN_ORDER = MODES;
 // exactly one palette. The canvas paints its own background; CSS variables
 // can't reach it.
 export const TERMINAL_THEME: Record<string, string> = {
-  background: '#0e1014',
+  background: '#15161f', // tokens.css --sunken
   foreground: '#e8e6e1',
-  cursor: '#e8b04a',
-  cursorAccent: '#0e1014',
-  selectionBackground: '#e8b04a55',
+  cursor: '#f47199', // --accent: the brand's pink, as text on the dark ground
+  cursorAccent: '#15161f',
+  selectionBackground: '#e91e6355',
   black: '#1a1d23',
   red: '#e06c75',
   green: '#98c379',

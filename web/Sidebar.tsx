@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { contextMenu, useFitMenu } from './contextMenu.ts';
 import type { State, Win } from './api.ts';
 import { askConfirm } from './ask.tsx';
 import { Icon } from './icons.tsx';
@@ -6,7 +7,7 @@ import { look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
 import { useSavedGroups, setGroupList } from './groupOrder.ts';
 import { movedSessionOrders, saveGroupMove, sidebarSections } from './sessionOrder.ts';
-import { runCommand, type CommandId } from './shortcuts.ts';
+import { commandLabel, isMac, runCommand, runCommandSoon, type CommandId } from './shortcuts.ts';
 import { ShortcutHint, shortcutTitle, useShortcutRevision } from './shortcuts.tsx';
 import { Glide } from './Glide.tsx';
 import { useFlip } from './useFlip.ts';
@@ -83,6 +84,8 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
   const [menuKey, setMenuKey] = useState<string | null>(null);
   const menuRow = useRef<HTMLDivElement>(null);
   useDismiss(menuKey !== null, menuRow, () => setMenuKey(null));
+  const rowMenuEl = useRef<HTMLDivElement>(null);
+  useFitMenu(rowMenuEl, menuKey !== null);
 
   const sections = sidebarSections(windows, multiHost, savedGroups);
   const flip = useFlip<HTMLDivElement>(sections.map((s) => `${s.id}:${s.windows.map((w) => w.key).join(',')}`).join('|'));
@@ -135,14 +138,19 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
     const modelLabel = shortModel(w.model);
     const active = w.key === selected;
     const seen = visible.has(w.key);
+    // Its ··· menu, from a secondary click or a finger held on the row too.
+    const press = contextMenu(() => setMenuKey(w.key));
     return (
       <div
         key={w.key}
         ref={menu ? menuRow : undefined}
         data-flip={w.key}
         className={`side-row ${overKey === w.key ? (overAfter ? 'drop-after' : 'drop') : ''} ${drag?.kind === 'session' && drag.key === w.key ? 'dragging' : ''}`}
+        {...press}
         draggable
         onDragStart={(e) => {
+          press.onDragStart();
+          setMenuKey(null);
           setDrag({ kind: 'session', key: w.key });
           onDragSession?.(w);
           e.dataTransfer.effectAllowed = 'move';
@@ -191,7 +199,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
             {w.pinned ? '★ ' : ''}
             {w.agent ? w.title : w.title === 'shell' ? w.command : w.title}
           </span>
-          {modelLabel && <span className="side-model">{modelLabel}</span>}
+          {/* The model is in the title's tooltip and the session's header: the row keeps its room for the title. */}
           {/* The group already names the project; a shell elsewhere in it says where. */}
           {!w.agent && subdir(w) && <span className="side-model mono">{subdir(w)}</span>}
           {w.fork && (
@@ -218,7 +226,8 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
           <Icon name="more" size={14} />
         </button>
         {menu && (
-          <div className="menu row-menu" onMouseLeave={() => setMenuKey(null)}>
+          <div className="menu row-menu" ref={rowMenuEl} onMouseLeave={() => setMenuKey(null)}>
+            {/* The session menu's own rows and words: opening the session, then the command, as its ··· would. */}
             <button
               onClick={() => {
                 setMenuKey(null);
@@ -227,6 +236,18 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
             >
               Open
             </button>
+            {(['rename', 'pin', ...(w.agent ? (['send-to'] as const) : [])] as const).map((id) => (
+              <button
+                key={id}
+                onClick={() => {
+                  setMenuKey(null);
+                  onSelect(w.key);
+                  runCommandSoon(id);
+                }}
+              >
+                {id === 'pin' && w.pinned ? 'Unpin' : commandLabel(id)}
+              </button>
+            ))}
             {onFork && w.agent && (
               <button
                 onClick={() => {
@@ -234,7 +255,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
                   onFork(w);
                 }}
               >
-                Fork session…
+                {commandLabel('fork')}
               </button>
             )}
             <button
@@ -246,7 +267,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
                 });
               }}
             >
-              Terminate session
+              {commandLabel('terminate')}
             </button>
           </div>
         )}
@@ -298,9 +319,10 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
         </div>
       )}
 
-      <button className="search" onClick={onSearch}>
+      {/* Off a Mac the chord is three worded caps: they show when the field is reached for, so the label keeps its room. */}
+      <button className="search" data-wordy={!isMac() || undefined} title={shortcutTitle(commandLabel('switcher'), 'switcher')} onClick={onSearch}>
         <Icon name="search" size={15} />
-        <span>Search or jump to</span>
+        <span>{commandLabel('switcher')}</span>
         <ShortcutHint id="switcher" />
       </button>
 
@@ -314,7 +336,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
         {waiting > 0 ? <span className="badge">{waiting}</span> : <span className="count">{windows.length}</span>}
       </button>
       <button className={`nav-item ${page === 'review' && !selected ? 'on' : ''}`} title={shortcutTitle('Review', 'go-review')} onClick={() => onPage('review')}>
-        <Icon name="diff" />
+        <Icon name="stack" />
         <span className="grow">Review</span>
         {(state?.review?.alerts.length ?? 0) > 0 && <span className="badge">{state!.review!.alerts.length}</span>}
       </button>
@@ -324,6 +346,10 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
         <span className="count">{state?.history.length ?? ''}</span>
       </button>
 
+      <button className={`nav-item ${page === 'search' && !selected ? 'on' : ''}`} title={shortcutTitle('Search', 'go-search')} onClick={() => onPage('search')}>
+        <Icon name="search" />
+        <span className="grow">Search</span>
+      </button>
       <button className={`nav-item ${page === 'settings' && !selected ? 'on' : ''}`} title={shortcutTitle('Settings', 'go-settings')} onClick={() => onPage('settings')}>
         <Icon name="gear" />
         <span className="grow">Settings</span>

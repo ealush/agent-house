@@ -46,7 +46,7 @@ export function parsePatch(patch: string): FileDiff[] {
  * Working changes beside the session (F34), and click-a-line to comment (F35):
  * the comment goes to the agent with the file, line and code attached.
  */
-export function ChangesPanel({ client, windowId, onComment }: { client: HostApi; windowId: string; onComment?: (text: string) => Promise<void> }) {
+export function ChangesPanel({ client, uid, onComment }: { client: HostApi; uid: string; onComment?: (text: string) => Promise<void> }) {
   const [data, setData] = useState<Changes | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<{ file: string; i: number } | null>(null);
@@ -54,13 +54,13 @@ export function ChangesPanel({ client, windowId, onComment }: { client: HostApi;
 
   const load = () => {
     setError(null);
-    client.changes(windowId).then(setData).catch((e) => setError(e.message));
+    client.changes(uid).then(setData).catch((e) => setError(e.message));
   };
   useEffect(() => {
     load();
     const t = window.setInterval(load, 10_000);
     return () => clearInterval(t);
-  }, [windowId, client]);
+  }, [uid, client]);
 
   const files = useMemo(() => (data ? parsePatch(data.patch) : []), [data]);
   const untracked = data?.files.filter((f) => f.code === '??' || f.code === '?') ?? [];
@@ -180,12 +180,12 @@ export function ChangesPanel({ client, windowId, onComment }: { client: HostApi;
 // branches plus remote-tracking ones; typing filters them, and a name that
 // matches nothing is offered as a new branch to create.
 
-export function BranchPicker({ client, windowId, current, onSwitched }: { client: HostApi; windowId: string; current: string; onSwitched: () => void }) {
+export function BranchPicker({ client, uid, current, onSwitched }: { client: HostApi; uid: string; current: string; onSwitched: () => void }) {
   const [dirty, setDirty] = useState(0);
   useEffect(() => {
     let dead = false;
     const load = () => {
-      client.branches(windowId).then((l) => {
+      client.branches(uid).then((l) => {
         if (!dead) setDirty(l.dirty ?? 0);
       }).catch(() => {});
     };
@@ -195,16 +195,16 @@ export function BranchPicker({ client, windowId, current, onSwitched }: { client
       dead = true;
       window.clearInterval(t);
     };
-  }, [client, windowId, current]);
+  }, [client, uid, current]);
   const title = dirty > 0 ? `Switch branch · ${dirty} uncommitted change${dirty === 1 ? '' : 's'}` : 'Switch branch';
   return (
     <Popover up={false} align="right" className="pill mono" title={title} label={<><Icon name="branch" size={12} /> {current}{dirty > 0 && <span className="dirty-marker" aria-hidden="true" title={`${dirty} uncommitted change${dirty === 1 ? '' : 's'}`}>*</span>}</>}>
-      {(close) => <BranchMenu client={client} windowId={windowId} close={close} onSwitched={onSwitched} />}
+      {(close) => <BranchMenu client={client} uid={uid} close={close} onSwitched={onSwitched} />}
     </Popover>
   );
 }
 
-function BranchMenu({ client, windowId, close, onSwitched }: { client: HostApi; windowId: string; close: () => void; onSwitched: () => void }) {
+function BranchMenu({ client, uid, close, onSwitched }: { client: HostApi; uid: string; close: () => void; onSwitched: () => void }) {
   const [list, setList] = useState<BranchList | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [q, setQ] = useState('');
@@ -213,8 +213,8 @@ function BranchMenu({ client, windowId, close, onSwitched }: { client: HostApi; 
   const [active, setActive] = useState(0);
 
   useEffect(() => {
-    client.branches(windowId).then(setList).catch((e) => setLoadError(errorText(e)));
-  }, [client, windowId]);
+    client.branches(uid).then(setList).catch((e) => setLoadError(errorText(e)));
+  }, [client, uid]);
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -242,7 +242,7 @@ function BranchMenu({ client, windowId, close, onSwitched }: { client: HostApi; 
     setBusy(branch);
     setError(null);
     try {
-      await client.switchBranch(windowId, branch);
+      await client.switchBranch(uid, branch);
       close();
       onSwitched();
     } catch (e) {
@@ -321,7 +321,7 @@ function BranchMenu({ client, windowId, close, onSwitched }: { client: HostApi; 
  * A phone's way to the branch: its header has no room for the pill, so the session's
  * ··· menu opens this sheet, the same switcher, with the pull request when there is one.
  */
-export function BranchSheet({ client, windowId, branch, onSwitched, onClose }: { client: HostApi; windowId: string; branch: string; onSwitched: () => void; onClose: () => void }) {
+export function BranchSheet({ client, uid, branch, onSwitched, onClose }: { client: HostApi; uid: string; branch: string; onSwitched: () => void; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
   const { dismiss } = useSheet(ref, onClose);
   const [pr, setPr] = useState<PullInfo | null>(null);
@@ -330,10 +330,10 @@ export function BranchSheet({ client, windowId, branch, onSwitched, onClose }: {
   }, []);
   useEffect(() => {
     client
-      .pull(windowId)
+      .pull(uid)
       .then((p) => setPr(p.number && p.url ? p : null))
       .catch(() => {});
-  }, [client, windowId, branch]);
+  }, [client, uid, branch]);
   return (
     <dialog ref={ref} className="dialog branch-sheet" aria-label="Branch" onClose={onClose} onClick={(e) => e.target === ref.current && onClose()}>
       <SheetBar onClose={dismiss} title="Branch" />
@@ -345,24 +345,24 @@ export function BranchSheet({ client, windowId, branch, onSwitched, onClose }: {
           </a>
         )}
       </p>
-      <BranchMenu client={client} windowId={windowId} close={dismiss} onSwitched={onSwitched} />
+      <BranchMenu client={client} uid={uid} close={dismiss} onSwitched={onSwitched} />
     </dialog>
   );
 }
 
 /** PR number for the session's branch, linked when one exists. Otherwise nothing. */
-export function PrLink({ client, windowId, branch }: { client: HostApi; windowId: string; branch: string }) {
+export function PrLink({ client, uid, branch }: { client: HostApi; uid: string; branch: string }) {
   const [pr, setPr] = useState<PullInfo | null>(null);
   useEffect(() => {
     setPr(null);
     client
-      .pull(windowId)
+      .pull(uid)
       .then((p) => setPr(p.number && p.url ? p : null))
       .catch(() => {});
-  }, [client, windowId, branch]);
+  }, [client, uid, branch]);
   if (!pr?.number || !pr.url) return null;
   return (
-    <a className="pill mono" href={pr.url} target="_blank" rel="noreferrer" title={`Pull request #${pr.number}`}>
+    <a className="pill" href={pr.url} target="_blank" rel="noreferrer" title={`Pull request #${pr.number}`}>
       #{pr.number}
     </a>
   );

@@ -163,7 +163,7 @@ export type Preset = {
 
 export type Host = { name: string; self: boolean; online: boolean };
 
-export const API_VERSION = 26;
+export const API_VERSION = 27;
 
 export type PullInfo = { number: number | null; url: string | null };
 
@@ -364,9 +364,9 @@ export function hostApi(base: string) {
     create: (body: { preset: string; cwd: string; session: string; label: string; resume: boolean; worktree?: boolean; create?: boolean; git?: boolean; mode?: string; model?: string; effort?: string; extraArgs?: string }) =>
       r<{ id: string; uid: string }>('POST', '/api/windows', body),
     order: (uid: string, order: number) => r('POST', `/api/sessions/${enc(uid)}/order`, { order }),
-    rename: (id: string, name: string) => r('PATCH', `/api/windows/${enc(id)}`, { name }),
-    kill: (id: string) => r('DELETE', `/api/windows/${enc(id)}`),
-    capture: (id: string) => r<string>('GET', `/api/windows/${enc(id)}/capture?lines=3000`),
+    rename: (uid: string, name: string) => r('PUT', `/api/sessions/${enc(uid)}/name`, { name }),
+    kill: (uid: string) => r('POST', `/api/sessions/${enc(uid)}/terminate`),
+    capture: (uid: string) => r<string>('GET', `/api/sessions/${enc(uid)}/capture?lines=3000`),
     resume: (ref: string) => r<{ id: string; uid: string; resumed: boolean }>('POST', `/api/sessions/${enc(ref)}/resume`),
     forkInfo: (ref: string) => r<ForkInfo>('GET', `/api/sessions/${enc(ref)}/fork-info`),
     fork: (ref: string, body: { name?: string; prompt?: string; model?: string; effort?: string; mode?: string }) => r<ForkResult>('POST', `/api/sessions/${enc(ref)}/fork`, body),
@@ -406,10 +406,10 @@ export function hostApi(base: string) {
       r<{ safety: SnapshotInfo; restored: SnapshotInfo; notified: boolean }>('POST', `/api/sessions/${enc(uid)}/snapshots/${turn}/restore`, { interrupt }),
     toggleSnapshots: (uid: string, enabled: boolean) => r('POST', `/api/sessions/${enc(uid)}/snapshots/toggle`, { enabled }),
     forget: (ref: string) => r('DELETE', `/api/sessions/${enc(ref)}`),
-    changes: (id: string) => r<Changes>('GET', `/api/windows/${enc(id)}/changes`),
-    branches: (id: string) => r<BranchList>('GET', `/api/windows/${enc(id)}/branches`),
-    switchBranch: (id: string, branch: string) => r<{ branch: string }>('POST', `/api/windows/${enc(id)}/branches`, { branch }),
-    pull: (id: string) => r<PullInfo>('GET', `/api/windows/${enc(id)}/pull`),
+    changes: (uid: string) => r<Changes>('GET', `/api/sessions/${enc(uid)}/changes`),
+    branches: (uid: string) => r<BranchList>('GET', `/api/sessions/${enc(uid)}/branches`),
+    switchBranch: (uid: string, branch: string) => r<{ branch: string }>('POST', `/api/sessions/${enc(uid)}/branches`, { branch }),
+    pull: (uid: string) => r<PullInfo>('GET', `/api/sessions/${enc(uid)}/pull`),
     subscriptions: () => r<Subscription[]>('GET', '/api/subscriptions'),
     saveSubscription: (body: { id?: string; name: string; baseUrl: string; model: string; apiKey?: string; envName?: string }) =>
       r<Subscription>('POST', '/api/subscriptions', body),
@@ -422,11 +422,11 @@ export function hostApi(base: string) {
     /** One-shot handoff brief from a chat subscription. Not stored as side chat. */
     summarize: (text: string, subscriptionId?: string) =>
       r<{ summary: string }>('POST', '/api/summarize', subscriptionId ? { text, subscriptionId } : { text }),
-    chat: (id: string) => r<{ messages: ChatMsg[]; subscriptionId: string | null }>('GET', `/api/windows/${enc(id)}/chat`),
-    pickChatSubscription: (id: string, subscriptionId: string) => r('PUT', `/api/windows/${enc(id)}/chat/subscription`, { id: subscriptionId }),
-    sendChat: (id: string, text: string, subscriptionId?: string) =>
-      r<ChatReply>('POST', `/api/windows/${enc(id)}/chat`, subscriptionId ? { text, subscriptionId } : { text }),
-    clearChat: (id: string) => r('DELETE', `/api/windows/${enc(id)}/chat`),
+    chat: (uid: string) => r<{ messages: ChatMsg[]; subscriptionId: string | null }>('GET', `/api/sessions/${enc(uid)}/chat`),
+    pickChatSubscription: (uid: string, subscriptionId: string) => r('PUT', `/api/sessions/${enc(uid)}/chat/subscription`, { id: subscriptionId }),
+    sendChat: (uid: string, text: string, subscriptionId?: string) =>
+      r<ChatReply>('POST', `/api/sessions/${enc(uid)}/chat`, subscriptionId ? { text, subscriptionId } : { text }),
+    clearChat: (uid: string) => r('DELETE', `/api/sessions/${enc(uid)}/chat`),
     pastChats: (q?: string) => r<ChatSummary[]>('GET', q ? `/api/chats?q=${enc(q)}` : '/api/chats'),
     search: (p: SearchQuery, all = false) => {
       const qs = new URLSearchParams({ q: p.q });

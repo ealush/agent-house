@@ -1,4 +1,5 @@
 import { lazy, Suspense, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useHardwareKeyboard } from './hardwareKeyboard.ts';
 import { createPortal } from 'react-dom';
 import { menuViewport, placeFloatingMenu } from './menuPlace.ts';
 import { askConfirm, showError, showNotice } from './ask.tsx';
@@ -29,6 +30,7 @@ import { ForkDialog, ForksDialog } from './ForkDialog.tsx';
 import { SendToDialog } from './SendToDialog.tsx';
 import { SnapshotsPanel } from './Snapshots.tsx';
 import { ShortcutHint, shortcutTitle, useCommand, usePaletteProvider, useShortcutRevision } from './shortcuts.tsx';
+import { commandLabel as L } from './shortcuts.ts';
 import { runCommand } from './shortcuts.ts';
 import { useLaunch, useLaunchPalette } from './useLaunch.ts';
 import { Glide } from './Glide.tsx';
@@ -159,7 +161,11 @@ function PanelDivider({ onResize, onReset }: { onResize: (dx: number) => void; o
 const DEFAULT_PANEL_WIDTH = 420;
 
 
-export function Session({ w, client, windows, clientFor, narrow, touch, multiHost, home, replyKey, onBack, onAnswer, onSent, onTerminate, refresh, onSplit, onReplace, onClosePane, onFlipSplit, panePath, onPaneDrag, onOpenKey, onSplitWith, onStartSession, active = true }: Props) {
+export function Session({ w, client, windows, clientFor, narrow, touch: touchScreen, multiHost, home, replyKey, onBack, onAnswer, onSent, onTerminate, refresh, onSplit, onReplace, onClosePane, onFlipSplit, panePath, onPaneDrag, onOpenKey, onSplitWith, onStartSession, active = true }: Props) {
+  // A touch screen with a hardware keyboard (an iPad on a Magic Keyboard) is a keyboard device:
+  // the session takes the keyboard as it opens, and the terminal needs no on-screen keys.
+  const hw = useHardwareKeyboard();
+  const touch = touchScreen && !hw;
   const surface = useRef<SurfaceHandle>(null);
   const body = useRef<HTMLDivElement>(null);
   const review = useReviewFor(w.host, w.uid, w.branch);
@@ -237,10 +243,12 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       );
       const maxHeight = Math.max(0, view.height - 16);
       el.style.maxHeight = `${maxHeight}px`;
-      const body = el.getBoundingClientRect();
-      const at = placeFloatingMenu(anchor, { width: body.width, height: body.height }, view);
+      // Its layout size, not its box: the menu grows from the button as it opens, and a box
+      // read mid-grow is smaller than the menu, so a tall one was placed below and ran off
+      // the screen (an iPad's 44px rows).
+      const at = placeFloatingMenu(anchor, { width: el.offsetWidth, height: el.offsetHeight }, view);
       // Flipped above the button when there is no room below: it grows from there instead.
-      const next = { ...at, maxHeight, above: at.top < anchor.top };
+      const next = { ...at, maxHeight: at.maxHeight ?? maxHeight, above: at.top < anchor.top };
       setMenuPos((prev) =>
         prev && prev.top === next.top && prev.left === next.left && prev.maxHeight === next.maxHeight ? prev : next,
       );
@@ -519,7 +527,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
     setPendingName(name);
     setNameSaving(true);
     try {
-      await client.rename(w.id, name);
+      await client.rename(w.uid, name);
       refresh();
     } catch (e) {
       setPendingName(null);
@@ -623,6 +631,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
     active && w.queued > 0,
   );
   useCommand('rename', startRename, active && !renaming);
+  useCommand('switch-branch', () => setBranching(true), active && !!w.branch);
   useCommand('fork', () => setForking(true), active && turns);
   useCommand('send-to', () => setSending(true), active && !!w.feed);
   useCommand('pin', () => void act(() => client.pin(w.uid, !w.pinned)), active);
@@ -636,6 +645,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
   useCommand('panel-queue', () => togglePanel('queue'), active && turns);
   useCommand('panel-snapshots', () => togglePanel('snapshots'), active && turns);
   useCommand('panel-preview', () => togglePanel('preview'), active);
+  useCommand('panel-stack', () => togglePanel('stack'), active && stackTab);
   useCommand('copy-last', () => surface.current?.copyLast?.(), active && view === 'gui');
   useCommand('jump-latest', () => surface.current?.jumpLatest?.(), active && view === 'gui');
   useCommand('browse-messages', () => void surface.current?.browse?.(), active && view === 'gui');
@@ -662,7 +672,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
     launch.preset?.settingsCommands?.[setting] ? launch.openSettings(setting) : onToast(`Palette → Session → Model and effort lists the ${setting === 'model' ? 'models' : 'effort levels'}`);
   useCommand('pick-model', () => void terminalPicker('model'), active && view !== 'gui' && !!w.agent);
   useCommand('pick-effort', () => void terminalPicker('effort'), active && view !== 'gui' && !!w.agent);
-  useCommand('scrollback', () => void act(async () => setCapture(await client.capture(w.id))), active);
+  useCommand('scrollback', () => void act(async () => setCapture(await client.capture(w.uid))), active);
   useCommand(
     'copy-attach',
     () =>
@@ -738,7 +748,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
     ) : p === 'preview' ? (
       <PreviewPanel client={client} uid={w.uid} />
     ) : p === 'diff' ? (
-      <ChangesPanel client={client} windowId={w.id} onComment={w.agent ? comment : undefined} />
+      <ChangesPanel client={client} uid={w.uid} onComment={w.agent ? comment : undefined} />
     ) : p === 'stack' ? (
       <Suspense fallback={<div className="panel-body" />}>
         <StackPanel uid={w.uid} />
@@ -778,16 +788,16 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
           : { position: 'fixed', right: 'auto', visibility: 'hidden', zIndex: 90, margin: 0 }
       }
     >
-      <button onClick={startRename}><span className="grow">Rename</span><ShortcutHint id="rename" /></button>
-      {/* A phone's header has no room for the branch pill: switching is here. */}
-      {narrow && w.branch && (
+      <button onClick={startRename}><span className="grow">{L('rename')}</span><ShortcutHint id="rename" /></button>
+      {/* Here on every device, so the menu is the same wherever it opens (the desktop header's pill is a shortcut to it). */}
+      {w.branch && (
         <button
           onClick={() => {
             setMenu(false);
             setBranching(true);
           }}
         >
-          <span className="grow">Branch</span>
+          <span className="grow">{L('switch-branch')}</span>
           <span className="menu-value mono">{w.branch}</span>
         </button>
       )}
@@ -798,7 +808,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
             setForking(true);
           }}
         >
-          <span className="grow">Fork session…</span>
+          <span className="grow">{L('fork')}</span>
           <ShortcutHint id="fork" />
         </button>
       )}
@@ -809,7 +819,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
             setSending(true);
           }}
         >
-          <span className="grow">Send to…</span>
+          <span className="grow">{L('send-to')}</span>
           <ShortcutHint id="send-to" />
         </button>
       )}
@@ -833,16 +843,16 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
           ))}
         </div>
       )}
-      <button onClick={() => act(() => client.pin(w.uid, !w.pinned))}>{w.pinned ? 'Unpin' : 'Pin to top'}</button>
+      <button onClick={() => act(() => client.pin(w.uid, !w.pinned))}>{w.pinned ? 'Unpin' : L('pin')}</button>
       <hr />
-      {diffTab && <button onClick={() => { setMenu(false); togglePanel('diff'); }}><span className="grow">Diff</span><ShortcutHint id="panel-diff" /></button>}
-      <button onClick={() => { setMenu(false); togglePanel('files'); }}><span className="grow">Files</span><ShortcutHint id="panel-files" /></button>
-      <button onClick={() => { setMenu(false); togglePanel('chat'); }}><span className="grow">Chat</span><ShortcutHint id="panel-chat" /></button>
-      {turns && <button onClick={() => { setMenu(false); togglePanel('queue'); }}><span className="grow">Queued messages{w.queued > 0 ? ` (${w.queued})` : ''}</span><ShortcutHint id="panel-queue" /></button>}
-      {w.queued > 0 && <button onClick={() => { setMenu(false); runCommand('send-now'); }}><span className="grow">Send next queued now</span><ShortcutHint id="send-now" /></button>}
-      {turns && <button onClick={() => { setMenu(false); togglePanel('snapshots'); }}><span className="grow">Snapshots</span><ShortcutHint id="panel-snapshots" /></button>}
-      <button onClick={() => { setMenu(false); togglePanel('preview'); }}><span className="grow">Preview</span><ShortcutHint id="panel-preview" /></button>
-      {stackTab && <button onClick={() => { setMenu(false); togglePanel('stack'); }}><span className="grow">Stack</span></button>}
+      {diffTab && <button onClick={() => { setMenu(false); togglePanel('diff'); }}><span className="grow">{L('panel-diff')}</span><ShortcutHint id="panel-diff" /></button>}
+      <button onClick={() => { setMenu(false); togglePanel('files'); }}><span className="grow">{L('panel-files')}</span><ShortcutHint id="panel-files" /></button>
+      <button onClick={() => { setMenu(false); togglePanel('chat'); }}><span className="grow">{L('panel-chat')}</span><ShortcutHint id="panel-chat" /></button>
+      {turns && <button onClick={() => { setMenu(false); togglePanel('queue'); }}><span className="grow">{L('panel-queue')}</span>{w.queued > 0 && <span className="menu-value">{w.queued}</span>}<ShortcutHint id="panel-queue" /></button>}
+      {w.queued > 0 && <button onClick={() => { setMenu(false); runCommand('send-now'); }}><span className="grow">{L('send-now')}</span><ShortcutHint id="send-now" /></button>}
+      {turns && <button onClick={() => { setMenu(false); togglePanel('snapshots'); }}><span className="grow">{L('panel-snapshots')}</span><ShortcutHint id="panel-snapshots" /></button>}
+      <button onClick={() => { setMenu(false); togglePanel('preview'); }}><span className="grow">{L('panel-preview')}</span><ShortcutHint id="panel-preview" /></button>
+      {stackTab && <button onClick={() => { setMenu(false); togglePanel('stack'); }}><span className="grow">{L('panel-stack')}</span><ShortcutHint id="panel-stack" /></button>}
       {(onSplit || onReplace || onClosePane) && <hr />}
       {onSplit && (
         <>
@@ -903,7 +913,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       <button
         onClick={() =>
           act(async () => {
-            setCapture(await client.capture(w.id));
+            setCapture(await client.capture(w.uid));
           })
         }
       >
@@ -937,7 +947,8 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
           setMenu(false);
         }}
       >
-        Copy “ah attach {w.uid}”
+        <span className="grow">{L('copy-attach')}</span>
+        <span className="menu-value mono">ah attach {w.uid}</span>
       </button>
       {/* Everything else this session can do; on a touch screen, the palette's only way in. */}
       <button
@@ -951,7 +962,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       </button>
       <hr />
       <button className="danger" onClick={kill}>
-        <span className="grow">Terminate session</span>
+        <span className="grow">{L('terminate')}</span>
         <ShortcutHint id="terminate" />
       </button>
     </div>
@@ -1042,7 +1053,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
               <span key={statusClass(w)} className={`pill ${statusClass(w)} ${changed ? 'pill-change' : ''}`}>
                 {w.status === 'waiting' && <span className="dot waiting" />} {statusWord(w)}
               </span>
-              {multiHost && <span className="pill mono">{w.host}</span>}
+              {multiHost && <span className="pill">{w.host}</span>}
               {w.queued > 0 && (
                 <button className="pill waiting" onClick={() => openPanel('queue')} title="Review queued messages">
                   ⇥ {w.queued} queued
@@ -1061,8 +1072,8 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
               {elsewhere && <span className="devices">On {elsewhere}</span>}
             </div>
             {/* Outside .session-pills: it clips overflow, which would cut off the dropdown. */}
-            {w.branch && <BranchPicker client={client} windowId={w.id} current={w.branch} onSwitched={refresh} />}
-            {w.branch && <PrLink client={client} windowId={w.id} branch={w.branch} />}
+            {w.branch && <BranchPicker client={client} uid={w.uid} current={w.branch} onSwitched={refresh} />}
+            {w.branch && <PrLink client={client} uid={w.uid} branch={w.branch} />}
             {review?.fixing ? (
               <button type="button" className="pill busy review-pill" onClick={() => review.open(review.fixing!.stackId, review.fixing!.pr)} title="Findings from Review this session is working on">
                 {review.fixing.count ? `Fixing ${review.fixing.count} finding${review.fixing.count === 1 ? '' : 's'}` : 'On a review'} · {review.fixing.role || `#${review.fixing.pr}`}
@@ -1105,7 +1116,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
               }}
               aria-label="Toggle panel"
               aria-pressed={!!panel && !panelCollapsed}
-              title={shortcutTitle(`Panel: ${lastPanel}${w.queued > 0 ? ` (Queue ${w.queued})` : ''}`, 'toggle-panel')}
+              title={shortcutTitle(`Side panel: ${lastPanel}${w.queued > 0 ? ` (Queue ${w.queued})` : ''}`, 'toggle-panel')}
             >
               <Icon name={panel && !panelCollapsed ? 'panel-hide' : 'panel'} size={16} />
             </button>
@@ -1132,39 +1143,29 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       {narrow && (
         <div className="seg-tabs" role="tablist" data-rove>
           <Glide match=".on" className="thumb" />
-          <button role="tab" aria-selected={tab === 'main'} className={tab === 'main' ? 'on' : ''} onClick={() => setTab('main')}>
-            {VIEW_LABEL[view]}
-          </button>
-          {diffTab && (
-            <button role="tab" aria-selected={tab === 'diff'} className={tab === 'diff' ? 'on' : ''} onClick={() => setTab('diff')}>
-              Diff
-            </button>
-          )}
-          <button role="tab" aria-selected={tab === 'files'} className={tab === 'files' ? 'on' : ''} onClick={() => setTab('files')}>
-            Files
-          </button>
-          <button role="tab" aria-selected={tab === 'chat'} className={tab === 'chat' ? 'on' : ''} onClick={() => setTab('chat')}>
-            Chat
-          </button>
-          {/* Nothing queued: the tab steps aside (the menu and palette still open it). */}
-          {turns && (w.queued > 0 || tab === 'queue') && (
-            <button role="tab" aria-selected={tab === 'queue'} className={tab === 'queue' ? 'on' : ''} onClick={() => setTab('queue')}>
-              Queue{w.queued > 0 ? ` (${w.queued})` : ''}
-            </button>
-          )}
-          {turns && (
-            <button role="tab" aria-selected={tab === 'snapshots'} className={tab === 'snapshots' ? 'on' : ''} onClick={() => setTab('snapshots')}>
-              Snapshots
-            </button>
-          )}
-          <button role="tab" aria-selected={tab === 'preview'} className={tab === 'preview' ? 'on' : ''} onClick={() => setTab('preview')}>
-            Preview
-          </button>
-          {/* Its branch in review, or open: otherwise the menu opens it. */}
-          {stackTab && (review?.layer || tab === 'stack') && (
-            <button role="tab" aria-selected={tab === 'stack'} className={tab === 'stack' ? 'on' : ''} onClick={() => setTab('stack')}>
-              Stack
-            </button>
+          {/* What you look at (the session, or one of its panels); the glass capsule above picks how (GUI
+              or terminal). Icons, the open one with its name, so every tab fits a phone (as on a desktop). */}
+          {(
+            [
+              ['main', 'sessions', 'Session', true],
+              ['diff', 'diff', L('panel-diff'), diffTab],
+              ['files', 'files', L('panel-files'), true],
+              ['chat', 'chat', L('panel-chat'), true],
+              // Nothing queued: the tab steps aside (the menu and palette still open it).
+              ['queue', 'queue', L('panel-queue'), turns && (w.queued > 0 || tab === 'queue')],
+              ['snapshots', 'history', L('panel-snapshots'), turns],
+              ['preview', 'globe', L('panel-preview'), true],
+              // Its branch in review, or open: otherwise the menu opens it.
+              ['stack', 'stack', L('panel-stack'), stackTab && (!!review?.layer || tab === 'stack')],
+            ] as const
+          ).map(([id, icon, label, shown]) =>
+            shown ? (
+              <button key={id} role="tab" aria-selected={tab === id} aria-label={label} className={`tab-icon ${tab === id ? 'on' : ''}`} onClick={() => setTab(id)}>
+                <Icon name={icon} size={18} />
+                <span className="tab-label">{label}</span>
+                {id === 'queue' && w.queued > 0 && <span className="badge">{w.queued}</span>}
+              </button>
+            ) : null,
           )}
         </div>
       )}
@@ -1214,36 +1215,38 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
                   {/* The tabs scroll sideways in a narrow panel; the buttons on the right always stay. */}
                   <div className="tabs-scroll">
                   <Glide match="[aria-selected='true']" className="underline" />
-                  {diffTab && (
-                    <button role="tab" aria-selected={panel === 'diff'} className="tab-underline" onClick={() => setPanel('diff')}>
-                      Diff
-                    </button>
-                  )}
-                  {/* Beside Diff: both are about the branch. */}
-                  {stackTab && (
-                    <button role="tab" aria-selected={panel === 'stack'} className="tab-underline" onClick={() => setPanel('stack')}>
-                      Stack
-                    </button>
-                  )}
-                  <button role="tab" aria-selected={panel === 'files'} className="tab-underline" onClick={() => setPanel('files')}>
-                    Files
-                  </button>
-                  <button role="tab" aria-selected={panel === 'chat'} className="tab-underline" onClick={() => setPanel('chat')}>
-                    Chat
-                  </button>
-                  {turns && (
-                    <button role="tab" aria-selected={panel === 'queue'} className="tab-underline" onClick={() => setPanel('queue')}>
-                      Queue{w.queued > 0 ? ` (${w.queued})` : ''}
-                    </button>
-                  )}
-                  {turns && (
-                    <button role="tab" aria-selected={panel === 'snapshots'} className="tab-underline" onClick={() => setPanel('snapshots')}>
-                      Snapshots
-                    </button>
-                  )}
-                  <button role="tab" aria-selected={panel === 'preview'} className="tab-underline" onClick={() => setPanel('preview')}>
-                    Preview
-                  </button>
+                  {/* Always the same tabs in the same order (agent-only ones absent for a shell): icons,
+                      the open one with its label, so all six fit in the narrowest panel. */}
+                  {(
+                    [
+                      ['diff', 'diff', diffTab],
+                      // Beside Diff: both are about the branch.
+                      ['stack', 'stack', stackTab],
+                      ['files', 'files', true],
+                      ['chat', 'chat', true],
+                      ['queue', 'queue', turns],
+                      ['snapshots', 'history', turns],
+                      ['preview', 'globe', true],
+                    ] as const
+                  ).map(([id, icon, shown]) => {
+                    if (!shown) return null;
+                    const label = L(`panel-${id}`);
+                    return (
+                      <button
+                        key={id}
+                        role="tab"
+                        aria-selected={panel === id}
+                        aria-label={label}
+                        title={shortcutTitle(label, `panel-${id}`)}
+                        className="tab-underline tab-icon"
+                        onClick={() => setPanel(id)}
+                      >
+                        <Icon name={icon} size={15} />
+                        <span className="tab-label">{label}</span>
+                        {id === 'queue' && w.queued > 0 && <span className="badge">{w.queued}</span>}
+                      </button>
+                    );
+                  })}
                   </div>
                   {panel === 'chat' && (
                     <button
@@ -1271,7 +1274,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch, multiHos
       </div>
 
       {capture !== null && <CaptureDialog text={capture} onClose={() => setCapture(null)} />}
-      {branching && w.branch && <BranchSheet client={client} windowId={w.id} branch={w.branch} onSwitched={refresh} onClose={() => setBranching(false)} />}
+      {branching && w.branch && <BranchSheet client={client} uid={w.uid} branch={w.branch} onSwitched={refresh} onClose={() => setBranching(false)} />}
       {forking && (
         <ForkDialog client={client} target={{ ref: w.uid, host: w.host, harness: w.agent, title: w.title }} onClose={() => setForking(false)} onForked={forked} />
       )}

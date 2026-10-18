@@ -46,8 +46,10 @@ worktree, fork lineage, queue, known transcripts).
   It outlives the tmux window: resume, relaunch and a tmux restart keep it.
 - Old links keyed on window ids (`@12`) are upgraded once the windows are
   known (`web/sessionKeys.ts`).
-- → A-01: part of the HTTP API (diff, branches, pull request, side chat,
-  rename, kill, capture) is still addressed by tmux window id.
+- The HTTP API names sessions by uid: `/api/sessions/:uid/…` (send, answer,
+  queue, feed, diff as `changes`, `branches`, `pull`, `chat`, `capture`,
+  `name`, `terminate`…). The server resolves the window the session has now;
+  the older `/api/windows/@N/…` routes stay as aliases for scripts.
 
 ## FND-5 · Conversation identity — shipped
 
@@ -112,9 +114,8 @@ taglines, the switcher and notifications:
 | `idle` | **idle** | none | 4 |
 | any stopped + limit | **limited** | warning | 2 |
 
-Tagline: "2 sessions need you. 2 working. 4 idle." or "All quiet."
-→ A-02: the tagline folds done and limited into "idle", while the section
-below says "Idle and done".
+Tagline: one count per word, in this order: "2 sessions need you. 2 working.
+1 limited. 1 done. 3 idle." or "All quiet."
 
 ## FND-9 · What a session is doing — shipped
 

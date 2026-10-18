@@ -107,7 +107,7 @@ function Order({ order, all, trunk, title, setTitle, move, drop, autoOrder, addi
     <div className="pick-order">
       {!adding && (
         <label className="field">
-          <span className="section-label">Stack name</span>
+          <span>Stack name</span>
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Named after the first PR" maxLength={120} />
         </label>
       )}

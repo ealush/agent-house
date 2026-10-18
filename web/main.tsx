@@ -9,18 +9,27 @@ import { initTheme } from './theme.ts';
 import { confirmKey } from './confirm.ts';
 import { installSlide } from './slide.ts';
 import { installEdges } from './edges.ts';
+import { installHardwareKeyboard } from './hardwareKeyboard.ts';
+import { installWindowControls } from './windowControls.ts';
+import { installPointer } from './pointer.ts';
+import { installSwitch } from './switch.ts';
 
 initTheme();
 // Every segmented control and toggle slides under a finger, as on iOS (slide.ts).
 installSlide();
 // The screen's side edges swipe ah's way, never the browser's Back on top of it (edges.ts).
 installEdges();
+installHardwareKeyboard();
+installWindowControls();
+// Hover is the trackpad's and the Pencil's, never a finger's tap left behind (pointer.ts).
+installPointer();
+installSwitch();
 // ⌘↵ / Ctrl+↵ presses the main button, signed in or on the lock screen (confirm.ts).
 window.addEventListener('keydown', confirmKey);
 // Fonts ship with the app: nothing loads from third parties.
-import '@fontsource-variable/inter';
 import '@fontsource-variable/jetbrains-mono';
 import '@fontsource-variable/rubik';
+import './tokens.css';
 import './styles.css';
 import './site-theme.css';
 

@@ -48,13 +48,13 @@ export function NotifySettings({ onChange }: { onChange: (active: boolean) => vo
       {support === 'ok' && (
         <>
           <label className="check">
-            <input type="checkbox" disabled={busy} checked={events.waiting} onChange={(e) => save({ ...events, waiting: e.target.checked })} />
+            <input type="checkbox" switch="" disabled={busy} checked={events.waiting} onChange={(e) => save({ ...events, waiting: e.target.checked })} />
             <span>
               <strong>Needs you</strong> <span className="hint">— an agent is waiting for input or permission</span>
             </span>
           </label>
           <label className="check">
-            <input type="checkbox" disabled={busy} checked={events.done} onChange={(e) => save({ ...events, done: e.target.checked })} />
+            <input type="checkbox" switch="" disabled={busy} checked={events.done} onChange={(e) => save({ ...events, done: e.target.checked })} />
             <span>
               <strong>Finished</strong> <span className="hint">— an agent completed a turn</span>
             </span>

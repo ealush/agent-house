@@ -15,10 +15,12 @@ test('flips above the anchor near the viewport bottom (short split panes)', () =
   assert.deepEqual(placeFloatingMenu(anchor, menu, viewport), { top: 294, left: 940 });
 });
 
-test('clamps to the margin when the menu is taller than the viewport', () => {
+test('a menu taller than either side stays at its button, on the roomier side, and scrolls', () => {
   const anchor = { top: 100, right: 1150, bottom: 124 };
   const tall = { width: 210, height: 1000 };
-  assert.deepEqual(placeFloatingMenu(anchor, tall, viewport), { top: 8, left: 940 });
+  assert.deepEqual(placeFloatingMenu(anchor, tall, viewport), { top: 130, left: 940, maxHeight: 662 });
+  // Near the bottom, above has more room: it ends just over the button.
+  assert.deepEqual(placeFloatingMenu({ top: 700, right: 1150, bottom: 724 }, tall, viewport), { top: 8, left: 940, maxHeight: 686 });
 });
 
 test('clamps horizontally near the left edge', () => {
@@ -30,7 +32,7 @@ test('keeps a tall menu inside a keyboard-shrunk visual viewport', () => {
   const anchor = { top: 320, right: 400, bottom: 348 };
   const tall = { width: 210, height: 800 };
   const keyboard = { top: 200, left: 0, width: 844, height: 240 };
-  assert.deepEqual(placeFloatingMenu(anchor, tall, keyboard), { top: 208, left: 190 });
+  assert.deepEqual(placeFloatingMenu(anchor, tall, keyboard), { top: 208, left: 190, maxHeight: 106 });
 });
 
 test('opens below the anchor inside an offset visual viewport', () => {

@@ -7,10 +7,10 @@ import { KeyBar } from './KeyBar.tsx';
 import { applyModifiers } from './keyboard.ts';
 import type { SurfaceHandle, SurfaceProps } from './surface.ts';
 import { shortcutTitle } from './shortcuts.tsx';
-import { AskPanel, type AskHandle } from './AskPanel.tsx';
+import { AskPanel, AskSummary, type AskHandle } from './AskPanel.tsx';
+import { KIND_LABEL } from './askView.ts';
 import { useFileDrop } from './useFileDrop.ts';
 
-const KIND_LABEL = { command: 'Wants to run a command', tool: 'Wants to use a tool', question: 'Asked a question', screen: 'Waiting for you', choice: 'Asked you' };
 const coarse = () => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 
 /** The session as its own TUI: xterm.js attached to the tmux window, plus the
@@ -91,7 +91,8 @@ export const TerminalSurface = forwardRef<SurfaceHandle, SurfaceProps>(function 
 
       {w.status === 'waiting' && w.ask && (
         <div className="ask-banner">
-          <span className="card-kind">{KIND_LABEL[w.ask.kind]}</span>
+          {/* The same summary as the Inbox and the GUI; the screen itself is right above. */}
+          {w.ask.kind === 'choice' ? <span className="card-kind">{KIND_LABEL[w.ask.kind]}</span> : <AskSummary w={w} terminalText={false} />}
           {w.ask.options?.length || ((w.ask.questions?.length || w.ask.dialog) && coarse()) ? (
             // A phone can't comfortably drive a picker through the key bar: answer it here.
             <AskPanel ref={askRef} w={w} client={client} onAnswer={onAnswer} compact />
@@ -99,7 +100,6 @@ export const TerminalSurface = forwardRef<SurfaceHandle, SurfaceProps>(function 
             <p className="muted small ask-hint">Pick in the terminal below: number keys choose, Enter confirms.</p>
           ) : (
             <>
-              {w.ask.text && <pre className={`ask-box ${w.ask.kind === 'command' || w.ask.kind === 'screen' ? 'code' : ''}`}>{w.ask.text}</pre>}
               <div className="actions">
                 {w.answerable ? (
                   <>

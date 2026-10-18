@@ -1,160 +1,4 @@
-:root {
-  --bg: #0a0b0d;
-  --surface: #111316;
-  --raised: #171a1e;
-  --sunken: #0b0d10;
-  --line: #22252a;
-  --line-2: #2d3137;
-  --text: #ececed;
-  --muted: #9a9ea6;
-  --faint: #62666e;
-
-  --accent: #f2b44b;
-  --accent-ink: #1b1306;
-  --accent-bg: color-mix(in srgb, var(--accent) 6%, transparent);
-  --accent-line: color-mix(in srgb, var(--accent) 24%, transparent);
-  --run: #5b9cf6;
-  --done: #3fbf86;
-  --danger: #ef6b73;
-  --danger-ink: #1b0608;
-  /* Soft black for popover/dialog shadows; a cooler ink in light mode. */
-  --shadow: #000;
-  /* Depth, two steps. Each is a lit top edge, a tight contact shadow and a wide
-     soft one, so a layer reads as lifted, not outlined. Menus, popovers and
-     toasts take 1; dialogs take 2. Floating layers are frosted (--glass). */
-  --elev-0: 0 1px 2px rgb(0 0 0 / 0.2), 0 10px 28px -14px rgb(0 0 0 / 0.6);
-  --elev-1: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 1px 2px rgb(0 0 0 / 0.3), 0 12px 32px -8px rgb(0 0 0 / 0.55);
-  --elev-2: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 2px 6px rgb(0 0 0 / 0.3), 0 32px 80px -16px rgb(0 0 0 / 0.7);
-  /* Liquid glass. Clear enough to show what's behind it, blurred and its
-     color lifted; lit from above, so a sheen falls across the top and a rim
-     catches the light at the top left and again, fainter, at the bottom
-     right; thick, so its edges glow and its underside sits in shadow. A
-     surface takes --glass-fill over a transparent 1px border, and
-     --glass-depth ahead of its elevation shadow. */
-  --glass-tint: color-mix(in srgb, var(--raised) 62%, transparent);
-  --glass: var(--glass-tint);
-  --glass-blur: blur(22px) saturate(2) brightness(1.06);
-  --glass-sheen:
-    radial-gradient(130% 70% at 18% -12%, rgb(255 255 255 / 0.16), transparent 62%),
-    linear-gradient(180deg, rgb(255 255 255 / 0.06), transparent 40%, transparent 78%, rgb(255 255 255 / 0.04));
-  --glass-rim: linear-gradient(150deg, rgb(255 255 255 / 0.5), rgb(255 255 255 / 0.1) 28%, rgb(255 255 255 / 0.04) 62%, rgb(255 255 255 / 0.26));
-  --glass-fill: var(--glass-sheen), linear-gradient(var(--glass-tint), var(--glass-tint)) padding-box, var(--glass-rim) border-box;
-  --glass-depth: inset 0 1px 0 rgb(255 255 255 / 0.14), inset 0 10px 18px -14px rgb(255 255 255 / 0.22), inset 0 -12px 22px -16px rgb(0 0 0 / 0.4);
-  /* A tall panel (the sidebar) is the same glass, tinted denser. */
-  --glass-panel: color-mix(in srgb, var(--raised) 78%, var(--bg));
-  /* What lights a pressed glass control. */
-  --glass-press: rgb(255 255 255 / 0.1);
-
-  --c-shell: #9aa3ae;
-  --c-claude: #e08a5f;
-  --c-codex: #7aa7ff;
-  --c-gemini: #6f9ef8;
-  --c-grok: #b9bec7;
-  --c-muse: #b18cf2;
-  --c-hermes: #e8c45a;
-  --c-opencode: #5fc4b0;
-  --c-cursor: #c9cdd4;
-  --c-copilot: #a5b4fc;
-  --c-crush: #f2a3c7;
-  --c-pi: #f0c674;
-  --c-other: #9a9ea6;
-
-  --ui: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --mono: 'JetBrainsMono Nerd Font', 'JetBrains Mono Variable', 'SF Mono', Menlo, ui-monospace, monospace;
-  --vh: 100dvh;
-  --radius: 12px;
-  /* Motion: one curve, two speeds. Small state changes are fast; things that arrive take a beat longer. */
-  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
-  --dur-1: 120ms;
-  --dur-2: 200ms;
-  /* Behind every modal and sheet: one depth, one color. */
-  --scrim: #040507a0;
-  /* The home indicator's strip. Zero while the keyboard covers it. */
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
-  /* What a bottom bar actually needs: the indicator is a thin line ~8pt up, so
-     controls clear it with the inset less 14pt, not the whole 34pt. */
-  --safe-pad: max(calc(var(--safe-bottom) - 14px), 0px);
-
-  color-scheme: dark;
-}
-
-/* Light theme: flat white surfaces, hairline borders, and the site pink —
-   accented one step darker than the brand #E91E63 so text and white-on-fill
-   both keep contrast. */
-:root[data-theme='light'] {
-  --bg: #edeff2;
-  --surface: #ffffff;
-  --raised: #ffffff;
-  --sunken: #f2f4f6;
-  --line: #e6e8ec;
-  --line-2: #d4d8de;
-  --text: #333333;
-  --muted: #757575;
-  --faint: #6e7480;
-
-  --accent: #d81b60;
-  --accent-ink: #ffffff;
-  --run: #1f47c8;
-  --done: #1e7f4f;
-  --danger: #b93a0b;
-  --danger-ink: #ffffff;
-  --shadow: #232a36;
-  --elev-0: 0 1px 2px rgb(35 42 54 / 0.06), 0 10px 28px -14px rgb(35 42 54 / 0.18);
-  --elev-1: 0 0 0 0.5px rgb(35 42 54 / 0.04), 0 1px 2px rgb(35 42 54 / 0.08), 0 12px 32px -8px rgb(35 42 54 / 0.2);
-  --elev-2: 0 2px 6px rgb(35 42 54 / 0.08), 0 32px 80px -16px rgb(35 42 54 / 0.32);
-  /* Light glass is white frost: denser than dark (over a dark terminal a thin
-     frost turns muddy), brightened behind, with a white sheen and a white rim
-     over a hairline that keeps its edge on a white page. */
-  --glass-tint: color-mix(in srgb, #ffffff 70%, transparent);
-  --glass-blur: blur(22px) saturate(1.9) brightness(1.12);
-  --glass-sheen:
-    radial-gradient(130% 70% at 18% -12%, rgb(255 255 255 / 0.75), transparent 62%),
-    linear-gradient(180deg, rgb(255 255 255 / 0.35), transparent 45%);
-  --glass-rim: linear-gradient(150deg, #ffffff, rgb(255 255 255 / 0.55) 25%, rgb(35 42 54 / 0.12) 62%, rgb(255 255 255 / 0.85));
-  --glass-depth: inset 0 1px 0 rgb(255 255 255 / 0.95), inset 0 -12px 22px -18px rgb(35 42 54 / 0.18);
-  --glass-press: rgb(35 42 54 / 0.06);
-
-  --c-shell: #5b6570;
-  --c-claude: #a8511f;
-  --c-codex: #2f5fd0;
-  --c-gemini: #2b5fc7;
-  --c-grok: #67707a;
-  --c-muse: #6d3fd4;
-  --c-hermes: #8a6300;
-  --c-opencode: #14705e;
-  --c-cursor: #3f4650;
-  --c-copilot: #4f46b8;
-  --c-crush: #a3336b;
-  --c-pi: #8a6300;
-  --c-other: #6e7480;
-
-  color-scheme: light;
-}
-
-/* Reduce Transparency: glass becomes the solid surface it stands for. Increase
-   Contrast: solid too, with a real outline. */
-@media (prefers-reduced-transparency: reduce) {
-  :root,
-  :root[data-theme] {
-    --glass-tint: var(--raised);
-    --glass-panel: var(--raised);
-    --glass-blur: none;
-    --glass-sheen: linear-gradient(transparent, transparent);
-    --glass-depth: 0 0 transparent;
-  }
-}
-
-@media (prefers-contrast: more) {
-  :root,
-  :root[data-theme] {
-    --glass-tint: var(--raised);
-    --glass-panel: var(--raised);
-    --glass-blur: none;
-    --glass-sheen: linear-gradient(transparent, transparent);
-    --glass-depth: 0 0 transparent;
-    --glass-rim: linear-gradient(var(--muted), var(--muted));
-  }
-}
+/* Tokens live in tokens.css. */
 
 * {
   box-sizing: border-box;
@@ -280,7 +124,17 @@ code,
   /* Keyboard up: the visible height. iOS home-screen app: the whole screen (viewport.ts). */
   height: var(--keyboard-vh, auto);
   overflow: hidden;
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+  padding: var(--safe-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+}
+
+/* The top inset every top edge uses: the status bar's, or in an iPadOS window the
+   strip its window buttons sit in, as a native app's (windowControls.ts). */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+}
+
+:root[data-window-controls] {
+  --safe-top: max(env(safe-area-inset-top, 0px), 32px);
 }
 
 .main {
@@ -392,7 +246,7 @@ code,
 }
 
 :root[data-theme='light'] .logo {
-  background: var(--accent);
+  background: var(--accent-strong);
   color: #fff;
 }
 
@@ -426,6 +280,13 @@ code,
   background: var(--sunken);
   color: var(--faint);
   text-align: left;
+}
+
+.search[data-wordy] .keycaps {
+  display: none;
+}
+:where(:root:not([data-touch])) .search[data-wordy]:is(:hover, :focus-visible) .keycaps {
+  display: inline-flex;
 }
 
 .search span:nth-child(2) {
@@ -483,7 +344,7 @@ kbd {
   text-align: left;
 }
 
-.nav-item:hover {
+:where(:root:not([data-touch])) .nav-item:hover {
   background: var(--raised);
   color: var(--text);
 }
@@ -513,7 +374,7 @@ kbd {
   height: 20px;
   padding: 0 6px;
   border-radius: 999px;
-  background: var(--accent);
+  background: var(--accent-strong);
   color: var(--accent-ink);
   font-size: 12px;
   font-weight: 600;
@@ -584,7 +445,7 @@ kbd {
   pointer-events: none;
 }
 
-.side-label:hover .label-add,
+:where(:root:not([data-touch])) .side-label:hover .label-add,
 .side-label:focus-within .label-add {
   opacity: 1;
   pointer-events: auto;
@@ -596,7 +457,7 @@ kbd {
   pointer-events: auto;
 }
 
-.label-add:hover {
+:where(:root:not([data-touch])) .label-add:hover {
   color: var(--text);
   background: var(--raised);
 }
@@ -614,7 +475,7 @@ kbd {
   color: var(--muted);
 }
 
-.side-session:hover {
+:where(:root:not([data-touch])) .side-session:hover {
   background: var(--raised);
   color: var(--text);
 }
@@ -679,7 +540,7 @@ kbd {
 }
 
 .dot.waiting {
-  background: var(--accent);
+  background: var(--brand);
   animation: ring 1.8s ease-out infinite;
 }
 
@@ -765,7 +626,7 @@ button.pill {
   padding: 3px 10px;
 }
 
-a.pill:hover {
+:where(:root:not([data-touch])) a.pill:hover {
   color: var(--text);
   border-color: var(--faint);
 }
@@ -1018,7 +879,7 @@ a.pill:hover {
   text-align: left;
 }
 
-.row:hover {
+:where(:root:not([data-touch])) .row:hover {
   background: var(--raised);
 }
 
@@ -1183,12 +1044,12 @@ a.pill:hover {
   transition: opacity var(--dur-1);
 }
 
-.empty-recent-row:hover,
+:where(:root:not([data-touch])) .empty-recent-row:hover,
 .empty-recent-row:focus-visible {
   background: var(--accent-bg);
 }
 
-.empty-recent-row:hover .resume-word,
+:where(:root:not([data-touch])) .empty-recent-row:hover .resume-word,
 .empty-recent-row:focus-visible .resume-word,
 .narrow .empty-recent-row .resume-word {
   opacity: 1;
@@ -1465,14 +1326,14 @@ a.pill:hover {
 
 /* The terminal itself stays dark in both UI themes, so its gutter does too. */
 :root[data-theme='light'] .term-wrap {
-  background: var(--term-bg, #0e1014);
+  background: var(--term-bg, var(--sunken));
 }
 
 /* A phone has no width to spare: the terminal runs edge to edge, in its own color. */
 .narrow .term-wrap {
   margin: 0;
   padding: 4px 2px 0 6px;
-  background: var(--term-bg, #0e1014);
+  background: var(--term-bg, var(--sunken));
   border-top: 1px solid var(--line);
 }
 
@@ -1613,7 +1474,7 @@ a.pill:hover {
   cursor: default;
 }
 
-.send-btn:not(.stop):hover:not(:disabled) {
+:where(:root:not([data-touch])) .send-btn:not(.stop):hover:not(:disabled) {
   background: var(--accent-hover, var(--accent));
 }
 
@@ -1630,7 +1491,7 @@ a.pill:hover {
   font-size: 17px;
 }
 
-.icon-btn:hover {
+:where(:root:not([data-touch])) .icon-btn:hover {
   background: var(--line);
   color: var(--text);
 }
@@ -1818,7 +1679,7 @@ a.pill:hover {
   white-space: nowrap;
 }
 
-.btn:hover {
+:where(:root:not([data-touch])) .btn:hover {
   border-color: var(--faint);
 }
 
@@ -1828,7 +1689,7 @@ a.pill:hover {
   color: var(--accent-ink);
 }
 
-.btn.primary:hover {
+:where(:root:not([data-touch])) .btn.primary:hover {
   filter: brightness(1.06);
 }
 
@@ -1847,7 +1708,7 @@ a.pill:hover {
   color: var(--muted);
 }
 
-.btn.ghost:hover {
+:where(:root:not([data-touch])) .btn.ghost:hover {
   color: var(--text);
   background: var(--raised);
 }
@@ -1857,7 +1718,7 @@ a.pill:hover {
   background: var(--raised);
 }
 
-.btn.danger:hover {
+:where(:root:not([data-touch])) .btn.danger:hover {
   color: var(--danger);
 }
 
@@ -1963,7 +1824,7 @@ a.btn {
   font-size: 14px;
 }
 
-.menu button:hover,
+:where(:root:not([data-touch])) .menu button:hover,
 .menu button:focus-visible {
   background: var(--line);
 }
@@ -2108,8 +1969,14 @@ a.btn {
   border-radius: 10px;
   border: 1px solid var(--line-2);
   background: var(--sunken);
-  font-family: var(--mono);
+  font-family: var(--ui);
   font-size: 16px; /* prevents iOS zoom-on-focus */
+}
+/* Paths, commands, arguments, model ids, variable names and keys read as code;
+   names and messages read as words. */
+.field input.mono,
+.field textarea.mono {
+  font-family: var(--mono);
 }
 
 @media (pointer: fine) {
@@ -2167,8 +2034,14 @@ a.btn {
   border-radius: 999px;
   border: 1px solid var(--line);
   background: none;
-  font: 12px var(--mono);
+  font: 13px var(--ui);
   color: var(--muted);
+}
+
+/* A folder name is code. */
+.sugg.project,
+.sugg.add {
+  font: 12px var(--mono);
 }
 
 /* A project's folder name stays on one line, its full path on hover. */
@@ -2180,7 +2053,7 @@ a.btn {
 }
 
 .sugg.on,
-.sugg:hover {
+:where(:root:not([data-touch])) .sugg:hover {
   color: var(--text);
   border-color: var(--faint);
 }
@@ -2356,9 +2229,8 @@ a.btn {
 }
 
 .switch-item .sub {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
-  font-family: var(--mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2410,7 +2282,7 @@ a.btn {
   cursor: pointer;
 }
 
-.switch-all:hover {
+:where(:root:not([data-touch])) .switch-all:hover {
   color: inherit;
 }
 
@@ -2496,30 +2368,24 @@ a.btn {
 
 /* Full-page search (issue #9) */
 .search-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  margin-bottom: 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 16px;
 }
 
-.search-controls > input {
-  flex: 1 1 260px;
-  padding: 10px 12px;
-  font-size: 15px;
+.search-controls .field {
+  margin: 0;
 }
 
-.search-controls select,
-.search-controls input[type='date'] {
-  padding: 9px 8px;
-}
-
-.search-date {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--muted);
+@media (max-width: 760px) {
+  .search-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .search-controls .search-q {
+    grid-column: 1 / -1;
+  }
 }
 
 .search-results {
@@ -2629,7 +2495,7 @@ a.btn {
 .toast {
   position: fixed;
   left: 50%;
-  top: calc(14px + env(safe-area-inset-top, 0px));
+  top: calc(14px + var(--safe-top));
   transform: translateX(-50%);
   max-width: calc(100vw - 32px);
   padding: 10px 16px;
@@ -2758,7 +2624,7 @@ a.btn {
   cursor: default;
 }
 
-.dl:not(.hunk):hover {
+:where(:root:not([data-touch])) .dl:not(.hunk):hover {
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
@@ -2829,7 +2695,7 @@ a.btn {
   mask-image: linear-gradient(to right, transparent, #000 24px);
 }
 
-.crumbs button:hover {
+:where(:root:not([data-touch])) .crumbs button:hover {
   color: var(--text);
 }
 
@@ -2852,7 +2718,7 @@ a.btn {
   border-radius: 8px;
 }
 
-.fs-row:hover {
+:where(:root:not([data-touch])) .fs-row:hover {
   background: var(--raised);
 }
 
@@ -2986,12 +2852,18 @@ a.btn {
 }
 
 .stale-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   flex: none;
   padding: 8px 14px;
   background: var(--accent-bg);
   border-bottom: 1px solid var(--accent-line);
   color: var(--accent);
   font-size: 13px;
+}
+.stale-banner .grow {
+  flex: 1;
 }
 
 /* ---------- lock & security */
@@ -3061,7 +2933,7 @@ a.btn {
   font-size: 14px;
 }
 
-.lock-alt .linkish:hover {
+:where(:root:not([data-touch])) .lock-alt .linkish:hover {
   color: var(--text);
 }
 
@@ -3272,7 +3144,7 @@ a.btn {
   gap: 4px 6px;
 }
 
-.keymap-bind:hover kbd,
+:where(:root:not([data-touch])) .keymap-bind:hover kbd,
 .keymap-bind:focus-visible kbd {
   border-color: var(--faint);
 }
@@ -3304,7 +3176,7 @@ a.btn {
    actions, they show on the row under the pointer or holding focus. They stay
    in the tab order (opacity, not display), and always show on touch. */
 @media (hover: hover) {
-  .keymap-table tbody tr:not(:hover):not(:focus-within) .keymap-actions .btn {
+  :where(:root:not([data-touch])) .keymap-table tbody tr:not(:hover):not(:focus-within) .keymap-actions .btn {
     opacity: 0;
   }
 }
@@ -3709,7 +3581,7 @@ a.btn {
   cursor: pointer;
 }
 
-.past-row:hover {
+:where(:root:not([data-touch])) .past-row:hover {
   border-color: var(--line-2);
 }
 
@@ -3758,7 +3630,7 @@ a.btn {
   opacity: 0.8;
 }
 
-.sidechat-msg .msg-actions .btn:hover,
+:where(:root:not([data-touch])) .sidechat-msg .msg-actions .btn:hover,
 .sidechat-msg .msg-actions .btn:focus-visible {
   opacity: 1;
 }
@@ -3771,7 +3643,7 @@ a.btn {
   left: 0;
 }
 
-.sidechat-msg:hover .msg-actions,
+:where(:root:not([data-touch])) .sidechat-msg:hover .msg-actions,
 .sidechat-msg:focus-within .msg-actions {
   opacity: 1;
   visibility: visible;
@@ -3846,7 +3718,7 @@ a.btn {
   text-decoration: none;
 }
 
-.sidechat-bubble .md a:hover {
+:where(:root:not([data-touch])) .sidechat-bubble .md a:hover {
   text-decoration: underline;
 }
 
@@ -4034,6 +3906,49 @@ a.btn {
   font-size: 13px;
 }
 
+/* A setting chip's name, quieter than its value (the design system's Chip). */
+.chip-key {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+/* A toggle drawn as an icon says when it is on. */
+.icon-btn[aria-pressed='true'] {
+  color: var(--accent);
+  background: var(--accent-bg);
+}
+
+/* Files: a row's actions show where a pointer is (hover or keyboard focus); on touch, always. */
+@media (hover: hover) {
+  .fs-row > .btn {
+    visibility: hidden;
+  }
+  :where(:root:not([data-touch])) .fs-row:hover > .btn,
+  .fs-row:focus-within > .btn {
+    visibility: visible;
+  }
+}
+
+/* A fact to know before confirming (the design system's Notice, info tone): not an error. */
+.note {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.note > svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--muted);
+}
+
 /* ---------- reorderable sidebar (F43/F44) */
 
 .side-row {
@@ -4073,10 +3988,10 @@ a.btn {
   opacity: 0;
 }
 
-.side-row:hover .grip,
+:where(:root:not([data-touch])) .side-row:hover .grip,
 .side-row:focus-within .grip,
 .side-row.dragging .grip,
-.side-label:hover .grip,
+:where(:root:not([data-touch])) .side-label:hover .grip,
 .side-label:focus-within .grip,
 .side-block.dragging > .side-label .grip {
   opacity: 1;
@@ -4097,18 +4012,18 @@ a.btn {
   color: var(--faint);
 }
 
-.row-kill:hover {
+:where(:root:not([data-touch])) .row-kill:hover {
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 13%, transparent);
 }
 
-.row-more:hover {
+:where(:root:not([data-touch])) .row-more:hover {
   color: var(--text);
   background: var(--raised);
 }
 
-.side-row:hover .row-kill,
-.side-row:hover .row-more,
+:where(:root:not([data-touch])) .side-row:hover .row-kill,
+:where(:root:not([data-touch])) .side-row:hover .row-more,
 .side-row:focus-within .row-kill,
 .side-row:focus-within .row-more {
   display: inline-flex;
@@ -4116,7 +4031,7 @@ a.btn {
 
 /* The actions take the model's place, like History's times, so the title
    keeps its width under the pointer. */
-.side-row:hover .side-model,
+:where(:root:not([data-touch])) .side-row:hover .side-model,
 .side-row:focus-within .side-model {
   display: none;
 }
@@ -4250,7 +4165,7 @@ a.btn {
   cursor: row-resize;
 }
 
-.divider:hover {
+:where(:root:not([data-touch])) .divider:hover {
   background: var(--accent-line);
 }
 
@@ -4348,6 +4263,45 @@ a.btn {
 }
 
 /* ---------- collapsible sidebar */
+
+/* An iPad in portrait, a Stage Manager window, a narrow desktop window (App's `tight`): the
+   sidebar slides over the page from the left, over a dimmed page, as iPadOS apps' sidebars do.
+   The rail keeps its button where the sidebar's own toggle is. */
+.side-over {
+  position: fixed;
+  z-index: 40;
+  top: var(--safe-top);
+  bottom: 0;
+  left: env(safe-area-inset-left);
+  display: flex;
+  animation: side-in var(--dur-2) var(--ease);
+}
+
+.side-over .sidebar {
+  box-shadow: var(--glass-depth), var(--elev-2);
+}
+
+.side-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 39;
+  background: var(--scrim);
+  animation: fade-in var(--dur-2) var(--ease);
+}
+
+@keyframes side-in {
+  from {
+    transform: translateX(-32px);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .side-over,
+  .side-scrim {
+    animation: none;
+  }
+}
 
 .rail {
   flex: none;
@@ -4548,7 +4502,7 @@ ul.queue-items {
   color: var(--muted);
 }
 
-.queue-row:hover {
+:where(:root:not([data-touch])) .queue-row:hover {
   background: var(--raised);
 }
 
@@ -4572,7 +4526,7 @@ ul.queue-items {
   touch-action: none;
 }
 
-.queue-grip:hover,
+:where(:root:not([data-touch])) .queue-grip:hover,
 .queue-grip:focus-visible {
   color: var(--text);
   background: var(--line);
@@ -4626,7 +4580,7 @@ ul.queue-items {
   cursor: pointer;
 }
 
-.queue-steer:hover {
+:where(:root:not([data-touch])) .queue-steer:hover {
   color: var(--text);
   background: var(--line);
 }
@@ -4827,7 +4781,7 @@ ul.queue-items {
   text-overflow: ellipsis;
 }
 
-button.tool-chip:hover {
+:where(:root:not([data-touch])) button.tool-chip:hover {
   color: var(--text);
   border-color: var(--faint);
 }
@@ -4915,7 +4869,7 @@ button.tool-chip:hover {
   padding-right: 10px;
 }
 
-.picker-row:hover,
+:where(:root:not([data-touch])) .picker-row:hover,
 .picker-row.on {
   background: var(--line);
 }
@@ -4957,7 +4911,7 @@ button.tool-chip:hover {
   background: var(--text);
 }
 
-.pip:hover {
+:where(:root:not([data-touch])) .pip:hover {
   background: var(--muted);
 }
 
@@ -5246,7 +5200,7 @@ button.tool-chip:hover {
   color: var(--muted);
 }
 
-.agent-pill:hover {
+:where(:root:not([data-touch])) .agent-pill:hover {
   color: var(--text);
   border-color: var(--line-2);
 }
@@ -5370,7 +5324,7 @@ button.tool-chip:hover {
   color: var(--muted);
 }
 
-.disclosure:hover {
+:where(:root:not([data-touch])) .disclosure:hover {
   color: var(--text);
 }
 
@@ -5390,7 +5344,7 @@ button.tool-chip:hover {
   color: var(--danger-ink);
 }
 
-.btn.danger-solid:hover {
+:where(:root:not([data-touch])) .btn.danger-solid:hover {
   filter: brightness(1.06);
 }
 
@@ -5472,27 +5426,30 @@ button.tool-chip:hover {
   gap: 6px;
 }
 
+/* Every "choose one" in ah (the design system's OptionList): a permission picker,
+   an agent's question, a widget's choices. 44px rows, a number, the label, a description. */
 .ask-row,
 .ask-option {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
-  min-height: 40px;
-  padding: 8px 12px;
+  min-height: 44px;
+  padding: 9px 12px;
   text-align: left;
   font: inherit;
+  font-weight: 500;
   color: var(--text);
   background: var(--raised);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
   cursor: pointer;
   transition: border-color var(--dur-1), background var(--dur-1);
 }
 
-.ask-row:hover,
-.ask-option:hover {
-  border-color: var(--line-2);
+:where(:root:not([data-touch])) .ask-row:hover,
+:where(:root:not([data-touch])) .ask-option:hover {
+  border-color: var(--accent-line);
 }
 
 .ask-row:focus-visible,
@@ -5530,12 +5487,61 @@ button.tool-chip:hover {
 
 .ask-label {
   overflow-wrap: anywhere;
+  font-weight: 500;
 }
 
 .ask-desc {
   color: var(--muted);
   font-size: 13px;
+  font-weight: 400;
   line-height: 1.4;
+}
+
+/* What a waiting agent asks (AskSummary), the same in the Inbox, the GUI and under
+   the terminal: what it wants, the command as code (with the agent's own
+   description) or its question, and the screen text only on request. */
+.ask-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.ask-command {
+  margin: 2px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  font: 13px/1.55 var(--mono);
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 160px;
+  overflow: auto;
+}
+.ask-command .prompt {
+  color: var(--faint);
+  user-select: none;
+}
+.ask-asked {
+  margin: 2px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text);
+  text-wrap: pretty;
+}
+.ask-raw summary {
+  width: fit-content;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--muted);
+}
+:where(:root:not([data-touch])) .ask-raw summary:hover {
+  color: var(--text);
+}
+.ask-raw[open] summary {
+  margin-bottom: 6px;
 }
 
 .ask-mark {
@@ -5711,7 +5717,7 @@ button.tool-chip:hover {
 }
 
 @media (hover: none) {
-  .suggest li.suggest-hint {
+  :root:not([data-hw-keyboard]) .suggest li.suggest-hint {
     display: none;
   }
 }
@@ -5786,7 +5792,7 @@ button.tool-chip:hover {
   cursor: pointer;
 }
 
-.palette-crumbs button:hover {
+:where(:root:not([data-touch])) .palette-crumbs button:hover {
   background: var(--line);
   color: var(--text);
 }
@@ -5797,7 +5803,7 @@ button.tool-chip:hover {
   cursor: default;
 }
 
-.palette-crumbs button.on:hover {
+:where(:root:not([data-touch])) .palette-crumbs button.on:hover {
   background: none;
 }
 
@@ -5881,12 +5887,13 @@ button.tool-chip:hover {
 }
 
 /* Without a keyboard in reach, key hints are noise: menus, the palette and the
-   switcher keep their labels and drop the caps. */
+   switcher keep their labels and drop the caps. A touch screen with a hardware
+   keyboard (an iPad on a Magic Keyboard, web/hardwareKeyboard.ts) keeps them. */
 @media (hover: none) {
-  .palette-keys,
-  .switch-foot,
-  .menu .keycaps,
-  .palette-tree .cmd-row .keycaps {
+  :root:not([data-hw-keyboard]) .palette-keys,
+  :root:not([data-hw-keyboard]) .switch-foot,
+  :root:not([data-hw-keyboard]) .menu .keycaps,
+  :root:not([data-hw-keyboard]) .palette-tree .cmd-row .keycaps {
     display: none;
   }
 }
@@ -6097,7 +6104,7 @@ button.tool-chip:hover {
 /* Keyboard-focused dividers light up like a hovered one. */
 .divider:focus-visible {
   outline: none;
-  background: var(--accent);
+  background: var(--brand);
 }
 
 /* Resize mode, like a Hyprland submap: says which keys mean what until you leave it. */
@@ -6186,12 +6193,12 @@ button.tool-chip:hover {
   background: transparent;
 }
 
-.ws-root.tiled > .divider:hover {
+:where(:root:not([data-touch])) .ws-root.tiled > .divider:hover {
   background: var(--accent-line);
 }
 
 .ws-root.tiled > .divider:focus-visible {
-  background: var(--accent);
+  background: var(--brand);
 }
 
 .ws-root.tiled > .divider.v {
@@ -6234,15 +6241,15 @@ button.tool-chip:hover {
   font: 600 12px var(--mono);
 }
 
-.ws-dots button:hover {
+:where(:root:not([data-touch])) .ws-dots button:hover {
   color: var(--text);
   border-color: var(--line-2);
 }
 
 .ws-dots button.on {
   color: var(--accent-ink);
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
 }
 
 /* Scratchpad shell (Ctrl+Shift+`): floats over everything, like Hyprland's special workspace. */
@@ -6381,7 +6388,16 @@ button.tool-chip:hover {
 }
 
 .pane-picker-text .hint {
+  font-size: 13px;
+}
+
+/* A session's line in any list (sessionLine.tsx): words in the UI face, a command as code. */
+.row .sub .mono,
+.switch-item .sub .mono,
+.pane-picker-text .hint .mono {
+  font-family: var(--mono);
   font-size: 12px;
+  color: var(--text-2);
 }
 
 .pane-picker-empty {
@@ -6428,7 +6444,7 @@ button.tool-chip:hover {
 }
 
 @media (hover: none) {
-  .btn .confirm-keys {
+  :root:not([data-hw-keyboard]) .btn .confirm-keys {
     display: none;
   }
 }
@@ -6665,7 +6681,7 @@ button.tool-chip:hover {
   white-space: nowrap;
 }
 
-.handoff:hover {
+:where(:root:not([data-touch])) .handoff:hover {
   border-color: var(--faint);
 }
 
@@ -6729,13 +6745,13 @@ button.tool-chip:hover {
     transition: opacity var(--dur-1);
   }
 
-  .history-row:hover .row-actions,
+  :where(:root:not([data-touch])) .history-row:hover .row-actions,
   .history-row:focus-within .row-actions {
     opacity: 1;
     pointer-events: auto;
   }
 
-  .history-row:hover .when,
+  :where(:root:not([data-touch])) .history-row:hover .when,
   .history-row:focus-within .when {
     opacity: 0;
   }
@@ -7267,7 +7283,7 @@ button.tool-chip:active,
   cursor: default;
 }
 
-.icon-btn:disabled:hover {
+:where(:root:not([data-touch])) .icon-btn:disabled:hover {
   background: none;
   color: var(--muted);
 }
@@ -7307,6 +7323,47 @@ select:not([multiple]) {
   font-size: 13px;
   letter-spacing: 0;
   text-transform: none;
+}
+
+/* The design system's PanelTabs: an icon per panel, the open one with its name. */
+.seg-tabs .tab-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 1 1 auto;
+}
+.seg-tabs .tab-icon .tab-label {
+  display: none;
+}
+.seg-tabs .tab-icon.on .tab-label {
+  display: inline;
+}
+.seg-tabs .tab-icon .badge {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 11px;
+}
+.side-panel .tab-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 32px;
+  min-height: 32px;
+  justify-content: center;
+}
+.side-panel .tab-icon .tab-label {
+  display: none;
+}
+.side-panel .tab-icon[aria-selected='true'] .tab-label {
+  display: inline;
+}
+.side-panel .tab-icon .badge {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 11px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -7513,7 +7570,7 @@ select:not([multiple]) {
 /* The current workspace's fill slides to the number you went to. */
 .ws-glide {
   border-radius: 6px;
-  background: var(--accent);
+  background: var(--brand);
 }
 
 .glides.glides > .ws-glide ~ button.on {
@@ -7622,7 +7679,7 @@ select:not([multiple]) {
   flex-direction: column;
   gap: 8px;
   /* Clear of the status bar: iOS blurs whatever runs under it. */
-  max-height: calc(var(--vh) - 10px - var(--safe-pad) - max(24px, env(safe-area-inset-top, 0px) + 12px));
+  max-height: calc(var(--vh) - 10px - var(--safe-pad) - max(24px, var(--safe-top) + 12px));
   animation: sheet-up 320ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
@@ -7787,7 +7844,7 @@ select:not([multiple]) {
    back like the pop transition's start, until the finger brings it forward. */
 .under {
   position: absolute;
-  top: env(safe-area-inset-top);
+  top: var(--safe-top);
   right: env(safe-area-inset-right);
   bottom: 0;
   left: env(safe-area-inset-left);
@@ -7803,9 +7860,9 @@ select:not([multiple]) {
 /* ---------- touch without a keyboard: no key hints; controls a finger can hit */
 
 @media (hover: none) {
-  .sidebar .keycaps,
-  .confirm-keys,
-  .empty-state .keycaps {
+  :root:not([data-hw-keyboard]) .sidebar .keycaps,
+  :root:not([data-hw-keyboard]) .confirm-keys,
+  :root:not([data-hw-keyboard]) .empty-state .keycaps {
     display: none;
   }
 }
@@ -7871,7 +7928,7 @@ select:not([multiple]) {
     align-items: center;
     gap: 8px;
     min-height: 52px;
-    padding: var(--sheet-safe, env(safe-area-inset-top)) 12px 0;
+    padding: var(--sheet-safe, var(--safe-top)) 12px 0;
     background: var(--glass);
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
@@ -7880,7 +7937,7 @@ select:not([multiple]) {
 
   .sheet-bar .grabber {
     position: absolute;
-    top: calc(var(--sheet-safe, env(safe-area-inset-top)) + 6px);
+    top: calc(var(--sheet-safe, var(--safe-top)) + 6px);
     left: 50%;
     width: 36px;
     height: 5px;
@@ -8224,7 +8281,7 @@ select:not([multiple]) {
   font: inherit;
 }
 
-.sub-choose[role='radio']:not(.on):hover {
+:where(:root:not([data-touch])) .sub-choose[role='radio']:not(.on):hover {
   background: var(--line);
 }
 
@@ -8250,4 +8307,363 @@ select:not([multiple]) {
   font-weight: 600;
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+/* A list row's held-finger menu, as iOS's context menus (PressMenu.tsx): the row lifts
+   out over the blurred page, its actions in a glass list under it. */
+.press-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  background: color-mix(in srgb, var(--scrim) 70%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  backdrop-filter: blur(18px) saturate(1.2);
+  animation: fade-in var(--dur-2) var(--ease);
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+.press-lift {
+  position: fixed;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--raised);
+  box-shadow: var(--elev-2);
+  animation: press-lift 340ms cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+.press-lift > * {
+  border-bottom: 0;
+}
+
+.press-list {
+  position: fixed;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-depth), var(--elev-2);
+  animation: press-list 300ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+.press-list button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+  text-align: left;
+}
+
+.press-list .grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.press-list button + button {
+  border-top: 1px solid var(--line);
+}
+
+.press-list button:active {
+  background: var(--glass-press, var(--line));
+}
+
+.press-list button.danger {
+  color: var(--danger);
+}
+
+.press-menu.closing {
+  animation: press-fade 160ms var(--ease) forwards;
+}
+
+@keyframes press-fade {
+  to {
+    opacity: 0;
+  }
+}
+
+.press-menu.closing .press-lift {
+  animation: press-drop 160ms var(--ease) forwards;
+}
+
+@keyframes press-lift {
+  from {
+    transform: translateY(var(--from, 0px)) scale(1);
+  }
+  to {
+    transform: translateY(0) scale(1.03);
+  }
+}
+
+@keyframes press-drop {
+  from {
+    transform: translateY(0) scale(1.03);
+  }
+  to {
+    transform: translateY(var(--from, 0px)) scale(1);
+  }
+}
+
+@keyframes press-list {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .press-menu,
+  .press-lift,
+  .press-list,
+  .press-menu.closing,
+  .press-menu.closing .press-lift {
+    animation: none;
+  }
+}
+
+/* A row's swipe actions, as Mail's (Swipe.tsx): behind the row at its trailing edge,
+   uncovered as the finger moves the row left. */
+.swipe {
+  position: relative;
+  overflow: hidden;
+  touch-action: pan-y;
+}
+
+.swipe-front {
+  position: relative;
+  z-index: 1;
+}
+
+/* The row is see-through at rest; moved, it needs the list's ground over the actions. */
+.swipe.open .swipe-front {
+  background: var(--surface);
+}
+
+.swipe-actions {
+  position: absolute;
+  inset: 0 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+  visibility: hidden;
+}
+
+.swipe.open .swipe-actions {
+  visibility: visible;
+}
+
+.swipe-act {
+  flex: none;
+  width: 76px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--raised);
+  transition: width 200ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* The page's ground as the ink: dark on the bright dark-theme colors, white on the deep light-theme ones. */
+.swipe-act.accent {
+  background: var(--limited);
+  color: var(--bg);
+}
+
+.swipe-act.danger {
+  background: var(--danger);
+  color: var(--bg);
+}
+
+/* A full swipe: the outermost action takes the whole row before it runs. */
+.swipe.full .swipe-act.outer {
+  width: 100%;
+}
+
+.swipe.full .swipe-act:not(.outer) {
+  width: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+/* A phone's Settings, as iOS's (Settings.tsx): grouped inset lists of tiled rows that
+   go into a section; a section is a page of its own under the sheet's bar. */
+.ios-group {
+  margin-top: 22px;
+}
+
+.ios-group-name {
+  margin: 0 0 6px 16px;
+  font-size: 13px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+.ios-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-radius: 12px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.ios-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 17px;
+  text-align: left;
+}
+
+.ios-row:active {
+  background: var(--line);
+}
+
+/* iOS's separators start where the words do, not under the tiles. */
+.ios-list li + li .ios-row {
+  position: relative;
+}
+
+.ios-list li + li .ios-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 58px;
+  border-top: 1px solid var(--line);
+}
+
+.ios-tile {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  color: #fff;
+}
+
+.ios-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.ios-value {
+  color: var(--muted);
+}
+
+.ios-chevron {
+  color: var(--faint);
+}
+
+.ios-chevron svg {
+  transform: scaleX(-1);
+}
+
+/* A section on a phone: its bar names it, as an iOS Settings page's inline title, so no
+   large title or tabs over the cards. */
+.settings-page .settings-body {
+  margin-top: 4px;
+}
+
+.dialog.sheet-view:has(.settings-page) .sheet-title {
+  opacity: 1;
+  animation: none;
+}
+
+/* On/off settings are switches, the words first and the switch at the row's end, as in
+   iOS and macOS Settings (switch.ts). Safari draws its own; elsewhere this one. */
+label:has(> input[type='checkbox'][switch]) {
+  align-self: stretch;
+  display: flex;
+  flex-direction: row-reverse;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+:root:not([data-native-switch]) input[type='checkbox'][switch] {
+  -webkit-appearance: none;
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 24px;
+  margin: 0;
+  border-radius: 999px;
+  background: var(--line-2);
+  cursor: pointer;
+  transition: background var(--dur-1, 120ms) var(--ease);
+}
+
+:root:not([data-native-switch]) input[type='checkbox'][switch]::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 220ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+:root:not([data-native-switch]) input[type='checkbox'][switch]:checked {
+  background: var(--accent);
+}
+
+:root:not([data-native-switch]) input[type='checkbox'][switch]:checked::before {
+  transform: translateX(16px);
+}
+
+:root:not([data-native-switch]) input[type='checkbox'][switch]:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+:root:not([data-native-switch]) input[type='checkbox'][switch]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* A finger's switch is iOS's size. */
+@media (pointer: coarse) {
+  :root:not([data-native-switch]) input[type='checkbox'][switch] {
+    width: 51px;
+    height: 31px;
+  }
+
+  :root:not([data-native-switch]) input[type='checkbox'][switch]::before {
+    width: 27px;
+    height: 27px;
+  }
+
+  :root:not([data-native-switch]) input[type='checkbox'][switch]:checked::before {
+    transform: translateX(20px);
+  }
 }

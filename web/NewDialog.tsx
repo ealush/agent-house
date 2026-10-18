@@ -62,6 +62,12 @@ export function lastCwd(host: string): string {
   }
 }
 
+/** The project of the most recently active session, if any has one. */
+export function newestProject(windows: Array<{ activity: number; projectPath?: string | null }>): string | null {
+  const w = [...windows].filter((x) => x.projectPath).sort((a, b) => b.activity - a.activity)[0];
+  return w?.projectPath ?? null;
+}
+
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** How many agents get a button of their own; the rest wait in the menu beside them. */
@@ -94,20 +100,24 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
   const client = clientFor(host);
   // What's installed here, less what Settings → Agents keeps out of the way.
   const presets = state.presets.filter((p) => p.available && !p.hidden);
-  const [presetId, setPresetId] = useState(() => initialPreset ?? localStorage.getItem('ah.lastPreset') ?? presets[0]?.id ?? 'shell');
-  const preset = presets.find((p) => p.id === presetId) ?? presets[0];
   // Shell or agent first; then which agent: the most used have buttons, the rest a menu.
   const shellPreset = presets.find((p) => !p.command);
   const agents = presets.filter((p) => p.command);
   const [use] = useState(launches);
   const front = frontAgents(agents, state.windows.map((w) => w.agent), use, FRONT);
+  // What you used last; on a device that has never started anything, an agent (the most used
+  // here, or one running on the host), since agents are what ah is for. Shell is one tap away.
+  const [presetId, setPresetId] = useState(() => initialPreset ?? localStorage.getItem('ah.lastPreset') ?? front[0]?.id ?? presets[0]?.id ?? 'shell');
+  const preset = presets.find((p) => p.id === presetId) ?? presets[0];
   const rest = agents.filter((a) => !front.includes(a));
   const [lastAgent, setLastAgent] = useState(() => (preset?.command ? preset.id : (localStorage.getItem('ah.lastAgent') ?? front[0]?.id)));
   const pickAgent = (id: string) => {
     setPresetId(id);
     setLastAgent(id);
   };
-  const [cwd, setCwd] = useState(newProject ? '' : initialCwd);
+  // Nothing to go on (no focused session, nothing started from this device): the project of
+  // the session that was active last, rather than the home folder.
+  const [cwd, setCwd] = useState(() => (newProject ? '' : initialCwd === '~' ? (newestProject(state.windows) ?? '~') : initialCwd));
   const [label, setLabel] = useState('');
   const [session, setSession] = useState(state.sessions.includes(state.defaultSession) ? state.defaultSession : (state.sessions[0] ?? NEW_SESSION));
   const [newSession, setNewSession] = useState(state.sessions.length ? '' : state.defaultSession);
@@ -395,7 +405,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
 
         <label className="field">
           <span>Project</span>
-          <input ref={cwdInput} value={cwd} onChange={(e) => setCwd(e.target.value)} list="ah-projects" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="~/code/project" />
+          <input className="mono" ref={cwdInput} value={cwd} onChange={(e) => setCwd(e.target.value)} list="ah-projects" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="~/code/project" />
           <datalist id="ah-projects">
             {projects.map((p) => (
               <option key={p} value={p} />
@@ -424,7 +434,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
               Creates <b>{newName}</b> in {newParent}
             </span>
             <label className="check">
-              <input type="checkbox" checked={gitInit} onChange={(e) => setGitInit(e.target.checked)} />
+              <input type="checkbox" switch="" checked={gitInit} onChange={(e) => setGitInit(e.target.checked)} />
               <span>git init</span>
             </label>
           </div>
@@ -556,7 +566,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
             )}
             {!isNew && (
               <label className="check">
-                <input type="checkbox" checked={worktree} onChange={(e) => setWorktree(e.target.checked)} />
+                <input type="checkbox" switch="" checked={worktree} onChange={(e) => setWorktree(e.target.checked)} />
                 <span>
                   Isolated git worktree <span className="hint">— its own branch and checkout</span>
                 </span>
@@ -564,7 +574,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
             )}
             {preset?.resume && (
               <label className="check">
-                <input type="checkbox" checked={resume} onChange={(e) => setResume(e.target.checked)} />
+                <input type="checkbox" switch="" checked={resume} onChange={(e) => setResume(e.target.checked)} />
                 <span>
                   Continue the last conversation in this folder <span className="hint">— {preset.resume}</span>
                 </span>
@@ -573,7 +583,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
             {!isShell && (
               <label className="field">
                 <span>Additional arguments</span>
-                <input value={extraArgs} onChange={(e) => setExtraArgs(e.target.value)} placeholder="--flag value" autoCapitalize="off" autoCorrect="off" spellCheck={false} maxLength={2048} />
+                <input className="mono" value={extraArgs} onChange={(e) => setExtraArgs(e.target.value)} placeholder="--flag value" autoCapitalize="off" autoCorrect="off" spellCheck={false} maxLength={2048} />
               </label>
             )}
           </div>

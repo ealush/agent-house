@@ -73,10 +73,13 @@ export class Push {
       const event = w.status === 'waiting' ? 'waiting' : w.status === 'attention' && prev === 'busy' ? 'done' : null;
       if (!event || now - (this.lastSent.get(w.uid) ?? 0) < COOLDOWN_S) continue;
       this.lastSent.set(w.uid, now);
+      // The session's title, as every screen names it ("Fix Safari login flash"), not its tmux window ("claude").
+      const title = w.title || w.name;
       this.send(event, {
         // A turn that ended on the plan's usage limit didn't finish: say so, and when it resets.
-        title: event === 'waiting' ? `${w.name} needs you` : w.limit ? `${w.name} hit its usage limit` : `${w.name} finished`,
-        body: `${w.project} · ${w.limit ?? (w.agent ? name(w.agent) : 'Shell')}`,
+        title: event === 'waiting' ? `${title} needs you` : w.limit ? `${title} hit its usage limit` : `${title} finished`,
+        // Needing you: what for ("Wants to run pnpm test"), so the lock screen is enough to decide.
+        body: `${w.project} · ${(event === 'waiting' && askLine(w.ask)) || w.limit || (w.agent ? name(w.agent) : 'Shell')}`,
         tag: w.uid,
         url: `/#${w.uid}`,
         badge: waiting,
@@ -110,4 +113,20 @@ export class Push {
       .then(() => writeFile(file, JSON.stringify(data, null, 2), { mode: 0o600 }))
       .catch((err) => console.error(`writing ${file} failed:`, err));
   }
+}
+
+/** One line for what a waiting session asks: the command, the question, or the tool. */
+export function askLine(ask: WindowView['ask']): string {
+  if (!ask) return '';
+  const first = (t: string) => t.split('\n').map((l) => l.trim()).find(Boolean) ?? '';
+  const short = (t: string) => (t.length > 120 ? t.slice(0, 119) + '…' : t);
+  if (ask.kind === 'command') {
+    // Screen-read asks carry the whole prompt; the command is its first line after the "Bash command" header.
+    const lines = ask.text.split('\n').map((l) => l.trim()).filter(Boolean);
+    const cmd = lines[0] === 'Bash command' ? lines[1] : lines[0];
+    return cmd ? short(`Wants to run ${cmd}`) : 'Wants to run a command';
+  }
+  if (ask.kind === 'choice' || ask.kind === 'question') return short(`Asks: ${first(ask.text)}`);
+  if (ask.kind === 'tool') return short(first(ask.text));
+  return 'Wants your answer';
 }

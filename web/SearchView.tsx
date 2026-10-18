@@ -74,35 +74,47 @@ export function SearchView({
       <header className="page-head">
         <div className="grow">
           <h1 className="page-title">Search<span className="period">.</span></h1>
-          <p className="tagline">Full text across agent transcripts and side chats, on every host. Results open at the matching turn.</p>
+          <p className="tagline">Every conversation and side chat, on every host. A result opens at its turn.</p>
         </div>
       </header>
 
+      {/* Every control is a labelled field, styled as every other field in ah. */}
       <div className="search-controls">
-        <input
-          autoFocus
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search transcripts and chats…"
-          aria-label="Search conversations"
-          autoCapitalize="off"
-          autoCorrect="off"
-        />
-        <select value={scope} onChange={(e) => setScope(e.target.value as typeof scope)} aria-label="Scope">
-          <option value="all">Transcripts and chats</option>
-          <option value="transcripts">Transcripts only</option>
-          <option value="chats">Chats only</option>
-        </select>
-        <select value={role} onChange={(e) => setRole(e.target.value as typeof role)} aria-label="Role">
-          <option value="">Any speaker</option>
-          <option value="user">You</option>
-          <option value="agent">Agent</option>
-        </select>
-        <label className="search-date">
-          From <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+        <label className="field search-q">
+          <span>Search</span>
+          <input
+            autoFocus
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Words from a conversation or a side chat"
+            aria-label="Search conversations"
+            autoCapitalize="off"
+            autoCorrect="off"
+          />
         </label>
-        <label className="search-date">
-          To <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+        <label className="field">
+          <span>In</span>
+          <select value={scope} onChange={(e) => setScope(e.target.value as typeof scope)} aria-label="Scope">
+            <option value="all">Conversations and chats</option>
+            <option value="transcripts">Conversations only</option>
+            <option value="chats">Side chats only</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>Who</span>
+          <select value={role} onChange={(e) => setRole(e.target.value as typeof role)} aria-label="Role">
+            <option value="">Anyone</option>
+            <option value="user">You</option>
+            <option value="agent">The agent</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>From</span>
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+        </label>
+        <label className="field">
+          <span>To</span>
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         </label>
       </div>
 

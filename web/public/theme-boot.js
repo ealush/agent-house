@@ -7,5 +7,5 @@ try {
   // Omarchy: the cached desktop background, so the first paint isn't ah's own.
   if (o && o.colors && o.colors.background) document.documentElement.style.background = o.colors.background;
   document.documentElement.dataset.theme = t;
-  if (t === 'light') document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff');
+  if (t === 'light') document.querySelector('meta[name="theme-color"]').setAttribute('content', '#eef0f4');
 } catch (e) {}

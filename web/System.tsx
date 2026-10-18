@@ -36,19 +36,12 @@ export function SystemPanel() {
 
   return (
     <div className="system-panels">
-      <div className="sec-card">
-        <h2>This device</h2>
-        <p className="hint">Load the app again on this device, for example after an update. Sessions keep running.</p>
-        <button className="btn" onClick={() => window.location.reload()}>
-          Reload page
-        </button>
-      </div>
       <HooksCard />
       <DesktopCard />
       <div className="sec-card">
         <h2>Server</h2>
         <p className="hint">
-          Restart the ah server on this host after updating it or changing its config. Rebuild and restart clears the old build, builds the UI again from this checkout, and then restarts. Sessions keep running, and this page reconnects by itself.
+          Restart the ah server on this host after updating it or changing its config. Rebuild and restart clears the old build, builds the UI again from this checkout, and then restarts. Reload page loads the app again on this device only. Sessions keep running, and this page reconnects by itself.
         </p>
         {phase === 'restart' && <p className="panel-msg">Restarting… this page reconnects when the server is back.</p>}
         {phase === 'rebuild' && <p className="panel-msg">Clearing the old build and rebuilding… the server restarts when the build finishes, and this page reconnects.</p>}
@@ -58,6 +51,9 @@ export function SystemPanel() {
           </button>
           <button className="btn" disabled={busy || phase !== null} onClick={() => void rebuild()}>
             Rebuild and restart
+          </button>
+          <button className="btn" onClick={() => window.location.reload()}>
+            Reload page
           </button>
         </div>
       </div>

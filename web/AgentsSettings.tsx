@@ -88,7 +88,7 @@ export function AgentsPanel() {
                 </span>
                 {a.installed && (
                   <label className="agent-shown">
-                    <input type="checkbox" checked={!a.hidden} disabled={busy === 'check' || busy === 'add'} onChange={(e) => void show(a.id, e.target.checked)} />
+                    <input type="checkbox" switch="" checked={!a.hidden} disabled={busy === 'check' || busy === 'add'} onChange={(e) => void show(a.id, e.target.checked)} />
                     <span>New session</span>
                   </label>
                 )}
@@ -149,7 +149,7 @@ export function AgentsPanel() {
           </label>
           <label className="field">
             <span>Command</span>
-            <input value={command} onChange={(e) => setCommand(e.target.value)} placeholder="aider --no-auto-commits" maxLength={200} autoCapitalize="off" autoCorrect="off" spellCheck={false} />
+            <input className="mono" value={command} onChange={(e) => setCommand(e.target.value)} placeholder="aider --no-auto-commits" maxLength={200} autoCapitalize="off" autoCorrect="off" spellCheck={false} />
           </label>
           <button className="btn primary" disabled={!!busy || !name.trim() || !command.trim()}>
             {busy === 'add' ? 'Adding…' : 'Add agent'}

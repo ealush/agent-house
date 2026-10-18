@@ -15,24 +15,24 @@ with a GUI adapter only) · side panel toggle · **···** session menu.
 ### VIEW-2 · Phone header — shipped
 
 Back (glass circle) · title over a subtitle that leads with the status pill
-(then project ⌥ branch · agent) · a glass capsule with the view icons and ···.
-Below it, the session's **tabs**: the view (GUI or Terminal), Diff, Files,
-Chat, Snapshots, Preview, scrolling sideways with edge fades.
-→ A-04: the view appears twice (capsule icons and the first tab).
+(then project ⌥ branch · agent) · a glass capsule with the view (GUI or
+terminal) and ···. Below it, the session's **tabs** pick what you look at:
+Session, Diff, Files, Chat, Queue, Snapshots, Preview (and Stack while the
+branch is in review), as icons with the open one named, so they all fit.
 
 ### VIEW-3 · Session menu — shipped
 
 ··· or ⌃⌥. Desktop: a popover; phone: an iOS action sheet (grouped, 48 px rows,
 Cancel apart, drag down to close). Rows, each with its chord:
 
-- Rename · Branch (phone) · Fork session… · Send to… · **Continue in** (a row
-  of agent marks; names under them on a phone) · Pin to top
-- Diff · Files · Chat · Queued messages (n) · Send next queued now ·
+- Rename session · Switch branch… · Fork session… · Send to… · **Continue in** (a row
+  of agent marks; names under them on a phone) · Pin
+- Diff · Files · Chat · Queue (n) · Send next queued now ·
   Snapshots · Preview
 - Split right · Split below · Flip split · Replace pane… · Close pane
   (desktop, in a split)
-- Scrollback as text · Hide/Show steps · Show/Hide on-screen keys · Copy
-  "ah attach <id>" · All commands…
+- Scrollback as text · Hide/Show steps · Show/Hide on-screen keys · Copy attach command (
+  `ah attach <id>`) · All commands…
 - **Terminate session** (danger)
 
 ## Terminal surface
@@ -48,8 +48,8 @@ the TUI captures the mouse); links open; Unicode 11 widths.
   tab, arrows) with edge fades.
 - **Scrollback as text** (session menu): the window's scrollback as
   selectable text, for phones.
-- **Answer card** under the terminal while it waits, with the picker's
-  options as buttons (SES-7).
+- **Answer card** under the terminal while it waits: the ask summary and the
+  picker's options as rows (SES-7, VIEW-6).
 - **Terminal pool:** a terminal you leave is parked 4 s and adopted if you come
   back; "Attaching…" shows only after 400 ms.
 - Omarchy theme and font when Appearance is Omarchy (SET-2).
@@ -71,11 +71,13 @@ older pages on demand). Same live session; switching views restarts nothing.
   (Ran, Read, Edited, Asked, Updated the plan), expandable to the command and
   output, a diff, a checklist, the question. Pending calls are in the present
   tense (Run, Edit); a call waiting on you says **Waiting for you**; a call the
-  turn ended without says **No result**. → A-05.
+  turn ended without says **No result**. Every kind of ask (a command, an
+edit, a question) marks the call it is about.
 - **Working line**: "Working · 12s" and what it is doing, "Esc stops".
 - **Widgets** (generative UI): an agent's ```` ```ah-widget ```` block renders as
   card, choices, table, checklist, stats, bar chart, progress, links, image,
-  code or diff ([docs/gui.md](../gui.md)). → A-06.
+  code or diff ([docs/gui.md](../gui.md)). Choices are the same numbered
+  option rows as an agent's own question; digits pick.
 - **Answered questions** fold to one line.
 - **Hide steps** (per device): tool calls and thinking fold to one line per
   run, so the conversation reads as prose.
@@ -93,7 +95,15 @@ A waiting agent's ask, answered without the terminal (`AskPanel.tsx`):
 Claude's question dialog as a form (whole set from hooks, else one question at
 a time from the screen), a numbered picker as buttons, or Approve / Deny.
 Digits pick, arrows move, Space toggles, ⌃↵ submits. Edit approvals render
-with the GUI's own diff. "Terminal text" discloses the screen; "Answer in
+with the GUI's own diff.
+
+It opens with the **ask summary** (`AskSummary`, `web/askView.ts`), the same in
+the Inbox card, the GUI and the bar under the terminal: what it wants ("Wants
+to run a command"), then the command as code with the agent's own description
+(the hook's detail when there is one, so a wrapped command reads whole), or
+the question; "Show terminal text" discloses the screen. Options are one row
+style everywhere (OptionList): a number, the label, a description. A waiting
+command's tool row stays folded, since the card shows the command. "Answer in
 terminal" switches view when ah can't drive the picker.
 
 ### VIEW-7 · Composer — shipped
@@ -130,8 +140,10 @@ An ended session stays in place: its conversation (GUI) or last screen, and
 ## Side panels
 
 One panel at a time beside the session (desktop: resizable, collapsible,
-closable, ⌃⌥1–6; phone: tabs). → A-11: the tab strip does not fit six tabs at
-the default width, and its set changes between panels.
+closable, ⌃⌥1–7; phone: tabs). Stack (REV-11) sits beside Diff in a git
+checkout. The tabs are the same set in the same order
+everywhere (agent-only ones absent for a shell), drawn as icons with the open
+one named; each tab's tooltip has its chord, and Queue carries its count.
 
 ### VIEW-9 · Diff — shipped
 
@@ -141,8 +153,8 @@ line and code. Footer: branch · files · +/−. Shells too (not agent-only).
 
 ### VIEW-10 · Files — shipped
 
-Browse the host from the session's folder, within `files.roots` (a root
-picker), go up, home, new folder; download a file, preview it (CSP sandboxed);
+Browse the host from the session's folder, within `files.roots` (Go to… a
+root), go up, the session folder, show hidden files, new folder; download a file, preview it (CSP sandboxed);
 **Upload here** from this device into any folder; **Insert** a file or folder
 path into the session (as an `@mention` for agents, quoted for shells).
 

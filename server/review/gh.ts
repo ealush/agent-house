@@ -349,3 +349,96 @@ export async function replyAndResolve(root: string, threadId: string, body: stri
   }
   await gh(root, ['api', 'graphql', '-f', 'query=mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}', '-f', `id=${threadId}`]);
 }
+
+// ---------- images in GitHub's markdown
+
+export type GhImage = { type: string; body: Buffer };
+export type ImageSource = { kind: 'file'; repo: string; parts: string[] } | { kind: 'upload'; url: string };
+
+const IMAGE_MAX = 10 * 1024 * 1024;
+const EXT_TYPE: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', avif: 'image/avif', svg: 'image/svg+xml' };
+const NAME = /^[\w.-]{1,100}$/;
+
+/**
+ * Where an image in a PR description or review comment lives on GitHub: a file
+ * in a repo (`github.com/o/r/blob/<ref>/<path>?raw=true`, `/raw/`, or
+ * raw.githubusercontent.com), or an upload (user-attachments, user-images).
+ * Anything else isn't GitHub's, and ah doesn't fetch it.
+ */
+export function imageSource(src: string): ImageSource | null {
+  let u: URL;
+  try {
+    u = new URL(src);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'https:' || u.username || u.password || u.port) return null;
+  const seg = u.pathname.split('/').filter(Boolean).map((s) => decodeURIComponent(s));
+  if (seg.some((s) => s === '..' || s === '.' || /[/\\\0]/.test(s))) return null;
+  if (u.hostname === 'github.com') {
+    if (seg[0] === 'user-attachments' && seg[1] === 'assets' && seg.length === 3) return { kind: 'upload', url: u.href };
+    if (seg.length >= 5 && NAME.test(seg[0]) && NAME.test(seg[1]) && seg[2] === 'assets') return { kind: 'upload', url: u.href };
+    if (seg.length >= 5 && NAME.test(seg[0]) && NAME.test(seg[1]) && (seg[2] === 'blob' || seg[2] === 'raw')) return { kind: 'file', repo: `${seg[0]}/${seg[1]}`, parts: seg.slice(3) };
+    return null;
+  }
+  if (u.hostname === 'raw.githubusercontent.com' && seg.length >= 4 && NAME.test(seg[0]) && NAME.test(seg[1])) {
+    const rest = seg.slice(2);
+    return { kind: 'file', repo: `${seg[0]}/${seg[1]}`, parts: rest[0] === 'refs' && rest[1] === 'heads' ? rest.slice(2) : rest };
+  }
+  if (u.hostname === 'user-images.githubusercontent.com' || u.hostname === 'private-user-images.githubusercontent.com') return { kind: 'upload', url: u.href };
+  return null;
+}
+
+function imageType(name: string, body: Buffer): string | null {
+  const ext = EXT_TYPE[name.split('.').pop()?.toLowerCase() ?? ''];
+  if (ext) return ext;
+  if (body.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  if (body[0] === 0xff && body[1] === 0xd8) return 'image/jpeg';
+  if (body.subarray(0, 4).toString('latin1') === 'GIF8') return 'image/gif';
+  if (body.subarray(0, 4).toString('latin1') === 'RIFF' && body.subarray(8, 12).toString('latin1') === 'WEBP') return 'image/webp';
+  return null;
+}
+
+let token: { value: string; at: number } | null = null;
+async function ghToken(root: string): Promise<string | null> {
+  if (token && Date.now() - token.at < 10 * 60_000) return token.value;
+  const value = (await gh(root, ['auth', 'token']).catch(() => '')).trim();
+  token = value ? { value, at: Date.now() } : null;
+  return value || null;
+}
+
+/**
+ * An image from GitHub's markdown, read with this host's `gh` login, for a page
+ * that only loads images from ah. A file comes through the contents API (a ref
+ * with slashes is tried a segment at a time); an upload is fetched with gh's
+ * token, which isn't sent on past GitHub (fetch drops it on a cross-origin
+ * redirect). Null when it isn't GitHub's, isn't an image, or can't be read.
+ */
+export async function ghImage(root: string, src: string): Promise<GhImage | null> {
+  const where = imageSource(src);
+  if (!where) return null;
+  if (where.kind === 'file') {
+    for (let i = 1; i < Math.min(where.parts.length, 5); i++) {
+      const ref = where.parts.slice(0, i).join('/');
+      const path = where.parts.slice(i).map(encodeURIComponent).join('/');
+      try {
+        const { stdout } = await exec('gh', ['api', '-H', 'Accept: application/vnd.github.raw', `repos/${where.repo}/contents/${path}?ref=${encodeURIComponent(ref)}`], { ...opts(root, GH_TIMEOUT_MS), encoding: 'buffer', maxBuffer: IMAGE_MAX });
+        const type = imageType(where.parts.at(-1)!, stdout);
+        return type ? { type, body: stdout } : null;
+      } catch (err) {
+        if ((err as { code?: string }).code === 'ENOENT') throw new GhError('gh is not installed on this host');
+      }
+    }
+    return null;
+  }
+  const t = await ghToken(root);
+  try {
+    const r = await fetch(where.url, { headers: t ? { authorization: `token ${t}` } : {}, signal: AbortSignal.timeout(GH_TIMEOUT_MS) });
+    const type = (r.headers.get('content-type') ?? '').split(';')[0].trim();
+    if (!r.ok || !/^image\//.test(type) || Number(r.headers.get('content-length') ?? 0) > IMAGE_MAX) return null;
+    const body = Buffer.from(await r.arrayBuffer());
+    return body.length > IMAGE_MAX ? null : { type, body };
+  } catch {
+    return null;
+  }
+}

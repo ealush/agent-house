@@ -50,6 +50,23 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
 
     if ((m = route('GET', `/stacks/${ID}`))) return send(res, 200, await svc.view(m[1]));
 
+    // An image in a PR description or review comment: the page only loads images from ah.
+    if ((m = route('GET', `/stacks/${ID}/image`))) {
+      const img = await svc.image(m[1], str(url.searchParams.get('src') ?? '', 'src', 2000));
+      if (!img) throw new HttpError(404, "that image isn't GitHub's, or can't be read");
+      res.writeHead(200, {
+        'content-type': img.type,
+        'content-length': img.body.length,
+        'cache-control': 'private, max-age=86400',
+        'x-content-type-options': 'nosniff',
+        'content-security-policy': "sandbox; default-src 'none'; style-src 'unsafe-inline'",
+      });
+      res.end(img.body);
+      return;
+    }
+
+    if ((m = route('GET', `/stacks/${ID}/layers/${PR}/description`))) return send(res, 200, await svc.description(m[1], Number(m[2])));
+
     if ((m = route('PATCH', `/stacks/${ID}`))) {
       const body = await readJson(req);
       const order = body.order === undefined ? undefined : Array.isArray(body.order) && body.order.length <= 200 ? body.order.map((n) => int(n, 'order')) : (() => { throw new HttpError(400, 'invalid order'); })();

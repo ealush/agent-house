@@ -148,7 +148,7 @@ export function FilesPanel({ fs, start, cwd, agent, onInsert }: Props) {
         </nav>
         {rootList.length > 0 && (
           <select className="roots" value="" onChange={(e) => e.target.value && setPath(e.target.value)} aria-label="Browsable folders">
-            <option value="">Roots…</option>
+            <option value="">Go to…</option>
             {rootList.map((r) => (
               <option key={r} value={r}>
                 {r}
@@ -159,8 +159,8 @@ export function FilesPanel({ fs, start, cwd, agent, onInsert }: Props) {
         <button className="icon-btn small" onClick={() => setPath(cwd)} title="Session folder" aria-label="Session folder">
           <Icon name="home" size={15} />
         </button>
-        <button className={`btn ghost small ${hidden ? 'on' : ''}`} onClick={() => setHidden(!hidden)} title="Show dotfiles">
-          .*
+        <button className={`icon-btn small ${hidden ? 'on' : ''}`} onClick={() => setHidden(!hidden)} title="Show hidden files" aria-label="Show hidden files" aria-pressed={hidden}>
+          <Icon name="view" size={15} />
         </button>
         <button className="icon-btn small" onClick={newFolder} title="New folder" aria-label="New folder">
           <Icon name="folder-plus" size={15} />
@@ -186,7 +186,7 @@ export function FilesPanel({ fs, start, cwd, agent, onInsert }: Props) {
                   Insert
                 </button>
                 {e.type === 'file' && (
-                  <a className="btn ghost small" href={fs.url(abs, true)} download={e.name} title="Download to this device">
+                  <a className="btn ghost small" href={fs.url(abs, true)} download={e.name} title="Download to this device" aria-label={`Download ${e.name}`}>
                     ↓
                   </a>
                 )}
@@ -198,7 +198,7 @@ export function FilesPanel({ fs, start, cwd, agent, onInsert }: Props) {
 
       <div className="fs-foot">
         <label className="check">
-          <input type="checkbox" checked={mention} onChange={(e) => setMention(e.target.checked)} />
+          <input type="checkbox" switch="" checked={mention} onChange={(e) => setMention(e.target.checked)} />
           <span>@mention</span>
         </label>
         <span className="spacer" />

@@ -403,9 +403,10 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
     for (const child of Array.from(el.children)) follow.observe(child);
     return () => follow.disconnect();
   }, [empty]);
-  // A permission prompt is about the newest call still without a result in this turn.
+  // What a waiting agent asks about is the newest call still without a result in this turn: the
+  // command or edit a permission prompt is for, or the question it put to you. Each reads "Waiting for you".
   const awaitingCall = useMemo(() => {
-    if (!waiting || (w.ask!.kind !== 'tool' && w.ask!.kind !== 'command')) return null;
+    if (!waiting || !w.ask || w.ask.kind === 'screen') return null;
     for (let i = blocks.length - 1; i >= 0; i--) {
       const b = blocks[i];
       if (b.kind === 'user') return null;
@@ -488,7 +489,7 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
 
             {waiting && (
               <div className="approval">
-                <AskPanel ref={askRef} w={w} client={client} onAnswer={onAnswer} onReply={onReply} onUseTerminal={onUseTerminal} drawn={!!awaitingCall} />
+                <AskPanel ref={askRef} w={w} client={client} onAnswer={onAnswer} onReply={onReply} onUseTerminal={onUseTerminal} />
               </div>
             )}
             {w.status === 'busy' && <Working detail={w.detail} />}
