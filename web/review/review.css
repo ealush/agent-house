@@ -162,7 +162,7 @@
     background var(--dur-1) var(--ease);
 }
 
-.stack-card:hover {
+:where(:root:not([data-touch])) .stack-card:hover {
   border-color: var(--line-2);
   background: var(--raised);
 }
@@ -269,7 +269,7 @@
     background var(--dur-1) var(--ease);
 }
 
-.project-card:hover {
+:where(:root:not([data-touch])) .project-card:hover {
   border-color: var(--line-2);
   background: var(--raised);
 }
@@ -438,7 +438,7 @@
   font-weight: 500;
 }
 
-.spine-top:hover {
+:where(:root:not([data-touch])) .spine-top:hover {
   background: var(--raised);
 }
 
@@ -515,7 +515,7 @@
   text-align: left;
 }
 
-.spine-row:hover {
+:where(:root:not([data-touch])) .spine-row:hover {
   background: var(--raised);
 }
 
@@ -617,7 +617,7 @@
   color: var(--muted);
 }
 
-.spine-chip:hover {
+:where(:root:not([data-touch])) .spine-chip:hover {
   background: var(--raised);
 }
 
@@ -785,7 +785,7 @@
   color: var(--muted);
 }
 
-button.mt-row:hover {
+:where(:root:not([data-touch])) button.mt-row:hover {
   background: var(--raised);
 }
 
@@ -839,7 +839,7 @@ button.mt-row:hover {
   font-size: 13px;
 }
 
-.add-prs:hover {
+:where(:root:not([data-touch])) .add-prs:hover {
   color: var(--text);
   border-color: var(--faint);
 }
@@ -1045,7 +1045,7 @@ button.mt-row:hover {
   transition: background var(--dur-1) var(--ease);
 }
 
-.pick-row:hover {
+:where(:root:not([data-touch])) .pick-row:hover {
   background: var(--raised);
 }
 
@@ -1331,7 +1331,7 @@ button.mt-row:hover {
   text-decoration: none;
 }
 
-.pr-link:hover {
+:where(:root:not([data-touch])) .pr-link:hover {
   color: var(--text);
 }
 
@@ -2089,7 +2089,7 @@ button.mt-row:hover {
   color: var(--muted);
 }
 
-.diff-fold:hover {
+:where(:root:not([data-touch])) .diff-fold:hover {
   color: var(--text);
 }
 
@@ -2330,7 +2330,7 @@ button.findings-label {
   font-size: 13px;
 }
 
-.add-finding:hover {
+:where(:root:not([data-touch])) .add-finding:hover {
   color: var(--text);
   border-color: var(--faint);
 }
@@ -2526,7 +2526,7 @@ button.findings-label {
   font-size: 14px;
 }
 
-.review-menu button:hover,
+:where(:root:not([data-touch])) .review-menu button:hover,
 .review-menu button:focus-visible {
   background: var(--line);
 }
@@ -2681,7 +2681,7 @@ button.findings-label {
   font-weight: 600;
 }
 
-a.ss-title:hover {
+:where(:root:not([data-touch])) a.ss-title:hover {
   text-decoration: underline;
 }
 
@@ -2755,7 +2755,7 @@ a.ss-title:hover {
   text-decoration: none;
 }
 
-.gh-md a:hover {
+:where(:root:not([data-touch])) .gh-md a:hover {
   text-decoration: underline;
 }
 

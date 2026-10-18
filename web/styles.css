@@ -285,7 +285,7 @@ code,
 .search[data-wordy] .keycaps {
   display: none;
 }
-.search[data-wordy]:is(:hover, :focus-visible) .keycaps {
+:where(:root:not([data-touch])) .search[data-wordy]:is(:hover, :focus-visible) .keycaps {
   display: inline-flex;
 }
 
@@ -344,7 +344,7 @@ kbd {
   text-align: left;
 }
 
-.nav-item:hover {
+:where(:root:not([data-touch])) .nav-item:hover {
   background: var(--raised);
   color: var(--text);
 }
@@ -445,7 +445,7 @@ kbd {
   pointer-events: none;
 }
 
-.side-label:hover .label-add,
+:where(:root:not([data-touch])) .side-label:hover .label-add,
 .side-label:focus-within .label-add {
   opacity: 1;
   pointer-events: auto;
@@ -457,7 +457,7 @@ kbd {
   pointer-events: auto;
 }
 
-.label-add:hover {
+:where(:root:not([data-touch])) .label-add:hover {
   color: var(--text);
   background: var(--raised);
 }
@@ -475,7 +475,7 @@ kbd {
   color: var(--muted);
 }
 
-.side-session:hover {
+:where(:root:not([data-touch])) .side-session:hover {
   background: var(--raised);
   color: var(--text);
 }
@@ -626,7 +626,7 @@ button.pill {
   padding: 3px 10px;
 }
 
-a.pill:hover {
+:where(:root:not([data-touch])) a.pill:hover {
   color: var(--text);
   border-color: var(--faint);
 }
@@ -879,7 +879,7 @@ a.pill:hover {
   text-align: left;
 }
 
-.row:hover {
+:where(:root:not([data-touch])) .row:hover {
   background: var(--raised);
 }
 
@@ -1044,12 +1044,12 @@ a.pill:hover {
   transition: opacity var(--dur-1);
 }
 
-.empty-recent-row:hover,
+:where(:root:not([data-touch])) .empty-recent-row:hover,
 .empty-recent-row:focus-visible {
   background: var(--accent-bg);
 }
 
-.empty-recent-row:hover .resume-word,
+:where(:root:not([data-touch])) .empty-recent-row:hover .resume-word,
 .empty-recent-row:focus-visible .resume-word,
 .narrow .empty-recent-row .resume-word {
   opacity: 1;
@@ -1474,7 +1474,7 @@ a.pill:hover {
   cursor: default;
 }
 
-.send-btn:not(.stop):hover:not(:disabled) {
+:where(:root:not([data-touch])) .send-btn:not(.stop):hover:not(:disabled) {
   background: var(--accent-hover, var(--accent));
 }
 
@@ -1491,7 +1491,7 @@ a.pill:hover {
   font-size: 17px;
 }
 
-.icon-btn:hover {
+:where(:root:not([data-touch])) .icon-btn:hover {
   background: var(--line);
   color: var(--text);
 }
@@ -1679,7 +1679,7 @@ a.pill:hover {
   white-space: nowrap;
 }
 
-.btn:hover {
+:where(:root:not([data-touch])) .btn:hover {
   border-color: var(--faint);
 }
 
@@ -1689,7 +1689,7 @@ a.pill:hover {
   color: var(--accent-ink);
 }
 
-.btn.primary:hover {
+:where(:root:not([data-touch])) .btn.primary:hover {
   filter: brightness(1.06);
 }
 
@@ -1708,7 +1708,7 @@ a.pill:hover {
   color: var(--muted);
 }
 
-.btn.ghost:hover {
+:where(:root:not([data-touch])) .btn.ghost:hover {
   color: var(--text);
   background: var(--raised);
 }
@@ -1718,7 +1718,7 @@ a.pill:hover {
   background: var(--raised);
 }
 
-.btn.danger:hover {
+:where(:root:not([data-touch])) .btn.danger:hover {
   color: var(--danger);
 }
 
@@ -1824,7 +1824,7 @@ a.btn {
   font-size: 14px;
 }
 
-.menu button:hover,
+:where(:root:not([data-touch])) .menu button:hover,
 .menu button:focus-visible {
   background: var(--line);
 }
@@ -2053,7 +2053,7 @@ a.btn {
 }
 
 .sugg.on,
-.sugg:hover {
+:where(:root:not([data-touch])) .sugg:hover {
   color: var(--text);
   border-color: var(--faint);
 }
@@ -2282,7 +2282,7 @@ a.btn {
   cursor: pointer;
 }
 
-.switch-all:hover {
+:where(:root:not([data-touch])) .switch-all:hover {
   color: inherit;
 }
 
@@ -2624,7 +2624,7 @@ a.btn {
   cursor: default;
 }
 
-.dl:not(.hunk):hover {
+:where(:root:not([data-touch])) .dl:not(.hunk):hover {
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
@@ -2695,7 +2695,7 @@ a.btn {
   mask-image: linear-gradient(to right, transparent, #000 24px);
 }
 
-.crumbs button:hover {
+:where(:root:not([data-touch])) .crumbs button:hover {
   color: var(--text);
 }
 
@@ -2718,7 +2718,7 @@ a.btn {
   border-radius: 8px;
 }
 
-.fs-row:hover {
+:where(:root:not([data-touch])) .fs-row:hover {
   background: var(--raised);
 }
 
@@ -2933,7 +2933,7 @@ a.btn {
   font-size: 14px;
 }
 
-.lock-alt .linkish:hover {
+:where(:root:not([data-touch])) .lock-alt .linkish:hover {
   color: var(--text);
 }
 
@@ -3144,7 +3144,7 @@ a.btn {
   gap: 4px 6px;
 }
 
-.keymap-bind:hover kbd,
+:where(:root:not([data-touch])) .keymap-bind:hover kbd,
 .keymap-bind:focus-visible kbd {
   border-color: var(--faint);
 }
@@ -3176,7 +3176,7 @@ a.btn {
    actions, they show on the row under the pointer or holding focus. They stay
    in the tab order (opacity, not display), and always show on touch. */
 @media (hover: hover) {
-  .keymap-table tbody tr:not(:hover):not(:focus-within) .keymap-actions .btn {
+  :where(:root:not([data-touch])) .keymap-table tbody tr:not(:hover):not(:focus-within) .keymap-actions .btn {
     opacity: 0;
   }
 }
@@ -3581,7 +3581,7 @@ a.btn {
   cursor: pointer;
 }
 
-.past-row:hover {
+:where(:root:not([data-touch])) .past-row:hover {
   border-color: var(--line-2);
 }
 
@@ -3630,7 +3630,7 @@ a.btn {
   opacity: 0.8;
 }
 
-.sidechat-msg .msg-actions .btn:hover,
+:where(:root:not([data-touch])) .sidechat-msg .msg-actions .btn:hover,
 .sidechat-msg .msg-actions .btn:focus-visible {
   opacity: 1;
 }
@@ -3643,7 +3643,7 @@ a.btn {
   left: 0;
 }
 
-.sidechat-msg:hover .msg-actions,
+:where(:root:not([data-touch])) .sidechat-msg:hover .msg-actions,
 .sidechat-msg:focus-within .msg-actions {
   opacity: 1;
   visibility: visible;
@@ -3718,7 +3718,7 @@ a.btn {
   text-decoration: none;
 }
 
-.sidechat-bubble .md a:hover {
+:where(:root:not([data-touch])) .sidechat-bubble .md a:hover {
   text-decoration: underline;
 }
 
@@ -3923,7 +3923,7 @@ a.btn {
   .fs-row > .btn {
     visibility: hidden;
   }
-  .fs-row:hover > .btn,
+  :where(:root:not([data-touch])) .fs-row:hover > .btn,
   .fs-row:focus-within > .btn {
     visibility: visible;
   }
@@ -3988,10 +3988,10 @@ a.btn {
   opacity: 0;
 }
 
-.side-row:hover .grip,
+:where(:root:not([data-touch])) .side-row:hover .grip,
 .side-row:focus-within .grip,
 .side-row.dragging .grip,
-.side-label:hover .grip,
+:where(:root:not([data-touch])) .side-label:hover .grip,
 .side-label:focus-within .grip,
 .side-block.dragging > .side-label .grip {
   opacity: 1;
@@ -4012,18 +4012,18 @@ a.btn {
   color: var(--faint);
 }
 
-.row-kill:hover {
+:where(:root:not([data-touch])) .row-kill:hover {
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 13%, transparent);
 }
 
-.row-more:hover {
+:where(:root:not([data-touch])) .row-more:hover {
   color: var(--text);
   background: var(--raised);
 }
 
-.side-row:hover .row-kill,
-.side-row:hover .row-more,
+:where(:root:not([data-touch])) .side-row:hover .row-kill,
+:where(:root:not([data-touch])) .side-row:hover .row-more,
 .side-row:focus-within .row-kill,
 .side-row:focus-within .row-more {
   display: inline-flex;
@@ -4031,7 +4031,7 @@ a.btn {
 
 /* The actions take the model's place, like History's times, so the title
    keeps its width under the pointer. */
-.side-row:hover .side-model,
+:where(:root:not([data-touch])) .side-row:hover .side-model,
 .side-row:focus-within .side-model {
   display: none;
 }
@@ -4165,7 +4165,7 @@ a.btn {
   cursor: row-resize;
 }
 
-.divider:hover {
+:where(:root:not([data-touch])) .divider:hover {
   background: var(--accent-line);
 }
 
@@ -4502,7 +4502,7 @@ ul.queue-items {
   color: var(--muted);
 }
 
-.queue-row:hover {
+:where(:root:not([data-touch])) .queue-row:hover {
   background: var(--raised);
 }
 
@@ -4526,7 +4526,7 @@ ul.queue-items {
   touch-action: none;
 }
 
-.queue-grip:hover,
+:where(:root:not([data-touch])) .queue-grip:hover,
 .queue-grip:focus-visible {
   color: var(--text);
   background: var(--line);
@@ -4580,7 +4580,7 @@ ul.queue-items {
   cursor: pointer;
 }
 
-.queue-steer:hover {
+:where(:root:not([data-touch])) .queue-steer:hover {
   color: var(--text);
   background: var(--line);
 }
@@ -4781,7 +4781,7 @@ ul.queue-items {
   text-overflow: ellipsis;
 }
 
-button.tool-chip:hover {
+:where(:root:not([data-touch])) button.tool-chip:hover {
   color: var(--text);
   border-color: var(--faint);
 }
@@ -4869,7 +4869,7 @@ button.tool-chip:hover {
   padding-right: 10px;
 }
 
-.picker-row:hover,
+:where(:root:not([data-touch])) .picker-row:hover,
 .picker-row.on {
   background: var(--line);
 }
@@ -4911,7 +4911,7 @@ button.tool-chip:hover {
   background: var(--text);
 }
 
-.pip:hover {
+:where(:root:not([data-touch])) .pip:hover {
   background: var(--muted);
 }
 
@@ -5200,7 +5200,7 @@ button.tool-chip:hover {
   color: var(--muted);
 }
 
-.agent-pill:hover {
+:where(:root:not([data-touch])) .agent-pill:hover {
   color: var(--text);
   border-color: var(--line-2);
 }
@@ -5324,7 +5324,7 @@ button.tool-chip:hover {
   color: var(--muted);
 }
 
-.disclosure:hover {
+:where(:root:not([data-touch])) .disclosure:hover {
   color: var(--text);
 }
 
@@ -5344,7 +5344,7 @@ button.tool-chip:hover {
   color: var(--danger-ink);
 }
 
-.btn.danger-solid:hover {
+:where(:root:not([data-touch])) .btn.danger-solid:hover {
   filter: brightness(1.06);
 }
 
@@ -5447,8 +5447,8 @@ button.tool-chip:hover {
   transition: border-color var(--dur-1), background var(--dur-1);
 }
 
-.ask-row:hover,
-.ask-option:hover {
+:where(:root:not([data-touch])) .ask-row:hover,
+:where(:root:not([data-touch])) .ask-option:hover {
   border-color: var(--accent-line);
 }
 
@@ -5537,7 +5537,7 @@ button.tool-chip:hover {
   font-size: 13px;
   color: var(--muted);
 }
-.ask-raw summary:hover {
+:where(:root:not([data-touch])) .ask-raw summary:hover {
   color: var(--text);
 }
 .ask-raw[open] summary {
@@ -5792,7 +5792,7 @@ button.tool-chip:hover {
   cursor: pointer;
 }
 
-.palette-crumbs button:hover {
+:where(:root:not([data-touch])) .palette-crumbs button:hover {
   background: var(--line);
   color: var(--text);
 }
@@ -5803,7 +5803,7 @@ button.tool-chip:hover {
   cursor: default;
 }
 
-.palette-crumbs button.on:hover {
+:where(:root:not([data-touch])) .palette-crumbs button.on:hover {
   background: none;
 }
 
@@ -6193,7 +6193,7 @@ button.tool-chip:hover {
   background: transparent;
 }
 
-.ws-root.tiled > .divider:hover {
+:where(:root:not([data-touch])) .ws-root.tiled > .divider:hover {
   background: var(--accent-line);
 }
 
@@ -6241,7 +6241,7 @@ button.tool-chip:hover {
   font: 600 12px var(--mono);
 }
 
-.ws-dots button:hover {
+:where(:root:not([data-touch])) .ws-dots button:hover {
   color: var(--text);
   border-color: var(--line-2);
 }
@@ -6681,7 +6681,7 @@ button.tool-chip:hover {
   white-space: nowrap;
 }
 
-.handoff:hover {
+:where(:root:not([data-touch])) .handoff:hover {
   border-color: var(--faint);
 }
 
@@ -6745,13 +6745,13 @@ button.tool-chip:hover {
     transition: opacity var(--dur-1);
   }
 
-  .history-row:hover .row-actions,
+  :where(:root:not([data-touch])) .history-row:hover .row-actions,
   .history-row:focus-within .row-actions {
     opacity: 1;
     pointer-events: auto;
   }
 
-  .history-row:hover .when,
+  :where(:root:not([data-touch])) .history-row:hover .when,
   .history-row:focus-within .when {
     opacity: 0;
   }
@@ -7283,7 +7283,7 @@ button.tool-chip:active,
   cursor: default;
 }
 
-.icon-btn:disabled:hover {
+:where(:root:not([data-touch])) .icon-btn:disabled:hover {
   background: none;
   color: var(--muted);
 }
@@ -8281,7 +8281,7 @@ select:not([multiple]) {
   font: inherit;
 }
 
-.sub-choose[role='radio']:not(.on):hover {
+:where(:root:not([data-touch])) .sub-choose[role='radio']:not(.on):hover {
   background: var(--line);
 }
 

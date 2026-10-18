@@ -634,6 +634,30 @@ test('iPad home-screen app in a window: a strip at the top for the window button
   await ctx.close();
 });
 
+test("iPad: a finger's tap leaves no hover behind, and the trackpad's pointer still gets it", { skip, timeout: 60_000 }, async () => {
+  const ctx = await browser.newContext({ ...devices['iPad Pro 11 landscape'] });
+  const { page, errors } = await open(ctx);
+  const root = page.locator('html');
+  const row = page.locator('.side-row', { hasText: 'zz-idle' }).first();
+  await row.waitFor();
+  // A row's Terminate shows under the pointer. A finger's tap set :hover and kept it,
+  // so the row you had just opened showed it, a tap away from ending the session.
+  const kill = () => row.locator('.row-kill').evaluate((e) => getComputedStyle(e).display);
+  await row.locator('.side-session').tap();
+  await page.locator('.term .xterm').first().waitFor();
+  // Safari doesn't focus a button on a tap (Chromium does, which shows the row's actions too).
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  assert.equal(await root.getAttribute('data-touch'), '');
+  assert.equal(await row.evaluate((e) => e.matches(':hover')), true, 'the browser still counts the tap as a hover');
+  assert.equal(await kill(), 'none');
+  // The trackpad's pointer: hover shows it again.
+  await row.hover();
+  assert.equal(await root.getAttribute('data-touch'), null);
+  assert.notEqual(await kill(), 'none');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('no control is smaller than 32px, on a desktop or a phone', { skip, timeout: 90_000 }, async () => {
   for (const opts of [{ viewport: { width: 1440, height: 900 } }, { ...devices['iPhone 15 Pro'] }, { ...devices['iPad Pro 11'] }]) {
     const ctx = await browser.newContext(opts);

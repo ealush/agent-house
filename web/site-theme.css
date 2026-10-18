@@ -132,7 +132,7 @@ body,
   text-decoration: none;
   transition: background-color var(--dur-2), transform var(--dur-2);
 }
-.list-row:hover {
+:where(:root:not([data-touch])) .list-row:hover {
   background: var(--accent-bg);
   transform: translateX(4px);
 }
@@ -166,8 +166,8 @@ body,
   white-space: nowrap;
   transition: all var(--dur-2);
 }
-a.tag:hover,
-button.tag:hover {
+:where(:root:not([data-touch])) a.tag:hover,
+:where(:root:not([data-touch])) button.tag:hover {
   color: var(--accent);
   border-color: var(--brand);
   background: transparent;
@@ -296,8 +296,8 @@ button.pill {
   text-decoration-color: var(--brand);
   transition: color var(--dur-2), text-decoration-color var(--dur-2);
 }
-.md a:hover,
-.gui a:hover {
+:where(:root:not([data-touch])) .md a:hover,
+:where(:root:not([data-touch])) .gui a:hover {
   color: var(--accent);
   text-decoration-color: var(--cyan);
 }
@@ -328,7 +328,7 @@ button.pill {
   border-color: var(--accent-strong);
   color: var(--accent-ink);
 }
-.btn.primary:hover {
+:where(:root:not([data-touch])) .btn.primary:hover {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
 }
@@ -344,14 +344,14 @@ button.pill {
 
 /* Session rows get the design's hover: pink tint everywhere, and the 4px
    nudge only where a hover exists (never on touch). */
-.row:hover {
+:where(:root:not([data-touch])) .row:hover {
   background: var(--accent-bg);
 }
 @media (hover: hover) {
   .row {
     transition: background-color var(--dur-2), transform var(--dur-2);
   }
-  .row:hover {
+  :where(:root:not([data-touch])) .row:hover {
     transform: translateX(4px);
   }
 }
@@ -428,8 +428,8 @@ button.pill {
   .tag {
     transition: none;
   }
-  .list-row:hover,
-  .row:hover {
+  :where(:root:not([data-touch])) .list-row:hover,
+  :where(:root:not([data-touch])) .row:hover {
     transform: none;
   }
 }

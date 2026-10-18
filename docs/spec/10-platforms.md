@@ -49,6 +49,16 @@ window (narrower than the screen, or clearly shorter), and gives it back in
 full screen. Settings → Appearance → Window buttons: *In a window* (the
 default), *Always* or *Never*. `?vh=1` shows the numbers it decides by.
 
+**Pointer and finger.** Hover is the pointer's — the trackpad's, a mouse's,
+the Pencil hovering — never a finger's: a tap made Safari count a hover and
+keep it, which left a button lit and a session row's Terminate showing a tap
+away. `<html data-touch>` is set while the last pointer was a finger, and
+every `:hover` rule is scoped `:where(:root:not([data-touch]))` (no added
+specificity; a stylesheet test keeps new ones scoped). With the trackpad, a
+row shows ··· and Terminate under the pointer, as on a desktop (no grips: a
+row is dragged by itself, and they would shift the list between finger and
+trackpad).
+
 ## PLT-3 · Phone — shipped
 
 - Floating glass **tab bar**: Inbox, Sessions, History, and Commands (ATT-8).
