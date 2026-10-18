@@ -82,6 +82,11 @@ trackpad).
   terminate act in place. History offers Resume, Fork and Hide. The lift
   opens nothing; a tap elsewhere or Escape puts it back. Touch screens only
   (an iPad's Inbox rows too).
+- **Swipe actions**, as Mail's: a session row swipes left to **Pin** and
+  **Terminate**, a History row to **Fork** and **Hide**. Past half the
+  actions it stays open; past 60% of the row, letting go runs the outermost
+  (Terminate still asks). One row open at a time; a tap on it, or anywhere
+  else, closes it. Only a sideways drag counts, so lists still scroll.
 - Agents open in the **GUI** unless you chose the terminal for that session.
 - 44 pt minimum targets; 16 px fields (no zoom); safe areas and the keyboard
   offset respected; edge fades on scrolling strips.

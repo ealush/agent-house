@@ -5,6 +5,7 @@ import { contextMenu } from './contextMenu.ts';
 import { Icon, type IconName } from './icons.tsx';
 import { commandLabel, runCommandSoon } from './shortcuts.ts';
 import { confirmTerminate } from './Sidebar.tsx';
+import type { SwipeAction } from './Swipe.tsx';
 
 export type PressItem = { label: string; icon?: IconName; danger?: boolean; run: () => void };
 
@@ -170,6 +171,22 @@ export function sessionItems(w: Win, a: SessionActions): PressItem[] {
       label: commandLabel('terminate'),
       icon: 'trash',
       danger: true,
+      run: () =>
+        void confirmTerminate(w).then((ok) => {
+          if (ok) a.kill(w);
+        }),
+    },
+  ];
+}
+
+/** A session row's swipe actions (Swipe.tsx): Pin, then Terminate outermost, so a full swipe asks to terminate. */
+export function sessionSwipes(w: Win, a: SessionActions): SwipeAction[] {
+  return [
+    { label: w.pinned ? 'Unpin' : 'Pin', icon: 'pin', tone: 'accent', run: () => a.pin(w) },
+    {
+      label: 'Terminate',
+      icon: 'trash',
+      tone: 'danger',
       run: () =>
         void confirmTerminate(w).then((ok) => {
           if (ok) a.kill(w);

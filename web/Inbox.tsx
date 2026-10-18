@@ -12,7 +12,8 @@ import { Glide } from './Glide.tsx';
 import { useFlip } from './useFlip.ts';
 import { statusClass, statusCounts, statusWord } from './status.ts';
 import { sessionLine } from './sessionLine.tsx';
-import { SessionActionsContext, sessionItems, usePressMenu } from './PressMenu.tsx';
+import { SessionActionsContext, sessionItems, sessionSwipes, usePressMenu } from './PressMenu.tsx';
+import { Swipe } from './Swipe.tsx';
 
 export type InboxGroup = 'status' | 'host' | 'project';
 
@@ -302,32 +303,34 @@ export function Rows({ windows, multiHost, narrow, onOpen, quiet, inProject }: {
         const pill = <span className={`pill ${statusClass(w) === 'idle' ? '' : statusClass(w)}`}>{statusWord(w)}</span>;
         return (
           <li key={w.key} data-flip={w.key}>
-            <button className={`row ${quiet ? 'quiet' : ''}`} style={{ '--agent': color } as React.CSSProperties} onClick={() => onOpen(w)} {...(actions ? bind(() => sessionItems(w, actions)) : {})}>
-              <span className="chip">
-                <AgentLogo id={w.agent} />
-              </span>
-              {narrow ? (
-                <>
-                  <span className="stack">
-                    <span className="name">{w.title}</span>
-                    <span className="sub">{sessionLine(w, { project: !inProject, host: multiHost })}</span>
-                  </span>
-                  <span className="when">{pill}</span>
-                </>
-              ) : (
-                <>
-                  {/* With nothing to say in Detail, the title takes its column. */}
-                  <span className={`name ${w.detail ? '' : 'solo'}`}>{w.title}</span>
-                  {w.detail && <span className="detail">{w.detail}</span>}
-                  <span className="meta">
-                    {pill}
-                    {w.queued > 0 && <span className="pill waiting">⇥ {w.queued} queued</span>}
-                    <span className="where" title={place}>{place}</span>
-                  </span>
-                  <span className="when">{age(w.activity)}</span>
-                </>
-              )}
-            </button>
+            <Swipe actions={actions ? sessionSwipes(w, actions) : []}>
+              <button className={`row ${quiet ? 'quiet' : ''}`} style={{ '--agent': color } as React.CSSProperties} onClick={() => onOpen(w)} {...(actions ? bind(() => sessionItems(w, actions)) : {})}>
+                <span className="chip">
+                  <AgentLogo id={w.agent} />
+                </span>
+                {narrow ? (
+                  <>
+                    <span className="stack">
+                      <span className="name">{w.title}</span>
+                      <span className="sub">{sessionLine(w, { project: !inProject, host: multiHost })}</span>
+                    </span>
+                    <span className="when">{pill}</span>
+                  </>
+                ) : (
+                  <>
+                    {/* With nothing to say in Detail, the title takes its column. */}
+                    <span className={`name ${w.detail ? '' : 'solo'}`}>{w.title}</span>
+                    {w.detail && <span className="detail">{w.detail}</span>}
+                    <span className="meta">
+                      {pill}
+                      {w.queued > 0 && <span className="pill waiting">⇥ {w.queued} queued</span>}
+                      <span className="where" title={place}>{place}</span>
+                    </span>
+                    <span className="when">{age(w.activity)}</span>
+                  </>
+                )}
+              </button>
+            </Swipe>
           </li>
         );
       })}

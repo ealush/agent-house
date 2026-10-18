@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { usePressMenu } from './PressMenu.tsx';
+import { Swipe } from './Swipe.tsx';
 import { statusCounts } from './status.ts';
 import type { HistoryItem, State, Win } from './api.ts';
 import { Icon } from './icons.tsx';
@@ -97,93 +98,100 @@ export function HistoryView({ state, onResume, onForget, onFork, touch = false, 
           const open = menuFor === key;
           return (
             <li key={key} className={open ? 'open' : undefined}>
-              <div
-                className={`row quiet history-row ${touch ? 'tap' : ''}`}
-                style={{ '--agent': color } as React.CSSProperties}
-                {...press.bind(() => [
-                  { label: 'Resume', icon: 'reload', run: () => onResume(h) },
-                  ...(canFork ? [{ label: 'Fork…', icon: 'fork' as const, run: () => onFork?.(h) }] : []),
-                  { label: 'Hide', icon: 'close', danger: true, run: () => onForget(h) },
-                ])}
-                onClick={
-                  touch
-                    ? (e) => {
-                        if ((e.target as HTMLElement).closest('button, .menu')) return;
-                        onResume(h);
-                      }
-                    : undefined
-                }
-                onKeyDown={(e) => {
-                  // Up and down move between conversations (the Resume buttons).
-                  // Left and right reach Fork and Hide on this row.
-                  if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
-                  const buttons = [...e.currentTarget.querySelectorAll('button')];
-                  const i = buttons.findIndex((b) => b === e.target || b.contains(e.target as Node));
-                  const next = buttons[i + (e.key === 'ArrowRight' ? 1 : -1)];
-                  if (i < 0 || !next) return;
-                  e.preventDefault();
-                  next.focus();
-                }}
+              <Swipe
+                actions={[
+                  ...(canFork ? [{ label: 'Fork', icon: 'fork' as const, run: () => onFork?.(h) }] : []),
+                  { label: 'Hide', icon: 'close', tone: 'danger', run: () => onForget(h) },
+                ]}
               >
-                <span className="chip">
-                  <AgentLogo id={h.harness} />
-                </span>
-                <span className="stack">
-                  <span className="name" title={h.title}>
-                    {h.title}
+                <div
+                  className={`row quiet history-row ${touch ? 'tap' : ''}`}
+                  style={{ '--agent': color } as React.CSSProperties}
+                  {...press.bind(() => [
+                    { label: 'Resume', icon: 'reload', run: () => onResume(h) },
+                    ...(canFork ? [{ label: 'Fork…', icon: 'fork' as const, run: () => onFork?.(h) }] : []),
+                    { label: 'Hide', icon: 'close', danger: true, run: () => onForget(h) },
+                  ])}
+                  onClick={
+                    touch
+                      ? (e) => {
+                          if ((e.target as HTMLElement).closest('button, .menu')) return;
+                          onResume(h);
+                        }
+                      : undefined
+                  }
+                  onKeyDown={(e) => {
+                    // Up and down move between conversations (the Resume buttons).
+                    // Left and right reach Fork and Hide on this row.
+                    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+                    const buttons = [...e.currentTarget.querySelectorAll('button')];
+                    const i = buttons.findIndex((b) => b === e.target || b.contains(e.target as Node));
+                    const next = buttons[i + (e.key === 'ArrowRight' ? 1 : -1)];
+                    if (i < 0 || !next) return;
+                    e.preventDefault();
+                    next.focus();
+                  }}
+                >
+                  <span className="chip">
+                    <AgentLogo id={h.harness} />
                   </span>
-                  <span className="sub">
-                    {historyLine(h, { project: true, host: multiHost })}
+                  <span className="stack">
+                    <span className="name" title={h.title}>
+                      {h.title}
+                    </span>
+                    <span className="sub">
+                      {historyLine(h, { project: true, host: multiHost })}
+                    </span>
                   </span>
-                </span>
-                <span className="when">{age(h.at)}</span>
-                {touch ? (
-                  <span className="row-actions" ref={open ? menuRow : undefined}>
-                    <button className="icon-btn small" aria-label={`More for ${h.title}`} aria-expanded={open} onClick={() => setMenuFor(open ? null : key)}>
-                      <Icon name="more" size={16} />
+                  <span className="when">{age(h.at)}</span>
+                  {touch ? (
+                    <span className="row-actions" ref={open ? menuRow : undefined}>
+                      <button className="icon-btn small" aria-label={`More for ${h.title}`} aria-expanded={open} onClick={() => setMenuFor(open ? null : key)}>
+                        <Icon name="more" size={16} />
+                      </button>
+                      {open &&
+                        (() => {
+                          const items = (
+                            <>
+                              <button onClick={() => { setMenuFor(null); onResume(h); }}>Resume</button>
+                              {canFork && <button onClick={() => { setMenuFor(null); onFork?.(h); }}>Fork…</button>}
+                              <button className="danger" onClick={() => { setMenuFor(null); onForget(h); }}>Hide</button>
+                            </>
+                          );
+                          // On a phone, the same action sheet as a session's menu.
+                          return narrow ? (
+                            createPortal(
+                              <ActionSheet onClose={() => setMenuFor(null)}>
+                                <div className="menu sheet" role="menu" aria-label={h.title} style={{ margin: 0 }}>
+                                  {items}
+                                </div>
+                              </ActionSheet>,
+                              document.body,
+                            )
+                          ) : (
+                            <div className="menu row-menu" role="menu">
+                              {items}
+                            </div>
+                          );
+                        })()}
+                    </span>
+                  ) : (
+                  <span className="row-actions">
+                    <button className="btn small resume" onClick={() => onResume(h)}>
+                      Resume
                     </button>
-                    {open &&
-                      (() => {
-                        const items = (
-                          <>
-                            <button onClick={() => { setMenuFor(null); onResume(h); }}>Resume</button>
-                            {canFork && <button onClick={() => { setMenuFor(null); onFork?.(h); }}>Fork…</button>}
-                            <button className="danger" onClick={() => { setMenuFor(null); onForget(h); }}>Hide</button>
-                          </>
-                        );
-                        // On a phone, the same action sheet as a session's menu.
-                        return narrow ? (
-                          createPortal(
-                            <ActionSheet onClose={() => setMenuFor(null)}>
-                              <div className="menu sheet" role="menu" aria-label={h.title} style={{ margin: 0 }}>
-                                {items}
-                              </div>
-                            </ActionSheet>,
-                            document.body,
-                          )
-                        ) : (
-                          <div className="menu row-menu" role="menu">
-                            {items}
-                          </div>
-                        );
-                      })()}
-                  </span>
-                ) : (
-                <span className="row-actions">
-                  <button className="btn small resume" onClick={() => onResume(h)}>
-                    Resume
-                  </button>
-                  {canFork && (
-                    <button className="btn small ghost" onClick={() => onFork(h)}>
-                      Fork
+                    {canFork && (
+                      <button className="btn small ghost" onClick={() => onFork(h)}>
+                        Fork
+                      </button>
+                    )}
+                    <button className="icon-btn small" title="Hide" onClick={() => onForget(h)}>
+                      <Icon name="close" size={14} />
                     </button>
+                  </span>
                   )}
-                  <button className="icon-btn small" title="Hide" onClick={() => onForget(h)}>
-                    <Icon name="close" size={14} />
-                  </button>
-                </span>
-                )}
-              </div>
+                </div>
+              </Swipe>
             </li>
           );
         })}

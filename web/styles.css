@@ -8429,3 +8429,73 @@ select:not([multiple]) {
     animation: none;
   }
 }
+
+/* A row's swipe actions, as Mail's (Swipe.tsx): behind the row at its trailing edge,
+   uncovered as the finger moves the row left. */
+.swipe {
+  position: relative;
+  overflow: hidden;
+  touch-action: pan-y;
+}
+
+.swipe-front {
+  position: relative;
+  z-index: 1;
+}
+
+/* The row is see-through at rest; moved, it needs the list's ground over the actions. */
+.swipe.open .swipe-front {
+  background: var(--surface);
+}
+
+.swipe-actions {
+  position: absolute;
+  inset: 0 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+  visibility: hidden;
+}
+
+.swipe.open .swipe-actions {
+  visibility: visible;
+}
+
+.swipe-act {
+  flex: none;
+  width: 76px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--raised);
+  transition: width 200ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* The page's ground as the ink: dark on the bright dark-theme colors, white on the deep light-theme ones. */
+.swipe-act.accent {
+  background: var(--limited);
+  color: var(--bg);
+}
+
+.swipe-act.danger {
+  background: var(--danger);
+  color: var(--bg);
+}
+
+/* A full swipe: the outermost action takes the whole row before it runs. */
+.swipe.full .swipe-act.outer {
+  width: 100%;
+}
+
+.swipe.full .swipe-act:not(.outer) {
+  width: 0;
+  overflow: hidden;
+  padding: 0;
+}

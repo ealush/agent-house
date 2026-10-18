@@ -739,6 +739,50 @@ test('phone: a finger held on a session row lifts it into its menu, and the lift
   await ctx.close();
 });
 
+test('phone: a session row swipes left to Pin and Terminate, and a full swipe asks to terminate', { skip, timeout: 60_000 }, async () => {
+  const ctx = await browser.newContext({ ...devices['iPhone 15 Pro'] });
+  const { page, errors } = await open(ctx, '#sessions');
+  const row = page.locator('.rows .row', { hasText: 'zz-idle' }).first();
+  await row.waitFor();
+  const cdp = await ctx.newCDPSession(page);
+  const swipe = async (dist: number) => {
+    const b = (await row.boundingBox())!;
+    const y = b.y + b.height / 2;
+    const x0 = b.x + b.width - 30;
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x0, y, id: 1 }] });
+    for (let i = 1; i <= 12; i++) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x0 - (dist * i) / 12, y, id: 1 }] });
+      await page.waitForTimeout(20);
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(400);
+  };
+  const swiped = page.locator('.swipe.open');
+  // Past half the actions: it stays open on Pin and Terminate, and opened nothing.
+  await swipe(140);
+  await swiped.waitFor();
+  assert.equal(new URL(page.url()).hash, '#sessions');
+  await swiped.getByRole('button', { name: 'Pin' }).waitFor();
+  await swiped.getByRole('button', { name: 'Terminate' }).waitFor();
+  // A tap on the open row only closes it.
+  await row.tap();
+  await swiped.waitFor({ state: 'detached' });
+  assert.equal(new URL(page.url()).hash, '#sessions');
+  // A full swipe asks to terminate; Cancel leaves the session.
+  await swipe(300);
+  const dialog = page.getByRole('dialog').filter({ hasText: 'Terminate' });
+  await dialog.waitFor();
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await row.waitFor();
+  // A short drag goes back, and a tap still opens the session.
+  await swipe(30);
+  assert.equal(await swiped.count(), 0);
+  await row.tap();
+  await page.locator('.term .xterm').first().waitFor();
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('no control is smaller than 32px, on a desktop or a phone', { skip, timeout: 90_000 }, async () => {
   for (const opts of [{ viewport: { width: 1440, height: 900 } }, { ...devices['iPhone 15 Pro'] }, { ...devices['iPad Pro 11'] }]) {
     const ctx = await browser.newContext(opts);
