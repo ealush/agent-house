@@ -87,6 +87,18 @@ trackpad).
   actions it stays open; past 60% of the row, letting go runs the outermost
   (Terminate still asks). One row open at a time; a tap on it, or anywhere
   else, closes it. Only a sideways drag counts, so lists still scroll.
+- **Settings as iOS Settings**: the sheet opens on a grouped list (*This
+  device*: Appearance, Shortcuts, Notifications; *This host*: Security,
+  Agents, Subscriptions, Environment, Search, System), each row a colored
+  tile, its name and a chevron. A section is a page of its own, named in the
+  sheet's bar with Back to the list. A link to a section (`#settings/agents`)
+  opens it, and Back returns to the list. A desktop's `#settings` is still
+  Security beside the section list.
+- **Switches** for on/off settings everywhere (notifications, the agents New
+  session offers, content search, snapshots, New session's options, a secret
+  variable, @mention): the words first, the switch at the row's end. Safari
+  draws its own `<input type="checkbox" switch>`; other browsers get a drawn
+  one. Picking items stays checkboxes.
 - Agents open in the **GUI** unless you chose the terminal for that session.
 - 44 pt minimum targets; 16 px fields (no zoom); safe areas and the keyboard
   offset respected; edge fades on scrolling strips.

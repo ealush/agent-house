@@ -3,6 +3,7 @@
 // Anything that needs more than a click (typing a variable, signing in a
 // device, a permission prompt) opens its settings page instead.
 // The Settings page itself loads lazily, so this module keeps clear of it.
+import { useEffect, useState } from 'react';
 import { api } from './api.ts';
 import { askConfirm, showError } from './ask.tsx';
 import type { IconName } from './icons.tsx';
@@ -24,6 +25,37 @@ export const SECTIONS = [
 export type Section = (typeof SECTIONS)[number]['id'];
 
 export const sectionHash = (id: Section) => (id === 'security' ? 'settings' : `settings/${id}`);
+
+/** The section a hash names (#settings/agents), or null for bare #settings (Security on a desktop, the list on a phone). */
+export function sectionPart(hash = typeof location === 'undefined' ? '' : location.hash): Section | null {
+  const h = hash.replace(/^#/, '');
+  const part = h.startsWith('settings/') ? h.slice('settings/'.length) : '';
+  return SECTIONS.some((s) => s.id === part) ? (part as Section) : null;
+}
+
+/** The section in the hash, kept current: the phone's Settings sheet titles itself by it. */
+export function useSectionPart(): Section | null {
+  const [part, setPart] = useState(() => sectionPart());
+  useEffect(() => {
+    const on = () => setPart(sectionPart());
+    window.addEventListener('hashchange', on);
+    return () => window.removeEventListener('hashchange', on);
+  }, []);
+  return part;
+}
+
+// A phone's Settings is a list you go into, as iOS's: a section opened from the list
+// pushes, so Back pops to the list; one linked straight at returns to the list in place.
+let fromList = false;
+export function openSection(id: Section) {
+  fromList = true;
+  location.hash = `settings/${id}`;
+}
+export function backToList() {
+  if (fromList) history.back();
+  else location.replace('#settings');
+  fromList = false;
+}
 
 export const THEMES: { id: ThemeMode; label: string; hint: string }[] = [
   { id: 'system', label: 'System', hint: 'Follow the OS' },

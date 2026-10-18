@@ -54,7 +54,7 @@ export function SearchSettingsPanel() {
       {status && (
         <>
           <label className="search-toggle">
-            <input type="checkbox" checked={status.enabled} disabled={busy} onChange={(e) => void toggle(e.target.checked)} />
+            <input type="checkbox" switch="" checked={status.enabled} disabled={busy} onChange={(e) => void toggle(e.target.checked)} />
             <span>Content search on this host</span>
           </label>
           {status.enabled ? (

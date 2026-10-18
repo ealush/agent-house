@@ -198,7 +198,7 @@ export function FilesPanel({ fs, start, cwd, agent, onInsert }: Props) {
 
       <div className="fs-foot">
         <label className="check">
-          <input type="checkbox" checked={mention} onChange={(e) => setMention(e.target.checked)} />
+          <input type="checkbox" switch="" checked={mention} onChange={(e) => setMention(e.target.checked)} />
           <span>@mention</span>
         </label>
         <span className="spacer" />

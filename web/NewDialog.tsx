@@ -434,7 +434,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
               Creates <b>{newName}</b> in {newParent}
             </span>
             <label className="check">
-              <input type="checkbox" checked={gitInit} onChange={(e) => setGitInit(e.target.checked)} />
+              <input type="checkbox" switch="" checked={gitInit} onChange={(e) => setGitInit(e.target.checked)} />
               <span>git init</span>
             </label>
           </div>
@@ -566,7 +566,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
             )}
             {!isNew && (
               <label className="check">
-                <input type="checkbox" checked={worktree} onChange={(e) => setWorktree(e.target.checked)} />
+                <input type="checkbox" switch="" checked={worktree} onChange={(e) => setWorktree(e.target.checked)} />
                 <span>
                   Isolated git worktree <span className="hint">— its own branch and checkout</span>
                 </span>
@@ -574,7 +574,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
             )}
             {preset?.resume && (
               <label className="check">
-                <input type="checkbox" checked={resume} onChange={(e) => setResume(e.target.checked)} />
+                <input type="checkbox" switch="" checked={resume} onChange={(e) => setResume(e.target.checked)} />
                 <span>
                   Continue the last conversation in this folder <span className="hint">— {preset.resume}</span>
                 </span>

@@ -179,7 +179,7 @@ export function EnvironmentPanel() {
         {form && (
           <>
             <label className="check">
-              <input type="checkbox" disabled={busy} checked={form.secret} onChange={(e) => setForm({ ...form, secret: e.target.checked, secretTouched: true })} />
+              <input type="checkbox" switch="" disabled={busy} checked={form.secret} onChange={(e) => setForm({ ...form, secret: e.target.checked, secretTouched: true })} />
               <span>Secret: hide the value once saved</span>
             </label>
             <div className="actions">

@@ -12,6 +12,7 @@ import { installEdges } from './edges.ts';
 import { installHardwareKeyboard } from './hardwareKeyboard.ts';
 import { installWindowControls } from './windowControls.ts';
 import { installPointer } from './pointer.ts';
+import { installSwitch } from './switch.ts';
 
 initTheme();
 // Every segmented control and toggle slides under a finger, as on iOS (slide.ts).
@@ -22,6 +23,7 @@ installHardwareKeyboard();
 installWindowControls();
 // Hover is the trackpad's and the Pencil's, never a finger's tap left behind (pointer.ts).
 installPointer();
+installSwitch();
 // ⌘↵ / Ctrl+↵ presses the main button, signed in or on the lock screen (confirm.ts).
 window.addEventListener('keydown', confirmKey);
 // Fonts ship with the app: nothing loads from third parties.

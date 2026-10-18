@@ -66,7 +66,7 @@ import { statusWord } from './status.ts';
 import { CommandPalette, Keycaps, Shortcuts, ShortcutsDialog, WhichKey, shortcutTitle, useCommand, usePaletteProvider } from './shortcuts.tsx';
 import { TabBar } from './TabBar.tsx';
 import { errorText } from './errors.ts';
-import { restartServer, sectionHash, settingsNodes } from './settingsMenu.ts';
+import { backToList, restartServer, sectionHash, SECTIONS, settingsNodes, useSectionPart } from './settingsMenu.ts';
 import { reviewHash } from './reviewApi.ts';
 import { ReviewContext } from './reviewContext.ts';
 
@@ -1115,6 +1115,7 @@ export function App({ onLock }: { onLock: () => void }) {
     fork: (w) => setForking({ ref: w.uid, host: w.host, harness: w.agent, title: w.title }),
     kill: terminate,
   };
+  const settingsPart = useSectionPart();
   const sideOverRef = useRef<HTMLDivElement>(null);
   const sideScrimRef = useRef<HTMLDivElement>(null);
   // A drag in from the edge shows the sidebar before it is open: it follows the finger.
@@ -1278,9 +1279,17 @@ export function App({ onLock }: { onLock: () => void }) {
 
 
       {narrow && page === 'settings' && state && (
-        <Sheet label="Settings" className="settings-sheet" onClose={() => goBack({ page: sheetBase.current }, { still: true })}>
+        <Sheet
+          label="Settings"
+          className="settings-sheet"
+          onClose={() => goBack({ page: sheetBase.current }, { still: true })}
+          // A section is a page you went into, as in iOS Settings: its name, and Back to the list.
+          title={settingsPart ? SECTIONS.find((s) => s.id === settingsPart)?.label : undefined}
+          onBack={settingsPart ? backToList : undefined}
+          backLabel="Settings"
+        >
           <Suspense fallback={<div className="page" />}>
-            <Settings onLocked={onLock} onNotifyChange={(on) => (pushActive.current = on)} />
+            <Settings phone onLocked={onLock} onNotifyChange={(on) => (pushActive.current = on)} />
           </Suspense>
         </Sheet>
       )}

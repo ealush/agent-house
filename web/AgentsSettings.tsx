@@ -88,7 +88,7 @@ export function AgentsPanel() {
                 </span>
                 {a.installed && (
                   <label className="agent-shown">
-                    <input type="checkbox" checked={!a.hidden} disabled={busy === 'check' || busy === 'add'} onChange={(e) => void show(a.id, e.target.checked)} />
+                    <input type="checkbox" switch="" checked={!a.hidden} disabled={busy === 'check' || busy === 'add'} onChange={(e) => void show(a.id, e.target.checked)} />
                     <span>New session</span>
                   </label>
                 )}

@@ -783,6 +783,36 @@ test('phone: a session row swipes left to Pin and Terminate, and a full swipe as
   await ctx.close();
 });
 
+test("phone: Settings is iOS Settings' list, a section is a page with Back, and on/off settings are switches", { skip, timeout: 60_000 }, async () => {
+  const ctx = await browser.newContext({ ...devices['iPhone 15 Pro'] });
+  const { page, errors } = await open(ctx, '#settings');
+  const sheet = page.locator('dialog.settings-sheet');
+  await sheet.locator('.ios-group-name', { hasText: 'This device' }).waitFor();
+  await sheet.locator('.ios-group-name', { hasText: 'This host' }).waitFor();
+  assert.equal(await sheet.locator('.settings-nav').count(), 0, 'no row of section tabs');
+  await sheet.locator('.ios-row', { hasText: 'Notifications' }).click();
+  await page.waitForFunction(() => location.hash === '#settings/notifications');
+  assert.equal(await sheet.locator('.sheet-title').innerText(), 'Notifications');
+  // On/off settings are switches: the switch at the row's end.
+  const sw = sheet.locator('input[type="checkbox"][switch]').first();
+  await sw.waitFor();
+  const label = sw.locator('xpath=..');
+  const [l, b] = [(await label.boundingBox())!, (await sw.boundingBox())!];
+  assert.ok(l.x + l.width - (b.x + b.width) < 2, 'the switch ends the row');
+  // Back goes to the list.
+  await sheet.getByRole('button', { name: 'Back to Settings' }).click();
+  await page.waitForFunction(() => location.hash === '#settings');
+  await sheet.locator('.ios-list').first().waitFor();
+  assert.deepEqual(errors, []);
+  await ctx.close();
+  // A desktop's #settings is still Security beside the section list.
+  const desk = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const { page: dp } = await open(desk, '#settings');
+  await dp.locator('.settings-nav .nav-item.on', { hasText: 'Security' }).waitFor();
+  assert.equal(await dp.locator('.ios-list').count(), 0);
+  await desk.close();
+});
+
 test('no control is smaller than 32px, on a desktop or a phone', { skip, timeout: 90_000 }, async () => {
   for (const opts of [{ viewport: { width: 1440, height: 900 } }, { ...devices['iPhone 15 Pro'] }, { ...devices['iPad Pro 11'] }]) {
     const ctx = await browser.newContext(opts);

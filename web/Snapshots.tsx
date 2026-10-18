@@ -113,7 +113,7 @@ export function SnapshotsPanel({ client, w, onChange }: { client: HostApi; w: Wi
       {data?.partial && data.available && <p className="hint">Snapshots may be partial for turns typed straight into the terminal (no hooks).</p>}
       {data && (
         <label className="snapshot-toggle">
-          <input type="checkbox" checked={data.enabled} disabled={busy} onChange={(e) => toggle(e.target.checked)} /> Take snapshots for this
+          <input type="checkbox" switch="" checked={data.enabled} disabled={busy} onChange={(e) => toggle(e.target.checked)} /> Take snapshots for this
           session
         </label>
       )}
