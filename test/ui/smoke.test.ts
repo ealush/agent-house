@@ -549,6 +549,55 @@ test('iPad in portrait: the sidebar slides over the page, by its button, a swipe
   await wide.close();
 });
 
+test('iPad in portrait: the sidebar follows the finger, and the release settles it by how far and how fast', { skip, timeout: 60_000 }, async () => {
+  const ctx = await browser.newContext({ ...devices['iPad Pro 11'] });
+  const { page, errors } = await open(ctx);
+  await page.getByRole('button', { name: 'Show sidebar' }).waitFor();
+  const over = page.locator('.side-over');
+  const cdp = await ctx.newCDPSession(page);
+  const touch = (type: string, x?: number) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: x === undefined ? [] : [{ x, y: 500, id: 1 }] });
+  // Slowly to x, held there (no flick), and left down.
+  const to = async (from: number, x: number) => {
+    await touch('touchStart', from);
+    for (let i = 1; i <= 10; i++) {
+      await touch('touchMove', from + ((x - from) * i) / 10);
+      await page.waitForTimeout(30);
+    }
+    await page.waitForTimeout(150);
+  };
+  const shift = () => over.evaluate((e) => new DOMMatrix(getComputedStyle(e).transform).m41);
+  // In from the edge: its right edge stays under the finger, over a page dimmed as far.
+  await to(4, 90);
+  const w = await over.evaluate((e) => (e as HTMLElement).offsetWidth);
+  assert.ok(Math.abs((await shift()) - (90 - w)) < 2, 'the sidebar edge is under the finger');
+  const dim = Number(await page.locator('.side-scrim').evaluate((e) => getComputedStyle(e).opacity));
+  assert.ok(Math.abs(dim - 90 / w) < 0.05);
+  // Let go a third of the way out, held still: it goes back.
+  await touch('touchEnd');
+  await over.waitFor({ state: 'detached' });
+  // Most of the way out: it opens, and stays put.
+  await to(4, w - 40);
+  await touch('touchEnd');
+  await page.waitForTimeout(400);
+  assert.equal(await over.count(), 1);
+  assert.equal(await shift(), 0);
+  // Pushed back a little and let go: still open. A flick: gone.
+  await to(200, 150);
+  assert.ok((await shift()) < -40);
+  await touch('touchEnd');
+  await page.waitForTimeout(400);
+  assert.equal(await shift(), 0);
+  await touch('touchStart', 200);
+  for (const x of [190, 170, 140]) {
+    await touch('touchMove', x);
+    await page.waitForTimeout(16);
+  }
+  await touch('touchEnd');
+  await over.waitFor({ state: 'detached' });
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('iPad with a hardware keyboard: the first key only it can send brings key hints back and puts the on-screen keys away', { skip, timeout: 60_000 }, async () => {
   const ctx = await browser.newContext({ ...devices['iPad Pro 11 landscape'] });
   const { page, errors } = await open(ctx);

@@ -1108,7 +1108,9 @@ export function App({ onLock }: { onLock: () => void }) {
         />
   );
   const sideOverRef = useRef<HTMLDivElement>(null);
-  useSideSwipe(tight, sideOver, setSideOver, sideOverRef);
+  const sideScrimRef = useRef<HTMLDivElement>(null);
+  // A drag in from the edge shows the sidebar before it is open: it follows the finger.
+  const sidePeek = useSideSwipe(tight, sideOver, setSideOver, sideOverRef, sideScrimRef);
 
   return (
     <PresetsContext.Provider value={presetFor}>
@@ -1129,9 +1131,9 @@ export function App({ onLock }: { onLock: () => void }) {
           </div>
         )
       )}
-      {tight && sideOver && (
+      {tight && (sideOver || sidePeek) && (
         <>
-          <div className="side-scrim" onClick={() => setSideOver(false)} aria-hidden />
+          <div className="side-scrim" ref={sideScrimRef} onClick={() => setSideOver(false)} aria-hidden />
           <div className="side-over" role="dialog" aria-label="Sidebar" ref={sideOverRef}>
             {sidebar}
           </div>

@@ -21,7 +21,10 @@ the layout that fits:
   the page keeps the width; the sidebar **slides over it** from the rail's
   button, Ctrl+Shift+E, or a drag in from the left edge, over a dimmed page.
   Picking anything, a drag to the left, Escape or a tap on the page puts it
-  away.
+  away. A drag moves it with the finger (its edge under the finger coming
+  in, the page dimming as far), and the release settles it: open past 40%
+  of its width, shut short of it, and a flick either way decides alone. A
+  finger can take it again while it settles.
 - **760 px and narrower** (Split View, Slide Over): the phone's layout.
 
 Touch sizing throughout: 44 px menu rows, 36 px segments and chips.
