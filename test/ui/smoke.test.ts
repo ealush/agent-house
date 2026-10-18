@@ -707,6 +707,38 @@ test("iPad: a finger's tap leaves no hover behind, and the trackpad's pointer st
   await ctx.close();
 });
 
+test('phone: a finger held on a session row lifts it into its menu, and the lift opens nothing', { skip, timeout: 60_000 }, async () => {
+  const ctx = await browser.newContext({ ...devices['iPhone 15 Pro'] });
+  const { page, errors } = await open(ctx, '#sessions');
+  const row = page.locator('.rows .row', { hasText: 'zz-idle' }).first();
+  await row.waitFor();
+  const cdp = await ctx.newCDPSession(page);
+  const hold = async () => {
+    const b = (await row.boundingBox())!;
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: b.x + 100, y: b.y + b.height / 2, id: 1 }] });
+    await page.waitForTimeout(650);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  };
+  const menu = page.locator('.press-menu');
+  await hold();
+  await menu.waitFor();
+  assert.equal(new URL(page.url()).hash, '#sessions', 'the lift opened nothing');
+  for (const label of ['Open', 'Rename session', 'Pin', 'Terminate session']) await menu.getByRole('menuitem', { name: label }).waitFor();
+  // A tap on the page puts it back; Escape too.
+  await page.touchscreen.tap(200, 60);
+  await menu.waitFor({ state: 'detached' });
+  await hold();
+  await menu.waitFor();
+  await page.keyboard.press('Escape');
+  await menu.waitFor({ state: 'detached' });
+  // Open opens the session.
+  await hold();
+  await menu.getByRole('menuitem', { name: 'Open' }).tap();
+  await page.locator('.term .xterm').first().waitFor();
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('no control is smaller than 32px, on a desktop or a phone', { skip, timeout: 90_000 }, async () => {
   for (const opts of [{ viewport: { width: 1440, height: 900 } }, { ...devices['iPhone 15 Pro'] }, { ...devices['iPad Pro 11'] }]) {
     const ctx = await browser.newContext(opts);

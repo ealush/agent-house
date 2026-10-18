@@ -57,6 +57,7 @@ import { Icon } from './icons.tsx';
 import { useSwipeBack } from './useSwipeBack.ts';
 import { edgeGesture } from './edges.ts';
 import { useSideSwipe } from './useSideSwipe.ts';
+import { SessionActionsContext, type SessionActions } from './PressMenu.tsx';
 import { Sheet } from './sheet.tsx';
 import { trackViewport } from './viewport.ts';
 import { glide, transition, type Heading } from './motion.ts';
@@ -1107,6 +1108,13 @@ export function App({ onLock }: { onLock: () => void }) {
           onFork={(w) => setForking({ ref: w.uid, host: w.host, harness: w.agent, title: w.title })}
         />
   );
+  // What a list row's held-finger menu does in place (PressMenu.tsx).
+  const sessionActions: SessionActions = {
+    open: (w) => open(w.key),
+    pin: (w) => void clientFor(w.host).pin(w.uid, !w.pinned).then(() => refresh(w.host), (e) => showError(e, "Couldn't pin")),
+    fork: (w) => setForking({ ref: w.uid, host: w.host, harness: w.agent, title: w.title }),
+    kill: terminate,
+  };
   const sideOverRef = useRef<HTMLDivElement>(null);
   const sideScrimRef = useRef<HTMLDivElement>(null);
   // A drag in from the edge shows the sidebar before it is open: it follows the finger.
@@ -1117,6 +1125,7 @@ export function App({ onLock }: { onLock: () => void }) {
     <HostPresetsContext.Provider value={(host) => hostState(host)?.presets ?? []}>
     <ResumeContext.Provider value={state ? { history: state.history, resume: (h) => resumeKey(h.host, h.ref), discard: terminate } : null}>
     <ReviewContext.Provider value={{ host: state?.hostname ?? '', state: state?.review ?? null, open: openReview }}>
+    <SessionActionsContext.Provider value={sessionActions}>
     <div className={`app ${narrow ? 'narrow' : ''}`}>
       <Shortcuts />
       <WhichKey />
@@ -1391,6 +1400,7 @@ export function App({ onLock }: { onLock: () => void }) {
         </div>
       )}
     </div>
+    </SessionActionsContext.Provider>
     </ReviewContext.Provider>
     </ResumeContext.Provider>
     </HostPresetsContext.Provider>

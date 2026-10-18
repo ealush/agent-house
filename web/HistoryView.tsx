@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { usePressMenu } from './PressMenu.tsx';
 import { statusCounts } from './status.ts';
 import type { HistoryItem, State, Win } from './api.ts';
 import { Icon } from './icons.tsx';
@@ -20,6 +21,8 @@ export function HistoryView({ state, onResume, onForget, onFork, touch = false, 
   // Touch: the row itself resumes (like any list on a phone), and Fork and
   // Hide wait behind ··· so the title keeps the width.
   const [menuFor, setMenuFor] = useState<string | null>(null);
+  // A finger held on a row: Resume, Fork, Hide, as iOS lists open a menu (PressMenu.tsx).
+  const press = usePressMenu();
   const menuRow = useRef<HTMLSpanElement>(null);
   // A phone's menu is an action sheet, which closes itself (scrim, Cancel, a drag down).
   useDismiss(menuFor !== null && !narrow, menuRow, () => setMenuFor(null));
@@ -86,6 +89,7 @@ export function HistoryView({ state, onResume, onForget, onFork, touch = false, 
       )}
       {state.history.length > 0 && shown.length === 0 && <p className="empty-state">No conversations match “{filter}”.</p>}
       <ul className="rows history-list">
+        {press.menu}
         {shown.map((h) => {
           const { color } = look(h.harness);
           const key = `${h.host}:${h.ref}`;
@@ -96,6 +100,11 @@ export function HistoryView({ state, onResume, onForget, onFork, touch = false, 
               <div
                 className={`row quiet history-row ${touch ? 'tap' : ''}`}
                 style={{ '--agent': color } as React.CSSProperties}
+                {...press.bind(() => [
+                  { label: 'Resume', icon: 'reload', run: () => onResume(h) },
+                  ...(canFork ? [{ label: 'Fork…', icon: 'fork' as const, run: () => onFork?.(h) }] : []),
+                  { label: 'Hide', icon: 'close', danger: true, run: () => onForget(h) },
+                ])}
                 onClick={
                   touch
                     ? (e) => {

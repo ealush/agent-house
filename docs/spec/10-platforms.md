@@ -74,6 +74,14 @@ trackpad).
   scroll inside, grabber and ✕, drag down to close. New session and Settings
   are sheets.
 - **Action sheet** for the session menu (VIEW-3).
+- **Context menus**, as iOS lists have: a finger held on a session row
+  (Inbox, Sessions) or a History row lifts it out over the blurred page with
+  its actions in a menu under it (over it near the bottom; the row moves up
+  when neither fits). A session row offers Open, Rename, Pin/Unpin, Send to,
+  Fork and Terminate (the desktop row menu's choices); pin, fork and
+  terminate act in place. History offers Resume, Fork and Hide. The lift
+  opens nothing; a tap elsewhere or Escape puts it back. Touch screens only
+  (an iPad's Inbox rows too).
 - Agents open in the **GUI** unless you chose the terminal for that session.
 - 44 pt minimum targets; 16 px fields (no zoom); safe areas and the keyboard
   offset respected; edge fades on scrolling strips.

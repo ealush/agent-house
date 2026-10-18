@@ -1,3 +1,4 @@
+import { useContext } from 'react';
 import type { HistoryItem, HostApi, ReviewAlert, State, Win } from './api.ts';
 import { AskPanel, AskSummary } from './AskPanel.tsx';
 import { KIND_LABEL } from './askView.ts';
@@ -11,6 +12,7 @@ import { Glide } from './Glide.tsx';
 import { useFlip } from './useFlip.ts';
 import { statusClass, statusCounts, statusWord } from './status.ts';
 import { sessionLine } from './sessionLine.tsx';
+import { SessionActionsContext, sessionItems, usePressMenu } from './PressMenu.tsx';
 
 export type InboxGroup = 'status' | 'host' | 'project';
 
@@ -288,15 +290,19 @@ function ListHead({ flip }: { flip: string }) {
 
 /** `inProject`: the rows sit under their project's heading, so they don't repeat it. */
 export function Rows({ windows, multiHost, narrow, onOpen, quiet, inProject }: { windows: Win[]; multiHost: boolean; narrow: boolean; onOpen: Props['onOpen']; quiet?: boolean; inProject?: boolean }) {
+  // A finger held on a row: its menu, as iOS lists open one (PressMenu.tsx).
+  const actions = useContext(SessionActionsContext);
+  const { bind, menu } = usePressMenu();
   return (
     <ul className="rows">
+      {menu}
       {windows.map((w) => {
         const { color } = look(w.agent);
         const place = inProject ? (multiHost ? w.host : '') : where(w, multiHost);
         const pill = <span className={`pill ${statusClass(w) === 'idle' ? '' : statusClass(w)}`}>{statusWord(w)}</span>;
         return (
           <li key={w.key} data-flip={w.key}>
-            <button className={`row ${quiet ? 'quiet' : ''}`} style={{ '--agent': color } as React.CSSProperties} onClick={() => onOpen(w)}>
+            <button className={`row ${quiet ? 'quiet' : ''}`} style={{ '--agent': color } as React.CSSProperties} onClick={() => onOpen(w)} {...(actions ? bind(() => sessionItems(w, actions)) : {})}>
               <span className="chip">
                 <AgentLogo id={w.agent} />
               </span>
