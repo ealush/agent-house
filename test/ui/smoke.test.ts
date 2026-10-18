@@ -606,6 +606,34 @@ test('iPad: a finger held on a session row, or a secondary click, opens its menu
   await ctx.close();
 });
 
+test('iPad home-screen app in a window: a strip at the top for the window buttons, none in full screen', { skip, timeout: 60_000 }, async () => {
+  const ctx = await browser.newContext({ ...devices['iPad Pro 11'], viewport: { width: 900, height: 700 }, screen: { width: 834, height: 1194 } });
+  // A home-screen app: Playwright can't install one, so it answers as one.
+  await ctx.addInitScript(() => {
+    const real = window.matchMedia.bind(window);
+    window.matchMedia = (q: string) => (q === '(display-mode: standalone)' ? ({ ...real(q), matches: true, media: q } as MediaQueryList) : real(q));
+  });
+  const { page, errors } = await open(ctx);
+  const button = page.getByRole('button', { name: 'Show sidebar' });
+  await button.waitFor();
+  const root = page.locator('html');
+  assert.equal(await root.getAttribute('data-window-controls'), '');
+  // The buttons reach ~30px down the corner: the sidebar button sits below them.
+  assert.ok((await button.boundingBox())!.y >= 32);
+  // Full screen: the corner is ah's again.
+  await page.setViewportSize({ width: 1194, height: 834 });
+  await page.waitForFunction(() => !document.documentElement.hasAttribute('data-window-controls'));
+  assert.ok((await page.locator('.sidebar').first().boundingBox())!.y < 32);
+  // Settings → Appearance can always leave it.
+  await page.evaluate(() => (location.hash = 'settings/appearance'));
+  await page.getByRole('radio', { name: 'Always' }).click();
+  assert.equal(await root.getAttribute('data-window-controls'), '');
+  await page.getByRole('radio', { name: 'In a window' }).click();
+  assert.equal(await root.getAttribute('data-window-controls'), null);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('no control is smaller than 32px, on a desktop or a phone', { skip, timeout: 90_000 }, async () => {
   for (const opts of [{ viewport: { width: 1440, height: 900 } }, { ...devices['iPhone 15 Pro'] }, { ...devices['iPad Pro 11'] }]) {
     const ctx = await browser.newContext(opts);

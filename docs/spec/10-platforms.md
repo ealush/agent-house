@@ -41,6 +41,14 @@ placed against the screen: under their button when they fit, over it when
 that fits, else on the roomier side as tall as the room, scrolling inside
 (44 px rows make long menus).
 
+**Window buttons.** In a Stage Manager window iPadOS 26 draws its window
+buttons over the top-left corner. A native app gets a 32 pt strip at the top
+for them; a home-screen web app gets none (its top inset reads 0), so ah
+takes the strip itself whenever it is a home-screen app on an iPad in a
+window (narrower than the screen, or clearly shorter), and gives it back in
+full screen. Settings → Appearance → Window buttons: *In a window* (the
+default), *Always* or *Never*. `?vh=1` shows the numbers it decides by.
+
 ## PLT-3 · Phone — shipped
 
 - Floating glass **tab bar**: Inbox, Sessions, History, and Commands (ATT-8).

@@ -177,7 +177,8 @@ function mountVhBadge(win: Window, doc: Document): { refresh: (editing: boolean)
     const focus = doc.activeElement as HTMLElement | null;
     el.textContent =
       `vv ${Math.round(win.visualViewport?.height ?? -1)} · lay ${doc.documentElement.clientHeight} · scr ${win.screen?.height ?? -1} · dvh ${probe.clientHeight} · --vh ${inline}\n` +
-      `edit ${editing ? 1 : 0} · focus ${focus?.tagName ?? 'none'} · pwa ${standalone ? 1 : 0} · inner ${win.innerHeight} · shim ${doc.documentElement.classList?.contains('ios-shim') ? doc.documentElement.style.getPropertyValue?.('--app-h') : 'off'}`;
+      `edit ${editing ? 1 : 0} · focus ${focus?.tagName ?? 'none'} · pwa ${standalone ? 1 : 0} · inner ${win.innerHeight} · shim ${doc.documentElement.classList?.contains('ios-shim') ? doc.documentElement.style.getPropertyValue?.('--app-h') : 'off'}\n` +
+      `win ${win.innerWidth}×${win.innerHeight} · scr ${win.screen?.width ?? -1}×${win.screen?.height ?? -1} · window buttons ${doc.documentElement.hasAttribute?.('data-window-controls') ? 'room' : 'none'}`;
   };
   const hasTimers = typeof win.setInterval === 'function' && typeof win.clearInterval === 'function';
   const timer: number | NodeJS.Timeout = hasTimers
