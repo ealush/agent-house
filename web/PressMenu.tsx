@@ -2,6 +2,7 @@ import { createContext, useEffect, useLayoutEffect, useRef, useState, type React
 import { createPortal } from 'react-dom';
 import type { Win } from './api.ts';
 import { contextMenu } from './contextMenu.ts';
+import { haptic } from './haptic.ts';
 import { Icon, type IconName } from './icons.tsx';
 import { commandLabel, runCommandSoon } from './shortcuts.ts';
 import { confirmTerminate } from './Sidebar.tsx';
@@ -25,7 +26,11 @@ export function usePressMenu(): { bind: (items: () => PressItem[]) => Partial<Re
   const bind = (items: () => PressItem[]) => {
     if (!TOUCH) return {};
     let el: HTMLElement | null = null;
-    const press = contextMenu(() => el && setAt({ el, items: items() }));
+    const press = contextMenu(() => {
+      if (!el) return;
+      haptic();
+      setAt({ el, items: items() });
+    });
     return {
       ...press,
       onPointerDown: (e: React.PointerEvent) => {

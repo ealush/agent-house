@@ -99,6 +99,12 @@ trackpad).
   variable, @mention): the words first, the switch at the row's end. Safari
   draws its own `<input type="checkbox" switch>`; other browsers get a drawn
   one. Picking items stays checkboxes.
+- **Haptics** where iOS apps tick: a held row's menu opening, a swipe
+  passing the point where letting go acts (and back). Android vibrates;
+  iOS Safari has no vibration API, so ah flips a hidden
+  `<input type="checkbox" switch>` through its label, which ticks Safari's
+  switch haptic (iOS 18+), and only inside a user gesture: a tick timed from
+  a held finger may not come. The flip's click reaches no other listener.
 - Agents open in the **GUI** unless you chose the terminal for that session.
 - 44 pt minimum targets; 16 px fields (no zoom); safe areas and the keyboard
   offset respected; edge fades on scrolling strips.

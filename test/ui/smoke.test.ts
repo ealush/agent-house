@@ -813,6 +813,40 @@ test("phone: Settings is iOS Settings' list, a section is a page with Back, and 
   await desk.close();
 });
 
+test('phone: a held row and a full swipe tick a haptic (vibrate, or iOS Safari\'s switch)', { skip, timeout: 60_000 }, async () => {
+  for (const ios of [false, true]) {
+    const ctx = await browser.newContext({ ...devices['iPhone 15 Pro'] });
+    await ctx.addInitScript((ios: boolean) => {
+      const w = window as unknown as { ticks: number };
+      w.ticks = 0;
+      // iOS Safari has no vibrate(): ah flips a hidden switch instead.
+      if (ios) Object.defineProperty(Navigator.prototype, 'vibrate', { value: undefined, configurable: true });
+      else Object.defineProperty(Navigator.prototype, 'vibrate', { value: () => (w.ticks++, true), configurable: true });
+    }, ios);
+    const { page, errors } = await open(ctx, '#sessions');
+    const row = page.locator('.rows .row', { hasText: 'zz-idle' }).first();
+    await row.waitFor();
+    const ticks = () => page.evaluate(() => (window as unknown as { ticks: number }).ticks);
+    const flips = () => page.evaluate(() => [...document.querySelectorAll('body > label[aria-hidden] input[switch]')].length);
+    if (ios) await page.evaluate(() => document.addEventListener('click', (e) => (e.target as Element).closest('body > label[aria-hidden]') && ((window as unknown as { ticks: number }).ticks += 1000), true));
+    const cdp = await ctx.newCDPSession(page);
+    const b = (await row.boundingBox())!;
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: b.x + 100, y: b.y + b.height / 2, id: 1 }] });
+    await page.waitForTimeout(650);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.locator('.press-menu').waitFor();
+    if (ios) assert.equal(await flips(), 1, 'the hidden switch is there');
+    // The tick reached nobody: the menu is still open.
+    await page.waitForTimeout(200);
+    assert.equal(await page.locator('.press-menu').count(), 1);
+    assert.ok((await ticks()) >= (ios ? 1000 : 1), 'a tick for the menu');
+    await page.keyboard.press('Escape');
+    await page.locator('.press-menu').waitFor({ state: 'detached' });
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  }
+});
+
 test('no control is smaller than 32px, on a desktop or a phone', { skip, timeout: 90_000 }, async () => {
   for (const opts of [{ viewport: { width: 1440, height: 900 } }, { ...devices['iPhone 15 Pro'] }, { ...devices['iPad Pro 11'] }]) {
     const ctx = await browser.newContext(opts);

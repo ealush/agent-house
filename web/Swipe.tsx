@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react';
+import { haptic } from './haptic.ts';
 import { Icon, type IconName } from './icons.tsx';
 
 export type SwipeAction = { label: string; icon: IconName; tone?: 'danger' | 'accent' | 'plain'; run: () => void };
@@ -28,7 +29,10 @@ function place(box: HTMLElement | null, front: HTMLElement | null, to: number, m
   front.style.transform = to ? `translateX(${to}px)` : '';
   box.style.setProperty('--shown', String(Math.min(1, -to / max)));
   box.classList.toggle('open', to < 0);
-  box.classList.toggle('full', -to > box.offsetWidth * FULL);
+  const full = -to > box.offsetWidth * FULL;
+  // Past the point where letting go runs the outermost action, and back: a tick each way, as Mail's.
+  if (full !== box.classList.contains('full') && !animate) haptic();
+  box.classList.toggle('full', full);
 }
 
 /**
