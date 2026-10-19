@@ -3388,6 +3388,7 @@ button.findings-label {
   .review-merge-stack .merge-how,
   .review-dispatch .merge-how {
     display: grid;
+    justify-content: stretch;
     gap: 6px;
   }
 
