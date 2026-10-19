@@ -50,7 +50,9 @@ time: the PR's **description**, read from GitHub when opened and shown as
 GitHub shows it (REV-7), and the **briefing** (written by the briefing
 subscription: what it does, how it fits, what to look at, tests). The merge gates are a row of marks under the diff. The layer's
 findings sit above the diff and fold to one line; each has *Discuss*. On a
-phone: Findings and Diff tabs and a glass bar with a Reviewer button.
+phone: Overview and Diff tabs and a glass bar with a Reviewer button. Overview
+opens on what the layer changes (files, +/−, its branches) and its Description
+and Briefing cards, then its findings and gates.
 
 ## REV-5 · The reviewer — shipped
 
@@ -62,7 +64,7 @@ whole stack) and anything you brought with *Discuss* on a finding. On a phone
 it's a sheet over the overview or the layer (the Reviewer button in the
 layer's bar, or *Discuss*): half the screen, so what you're asking about stays
 in view above it, pulled up to full height, dragged down to put away, and above
-the keyboard while you type. The layer's tabs are Findings and Diff. In the diff, a
+the keyboard while you type. The layer's tabs are Overview and Diff. In the diff, a
 clicked line (Shift+click for a range, removed lines too) offers *Ask the
 reviewer* beside *Add finding*, taking the lines as the diff shows them and
 what you wrote; each file's header has *Discuss* for the file's whole change. By

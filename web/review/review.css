@@ -2064,7 +2064,37 @@
 
 .layer.phone > .seg {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
+}
+
+/* Overview: the layer's size and branches, then its description or briefing, before its findings. */
+.layer.phone .layer-about {
+  display: grid;
+  gap: 10px;
+}
+
+.layer.phone .about-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.layer.phone .about-meta .branchline {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.layer.phone .layer-about .briefing {
+  margin: 0;
+}
+
+.layer.phone .layer-about + .card-label {
+  margin-top: 8px;
 }
 
 .layer.phone .layer-tab {
