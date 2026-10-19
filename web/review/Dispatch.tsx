@@ -27,6 +27,7 @@ export function DispatchDialog({
   findingIds,
   extra,
   kind,
+  method,
   onClose,
   onSent,
 }: {
@@ -35,7 +36,9 @@ export function DispatchDialog({
   layer: Layer;
   findingIds: number[];
   extra: string;
-  kind?: 'restack';
+  /** A restack of the layer, or merging the stack up to it (with `method`). */
+  kind?: 'restack' | 'merge';
+  method?: string;
   onClose: () => void;
   onSent: (outcome: string, to: string) => void;
 }) {
@@ -57,7 +60,7 @@ export function DispatchDialog({
   // A new session gets the draft for one: where it is, how to push, why the stack exists. Edits you made stay.
   const wasFresh = useRef(false);
   useEffect(() => {
-    if (loading || kind === 'restack' || fresh === wasFresh.current) return;
+    if (loading || kind || fresh === wasFresh.current) return;
     wasFresh.current = fresh;
     if (text !== drafted) return;
     api.dispatchText(stack.id, layer.pr, findingIds, extra, kind, fresh).then((t) => (setText(t.text), setDrafted(t.text)), () => {});
@@ -65,7 +68,7 @@ export function DispatchDialog({
 
   useEffect(() => {
     let live = true;
-    Promise.all([api.dispatchText(stack.id, layer.pr, findingIds, extra, kind), api.owners(stack.id)])
+    Promise.all([api.dispatchText(stack.id, layer.pr, findingIds, extra, kind, false, method), api.owners(stack.id)])
       .then(([t, o]) => {
         if (!live) return;
         setText(t.text);
@@ -89,7 +92,8 @@ export function DispatchDialog({
     setBusy(true);
     setError(null);
     try {
-      const out = await api.dispatch(stack.id, layer.pr, fresh ? { findingIds, text, newSession: { preset: target.slice(4) } } : { findingIds, text, targetUid: target });
+      const merge = kind === 'merge' ? { kind: 'merge' as const } : {};
+      const out = await api.dispatch(stack.id, layer.pr, fresh ? { findingIds, text, newSession: { preset: target.slice(4) }, ...merge } : { findingIds, text, targetUid: target, ...merge });
       onSent(out.outcome, fresh ? `a new ${look(target.slice(4)).name} session` : (chosen?.title ?? stack.owner?.title ?? 'the agent'));
       onClose();
     } catch (err) {
@@ -104,10 +108,12 @@ export function DispatchDialog({
       <SheetBar onClose={dismiss} />
       <form onSubmit={submit}>
         <header className="ns-head">
-          <h2>{kind === 'restack' ? `Restack ${label}` : findingIds.length ? `Send ${findingIds.length} finding${findingIds.length > 1 ? 's' : ''} for ${label}` : `Send to the agent on ${label}`}</h2>
+          <h2>{kind === 'merge' ? `Ask the agent to merge ${layer.pr === stack.layers.filter((l) => l.state === 'open').at(-1)?.pr ? 'the stack' : `up to ${label}`}` : kind === 'restack' ? `Restack ${label}` : findingIds.length ? `Send ${findingIds.length} finding${findingIds.length > 1 ? 's' : ''} for ${label}` : `Send to the agent on ${label}`}</h2>
         </header>
         <p className="hint">
-          Drafted from your findings, decisions and the layers above. Edit it as you like. When the agent finishes and pushes, the layer comes back for a re-review.
+          {kind === 'merge'
+            ? `Drafted from the merge order, the heads you reviewed and how each layer lands. Edit it as you like. When the agent finishes, ah checks that ${label} merged.`
+            : 'Drafted from your findings, decisions and the layers above. Edit it as you like. When the agent finishes and pushes, the layer comes back for a re-review.'}
         </p>
         <label className="field">
           <span>Session</span>

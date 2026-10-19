@@ -343,6 +343,7 @@ function upNext(stack: Stack, alerts: ReviewAlert[]): Next {
     return { tone: 'todo', eyebrow: 'Up next', title: `Review ${name(todo)}`, body: `${todo.title}${r ? ` · ${r.files} file${r.files === 1 ? '' : 's'}, +${r.additions} −${r.deletions}` : ''}`, pr: todo.pr, action: `Review ${name(todo)}` };
   }
   const fixing = open.find((l) => l.status === 'fixing');
+  if (fixing?.dispatch?.kind === 'merge') return { tone: 'busy', eyebrow: 'Waiting', title: `${who(fixing)} is merging the stack${fixing.pr === open.at(-1)?.pr ? '' : ` up to ${name(fixing)}`}`, body: 'The layers turn merged as GitHub lands them. You get a push if it stops short.', pr: fixing.pr, action: null };
   if (fixing) return { tone: 'busy', eyebrow: 'Waiting', title: `${who(fixing)} is fixing ${name(fixing)}`, body: 'You get a push and an Inbox card when it comes back.', pr: fixing.pr, action: null };
   if (first) return { tone: 'todo', eyebrow: 'Up next', title: `${name(first)}: ${STATUS_WORD[first.status].toLowerCase()}`, body: first.title, pr: first.pr, action: `Open ${name(first)}` };
   return { tone: 'done', eyebrow: 'Done', title: 'Every layer is merged or closed', body: `${stack.layers.filter((l) => l.state === 'merged').length} merged into ${stack.trunk}.`, pr: null, action: null };
@@ -419,7 +420,7 @@ function MergeTable({ stack, onOpen, onMerge }: { stack: Stack; onOpen: (pr: num
               <span role="cell">
                 <span className={`tone-pill ${tone}`}>
                   <Dot tone={tone} size="sm" />
-                  {SHORT[l.status]}
+                  {l.status === 'fixing' && l.dispatch?.kind === 'merge' ? 'Agent merging' : SHORT[l.status]}
                 </span>
               </span>
               <span className="mt-f" role="cell">
@@ -562,6 +563,8 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
   // A reviewer answer you're sending to the agent, from the layer you're on.
   const [handing, setHanding] = useState<string | null>(null);
   const [mergingAll, setMergingAll] = useState(false);
+  // Merging handed to the agent: up to which layer, and how.
+  const [agentMerge, setAgentMerge] = useState<{ upTo: number; method: string } | null>(null);
   const live = useRef(true);
   useEffect(() => {
     live.current = true;
@@ -837,6 +840,24 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
         load();
         loadFindings();
       }}
+      onAskAgent={(method, upTo) => setAgentMerge({ method, upTo })}
+    />
+  );
+  const agentLayer = agentMerge && stack.layers.find((l) => l.pr === agentMerge.upTo);
+  const askMerge = agentMerge && agentLayer && (
+    <DispatchDialog
+      api={api}
+      stack={stack}
+      layer={agentLayer}
+      findingIds={[]}
+      extra=""
+      kind="merge"
+      method={agentMerge.method}
+      onClose={() => setAgentMerge(null)}
+      onSent={(outcome, to) => {
+        toast(outcome === 'queued' ? `Merge queued for ${to}` : `Asked ${to} to merge`);
+        load();
+      }}
     />
   );
 
@@ -935,6 +956,7 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
         <div className="review-grid">{layerView}</div>
         {handoff}
         {mergeAll}
+      {askMerge}
       </div>
     ) : (
       <div className="review-stack page phone" data-title={stack.title}>
@@ -946,6 +968,7 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
           </Sheet>
         )}
         {mergeAll}
+      {askMerge}
       </div>
     );
 
@@ -966,6 +989,7 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
       </div>
       {handoff}
       {mergeAll}
+      {askMerge}
     </div>
   );
 }

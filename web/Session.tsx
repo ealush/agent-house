@@ -1076,7 +1076,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
             {w.branch && <PrLink client={client} uid={w.uid} branch={w.branch} />}
             {review?.fixing ? (
               <button type="button" className="pill busy review-pill" onClick={() => review.open(review.fixing!.stackId, review.fixing!.pr)} title="Findings from Review this session is working on">
-                {review.fixing.count ? `Fixing ${review.fixing.count} finding${review.fixing.count === 1 ? '' : 's'}` : 'On a review'} · {review.fixing.role || `#${review.fixing.pr}`}
+                {review.fixing.merge ? 'Merging the stack' : review.fixing.count ? `Fixing ${review.fixing.count} finding${review.fixing.count === 1 ? '' : 's'}` : 'On a review'} · {review.fixing.role || `#${review.fixing.pr}`}
               </button>
             ) : review?.layer ? (
               <button type="button" className="pill review-pill" onClick={() => review.open(review.layer!.stackId, review.layer!.pr)} title={`${review.layer.stackTitle}, in Review`}>

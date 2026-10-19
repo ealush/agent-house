@@ -205,7 +205,12 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
     if ((m = route('GET', `/stacks/${ID}/layers/${PR}/dispatch`))) {
       const ids = (url.searchParams.get('findings') ?? '').split(',').filter(Boolean).slice(0, 50).map((x) => int(x, 'finding'));
       const kind = url.searchParams.get('kind');
-      const text = kind === 'restack' ? await svc.restackText(m[1], Number(m[2])) : await svc.dispatchText(m[1], Number(m[2]), ids, (url.searchParams.get('extra') ?? '').slice(0, 8000), url.searchParams.get('fresh') === '1');
+      const text =
+        kind === 'restack'
+          ? await svc.restackText(m[1], Number(m[2]))
+          : kind === 'merge'
+            ? await svc.mergeText(m[1], (url.searchParams.get('method') ?? 'merge').slice(0, 10), Number(m[2]))
+            : await svc.dispatchText(m[1], Number(m[2]), ids, (url.searchParams.get('extra') ?? '').slice(0, 8000), url.searchParams.get('fresh') === '1');
       return send(res, 200, { text });
     }
 
@@ -213,9 +218,11 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
       const body = await readJson(req);
       const ids = Array.isArray(body.findingIds) ? body.findingIds.slice(0, 50).map((x) => int(x, 'finding')) : [];
       const fresh = body.newSession && typeof body.newSession === 'object' ? { preset: str((body.newSession as Record<string, unknown>).preset, 'preset', 40) } : undefined;
-      const out = await svc.dispatch(m[1], Number(m[2]), { findingIds: ids, text: str(body.text, 'text', 16_000), targetUid: opt(body.targetUid, (x) => str(x, 'targetUid', 80)), newSession: fresh });
+      const kind = body.kind === 'merge' ? ('merge' as const) : undefined;
+      if (kind && ids.length) throw new HttpError(400, 'a merge request carries no findings');
+      const out = await svc.dispatch(m[1], Number(m[2]), { findingIds: ids, text: str(body.text, 'text', 16_000), targetUid: opt(body.targetUid, (x) => str(x, 'targetUid', 80)), newSession: fresh, kind });
       if (fresh) audit(req, 'session.create', { uid: out.dispatch.targetUid, preset: fresh.preset, for: `review ${m[1]}/${m[2]}` });
-      audit(req, 'review.dispatch', { stack: m[1], pr: Number(m[2]), to: out.dispatch.targetUid, findings: ids.length, new: !!fresh });
+      audit(req, 'review.dispatch', { stack: m[1], pr: Number(m[2]), to: out.dispatch.targetUid, findings: ids.length, new: !!fresh, ...(kind ? { kind } : {}) });
       return send(res, 200, out);
     }
 

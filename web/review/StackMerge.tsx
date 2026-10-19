@@ -14,7 +14,20 @@ const toast = (text: string) => window.dispatchEvent(new CustomEvent('ah:toast',
 
 export type StackMergeOut = Awaited<ReturnType<ReviewApi['mergeStack']>>;
 
-export function StackMergeDialog({ api, stack, onClose, onMerged }: { api: ReviewApi; stack: Stack; onClose: () => void; onMerged: (out: StackMergeOut) => void }) {
+export function StackMergeDialog({
+  api,
+  stack,
+  onClose,
+  onMerged,
+  onAskAgent,
+}: {
+  api: ReviewApi;
+  stack: Stack;
+  onClose: () => void;
+  onMerged: (out: StackMergeOut) => void;
+  /** Hand the merge to the agent instead: up to this layer, with this method. */
+  onAskAgent: (method: Method, upTo: number) => void;
+}) {
   const dialog = useRef<HTMLDialogElement>(null);
   const { dismiss } = useSheet(dialog, onClose);
   const [method, setMethod] = useState<Method>(stack.mergeMethod);
@@ -31,6 +44,10 @@ export function StackMergeDialog({ api, stack, onClose, onMerged }: { api: Revie
   const range = plan.lands.length > 1 ? `${name(plan.lands[0].pr)}–${name(plan.upTo!.pr)}` : plan.upTo ? name(plan.upTo.pr) : '';
   const verb = plan.review.length ? 'Mark reviewed & merge' : 'Merge';
   const button = all ? `${verb} ${plan.lands.length === 1 ? 'it' : `all ${plan.lands.length}`}` : `${verb} ${range}`;
+  // The agent can do the restacks ah won't; it stops only where a gate holds a layer (whatever the method).
+  const gated = useMemo(() => planStackMerge(stack, 'merge'), [stack]);
+  const held = gated.rows.findIndex((r) => r.state === 'held');
+  const agentUpTo = (held < 0 ? gated.rows.at(-1) : gated.rows[held - 1])?.layer ?? null;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -115,7 +132,7 @@ export function StackMergeDialog({ api, stack, onClose, onMerged }: { api: Revie
             <Icon name="ban" size={16} />
             <span>
               {plan.stop.state === 'restack'
-                ? `${METHOD[method]} rewrites what ${name(plan.stop.layer.pr)} sits on, so it needs a restack before it can land, and ah doesn't rewrite branches. ${stack.link?.ok ? 'Make it a stack on GitHub (··· menu) and GitHub restacks it, or ask' : 'Ask'} the agent, or merge with merge commits.`
+                ? `${METHOD[method]} rewrites what ${name(plan.stop.layer.pr)} sits on, so it needs a restack before it can land, and ah doesn't rewrite branches. Ask the agent, which restacks as it goes${stack.link?.ok ? ', make it a stack on GitHub (··· menu) so GitHub restacks it' : ''}, or merge with merge commits.`
                 : `${name(plan.stop.layer.pr)} is held: ${plan.stop.why}.${plan.upTo ? ` ${range} can land now; the rest waits.` : ''}`}
             </span>
           </p>
@@ -124,6 +141,19 @@ export function StackMergeDialog({ api, stack, onClose, onMerged }: { api: Revie
         <div className="actions">
           <button type="button" className="btn ghost" onClick={dismiss}>
             Cancel
+          </button>
+          <span className="spacer" />
+          <button
+            type="button"
+            className="btn"
+            disabled={busy || !agentUpTo}
+            title={agentUpTo ? 'Draft a message asking the agent that owns the stack to merge it; you edit it before it goes' : undefined}
+            onClick={() => {
+              onAskAgent(method, agentUpTo!.pr);
+              onClose();
+            }}
+          >
+            Ask the agent…
           </button>
           <ConfirmButton type="submit" className="btn primary" disabled={busy || !plan.upTo}>
             {busy ? 'Merging…' : plan.upTo ? button : 'Nothing can land yet'}

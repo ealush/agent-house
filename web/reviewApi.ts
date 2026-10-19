@@ -6,7 +6,7 @@ export type Verdict = { items: { id: number; verdict: 'addressed' | 'partly' | '
 export type RevView = { id: number; baseSha: string; headSha: string; patchId: string; files: number; additions: number; deletions: number; summary: string | null; verdict: Verdict | null };
 export type LayerStatus = 'unreviewed' | 'changes' | 'fixing' | 'rereview' | 'approved' | 'merged' | 'closed' | 'skipped';
 export type Gate = { key: 'reviewed' | 'findings' | 'checks' | 'mergeable' | 'base' | 'below' | 'order'; ok: boolean; label: string; detail?: string };
-export type DispatchView = { id: number; pr: number; state: string; targetUid: string; targetTitle: string | null; targetAgent: string | null; sentAt: number; doneAt: number | null; findings: number[]; text: string };
+export type DispatchView = { id: number; pr: number; kind: string; state: string; targetUid: string; targetTitle: string | null; targetAgent: string | null; sentAt: number; doneAt: number | null; findings: number[]; text: string };
 export type Finding = {
   id: number;
   ownerPr: number;
@@ -167,10 +167,11 @@ export function reviewApi(base = '') {
     merge: (id: string, pr: number, outOfOrder = false) => r<{ next: number | null; retargeted: number[]; restack: number[]; merged: number[]; waiting: 'github' | 'queue' | null }>('POST', `${l(id, pr)}/merge`, { outOfOrder }),
     retarget: (id: string, pr: number) => r<Stack>('POST', `${l(id, pr)}/retarget`),
     ready: (id: string, pr: number) => r<Stack>('POST', `${l(id, pr)}/ready`),
-    dispatchText: (id: string, pr: number, findings: number[], extra = '', kind?: 'restack', fresh = false) =>
-      r<{ text: string }>('GET', `${l(id, pr)}/dispatch?findings=${findings.join(',')}&extra=${enc(extra)}${kind ? `&kind=${kind}` : ''}${fresh ? '&fresh=1' : ''}`),
+    /** A merge draft (kind 'merge') covers the stack up to `pr`, with `method`. */
+    dispatchText: (id: string, pr: number, findings: number[], extra = '', kind?: 'restack' | 'merge', fresh = false, method?: string) =>
+      r<{ text: string }>('GET', `${l(id, pr)}/dispatch?findings=${findings.join(',')}&extra=${enc(extra)}${kind ? `&kind=${kind}` : ''}${fresh ? '&fresh=1' : ''}${method ? `&method=${method}` : ''}`),
     /** To a session (`targetUid`), or to a new one started for it (`newSession`). */
-    dispatch: (id: string, pr: number, body: { findingIds: number[]; text: string; targetUid?: string; newSession?: { preset: string } }) => r<{ dispatch: DispatchView; outcome: string }>('POST', `${l(id, pr)}/dispatch`, body),
+    dispatch: (id: string, pr: number, body: { findingIds: number[]; text: string; targetUid?: string; newSession?: { preset: string }; kind?: 'merge' }) => r<{ dispatch: DispatchView; outcome: string }>('POST', `${l(id, pr)}/dispatch`, body),
     findings: (id: string, pr?: number) => r<Finding[]>('GET', `${s(id)}/findings${pr ? `?pr=${pr}` : ''}`),
     addFinding: (id: string, body: { ownerPr: number; foundOnPr?: number; title: string; body?: string; severity?: string; path?: string | null; lineStart?: number | null; lineEnd?: number | null }) =>
       r<Finding>('POST', `${s(id)}/findings`, body),

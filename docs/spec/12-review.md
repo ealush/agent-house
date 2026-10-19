@@ -130,6 +130,13 @@ blocking finding, a failing check or a conflict still holds the layer, and
 the merge lands what's below it. Squash or rebase on a chain lands one step:
 what sat on it then needs a restack, which ah leaves to the agent. It stops at
 the first step GitHub refuses or hasn't finished, and says where.
+*Ask the agent…* in the same dialog drafts a message instead (REV-8): the
+layers up to the first one a gate holds, each at its reviewed head, how each
+lands (gh stack merge for a run of a GitHub stack, else the stack merge API;
+gh pr merge for the rest, with the retarget and, after a squash or rebase,
+the restack before each), and to stop before a held layer. That merge is done
+when the last layer it covers has merged; the layer reads *Agent merging*
+meanwhile, and the Inbox says so if the agent finished without merging.
 
 ## REV-11 · Where Review shows up — shipped
 

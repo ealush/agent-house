@@ -395,6 +395,43 @@ test('review: a stack on GitHub merges a run of its layers in one step, and a la
   });
 });
 
+test('review: the agent can be asked to merge the stack, told how each layer lands, and it is done when the layers have', async () => {
+  const t = await setup();
+  await t.setState((s) => {
+    (s as Record<string, unknown>).stacks = [{ number: 7, prs: [1, 2, 3] }];
+  });
+  await withGh(t.w, async () => {
+    const v = await t.svc.create(t.w.local, { pr: 1 });
+    await t.svc.sync(v.id, true);
+    let text = await t.svc.mergeText(v.id, 'squash');
+    assert.match(text, /^Please merge the stack "PR 1" \(me\/proj\) into main, bottom up, with squash merges\./);
+    assert.match(text, /\n1\. #1 "PR 1": base at [0-9a-f]{12}, in GitHub stack #7\n2\. #4 "PR 4": fix at [0-9a-f]{12}\n/);
+    assert.match(text, /\n- #1: gh stack merge 1 --squash --yes lands it with the rest of GitHub stack #7 under 1/);
+    assert.match(text, /\n- #4: point it at main \(gh pr edit 4 --base main\), rebase its own commits onto origin\/main \(git rebase --onto origin\/main [0-9a-f]{12} fix\), run the tests, push with --force-with-lease and wait for its checks, then gh pr merge 4 --squash --match-head-commit <its new head>\./);
+    assert.match(text, /\n- #2, #3: gh stack merge 3 --squash --yes/);
+    await t.svc.addFinding(v.id, { ownerPr: 2, title: 'Return 2', severity: 'blocking' });
+    text = await t.svc.mergeText(v.id, 'merge');
+    assert.match(text, /\n- #4: point it at main \(gh pr edit 4 --base main\), then gh pr merge 4 --merge --match-head-commit [0-9a-f]{40}\./);
+    assert.match(text, /\n- Stop before #2: 1 blocking\. Tell me what's left instead of merging past it\./);
+    assert.doesNotMatch(text, /gh stack merge 3/);
+
+    // Sent to the agent for the layers up to #4. A merge pushes nothing: it's done when #4 has landed.
+    await t.svc.dispatch(v.id, 4, { findingIds: [], text, targetUid: 'u-agent', kind: 'merge' });
+    const watch = () => (t.svc as unknown as { watch(): Promise<void> }).watch();
+    t.sessions[0].status = 'busy';
+    await watch();
+    t.sessions[0].status = 'idle';
+    await t.setState((s) => {
+      for (const p of s.prs) if (p.number === 1 || p.number === 4) p.state = 'MERGED';
+    });
+    await watch();
+    const after = await t.svc.view(v.id);
+    assert.deepEqual(after.layers.map((l) => [l.pr, l.state]), [[1, 'merged'], [4, 'merged'], [2, 'open'], [3, 'open']]);
+    assert.equal((await t.db.reviewDispatch.findFirst({ where: { stackId: v.id, pr: 4 } }))?.state, 'done');
+    assert.ok(!t.svc.state().alerts.some((a) => a.kind === 'nopush'), 'no "finished without pushing" for a merge that landed');
+  });
+});
+
 test('review: the reviewer reads pinned revisions through tools and proposes findings you keep or dismiss', async () => {
   const t = await setup();
   await withGh(t.w, async () => {
