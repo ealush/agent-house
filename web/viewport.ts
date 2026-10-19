@@ -75,10 +75,8 @@ export function trackViewport(win: Window, doc: Document): () => void {
     const height = keyboardViewportHeight(root.clientHeight, viewport.height, viewport.scale, editing);
     // Kept across the keyboard too: while it is up the shell uses the keyboard height instead.
     shim = nextShim(shim, standaloneInfo(win));
-    // Not while typing, even on a hardware keyboard: WebKit scrolls the page to reveal the
-    // caret after every keystroke unless the caret is inside position: fixed, and the shim's
-    // shell is absolute. pin() then snapped it back, so the page jumped for a frame per key.
-    const full = height === null && !editing ? (shim?.full ?? null) : null;
+    // A software keyboard sizes the shell itself (--keyboard-vh), so the shim steps aside.
+    const full = height === null ? (shim?.full ?? null) : null;
     if (full !== null) {
       root.style.setProperty('--app-h', `${full}px`);
       root.classList.add('ios-shim');
@@ -86,6 +84,13 @@ export function trackViewport(win: Window, doc: Document): () => void {
       root.style.removeProperty('--app-h');
       root.classList.remove('ios-shim');
     }
+    // Typing on a hardware keyboard: WebKit scrolls the page to reveal the caret after every
+    // keystroke unless the caret is inside position: fixed, so the shell is fixed while a
+    // field is edited, still at the full height of the stretched page. Stepping aside to the
+    // short viewport instead made the app jump up by the gap on focus (iPad, ~33px), and
+    // left the caret drawn that far below its line after the page moved under it.
+    if (full !== null && editing) root.classList.add('ios-shim-typing');
+    else root.classList.remove('ios-shim-typing');
     if (height === null) {
       root.style.removeProperty('--vh');
       root.style.removeProperty('--keyboard-vh');
@@ -147,6 +152,7 @@ export function trackViewport(win: Window, doc: Document): () => void {
     root.style.removeProperty('--keyboard-top');
     root.style.removeProperty('--app-h');
     root.classList.remove('ios-shim');
+    root.classList.remove('ios-shim-typing');
     win.removeEventListener('scroll', pin);
     delete root.dataset.keyboard;
   };
@@ -177,7 +183,7 @@ function mountVhBadge(win: Window, doc: Document): { refresh: (editing: boolean)
     const focus = doc.activeElement as HTMLElement | null;
     el.textContent =
       `vv ${Math.round(win.visualViewport?.height ?? -1)} · lay ${doc.documentElement.clientHeight} · scr ${win.screen?.height ?? -1} · dvh ${probe.clientHeight} · --vh ${inline}\n` +
-      `edit ${editing ? 1 : 0} · focus ${focus?.tagName ?? 'none'} · pwa ${standalone ? 1 : 0} · inner ${win.innerHeight} · shim ${doc.documentElement.classList?.contains('ios-shim') ? doc.documentElement.style.getPropertyValue?.('--app-h') : 'off'}\n` +
+      `edit ${editing ? 1 : 0} · focus ${focus?.tagName ?? 'none'} · pwa ${standalone ? 1 : 0} · inner ${win.innerHeight} · shim ${doc.documentElement.classList?.contains('ios-shim') ? doc.documentElement.style.getPropertyValue?.('--app-h') + (doc.documentElement.classList.contains('ios-shim-typing') ? ' fixed' : '') : 'off'} · y ${Math.round(win.scrollY || 0)}\n` +
       `win ${win.innerWidth}×${win.innerHeight} · scr ${win.screen?.width ?? -1}×${win.screen?.height ?? -1} · window buttons ${doc.documentElement.hasAttribute?.('data-window-controls') ? 'room' : 'none'}`;
   };
   const hasTimers = typeof win.setInterval === 'function' && typeof win.clearInterval === 'function';

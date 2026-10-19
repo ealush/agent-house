@@ -102,6 +102,11 @@ code,
   height: var(--app-h);
 }
 
+/* Typing: fixed, so WebKit leaves the page alone per keystroke, and still full height. */
+:root.ios-shim.ios-shim-typing .app {
+  position: fixed;
+}
+
 /* Under 16px, iOS zooms the page into a field that takes focus, and the layout
    never recovers its scale. Touch screens get 16px in every field. */
 @media (pointer: coarse) {
