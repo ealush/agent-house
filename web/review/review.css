@@ -3319,7 +3319,8 @@ button.findings-label {
   color: var(--accent);
 }
 
-.review-merge-stack .merge-how {
+.review-merge-stack .merge-how,
+.review-dispatch .merge-how {
   display: flex;
   align-items: center;
   justify-content: space-between;

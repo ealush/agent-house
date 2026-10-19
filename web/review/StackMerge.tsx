@@ -12,6 +12,24 @@ import { planStackMerge, type Method, type MergeRow } from './stackMerge.ts';
 const METHOD: Record<Method, string> = { merge: 'Merge commits', squash: 'Squash', rebase: 'Rebase' };
 const toast = (text: string) => window.dispatchEvent(new CustomEvent('ah:toast', { detail: text }));
 
+/** How each layer lands, where the repo allows more than one way. The agent's merge message has it too. */
+export function MethodSwitch({ methods, method, onChange }: { methods: Method[]; method: Method; onChange: (m: Method) => void }) {
+  if (methods.length < 2) return null;
+  return (
+    <div className="merge-how">
+      <span className="hint">Each layer lands as</span>
+      <div className="seg" role="radiogroup" aria-label="Merge method">
+        <Glide match=".on" className="thumb" />
+        {methods.map((m) => (
+          <button key={m} type="button" role="radio" aria-checked={method === m} className={method === m ? 'on' : ''} onClick={() => onChange(m)}>
+            {METHOD[m]}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export type StackMergeOut = Awaited<ReturnType<ReviewApi['mergeStack']>>;
 
 export function StackMergeDialog({
@@ -91,19 +109,7 @@ export function StackMergeDialog({
         <p className="hint">
           Bottom up, {steps === 1 ? 'in one step' : `in ${steps} steps`}, each at the head you reviewed{plan.lands.some((l) => l.ghStack !== null) ? "; a run of layers in one GitHub stack lands through GitHub's stack merge, all or none" : ''}. It stops at the first step GitHub refuses.
         </p>
-        {stack.methods.length > 1 && (
-          <div className="merge-how">
-            <span className="hint">Each layer lands as</span>
-            <div className="seg" role="radiogroup" aria-label="Merge method">
-              <Glide match=".on" className="thumb" />
-              {stack.methods.map((m) => (
-                <button key={m} type="button" role="radio" aria-checked={method === m} className={method === m ? 'on' : ''} onClick={() => setMethod(m)}>
-                  {METHOD[m]}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        <MethodSwitch methods={stack.methods} method={method} onChange={setMethod} />
         <ol className="stack-land">
           <li className="land-trunk mono">
             <Icon name="branch" size={14} /> {stack.trunk}

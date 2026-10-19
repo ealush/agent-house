@@ -134,7 +134,8 @@ the first step GitHub refuses or hasn't finished, and says where.
 layers up to the first one a gate holds, each at its reviewed head, how each
 lands (gh stack merge for a run of a GitHub stack, else the stack merge API;
 gh pr merge for the rest, with the retarget and, after a squash or rebase,
-the restack before each), and to stop before a held layer. That merge is done
+the restack before each), and to stop before a held layer. Its own method
+switch redrafts the message, unless you have edited it. That merge is done
 when the last layer it covers has merged; the layer reads *Agent merging*
 meanwhile, and the Inbox says so if the agent finished without merging.
 

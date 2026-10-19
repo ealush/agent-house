@@ -14,7 +14,7 @@ import { DispatchDialog, PlanDialog } from './Dispatch.tsx';
 import { Compose, rememberRoot } from './Compose.tsx';
 import { Dot, Spine, SpineBar, SpineColumn, layerLine } from './Spine.tsx';
 import { StackMergeDialog } from './StackMerge.tsx';
-import { planStackMerge } from './stackMerge.ts';
+import { planStackMerge, type Method } from './stackMerge.ts';
 import './review.css';
 
 const api = reviewApi();
@@ -564,7 +564,7 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
   const [handing, setHanding] = useState<string | null>(null);
   const [mergingAll, setMergingAll] = useState(false);
   // Merging handed to the agent: up to which layer, and how.
-  const [agentMerge, setAgentMerge] = useState<{ upTo: number; method: string } | null>(null);
+  const [agentMerge, setAgentMerge] = useState<{ upTo: number; method: Method } | null>(null);
   const live = useRef(true);
   useEffect(() => {
     live.current = true;

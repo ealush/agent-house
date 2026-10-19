@@ -8,6 +8,8 @@ import { SheetBar, useSheet } from '../sheet.tsx';
 import { Markdown } from '../Markdown.tsx';
 import { GitHubText, type ImageUrl } from './GitHubText.tsx';
 import { errorText } from '../errors.ts';
+import { MethodSwitch } from './StackMerge.tsx';
+import type { Method } from './stackMerge.ts';
 
 const STATUS: Record<string, string> = { waiting: 'needs you', busy: 'working', attention: 'done', idle: 'idle', ended: 'ended; sending resumes it' };
 
@@ -36,9 +38,9 @@ export function DispatchDialog({
   layer: Layer;
   findingIds: number[];
   extra: string;
-  /** A restack of the layer, or merging the stack up to it (with `method`). */
+  /** A restack of the layer, or merging the stack up to it (with `method`, which can still be switched here). */
   kind?: 'restack' | 'merge';
-  method?: string;
+  method?: Method;
   onClose: () => void;
   onSent: (outcome: string, to: string) => void;
 }) {
@@ -51,6 +53,8 @@ export function DispatchDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [drafted, setDrafted] = useState('');
+  const [how, setHow] = useState<Method | undefined>(method);
+  const [stale, setStale] = useState(false);
   const host = useContext(ReviewContext)?.host ?? '';
   const agents = useContext(HostPresetsContext)(host).filter((p) => p.available && !p.hidden && p.command && p.id !== 'shell');
   const fresh = target.startsWith('new:');
@@ -82,6 +86,14 @@ export function DispatchDialog({
       live = false;
     };
   }, []);
+
+  // Switching how layers land redrafts the merge message, unless you've edited it.
+  const redraft = (m: Method) => {
+    setHow(m);
+    setStale(text !== drafted && m !== method);
+    if (text !== drafted) return;
+    api.dispatchText(stack.id, layer.pr, findingIds, extra, kind, false, m).then((t) => (setText(t.text), setDrafted(t.text)), () => {});
+  };
 
   const chosen = owners.find((o) => o.uid === target);
   const bound = stack.owner && stack.owner.uid === target;
@@ -144,6 +156,8 @@ export function DispatchDialog({
         ) : (
           !bound && target && <p className="hint">Sending binds this stack to that conversation; later findings go there too, even after it resumes.</p>
         )}
+        {kind === 'merge' && how && !loading && <MethodSwitch methods={stack.methods} method={how} onChange={redraft} />}
+        {stale && <p className="hint">You've edited the message, so it wasn't redrafted; say how to merge in it.</p>}
         {loading ? (
           <p className="hint">Drafting…</p>
         ) : (
