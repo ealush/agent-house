@@ -261,8 +261,10 @@ export function LayerView({
   }, []);
   const [importing, setImporting] = useState(false);
   // Above the diff, one card at a time: the PR's description from GitHub, or the briefing. The
-  // briefing is for a first read; on a re-review, what changed comes first.
-  const [card, setCard] = useState<'description' | 'briefing' | null>(layer.status === 'unreviewed' || layer.status === 'changes' ? 'briefing' : null);
+  // briefing is for a first read; on a re-review, what changed comes first. A phone's Overview
+  // has no diff under it, so there a re-review opens on the description.
+  const firstCard = (): 'description' | 'briefing' | null => (layer.status === 'unreviewed' || layer.status === 'changes' ? 'briefing' : narrow ? 'description' : null);
+  const [card, setCard] = useState(firstCard);
   const briefOpen = card === 'briefing';
   const [desc, setDesc] = useState<{ pr: number; body: string } | { pr: number; error: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -274,7 +276,7 @@ export function LayerView({
   // A new layer starts on what matters for it; a re-review starts on what changed.
   useEffect(() => {
     setMode(layer.status === 'rereview' && layer.reviewed ? 'since' : 'this');
-    setCard(layer.status === 'unreviewed' || layer.status === 'changes' ? 'briefing' : null);
+    setCard(firstCard());
     setSelected(new Set());
     setTab('findings');
   }, [layer.pr]);
@@ -626,6 +628,34 @@ export function LayerView({
     </section>
   );
 
+  const toggles = (
+    <span className="card-toggles">
+      <button className={`btn ghost small brief-toggle ${card === 'description' ? 'on' : ''}`} aria-pressed={card === 'description'} title="The pull request's description, from GitHub" onClick={() => setCard(card === 'description' ? null : 'description')}>
+        <Icon name="queue" size={15} /> Description
+      </button>
+      <button className={`btn ghost small brief-toggle ${briefOpen ? 'on' : ''}`} aria-pressed={briefOpen} title="What the layer does and where to look, written for this review" onClick={() => setCard(briefOpen ? null : 'briefing')}>
+        <Icon name="sparkle" size={15} /> Briefing{summarizing && !rev?.summary ? '…' : ''}
+      </button>
+    </span>
+  );
+
+  // A phone opens a layer on what it changes: its size and branches, its description or briefing, then its findings.
+  const about = (
+    <section className="layer-about" aria-label="What this layer changes">
+      {rev && (
+        <p className="about-meta">
+          {rev.files} file{rev.files === 1 ? '' : 's'} <span className="add-n">+{rev.additions}</span> <span className="del-n">−{rev.deletions}</span>
+          <span className="mono faint branchline">
+            {layer.headRef} → {layer.baseRef}
+          </span>
+        </p>
+      )}
+      {toggles}
+      {description}
+      {summary}
+    </section>
+  );
+
   const findingsPane = (
     <FindingsList
       api={api}
@@ -703,17 +733,10 @@ export function LayerView({
         )}
         <span className="spacer" />
         {diff?.truncated && <span className="hint">First 400 KB</span>}
-        <span className="card-toggles">
-          <button className={`btn ghost small brief-toggle ${card === 'description' ? 'on' : ''}`} aria-pressed={card === 'description'} title="The pull request's description, from GitHub" onClick={() => setCard(card === 'description' ? null : 'description')}>
-            <Icon name="queue" size={15} /> Description
-          </button>
-          <button className={`btn ghost small brief-toggle ${briefOpen ? 'on' : ''}`} aria-pressed={briefOpen} title="What the layer does and where to look, written for this review" onClick={() => setCard(briefOpen ? null : 'briefing')}>
-            <Icon name="sparkle" size={15} /> Briefing{summarizing && !rev?.summary ? '…' : ''}
-          </button>
-        </span>
+        {!narrow && toggles}
       </div>
-      {description}
-      {summary}
+      {!narrow && description}
+      {!narrow && summary}
       {diffError ? (
         <p className="panel-msg">{diffError}</p>
       ) : !diff ? (
@@ -772,7 +795,7 @@ export function LayerView({
           value={tab}
           onChange={setTab}
           options={[
-            ['findings', <>Findings{count ? <span className="count"> {count}</span> : null}</>],
+            ['findings', <>Overview{count ? <span className="count"> {count}</span> : null}</>],
             ['diff', 'Diff'],
           ]}
         />
@@ -780,6 +803,8 @@ export function LayerView({
           {tab === 'findings' && (
             <>
               {banner}
+              {about}
+              <h3 className="card-label">Findings{count ? ` · ${count}` : ''}</h3>
               {findingsPane}
               <Gates layer={layer} />
             </>
