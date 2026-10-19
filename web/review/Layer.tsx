@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { HostApi, Subscription } from '../api.ts';
-import { STATUS_WORD, type DiffOut, type Finding, type Layer, type ReviewApi, type Stack } from '../reviewApi.ts';
+import { attachKey, STATUS_WORD, type Attachment, type DiffOut, type Finding, type Layer, type ReviewApi, type Stack } from '../reviewApi.ts';
 import { askConfirm, askText, showError } from '../ask.tsx';
 import { ConfirmButton } from '../ConfirmButton.tsx';
 import { Glide } from '../Glide.tsx';
@@ -11,18 +11,17 @@ import { SubscriptionPicker } from '../SubscriptionPicker.tsx';
 import { age, look } from '../agents.ts';
 import { ReviewDiff } from './Diff.tsx';
 import { FindingsList } from './Findings.tsx';
-import { Thread } from './Thread.tsx';
 import { DispatchDialog } from './Dispatch.tsx';
 import { GitHubText } from './GitHubText.tsx';
 
 type Mode = 'this' | 'since' | 'cumulative';
-type Side = 'findings' | 'thread';
-type PhoneTab = 'diff' | 'findings' | 'thread';
+type PhoneTab = 'diff' | 'findings';
 
 const toast = (text: string) => window.dispatchEvent(new CustomEvent('ah:toast', { detail: text }));
 const when = (t: number) => (age(t) === 'now' ? 'just now' : `${age(t)} ago`);
 
-function stored<T extends string>(key: string, fallback: T): [T, (v: T) => void] {
+/** A choice kept in this browser (a fold, a tab), read once. */
+export function stored<T extends string>(key: string, fallback: T): [T, (v: T) => void] {
   const [v, setV] = useState<T>(() => {
     try {
       return (localStorage.getItem(key) as T) || fallback;
@@ -222,6 +221,9 @@ export function LayerView({
   onFindings,
   onNavigate,
   onOpenSession,
+  onReviewer,
+  attached,
+  onDiscuss,
 }: {
   client: HostApi;
   api: ReviewApi;
@@ -236,11 +238,16 @@ export function LayerView({
   onFindings: () => void;
   onNavigate: (pr: number | null) => void;
   onOpenSession: (uid: string) => void;
+  /** On a phone: bring up the reviewer's sheet (on a desktop it sits beside the layer), and how much waits in it. */
+  onReviewer: () => void;
+  attached: number;
+  /** Bring something to the reviewer's conversation, with the start of a question. */
+  onDiscuss: (a: Attachment, note?: string) => void;
 }) {
   const [mode, setMode] = useState<Mode>(layer.status === 'rereview' && layer.reviewed ? 'since' : 'this');
   const [diff, setDiff] = useState<DiffOut | null>(null);
   const [diffError, setDiffError] = useState<string | null>(null);
-  const [sideTab, setSideTab] = stored<Side>('ah.review.side', 'findings');
+  const [findingsOpen, setFindingsOpen] = stored<'open' | 'closed'>('ah.review.findings', 'open');
   const [tab, setTab] = useState<PhoneTab>('findings');
   const [selected, setSelected] = useState<Set<number>>(() => new Set());
   const [sending, setSending] = useState<{ ids: number[]; extra: string; kind?: 'restack' } | null>(null);
@@ -407,15 +414,9 @@ export function LayerView({
       throw e;
     }
   };
-  const pinDecision = async (seed: string) => {
-    const text = await askText({ title: 'Pin a decision', body: 'Every reviewer answer and every message to the agent holds the code to it.', label: 'Decision', value: seed, confirm: 'Pin' });
-    if (!text?.trim()) return;
-    try {
-      onStack(await api.addDecision(stack.id, text.trim(), layer.pr));
-      toast('Decision pinned');
-    } catch (e) {
-      showError(e, "Couldn't pin it");
-    }
+  const discuss = (f: Finding) => {
+    const ctx = { kind: 'finding' as const, id: f.id };
+    onDiscuss({ ctx, label: f.title, key: attachKey(ctx) });
   };
 
   // The one button that moves the layer forward (⌘↵).
@@ -625,8 +626,66 @@ export function LayerView({
     </section>
   );
 
+  const findingsPane = (
+    <FindingsList
+      api={api}
+      stackId={stack.id}
+      layer={layer}
+      layers={stack.layers}
+      findings={findings}
+      followups={followups}
+      selected={selected}
+      setSelected={setSelected}
+      onChanged={() => {
+        onFindings();
+        onStack();
+      }}
+      onImport={importThreads}
+      importing={importing}
+      onDiscuss={discuss}
+    />
+  );
+
+  // Above the diff on a desktop: the layer's findings, folded to a line when you want the room, and sending the ones you picked.
+  const sendFoot = chosen.length > 0 && (
+    <footer className="side-foot">
+      <span className="side-why">
+        <span className="grow hint">
+          {chosen.length} selected{above.length ? ` · ${above.map((l) => l.role || `#${l.pr}`).join(', ')} restack${above.length === 1 ? 's' : ''} after the fix` : ''}
+        </span>
+        <button className="btn ghost small" onClick={() => setSelected(new Set())}>
+          Clear
+        </button>
+      </span>
+      {send && (
+        <ConfirmButton className="btn send" disabled={busy} onClick={send.act}>
+          {send.text}
+        </ConfirmButton>
+      )}
+    </footer>
+  );
+  const findingsSection = (
+    <section className={`layer-findings ${findingsOpen === 'open' ? 'open' : ''}`} aria-label="Findings">
+      <button className="findings-fold" aria-expanded={findingsOpen === 'open'} onClick={() => setFindingsOpen(findingsOpen === 'open' ? 'closed' : 'open')}>
+        <span className="fold-mark" aria-hidden>
+          <Icon name="back" size={14} />
+        </span>
+        <span className="findings-word">Findings</span>
+        {count > 0 && <span className="count">{count}</span>}
+        <span className="hint grow">{findingsOpen === 'open' ? '' : count ? (layer.open ? `${layer.open} open` : proposed ? `${proposed} proposed` : `${followups.length} follow-up${followups.length === 1 ? '' : 's'}`) : 'None yet'}</span>
+      </button>
+      {findingsOpen === 'open' && (
+        <>
+          {findingsPane}
+          {sendFoot}
+        </>
+      )}
+    </section>
+  );
+
   const diffPane = (
     <div className="layer-diff">
+      {!narrow && findingsSection}
       <div className="diff-bar">
         <Seg<Mode>
           label="Diff"
@@ -667,76 +726,23 @@ export function LayerView({
       ) : mode === 'since' && !diff.text ? (
         <p className="panel-msg">Nothing changed since your review.</p>
       ) : (
-        <ReviewDiff patch={diff.text} findings={layerFindings} onFile={mode === 'cumulative' ? undefined : addFinding} />
+        <ReviewDiff
+          patch={diff.text}
+          findings={layerFindings}
+          onFile={mode === 'cumulative' ? undefined : addFinding}
+          touch={narrow}
+          onAsk={(x, note) => {
+            const ctx = { kind: 'lines' as const, pr: layer.pr, path: x.path, start: x.start, end: x.end, text: x.text };
+            const name = x.path.split('/').pop();
+            onDiscuss({ ctx, label: `${name}:${x.start}${x.end > x.start ? `–${x.end}` : ''}${x.removed ? ' (removed)' : ''}`, key: attachKey(ctx) }, note);
+          }}
+          onAskFile={(path) => {
+            const ctx = { kind: 'file' as const, pr: layer.pr, path };
+            onDiscuss({ ctx, label: path.split('/').pop() ?? path, key: attachKey(ctx) });
+          }}
+        />
       )}
     </div>
-  );
-
-  const findingsPane = (
-    <FindingsList
-      api={api}
-      stackId={stack.id}
-      layer={layer}
-      layers={stack.layers}
-      findings={findings}
-      followups={followups}
-      selected={selected}
-      setSelected={setSelected}
-      onChanged={() => {
-        onFindings();
-        onStack();
-      }}
-      onImport={importThreads}
-      importing={importing}
-    />
-  );
-
-  const threadPane = (
-    <Thread
-      client={client}
-      api={api}
-      stackId={stack.id}
-      pr={layer.pr}
-      layers={stack.layers}
-      onSend={(text) => setSending({ ids: [], extra: text })}
-      onDecision={pinDecision}
-      onChanged={() => {
-        onFindings();
-        onStack();
-      }}
-    />
-  );
-
-  const side = (
-    <aside className="layer-side">
-      <Seg<Side>
-        label="Side"
-        value={sideTab}
-        onChange={setSideTab}
-        options={[
-          ['findings', <>Findings{count ? <span className="count"> {count}</span> : null}</>],
-          ['thread', 'Reviewer'],
-        ]}
-      />
-      <div className="side-pane">{sideTab === 'findings' ? findingsPane : threadPane}</div>
-      {sideTab === 'findings' && chosen.length > 0 && (
-        <footer className="side-foot">
-          <span className="side-why">
-            <span className="grow hint">
-              {chosen.length} selected{above.length ? ` · ${above.map((l) => l.role || `#${l.pr}`).join(', ')} restack${above.length === 1 ? 's' : ''} after the fix` : ''}
-            </span>
-            <button className="btn ghost small" onClick={() => setSelected(new Set())}>
-              Clear
-            </button>
-          </span>
-          {send && (
-            <ConfirmButton className="btn send" disabled={busy} onClick={send.act}>
-              {send.text}
-            </ConfirmButton>
-          )}
-        </footer>
-      )}
-    </aside>
   );
 
   const dialog = sending && (
@@ -768,7 +774,6 @@ export function LayerView({
           options={[
             ['findings', <>Findings{count ? <span className="count"> {count}</span> : null}</>],
             ['diff', 'Diff'],
-            ['thread', 'Reviewer'],
           ]}
         />
         <div className="layer-tab">
@@ -780,7 +785,6 @@ export function LayerView({
             </>
           )}
           {tab === 'diff' && diffPane}
-          {tab === 'thread' && threadPane}
         </div>
         <footer className="merge-bar layer-bar">
           {nav(prev, 'prev', true)}
@@ -791,6 +795,10 @@ export function LayerView({
           ) : (
             <span className="grow hint bar-why">{layer.state === 'open' ? (layer.gates.find((g) => !g.ok)?.detail ?? layer.gates.find((g) => !g.ok)?.label ?? '') : STATUS_WORD[layer.status]}</span>
           )}
+          <button className="icon-btn round bar-reviewer" onClick={onReviewer} aria-label={attached ? `Reviewer, ${attached} attached` : 'Reviewer'} title="Reviewer">
+            <Icon name="sparkle" size={18} />
+            {attached > 0 && <span className="badge">{attached}</span>}
+          </button>
           <Popover label={<Icon name="more" size={18} />} className="icon-btn round" align="right" up title="More">
             {more}
           </Popover>
@@ -804,12 +812,9 @@ export function LayerView({
     <div className="layer">
       {head}
       {banner}
-      <div className="layer-body">
-        <div className="layer-main">
-          {diffPane}
-          {layer.state === 'open' && <Gates layer={layer} />}
-        </div>
-        {side}
+      <div className="layer-main">
+        {diffPane}
+        {layer.state === 'open' && <Gates layer={layer} />}
       </div>
       {dialog}
     </div>

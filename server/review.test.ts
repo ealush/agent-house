@@ -41,7 +41,16 @@ else if (a[0] === 'pr' && a[1] === 'merge') {
   const p = pr(a[2]); const i = a.indexOf('--match-head-commit');
   if (stackOf(p.number)) { console.error('X Pull request #' + p.number + ' is in a stack: merge it with the merge-async API'); process.exit(1); }
   if (p.headRefOid !== a[i + 1]) { console.error('X Head branch was modified. Review and try the merge again.'); process.exit(1); }
-  p.state = 'MERGED'; save();
+  p.state = 'MERGED';
+  // The base moves the way GitHub moves it: a merge commit, or one squashed commit.
+  if (st.remote) {
+    const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
+    const git = (...x) => require('child_process').execFileSync('git', ['--git-dir', st.remote, ...x], { env }).toString().trim();
+    const base = git('rev-parse', 'refs/heads/' + p.baseRefName);
+    const c = git('commit-tree', p.headRefOid + '^{tree}', '-p', base, ...(a.includes('--squash') ? [] : ['-p', p.headRefOid]), '-m', 'merge #' + p.number);
+    git('update-ref', 'refs/heads/' + p.baseRefName, c);
+  }
+  save();
 }
 else if (a[0] === 'pr' && a[1] === 'edit') { pr(a[2]).baseRefName = a[a.indexOf('--base') + 1]; save(); }
 else if (a[0] === 'pr' && a[1] === 'ready') { pr(a[2]).isDraft = false; save(); }
@@ -190,7 +199,7 @@ async function setup() {
   w.g('checkout', '-q', '-b', 'fix');
   await w.commit('d.ts', 'export const d = 1;\n', 'fix');
   const h4 = w.publish('fix', 4);
-  const state = { prs: [pr(1, 'base', 'main', h1), pr(2, 'feat', 'base', h2), pr(3, 'docs', 'feat', h3), pr(4, 'fix', 'base', h4), pr(9, 'other', 'main', h1)], threads: [] as unknown[] };
+  const state = { prs: [pr(1, 'base', 'main', h1), pr(2, 'feat', 'base', h2), pr(3, 'docs', 'feat', h3), pr(4, 'fix', 'base', h4), pr(9, 'other', 'main', h1)], threads: [] as unknown[], remote: w.remote };
   await writeFile(w.stateFile, JSON.stringify(state));
   const dbPath = join(w.parent, 'ah.db');
   await ensureMigrated(dbPath);
@@ -225,7 +234,7 @@ async function setup() {
     fn(cur);
     await writeFile(w.stateFile, JSON.stringify(cur));
   };
-  return { w, svc, chat, sessions, sent, alerts, transcripts, launched, setState, heads: { h1, h2, h3, h4 } };
+  return { w, svc, db: getDb(dbPath), chat, sessions, sent, alerts, transcripts, launched, setState, heads: { h1, h2, h3, h4 } };
 }
 
 test('review: stack from a PR tree, fix loop through the owner, re-review, merge and next', async () => {
@@ -325,6 +334,104 @@ test('review: stack from a PR tree, fix loop through the owner, re-review, merge
   });
 });
 
+test('review: the whole stack merges in order, marking it reviewed if you say so, and refuses what a gate holds back', async () => {
+  const t = await setup();
+  await withGh(t.w, async () => {
+    let v = await t.svc.create(t.w.local, { pr: 1 });
+    await t.svc.sync(v.id);
+    v = await t.svc.view(v.id);
+    assert.deepEqual(v.layers.map((l) => l.pr), [1, 4, 2, 3]);
+    const f = await t.svc.addFinding(v.id, { ownerPr: 2, title: 'Return 2', severity: 'blocking' });
+    await assert.rejects(t.svc.mergeStack(v.id, { markReviewed: true }), /#2: 1 blocking/, 'a blocking finding holds the whole stack back');
+    await assert.rejects(t.svc.mergeStack(v.id, { upTo: 4 }), /#1: not marked reviewed/, 'without the review mark, nothing goes');
+    // Up to #4: the layers above it stay open, findings and all.
+    let out = await t.svc.mergeStack(v.id, { markReviewed: true, upTo: 4 });
+    assert.deepEqual(out.stopped, null);
+    assert.deepEqual(out.merged, [1, 4]);
+    assert.equal(out.stopped, null);
+    assert.equal(out.next, 2);
+    await t.svc.updateFinding(v.id, f.id, { state: 'wontfix', note: 'Not this stack' });
+    out = await t.svc.mergeStack(v.id, { markReviewed: true });
+    assert.deepEqual(out.merged, [2, 3]);
+    assert.equal(out.next, null);
+    v = await t.svc.view(v.id);
+    assert.deepEqual(v.layers.map((l) => l.state), ['merged', 'merged', 'merged', 'merged']);
+    const log = await readFile(`${t.w.stateFile}.log`, 'utf8');
+    assert.deepEqual([...log.matchAll(/pr merge (\d+) --merge --match-head-commit/g)].map((m) => Number(m[1])), [1, 4, 2, 3], 'one merge each, bottom up, at the heads it marked reviewed');
+    assert.match(log, /pr edit 3 --base main/, 'each layer is pointed at the trunk before its turn');
+    await assert.rejects(t.svc.mergeStack(v.id), /nothing left to merge/);
+  });
+});
+
+test('review: squashing a chain stops after the first layer, which leaves the next to restack', async () => {
+  const t = await setup();
+  await withGh(t.w, async () => {
+    const v = await t.svc.create(t.w.local, { pr: 1 });
+    await t.svc.sync(v.id);
+    const out = await t.svc.mergeStack(v.id, { method: 'squash', markReviewed: true });
+    assert.deepEqual(out.merged, [1]);
+    assert.deepEqual(out.restack.sort(), [2, 4]);
+    assert.deepEqual(out.stopped, { pr: 4, why: 'it needs a restack onto main first' });
+    assert.equal((await t.svc.view(v.id)).mergeMethod, 'squash', 'the method you picked is the stack\'s now');
+    assert.match(await readFile(`${t.w.stateFile}.log`, 'utf8'), /pr merge 1 --squash/);
+  });
+});
+
+test('review: a stack on GitHub merges a run of its layers in one step, and a layer outside it on its own', async () => {
+  const t = await setup();
+  await t.setState((s) => {
+    (s as Record<string, unknown>).remote = t.w.remote;
+    (s as Record<string, unknown>).stacks = [{ number: 7, prs: [1, 2, 3] }];
+  });
+  await withGh(t.w, async () => {
+    const v = await t.svc.create(t.w.local, { pr: 1 });
+    await t.svc.sync(v.id, true);
+    const out = await t.svc.mergeStack(v.id, { markReviewed: true });
+    assert.deepEqual(out.merged, [1, 4, 2, 3]);
+    assert.equal(out.stopped, null);
+    const log = await readFile(`${t.w.stateFile}.log`, 'utf8');
+    assert.deepEqual([...log.matchAll(/pulls\/(\d+)\/merge-async -f/g)].map((m) => Number(m[1])), [1, 3], "#1 alone (#4 comes next), then #2 and #3 in one stack merge of #3");
+    assert.match(log, /pr merge 4 --merge/);
+  });
+});
+
+test('review: the agent can be asked to merge the stack, told how each layer lands, and it is done when the layers have', async () => {
+  const t = await setup();
+  await t.setState((s) => {
+    (s as Record<string, unknown>).stacks = [{ number: 7, prs: [1, 2, 3] }];
+  });
+  await withGh(t.w, async () => {
+    const v = await t.svc.create(t.w.local, { pr: 1 });
+    await t.svc.sync(v.id, true);
+    let text = await t.svc.mergeText(v.id, 'squash');
+    assert.match(text, /^Please merge the stack "PR 1" \(me\/proj\) into main, bottom up, with squash merges\./);
+    assert.match(text, /\n1\. #1 "PR 1": base at [0-9a-f]{12}, in GitHub stack #7\n2\. #4 "PR 4": fix at [0-9a-f]{12}\n/);
+    assert.match(text, /\n- #1: gh stack merge 1 --squash --yes lands it with the rest of GitHub stack #7 under 1/);
+    assert.match(text, /\n- #4: point it at main \(gh pr edit 4 --base main\), rebase its own commits onto origin\/main \(git rebase --onto origin\/main [0-9a-f]{12} fix\), run the tests, push with --force-with-lease and wait for its checks, then gh pr merge 4 --squash --match-head-commit <its new head>\./);
+    assert.match(text, /\n- #2, #3: gh stack merge 3 --squash --yes/);
+    await t.svc.addFinding(v.id, { ownerPr: 2, title: 'Return 2', severity: 'blocking' });
+    text = await t.svc.mergeText(v.id, 'merge');
+    assert.match(text, /\n- #4: point it at main \(gh pr edit 4 --base main\), then gh pr merge 4 --merge --match-head-commit [0-9a-f]{40}\./);
+    assert.match(text, /\n- Stop before #2: 1 blocking\. Tell me what's left instead of merging past it\./);
+    assert.doesNotMatch(text, /gh stack merge 3/);
+
+    // Sent to the agent for the layers up to #4. A merge pushes nothing: it's done when #4 has landed.
+    await t.svc.dispatch(v.id, 4, { findingIds: [], text, targetUid: 'u-agent', kind: 'merge' });
+    const watch = () => (t.svc as unknown as { watch(): Promise<void> }).watch();
+    t.sessions[0].status = 'busy';
+    await watch();
+    t.sessions[0].status = 'idle';
+    await t.setState((s) => {
+      for (const p of s.prs) if (p.number === 1 || p.number === 4) p.state = 'MERGED';
+    });
+    await watch();
+    const after = await t.svc.view(v.id);
+    assert.deepEqual(after.layers.map((l) => [l.pr, l.state]), [[1, 'merged'], [4, 'merged'], [2, 'open'], [3, 'open']]);
+    assert.equal((await t.db.reviewDispatch.findFirst({ where: { stackId: v.id, pr: 4 } }))?.state, 'done');
+    assert.ok(!t.svc.state().alerts.some((a) => a.kind === 'nopush'), 'no "finished without pushing" for a merge that landed');
+  });
+});
+
 test('review: the reviewer reads pinned revisions through tools and proposes findings you keep or dismiss', async () => {
   const t = await setup();
   await withGh(t.w, async () => {
@@ -363,7 +470,7 @@ test('review: the reviewer reads pinned revisions through tools and proposes fin
       },
     );
     assert.match(toolResult, /export const c = \(\) => 1;/, 'read at the PR head, not the working tree');
-    const thread = await t.svc.thread(v.id, 2);
+    const thread = await t.svc.thread(v.id);
     assert.deepEqual(thread.messages.map((m) => m.role), ['user', 'assistant']);
     assert.equal(thread.findings.length, 2);
     assert.equal(thread.subscriptionId, await t.chat.defaultId(), 'nothing picked here: the active subscription answers');
@@ -372,14 +479,63 @@ test('review: the reviewer reads pinned revisions through tools and proposes fin
       () => ({ content: JSON.stringify({ content: 'ok', followups: [], findings: [] }) }),
       () => t.svc.ask(v.id, 2, 'Again?', other).then(() => {}),
     );
-    assert.equal((await t.svc.thread(v.id, 2)).subscriptionId, other, 'a pick in the thread sticks to it');
-    assert.equal((await t.svc.thread(v.id, null)).subscriptionId, await t.chat.defaultId(), 'and only to it');
+    assert.equal((await t.svc.thread(v.id)).subscriptionId, other, "a pick sticks to the stack's conversation");
     // Proposals don't count until kept.
     let view = await t.svc.view(v.id);
     assert.equal(view.layers.find((l) => l.pr === 1)!.open, 0);
     await t.svc.updateFinding(v.id, thread.findings[0].id, { state: 'open' });
     view = await t.svc.view(v.id);
     assert.equal(view.layers.find((l) => l.pr === 1)!.open, 1);
+  });
+});
+
+test('review: a stack has one conversation that follows you between layers, with what you attach spelled out', async () => {
+  const t = await setup();
+  await withGh(t.w, async () => {
+    await t.chat.put({ name: 'm', baseUrl: 'https://x.test/v1', model: 'm', apiKey: 'k' });
+    const v = await t.svc.create(t.w.local, { pr: 1 });
+    await t.svc.sync(v.id);
+    // A question from the time each layer had its own thread.
+    await t.db.chatMessage.create({ data: { uid: `review:${v.id}:2`, role: 'user', text: 'Old question', at: 1 } });
+    await t.db.chatMessage.create({ data: { uid: `review:${v.id}:2`, role: 'assistant', text: 'Old answer', at: 1 } });
+    const f = await t.svc.addFinding(v.id, { ownerPr: 2, title: 'Return a name', body: 'Callers need it.', severity: 'blocking', path: 'c.ts', lineStart: 1 });
+    const seen: { role: string; content: string }[][] = [];
+    await withFetch(
+      (body) => {
+        seen.push(body.messages);
+        return { content: JSON.stringify({ content: 'ok', followups: [], findings: [] }) };
+      },
+      async () => {
+        const r = await t.svc.ask(v.id, 2, 'Is this the right fix?', undefined, [
+          { kind: 'finding', id: f.id },
+          { kind: 'lines', pr: 2, path: 'c.ts', start: 1, end: 1, text: '+export const c = () => 1;' },
+          { kind: 'file', pr: 2, path: 'c.ts' },
+        ]);
+        assert.equal(r.asked.pr, 2);
+        assert.deepEqual(r.asked.context.map((c) => c.label), ['Return a name', 'c.ts:1', 'c.ts']);
+        await t.svc.ask(v.id, 1, 'And under it?');
+        await t.svc.ask(v.id, null, 'The whole thing?');
+      },
+    );
+    const first = seen[0].at(-1)!.content;
+    assert.match(first, /^Is this the right fix\?\n\nAttached:/);
+    assert.match(first, new RegExp(`Finding F${f.id} \\[blocking, open, from you\\] owned by #2: Return a name \\(c\\.ts:1\\)\nCallers need it\\.`));
+    assert.match(first, /Lines c\.ts:1 of #2, as the diff shows them:\n```diff\n\+export const c = \(\) => 1;\n```/);
+    assert.match(first, /The file c\.ts, as #2 changes it:\n```diff\ndiff --git a\/c\.ts b\/c\.ts/, "the file's change, read at the layer's revisions");
+    assert.match(seen[0][0].content, /You are reviewing #2/);
+    // The next question, on another layer, sees the conversation so far and where each turn was.
+    const history = seen[1].filter((m) => m.role === 'user').map((m) => m.content);
+    assert.deepEqual(history.slice(0, 2), ['[On #2] Old question', `[On #2 · attached finding F${f.id}, c.ts:1, c.ts] Is this the right fix?`]);
+    assert.match(seen[1][0].content, /You are reviewing #1/);
+    assert.match(seen[2][0].content, /discussing the stack as a whole/);
+    const thread = await t.svc.thread(v.id);
+    assert.deepEqual(
+      thread.messages.map((m) => [m.role, m.pr]),
+      [['user', 2], ['assistant', 2], ['user', 2], ['assistant', 2], ['user', 1], ['assistant', 1], ['user', null], ['assistant', null]],
+    );
+    assert.equal(thread.messages[2].context.length, 3);
+    await t.svc.clearThread(v.id);
+    assert.equal((await t.svc.thread(v.id)).messages.length, 0, 'clearing takes the old per-layer rows too');
   });
 });
 

@@ -8,6 +8,8 @@ import { SheetBar, useSheet } from '../sheet.tsx';
 import { Markdown } from '../Markdown.tsx';
 import { GitHubText, type ImageUrl } from './GitHubText.tsx';
 import { errorText } from '../errors.ts';
+import { MethodSwitch } from './StackMerge.tsx';
+import type { Method } from './stackMerge.ts';
 
 const STATUS: Record<string, string> = { waiting: 'needs you', busy: 'working', attention: 'done', idle: 'idle', ended: 'ended; sending resumes it' };
 
@@ -27,6 +29,7 @@ export function DispatchDialog({
   findingIds,
   extra,
   kind,
+  method,
   onClose,
   onSent,
 }: {
@@ -35,7 +38,9 @@ export function DispatchDialog({
   layer: Layer;
   findingIds: number[];
   extra: string;
-  kind?: 'restack';
+  /** A restack of the layer, or merging the stack up to it (with `method`, which can still be switched here). */
+  kind?: 'restack' | 'merge';
+  method?: Method;
   onClose: () => void;
   onSent: (outcome: string, to: string) => void;
 }) {
@@ -48,6 +53,8 @@ export function DispatchDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [drafted, setDrafted] = useState('');
+  const [how, setHow] = useState<Method | undefined>(method);
+  const [stale, setStale] = useState(false);
   const host = useContext(ReviewContext)?.host ?? '';
   const agents = useContext(HostPresetsContext)(host).filter((p) => p.available && !p.hidden && p.command && p.id !== 'shell');
   const fresh = target.startsWith('new:');
@@ -57,7 +64,7 @@ export function DispatchDialog({
   // A new session gets the draft for one: where it is, how to push, why the stack exists. Edits you made stay.
   const wasFresh = useRef(false);
   useEffect(() => {
-    if (loading || kind === 'restack' || fresh === wasFresh.current) return;
+    if (loading || kind || fresh === wasFresh.current) return;
     wasFresh.current = fresh;
     if (text !== drafted) return;
     api.dispatchText(stack.id, layer.pr, findingIds, extra, kind, fresh).then((t) => (setText(t.text), setDrafted(t.text)), () => {});
@@ -65,7 +72,7 @@ export function DispatchDialog({
 
   useEffect(() => {
     let live = true;
-    Promise.all([api.dispatchText(stack.id, layer.pr, findingIds, extra, kind), api.owners(stack.id)])
+    Promise.all([api.dispatchText(stack.id, layer.pr, findingIds, extra, kind, false, method), api.owners(stack.id)])
       .then(([t, o]) => {
         if (!live) return;
         setText(t.text);
@@ -80,6 +87,14 @@ export function DispatchDialog({
     };
   }, []);
 
+  // Switching how layers land redrafts the merge message, unless you've edited it.
+  const redraft = (m: Method) => {
+    setHow(m);
+    setStale(text !== drafted && m !== method);
+    if (text !== drafted) return;
+    api.dispatchText(stack.id, layer.pr, findingIds, extra, kind, false, m).then((t) => (setText(t.text), setDrafted(t.text)), () => {});
+  };
+
   const chosen = owners.find((o) => o.uid === target);
   const bound = stack.owner && stack.owner.uid === target;
 
@@ -89,7 +104,8 @@ export function DispatchDialog({
     setBusy(true);
     setError(null);
     try {
-      const out = await api.dispatch(stack.id, layer.pr, fresh ? { findingIds, text, newSession: { preset: target.slice(4) } } : { findingIds, text, targetUid: target });
+      const merge = kind === 'merge' ? { kind: 'merge' as const } : {};
+      const out = await api.dispatch(stack.id, layer.pr, fresh ? { findingIds, text, newSession: { preset: target.slice(4) }, ...merge } : { findingIds, text, targetUid: target, ...merge });
       onSent(out.outcome, fresh ? `a new ${look(target.slice(4)).name} session` : (chosen?.title ?? stack.owner?.title ?? 'the agent'));
       onClose();
     } catch (err) {
@@ -104,10 +120,12 @@ export function DispatchDialog({
       <SheetBar onClose={dismiss} />
       <form onSubmit={submit}>
         <header className="ns-head">
-          <h2>{kind === 'restack' ? `Restack ${label}` : findingIds.length ? `Send ${findingIds.length} finding${findingIds.length > 1 ? 's' : ''} for ${label}` : `Send to the agent on ${label}`}</h2>
+          <h2>{kind === 'merge' ? `Ask the agent to merge ${layer.pr === stack.layers.filter((l) => l.state === 'open').at(-1)?.pr ? 'the stack' : `up to ${label}`}` : kind === 'restack' ? `Restack ${label}` : findingIds.length ? `Send ${findingIds.length} finding${findingIds.length > 1 ? 's' : ''} for ${label}` : `Send to the agent on ${label}`}</h2>
         </header>
         <p className="hint">
-          Drafted from your findings, decisions and the layers above. Edit it as you like. When the agent finishes and pushes, the layer comes back for a re-review.
+          {kind === 'merge'
+            ? `Drafted from the merge order, the heads you reviewed and how each layer lands. Edit it as you like. When the agent finishes, ah checks that ${label} merged.`
+            : 'Drafted from your findings, decisions and the layers above. Edit it as you like. When the agent finishes and pushes, the layer comes back for a re-review.'}
         </p>
         <label className="field">
           <span>Session</span>
@@ -138,6 +156,8 @@ export function DispatchDialog({
         ) : (
           !bound && target && <p className="hint">Sending binds this stack to that conversation; later findings go there too, even after it resumes.</p>
         )}
+        {kind === 'merge' && how && !loading && <MethodSwitch methods={stack.methods} method={how} onChange={redraft} />}
+        {stale && <p className="hint">You've edited the message, so it wasn't redrafted; say how to merge in it.</p>}
         {loading ? (
           <p className="hint">Drafting…</p>
         ) : (

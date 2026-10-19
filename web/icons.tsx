@@ -58,6 +58,8 @@ const PATHS: Record<string, string> = {
   sparkle: 'M12 3c.7 5.3 3.7 8.3 9 9-5.3.7-8.3 3.7-9 9-.7-5.3-3.7-8.3-9-9 5.3-.7 8.3-3.7 9-9z',
   model: 'M7 7h10v10H7zM10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4',
   effort: 'M12 14l4-4M4.5 18a9 9 0 1 1 15 0',
+  flag: 'M5 21V4M5 4h12l-2.5 4.5L17 13H5',
+  file: 'M6 3h8l4 4v14H6zM14 3v4h4',
 };
 
 export type IconName = keyof typeof PATHS;

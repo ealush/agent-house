@@ -12,7 +12,7 @@ export function layerLine(l: Layer): string {
   if (l.status === 'merged') return 'Merged';
   if (l.status === 'closed') return 'Closed on GitHub';
   if (l.status === 'skipped') return "Skipped · won't merge";
-  if (l.status === 'fixing') return `${d?.targetAgent ? look(d.targetAgent).name : 'The agent'} is fixing${d?.findings.length ? ` ${d.findings.length}` : ''}`;
+  if (l.status === 'fixing') return `${d?.targetAgent ? look(d.targetAgent).name : 'The agent'} is ${d?.kind === 'merge' ? 'merging up to here' : `fixing${d?.findings.length ? ` ${d.findings.length}` : ''}`}`;
   if (l.status === 'rereview') return l.open ? `Came back · ${l.open} open` : 'Came back';
   if (d?.state === 'no-push') return 'Finished without a push';
   if (l.needs === 'merging') return 'Merging on GitHub';

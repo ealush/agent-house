@@ -6,7 +6,7 @@ export type Verdict = { items: { id: number; verdict: 'addressed' | 'partly' | '
 export type RevView = { id: number; baseSha: string; headSha: string; patchId: string; files: number; additions: number; deletions: number; summary: string | null; verdict: Verdict | null };
 export type LayerStatus = 'unreviewed' | 'changes' | 'fixing' | 'rereview' | 'approved' | 'merged' | 'closed' | 'skipped';
 export type Gate = { key: 'reviewed' | 'findings' | 'checks' | 'mergeable' | 'base' | 'below' | 'order'; ok: boolean; label: string; detail?: string };
-export type DispatchView = { id: number; pr: number; state: string; targetUid: string; targetTitle: string | null; targetAgent: string | null; sentAt: number; doneAt: number | null; findings: number[]; text: string };
+export type DispatchView = { id: number; pr: number; kind: string; state: string; targetUid: string; targetTitle: string | null; targetAgent: string | null; sentAt: number; doneAt: number | null; findings: number[]; text: string };
 export type Finding = {
   id: number;
   ownerPr: number;
@@ -113,7 +113,15 @@ export type SessionStack = {
   start: { native: number } | { prs: number[] } | null;
 };
 export type OwnerSuggestion = { uid: string; key: string; title: string; agent: string | null; status: string; cwd: string; branch: string | null; live: boolean; reason: 'branch' | 'repo'; origin: boolean };
-export type ThreadMsg = { role: 'user' | 'assistant'; text: string; at: number; id: number };
+/** What a question to the reviewer points at, besides the layer you're on. Lines carry the diff text you saw. */
+export type AskContext = { kind: 'finding'; id: number } | { kind: 'lines'; pr: number; path: string; start: number; end: number; text: string } | { kind: 'file'; pr: number; path: string };
+/** Something you're about to ask the reviewer about: what goes to the server, its chip's label, and a key to keep it once. */
+export type Attachment = { ctx: AskContext; label: string; key: string };
+export const attachKey = (c: AskContext) => (c.kind === 'finding' ? `f${c.id}` : c.kind === 'file' ? `p${c.pr}:${c.path}` : `l${c.pr}:${c.path}:${c.start}-${c.end}`);
+/** An attachment as the thread keeps it, with a label for its chip. */
+export type SavedContext = { kind: 'finding'; id: number; pr: number; label: string } | { kind: 'lines'; pr: number; path: string; start: number; end: number; label: string } | { kind: 'file'; pr: number; path: string; label: string };
+/** A message of the stack's one conversation: the layer it was asked on (null: the whole stack), and what was attached. */
+export type ThreadMsg = { role: 'user' | 'assistant'; text: string; at: number; id: number; pr: number | null; context: SavedContext[] };
 export type Followup = { title: string; kind: 'session' | 'chat'; text: string };
 export type DiffOut = { kind: 'patch' | 'range'; text: string; truncated: boolean; from: string; to: string };
 
@@ -153,13 +161,17 @@ export function reviewApi(base = '') {
     approve: (id: string, pr: number, approved = true) => r<Stack>('POST', `${l(id, pr)}/approve`, { approved }),
     accept: (id: string, pr: number, overrides: Record<number, 'addressed' | 'open'> = {}) => r<Stack>('POST', `${l(id, pr)}/accept`, { overrides }),
     importThreads: (id: string, pr: number) => r<{ added: number }>('POST', `${l(id, pr)}/threads`),
+    /** Merge the stack bottom up, to the top or to `upTo`; it stops where a step fails, waits on GitHub, or leaves a restack. */
+    mergeStack: (id: string, body: { method?: string; markReviewed?: boolean; upTo?: number }) =>
+      r<{ merged: number[]; restack: number[]; waiting: 'github' | 'queue' | null; stopped: { pr: number; why: string } | null; next: number | null }>('POST', `${s(id)}/merge`, body),
     merge: (id: string, pr: number, outOfOrder = false) => r<{ next: number | null; retargeted: number[]; restack: number[]; merged: number[]; waiting: 'github' | 'queue' | null }>('POST', `${l(id, pr)}/merge`, { outOfOrder }),
     retarget: (id: string, pr: number) => r<Stack>('POST', `${l(id, pr)}/retarget`),
     ready: (id: string, pr: number) => r<Stack>('POST', `${l(id, pr)}/ready`),
-    dispatchText: (id: string, pr: number, findings: number[], extra = '', kind?: 'restack', fresh = false) =>
-      r<{ text: string }>('GET', `${l(id, pr)}/dispatch?findings=${findings.join(',')}&extra=${enc(extra)}${kind ? `&kind=${kind}` : ''}${fresh ? '&fresh=1' : ''}`),
+    /** A merge draft (kind 'merge') covers the stack up to `pr`, with `method`. */
+    dispatchText: (id: string, pr: number, findings: number[], extra = '', kind?: 'restack' | 'merge', fresh = false, method?: string) =>
+      r<{ text: string }>('GET', `${l(id, pr)}/dispatch?findings=${findings.join(',')}&extra=${enc(extra)}${kind ? `&kind=${kind}` : ''}${fresh ? '&fresh=1' : ''}${method ? `&method=${method}` : ''}`),
     /** To a session (`targetUid`), or to a new one started for it (`newSession`). */
-    dispatch: (id: string, pr: number, body: { findingIds: number[]; text: string; targetUid?: string; newSession?: { preset: string } }) => r<{ dispatch: DispatchView; outcome: string }>('POST', `${l(id, pr)}/dispatch`, body),
+    dispatch: (id: string, pr: number, body: { findingIds: number[]; text: string; targetUid?: string; newSession?: { preset: string }; kind?: 'merge' }) => r<{ dispatch: DispatchView; outcome: string }>('POST', `${l(id, pr)}/dispatch`, body),
     findings: (id: string, pr?: number) => r<Finding[]>('GET', `${s(id)}/findings${pr ? `?pr=${pr}` : ''}`),
     addFinding: (id: string, body: { ownerPr: number; foundOnPr?: number; title: string; body?: string; severity?: string; path?: string | null; lineStart?: number | null; lineEnd?: number | null }) =>
       r<Finding>('POST', `${s(id)}/findings`, body),
@@ -167,11 +179,11 @@ export function reviewApi(base = '') {
     resolveThread: (id: string, fid: number, body: string) => r<Finding>('POST', `${s(id)}/findings/${fid}/resolve`, { body }),
     addDecision: (id: string, text: string, fromPr: number | null) => r<Stack>('POST', `${s(id)}/decisions`, { text, fromPr }),
     removeDecision: (id: string, did: number) => r<Stack>('DELETE', `${s(id)}/decisions/${did}`),
-    thread: (id: string, pr: number | null) => r<{ messages: ThreadMsg[]; findings: Finding[]; subscriptionId: string | null }>('GET', `${s(id)}/chat${pr ? `?pr=${pr}` : ''}`),
-    pickSubscription: (id: string, pr: number | null, subscriptionId: string) => r<{ ok: true }>('PUT', `${s(id)}/chat/subscription`, { pr, id: subscriptionId }),
-    ask: (id: string, pr: number | null, text: string, subscriptionId?: string) =>
-      r<{ message: ThreadMsg; followups: Followup[]; findings: Finding[] }>('POST', `${s(id)}/chat`, { text, pr, ...(subscriptionId ? { subscriptionId } : {}) }),
-    clearThread: (id: string, pr: number | null) => r('DELETE', `${s(id)}/chat${pr ? `?pr=${pr}` : ''}`),
+    thread: (id: string) => r<{ messages: ThreadMsg[]; findings: Finding[]; subscriptionId: string | null }>('GET', `${s(id)}/chat`),
+    pickSubscription: (id: string, subscriptionId: string) => r<{ ok: true }>('PUT', `${s(id)}/chat/subscription`, { id: subscriptionId }),
+    ask: (id: string, pr: number | null, text: string, subscriptionId?: string, context: AskContext[] = []) =>
+      r<{ asked: ThreadMsg; message: ThreadMsg; followups: Followup[]; findings: Finding[] }>('POST', `${s(id)}/chat`, { text, pr, context, ...(subscriptionId ? { subscriptionId } : {}) }),
+    clearThread: (id: string) => r('DELETE', `${s(id)}/chat`),
   };
 }
 

@@ -62,6 +62,8 @@ model ChatMessage {
   role String
   text String
   at   Int
+  /// Review threads: JSON of what a question pointed at (the layer, findings, diff lines, files).
+  context String?
 
   @@index([uid, id])
 }
@@ -206,6 +208,8 @@ model ReviewDispatch {
   pr          Int
   targetUid   String
   targetKey   String
+  /// "fix": done when the layer's head moves; "merge": the stack merged up to this layer, done when it has.
+  kind        String  @default("fix")
   text        String
   fromRevId   Int?
   fromHead    String  @default("")

@@ -100,7 +100,7 @@ export type LayerStatus = 'unreviewed' | 'changes' | 'fixing' | 'rereview' | 'ap
 export type Gate = { key: 'reviewed' | 'findings' | 'checks' | 'mergeable' | 'base' | 'below' | 'order'; ok: boolean; label: string; detail?: string };
 
 export type RevView = { id: number; baseSha: string; headSha: string; patchId: string; files: number; additions: number; deletions: number; summary: string | null; verdict: Verdict | null };
-export type DispatchView = { id: number; pr: number; state: string; targetUid: string; targetTitle: string | null; targetAgent: string | null; sentAt: number; doneAt: number | null; findings: number[]; text: string };
+export type DispatchView = { id: number; pr: number; kind: string; state: string; targetUid: string; targetTitle: string | null; targetAgent: string | null; sentAt: number; doneAt: number | null; findings: number[]; text: string };
 export type FindingView = {
   id: number;
   ownerPr: number;
@@ -185,12 +185,14 @@ export type StackView = {
 };
 /** What a merge did: the PRs that landed, those GitHub retargeted onto the trunk, and whether GitHub is still at it. */
 export type MergeOutcome = { next: number | null; retargeted: number[]; restack: number[]; merged: number[]; waiting: 'github' | 'queue' | null };
+/** What merging the stack did: the PRs that landed, those left to restack, whether GitHub is still at it, and where it stopped and why. */
+export type StackMergeOutcome = { merged: number[]; restack: number[]; waiting: 'github' | 'queue' | null; stopped: { pr: number; why: string } | null; next: number | null };
 export type StackSummary = { id: string; title: string; repo: string; trunk: string; state: string; source: 'tree' | 'manual' | 'native'; ghStack: number | null; layers: number; merged: number; needsYou: number; next: number | null; syncedAt: number; spine: { pr: number; role: string; status: LayerStatus }[] };
-export type ReviewAlert = { kind: 'rereview' | 'nopush' | 'ready' | 'restack'; stackId: string; stackTitle: string; pr: number; role: string; title: string; at: number };
+export type ReviewAlert = { kind: 'rereview' | 'nopush' | 'ready' | 'restack'; stackId: string; stackTitle: string; pr: number; role: string; title: string; at: number; /** nopush: the message asked it to merge, not to fix. */ merge?: boolean };
 /** What the streamed state carries: Inbox alerts, session banners, and the PR → stack map for session headers. */
 export type ReviewState = {
   alerts: ReviewAlert[];
-  fixing: { uid: string; stackId: string; pr: number; role: string; count: number }[];
+  fixing: { uid: string; stackId: string; pr: number; role: string; count: number; /** Asked to merge the stack up to `pr`, not to fix it. */ merge?: boolean }[];
   branches: { repo: string; branch: string; stackId: string; pr: number; role: string; stackTitle: string }[];
 };
 
@@ -268,6 +270,30 @@ const OPEN_FINDING = ['open', 'sent'];
 const ACTIVE_DISPATCH = ['sent', 'working'];
 const label = (l: { role: string; pr: number }) => (l.role ? `${l.role} #${l.pr}` : `#${l.pr}`);
 export const threadKey = (stackId: string, pr: number | null) => (pr === null ? `review:${stackId}` : `review:${stackId}:${pr}`);
+
+/** What a question to the reviewer points at, besides the layer you're on: a finding, lines of a layer's diff (as shown), a file. */
+export type AskContext = { kind: 'finding'; id: number } | { kind: 'lines'; pr: number; path: string; start: number; end: number; text: string } | { kind: 'file'; pr: number; path: string };
+/** An attachment as the thread keeps it: enough to show it as a chip and say what it was. */
+export type SavedContext = { kind: 'finding'; id: number; pr: number; label: string } | { kind: 'lines'; pr: number; path: string; start: number; end: number; label: string } | { kind: 'file'; pr: number; path: string; label: string };
+/** One message of a stack's conversation: the layer it was asked on (null: the whole stack), and what was attached. */
+export type ThreadMessage = { id: number; role: 'user' | 'assistant'; text: string; at: number; pr: number | null; context: SavedContext[] };
+
+function threadMessage(r: { id: number; uid: string; role: string; text: string; at: number; context: string | null }): ThreadMessage {
+  let pr: number | null = null;
+  let context: SavedContext[] = [];
+  try {
+    const c = r.context ? (JSON.parse(r.context) as { pr?: unknown; items?: unknown }) : null;
+    if (c) {
+      pr = typeof c.pr === 'number' ? c.pr : null;
+      if (Array.isArray(c.items)) context = c.items as SavedContext[];
+    } else {
+      // Rows from the time each layer had its own thread: the key says which.
+      const m = /^review:.+:(\d+)$/.exec(r.uid);
+      pr = m ? Number(m[1]) : null;
+    }
+  } catch {}
+  return { id: r.id, role: r.role === 'assistant' ? 'assistant' : 'user', text: r.text, at: r.at, pr, context };
+}
 
 export class ReviewService {
   private db: PrismaClient;
@@ -710,7 +736,7 @@ export class ReviewService {
               { key: 'order', ok: firstOpen === l.pr, label: 'Next in merge order', detail: firstOpen === l.pr ? undefined : `#${firstOpen} comes first` },
             ];
       const dv: DispatchView | null = d
-        ? { id: d.id, pr: d.pr, state: d.state, targetUid: d.targetUid, targetTitle: ownerOf(d.targetUid, d.targetKey)?.title ?? null, targetAgent: ownerOf(d.targetUid, d.targetKey)?.agent ?? null, sentAt: d.sentAt, doneAt: d.doneAt, findings: findings.filter((f) => f.dispatchId === d.id).map((f) => f.id), text: d.text }
+        ? { id: d.id, pr: d.pr, kind: d.kind, state: d.state, targetUid: d.targetUid, targetTitle: ownerOf(d.targetUid, d.targetKey)?.title ?? null, targetAgent: ownerOf(d.targetUid, d.targetKey)?.agent ?? null, sentAt: d.sentAt, doneAt: d.doneAt, findings: findings.filter((f) => f.dispatchId === d.id).map((f) => f.id), text: d.text }
         : null;
       return {
         pr: l.pr,
@@ -1307,7 +1333,7 @@ export class ReviewService {
     return lines.join('\n');
   }
 
-  async dispatch(id: string, pr: number, input: { findingIds: number[]; text: string; targetUid?: string; newSession?: { preset: string } }): Promise<{ dispatch: DispatchView; outcome: string }> {
+  async dispatch(id: string, pr: number, input: { findingIds: number[]; text: string; targetUid?: string; newSession?: { preset: string }; kind?: 'fix' | 'merge' }): Promise<{ dispatch: DispatchView; outcome: string }> {
     const s = await this.stack(id);
     const l = await this.layer(id, pr);
     const text = input.text.trim();
@@ -1330,10 +1356,10 @@ export class ReviewService {
     if (!target) throw new ReviewError(409, 'choose the session that owns this stack first');
     const sent = await this.deps.send(target.uid, text);
     const d = await this.db.reviewDispatch.create({
-      data: { stackId: id, pr, targetUid: target.uid, targetKey: target.key, text, fromRevId: l.currentRevId, fromHead: l.headSha, queueId: sent.queueId ?? null, sentAt: now() },
+      data: { stackId: id, pr, kind: input.kind ?? 'fix', targetUid: target.uid, targetKey: target.key, text, fromRevId: l.currentRevId, fromHead: l.headSha, queueId: sent.queueId ?? null, sentAt: now() },
     });
     // The revision the findings were written against is the checkpoint the fix is compared with.
-    await this.db.reviewLayer.update({ where: { stackId_pr: { stackId: id, pr } }, data: { reviewedRevId: l.currentRevId ?? l.reviewedRevId } });
+    if (input.kind !== 'merge') await this.db.reviewLayer.update({ where: { stackId_pr: { stackId: id, pr } }, data: { reviewedRevId: l.currentRevId ?? l.reviewedRevId } });
     if (input.findingIds.length) {
       // Sent to this layer, they're its to fix: a follow-up from a merged layer moves here.
       await this.db.reviewFinding.updateMany({ where: { stackId: id, id: { in: input.findingIds } }, data: { state: 'sent', ownerPr: pr, dispatchId: d.id, stateBy: 'you', stateRevId: l.currentRevId, updatedAt: now() } });
@@ -1363,7 +1389,8 @@ export class ReviewService {
         await this.sync(stackId).catch(() => {});
         for (const d of active.filter((x) => x.stackId === stackId && x.sawWork)) {
           const l = await this.db.reviewLayer.findUnique({ where: { stackId_pr: { stackId, pr: d.pr } } });
-          const pushed = !!l && l.headSha !== d.fromHead;
+          // A fix is done when the head moved; a merge when the layer landed.
+          const pushed = !!l && (d.kind === 'merge' ? l.state === 'merged' : l.headSha !== d.fromHead);
           await this.db.reviewDispatch.update({ where: { id: d.id }, data: { state: pushed ? 'done' : 'no-push', doneAt: now() } });
         }
       }
@@ -1400,6 +1427,61 @@ export class ReviewService {
     await this.sync(id, true).catch(() => {});
     const after = await this.view(id);
     return { next: after.next, retargeted, restack, merged: [pr], waiting: null };
+  }
+
+  /**
+   * Merge the stack, bottom up, up to a layer (all of it by default), in as few
+   * steps as GitHub allows: a run of layers in one GitHub stack lands through
+   * one stack merge of its top, any other layer through its own merge, each
+   * step re-checked by merge() against a fresh sync. Before the first step
+   * every layer must pass its gates, bar merge order, the layers under it and
+   * targeting a layer below it (the steps take care of those) and, with
+   * markReviewed, your review mark, which it then sets at the current heads.
+   * It stops at the first step that fails, that GitHub hasn't finished, or that
+   * leaves the next layer to restack (squash or rebase on a chain: ah doesn't
+   * rewrite branches).
+   */
+  async mergeStack(id: string, opts: { method?: string; markReviewed?: boolean; upTo?: number } = {}): Promise<StackMergeOutcome> {
+    if (opts.method) await this.update(id, { mergeMethod: opts.method });
+    await this.sync(id, true);
+    const v = await this.view(id);
+    const open = v.layers.filter((l) => l.state === 'open');
+    const end = opts.upTo === undefined ? open.length - 1 : open.findIndex((l) => l.pr === opts.upTo);
+    if (end < 0) throw new ReviewError(opts.upTo === undefined ? 409 : 404, opts.upTo === undefined ? 'nothing left to merge' : `#${opts.upTo} is not an open layer of this stack`);
+    const todo = open.slice(0, end + 1);
+    const heads = new Set<string>();
+    for (const l of todo) {
+      const bad = l.gates.find((g) => !g.ok && g.key !== 'order' && g.key !== 'below' && g.key !== 'reviewed' && !(g.key === 'base' && heads.has(l.baseRef)));
+      if (bad) throw new ReviewError(409, `${label(l)}: ${bad.detail ?? bad.label}`);
+      if (!opts.markReviewed && l.gates.some((g) => g.key === 'reviewed' && !g.ok)) throw new ReviewError(409, `${label(l)}: not marked reviewed at its current head`);
+      heads.add(l.headRef);
+    }
+    if (opts.markReviewed) for (const l of todo) if (l.gates.some((g) => g.key === 'reviewed' && !g.ok)) await this.approve(id, l.pr, true);
+    const out: StackMergeOutcome = { merged: [], restack: [], waiting: null, stopped: null, next: null };
+    for (let i = 0; i < todo.length; ) {
+      let j = i;
+      if (todo[i].ghStack !== null) while (j + 1 < todo.length && todo[j + 1].ghStack === todo[i].ghStack && (todo[j + 1].ghPos ?? 0) > (todo[j].ghPos ?? 0)) j++;
+      const moved = todo.slice(i, j + 1).find((x) => out.restack.includes(x.pr));
+      if (moved) {
+        out.stopped = { pr: moved.pr, why: `it needs a restack onto ${v.trunk} first` };
+        break;
+      }
+      try {
+        const step = await this.merge(id, todo[j].pr, { outOfOrder: true });
+        out.merged.push(...step.merged);
+        out.restack.push(...step.restack);
+        if (step.waiting) {
+          out.waiting = step.waiting;
+          break;
+        }
+      } catch (err) {
+        out.stopped = { pr: todo[j].pr, why: err instanceof Error ? err.message : String(err) };
+        break;
+      }
+      i = j + 1;
+    }
+    out.next = (await this.view(id)).next;
+    return out;
   }
 
   /**
@@ -1513,6 +1595,63 @@ export class ReviewService {
   }
 
   /** The instruction for a layer that repeats its merged parent's commits (squash/rebase merges). */
+  /**
+   * The message asking the agent to merge the stack up to a layer (all of it
+   * by default): bottom up, with the method you picked, each at the head you
+   * reviewed. A run of a GitHub stack goes through gh stack merge (or the
+   * stack merge API without it); a layer of a chain is merged, the next one
+   * retargeted and, after a squash or rebase, restacked before its turn. A
+   * layer a gate holds back is where it stops and asks.
+   */
+  async mergeText(id: string, method: string, upTo?: number): Promise<string> {
+    const s = await this.stack(id);
+    const v = await this.view(id);
+    const open = v.layers.filter((l) => l.state === 'open');
+    const end = upTo === undefined ? open.length - 1 : open.findIndex((l) => l.pr === upTo);
+    if (end < 0) throw new ReviewError(upTo === undefined ? 409 : 404, upTo === undefined ? 'nothing left to merge' : `#${upTo} is not an open layer of this stack`);
+    const todo = open.slice(0, end + 1);
+    const how = method === 'squash' || method === 'rebase' ? method : 'merge';
+    const tool = todo.some((l) => l.ghStack !== null) && (await this.ghStackHere(s.repoRoot));
+    const head = (l: LayerView) => (l.current?.headSha ?? '').slice(0, 12);
+    const lines = [
+      `Please merge the stack "${s.title}" (${s.repo}) into ${s.trunk}, bottom up, with ${how === 'merge' ? 'merge commits' : how === 'squash' ? 'squash merges' : 'rebase merges'}. Merge each pull request at the head I reviewed; if a branch has moved since, stop and tell me.`,
+      '',
+      ...todo.map((l, i) => `${i + 1}. ${label(l)} "${l.title}": ${l.headRef} at ${head(l)}${l.ghStack !== null ? `, in GitHub stack #${l.ghStack}` : ''}`),
+      '',
+    ];
+    // How each run lands, bottom up.
+    const heads = new Set<string>();
+    for (let i = 0; i < todo.length; ) {
+      let j = i;
+      if (todo[i].ghStack !== null) while (j + 1 < todo.length && todo[j + 1].ghStack === todo[i].ghStack && (todo[j + 1].ghPos ?? 0) > (todo[j].ghPos ?? 0)) j++;
+      const run = todo.slice(i, j + 1);
+      const top = todo[j];
+      const held = run.find((l) => l.gates.some((g) => !g.ok && g.key !== 'order' && g.key !== 'below' && g.key !== 'reviewed' && !(g.key === 'base' && heads.has(l.baseRef))));
+      if (held) {
+        const g = held.gates.find((x) => !x.ok && x.key !== 'order' && x.key !== 'below' && x.key !== 'reviewed' && !(x.key === 'base' && heads.has(held.baseRef)))!;
+        lines.push(`- Stop before ${label(held)}: ${(g.detail ?? g.label).replace(/^./, (c) => c.toLowerCase())}. Tell me what's left instead of merging past it.`);
+        break;
+      }
+      if (top.ghStack !== null) {
+        const clash = v.layers.some((l) => l.ghStack === top.pr);
+        lines.push(
+          tool
+            ? `- ${run.map(label).join(', ')}: gh stack merge ${top.pr} --${how} --yes lands ${run.length > 1 ? 'them' : 'it'} with the rest of GitHub stack #${top.ghStack} under ${top.pr}, all or none.${clash ? ` (${top.pr} is also a stack's number, which gh stack takes first: check it picks the PR.)` : ''}`
+            : `- ${run.map(label).join(', ')}: through GitHub's stack merge (plain gh pr merge refuses stacked PRs): gh api -X PUT repos/${s.repo}/pulls/${top.pr}/merge-async -f merge_method=${how} -f sha=${top.current?.headSha ?? ''}, then wait until it lands.`,
+        );
+      } else {
+        const sat = i > 0 && heads.has(top.baseRef);
+        lines.push(
+          `- ${label(top)}: ${sat ? `point it at ${s.trunk} (gh pr edit ${top.pr} --base ${s.trunk})${how !== 'merge' ? `, rebase its own commits onto origin/${s.trunk} (git rebase --onto origin/${s.trunk} ${top.current?.baseSha.slice(0, 12) ?? top.baseRef} ${top.headRef}), run the tests, push with --force-with-lease and wait for its checks` : ''}, then ` : ''}gh pr merge ${top.pr} --${how} --match-head-commit ${how !== 'merge' && sat ? '<its new head>' : top.current?.headSha ?? ''}.`,
+        );
+      }
+      for (const l of run) heads.add(l.headRef);
+      i = j + 1;
+    }
+    lines.push('', 'If GitHub refuses a merge or a check fails, stop there and tell me why. Reply with what merged.', `(ah review ${s.id}/merge)`);
+    return lines.join('\n');
+  }
+
   async restackText(id: string, pr: number): Promise<string> {
     const s = await this.stack(id);
     const l = await this.layer(id, pr);
@@ -1641,47 +1780,103 @@ export class ReviewService {
     return { path: s.planPath, text: await this.planText(s) };
   }
 
-  async thread(id: string, pr: number | null): Promise<{ messages: { role: string; text: string; at: number; id: number }[]; findings: FindingView[]; subscriptionId: string | null }> {
-    await this.stack(id);
-    if (pr !== null) await this.layer(id, pr);
-    const rows = await this.db.chatMessage.findMany({ where: { uid: threadKey(id, pr) }, orderBy: { id: 'asc' } });
-    const ids = rows.map((r) => r.id);
-    const proposed = ids.length ? await this.db.reviewFinding.findMany({ where: { stackId: id, messageId: { in: ids } }, orderBy: { id: 'asc' } }) : [];
-    return { messages: rows.map((r) => ({ role: r.role, text: r.text, at: r.at, id: r.id })), findings: proposed.map((f) => findingView(f)), subscriptionId: await this.chat.picked(threadKey(id, pr)) };
-  }
-
-  /** Pick the subscription a thread answers with, before asking it anything. */
-  async pickThread(id: string, pr: number | null, subscriptionId: string): Promise<void> {
-    await this.stack(id);
-    if (pr !== null) await this.layer(id, pr);
-    await this.chat.pick(threadKey(id, pr), subscriptionId);
-  }
-
-  async clearThread(id: string, pr: number | null): Promise<void> {
-    await this.db.reviewFinding.deleteMany({ where: { stackId: id, state: 'proposed', messageId: { not: null } } });
-    await this.chat.clear(threadKey(id, pr));
+  /** Every row of a stack's conversation: the stack's own key, and the per-layer keys threads used to have. */
+  private threadRows(id: string, take?: number) {
+    const where = { OR: [{ uid: threadKey(id, null) }, { uid: { startsWith: `review:${id}:` } }] };
+    return take ? this.db.chatMessage.findMany({ where, orderBy: { id: 'desc' }, take }).then((r) => r.reverse()) : this.db.chatMessage.findMany({ where, orderBy: { id: 'asc' } });
   }
 
   /**
-   * One turn with the reviewer. The thread is kept whole (side chat keeps 30);
-   * the model sees the last few turns. Proposed findings are stored as
-   * `proposed` until you keep or dismiss them.
+   * The stack's one conversation with the reviewer, oldest first. Each question
+   * says which layer you were on and what you attached; the reviewer's proposals
+   * come with it.
    */
-  async ask(id: string, pr: number | null, text: string, subscriptionId?: string) {
+  async thread(id: string): Promise<{ messages: ThreadMessage[]; findings: FindingView[]; subscriptionId: string | null }> {
+    await this.stack(id);
+    const rows = await this.threadRows(id);
+    const ids = rows.map((r) => r.id);
+    const proposed = ids.length ? await this.db.reviewFinding.findMany({ where: { stackId: id, messageId: { in: ids } }, orderBy: { id: 'asc' } }) : [];
+    return { messages: rows.map(threadMessage), findings: proposed.map((f) => findingView(f)), subscriptionId: await this.chat.picked(threadKey(id, null)) };
+  }
+
+  /** Pick the subscription the stack's reviewer answers with, before asking it anything. */
+  async pickThread(id: string, subscriptionId: string): Promise<void> {
+    await this.stack(id);
+    await this.chat.pick(threadKey(id, null), subscriptionId);
+  }
+
+  async clearThread(id: string): Promise<void> {
+    await this.db.reviewFinding.deleteMany({ where: { stackId: id, state: 'proposed', messageId: { not: null } } });
+    const keys = [...new Set((await this.threadRows(id)).map((r) => r.uid)), threadKey(id, null)];
+    for (const k of keys) await this.chat.clear(k);
+  }
+
+  /** What you attached, spelled out for the reviewer: the finding, the lines as the diff showed them, the file's change. */
+  private async attachments(s: ReviewStack, env: ReviewEnv, items: AskContext[]): Promise<{ text: string; saved: SavedContext[] }> {
+    const parts: string[] = [];
+    const saved: SavedContext[] = [];
+    const layerName = (pr: number) => {
+      const l = env.layers.find((x) => x.pr === pr);
+      return l ? label(l) : `#${pr}`;
+    };
+    for (const c of items) {
+      if (c.kind === 'finding') {
+        const f = await this.db.reviewFinding.findFirst({ where: { id: c.id, stackId: s.id } });
+        if (!f) continue;
+        const where = f.path ? ` (${f.path}${f.lineStart ? `:${f.lineStart}` : ''})` : '';
+        parts.push(`Finding F${f.id} [${f.severity}, ${f.state}, from ${f.source}] owned by ${layerName(f.ownerPr)}: ${f.title}${where}${f.body ? `\n${f.body.slice(0, 3000)}` : ''}`);
+        saved.push({ kind: 'finding', id: f.id, pr: f.ownerPr, label: f.title });
+      } else {
+        const l = env.layers.find((x) => x.pr === c.pr);
+        if (!l) continue;
+        if (c.kind === 'lines') {
+          const span = c.end > c.start ? `${c.start}–${c.end}` : `${c.start}`;
+          parts.push(`Lines ${c.path}:${span} of ${label(l)}, as the diff shows them:\n\`\`\`diff\n${c.text.slice(0, 6000)}\n\`\`\``);
+          saved.push({ kind: 'lines', pr: c.pr, path: c.path, start: c.start, end: c.end, label: `${c.path.split('/').pop()}:${span}` });
+        } else {
+          const d = l.base && l.head ? await diff(s.repoRoot, l.base, l.head, [c.path]).catch(() => null) : null;
+          const patch = d?.patch ?? '';
+          parts.push(
+            patch && patch.length <= 12_000
+              ? `The file ${c.path}, as ${label(l)} changes it:\n\`\`\`diff\n${patch}\n\`\`\``
+              : `The file ${c.path} in ${label(l)}${patch ? ` (its change is ${Math.round(patch.length / 1000)}k characters: read it with layer_diff and paths)` : ''}.`,
+          );
+          saved.push({ kind: 'file', pr: c.pr, path: c.path, label: c.path.split('/').pop() ?? c.path });
+        }
+      }
+    }
+    return { text: parts.length ? `\n\nAttached:\n\n${parts.join('\n\n')}` : '', saved };
+  }
+
+  /**
+   * One turn with the reviewer. A stack has one conversation; `pr` is the layer
+   * you're on (null: the stack as a whole), and what you attach is spelled out
+   * for it. The model sees the last few turns, each with where it was asked.
+   * Proposed findings are stored as `proposed` until you keep or dismiss them.
+   */
+  async ask(id: string, pr: number | null, text: string, subscriptionId?: string, attach: AskContext[] = []) {
     const s = await this.stack(id);
     if (pr !== null) await this.layer(id, pr);
-    const key = threadKey(id, pr);
+    const key = threadKey(id, null);
     const sub = await this.chat.subscription(subscriptionId ?? (await this.chat.picked(key)) ?? undefined);
     if (subscriptionId) await this.chat.pick(key, subscriptionId);
     const env = await this.env(s);
-    const prior = (await this.db.chatMessage.findMany({ where: { uid: key }, orderBy: { id: 'desc' }, take: THREAD_HISTORY })).reverse();
+    const prior = await this.threadRows(id, THREAD_HISTORY);
     const cur = pr === null ? null : await this.currentRev(id, pr);
-    const messages = await reviewMessages(env, { pr }, prior.map((m) => ({ role: m.role as 'user' | 'assistant', text: m.text })), text, cur?.summary ?? null);
+    const { text: attached, saved: items } = await this.attachments(s, env, attach);
+    const where = (m: ThreadMessage) => {
+      const l = m.pr === null ? null : env.layers.find((x) => x.pr === m.pr);
+      const what = m.context.map((c) => (c.kind === 'finding' ? `finding F${c.id}` : c.kind === 'lines' ? `${c.path}:${c.start}${c.end > c.start ? `–${c.end}` : ''}` : c.path));
+      return `[${l ? `On ${label(l)}` : 'On the whole stack'}${what.length ? ` · attached ${what.join(', ')}` : ''}] `;
+    };
+    const history = prior.map(threadMessage).map((m) => ({ role: m.role, text: m.role === 'user' ? where(m) + m.text : m.text }));
+    const messages = await reviewMessages(env, { pr }, history, text + attached, cur?.summary ?? null);
     const raw = await this.chat.converse(sub, messages, REVIEW_TOOLS, (name, args) => runReviewTool(env, name, args), { rounds: 10, timeoutMs: 180_000 });
     const reply = parseReply(raw, env.order);
     const at = now();
-    await this.db.chatMessage.create({ data: { uid: key, role: 'user', text, at } });
-    const saved = await this.db.chatMessage.create({ data: { uid: key, role: 'assistant', text: reply.content, at } });
+    const context = JSON.stringify({ pr, items } satisfies { pr: number | null; items: SavedContext[] });
+    const asked = await this.db.chatMessage.create({ data: { uid: key, role: 'user', text, at, context } });
+    const saved = await this.db.chatMessage.create({ data: { uid: key, role: 'assistant', text: reply.content, at, context: JSON.stringify({ pr, items: [] }) } });
     const findings: FindingView[] = [];
     for (const f of reply.findings) {
       const owner = f.ownerPr ?? pr ?? env.order.find((n) => env.layers.find((x) => x.pr === n)?.state === 'open') ?? env.order[0];
@@ -1689,7 +1884,7 @@ export class ReviewService {
         await this.addFinding(id, { ownerPr: owner, foundOnPr: pr ?? owner, title: f.title, body: f.body, severity: f.severity, path: f.path, lineStart: f.lineStart, lineEnd: f.lineEnd, source: 'reviewer', state: 'proposed', messageId: saved.id }),
       );
     }
-    return { message: { role: 'assistant', text: reply.content, at, id: saved.id }, followups: reply.followups, findings };
+    return { asked: threadMessage(asked), message: threadMessage(saved), followups: reply.followups, findings };
   }
 
   private async currentRev(id: string, pr: number): Promise<ReviewRevision | null> {
@@ -1801,10 +1996,10 @@ export class ReviewService {
         for (const l of v.layers) {
           if (l.state === 'open') next.branches.push({ repo: s.repo, branch: l.headRef, stackId: s.id, pr: l.pr, role: l.role, stackTitle: s.title });
           const base = { stackId: s.id, stackTitle: s.title, pr: l.pr, role: l.role, title: l.title };
-          if (l.dispatch && ACTIVE_DISPATCH.includes(l.dispatch.state)) next.fixing.push({ uid: l.dispatch.targetUid, stackId: s.id, pr: l.pr, role: l.role, count: l.dispatch.findings.length });
+          if (l.dispatch && ACTIVE_DISPATCH.includes(l.dispatch.state)) next.fixing.push({ uid: l.dispatch.targetUid, stackId: s.id, pr: l.pr, role: l.role, count: l.dispatch.findings.length, ...(l.dispatch.kind === 'merge' ? { merge: true } : {}) });
           if (l.state !== 'open') continue;
           if (l.status === 'rereview') next.alerts.push({ ...base, kind: 'rereview', at: l.current ? (await this.db.reviewRevision.findUnique({ where: { id: l.current.id } }))?.createdAt ?? 0 : 0 });
-          else if (l.dispatch?.state === 'no-push') next.alerts.push({ ...base, kind: 'nopush', at: l.dispatch.doneAt ?? 0 });
+          else if (l.dispatch?.state === 'no-push') next.alerts.push({ ...base, kind: 'nopush', at: l.dispatch.doneAt ?? 0, ...(l.dispatch.kind === 'merge' ? { merge: true } : {}) });
           else if (l.needs === 'restack') next.alerts.push({ ...base, kind: 'restack', at: s.syncedAt });
           else if (v.next === l.pr && l.gates.every((g) => g.ok)) next.alerts.push({ ...base, kind: 'ready', at: s.syncedAt });
         }
@@ -1816,7 +2011,7 @@ export class ReviewService {
         this.alerted.add(tag);
         if (!this.snapshotPrimed) continue;
         const who = a.role || `#${a.pr}`;
-        const title = a.kind === 'rereview' ? `${who} updated: ready to re-review` : a.kind === 'nopush' ? `${who}: the agent finished without pushing` : a.kind === 'restack' ? `${who} needs a restack` : `${who} is ready to merge`;
+        const title = a.kind === 'rereview' ? `${who} updated: ready to re-review` : a.kind === 'nopush' ? `${who}: the agent finished without ${a.merge ? 'merging' : 'pushing'}` : a.kind === 'restack' ? `${who} needs a restack` : `${who} is ready to merge`;
         this.deps.alert({ title, body: `${a.stackTitle} · ${a.title}`, tag: `review-${a.stackId}-${a.pr}`, url: `/#review/${a.stackId}/${a.pr}` });
       }
       this.snapshotPrimed = true;

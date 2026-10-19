@@ -401,12 +401,25 @@
   grid-template-columns: 284px minmax(0, 1fr);
 }
 
-.review-grid.asking {
-  grid-template-columns: 284px minmax(0, 1fr) minmax(320px, 400px);
+/* Spine, what you're looking at, and the reviewer beside it (or the rail it folds to). */
+.review-grid.panel-open {
+  grid-template-columns: 284px minmax(0, 1fr) minmax(340px, 400px);
+}
+
+.review-grid.panel-closed {
+  grid-template-columns: 284px minmax(0, 1fr) 56px;
 }
 
 .layer-mode .review-grid {
   grid-template-columns: 64px minmax(0, 1fr);
+}
+
+.layer-mode .review-grid.panel-open {
+  grid-template-columns: 64px minmax(0, 1fr) minmax(340px, 400px);
+}
+
+.layer-mode .review-grid.panel-closed {
+  grid-template-columns: 64px minmax(0, 1fr) 56px;
 }
 
 .review-main {
@@ -926,8 +939,23 @@
   white-space: nowrap;
 }
 
-/* The reviewer on the whole stack opens beside the overview, not in its way. */
-.review-drawer {
+/* The reviewer: always beside the overview and every layer, full height, one conversation for the stack. */
+.review-stack {
+  position: relative;
+}
+
+/* Where the page is too narrow for it to sit beside, it floats over the right edge when you ask for it. */
+.reviewer-panel.floating {
+  position: absolute;
+  z-index: 20;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(400px, calc(100% - 72px));
+  box-shadow: var(--elev-2);
+}
+
+.reviewer-panel {
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -936,26 +964,100 @@
   background: var(--surface);
 }
 
-.drawer-head {
+.reviewer-panel .review-thread {
+  flex: 1;
+  min-height: 0;
+}
+
+.reviewer-rail {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 0;
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.reviewer-rail .count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.reviewer-head {
   flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 48px;
+  min-height: 56px;
   padding: 0 8px 0 16px;
   border-bottom: 1px solid var(--line);
-  font-size: 13px;
+  color: var(--accent);
+}
+
+.reviewer-head .grow {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.reviewer-title {
+  font-size: 15px;
   font-weight: 600;
-  color: var(--muted);
+  color: var(--text);
 }
 
-.drawer-head .grow {
-  flex: 1;
+.reviewer-head .hint {
+  font-size: 12px;
 }
 
-.review-drawer .review-thread {
-  flex: 1;
-  min-height: 0;
+
+/* In the composer: the layer you're on, then what you attached. */
+.ctx-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.ctx-chip.scope {
+  border-color: var(--accent-line);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.ctx-chip .chip-x {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-right: -4px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: inherit;
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+:where(:root:not([data-touch])) .ctx-chip .chip-x:hover {
+  opacity: 1;
+  background: var(--glass-press);
+}
+
+.sidechat-compose .rescope {
+  align-self: flex-start;
+  margin-left: -8px;
+  font-size: 12px;
 }
 
 /* ---- picking pull requests */
@@ -1277,9 +1379,34 @@
   flex: none;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
   padding: 12px 18px;
   border-bottom: 1px solid var(--line);
+}
+
+/* The layer shares its width with the reviewer: its header drops the extras, then goes to two rows. */
+.layer:not(.phone) {
+  container: layerbox / inline-size;
+}
+
+@container layerbox (max-width: 900px) {
+  .layer-head .nav-pair,
+  .layer-head .head-sep,
+  .layer-head .confirm-keys {
+    display: none;
+  }
+}
+
+@container layerbox (max-width: 720px) {
+  .layer-head {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .layer-head .layer-id {
+    flex: 1 1 calc(100% - 64px);
+  }
 }
 
 .layer-id {
@@ -1463,15 +1590,86 @@
   background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 
-.layer-body {
+.layer-main {
   flex: 1;
+  min-width: 0;
   min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 344px;
+  display: flex;
+  flex-direction: column;
 }
 
-.layer-main {
-  min-width: 0;
+/* Above the diff: the layer's findings, folding to one line. */
+.layer-findings {
+  margin: 12px 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.findings-fold {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.findings-fold .fold-mark {
+  display: inline-grid;
+  color: var(--faint);
+  transform: rotate(180deg);
+  transition: transform 0.16s ease;
+}
+
+.layer-findings.open .findings-fold .fold-mark {
+  transform: rotate(270deg);
+}
+
+.findings-word {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.findings-fold .count {
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--badge-bg);
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.findings-fold .grow {
+  flex: 1;
+  font-size: 13px;
+}
+
+.layer-findings .findings {
+  padding: 0 14px 12px;
+}
+
+.layer-findings .side-foot {
+  border-top: 1px solid var(--line);
+}
+
+.finding-head .discuss {
+  flex: none;
+  align-self: flex-start;
+  color: var(--faint);
+}
+
+:where(:root:not([data-touch])) .finding-head .discuss:hover {
+  color: var(--accent);
+}
+
+.layer-reviewer {
+  flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -1634,35 +1832,6 @@
   background: var(--done);
 }
 
-.layer-side {
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  border-left: 1px solid var(--line);
-  background: var(--surface);
-}
-
-.layer-side > .seg {
-  flex: none;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  margin: 12px 14px 8px;
-}
-
-.side-pane {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.side-pane > .findings,
-.side-pane > .review-thread {
-  flex: 1;
-  min-height: 0;
-}
-
 .side-foot {
   flex: none;
   display: flex;
@@ -1695,14 +1864,13 @@
 /* ---- narrower windows: the cockpit stacks its cards, the side column goes under the diff */
 
 @container review (max-width: 1180px) {
-  .review-grid.asking {
+  .review-grid.panel-open {
     grid-template-columns: 240px minmax(0, 1fr) 340px;
   }
 
-  .cockpit-cards {
-    grid-template-columns: 1fr 1fr;
+  .layer-mode .review-grid.panel-open {
+    grid-template-columns: 64px minmax(0, 1fr) 340px;
   }
-
 
 }
 
@@ -1715,35 +1883,55 @@
     grid-template-columns: 220px minmax(0, 1fr);
   }
 
-  .review-grid.asking {
-    grid-template-columns: minmax(0, 1fr) 340px;
+  .review-grid.panel-closed {
+    grid-template-columns: 220px minmax(0, 1fr) 56px;
   }
 
-  .review-grid.asking > .spine {
+  .review-grid.overview.panel-open {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+
+  .review-grid.overview.panel-open > .spine {
     display: none;
   }
 
-  .layer-body {
-    display: block;
-    overflow-y: auto;
+  .layer-mode .review-grid.panel-open {
+    grid-template-columns: 64px minmax(0, 1fr) 320px;
   }
+}
 
-  .layer-main {
-    min-height: 70vh;
+/* The overview shares its width with the reviewer: its table and cards answer to the room they have. */
+.review-main {
+  container: cockpit / inline-size;
+}
+
+@container cockpit (max-width: 860px) {
+  .cockpit-cards {
+    grid-template-columns: 1fr 1fr;
   }
+}
 
-  .layer-side {
-    min-height: 520px;
-    border-left: 0;
-    border-top: 1px solid var(--line);
-  }
-
+@container cockpit (max-width: 700px) {
   .mt-c {
     display: none;
   }
 
   .mt-row {
     grid-template-columns: 48px minmax(0, 1fr) 132px 84px;
+  }
+}
+
+@container cockpit (max-width: 520px) {
+  .cockpit-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .mt-f {
+    display: none;
+  }
+
+  .mt-row {
+    grid-template-columns: 40px minmax(0, 1fr) 124px;
   }
 }
 
@@ -1910,12 +2098,6 @@
   padding: 0;
 }
 
-.layer.phone .review-thread {
-  height: 70vh;
-  border-radius: 12px;
-  border: 1px solid var(--line);
-}
-
 .layer.phone .merge-bar,
 .review-pick.phone .pick-bar {
   position: sticky;
@@ -2068,13 +2250,41 @@
   color: var(--muted);
 }
 
-.review-diff .diff-file {
-  width: 100%;
-  min-height: 40px;
-  border: 0;
+.review-diff .diff-file-row {
+  display: flex;
+  align-items: center;
   border-bottom: 1px solid var(--line);
   background: var(--surface);
+}
+
+.review-diff .diff-file {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  border: 0;
+  background: none;
   text-align: left;
+}
+
+.review-diff .file-ask {
+  flex: none;
+  margin-right: 4px;
+  color: var(--faint);
+}
+
+:where(:root:not([data-touch])) .review-diff .file-ask:hover {
+  color: var(--accent);
+}
+
+/* A Shift+click range you're about to ask about or file on. */
+.dl.picked {
+  box-shadow: inset 2px 0 0 var(--accent);
+  background: var(--accent-bg);
+}
+
+.comment-box .range-hint {
+  margin: 0 0 6px;
+  font-size: 12px;
 }
 
 .diff-fold {
@@ -2949,4 +3159,465 @@ button.findings-label {
 
 .pr-description .briefing-foot .btn {
   gap: 6px;
+}
+
+/* Over a question in the stack's conversation: the layer it was asked on, and what it pointed at. */
+.asked-on {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  font-size: 12px;
+  color: var(--faint);
+}
+.asked-where {
+  font-family: var(--mono);
+}
+.ctx-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 220px;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  color: var(--text-2);
+  font-size: 12px;
+}
+.ctx-chip.small {
+  min-height: 20px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+.ctx-chip .ellipsis {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- merging the whole stack: the trunk, then each layer bottom up, and what happens to it */
+
+.section-head .grow {
+  flex: 1;
+}
+
+.section-head .merge-all {
+  align-self: center;
+  margin-bottom: 10px;
+}
+
+.review-merge-stack {
+  width: min(640px, calc(100vw - 24px));
+}
+
+.stack-land {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.stack-land > li + li {
+  border-top: 1px solid var(--line);
+}
+
+.stack-land .land-trunk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 14px;
+  background: var(--sunken);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.stack-land .land-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 14px;
+  font-size: 13px;
+}
+
+.stack-land .land-mark {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  border-radius: 999px;
+  border: 2px dashed var(--faint);
+}
+
+.stack-land .land-row.ready,
+.stack-land .land-row.review {
+  background: color-mix(in srgb, var(--done) 8%, transparent);
+}
+
+.stack-land .land-row.ready .land-mark,
+.stack-land .land-row.review .land-mark {
+  border: 0;
+  background: var(--done);
+  color: var(--surface);
+}
+
+.stack-land .land-row.held .land-mark,
+.stack-land .land-row.restack .land-mark {
+  border: 2px solid var(--accent);
+}
+
+.stack-land .land-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.stack-land .land-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The first layer of each step says which step; the rest of a stack merge run share its band. */
+.stack-land .land-step {
+  flex: none;
+  min-width: 44px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: right;
+  color: var(--muted);
+}
+
+.stack-land > li.same-step {
+  border-top-color: transparent;
+}
+
+.stack-land .land-row.waits .land-title {
+  color: var(--muted);
+}
+
+.stack-land .land-note {
+  flex: none;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.stack-land .land-row.ready .land-note,
+.stack-land .land-row.review .land-note {
+  color: var(--done);
+}
+
+.stack-land .land-row.held .land-note,
+.stack-land .land-row.restack .land-note {
+  color: var(--accent);
+}
+
+.review-merge-stack .merge-how,
+.review-dispatch .merge-how {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.review-merge-stack .merge-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--sunken);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.review-merge-stack .merge-note.held {
+  color: var(--text-2);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+
+.review-merge-stack .merge-note > svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+/* On a phone: each layer's title over its note, a full-width method switch, and the actions
+   one above the other under the thumb; the sheet's own close button stands in for Cancel. */
+@media (max-width: 600px) {
+  .stack-land .land-row {
+    min-height: 56px;
+    padding: 8px 12px;
+  }
+
+  .stack-land .land-text {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+  }
+
+  .stack-land .land-note {
+    max-width: none;
+    white-space: normal;
+  }
+
+  .review-merge-stack .wide-only {
+    display: none;
+  }
+
+  .review-merge-stack .merge-how,
+  .review-dispatch .merge-how {
+    display: grid;
+    justify-content: stretch;
+    gap: 6px;
+  }
+
+  .review-merge-stack .merge-how .seg,
+  .review-dispatch .merge-how .seg {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+  }
+
+  .review-merge-stack .merge-how .seg button,
+  .review-dispatch .merge-how .seg button {
+    min-height: 40px;
+  }
+
+  .review-merge-stack .actions,
+  .review-dispatch .actions {
+    display: grid;
+    gap: 8px;
+  }
+
+  .review-merge-stack .actions > .btn,
+  .review-dispatch .actions > .btn {
+    min-height: 52px;
+    justify-content: center;
+    border-radius: 12px;
+  }
+
+  .review-merge-stack .actions > .btn.primary,
+  .review-dispatch .actions > .btn.primary {
+    order: -1;
+    font-size: 17px;
+  }
+
+  .review-merge-stack .actions > .btn.ghost,
+  .review-merge-stack .actions > .spacer,
+  .review-dispatch .actions > .btn.ghost {
+    display: none;
+  }
+}
+
+/* ---- on a phone: the reviewer as a sheet over the layer, at half height or pulled up */
+
+.rs-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--scrim);
+  opacity: 0.35;
+  animation: rs-fade 0.22s ease both;
+}
+
+.rs-scrim.full {
+  opacity: 0.6;
+}
+
+.reviewer-sheet {
+  position: fixed;
+  z-index: 41;
+  left: 0;
+  right: 0;
+  /* Half the visible screen, over the keyboard's top edge while you type (viewport.ts). */
+  top: calc(var(--keyboard-top, 0px) + var(--vh, 100dvh) * 0.42);
+  height: calc(var(--vh, 100dvh) * 0.58);
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px 16px 0 0;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--elev-2);
+  padding-bottom: var(--safe-bottom, 0px);
+  transition:
+    top 0.3s cubic-bezier(0.32, 0.72, 0, 1),
+    height 0.3s cubic-bezier(0.32, 0.72, 0, 1),
+    transform 0.26s cubic-bezier(0.32, 0.72, 0, 1);
+  animation: rs-rise 0.32s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+.reviewer-sheet.full {
+  top: calc(var(--keyboard-top, 0px) + var(--safe-top, 0px) + 8px);
+  height: calc(var(--vh, 100dvh) - var(--safe-top, 0px) - 8px);
+}
+
+.reviewer-sheet.leaving {
+  transform: translate3d(0, 100%, 0);
+}
+
+.rs-scrim.leaving {
+  opacity: 0;
+  transition: opacity 0.22s ease;
+}
+
+.rs-grabber {
+  flex: none;
+  align-self: center;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: none;
+  touch-action: none;
+  cursor: grab;
+}
+
+.rs-grabber > span {
+  width: 36px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--line-2);
+}
+
+.reviewer-sheet .reviewer-head {
+  min-height: 48px;
+  touch-action: none;
+}
+
+.reviewer-sheet .review-thread {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
+@keyframes rs-rise {
+  from {
+    transform: translate3d(0, 100%, 0);
+  }
+}
+
+@keyframes rs-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reviewer-sheet,
+  .rs-scrim {
+    animation: none;
+    transition: none;
+  }
+}
+
+.layer.phone .bar-reviewer {
+  position: relative;
+  color: var(--accent);
+}
+
+.layer.phone .bar-reviewer .badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent-strong);
+  color: var(--accent-ink);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+}
+
+/* Lines picked by touch: what they are, and the two things to do with them, above the tab bar. */
+.pick-bar-touch {
+  position: fixed;
+  z-index: 30;
+  left: 12px;
+  right: 12px;
+  bottom: calc(max(var(--safe-pad, 0px), 12px) + 66px);
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid transparent;
+  /* Nearly opaque: the layer's own bar sits right under it. */
+  background: color-mix(in srgb, var(--raised) 94%, transparent);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-depth), var(--elev-2);
+}
+
+.pick-bar-touch .ptb-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 4px;
+}
+
+.pick-bar-touch .ptb-what {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+
+.pick-bar-touch .ptb-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.pick-bar-touch .hint {
+  font-size: 12px;
+}
+
+.pick-bar-touch .ptb-actions {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.pick-bar-touch .ptb-actions .btn {
+  justify-content: center;
+  min-height: 48px;
+  border-radius: 12px;
+}
+
+/* A finger needs the full 44px on Discuss and on a file's button. */
+:root[data-touch] .finding-head .discuss,
+:root[data-touch] .review-diff .file-ask {
+  width: 44px;
+  height: 44px;
+}
+
+/* At half height the empty conversation keeps its title and starters; the explanation is for the panel. */
+.reviewer-sheet .sidechat-empty .hint {
+  display: none;
 }

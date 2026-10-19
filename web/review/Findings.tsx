@@ -39,6 +39,7 @@ export function FindingRow({
   onChanged,
   verdict,
   followup,
+  onDiscuss,
 }: {
   f: Finding;
   api: ReviewApi;
@@ -49,6 +50,8 @@ export function FindingRow({
   onChanged: () => void;
   verdict?: Verdict['items'][number];
   followup?: boolean;
+  /** Bring it to the reviewer's conversation. */
+  onDiscuss?: (f: Finding) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -114,6 +117,11 @@ export function FindingRow({
             )}
           </span>
         </span>
+        {onDiscuss && f.state !== 'proposed' && (
+          <button type="button" className="icon-btn discuss" onClick={() => onDiscuss(f)} aria-label={`Discuss "${f.title}" with the reviewer`} title="Discuss with the reviewer">
+            <Icon name="chat" size={16} />
+          </button>
+        )}
       </div>
       {(open || f.state === 'proposed') && f.body && (
         <div className="finding-body">
@@ -259,6 +267,7 @@ export function FindingsList({
   onChanged,
   onImport,
   importing,
+  onDiscuss,
 }: {
   api: ReviewApi;
   stackId: string;
@@ -271,6 +280,7 @@ export function FindingsList({
   onChanged: () => void;
   onImport: () => void;
   importing: boolean;
+  onDiscuss?: (f: Finding) => void;
 }) {
   const [showClosed, setShowClosed] = useState(false);
   const mine = findings.filter((f) => f.ownerPr === layer.pr || f.foundOnPr === layer.pr);
@@ -289,7 +299,7 @@ export function FindingsList({
     setSelected(next);
   };
   const row = (f: Finding, opts: { select?: boolean; followup?: boolean } = {}) => (
-    <FindingRow key={f.id} f={f} api={api} stackId={stackId} layers={layers} selected={selected.has(f.id)} onSelect={opts.select ? (on) => toggle(f.id, on) : undefined} onChanged={onChanged} verdict={verdicts.get(f.id)} followup={opts.followup} />
+    <FindingRow key={f.id} f={f} api={api} stackId={stackId} layers={layers} selected={selected.has(f.id)} onSelect={opts.select ? (on) => toggle(f.id, on) : undefined} onChanged={onChanged} verdict={verdicts.get(f.id)} followup={opts.followup} onDiscuss={onDiscuss} />
   );
   return (
     <div className="findings">

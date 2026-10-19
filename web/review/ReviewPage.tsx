@@ -1,18 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { HostApi, ReviewAlert, State } from '../api.ts';
-import { parseReviewHash, reviewApi, reviewHash, STATUS_WORD, toneOf, type Candidates, type Finding, type Layer, type OwnerSuggestion, type Stack, type StackSummary } from '../reviewApi.ts';
+import { parseReviewHash, reviewApi, reviewHash, STATUS_WORD, toneOf, type Attachment, type Candidates, type Finding, type Layer, type OwnerSuggestion, type Stack, type StackSummary } from '../reviewApi.ts';
 import { askConfirm, askText, showError } from '../ask.tsx';
 import { ConfirmButton } from '../ConfirmButton.tsx';
 import { Icon } from '../icons.tsx';
 import { Popover } from '../ModelPicker.tsx';
-import { Sheet } from '../sheet.tsx';
 import { age, look } from '../agents.ts';
 import { AgentLogo } from '../logos.tsx';
 import { Thread } from './Thread.tsx';
-import { LayerView } from './Layer.tsx';
-import { PlanDialog } from './Dispatch.tsx';
+import { LayerView, stored } from './Layer.tsx';
+import { DispatchDialog, PlanDialog } from './Dispatch.tsx';
 import { Compose, rememberRoot } from './Compose.tsx';
 import { Dot, Spine, SpineBar, SpineColumn, layerLine } from './Spine.tsx';
+import { StackMergeDialog } from './StackMerge.tsx';
+import { ReviewerSheet } from './ReviewerSheet.tsx';
+import { planStackMerge, type Method } from './stackMerge.ts';
 import './review.css';
 
 const api = reviewApi();
@@ -298,7 +300,7 @@ function SessionCard({ kind, stack, onStack, onOpenSession }: { kind: 'owner' | 
   );
 }
 
-type Next = { tone: 'needs' | 'busy' | 'ready' | 'todo' | 'done'; eyebrow: string; title: string; body: string; pr: number | null; action: string | null };
+type Next = { tone: 'needs' | 'busy' | 'ready' | 'todo' | 'done'; eyebrow: string; title: string; body: string; pr: number | null; action: string | null; merge?: boolean };
 
 /** The one thing to do next on the stack, and the button that does it. */
 function upNext(stack: Stack, alerts: ReviewAlert[]): Next {
@@ -328,6 +330,10 @@ function upNext(stack: Stack, alerts: ReviewAlert[]): Next {
     return { tone: 'ready', eyebrow: 'Up next', title: `${name(al)} is ready to merge`, body: al.title, pr: al.pr, action: `Open ${name(al)}` };
   }
   const changes = open.find((l) => l.status === 'changes');
+  // Every layer reviewed and nothing holding any back: the stack goes in one go.
+  const plan = planStackMerge(stack, stack.mergeMethod);
+  if (open.length > 1 && !changes && plan.lands.length === open.length && !plan.review.length)
+    return { tone: 'ready', eyebrow: 'Up next', title: 'The stack is ready to merge', body: `${open.length} layers into ${stack.trunk}, bottom up.`, pr: null, action: 'Merge the stack', merge: true };
   if (changes) return { tone: 'needs', eyebrow: 'Up next', title: `${name(changes)} has ${changes.open} finding${changes.open === 1 ? '' : 's'} to send`, body: changes.title, pr: changes.pr, action: `Open ${name(changes)}` };
   const first = open.find((l) => l.status !== 'skipped');
   if (first?.status === 'approved' && first.gates.every((g) => g.ok)) return { tone: 'ready', eyebrow: 'Up next', title: `${name(first)} is ready to merge`, body: first.title, pr: first.pr, action: `Open ${name(first)}` };
@@ -337,12 +343,13 @@ function upNext(stack: Stack, alerts: ReviewAlert[]): Next {
     return { tone: 'todo', eyebrow: 'Up next', title: `Review ${name(todo)}`, body: `${todo.title}${r ? ` · ${r.files} file${r.files === 1 ? '' : 's'}, +${r.additions} −${r.deletions}` : ''}`, pr: todo.pr, action: `Review ${name(todo)}` };
   }
   const fixing = open.find((l) => l.status === 'fixing');
+  if (fixing?.dispatch?.kind === 'merge') return { tone: 'busy', eyebrow: 'Waiting', title: `${who(fixing)} is merging the stack${fixing.pr === open.at(-1)?.pr ? '' : ` up to ${name(fixing)}`}`, body: 'The layers turn merged as GitHub lands them. You get a push if it stops short.', pr: fixing.pr, action: null };
   if (fixing) return { tone: 'busy', eyebrow: 'Waiting', title: `${who(fixing)} is fixing ${name(fixing)}`, body: 'You get a push and an Inbox card when it comes back.', pr: fixing.pr, action: null };
   if (first) return { tone: 'todo', eyebrow: 'Up next', title: `${name(first)}: ${STATUS_WORD[first.status].toLowerCase()}`, body: first.title, pr: first.pr, action: `Open ${name(first)}` };
   return { tone: 'done', eyebrow: 'Done', title: 'Every layer is merged or closed', body: `${stack.layers.filter((l) => l.state === 'merged').length} merged into ${stack.trunk}.`, pr: null, action: null };
 }
 
-function UpNext({ next, onOpen }: { next: Next; onOpen: (pr: number) => void }) {
+function UpNext({ next, onOpen, onMerge }: { next: Next; onOpen: (pr: number) => void; onMerge: () => void }) {
   return (
     <section className={`up-next ${next.tone}`}>
       <span className="up-mark" aria-hidden>
@@ -353,8 +360,8 @@ function UpNext({ next, onOpen }: { next: Next; onOpen: (pr: number) => void }) 
         <h2>{next.title}</h2>
         <p>{next.body}</p>
       </div>
-      {next.action && next.pr !== null && (
-        <ConfirmButton className="btn primary" onClick={() => onOpen(next.pr!)}>
+      {next.action && (next.pr !== null || next.merge) && (
+        <ConfirmButton className="btn primary" onClick={() => (next.merge ? onMerge() : onOpen(next.pr!))}>
           {next.action}
         </ConfirmButton>
       )}
@@ -362,7 +369,7 @@ function UpNext({ next, onOpen }: { next: Next; onOpen: (pr: number) => void }) 
   );
 }
 
-function MergeTable({ stack, onOpen }: { stack: Stack; onOpen: (pr: number) => void }) {
+function MergeTable({ stack, onOpen, onMerge }: { stack: Stack; onOpen: (pr: number) => void; onMerge: () => void }) {
   const counts = new Map<string, number>();
   for (const l of stack.layers) counts.set(toneOf(l.status), (counts.get(toneOf(l.status)) ?? 0) + 1);
   const said = [
@@ -379,7 +386,12 @@ function MergeTable({ stack, onOpen }: { stack: Stack; onOpen: (pr: number) => v
     <section className="merge-order">
       <div className="section-head">
         <h2 className="section-label first">Merge order</h2>
-        <span className="hint">{said}</span>
+        <span className="hint grow">{said}</span>
+        {stack.layers.some((l) => l.state === 'open') && (
+          <button className="btn small merge-all" onClick={onMerge}>
+            Merge the stack…
+          </button>
+        )}
       </div>
       <div className="merge-table" role="table" aria-label="Layers in merge order">
         <div className="mt-row head" role="row">
@@ -408,7 +420,7 @@ function MergeTable({ stack, onOpen }: { stack: Stack; onOpen: (pr: number) => v
               <span role="cell">
                 <span className={`tone-pill ${tone}`}>
                   <Dot tone={tone} size="sm" />
-                  {SHORT[l.status]}
+                  {l.status === 'fixing' && l.dispatch?.kind === 'merge' ? 'Agent merging' : SHORT[l.status]}
                 </span>
               </span>
               <span className="mt-f" role="cell">
@@ -425,7 +437,7 @@ function MergeTable({ stack, onOpen }: { stack: Stack; onOpen: (pr: number) => v
   );
 }
 
-function Cockpit({ stack, alerts, narrow, onStack, onOpen, onOpenSession, onPick }: { stack: Stack; alerts: ReviewAlert[]; narrow: boolean; onStack: (s?: Stack) => void; onOpen: (pr: number | null) => void; onOpenSession: (uid: string) => void; onPick: () => void }) {
+function Cockpit({ stack, alerts, narrow, onStack, onOpen, onOpenSession, onPick, onMerge }: { stack: Stack; alerts: ReviewAlert[]; narrow: boolean; onStack: (s?: Stack) => void; onOpen: (pr: number | null) => void; onOpenSession: (uid: string) => void; onPick: () => void; onMerge: () => void }) {
   const [plan, setPlan] = useState<{ path: string | null; text: string | null } | null>(null);
   const [reading, setReading] = useState(false);
   useEffect(() => {
@@ -453,11 +465,11 @@ function Cockpit({ stack, alerts, narrow, onStack, onOpen, onOpenSession, onPick
   return (
     <div className="cockpit">
       {reading && <PlanDialog path={stack.planPath} text={plan?.text ?? null} image={(src) => api.imageUrl(stack.id, src)} onClose={() => setReading(false)} />}
-      <UpNext next={next} onOpen={(pr) => onOpen(pr)} />
+      <UpNext next={next} onOpen={(pr) => onOpen(pr)} onMerge={onMerge} />
       {narrow ? (
         <Spine stack={stack} pr={null} onPick={onOpen} />
       ) : (
-        <MergeTable stack={stack} onOpen={(pr) => onOpen(pr)} />
+        <MergeTable stack={stack} onOpen={(pr) => onOpen(pr)} onMerge={onMerge} />
       )}
       {stack.state === 'open' && (
         <button className="add-prs" onClick={onPick}>
@@ -529,7 +541,30 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
   const [findings, setFindings] = useState<Finding[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
+  // On a phone the reviewer is a sheet on the overview and a tab on a layer; on a desktop it's a panel beside both.
   const [asking, setAsking] = useState(false);
+  const [panel, setPanel] = stored<'open' | 'closed'>('ah.review.panel', 'open');
+  // Under 900px there's no room beside the page: the reviewer floats over it when asked for, and folds back.
+  const [box, setBox] = useState<HTMLDivElement | null>(null);
+  const [width, setWidth] = useState(1200);
+  useEffect(() => {
+    if (!box) return;
+    const ro = new ResizeObserver(([e]) => setWidth(e.contentRect.width));
+    ro.observe(box);
+    return () => ro.disconnect();
+  }, [box]);
+  const compact = !narrow && width < 900;
+  const [floating, setFloating] = useState(false);
+  const shown = compact ? floating : panel === 'open';
+  const showPanel = (on: boolean) => (compact ? setFloating(on) : setPanel(on ? 'open' : 'closed'));
+  // What you've brought to the reviewer and not asked about yet; it waits while you move between layers.
+  const [attached, setAttached] = useState<Attachment[]>([]);
+  const [focus, setFocus] = useState({ n: 0, text: '' });
+  // A reviewer answer you're sending to the agent, from the layer you're on.
+  const [handing, setHanding] = useState<string | null>(null);
+  const [mergingAll, setMergingAll] = useState(false);
+  // Merging handed to the agent: up to which layer, and how.
+  const [agentMerge, setAgentMerge] = useState<{ upTo: number; method: Method } | null>(null);
   const live = useRef(true);
   useEffect(() => {
     live.current = true;
@@ -640,6 +675,7 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
 
   const stackItems = (close: () => void) => (
     <>
+      {stack.layers.some((l) => l.state === 'open') && <button onClick={() => (close(), setMergingAll(true))}>Merge the stack…</button>}
       <button onClick={() => (close(), go(stack.id, null, { pick: true }))}>Add pull requests…</button>
       <button
         onClick={async () => {
@@ -704,6 +740,7 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
 
   const layerItems = (l: Layer) => (close: () => void) => (
     <>
+      {l.state === 'open' && <button onClick={() => (close(), setMergingAll(true))}>Merge the stack…</button>}
       {l.state === 'open' && (
         <>
           <button
@@ -757,18 +794,37 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
     </>
   );
 
+  const discuss = (a: Attachment, note = '') => {
+    setAttached((xs) => (xs.some((x) => x.key === a.key) ? xs : [...xs, a].slice(-8)));
+    showPanel(true);
+    if (narrow) setAsking(true);
+    setFocus((f) => ({ n: f.n + 1, text: note }));
+  };
+  const pinDecision = async (seed: string) => {
+    const text = await askText({ title: 'Pin a decision', body: 'Every reviewer answer and every message to the agent holds the code to it.', label: 'Decision', value: seed, confirm: 'Pin' });
+    if (!text?.trim()) return;
+    try {
+      setStack(await api.addDecision(stack.id, text.trim(), layer?.pr ?? null));
+      toast('Decision pinned');
+    } catch (e) {
+      showError(e, "Couldn't pin it");
+    }
+  };
+
   const reviewer = (
     <Thread
       client={client}
       api={api}
       stackId={stack.id}
-      pr={null}
+      pr={layer?.pr ?? null}
       layers={stack.layers}
-      onSend={() => toast('Open a layer to send to its agent')}
-      onDecision={async (seed) => {
-        const text = await askText({ title: 'Pin a decision', label: 'Decision', value: seed, confirm: 'Pin' });
-        if (text?.trim()) setStack(await api.addDecision(stack.id, text.trim(), null));
-      }}
+      attached={attached}
+      onDetach={(key) => setAttached((xs) => (key === null ? [] : xs.filter((x) => x.key !== key)))}
+      focus={focus}
+      onHide={narrow ? () => setAsking(false) : () => showPanel(false)}
+      sheet={narrow}
+      onSend={(text) => (layer?.state === 'open' ? setHanding(text) : toast('Open a layer to send to its agent'))}
+      onDecision={pinDecision}
       onChanged={() => {
         loadFindings();
         load();
@@ -776,84 +832,163 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
     />
   );
 
-  if (layer)
-    return (
-      <div className={`review-stack layer-mode ${narrow ? 'page phone' : ''}`} data-title={`${layer.role || `#${layer.pr}`} · ${stack.title}`}>
-        <div className="review-grid">
-          {!narrow && <SpineColumn stack={stack} pr={pr} onPick={open} />}
-          <LayerView
-            client={client}
-            api={api}
-            stack={stack}
-            layer={layer}
-            findings={findings}
-            narrow={narrow}
-            menu={layerItems(layer)}
-            onBack={() => (narrow ? history.back() : open(null))}
-            onStack={(s) => (s ? setStack(s) : load())}
-            onFindings={loadFindings}
-            onNavigate={(next) => go(stack.id, next, { replace: true })}
-            onOpenSession={onOpenSession}
-          />
-        </div>
+  const mergeAll = mergingAll && (
+    <StackMergeDialog
+      api={api}
+      stack={stack}
+      onClose={() => setMergingAll(false)}
+      onMerged={() => {
+        load();
+        loadFindings();
+      }}
+      onAskAgent={(method, upTo) => setAgentMerge({ method, upTo })}
+    />
+  );
+  const agentLayer = agentMerge && stack.layers.find((l) => l.pr === agentMerge.upTo);
+  const askMerge = agentMerge && agentLayer && (
+    <DispatchDialog
+      api={api}
+      stack={stack}
+      layer={agentLayer}
+      findingIds={[]}
+      extra=""
+      kind="merge"
+      method={agentMerge.method}
+      onClose={() => setAgentMerge(null)}
+      onSent={(outcome, to) => {
+        toast(outcome === 'queued' ? `Merge queued for ${to}` : `Asked ${to} to merge`);
+        load();
+      }}
+    />
+  );
+
+  const handoff = handing !== null && layer && (
+    <DispatchDialog
+      api={api}
+      stack={stack}
+      layer={layer}
+      findingIds={[]}
+      extra={handing}
+      onClose={() => setHanding(null)}
+      onSent={(outcome, to) => {
+        toast(outcome === 'queued' ? `Queued for ${to}` : `Sent to ${to}`);
+        load();
+        loadFindings();
+      }}
+    />
+  );
+
+  // Beside the overview and every layer: the reviewer, or the rail it folds to (and, when narrow, floats over from).
+  const rail = (
+    <aside className="reviewer-rail" aria-label="Reviewer">
+      <button className="icon-btn round" onClick={() => showPanel(true)} aria-label="Show the reviewer" title="Show the reviewer" aria-expanded={shown}>
+        <Icon name="sparkle" size={18} />
+      </button>
+      {attached.length > 0 && <span className="count">{attached.length}</span>}
+    </aside>
+  );
+  const side = !shown ? (
+    rail
+  ) : compact ? (
+    <>
+      {rail}
+      <aside className="reviewer-panel floating" aria-label="Reviewer" onKeyDown={(e) => e.key === 'Escape' && !e.defaultPrevented && showPanel(false)}>
+        {reviewer}
+      </aside>
+    </>
+  ) : (
+    <aside className="reviewer-panel" aria-label="Reviewer">
+      {reviewer}
+    </aside>
+  );
+
+  const head = (
+    <header className="review-head">
+      <button className="icon-btn round" onClick={() => go(null, null)} aria-label="All stacks">
+        <Icon name="back" size={20} />
+      </button>
+      <div className="grow">
+        <h1 className="review-title">{stack.title}</h1>
+        <p className="tagline">
+          {stack.repo} · {stack.source === 'manual' ? 'picked by hand' : `into ${stack.trunk}`}
+          {ghStacks.length === 1 ? ` · GitHub stack #${ghStacks[0]}` : ghStacks.length > 1 ? ` · ${ghStacks.length} GitHub stacks` : ''} · {merged} of {counted} merged · {stack.syncError ? <span className="bad">{stack.syncError}</span> : stack.syncing || syncing ? 'refreshing…' : `checked ${ago(stack.syncedAt)}`}
+        </p>
+      </div>
+      {narrow && (
+        <button className={`btn ask ${asking ? 'on' : ''}`} onClick={() => setAsking((v) => !v)} aria-pressed={asking} aria-label="Ask the reviewer" title="Ask the reviewer about the whole stack">
+          <Icon name="sparkle" size={16} />
+        </button>
+      )}
+      <Popover label={<Icon name="more" size={18} />} className="icon-btn round" align="right" up={false} title="Stack">
+        {(close) => (
+          <div className="review-menu">
+            <button disabled={syncing} onClick={() => (close(), sync())}>
+              Refresh from GitHub
+            </button>
+            {stackItems(close)}
+          </div>
+        )}
+      </Popover>
+    </header>
+  );
+
+  const layerView = layer && (
+    <LayerView
+      client={client}
+      api={api}
+      stack={stack}
+      layer={layer}
+      findings={findings}
+      narrow={narrow}
+      menu={layerItems(layer)}
+      onBack={() => (narrow ? history.back() : open(null))}
+      onStack={(s) => (s ? setStack(s) : load())}
+      onFindings={loadFindings}
+      onNavigate={(next) => go(stack.id, next, { replace: true })}
+      onOpenSession={onOpenSession}
+      onReviewer={() => setAsking(true)}
+      attached={attached.length}
+      onDiscuss={discuss}
+    />
+  );
+
+  if (narrow)
+    return layer ? (
+      <div className="review-stack layer-mode page phone" data-title={`${layer.role || `#${layer.pr}`} · ${stack.title}`}>
+        <div className="review-grid">{layerView}</div>
+        {asking && <ReviewerSheet onClose={() => setAsking(false)}>{reviewer}</ReviewerSheet>}
+        {handoff}
+        {mergeAll}
+      {askMerge}
+      </div>
+    ) : (
+      <div className="review-stack page phone" data-title={stack.title}>
+        {head}
+        <Cockpit stack={stack} alerts={alerts} narrow onStack={(s) => (s ? setStack(s) : load())} onOpen={open} onOpenSession={onOpenSession} onPick={() => go(stack.id, null, { pick: true })} onMerge={() => setMergingAll(true)} />
+        {asking && <ReviewerSheet onClose={() => setAsking(false)}>{reviewer}</ReviewerSheet>}
+        {mergeAll}
+      {askMerge}
       </div>
     );
 
+  // The same three columns on the overview and on a layer, so the reviewer stays put (and keeps your draft) as you move.
   return (
-    <div className={`review-stack ${narrow ? 'page phone' : ''}`} data-title={stack.title}>
-      <header className="review-head">
-        <button className="icon-btn round" onClick={() => go(null, null)} aria-label="All stacks">
-          <Icon name="back" size={20} />
-        </button>
-        <div className="grow">
-          <h1 className="review-title">{stack.title}</h1>
-          <p className="tagline">
-            {stack.repo} · {stack.source === 'manual' ? 'picked by hand' : `into ${stack.trunk}`}
-            {ghStacks.length === 1 ? ` · GitHub stack #${ghStacks[0]}` : ghStacks.length > 1 ? ` · ${ghStacks.length} GitHub stacks` : ''} · {merged} of {counted} merged · {stack.syncError ? <span className="bad">{stack.syncError}</span> : stack.syncing || syncing ? 'refreshing…' : `checked ${ago(stack.syncedAt)}`}
-          </p>
-        </div>
-        <button className={`btn ask ${asking ? 'on' : ''}`} onClick={() => setAsking((v) => !v)} aria-pressed={asking} aria-label="Ask the reviewer" title="Ask the reviewer about the whole stack">
-          <Icon name="sparkle" size={16} />
-          {!narrow && <span>Ask the reviewer</span>}
-        </button>
-        <Popover label={<Icon name="more" size={18} />} className="icon-btn round" align="right" up={false} title="Stack">
-          {(close) => (
-            <div className="review-menu">
-              <button disabled={syncing} onClick={() => (close(), sync())}>
-                Refresh from GitHub
-              </button>
-              {stackItems(close)}
-            </div>
-          )}
-        </Popover>
-      </header>
-      {narrow ? (
-        <Cockpit stack={stack} alerts={alerts} narrow onStack={(s) => (s ? setStack(s) : load())} onOpen={open} onOpenSession={onOpenSession} onPick={() => go(stack.id, null, { pick: true })} />
-      ) : (
-        <div className={`review-grid overview ${asking ? 'asking' : ''}`}>
-          <Spine stack={stack} pr={null} onPick={open} />
+    <div ref={setBox} className={`review-stack ${layer ? 'layer-mode' : ''}`} data-title={layer ? `${layer.role || `#${layer.pr}`} · ${stack.title}` : stack.title}>
+      <div className={`review-grid ${layer ? '' : 'overview'} panel-${shown && !compact ? 'open' : 'closed'}`}>
+        {layer ? <SpineColumn stack={stack} pr={pr} onPick={open} /> : <Spine stack={stack} pr={null} onPick={open} />}
+        {layer ? (
+          layerView
+        ) : (
           <div className="review-main">
-            <Cockpit stack={stack} alerts={alerts} narrow={false} onStack={(s) => (s ? setStack(s) : load())} onOpen={open} onOpenSession={onOpenSession} onPick={() => go(stack.id, null, { pick: true })} />
+            {head}
+            <Cockpit stack={stack} alerts={alerts} narrow={false} onStack={(s) => (s ? setStack(s) : load())} onOpen={open} onOpenSession={onOpenSession} onPick={() => go(stack.id, null, { pick: true })} onMerge={() => setMergingAll(true)} />
           </div>
-          {asking && (
-            <aside className="review-drawer" aria-label="Reviewer on the whole stack">
-              <header className="drawer-head">
-                <Icon name="sparkle" size={15} />
-                <span className="grow">Reviewer on the whole stack</span>
-                <button className="icon-btn" aria-label="Close the reviewer" onClick={() => setAsking(false)}>
-                  <Icon name="close" size={15} />
-                </button>
-              </header>
-              {reviewer}
-            </aside>
-          )}
-        </div>
-      )}
-      {narrow && asking && (
-        <Sheet label="Reviewer" className="review-sheet" onClose={() => setAsking(false)}>
-          {reviewer}
-        </Sheet>
-      )}
+        )}
+        {side}
+      </div>
+      {handoff}
+      {mergeAll}
+      {askMerge}
     </div>
   );
 }
