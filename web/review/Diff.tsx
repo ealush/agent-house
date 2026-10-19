@@ -2,6 +2,9 @@ import { useMemo, useState } from 'react';
 import { parsePatch } from '../Git.tsx';
 import { Icon } from '../icons.tsx';
 import type { Finding } from '../reviewApi.ts';
+import { pickedLines, type AskedLines } from './askLines.ts';
+
+export type { AskedLines };
 
 export type Severity = 'blocking' | 'should' | 'nit';
 
@@ -31,12 +34,27 @@ export function SeveritySeg({ value, onChange }: { value: Severity; onChange: (s
 
 /**
  * A layer's patch with its findings drawn on the lines they're about. Click a
- * line (or Enter on it) to file a finding there; the first line you write is
- * its title. Large files start folded.
+ * line (or Enter on it) to file a finding there, or to ask the reviewer about
+ * it; Shift+click another line of the file to take a range. The first line you
+ * write is the finding's title. Large files start folded.
  */
-export function ReviewDiff({ patch, findings, onFile }: { patch: string; findings: Finding[]; onFile?: (f: { path: string; line: number; title: string; body: string; severity: Severity }) => Promise<void> }) {
+export function ReviewDiff({
+  patch,
+  findings,
+  onFile,
+  onAsk,
+  onAskFile,
+}: {
+  patch: string;
+  findings: Finding[];
+  onFile?: (f: { path: string; line: number; title: string; body: string; severity: Severity }) => Promise<void>;
+  /** Bring the lines to the reviewer, with what you wrote as the start of your question. */
+  onAsk?: (lines: AskedLines, note: string) => void;
+  onAskFile?: (path: string) => void;
+}) {
   const files = useMemo(() => parsePatch(patch), [patch]);
-  const [open, setOpen] = useState<{ file: string; i: number } | null>(null);
+  // The line you clicked, and the other end of a Shift+click range.
+  const [open, setOpen] = useState<{ file: string; i: number; j?: number } | null>(null);
   const [draft, setDraft] = useState('');
   const [sev, setSev] = useState<Severity>('should');
   const [busy, setBusy] = useState(false);
@@ -53,6 +71,13 @@ export function ReviewDiff({ patch, findings, onFile }: { patch: string; finding
   }, [findings]);
 
   if (!files.length) return <p className="panel-msg">No changes.</p>;
+
+  function ask(lines: ReturnType<typeof parsePatch>[number]['lines'], path: string) {
+    if (!open || !onAsk) return;
+    onAsk(pickedLines(lines, path, open.i, open.j), draft.trim());
+    setOpen(null);
+    setDraft('');
+  }
 
   async function submit(path: string, line: number) {
     const { title, body } = splitNote(draft);
@@ -78,15 +103,22 @@ export function ReviewDiff({ patch, findings, onFile }: { patch: string; finding
         };
         return (
           <section key={f.path} className="diff-block">
-            <button type="button" className="diff-file" onClick={toggle} aria-expanded={!shut}>
-              <span className={`fold-mark ${shut ? 'shut' : ''}`} aria-hidden>
-                <Icon name="chevron-down" size={14} />
-              </span>
-              <span className="grow">{f.path}</span>
-              <span className="add-n">+{f.add}</span>
-              <span className="del-n">−{f.del}</span>
-              {files.length > 1 && <span className="file-n">{`${fi + 1} of ${files.length}`}</span>}
-            </button>
+            <div className="diff-file-row">
+              <button type="button" className="diff-file" onClick={toggle} aria-expanded={!shut}>
+                <span className={`fold-mark ${shut ? 'shut' : ''}`} aria-hidden>
+                  <Icon name="chevron-down" size={14} />
+                </span>
+                <span className="grow">{f.path}</span>
+                <span className="add-n">+{f.add}</span>
+                <span className="del-n">−{f.del}</span>
+                {files.length > 1 && <span className="file-n">{`${fi + 1} of ${files.length}`}</span>}
+              </button>
+              {onAskFile && (
+                <button type="button" className="icon-btn file-ask" onClick={() => onAskFile(f.path)} aria-label={`Discuss ${f.path} with the reviewer`} title="Discuss this file with the reviewer">
+                  <Icon name="chat" size={16} />
+                </button>
+              )}
+            </div>
             {shut ? (
               <button type="button" className="diff-fold" onClick={toggle}>
                 Show {f.lines.length} lines
@@ -94,18 +126,29 @@ export function ReviewDiff({ patch, findings, onFile }: { patch: string; finding
             ) : (
               f.lines.map((l, i) => {
                 const here = l.kind !== 'hunk' && l.kind !== 'del' && l.n !== null ? marks.get(`${f.path}:${l.n}`) : undefined;
-                const pickable = !!onFile && l.kind !== 'hunk' && l.kind !== 'del' && l.n !== null;
-                const isOpen = open?.file === f.path && open.i === i;
+                // A finding goes on a line of the new side; a question can be about any line, removed ones too.
+                const fileable = !!onFile && l.kind !== 'hunk' && l.kind !== 'del' && l.n !== null;
+                const pickable = l.kind !== 'hunk' && (fileable || !!onAsk);
+                const mine = open?.file === f.path;
+                const last = mine ? Math.max(open.i, open.j ?? open.i) : -1;
+                const inRange = mine && i >= Math.min(open.i, open.j ?? open.i) && i <= last;
+                const isOpen = mine && i === last;
+                const anchor = mine ? f.lines[open.i] : null;
+                const anchorFileable = !!onFile && !!anchor && anchor.kind !== 'del' && anchor.n !== null;
+                const pick = (shift: boolean) => {
+                  if (shift && mine) setOpen({ ...open, j: i === open.i ? undefined : i });
+                  else setOpen(mine && open.i === i && open.j === undefined ? null : { file: f.path, i });
+                };
                 return (
                   <div key={i}>
                     <div
-                      className={`dl ${l.kind} ${pickable ? 'pickable' : ''} ${here ? 'marked' : ''}`}
+                      className={`dl ${l.kind} ${pickable ? 'pickable' : ''} ${here ? 'marked' : ''} ${inRange ? 'picked' : ''}`}
                       tabIndex={pickable ? 0 : undefined}
-                      onClick={() => pickable && setOpen(isOpen ? null : { file: f.path, i })}
+                      onClick={(e) => pickable && pick(e.shiftKey)}
                       onKeyDown={(e) => {
                         if (pickable && e.key === 'Enter') {
                           e.preventDefault();
-                          setOpen(isOpen ? null : { file: f.path, i });
+                          pick(e.shiftKey);
                         }
                       }}
                     >
@@ -131,14 +174,15 @@ export function ReviewDiff({ patch, findings, onFile }: { patch: string; finding
                         data-confirm
                         onSubmit={(e) => {
                           e.preventDefault();
-                          void submit(f.path, l.n!);
+                          if (anchorFileable) void submit(f.path, anchor!.n!);
                         }}
                       >
+                        {open.j !== undefined && <p className="hint range-hint">{(() => { const p = pickedLines(f.lines, f.path, open.i, open.j); return `${p.removed ? 'Removed lines' : 'Lines'} ${p.start}–${p.end}`; })()}</p>}
                         <textarea
                           autoFocus
                           value={draft}
                           onChange={(e) => setDraft(e.target.value)}
-                          placeholder={`What should change at ${f.path}:${l.n}? The first line is the title.`}
+                          placeholder={anchorFileable ? `What should change at ${f.path}:${anchor!.n}? The first line is the title.${onAsk ? ' Or ask the reviewer about it.' : ''}` : 'What do you want to know about these lines?'}
                           onKeyDown={(e) => {
                             if (e.key === 'Escape') {
                               e.stopPropagation();
@@ -146,19 +190,27 @@ export function ReviewDiff({ patch, findings, onFile }: { patch: string; finding
                             }
                             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                               e.preventDefault();
-                              void submit(f.path, l.n!);
+                              if (anchorFileable) void submit(f.path, anchor!.n!);
+                              else ask(f.lines, f.path);
                             }
                           }}
                         />
                         <div className="row-actions">
-                          <SeveritySeg value={sev} onChange={setSev} />
+                          {anchorFileable && <SeveritySeg value={sev} onChange={setSev} />}
                           <span className="spacer" />
                           <button type="button" className="btn ghost small" onClick={() => setOpen(null)}>
                             Cancel
                           </button>
-                          <button type="submit" className="btn primary small" disabled={busy || !draft.trim()}>
-                            Add finding
-                          </button>
+                          {onAsk && (
+                            <button type="button" className={`btn small ${anchorFileable ? '' : 'primary'}`} onClick={() => ask(f.lines, f.path)} title="Bring these lines to the reviewer, with what you wrote">
+                              <Icon name="chat" size={14} /> Ask the reviewer
+                            </button>
+                          )}
+                          {anchorFileable && (
+                            <button type="submit" className="btn primary small" disabled={busy || !draft.trim()}>
+                              Add finding
+                            </button>
+                          )}
                         </div>
                       </form>
                     )}

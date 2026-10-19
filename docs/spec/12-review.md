@@ -59,7 +59,10 @@ stays put (and keeps your draft) as you move; it folds to a rail, and where
 the page is under 900px wide it floats over the right edge when you open it.
 The composer shows the layer you're on as a chip (take it off to ask about the
 whole stack) and anything you brought with *Discuss* on a finding. On a phone
-it's the layer's Reviewer tab and a sheet on the overview.
+it's the layer's Reviewer tab and a sheet on the overview. In the diff, a
+clicked line (Shift+click for a range, removed lines too) offers *Ask the
+reviewer* beside *Add finding*, taking the lines as the diff shows them and
+what you wrote; each file's header has *Discuss* for the file's whole change.
 One conversation per stack, which follows you between layers: each question
 records the layer it was asked on (or the whole stack) and what you attached
 to it (findings, lines of a diff, a file), and the reviewer gets those spelled

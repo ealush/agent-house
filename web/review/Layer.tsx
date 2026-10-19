@@ -239,8 +239,8 @@ export function LayerView({
   onOpenSession: (uid: string) => void;
   /** The stack's reviewer conversation: the phone's Reviewer tab (on a desktop it sits beside the layer). */
   reviewer: React.ReactNode;
-  /** Bring something to the reviewer's conversation. */
-  onDiscuss: (a: Attachment) => void;
+  /** Bring something to the reviewer's conversation, with the start of a question. */
+  onDiscuss: (a: Attachment, note?: string) => void;
 }) {
   const [mode, setMode] = useState<Mode>(layer.status === 'rereview' && layer.reviewed ? 'since' : 'this');
   const [diff, setDiff] = useState<DiffOut | null>(null);
@@ -725,7 +725,22 @@ export function LayerView({
       ) : mode === 'since' && !diff.text ? (
         <p className="panel-msg">Nothing changed since your review.</p>
       ) : (
-        <ReviewDiff patch={diff.text} findings={layerFindings} onFile={mode === 'cumulative' ? undefined : addFinding} />
+        <ReviewDiff
+          patch={diff.text}
+          findings={layerFindings}
+          onFile={mode === 'cumulative' ? undefined : addFinding}
+          onAsk={(x, note) => {
+            const ctx = { kind: 'lines' as const, pr: layer.pr, path: x.path, start: x.start, end: x.end, text: x.text };
+            const name = x.path.split('/').pop();
+            onDiscuss({ ctx, label: `${name}:${x.start}${x.end > x.start ? `–${x.end}` : ''}${x.removed ? ' (removed)' : ''}`, key: attachKey(ctx) }, note);
+            if (narrow) setTab('thread');
+          }}
+          onAskFile={(path) => {
+            const ctx = { kind: 'file' as const, pr: layer.pr, path };
+            onDiscuss({ ctx, label: path.split('/').pop() ?? path, key: attachKey(ctx) });
+            if (narrow) setTab('thread');
+          }}
+        />
       )}
     </div>
   );

@@ -62,7 +62,7 @@ export function Thread({
   layers,
   attached,
   onDetach,
-  focusKey,
+  focus,
   onHide,
   onSend,
   onDecision,
@@ -78,8 +78,8 @@ export function Thread({
   attached: Attachment[];
   /** Take one off (by key), or all of them (null) once they've gone with a question. */
   onDetach: (key: string | null) => void;
-  /** Bumped when something is attached: the field takes focus. */
-  focusKey: number;
+  /** Bumped when something is attached: the field takes focus, with what you'd started writing (a diff line's note). */
+  focus: { n: number; text: string };
   /** Fold the panel away. */
   onHide?: () => void;
   /** Open the send dialog with this text. */
@@ -101,10 +101,11 @@ export function Thread({
   const [scoped, setScoped] = useState(true);
   useEffect(() => setScoped(true), [pr]);
   useEffect(() => {
-    if (!focusKey) return;
+    if (!focus.n) return;
+    if (focus.text) setDraft((d) => (d.trim() ? `${d.trimEnd()}\n${focus.text}` : focus.text));
     areaRef.current?.focus({ preventScroll: true });
     areaRef.current?.scrollIntoView({ block: 'nearest' });
-  }, [focusKey]);
+  }, [focus.n]);
 
   const load = () =>
     api

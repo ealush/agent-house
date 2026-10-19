@@ -547,7 +547,7 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
   const showPanel = (on: boolean) => (compact ? setFloating(on) : setPanel(on ? 'open' : 'closed'));
   // What you've brought to the reviewer and not asked about yet; it waits while you move between layers.
   const [attached, setAttached] = useState<Attachment[]>([]);
-  const [focusKey, setFocusKey] = useState(0);
+  const [focus, setFocus] = useState({ n: 0, text: '' });
   // A reviewer answer you're sending to the agent, from the layer you're on.
   const [handing, setHanding] = useState<string | null>(null);
   const live = useRef(true);
@@ -777,11 +777,11 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
     </>
   );
 
-  const discuss = (a: Attachment) => {
+  const discuss = (a: Attachment, note = '') => {
     setAttached((xs) => (xs.some((x) => x.key === a.key) ? xs : [...xs, a].slice(-8)));
     showPanel(true);
     if (narrow && !layer) setAsking(true);
-    setFocusKey((k) => k + 1);
+    setFocus((f) => ({ n: f.n + 1, text: note }));
   };
   const pinDecision = async (seed: string) => {
     const text = await askText({ title: 'Pin a decision', body: 'Every reviewer answer and every message to the agent holds the code to it.', label: 'Decision', value: seed, confirm: 'Pin' });
@@ -803,7 +803,7 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
       layers={stack.layers}
       attached={attached}
       onDetach={(key) => setAttached((xs) => (key === null ? [] : xs.filter((x) => x.key !== key)))}
-      focusKey={focusKey}
+      focus={focus}
       onHide={narrow ? undefined : () => showPanel(false)}
       onSend={(text) => (layer?.state === 'open' ? setHanding(text) : toast('Open a layer to send to its agent'))}
       onDecision={pinDecision}
