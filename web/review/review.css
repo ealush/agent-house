@@ -401,12 +401,25 @@
   grid-template-columns: 284px minmax(0, 1fr);
 }
 
-.review-grid.asking {
-  grid-template-columns: 284px minmax(0, 1fr) minmax(320px, 400px);
+/* Spine, what you're looking at, and the reviewer beside it (or the rail it folds to). */
+.review-grid.panel-open {
+  grid-template-columns: 284px minmax(0, 1fr) minmax(340px, 400px);
+}
+
+.review-grid.panel-closed {
+  grid-template-columns: 284px minmax(0, 1fr) 56px;
 }
 
 .layer-mode .review-grid {
   grid-template-columns: 64px minmax(0, 1fr);
+}
+
+.layer-mode .review-grid.panel-open {
+  grid-template-columns: 64px minmax(0, 1fr) minmax(340px, 400px);
+}
+
+.layer-mode .review-grid.panel-closed {
+  grid-template-columns: 64px minmax(0, 1fr) 56px;
 }
 
 .review-main {
@@ -926,8 +939,23 @@
   white-space: nowrap;
 }
 
-/* The reviewer on the whole stack opens beside the overview, not in its way. */
-.review-drawer {
+/* The reviewer: always beside the overview and every layer, full height, one conversation for the stack. */
+.review-stack {
+  position: relative;
+}
+
+/* Where the page is too narrow for it to sit beside, it floats over the right edge when you ask for it. */
+.reviewer-panel.floating {
+  position: absolute;
+  z-index: 20;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(400px, calc(100% - 72px));
+  box-shadow: var(--elev-2);
+}
+
+.reviewer-panel {
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -936,26 +964,105 @@
   background: var(--surface);
 }
 
-.drawer-head {
+.reviewer-panel .review-thread {
+  flex: 1;
+  min-height: 0;
+}
+
+.reviewer-rail {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 0;
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.reviewer-rail .count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.reviewer-head {
   flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 48px;
+  min-height: 56px;
   padding: 0 8px 0 16px;
   border-bottom: 1px solid var(--line);
-  font-size: 13px;
+  color: var(--accent);
+}
+
+.reviewer-head .grow {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.reviewer-title {
+  font-size: 15px;
   font-weight: 600;
-  color: var(--muted);
+  color: var(--text);
 }
 
-.drawer-head .grow {
-  flex: 1;
+.reviewer-head .hint {
+  font-size: 12px;
 }
 
-.review-drawer .review-thread {
-  flex: 1;
-  min-height: 0;
+/* Under the phone's Reviewer tab, or in its sheet, the tab already says what it is. */
+.layer.phone .reviewer-title,
+.review-sheet .reviewer-title {
+  display: none;
+}
+
+/* In the composer: the layer you're on, then what you attached. */
+.ctx-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.ctx-chip.scope {
+  border-color: var(--accent-line);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.ctx-chip .chip-x {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-right: -4px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: inherit;
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+:where(:root:not([data-touch])) .ctx-chip .chip-x:hover {
+  opacity: 1;
+  background: var(--glass-press);
+}
+
+.sidechat-compose .rescope {
+  align-self: flex-start;
+  margin-left: -8px;
+  font-size: 12px;
 }
 
 /* ---- picking pull requests */
@@ -1277,9 +1384,34 @@
   flex: none;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
   padding: 12px 18px;
   border-bottom: 1px solid var(--line);
+}
+
+/* The layer shares its width with the reviewer: its header drops the extras, then goes to two rows. */
+.layer:not(.phone) {
+  container: layerbox / inline-size;
+}
+
+@container layerbox (max-width: 900px) {
+  .layer-head .nav-pair,
+  .layer-head .head-sep,
+  .layer-head .confirm-keys {
+    display: none;
+  }
+}
+
+@container layerbox (max-width: 720px) {
+  .layer-head {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .layer-head .layer-id {
+    flex: 1 1 calc(100% - 64px);
+  }
 }
 
 .layer-id {
@@ -1463,15 +1595,86 @@
   background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 
-.layer-body {
+.layer-main {
   flex: 1;
+  min-width: 0;
   min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 344px;
+  display: flex;
+  flex-direction: column;
 }
 
-.layer-main {
-  min-width: 0;
+/* Above the diff: the layer's findings, folding to one line. */
+.layer-findings {
+  margin: 12px 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.findings-fold {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.findings-fold .fold-mark {
+  display: inline-grid;
+  color: var(--faint);
+  transform: rotate(180deg);
+  transition: transform 0.16s ease;
+}
+
+.layer-findings.open .findings-fold .fold-mark {
+  transform: rotate(270deg);
+}
+
+.findings-word {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.findings-fold .count {
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--badge-bg);
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.findings-fold .grow {
+  flex: 1;
+  font-size: 13px;
+}
+
+.layer-findings .findings {
+  padding: 0 14px 12px;
+}
+
+.layer-findings .side-foot {
+  border-top: 1px solid var(--line);
+}
+
+.finding-head .discuss {
+  flex: none;
+  align-self: flex-start;
+  color: var(--faint);
+}
+
+:where(:root:not([data-touch])) .finding-head .discuss:hover {
+  color: var(--accent);
+}
+
+.layer-reviewer {
+  flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -1634,35 +1837,6 @@
   background: var(--done);
 }
 
-.layer-side {
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  border-left: 1px solid var(--line);
-  background: var(--surface);
-}
-
-.layer-side > .seg {
-  flex: none;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  margin: 12px 14px 8px;
-}
-
-.side-pane {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.side-pane > .findings,
-.side-pane > .review-thread {
-  flex: 1;
-  min-height: 0;
-}
-
 .side-foot {
   flex: none;
   display: flex;
@@ -1695,14 +1869,13 @@
 /* ---- narrower windows: the cockpit stacks its cards, the side column goes under the diff */
 
 @container review (max-width: 1180px) {
-  .review-grid.asking {
+  .review-grid.panel-open {
     grid-template-columns: 240px minmax(0, 1fr) 340px;
   }
 
-  .cockpit-cards {
-    grid-template-columns: 1fr 1fr;
+  .layer-mode .review-grid.panel-open {
+    grid-template-columns: 64px minmax(0, 1fr) 340px;
   }
-
 
 }
 
@@ -1715,35 +1888,55 @@
     grid-template-columns: 220px minmax(0, 1fr);
   }
 
-  .review-grid.asking {
-    grid-template-columns: minmax(0, 1fr) 340px;
+  .review-grid.panel-closed {
+    grid-template-columns: 220px minmax(0, 1fr) 56px;
   }
 
-  .review-grid.asking > .spine {
+  .review-grid.overview.panel-open {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+
+  .review-grid.overview.panel-open > .spine {
     display: none;
   }
 
-  .layer-body {
-    display: block;
-    overflow-y: auto;
+  .layer-mode .review-grid.panel-open {
+    grid-template-columns: 64px minmax(0, 1fr) 320px;
   }
+}
 
-  .layer-main {
-    min-height: 70vh;
+/* The overview shares its width with the reviewer: its table and cards answer to the room they have. */
+.review-main {
+  container: cockpit / inline-size;
+}
+
+@container cockpit (max-width: 860px) {
+  .cockpit-cards {
+    grid-template-columns: 1fr 1fr;
   }
+}
 
-  .layer-side {
-    min-height: 520px;
-    border-left: 0;
-    border-top: 1px solid var(--line);
-  }
-
+@container cockpit (max-width: 700px) {
   .mt-c {
     display: none;
   }
 
   .mt-row {
     grid-template-columns: 48px minmax(0, 1fr) 132px 84px;
+  }
+}
+
+@container cockpit (max-width: 520px) {
+  .cockpit-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .mt-f {
+    display: none;
+  }
+
+  .mt-row {
+    grid-template-columns: 40px minmax(0, 1fr) 124px;
   }
 }
 

@@ -115,6 +115,9 @@ export type SessionStack = {
 export type OwnerSuggestion = { uid: string; key: string; title: string; agent: string | null; status: string; cwd: string; branch: string | null; live: boolean; reason: 'branch' | 'repo'; origin: boolean };
 /** What a question to the reviewer points at, besides the layer you're on. Lines carry the diff text you saw. */
 export type AskContext = { kind: 'finding'; id: number } | { kind: 'lines'; pr: number; path: string; start: number; end: number; text: string } | { kind: 'file'; pr: number; path: string };
+/** Something you're about to ask the reviewer about: what goes to the server, its chip's label, and a key to keep it once. */
+export type Attachment = { ctx: AskContext; label: string; key: string };
+export const attachKey = (c: AskContext) => (c.kind === 'finding' ? `f${c.id}` : c.kind === 'file' ? `p${c.pr}:${c.path}` : `l${c.pr}:${c.path}:${c.start}-${c.end}`);
 /** An attachment as the thread keeps it, with a label for its chip. */
 export type SavedContext = { kind: 'finding'; id: number; pr: number; label: string } | { kind: 'lines'; pr: number; path: string; start: number; end: number; label: string } | { kind: 'file'; pr: number; path: string; label: string };
 /** A message of the stack's one conversation: the layer it was asked on (null: the whole stack), and what was attached. */

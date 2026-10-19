@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { HostApi, Subscription } from '../api.ts';
-import type { Finding, Followup, Layer, ReviewApi, ThreadMsg } from '../reviewApi.ts';
+import type { Attachment, Finding, Followup, Layer, ReviewApi, ThreadMsg } from '../reviewApi.ts';
 import { askConfirm, showError, showNotice } from '../ask.tsx';
 import { Icon } from '../icons.tsx';
 import { Markdown } from '../Markdown.tsx';
@@ -48,9 +48,11 @@ const STARTERS_LAYER = ['What could break here?', 'Does this fit what the layers
 const STARTERS_STACK = ['Does the overall architecture hold together?', 'Which layer owns each behavior?', 'What should I look at first?'];
 
 /**
- * The reviewer, for a layer or for the whole stack. It answers from the exact
- * revisions; what it proposes lands as cards you keep or dismiss, and anything
- * worth doing goes to the agent through Send.
+ * The stack's one conversation with the reviewer, beside whatever you're
+ * looking at. The layer you're on rides along as a chip (take it off to ask
+ * about the whole stack), with anything you attached: findings, diff lines,
+ * files. It answers from the exact revisions; what it proposes lands as cards
+ * you keep or dismiss, and anything worth doing goes to the agent through Send.
  */
 export function Thread({
   client,
@@ -58,6 +60,10 @@ export function Thread({
   stackId,
   pr,
   layers,
+  attached,
+  onDetach,
+  focusKey,
+  onHide,
   onSend,
   onDecision,
   onChanged,
@@ -65,8 +71,17 @@ export function Thread({
   client: HostApi;
   api: ReviewApi;
   stackId: string;
+  /** The layer you're on; null on the stack's overview. */
   pr: number | null;
   layers: Layer[];
+  /** What you brought to the conversation (a finding's Discuss, a diff line's Ask): sent with the next question. */
+  attached: Attachment[];
+  /** Take one off (by key), or all of them (null) once they've gone with a question. */
+  onDetach: (key: string | null) => void;
+  /** Bumped when something is attached: the field takes focus. */
+  focusKey: number;
+  /** Fold the panel away. */
+  onHide?: () => void;
   /** Open the send dialog with this text. */
   onSend: (text: string) => void;
   onDecision: (text: string) => void;
@@ -82,6 +97,14 @@ export function Thread({
   const areaRef = useRef<HTMLTextAreaElement>(null);
   const gen = useRef(0);
   const sending = useRef(false);
+  // The layer you're on is the question's scope until you take its chip off; a new layer puts it back.
+  const [scoped, setScoped] = useState(true);
+  useEffect(() => setScoped(true), [pr]);
+  useEffect(() => {
+    if (!focusKey) return;
+    areaRef.current?.focus({ preventScroll: true });
+    areaRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [focusKey]);
 
   const load = () =>
     api
@@ -124,9 +147,13 @@ export function Thread({
     const at = Math.floor(Date.now() / 1000);
     setDraft('');
     const key = `u${Date.now()}`;
-    setRows((r) => [...r, { role: 'user', text: t, at, id: -1, pr, context: [], key }, { role: 'assistant', text: '', at, id: -2, pr, context: [], key: 'pending', pending: true }]);
+    const on = scoped ? pr : null;
+    const sent = attached;
+    const shown = sent.map((a) => ({ ...a.ctx, label: a.label })) as ThreadMsg['context'];
+    setRows((r) => [...r, { role: 'user', text: t, at, id: -1, pr: on, context: shown, key }, { role: 'assistant', text: '', at, id: -2, pr: on, context: [], key: 'pending', pending: true }]);
+    onDetach(null);
     try {
-      const out = await api.ask(stackId, pr, t, subId);
+      const out = await api.ask(stackId, on, t, subId, sent.map((a) => a.ctx));
       if (mine !== gen.current) return;
       setRows((r) => [...r.filter((x) => !x.pending).map((x) => (x.key === key ? { ...out.asked, key: `m${out.asked.id}` } : x)), { ...out.message, key: `m${out.message.id}`, followups: out.followups }]);
       setCards((c) => [...c, ...out.findings]);
@@ -154,22 +181,28 @@ export function Thread({
   }
 
   const noSub = subs !== null && subs.length === 0;
-  const layer = pr === null ? null : layers.find((l) => l.pr === pr);
+  const layer = pr === null ? null : (layers.find((l) => l.pr === pr) ?? null);
+  const on = scoped ? layer : null;
 
   return (
     <div className="panel-body sidechat review-thread">
-      <div className="sidechat-context">
-        <span className="sidechat-where">
-          <Icon name="sparkle" size={14} />
-          <span className="hint">{layer ? `Reviewer · now on ${layer.role || `#${layer.pr}`}, the whole stack in view` : 'Reviewer on the whole stack'}</span>
+      <header className="reviewer-head">
+        <Icon name="sparkle" size={16} />
+        <span className="grow">
+          <span className="reviewer-title">Reviewer</span>
+          <span className="hint">One conversation for the stack</span>
         </span>
-        <span className="spacer" />
         {rows.length > 0 && (
           <button className="btn ghost small" onClick={clear}>
             Clear
           </button>
         )}
-      </div>
+        {onHide && (
+          <button className="icon-btn" onClick={onHide} aria-label="Hide the reviewer" title="Hide the reviewer">
+            <Icon name="panel" size={16} />
+          </button>
+        )}
+      </header>
       {noSub && (
         <p className="panel-msg">
           The reviewer needs a model. <a href="#settings/subscriptions">Add one under Settings → Subscriptions</a>.
@@ -180,10 +213,10 @@ export function Thread({
         {!rows.length && !noSub && (
           <div className="sidechat-empty">
             <Icon name="sparkle" size={28} />
-            <p className="title">{layer ? 'Ask about this layer' : 'Ask about the stack'}</p>
-            <p className="hint">The reviewer reads the exact revisions, the plan and your decisions. Nothing reaches the agent unless you send it.</p>
+            <p className="title">{on ? `Ask about ${on.role || `#${on.pr}`}` : 'Ask about the stack'}</p>
+            <p className="hint">It reads the exact revisions, the plan and your decisions, and follows you from layer to layer. Discuss on a finding or a diff line brings it here. Nothing reaches the agent unless you send it.</p>
             <div className="suggestions">
-              {(layer ? STARTERS_LAYER : STARTERS_STACK).map((s) => (
+              {(on ? STARTERS_LAYER : STARTERS_STACK).map((s) => (
                 <button key={s} className="sugg" onClick={() => ask(s)}>
                   {s}
                 </button>
@@ -275,6 +308,32 @@ export function Thread({
             }}
           />
         )}
+        {(on || attached.length > 0) && (
+          <div className="ctx-chips" aria-label="Asking about">
+            {on && (
+              <span className="ctx-chip scope" title={`${on.title}: the reviewer reads this layer first. Take it off to ask about the whole stack.`}>
+                <span className="mono">{on.role || `#${on.pr}`}</span>
+                <button type="button" className="chip-x" aria-label={`Ask about the whole stack, not ${on.role || `#${on.pr}`}`} onClick={() => setScoped(false)}>
+                  <Icon name="close" size={12} />
+                </button>
+              </span>
+            )}
+            {attached.map((a) => (
+              <span key={a.key} className="ctx-chip" title={a.ctx.kind === 'lines' ? `${a.ctx.path}:${a.ctx.start}–${a.ctx.end}` : a.ctx.kind === 'file' ? a.ctx.path : a.label}>
+                <Icon name={a.ctx.kind === 'finding' ? 'flag' : a.ctx.kind === 'file' ? 'file' : 'diff'} size={12} />
+                <span className="ellipsis">{a.label}</span>
+                <button type="button" className="chip-x" aria-label={`Take off ${a.label}`} onClick={() => onDetach(a.key)}>
+                  <Icon name="close" size={12} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        {!on && layer && (
+          <button type="button" className="btn ghost small rescope" onClick={() => setScoped(true)}>
+            Asking about the whole stack · <span className="mono">{layer.role || `#${layer.pr}`}</span> again
+          </button>
+        )}
         <div className="sidechat-field">
           <textarea
             ref={areaRef}
@@ -282,7 +341,7 @@ export function Thread({
             disabled={noSub}
             rows={1}
             enterKeyHint="send"
-            placeholder={layer ? `Ask about ${layer.role || `#${layer.pr}`}…` : 'Ask about the stack…'}
+            placeholder={attached.length ? 'Ask about these…' : on ? `Ask about ${on.role || `#${on.pr}`}…` : 'Ask about the stack…'}
             title="Shift+Enter for a new line"
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { HostApi, ReviewAlert, State } from '../api.ts';
-import { parseReviewHash, reviewApi, reviewHash, STATUS_WORD, toneOf, type Candidates, type Finding, type Layer, type OwnerSuggestion, type Stack, type StackSummary } from '../reviewApi.ts';
+import { parseReviewHash, reviewApi, reviewHash, STATUS_WORD, toneOf, type Attachment, type Candidates, type Finding, type Layer, type OwnerSuggestion, type Stack, type StackSummary } from '../reviewApi.ts';
 import { askConfirm, askText, showError } from '../ask.tsx';
 import { ConfirmButton } from '../ConfirmButton.tsx';
 import { Icon } from '../icons.tsx';
@@ -9,8 +9,8 @@ import { Sheet } from '../sheet.tsx';
 import { age, look } from '../agents.ts';
 import { AgentLogo } from '../logos.tsx';
 import { Thread } from './Thread.tsx';
-import { LayerView } from './Layer.tsx';
-import { PlanDialog } from './Dispatch.tsx';
+import { LayerView, stored } from './Layer.tsx';
+import { DispatchDialog, PlanDialog } from './Dispatch.tsx';
 import { Compose, rememberRoot } from './Compose.tsx';
 import { Dot, Spine, SpineBar, SpineColumn, layerLine } from './Spine.tsx';
 import './review.css';
@@ -529,7 +529,27 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
   const [findings, setFindings] = useState<Finding[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
+  // On a phone the reviewer is a sheet on the overview and a tab on a layer; on a desktop it's a panel beside both.
   const [asking, setAsking] = useState(false);
+  const [panel, setPanel] = stored<'open' | 'closed'>('ah.review.panel', 'open');
+  // Under 900px there's no room beside the page: the reviewer floats over it when asked for, and folds back.
+  const [box, setBox] = useState<HTMLDivElement | null>(null);
+  const [width, setWidth] = useState(1200);
+  useEffect(() => {
+    if (!box) return;
+    const ro = new ResizeObserver(([e]) => setWidth(e.contentRect.width));
+    ro.observe(box);
+    return () => ro.disconnect();
+  }, [box]);
+  const compact = !narrow && width < 900;
+  const [floating, setFloating] = useState(false);
+  const shown = compact ? floating : panel === 'open';
+  const showPanel = (on: boolean) => (compact ? setFloating(on) : setPanel(on ? 'open' : 'closed'));
+  // What you've brought to the reviewer and not asked about yet; it waits while you move between layers.
+  const [attached, setAttached] = useState<Attachment[]>([]);
+  const [focusKey, setFocusKey] = useState(0);
+  // A reviewer answer you're sending to the agent, from the layer you're on.
+  const [handing, setHanding] = useState<string | null>(null);
   const live = useRef(true);
   useEffect(() => {
     live.current = true;
@@ -757,18 +777,36 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
     </>
   );
 
+  const discuss = (a: Attachment) => {
+    setAttached((xs) => (xs.some((x) => x.key === a.key) ? xs : [...xs, a].slice(-8)));
+    showPanel(true);
+    if (narrow && !layer) setAsking(true);
+    setFocusKey((k) => k + 1);
+  };
+  const pinDecision = async (seed: string) => {
+    const text = await askText({ title: 'Pin a decision', body: 'Every reviewer answer and every message to the agent holds the code to it.', label: 'Decision', value: seed, confirm: 'Pin' });
+    if (!text?.trim()) return;
+    try {
+      setStack(await api.addDecision(stack.id, text.trim(), layer?.pr ?? null));
+      toast('Decision pinned');
+    } catch (e) {
+      showError(e, "Couldn't pin it");
+    }
+  };
+
   const reviewer = (
     <Thread
       client={client}
       api={api}
       stackId={stack.id}
-      pr={null}
+      pr={layer?.pr ?? null}
       layers={stack.layers}
-      onSend={() => toast('Open a layer to send to its agent')}
-      onDecision={async (seed) => {
-        const text = await askText({ title: 'Pin a decision', label: 'Decision', value: seed, confirm: 'Pin' });
-        if (text?.trim()) setStack(await api.addDecision(stack.id, text.trim(), null));
-      }}
+      attached={attached}
+      onDetach={(key) => setAttached((xs) => (key === null ? [] : xs.filter((x) => x.key !== key)))}
+      focusKey={focusKey}
+      onHide={narrow ? undefined : () => showPanel(false)}
+      onSend={(text) => (layer?.state === 'open' ? setHanding(text) : toast('Open a layer to send to its agent'))}
+      onDecision={pinDecision}
       onChanged={() => {
         loadFindings();
         load();
@@ -776,84 +814,129 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
     />
   );
 
-  if (layer)
-    return (
-      <div className={`review-stack layer-mode ${narrow ? 'page phone' : ''}`} data-title={`${layer.role || `#${layer.pr}`} · ${stack.title}`}>
-        <div className="review-grid">
-          {!narrow && <SpineColumn stack={stack} pr={pr} onPick={open} />}
-          <LayerView
-            client={client}
-            api={api}
-            stack={stack}
-            layer={layer}
-            findings={findings}
-            narrow={narrow}
-            menu={layerItems(layer)}
-            onBack={() => (narrow ? history.back() : open(null))}
-            onStack={(s) => (s ? setStack(s) : load())}
-            onFindings={loadFindings}
-            onNavigate={(next) => go(stack.id, next, { replace: true })}
-            onOpenSession={onOpenSession}
-          />
-        </div>
+  const handoff = handing !== null && layer && (
+    <DispatchDialog
+      api={api}
+      stack={stack}
+      layer={layer}
+      findingIds={[]}
+      extra={handing}
+      onClose={() => setHanding(null)}
+      onSent={(outcome, to) => {
+        toast(outcome === 'queued' ? `Queued for ${to}` : `Sent to ${to}`);
+        load();
+        loadFindings();
+      }}
+    />
+  );
+
+  // Beside the overview and every layer: the reviewer, or the rail it folds to (and, when narrow, floats over from).
+  const rail = (
+    <aside className="reviewer-rail" aria-label="Reviewer">
+      <button className="icon-btn round" onClick={() => showPanel(true)} aria-label="Show the reviewer" title="Show the reviewer" aria-expanded={shown}>
+        <Icon name="sparkle" size={18} />
+      </button>
+      {attached.length > 0 && <span className="count">{attached.length}</span>}
+    </aside>
+  );
+  const side = !shown ? (
+    rail
+  ) : compact ? (
+    <>
+      {rail}
+      <aside className="reviewer-panel floating" aria-label="Reviewer" onKeyDown={(e) => e.key === 'Escape' && !e.defaultPrevented && showPanel(false)}>
+        {reviewer}
+      </aside>
+    </>
+  ) : (
+    <aside className="reviewer-panel" aria-label="Reviewer">
+      {reviewer}
+    </aside>
+  );
+
+  const head = (
+    <header className="review-head">
+      <button className="icon-btn round" onClick={() => go(null, null)} aria-label="All stacks">
+        <Icon name="back" size={20} />
+      </button>
+      <div className="grow">
+        <h1 className="review-title">{stack.title}</h1>
+        <p className="tagline">
+          {stack.repo} · {stack.source === 'manual' ? 'picked by hand' : `into ${stack.trunk}`}
+          {ghStacks.length === 1 ? ` · GitHub stack #${ghStacks[0]}` : ghStacks.length > 1 ? ` · ${ghStacks.length} GitHub stacks` : ''} · {merged} of {counted} merged · {stack.syncError ? <span className="bad">{stack.syncError}</span> : stack.syncing || syncing ? 'refreshing…' : `checked ${ago(stack.syncedAt)}`}
+        </p>
+      </div>
+      {narrow && (
+        <button className={`btn ask ${asking ? 'on' : ''}`} onClick={() => setAsking((v) => !v)} aria-pressed={asking} aria-label="Ask the reviewer" title="Ask the reviewer about the whole stack">
+          <Icon name="sparkle" size={16} />
+        </button>
+      )}
+      <Popover label={<Icon name="more" size={18} />} className="icon-btn round" align="right" up={false} title="Stack">
+        {(close) => (
+          <div className="review-menu">
+            <button disabled={syncing} onClick={() => (close(), sync())}>
+              Refresh from GitHub
+            </button>
+            {stackItems(close)}
+          </div>
+        )}
+      </Popover>
+    </header>
+  );
+
+  const layerView = layer && (
+    <LayerView
+      client={client}
+      api={api}
+      stack={stack}
+      layer={layer}
+      findings={findings}
+      narrow={narrow}
+      menu={layerItems(layer)}
+      onBack={() => (narrow ? history.back() : open(null))}
+      onStack={(s) => (s ? setStack(s) : load())}
+      onFindings={loadFindings}
+      onNavigate={(next) => go(stack.id, next, { replace: true })}
+      onOpenSession={onOpenSession}
+      reviewer={reviewer}
+      onDiscuss={discuss}
+    />
+  );
+
+  if (narrow)
+    return layer ? (
+      <div className="review-stack layer-mode page phone" data-title={`${layer.role || `#${layer.pr}`} · ${stack.title}`}>
+        <div className="review-grid">{layerView}</div>
+        {handoff}
+      </div>
+    ) : (
+      <div className="review-stack page phone" data-title={stack.title}>
+        {head}
+        <Cockpit stack={stack} alerts={alerts} narrow onStack={(s) => (s ? setStack(s) : load())} onOpen={open} onOpenSession={onOpenSession} onPick={() => go(stack.id, null, { pick: true })} />
+        {asking && (
+          <Sheet label="Reviewer" className="review-sheet" onClose={() => setAsking(false)}>
+            {reviewer}
+          </Sheet>
+        )}
       </div>
     );
 
+  // The same three columns on the overview and on a layer, so the reviewer stays put (and keeps your draft) as you move.
   return (
-    <div className={`review-stack ${narrow ? 'page phone' : ''}`} data-title={stack.title}>
-      <header className="review-head">
-        <button className="icon-btn round" onClick={() => go(null, null)} aria-label="All stacks">
-          <Icon name="back" size={20} />
-        </button>
-        <div className="grow">
-          <h1 className="review-title">{stack.title}</h1>
-          <p className="tagline">
-            {stack.repo} · {stack.source === 'manual' ? 'picked by hand' : `into ${stack.trunk}`}
-            {ghStacks.length === 1 ? ` · GitHub stack #${ghStacks[0]}` : ghStacks.length > 1 ? ` · ${ghStacks.length} GitHub stacks` : ''} · {merged} of {counted} merged · {stack.syncError ? <span className="bad">{stack.syncError}</span> : stack.syncing || syncing ? 'refreshing…' : `checked ${ago(stack.syncedAt)}`}
-          </p>
-        </div>
-        <button className={`btn ask ${asking ? 'on' : ''}`} onClick={() => setAsking((v) => !v)} aria-pressed={asking} aria-label="Ask the reviewer" title="Ask the reviewer about the whole stack">
-          <Icon name="sparkle" size={16} />
-          {!narrow && <span>Ask the reviewer</span>}
-        </button>
-        <Popover label={<Icon name="more" size={18} />} className="icon-btn round" align="right" up={false} title="Stack">
-          {(close) => (
-            <div className="review-menu">
-              <button disabled={syncing} onClick={() => (close(), sync())}>
-                Refresh from GitHub
-              </button>
-              {stackItems(close)}
-            </div>
-          )}
-        </Popover>
-      </header>
-      {narrow ? (
-        <Cockpit stack={stack} alerts={alerts} narrow onStack={(s) => (s ? setStack(s) : load())} onOpen={open} onOpenSession={onOpenSession} onPick={() => go(stack.id, null, { pick: true })} />
-      ) : (
-        <div className={`review-grid overview ${asking ? 'asking' : ''}`}>
-          <Spine stack={stack} pr={null} onPick={open} />
+    <div ref={setBox} className={`review-stack ${layer ? 'layer-mode' : ''}`} data-title={layer ? `${layer.role || `#${layer.pr}`} · ${stack.title}` : stack.title}>
+      <div className={`review-grid ${layer ? '' : 'overview'} panel-${shown && !compact ? 'open' : 'closed'}`}>
+        {layer ? <SpineColumn stack={stack} pr={pr} onPick={open} /> : <Spine stack={stack} pr={null} onPick={open} />}
+        {layer ? (
+          layerView
+        ) : (
           <div className="review-main">
+            {head}
             <Cockpit stack={stack} alerts={alerts} narrow={false} onStack={(s) => (s ? setStack(s) : load())} onOpen={open} onOpenSession={onOpenSession} onPick={() => go(stack.id, null, { pick: true })} />
           </div>
-          {asking && (
-            <aside className="review-drawer" aria-label="Reviewer on the whole stack">
-              <header className="drawer-head">
-                <Icon name="sparkle" size={15} />
-                <span className="grow">Reviewer on the whole stack</span>
-                <button className="icon-btn" aria-label="Close the reviewer" onClick={() => setAsking(false)}>
-                  <Icon name="close" size={15} />
-                </button>
-              </header>
-              {reviewer}
-            </aside>
-          )}
-        </div>
-      )}
-      {narrow && asking && (
-        <Sheet label="Reviewer" className="review-sheet" onClose={() => setAsking(false)}>
-          {reviewer}
-        </Sheet>
-      )}
+        )}
+        {side}
+      </div>
+      {handoff}
     </div>
   );
 }

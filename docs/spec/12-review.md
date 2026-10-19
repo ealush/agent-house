@@ -37,7 +37,7 @@ one thing to do, ⌘↵ on its button), the merge order as a table (layer, PR,
 status, findings, checks), and cards: **Made in** (the session that built the
 stack), **Fixes go to**, **Plan** (a plan file, else the first PR's
 description) and **Decisions** (pinned statements the reviewer and agent are
-held to). *Ask the reviewer* opens the stack's thread in a drawer.
+held to). The reviewer sits beside it (REV-5).
 → A-31
 
 ## REV-4 · A layer — shipped
@@ -48,12 +48,18 @@ what's new. The diff reads **This PR**, **Since review** or **From
 <trunk>**, at a pinned revision. Two cards sit behind toggles on the diff bar, one at a
 time: the PR's **description**, read from GitHub when opened and shown as
 GitHub shows it (REV-7), and the **briefing** (written by the briefing
-subscription: what it does, how it fits, what to look at, tests). The merge gates are a row of marks under the diff. A side column
-holds Findings and the Reviewer. On a phone: Findings, Diff and Reviewer tabs
-and a glass bar.
+subscription: what it does, how it fits, what to look at, tests). The merge gates are a row of marks under the diff. The layer's
+findings sit above the diff and fold to one line; each has *Discuss*. On a
+phone: Findings, Diff and Reviewer tabs and a glass bar.
 
 ## REV-5 · The reviewer — shipped
 
+A panel on the right of the overview and of every layer, full height, which
+stays put (and keeps your draft) as you move; it folds to a rail, and where
+the page is under 900px wide it floats over the right edge when you open it.
+The composer shows the layer you're on as a chip (take it off to ask about the
+whole stack) and anything you brought with *Discuss* on a finding. On a phone
+it's the layer's Reviewer tab and a sheet on the overview.
 One conversation per stack, which follows you between layers: each question
 records the layer it was asked on (or the whole stack) and what you attached
 to it (findings, lines of a diff, a file), and the reviewer gets those spelled
