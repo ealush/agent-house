@@ -62,6 +62,8 @@ model ChatMessage {
   role String
   text String
   at   Int
+  /// Review threads: JSON of what a question pointed at (the layer, findings, diff lines, files).
+  context String?
 
   @@index([uid, id])
 }

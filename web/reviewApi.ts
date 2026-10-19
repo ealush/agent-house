@@ -113,7 +113,12 @@ export type SessionStack = {
   start: { native: number } | { prs: number[] } | null;
 };
 export type OwnerSuggestion = { uid: string; key: string; title: string; agent: string | null; status: string; cwd: string; branch: string | null; live: boolean; reason: 'branch' | 'repo'; origin: boolean };
-export type ThreadMsg = { role: 'user' | 'assistant'; text: string; at: number; id: number };
+/** What a question to the reviewer points at, besides the layer you're on. Lines carry the diff text you saw. */
+export type AskContext = { kind: 'finding'; id: number } | { kind: 'lines'; pr: number; path: string; start: number; end: number; text: string } | { kind: 'file'; pr: number; path: string };
+/** An attachment as the thread keeps it, with a label for its chip. */
+export type SavedContext = { kind: 'finding'; id: number; pr: number; label: string } | { kind: 'lines'; pr: number; path: string; start: number; end: number; label: string } | { kind: 'file'; pr: number; path: string; label: string };
+/** A message of the stack's one conversation: the layer it was asked on (null: the whole stack), and what was attached. */
+export type ThreadMsg = { role: 'user' | 'assistant'; text: string; at: number; id: number; pr: number | null; context: SavedContext[] };
 export type Followup = { title: string; kind: 'session' | 'chat'; text: string };
 export type DiffOut = { kind: 'patch' | 'range'; text: string; truncated: boolean; from: string; to: string };
 
@@ -167,11 +172,11 @@ export function reviewApi(base = '') {
     resolveThread: (id: string, fid: number, body: string) => r<Finding>('POST', `${s(id)}/findings/${fid}/resolve`, { body }),
     addDecision: (id: string, text: string, fromPr: number | null) => r<Stack>('POST', `${s(id)}/decisions`, { text, fromPr }),
     removeDecision: (id: string, did: number) => r<Stack>('DELETE', `${s(id)}/decisions/${did}`),
-    thread: (id: string, pr: number | null) => r<{ messages: ThreadMsg[]; findings: Finding[]; subscriptionId: string | null }>('GET', `${s(id)}/chat${pr ? `?pr=${pr}` : ''}`),
-    pickSubscription: (id: string, pr: number | null, subscriptionId: string) => r<{ ok: true }>('PUT', `${s(id)}/chat/subscription`, { pr, id: subscriptionId }),
-    ask: (id: string, pr: number | null, text: string, subscriptionId?: string) =>
-      r<{ message: ThreadMsg; followups: Followup[]; findings: Finding[] }>('POST', `${s(id)}/chat`, { text, pr, ...(subscriptionId ? { subscriptionId } : {}) }),
-    clearThread: (id: string, pr: number | null) => r('DELETE', `${s(id)}/chat${pr ? `?pr=${pr}` : ''}`),
+    thread: (id: string) => r<{ messages: ThreadMsg[]; findings: Finding[]; subscriptionId: string | null }>('GET', `${s(id)}/chat`),
+    pickSubscription: (id: string, subscriptionId: string) => r<{ ok: true }>('PUT', `${s(id)}/chat/subscription`, { id: subscriptionId }),
+    ask: (id: string, pr: number | null, text: string, subscriptionId?: string, context: AskContext[] = []) =>
+      r<{ asked: ThreadMsg; message: ThreadMsg; followups: Followup[]; findings: Finding[] }>('POST', `${s(id)}/chat`, { text, pr, context, ...(subscriptionId ? { subscriptionId } : {}) }),
+    clearThread: (id: string) => r('DELETE', `${s(id)}/chat`),
   };
 }
 

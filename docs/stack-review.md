@@ -242,7 +242,7 @@ stay. What changes:
   and costs nothing.
 - **Models per job.** Settings → Subscriptions picks the subscription for
   briefings and re-checks (a cheap one will do). The reviewer chat uses the
-  default, and each thread can switch to another from its composer.
+  default, and each stack's conversation can switch to another from its composer.
 
 The reviewer can't merge, push, retarget, resolve threads or send to an agent.
 It proposes. You decide by pressing a button.
@@ -536,7 +536,7 @@ host you opened; a peer's stacks through `/h/<host>` are R4.
 | Re-review via "patch fingerprints" | `patch-id` for identity, `range-diff` for review, pinned refs to keep old revisions | Named tools that exist, and they work across force-pushes. |
 | "Verify the actual head" before merge | `gh pr merge --match-head-commit` | GitHub checks it at merge time, so a push in between can't slip through. |
 | Merge, then "reconcile downstream" | Retarget children with `gh pr edit --base`; restack is an agent dispatch | With merge commits, retargeting is all it takes. With squash, rebasing belongs to whoever owns the checkout. |
-| Two chat scopes plus a "Look ahead" action | Stack thread on the stack page, layer thread on the layer page; look-ahead is a tool | No mode to pick. Where you are decides the scope. |
+| Two chat scopes plus a "Look ahead" action | One conversation per stack; the layer you're on rides along as its scope, and you attach findings, diff lines or files; look-ahead is a tool | No mode to pick. Where you are decides the scope, and the conversation doesn't restart when you move. |
 | "Send to agent" from chat as a new feature | Already exists (`followups` with `kind: 'session'`) | Reuse it. |
 | Native GitHub stacks via a stack-aware merge API | GitHub's stack merge, with a gate for the layers under it | The Stacks and async merge APIs went GA on 6 October. GitHub owns the line; ah owns the review. |
 | — | Bot threads become findings, closed with Reply & resolve | That's half of the current handoff file. |
@@ -605,9 +605,13 @@ with cited nodes, and a completion report when a stack closes.
 3. **You resolve bot threads.** A finding from GitHub shows Resolve on GitHub,
    which posts your note (if any) as the reply and resolves the thread. The
    agent is never asked to touch the PR conversation.
-4. **Both thread scopes stay.** The stack's thread is on its overview and a
-   layer's thread is on the layer, so where you are decides the scope. Pinned
-   decisions carry what one thread settles into every other one.
+4. **One conversation per stack** (changed 2026-10-19; it was a thread per
+   layer plus one for the stack). Moving to another layer started an empty
+   thread, and the reviewer lost what you'd just settled. Now each question
+   records the layer it was asked on, which still sets the reviewer's scope,
+   and what you attached. The old per-layer threads read as part of it.
+   Pinned decisions still carry settled points into briefings and messages to
+   the agent.
 5. **A cheaper model for the background work.** Settings → Subscriptions picks
    the subscription that writes briefings and re-checks; the reviewer chat uses
    the default (or the one picked in the thread).

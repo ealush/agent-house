@@ -269,6 +269,30 @@ const ACTIVE_DISPATCH = ['sent', 'working'];
 const label = (l: { role: string; pr: number }) => (l.role ? `${l.role} #${l.pr}` : `#${l.pr}`);
 export const threadKey = (stackId: string, pr: number | null) => (pr === null ? `review:${stackId}` : `review:${stackId}:${pr}`);
 
+/** What a question to the reviewer points at, besides the layer you're on: a finding, lines of a layer's diff (as shown), a file. */
+export type AskContext = { kind: 'finding'; id: number } | { kind: 'lines'; pr: number; path: string; start: number; end: number; text: string } | { kind: 'file'; pr: number; path: string };
+/** An attachment as the thread keeps it: enough to show it as a chip and say what it was. */
+export type SavedContext = { kind: 'finding'; id: number; pr: number; label: string } | { kind: 'lines'; pr: number; path: string; start: number; end: number; label: string } | { kind: 'file'; pr: number; path: string; label: string };
+/** One message of a stack's conversation: the layer it was asked on (null: the whole stack), and what was attached. */
+export type ThreadMessage = { id: number; role: 'user' | 'assistant'; text: string; at: number; pr: number | null; context: SavedContext[] };
+
+function threadMessage(r: { id: number; uid: string; role: string; text: string; at: number; context: string | null }): ThreadMessage {
+  let pr: number | null = null;
+  let context: SavedContext[] = [];
+  try {
+    const c = r.context ? (JSON.parse(r.context) as { pr?: unknown; items?: unknown }) : null;
+    if (c) {
+      pr = typeof c.pr === 'number' ? c.pr : null;
+      if (Array.isArray(c.items)) context = c.items as SavedContext[];
+    } else {
+      // Rows from the time each layer had its own thread: the key says which.
+      const m = /^review:.+:(\d+)$/.exec(r.uid);
+      pr = m ? Number(m[1]) : null;
+    }
+  } catch {}
+  return { id: r.id, role: r.role === 'assistant' ? 'assistant' : 'user', text: r.text, at: r.at, pr, context };
+}
+
 export class ReviewService {
   private db: PrismaClient;
   private chat: SideChatStore;
@@ -1641,47 +1665,103 @@ export class ReviewService {
     return { path: s.planPath, text: await this.planText(s) };
   }
 
-  async thread(id: string, pr: number | null): Promise<{ messages: { role: string; text: string; at: number; id: number }[]; findings: FindingView[]; subscriptionId: string | null }> {
-    await this.stack(id);
-    if (pr !== null) await this.layer(id, pr);
-    const rows = await this.db.chatMessage.findMany({ where: { uid: threadKey(id, pr) }, orderBy: { id: 'asc' } });
-    const ids = rows.map((r) => r.id);
-    const proposed = ids.length ? await this.db.reviewFinding.findMany({ where: { stackId: id, messageId: { in: ids } }, orderBy: { id: 'asc' } }) : [];
-    return { messages: rows.map((r) => ({ role: r.role, text: r.text, at: r.at, id: r.id })), findings: proposed.map((f) => findingView(f)), subscriptionId: await this.chat.picked(threadKey(id, pr)) };
-  }
-
-  /** Pick the subscription a thread answers with, before asking it anything. */
-  async pickThread(id: string, pr: number | null, subscriptionId: string): Promise<void> {
-    await this.stack(id);
-    if (pr !== null) await this.layer(id, pr);
-    await this.chat.pick(threadKey(id, pr), subscriptionId);
-  }
-
-  async clearThread(id: string, pr: number | null): Promise<void> {
-    await this.db.reviewFinding.deleteMany({ where: { stackId: id, state: 'proposed', messageId: { not: null } } });
-    await this.chat.clear(threadKey(id, pr));
+  /** Every row of a stack's conversation: the stack's own key, and the per-layer keys threads used to have. */
+  private threadRows(id: string, take?: number) {
+    const where = { OR: [{ uid: threadKey(id, null) }, { uid: { startsWith: `review:${id}:` } }] };
+    return take ? this.db.chatMessage.findMany({ where, orderBy: { id: 'desc' }, take }).then((r) => r.reverse()) : this.db.chatMessage.findMany({ where, orderBy: { id: 'asc' } });
   }
 
   /**
-   * One turn with the reviewer. The thread is kept whole (side chat keeps 30);
-   * the model sees the last few turns. Proposed findings are stored as
-   * `proposed` until you keep or dismiss them.
+   * The stack's one conversation with the reviewer, oldest first. Each question
+   * says which layer you were on and what you attached; the reviewer's proposals
+   * come with it.
    */
-  async ask(id: string, pr: number | null, text: string, subscriptionId?: string) {
+  async thread(id: string): Promise<{ messages: ThreadMessage[]; findings: FindingView[]; subscriptionId: string | null }> {
+    await this.stack(id);
+    const rows = await this.threadRows(id);
+    const ids = rows.map((r) => r.id);
+    const proposed = ids.length ? await this.db.reviewFinding.findMany({ where: { stackId: id, messageId: { in: ids } }, orderBy: { id: 'asc' } }) : [];
+    return { messages: rows.map(threadMessage), findings: proposed.map((f) => findingView(f)), subscriptionId: await this.chat.picked(threadKey(id, null)) };
+  }
+
+  /** Pick the subscription the stack's reviewer answers with, before asking it anything. */
+  async pickThread(id: string, subscriptionId: string): Promise<void> {
+    await this.stack(id);
+    await this.chat.pick(threadKey(id, null), subscriptionId);
+  }
+
+  async clearThread(id: string): Promise<void> {
+    await this.db.reviewFinding.deleteMany({ where: { stackId: id, state: 'proposed', messageId: { not: null } } });
+    const keys = [...new Set((await this.threadRows(id)).map((r) => r.uid)), threadKey(id, null)];
+    for (const k of keys) await this.chat.clear(k);
+  }
+
+  /** What you attached, spelled out for the reviewer: the finding, the lines as the diff showed them, the file's change. */
+  private async attachments(s: ReviewStack, env: ReviewEnv, items: AskContext[]): Promise<{ text: string; saved: SavedContext[] }> {
+    const parts: string[] = [];
+    const saved: SavedContext[] = [];
+    const layerName = (pr: number) => {
+      const l = env.layers.find((x) => x.pr === pr);
+      return l ? label(l) : `#${pr}`;
+    };
+    for (const c of items) {
+      if (c.kind === 'finding') {
+        const f = await this.db.reviewFinding.findFirst({ where: { id: c.id, stackId: s.id } });
+        if (!f) continue;
+        const where = f.path ? ` (${f.path}${f.lineStart ? `:${f.lineStart}` : ''})` : '';
+        parts.push(`Finding F${f.id} [${f.severity}, ${f.state}, from ${f.source}] owned by ${layerName(f.ownerPr)}: ${f.title}${where}${f.body ? `\n${f.body.slice(0, 3000)}` : ''}`);
+        saved.push({ kind: 'finding', id: f.id, pr: f.ownerPr, label: f.title });
+      } else {
+        const l = env.layers.find((x) => x.pr === c.pr);
+        if (!l) continue;
+        if (c.kind === 'lines') {
+          const span = c.end > c.start ? `${c.start}–${c.end}` : `${c.start}`;
+          parts.push(`Lines ${c.path}:${span} of ${label(l)}, as the diff shows them:\n\`\`\`diff\n${c.text.slice(0, 6000)}\n\`\`\``);
+          saved.push({ kind: 'lines', pr: c.pr, path: c.path, start: c.start, end: c.end, label: `${c.path.split('/').pop()}:${span}` });
+        } else {
+          const d = l.base && l.head ? await diff(s.repoRoot, l.base, l.head, [c.path]).catch(() => null) : null;
+          const patch = d?.patch ?? '';
+          parts.push(
+            patch && patch.length <= 12_000
+              ? `The file ${c.path}, as ${label(l)} changes it:\n\`\`\`diff\n${patch}\n\`\`\``
+              : `The file ${c.path} in ${label(l)}${patch ? ` (its change is ${Math.round(patch.length / 1000)}k characters: read it with layer_diff and paths)` : ''}.`,
+          );
+          saved.push({ kind: 'file', pr: c.pr, path: c.path, label: c.path.split('/').pop() ?? c.path });
+        }
+      }
+    }
+    return { text: parts.length ? `\n\nAttached:\n\n${parts.join('\n\n')}` : '', saved };
+  }
+
+  /**
+   * One turn with the reviewer. A stack has one conversation; `pr` is the layer
+   * you're on (null: the stack as a whole), and what you attach is spelled out
+   * for it. The model sees the last few turns, each with where it was asked.
+   * Proposed findings are stored as `proposed` until you keep or dismiss them.
+   */
+  async ask(id: string, pr: number | null, text: string, subscriptionId?: string, attach: AskContext[] = []) {
     const s = await this.stack(id);
     if (pr !== null) await this.layer(id, pr);
-    const key = threadKey(id, pr);
+    const key = threadKey(id, null);
     const sub = await this.chat.subscription(subscriptionId ?? (await this.chat.picked(key)) ?? undefined);
     if (subscriptionId) await this.chat.pick(key, subscriptionId);
     const env = await this.env(s);
-    const prior = (await this.db.chatMessage.findMany({ where: { uid: key }, orderBy: { id: 'desc' }, take: THREAD_HISTORY })).reverse();
+    const prior = await this.threadRows(id, THREAD_HISTORY);
     const cur = pr === null ? null : await this.currentRev(id, pr);
-    const messages = await reviewMessages(env, { pr }, prior.map((m) => ({ role: m.role as 'user' | 'assistant', text: m.text })), text, cur?.summary ?? null);
+    const { text: attached, saved: items } = await this.attachments(s, env, attach);
+    const where = (m: ThreadMessage) => {
+      const l = m.pr === null ? null : env.layers.find((x) => x.pr === m.pr);
+      const what = m.context.map((c) => (c.kind === 'finding' ? `finding F${c.id}` : c.kind === 'lines' ? `${c.path}:${c.start}${c.end > c.start ? `–${c.end}` : ''}` : c.path));
+      return `[${l ? `On ${label(l)}` : 'On the whole stack'}${what.length ? ` · attached ${what.join(', ')}` : ''}] `;
+    };
+    const history = prior.map(threadMessage).map((m) => ({ role: m.role, text: m.role === 'user' ? where(m) + m.text : m.text }));
+    const messages = await reviewMessages(env, { pr }, history, text + attached, cur?.summary ?? null);
     const raw = await this.chat.converse(sub, messages, REVIEW_TOOLS, (name, args) => runReviewTool(env, name, args), { rounds: 10, timeoutMs: 180_000 });
     const reply = parseReply(raw, env.order);
     const at = now();
-    await this.db.chatMessage.create({ data: { uid: key, role: 'user', text, at } });
-    const saved = await this.db.chatMessage.create({ data: { uid: key, role: 'assistant', text: reply.content, at } });
+    const context = JSON.stringify({ pr, items } satisfies { pr: number | null; items: SavedContext[] });
+    const asked = await this.db.chatMessage.create({ data: { uid: key, role: 'user', text, at, context } });
+    const saved = await this.db.chatMessage.create({ data: { uid: key, role: 'assistant', text: reply.content, at, context: JSON.stringify({ pr, items: [] }) } });
     const findings: FindingView[] = [];
     for (const f of reply.findings) {
       const owner = f.ownerPr ?? pr ?? env.order.find((n) => env.layers.find((x) => x.pr === n)?.state === 'open') ?? env.order[0];
@@ -1689,7 +1769,7 @@ export class ReviewService {
         await this.addFinding(id, { ownerPr: owner, foundOnPr: pr ?? owner, title: f.title, body: f.body, severity: f.severity, path: f.path, lineStart: f.lineStart, lineEnd: f.lineEnd, source: 'reviewer', state: 'proposed', messageId: saved.id }),
       );
     }
-    return { message: { role: 'assistant', text: reply.content, at, id: saved.id }, followups: reply.followups, findings };
+    return { asked: threadMessage(asked), message: threadMessage(saved), followups: reply.followups, findings };
   }
 
   private async currentRev(id: string, pr: number): Promise<ReviewRevision | null> {

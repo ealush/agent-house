@@ -54,11 +54,14 @@ and a glass bar.
 
 ## REV-5 · The reviewer — shipped
 
-One thread per stack and per layer. It reads exact revisions, the plan, the
-decisions and the session that made the stack, and can propose findings (kept
-or dismissed by you). Starters on an empty thread; follow-ups under a reply
+One conversation per stack, which follows you between layers: each question
+records the layer it was asked on (or the whole stack) and what you attached
+to it (findings, lines of a diff, a file), and the reviewer gets those spelled
+out (a file as the layer changes it). The threads layers used to have read as
+part of it. It reads exact revisions, the plan, the decisions and the session
+that made the stack, and can propose findings (kept or dismissed by you). Starters on an empty thread; follow-ups under a reply
 (ask more, or send to the agent). The subscription it uses is picked in the
-thread's chip and kept per thread (SET-6). → A-35 (fixed)
+thread's chip and kept for the stack (SET-6). → A-35 (fixed)
 
 ## REV-6 · Findings — shipped
 

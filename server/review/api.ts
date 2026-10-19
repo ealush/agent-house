@@ -3,7 +3,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { HttpError, readJson, send, str } from '../http.ts';
 import { SideChatError } from '../sidechat.ts';
-import { ReviewError, type ReviewService } from './service.ts';
+import { ReviewError, type AskContext, type ReviewService } from './service.ts';
 
 type Audit = (req: IncomingMessage, event: string, detail?: Record<string, unknown>) => void;
 
@@ -18,6 +18,19 @@ function int(v: unknown, field: string): number {
 
 function opt<T>(v: unknown, fn: (v: unknown) => T): T | undefined {
   return v === undefined ? undefined : fn(v);
+}
+
+/** What a question attaches: up to 8 findings, diff lines or files. */
+function askContext(v: unknown): AskContext[] {
+  if (v === undefined || v === null) return [];
+  if (!Array.isArray(v) || v.length > 8) throw new HttpError(400, 'context must be a list of up to 8');
+  return v.map((x): AskContext => {
+    const c = (x && typeof x === 'object' ? x : {}) as Record<string, unknown>;
+    if (c.kind === 'finding') return { kind: 'finding', id: int(c.id, 'context id') };
+    if (c.kind === 'lines') return { kind: 'lines', pr: int(c.pr, 'context pr'), path: str(c.path, 'context path', 500), start: int(c.start, 'context start'), end: int(c.end, 'context end'), text: str(c.text, 'context text', 8000) };
+    if (c.kind === 'file') return { kind: 'file', pr: int(c.pr, 'context pr'), path: str(c.path, 'context path', 500) };
+    throw new HttpError(400, 'context kind must be finding, lines or file');
+  });
 }
 
 export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: URL, path: string, svc: ReviewService, audit: Audit): Promise<void> {
@@ -249,30 +262,25 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
 
     if ((m = route('DELETE', `/stacks/${ID}/decisions/(\\d{1,9})`))) return send(res, 200, await svc.removeDecision(m[1], Number(m[2])));
 
-    // Threads: the stack's own (no pr), or a layer's.
-    if ((m = route('GET', `/stacks/${ID}/chat`))) {
-      const pr = url.searchParams.get('pr');
-      return send(res, 200, await svc.thread(m[1], pr ? int(pr, 'pr') : null));
-    }
+    // The stack's one conversation with the reviewer. `pr` on a question is the layer you're on.
+    if ((m = route('GET', `/stacks/${ID}/chat`))) return send(res, 200, await svc.thread(m[1]));
 
     if ((m = route('POST', `/stacks/${ID}/chat`))) {
       const body = await readJson(req);
       const text = str(body.text, 'text', 8000).trim();
       if (!text) throw new HttpError(400, 'text required');
       const pr = body.pr === undefined || body.pr === null ? null : int(body.pr, 'pr');
-      return send(res, 200, await svc.ask(m[1], pr, text, opt(body.subscriptionId, (x) => str(x, 'subscriptionId', 40))));
+      return send(res, 200, await svc.ask(m[1], pr, text, opt(body.subscriptionId, (x) => str(x, 'subscriptionId', 40)), askContext(body.context)));
     }
 
     if ((m = route('PUT', `/stacks/${ID}/chat/subscription`))) {
       const body = await readJson(req);
-      const pr = body.pr === undefined || body.pr === null ? null : int(body.pr, 'pr');
-      await svc.pickThread(m[1], pr, str(body.id, 'id', 40));
+      await svc.pickThread(m[1], str(body.id, 'id', 40));
       return send(res, 200, { ok: true });
     }
 
     if ((m = route('DELETE', `/stacks/${ID}/chat`))) {
-      const pr = url.searchParams.get('pr');
-      await svc.clearThread(m[1], pr ? int(pr, 'pr') : null);
+      await svc.clearThread(m[1]);
       return send(res, 200, { ok: true });
     }
   } catch (err) {

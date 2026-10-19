@@ -2950,3 +2950,42 @@ button.findings-label {
 .pr-description .briefing-foot .btn {
   gap: 6px;
 }
+
+/* Over a question in the stack's conversation: the layer it was asked on, and what it pointed at. */
+.asked-on {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  font-size: 12px;
+  color: var(--faint);
+}
+.asked-where {
+  font-family: var(--mono);
+}
+.ctx-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 220px;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  color: var(--text-2);
+  font-size: 12px;
+}
+.ctx-chip.small {
+  min-height: 20px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+.ctx-chip .ellipsis {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -28,6 +28,22 @@ function Thinking({ since }: { since: number }) {
   );
 }
 
+/** Over a question: the layer it was asked on, and what was attached to it. */
+function AskedOn({ m, layers }: { m: ThreadMsg; layers: Layer[] }) {
+  const l = m.pr === null ? null : layers.find((x) => x.pr === m.pr);
+  return (
+    <div className="asked-on">
+      <span className="asked-where">{l ? `On ${l.role || `#${l.pr}`}` : m.pr === null ? 'On the stack' : `On #${m.pr}`}</span>
+      {m.context.map((c) => (
+        <span key={`${c.kind}:${c.kind === 'finding' ? c.id : `${c.pr}:${c.path}:${c.kind === 'lines' ? c.start : ''}`}`} className="ctx-chip small" title={c.kind === 'lines' ? `${c.path}:${c.start}–${c.end}` : c.kind === 'file' ? c.path : c.label}>
+          <Icon name={c.kind === 'finding' ? 'flag' : c.kind === 'file' ? 'file' : 'diff'} size={12} />
+          <span className="ellipsis">{c.label}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 const STARTERS_LAYER = ['What could break here?', 'Does this fit what the layers above need?', 'Is anything here in the wrong layer?'];
 const STARTERS_STACK = ['Does the overall architecture hold together?', 'Which layer owns each behavior?', 'What should I look at first?'];
 
@@ -69,7 +85,7 @@ export function Thread({
 
   const load = () =>
     api
-      .thread(stackId, pr)
+      .thread(stackId)
       .then((t) => {
         setRows(t.messages.map((m) => ({ ...m, key: `m${m.id}` })));
         setCards(t.findings);
@@ -86,7 +102,7 @@ export function Thread({
     setSubId(undefined);
     void load();
     client.subscriptions().then(setSubs, () => setSubs([]));
-  }, [stackId, pr]);
+  }, [stackId]);
 
   useLayoutEffect(() => {
     const el = areaRef.current;
@@ -107,11 +123,12 @@ export function Thread({
     const mine = gen.current;
     const at = Math.floor(Date.now() / 1000);
     setDraft('');
-    setRows((r) => [...r, { role: 'user', text: t, at, id: -1, key: `u${Date.now()}` }, { role: 'assistant', text: '', at, id: -2, key: 'pending', pending: true }]);
+    const key = `u${Date.now()}`;
+    setRows((r) => [...r, { role: 'user', text: t, at, id: -1, pr, context: [], key }, { role: 'assistant', text: '', at, id: -2, pr, context: [], key: 'pending', pending: true }]);
     try {
       const out = await api.ask(stackId, pr, t, subId);
       if (mine !== gen.current) return;
-      setRows((r) => [...r.filter((x) => !x.pending), { ...out.message, key: `m${out.message.id}`, followups: out.followups }]);
+      setRows((r) => [...r.filter((x) => !x.pending).map((x) => (x.key === key ? { ...out.asked, key: `m${out.asked.id}` } : x)), { ...out.message, key: `m${out.message.id}`, followups: out.followups }]);
       setCards((c) => [...c, ...out.findings]);
     } catch (e) {
       if (mine !== gen.current) return;
@@ -123,10 +140,10 @@ export function Thread({
 
   async function clear() {
     if (!rows.length) return;
-    if (!(await askConfirm({ title: 'Clear this thread?', body: 'Kept findings stay; proposals from it go.', confirm: 'Clear', danger: true }))) return;
+    if (!(await askConfirm({ title: 'Clear the conversation?', body: "The stack's whole conversation with the reviewer goes. Kept findings stay; proposals from it go.", confirm: 'Clear', danger: true }))) return;
     try {
       gen.current++;
-      await api.clearThread(stackId, pr);
+      await api.clearThread(stackId);
       setRows([]);
       setSubId(undefined);
       setCards([]);
@@ -144,7 +161,7 @@ export function Thread({
       <div className="sidechat-context">
         <span className="sidechat-where">
           <Icon name="sparkle" size={14} />
-          <span className="hint">{layer ? `Reviewer on ${layer.role || `#${layer.pr}`}, the whole stack in view` : 'Reviewer on the whole stack'}</span>
+          <span className="hint">{layer ? `Reviewer · now on ${layer.role || `#${layer.pr}`}, the whole stack in view` : 'Reviewer on the whole stack'}</span>
         </span>
         <span className="spacer" />
         {rows.length > 0 && (
@@ -179,6 +196,7 @@ export function Thread({
           const mine = cards.filter((c) => c.messageId === m.id);
           return (
             <div key={m.key} className={`sidechat-msg ${m.role}${m.pending ? ' sending' : ''}`}>
+              {m.role === 'user' && <AskedOn m={m} layers={layers} />}
               <div className="sidechat-bubble">{m.role === 'assistant' ? m.pending ? <Thinking since={m.at * 1000} /> : <Markdown text={m.text} /> : m.text}</div>
               {m.failed && (
                 <div className="msg-meta failed">
@@ -253,7 +271,7 @@ export function Thread({
             note="This thread keeps it"
             onPick={(id) => {
               setSubId(id);
-              api.pickSubscription(stackId, pr, id).catch((e) => showError(e, "Couldn't switch the reviewer"));
+              api.pickSubscription(stackId, id).catch((e) => showError(e, "Couldn't switch the reviewer"));
             }}
           />
         )}
