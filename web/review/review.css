@@ -1679,6 +1679,8 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* Up and down only: wide code scrolls in its own box, never the whole column. */
+  overflow-x: hidden;
   padding: 0 18px 12px;
 }
 
@@ -1738,6 +1740,19 @@
 @media (max-width: 760px) {
   .diff-bar {
     flex-wrap: wrap;
+  }
+}
+
+/* So does a layer squeezed between the sidebar and the reviewer (an iPad in landscape):
+   three diff modes and both toggles need ~560px on one line. */
+@container layerbox (max-width: 600px) {
+  .diff-bar {
+    flex-wrap: wrap;
+  }
+
+  /* The counts take what's left beside the modes, cut short, rather than a row of their own. */
+  .diff-bar .diff-meta {
+    flex: 1 1 0;
   }
 }
 
