@@ -118,6 +118,19 @@ none), a gate checks those layers too, the base gate reads *Lands in
 <trunk>*, and *Needs a restack* means the branch no longer sits on the one
 under it. A merge dialog says what lands and how.
 
+**Merge the stack** (the merge order's button, the stack's and a layer's ···,
+and Up next once every layer is reviewed) merges bottom up in as few steps as
+GitHub allows: a run of layers in one GitHub stack through one stack merge,
+any other layer through its own, each at its reviewed head and re-checked
+just before. Its dialog lists every layer as landing, held (by what), waiting
+behind a held one, or needing a restack, and picks the method (merge commits,
+squash, rebase: the stack keeps it). Layers you haven't marked reviewed are
+marked at their current heads as it merges (*Mark reviewed & merge*); a
+blocking finding, a failing check or a conflict still holds the layer, and
+the merge lands what's below it. Squash or rebase on a chain lands one step:
+what sat on it then needs a restack, which ah leaves to the agent. It stops at
+the first step GitHub refuses or hasn't finished, and says where.
+
 ## REV-11 · Where Review shows up — shipped
 
 A session whose branch is a layer has an "F2 in review" pill in its header.

@@ -172,6 +172,17 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
 
     if ((m = route('POST', `/stacks/${ID}/layers/${PR}/threads`))) return send(res, 200, await svc.importThreads(m[1], Number(m[2])));
 
+    if ((m = route('POST', `/stacks/${ID}/merge`))) {
+      const body = await readJson(req);
+      const out = await svc.mergeStack(m[1], {
+        method: opt(body.method, (x) => str(x, 'method', 10)),
+        markReviewed: body.markReviewed === true,
+        upTo: body.upTo === undefined || body.upTo === null ? undefined : int(body.upTo, 'upTo'),
+      });
+      audit(req, 'review.merge-stack', { stack: m[1], merged: out.merged, stopped: out.stopped?.pr ?? null, waiting: out.waiting });
+      return send(res, 200, out);
+    }
+
     if ((m = route('POST', `/stacks/${ID}/layers/${PR}/merge`))) {
       const body = await readJson(req).catch(() => ({}) as Record<string, unknown>);
       const out = await svc.merge(m[1], Number(m[2]), { outOfOrder: body.outOfOrder === true });

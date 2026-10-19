@@ -41,7 +41,16 @@ else if (a[0] === 'pr' && a[1] === 'merge') {
   const p = pr(a[2]); const i = a.indexOf('--match-head-commit');
   if (stackOf(p.number)) { console.error('X Pull request #' + p.number + ' is in a stack: merge it with the merge-async API'); process.exit(1); }
   if (p.headRefOid !== a[i + 1]) { console.error('X Head branch was modified. Review and try the merge again.'); process.exit(1); }
-  p.state = 'MERGED'; save();
+  p.state = 'MERGED';
+  // The base moves the way GitHub moves it: a merge commit, or one squashed commit.
+  if (st.remote) {
+    const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
+    const git = (...x) => require('child_process').execFileSync('git', ['--git-dir', st.remote, ...x], { env }).toString().trim();
+    const base = git('rev-parse', 'refs/heads/' + p.baseRefName);
+    const c = git('commit-tree', p.headRefOid + '^{tree}', '-p', base, ...(a.includes('--squash') ? [] : ['-p', p.headRefOid]), '-m', 'merge #' + p.number);
+    git('update-ref', 'refs/heads/' + p.baseRefName, c);
+  }
+  save();
 }
 else if (a[0] === 'pr' && a[1] === 'edit') { pr(a[2]).baseRefName = a[a.indexOf('--base') + 1]; save(); }
 else if (a[0] === 'pr' && a[1] === 'ready') { pr(a[2]).isDraft = false; save(); }
@@ -190,7 +199,7 @@ async function setup() {
   w.g('checkout', '-q', '-b', 'fix');
   await w.commit('d.ts', 'export const d = 1;\n', 'fix');
   const h4 = w.publish('fix', 4);
-  const state = { prs: [pr(1, 'base', 'main', h1), pr(2, 'feat', 'base', h2), pr(3, 'docs', 'feat', h3), pr(4, 'fix', 'base', h4), pr(9, 'other', 'main', h1)], threads: [] as unknown[] };
+  const state = { prs: [pr(1, 'base', 'main', h1), pr(2, 'feat', 'base', h2), pr(3, 'docs', 'feat', h3), pr(4, 'fix', 'base', h4), pr(9, 'other', 'main', h1)], threads: [] as unknown[], remote: w.remote };
   await writeFile(w.stateFile, JSON.stringify(state));
   const dbPath = join(w.parent, 'ah.db');
   await ensureMigrated(dbPath);
@@ -322,6 +331,67 @@ test('review: stack from a PR tree, fix loop through the owner, re-review, merge
       s.prs.find((p) => p.number === 4)!.headRefOid = 'f'.repeat(40);
     });
     await assert.rejects(t.svc.merge(v.id, 4), /Reviewed revision is current|Head branch was modified/);
+  });
+});
+
+test('review: the whole stack merges in order, marking it reviewed if you say so, and refuses what a gate holds back', async () => {
+  const t = await setup();
+  await withGh(t.w, async () => {
+    let v = await t.svc.create(t.w.local, { pr: 1 });
+    await t.svc.sync(v.id);
+    v = await t.svc.view(v.id);
+    assert.deepEqual(v.layers.map((l) => l.pr), [1, 4, 2, 3]);
+    const f = await t.svc.addFinding(v.id, { ownerPr: 2, title: 'Return 2', severity: 'blocking' });
+    await assert.rejects(t.svc.mergeStack(v.id, { markReviewed: true }), /#2: 1 blocking/, 'a blocking finding holds the whole stack back');
+    await assert.rejects(t.svc.mergeStack(v.id, { upTo: 4 }), /#1: not marked reviewed/, 'without the review mark, nothing goes');
+    // Up to #4: the layers above it stay open, findings and all.
+    let out = await t.svc.mergeStack(v.id, { markReviewed: true, upTo: 4 });
+    assert.deepEqual(out.stopped, null);
+    assert.deepEqual(out.merged, [1, 4]);
+    assert.equal(out.stopped, null);
+    assert.equal(out.next, 2);
+    await t.svc.updateFinding(v.id, f.id, { state: 'wontfix', note: 'Not this stack' });
+    out = await t.svc.mergeStack(v.id, { markReviewed: true });
+    assert.deepEqual(out.merged, [2, 3]);
+    assert.equal(out.next, null);
+    v = await t.svc.view(v.id);
+    assert.deepEqual(v.layers.map((l) => l.state), ['merged', 'merged', 'merged', 'merged']);
+    const log = await readFile(`${t.w.stateFile}.log`, 'utf8');
+    assert.deepEqual([...log.matchAll(/pr merge (\d+) --merge --match-head-commit/g)].map((m) => Number(m[1])), [1, 4, 2, 3], 'one merge each, bottom up, at the heads it marked reviewed');
+    assert.match(log, /pr edit 3 --base main/, 'each layer is pointed at the trunk before its turn');
+    await assert.rejects(t.svc.mergeStack(v.id), /nothing left to merge/);
+  });
+});
+
+test('review: squashing a chain stops after the first layer, which leaves the next to restack', async () => {
+  const t = await setup();
+  await withGh(t.w, async () => {
+    const v = await t.svc.create(t.w.local, { pr: 1 });
+    await t.svc.sync(v.id);
+    const out = await t.svc.mergeStack(v.id, { method: 'squash', markReviewed: true });
+    assert.deepEqual(out.merged, [1]);
+    assert.deepEqual(out.restack.sort(), [2, 4]);
+    assert.deepEqual(out.stopped, { pr: 4, why: 'it needs a restack onto main first' });
+    assert.equal((await t.svc.view(v.id)).mergeMethod, 'squash', 'the method you picked is the stack\'s now');
+    assert.match(await readFile(`${t.w.stateFile}.log`, 'utf8'), /pr merge 1 --squash/);
+  });
+});
+
+test('review: a stack on GitHub merges a run of its layers in one step, and a layer outside it on its own', async () => {
+  const t = await setup();
+  await t.setState((s) => {
+    (s as Record<string, unknown>).remote = t.w.remote;
+    (s as Record<string, unknown>).stacks = [{ number: 7, prs: [1, 2, 3] }];
+  });
+  await withGh(t.w, async () => {
+    const v = await t.svc.create(t.w.local, { pr: 1 });
+    await t.svc.sync(v.id, true);
+    const out = await t.svc.mergeStack(v.id, { markReviewed: true });
+    assert.deepEqual(out.merged, [1, 4, 2, 3]);
+    assert.equal(out.stopped, null);
+    const log = await readFile(`${t.w.stateFile}.log`, 'utf8');
+    assert.deepEqual([...log.matchAll(/pulls\/(\d+)\/merge-async -f/g)].map((m) => Number(m[1])), [1, 3], "#1 alone (#4 comes next), then #2 and #3 in one stack merge of #3");
+    assert.match(log, /pr merge 4 --merge/);
   });
 });
 

@@ -161,6 +161,9 @@ export function reviewApi(base = '') {
     approve: (id: string, pr: number, approved = true) => r<Stack>('POST', `${l(id, pr)}/approve`, { approved }),
     accept: (id: string, pr: number, overrides: Record<number, 'addressed' | 'open'> = {}) => r<Stack>('POST', `${l(id, pr)}/accept`, { overrides }),
     importThreads: (id: string, pr: number) => r<{ added: number }>('POST', `${l(id, pr)}/threads`),
+    /** Merge the stack bottom up, to the top or to `upTo`; it stops where a step fails, waits on GitHub, or leaves a restack. */
+    mergeStack: (id: string, body: { method?: string; markReviewed?: boolean; upTo?: number }) =>
+      r<{ merged: number[]; restack: number[]; waiting: 'github' | 'queue' | null; stopped: { pr: number; why: string } | null; next: number | null }>('POST', `${s(id)}/merge`, body),
     merge: (id: string, pr: number, outOfOrder = false) => r<{ next: number | null; retargeted: number[]; restack: number[]; merged: number[]; waiting: 'github' | 'queue' | null }>('POST', `${l(id, pr)}/merge`, { outOfOrder }),
     retarget: (id: string, pr: number) => r<Stack>('POST', `${l(id, pr)}/retarget`),
     ready: (id: string, pr: number) => r<Stack>('POST', `${l(id, pr)}/ready`),

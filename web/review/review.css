@@ -3210,3 +3210,153 @@ button.findings-label {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ---- merging the whole stack: the trunk, then each layer bottom up, and what happens to it */
+
+.section-head .grow {
+  flex: 1;
+}
+
+.section-head .merge-all {
+  align-self: center;
+  margin-bottom: 10px;
+}
+
+.review-merge-stack {
+  width: min(640px, calc(100vw - 24px));
+}
+
+.stack-land {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.stack-land > li + li {
+  border-top: 1px solid var(--line);
+}
+
+.stack-land .land-trunk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 14px;
+  background: var(--sunken);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.stack-land .land-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 14px;
+  font-size: 13px;
+}
+
+.stack-land .land-mark {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  border-radius: 999px;
+  border: 2px dashed var(--faint);
+}
+
+.stack-land .land-row.ready,
+.stack-land .land-row.review {
+  background: color-mix(in srgb, var(--done) 8%, transparent);
+}
+
+.stack-land .land-row.ready .land-mark,
+.stack-land .land-row.review .land-mark {
+  border: 0;
+  background: var(--done);
+  color: var(--surface);
+}
+
+.stack-land .land-row.held .land-mark,
+.stack-land .land-row.restack .land-mark {
+  border: 2px solid var(--accent);
+}
+
+.stack-land .land-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stack-land .land-row.waits .land-title {
+  color: var(--muted);
+}
+
+.stack-land .land-note {
+  flex: none;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.stack-land .land-row.ready .land-note,
+.stack-land .land-row.review .land-note {
+  color: var(--done);
+}
+
+.stack-land .land-row.held .land-note,
+.stack-land .land-row.restack .land-note {
+  color: var(--accent);
+}
+
+.review-merge-stack .merge-how {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.review-merge-stack .merge-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--sunken);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.review-merge-stack .merge-note.held {
+  color: var(--text-2);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+
+.review-merge-stack .merge-note > svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+@media (max-width: 600px) {
+  .stack-land .land-title {
+    display: none;
+  }
+
+  .stack-land .land-note {
+    flex: 1;
+    max-width: none;
+  }
+}

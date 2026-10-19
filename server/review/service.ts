@@ -185,6 +185,8 @@ export type StackView = {
 };
 /** What a merge did: the PRs that landed, those GitHub retargeted onto the trunk, and whether GitHub is still at it. */
 export type MergeOutcome = { next: number | null; retargeted: number[]; restack: number[]; merged: number[]; waiting: 'github' | 'queue' | null };
+/** What merging the stack did: the PRs that landed, those left to restack, whether GitHub is still at it, and where it stopped and why. */
+export type StackMergeOutcome = { merged: number[]; restack: number[]; waiting: 'github' | 'queue' | null; stopped: { pr: number; why: string } | null; next: number | null };
 export type StackSummary = { id: string; title: string; repo: string; trunk: string; state: string; source: 'tree' | 'manual' | 'native'; ghStack: number | null; layers: number; merged: number; needsYou: number; next: number | null; syncedAt: number; spine: { pr: number; role: string; status: LayerStatus }[] };
 export type ReviewAlert = { kind: 'rereview' | 'nopush' | 'ready' | 'restack'; stackId: string; stackTitle: string; pr: number; role: string; title: string; at: number };
 /** What the streamed state carries: Inbox alerts, session banners, and the PR → stack map for session headers. */
@@ -1424,6 +1426,61 @@ export class ReviewService {
     await this.sync(id, true).catch(() => {});
     const after = await this.view(id);
     return { next: after.next, retargeted, restack, merged: [pr], waiting: null };
+  }
+
+  /**
+   * Merge the stack, bottom up, up to a layer (all of it by default), in as few
+   * steps as GitHub allows: a run of layers in one GitHub stack lands through
+   * one stack merge of its top, any other layer through its own merge, each
+   * step re-checked by merge() against a fresh sync. Before the first step
+   * every layer must pass its gates, bar merge order, the layers under it and
+   * targeting a layer below it (the steps take care of those) and, with
+   * markReviewed, your review mark, which it then sets at the current heads.
+   * It stops at the first step that fails, that GitHub hasn't finished, or that
+   * leaves the next layer to restack (squash or rebase on a chain: ah doesn't
+   * rewrite branches).
+   */
+  async mergeStack(id: string, opts: { method?: string; markReviewed?: boolean; upTo?: number } = {}): Promise<StackMergeOutcome> {
+    if (opts.method) await this.update(id, { mergeMethod: opts.method });
+    await this.sync(id, true);
+    const v = await this.view(id);
+    const open = v.layers.filter((l) => l.state === 'open');
+    const end = opts.upTo === undefined ? open.length - 1 : open.findIndex((l) => l.pr === opts.upTo);
+    if (end < 0) throw new ReviewError(opts.upTo === undefined ? 409 : 404, opts.upTo === undefined ? 'nothing left to merge' : `#${opts.upTo} is not an open layer of this stack`);
+    const todo = open.slice(0, end + 1);
+    const heads = new Set<string>();
+    for (const l of todo) {
+      const bad = l.gates.find((g) => !g.ok && g.key !== 'order' && g.key !== 'below' && g.key !== 'reviewed' && !(g.key === 'base' && heads.has(l.baseRef)));
+      if (bad) throw new ReviewError(409, `${label(l)}: ${bad.detail ?? bad.label}`);
+      if (!opts.markReviewed && l.gates.some((g) => g.key === 'reviewed' && !g.ok)) throw new ReviewError(409, `${label(l)}: not marked reviewed at its current head`);
+      heads.add(l.headRef);
+    }
+    if (opts.markReviewed) for (const l of todo) if (l.gates.some((g) => g.key === 'reviewed' && !g.ok)) await this.approve(id, l.pr, true);
+    const out: StackMergeOutcome = { merged: [], restack: [], waiting: null, stopped: null, next: null };
+    for (let i = 0; i < todo.length; ) {
+      let j = i;
+      if (todo[i].ghStack !== null) while (j + 1 < todo.length && todo[j + 1].ghStack === todo[i].ghStack && (todo[j + 1].ghPos ?? 0) > (todo[j].ghPos ?? 0)) j++;
+      const moved = todo.slice(i, j + 1).find((x) => out.restack.includes(x.pr));
+      if (moved) {
+        out.stopped = { pr: moved.pr, why: `it needs a restack onto ${v.trunk} first` };
+        break;
+      }
+      try {
+        const step = await this.merge(id, todo[j].pr, { outOfOrder: true });
+        out.merged.push(...step.merged);
+        out.restack.push(...step.restack);
+        if (step.waiting) {
+          out.waiting = step.waiting;
+          break;
+        }
+      } catch (err) {
+        out.stopped = { pr: todo[j].pr, why: err instanceof Error ? err.message : String(err) };
+        break;
+      }
+      i = j + 1;
+    }
+    out.next = (await this.view(id)).next;
+    return out;
   }
 
   /**
