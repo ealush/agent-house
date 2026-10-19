@@ -15,7 +15,7 @@ import { DispatchDialog } from './Dispatch.tsx';
 import { GitHubText } from './GitHubText.tsx';
 
 type Mode = 'this' | 'since' | 'cumulative';
-type PhoneTab = 'diff' | 'findings' | 'thread';
+type PhoneTab = 'diff' | 'findings';
 
 const toast = (text: string) => window.dispatchEvent(new CustomEvent('ah:toast', { detail: text }));
 const when = (t: number) => (age(t) === 'now' ? 'just now' : `${age(t)} ago`);
@@ -221,7 +221,8 @@ export function LayerView({
   onFindings,
   onNavigate,
   onOpenSession,
-  reviewer,
+  onReviewer,
+  attached,
   onDiscuss,
 }: {
   client: HostApi;
@@ -237,8 +238,9 @@ export function LayerView({
   onFindings: () => void;
   onNavigate: (pr: number | null) => void;
   onOpenSession: (uid: string) => void;
-  /** The stack's reviewer conversation: the phone's Reviewer tab (on a desktop it sits beside the layer). */
-  reviewer: React.ReactNode;
+  /** On a phone: bring up the reviewer's sheet (on a desktop it sits beside the layer), and how much waits in it. */
+  onReviewer: () => void;
+  attached: number;
   /** Bring something to the reviewer's conversation, with the start of a question. */
   onDiscuss: (a: Attachment, note?: string) => void;
 }) {
@@ -415,7 +417,6 @@ export function LayerView({
   const discuss = (f: Finding) => {
     const ctx = { kind: 'finding' as const, id: f.id };
     onDiscuss({ ctx, label: f.title, key: attachKey(ctx) });
-    if (narrow) setTab('thread');
   };
 
   // The one button that moves the layer forward (⌘↵).
@@ -729,16 +730,15 @@ export function LayerView({
           patch={diff.text}
           findings={layerFindings}
           onFile={mode === 'cumulative' ? undefined : addFinding}
+          touch={narrow}
           onAsk={(x, note) => {
             const ctx = { kind: 'lines' as const, pr: layer.pr, path: x.path, start: x.start, end: x.end, text: x.text };
             const name = x.path.split('/').pop();
             onDiscuss({ ctx, label: `${name}:${x.start}${x.end > x.start ? `–${x.end}` : ''}${x.removed ? ' (removed)' : ''}`, key: attachKey(ctx) }, note);
-            if (narrow) setTab('thread');
           }}
           onAskFile={(path) => {
             const ctx = { kind: 'file' as const, pr: layer.pr, path };
             onDiscuss({ ctx, label: path.split('/').pop() ?? path, key: attachKey(ctx) });
-            if (narrow) setTab('thread');
           }}
         />
       )}
@@ -774,7 +774,6 @@ export function LayerView({
           options={[
             ['findings', <>Findings{count ? <span className="count"> {count}</span> : null}</>],
             ['diff', 'Diff'],
-            ['thread', 'Reviewer'],
           ]}
         />
         <div className="layer-tab">
@@ -786,7 +785,6 @@ export function LayerView({
             </>
           )}
           {tab === 'diff' && diffPane}
-          {tab === 'thread' && <div className="layer-reviewer">{reviewer}</div>}
         </div>
         <footer className="merge-bar layer-bar">
           {nav(prev, 'prev', true)}
@@ -797,6 +795,10 @@ export function LayerView({
           ) : (
             <span className="grow hint bar-why">{layer.state === 'open' ? (layer.gates.find((g) => !g.ok)?.detail ?? layer.gates.find((g) => !g.ok)?.label ?? '') : STATUS_WORD[layer.status]}</span>
           )}
+          <button className="icon-btn round bar-reviewer" onClick={onReviewer} aria-label={attached ? `Reviewer, ${attached} attached` : 'Reviewer'} title="Reviewer">
+            <Icon name="sparkle" size={18} />
+            {attached > 0 && <span className="badge">{attached}</span>}
+          </button>
           <Popover label={<Icon name="more" size={18} />} className="icon-btn round" align="right" up title="More">
             {more}
           </Popover>

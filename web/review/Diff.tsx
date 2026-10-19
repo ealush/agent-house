@@ -44,6 +44,7 @@ export function ReviewDiff({
   onFile,
   onAsk,
   onAskFile,
+  touch = false,
 }: {
   patch: string;
   findings: Finding[];
@@ -51,10 +52,12 @@ export function ReviewDiff({
   /** Bring the lines to the reviewer, with what you wrote as the start of your question. */
   onAsk?: (lines: AskedLines, note: string) => void;
   onAskFile?: (path: string) => void;
+  /** A finger, not a pointer: a second tap stretches the selection, and a bar at the bottom asks or files. */
+  touch?: boolean;
 }) {
   const files = useMemo(() => parsePatch(patch), [patch]);
   // The line you clicked, and the other end of a Shift+click range.
-  const [open, setOpen] = useState<{ file: string; i: number; j?: number } | null>(null);
+  const [open, setOpen] = useState<{ file: string; i: number; j?: number; writing?: boolean } | null>(null);
   const [draft, setDraft] = useState('');
   const [sev, setSev] = useState<Severity>('should');
   const [busy, setBusy] = useState(false);
@@ -132,11 +135,13 @@ export function ReviewDiff({
                 const mine = open?.file === f.path;
                 const last = mine ? Math.max(open.i, open.j ?? open.i) : -1;
                 const inRange = mine && i >= Math.min(open.i, open.j ?? open.i) && i <= last;
-                const isOpen = mine && i === last;
+                // By touch, the box opens only once you choose Add finding in the bar.
+                const isOpen = mine && i === last && (!touch || !!open.writing);
                 const anchor = mine ? f.lines[open.i] : null;
                 const anchorFileable = !!onFile && !!anchor && anchor.kind !== 'del' && anchor.n !== null;
                 const pick = (shift: boolean) => {
-                  if (shift && mine) setOpen({ ...open, j: i === open.i ? undefined : i });
+                  // By touch there's no Shift: a tap on another line of the file stretches the selection to it.
+                  if ((shift || touch) && mine && !(touch && i === open.i && open.j === undefined)) setOpen({ file: f.path, i: open.i, j: i === open.i ? undefined : i });
                   else setOpen(mine && open.i === i && open.j === undefined ? null : { file: f.path, i });
                 };
                 return (
@@ -221,6 +226,38 @@ export function ReviewDiff({
           </section>
         );
       })}
+      {touch && open && !open.writing && (() => {
+        const f = files.find((x) => x.path === open.file);
+        if (!f) return null;
+        const p = pickedLines(f.lines, f.path, open.i, open.j);
+        const anchor = f.lines[open.i];
+        const fileable = !!onFile && anchor.kind !== 'del' && anchor.n !== null;
+        return (
+          <div className="pick-bar-touch" role="toolbar" aria-label={`Lines ${p.start} to ${p.end} of ${p.path}`}>
+            <div className="ptb-head">
+              <span className="ptb-what">
+                <span className="ptb-title">{p.removed ? 'Removed lines' : 'Lines'} {p.start === p.end ? p.start : `${p.start}–${p.end}`}</span>
+                <span className="hint">{p.path.split('/').pop()} · tap another line to stretch</span>
+              </span>
+              <button type="button" className="icon-btn round" aria-label="Clear the selection" onClick={() => setOpen(null)}>
+                <Icon name="close" size={16} />
+              </button>
+            </div>
+            <div className="ptb-actions">
+              {onAsk && (
+                <button type="button" className="btn primary" onClick={() => ask(f.lines, f.path)}>
+                  <Icon name="sparkle" size={15} /> Ask reviewer
+                </button>
+              )}
+              {fileable && (
+                <button type="button" className="btn" onClick={() => setOpen({ ...open, j: undefined, writing: true })}>
+                  <Icon name="flag" size={15} /> Add finding
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

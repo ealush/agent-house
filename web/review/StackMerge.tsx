@@ -10,6 +10,8 @@ import { errorText } from '../errors.ts';
 import { planStackMerge, type Method, type MergeRow } from './stackMerge.ts';
 
 const METHOD: Record<Method, string> = { merge: 'Merge commits', squash: 'Squash', rebase: 'Rebase' };
+/** The switch's words: short enough for three across a phone. */
+const SHORT_METHOD: Record<Method, string> = { merge: 'Merge', squash: 'Squash', rebase: 'Rebase' };
 const toast = (text: string) => window.dispatchEvent(new CustomEvent('ah:toast', { detail: text }));
 
 /** How each layer lands, where the repo allows more than one way. The agent's merge message has it too. */
@@ -22,7 +24,7 @@ export function MethodSwitch({ methods, method, onChange }: { methods: Method[];
         <Glide match=".on" className="thumb" />
         {methods.map((m) => (
           <button key={m} type="button" role="radio" aria-checked={method === m} className={method === m ? 'on' : ''} onClick={() => onChange(m)}>
-            {METHOD[m]}
+            {SHORT_METHOD[m]}
           </button>
         ))}
       </div>
@@ -103,7 +105,7 @@ export function StackMergeDialog({
       <form onSubmit={submit}>
         <header className="ns-head">
           <h2 id="merge-stack-title">
-            Merge {stack.title} into {stack.trunk}
+            Merge <span className="wide-only">{stack.title} </span>into {stack.trunk}
           </h2>
         </header>
         <p className="hint">
@@ -114,14 +116,17 @@ export function StackMergeDialog({
           <li className="land-trunk mono">
             <Icon name="branch" size={14} /> {stack.trunk}
           </li>
-          {plan.rows.map((r) => (
-            <li key={r.layer.pr} className={`land-row ${r.state}`}>
+          {plan.rows.map((r, i) => (
+            <li key={r.layer.pr} className={`land-row ${r.state} ${i && plan.rows[i - 1].step === r.step ? 'same-step' : ''}`}>
               <span className="land-mark" aria-hidden>
                 {(r.state === 'ready' || r.state === 'review') && <Icon name="check" size={13} />}
               </span>
               <span className="role-chip">{r.layer.role || `#${r.layer.pr}`}</span>
-              <span className="land-title">{r.layer.title}</span>
-              <span className="land-note">{note(r)}</span>
+              <span className="land-text">
+                <span className="land-title">{r.layer.title}</span>
+                <span className="land-note">{note(r)}</span>
+              </span>
+              {steps > 1 && (r.state === 'ready' || r.state === 'review') && !(i && plan.rows[i - 1].step === r.step) && <span className="land-step">Step {r.step}</span>}
             </li>
           ))}
         </ol>

@@ -50,7 +50,7 @@ time: the PR's **description**, read from GitHub when opened and shown as
 GitHub shows it (REV-7), and the **briefing** (written by the briefing
 subscription: what it does, how it fits, what to look at, tests). The merge gates are a row of marks under the diff. The layer's
 findings sit above the diff and fold to one line; each has *Discuss*. On a
-phone: Findings, Diff and Reviewer tabs and a glass bar.
+phone: Findings and Diff tabs and a glass bar with a Reviewer button.
 
 ## REV-5 · The reviewer — shipped
 
@@ -59,10 +59,15 @@ stays put (and keeps your draft) as you move; it folds to a rail, and where
 the page is under 900px wide it floats over the right edge when you open it.
 The composer shows the layer you're on as a chip (take it off to ask about the
 whole stack) and anything you brought with *Discuss* on a finding. On a phone
-it's the layer's Reviewer tab and a sheet on the overview. In the diff, a
+it's a sheet over the overview or the layer (the Reviewer button in the
+layer's bar, or *Discuss*): half the screen, so what you're asking about stays
+in view above it, pulled up to full height, dragged down to put away, and above
+the keyboard while you type. The layer's tabs are Findings and Diff. In the diff, a
 clicked line (Shift+click for a range, removed lines too) offers *Ask the
 reviewer* beside *Add finding*, taking the lines as the diff shows them and
-what you wrote; each file's header has *Discuss* for the file's whole change.
+what you wrote; each file's header has *Discuss* for the file's whole change. By
+touch, a tap picks a line and a second tap stretches the range to it; a bar
+above the tab bar says which lines and offers *Ask reviewer* and *Add finding*.
 One conversation per stack, which follows you between layers: each question
 records the layer it was asked on (or the whole stack) and what you attached
 to it (findings, lines of a diff, a file), and the reviewer gets those spelled
@@ -129,7 +134,9 @@ marked at their current heads as it merges (*Mark reviewed & merge*); a
 blocking finding, a failing check or a conflict still holds the layer, and
 the merge lands what's below it. Squash or rebase on a chain lands one step:
 what sat on it then needs a restack, which ah leaves to the agent. It stops at
-the first step GitHub refuses or hasn't finished, and says where.
+the first step GitHub refuses or hasn't finished, and says where. On a phone the
+dialog is a sheet: each layer's title over its note, a full-width method
+switch, and the actions one above the other.
 *Ask the agent…* in the same dialog drafts a message instead (REV-8): the
 layers up to the first one a gate holds, each at its reviewed head, how each
 lands (gh stack merge for a run of a GitHub stack, else the stack merge API;

@@ -5,7 +5,6 @@ import { askConfirm, askText, showError } from '../ask.tsx';
 import { ConfirmButton } from '../ConfirmButton.tsx';
 import { Icon } from '../icons.tsx';
 import { Popover } from '../ModelPicker.tsx';
-import { Sheet } from '../sheet.tsx';
 import { age, look } from '../agents.ts';
 import { AgentLogo } from '../logos.tsx';
 import { Thread } from './Thread.tsx';
@@ -14,6 +13,7 @@ import { DispatchDialog, PlanDialog } from './Dispatch.tsx';
 import { Compose, rememberRoot } from './Compose.tsx';
 import { Dot, Spine, SpineBar, SpineColumn, layerLine } from './Spine.tsx';
 import { StackMergeDialog } from './StackMerge.tsx';
+import { ReviewerSheet } from './ReviewerSheet.tsx';
 import { planStackMerge, type Method } from './stackMerge.ts';
 import './review.css';
 
@@ -797,7 +797,7 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
   const discuss = (a: Attachment, note = '') => {
     setAttached((xs) => (xs.some((x) => x.key === a.key) ? xs : [...xs, a].slice(-8)));
     showPanel(true);
-    if (narrow && !layer) setAsking(true);
+    if (narrow) setAsking(true);
     setFocus((f) => ({ n: f.n + 1, text: note }));
   };
   const pinDecision = async (seed: string) => {
@@ -821,7 +821,8 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
       attached={attached}
       onDetach={(key) => setAttached((xs) => (key === null ? [] : xs.filter((x) => x.key !== key)))}
       focus={focus}
-      onHide={narrow ? undefined : () => showPanel(false)}
+      onHide={narrow ? () => setAsking(false) : () => showPanel(false)}
+      sheet={narrow}
       onSend={(text) => (layer?.state === 'open' ? setHanding(text) : toast('Open a layer to send to its agent'))}
       onDecision={pinDecision}
       onChanged={() => {
@@ -945,7 +946,8 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
       onFindings={loadFindings}
       onNavigate={(next) => go(stack.id, next, { replace: true })}
       onOpenSession={onOpenSession}
-      reviewer={reviewer}
+      onReviewer={() => setAsking(true)}
+      attached={attached.length}
       onDiscuss={discuss}
     />
   );
@@ -954,6 +956,7 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
     return layer ? (
       <div className="review-stack layer-mode page phone" data-title={`${layer.role || `#${layer.pr}`} · ${stack.title}`}>
         <div className="review-grid">{layerView}</div>
+        {asking && <ReviewerSheet onClose={() => setAsking(false)}>{reviewer}</ReviewerSheet>}
         {handoff}
         {mergeAll}
       {askMerge}
@@ -962,11 +965,7 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
       <div className="review-stack page phone" data-title={stack.title}>
         {head}
         <Cockpit stack={stack} alerts={alerts} narrow onStack={(s) => (s ? setStack(s) : load())} onOpen={open} onOpenSession={onOpenSession} onPick={() => go(stack.id, null, { pick: true })} onMerge={() => setMergingAll(true)} />
-        {asking && (
-          <Sheet label="Reviewer" className="review-sheet" onClose={() => setAsking(false)}>
-            {reviewer}
-          </Sheet>
-        )}
+        {asking && <ReviewerSheet onClose={() => setAsking(false)}>{reviewer}</ReviewerSheet>}
         {mergeAll}
       {askMerge}
       </div>

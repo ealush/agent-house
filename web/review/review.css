@@ -1019,11 +1019,6 @@
   font-size: 12px;
 }
 
-/* Under the phone's Reviewer tab, or in its sheet, the tab already says what it is. */
-.layer.phone .reviewer-title,
-.review-sheet .reviewer-title {
-  display: none;
-}
 
 /* In the composer: the layer you're on, then what you attached. */
 .ctx-chips {
@@ -2101,12 +2096,6 @@
 
 .layer.phone .findings {
   padding: 0;
-}
-
-.layer.phone .review-thread {
-  height: 70vh;
-  border-radius: 12px;
-  border: 1px solid var(--line);
 }
 
 .layer.phone .merge-bar,
@@ -3287,12 +3276,34 @@ button.findings-label {
   border: 2px solid var(--accent);
 }
 
+.stack-land .land-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .stack-land .land-title {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The first layer of each step says which step; the rest of a stack merge run share its band. */
+.stack-land .land-step {
+  flex: none;
+  min-width: 44px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: right;
+  color: var(--muted);
+}
+
+.stack-land > li.same-step {
+  border-top-color: transparent;
 }
 
 .stack-land .land-row.waits .land-title {
@@ -3351,13 +3362,261 @@ button.findings-label {
   margin-top: 1px;
 }
 
+/* On a phone: each layer's title over its note, a full-width method switch, and the actions
+   one above the other under the thumb; the sheet's own close button stands in for Cancel. */
 @media (max-width: 600px) {
-  .stack-land .land-title {
-    display: none;
+  .stack-land .land-row {
+    min-height: 56px;
+    padding: 8px 12px;
+  }
+
+  .stack-land .land-text {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
   }
 
   .stack-land .land-note {
-    flex: 1;
     max-width: none;
+    white-space: normal;
   }
+
+  .review-merge-stack .wide-only {
+    display: none;
+  }
+
+  .review-merge-stack .merge-how,
+  .review-dispatch .merge-how {
+    display: grid;
+    gap: 6px;
+  }
+
+  .review-merge-stack .merge-how .seg,
+  .review-dispatch .merge-how .seg {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+  }
+
+  .review-merge-stack .merge-how .seg button,
+  .review-dispatch .merge-how .seg button {
+    min-height: 40px;
+  }
+
+  .review-merge-stack .actions,
+  .review-dispatch .actions {
+    display: grid;
+    gap: 8px;
+  }
+
+  .review-merge-stack .actions > .btn,
+  .review-dispatch .actions > .btn {
+    min-height: 52px;
+    justify-content: center;
+    border-radius: 12px;
+  }
+
+  .review-merge-stack .actions > .btn.primary,
+  .review-dispatch .actions > .btn.primary {
+    order: -1;
+    font-size: 17px;
+  }
+
+  .review-merge-stack .actions > .btn.ghost,
+  .review-merge-stack .actions > .spacer,
+  .review-dispatch .actions > .btn.ghost {
+    display: none;
+  }
+}
+
+/* ---- on a phone: the reviewer as a sheet over the layer, at half height or pulled up */
+
+.rs-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--scrim);
+  opacity: 0.35;
+  animation: rs-fade 0.22s ease both;
+}
+
+.rs-scrim.full {
+  opacity: 0.6;
+}
+
+.reviewer-sheet {
+  position: fixed;
+  z-index: 41;
+  left: 0;
+  right: 0;
+  /* Half the visible screen, over the keyboard's top edge while you type (viewport.ts). */
+  top: calc(var(--keyboard-top, 0px) + var(--vh, 100dvh) * 0.42);
+  height: calc(var(--vh, 100dvh) * 0.58);
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px 16px 0 0;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--elev-2);
+  padding-bottom: var(--safe-bottom, 0px);
+  transition:
+    top 0.3s cubic-bezier(0.32, 0.72, 0, 1),
+    height 0.3s cubic-bezier(0.32, 0.72, 0, 1),
+    transform 0.26s cubic-bezier(0.32, 0.72, 0, 1);
+  animation: rs-rise 0.32s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+.reviewer-sheet.full {
+  top: calc(var(--keyboard-top, 0px) + var(--safe-top, 0px) + 8px);
+  height: calc(var(--vh, 100dvh) - var(--safe-top, 0px) - 8px);
+}
+
+.reviewer-sheet.leaving {
+  transform: translate3d(0, 100%, 0);
+}
+
+.rs-scrim.leaving {
+  opacity: 0;
+  transition: opacity 0.22s ease;
+}
+
+.rs-grabber {
+  flex: none;
+  align-self: center;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: none;
+  touch-action: none;
+  cursor: grab;
+}
+
+.rs-grabber > span {
+  width: 36px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--line-2);
+}
+
+.reviewer-sheet .reviewer-head {
+  min-height: 48px;
+  touch-action: none;
+}
+
+.reviewer-sheet .review-thread {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
+@keyframes rs-rise {
+  from {
+    transform: translate3d(0, 100%, 0);
+  }
+}
+
+@keyframes rs-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reviewer-sheet,
+  .rs-scrim {
+    animation: none;
+    transition: none;
+  }
+}
+
+.layer.phone .bar-reviewer {
+  position: relative;
+  color: var(--accent);
+}
+
+.layer.phone .bar-reviewer .badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent-strong);
+  color: var(--accent-ink);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+}
+
+/* Lines picked by touch: what they are, and the two things to do with them, above the tab bar. */
+.pick-bar-touch {
+  position: fixed;
+  z-index: 30;
+  left: 12px;
+  right: 12px;
+  bottom: calc(max(var(--safe-pad, 0px), 12px) + 66px);
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid transparent;
+  /* Nearly opaque: the layer's own bar sits right under it. */
+  background: color-mix(in srgb, var(--raised) 94%, transparent);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-depth), var(--elev-2);
+}
+
+.pick-bar-touch .ptb-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 4px;
+}
+
+.pick-bar-touch .ptb-what {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+
+.pick-bar-touch .ptb-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.pick-bar-touch .hint {
+  font-size: 12px;
+}
+
+.pick-bar-touch .ptb-actions {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.pick-bar-touch .ptb-actions .btn {
+  justify-content: center;
+  min-height: 48px;
+  border-radius: 12px;
+}
+
+/* A finger needs the full 44px on Discuss and on a file's button. */
+:root[data-touch] .finding-head .discuss,
+:root[data-touch] .review-diff .file-ask {
+  width: 44px;
+  height: 44px;
+}
+
+/* At half height the empty conversation keeps its title and starters; the explanation is for the panel. */
+.reviewer-sheet .sidechat-empty .hint {
+  display: none;
 }

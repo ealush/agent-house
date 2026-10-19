@@ -64,6 +64,7 @@ export function Thread({
   onDetach,
   focus,
   onHide,
+  sheet = false,
   onSend,
   onDecision,
   onChanged,
@@ -80,8 +81,9 @@ export function Thread({
   onDetach: (key: string | null) => void;
   /** Bumped when something is attached: the field takes focus, with what you'd started writing (a diff line's note). */
   focus: { n: number; text: string };
-  /** Fold the panel away. */
+  /** Fold the panel away (or, in a phone's sheet, put the sheet away). */
   onHide?: () => void;
+  sheet?: boolean;
   /** Open the send dialog with this text. */
   onSend: (text: string) => void;
   onDecision: (text: string) => void;
@@ -199,8 +201,8 @@ export function Thread({
           </button>
         )}
         {onHide && (
-          <button className="icon-btn" onClick={onHide} aria-label="Hide the reviewer" title="Hide the reviewer">
-            <Icon name="panel" size={16} />
+          <button className={sheet ? 'icon-btn round' : 'icon-btn'} onClick={onHide} aria-label={sheet ? 'Close the reviewer' : 'Hide the reviewer'} title={sheet ? 'Close' : 'Hide the reviewer'}>
+            <Icon name={sheet ? 'close' : 'panel'} size={16} />
           </button>
         )}
       </header>
