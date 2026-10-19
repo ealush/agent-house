@@ -137,7 +137,7 @@ test('an iOS home-screen app fills the screen when the viewport is short by the 
   assert.equal(standaloneHeight({ ...iphone, portrait: false, inner: 340 }), 402, 'landscape uses the short side');
 });
 
-test('typing on a hardware keyboard puts the shim aside, so the caret is inside the fixed shell', () => {
+test('typing on a hardware keyboard keeps the full height, with the caret inside a fixed shell', () => {
   const viewport = Object.assign(new EventTarget(), { height: 810, scale: 1 });
   const frames: FrameRequestCallback[] = [];
   const win = Object.assign(new EventTarget(), {
@@ -172,12 +172,23 @@ test('typing on a hardware keyboard puts the shim aside, so the caret is inside 
   doc.activeElement = { matches: () => true, isContentEditable: false };
   doc.dispatchEvent(new Event('focusin'));
   flush();
-  assert.equal(classes.has('ios-shim'), false, 'the shell is fixed while typing');
+  assert.ok(classes.has('ios-shim'), 'still stretched to the screen: the app does not jump up by the gap');
+  assert.equal(style.get('--app-h'), '834px');
+  assert.ok(classes.has('ios-shim-typing'), 'the shell is fixed while typing');
   assert.equal(style.has('--keyboard-vh'), false, 'no software keyboard to fit');
+  // A software keyboard comes up after all: it sizes the shell, and the shim steps aside.
+  viewport.height = 450;
+  doc.dispatchEvent(new Event('focusin'));
+  flush();
+  assert.equal(style.get('--keyboard-vh'), '450px');
+  assert.equal(classes.has('ios-shim'), false);
+  assert.equal(classes.has('ios-shim-typing'), false);
+  viewport.height = 810;
   doc.activeElement = null;
   doc.dispatchEvent(new Event('focusout'));
   flush();
   assert.ok(classes.has('ios-shim'), 'and stretched again after');
+  assert.equal(classes.has('ios-shim-typing'), false, 'and absolute again, so the page paints to the bottom');
   assert.equal(style.get('--app-h'), '834px');
   stop();
 });

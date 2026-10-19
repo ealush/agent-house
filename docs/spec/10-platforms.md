@@ -121,6 +121,11 @@ are in.
 Manifest and icons; Share → Add to Home Screen on iOS. Required for Web Push
 on iOS; badges its icon (CON-7).
 
+iOS can start a home-screen app with its page a little short of the screen
+(about 60 pt on an iPhone, 33 pt on an iPad in full screen). ah fills the whole
+screen anyway, and keeps it filled while you type on a hardware keyboard: the
+app doesn't move when a field takes focus.
+
 ## PLT-6 · Omarchy — shipped
 
 Appearance → Omarchy (SET-2); Run in project (SES-4) mirrors Omarchy's launcher;
