@@ -9,6 +9,17 @@ struct HubStateReducer: Sendable {
         state = nil
     }
 
+    /// A full state fetched over REST (polling fallback, foreground resync).
+    mutating func adopt(_ next: HubStateDTO) throws {
+        do {
+            try next.validate()
+            state = next
+        } catch {
+            state = nil
+            throw error
+        }
+    }
+
     /// Unknown event names are ignored. Recognized events are committed atomically;
     /// a bad event invalidates the baseline until a new full snapshot arrives.
     @discardableResult
@@ -35,23 +46,40 @@ struct HubStateReducer: Sendable {
 }
 
 /// Omitted and explicit null are different on this wire. Arrays replace in full;
-/// this is neither JSON Patch nor a recursive merge.
+/// this is neither JSON Patch nor a recursive merge (`server/core.ts` tick sends the
+/// top-level fields that changed).
 private struct HubStatePatchDTO: Decodable {
     let api: PatchField<Int>
     let hostname: PatchField<String>
     let hosts: PatchField<[HostDTO]>
+    let home: PatchField<String>
+    let defaultSession: PatchField<String>
+    let sessions: PatchField<[String]>
     let windows: PatchField<[SessionDTO]>
+    let history: PatchField<[HistoryItemDTO]>
+    let presets: PatchField<[PresetDTO]>
+    let omarchy: PatchField<OmarchyStampDTO>
     let focus: PatchField<FocusDTO>
+    let review: PatchField<ReviewStateDTO>
 
-    private enum CodingKeys: String, CodingKey { case api, hostname, hosts, windows, focus }
+    private enum CodingKeys: String, CodingKey {
+        case api, hostname, hosts, home, defaultSession, sessions, windows, history, presets, omarchy, focus, review
+    }
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         api = try container.patch(.api)
         hostname = try container.patch(.hostname)
         hosts = try container.patch(.hosts)
+        home = try container.patch(.home)
+        defaultSession = try container.patch(.defaultSession)
+        sessions = try container.patch(.sessions)
         windows = try container.patch(.windows)
+        history = try container.patch(.history)
+        presets = try container.patch(.presets)
+        omarchy = try container.patch(.omarchy)
         focus = try container.patch(.focus)
+        review = try container.patch(.review)
     }
 
     func applying(to previous: HubStateDTO) throws -> HubStateDTO {
@@ -59,12 +87,15 @@ private struct HubStatePatchDTO: Decodable {
         next.api = try api.replacing(previous.api)
         next.hostname = try hostname.replacing(previous.hostname)
         next.hosts = try hosts.replacing(previous.hosts)
+        next.home = try home.replacing(previous.home)
+        next.defaultSession = try defaultSession.replacing(previous.defaultSession)
+        next.sessions = try sessions.replacing(previous.sessions)
         next.windows = try windows.replacing(previous.windows)
-        switch focus {
-        case .unchanged: break
-        case .null: next.focus = nil
-        case .value(let value): next.focus = value
-        }
+        next.history = try history.replacing(previous.history)
+        next.presets = try presets.replacing(previous.presets)
+        next.omarchy = omarchy.optional(previous.omarchy)
+        next.focus = focus.optional(previous.focus)
+        next.review = review.optional(previous.review)
         return next
     }
 }
@@ -77,6 +108,15 @@ private enum PatchField<Value: Decodable>: Decodable {
     init(from decoder: any Decoder) throws {
         let container = try decoder.singleValueContainer()
         self = container.decodeNil() ? .null : .value(try container.decode(Value.self))
+    }
+
+    /// A nullable field: omitted keeps it, null clears it.
+    func optional(_ previous: Value?) -> Value? {
+        switch self {
+        case .unchanged: return previous
+        case .null: return nil
+        case .value(let value): return value
+        }
     }
 
     func replacing(_ previous: Value) throws -> Value {

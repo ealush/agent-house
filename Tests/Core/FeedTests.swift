@@ -1,0 +1,152 @@
+import Foundation
+import Testing
+#if SWIFT_PACKAGE
+@testable import AgentHubKit
+#else
+@testable import AgentHubNative
+#endif
+
+// Ports of ../ah/test/gui.test.ts and test/feed.test.ts expectations for the client side.
+
+private func entry(_ seq: Int, _ role: FeedEntry.Role, _ parts: [FeedPart]) -> FeedEntry {
+    FeedEntry(seq: seq, id: String(seq), role: role, step: "message", at: Double(seq) * 1000, parts: parts)
+}
+
+private let call = ToolCall(id: "c1", name: "Bash", args: ["command": .string("pnpm test --filter auth"), "description": .string("Run the auth tests")])
+private let result = ToolResult(callId: "c1", text: "ok", isError: false, data: nil, images: nil, truncated: nil)
+
+@Test func snapshotsReplaceAppendsMergeBySeqAndOlderPagesGoInFront() {
+    var s = FeedReducer.reduce(.initial, .message(.snapshot(reason: .initial, harness: "claude", entries: [entry(5, .user, [.text("hi")]), entry(6, .assistant, [.toolCall(call)])], floor: 0, head: 6, hasOlder: true)))
+    #expect(s.status == .live)
+    #expect(s.epoch == 0, "the first snapshot is not a rebuild")
+    // An overlapping delivery dedupes; the result folds into its call by id.
+    s = FeedReducer.reduce(s, .message(.append(entries: [entry(6, .assistant, [.toolCall(call)]), entry(7, .tool, [.toolResult(result)])], head: 7)))
+    #expect(s.entries.map(\.seq) == [5, 6, 7])
+    #expect(s.results["c1"] == result)
+    s = FeedReducer.reduce(s, .older(FeedPage(entries: [entry(2, .user, [.text("older")])], hasOlder: false)))
+    #expect(s.entries.map(\.seq) == [2, 5, 6, 7])
+    #expect(!s.hasOlder)
+    // A rotated transcript rebuilds the projection.
+    let rotated = FeedReducer.reduce(s, .message(.snapshot(reason: .rotated, harness: "claude", entries: [entry(1, .user, [.text("new")])], floor: 0, head: 1, hasOlder: false)))
+    #expect(rotated.entries.map(\.seq) == [1])
+    #expect(rotated.epoch == 1)
+    #expect(rotated.results.isEmpty)
+}
+
+@Test func cachedPagesNeverOverwriteTheLiveStreamAndDisconnectsAreVisible() {
+    let cached = FeedReducer.reduce(.initial, .cached(harness: "codex", entries: [entry(1, .user, [.text("cached")])], hasOlder: true))
+    #expect(cached.entries.count == 1)
+    #expect(cached.status == .connecting, "a cache is not live data")
+    let live = FeedReducer.reduce(cached, .message(.snapshot(reason: .initial, harness: "codex", entries: [entry(9, .user, [.text("live")])], floor: 0, head: 9, hasOlder: false)))
+    #expect(FeedReducer.reduce(live, .cached(harness: "codex", entries: [entry(1, .user, [.text("stale")])], hasOlder: true)) == live)
+    #expect(FeedReducer.reduce(live, .disconnected).status == .connecting)
+    let gone = FeedReducer.reduce(live, .message(.unavailable(reason: "no-adapter")))
+    #expect(gone.status == .unavailable && gone.entries.isEmpty && gone.reason == "no-adapter")
+}
+
+@Test func projectionGroupsTurnsAndConsecutiveToolCalls() {
+    let second = ToolCall(id: "c2", name: "Read", args: ["file_path": .string("/repo/web/app.tsx")])
+    let blocks = FeedProjection.project([
+        entry(1, .user, [.text("fix it")]),
+        entry(2, .assistant, [.reasoning("thinking"), .toolCall(call)]),
+        entry(3, .assistant, [.toolCall(second)]),
+        entry(4, .tool, [.toolResult(result)]),
+        entry(5, .assistant, [.text("Done.")]),
+        entry(6, .system, [.notice(kind: .compacted, text: "Conversation compacted")]),
+        entry(7, .assistant, [.text("After.")]),
+    ])
+    #expect(blocks.count == 4)
+    guard case .agent(_, _, _, let items) = blocks[1] else { Issue.record("expected an agent turn"); return }
+    #expect(items.count == 3, "reasoning, one tool group of two, then prose")
+    if case .tools(_, let calls) = items[1] { #expect(calls.map(\.id) == ["c1", "c2"]) } else { Issue.record("expected a tool group") }
+    #expect(blocks[1].text == "Done.", "a block copies as its prose only")
+    if case .notice(_, _, _, let kind, _) = blocks[2] { #expect(kind == .compacted) } else { Issue.record("expected a notice") }
+    #expect(FeedProjection.lastAssistantText([entry(1, .assistant, [.text("a")]), entry(2, .assistant, [.toolCall(call)])]) == "a", "a trailing tool-only turn is skipped")
+}
+
+@Test func handoffHelpersMatchTheWebClient() async throws {
+    #expect(FeedProjection.handoffText(summary: " s ", latest: " l ") == "Session summary:\ns\n\nLatest reply:\nl")
+    #expect(FeedProjection.handoffText(summary: "", latest: "l") == "l")
+    let long = String(repeating: "a", count: 500) + "\n\n" + String(repeating: "b", count: 100)
+    #expect(FeedProjection.clipTail(long, max: 150) == String(repeating: "b", count: 100))
+    var pages = [FeedPage(entries: [entry(10, .assistant, [.toolCall(call)])], hasOlder: true), FeedPage(entries: [entry(4, .user, [.text("q")]), entry(5, .assistant, [.text("the reply")])], hasOlder: true)]
+    let text = try await FeedProjection.readLastAssistant { _, _ in pages.removeFirst() }
+    #expect(text == "the reply")
+}
+
+@Test func toolViewsNameWhatTheAgentDidAndWhetherItFinished() {
+    let shell = ToolPresentation(call: call, result: nil)
+    #expect(shell.label == "Run")
+    #expect(shell.summary == "pnpm test --filter auth")
+    #expect(shell.status == .running)
+    #expect(ToolPresentation(call: call, result: nil, awaiting: true).status == .awaiting)
+    #expect(ToolPresentation(call: call, result: nil, turnLive: false).status == .stopped, "no result and the turn is over")
+    let done = ToolPresentation(call: call, result: result)
+    #expect(done.label == "Ran")
+    #expect(done.status == .done)
+    let failed = ToolResult(callId: "c1", text: "boom", isError: true, data: nil, images: nil, truncated: true)
+    #expect(ToolPresentation(call: call, result: failed).status == .error)
+    #expect(ToolPresentation(call: call, result: failed).truncated)
+
+    let edit = ToolCall(id: "e", name: "Edit", args: ["file_path": .string("/a/b/calc.py"), "old_string": .string("x = 1\ny = 2"), "new_string": .string("x = 1\ny = 3")])
+    let editView = ToolPresentation(call: edit, result: nil)
+    #expect(editView.summary == "calc.py")
+    guard case .fileDiff(_, let lines, _) = editView.body else { Issue.record("expected a diff"); return }
+    #expect(lines.map(\.kind) == [.ctx, .del, .add], "an unchanged line stays context")
+
+    let plan = ToolCall(id: "t", name: "TodoWrite", args: ["todos": .array([
+        .object(["content": .string("a"), "status": .string("completed")]),
+        .object(["content": .string("b"), "activeForm": .string("Doing b"), "status": .string("in_progress")]),
+        .object(["content": .string("c"), "status": .string("pending")]),
+    ])])
+    let planView = ToolPresentation(call: plan, result: nil)
+    #expect(planView.summary == "1/3 done")
+    #expect(planView.body == .checklist([.init(text: "a", state: .done), .init(text: "Doing b", state: .active), .init(text: "c", state: .todo)]))
+    #expect(ToolPresentation.displayName("mcp__github__create_issue") == "create_issue (github)")
+    #expect(ToolPresentation(call: ToolCall(id: "x", name: "mcp__s__t", args: ["query": .string("q")]), result: nil).label == "t (s)")
+
+    let patch = ToolCall(id: "p", name: "apply_patch", args: ["input": .string("*** Begin Patch\n*** Update File: src/a.ts\n@@\n-old\n+new\n*** End Patch")])
+    #expect(ToolPresentation(call: patch, result: nil).summary == "a.ts")
+}
+
+@Test func toolGroupsFoldButNeverHideAQuestion() {
+    let question = ToolCall(id: "q", name: "AskUserQuestion", args: ["questions": .array([.object(["question": .string("Which?")])])])
+    let group = ToolGroupSummary(calls: [call, question], results: ["c1": result], awaitingCall: nil, turnLive: true)
+    #expect(group.asking)
+    #expect(group.running)
+    #expect(group.foldedLabel == "2 steps")
+    #expect(ToolGroupSummary.hiddenCount(total: 5, showAll: false) == 2)
+}
+
+@Test func diffsInEveryShapeAgentsProduce() {
+    let git = DiffParser.patchLines("diff --git a/x b/x\nindex 1..2\n--- a/x\n+++ b/x\n@@ -10,2 +10,3 @@ func\n ctx\n-gone\n+new\n+more")
+    #expect(git.map(\.kind) == [.file, .hunk, .ctx, .del, .add, .add])
+    #expect(git[1].text == "… func")
+    #expect(git[2].number == 10 && git[3].number == 11 && git[4].number == 11 && git[5].number == 12)
+    let structured = DiffParser.structuredLines(.array([.object(["oldStart": .number(3), "newStart": .number(3), "lines": .array([.string(" a"), .string("-b"), .string("+c")])])]))
+    #expect(structured?.map(\.number) == [nil, 3, 4, 4])
+    let files = FileDiff.files(in: "diff --git a/one.txt b/one.txt\n--- a/one.txt\n+++ b/one.txt\n@@ -1 +1 @@\n-a\n+b\ndiff --git a/two.txt b/two.txt\n@@ -0,0 +1 @@\n+c")
+    #expect(files.map(\.path) == ["one.txt", "two.txt"])
+    #expect(files[0].additions == 1 && files[0].deletions == 1)
+}
+
+@Test func widgetsDecodeEveryDocumentedTypeAndKeepUnknownOnesAsData() throws {
+    func widget(_ json: String) throws -> WidgetModel { WidgetModel(try JSONDecoder().decode(Widget.self, from: Data(json.utf8))) }
+    #expect(try widget(#"{"type":"card","title":"T","body":"**b**","tone":"weird","actions":[{"label":"Go","reply":"go now"},{}]}"#)
+        == .card(title: "T", body: "**b**", tone: .info, actions: [.init(label: "Go", reply: "go now", description: nil), .init(label: "Option 2", reply: "Option 2", description: nil)]))
+    #expect(try widget(#"{"type":"choices","prompt":"Next?","options":[{"label":"Again","reply":"again"},"Stop"]}"#)
+        == .choices(prompt: "Next?", options: [.init(label: "Again", reply: "again", description: nil), .init(label: "Stop", reply: "Stop", description: nil)]))
+    #expect(try widget(#"{"type":"table","columns":["a","b"],"rows":[[1,"x"],{"a":2,"b":"y"}]}"#) == .table(title: "", columns: ["a", "b"], rows: [["1", "x"], ["2", "y"]]))
+    #expect(try widget(#"{"type":"checklist","items":[{"text":"a","done":true},{"text":"b","done":"in_progress"},"c"]}"#)
+        == .checklist(title: "", items: [.init(text: "a", state: .done), .init(text: "b", state: .active), .init(text: "c", state: .todo)]))
+    #expect(try widget(#"{"type":"bar-chart","unit":"ms","data":[{"label":"a","value":5},{"label":"bad","value":"x"},{"label":"b","value":10}]}"#)
+        == .barChart(title: "", unit: "ms", data: [.init(label: "a", value: 5), .init(label: "b", value: 10)]))
+    #expect(WidgetModel.barFractions([.init(label: "a", value: 5), .init(label: "b", value: 10)]) == [0.5, 1])
+    #expect(try widget(#"{"type":"progress","value":150,"max":0}"#) == .progress(label: "", value: 100, max: 100))
+    guard case .links(_, let links) = try widget(#"{"type":"links","items":[{"label":"Docs","url":"https://example.com"},{"label":"Plan","url":"~/plan.md"},{"label":"Bad","url":"javascript:alert(1)"}]}"#) else { Issue.record("links"); return }
+    #expect(links.map(\.target) == [.web(URL(string: "https://example.com")!), .hostFile("~/plan.md"), .unsupported("javascript:alert(1)")])
+    #expect(try widget(#"{"type":"image","src":"https://tracker.example/x.png"}"#) == .image(title: "", source: .unavailable("https://tracker.example/x.png"), alt: "", caption: ""), "no remote images")
+    #expect(try widget(#"{"type":"image","src":"data:image/png;base64,iVBORw0K"}"#) == .image(title: "", source: .inline(Data(base64Encoded: "iVBORw0K")!), alt: "", caption: ""))
+    guard case .unknown(let type, let title, let json) = try widget(#"{"type":"sparkline","title":"S","points":[1,2]}"#) else { Issue.record("unknown"); return }
+    #expect(type == "sparkline" && title == "S" && json.contains("\"points\""))
+}

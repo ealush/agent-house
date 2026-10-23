@@ -1,6 +1,10 @@
 import Foundation
 import Testing
+#if SWIFT_PACKAGE
+@testable import AgentHubKit
+#else
 @testable import AgentHubNative
+#endif
 
 @Test func sceneJournalSurvivesReopeningAndKeepsWindowsIndependent() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

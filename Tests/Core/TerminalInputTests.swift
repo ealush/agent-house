@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 #if SWIFT_PACKAGE
-@testable import AgentHubCore
+@testable import AgentHubKit
 #else
 @testable import AgentHubNative
 #endif
