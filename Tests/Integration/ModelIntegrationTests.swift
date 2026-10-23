@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import GRDB
 #if SWIFT_PACKAGE
 @testable import AgentHubKit
 #else
@@ -80,6 +81,36 @@ struct ModelIntegrationTests {
         _ = try await waitFor("steered", timeout: 10) { session.queue.sending.isEmpty && session.queue.items.isEmpty ? true : nil }
         session.close()
         account.deactivate()
+    }
+
+    @Test func theNewestTranscriptPageIsSealedAndPaintsBeforeTheStream() async throws {
+        let app = try app()
+        let account = try await app.enroll(address: LiveHost.origin.absoluteString, code: try await LiveHost.setupCode(), label: "Cache iPhone")
+        _ = try await waitFor("cache key") { account.cacheKey }
+        let agent = try await LiveHost.launch(account.api, preset: "claude", label: "cache-agent")
+        _ = try await waitFor("transcript adopted", timeout: 25) { account.hub.row(agent.uid).flatMap { $0.dto.feed != nil ? true : nil } }
+        let scene = SceneModel(sceneID: "cache-window", app: app)
+        scene.useAccount(account.origin)
+        let session = try #require(scene.session(agent.uid))
+        _ = try await waitFor("live feed", timeout: 20) { session.feed.status == .live && !session.feed.entries.isEmpty ? true : nil }
+        let sealed = try await waitFor("sealed", timeout: 10) { account.cached(SessionModel.FeedCache.Entry.self, kind: .feed, key: agent.uid) }
+        #expect(sealed.harness == "claude")
+        #expect(sealed.page.entries.map(\.seq) == session.feed.entries.suffix(SessionModel.cachedEntries).map(\.seq))
+        // At rest it's ciphertext: no row carries the entry's JSON.
+        let raw = try await app.services.database.pool.read { db in try Data.fetchAll(db, sql: "SELECT sealed FROM cacheEntry WHERE kind = 'feed'") }
+        #expect(!raw.isEmpty && raw.allSatisfy { !String(decoding: $0, as: UTF8.self).contains("harness") })
+
+        // Another window opening the session paints the cached page before its own stream answers.
+        let later = SceneModel(sceneID: "cache-window-2", app: app)
+        later.useAccount(account.origin)
+        let reopened = try #require(later.session(agent.uid))
+        _ = try await waitFor("painted from cache", timeout: 5) { reopened.feed.entries.isEmpty ? nil : true }
+        session.close()
+        reopened.close()
+        // Forgetting the account takes its sealed data with it.
+        await app.removeLocally(account)
+        let left = try await app.services.database.pool.read { db in try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM cacheEntry") }
+        #expect(left == 0)
     }
 
     @Test func aRefusedSendComesBackIntoTheBox() async throws {

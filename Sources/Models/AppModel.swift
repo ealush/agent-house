@@ -166,6 +166,7 @@ final class AccountSession: Identifiable {
         try? services.vault.save(nil, origin: origin)
         try? services.keys.delete(origin: origin)
         try? services.accounts.remove(origin: origin)
+        try? services.cache.clear(origin: origin)
         cacheKey = nil
         status = .unenrolled("Removed from this device.")
     }

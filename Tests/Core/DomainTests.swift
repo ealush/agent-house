@@ -88,3 +88,65 @@ import Testing
     #expect(APIError.transport("x").isTransient)
     #expect(!APIError.forbidden("x").isTransient)
 }
+
+@Test func omarchyThemesMapToAhsTokensAndTheTerminal() {
+    let theme = OmarchyTheme(name: "tokyo", mode: "dark", colors: ["background": "#1a1b26", "foreground": "#a9b1d6", "accent": "#7aa2f7", "green": "#9ece6a", "cyan": "#7dcfff", "red": "#f7768e"], font: "JetBrainsMono Nerd Font")
+    let palette = try! #require(ThemePalette.omarchy(theme))
+    #expect(palette.brand == "#7aa2f7")
+    #expect(palette.surface == "#1a1b26", "no dark_background: the background")
+    #expect(palette.run == "#7dcfff" && palette.done == "#9ece6a" && palette.danger == "#f7768e")
+    #expect(palette.color(for: .needsYou) == "#7aa2f7")
+    #expect(palette.terminal.ansi.count == 16)
+    #expect(palette.terminal.ansi[9] == "#f7768e", "bright red falls back to red")
+    #expect(ThemePalette.omarchy(OmarchyTheme(name: "x", mode: "dark", colors: ["background": "#000000"], font: nil)) == nil)
+    #expect(hexComponents("#ff000080")!.a > 0.5 && hexComponents("#ff000080")!.a < 0.51)
+    #expect(hexComponents("nope") == nil)
+}
+
+@Test func questionFormsAnswerLikeTheAgentsOwnDialog() {
+    let color = AskDTO.Question(question: "Pick a color", header: "Color", multiSelect: false, options: [.init(label: "Red", description: nil, checked: nil), .init(label: "Green", description: nil, checked: nil)])
+    let toppings = AskDTO.Question(question: "Toppings", header: nil, multiSelect: true, options: [.init(label: "Cheese", description: nil, checked: nil), .init(label: "Olives", description: nil, checked: nil), .init(label: "Basil", description: nil, checked: nil)])
+    var single = QuestionForm(questions: [color])
+    #expect(single.instant)
+    let submitsNow = single.choose(0, 1)
+    #expect(submitsNow, "one single-choice question answers on the pick")
+    #expect(single.answers == [QuestionAnswer(picked: [1])])
+
+    var form = QuestionForm(questions: [color, toppings], initial: [[], [2]])
+    #expect(!form.instant)
+    #expect(form.answered(1), "a half-answered multi choice from the terminal counts")
+    let first = form.choose(0, 0)
+    #expect(!first)
+    #expect(form.firstOpen == nil)
+    let second = form.choose(1, 0)
+    #expect(!second)
+    let third = form.choose(1, 2)
+    #expect(!third, "toggling off")
+    form.setOther(1, text: " Fox ")
+    #expect(form.answers == [QuestionAnswer(picked: [0]), QuestionAnswer(picked: [0], text: "Fox")])
+    form.setOther(0, text: "Teal")
+    #expect(form.answers[0] == QuestionAnswer(picked: [], text: "Teal"), "a typed answer replaces a single pick")
+    var empty = QuestionForm(questions: [color, toppings])
+    #expect(!empty.complete && empty.firstOpen == 0)
+    empty.setOther(0, text: "   ")
+    #expect(!empty.answered(0), "blank typing isn't an answer")
+}
+
+@Test func deepLinksFromPushRoutesAndURLs() {
+    // server/push.ts strips "/#" from the web hash: a bare uid, or a review layer.
+    #expect(DeepLink(route: "ah-1a2b", host: "box") == .session(host: "box", uid: "ah-1a2b"))
+    #expect(DeepLink(route: "/#ah-1a2b", host: nil) == .session(host: nil, uid: "ah-1a2b"))
+    #expect(DeepLink(route: "review/stk_1234/42", host: "box") == .review(host: "box", ReviewRoute(stack: "stk_1234", pr: 42)))
+    #expect(DeepLink(route: "", host: "box") == .inbox(host: "box"))
+    #expect(DeepLink(route: "../etc/passwd", host: nil) == .inbox(host: nil), "nothing but a uid opens a session")
+
+    let link = DeepLink.session(host: "box", uid: "ah-1")
+    #expect(DeepLink(url: link.url) == link)
+    let review = DeepLink.review(host: "peer", ReviewRoute(stack: "stk_1234", pr: 7))
+    #expect(DeepLink(url: review.url) == review)
+    #expect(DeepLink(url: URL(string: "https://box.ts.net/#ah-1")!) == nil)
+
+    #expect(link.sessionKey(localHost: "box") == "ah-1")
+    #expect(link.sessionKey(localHost: "other") == "box/ah-1")
+    #expect(DeepLink.session(host: nil, uid: "ah-1").sessionKey(localHost: "box") == "ah-1")
+}

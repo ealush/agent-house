@@ -67,6 +67,10 @@ private let result = ToolResult(callId: "c1", text: "ok", isError: false, data: 
 @Test func handoffHelpersMatchTheWebClient() async throws {
     #expect(FeedProjection.handoffText(summary: " s ", latest: " l ") == "Session summary:\ns\n\nLatest reply:\nl")
     #expect(FeedProjection.handoffText(summary: "", latest: "l") == "l")
+    let prompt = FeedProjection.continuePrompt(from: "Claude", cwd: "/w/app", branch: "fix", transcript: "", latest: " last ")
+    #expect(prompt.hasPrefix("You are picking up a conversation that was running in Claude, in this same directory (/w/app, branch fix)."))
+    #expect(prompt.hasSuffix("<previous-conversation>\nlast\n</previous-conversation>"))
+    #expect(FeedProjection.continuePrompt(from: "Codex", cwd: "/w", branch: nil, transcript: "", latest: "").contains("(The earlier conversation had no readable messages.)"))
     let long = String(repeating: "a", count: 500) + "\n\n" + String(repeating: "b", count: 100)
     #expect(FeedProjection.clipTail(long, max: 150) == String(repeating: "b", count: 100))
     actor Pages {

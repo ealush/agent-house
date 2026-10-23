@@ -241,6 +241,21 @@ enum FeedProjection {
         return l
     }
 
+    /// The first message for another agent picking up a conversation (`web/handoff.ts`):
+    /// where it ran, what was said (newest last), and how to carry on. No model involved.
+    static func continuePrompt(from agent: String, cwd: String, branch: String?, transcript: String, latest: String) -> String {
+        let t = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = t.isEmpty ? latest.trimmingCharacters(in: .whitespacesAndNewlines) : t
+        return [
+            "You are picking up a conversation that was running in \(agent), in this same directory (\(cwd)\(branch.map { ", branch \($0)" } ?? "")).",
+            "Below is what was said so far, most recent last. Check the current state of the files before acting, do not redo finished work, and continue from where it left off.",
+            "",
+            "<previous-conversation>",
+            body.isEmpty ? "(The earlier conversation had no readable messages.)" : body,
+            "</previous-conversation>",
+        ].joined(separator: "\n")
+    }
+
     /// Last assistant prose, paging back while the newest turn is cut off (bounded).
     static func readLastAssistant(page: @Sendable (Int?, Int) async throws -> FeedPage) async throws -> String {
         var before: Int? = nil

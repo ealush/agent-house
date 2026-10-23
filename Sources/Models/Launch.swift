@@ -22,7 +22,12 @@ struct LaunchState: Equatable, Sendable {
         modelLabel = chosen?.name ?? Self.shortModel(session?.model)
         effort = session?.launchEffort ?? (session?.launchModel != nil ? nil : preset?.defaultEffort)
         mode = preset?.modes?.first { $0.id == (session?.launchMode ?? "default") }
-        levels = preset.map { chosen?.efforts ?? $0.effort?.levels ?? [] } ?? []
+        levels = preset.map { Self.levels($0, model: chosen?.id) } ?? []
+    }
+
+    /// The effort levels a model takes: its own list, else the agent's.
+    static func levels(_ preset: PresetDTO, model: String?) -> [String] {
+        (preset.models?.first { $0.id == model }?.efforts) ?? preset.effort?.levels ?? []
     }
 
     static func runningModel(_ models: [PresetDTO.Model], _ running: String?) -> PresetDTO.Model? {

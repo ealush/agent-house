@@ -331,19 +331,21 @@ final class ReviewModel {
 
     // MARK: Request fixes
 
-    func draftDispatch(findings ids: [Int], extra: String = "") async -> String? {
+    /// The instruction for the agent: fixes for findings, or (`kind`) a restack or a merge
+    /// the agent carries out itself (`method` for a merge).
+    func draftDispatch(findings ids: [Int], extra: String = "", kind: String? = nil, method: String? = nil) async -> String? {
         guard let id = stack?.id, let pr = selectedPR else { return nil }
         var text: String?
-        await load("dispatch") { text = try await review.dispatchText(id, pr: pr, findings: ids, extra: extra) }
+        await load("dispatch") { text = try await review.dispatchText(id, pr: pr, findings: ids, extra: extra, kind: kind, method: method) }
         return text
     }
 
     /// Send the requested fixes to the implementing agent (or a new one in a fresh worktree).
-    func dispatch(findings ids: [Int], text: String, to target: String?, newSessionPreset: String?) async -> DispatchResult? {
+    func dispatch(findings ids: [Int], text: String, to target: String?, newSessionPreset: String?, kind: String? = nil) async -> DispatchResult? {
         guard let id = stack?.id, let pr = selectedPR else { return nil }
         var result: DispatchResult?
         await load("dispatch") {
-            result = try await review.dispatch(id, pr: pr, findings: ids, text: text, targetUid: target, newSessionPreset: newSessionPreset)
+            result = try await review.dispatch(id, pr: pr, findings: ids, text: text, targetUid: target, newSessionPreset: newSessionPreset, kind: kind)
             stack = try await review.stack(id)
             findings = try await review.findings(id)
         }
@@ -440,6 +442,27 @@ final class ReviewModel {
     func removeDecision(_ decision: Int) async {
         guard let id = stack?.id else { return }
         await load("decision") { stack = try await review.removeDecision(id, decision: decision) }
+    }
+
+    func addLayers(_ prs: [Int]) async {
+        guard let id = stack?.id, !prs.isEmpty else { return }
+        await load("layers") { stack = try await review.addLayers(id, prs: prs) }
+    }
+
+    func removeLayer(_ pr: Int) async {
+        guard let id = stack?.id else { return }
+        await load("layers") {
+            stack = try await review.removeLayer(id, pr: pr)
+            if selectedPR == pr { selectedPR = stack?.next ?? stack?.layers.first?.pr }
+        }
+    }
+
+    /// Sessions that could own fixes, the one that made the stack first.
+    func owners() async -> [OwnerSuggestion] {
+        guard let id = stack?.id else { return [] }
+        var out: [OwnerSuggestion] = []
+        await load("owners") { out = try await review.owners(id) }
+        return out
     }
 
     func link() async {

@@ -29,6 +29,10 @@ final class SceneModel {
     var whichKey: [CommandMatcher.WhichKeyRow] = []
     /// Set by the platform layer.
     var clipboard: (String) -> Void = { _ in }
+    /// Where the keyboard is now, set by the focused responder (a composer, a terminal). The
+    /// menu's key commands match through it, so they never take a key that responder owns.
+    @ObservationIgnored var keyScope: KeyScope = .app
+    @ObservationIgnored var fieldState = FieldState()
 
     @ObservationIgnored private var sessions: [String: SessionModel] = [:]
     @ObservationIgnored private var saveTask: Task<Void, Never>?
@@ -164,6 +168,10 @@ final class SceneModel {
         guard let hub, let account else { return nil }
         let surface = app.services.preferences.surface(origin: account.origin, sessionKey: key) ?? .gui
         let model = SessionModel(key: key, hub: hub, outbox: app.outbox, surface: surface)
+        let cacheKey = "\(key)"
+        model.feedCache = SessionModel.FeedCache(
+            load: { [weak account] in account?.cached(SessionModel.FeedCache.Entry.self, kind: .feed, key: cacheKey) },
+            store: { [weak account] entry in account?.cache(entry, kind: .feed, key: cacheKey) })
         sessions[key] = model
         Task { await model.open() }
         return model
@@ -400,6 +408,14 @@ final class SceneModel {
         case "toggle-keys": return s?.surface == .terminal
         default: return false
         }
+    }
+
+    /// A menu key command may run: the command is available and, for a key press, its chord
+    /// means this command where the keyboard is now (a menu click passes no chord).
+    func allowsMenuCommand(_ id: CommandID, chord: Chord?) -> Bool {
+        guard isAvailable(id) else { return false }
+        guard let chord else { return true }
+        return CommandMatcher.match(chord, scope: keyScope, bindings: app.keyBindings, field: fieldState) == id
     }
 
     func perform(_ id: CommandID) {

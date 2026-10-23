@@ -137,3 +137,69 @@ extension String {
         return s
     }
 }
+
+/// The agent's questions as one form (`../ah/web/AskPanel.tsx QuestionForm`). One single-choice
+/// question answers on the pick, like the agent's own dialog.
+struct QuestionForm: Equatable, Sendable {
+    struct Draft: Equatable, Sendable {
+        var picked: [Int] = []
+        var text = ""
+        /// "Something else": a typed answer.
+        var other = false
+    }
+
+    let questions: [AskDTO.Question]
+    private(set) var drafts: [Draft]
+
+    init(questions: [AskDTO.Question], initial: [[Int]]? = nil) {
+        self.questions = questions
+        drafts = questions.indices.map { Draft(picked: initial?[safe: $0] ?? []) }
+    }
+
+    /// Answers the moment it's picked: one single-choice question.
+    var instant: Bool { questions.count == 1 && !questions[0].multiSelect }
+
+    func answered(_ i: Int) -> Bool {
+        let d = drafts[i]
+        let typed = d.other && !d.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return questions[i].multiSelect ? (!d.picked.isEmpty || typed) : (d.picked.count == 1 || typed)
+    }
+
+    var complete: Bool { questions.indices.allSatisfy(answered) }
+    var firstOpen: Int? { questions.indices.first { !answered($0) } }
+
+    /// Single choice: the pick replaces any typed answer; multi choice toggles. True when the
+    /// form should submit now.
+    mutating func choose(_ qi: Int, _ oi: Int) -> Bool {
+        guard questions.indices.contains(qi), questions[qi].options.indices.contains(oi) else { return false }
+        if questions[qi].multiSelect {
+            if let at = drafts[qi].picked.firstIndex(of: oi) { drafts[qi].picked.remove(at: at) } else { drafts[qi].picked.append(oi) }
+            return false
+        }
+        drafts[qi].picked = [oi]
+        drafts[qi].other = false
+        return instant
+    }
+
+    mutating func setOther(_ qi: Int, text: String) {
+        drafts[qi].other = true
+        drafts[qi].text = text
+    }
+
+    mutating func clearOther(_ qi: Int) {
+        drafts[qi].other = false
+        drafts[qi].text = ""
+    }
+
+    /// What goes to the host: a typed answer to a single choice replaces the pick; multi keeps both.
+    var answers: [QuestionAnswer] {
+        drafts.enumerated().map { i, d in
+            let typed = d.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return QuestionAnswer(picked: d.other && !questions[i].multiSelect ? [] : d.picked, text: d.other && !typed.isEmpty ? typed : nil)
+        }
+    }
+}
+
+extension Array {
+    subscript(safe index: Int) -> Element? { indices.contains(index) ? self[index] : nil }
+}

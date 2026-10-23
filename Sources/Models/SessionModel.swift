@@ -124,16 +124,29 @@ final class SessionModel: Identifiable {
 
     func background() async { await composer.background() }
 
+    /// This device's sealed cache for the account (set by the window that made this model):
+    /// the newest transcript page, painted until the stream answers.
+    struct FeedCache {
+        struct Entry: Codable, Equatable, Sendable { let harness: String; let page: FeedPage }
+        let load: @MainActor () -> Entry?
+        let store: @MainActor (Entry) -> Void
+    }
+    @ObservationIgnored var feedCache: FeedCache?
+    @ObservationIgnored private var feedCachedAt: Date = .distantPast
+
     private func startFeed() {
         guard feedStream == nil else { return }
         let stream = FeedStream(api: api, ref: ref)
         feedStream = stream
+        let cached = feedCache?.load()
         feedTask = Task { [weak self] in
             let updates = await stream.updates()
+            if let cached { await stream.seed(harness: cached.harness, entries: cached.page.entries, hasOlder: cached.page.hasOlder) }
             await stream.start()
             for await state in updates {
                 guard let self else { return }
                 self.feed = state
+                self.cacheFeed(state)
                 self.outbox.retireSent(key: self.key, userTurns: self.blocks.compactMap { block in
                     guard case .user = block else { return nil }
                     return (block.at / 1000, block.text)
@@ -141,6 +154,16 @@ final class SessionModel: Identifiable {
             }
         }
     }
+
+    /// The newest page, sealed, at most every few seconds while live.
+    private func cacheFeed(_ state: FeedState) {
+        guard state.status == .live, let feedCache, Date().timeIntervalSince(feedCachedAt) > 5, !state.entries.isEmpty else { return }
+        feedCachedAt = Date()
+        let newest = Array(state.entries.suffix(Self.cachedEntries))
+        feedCache.store(FeedCache.Entry(harness: state.harness, page: FeedPage(entries: newest, hasOlder: state.hasOlder || state.entries.count > newest.count)))
+    }
+
+    static let cachedEntries = 120
 
     /// Seed from this device's sealed cache before the stream answers.
     func seed(_ page: FeedPage, harness: String) async {
@@ -371,6 +394,16 @@ final class SessionModel: Identifiable {
             }
         }
         return FeedProjection.handoffText(summary: summary, latest: read.latest)
+    }
+
+    /// Continue in…: this conversation as the first message for another agent (no model).
+    func continuePrompt() async -> String? {
+        guard let row else { return nil }
+        let api = api
+        let ref = ref
+        guard let read = try? await FeedProjection.readHandoff(page: { before, limit in try await api.feedPage(ref, before: before, limit: limit) }) else { return nil }
+        let agent = hub.preset(for: row)?.name ?? row.dto.agent ?? "another agent"
+        return FeedProjection.continuePrompt(from: agent, cwd: row.dto.cwd, branch: row.dto.branch, transcript: read.transcript, latest: read.latest)
     }
 
     /// The terminal's scrollback as selectable text.
