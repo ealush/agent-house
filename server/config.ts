@@ -114,6 +114,11 @@ export type Config = {
   preview: { ports: [number, number] };
   /** App sign-in on top of Tailscale. See server/auth.ts. */
   auth: { mode: 'passkey' | 'off'; idleHours: number; maxDays: number };
+  /**
+   * Native app notifications through Apple's APNs (server/apns.ts): the Apple team, the
+   * .p8 signing key Apple issued, and the app's bundle id. Absent: no native push.
+   */
+  apns?: { teamId: string; keyId: string; keyFile: string; topic: string };
   presets: Preset[];
 };
 

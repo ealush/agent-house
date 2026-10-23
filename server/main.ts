@@ -39,6 +39,7 @@ import { Peers, proxyHttp, proxyWs, peerUrlAllowed } from './peers.ts';
 import { SearchIndexer, combineResponses, type SearchParams } from './search.ts';
 import { Auth, AuthError, clearCookies, type Caller } from './auth.ts';
 import { Gate, LOOPBACK_BIND } from './gate.ts';
+import { Apns, ApnsError } from './apns.ts';
 import { HttpError, send, readBody, readJson, str, safeDecode } from './http.ts';
 import { rebuildFailure, rebuildWeb } from './rebuild.ts';
 import { slashCommands, projectFiles } from './complete.ts';
@@ -85,6 +86,10 @@ try {
   process.exit(1);
 }
 const core = new Core(config, viewers);
+// Native app push: delivered beside Web Push; a sign-in that ends stops its alerts.
+const apns = new Apns(config.apns);
+core.push.apns = apns;
+auth.onSessionEnd = (id) => apns.forgetSession(id);
 // Each agent CLI's current modes and efforts, and the host's hidden and added agents.
 core.harnesses = new Harnesses();
 core.applyHarnesses();
@@ -834,6 +839,34 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
 
   if (route('POST', /^\/api\/push\/unsubscribe$/)) {
     core.push.unsubscribe(str((await readJson(req)).endpoint, 'endpoint', 2048));
+    return send(res, 200, { ok: true });
+  }
+
+  // Native app push (server/apns.ts): one registration per native sign-in.
+  if (route('GET', /^\/api\/push\/apns$/)) return send(res, 200, apns.status(caller.kind === 'session' ? caller.session.id : null));
+  if (route('PUT', /^\/api\/push\/apns$/)) {
+    if (caller.kind !== 'session' || !auth.isNative(caller)) throw new HttpError(403, 'only the native app registers for APNs');
+    const body = await readJson(req);
+    const events = body.events as { waiting?: unknown; done?: unknown } | undefined;
+    try {
+      apns.register({
+        token: str(body.token, 'token', 200),
+        environment: str(body.environment, 'environment', 20) as never,
+        events: { waiting: events?.waiting !== false, done: events?.done === true },
+        preview: body.preview === 'private' ? 'private' : 'full',
+        sessionId: caller.session.id,
+        deviceId: caller.session.keyId ?? '',
+        label: caller.session.label,
+      });
+    } catch (err) {
+      if (err instanceof ApnsError) throw new HttpError(err.status, err.message);
+      throw err;
+    }
+    audit(req, 'push.apns.register', { device: caller.session.keyId });
+    return send(res, 200, apns.status(caller.session.id));
+  }
+  if (route('DELETE', /^\/api\/push\/apns$/)) {
+    if (caller.kind === 'session') apns.unregister(caller.session.id);
     return send(res, 200, { ok: true });
   }
 

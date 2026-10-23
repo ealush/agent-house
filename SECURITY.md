@@ -60,6 +60,7 @@ repository, or email the maintainer. Don't file a public issue.
 | WebSockets: same checks; revoke closes them; oversized frames don't crash ah | `websocket.test.ts` |
 | Native app: writes need X-AH; Origin may be absent only with a native bearer (or on the native sign-in routes) and no cookie; bearer and cookie secrets never substitute for each other | `test/security/native.test.ts` |
 | Native sign-in: code spent only after the key proves possession; signatures bound to purpose/Host/challenge/label; revoking a sign-in or removing a device cuts its streams and terminals | `test/security/native.test.ts` |
+| Native push: only a native sign-in registers an APNs token; signing out, revocation or removing the device drops it; tokens go only to Apple's origins | `test/security/apns.test.ts`, `server/apns.test.ts` |
 | Hub never forwards cookies, never follows redirects, never uses plain-http LAN peers | `peers.test.ts` |
 | Files: configured roots only, symlinks resolved, uploads 0600, downloads sandboxed | `files.test.ts`, `server/files.test.ts` |
 | Setup codes spent only after a passkey verifies; throttling per mechanism/source | `server/auth.test.ts` |
@@ -78,6 +79,7 @@ All under `~/.local/state/ah/` (mode 0700 directory, 0600 files):
 | `ah.db` (SQLite via Prisma) | the session registry (titles, directories, conversation ids, queued messages), recent prompts (may contain anything you pasted — `promptHistory: 0` keeps none; Security → Clear prompt history), chat API keys and side-chat history (the API returns a key only masked, its first and last few characters), session environment variables (Settings → Environment; secret values are returned masked the same way, and every window ah starts gets them, so any agent you run can read them), and loose settings. First boot imports `sessions.json`/`prompts.json`/`sidechat.json` once when present; those legacy files are then unused |
 | `audit.log` | sign-ins, failures, enrollments, and session actions (create, send, approve, kill, upload, subscription save/remove, environment variable save/remove by name, never value) |
 | `push.json`, `vapid.json` | Web Push subscriptions and keys |
+| `apns.json` | the native app's APNs device tokens, each tied to the native sign-in that registered it (dropped when that sign-in ends). The APNs signing key itself is wherever `apns.keyFile` points |
 | `drafts.json` | unsent composer text per session (may contain anything you typed or pasted), so it follows you between devices; cleared when sent or emptied, dropped after 14 days untouched |
 
 Uploads go to `~/.cache/ah/uploads/` (0600).
