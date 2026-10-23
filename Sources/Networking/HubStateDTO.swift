@@ -318,6 +318,10 @@ struct PresetDTO: Codable, Equatable, Sendable {
     let resetModel: String?
     let resetEffort: String?
     let modeCycle: ModeCycle?
+    /// Present when the agent takes a model flag at launch (relaunch can change it).
+    let modelArgs: [String]?
+    /// Commands that open the agent's own pickers in its terminal.
+    let settingsCommands: SettingsCommands?
     let feed: String?
     let available: Bool
     let hidden: Bool?
@@ -340,6 +344,7 @@ struct PresetDTO: Codable, Equatable, Sendable {
 
     struct Effort: Codable, Equatable, Sendable { let levels: [String] }
     struct ModeCycle: Codable, Equatable, Sendable { let key: String }
+    struct SettingsCommands: Codable, Equatable, Sendable { let model: String?; let effort: String?; let mode: String? }
 
     var isShell: Bool { command.trimmingCharacters(in: .whitespaces).isEmpty }
     /// Shown in New session: installed and not hidden on this host.

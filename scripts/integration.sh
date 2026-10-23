@@ -19,6 +19,8 @@ exec 3> "$fifo"
 cleanup() {
   exec 3>&- || true
   wait "$host" 2>/dev/null || true
+  # AH_IT_LOG=<file> keeps the host's log (ah's own stdout/stderr) for debugging.
+  [[ -n "${AH_IT_LOG:-}" ]] && cp "$fifo.err" "$AH_IT_LOG" 2>/dev/null
   rm -f "$fifo" "$fifo.out" "$fifo.err"
 }
 trap cleanup EXIT
@@ -35,4 +37,6 @@ export AH_IT_PORT=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["
 export AH_IT_TOKEN=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["localToken"])' "$line")
 export AH_IT_KEYS=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["keys"])' "$line")
 echo "integration host on 127.0.0.1:$AH_IT_PORT"
-"$SWIFT" test --filter Integration "$@"
+# Serialized: ah has a create-window race when the tmux session is new (two
+# concurrent POST /api/windows both run tmux new-session); see docs/native/RISKS.md.
+"$SWIFT" test --no-parallel --filter Integration "$@"

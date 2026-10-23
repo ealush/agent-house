@@ -43,6 +43,15 @@ const ah = await startAh({
 }, dir);
 
 process.stdout.write(JSON.stringify({ port: ah.port, localToken: ah.localToken(), dir: ah.dir, keys }) + '\n');
+// ah's own log goes to stderr, which scripts/integration.sh can keep (AH_IT_LOG).
+setInterval(() => {
+  const log = ah.log();
+  if (log.length > written) {
+    process.stderr.write(log.slice(written));
+    written = log.length;
+  }
+}, 200).unref();
+let written = 0;
 
 let done = false;
 const stop = async () => {
