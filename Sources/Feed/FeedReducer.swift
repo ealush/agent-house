@@ -242,7 +242,7 @@ enum FeedProjection {
     }
 
     /// Last assistant prose, paging back while the newest turn is cut off (bounded).
-    static func readLastAssistant(page: (Int?, Int) async throws -> FeedPage) async throws -> String {
+    static func readLastAssistant(page: @Sendable (Int?, Int) async throws -> FeedPage) async throws -> String {
         var before: Int? = nil
         var entries: [FeedEntry] = []
         for _ in 0..<5 {
@@ -258,7 +258,7 @@ enum FeedProjection {
     }
 
     /// Latest reply plus a clipped prose transcript for a subscription to summarize.
-    static func readHandoff(page: (Int?, Int) async throws -> FeedPage) async throws -> (latest: String, transcript: String) {
+    static func readHandoff(page: @Sendable (Int?, Int) async throws -> FeedPage) async throws -> (latest: String, transcript: String) {
         let budget = 16_000
         var before: Int? = nil
         var entries: [FeedEntry] = []

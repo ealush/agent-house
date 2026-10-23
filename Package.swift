@@ -29,7 +29,10 @@ let package = Package(
             name: "AgentHubKitTests",
             dependencies: ["AgentHubKit"],
             path: "Tests",
-            exclude: ["UI"]
+            exclude: ["UI"],
+            // The Linux toolchain's libswiftObservation references swift::threading::fatal,
+            // which its runtime doesn't export (only reached on a fatal error path).
+            linkerSettings: [.unsafeFlags(["-Xlinker", "--allow-shlib-undefined"], .when(platforms: [.linux]))]
         ),
     ]
 )

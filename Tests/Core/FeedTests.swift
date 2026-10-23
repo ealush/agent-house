@@ -69,8 +69,12 @@ private let result = ToolResult(callId: "c1", text: "ok", isError: false, data: 
     #expect(FeedProjection.handoffText(summary: "", latest: "l") == "l")
     let long = String(repeating: "a", count: 500) + "\n\n" + String(repeating: "b", count: 100)
     #expect(FeedProjection.clipTail(long, max: 150) == String(repeating: "b", count: 100))
-    var pages = [FeedPage(entries: [entry(10, .assistant, [.toolCall(call)])], hasOlder: true), FeedPage(entries: [entry(4, .user, [.text("q")]), entry(5, .assistant, [.text("the reply")])], hasOlder: true)]
-    let text = try await FeedProjection.readLastAssistant { _, _ in pages.removeFirst() }
+    actor Pages {
+        var pages = [FeedPage(entries: [entry(10, .assistant, [.toolCall(call)])], hasOlder: true), FeedPage(entries: [entry(4, .user, [.text("q")]), entry(5, .assistant, [.text("the reply")])], hasOlder: true)]
+        func next() -> FeedPage { pages.removeFirst() }
+    }
+    let pages = Pages()
+    let text = try await FeedProjection.readLastAssistant { _, _ in await pages.next() }
     #expect(text == "the reply")
 }
 
