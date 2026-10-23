@@ -8,7 +8,12 @@
 //   commands on the host is already trusted.
 // - An optional master password (scrypt) for browsers without passkeys, set on the host.
 // - Machine tokens for the local CLI and for peers that proxy through each other.
-import { createHash, createHmac, randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
+// - Native app devices (iPhone/iPad): a device-bound P-256 key, enrolled with the same
+//   host-issued code, signs a fresh challenge to sign in. Each sign-in is an ordinary
+//   session (same expiry, revocation and stream tracking) carried as a bearer secret
+//   instead of a cookie. Passkeys can't serve the native app: Apple fetches associated
+//   domains through its public CDN, which can't reach a private ts.net name.
+import { createHash, createHmac, createPublicKey, randomBytes, scrypt as scryptCb, timingSafeEqual, verify as verifySignature } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'node:fs';
 import { homedir, hostname } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -51,7 +56,23 @@ export type AuthConfig = {
 };
 
 type Passkey = { id: string; publicKey: string; counter: number; transports?: string[]; rpID: string; label: string; createdAt: number; lastUsedAt: number };
-type Session = { id: string; hash: string; label: string; via: string; createdAt: number; lastSeenAt: number; expiresAt: number };
+type Session = {
+  id: string;
+  hash: string;
+  label: string;
+  via: string;
+  createdAt: number;
+  lastSeenAt: number;
+  expiresAt: number;
+  /** A native app sign-in: the secret travels as `Authorization: Bearer`, never as a cookie. */
+  bearer?: boolean;
+  /** The native device key this sign-in came from; removing the key ends it. */
+  keyId?: string;
+  /** Derived from another sign-in (a native app's preview web view); ends with it. */
+  parent?: string;
+};
+/** A native app's device key: uncompressed P-256 point (X9.63), base64url. */
+type NativeKey = { id: string; publicKey: string; label: string; createdAt: number; lastUsedAt: number };
 type Token = { id: string; hash: string; name: string; createdAt: number; lastUsedAt: number };
 type Store = {
   userId: string;
@@ -59,6 +80,7 @@ type Store = {
   sessions: Session[];
   tokens: Token[];
   password?: { salt: string; hash: string };
+  nativeKeys?: NativeKey[];
   /** Keys the browser's encrypted conversation cache, one key per sign-in (see cacheKey). */
   cacheSecret?: string;
 };
@@ -89,7 +111,7 @@ export class Auth {
   readonly config: AuthConfig;
   private store: Store;
   private codes = new Map<string, number>(); // code → expiry
-  private challenges = new Map<string, { challenge: string; rpID: string; origin: string; expires: number; enrollCode?: string; sessionId?: string }>();
+  private challenges = new Map<string, { challenge: string; rpID: string; origin: string; expires: number; enrollCode?: string; sessionId?: string; native?: 'enroll' | 'login' }>();
   /** Failure timestamps per "mechanism:source" bucket, plus one global bucket per mechanism. */
   private failures = new Map<string, number[]>();
   /** Live sockets/streams per session, so revoking a device also cuts its terminals. */
@@ -109,6 +131,7 @@ export class Auth {
       this.store = { userId: newSecret(), passkeys: [], sessions: [], tokens: [] };
     }
     this.store.tokens ??= [];
+    this.store.nativeKeys ??= [];
     this.store.cacheSecret ??= newSecret();
     // A fresh local token every start; the CLI reads it from a 0600 file.
     this.localToken = newSecret();
@@ -127,8 +150,15 @@ export class Auth {
   }
 
   get enrolled() {
-    return this.store.passkeys.length > 0 || !!this.store.password;
+    return this.store.passkeys.length > 0 || !!this.store.password || this.nativeKeys.length > 0;
   }
+
+  private get nativeKeys(): NativeKey[] {
+    return (this.store.nativeKeys ??= []);
+  }
+
+  /** Called when a sign-in ends (signed out, revoked, expired), e.g. to forget its APNs token. */
+  onSessionEnd: (id: string) => void = () => {};
 
   private save() {
     mkdirSync(dirname(FILE), { recursive: true, mode: 0o700 });
@@ -197,13 +227,20 @@ export class Auth {
         }
         return { kind: 'token', token };
       }
-      return null;
+      // A native app's sign-in. Bearer sessions are never accepted as cookies, nor the reverse.
+      const native = this.store.sessions.find((x) => x.bearer && safeEqual(x.hash, hash));
+      return native ? this.live_(native) : null;
     }
     const raw = cookie(req, COOKIE) ?? cookie(req, SECURE_COOKIE);
     if (!raw) return null;
     const hash = sha256(raw);
-    const s = this.store.sessions.find((x) => safeEqual(x.hash, hash));
+    const s = this.store.sessions.find((x) => !x.bearer && safeEqual(x.hash, hash));
     if (!s) return null;
+    return this.live_(s);
+  }
+
+  /** The caller for a session that still holds, or null (and ended) once it expired. */
+  private live_(s: Session): Caller | null {
     const t = now();
     if (t > s.expiresAt || t - s.lastSeenAt > this.config.idleHours * 3600_000) {
       this.endSession(s.id, 'expired');
@@ -257,6 +294,14 @@ export class Auth {
     }
     for (const c of this.live.get(id) ?? []) c.close();
     this.live.delete(id);
+    this.onSessionEnd(id);
+    // Sign-ins derived from this one (a native app's preview web view) end with it.
+    for (const child of this.store.sessions.filter((s) => s.parent === id)) this.endSession(child.id, reason);
+  }
+
+  /** Is this caller a native app's sign-in (bearer secret, not a browser cookie)? */
+  isNative(caller: Caller | null): boolean {
+    return caller?.kind === 'session' && !!caller.session.bearer;
   }
 
   // ---------- enrollment codes (host-issued)
@@ -283,7 +328,7 @@ export class Auth {
 
   // ---------- passkeys
 
-  private newChallenge(c: { challenge: string; rpID: string; origin: string; expires: number; enrollCode?: string; sessionId?: string }): string {
+  private newChallenge(c: { challenge: string; rpID: string; origin: string; expires: number; enrollCode?: string; sessionId?: string; native?: 'enroll' | 'login' }): string {
     const t = now();
     for (const [id, v] of this.challenges) if (v.expires < t) this.challenges.delete(id);
     if (this.challenges.size >= MAX_CHALLENGES) throw new AuthError(429, 'Too many sign-ins in progress. Try again shortly.');
@@ -421,6 +466,105 @@ export class Auth {
     return secret;
   }
 
+  // ---------- native app devices
+  //
+  // Enrollment spends a host-issued code (or runs from a signed-in device) exactly like a
+  // passkey, and only once the device has proven it holds the key it registers. The
+  // signed message names the purpose, the challenge, the Host the request was addressed
+  // to and the label, so a signature can't be replayed to another host or step.
+
+  /** Step 1 of enrolling a native app: a challenge for its new device key to sign. */
+  nativeEnrollOptions(req: IncomingMessage, caller: Caller | null, code: string | undefined) {
+    let enrollCode: string | undefined;
+    if (!caller || caller.kind !== 'session') {
+      this.throttle('code', req);
+      const c = code && this.takeCode(code, false);
+      if (!c) this.fail('invalid or expired setup code', req, 'code');
+      enrollCode = c;
+    }
+    const challenge = newSecret();
+    const challengeId = this.newChallenge({ challenge, rpID: hostHeader(req), origin: '', expires: now() + CHALLENGE_TTL_MS, enrollCode, native: 'enroll' });
+    return { challengeId, challenge, host: hostHeader(req) };
+  }
+
+  nativeEnrollVerify(req: IncomingMessage, challengeId: string, publicKey: string, signature: string, label: string) {
+    const ch = this.challenges.get(challengeId);
+    this.challenges.delete(challengeId);
+    if (!ch || ch.expires < now() || ch.native !== 'enroll') this.fail('setup timed out, try again', req);
+    if (ch.rpID !== hostHeader(req)) this.fail('setup was started on another address', req);
+    if (ch.enrollCode && !this.takeCode(ch.enrollCode, false)) this.fail('invalid or expired setup code', req, 'code');
+    const key = nativePublicKey(publicKey);
+    if (!key) this.fail('device key not accepted', req);
+    if (!checkSignature(key, nativeMessage('enroll', ch.challenge, ch.rpID, publicKey, label), signature)) this.fail('device key signature not accepted', req);
+    if (ch.enrollCode && !this.takeCode(ch.enrollCode, true)) this.fail('invalid or expired setup code', req, 'code');
+    if (this.nativeKeys.some((k) => k.publicKey === publicKey)) this.fail('this device is already enrolled', req);
+    const t = now();
+    const device: NativeKey = { id: shortId(), publicKey, label: label || 'device', createdAt: t, lastUsedAt: t };
+    this.nativeKeys.push(device);
+    this.save();
+    this.audit('auth.device_added', { label: device.label, device: device.id, from: who(req) });
+    return { deviceId: device.id, ...this.newBearerSession(req, device) };
+  }
+
+  /** Sign-in for an enrolled native device: a fresh challenge for its key. */
+  nativeLoginOptions(req: IncomingMessage) {
+    const challenge = newSecret();
+    const challengeId = this.newChallenge({ challenge, rpID: hostHeader(req), origin: '', expires: now() + CHALLENGE_TTL_MS, native: 'login' });
+    return { challengeId, challenge, host: hostHeader(req) };
+  }
+
+  nativeLoginVerify(req: IncomingMessage, challengeId: string, deviceId: string, signature: string, label: string) {
+    const ch = this.challenges.get(challengeId);
+    this.challenges.delete(challengeId);
+    if (!ch || ch.expires < now() || ch.native !== 'login') this.fail('sign-in timed out, try again', req);
+    if (ch.rpID !== hostHeader(req)) this.fail('sign-in was started on another address', req);
+    const device = this.nativeKeys.find((k) => k.id === deviceId);
+    const key = device && nativePublicKey(device.publicKey);
+    if (!device || !key) this.fail('unknown device', req);
+    if (!checkSignature(key, nativeMessage('login', ch.challenge, ch.rpID, deviceId, label), signature)) this.fail('device key signature not accepted', req);
+    device.lastUsedAt = now();
+    if (label) device.label = label;
+    this.save();
+    return { deviceId: device.id, ...this.newBearerSession(req, device) };
+  }
+
+  private newBearerSession(req: IncomingMessage, device: NativeKey) {
+    const secret = newSecret();
+    const t = now();
+    const session: Session = { id: shortId(), hash: sha256(secret), label: device.label, via: 'native', createdAt: t, lastSeenAt: t, expiresAt: t + this.config.maxDays * 86400_000, bearer: true, keyId: device.id };
+    this.store.sessions.push(session);
+    this.store.sessions = this.store.sessions.filter((s) => s.expiresAt > t);
+    this.save();
+    this.audit('auth.signin', { via: 'native', device: device.label, session: session.id, from: who(req) });
+    return { token: secret, sessionId: session.id, expiresAt: session.expiresAt, idleHours: this.config.idleHours };
+  }
+
+  /**
+   * A cookie for the native app's preview web view only (a session's dev server on its own
+   * port authorizes by cookie, like a browser). Short-lived, and it ends with the native sign-in.
+   */
+  nativePreviewSession(caller: Caller) {
+    if (caller.kind !== 'session' || !caller.session.bearer) throw new AuthError(403, 'only the native app needs this');
+    const parent = caller.session;
+    const secret = newSecret();
+    const t = now();
+    const session: Session = { id: shortId(), hash: sha256(secret), label: `${parent.label} preview`, via: 'native-preview', createdAt: t, lastSeenAt: t, expiresAt: Math.min(parent.expiresAt, t + 12 * 3600_000), keyId: parent.keyId, parent: parent.id };
+    this.store.sessions.push(session);
+    this.save();
+    this.audit('auth.preview_session', { session: session.id, parent: parent.id });
+    return { value: secret, expiresAt: session.expiresAt, names: { https: SECURE_COOKIE, http: COOKIE } };
+  }
+
+  removeDevice(id: string) {
+    const device = this.nativeKeys.find((k) => k.id === id);
+    if (!device) throw new AuthError(404, 'no such device');
+    if (!this.store.passkeys.length && !this.store.password && this.nativeKeys.length === 1) throw new AuthError(409, 'that is the last way in — enroll another device or add a passkey first');
+    this.store.nativeKeys = this.nativeKeys.filter((k) => k.id !== id);
+    this.save();
+    this.audit('auth.device_removed', { label: device.label, device: id });
+    for (const s of this.store.sessions.filter((s) => s.keyId === id)) this.endSession(s.id, 'device removed');
+  }
+
   // ---------- management
 
   overview(current: Caller | null) {
@@ -428,7 +572,8 @@ export class Auth {
       passkeys: this.store.passkeys.map(({ id, label, rpID, createdAt, lastUsedAt }) => ({ id, label, rpID, createdAt, lastUsedAt })),
       sessions: this.store.sessions
         .filter((s) => s.expiresAt > now())
-        .map(({ id, label, via, createdAt, lastSeenAt, expiresAt }) => ({ id, label, via, createdAt, lastSeenAt, expiresAt, current: current?.kind === 'session' && current.session.id === id })),
+        .map(({ id, label, via, createdAt, lastSeenAt, expiresAt, bearer, keyId }) => ({ id, label, via, createdAt, lastSeenAt, expiresAt, current: current?.kind === 'session' && current.session.id === id, native: !!bearer, deviceId: keyId ?? null })),
+      devices: this.nativeKeys.map(({ id, label, createdAt, lastUsedAt }) => ({ id, label, createdAt, lastUsedAt, current: current?.kind === 'session' && current.session.keyId === id })),
       tokens: this.store.tokens.map(({ id, name, createdAt, lastUsedAt }) => ({ id, name, createdAt, lastUsedAt })),
       password: !!this.store.password,
       enabled: this.enabled,
@@ -440,7 +585,7 @@ export class Auth {
   removePasskey(id: string) {
     const pk = this.store.passkeys.find((p) => p.id === id);
     if (!pk) throw new AuthError(404, 'no such passkey');
-    if (this.store.passkeys.length === 1 && !this.store.password) throw new AuthError(409, 'that is the last way in — add another passkey first');
+    if (this.store.passkeys.length === 1 && !this.store.password && !this.nativeKeys.length) throw new AuthError(409, 'that is the last way in — add another passkey first');
     this.store.passkeys = this.store.passkeys.filter((p) => p.id !== id);
     this.save();
     this.audit('auth.passkey_removed', { label: pk.label });
@@ -483,6 +628,35 @@ function cookie(req: IncomingMessage, name: string): string | null {
     if (k === name) return v.join('=');
   }
   return null;
+}
+
+/** The Host a request was addressed to, as the native app signs it. */
+function hostHeader(req: IncomingMessage): string {
+  return String(req.headers.host ?? '').toLowerCase();
+}
+
+/** What a native device key signs: purpose, challenge, the addressed Host, then the step's own fields. */
+export function nativeMessage(purpose: 'enroll' | 'login', challenge: string, host: string, subject: string, label: string): Buffer {
+  return Buffer.from([`ah-native-${purpose}-v1`, challenge, host, subject, label].join('\n'), 'utf8');
+}
+
+function nativePublicKey(raw: string): ReturnType<typeof createPublicKey> | null {
+  try {
+    const point = Buffer.from(raw, 'base64url');
+    if (point.length !== 65 || point[0] !== 4 || point.toString('base64url') !== raw) return null;
+    return createPublicKey({ key: { kty: 'EC', crv: 'P-256', x: point.subarray(1, 33).toString('base64url'), y: point.subarray(33).toString('base64url') }, format: 'jwk' });
+  } catch {
+    return null;
+  }
+}
+
+function checkSignature(key: ReturnType<typeof createPublicKey>, message: Buffer, signature: string): boolean {
+  try {
+    const der = Buffer.from(signature, 'base64url');
+    return der.length > 0 && der.length <= 80 && verifySignature('sha256', message, { key, dsaEncoding: 'der' }, der);
+  } catch {
+    return false;
+  }
 }
 
 function who(req: IncomingMessage): string {

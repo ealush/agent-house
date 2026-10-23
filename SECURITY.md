@@ -20,6 +20,13 @@ repository, or email the maintainer. Don't file a public issue.
 - **A lost or borrowed device.** Every device must sign in with a passkey (or the
   optional master password); sessions expire after 24h idle / 30 days, and can be
   revoked from any signed-in device, which also closes their open terminals.
+- **A lost or stolen phone running the native app.** The iPhone/iPad app enrolls with the
+  same host-issued one-time code, then holds a device key that never leaves the Secure
+  Enclave and needs Face ID/Touch ID to sign. Each sign-in signs a fresh, single-use
+  challenge bound to its purpose, the addressed host and the device's name, and becomes an
+  ordinary session (same expiry and revocation, which also closes its streams and
+  terminals) carried as a bearer secret in the Keychain. Removing the device from Settings
+  ends all of its sign-ins.
 - **Malicious web pages you visit.** Host allowlist (DNS rebinding), exact-Origin checks
   on WebSockets and writes (a dev server on another port of the same name doesn't pass), an `X-AH` header on every write (needs a CORS preflight ah never
   grants), `SameSite=Strict` cookies, strict CSP with no third-party origins, no framing.
@@ -51,6 +58,8 @@ repository, or email the maintainer. Don't file a public issue.
 | Writes need X-AH + ah's exact Origin (scheme, host and port: another port on the same name is another site) | `authz.test.ts`, `websocket.test.ts` |
 | Host allowlist; Serve requests need the owner's identity; loopback ignores the header | `authz.test.ts`, `websocket.test.ts` |
 | WebSockets: same checks; revoke closes them; oversized frames don't crash ah | `websocket.test.ts` |
+| Native app: writes need X-AH; Origin may be absent only with a native bearer (or on the native sign-in routes) and no cookie; bearer and cookie secrets never substitute for each other | `test/security/native.test.ts` |
+| Native sign-in: code spent only after the key proves possession; signatures bound to purpose/Host/challenge/label; revoking a sign-in or removing a device cuts its streams and terminals | `test/security/native.test.ts` |
 | Hub never forwards cookies, never follows redirects, never uses plain-http LAN peers | `peers.test.ts` |
 | Files: configured roots only, symlinks resolved, uploads 0600, downloads sandboxed | `files.test.ts`, `server/files.test.ts` |
 | Setup codes spent only after a passkey verifies; throttling per mechanism/source | `server/auth.test.ts` |
@@ -63,7 +72,7 @@ All under `~/.local/state/ah/` (mode 0700 directory, 0600 files):
 
 | File | Contains |
 |---|---|
-| `auth.json` | passkey public keys, hashed session and token secrets, scrypt password hash, the browser cache secret |
+| `auth.json` | passkey and native-device public keys, hashed session and token secrets, scrypt password hash, the browser cache secret |
 | `local-token` | the host CLI's bearer token (regenerated each start) |
 | `peer-tokens.json` | tokens other hosts issued to this one |
 | `ah.db` (SQLite via Prisma) | the session registry (titles, directories, conversation ids, queued messages), recent prompts (may contain anything you pasted — `promptHistory: 0` keeps none; Security → Clear prompt history), chat API keys and side-chat history (the API returns a key only masked, its first and last few characters), session environment variables (Settings → Environment; secret values are returned masked the same way, and every window ah starts gets them, so any agent you run can read them), and loose settings. First boot imports `sessions.json`/`prompts.json`/`sidechat.json` once when present; those legacy files are then unused |

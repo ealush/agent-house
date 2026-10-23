@@ -60,6 +60,8 @@ const PROTECTED: Array<[string, string, unknown?]> = [
   ['DELETE', '/api/auth/sessions/abc'],
   ['POST', '/api/auth/signout-all', {}],
   ['DELETE', '/api/auth/passkeys/abc'],
+  ['POST', '/api/auth/native/preview-session', {}],
+  ['DELETE', '/api/auth/devices/abc'],
   ['POST', '/api/auth/tokens', { name: 'x' }],
   ['DELETE', '/api/auth/tokens/abc'],
   ['POST', '/api/auth/password', { password: 'whatever whatever' }],
@@ -77,6 +79,10 @@ const PUBLIC: Array<[string, string, unknown?]> = [
   ['POST', '/api/auth/login/verify', { challengeId: 'x', response: {} }],
   ['POST', '/api/auth/password/login', { password: 'nope' }],
   ['POST', '/api/auth/logout', {}],
+  ['POST', '/api/auth/native/enroll/options', { code: 'AAAAA-AAAAA' }],
+  ['POST', '/api/auth/native/enroll/verify', { challengeId: 'x', publicKey: 'x', signature: 'x' }],
+  ['POST', '/api/auth/native/login/options', {}],
+  ['POST', '/api/auth/native/login/verify', { challengeId: 'x', deviceId: 'x', signature: 'x' }],
 ];
 
 test('every protected route refuses anonymous callers, also via /h/<self>/', async () => {
