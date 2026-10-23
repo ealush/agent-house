@@ -1,0 +1,467 @@
+import Foundation
+import Observation
+
+/// What the evidence says about one layer, for a decision: what you reviewed against what's
+/// there now, what checks actually ran, what's still open. Never green on absence: "no
+/// checks reported" is not "checks passed", and an unreviewed head is not reviewed.
+struct LayerConfidence: Equatable, Sendable {
+    enum Review: Equatable, Sendable {
+        case notReviewed
+        /// Reviewed at exactly this head.
+        case current
+        /// Rebased since your review, same patch: your review still covers it.
+        case rebasedSamePatch
+        /// The code changed after your review.
+        case changedSinceReview
+    }
+
+    let review: Review
+    let checks: Checks.Outcome
+    let failingChecks: [String]
+    let openFindings: Int
+    let blockingFindings: Int
+    let followups: Int
+    /// The server's gates that still say no (bar merge order, which merging handles).
+    let blockers: [MergeGate]
+    /// A model re-review's verdict on requested fixes, when one ran.
+    let verdict: Verdict?
+    let agentWorking: Bool
+
+    init(layer: Layer) {
+        if !layer.approved || layer.reviewed == nil {
+            review = .notReviewed
+        } else if !layer.samePatch {
+            review = .changedSinceReview
+        } else if layer.rebased {
+            review = .rebasedSamePatch
+        } else {
+            review = .current
+        }
+        checks = layer.checks.outcome
+        failingChecks = layer.checks.failing
+        openFindings = layer.open
+        blockingFindings = layer.blocking
+        followups = layer.followups
+        blockers = layer.gates.filter { !$0.ok && $0.key != "order" }
+        verdict = layer.current?.verdict
+        agentWorking = layer.status == .fixing
+    }
+
+    var reviewText: String {
+        switch review {
+        case .notReviewed: return "Not reviewed by you yet"
+        case .current: return "You reviewed this exact revision"
+        case .rebasedSamePatch: return "Rebased since your review; same changes"
+        case .changedSinceReview: return "Changed since your review"
+        }
+    }
+
+    var checksText: String {
+        switch checks {
+        case .none: return "No checks reported"
+        case .pending: return "Checks still running"
+        case .failing: return "Failing: \(failingChecks.joined(separator: ", "))"
+        case .passing: return "Checks passed"
+        }
+    }
+
+    /// What's missing before you could merge, in plain words, most important first.
+    var missing: [String] {
+        var out: [String] = []
+        if review == .notReviewed { out.append("Your review of this revision") }
+        if review == .changedSinceReview { out.append("A re-review of what changed") }
+        if blockingFindings > 0 { out.append("\(blockingFindings) blocking finding\(blockingFindings == 1 ? "" : "s") resolved") }
+        if checks == .failing { out.append("Passing checks") }
+        if checks == .pending { out.append("Checks to finish") }
+        for gate in blockers where !["reviewed", "findings", "checks"].contains(gate.key) {
+            out.append(gate.detail ?? gate.label)
+        }
+        return out
+    }
+
+    /// Reviewed at this head, nothing blocking, checks not failing or running.
+    var readyToMerge: Bool { (review == .current || review == .rebasedSamePatch) && blockers.isEmpty }
+}
+
+/// What merging the stack bottom-up would do (`../ah/web/review/stackMerge.ts`), worked out
+/// before asking; the host re-checks everything at merge time. Natively the merge never marks
+/// a layer reviewed for you: a layer you haven't reviewed holds the merge.
+struct StackMergePlan: Equatable, Sendable {
+    enum State: String, Sendable { case ready, review, held, waits, restack }
+    struct Row: Equatable, Sendable, Identifiable {
+        var id: Int { layer.pr }
+        let layer: Layer
+        let state: State
+        let why: String?
+        let step: Int
+    }
+
+    let rows: [Row]
+    let lands: [Layer]
+    let needsReview: [Layer]
+    let stop: Row?
+
+    var upTo: Layer? { lands.last }
+
+    init(stack: ReviewStack, method: String) {
+        let open = stack.layers.filter { $0.state == "open" }
+        var rows: [Row] = []
+        var heads = Set<String>()
+        var stop: Row?
+        var step = 0
+        for (i, l) in open.enumerated() {
+            let prev = i > 0 ? open[i - 1] : nil
+            if prev == nil || l.ghStack == nil || l.ghStack != prev?.ghStack || (l.ghPos ?? 0) < (prev?.ghPos ?? 0) { step += 1 }
+            if let stopRow = stop {
+                rows.append(Row(layer: l, state: .waits, why: "Waits for \(stopRow.layer.name)", step: step))
+                continue
+            }
+            let currentStep = step
+            let sat = rows.contains { $0.step < currentStep && $0.layer.headRef == l.baseRef && !(l.ghStack != nil && $0.layer.ghStack == l.ghStack) }
+            if method != "merge" && sat {
+                let row = Row(layer: l, state: .restack, why: "Needs a restack once \(prev?.name ?? "the layer below") lands", step: step)
+                stop = row
+                rows.append(row)
+                continue
+            }
+            if let bad = l.gates.first(where: { !$0.ok && $0.key != "order" && $0.key != "below" && $0.key != "reviewed" && !($0.key == "base" && heads.contains(l.baseRef)) }) {
+                let row = Row(layer: l, state: .held, why: bad.detail ?? bad.label, step: step)
+                stop = row
+                rows.append(row)
+                continue
+            }
+            let review = l.gates.contains { $0.key == "reviewed" && !$0.ok }
+            if review {
+                // Native: an unreviewed layer holds the merge here; you review it first.
+                let row = Row(layer: l, state: .review, why: "Review \(l.name) first", step: step)
+                stop = row
+                rows.append(row)
+                continue
+            }
+            rows.append(Row(layer: l, state: .ready, why: nil, step: step))
+            heads.insert(l.headRef)
+        }
+        self.rows = rows
+        lands = rows.filter { $0.state == .ready }.map(\.layer)
+        needsReview = rows.filter { $0.state == .review }.map(\.layer)
+        self.stop = stop
+    }
+}
+
+/// The Review area: stacks in progress, one stack's cockpit, one layer's evidence, the
+/// reviewer thread, findings, dispatches and the merge.
+@MainActor
+@Observable
+final class ReviewModel {
+    let review: ReviewAPI
+    private(set) var stacks: [StackSummary] = []
+    private(set) var repos: [ReviewRepo] = []
+    private(set) var stack: ReviewStack?
+    private(set) var findings: [Finding] = []
+    private(set) var thread: [ThreadMessage] = []
+    private(set) var threadSubscription: String?
+    private(set) var followups: [Followup] = []
+    private(set) var diff: DiffOut?
+    private(set) var diffScope: DiffScope = .this
+    private(set) var description: PRDescription?
+    private(set) var plan: PlanText?
+    private(set) var loading: Set<String> = []
+    private(set) var error: String?
+    var selectedPR: Int?
+    /// Lines, files or findings attached to the next question for the reviewer.
+    var attachments: [AskContext] = []
+
+    init(api: APIClient) {
+        review = ReviewAPI(api: api)
+    }
+
+    var layer: Layer? { stack?.layers.first { $0.pr == selectedPR } }
+    var confidence: LayerConfidence? { layer.map(LayerConfidence.init) }
+
+    private func load(_ what: String, _ body: () async throws -> Void) async {
+        loading.insert(what)
+        defer { loading.remove(what) }
+        do {
+            try await body()
+            error = nil
+        } catch {
+            self.error = APIError.wrap(error).message
+        }
+    }
+
+    func loadList() async {
+        await load("stacks") {
+            async let s = review.stacks()
+            async let r = review.repos()
+            stacks = try await s
+            repos = (try? await r) ?? []
+        }
+    }
+
+    func open(_ route: ReviewRoute) async {
+        guard let id = route.stack else {
+            stack = nil
+            await loadList()
+            return
+        }
+        await load("stack") {
+            stack = try await review.stack(id)
+            findings = try await review.findings(id)
+        }
+        selectedPR = route.pr ?? stack?.next ?? stack?.layers.first { $0.state == "open" }?.pr
+        if let pr = selectedPR { await select(pr) }
+        await loadThread()
+    }
+
+    func select(_ pr: Int) async {
+        selectedPR = pr
+        diff = nil
+        description = nil
+        guard let id = stack?.id else { return }
+        // A layer you reviewed before opens on what changed since.
+        let l = stack?.layers.first { $0.pr == pr }
+        diffScope = (l.map(LayerConfidence.init)?.review == .changedSinceReview) ? .since : .this
+        await loadDiff(diffScope)
+        await load("description") { description = try await review.description(id, pr: pr) }
+    }
+
+    func loadDiff(_ scope: DiffScope) async {
+        guard let id = stack?.id, let pr = selectedPR else { return }
+        diffScope = scope
+        await load("diff") { diff = try await review.diff(id, pr: pr, scope: scope) }
+    }
+
+    func loadThread() async {
+        guard let id = stack?.id else { return }
+        await load("thread") {
+            let t = try await review.thread(id)
+            thread = t.messages
+            threadSubscription = t.subscriptionId
+            findings = t.findings.isEmpty ? findings : t.findings
+        }
+    }
+
+    func loadPlan() async {
+        guard let id = stack?.id else { return }
+        await load("plan") { plan = try await review.plan(id) }
+    }
+
+    func refresh() async {
+        guard let id = stack?.id else { return }
+        await load("sync") {
+            stack = try await review.sync(id)
+            findings = try await review.findings(id)
+        }
+    }
+
+    // MARK: Challenge
+
+    func attach(_ context: AskContext) {
+        if !attachments.contains(where: { $0.key == context.key }) { attachments.append(context) }
+    }
+
+    func ask(_ text: String, wholeStack: Bool = false) async {
+        guard let id = stack?.id, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let context = attachments
+        await load("ask") {
+            let reply = try await review.ask(id, pr: wholeStack ? nil : selectedPR, text: text, subscriptionId: threadSubscription, context: context)
+            thread.append(reply.asked)
+            thread.append(reply.message)
+            followups = reply.followups
+            if !reply.findings.isEmpty { findings = try await review.findings(id) }
+            attachments = []
+        }
+    }
+
+    func pickSubscription(_ id: String) async {
+        guard let stackID = stack?.id else { return }
+        await load("subscription") {
+            try await review.pickSubscription(stackID, subscription: id)
+            threadSubscription = id
+        }
+    }
+
+    func clearThread() async {
+        guard let id = stack?.id else { return }
+        await load("thread") {
+            try await review.clearThread(id)
+            thread = []
+        }
+    }
+
+    // MARK: Findings
+
+    func addFinding(title: String, body: String, severity: Finding.Severity, path: String?, lines: ClosedRange<Int>?) async {
+        guard let id = stack?.id, let pr = selectedPR else { return }
+        await load("finding") {
+            _ = try await review.addFinding(id, NewFinding(ownerPr: pr, foundOnPr: pr, title: title, body: body, severity: severity.rawValue, path: path, lineStart: lines?.lowerBound, lineEnd: lines?.upperBound))
+            findings = try await review.findings(id)
+            stack = try await review.stack(id)
+        }
+    }
+
+    func setFinding(_ finding: Finding, state: Finding.State? = nil, severity: Finding.Severity? = nil, owner: Int? = nil, note: String?? = nil) async {
+        guard let id = stack?.id else { return }
+        await load("finding") {
+            _ = try await review.updateFinding(id, finding: finding.id, FindingPatch(state: state?.rawValue, severity: severity?.rawValue, ownerPr: owner, note: note))
+            findings = try await review.findings(id)
+            stack = try await review.stack(id)
+        }
+    }
+
+    func resolveThread(_ finding: Finding, reply: String) async {
+        guard let id = stack?.id else { return }
+        await load("resolve") {
+            _ = try await review.resolveThread(id, finding: finding.id, body: reply)
+            findings = try await review.findings(id)
+        }
+    }
+
+    func importThreads() async -> Int {
+        guard let id = stack?.id, let pr = selectedPR else { return 0 }
+        var added = 0
+        await load("threads") {
+            added = try await review.importThreads(id, pr: pr).added
+            findings = try await review.findings(id)
+        }
+        return added
+    }
+
+    func findings(for pr: Int) -> [Finding] { findings.filter { $0.ownerPr == pr } }
+
+    // MARK: Request fixes
+
+    func draftDispatch(findings ids: [Int], extra: String = "") async -> String? {
+        guard let id = stack?.id, let pr = selectedPR else { return nil }
+        var text: String?
+        await load("dispatch") { text = try await review.dispatchText(id, pr: pr, findings: ids, extra: extra) }
+        return text
+    }
+
+    /// Send the requested fixes to the implementing agent (or a new one in a fresh worktree).
+    func dispatch(findings ids: [Int], text: String, to target: String?, newSessionPreset: String?) async -> DispatchResult? {
+        guard let id = stack?.id, let pr = selectedPR else { return nil }
+        var result: DispatchResult?
+        await load("dispatch") {
+            result = try await review.dispatch(id, pr: pr, findings: ids, text: text, targetUid: target, newSessionPreset: newSessionPreset)
+            stack = try await review.stack(id)
+            findings = try await review.findings(id)
+        }
+        return result
+    }
+
+    // MARK: Decide
+
+    /// Your decision, at the head you're looking at. Withdraw with `false`.
+    func markReviewed(_ approved: Bool = true) async {
+        guard let id = stack?.id, let pr = selectedPR else { return }
+        await load("approve") { stack = try await review.approve(id, pr: pr, approved: approved) }
+    }
+
+    /// Accept a model re-review's verdict on the fixes, with your overrides.
+    func acceptFixes(overrides: [Int: String] = [:]) async {
+        guard let id = stack?.id, let pr = selectedPR else { return }
+        await load("accept") {
+            stack = try await review.accept(id, pr: pr, overrides: overrides)
+            findings = try await review.findings(id)
+        }
+    }
+
+    func summarize(force: Bool = false) async {
+        guard let id = stack?.id, let pr = selectedPR else { return }
+        await load("summary") { _ = try await review.summarize(id, pr: pr, force: force) }
+    }
+
+    // MARK: Merge
+
+    enum MergeOutcome: Equatable, Sendable {
+        case merged(next: Int?, restack: [Int], waiting: String?)
+        /// The head moved after you looked: nothing merged; review the new revision.
+        case changed(String)
+        case refused(String)
+    }
+
+    /// Merge this layer at the head you reviewed. Re-fetches first: a head that moved since
+    /// the confirmation was shown stops the merge here, and the host checks again itself.
+    func merge(expectedHead: String) async -> MergeOutcome {
+        guard let id = stack?.id, let pr = selectedPR else { return .refused("No layer selected") }
+        do {
+            let fresh = try await review.sync(id)
+            stack = fresh
+            guard let l = fresh.layers.first(where: { $0.pr == pr }) else { return .refused("#\(pr) is no longer in this stack") }
+            guard l.headSha == expectedHead else { return .changed("#\(pr) changed since you looked (now \(l.headSha.prefix(7))). Review the new revision before merging.") }
+            let result = try await review.merge(id, pr: pr)
+            stack = try await review.stack(id)
+            if let next = result.next { await select(next) }
+            return .merged(next: result.next, restack: result.restack, waiting: result.waiting)
+        } catch {
+            return .refused(APIError.wrap(error).message)
+        }
+    }
+
+    /// Bottom-up to the last layer that can land; never marks anything reviewed for you.
+    func mergeStack(method: String, upTo: Int?) async -> StackMergeResult? {
+        guard let id = stack?.id else { return nil }
+        var result: StackMergeResult?
+        await load("merge") {
+            result = try await review.mergeStack(id, method: method, markReviewed: false, upTo: upTo)
+            stack = try await review.stack(id)
+        }
+        return result
+    }
+
+    func retarget() async {
+        guard let id = stack?.id, let pr = selectedPR else { return }
+        await load("retarget") { stack = try await review.retarget(id, pr: pr) }
+    }
+
+    func ready() async {
+        guard let id = stack?.id, let pr = selectedPR else { return }
+        await load("ready") { stack = try await review.ready(id, pr: pr) }
+    }
+
+    // MARK: Maintain
+
+    func update(_ patch: StackPatch) async {
+        guard let id = stack?.id else { return }
+        await load("update") { stack = try await review.update(id, patch) }
+    }
+
+    func setLayer(_ patch: LayerPatch) async {
+        guard let id = stack?.id, let pr = selectedPR else { return }
+        await load("layer") { stack = try await review.setLayer(id, pr: pr, patch) }
+    }
+
+    func addDecision(_ text: String) async {
+        guard let id = stack?.id else { return }
+        await load("decision") { stack = try await review.addDecision(id, text: text, fromPr: selectedPR) }
+    }
+
+    func removeDecision(_ decision: Int) async {
+        guard let id = stack?.id else { return }
+        await load("decision") { stack = try await review.removeDecision(id, decision: decision) }
+    }
+
+    func link() async {
+        guard let id = stack?.id else { return }
+        await load("link") { stack = try await review.link(id) }
+    }
+
+    func create(root: String, pick: ReviewAPI.Pick, title: String?) async -> String? {
+        var created: String?
+        await load("create") {
+            let s = try await review.create(root: root, pick: pick, title: title)
+            stack = s
+            created = s.id
+        }
+        return created
+    }
+
+    func remove() async {
+        guard let id = stack?.id else { return }
+        await load("remove") {
+            try await review.remove(id)
+            stack = nil
+        }
+    }
+}
