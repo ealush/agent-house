@@ -60,3 +60,23 @@ fastlane/report.xml
 fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output
+
+# Agent Hub Native
+.DS_Store
+.build/
+.swiftpm/
+DerivedData/
+*.xcresult/
+xcuserdata/
+*.xcuserstate
+AgentHubNative.xcodeproj/
+Config/Local.xcconfig
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+*.p8
+*.p12
+*.mobileprovision
+

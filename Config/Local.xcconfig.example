@@ -1,0 +1,4 @@
+// Copy to Local.xcconfig on a Mac for physical-device builds.
+DEVELOPMENT_TEAM = YOUR_APPLE_TEAM_ID
+AH_BUNDLE_IDENTIFIER = your.reverse.domain.ah.native
+
