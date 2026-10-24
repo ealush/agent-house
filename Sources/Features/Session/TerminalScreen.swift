@@ -29,7 +29,7 @@ struct TerminalScreen: View {
                 AskPanelView(target: AskTarget(session: session), onReply: { scene.requestFocus(.terminal(session.key)) })
                     .padding(10)
             }
-            if scene.app.preferences.keyBarVisible {
+            if scene.app.preferences.showsKeyBar(hardwareKeyboard: scene.hardwareKeyboard) {
                 KeyBar(ctrl: $ctrl, alt: $alt, shift: $shift) { bytes in
                     controller?.send(bytes)
                 } paste: {

@@ -1,4 +1,3 @@
-import GameController
 import PhotosUI
 import SwiftUI
 import UIKit
@@ -288,7 +287,7 @@ struct ComposerTextField: UIViewRepresentable {
             let end = view.endOfDocument
             view.selectedTextRange = view.textRange(from: end, to: end)
         }
-        view.placeholder = composer.placeholder(working: session.working, queued: session.row?.dto.queued ?? 0, touchOnly: !GCKeyboardPresence.isAttached)
+        view.placeholder = composer.placeholder(working: session.working, queued: session.row?.dto.queued ?? 0, touchOnly: !scene.hardwareKeyboard)
         view.textColor = UIColor(theme.text)
         if let request = scene.focusRequest, request.nonce != context.coordinator.handledFocus {
             context.coordinator.handledFocus = request.nonce
@@ -495,9 +494,6 @@ final class ComposerTextView: UITextView {
 }
 
 /// Whether a hardware keyboard is attached: hints name keys only when there are keys.
-enum GCKeyboardPresence {
-    @MainActor static var isAttached: Bool { GCKeyboard.coalesced != nil }
-}
 
 /// Queued follow-ups above the composer (`../ah/web/QueueTray.tsx`): Send now, Edit, Cancel,
 /// drag to reorder; and our own just-queued messages until the host lists them.

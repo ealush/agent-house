@@ -245,7 +245,11 @@ private struct AppearanceSection: View {
             }
             Section("Terminal") {
                 Stepper("Font size \(Int(app.preferences.terminalFontSize))", value: $app.preferences.terminalFontSize, in: 9...24, step: 1)
-                Toggle("Show the key bar", isOn: $app.preferences.keyBarVisible)
+                Picker("On-screen keys", selection: $app.preferences.keyBar) {
+                    Text("Without a keyboard").tag(DevicePreferences.KeyBarMode.auto)
+                    Text("Always").tag(DevicePreferences.KeyBarMode.on)
+                    Text("Never").tag(DevicePreferences.KeyBarMode.off)
+                }
             }
             Section {
                 TextField("Device name", text: Binding(get: { app.preferences.deviceName ?? "" }, set: { app.preferences.deviceName = $0.isEmpty ? nil : $0 }), prompt: Text(app.services.device.name))

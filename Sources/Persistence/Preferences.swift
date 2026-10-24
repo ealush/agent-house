@@ -35,7 +35,8 @@ struct DevicePreferences: Codable, Equatable, Sendable {
     /// What other devices call this one; nil uses the model name.
     var deviceName: String? = nil
     var stepsHidden = false
-    var keyBarVisible = true
+    /// The terminal's on-screen key row: on touch only (auto), always, or never.
+    var keyBar: KeyBarMode = .auto
     var terminalFontSize: Double = 13
     var inboxGrouping: InboxGrouping = .status
     var notifications = Notifications()
@@ -48,21 +49,34 @@ struct DevicePreferences: Codable, Equatable, Sendable {
 
     init() {}
 
-    private enum CodingKeys: String, CodingKey { case appearance, deviceName, stepsHidden, keyBarVisible, terminalFontSize, inboxGrouping, notifications, recentAgents, focusFollowsPointer, recentPalette }
+    private enum CodingKeys: String, CodingKey { case appearance, deviceName, stepsHidden, keyBar, terminalFontSize, inboxGrouping, notifications, recentAgents, focusFollowsPointer, recentPalette }
+
+    private enum LegacyKeys: String, CodingKey { case keyBarVisible }
 
     /// Fields added later decode with their defaults, so older rows keep working.
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        let legacy = try decoder.container(keyedBy: LegacyKeys.self)
         appearance = (try? c.decode(Appearance.self, forKey: .appearance)) ?? .system
         deviceName = try? c.decodeIfPresent(String.self, forKey: .deviceName)
         stepsHidden = (try? c.decode(Bool.self, forKey: .stepsHidden)) ?? false
-        keyBarVisible = (try? c.decode(Bool.self, forKey: .keyBarVisible)) ?? true
+        // Older rows stored a switch: on meant "when it helps", off meant never.
+        keyBar = (try? c.decode(KeyBarMode.self, forKey: .keyBar)) ?? ((try? legacy.decode(Bool.self, forKey: .keyBarVisible)) == false ? .off : .auto)
         terminalFontSize = (try? c.decode(Double.self, forKey: .terminalFontSize)) ?? 13
         inboxGrouping = (try? c.decode(InboxGrouping.self, forKey: .inboxGrouping)) ?? .status
         notifications = (try? c.decode(Notifications.self, forKey: .notifications)) ?? Notifications()
         recentAgents = (try? c.decode([String].self, forKey: .recentAgents)) ?? []
         focusFollowsPointer = (try? c.decode(Bool.self, forKey: .focusFollowsPointer)) ?? true
         recentPalette = (try? c.decode([String].self, forKey: .recentPalette)) ?? []
+    }
+
+    enum KeyBarMode: String, Codable, Sendable, CaseIterable {
+        case auto, on, off
+    }
+
+    /// Whether the key row shows, given whether a hardware keyboard is attached.
+    func showsKeyBar(hardwareKeyboard: Bool) -> Bool {
+        keyBar == .on || (keyBar == .auto && !hardwareKeyboard)
     }
 
     mutating func notePalette(_ key: String) {

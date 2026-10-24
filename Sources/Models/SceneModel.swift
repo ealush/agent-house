@@ -812,7 +812,7 @@ final class SceneModel {
             guard let s else { return }
             clipboard(s.attachCommand)
             toast("Copied “\(s.attachCommand)”")
-        case "toggle-keys": app.preferences.keyBarVisible.toggle()
+        case "toggle-keys": app.preferences.keyBar = app.preferences.showsKeyBar(hardwareKeyboard: hardwareKeyboard) ? .off : .on
         case "terminate": if let key { sheet = .confirmTerminate(key) }
         default: break
         }

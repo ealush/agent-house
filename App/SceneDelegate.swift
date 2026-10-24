@@ -13,7 +13,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options: UIScene.ConnectionOptions) {
         guard let windowScene = scene as? UIWindowScene, let delegate = UIApplication.shared.delegate as? AppDelegate else { return }
-        let window = UIWindow(windowScene: windowScene)
+        let window = KeyboardSensingWindow(windowScene: windowScene)
         self.window = window
         guard let app = delegate.app else {
             window.rootViewController = StartupFailureController(message: delegate.startupError ?? "Agent Hub couldn’t open its data.")
@@ -31,6 +31,10 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         let root = SceneRootController(scene: model)
         self.root = root
         window.rootViewController = root
+        window.onHardwareKey = { [weak model, weak root] event in
+            if model?.hardwareKeyboard == false { model?.hardwareKeyboard = true }
+            root?.sawKeys(event)
+        }
         window.makeKeyAndVisible()
         windowScene.title = nil
 
@@ -136,5 +140,21 @@ private final class StartupFailureController: UIViewController {
         config.text = "Agent Hub couldn’t start"
         config.secondaryText = "\(message)\n\nYour hosts and their sessions are unaffected. Try again after unlocking the device, or free some storage."
         contentUnavailableConfiguration = config
+    }
+}
+
+/// Notices a hardware keyboard by its first key press, and shows the root every key event
+/// (which-key needs the releases a focused terminal or text field keeps). `GCKeyboard` can report one late, or
+/// not at all for a keyboard the system forwards (a Mac's, in the Simulator), and the window
+/// should move keyboard focus with navigation from the first key on.
+final class KeyboardSensingWindow: UIWindow {
+    /// Every event carrying a hardware key, before any responder sees it.
+    var onHardwareKey: ((UIPressesEvent) -> Void)?
+
+    override func sendEvent(_ event: UIEvent) {
+        if let presses = event as? UIPressesEvent, presses.allPresses.contains(where: { $0.key != nil }) {
+            onHardwareKey?(presses)
+        }
+        super.sendEvent(event)
     }
 }

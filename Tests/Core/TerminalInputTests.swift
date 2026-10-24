@@ -23,3 +23,18 @@ import Testing
     #expect(scroll?["r"] == nil)
 }
 
+
+@Test func theKeyRowShowsWithoutAKeyboardUnlessChosenOtherwise() throws {
+    var preferences = DevicePreferences()
+    #expect(preferences.showsKeyBar(hardwareKeyboard: false))
+    #expect(!preferences.showsKeyBar(hardwareKeyboard: true))
+    preferences.keyBar = .on
+    #expect(preferences.showsKeyBar(hardwareKeyboard: true))
+    preferences.keyBar = .off
+    #expect(!preferences.showsKeyBar(hardwareKeyboard: false))
+    // The old switch: off stays off, on becomes "without a keyboard".
+    let off = try JSONDecoder().decode(DevicePreferences.self, from: Data(#"{"keyBarVisible": false}"#.utf8))
+    #expect(off.keyBar == .off)
+    let on = try JSONDecoder().decode(DevicePreferences.self, from: Data(#"{"keyBarVisible": true}"#.utf8))
+    #expect(on.keyBar == .auto)
+}

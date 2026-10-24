@@ -309,7 +309,6 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
 
     /// App-scope keys no focused responder took: submaps, workspace digits, Escape.
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
-        trackModifiers(event)
         guard case .main = phase, scene.keyScope == .app else { return super.pressesBegan(presses, with: event) }
         var rest = Set<UIPress>()
         for press in presses {
@@ -320,31 +319,25 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
         if !rest.isEmpty { super.pressesBegan(rest, with: event) }
     }
 
-    override func pressesChanged(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
-        trackModifiers(event)
-        super.pressesChanged(presses, with: event)
-    }
-
-    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
-        trackModifiers(event, released: presses)
-        super.pressesEnded(presses, with: event)
-    }
-
-    override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+    /// Every hardware key event in the window, seen before any responder (the terminal and
+    /// text fields keep the presses they handle, releases included).
+    ///
+    /// Which-key: two or more modifiers pressed and then held still for a moment show what one
+    /// more key does. Only a modifier going down arms it; any other key, or a modifier coming
+    /// up, puts it away (after a chord the modifiers are often still held, and the legend
+    /// would only get in the way).
+    func sawKeys(_ event: UIPressesEvent) {
+        let presses = event.allPresses.filter { $0.key != nil }
+        let isModifier = { (press: UIPress) in KeyPress.modifierUsages.contains(press.key!.keyCode.rawValue) }
+        let armed = presses.contains { $0.phase == .began && isModifier($0) } && !presses.contains { $0.phase == .began && !isModifier($0) }
         whichKeyTask?.cancel()
-        scene.updateWhichKey(ctrl: false, alt: false, shift: false, meta: false)
-        super.pressesCancelled(presses, with: event)
-    }
-
-    /// Which-key: two or more modifiers held still for a moment show what one more key does.
-    private func trackModifiers(_ event: UIPressesEvent?, released: Set<UIPress> = []) {
-        whichKeyTask?.cancel()
-        var flags = event?.modifierFlags ?? []
-        for press in released {
-            if let key = press.key, KeyPress.modifierUsages.contains(key.keyCode.rawValue) { flags.subtract(key.modifierFlags) }
+        if !scene.whichKey.isEmpty { scene.updateWhichKey(ctrl: false, alt: false, shift: false, meta: false) }
+        guard armed else { return }
+        var flags = event.modifierFlags
+        for press in presses where press.phase == .ended || press.phase == .cancelled {
+            flags.subtract(press.key!.modifierFlags)
         }
         let ctrl = flags.contains(.control), alt = flags.contains(.alternate), shift = flags.contains(.shift), meta = flags.contains(.command)
-        if !scene.whichKey.isEmpty { scene.updateWhichKey(ctrl: false, alt: false, shift: false, meta: false) }
         guard [ctrl, alt, shift, meta].filter({ $0 }).count >= 2 else { return }
         whichKeyTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(600))
