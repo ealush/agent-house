@@ -233,6 +233,21 @@ extension LaunchState {
 
     /// The model a new session asks for: a valid typed id wins over the list; the
     /// default (or nothing) sends nothing, so the agent's own default stays in charge.
+    /// A fork's request (`../ah/web/ForkDialog.tsx`): the name and first message when given,
+    /// the permission mode when the agent has a choice, and model or effort only where they
+    /// differ from what the parent runs ("default" clears an inherited one).
+    static func forkRequest(name: String, prompt: String, mode: String, modes: Int, inherited: (model: String?, effort: String?), picked: (model: String?, effort: String?)) -> ForkRequest {
+        var request = ForkRequest()
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !name.isEmpty { request.name = name }
+        if !prompt.isEmpty { request.prompt = prompt }
+        if modes > 1 { request.mode = mode }
+        if picked.model != inherited.model { request.model = picked.model ?? "default" }
+        if picked.effort != inherited.effort { request.effort = picked.effort ?? "default" }
+        return request
+    }
+
     static func chosenModel(listed: String?, typed: String, preset: PresetDTO) -> String? {
         let custom = typed.trimmingCharacters(in: .whitespaces)
         if takesCustomModel(preset), !custom.isEmpty, isValidModelID(custom) { return custom }

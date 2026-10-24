@@ -136,37 +136,9 @@ struct NewSessionSheet: View {
                 } header: {
                     Text("Where")
                 }
-                if let preset, !preset.isShell {
+                if let preset, !preset.isShell, LaunchOptionRows.offersChoices(preset) {
                     Section("How") {
-                        if let modes = preset.modes, modes.count > 1 {
-                            Picker("Permissions", selection: $mode) {
-                                Text("Default").tag("default")
-                                ForEach(modes, id: \.id) { m in Text((m.dangerous == true ? "⚠ " : "") + m.name).tag(m.id) }
-                            }
-                        }
-                        if let models = preset.models, !models.isEmpty {
-                            Picker("Model", selection: $model) {
-                                Text("Default").tag(String?.none)
-                                ForEach(models, id: \.id) { m in Text(m.name).tag(Optional(m.id)) }
-                            }
-                            .disabled(LaunchState.chosenModel(listed: nil, typed: customModel, preset: preset) != nil)
-                        }
-                        if LaunchState.takesCustomModel(preset) {
-                            TextField("Other model version (optional)", text: $customModel)
-                                .font(.body.monospaced())
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                            if !customModel.trimmingCharacters(in: .whitespaces).isEmpty && !LaunchState.isValidModelID(customModel.trimmingCharacters(in: .whitespaces)) {
-                                Text("A model id is letters, digits and . _ : / @ -, starting with a letter or digit.").font(.caption).foregroundStyle(theme.danger)
-                            }
-                        }
-                        let levels = LaunchState.levels(preset, model: model)
-                        if !levels.isEmpty {
-                            Picker("Effort", selection: $effort) {
-                                Text("Default").tag(String?.none)
-                                ForEach(levels, id: \.self) { Text($0).tag(Optional($0)) }
-                            }
-                        }
+                        LaunchOptionRows(preset: preset, mode: $mode, model: $model, customModel: $customModel, effort: $effort)
                     }
                 }
                 Section {
@@ -268,7 +240,13 @@ struct ForkSheet: View {
     @State private var name = ""
     @State private var prompt = ""
     @State private var busy = false
+    @State private var mode = "default"
+    @State private var model: String?
+    @State private var customModel = ""
+    @State private var effort: String?
     @Environment(\.theme) private var theme
+
+    private var preset: PresetDTO? { session.row.flatMap { session.hub.preset(for: $0) } }
 
     var body: some View {
         NavigationStack {
@@ -282,6 +260,15 @@ struct ForkSheet: View {
                             TextField("First message for the fork (optional)", text: $prompt, axis: .vertical).lineLimit(2...6)
                         } footer: {
                             Text("A new \(info.harness) session with this conversation, in its own worktree off \(info.branch ?? "the current branch")\(info.head.map { " at \($0.prefix(7))" } ?? "").")
+                        }
+                        if let preset, !preset.isShell, LaunchOptionRows.offersChoices(preset) {
+                            Section {
+                                LaunchOptionRows(preset: preset, mode: $mode, model: $model, customModel: $customModel, effort: $effort)
+                            } header: {
+                                Text("How it runs")
+                            } footer: {
+                                Text("As the original does, unless you change it here.")
+                            }
                         }
                         if info.dirty > 0 { Label("\(info.dirty) uncommitted change\(info.dirty == 1 ? "" : "s") stay here; the fork starts from the last commit.", systemImage: "exclamationmark.triangle").foregroundStyle(theme.limited) }
                         if info.busy { Label("It’s mid-turn: the fork gets the conversation up to now.", systemImage: "clock").foregroundStyle(theme.muted) }
@@ -299,7 +286,9 @@ struct ForkSheet: View {
                     Button(busy ? "Forking…" : "Fork") {
                         busy = true
                         Task {
-                            if let result = await session.fork(ForkRequest(name: name.isEmpty ? nil : name, prompt: prompt.isEmpty ? nil : prompt)) {
+                            let picked = preset.map { LaunchState.chosenModel(listed: model, typed: customModel, preset: $0) ?? model } ?? model
+                            let request = LaunchState.forkRequest(name: name, prompt: prompt, mode: mode, modes: preset?.modes?.count ?? 0, inherited: (info?.model, info?.effort), picked: (picked, effort))
+                            if let result = await session.fork(request) {
                                 let host = SessionKey(session.key)?.host
                                 scene.sheet = nil
                                 scene.open(host.map { "\($0)/\(result.uid)" } ?? result.uid)
@@ -314,9 +303,79 @@ struct ForkSheet: View {
             .task {
                 info = await session.forkInfo()
                 name = info?.suggestedName ?? ""
+                mode = info?.mode ?? "default"
+                model = info?.model
+                effort = info?.effort
             }
         }
         .presentationDetents([.medium, .large])
+    }
+}
+
+// MARK: Launch options
+
+/// How an agent runs: permission mode, model (listed or typed) and reasoning effort, as the
+/// agent offers them. New session and Fork both use it.
+struct LaunchOptionRows: View {
+    let preset: PresetDTO
+    @Binding var mode: String
+    @Binding var model: String?
+    @Binding var customModel: String
+    @Binding var effort: String?
+    @Environment(\.theme) private var theme
+
+    /// Whether the agent offers anything to choose (a section with nothing in it is noise).
+    static func offersChoices(_ preset: PresetDTO) -> Bool {
+        (preset.modes?.count ?? 0) > 1 || !(preset.models ?? []).isEmpty || LaunchState.takesCustomModel(preset) || preset.effort != nil
+    }
+
+    var body: some View {
+        if let modes = preset.modes, modes.count > 1 {
+            Picker(selection: $mode) {
+                Text("Default").tag("default")
+                ForEach(modes, id: \.id) { m in
+                    if m.dangerous == true {
+                        Label(m.name, systemImage: "exclamationmark.shield").tag(m.id)
+                    } else {
+                        Text(m.name).tag(m.id)
+                    }
+                }
+            } label: {
+                Label("Permissions", systemImage: "lock.shield")
+            }
+            if let chosen = modes.first(where: { $0.id == mode }), chosen.dangerous == true {
+                Label(chosen.description ?? "Runs without asking before it acts.", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(theme.danger)
+            }
+        }
+        if let models = preset.models, !models.isEmpty {
+            Picker(selection: $model) {
+                Text("Default\(preset.defaultModel.map { " · \($0)" } ?? "")").tag(String?.none)
+                ForEach(models, id: \.id) { m in Text(m.name).tag(Optional(m.id)) }
+            } label: {
+                Label("Model", systemImage: "cpu")
+            }
+            .disabled(LaunchState.chosenModel(listed: nil, typed: customModel, preset: preset) != nil)
+        }
+        if LaunchState.takesCustomModel(preset) {
+            TextField("Other model version (optional)", text: $customModel)
+                .font(.body.monospaced())
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            if !customModel.trimmingCharacters(in: .whitespaces).isEmpty && !LaunchState.isValidModelID(customModel.trimmingCharacters(in: .whitespaces)) {
+                Text("A model id is letters, digits and . _ : / @ -, starting with a letter or digit.").font(.caption).foregroundStyle(theme.danger)
+            }
+        }
+        let levels = LaunchState.levels(preset, model: model)
+        if !levels.isEmpty {
+            Picker(selection: $effort) {
+                Text("Default\(preset.defaultEffort.map { " · \($0)" } ?? "")").tag(String?.none)
+                ForEach(levels, id: \.self) { Text($0.capitalized).tag(Optional($0)) }
+            } label: {
+                Label("Effort", systemImage: "gauge.with.dots.needle.33percent")
+            }
+        }
     }
 }
 
@@ -468,40 +527,92 @@ struct BranchSheet: View {
         _model = State(initialValue: DiffModel(api: session.api, uid: session.ref))
     }
 
+    @State private var held: BranchList.Branch?
+    @FocusState private var searching: Bool
+
+    /// Current first, then by name, filtered by what's typed.
+    private func rows(_ list: BranchList) -> [BranchList.Branch] {
+        list.branches
+            .filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
+            .sorted { $0.current != $1.current ? $0.current : $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    private var created: String? {
+        let name = query.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty, model.branches?.branches.contains(where: { $0.name == name }) == false else { return nil }
+        return name
+    }
+
     var body: some View {
         NavigationStack {
             List {
                 if let error = model.error { Banner(text: error, tone: .error) }
                 if let branches = model.branches {
-                    if branches.dirty > 0 {
-                        Label("\(branches.dirty) uncommitted change\(branches.dirty == 1 ? "" : "s") come along to the new branch.", systemImage: "exclamationmark.triangle").foregroundStyle(theme.limited).font(.callout)
-                    }
-                    let filtered = branches.branches.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
-                    if !query.isEmpty && !branches.branches.contains(where: { $0.name == query }) {
-                        Button("Create and switch to “\(query)”", systemImage: "plus") { switchTo(query) }
-                    }
-                    ForEach(filtered, id: \.name) { b in
-                        Button {
-                            switchTo(b.name)
-                        } label: {
-                            HStack {
-                                Text(b.name).font(.callout.monospaced())
-                                if b.remote { Text("remote").font(.caption2).foregroundStyle(theme.faint) }
-                                Spacer()
-                                if b.current { Image(systemName: "checkmark").foregroundStyle(theme.brand) }
-                            }
+                    let rows = rows(branches)
+                    if let number = model.pull?.number, let link = model.pull?.url.flatMap(URL.init(string:)) {
+                        Link(destination: link) {
+                            Label("Pull request #\(number)", systemImage: "arrow.triangle.pull")
                         }
-                        .disabled(b.current || b.worktree != nil)
+                    }
+                    if let created {
+                        Button { switchTo(created) } label: {
+                            Label("Create “\(created)”", systemImage: "plus.circle.fill")
+                        }
+                    }
+                    Section {
+                        ForEach(rows, id: \.name) { b in
+                            Button {
+                                if b.current { return }
+                                if b.worktree != nil { held = b } else { switchTo(b.name) }
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: b.remote ? "cloud" : "arrow.triangle.branch")
+                                        .foregroundStyle(b.current ? theme.accent : theme.muted)
+                                        .frame(width: 20)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(b.name).font(.callout.monospaced()).foregroundStyle(b.worktree != nil && !b.current ? theme.muted : theme.text)
+                                        if b.current, branches.dirty > 0 {
+                                            Text("\(branches.dirty) uncommitted change\(branches.dirty == 1 ? "" : "s")").font(.caption).foregroundStyle(theme.limited)
+                                        } else if let tree = b.worktree, !b.current {
+                                            Text("Checked out in \((tree as NSString).lastPathComponent)").font(.caption).foregroundStyle(theme.faint)
+                                        } else if b.remote {
+                                            Text("Remote · checks out with tracking").font(.caption).foregroundStyle(theme.faint)
+                                        }
+                                    }
+                                    Spacer()
+                                    if b.current { Image(systemName: "checkmark").foregroundStyle(theme.accent).fontWeight(.semibold) }
+                                    if model.switching == b.name { ProgressView().controlSize(.small) }
+                                }
+                            }
+                            .accessibilityIdentifier("branch:\(b.name)")
+                        }
+                    } footer: {
+                        if branches.dirty > 0 {
+                            Text("Uncommitted changes come along to the branch you switch to.")
+                        }
+                    }
+                    if rows.isEmpty && created == nil {
+                        Text("No branches yet. Type a name to create one.").foregroundStyle(theme.muted)
                     }
                 } else {
                     ProgressView()
                 }
             }
-            .searchable(text: $query, prompt: "Find or name a branch")
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Find or create a branch")
+            .searchFocused($searching)
+            .onAppear { searching = true }
+            .onSubmit(of: .search) {
+                if let first = model.branches.map(rows)?.first(where: { !$0.current && $0.worktree == nil }), created == nil { switchTo(first.name) } else if let created { switchTo(created) }
+            }
             .navigationTitle("Switch branch")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { scene.sheet = nil } } }
             .task { await model.loadBranches() }
+            .alert("“\(held?.name ?? "")” is checked out elsewhere", isPresented: Binding(get: { held != nil }, set: { if !$0 { held = nil } })) {
+                Button("OK", role: .cancel) { held = nil }
+            } message: {
+                Text("Git won’t check out one branch in two places. It’s in the worktree at \(held?.worktree ?? ""). Open that worktree’s session, or remove the worktree (the branch is kept) to free it.")
+            }
         }
     }
 

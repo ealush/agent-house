@@ -77,8 +77,14 @@ final class DiffModel {
         }
     }
 
+    /// The branch being switched to, while it happens.
+    private(set) var switching: String?
+
     /// Switch to a branch, or create it when it doesn't exist.
     func switchBranch(_ name: String) async -> Bool {
+        guard switching == nil else { return false }
+        switching = name
+        defer { switching = nil }
         do {
             _ = try await api.switchBranch(uid, branch: name.trimmingCharacters(in: .whitespaces))
             await loadBranches()

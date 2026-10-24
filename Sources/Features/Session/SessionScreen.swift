@@ -208,7 +208,16 @@ private struct SessionHeader: View {
                 HStack(spacing: 8) {
                     Text(row.dto.project).foregroundStyle(theme.muted)
                     if let branch = row.dto.branch {
-                        Label(branch, systemImage: "arrow.triangle.branch").foregroundStyle(theme.muted).lineLimit(1)
+                        Button {
+                            scene.sheet = .branch(session.key)
+                        } label: {
+                            Label(branch, systemImage: "arrow.triangle.branch").lineLimit(1)
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(theme.muted)
+                        .disabled(!session.isLive)
+                        .accessibilityLabel("Branch \(branch)")
+                        .accessibilityHint("Switch branch")
                     }
                     if let launch = row.dto.launch { Text(launch).foregroundStyle(theme.faint).lineLimit(1) }
                     if let limit = row.dto.limit { Label(limit, systemImage: "hourglass").foregroundStyle(theme.limited) }
@@ -274,21 +283,33 @@ struct SessionMenu: View {
     var body: some View {
         Menu {
             if session.isLive {
-                Button("Rename", systemImage: "pencil") { scene.perform("rename") }
-                Button(session.row?.dto.pinned == true ? "Unpin" : "Pin", systemImage: "pin") { Task { await session.togglePin() } }
-                if session.row?.dto.branch != nil { Button("Switch branch…", systemImage: "arrow.triangle.branch") { scene.sheet = .branch(session.key) } }
-                if !session.isShell { Button("Fork…", systemImage: "arrow.triangle.branch") { scene.sheet = .fork(session.key) } }
-                if session.row?.dto.feed != nil { Button("Send to…", systemImage: "paperplane") { scene.sheet = .sendTo(session.key) } }
-                Button("Scrollback as text", systemImage: "text.alignleft") { scene.perform("scrollback") }
-                Button("Copy attach command", systemImage: "terminal") { scene.perform("copy-attach") }
-                if session.surface == .gui { Button("Copy last reply", systemImage: "doc.on.doc") { scene.perform("copy-last") } }
-                Divider()
+                Section {
+                    Button("Rename", systemImage: "pencil") { scene.perform("rename") }
+                    Button(session.row?.dto.pinned == true ? "Unpin" : "Pin", systemImage: session.row?.dto.pinned == true ? "pin.slash" : "pin") { Task { await session.togglePin() } }
+                }
+                Section {
+                    if session.row?.dto.branch != nil { Button("Switch Branch…", systemImage: "arrow.triangle.branch") { scene.sheet = .branch(session.key) } }
+                    if !session.isShell { Button("Fork…", systemImage: "arrow.branch") { scene.sheet = .fork(session.key) } }
+                    if session.row?.dto.feed != nil { Button("Send To…", systemImage: "paperplane") { scene.sheet = .sendTo(session.key) } }
+                    if let queued = session.row?.dto.queued, queued > 0 {
+                        Button("Send Queued Now (\(queued))", systemImage: "arrow.up.to.line") { scene.perform("send-now") }
+                    }
+                }
+                Section {
+                    if session.surface == .gui {
+                        Button(scene.app.preferences.stepsHidden ? "Show Steps" : "Hide Steps", systemImage: scene.app.preferences.stepsHidden ? "list.bullet.indent" : "list.bullet") { scene.perform("toggle-steps") }
+                        Button("Copy Last Reply", systemImage: "doc.on.doc") { scene.perform("copy-last") }
+                    }
+                    Button("Scrollback as Text", systemImage: "text.alignleft") { scene.perform("scrollback") }
+                    Button("Copy Attach Command", systemImage: "terminal") { scene.perform("copy-attach") }
+                    Button("All Commands…", systemImage: "command") { scene.perform("command-palette") }
+                }
                 Button("Terminate…", systemImage: "xmark.octagon", role: .destructive) { scene.sheet = .confirmTerminate(session.key) }
             } else {
                 Button("Resume", systemImage: "play") {
                     Task { if let key = await session.resume() { scene.open(key) } }
                 }
-                Button("Fork…", systemImage: "arrow.triangle.branch") { scene.sheet = .fork(session.key) }
+                Button("Fork…", systemImage: "arrow.branch") { scene.sheet = .fork(session.key) }
                 Button(session.history?.dto.pinned == true ? "Unpin" : "Pin", systemImage: "pin") { Task { await session.togglePin() } }
             }
         } label: {

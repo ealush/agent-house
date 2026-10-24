@@ -190,3 +190,10 @@ import Testing
     #expect(Handoff(origin: "http://127.0.0.1:7000", route: .inbox, title: "").webpageURL == nil, "only an https host has a page to hand to")
     #expect(Handoff(userInfo: ["hash": "abc12"]) == nil, "no host, nothing to continue")
 }
+
+@Test func aForkSendsOnlyWhatDiffersFromItsParent() {
+    let same = LaunchState.forkRequest(name: "  Try B ", prompt: "", mode: "default", modes: 1, inherited: ("opus", "high"), picked: ("opus", "high"))
+    #expect(same == ForkRequest(name: "Try B"))
+    let changed = LaunchState.forkRequest(name: "", prompt: "Rewrite the parser", mode: "plan", modes: 3, inherited: ("opus", "high"), picked: ("sonnet", nil))
+    #expect(changed == ForkRequest(prompt: "Rewrite the parser", model: "sonnet", effort: "default", mode: "plan"))
+}
