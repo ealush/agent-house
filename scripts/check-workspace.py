@@ -34,7 +34,7 @@ def check(source: Path | None) -> list[str]:
     required = [
         "AUDIT.md", "SPEC.md", "SOURCE.json", "README.md", "AGENTS.md", "project.yml",
         "Config/Info.plist", "App/AppDelegate.swift", "App/SceneDelegate.swift",
-        "App/AppCoordinator.swift", "Sources/Persistence/SceneStore.swift",
+        "App/AppCoordinator.swift", "Sources/Persistence/AppDatabase.swift",
         "Sources/Features/HostSetup/HostSetupModel.swift",
         "Sources/Features/HostSetup/HostSetupView.swift",
         "Tests/Core/HostEndpointTests.swift", "Tests/Unit/SceneStoreTests.swift",

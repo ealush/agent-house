@@ -7,7 +7,7 @@ final class AppCoordinator {
     private let model: HostSetupModel
     private var restorationTask: Task<Void, Never>?
 
-    init(sceneID: String, store: SceneStore) {
+    init(sceneID: String, store: SceneRepository?) {
         model = HostSetupModel(sceneID: sceneID, store: store)
     }
 

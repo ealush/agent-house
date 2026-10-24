@@ -12,7 +12,7 @@ iPhone/iPad, iOS 26+. The existing `../ah` service owns agent sessions, tmux, qu
 | Feature state | `HostSetupModel` uses `@Observable` and `@MainActor`. A distinct instance belongs to each scene. SwiftUI binds to its projection. |
 | Domain | `HostEndpoint` validates the hub's HTTPS Tailscale Serve origin; `SessionIdentity` is host + stable uid, never a tmux window ID. These are local domain types, not a claim of complete wire DTO coverage. |
 | Wire state | `Sources/Networking` defines a read-only API 28 Inbox projection, typed asks, an incremental bounded SSE parser and a per-host snapshot/patch reducer. Not connected to the app or a network transport. See [transport contract](TRANSPORT.md). |
-| Persistence | `SceneStore` is an actor with one lazy GRDB `DatabasePool`, migrations, transactional upsert and scene-keyed lookup/removal. Concurrent windows justify pooled WAL readers. |
+| Persistence | `AppDatabase` owns one GRDB `DatabasePool` with append-only migrations; `SceneRepository` does transactional upsert and scene-keyed lookup/removal. Concurrent windows justify pooled WAL readers. |
 | Terminal boundary | `TerminalInput` matches current JSON input/resize/scroll messages. `TerminalTransport` and `TerminalRenderer` are interfaces only. No WebSocket or emulator has been connected. |
 | Future transport | Actor-owned URLSession REST/SSE/WebSocket clients with typed DTOs, cancellation, bounded buffering, reconnect/resync and explicit delivery status. Authentication first. |
 

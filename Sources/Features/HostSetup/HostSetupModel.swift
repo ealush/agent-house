@@ -11,19 +11,23 @@ final class HostSetupModel {
     private(set) var error: String?
 
     private let sceneID: String
-    private let store: SceneStore
+    private let store: SceneRepository?
     private var savedOrigin: String?
     private var canPersist = false
 
-    init(sceneID: String, store: SceneStore) {
+    init(sceneID: String, store: SceneRepository?) {
         self.sceneID = sceneID
         self.store = store
     }
 
     func restore() async {
         defer { isRestoring = false }
+        guard let store else {
+            error = "Couldn’t open this device’s storage. Nothing will be saved."
+            return
+        }
         do {
-            let snapshot = try await store.load(sceneID: sceneID)
+            let snapshot = try store.load(sceneID: sceneID)
             try Task.checkCancellation()
             savedOrigin = snapshot?.hostOrigin
             canPersist = true
@@ -42,9 +46,13 @@ final class HostSetupModel {
         notice = nil
         isSaving = true
         defer { isSaving = false }
+        guard let store else {
+            error = "Couldn’t open this device’s storage. Nothing will be saved."
+            return
+        }
         do {
             let endpoint = try HostEndpoint(address)
-            try await store.save(SceneSnapshot(sceneID: sceneID, hostOrigin: endpoint.url.absoluteString))
+            try store.save(SceneSnapshot(sceneID: sceneID, hostOrigin: endpoint.url.absoluteString))
             savedOrigin = endpoint.url.absoluteString
             canPersist = true
             address = endpoint.url.absoluteString
@@ -60,7 +68,7 @@ final class HostSetupModel {
         // A failed load must not let a background callback overwrite the journal.
         guard canPersist && !isRestoring && !isSaving else { return }
         do {
-            try await store.save(SceneSnapshot(sceneID: sceneID, hostOrigin: savedOrigin))
+            try store?.save(SceneSnapshot(sceneID: sceneID, hostOrigin: savedOrigin))
         } catch {
             self.error = "Couldn’t save this window’s state."
         }
