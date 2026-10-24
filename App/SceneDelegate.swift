@@ -1,34 +1,131 @@
-import SwiftUI
 import UIKit
 
+/// One window: its `SceneModel` (navigation, panes, presentation, keyboard), restored from
+/// the GRDB journal by the scene's persistent identifier and reconciled with the hosts once
+/// they answer; deep links and notification taps land here.
 @MainActor
 final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+    static let activityType = "dev.ealush.ah.native.scene"
+
     var window: UIWindow?
-    private var coordinator: AppCoordinator?
+    private(set) var model: SceneModel?
+    private var root: SceneRootController?
 
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options: UIScene.ConnectionOptions) {
-        guard let windowScene = scene as? UIWindowScene,
-              let app = UIApplication.shared.delegate as? AppDelegate else { return }
+        guard let windowScene = scene as? UIWindowScene, let delegate = UIApplication.shared.delegate as? AppDelegate else { return }
         let window = UIWindow(windowScene: windowScene)
-        let coordinator = AppCoordinator(sceneID: session.persistentIdentifier, store: app.sceneStore)
         self.window = window
-        self.coordinator = coordinator
-        coordinator.start(in: window)
-    }
+        guard let app = delegate.app else {
+            window.rootViewController = StartupFailureController(message: delegate.startupError ?? "Agent Hub couldn’t open its data.")
+            window.makeKeyAndVisible()
+            return
+        }
+        // The journal is keyed by the system's scene identifier; the activity only names it.
+        let model = SceneModel(sceneID: session.persistentIdentifier, app: app)
+        if let origin = (session.stateRestorationActivity ?? options.userActivities.first)?.userInfo?["origin"] as? String {
+            model.useAccount(origin)
+        }
+        model.restore()
+        model.clipboard = { UIPasteboard.general.string = $0 }
+        self.model = model
+        let root = SceneRootController(scene: model)
+        self.root = root
+        window.rootViewController = root
+        window.makeKeyAndVisible()
+        windowScene.title = nil
 
-    func sceneDidEnterBackground(_ scene: UIScene) {
-        coordinator?.persist()
+        for context in options.urlContexts { handle(context.url) }
+        if let link = (options.userActivities.first?.userInfo?["link"] as? String).flatMap(URL.init(string:)) { handle(link) }
+        if let response = options.notificationResponse, let payload = PushPayload(response.notification.request.content.userInfo) {
+            open(payload.link, origin: nil)
+        }
     }
 
     func sceneDidDisconnect(_ scene: UIScene) {
-        coordinator?.stop()
+        model?.scheduleSave(now: true)
     }
 
+    func sceneWillEnterForeground(_ scene: UIScene) {
+        model?.willEnterForeground()
+        if let app = model?.app {
+            app.resyncAll()
+            Task { await PushRegistrar.shared.registerIfAuthorized() }
+        }
+    }
+
+    func sceneDidEnterBackground(_ scene: UIScene) {
+        model?.didEnterBackground()
+    }
+
+    /// The system keeps this with the scene session; GRDB holds the window's real state.
     func stateRestorationActivity(for scene: UIScene) -> NSUserActivity? {
-        let activity = NSUserActivity(activityType: "dev.ealush.ah.native.scene")
-        // Only a lookup identifier; GRDB is the versioned restoration journal.
-        activity.userInfo = ["sceneID": scene.session.persistentIdentifier]
+        let activity = NSUserActivity(activityType: Self.activityType)
+        var info: [String: Any] = ["sceneID": scene.session.persistentIdentifier]
+        if let origin = model?.account?.origin { info["origin"] = origin }
+        activity.userInfo = info
         return activity
+    }
+
+    func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+        for context in URLContexts { handle(context.url) }
+    }
+
+    private func handle(_ url: URL) {
+        guard let link = DeepLink(url: url) else { return }
+        open(link, origin: nil)
+    }
+
+    /// Goes to a link in this window: picks the account that serves its host, then the place.
+    func open(_ link: DeepLink, origin: String?) {
+        guard let model else { return }
+        let app = model.app
+        if let origin { model.useAccount(origin) }
+        else if let host = link.host, let account = app.accounts.first(where: { $0.hostname == host || $0.hub.hosts.contains { $0.name == host } }) {
+            model.useAccount(account.origin)
+        }
+        switch link {
+        case .session:
+            if let key = link.sessionKey(localHost: model.hub?.hostname) { model.open(key) }
+        case .review(_, let route):
+            model.openReview(route)
+        case .inbox:
+            model.show(.inbox)
+        }
+    }
+
+    /// From the app delegate (a notification tap): the foreground window, else the most recent.
+    static func open(_ link: DeepLink, origin: String?) {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let target = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+        if let delegate = target?.delegate as? SceneDelegate {
+            delegate.open(link, origin: origin)
+        } else {
+            // No window yet: ask for one; it opens the link once connected.
+            let activity = NSUserActivity(activityType: activityType)
+            var info: [String: Any] = ["link": link.url.absoluteString]
+            if let origin { info["origin"] = origin }
+            activity.userInfo = info
+            UIApplication.shared.requestSceneSessionActivation(nil, userActivity: activity, options: nil) { _ in }
+        }
     }
 }
 
+/// Shown only when local storage can't open: what happened, and that hosts are untouched.
+private final class StartupFailureController: UIViewController {
+    let message: String
+    init(message: String) {
+        self.message = message
+        super.init(nibName: nil, bundle: nil)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+        var config = UIContentUnavailableConfiguration.empty()
+        config.image = UIImage(systemName: "externaldrive.badge.exclamationmark")
+        config.text = "Agent Hub couldn’t start"
+        config.secondaryText = "\(message)\n\nYour hosts and their sessions are unaffected. Try again after unlocking the device, or free some storage."
+        contentUnavailableConfiguration = config
+    }
+}

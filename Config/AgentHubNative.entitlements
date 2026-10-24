@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- APNs. Xcode signs distribution builds with "production"; the app reports which
+         one it was built for (PushRegistrar.environment) so the host uses the matching gateway. -->
+    <key>aps-environment</key>
+    <string>development</string>
+    <!-- "Needs you" alerts are time-sensitive (they break through Focus when allowed). -->
+    <key>com.apple.developer.usernotifications.time-sensitive</key>
+    <true/>
+</dict>
+</plist>

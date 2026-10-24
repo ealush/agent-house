@@ -1,12 +1,11 @@
 # Agent Hub Native workspace
 
-Read root `AUDIT.md`, `SPEC.md` and `docs/native/ARCHITECTURE.md` before porting. The current task delivered preparation only; the implementation mission in SPEC describes subsequent product work.
+Read root `AUDIT.md`, `SPEC.md` and `docs/native/ARCHITECTURE.md` before changing behavior.
 
-- Target iOS/iPadOS 26+. UIKit owns lifecycle, presentation, navigation, keyboard routing and scenes. SwiftUI hosts content. Use Observation and Swift concurrency, with explicit ownership and cancellation.
-- GRDB is the local persistence library. Preserve migration history. Store only non-secret navigation metadata until encrypted account-bound caching is designed. Credentials belong in Keychain.
-- `../ah` is the canonical backend/web reference. Do not copy its server, node_modules, web build, lockfile or PWA into this project. `SOURCE.json` pins the audited baseline; verify drift before relying on it.
-- No fake sessions, success states or terminal substitutes. Authentication, APNs and signing are unresolved product gates. Never spoof Origin/Tailscale identity headers or reuse the host CLI token.
-- Keep one canonical copy of the audit and specification at the root. Maintain source/test evidence and truthful statuses in `docs/native/PARITY.md`.
-- `project.yml` generates the Xcode project. Run `./scripts/verify.sh --static` anywhere and `./scripts/verify.sh` on macOS. Do not claim an Apple build or device check passed without executing it.
-- Honor inherited `../AGENTS.md` shipping requirements. Preparation stays local until builds and meaningful checks pass; never push or deploy without the user's instruction.
-
+- Target iOS/iPadOS 26+. UIKit owns lifecycle, scenes, presentation, navigation and keyboard routing; SwiftUI hosts content. Use Observation (no Combine/ObservableObject) and Swift concurrency with explicit ownership and cancellation.
+- GRDB is the only persistence library. Preserve migration history. Credentials and key material belong in Keychain; anything sensitive cached in GRDB goes through `SealedCache`, never the scene journal.
+- `../ah` is the canonical backend/web reference. Don't copy its server, node_modules, web build, lockfile or PWA here. Backend changes are additive and go on their own stacked branches in `ah`.
+- No fake sessions, success states or terminal substitutes. Never spoof Origin/Tailscale identity headers, reuse the host CLI token, expose the backend publicly or change its loopback binding.
+- Keep non-UI code in `Sources` outside `Features`/`Platform` so `swift test` and `scripts/integration.sh` cover it. Gate commits on `swift test` passing.
+- Keep `docs/native/PARITY.md` statuses truthful with evidence. Don't claim an Apple build, simulator or device check passed without running it.
+- Honor `../CLAUDE.md` shipping rules (stacked PRs via `gh stack`). Never push or deploy without the owner's instruction.

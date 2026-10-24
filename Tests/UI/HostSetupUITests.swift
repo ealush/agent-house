@@ -1,19 +1,30 @@
 import XCTest
 
+/// Pairing on a fresh install. Needs no host: an address that isn't a valid tailnet HTTPS
+/// origin is refused before anything leaves the device.
 @MainActor
 final class HostSetupUITests: XCTestCase {
-    func testInvalidHostShowsValidationError() {
+    func testPlainHTTPAddressIsRefusedBeforeEnrolling() {
         let app = XCUIApplication()
         app.launch()
-        let field = app.textFields["hostAddress"]
-        XCTAssertTrue(field.waitForExistence(timeout: 10))
-        field.tap()
-        // This is also invalid when appended to a previously restored origin.
-        field.typeText("http://example.com")
-        let save = app.buttons["saveHostAddress"]
-        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: save)
-        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 10), .completed)
-        save.tap()
+        let address = app.textFields["hostAddress"]
+        XCTAssertTrue(address.waitForExistence(timeout: 10), "a fresh install opens on pairing")
+        address.tap()
+        address.typeText("http://example.com")
+        let code = app.textFields["setupCode"]
+        code.tap()
+        code.typeText("ABCD-EFGH")
+        let connect = app.buttons["connectHost"]
+        XCTAssertTrue(connect.isEnabled)
+        connect.tap()
         XCTAssertTrue(app.descendants(matching: .any)["setupError"].waitForExistence(timeout: 5))
+    }
+
+    func testConnectNeedsAnAddressAndACode() {
+        let app = XCUIApplication()
+        app.launch()
+        let connect = app.buttons["connectHost"]
+        XCTAssertTrue(connect.waitForExistence(timeout: 10))
+        XCTAssertFalse(connect.isEnabled)
     }
 }

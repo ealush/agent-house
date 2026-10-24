@@ -17,6 +17,9 @@ packages:
   GRDB:
     url: https://github.com/groue/GRDB.swift.git
     exactVersion: 7.11.1
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm.git
+    exactVersion: 1.99.1
 fileGroups:
   - README.md
   - AUDIT.md
@@ -37,6 +40,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(AH_BUNDLE_IDENTIFIER)
         INFOPLIST_FILE: Config/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Config/AgentHubNative.entitlements
         PRODUCT_NAME: AgentHubNative
         MARKETING_VERSION: 0.1.0
         CURRENT_PROJECT_VERSION: 1
@@ -44,6 +48,8 @@ targets:
     dependencies:
       - package: GRDB
         product: GRDB
+      - package: SwiftTerm
+        product: SwiftTerm
   AgentHubNativeTests:
     type: bundle.unit-test
     platform: iOS

@@ -34,9 +34,10 @@ def check(source: Path | None) -> list[str]:
     required = [
         "AUDIT.md", "SPEC.md", "SOURCE.json", "README.md", "AGENTS.md", "project.yml",
         "Config/Info.plist", "App/AppDelegate.swift", "App/SceneDelegate.swift",
-        "App/AppCoordinator.swift", "Sources/Persistence/AppDatabase.swift",
-        "Sources/Features/HostSetup/HostSetupModel.swift",
-        "Sources/Features/HostSetup/HostSetupView.swift",
+        "Config/AgentHubNative.entitlements", "Sources/Persistence/AppDatabase.swift",
+        "Sources/Features/Shell/SceneRootController.swift", "Sources/Features/Setup/SetupView.swift",
+        "Sources/Models/SceneModel.swift", "Sources/Models/AppModel.swift",
+        "scripts/integration.sh", "docs/native/TRANSPORT.md",
         "Tests/Core/HostEndpointTests.swift", "Tests/Unit/SceneStoreTests.swift",
         "Tests/Core/TerminalInputTests.swift", "Tests/UI/HostSetupUITests.swift",
         "Package.swift", "Sources/Networking/HubStateDTO.swift",

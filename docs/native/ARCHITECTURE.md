@@ -2,41 +2,57 @@
 
 ## Target and authority
 
-iPhone/iPad, iOS 26+. The existing `../ah` service owns agent sessions, tmux, queues, drafts, review state, provider configuration and filesystem operations. Native is an additional client. The current preparation makes no backend changes.
+iPhone and iPad, iOS/iPadOS 26+, Swift 6 with complete strict concurrency. The `../ah` service stays the authority for sessions, tmux, queues, drafts, review state, providers and files; the app is another client of it. Backend changes are additive and live on their own stacked branches in `ah` (native device auth, APNs).
 
-## Layers
+## Modules and where they compile
 
-| Area | Ownership / current files |
-| --- | --- |
-| Lifecycle and navigation | `AppDelegate` creates one shared scene store. `SceneDelegate` owns a coordinator/window. `AppCoordinator` owns UIKit navigation and hosts SwiftUI content. |
-| Feature state | `HostSetupModel` uses `@Observable` and `@MainActor`. A distinct instance belongs to each scene. SwiftUI binds to its projection. |
-| Domain | `HostEndpoint` validates the hub's HTTPS Tailscale Serve origin; `SessionIdentity` is host + stable uid, never a tmux window ID. These are local domain types, not a claim of complete wire DTO coverage. |
-| Wire state | `Sources/Networking` defines a read-only API 28 Inbox projection, typed asks, an incremental bounded SSE parser and a per-host snapshot/patch reducer. Not connected to the app or a network transport. See [transport contract](TRANSPORT.md). |
-| Persistence | `AppDatabase` owns one GRDB `DatabasePool` with append-only migrations; `SceneRepository` does transactional upsert and scene-keyed lookup/removal. Concurrent windows justify pooled WAL readers. |
-| Terminal boundary | `TerminalInput` matches current JSON input/resize/scroll messages. `TerminalTransport` and `TerminalRenderer` are interfaces only. No WebSocket or emulator has been connected. |
-| Future transport | Actor-owned URLSession REST/SSE/WebSocket clients with typed DTOs, cancellation, bounded buffering, reconnect/resync and explicit delivery status. Authentication first. |
+| Layer | Directory | Compiles on | Owns |
+| --- | --- | --- | --- |
+| Domain | `Sources/Domain` | Linux + Apple | Host endpoint validation, session identity/status words, ask reading and question forms, theme palettes, deep links |
+| Networking | `Sources/Networking` | Linux + Apple | `APIClient` for every `web/api.ts` route, `URLSessionTransport` (no cookies, cache or redirects; delegate-streamed SSE), wire DTOs, SSE parser, snapshot/patch reducer |
+| Auth | `Sources/Auth` | Linux + Apple | `NativeAuth` enroll/sign-in signing, device keys (`DeviceKey`), credential types |
+| Connection | `Sources/Connection` | Linux + Apple | `StateStream` (per-connection reducer, backoff, polling while down, foreground resync), `FeedStream` |
+| Feed | `Sources/Feed` | Linux + Apple | Transcript schema, reducer, projection to blocks/tools/widgets, diff parsing, hand-off text |
+| Terminal | `Sources/Terminal` | Linux + Apple | `TerminalConnection` (PTY WebSocket, re-resolves the tmux window per attach, never replays keys), input/resize/scroll frames |
+| Keyboard | `Sources/Keyboard` | Linux + Apple | The 89-command catalog, chords, bindings, matcher, which-key, palette tree |
+| Workspace | `Sources/Workspace` | Linux + Apple | Pane layout tree, tiles/seams geometry, neighbors, workspaces 1–9 |
+| Persistence | `Sources/Persistence` | Linux + Apple | GRDB `AppDatabase` (migrations), scene journal, accounts, preferences, sealed cache, credential vault |
+| Models | `Sources/Models` | Linux + Apple | `AppModel`, `AccountSession`, `HubStore`, `SceneModel`, `SessionModel`, composer/outbox/drafts/queue, launch plans, panel and settings models |
+| Review | `Sources/Review` | Linux + Apple | `ReviewAPI`, review DTOs, `ReviewModel`, `LayerConfidence`, `StackMergePlan` |
+| Markdown | `Sources/Markdown` | Linux + Apple | GitHub-flavored Markdown parser for native rendering |
+| Platform | `Sources/Platform` | Apple only | Keychain store, Secure Enclave keys, `UIKey` → `KeyPress`, menu commands, haptics, styles, `PushRegistrar` |
+| Features | `Sources/Features` | Apple only | SwiftUI content: Inbox/Sessions/History/Search pages, session screen (transcript, widgets, composer, ask, terminal, panels), Review, Settings, sheets, overlays, the UIKit shell |
+| App | `App` | Apple only | `AppDelegate`, `SceneDelegate` |
 
-## Portable protocol harness
+`Package.swift` builds everything except `Features`, `Platform` and `App` as `AgentHubKit`, so the protocol, persistence, models and keyboard logic are compiled and tested on Linux with the same sources XcodeGen compiles into the app. `swift-crypto` stands in for CryptoKit on Linux only.
 
-`Package.swift` compiles the existing Domain, Networking and terminal-input source files as `AgentHubCore` for `swift test` on Linux/macOS. XcodeGen compiles the same files directly into the app, with the same `Tests/Core` tests in its unit-test target. Conditional test imports select the module; there is one canonical implementation of each type. This harness has no external dependencies and does not compile UIKit, feature Observation models, GRDB or Keychain. Passing it cannot establish an Apple build or native authentication.
+## Ownership
+
+- **App** (`AppModel`): storage, Keychain vault, device key store, transport, device preferences and shortcuts, the outbox, every enrolled account. Created once by `AppDelegate`.
+- **Account** (`AccountSession`): one host origin, its bearer credential (Keychain), its `APIClient` and `HubStore`. `HubStore` runs one state stream for the hub and one per online peer (under `/h/<peer>`), for the whole app; windows observe it and never open their own. Rejection (401/4401) from any request or stream signs the account out everywhere at once.
+- **Window** (`SceneModel`): route, workspace/panes, sheet/palette/switcher state, focus requests, key scope, toasts. Each UIKit scene has its own, keyed by the scene session's persistent identifier. `SessionModel`s are per window (their feed streams are per viewer, like a browser tab).
+- **Session view** (`SessionModel`): feed stream, composer, queue, notices; created on first display and pruned when no pane or route shows it.
+
+## UIKit shell
+
+`SceneRootController` is each window's root. It swaps between setup, sign-in and the app by account state, and on iOS 26 uses `updateProperties()` observation tracking to follow `SceneModel` without Combine:
+
+- **Layout**: `MainSplitController` (`UISplitViewController`, double column) with the SwiftUI sidebar and detail; its `.compact` column is a `UITabBarController` (`UITab`s: Inbox, Sessions, History, Review, Search) whose `UINavigationController`s push a `SessionHostController` per session. Rotation and Stage Manager resizing keep the same `SceneModel`, so the place survives.
+- **Panes**: `WorkspaceView` lays tiles out flat from `LayoutNode.tiles()`, so a session's view (and terminal) survives the tree changing; seams drag to resize.
+- **Presentation**: one modal slot driven by `SceneModel.sheet`/`palette`/`switcher`/`showingShortcuts`; dismissing by swipe writes back to state. Toasts, which-key and the submap legend float in a pass-through overlay.
+- **Keyboard**: `AppDelegate.buildMenu` puts every command in the menu bar (and the ⌘-hold overlay) with `UIKeyCommand`s targeting `runKeyCommand(_:)` on the root. `canPerformAction` asks `SceneModel.allowsMenuCommand`, which matches the chord through the current key scope (composer field edges, terminal), so a disabled command lets the key reach the focused responder. The composer (`UITextView`) and terminal (`TerminalView`) route their own `pressesBegan` through `SceneModel.handle` first; the root handles leftover app-scope keys (submaps, workspace digits) and held-modifier which-key.
+
+## Security
+
+- Enrollment needs a one-time setup code from an already signed-in device (or `ah auth code` on the host). The device key is a Secure Enclave P-256 key (`.userPresence`, Face ID); only its public half leaves the device. Sign-in signs a fresh host challenge. Sessions are bearer tokens in Keychain; removing the device on any other device ends every sign-in from it and closes its streams and terminals.
+- The client never sends forged Origin or Tailscale identity headers. Writes carry `X-AH`; the host accepts a missing Origin only with a native bearer and no cookies. The backend's loopback binding and browser defenses are unchanged.
+- Local data: GRDB under Application Support, excluded from backup, `completeUntilFirstUserAuthentication`. Transcript pages are sealed with AES-GCM under a key derived (HKDF) from a device secret in Keychain and a per-sign-in server key, bound to the host origin; locking drops the key, forgetting an account deletes its rows.
+- Developer preview uses a non-persistent `WKWebView` with a host-only preview cookie from `/api/auth/native/preview-session`; links leaving the host open in Safari.
 
 ## Restoration
 
-UIKit scene sessions supply `persistentIdentifier`; each scene loads its corresponding versioned GRDB snapshot. `NSUserActivity` carries only that lookup identifier. Significant host-address saves write immediately, with a supplementary background save. Never depend on termination callbacks. Discarding a scene removes its row on a best-effort basis.
+Each scene's journal row (`SceneSnapshot`, versioned) records route, workspaces/panes, per-session surface/panel/scroll anchor/composer focus, search and filters. `SceneDelegate` keeps only the scene identifier and account origin in `stateRestorationActivity`; after relaunch `SceneModel.restore()` loads the row, and `reconcileIfReady()` checks every session against the host once state arrives (ended sessions fall back to History, gone ones are dropped). Saves are debounced, immediate on backgrounding; termination callbacks are never relied on.
 
-The v1 snapshot holds schema version, scene ID and validated host origin only. It cannot yet restore session selection, tabs, pane layout, scroll position or drafts: extend it with tested migrations as those features arrive. Load errors surface without deleting the journal. Future versions are rejected instead of silently erased. A fresh scene without a journal entry opens setup.
+## Notifications
 
-The directory is excluded from backups and uses iOS Data Protection `completeUntilFirstUserAuthentication`. This is not application-level database encryption. No transcript/draft/credential is currently cached. Before sensitive caching, introduce Keychain-bound CryptoKit encryption, account identity/invalidation, retention, signout cleanup and revoked-account handling.
-
-## State boundaries for the port
-
-| Scope | State |
-| --- | --- |
-| Host-global | Live sessions/status, titles/order/pins, queues, synced drafts, history/review, agents/environment/providers. Reconcile with server truth. |
-| Device/account | Revocable credential in Keychain; local appearance/shortcuts/notification preferences; stable device presence identity. Not implemented yet. |
-| Scene | Selected route, pane tree/workspace, focus and scroll positions; never share a mutable navigation model between windows. Only host setup is wired today. |
-
-Current auth is browser-centric: writes require exact Origin + `X-AH`, WebSocket upgrades require Origin, and Serve requests require server-injected owner identity. Read `../ah/server/gate.ts`, `server/main.ts`, `server/auth.ts`, `SECURITY.md` and adversarial security tests before changing it. Design an explicit native contract; the interfaces in this scaffold do not authorize requests.
-
-`WKWebView` is reserved for developer previews after an authenticated, isolated cookie/origin strategy is proved. The app shell and terminal must remain native.
-
+`PushRegistrar` asks for permission once, registers for APNs, and sends the token plus per-device opt-ins (needs you, finished, private preview) to every signed-in host (`PUT /api/push/apns`). The host's `server/apns.ts` sends ES256-JWT-authenticated HTTP/2 pushes; payloads carry `ah: {host, route, event}` and, for plain permission prompts only, the `AH_APPROVAL` category with Approve/Deny actions that require an unlocked device. Taps route through `DeepLink` to the right account and window. The icon badge counts sessions waiting on you across hosts.

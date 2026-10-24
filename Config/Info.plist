@@ -22,6 +22,23 @@
     <string>$(CURRENT_PROJECT_VERSION)</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
+    <key>NSFaceIDUsageDescription</key>
+    <string>Face ID unlocks this device’s key to sign in to your Agent Hub host.</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>$(PRODUCT_BUNDLE_IDENTIFIER).link</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>agenthub</string>
+            </array>
+        </dict>
+    </array>
+    <key>NSUserActivityTypes</key>
+    <array>
+        <string>dev.ealush.ah.native.scene</string>
+    </array>
     <key>UIApplicationSceneManifest</key>
     <dict>
         <key>UIApplicationSupportsMultipleScenes</key>

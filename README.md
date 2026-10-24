@@ -1,65 +1,40 @@
 # Agent Hub Native
 
-Native iPhone and iPad client workspace for [`../ah`](../ah), prepared from the port kit on 23 October 2026.
+Native iPhone and iPad client for [Agent Hub](../ah): your agent sessions, their asks, transcripts and terminals, the iPad workspace, stack review and settings, as a UIKit + SwiftUI app.
 
-The selected stack is **iOS/iPadOS 26+, Swift 6, UIKit navigation, SwiftUI content, Observation, Swift concurrency, and GRDB.swift**. The Linux Node/tmux/Prisma service remains the authority for sessions and agent operations.
+**Stack:** iOS/iPadOS 26+, Swift 6 (complete strict concurrency), UIKit lifecycle/scenes/navigation/keyboard, SwiftUI content in `UIHostingController`, Observation, GRDB 7.11.1, SwiftTerm 1.99.1, Keychain and the Secure Enclave. The `ah` host stays the authority for sessions and agents.
 
-Start with [AUDIT.md](AUDIT.md) and [SPEC.md](SPEC.md). These are the only imported port documents; the ZIP and its duplicate document tree were deliberately omitted. [SOURCE.json](SOURCE.json) records their provenance and the source revision/file hashes.
+Start with [AUDIT.md](AUDIT.md) and [SPEC.md](SPEC.md) (the port's source documents), then [ARCHITECTURE](docs/native/ARCHITECTURE.md), [TRANSPORT](docs/native/TRANSPORT.md) and [DECISIONS](docs/native/DECISIONS.md). [PARITY](docs/native/PARITY.md) tracks every capability, command and setting with its evidence; [TEST-MATRIX](docs/native/TEST-MATRIX.md) records what ran; [RISKS](docs/native/RISKS.md) lists the open gates.
 
-The full [completion and pending-work checklist](docs/native/PARITY.md) pairs with the specification: every built component has a checked row with implementation/test evidence, and every product phase, audit capability, command, setting, adapter, widget and acceptance gate has explicit remaining status. Use it as the live progress record; an implemented foundation does not close a product journey.
+## Status
 
-## What is prepared
-
-- UIKit application/scene delegates, a navigation coordinator and a hosted SwiftUI host-address form.
-- Observation model, strict HTTPS Tailscale-origin validation and stable host/uid identity.
-- Actor-owned GRDB `DatabasePool`, a first migration and versioned per-scene metadata restoration.
-- Terminal input/resize/scroll encoding and replaceable transport/renderer interfaces.
-- API 28 Inbox state/ask DTOs, an atomic snapshot/patch reducer and a bounded incremental SSE parser, with a portable Swift test harness.
-- XcodeGen project specification, signing overrides, simulator validation scripts, unit/UI test targets and a macOS CI workflow.
-- Architecture, decisions, risks, test matrix, and a source-linked parity tracker including all 89 keyboard commands.
-
-This is a scaffold. The form saves an address locally; it makes no network request. Authentication/pairing, Inbox, terminal rendering, other product views, and APNs await implementation. The native authentication contract must be established before authenticated features are connected.
+- The whole app is written: pairing and Face ID sign-in, Inbox, sessions (GUI transcript with tools and widgets, composer with queue/drafts/attachments, asks and forms, SwiftTerm terminal), panels (diff, files, side chat, queue, snapshots, preview, stack), History, Search, the iPad split/panes/workspaces/scratchpad, all 89 keyboard commands in the menu bar, palette and switcher, stack review through exact-head merge, all nine Settings sections, APNs with Approve/Deny actions, deep links, restoration and an encrypted transcript cache.
+- Everything except the UI layer compiles and passes on Linux: **104 unit tests** and **18 integration tests against a disposable `ah`** (real tmux, fake agents).
+- **The UIKit/SwiftUI layer has never been compiled** — this was built on Linux with no Xcode. The first Mac build will need fixes. No simulator, device, APNs or hardware-keyboard check has run.
+- The app needs the host on `ah` branches `native/1-device-auth` and `native/2-apns` (local, not yet pushed).
 
 ## On a Mac
 
-Install Xcode 26 or newer with an iOS 26+ simulator runtime and XcodeGen 2.44 or newer. Select the full Xcode installation with `xcode-select` if needed.
+Xcode 26+, an iOS 26+ simulator runtime, XcodeGen 2.44+.
 
 ```bash
 brew install xcodegen
-./scripts/bootstrap.sh
-open AgentHubNative.xcodeproj
-./scripts/verify.sh
+./scripts/bootstrap.sh          # generate AgentHubNative.xcodeproj, resolve packages
+./scripts/verify.sh             # static checks + unit and UI tests on a simulator
 ```
 
-`project.yml` is the project source of truth. The generated `.xcodeproj` is ignored; regenerate it after changing targets or dependencies. GRDB is pinned to **7.11.1**, including its packaged privacy manifest. There are no CocoaPods, JavaScript packages, or embedded web shell.
+For a device, copy `Config/Local.xcconfig.example` to `Config/Local.xcconfig` with your team and bundle ID. APNs needs an auth key configured on the host (`apns` in its config: `teamId`, `keyId`, `keyFile`, `topic`).
 
-`verify.sh` runs the static workspace check, regenerates the project, chooses an available iOS 26+ iPhone simulator, and runs the unit and UI tests. Override the destination when needed:
+## Anywhere with Swift 6.2
 
 ```bash
-AH_SIMULATOR_DESTINATION='platform=iOS Simulator,id=SIMULATOR_UDID' ./scripts/verify.sh
+./scripts/verify.sh --static    # workspace, links, plists, provenance
+swift test                      # every non-UI source, 104 tests
+AH_SOURCE=../path/to/ah ./scripts/integration.sh   # against a disposable host
 ```
 
-Replace `SIMULATOR_UDID` with an installed device's UUID from `xcrun simctl list devices available`. For a physical device, copy `Config/Local.xcconfig.example` to `Config/Local.xcconfig` and fill in your team and bundle identifier. APNs and Associated Domains entitlements are deliberately absent until provisioning and the native auth design are settled. Distribution icons and signing are later release tasks.
+`Package.swift` compiles all of `Sources` except `Features` and `Platform` (the UIKit/SwiftUI layer) as one module, so the models, keyboard routing and persistence run in plain `swift test`.
 
-## On Linux / source verification
+## Shipping
 
-```bash
-./scripts/verify.sh --static
-python3 scripts/check-workspace.py --source ../ah
-# With a Swift 6+ toolchain installed (Linux or macOS):
-swift test
-```
-
-The static checks detect duplicate/case-colliding files, broken local Markdown links, missing scaffold files, malformed metadata/plists, and source drift. `swift test` separately compiles and tests the Foundation protocol sources in `Package.swift`: host validation, terminal encoding, SSE framing and state reduction. It does not compile UIKit, the Observation feature model or GRDB. The macOS Xcode unit-test target also includes these core tests. See [the transport contract](docs/native/TRANSPORT.md) for coverage and connection/authentication gates.
-
-Preparation ran on Linux without Swift, Xcode or an Apple simulator. On 24 October, an isolated Swift 6.2 Linux toolchain compiled the portable core and all **19 Swift tests passed**. UIKit/GRDB compilation and simulator/UI tests have **not** run. See [docs/native/TEST-MATRIX.md](docs/native/TEST-MATRIX.md) for gates and evidence.
-
-## Porting next
-
-1. On macOS, generate, resolve and build the scaffold; resolve compiler/SDK issues before feature work.
-2. Design and test scoped/revocable native credentials and pairing in `ah`, preserving its existing browser defenses.
-3. Implement typed REST/SSE state, a first authenticated Inbox journey, and a real terminal adapter.
-4. Continue through the priorities and acceptance gates in [SPEC.md](SPEC.md), updating [PARITY.md](docs/native/PARITY.md) with evidence.
-
-The source application has not been changed. This is an independent local Git repository; scaffolding continues on `scaffold/state-foundations`, without a remote, commit, push or deployment. Follow the parent `../AGENTS.md` stacked-PR rules when it is ready to ship.
-
+Follow `../CLAUDE.md`: stacked PRs through `gh stack`, one logical layer each, never directly to `main`, and nothing pushed without the owner's go-ahead.

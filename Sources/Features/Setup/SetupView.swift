@@ -1,0 +1,174 @@
+import SwiftUI
+import UIKit
+
+/// Pairing this device with a host: its tailnet address, a one-time setup code from a device
+/// that's already signed in, and a name. The device's key is made here (Secure Enclave) and
+/// only its public half leaves; nothing is trusted from the network until the host verifies
+/// the code and the signature.
+struct SetupView: View {
+    let app: AppModel
+    let done: (AccountSession) -> Void
+    @State private var address = ""
+    @State private var code = ""
+    @State private var label = UIDevice.current.name
+    @State private var busy = false
+    @State private var error: String?
+    @FocusState private var field: Field?
+    @Environment(\.theme) private var theme
+    @Environment(\.dismiss) private var dismiss
+
+    enum Field { case address, code, label }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Image(systemName: "point.3.connected.trianglepath.dotted").font(.largeTitle).foregroundStyle(theme.brand)
+                        Text("Connect to Agent Hub").font(.title2.weight(.semibold))
+                        Text("Your host stays private on your tailnet. This device gets its own key, which you can remove from any other device.")
+                            .font(.callout).foregroundStyle(theme.muted)
+                    }
+                    .padding(.vertical, 6)
+                }
+                Section {
+                    TextField("https://your-host.your-tailnet.ts.net", text: $address)
+                        .textContentType(.URL)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .focused($field, equals: .address)
+                        .submitLabel(.next)
+                        .onSubmit { field = .code }
+                        .accessibilityIdentifier("hostAddress")
+                } header: {
+                    Text("Host address")
+                } footer: {
+                    Text("The HTTPS address Tailscale Serve gives Agent Hub.")
+                }
+                Section {
+                    TextField("Setup code", text: $code)
+                        .font(.title3.monospaced())
+                        .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled()
+                        .textContentType(.oneTimeCode)
+                        .focused($field, equals: .code)
+                        .submitLabel(.next)
+                        .onSubmit { field = .label }
+                        .accessibilityIdentifier("setupCode")
+                } header: {
+                    Text("Setup code")
+                } footer: {
+                    Text("On a device that’s already signed in: Settings → Security → Issue a setup code. On the host itself: `ah auth code`.")
+                }
+                Section("This device’s name") {
+                    TextField("Name", text: $label)
+                        .focused($field, equals: .label)
+                        .submitLabel(.go)
+                        .onSubmit { Task { await enroll() } }
+                        .accessibilityIdentifier("deviceLabel")
+                }
+                if let error {
+                    Section {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(theme.danger)
+                            .accessibilityIdentifier("setupError")
+                    }
+                }
+                Section {
+                    Button {
+                        Task { await enroll() }
+                    } label: {
+                        HStack {
+                            Spacer()
+                            if busy { ProgressView() } else { Text("Connect").fontWeight(.semibold) }
+                            Spacer()
+                        }
+                    }
+                    .disabled(busy || address.trimmingCharacters(in: .whitespaces).isEmpty || code.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .accessibilityIdentifier("connectHost")
+                }
+            }
+            .navigationTitle(app.accounts.isEmpty ? "" : "Add a host")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if !app.accounts.isEmpty {
+                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                }
+            }
+            .onAppear { field = .address }
+        }
+        .interactiveDismissDisabled(app.accounts.isEmpty || busy)
+    }
+
+    private func enroll() async {
+        guard !busy else { return }
+        busy = true
+        error = nil
+        defer { busy = false }
+        do {
+            let session = try await app.enroll(address: address.trimmingCharacters(in: .whitespaces), code: code.trimmingCharacters(in: .whitespaces), label: label)
+            Haptics.success()
+            await PushRegistrar.shared.registerIfAuthorized()
+            done(session)
+        } catch {
+            Haptics.failure()
+            self.error = (error as? LocalizedError)?.errorDescription ?? APIError.wrap(error).message
+        }
+    }
+}
+
+/// An enrolled host whose sign-in ended (locked, expired, or ended from another device):
+/// Face ID unlocks the device key, which signs a fresh challenge.
+struct SignInView: View {
+    let account: AccountSession
+    let app: AppModel
+    @Environment(\.theme) private var theme
+    @State private var confirmForget = false
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Spacer()
+            Image(systemName: "lock.shield").font(.system(size: 56)).foregroundStyle(theme.brand)
+            Text(account.hostname).font(.title2.weight(.semibold))
+            Text(account.origin).font(.footnote.monospaced()).foregroundStyle(theme.muted)
+            switch account.status {
+            case .needsSignIn(let reason):
+                if let reason { Text(reason).font(.callout).foregroundStyle(theme.muted).multilineTextAlignment(.center) }
+                Button {
+                    Task { await account.signIn() }
+                } label: {
+                    Label("Sign in", systemImage: "faceid").frame(maxWidth: 280)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .tint(theme.accentStrong)
+                .keyboardShortcut(.defaultAction)
+            case .signingIn:
+                ProgressView("Signing in…")
+            case .unenrolled(let reason):
+                Text(reason).font(.callout).foregroundStyle(theme.muted).multilineTextAlignment(.center)
+                Text("This device is no longer enrolled with this host. Pair it again with a new setup code.").font(.callout).multilineTextAlignment(.center)
+                Button("Forget this host") { Task { await app.removeLocally(account) } }.buttonStyle(.bordered)
+            case .signedIn:
+                ProgressView()
+            }
+            Spacer()
+            if case .needsSignIn = account.status {
+                Button("Forget this host on this device…", role: .destructive) { confirmForget = true }.font(.footnote)
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(theme.background)
+        .confirmationDialog("Forget \(account.hostname)?", isPresented: $confirmForget, titleVisibility: .visible) {
+            Button("Forget", role: .destructive) { Task { await app.removeLocally(account) } }
+        } message: {
+            Text("This device’s key is deleted. The host still lists it until you remove it there.")
+        }
+        .task {
+            // Arriving locked from launch: ask for Face ID straight away, once.
+            if case .needsSignIn(nil) = account.status { await account.signIn() }
+        }
+    }
+}
