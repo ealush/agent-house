@@ -93,6 +93,18 @@ struct TranscriptView: View {
                 case .messages(let key) where key == session.key:
                     browsing = blocks.indices.last
                     browseFocused = true
+                case .turn(let key, let seq) where key == session.key:
+                    Task {
+                        guard await session.reveal(seq: seq) else {
+                            scene.toast("That turn isn’t in this transcript any more")
+                            return
+                        }
+                        // Let the newly loaded pages lay out, then bring the turn to the top.
+                        await Task.yield()
+                        if let block = session.blocks.first(where: { $0.seq == seq }) {
+                            withAnimation(.snappy) { reader.scrollTo(block.id, anchor: .top) }
+                        }
+                    }
                 default:
                     break
                 }

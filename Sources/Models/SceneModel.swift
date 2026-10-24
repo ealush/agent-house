@@ -137,11 +137,13 @@ final class SceneModel {
         case rename(String)
         /// An empty pane's session search.
         case chooser(LayoutNode.Path)
+        /// Scroll a transcript to this turn (a search hit), loading older pages as needed.
+        case turn(String, Int)
 
         /// The session this target is in, if any.
         var sessionKey: String? {
             switch self {
-            case .composer(let k), .terminal(let k), .ask(let k), .messages(let k), .latest(let k), .rename(let k): return k
+            case .composer(let k), .terminal(let k), .ask(let k), .messages(let k), .latest(let k), .rename(let k), .turn(let k, _): return k
             case .sidebar, .page, .chooser: return nil
             }
         }
@@ -889,6 +891,58 @@ final class SceneModel {
         }
         pruneSessions()
         scheduleSave()
+    }
+
+    // MARK: Switcher and search results
+
+    /// Resume an ended or saved conversation from History and open it.
+    func resume(_ item: HistoryRow) async {
+        guard let hub else { return }
+        let host = item.isLocal ? nil : item.host
+        do {
+            let result = try await hub.client(host: host).resume(item.dto.ref)
+            hub.refresh(host: host)
+            open(host.map { "\($0)/\(result.uid)" } ?? result.uid)
+        } catch {
+            toast("Couldn’t resume: \(APIError.wrap(error).message)", error: true)
+        }
+    }
+
+    /// Open a match inside a conversation at its turn: the live session when it's running
+    /// (a side chat opens its Chat panel), otherwise the ended record, which reads without
+    /// resuming anything.
+    func openHit(_ hit: SearchHit) {
+        switcher = nil
+        guard let hub else { return }
+        let local = hit.host == hub.hostname
+        let seq = hit.kind == "transcript" ? hit.excerpts.first?.seq : nil
+        let live = hub.rows.first { row in
+            (local ? row.isLocal : row.host == hit.host) && (hit.uid.map { row.uid == $0 } ?? (hit.harnessId != nil && row.dto.harnessId == hit.harnessId))
+        }
+        if let row = live {
+            open(row.key)
+            if hit.kind == "chat" {
+                session(row.key)?.panel = .chat
+            } else if let seq {
+                setSurface(.gui, for: row.key)
+                requestFocus(.turn(row.key, seq))
+            }
+            return
+        }
+        guard let ref = hit.ref else {
+            toast(hit.kind == "chat" ? "That side chat’s session has ended; its chats are under Past chats." : "Session not found.", error: hit.kind != "chat")
+            return
+        }
+        let key = local ? ref : "\(hit.host)/\(ref)"
+        open(key)
+        if let seq { requestFocus(.turn(key, seq)) }
+    }
+
+    /// Search's full page, with this text.
+    func showAllResults(_ text: String) {
+        switcher = nil
+        search = SearchQuery(q: text)
+        show(.search)
     }
 
     // MARK: Panes by pointer

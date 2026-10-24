@@ -177,6 +177,16 @@ final class SessionModel: Identifiable {
         return (try? await stream.loadOlder()) ?? false
     }
 
+    /// Load older pages until the turn `seq` is in the transcript (a search hit's turn), up
+    /// to `pages` pages. True when it's there to scroll to.
+    func reveal(seq: Int, pages: Int = 20) async -> Bool {
+        for _ in 0..<pages {
+            if feed.entries.contains(where: { $0.seq == seq }) { return true }
+            guard let oldest = feed.entries.first?.seq, oldest > seq, await loadOlder() else { break }
+        }
+        return feed.entries.contains { $0.seq == seq }
+    }
+
     /// Something changed the queue or status: keep the tray's poll in step.
     func stateChanged() {
         queue.watch(queued: row?.dto.queued ?? 0)

@@ -364,8 +364,7 @@ struct SearchView: View {
                 }
                 ForEach(Array(response.results.enumerated()), id: \.offset) { _, hit in
                     Button {
-                        if let uid = hit.uid { scene.open(hit.host == scene.hub?.hostname ? uid : "\(hit.host)/\(uid)") }
-                        else if let ref = hit.ref { scene.open(ref) }
+                        scene.openHit(hit)
                     } label: {
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {

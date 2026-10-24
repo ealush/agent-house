@@ -309,71 +309,231 @@ private struct PaletteRow: View {
     }
 }
 
-/// The session switcher (⌘K): every session, newest attention first; typing filters.
+/// The session switcher (⌘K, `web/Switcher.tsx`): live sessions first; once you type,
+/// History and matches inside conversations too. Tokens scope it: `h:claude s:waiting
+/// p:vest m:opus in:chats role:user`. ↵ opens or resumes, ⌘↵ / ⌃↵ opens a live session as
+/// a new pane, Esc closes.
 struct SwitcherView: View {
     @Bindable var scene: SceneModel
     @State private var selection = 0
+    @State private var content: SwitcherContent?
     @FocusState private var focused: Bool
     @Environment(\.theme) private var theme
 
-    private var rows: [SessionRow] {
-        let all = scene.sidebarOrder
-        let q = (scene.switcher?.query ?? "").trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty else { return all }
-        return all.map { row in (row, max(CommandMatcher.fuzzy(q, row.title) * 2, CommandMatcher.fuzzy(q, row.dto.project), CommandMatcher.fuzzy(q, row.dto.branch ?? ""))) }
-            .filter { $0.1 > 0 }
-            .sorted { $0.1 > $1.1 }
-            .map(\.0)
+    private enum Row: Identifiable {
+        case live(SessionRow)
+        case past(HistoryRow)
+        case hit(SearchHit)
+
+        var id: String {
+            switch self {
+            case .live(let row): return "live:" + row.key
+            case .past(let row): return "past:" + row.id
+            case .hit(let hit): return "hit:\(hit.host):\(hit.kind):\(hit.ref ?? hit.uid ?? hit.title)"
+            }
+        }
+    }
+
+    private var query: String { scene.switcher?.query ?? "" }
+    private var tile: Bool { scene.switcher?.asTile == true || scene.switcher?.intoPane != nil }
+
+    private func rows() -> (live: [SessionRow], past: [HistoryRow], hits: [SearchHit]) {
+        guard let hub = scene.hub else { return ([], [], []) }
+        let parsed = SwitcherSearch.parse(query)
+        let order = scene.sidebarOrder.map(\.key)
+        let found = SwitcherSearch.results(live: hub.rows, order: order, history: tile ? [] : hub.history, parsed)
+        return (found.live, found.past, tile ? [] : (content?.hits ?? []))
     }
 
     var body: some View {
-        let rows = rows
+        let found = rows()
+        let all: [Row] = found.live.map(Row.live) + found.past.map(Row.past) + found.hits.map(Row.hit)
+        let text = SwitcherSearch.parse(query).text.trimmingCharacters(in: .whitespaces)
         VStack(spacing: 0) {
-            TextField(scene.switcher?.asTile == true ? "Open beside the focused pane" : "Go to a session", text: Binding(get: { scene.switcher?.query ?? "" }, set: { scene.switcher?.query = $0; selection = 0 }))
-                .textFieldStyle(.plain)
-                .font(.title3)
-                .padding(14)
-                .focused($focused)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .onSubmit { if rows.indices.contains(selection) { scene.pick(rows[selection].key) } }
-                .onKeyPress(.upArrow) { if !rows.isEmpty { selection = (selection - 1 + rows.count) % rows.count }; return .handled }
-                .onKeyPress(.downArrow) { if !rows.isEmpty { selection = (selection + 1) % rows.count }; return .handled }
-                .onKeyPress(.escape) { scene.switcher = nil; return .handled }
-            Divider()
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundStyle(theme.faint)
+                TextField(tile ? "Open as a new pane…" : scene.hardwareKeyboard ? "Jump, resume, or search conversations…  h:claude p:vest in:chats" : "Jump, resume or search…",
+                          text: Binding(get: { query }, set: { scene.switcher?.query = $0; selection = 0; content?.update($0) }))
+                    .textFieldStyle(.plain)
+                    .font(.title3)
+                    .focused($focused)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .onSubmit { choose(all, split: false) }
+                    .onKeyPress(.upArrow) { if !all.isEmpty { selection = (selection - 1 + all.count) % all.count }; return .handled }
+                    .onKeyPress(.downArrow) { if !all.isEmpty { selection = (selection + 1) % all.count }; return .handled }
+                    .onKeyPress(.escape) { scene.switcher = nil; return .handled }
+                    .onKeyPress(.return, phases: .down) { press in
+                        guard press.modifiers.contains(.command) || press.modifiers.contains(.control) else { return .ignored }
+                        choose(all, split: true)
+                        return .handled
+                    }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 13)
+            Divider().overlay(theme.faint.opacity(0.25))
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(Array(rows.enumerated()), id: \.element.key) { index, row in
-                            HStack(spacing: 10) {
-                                AgentMark(agent: row.dto.agent, size: 22)
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(row.title).font(.callout).lineLimit(1)
-                                    Text([row.dto.project, row.dto.branch, scene.hub?.multiHost == true ? row.host : nil].compactMap { $0 }.joined(separator: " · "))
-                                        .font(.caption).foregroundStyle(theme.muted).lineLimit(1)
-                                }
-                                Spacer()
-                                StatusPill(word: row.word)
+                    LazyVStack(alignment: .leading, spacing: 1) {
+                        ForEach(Array(all.enumerated()), id: \.element.id) { index, row in
+                            if let head = heading(row, index: index, found: found) {
+                                Text(head.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(theme.faint)
+                                    .padding(.horizontal, 18).padding(.top, index == 0 ? 6 : 12).padding(.bottom, 4)
+                                    .accessibilityAddTraits(.isHeader)
                             }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background(index == selection ? theme.accentStrong.opacity(0.18) : .clear)
-                            .contentShape(Rectangle())
-                            .onTapGesture { scene.pick(row.key) }
-                            .id(index)
+                            if case .hit = row, index == found.live.count + found.past.count, let note = content?.note {
+                                Text(note).font(.caption).foregroundStyle(theme.muted).padding(.horizontal, 18)
+                            }
+                            SwitcherRow(row: display(row), selected: index == selection, multiHost: scene.hub?.multiHost == true)
+                                .id(row.id)
+                                .contentShape(Rectangle())
+                                .onTapGesture { selection = index; choose(all, split: false) }
+                                .onHover { if $0 { selection = index } }
                         }
-                        if rows.isEmpty { Text("No sessions match").foregroundStyle(theme.muted).padding(24) }
+                        if found.hits.isEmpty, let note = content?.note, !tile {
+                            Text(note).font(.caption).foregroundStyle(theme.muted).padding(.horizontal, 18).padding(.vertical, 8)
+                        }
+                        if all.isEmpty {
+                            Text("Nothing matches. Try h:claude or p:ah.").foregroundStyle(theme.muted).frame(maxWidth: .infinity).padding(24)
+                        }
+                        if text.count >= 2, !tile {
+                            Button {
+                                scene.showAllResults(text)
+                            } label: {
+                                Label("See all results for “\(text)”", systemImage: "arrow.right").font(.callout)
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(theme.accent)
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 10)
+                        }
                     }
+                    .padding(.vertical, 6)
                 }
-                .onChange(of: selection) { _, new in proxy.scrollTo(new, anchor: .center) }
+                .onChange(of: selection) { _, new in if all.indices.contains(new) { proxy.scrollTo(all[new].id) } }
             }
-            .frame(maxHeight: 420)
+            .frame(maxHeight: 440)
+            Divider().overlay(theme.faint.opacity(0.25))
+            HStack(spacing: 14) {
+                HStack(spacing: 4) { Keycaps(parts: ["↑", "↓"]); Text("move") }
+                HStack(spacing: 4) { Keycaps(parts: ["↵"]); Text(tile ? "open as a new pane" : "open or resume") }
+                if !tile && !scene.narrow { HStack(spacing: 4) { Keycaps(parts: ["⌘", "↵"]); Text("as a new pane") } }
+                Spacer()
+                HStack(spacing: 4) { Keycaps(parts: ["esc"]); Text("close") }
+            }
+            .font(.caption)
+            .foregroundStyle(theme.muted)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .accessibilityHidden(true)
         }
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .frame(maxWidth: 560)
+        .background(theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(theme.faint.opacity(0.35), lineWidth: 0.5))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.28), radius: 30, y: 16)
+        .frame(maxWidth: 600)
         .padding(.horizontal, 16)
-        .shadow(radius: 30, y: 10)
-        .onAppear { focused = true }
+        .onAppear {
+            focused = true
+            if content == nil, let api = scene.hub?.api {
+                content = SwitcherContent { query in try await api.search(query, allHosts: true) }
+                content?.update(query)
+            }
+        }
+    }
+
+    private func display(_ row: Row) -> SwitcherViewRow {
+        switch row {
+        case .live(let r):
+            return SwitcherViewRow(agent: r.dto.agent, title: r.title, fork: r.dto.fork != nil, host: r.host, detail: [r.dto.project, r.dto.branch ?? ""], status: r.word)
+        case .past(let h):
+            return SwitcherViewRow(agent: h.dto.harness == "shell" ? nil : h.dto.harness, title: h.dto.title, fork: h.dto.fork != nil, host: h.host,
+                                   detail: [h.dto.project, Elapsed.format(Date(timeIntervalSince1970: h.dto.at), now: .now)], tag: "Resume")
+        case .hit(let hit):
+            let date = hit.at > 0 ? Date(timeIntervalSince1970: hit.at / 1000).formatted(.dateTime.month(.abbreviated).day()) : ""
+            return SwitcherViewRow(agent: hit.harness, title: hit.title, host: hit.host,
+                                   detail: [hit.kind == "chat" ? "side chat" : (hit.harness ?? ""), date, "\(hit.matches) match\(hit.matches == 1 ? "" : "es")"],
+                                   snippet: hit.excerpts.first?.snippet)
+        }
+    }
+
+    private func heading(_ row: Row, index: Int, found: (live: [SessionRow], past: [HistoryRow], hits: [SearchHit])) -> String? {
+        switch row {
+        case .live: return index == 0 && !found.past.isEmpty ? "Sessions" : nil
+        case .past: return index == found.live.count ? "History" : nil
+        case .hit: return index == found.live.count + found.past.count ? "In conversations" : nil
+        }
+    }
+
+    private func choose(_ all: [Row], split: Bool) {
+        guard all.indices.contains(selection) else { return }
+        switch all[selection] {
+        case .live(let row):
+            if split && !scene.narrow && scene.switcher?.intoPane == nil {
+                scene.switcher?.asTile = true
+            }
+            scene.pick(row.key)
+        case .past(let item):
+            scene.switcher = nil
+            Task { await scene.resume(item) }
+        case .hit(let hit):
+            scene.openHit(hit)
+        }
+    }
+}
+
+private struct SwitcherRow: View {
+    let row: SwitcherViewRow
+    let selected: Bool
+    let multiHost: Bool
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            AgentMark(agent: row.agent, size: 22)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.title + (row.fork ? " ⑂" : "")).font(.callout).lineLimit(1).foregroundStyle(theme.text)
+                Text(row.subtitle(multiHost)).font(.caption).foregroundStyle(theme.muted).lineLimit(1)
+                if let snippet = row.snippet {
+                    SwitcherSearch.highlights(snippet).reduce(Text("")) { text, run in
+                        text + (run.marked ? Text(run.text).bold().foregroundColor(theme.accent) : Text(run.text))
+                    }
+                    .font(.caption)
+                    .foregroundStyle(theme.text2)
+                    .lineLimit(2)
+                }
+            }
+            Spacer(minLength: 8)
+            if let word = row.status {
+                StatusPill(word: word, compact: true)
+            } else if let tag = row.tag {
+                Text(tag).font(.caption2.weight(.semibold)).padding(.horizontal, 6).padding(.vertical, 2).background(theme.raised, in: Capsule()).foregroundStyle(theme.muted)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background {
+            if selected { RoundedRectangle(cornerRadius: 9, style: .continuous).fill(theme.accentStrong.opacity(0.16)) }
+        }
+        .padding(.horizontal, 6)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
+    }
+}
+
+/// What a switcher row shows, whatever it came from.
+struct SwitcherViewRow {
+    var agent: String?
+    var title: String
+    var fork = false
+    var host: String?
+    var detail: [String]
+    var status: StatusWord?
+    var tag: String?
+    var snippet: String?
+
+    func subtitle(_ multiHost: Bool) -> String {
+        ((multiHost ? [host].compactMap { $0 } : []) + detail).filter { !$0.isEmpty }.joined(separator: " · ")
     }
 }
 

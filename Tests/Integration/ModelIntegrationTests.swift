@@ -93,6 +93,14 @@ struct ModelIntegrationTests {
         scene.useAccount(account.origin)
         let session = try #require(scene.session(agent.uid))
         _ = try await waitFor("live feed", timeout: 20) { session.feed.status == .live && !session.feed.entries.isEmpty ? true : nil }
+        // A search hit inside this conversation opens it on the GUI at that turn.
+        let firstSeq = try #require(session.feed.entries.first?.seq)
+        let hit = SearchHit(kind: "transcript", host: try #require(account.hub.hostname), ref: nil, uid: agent.uid, harness: "claude", harnessId: nil, title: "cache-agent", cwd: "", at: 0, matches: 1,
+                            excerpts: [SearchExcerpt(seq: firstSeq, msgId: nil, role: "user", at: 0, snippet: "hi")])
+        scene.openHit(hit)
+        #expect(scene.route == .session(agent.uid))
+        #expect(scene.focusRequest?.target == .turn(agent.uid, firstSeq))
+        #expect(await session.reveal(seq: firstSeq))
         let sealed = try await waitFor("sealed", timeout: 10) { account.cached(SessionModel.FeedCache.Entry.self, kind: .feed, key: agent.uid) }
         #expect(sealed.harness == "claude")
         #expect(sealed.page.entries.map(\.seq) == session.feed.entries.suffix(SessionModel.cachedEntries).map(\.seq))
