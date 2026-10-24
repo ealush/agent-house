@@ -87,9 +87,26 @@ private struct SessionHeader: View {
     @Environment(\.theme) private var theme
     @FocusState private var renameFocused: Bool
 
+    /// The detail column has no navigation bar while it shows sessions, so the leading
+    /// header (the single session, or the top-left pane) offers the sidebar back.
+    private var showsSidebarButton: Bool {
+        guard !scene.narrow, !scene.workspace.sidebarVisible else { return false }
+        guard let pane else { return true }
+        return pane.allSatisfy { $0 == .first }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
+                if showsSidebarButton {
+                    Button {
+                        scene.perform("toggle-sidebar")
+                    } label: {
+                        Image(systemName: "sidebar.left")
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Show Sidebar")
+                }
                 AgentMark(agent: session.row?.dto.agent ?? (session.isShell ? nil : session.history?.dto.harness), size: 24)
                     .modifier(PaneDragHandle(pane: pane))
                 if session.renaming != nil {

@@ -91,19 +91,23 @@ struct StatusPill: View {
     let word: StatusWord
     var compact = false
     @Environment(\.theme) private var theme
+    /// Increased on a selected row filled with the accent (a focused list): status colors
+    /// would vanish into it, so the pill turns white there.
+    @Environment(\.backgroundProminence) private var prominence
 
     var body: some View {
+        let onAccent = prominence == .increased
         HStack(spacing: 5) {
             Circle()
-                .fill(theme.status(word))
+                .fill(onAccent ? Color.white : theme.status(word))
                 .frame(width: 8, height: 8)
                 .overlay {
-                    if word == .working { PulseRing(color: theme.status(word)) }
+                    if word == .working { PulseRing(color: onAccent ? .white : theme.status(word)) }
                 }
             if !compact {
                 Text(word.rawValue)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(word == .idle ? theme.muted : theme.status(word))
+                    .foregroundStyle(onAccent ? Color.white.opacity(0.9) : word == .idle ? theme.muted : theme.status(word))
             }
         }
         .accessibilityElement(children: .ignore)

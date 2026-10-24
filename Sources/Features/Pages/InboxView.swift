@@ -147,22 +147,25 @@ struct SessionRowView: View {
     let multiHost: Bool
     let open: () -> Void
     @Environment(\.theme) private var theme
+    /// Increased when the row is selected in a focused list (filled with the accent).
+    @Environment(\.backgroundProminence) private var prominence
 
     var body: some View {
+        let onAccent = prominence == .increased
         Button(action: open) {
             HStack(spacing: 10) {
                 AgentMark(agent: row.dto.agent)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        if row.dto.pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(theme.faint) }
-                        Text(row.title).foregroundStyle(theme.text).lineLimit(1)
+                        if row.dto.pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint) }
+                        Text(row.title).foregroundStyle(onAccent ? .white : theme.text).lineLimit(1)
                     }
-                    Text(detail).font(.caption).foregroundStyle(theme.muted).lineLimit(1)
+                    Text(detail).font(.caption).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.muted).lineLimit(1)
                 }
                 Spacer(minLength: 4)
                 VStack(alignment: .trailing, spacing: 2) {
                     StatusPill(word: row.word)
-                    if row.dto.queued > 0 { Text("\(row.dto.queued) queued").font(.caption2).foregroundStyle(theme.faint) }
+                    if row.dto.queued > 0 { Text("\(row.dto.queued) queued").font(.caption2).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint) }
                 }
             }
             .contentShape(Rectangle())

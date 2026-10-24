@@ -446,11 +446,31 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
     override func updateProperties() {
         super.updateProperties()
         preferredDisplayMode = scene.workspace.sidebarVisible ? .oneBesideSecondary : .secondaryOnly
+        syncDetailBar()
         if let hub = scene.hub {
             let waiting = hub.rows.filter { $0.dto.status == .waiting }.count + hub.reviewAlerts.count
             tabBar.tab(forIdentifier: "inbox")?.badgeValue = waiting > 0 ? "\(waiting)" : nil
         }
         if scene.narrow { syncPhone() }
+    }
+
+    /// Sessions and panes bring their own headers; an empty bar above them only wastes
+    /// height. Pages keep it for their titles and toolbars. Also run on layout: on restore the
+    /// split view wraps the detail in its navigation controller after the first update.
+    private func syncDetailBar() {
+        let showsSessions: Bool = {
+            if scene.workspace.layout != nil { return true }
+            if case .session = scene.route { return true }
+            return false
+        }()
+        if let nav = viewController(for: .secondary)?.navigationController, nav.isNavigationBarHidden != showsSessions {
+            nav.setNavigationBarHidden(showsSessions, animated: false)
+        }
+    }
+
+    override func viewWillLayoutSubviews() {
+        super.viewWillLayoutSubviews()
+        syncDetailBar()
     }
 
     func splitViewController(_ svc: UISplitViewController, willHide column: UISplitViewController.Column) {
