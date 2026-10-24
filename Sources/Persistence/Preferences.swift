@@ -43,10 +43,12 @@ struct DevicePreferences: Codable, Equatable, Sendable {
     var recentAgents: [String] = []
     /// With a trackpad or mouse, hovering over a pane focuses it.
     var focusFollowsPointer = true
+    /// Palette rows run recently (`PaletteAction.recentKey`), newest first.
+    var recentPalette: [String] = []
 
     init() {}
 
-    private enum CodingKeys: String, CodingKey { case appearance, deviceName, stepsHidden, keyBarVisible, terminalFontSize, inboxGrouping, notifications, recentAgents, focusFollowsPointer }
+    private enum CodingKeys: String, CodingKey { case appearance, deviceName, stepsHidden, keyBarVisible, terminalFontSize, inboxGrouping, notifications, recentAgents, focusFollowsPointer, recentPalette }
 
     /// Fields added later decode with their defaults, so older rows keep working.
     init(from decoder: any Decoder) throws {
@@ -60,6 +62,11 @@ struct DevicePreferences: Codable, Equatable, Sendable {
         notifications = (try? c.decode(Notifications.self, forKey: .notifications)) ?? Notifications()
         recentAgents = (try? c.decode([String].self, forKey: .recentAgents)) ?? []
         focusFollowsPointer = (try? c.decode(Bool.self, forKey: .focusFollowsPointer)) ?? true
+        recentPalette = (try? c.decode([String].self, forKey: .recentPalette)) ?? []
+    }
+
+    mutating func notePalette(_ key: String) {
+        recentPalette = Array(([key] + recentPalette.filter { $0 != key }).prefix(12))
     }
 
     mutating func noteAgent(_ id: String) {

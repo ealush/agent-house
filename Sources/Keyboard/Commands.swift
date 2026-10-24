@@ -22,16 +22,20 @@ struct Chord: Hashable, Codable, Sendable {
     var ctrl = false
     var alt = false
     var shift = false
+    /// A second key pressed after this one, like VS Code's two-key chords ("⌃K ⌃S"). Native
+    /// only, at most one step; an array because a struct can't hold an optional of itself.
+    private(set) var then: [Chord] = []
 
-    init(_ key: String, meta: Bool = false, ctrl: Bool = false, alt: Bool = false, shift: Bool = false) {
+    init(_ key: String, meta: Bool = false, ctrl: Bool = false, alt: Bool = false, shift: Bool = false, then next: Chord? = nil) {
         self.key = key
         self.meta = meta
         self.ctrl = ctrl
         self.alt = alt
         self.shift = shift
+        then = next.map { [$0.lead] } ?? []
     }
 
-    private enum CodingKeys: String, CodingKey { case key, meta, ctrl, alt, shift }
+    private enum CodingKeys: String, CodingKey { case key, meta, ctrl, alt, shift, then }
 
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -40,6 +44,7 @@ struct Chord: Hashable, Codable, Sendable {
         ctrl = (try? c.decode(Bool.self, forKey: .ctrl)) ?? false
         alt = (try? c.decode(Bool.self, forKey: .alt)) ?? false
         shift = (try? c.decode(Bool.self, forKey: .shift)) ?? false
+        then = (try? c.decodeIfPresent(Chord.self, forKey: .then)).flatMap { $0 }.map { [$0.lead] } ?? []
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -49,16 +54,33 @@ struct Chord: Hashable, Codable, Sendable {
         if ctrl { try c.encode(true, forKey: .ctrl) }
         if alt { try c.encode(true, forKey: .alt) }
         if shift { try c.encode(true, forKey: .shift) }
+        if let next { try c.encode(next, forKey: .then) }
     }
 
-    /// Needs Ctrl, Option or Command: a bare key is text.
-    var isUsable: Bool { meta || ctrl || alt }
+    /// The second key of a two-key chord.
+    var next: Chord? { then.first }
+    var isSequence: Bool { !then.isEmpty }
+    /// The first key alone.
+    var lead: Chord { Chord(key, meta: meta, ctrl: ctrl, alt: alt, shift: shift) }
+    /// Every key in order: one, or two for a two-key chord.
+    var steps: [Chord] { [lead] + then }
+
+    func followed(by next: Chord) -> Chord { Chord(key, meta: meta, ctrl: ctrl, alt: alt, shift: shift, then: next) }
+
+    /// The first key needs Ctrl, Option or Command (a bare key is text); a second key may be
+    /// bare, but never Escape, which cancels a chord in progress.
+    var isUsable: Bool {
+        guard meta || ctrl || alt else { return false }
+        guard let next else { return true }
+        return !next.key.isEmpty && next.key != "Escape"
+    }
 
     private static let keyLabel: [String: String] = ["ArrowUp": "↑", "ArrowDown": "↓", "ArrowLeft": "←", "ArrowRight": "→", "Enter": "Enter", "Backspace": "⌫", "Escape": "Esc", " ": "Space"]
     private static let partLabel: [String: String] = keyLabel.merging(["Enter": "↵", "Backspace": "Backspace", "Tab": "Tab"]) { $1 }
 
-    /// "⌃⌥Enter" on Apple keyboards, "Ctrl+Alt+Enter" elsewhere.
+    /// "⌃⌥Enter" on Apple keyboards, "Ctrl+Alt+Enter" elsewhere; a two-key chord is both, spaced.
     func formatted(mac: Bool = true) -> String {
+        if let next { return lead.formatted(mac: mac) + " " + next.formatted(mac: mac) }
         let name = Self.keyLabel[key] ?? (key.count == 1 ? key.uppercased() : key)
         if mac { return "\(ctrl ? "⌃" : "")\(alt ? "⌥" : "")\(shift ? "⇧" : "")\(meta ? "⌘" : "")\(name)" }
         var parts: [String] = []
@@ -70,7 +92,8 @@ struct Chord: Hashable, Codable, Sendable {
         return parts.joined(separator: "+")
     }
 
-    /// One label per key, Ctrl, Shift, Option, Command, then the key: for keycaps.
+    /// One label per key of the first step, Ctrl, Shift, Option, Command, then the key: for
+    /// keycaps (`steps` gives each step of a two-key chord).
     func parts(mac: Bool = true) -> [String] {
         var out: [String] = []
         if ctrl { out.append(mac ? "⌃" : "Ctrl") }
@@ -279,6 +302,40 @@ enum CommandCatalog {
     static let byID: [CommandID: Command] = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
 
     static func command(_ id: CommandID) -> Command? { byID[id] }
+
+    /// Each command's SF Symbol, for palette rows, menus and pane menus.
+    static func icon(_ id: CommandID) -> String {
+        if let n = id.workspaceNumber { return "\(n).square" }
+        if let n = id.sendToWorkspaceNumber { return "\(n).square.fill" }
+        return icons[id.rawValue] ?? "command"
+    }
+
+    private static let icons: [String: String] = [
+        "command-palette": "command", "switcher": "magnifyingglass", "cycle-prev": "chevron.up", "cycle-next": "chevron.down",
+        "new-session": "plus.square", "new-project": "folder.badge.plus", "toggle-sidebar": "sidebar.left", "go-inbox": "tray",
+        "go-history": "clock.arrow.circlepath", "go-review": "checkmark.rectangle.stack", "go-search": "text.magnifyingglass",
+        "worktrees": "arrow.triangle.branch", "go-settings": "gearshape", "focus-sidebar": "sidebar.squares.left", "focus-main": "text.cursor",
+        "reload-page": "arrow.clockwise", "show-shortcuts": "keyboard", "toggle-view": "terminal", "toggle-steps": "list.bullet.indent",
+        "toggle-panel": "sidebar.right", "reply": "arrowshape.turn.up.left", "approve": "checkmark.circle", "deny": "xmark.circle",
+        "interrupt": "stop.circle", "send-now": "paperplane", "clear-queue": "trash", "pick-model": "cpu", "pick-effort": "speedometer",
+        "copy-last": "doc.on.doc", "jump-latest": "arrow.down.to.line", "browse-messages": "text.bubble", "switch-branch": "arrow.triangle.branch",
+        "rename": "pencil", "fork": "arrow.triangle.pull", "send-to": "arrowshape.turn.up.right", "pin": "pin", "panel-diff": "plusminus",
+        "panel-files": "folder", "panel-chat": "bubble.left.and.bubble.right", "panel-queue": "list.bullet.rectangle", "panel-snapshots": "camera",
+        "panel-preview": "safari", "panel-stack": "square.stack.3d.up", "session-menu": "ellipsis.circle", "scrollback": "scroll",
+        "copy-attach": "link", "toggle-keys": "keyboard.chevron.compact.down", "terminate": "power",
+        "split-right": "rectangle.split.2x1", "split-below": "rectangle.split.1x2", "split-left": "rectangle.lefthalf.inset.filled",
+        "split-above": "rectangle.tophalf.inset.filled", "close-pane": "xmark.square",
+        "focus-pane-left": "arrow.left.square", "focus-pane-right": "arrow.right.square", "focus-pane-up": "arrow.up.square", "focus-pane-down": "arrow.down.square",
+        "move-pane-left": "arrow.left.circle", "move-pane-right": "arrow.right.circle", "move-pane-up": "arrow.up.circle", "move-pane-down": "arrow.down.circle",
+        "toggle-split": "arrow.triangle.2.circlepath", "resize-left": "arrow.left.and.right", "resize-right": "arrow.left.and.right",
+        "resize-up": "arrow.up.and.down", "resize-down": "arrow.up.and.down", "resize-mode": "arrow.left.and.right.square",
+        "pane-mode": "square.grid.2x2", "replace-pane": "arrow.triangle.swap", "open-in-pane": "plus.rectangle.on.rectangle",
+        "scratchpad": "terminal.fill", "maximize-pane": "arrow.up.left.and.arrow.down.right", "exit-split": "rectangle",
+        "balance-panes": "equal.square", "swap-pane-left": "arrow.left.arrow.right", "swap-pane-right": "arrow.left.arrow.right",
+        "swap-pane-up": "arrow.up.arrow.down", "swap-pane-down": "arrow.up.arrow.down", "focus-pane-next": "arrow.forward.square",
+        "focus-pane-prev": "arrow.backward.square", "workspace-next": "chevron.right.square", "workspace-prev": "chevron.left.square",
+        "go-to-session": "rectangle.stack", "focus-follows-pointer": "cursorarrow.motionlines",
+    ]
     static func label(_ id: CommandID) -> String { byID[id]?.label ?? id.rawValue }
 
     /// "Not in a dialog; while typing, only from the start of the text".
@@ -329,14 +386,16 @@ struct KeyBindings: Equatable, Sendable, Codable {
         var object: [String: JSONValue] = [:]
         for (id, chords) in overrides {
             if let chords {
-                object[id.rawValue] = .array(chords.map { chord in
+                func encode(_ chord: Chord) -> JSONValue {
                     var o: [String: JSONValue] = ["key": .string(chord.key)]
                     if chord.meta { o["meta"] = .bool(true) }
                     if chord.ctrl { o["ctrl"] = .bool(true) }
                     if chord.alt { o["alt"] = .bool(true) }
                     if chord.shift { o["shift"] = .bool(true) }
+                    if let next = chord.next { o["then"] = encode(next) }
                     return .object(o)
-                })
+                }
+                object[id.rawValue] = .array(chords.map(encode))
             } else {
                 object[id.rawValue] = .null
             }
@@ -357,29 +416,104 @@ struct KeyBindings: Equatable, Sendable, Codable {
         return list.first { mac ? $0.meta : !$0.meta } ?? list.first
     }
 
-    /// Why `chord` can't be bound to `id`, or nil.
-    func bindingError(_ id: CommandID, _ chord: Chord, mac: Bool = true) -> String? {
-        guard chord.isUsable else { return "Use Control, Option, or Command together with another key." }
-        for command in CommandCatalog.all where command.id != id {
-            if chords(command.id).contains(chord) { return "\(chord.formatted(mac: mac)) is already \(command.label)." }
+    /// Two bindings fight when they're the same keys, or one is the first key of the other's
+    /// two-key chord (it would fire before the second key could come).
+    static func clashes(_ a: Chord, _ b: Chord) -> Bool {
+        if a == b { return true }
+        if a.isSequence == b.isSequence { return false }
+        return a.isSequence ? a.lead == b : b.lead == a
+    }
+
+    /// The command that already answers `chord` wherever `id` would (their scopes overlap).
+    func conflict(_ id: CommandID, _ chord: Chord) -> CommandID? {
+        let mine = CommandCatalog.byID[id]?.scopes ?? [.app, .terminal, .field]
+        for command in CommandCatalog.all where command.id != id && !command.scopes.isDisjoint(with: mine) {
+            if chords(command.id).contains(where: { Self.clashes(chord, $0) }) { return command.id }
         }
         return nil
     }
 
-    /// Binds `chord` (nil unbinds). Choosing a default chord clears the override. Returns an error and changes nothing when illegal or taken.
-    mutating func set(_ id: CommandID, _ chord: Chord?, mac: Bool = true) -> String? {
-        if let chord, let error = bindingError(id, chord, mac: mac) { return error }
-        let defaults = CommandCatalog.byID[id]?.chords ?? []
-        if let chord {
-            if defaults.contains(chord) { overrides[id] = nil } else { overrides[id] = .some([chord]) }
-        } else {
+    /// Keys iPadOS or text editing keep for themselves: the app would never see them, or
+    /// typing would break. Why, or nil.
+    static func reservedReason(_ chord: Chord, mac: Bool = true) -> String? {
+        let lead = chord.lead
+        let system: [Chord: String] = [
+            Chord("h", meta: true): "goes to the Home Screen", Chord(" ", meta: true): "opens Spotlight",
+            Chord("Tab", meta: true): "switches apps", Chord("Tab", meta: true, shift: true): "switches apps",
+            Chord("3", meta: true, shift: true): "takes a screenshot", Chord("4", meta: true, shift: true): "takes a screenshot",
+            Chord("d", meta: true, alt: true): "shows the Dock",
+        ]
+        let editing: [Chord: String] = [
+            Chord("c", meta: true): "Copy", Chord("v", meta: true): "Paste", Chord("x", meta: true): "Cut",
+            Chord("z", meta: true): "Undo", Chord("z", meta: true, shift: true): "Redo", Chord("a", meta: true): "Select All",
+            Chord("ArrowLeft", meta: true): "start of line", Chord("ArrowRight", meta: true): "end of line",
+            Chord("ArrowUp", meta: true): "start of text", Chord("ArrowDown", meta: true): "end of text",
+            Chord("ArrowLeft", alt: true): "previous word", Chord("ArrowRight", alt: true): "next word",
+            Chord("Backspace", alt: true): "delete a word", Chord("Backspace", meta: true): "delete to line start",
+        ]
+        let name = lead.formatted(mac: mac)
+        if let what = system[lead] { return "\(name) \(what), so the app never sees it." }
+        if let what = editing[lead] { return "\(name) is \(what) while you type." }
+        return nil
+    }
+
+    /// Why `chord` can't be bound to `id`, or nil.
+    func bindingError(_ id: CommandID, _ chord: Chord, mac: Bool = true) -> String? {
+        guard chord.isUsable else {
+            if chord.isSequence, chord.next?.key == "Escape" { return "Escape cancels a two-key shortcut, so it can't be the second key." }
+            return "Use Control, Option, or Command together with another key."
+        }
+        if let reason = Self.reservedReason(chord, mac: mac) { return reason }
+        if let other = conflict(id, chord), let command = CommandCatalog.byID[other] {
+            let theirs = chords(other).first { Self.clashes(chord, $0) } ?? chord
+            if theirs == chord { return "\(chord.formatted(mac: mac)) is already \(command.label)." }
+            return "\(chord.formatted(mac: mac)) clashes with \(command.label) (\(theirs.formatted(mac: mac)))."
+        }
+        if chords(id).contains(where: { $0 != chord && Self.clashes(chord, $0) }) { return "\(chord.formatted(mac: mac)) clashes with this command's other shortcut." }
+        return nil
+    }
+
+    /// Binds `chord` (nil unbinds): in place of this command's shortcuts, or `adding` it to
+    /// them. `takingOver` removes it from the command that has it instead of refusing.
+    /// Ending up with the defaults clears the override. Returns an error and changes nothing
+    /// when illegal or taken.
+    mutating func set(_ id: CommandID, _ chord: Chord?, mac: Bool = true, adding: Bool = false, takingOver: Bool = false) -> String? {
+        guard let chord else {
             overrides[id] = .some(nil)
+            return nil
+        }
+        if takingOver, chord.isUsable, Self.reservedReason(chord, mac: mac) == nil {
+            while let other = conflict(id, chord) {
+                store(other, chords(other).filter { !Self.clashes(chord, $0) })
+            }
+        }
+        if let error = bindingError(id, chord, mac: mac) { return error }
+        let defaults = CommandCatalog.byID[id]?.chords ?? []
+        if adding {
+            store(id, chords(id).contains(chord) ? chords(id) : chords(id) + [chord])
+        } else if defaults.contains(chord) {
+            overrides[id] = nil
+        } else {
+            store(id, [chord])
         }
         return nil
+    }
+
+    /// Drop one of a command's shortcuts.
+    mutating func remove(_ id: CommandID, _ chord: Chord) {
+        store(id, chords(id).filter { $0 != chord })
+    }
+
+    private mutating func store(_ id: CommandID, _ list: [Chord]) {
+        let defaults = CommandCatalog.byID[id]?.chords ?? []
+        if list == defaults { overrides[id] = nil } else { overrides[id] = .some(list.isEmpty ? nil : list) }
     }
 
     mutating func reset(_ id: CommandID) { overrides[id] = nil }
     mutating func resetAll() { overrides = [:] }
+
+    /// Commands whose shortcuts differ from the defaults.
+    var modified: Set<CommandID> { Set(overrides.keys) }
 }
 
 /// The handlers that can run right now (registered by what's on screen, newest wins).
@@ -396,6 +530,34 @@ enum CommandMatcher {
             if bindings.chords(command.id).contains(chord) { return command.id }
         }
         return nil
+    }
+
+    /// This key starts a two-key chord here: the window waits for the second key.
+    static func startsSequence(_ chord: Chord, scope: KeyScope, bindings: KeyBindings = KeyBindings()) -> Bool {
+        guard scope != .ask, chord.isUsable, !chord.isSequence else { return false }
+        return CommandCatalog.all.contains { command in
+            command.scopes.contains(scope) && bindings.chords(command.id).contains { $0.isSequence && $0.lead == chord }
+        }
+    }
+
+    /// The command a two-key chord runs in `scope`, or nil.
+    static func completeSequence(_ lead: Chord, _ next: Chord, scope: KeyScope, bindings: KeyBindings = KeyBindings()) -> CommandID? {
+        let full = lead.lead.followed(by: next)
+        for command in CommandCatalog.all where command.scopes.contains(scope) {
+            if bindings.chords(command.id).contains(full) { return command.id }
+        }
+        return nil
+    }
+
+    /// What the second key can be after `lead`: the legend while a chord is in progress.
+    static func continuations(after lead: Chord, active: (CommandID) -> Bool, bindings: KeyBindings = KeyBindings(), mac: Bool = true) -> [WhichKeyRow] {
+        var rows: [WhichKeyRow] = []
+        for command in CommandCatalog.all where active(command.id) {
+            for chord in bindings.chords(command.id) where chord.isSequence && chord.lead == lead.lead {
+                rows.append(WhichKeyRow(id: command.id, label: command.label, key: chord.next!.formatted(mac: mac)))
+            }
+        }
+        return rows.sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
     }
 
     /// Subsequence score; contiguous runs and word starts count more; zero when a character is missing.
@@ -445,11 +607,78 @@ enum CommandMatcher {
     /// What answers these held modifiers right now, plus one key: the which-key overlay.
     static func whichKey(ctrl: Bool, alt: Bool, shift: Bool, meta: Bool, active: (CommandID) -> Bool, bindings: KeyBindings = KeyBindings(), mac: Bool = true) -> [WhichKeyRow] {
         var rows: [WhichKeyRow] = []
+        var leads: [String: Int] = [:]
         for command in CommandCatalog.all where active(command.id) {
-            if let chord = bindings.chords(command.id).first(where: { (mac || !$0.meta) && $0.ctrl == ctrl && $0.alt == alt && $0.shift == shift && $0.meta == meta }) {
+            let held = bindings.chords(command.id).filter { (mac || !$0.meta) && $0.ctrl == ctrl && $0.alt == alt && $0.shift == shift && $0.meta == meta }
+            if let chord = held.first(where: { !$0.isSequence }) {
                 rows.append(WhichKeyRow(id: command.id, label: command.label, key: chord.parts(mac: mac).last!))
+            }
+            // A two-key chord's first key shows once, as "K…".
+            for chord in held where chord.isSequence {
+                let key = chord.parts(mac: mac).last! + "…"
+                if let i = leads[key] {
+                    rows[i] = WhichKeyRow(id: rows[i].id, label: "Two-key shortcuts", key: key)
+                } else {
+                    leads[key] = rows.count
+                    rows.append(WhichKeyRow(id: command.id, label: "Then: \(command.label)", key: key))
+                }
             }
         }
         return rows.sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
+    }
+}
+
+/// The shortcut editor's search: a command's name, group, related words or detail, or its
+/// keys typed as words or glyphs ("ctrl shift p", "⌃⇧P", "cmd+k"), or keys pressed.
+enum KeymapSearch {
+    enum Filter: String, Sendable, CaseIterable {
+        case all, modified, unbound
+    }
+
+    static func commands(_ query: String, bindings: KeyBindings, filter: Filter = .all, mac: Bool = true) -> [Command] {
+        let words = tokens(query)
+        return CommandCatalog.all.filter { command in
+            switch filter {
+            case .all: break
+            case .modified: guard bindings.isOverridden(command.id) else { return false }
+            case .unbound: guard bindings.chords(command.id).isEmpty else { return false }
+            }
+            guard !words.isEmpty else { return true }
+            let text = ([command.label, command.group.rawValue, command.detail] + command.terms).joined(separator: " ").lowercased()
+            if words.allSatisfy({ text.contains($0) }) { return true }
+            return bindings.chords(command.id).contains { chord in Set(words).isSubset(of: keyWords(chord)) }
+        }
+    }
+
+    /// Commands bound to exactly these keys (the editor's "press keys to search").
+    static func commands(pressing chord: Chord, bindings: KeyBindings) -> [Command] {
+        CommandCatalog.all.filter { command in bindings.chords(command.id).contains { $0 == chord || $0.lead == chord } }
+    }
+
+    private static let glyphs: [Character: String] = ["⌃": "ctrl", "⌥": "alt", "⇧": "shift", "⌘": "cmd", "↑": "up", "↓": "down", "←": "left", "→": "right", "⌫": "backspace", "↵": "enter"]
+    private static let synonyms: [String: String] = ["control": "ctrl", "option": "alt", "opt": "alt", "command": "cmd", "super": "cmd", "meta": "cmd", "return": "enter", "esc": "escape"]
+
+    /// Lowercased words, with modifier glyphs and "+" split apart and synonyms folded.
+    static func tokens(_ text: String) -> [String] {
+        var spaced = ""
+        for ch in text.lowercased() {
+            if let word = glyphs[ch] { spaced += " \(word) " } else if ch == "+" { spaced += " " } else { spaced.append(ch) }
+        }
+        return spaced.split(whereSeparator: { $0 == " " }).map { synonyms[String($0)] ?? String($0) }
+    }
+
+    /// Every word a chord answers to: its modifiers and its key, for both of a two-key chord's steps.
+    static func keyWords(_ chord: Chord) -> Set<String> {
+        var words: Set<String> = []
+        for step in chord.steps {
+            if step.ctrl { words.insert("ctrl") }
+            if step.alt { words.insert("alt") }
+            if step.shift { words.insert("shift") }
+            if step.meta { words.insert("cmd") }
+            let key = step.key.lowercased()
+            words.insert(key == " " ? "space" : key)
+            if key.hasPrefix("arrow") { words.insert(String(key.dropFirst(5))) }
+        }
+        return words
     }
 }

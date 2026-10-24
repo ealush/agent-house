@@ -64,6 +64,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         builder.remove(menu: .format)
         builder.remove(menu: .toolbar)
         builder.insertChild(MenuCommands.palette(bindings: app.keyBindings), atStartOfMenu: .application)
+        builder.insertChild(MenuCommands.chordStarts(bindings: app.keyBindings), atEndOfMenu: .application)
         var previous = UIMenu.Identifier.view
         for menu in MenuCommands.menus(bindings: app.keyBindings) {
             builder.insertSibling(menu, afterMenu: previous)

@@ -27,6 +27,8 @@ final class SceneModel {
     private(set) var toasts: [Toast] = []
     /// The newest which-key overlay, while modifiers are held.
     var whichKey: [CommandMatcher.WhichKeyRow] = []
+    /// The first key of a two-key chord, waiting for the second.
+    private(set) var pendingChord: Chord?
     /// Set by the platform layer.
     var clipboard: (String) -> Void = { _ in }
     /// Where the keyboard is now, set by the focused responder (a composer, a terminal). The
@@ -53,6 +55,7 @@ final class SceneModel {
     @ObservationIgnored private var nonceAtModal = 0
     @ObservationIgnored private var deferredFocus: FocusTarget?
     @ObservationIgnored private var hoverQuietUntil = Date.distantPast
+    @ObservationIgnored private var chordTimeout: Task<Void, Never>?
 
     init(sceneID: String, app: AppModel, client: String = DeviceDescriptor.newClientID()) {
         self.sceneID = sceneID
@@ -503,6 +506,10 @@ final class SceneModel {
 
     /// A hardware key press from wherever focus is. True when a command took it.
     func handle(_ press: KeyPress, scope: KeyScope, field: FieldState = FieldState()) -> Bool {
+        if let lead = pendingChord, scope != .ask, let next = press.chord {
+            finishChord(lead, next, scope: scope)
+            return true
+        }
         if workspace.submap != nil, scope != .ask {
             let digit = KeyPress.digits[press.hidUsage].flatMap(Int.init)
             following {
@@ -515,9 +522,51 @@ final class SceneModel {
             scheduleSave()
             return true
         }
-        guard let chord = press.chord, let id = CommandMatcher.match(chord, scope: scope, bindings: app.keyBindings, field: field), isAvailable(id) else { return false }
+        guard let chord = press.chord else { return false }
+        if let id = CommandMatcher.match(chord, scope: scope, bindings: app.keyBindings, field: field), isAvailable(id) {
+            perform(id)
+            return true
+        }
+        if CommandMatcher.startsSequence(chord, scope: scope, bindings: app.keyBindings) {
+            beginChord(chord)
+            return true
+        }
+        return false
+    }
+
+    /// The first key of a two-key chord: wait (with a legend of what can follow) up to 2 s.
+    func beginChord(_ lead: Chord) {
+        pendingChord = lead
+        whichKey = CommandMatcher.continuations(after: lead, active: isAvailable, bindings: app.keyBindings)
+        chordTimeout?.cancel()
+        chordTimeout = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled, let self, self.pendingChord == lead else { return }
+            self.pendingChord = nil
+            self.whichKey = []
+        }
+    }
+
+    /// The second key: run what the pair means, or say it means nothing. Escape cancels.
+    private func finishChord(_ lead: Chord, _ next: Chord, scope: KeyScope) {
+        pendingChord = nil
+        whichKey = []
+        chordTimeout?.cancel()
+        guard next.key != "Escape" else { return }
+        if let id = CommandMatcher.completeSequence(lead, next, scope: scope, bindings: app.keyBindings), isAvailable(id) {
+            perform(id)
+        } else {
+            toast("\(lead.followed(by: next).formatted()) isn’t a shortcut")
+        }
+    }
+
+    /// A menu-bar key command fired. While a two-key chord waits, its key is the second key.
+    func runMenuCommand(_ id: CommandID, chord: Chord?) {
+        if let lead = pendingChord, let chord {
+            finishChord(lead, chord, scope: keyScope)
+            return
+        }
         perform(id)
-        return true
     }
 
     /// Held modifiers: what one more key does here (which-key).
@@ -588,6 +637,7 @@ final class SceneModel {
     /// A menu key command may run: the command is available and, for a key press, its chord
     /// means this command where the keyboard is now (a menu click passes no chord).
     func allowsMenuCommand(_ id: CommandID, chord: Chord?) -> Bool {
+        if pendingChord != nil, chord != nil { return true }
         guard isAvailable(id) else { return false }
         guard let chord else { return true }
         return CommandMatcher.match(chord, scope: keyScope, bindings: app.keyBindings, field: fieldState) == id
@@ -848,8 +898,18 @@ final class SceneModel {
         let s = focusedSession
         switch provider {
         case .sessions:
+            let visible = Set(workspace.visibleKeys)
+            let others = (1...9).filter { $0 != workspace.currentWorkspace }
             return sidebarOrder.map { row in
-                PaletteNode(key: "session:\(row.key)", label: row.title, agent: row.dto.agent, detail: [row.word.rawValue, row.dto.project].joined(separator: " · "), action: .openSession(row.key))
+                let here = visible.contains(row.key)
+                var choices = [PaletteNode(key: "go", label: here ? "Focus its pane" : "Switch to it", icon: "arrow.right.circle", action: .openSession(row.key))]
+                if !narrow && !here { choices.append(PaletteNode(key: "pane", label: "Open as a new pane", icon: "plus.rectangle.on.rectangle", detail: "Beside the focused pane", action: .openAsPane(row.key))) }
+                choices.append(PaletteNode(key: "workspace", label: "Move to workspace", icon: "square.grid.3x3", children: others.map { n in
+                    PaletteNode(key: "ws\(n)", label: "Workspace \(n)", icon: "\(n).square", detail: workspace.occupiedWorkspaces.contains(n) ? "Beside what’s there" : "Empty", action: .sendSession(row.key, workspace: n))
+                }))
+                let host = hub.multiHost ? row.host : nil
+                let detail = [row.word.rawValue, row.dto.project, row.dto.branch, host, here ? "on screen" : nil].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+                return PaletteNode(key: "session:\(row.key)", label: row.title, agent: row.dto.agent, detail: detail, terms: [row.dto.branch, row.host].compactMap { $0 }, action: .openSession(row.key), children: choices)
             }
         case .tiles:
             let visible = Set(workspace.visibleKeys)
@@ -918,13 +978,34 @@ final class SceneModel {
     /// Run a palette row (after the palette closes).
     func run(_ action: PaletteAction) {
         palette = nil
+        if let key = action.recentKey { app.preferences.notePalette(key) }
         following { execute(action) }
+    }
+
+    /// Rows the palette ran recently that can still run here.
+    func recentPaletteRows() -> [PaletteNode] {
+        PaletteTree.recent(paletteTree(), keys: app.preferences.recentPalette)
+    }
+
+    /// Go to a session: focus its pane when it's already on screen, otherwise open it.
+    func goTo(_ key: String) {
+        if let layout = workspace.layout, let leaf = layout.leaves().first(where: { $0.sessionKey == key }) {
+            following { workspace.focus(leaf.path) }
+            scheduleSave()
+        } else {
+            open(key)
+        }
     }
 
     private func execute(_ action: PaletteAction) {
         switch action {
         case .command(let id): perform(id)
-        case .openSession(let key): open(key)
+        case .openSession(let key): goTo(key)
+        case .sendSession(let key, let n):
+            if workspace.sendSession(key, to: n) {
+                syncRouteToWorkspace()
+                toast("Moved to workspace \(n)")
+            }
         case .openAsPane(let key):
             workspace.openTile(key, wide: true)
             syncRouteToWorkspace()

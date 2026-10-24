@@ -51,13 +51,17 @@ extension Chord {
 /// that own a text field apply them only at the edge, so the menu never steals them.
 enum MenuCommands {
     static let action = #selector(SceneRootController.runKeyCommand(_:))
+    static let chordAction = #selector(SceneRootController.startChord(_:))
 
     static func menus(bindings: KeyBindings) -> [UIMenu] {
         let groups: [(CommandGroup, String)] = [(.navigate, "Go"), (.session, "Session"), (.workspace, "Workspace")]
         return groups.map { group, title in
             let commands = CommandCatalog.all.filter { $0.group == group && $0.id != "command-palette" }
             let children: [UIMenuElement] = commands.map { command in
-                let chord = bindings.chords(command.id).first { !$0.meta } ?? bindings.chords(command.id).first
+                // A two-key chord can't be a menu key equivalent; the menu shows it in the title's
+                // discoverability text and `chordStarts` catches its first key.
+                let singles = bindings.chords(command.id).filter { !$0.isSequence }
+                let chord = singles.first { !$0.meta } ?? singles.first
                 if let chord, command.field == nil {
                     let element = UIKeyCommand(title: command.label, image: nil, action: action, input: chord.keyCommandInput, modifierFlags: chord.modifierFlags, propertyList: command.id.rawValue, alternates: [], discoverabilityTitle: command.detail, attributes: [], state: .off)
                     element.wantsPriorityOverSystemBehavior = command.scopes.contains(.field)
@@ -67,6 +71,22 @@ enum MenuCommands {
             }
             return UIMenu(title: title, identifier: UIMenu.Identifier("dev.ealush.ah.native.\(title.lowercased())"), options: [], children: children)
         }
+    }
+
+    /// Hidden key commands for the first key of every two-key chord, so a chord starts
+    /// wherever the keyboard is (the second key arrives through `runKeyCommand` or a
+    /// responder's `pressesBegan`).
+    static func chordStarts(bindings: KeyBindings) -> UIMenu {
+        var leads: [Chord] = []
+        for command in CommandCatalog.all {
+            for chord in bindings.chords(command.id) where chord.isSequence && !leads.contains(chord.lead) { leads.append(chord.lead) }
+        }
+        let elements: [UIMenuElement] = leads.map { lead in
+            let element = UIKeyCommand(title: lead.formatted(), image: nil, action: chordAction, input: lead.keyCommandInput, modifierFlags: lead.modifierFlags, propertyList: "chord", alternates: [], discoverabilityTitle: nil, attributes: .hidden, state: .off)
+            element.wantsPriorityOverSystemBehavior = true
+            return element
+        }
+        return UIMenu(title: "", identifier: UIMenu.Identifier("dev.ealush.ah.native.chords"), options: .displayInline, children: elements)
     }
 
     /// The palette's own chord, at the top of the app menu.

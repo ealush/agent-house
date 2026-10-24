@@ -239,7 +239,13 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
     @objc func runKeyCommand(_ sender: UICommand) {
         guard let raw = sender.propertyList as? String else { return }
         Haptics.selection()
-        scene.perform(CommandID(rawValue: raw))
+        scene.runMenuCommand(CommandID(rawValue: raw), chord: (sender as? UIKeyCommand).flatMap(Chord.init(keyCommand:)))
+    }
+
+    /// The first key of a two-key chord, from its hidden menu key command.
+    @objc func startChord(_ sender: UIKeyCommand) {
+        guard let lead = Chord(keyCommand: sender) else { return }
+        scene.beginChord(lead)
     }
 
     /// Disabled (so the key passes on to the focused text box or terminal) unless the
@@ -250,6 +256,10 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
                   let command = sender as? UICommand, let raw = command.propertyList as? String else { return false }
             let chord = (sender as? UIKeyCommand).flatMap(Chord.init(keyCommand:))
             return scene.allowsMenuCommand(CommandID(rawValue: raw), chord: chord)
+        }
+        if action == #selector(startChord(_:)) {
+            guard case .main = phase, scene.pendingChord == nil, let command = sender as? UIKeyCommand, let lead = Chord(keyCommand: command) else { return false }
+            return CommandMatcher.startsSequence(lead, scope: scene.keyScope, bindings: scene.app.keyBindings)
         }
         return super.canPerformAction(action, withSender: sender)
     }

@@ -108,6 +108,18 @@ struct SceneIntegrationTests {
         let tree = scene.paletteTree()
         #expect(PaletteTree.search(tree, "keys-b").contains { $0.node.action == .openSession(b.uid) })
         #expect(!PaletteTree.search(tree, "approve").contains { $0.node.action == .command("approve") })
+        // Going to a session already in a pane focuses that pane rather than replacing another.
+        scene.workspace.focusPane(.left)
+        scene.run(.openSession(b.uid))
+        #expect(scene.workspace.layout?.keys == [a.uid, b.uid] && scene.workspace.focusedKey == b.uid)
+        #expect(scene.focusRequest?.target == .terminal(b.uid))
+        #expect(scene.recentPaletteRows().first?.action == .openSession(b.uid))
+        // A session row's choices move it to another workspace.
+        let row = PaletteTree.search(scene.paletteTree(), "keys-b").first { $0.node.action == .openSession(b.uid) }?.node
+        #expect(row?.children?.contains { $0.key == "workspace" } == true)
+        scene.run(.sendSession(b.uid, workspace: 4))
+        #expect(scene.workspace.layout == nil && scene.workspace.selected == a.uid)
+        #expect(scene.workspace.occupiedWorkspaces.contains(4))
         account.deactivate()
     }
 

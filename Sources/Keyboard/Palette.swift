@@ -16,19 +16,25 @@ struct PaletteNode: Equatable, Sendable, Identifiable {
     var action: PaletteAction? = nil
     var children: [PaletteNode]? = nil
 
-    var isCategory: Bool { children != nil }
+    /// A branch you walk into. A row with both an action and children (a session) runs on
+    /// Enter and opens its choices (switch to, open as a pane, move to a workspace) on →.
+    var isCategory: Bool { children != nil && action == nil }
+    var hasChoices: Bool { children != nil && action != nil }
 
-    /// Runnable leaves under a category (shown beside it).
+    /// Runnable rows under a category (shown beside it).
     var leafCount: Int {
-        (children ?? []).reduce(0) { $0 + ($1.children != nil ? $1.leafCount : 1) }
+        (children ?? []).reduce(0) { $0 + ($1.isCategory ? $1.leafCount : 1) }
     }
 }
 
 /// What choosing a palette row does: data the UI dispatches, never a closure.
 enum PaletteAction: Equatable, Sendable, Hashable {
     case command(CommandID)
+    /// Go to a session: its pane when it's already on screen, else open it.
     case openSession(String)
     case openAsPane(String)
+    /// Move a session to workspace N, beside what's there.
+    case sendSession(String, workspace: Int)
     case sendQueuedNow(uid: String, item: String)
     case switchModel(String)
     case switchEffort(String)
@@ -37,6 +43,17 @@ enum PaletteAction: Equatable, Sendable, Hashable {
     case runInProject(path: String, preset: String)
     case continueIn(preset: String)
     case settings(String)
+
+    /// How the palette remembers a row it ran, for Recent; nil for one-off rows.
+    var recentKey: String? {
+        switch self {
+        case .command(let id): return id == "command-palette" ? nil : "command:\(id.rawValue)"
+        case .openSession(let key): return "session:\(key)"
+        case .settings(let section): return "settings:\(section)"
+        case .runInProject(let path, let preset): return "run:\(preset):\(path)"
+        case .openAsPane, .sendSession, .sendQueuedNow, .switchModel, .switchEffort, .switchMode, .continueIn: return nil
+        }
+    }
 }
 
 enum PaletteProvider: String, Sendable, CaseIterable {
@@ -109,7 +126,7 @@ enum PaletteTree {
             switch spec {
             case .command(let id):
                 guard id != "command-palette", active(id), let command = CommandCatalog.command(id) else { return [] }
-                return [PaletteNode(key: id.rawValue, label: command.label, detail: command.detail, terms: command.terms, action: .command(id))]
+                return [PaletteNode(key: id.rawValue, label: command.label, icon: CommandCatalog.icon(id), detail: command.detail, terms: command.terms, action: .command(id))]
             case .provider(let provider):
                 return provide(provider)
             case .category(let key, let label, let icon, let detail, let terms, let children):
@@ -130,9 +147,23 @@ enum PaletteTree {
         let related: Bool
     }
 
+    /// Rows the palette ran recently that can still run here, newest first.
+    static func recent(_ tree: PaletteNode, keys: [String], limit: Int = 5) -> [PaletteNode] {
+        var byKey: [String: PaletteNode] = [:]
+        func walk(_ node: PaletteNode) {
+            for child in node.children ?? [] {
+                if let key = child.action?.recentKey, byKey[key] == nil { byKey[key] = child }
+                if child.isCategory { walk(child) }
+            }
+        }
+        walk(tree)
+        return Array(keys.compactMap { byKey[$0] }.prefix(limit))
+    }
+
     /// Everything under `scope` matching `query` (`searchTree`): name/detail/breadcrumb
-    /// matches first, related words after; categories and commands compete equally.
-    static func search(_ scope: PaletteNode, _ query: String) -> [Hit] {
+    /// matches first, related words after; categories and commands compete equally. Among
+    /// equal matches, what you ran recently comes first (it never jumps a better match).
+    static func search(_ scope: PaletteNode, _ query: String, recent: [String] = []) -> [Hit] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
         guard !q.isEmpty else { return [] }
         let words = q.split(separator: " ").map(String.init)
@@ -147,13 +178,16 @@ enum PaletteTree {
                 let term = own > 0 ? 0 : (child.terms.map { CommandMatcher.fuzzy(q, $0) }.max() ?? 0)
                 let score = own > 0 ? own : term
                 if score > 0 { hits.append((Hit(node: child, trail: trail, score: score - Double(trail.count) * 0.5, related: own == 0), hits.count)) }
-                if child.children != nil { visit(child, trail + [child]) }
+                if child.isCategory { visit(child, trail + [child]) }
             }
         }
         visit(scope, [])
+        let rank = Dictionary(recent.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
+        func recency(_ hit: Hit) -> Int { hit.node.action?.recentKey.flatMap { rank[$0] } ?? Int.max }
         return hits.sorted { a, b in
             if a.0.related != b.0.related { return !a.0.related }
             if a.0.score != b.0.score { return a.0.score > b.0.score }
+            if recency(a.0) != recency(b.0) { return recency(a.0) < recency(b.0) }
             return a.1 < b.1
         }.map(\.0)
     }
