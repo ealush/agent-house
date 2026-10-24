@@ -1,7 +1,8 @@
 import Foundation
 
 // The keyboard command catalog (`../ah/web/shortcuts.ts`): 71 literal commands plus
-// workspace 1–9 and send-to-workspace 1–9 = 89. Defaults live here; a device may
+// workspace 1–9 and send-to-workspace 1–9 = 89, then the native workspace's own (split
+// left/above, balance, swap, pane and workspace cycling…). Defaults live here; a device may
 // override them (Settings → Shortcuts). A chord needs Ctrl, Option or Command, so a plain
 // letter always reaches the agent. Letters match the character the layout produces
 // (Colemak included); digits and punctuation match the physical key, so Shift doesn't turn
@@ -171,7 +172,8 @@ enum CommandCatalog {
 
     private static let everywhere: Set<KeyScope> = [.app, .terminal, .field]
 
-    static let all: [Command] = {
+    /// The web's 89, in its order.
+    static let web: [Command] = {
         var list: [Command] = [
             Command("command-palette", .navigate, "Command palette", "Search the actions you can run right now. The binding sits on the right of each one.", chords: [c("p", meta: true, shift: true), c("p", ctrl: true, shift: true)]),
             Command("switcher", .navigate, "Search or jump", "Open the switcher. Also works while a text field or another dialog is open.", chords: [c("k", meta: true), c("k", ctrl: true, shift: true)], scopes: [.app, .terminal, .field, .dialog]),
@@ -254,6 +256,25 @@ enum CommandCatalog {
         }
         return list
     }()
+
+    /// Native workspace commands beyond the web's catalog (DECISIONS: tiling and focus).
+    static let native: [Command] = [
+        Command("split-left", .workspace, "Split left", "Open another pane to the left of the focused one.", chords: [c("\\", ctrl: true, alt: true, shift: true)], terms: ["pane", "beside"]),
+        Command("split-above", .workspace, "Split above", "Open another pane above the focused one.", chords: [c("-", ctrl: true, alt: true, shift: true)], terms: ["pane"]),
+        Command("balance-panes", .workspace, "Balance panes", "Even out every divider, so each pane gets its share.", chords: [c("=", ctrl: true, shift: true)], terms: ["equalize", "even", "sizes", "resize"]),
+        Command("swap-pane-left", .workspace, "Swap with pane left", "Trade places with the pane on the left; the focus moves with yours.", terms: ["exchange", "pane"]),
+        Command("swap-pane-right", .workspace, "Swap with pane right", "Trade places with the pane on the right; the focus moves with yours.", terms: ["exchange", "pane"]),
+        Command("swap-pane-up", .workspace, "Swap with pane above", "Trade places with the pane above; the focus moves with yours.", terms: ["exchange", "pane"]),
+        Command("swap-pane-down", .workspace, "Swap with pane below", "Trade places with the pane below; the focus moves with yours.", terms: ["exchange", "pane"]),
+        Command("focus-pane-next", .workspace, "Next pane", "Move to the next pane in reading order, wrapping around.", chords: [c("Tab", ctrl: true)], terms: ["cycle"]),
+        Command("focus-pane-prev", .workspace, "Previous pane", "Move to the previous pane in reading order, wrapping around.", chords: [c("Tab", ctrl: true, shift: true)], terms: ["cycle"]),
+        Command("workspace-next", .workspace, "Next workspace", "The next workspace with something in it, or the next number when no other has.", chords: [c("]", ctrl: true, alt: true)]),
+        Command("workspace-prev", .workspace, "Previous workspace", "The previous workspace with something in it, or the previous number.", chords: [c("[", ctrl: true, alt: true)]),
+        Command("go-to-session", .navigate, "Go to session…", "Search every session in the palette and jump to it, or open it as a pane or in another workspace.", terms: ["switch", "find", "session"]),
+        Command("focus-follows-pointer", .workspace, "Focus follows the pointer", "With a trackpad or mouse, hovering over a pane makes it the focused one. Again to turn it off.", terms: ["hover", "mouse", "trackpad", "focus"]),
+    ]
+
+    static let all: [Command] = web + native
 
     static let byID: [CommandID: Command] = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
 

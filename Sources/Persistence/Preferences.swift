@@ -41,10 +41,12 @@ struct DevicePreferences: Codable, Equatable, Sendable {
     var notifications = Notifications()
     /// Agents chosen recently in New session, newest first.
     var recentAgents: [String] = []
+    /// With a trackpad or mouse, hovering over a pane focuses it.
+    var focusFollowsPointer = true
 
     init() {}
 
-    private enum CodingKeys: String, CodingKey { case appearance, deviceName, stepsHidden, keyBarVisible, terminalFontSize, inboxGrouping, notifications, recentAgents }
+    private enum CodingKeys: String, CodingKey { case appearance, deviceName, stepsHidden, keyBarVisible, terminalFontSize, inboxGrouping, notifications, recentAgents, focusFollowsPointer }
 
     /// Fields added later decode with their defaults, so older rows keep working.
     init(from decoder: any Decoder) throws {
@@ -57,6 +59,7 @@ struct DevicePreferences: Codable, Equatable, Sendable {
         inboxGrouping = (try? c.decode(InboxGrouping.self, forKey: .inboxGrouping)) ?? .status
         notifications = (try? c.decode(Notifications.self, forKey: .notifications)) ?? Notifications()
         recentAgents = (try? c.decode([String].self, forKey: .recentAgents)) ?? []
+        focusFollowsPointer = (try? c.decode(Bool.self, forKey: .focusFollowsPointer)) ?? true
     }
 
     mutating func noteAgent(_ id: String) {

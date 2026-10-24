@@ -42,10 +42,12 @@ struct SceneIntegrationTests {
         let b = try await LiveHost.launch(account.api, preset: "shell", label: "keys-b")
         _ = try await waitFor("rows") { account.hub.row(a.uid) != nil && account.hub.row(b.uid) != nil ? true : nil }
         let scene = SceneModel(sceneID: "keys", app: app)
+        scene.hardwareKeyboard = true
         scene.restore()
         scene.sheet = nil
         scene.open(a.uid)
         #expect(scene.route == .session(a.uid))
+        #expect(scene.focusRequest?.target == .terminal(a.uid), "a shell has no GUI: the keyboard goes to its terminal")
 
         // ⌃⇧\ splits right (physical backslash, produced "|"), ⌃⇧K is the switcher.
         #expect(scene.handle(key(0x31, "|", [.control, .shift]), scope: .terminal))
@@ -59,11 +61,38 @@ struct SceneIntegrationTests {
         #expect(!scene.handle(key(0x50, "", [.control, .shift]), scope: .field, field: FieldState(text: "hello", selection: 2..<2)))
         #expect(scene.handle(key(0x50, "", [.control, .shift]), scope: .field, field: FieldState(text: "hello", selection: 0..<0)))
         #expect(scene.workspace.focusedKey == a.uid)
+        #expect(scene.focusRequest?.target == .terminal(a.uid), "the keyboard moves with the focus, not just the border")
+        // Swap from the palette's command, balance by ⌃⇧=, cycle by ⌃Tab: the keyboard follows.
+        scene.perform("swap-pane-right")
+        #expect(scene.workspace.layout?.keys == [b.uid, a.uid])
+        #expect(scene.workspace.focusedKey == a.uid)
+        scene.workspace.setRatio(at: [], 0.7)
+        #expect(scene.handle(key(0x2E, "=", [.control, .shift]), scope: .terminal))
+        if case .split(_, let ratio, _, _)? = scene.workspace.layout { #expect(abs(ratio - 0.5) < 1e-9) }
+        #expect(scene.handle(key(0x2B, "\t", [.control]), scope: .terminal))
+        #expect(scene.workspace.focusedKey == b.uid)
+        #expect(scene.focusRequest?.target == .terminal(b.uid))
+        scene.perform("swap-pane-right")
+        #expect(scene.workspace.layout?.keys == [a.uid, b.uid])
+        scene.workspace.focusPane(.left)
         // ⌥2 goes to workspace 2, ⌥1 brings the split back.
         #expect(scene.handle(key(0x1F, "™", [.option]), scope: .app))
         #expect(scene.workspace.journalSpaces.current == 2)
         #expect(scene.handle(key(0x1E, "¡", [.option]), scope: .app))
         #expect(scene.workspace.layout?.keys == [a.uid, b.uid])
+        // ⌃⌥] steps to the next workspace with something in it: there is none, so 2, then back.
+        #expect(scene.handle(key(0x30, "]", [.control, .option]), scope: .app))
+        #expect(scene.workspace.currentWorkspace == 2)
+        #expect(scene.handle(key(0x2F, "[", [.control, .option]), scope: .app))
+        #expect(scene.workspace.currentWorkspace == 1 && scene.workspace.layout?.keys == [a.uid, b.uid])
+        // The palette hides what can't run here and puts the keyboard back when it closes.
+        scene.didFocus(.terminal(a.uid))
+        scene.perform("go-to-session")
+        #expect(scene.palette?.path == ["go", "sessions"])
+        scene.modalWillPresent()
+        scene.palette = nil
+        scene.modalDidDismiss()
+        #expect(scene.focusRequest?.target == .terminal(a.uid))
         // Pane mode: ⌃⇧Space, then l focuses right, Esc leaves.
         #expect(scene.handle(key(0x2C, " ", [.control, .shift]), scope: .app))
         #expect(scene.handle(key(0x0F, "l", []), scope: .app))

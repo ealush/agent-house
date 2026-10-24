@@ -292,6 +292,31 @@ indirect enum LayoutNode: Hashable, Codable, Sendable {
         return placed.0 == self ? (self, path) : placed
     }
 
+    /// Even out the dividers: each side of a split gets room in proportion to the panes it
+    /// holds along that split's axis, so three columns come out as thirds.
+    func balanced() -> LayoutNode {
+        guard case .split(let direction, _, let first, let second) = self else { return self }
+        let a = first.weight(along: direction), b = second.weight(along: direction)
+        return .split(direction: direction, ratio: min(0.85, max(0.15, a / (a + b))), first: first.balanced(), second: second.balanced())
+    }
+
+    private func weight(along direction: Direction) -> Double {
+        guard case .split(let d, _, let first, let second) = self, d == direction else { return 1 }
+        return first.weight(along: direction) + second.weight(along: direction)
+    }
+
+    /// Trade places with the pane in `dir` (Hyprland's swapwindow). The pane's path is where
+    /// the moved session ended up, so focus can follow it.
+    func swapping(_ path: Path, _ dir: Move) -> (layout: LayoutNode, path: Path) {
+        guard case .session(let mine)? = node(at: path), let other = neighbor(of: path, dir), case .session(let theirs)? = node(at: other) else { return (self, path) }
+        return (replacing(.path(path), with: theirs).replacing(.path(other), with: mine), other)
+    }
+
+    /// Whether every pane gets at least this much room in a workspace this size (points).
+    func fits(width: Double, height: Double, minWidth: Double, minHeight: Double) -> Bool {
+        tiles().tiles.allSatisfy { $0.box.w * width >= minWidth && $0.box.h * height >= minHeight }
+    }
+
     /// Flip the split holding this pane between side by side and stacked.
     func flipping(_ path: Path) -> LayoutNode {
         let parentPath = Array(path.dropLast())
@@ -375,18 +400,45 @@ struct Workspaces: Equatable, Codable, Sendable {
                 left.selected = (closed ?? layout).leaves().first { $0.sessionKey != key }?.sessionKey
             }
         }
-        let there = slots[n] ?? .empty
-        let joined: Slot
-        if let layout = there.layout, let last = layout.leaves().last {
-            joined = Slot(layout: layout.splitting(.path(last.path), direction: .horizontal, next: key), selected: nil)
-        } else if let selected = there.selected, selected != key {
-            joined = Slot(layout: LayoutNode.session(selected).splitting(.key(selected), direction: .horizontal, next: key), selected: nil)
-        } else {
-            joined = Slot(layout: nil, selected: key)
-        }
         var next = self
         next.slots[current] = left
-        next.slots[n] = joined
+        next.slots[n] = Workspaces.joining(key, slots[n] ?? .empty)
         return (next, left)
+    }
+
+    /// Add a session that isn't on screen here to workspace `n`, leaving this one as it is.
+    func adding(_ key: String, to n: Int, keeping now: Slot) -> Workspaces {
+        guard n != current else { return self }
+        var next = self
+        next.slots[current] = now
+        next.slots[n] = Workspaces.joining(key, slots[n] ?? .empty)
+        return next
+    }
+
+    /// A session joining a workspace: a new tile beside what's there, or alone.
+    private static func joining(_ key: String, _ there: Slot) -> Slot {
+        if let layout = there.layout, !layout.keys.contains(key), let last = layout.leaves().last {
+            return Slot(layout: layout.splitting(.path(last.path), direction: .horizontal, next: key), selected: nil)
+        }
+        if let layout = there.layout { return Slot(layout: layout, selected: nil) }
+        if let selected = there.selected, selected != key {
+            return Slot(layout: LayoutNode.session(selected).splitting(.key(selected), direction: .horizontal, next: key), selected: nil)
+        }
+        return Slot(layout: nil, selected: key)
+    }
+
+    /// Workspaces with something in them, counting `now` for the current one.
+    func occupied(now: Slot) -> [Int] {
+        (1...9).filter { $0 == current ? now.isOccupied : (slots[$0]?.isOccupied ?? false) }
+    }
+
+    /// The next workspace in `step`'s direction: among the occupied ones when there are
+    /// others (Hyprland's `e+1`), otherwise the neighboring number, wrapping 1–9.
+    func stepping(_ step: Int, now: Slot) -> Int {
+        let candidates = Set(occupied(now: now)).union([current]).sorted()
+        if candidates.count > 1, let i = candidates.firstIndex(of: current) {
+            return candidates[(i + step + candidates.count) % candidates.count]
+        }
+        return (current - 1 + step + 9) % 9 + 1
     }
 }

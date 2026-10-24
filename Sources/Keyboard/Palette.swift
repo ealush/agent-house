@@ -57,7 +57,8 @@ enum PaletteTree {
         .command("scratchpad"),
         .category(key: "run", label: "Run in project", icon: "folder", detail: "Start an agent or a shell in one of your projects", children: [.provider(.projects)]),
         .category(key: "go", label: "Go to", icon: "magnifyingglass", detail: "Sessions, pages and focus", children: [
-            .provider(.sessions), .command("go-inbox"), .command("go-review"), .command("go-history"), .command("go-search"), .command("go-settings"),
+            .category(key: "sessions", label: "Sessions", icon: "rectangle.stack", detail: "Every session, by name, project, branch or host", terms: ["switch", "jump"], children: [.provider(.sessions)]),
+            .command("go-to-session"), .command("go-inbox"), .command("go-review"), .command("go-history"), .command("go-search"), .command("go-settings"),
             .command("worktrees"), .command("cycle-prev"), .command("cycle-next"), .command("focus-sidebar"), .command("focus-main"),
         ]),
         .category(key: "session", label: "Session", icon: "terminal", detail: "The focused session", children: [
@@ -77,13 +78,21 @@ enum PaletteTree {
         ]),
         .category(key: "workspace", label: "Workspace", icon: "rectangle.split.2x2", detail: "Splits, panes and the sidebar", children: [
             .command("pane-mode"),
+            .command("focus-follows-pointer"),
             .category(key: "tiles", label: "Open as a new pane", icon: "rectangle.split.2x1", detail: "Beside the focused pane, along its longer side", children: [.command("open-in-pane"), .provider(.tiles)]),
             .category(key: "split", label: "Split", icon: "rectangle.split.2x1", detail: "Open, replace, flip, close panes", terms: ["pane"], children: [
-                .command("split-right"), .command("split-below"), .command("replace-pane"), .command("toggle-split"), .command("close-pane"), .command("exit-split"),
+                .command("split-right"), .command("split-below"), .command("split-left"), .command("split-above"), .command("replace-pane"), .command("toggle-split"),
+                .command("balance-panes"), .command("close-pane"), .command("exit-split"),
             ]),
-            .category(key: "focus", label: "Focus pane", icon: "rectangle.lefthalf.inset.filled", children: [.command("focus-pane-left"), .command("focus-pane-right"), .command("focus-pane-up"), .command("focus-pane-down")]),
+            .category(key: "focus", label: "Focus pane", icon: "rectangle.lefthalf.inset.filled", children: [
+                .command("focus-pane-left"), .command("focus-pane-right"), .command("focus-pane-up"), .command("focus-pane-down"), .command("focus-pane-next"), .command("focus-pane-prev"),
+            ]),
             .category(key: "move", label: "Move pane", icon: "rectangle.righthalf.inset.filled", children: [.command("move-pane-left"), .command("move-pane-right"), .command("move-pane-up"), .command("move-pane-down")]),
-            .category(key: "workspaces", label: "Workspaces", icon: "square.grid.3x3", detail: "Hyprland-style 1–9: go to one, or send the focused session there", children: (1...9).flatMap { [Spec.command(.workspace($0)), .command(.toWorkspace($0))] }),
+            .category(key: "swap", label: "Swap panes", icon: "arrow.left.arrow.right", detail: "Trade places with a neighbor", terms: ["exchange"], children: [
+                .command("swap-pane-left"), .command("swap-pane-right"), .command("swap-pane-up"), .command("swap-pane-down"),
+            ]),
+            .category(key: "workspaces", label: "Workspaces", icon: "square.grid.3x3", detail: "Hyprland-style 1–9: go to one, or send the focused session there", children:
+                [Spec.command("workspace-next"), .command("workspace-prev")] + (1...9).flatMap { [Spec.command(.workspace($0)), .command(.toWorkspace($0))] }),
             .category(key: "resize", label: "Resize", icon: "arrow.left.and.right", detail: "Dividers and the side panel, by key", children: [
                 .command("resize-mode"), .command("resize-left"), .command("resize-right"), .command("resize-up"), .command("resize-down"), .command("maximize-pane"),
             ]),

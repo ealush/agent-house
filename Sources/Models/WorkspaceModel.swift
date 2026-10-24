@@ -19,6 +19,8 @@ final class WorkspaceModel {
     var scratchVisible = false
     var scratchKey: String?
     var sidebarVisible = true
+    /// A divider or pane is being dragged: hover never moves focus meanwhile.
+    var dragging = false
 
     init() {}
 
@@ -99,23 +101,49 @@ final class WorkspaceModel {
 
     // MARK: Splitting
 
-    /// Single view → split: the new half asks what goes there (or shows `other`).
-    func splitFrom(_ key: String, _ direction: LayoutNode.Direction, other: String? = nil) {
-        layout = LayoutNode.session(key).splitting(.key(key), direction: direction, next: other ?? LayoutNode.pickKey())
+    /// Single view → split: the new half asks what goes there (or shows `other`). `before`
+    /// puts the new half on the left or on top.
+    func splitFrom(_ key: String, _ direction: LayoutNode.Direction, other: String? = nil, before: Bool = false) {
+        layout = LayoutNode.session(key).splitting(.key(key), direction: direction, next: other ?? LayoutNode.pickKey(), before: before)
         selected = nil
-        focusPath = other != nil ? [.first] : [.second]
+        let added: LayoutNode.Side = before ? .first : .second
+        focusPath = other != nil ? [added == .first ? .second : .first] : [added]
         zoom = false
     }
 
-    /// Split right / below from the focused pane (a session or a chooser) or the single view.
-    func split(_ direction: LayoutNode.Direction) {
+    /// Split the focused pane (a session or a chooser), or the single view: right or below,
+    /// or with `before`, left or above. The new half is a chooser and takes the focus.
+    func split(_ direction: LayoutNode.Direction, before: Bool = false) {
         if let layout, let path = focusPath ?? layout.leaves().first?.path {
-            self.layout = layout.splitting(.path(path), direction: direction, next: LayoutNode.pickKey())
-            focusPath = path + [.second]
+            self.layout = layout.splitting(.path(path), direction: direction, next: LayoutNode.pickKey(), before: before)
+            focusPath = path + [before ? .first : .second]
             zoom = false
         } else if let selected {
-            splitFrom(selected, direction)
+            splitFrom(selected, direction, before: before)
         }
+    }
+
+    /// Even out every divider.
+    func balance() {
+        guard let layout else { return }
+        self.layout = layout.balanced()
+    }
+
+    /// Trade places with the pane in `dir`; focus stays with the session that moved.
+    func swapPane(_ dir: LayoutNode.Move) {
+        guard let layout, let path = focusPath ?? layout.leaves().first?.path else { return }
+        let swapped = layout.swapping(path, dir)
+        self.layout = swapped.layout
+        focusPath = swapped.path
+    }
+
+    /// The next or previous pane in reading order, wrapping.
+    func cycleFocus(_ step: Int) {
+        guard let layout else { return }
+        let paths = layout.leaves().map(\.path)
+        guard !paths.isEmpty else { return }
+        let i = focusPath.flatMap { paths.firstIndex(of: $0) } ?? 0
+        focusPath = paths[(i + step + paths.count) % paths.count]
     }
 
     /// Close the focused pane without stopping its session; one pane left is just that session.
@@ -298,6 +326,38 @@ final class WorkspaceModel {
         return true
     }
 
+    /// Workspaces with something in them (the current one counts what's on screen).
+    var occupiedWorkspaces: [Int] { spaces.occupied(now: slot) }
+    var currentWorkspace: Int { spaces.current }
+
+    /// The next or previous occupied workspace (or the neighboring number when no other is).
+    @discardableResult
+    func stepWorkspace(_ step: Int) -> Int? {
+        let n = spaces.stepping(step, now: slot)
+        return switchWorkspace(n) ? n : nil
+    }
+
+    /// Move any session to workspace `n`: off this screen if it's here, beside what's there.
+    @discardableResult
+    func sendSession(_ key: String, to n: Int) -> Bool {
+        guard n != spaces.current else { return false }
+        if let layout, let leaf = layout.leaves().first(where: { $0.sessionKey == key }) {
+            let keep = focusedKey == key ? nil : focusedKey
+            let (next, shown) = spaces.sending(key, to: n, keeping: slot, path: leaf.path)
+            spaces = next
+            show(shown)
+            // The pane you were in keeps the focus when it's still here.
+            if let keep, let path = self.layout?.leaves().first(where: { $0.sessionKey == keep })?.path { focusPath = path }
+        } else if layout == nil, selected == key {
+            let (next, shown) = spaces.sending(key, to: n, keeping: slot, path: nil)
+            spaces = next
+            show(shown)
+        } else {
+            spaces = spaces.adding(key, to: n, keeping: slot)
+        }
+        return true
+    }
+
     private func show(_ slot: Workspaces.Slot) {
         zoom = false
         layout = LayoutNode.normalized(slot.layout)
@@ -318,7 +378,7 @@ final class WorkspaceModel {
 
     enum Presentation: Equatable, Sendable { case openTileSwitcher, newSession, scratchpad }
 
-    func submapKey(_ key: String, shift: Bool, digit: Int?) -> SubmapResult {
+    func submapKey(_ key: String, shift: Bool, alt: Bool = false, digit: Int?) -> SubmapResult {
         guard let mode = submap else { return .left }
         let directions: [String: LayoutNode.Move] = ["arrowleft": .left, "arrowright": .right, "arrowup": .up, "arrowdown": .down, "h": .left, "l": .right, "k": .up, "j": .down]
         let lowered = key.lowercased()
@@ -336,7 +396,7 @@ final class WorkspaceModel {
             return .left
         }
         if let dir {
-            if shift { movePane(dir) } else { focusPane(dir) }
+            if alt { swapPane(dir) } else if shift { movePane(dir) } else { focusPane(dir) }
             return .handled
         }
         if let digit, (1...9).contains(digit) {
@@ -345,8 +405,18 @@ final class WorkspaceModel {
             return .handled
         }
         switch lowered {
-        case "v": return .run("split-right")
-        case "s": return .run("split-below")
+        case "v": return .run(shift ? "split-left" : "split-right")
+        case "s": return .run(shift ? "split-above" : "split-below")
+        case "=":
+            balance()
+            return .handled
+        case "tab":
+            cycleFocus(shift ? -1 : 1)
+            return .handled
+        case "[", "]":
+            submap = nil
+            stepWorkspace(lowered == "]" ? 1 : -1)
+            return .handled
         case "x": return .run("close-pane")
         case "p":
             submap = nil
@@ -377,9 +447,10 @@ final class WorkspaceModel {
     static let submapKeys: [Submap: [(keys: [String], label: String)]] = [
         .resize: [(["←", "↓", "↑", "→"], "move the divider"), (["H", "J", "K", "L"], "same"), (["⇧"], "bigger steps"), (["Esc"], "done")],
         .pane: [
-            (["H", "J", "K", "L"], "focus"), (["⇧", "HJKL"], "move"), (["V"], "split right"), (["S"], "split below"), (["P"], "replace"),
-            (["X"], "close"), (["F"], "maximize"), (["T"], "flip"), (["R"], "resize"), (["O"], "open here"), (["N"], "new session"),
-            (["1–9"], "workspace"), (["Esc"], "done"),
+            (["H", "J", "K", "L"], "focus"), (["⇧", "HJKL"], "move"), (["⌥", "HJKL"], "swap"), (["Tab"], "next pane"),
+            (["V"], "split right"), (["⇧", "V"], "split left"), (["S"], "split below"), (["⇧", "S"], "split above"), (["="], "balance"),
+            (["P"], "replace"), (["X"], "close"), (["F"], "maximize"), (["T"], "flip"), (["R"], "resize"), (["O"], "open here"),
+            (["N"], "new session"), (["1–9"], "workspace"), (["[", "]"], "prev / next workspace"), (["Esc"], "done"),
         ],
     ]
 }

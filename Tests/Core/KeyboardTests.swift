@@ -13,19 +13,19 @@ private func press(_ key: String, meta: Bool = false, ctrl: Bool = false, alt: B
 }
 
 @Test func theCatalogHasEightyNineCommandsAndNoSharedDefaults() {
-    #expect(CommandCatalog.all.count == 89)
-    #expect(Set(CommandCatalog.all.map(\.id)).count == 89)
+    #expect(CommandCatalog.web.count == 89)
+    #expect(Set(CommandCatalog.web.map(\.id)).count == 89)
     var seen: [String: CommandID] = [:]
-    for command in CommandCatalog.all {
+    for command in CommandCatalog.web {
         for chord in command.chords {
             let key = chord.formatted(mac: false)
             #expect(seen[key] == nil, "\(key) is both \(seen[key]?.rawValue ?? "") and \(command.id.rawValue)")
             seen[key] = command.id
         }
     }
-    #expect(CommandCatalog.all.filter { $0.group == .navigate }.count == 17)
-    #expect(CommandCatalog.all.filter { $0.group == .session }.count == 31)
-    #expect(CommandCatalog.all.filter { $0.group == .workspace }.count == 41)
+    #expect(CommandCatalog.web.filter { $0.group == .navigate }.count == 17)
+    #expect(CommandCatalog.web.filter { $0.group == .session }.count == 31)
+    #expect(CommandCatalog.web.filter { $0.group == .workspace }.count == 41)
 }
 
 @Test func switcherAndCyclingMatchTheirChords() {

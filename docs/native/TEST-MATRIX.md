@@ -7,7 +7,7 @@ Environment, 24 October 2026: Arch Linux, official Swift 6.2 toolchain in `~/.ca
 | Check | Invocation | Result (24 October 2026) |
 | --- | --- | --- |
 | Workspace, links, plists, provenance, 89-command rows | `./scripts/verify.sh --static` | PASS |
-| Unit tests (all non-UI sources) | `swift test` (here: `swiftw test`) | PASS — 104 tests in 3 suites |
+| Unit tests (all non-UI sources) | `swift test` (here: `swiftw test`) | PASS — 118 tests in 3 suites |
 | Integration against a disposable `ah` | `AH_SOURCE=<ah checkout with native branches> ./scripts/integration.sh` | PASS — 18 tests in 3 suites |
 | Backend suite on `native/1-device-auth` + `native/2-apns` | `npm test`, `npx tsc --noEmit` in `ah` | PASS — 552/552, typecheck clean |
 | UI layer syntax | `swiftc -frontend -parse` on `Sources/Features`, `Sources/Platform`, `App`, `Tests/UI` | PASS (syntax only; not type-checked) |
@@ -31,7 +31,7 @@ Environment, 24 October 2026: Arch Linux, official Swift 6.2 toolchain in `~/.ca
 | Drafts across devices, never overwriting typing | `draftsFollowTheSessionAcrossDevicesAndClearWhenEmpty`, `draftsFillAnUntouchedBoxButNeverOverwriteTyping` |
 | Uploads land owner-only and come back as attachments | `uploadsLandOwnerOnlyAndComeBackAsAttachments` |
 | Sealed transcript cache: written while live, ciphertext at rest, paints a later window, erased on forget | `theNewestTranscriptPageIsSealedAndPaintsBeforeTheStream` |
-| Hardware key routing drives the workspace | `hardwareKeysDriveTheWorkspace` |
+| Hardware key routing drives the workspace; the keyboard follows pane focus, swap, balance, ⌃Tab and workspace stepping, and returns after the palette | `hardwareKeysDriveTheWorkspace` |
 | A relaunched window reopens where it was and reconciles with the host | `aRelaunchedWindowReopensWhereItWasAndReconciles` |
 
 ## Still to run (in order)

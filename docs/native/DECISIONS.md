@@ -43,3 +43,17 @@ Do not treat documentation research as proof that this app compiles or behaves c
 | Sealed cache: HKDF(device secret, per-sign-in server key, origin) + AES-GCM | A stolen database alone reveals nothing; locking forgets the key; a revoked sign-in's server key is gone so old rows are unreadable; forgetting an account deletes its rows. Only the newest transcript page per session is cached today (`HubStateDTO` is decode-only). |
 | `agenthub://<host>/<route>` deep links | Same routes as push payloads (`<uid>`, `review/<stack>/<pr>`); only a uid-shaped path opens a session. No Universal Links (same Associated Domains limit as passkeys). |
 | No fake progress or local "success" | Sends show `sending` until the host answers; refused sends return to the box; merges re-sync and stop if the head moved; "No checks reported" is shown as such, never as passing. |
+
+## Keyboard-first workspace — 24 October 2026
+
+Following the owner's [WORKSPACE-SPEC.md](../../WORKSPACE-SPEC.md).
+
+| Decision | Reason and reference |
+| --- | --- |
+| Native commands beside the web's 89, not inside them | `CommandCatalog.web` stays the audited port (the parity check counts it); `CommandCatalog.native` adds split left/above, balance, swap, pane cycling, workspace next/previous, Go to session and focus-follows-pointer. Defaults avoid every web chord and each other (unit test), and the less common ones stay palette/pane-mode only rather than spending scarce chords. |
+| One focus authority, keyed on what the window shows | The spec's "the pane that looks focused is the pane that receives input" fails when each view moves its own responder. `SceneModel.following` diffs route, layout, focused pane, workspace and zoom around every action and moves the keyboard once; responders report back through `didFocus`, which also moves the pane focus when you click into another pane's composer. |
+| Keyboard follows only with a hardware keyboard | Making a `UITextView` first responder on touch alone raises the software keyboard over the content; `GCKeyboard` presence gates automatic moves, never explicit ones (Reply, Rename). [GCKeyboard](https://developer.apple.com/documentation/gamecontroller/gckeyboard). |
+| Focus restored after transient UI by the window, not by UIKit | UIKit doesn't return first responder to a view under a dismissed presentation. The root tells the model when something is presented and when all of it is gone; requests made meanwhile are delivered after dismissal, otherwise the remembered responder is restored. |
+| Hover focus is gated, not debounced | Pointer hover ([onContinuousHover](https://developer.apple.com/documentation/swiftui/view/oncontinuoushover(coordinatespace:perform:))) focuses a pane at once, like Hyprland's follow-mouse, except while dragging, under any overlay or scratchpad, in a submap or maximized, and for 0.35 s after the layout changes, so a pane sliding under a still pointer never steals the keyboard. On by default; a palette command turns it off. |
+| Workspace next/previous visit occupied workspaces | Like Hyprland's `workspace e+1`: stepping skips empty ones when others are occupied, and falls back to the neighboring number when none are, so the command always does something visible. |
+

@@ -33,6 +33,9 @@ final class SceneModel {
     /// menu's key commands match through it, so they never take a key that responder owns.
     @ObservationIgnored var keyScope: KeyScope = .app
     @ObservationIgnored var fieldState = FieldState()
+    /// A hardware keyboard is attached (set by the platform). Navigation moves the keyboard
+    /// focus only then: on touch alone, focusing a text box would raise the software keyboard.
+    var hardwareKeyboard = false
 
     @ObservationIgnored private var sessions: [String: SessionModel] = [:]
     @ObservationIgnored private var saveTask: Task<Void, Never>?
@@ -41,6 +44,15 @@ final class SceneModel {
     @ObservationIgnored private var restored = false
     @ObservationIgnored private var pendingRestore: SceneSnapshot?
     @ObservationIgnored private var panelDelta: Double = 0
+    /// Where the keyboard is now (a composer or terminal), as the responders report it.
+    @ObservationIgnored private(set) var currentFocus: FocusTarget?
+    /// Per session, where the keyboard was last: its composer or its terminal.
+    @ObservationIgnored private var focusMemory: [String: FocusTarget] = [:]
+    @ObservationIgnored private var modalShown = false
+    @ObservationIgnored private var focusBeforeModal: FocusTarget?
+    @ObservationIgnored private var nonceAtModal = 0
+    @ObservationIgnored private var deferredFocus: FocusTarget?
+    @ObservationIgnored private var hoverQuietUntil = Date.distantPast
 
     init(sceneID: String, app: AppModel, client: String = DeviceDescriptor.newClientID()) {
         self.sceneID = sceneID
@@ -120,6 +132,16 @@ final class SceneModel {
         case messages(String)
         case latest(String)
         case rename(String)
+        /// An empty pane's session search.
+        case chooser(LayoutNode.Path)
+
+        /// The session this target is in, if any.
+        var sessionKey: String? {
+            switch self {
+            case .composer(let k), .terminal(let k), .ask(let k), .messages(let k), .latest(let k), .rename(let k): return k
+            case .sidebar, .page, .chooser: return nil
+            }
+        }
     }
 
     struct FocusRequest: Equatable, Sendable {
@@ -133,9 +155,143 @@ final class SceneModel {
         let isError: Bool
     }
 
+    /// Ask a responder to take the keyboard. While a sheet or the palette is up, the request
+    /// waits and is delivered once it's gone, so nothing behind it steals the keyboard.
     func requestFocus(_ target: FocusTarget) {
         focusNonce += 1
-        focusRequest = FocusRequest(target: target, nonce: focusNonce)
+        if modalShown {
+            deferredFocus = target
+        } else {
+            focusRequest = FocusRequest(target: target, nonce: focusNonce)
+        }
+    }
+
+    // MARK: Keyboard focus
+
+    /// A composer or terminal took the keyboard. Its session remembers that spot, and its
+    /// pane becomes the focused one, so the pane that looks focused is the one getting keys.
+    func didFocus(_ target: FocusTarget) {
+        currentFocus = target
+        guard let key = target.sessionKey else { return }
+        switch target {
+        case .composer, .terminal: focusMemory[key] = target
+        default: break
+        }
+        if let layout = workspace.layout, workspace.focusedKey != key, let leaf = layout.leaves().first(where: { $0.sessionKey == key }) {
+            workspace.focus(leaf.path)
+            scheduleSave()
+        }
+    }
+
+    func didBlur(_ target: FocusTarget) {
+        if currentFocus == target { currentFocus = nil }
+    }
+
+    /// Where the keyboard belongs in what the window shows: a chooser's search, the
+    /// focused session's remembered spot (its composer in the GUI, else its terminal), or the page.
+    var contentFocusTarget: FocusTarget {
+        if workspace.chooserFocused, let path = workspace.focusPath { return .chooser(path) }
+        let key: String? = {
+            if let key = workspace.focusedKey { return key }
+            if case .session(let key) = route { return key }
+            return nil
+        }()
+        guard let key else { return .page }
+        if let remembered = focusMemory[key] { return remembered }
+        guard let model = session(key) else { return .composer(key) }
+        return model.surface == .gui && model.hasGUI ? .composer(key) : .terminal(key)
+    }
+
+    /// Put the keyboard where it belongs now (with a hardware keyboard only).
+    func focusContent() {
+        guard hardwareKeyboard else { return }
+        requestFocus(contentFocusTarget)
+    }
+
+    /// What decides where focus goes: the page, the panes and which one is focused, what's
+    /// in it, the workspace and zoom.
+    private struct FocusSpot: Equatable {
+        let route: SceneSnapshot.Route
+        let layout: LayoutNode?
+        let path: LayoutNode.Path?
+        let key: String?
+        let workspace: Int
+        let zoom: Bool
+    }
+
+    private var focusSpot: FocusSpot {
+        FocusSpot(route: route, layout: workspace.layout, path: workspace.focusPath, key: workspace.focusedKey ?? workspace.selected, workspace: workspace.currentWorkspace, zoom: workspace.zoom)
+    }
+
+    /// Deliberate navigation carries the keyboard with it: run `change`; if the focused pane
+    /// or what it shows changed and nothing asked for focus meanwhile, the keyboard goes to the
+    /// new pane's spot. A layout change also quiets hover briefly, so a pane sliding under a
+    /// still pointer doesn't take the focus.
+    private func following(_ change: () -> Void) {
+        let before = focusSpot
+        let nonce = focusNonce
+        change()
+        let after = focusSpot
+        guard after != before else { return }
+        if after.layout != before.layout || after.zoom != before.zoom || after.workspace != before.workspace || after.route != before.route { suppressHover() }
+        if focusNonce == nonce { focusContent() }
+    }
+
+    /// A pane was tapped or clicked: it's focused. If the tap didn't land in a text box or
+    /// terminal of its own, the keyboard follows once the tap settles.
+    func tapPane(_ path: LayoutNode.Path) async {
+        guard workspace.layout?.node(at: path) != nil else { return }
+        workspace.focus(path)
+        scheduleSave()
+        await Task.yield()
+        if workspace.focusPath == path, currentFocus?.sessionKey != workspace.focusedKey || workspace.chooserFocused { focusContent() }
+    }
+
+    // MARK: Hover focus
+
+    func suppressHover(for seconds: Double = 0.35, now: Date = Date()) {
+        hoverQuietUntil = now.addingTimeInterval(seconds)
+    }
+
+    /// The pointer settled over a pane: with focus-follows-pointer on, it becomes the focused
+    /// pane and takes the keyboard. Never while a divider or pane is dragged, a sheet, the
+    /// palette or the scratchpad is over the panes, in pane or resize mode, while maximized,
+    /// or just after the layout moved under a still pointer.
+    @discardableResult
+    func hoverFocus(_ path: LayoutNode.Path, now: Date = Date()) -> Bool {
+        guard app.preferences.focusFollowsPointer, !modalShown, sheet == nil, palette == nil, switcher == nil, !showingShortcuts,
+              !workspace.dragging, !workspace.scratchVisible, workspace.submap == nil, !workspace.zoom, now >= hoverQuietUntil,
+              let layout = workspace.layout, layout.node(at: path) != nil, workspace.focusPath != path else { return false }
+        following { workspace.focus(path) }
+        scheduleSave()
+        return true
+    }
+
+    // MARK: Presented over the window
+
+    /// A sheet, the palette, the switcher or the shortcut table is about to cover the window.
+    func modalWillPresent() {
+        guard !modalShown else { return }
+        modalShown = true
+        focusBeforeModal = currentFocus
+        nonceAtModal = focusNonce
+    }
+
+    /// Everything presented is gone: deliver focus asked for meanwhile, or put the keyboard
+    /// back where it was.
+    func modalDidDismiss() {
+        guard modalShown else { return }
+        modalShown = false
+        let back = focusBeforeModal
+        focusBeforeModal = nil
+        if let deferred = deferredFocus {
+            deferredFocus = nil
+            focusNonce += 1
+            focusRequest = FocusRequest(target: deferred, nonce: focusNonce)
+        } else if focusNonce == nonceAtModal, let back {
+            focusNonce += 1
+            focusRequest = FocusRequest(target: back, nonce: focusNonce)
+        }
     }
 
     func toast(_ text: String, error: Bool = false) {
@@ -211,8 +367,10 @@ final class SceneModel {
 
     /// Open a session: in a split it replaces the focused pane, on a phone it pushes.
     func open(_ key: String) {
-        workspace.open(key)
-        if workspace.layout == nil { route = .session(key) }
+        following {
+            workspace.open(key)
+            if workspace.layout == nil { route = .session(key) }
+        }
         if let hub, hub.row(key) != nil { Task { try? await hub.client(forKey: key).focus(key: key) } }
         pruneSessions()
         scheduleSave()
@@ -347,10 +505,12 @@ final class SceneModel {
     func handle(_ press: KeyPress, scope: KeyScope, field: FieldState = FieldState()) -> Bool {
         if workspace.submap != nil, scope != .ask {
             let digit = KeyPress.digits[press.hidUsage].flatMap(Int.init)
-            switch workspace.submapKey(press.key ?? "", shift: press.modifiers.contains(.shift), digit: digit) {
-            case .handled, .left: break
-            case .run(let id): perform(id)
-            case .present(let what): present(what)
+            following {
+                switch workspace.submapKey(press.key ?? "", shift: press.modifiers.contains(.shift), alt: press.modifiers.contains(.option), digit: digit) {
+                case .handled, .left: break
+                case .run(let id): perform(id)
+                case .present(let what): present(what)
+                }
             }
             scheduleSave()
             return true
@@ -388,6 +548,9 @@ final class SceneModel {
         if let n = id.workspaceNumber { return (1...9).contains(n) }
         if id.sendToWorkspaceNumber != nil { return ws.focusedKey != nil }
         switch id.rawValue {
+        case "go-to-session", "workspace-next", "workspace-prev", "focus-follows-pointer": return true
+        case "split-left", "split-above": return !narrow && (ws.focusedKey != nil || ws.chooserFocused)
+        case "balance-panes", "focus-pane-next", "focus-pane-prev", "swap-pane-left", "swap-pane-right", "swap-pane-up", "swap-pane-down": return ws.splitOpen
         case "command-palette", "switcher", "new-session", "new-project", "cycle-prev", "cycle-next", "go-inbox", "go-history", "go-review",
              "go-search", "go-settings", "worktrees", "show-shortcuts", "reload-page", "focus-sidebar", "scratchpad":
             return true
@@ -430,9 +593,15 @@ final class SceneModel {
         return CommandMatcher.match(chord, scope: keyScope, bindings: app.keyBindings, field: fieldState) == id
     }
 
+    /// Run a command: the same path for its key, the palette, the menu bar, a pane's menu
+    /// and any button for it. The keyboard follows wherever it moves the focus.
     func perform(_ id: CommandID) {
         guard isAvailable(id) else { return }
-        defer { scheduleSave() }
+        following { execute(id) }
+        scheduleSave()
+    }
+
+    private func execute(_ id: CommandID) {
         if let n = id.workspaceNumber {
             if workspace.switchWorkspace(n) {
                 syncRouteToWorkspace()
@@ -451,6 +620,28 @@ final class SceneModel {
         let key = workspace.focusedKey
         switch id.rawValue {
         case "command-palette": palette = palette == nil ? PaletteState() : nil
+        case "go-to-session": palette = PaletteState(path: ["go", "sessions"])
+        case "split-left":
+            workspace.split(.horizontal, before: true)
+            syncRouteToWorkspace()
+        case "split-above":
+            workspace.split(.vertical, before: true)
+            syncRouteToWorkspace()
+        case "balance-panes": workspace.balance()
+        case "swap-pane-left": workspace.swapPane(.left)
+        case "swap-pane-right": workspace.swapPane(.right)
+        case "swap-pane-up": workspace.swapPane(.up)
+        case "swap-pane-down": workspace.swapPane(.down)
+        case "focus-pane-next": workspace.cycleFocus(1)
+        case "focus-pane-prev": workspace.cycleFocus(-1)
+        case "workspace-next", "workspace-prev":
+            if let n = workspace.stepWorkspace(id.rawValue == "workspace-next" ? 1 : -1) {
+                syncRouteToWorkspace()
+                if !workspace.sidebarVisible || narrow { toast("Workspace \(n)") }
+            }
+        case "focus-follows-pointer":
+            app.preferences.focusFollowsPointer.toggle()
+            toast(app.preferences.focusFollowsPointer ? "Focus follows the pointer" : "Focus stays until you click")
         case "switcher": switcher = switcher == nil ? SwitcherState() : nil
         case "new-session": sheet = .newSession(NewSessionContext(cwd: s?.row?.dto.projectPath, host: s?.row.map { $0.isLocal ? nil : $0.host } ?? nil))
         case "new-project": sheet = .newSession(NewSessionContext(project: true))
@@ -632,6 +823,10 @@ final class SceneModel {
     func pick(_ key: String) {
         let state = switcher
         switcher = nil
+        following { place(key, state) }
+    }
+
+    private func place(_ key: String, _ state: SwitcherState?) {
         if let path = state?.intoPane {
             workspace.fill(path, with: key)
         } else if state?.asTile == true {
@@ -723,6 +918,10 @@ final class SceneModel {
     /// Run a palette row (after the palette closes).
     func run(_ action: PaletteAction) {
         palette = nil
+        following { execute(action) }
+    }
+
+    private func execute(_ action: PaletteAction) {
         switch action {
         case .command(let id): perform(id)
         case .openSession(let key): open(key)

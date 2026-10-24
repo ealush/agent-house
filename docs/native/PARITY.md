@@ -6,7 +6,7 @@ Last reconciled: **24 October 2026**. This is the completion companion to [SPEC.
 
 Statuses: `unstarted`, `implemented` (code exists; its stated evidence is all that ran), `verified` (the named test/platform ran and passed), `blocked` (needs something this machine or session can't provide), `substituted` (a web/host mechanism replaced by a native one, or deliberately kept on the host). `[x]` marks verified rows only.
 
-**Current outcome:** every P0/P1 capability has native code. The non-UI core (protocol, auth, streams, models, keyboard routing, workspace, persistence, review logic) is compiled and tested on Linux: **104 unit tests** and **18 integration tests against a disposable `ah`** with real tmux and fake agents. The UIKit/SwiftUI layer is written but has **never been compiled** (no Xcode or iOS SDK here), so no screen, device, APNs delivery or hardware-keyboard behavior is verified. **No implementation-phase exit gate is closed**; G-0 needs one Apple build and run.
+**Current outcome:** every P0/P1 capability has native code. The non-UI core (protocol, auth, streams, models, keyboard routing, workspace, persistence, review logic) is compiled and tested on Linux: **118 unit tests** and **18 integration tests against a disposable `ah`** with real tmux and fake agents. The UIKit/SwiftUI layer is written but has **never been compiled** (no Xcode or iOS SDK here), so no screen, device, APNs delivery or hardware-keyboard behavior is verified. **No implementation-phase exit gate is closed**; G-0 needs one Apple build and run.
 
 Evidence shorthand used below: **UT** = `swift test` (Linux, Swift 6.2); **IT** = `scripts/integration.sh` (Linux, disposable `ah` on branches `native/1-device-auth` + `native/2-apns`); **UI** = SwiftUI/UIKit source, syntax-checked only.
 
@@ -518,6 +518,64 @@ Source: [AUDIT contextual bindings](../../AUDIT.md#contextual-bindings-and-behav
 | [ ] | K-10 | Diff-line navigation, Enter/Space comment, Cmd/Ctrl+Enter send and Escape cancel — *diff lines are tap targets; keyboard line navigation not built* | P1 | unstarted |
 | [ ] | K-11 | Roving lists retain intended item/focus through reorder; scoped main-action dispatch respects dialogs/controls — *SceneModel.handle + UIKit routing; UT KeyboardTests* | P1 | implemented |
 | [ ] | K-12 | Which-key modifier-hold HUD, native shortcut discoverability, key hints, rebindings and conflict feedback — *SceneModel.handle + UIKit routing; UT KeyboardTests* | P1 | implemented |
+
+### Keyboard-first workspace
+
+Source: the owner's [WORKSPACE-SPEC.md](../../WORKSPACE-SPEC.md) (24 October 2026), which refines SPEC's keyboard, palette and tiling contract. Native-only commands (beyond the web's 89) are listed after the table. "Model" means the behavior lives in `SceneModel`/`WorkspaceModel`/`LayoutNode`/`KeyBindings` and is tested on Linux; the UIKit/SwiftUI side is unverified until the first Apple build.
+
+| Done | ID | Requirement (WORKSPACE-SPEC section) — *evidence* | Priority | Status |
+| --- | --- | --- | --- | --- |
+| [ ] | KW-01 | §1 A global shortcut opens the palette from anywhere — *⌘⇧P/⌃⇧P menu key command with priority over text; UI unverified* | P1 | implemented |
+| [ ] | KW-02 | §1 Nested categories walked in place: arrows move, Enter/→ opens or runs, ⌫/← goes back — *Enter/⌫ written; →/← not yet* | P1 | implemented |
+| [ ] | KW-03 | §1 Every row: icon, label, keycaps right-aligned — *categories have icons; commands not yet* | P1 | unstarted |
+| [ ] | KW-04 | §1 Forgiving fuzzy search from any level reaches nested commands — *UT KeyboardTests (PaletteTree.search)* | P1 | implemented |
+| [ ] | KW-05 | §1 Context-sensitive: only what can run in this window and pane — *UT KeyboardTests; IT hardwareKeysDriveTheWorkspace* | P1 | implemented |
+| [ ] | KW-06 | §1 Recently used actions surfaced without reordering unpredictably | P2 | unstarted |
+| [ ] | KW-07 | §1 Sessions in the same search, set apart from actions, with identifying context; a Go to → Sessions branch (`go-to-session`) — *branch: IT hardwareKeysDriveTheWorkspace* | P1 | implemented |
+| [ ] | KW-08 | §1 Session destinations: switch to, open as a pane, move to workspace N | P1 | unstarted |
+| [ ] | KW-09 | §1 Compact floating surface, keycaps, clear selection, smooth level transitions, depth without heavy translucency | P1 | unstarted |
+| [ ] | KW-10 | §2 Shortcut editor search by name, category or shortcut | P1 | unstarted |
+| [ ] | KW-11 | §2 Record a new combination straight from the keyboard — *ChordRecorder; UI unverified* | P1 | implemented |
+| [ ] | KW-12 | §2 Two-key chords where appropriate | P2 | unstarted |
+| [ ] | KW-13 | §2 Conflicts detected with a way to resolve them (take it over or cancel); system-reserved keys refused | P1 | unstarted |
+| [ ] | KW-14 | §2 Reset one shortcut or all of them — *Settings → Shortcuts; UI unverified* | P1 | implemented |
+| [ ] | KW-15 | §2 App-wide and context-only shortcuts told apart | P2 | unstarted |
+| [ ] | KW-16 | §2 Palette, menu bar, which-key and the editor always show the same bindings — *one `KeyBindings`; menu rebuilt on change* | P1 | implemented |
+| [ ] | KW-17 | §2 Which-key overlay for held modifiers — *UT KeyboardTests (whichKey)* | P2 | implemented |
+| [ ] | KW-18 | §3 Split the focused pane right, below, left or above, recursively — *UT TilingFocusTests, WorkspaceModelTests; IT* | P1 | implemented |
+| [ ] | KW-19 | §3 Resize by dragging dividers or by key — *UT LayoutTests; drag UI unverified* | P1 | implemented |
+| [ ] | KW-20 | §3 Move and swap panes by key or by dragging — *UT TilingFocusTests, LayoutTests; IT (swap)* | P1 | implemented |
+| [ ] | KW-21 | §3 Close a pane; its neighbors reclaim the space — *UT WorkspaceModelTests* | P1 | implemented |
+| [ ] | KW-22 | §3 Maximize and return to the arrangement — *UT; UI unverified* | P1 | implemented |
+| [ ] | KW-23 | §3 Workspaces 1–9 with next/previous — *UT TilingFocusTests; IT* | P1 | implemented |
+| [ ] | KW-24 | §3 Balance sizes; flip a split — *UT TilingFocusTests; IT (⌃⇧=)* | P1 | implemented |
+| [ ] | KW-25 | §3 Every workspace capability is in the palette — *UT everyCommandHasAPlaceInThePaletteTree* | P1 | implemented |
+| [ ] | KW-26 | §3 One unmistakable active pane (accent border), minimal chrome — *UI border; unverified* | P1 | implemented |
+| [ ] | KW-27 | §4 Directional focus follows the real spatial arrangement — *UT LayoutTests (neighbor)* | P1 | implemented |
+| [ ] | KW-28 | §4 Moving focus moves the real keyboard focus; each pane remembers its composer or terminal — *model: UT TilingFocusTests, IT; responders not yet reporting* | P0 | implemented |
+| [ ] | KW-29 | §4 Hover-to-focus without flicker during drags, overlays or layout changes — *model gating: UT TilingFocusTests; no pointer UI yet* | P1 | implemented |
+| [ ] | KW-30 | §4 Focus stays right through split, move, swap, close, maximize, session and workspace switches — *model: UT, IT* | P0 | implemented |
+| [ ] | KW-31 | §4 Temporary interfaces give the keyboard back on dismissal; deliberate navigation focuses the destination — *model: UT, IT; presentation hook not yet* | P0 | implemented |
+| [ ] | KW-32 | §4 Global shortcuts reachable from pane content without breaking typing — *scopes and caret edges: UT KeyboardTests* | P0 | implemented |
+| [ ] | KW-33 | §5 One capability, four paths: palette, shortcut, a pane's context menu, a visible control — *palette, keys, menu bar; pane menus not yet* | P1 | implemented |
+| [ ] | KW-34 | §6 Motion with spatial continuity for split, close, maximize, palette levels; Reduce Motion respected | P1 | unstarted |
+| [ ] | KW-35 | §6 Clear hover, pressed, selected and disabled states | P2 | unstarted |
+| [ ] | KW-36 | §6 A window too small for the layout shows the focused pane with a pane strip — *`LayoutNode.fits`: UT TilingFocusTests; no UI yet* | P1 | implemented |
+| [ ] | KW-37 | §6 Accessibility: VoiceOver names for panes and focus, Dynamic Type — *labels written; needs a device* | P1 | implemented |
+| [ ] | KW-38 | §7 Everything in the quality bar without a mouse, on an iPad with a keyboard | P0 | blocked |
+
+Native workspace commands (DECISIONS: Keyboard-first workspace). The web's 89 stay as above; these add to them, with defaults that clash with none (UT `nativeCommandsKeepTheWebCatalogAndClashWithNothing`).
+
+| ID | Command | Default | Pane mode |
+| --- | --- | --- | --- |
+| KW-C01 | `split-left` Split left | ⌃⌥⇧\\ | ⇧V |
+| KW-C02 | `split-above` Split above | ⌃⌥⇧- | ⇧S |
+| KW-C03 | `balance-panes` Balance panes | ⌃⇧= | = |
+| KW-C04 | `swap-pane-left/right/up/down` Swap with a neighbor | — | ⌥H/J/K/L |
+| KW-C05 | `focus-pane-next/prev` Next/previous pane | ⌃Tab / ⌃⇧Tab | Tab / ⇧Tab |
+| KW-C06 | `workspace-next/prev` Next/previous workspace | ⌃⌥] / ⌃⌥[ | ] / [ |
+| KW-C07 | `go-to-session` Go to session… | — | — |
+| KW-C08 | `focus-follows-pointer` Focus follows the pointer | — | — |
 
 ### Delivery, safety and recovery edge cases
 
