@@ -46,10 +46,18 @@ struct DevicePreferences: Codable, Equatable, Sendable {
     var focusFollowsPointer = true
     /// Palette rows run recently (`PaletteAction.recentKey`), newest first.
     var recentPalette: [String] = []
+    /// New session's last choices for each agent, by preset id.
+    var launchMemory: [String: LaunchMemory] = [:]
+
+    struct LaunchMemory: Codable, Equatable, Sendable {
+        var mode: String?
+        var model: String?
+        var effort: String?
+    }
 
     init() {}
 
-    private enum CodingKeys: String, CodingKey { case appearance, deviceName, stepsHidden, keyBar, terminalFontSize, inboxGrouping, notifications, recentAgents, focusFollowsPointer, recentPalette }
+    private enum CodingKeys: String, CodingKey { case appearance, deviceName, stepsHidden, keyBar, terminalFontSize, inboxGrouping, notifications, recentAgents, focusFollowsPointer, recentPalette, launchMemory }
 
     private enum LegacyKeys: String, CodingKey { case keyBarVisible }
 
@@ -68,6 +76,7 @@ struct DevicePreferences: Codable, Equatable, Sendable {
         recentAgents = (try? c.decode([String].self, forKey: .recentAgents)) ?? []
         focusFollowsPointer = (try? c.decode(Bool.self, forKey: .focusFollowsPointer)) ?? true
         recentPalette = (try? c.decode([String].self, forKey: .recentPalette)) ?? []
+        launchMemory = (try? c.decode([String: LaunchMemory].self, forKey: .launchMemory)) ?? [:]
     }
 
     enum KeyBarMode: String, Codable, Sendable, CaseIterable {

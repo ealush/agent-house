@@ -233,6 +233,23 @@ extension LaunchState {
 
     /// The model a new session asks for: a valid typed id wins over the list; the
     /// default (or nothing) sends nothing, so the agent's own default stays in charge.
+    /// Where a new session starts by default: the project of the most recently active
+    /// session that has one (`newestProject` in `../ah/web/NewDialog.tsx`).
+    static func newestProject(_ rows: [SessionRow]) -> String? {
+        rows.filter { !$0.dto.projectPath.isEmpty }.max { $0.dto.activity < $1.dto.activity }?.dto.projectPath
+    }
+
+    /// What New session remembers per agent and puts back next time: model and effort as
+    /// chosen, and the permission mode unless it's a dangerous one (that's always a choice
+    /// made on purpose, never a leftover).
+    static func remembered(_ memory: DevicePreferences.LaunchMemory?, preset: PresetDTO) -> (mode: String, model: String?, effort: String?) {
+        guard let memory else { return ("default", preset.defaultModel, preset.defaultEffort) }
+        let mode = preset.modes?.first { $0.id == memory.mode && $0.dangerous != true }?.id ?? "default"
+        let model = memory.model.flatMap { id in (preset.models ?? []).contains { $0.id == id } || (takesCustomModel(preset) && isValidModelID(id)) ? id : nil } ?? preset.defaultModel
+        let effort = memory.effort.flatMap { levels(preset, model: model).contains($0) ? $0 : nil } ?? preset.defaultEffort
+        return (mode, model, effort)
+    }
+
     /// A fork's request (`../ah/web/ForkDialog.tsx`): the name and first message when given,
     /// the permission mode when the agent has a choice, and model or effort only where they
     /// differ from what the parent runs ("default" clears an inherited one).

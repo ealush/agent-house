@@ -66,7 +66,11 @@ struct NewSessionSheet: View {
     @State private var projects: [String] = []
     @State private var busy = false
     @State private var error: String?
+    /// Where new projects go on this host (the folder field's "New folder" starts there).
+    @State private var root: String?
+    @State private var browsing = false
     @FocusState private var promptFocused: Bool
+    @FocusState private var folderFocused: Bool
 
     private var hub: HubStore? { scene.hub }
     private var presets: [PresetDTO] {
@@ -117,20 +121,58 @@ struct NewSessionSheet: View {
                     }
                 }
                 Section {
-                    TextField("Folder", text: $cwd)
-                        .font(.body.monospaced())
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .onChange(of: cwd) { _, _ in dirState = nil }
-                        .onSubmit { Task { await checkDir() } }
-                    if let problem = dirProblem { Text(problem).font(.caption).foregroundStyle(theme.danger) }
-                    if dirState == .new {
-                        Label("A new folder will be created", systemImage: "folder.badge.plus").font(.callout)
-                        Toggle("git init", isOn: $gitInit)
+                    HStack(spacing: 10) {
+                        Image(systemName: dirState == .new ? "folder.badge.plus" : "folder").foregroundStyle(theme.accent)
+                        TextField("~/code/project", text: $cwd)
+                            .font(.body.monospaced())
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .focused($folderFocused)
+                            .onSubmit { Task { await checkDir() } }
+                        Button {
+                            browsing = true
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("Browse folders on the host")
                     }
-                    if !projects.isEmpty {
-                        Menu("Recent projects") {
-                            ForEach(projects.prefix(20), id: \.self) { path in Button(path) { cwd = path; dirState = .dir } }
+                    if !projects.isEmpty || root != nil {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(projects.prefix(6), id: \.self) { path in
+                                    projectChip((path as NSString).lastPathComponent, systemImage: "folder", on: cwd == path) { cwd = path }
+                                        .help(path)
+                                }
+                                if let root {
+                                    projectChip("New Folder", systemImage: "plus", on: dirState == .new) {
+                                        cwd = root.hasSuffix("/") ? root : root + "/"
+                                        folderFocused = true
+                                    }
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                    if let problem = dirProblem {
+                        Label(problem, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(theme.danger)
+                    } else if dirState == .new {
+                        let folder = cwd.trimmingCharacters(in: .whitespaces)
+                        Label {
+                            Text("Creates **\((folder as NSString).lastPathComponent)** in \((folder as NSString).deletingLastPathComponent)")
+                        } icon: {
+                            Image(systemName: "sparkles")
+                        }
+                        .font(.callout)
+                        Toggle("Initialize a git repository", isOn: $gitInit)
+                    } else if preset?.isShell == false {
+                        Toggle(isOn: $worktree) {
+                            Label {
+                                Text("Its own worktree")
+                                Text("A new branch in a checkout of its own, so it never collides with other agents here.")
+                            } icon: {
+                                Image(systemName: "square.on.square.dashed")
+                            }
                         }
                     }
                 } header: {
@@ -155,7 +197,6 @@ struct NewSessionSheet: View {
                     if tmuxSession == nil {
                         TextField("New tmux session name", text: $newTmux).textInputAutocapitalization(.never).autocorrectionDisabled()
                     }
-                    Toggle("Isolated git worktree", isOn: $worktree).disabled(dirState == .new)
                     if preset?.resume != nil { Toggle("Resume its last conversation here", isOn: $resume) }
                     TextField("Extra arguments", text: $extraArgs).font(.body.monospaced()).textInputAutocapitalization(.never).autocorrectionDisabled()
                 }
@@ -170,9 +211,20 @@ struct NewSessionSheet: View {
                         .keyboardShortcut(.return, modifiers: .command)
                 }
             }
+            .task(id: "\(host ?? "")|\(cwd)") {
+                // Say what the folder is while it's typed (after a pause), not only on Start.
+                try? await Task.sleep(for: .milliseconds(cwd.isEmpty ? 0 : 300))
+                guard !Task.isCancelled, !cwd.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+                await checkDir()
+            }
+            .sheet(isPresented: $browsing) {
+                if let hub {
+                    FolderPicker(api: hub.client(host: host), start: cwd.isEmpty ? nil : cwd) { picked in cwd = picked }
+                }
+            }
             .task {
                 host = context.host
-                cwd = context.cwd ?? (context.project ? "" : "~")
+                cwd = context.cwd ?? (context.project ? "" : (LaunchState.newestProject(hub?.rows.filter { $0.isLocal == (context.host == nil) } ?? []) ?? "~"))
                 let tmux = LaunchState.tmuxChoices(sessions: hub?.state(host: host)?.sessions ?? [], defaultSession: hub?.state(host: host)?.defaultSession ?? "")
                 tmuxSession = tmux.initial
                 if tmux.initial == nil { newTmux = hub?.state(host: host)?.defaultSession ?? "" }
@@ -195,17 +247,36 @@ struct NewSessionSheet: View {
         }
     }
 
+    /// Each agent comes back as it was last started from here (a dangerous mode never does).
     private func applyDefaults(_ p: PresetDTO) {
-        mode = "default"
-        model = p.defaultModel
-        effort = p.defaultEffort
-        customModel = ""
+        let last = LaunchState.remembered(scene.app.preferences.launchMemory[p.id], preset: p)
+        mode = last.mode
+        let listed = last.model.map { id in (p.models ?? []).contains { $0.id == id } } ?? true
+        model = listed ? last.model : p.defaultModel
+        customModel = listed ? "" : (last.model ?? "")
+        effort = last.effort
         resume = false
     }
 
     private func checkDir() async {
         guard let hub else { return }
-        dirState = (try? await hub.client(host: host).dir(cwd.trimmingCharacters(in: .whitespaces)))?.state
+        let status = try? await hub.client(host: host).dir(cwd.trimmingCharacters(in: .whitespaces))
+        dirState = status?.state
+        if let status { root = status.root }
+    }
+
+    private func projectChip(_ title: String, systemImage: String, on: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.callout)
+                .lineLimit(1)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(on ? theme.accentStrong.opacity(0.18) : theme.raised, in: Capsule())
+                .overlay(Capsule().stroke(on ? theme.accentStrong : .clear))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 
     private func start() async {
@@ -226,7 +297,79 @@ struct NewSessionSheet: View {
             mode: mode == "default" ? nil : mode, model: chosenModel, effort: chosenEffort,
             extraArgs: extraArgs.trimmingCharacters(in: .whitespaces).isEmpty ? nil : extraArgs.trimmingCharacters(in: .whitespaces))
         if await scene.start(request, host: host, prompt: prompt, intoPane: context.intoPane) != nil {
+            if !preset.isShell {
+                scene.app.preferences.launchMemory[preset.id] = .init(mode: mode, model: chosenModel ?? model, effort: effort)
+            }
             scene.sheet = nil
+        }
+    }
+}
+
+// MARK: Folder picker
+
+/// The host's folders, one level at a time, to pick where something starts.
+struct FolderPicker: View {
+    let api: APIClient
+    let start: String?
+    let pick: (String) -> Void
+    @State private var model: FilesModel
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.theme) private var theme
+
+    init(api: APIClient, start: String?, pick: @escaping (String) -> Void) {
+        self.api = api
+        self.start = start
+        self.pick = pick
+        _model = State(initialValue: FilesModel(api: api))
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if let listing = model.listing {
+                    if let parent = listing.parent {
+                        Button { Task { await model.open(parent) } } label: {
+                            Label((parent as NSString).lastPathComponent.isEmpty ? "/" : (parent as NSString).lastPathComponent, systemImage: "arrow.turn.left.up")
+                        }
+                    }
+                    ForEach(listing.entries.filter { $0.type == .dir }, id: \.name) { entry in
+                        Button { Task { await model.open(model.child(entry)) } } label: {
+                            HStack {
+                                Label {
+                                    Text(entry.name).foregroundStyle(Color(uiColor: .label))
+                                } icon: {
+                                    Image(systemName: "folder.fill").foregroundStyle(theme.accent)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(theme.faint)
+                            }
+                        }
+                    }
+                    if !listing.entries.contains(where: { $0.type == .dir }) {
+                        Text("No folders inside.").foregroundStyle(theme.muted)
+                    }
+                } else if let error = model.error {
+                    Banner(text: error, tone: .error)
+                } else {
+                    ProgressView()
+                }
+            }
+            .navigationTitle(model.listing.map { ($0.path as NSString).lastPathComponent } ?? "Folders")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Choose") {
+                        if let path = model.listing?.path { pick(path) }
+                        dismiss()
+                    }
+                    .disabled(model.listing == nil)
+                }
+            }
+            .task {
+                await model.open(start)
+                if model.listing == nil { await model.open(nil) }
+            }
         }
     }
 }

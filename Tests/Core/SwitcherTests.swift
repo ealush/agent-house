@@ -83,3 +83,25 @@ private func past(_ ref: String, title: String, harness: String = "claude", proj
     await building.settle()
     #expect(building.note == "Indexing conversations…")
 }
+
+@Test func newSessionsStartInTheNewestProjectAndRememberSafeChoices() throws {
+    var a = try JSONSerialization.jsonObject(with: JSONEncoder().encode(try session("a", title: "A", project: "web").dto)) as! [String: Any]
+    a["activity"] = 10
+    var b = try JSONSerialization.jsonObject(with: JSONEncoder().encode(try session("b", title: "B", project: "api").dto)) as! [String: Any]
+    b["activity"] = 20
+    let rows = try [a, b].map { SessionRow(key: $0["uid"] as! String, host: "desk", isLocal: true, dto: try JSONDecoder().decode(SessionDTO.self, from: JSONSerialization.data(withJSONObject: $0))) }
+    #expect(LaunchState.newestProject(rows) == "/p/api")
+    #expect(LaunchState.newestProject([]) == nil)
+
+    let preset = try JSONDecoder().decode(PresetDTO.self, from: Data(#"""
+    {"id":"claude","name":"Claude Code","command":"claude","available":true,"defaultEffort":"medium",
+     "modes":[{"id":"default","name":"Ask"},{"id":"plan","name":"Plan"},{"id":"dangerous","name":"Skip permissions","dangerous":true}],
+     "models":[{"id":"opus","name":"Opus 5.5"},{"id":"sonnet","name":"Sonnet 5.5"}],
+     "effort":{"levels":["low","medium","high"]},"modelArgs":["--model","{model}"]}
+    """#.utf8))
+    #expect(LaunchState.remembered(nil, preset: preset) == ("default", nil, "medium"))
+    let plan = LaunchState.remembered(.init(mode: "plan", model: "sonnet", effort: "high"), preset: preset)
+    #expect(plan == ("plan", "sonnet", "high"))
+    let risky = LaunchState.remembered(.init(mode: "dangerous", model: "claude-opus-5-5", effort: "ultra"), preset: preset)
+    #expect(risky == ("default", "claude-opus-5-5", "medium"), "a dangerous mode and an unknown effort aren't restored; a typed model id is")
+}
