@@ -53,6 +53,7 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
     private var shownModal: Modal?
     private weak var modalController: UIViewController?
     private var whichKeyTask: Task<Void, Never>?
+    private var advertised: Handoff?
 
     init(scene: SceneModel) {
         self.scene = scene
@@ -113,6 +114,30 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
         theme.follow(scene.hub, appearance: appearance)
         view.window?.overrideUserInterfaceStyle = theme.theme(appearance).interfaceStyle
         if case .main = next { scene.reconcileIfReady() }
+        advertise(scene.handoff)
+    }
+
+    /// Handoff: this window's place, offered to your other devices (and, without the app,
+    /// as the host's web page). Only the origin and the web hash travel.
+    private func advertise(_ handoff: Handoff?) {
+        guard handoff != advertised else { return }
+        advertised = handoff
+        guard let windowScene = view.window?.windowScene else { return }
+        guard let handoff else {
+            windowScene.userActivity?.invalidate()
+            windowScene.userActivity = nil
+            return
+        }
+        let activity = NSUserActivity(activityType: Handoff.activityType)
+        activity.title = handoff.title
+        activity.userInfo = handoff.userInfo
+        activity.webpageURL = handoff.webpageURL
+        activity.isEligibleForHandoff = true
+        activity.isEligibleForSearch = false
+        activity.isEligibleForPrediction = false
+        windowScene.userActivity?.invalidate()
+        windowScene.userActivity = activity
+        activity.becomeCurrent()
     }
 
     private func currentPhase() -> Phase {

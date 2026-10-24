@@ -174,6 +174,16 @@ struct SceneIntegrationTests {
         let one = try #require(window.workspace.journalSpaces.slots[1]?.layout)
         #expect(one.keys.first == keep.uid)
         #expect(one.keys.count == 2)
+        // Handoff: this window offers its session; another window continues it there.
+        let offer = try #require(window.handoff)
+        #expect(offer.route == .session(keep.uid) && offer.title == "restore-keep")
+        #expect(offer.webpageURL == nil, "a loopback test host has no https page to hand to")
+        let other = SceneModel(sceneID: "handoff-window", app: relaunched)
+        other.restore()
+        other.sheet = nil
+        #expect(other.continueHandoff(try #require(Handoff(userInfo: offer.userInfo))))
+        #expect(other.route == .session(keep.uid))
+        #expect(!other.continueHandoff(Handoff(origin: "https://elsewhere.example.ts.net", route: .inbox, title: "")))
         session.deactivate()
     }
 }

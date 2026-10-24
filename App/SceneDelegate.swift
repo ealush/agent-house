@@ -35,6 +35,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         windowScene.title = nil
 
         for context in options.urlContexts { handle(context.url) }
+        if let activity = options.userActivities.first(where: { $0.activityType == Handoff.activityType }), let handoff = Handoff(userInfo: activity.userInfo ?? [:]) {
+            model.continueHandoff(handoff)
+        }
         if let link = (options.userActivities.first?.userInfo?["link"] as? String).flatMap(URL.init(string:)) { handle(link) }
         if let response = options.notificationResponse, let payload = PushPayload(response.notification.request.content.userInfo) {
             open(payload.link, origin: nil)
@@ -64,6 +67,12 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         if let origin = model?.account?.origin { info["origin"] = origin }
         activity.userInfo = info
         return activity
+    }
+
+    /// Handoff from another of your devices into this window.
+    func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
+        guard userActivity.activityType == Handoff.activityType, let handoff = Handoff(userInfo: userActivity.userInfo ?? [:]) else { return }
+        model?.continueHandoff(handoff)
     }
 
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {

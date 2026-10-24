@@ -1,0 +1,71 @@
+import Foundation
+
+/// Handoff between your own devices (`NSUserActivity`): where a window is, as an activity
+/// another device continues in this app (same host, same place) or, without the app, in the
+/// host's web app at the same place. The web's hash names it: "#<uid>", "#<host>/<uid>",
+/// "#history", "#review/<stack>/<pr>" (`../ah/web/App.tsx` fromHash). Only non-secret
+/// navigation travels: the host's origin and that hash.
+struct Handoff: Equatable, Sendable {
+    static let activityType = "dev.ealush.ah.native.handoff"
+
+    let origin: String
+    let route: SceneSnapshot.Route
+    let title: String
+
+    /// The web app's hash for this place, without "#".
+    var hash: String { Self.hash(route) }
+
+    /// The same place in the host's web app, for a device without this app.
+    var webpageURL: URL? {
+        guard var components = URLComponents(string: origin), components.scheme == "https" else { return nil }
+        components.path = "/"
+        components.fragment = hash.isEmpty ? nil : hash
+        return components.url
+    }
+
+    var userInfo: [String: String] { ["origin": origin, "hash": hash] }
+
+    init(origin: String, route: SceneSnapshot.Route, title: String) {
+        self.origin = origin
+        self.route = route
+        self.title = title
+    }
+
+    /// From a continued activity; nil when it isn't ours or names no host.
+    init?(userInfo: [AnyHashable: Any]) {
+        guard let origin = userInfo["origin"] as? String, !origin.isEmpty else { return nil }
+        let hash = userInfo["hash"] as? String ?? ""
+        self.init(origin: origin, route: Self.route(hash: hash), title: "")
+    }
+
+    static func hash(_ route: SceneSnapshot.Route) -> String {
+        switch route {
+        case .session(let key): return key
+        case .inbox, .worktrees: return ""
+        case .sessions: return "sessions"
+        case .history: return "history"
+        case .search: return "search"
+        case .settings: return "settings"
+        case .review(let target): return target.fragment
+        }
+    }
+
+    /// `fromHash`: pages by name, review with its place, a session key ("uid" or
+    /// "host/uid"), anything else the Inbox.
+    static func route(hash raw: String) -> SceneSnapshot.Route {
+        var h = raw.hasPrefix("#") ? String(raw.dropFirst()) : raw
+        h = h.removingPercentEncoding ?? h
+        if h == "security" || h == "settings" || h.hasPrefix("settings/") { return .settings(nil) }
+        if h == "review" || h.hasPrefix("review/") { return .review(ReviewRoute(fragment: h)) }
+        switch h {
+        case "history": return .history
+        case "sessions": return .sessions
+        case "search": return .search
+        default: break
+        }
+        let parts = h.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        let hostOK = parts.count == 2 && !parts[0].isEmpty && parts[0].allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "." || $0 == "-" || $0 == "_") }
+        if let uid = parts.last, (parts.count == 1 || hostOK), (4...40).contains(uid.count), DeepLink.isUID(uid) { return .session(h) }
+        return .inbox
+    }
+}

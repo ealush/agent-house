@@ -38,6 +38,7 @@
     <key>NSUserActivityTypes</key>
     <array>
         <string>dev.ealush.ah.native.scene</string>
+        <string>dev.ealush.ah.native.handoff</string>
     </array>
     <key>UIApplicationSceneManifest</key>
     <dict>

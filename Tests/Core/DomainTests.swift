@@ -169,3 +169,24 @@ import Testing
     #expect(LaunchState.tmuxChoices(sessions: ["work"], defaultSession: "ah").initial == "work")
     #expect(LaunchState.tmuxChoices(sessions: [], defaultSession: "ah").initial == nil)
 }
+
+@Test func handoffCarriesTheWebHashBothWays() throws {
+    let origin = "https://desk.tail1234.ts.net"
+    let session = Handoff(origin: origin, route: .session("a1b2c3"), title: "fix login")
+    #expect(session.hash == "a1b2c3")
+    #expect(session.webpageURL?.absoluteString == "https://desk.tail1234.ts.net/#a1b2c3")
+    #expect(Handoff(userInfo: session.userInfo)?.route == .session("a1b2c3"))
+    let peer = Handoff(origin: origin, route: .session("laptop/zz9y8x"), title: "")
+    #expect(Handoff(userInfo: peer.userInfo)?.route == .session("laptop/zz9y8x"))
+    let review = Handoff(origin: origin, route: .review(ReviewRoute(stack: "stk1", pr: 42)), title: "Review")
+    #expect(review.hash == "review/stk1/42")
+    #expect(Handoff.route(hash: "#review/stk1/42") == .review(ReviewRoute(stack: "stk1", pr: 42)))
+    #expect(Handoff.route(hash: "history") == .history)
+    #expect(Handoff.route(hash: "security") == .settings(nil))
+    #expect(Handoff.route(hash: "") == .inbox)
+    #expect(Handoff.route(hash: "@12") == .inbox, "an old tmux window id can't be resolved here")
+    #expect(Handoff.route(hash: "bad host!/abcd1") == .inbox)
+    #expect(Handoff(origin: origin, route: .inbox, title: "Inbox").webpageURL?.absoluteString == "https://desk.tail1234.ts.net/")
+    #expect(Handoff(origin: "http://127.0.0.1:7000", route: .inbox, title: "").webpageURL == nil, "only an https host has a page to hand to")
+    #expect(Handoff(userInfo: ["hash": "abc12"]) == nil, "no host, nothing to continue")
+}

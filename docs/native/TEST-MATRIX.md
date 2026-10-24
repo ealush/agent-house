@@ -7,7 +7,7 @@ Environment, 24 October 2026: Arch Linux, official Swift 6.2 toolchain in `~/.ca
 | Check | Invocation | Result (24 October 2026) |
 | --- | --- | --- |
 | Workspace, links, plists, provenance, 89-command rows | `./scripts/verify.sh --static` | PASS |
-| Unit tests (all non-UI sources) | `swift test` (here: `swiftw test`) | PASS — 140 tests in 3 suites |
+| Unit tests (all non-UI sources) | `swift test` (here: `swiftw test`) | PASS — 141 tests in 3 suites |
 | Integration against a disposable `ah` | `AH_SOURCE=<ah checkout with native branches> ./scripts/integration.sh` | PASS — 19 tests in 3 suites |
 | Backend suite on `native/1-device-auth` + `native/2-apns` | `npm test`, `npx tsc --noEmit` in `ah` | PASS — 552/552, typecheck clean |
 | UI layer syntax | `swiftc -frontend -parse` on `Sources/Features`, `Sources/Platform`, `App`, `Tests/UI` | PASS (syntax only; not type-checked) |
@@ -33,13 +33,13 @@ Environment, 24 October 2026: Arch Linux, official Swift 6.2 toolchain in `~/.ca
 | Sealed transcript page and session list: written while live, ciphertext at rest, paint a later window or a cold start, erased on forget; a search hit opens its session on the GUI at that turn | `theNewestTranscriptPageIsSealedAndPaintsBeforeTheStream` |
 | A new session goes into the tmux session you name | `aNewSessionGoesIntoTheTmuxSessionYouName` |
 | Hardware key routing drives the workspace; the keyboard follows pane focus, swap, balance, ⌃Tab and workspace stepping, and returns after the palette; Go to session focuses an on-screen pane, is remembered in Recent, and moves a session to another workspace | `hardwareKeysDriveTheWorkspace` |
-| A relaunched window reopens where it was and reconciles with the host | `aRelaunchedWindowReopensWhereItWasAndReconciles` |
+| A relaunched window reopens where it was and reconciles with the host; it offers Handoff, and another window continues there | `aRelaunchedWindowReopensWhereItWasAndReconciles` |
 
 ## Still to run (in order)
 
 1. On a Mac: `brew install xcodegen && ./scripts/verify.sh` — expect compile fixes in the UI layer, which has never been type-checked.
 2. Simulator: pairing UI test, then setup → Inbox → session → terminal against a host running the native branches (Debug simulator builds may use a loopback host).
-3. Signed device: Secure Enclave enrollment and Face ID sign-in, APNs delivery/actions/badge, background and relaunch.
+3. Signed devices: Secure Enclave enrollment and Face ID sign-in, APNs delivery/actions/badge, background and relaunch, and Handoff between an iPhone and an iPad (and to a Mac's browser).
 4. iPad with keyboard and trackpad: all 89 commands plus the 13 native ones, pane mode, which-key and two-key chords, Stage Manager sizes (including the one-pane-at-a-time fallback), two windows. Walk WORKSPACE-SPEC §7 without the mouse, then check hover focus, pane and divider drags, pane menus and that the keyboard returns after every sheet.
 5. A disposable GitHub stack: review → request fixes → re-review → exact-head merge.
 6. Accessibility pass (VoiceOver, Dynamic Type, Reduce Motion) and performance on large transcripts.

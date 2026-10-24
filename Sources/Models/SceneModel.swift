@@ -893,6 +893,39 @@ final class SceneModel {
         scheduleSave()
     }
 
+    // MARK: Handoff
+
+    /// This window's place for Handoff: the focused session (in a split, its focused pane)
+    /// or the page. Nil until signed in.
+    var handoff: Handoff? {
+        guard let account, account.status == .signedIn, let hub else { return nil }
+        if let key = workspace.focusedKey ?? { if case .session(let k) = route { return k } else { return nil } }() {
+            let title = hub.row(key)?.title ?? hub.history.first { $0.id == key }?.dto.title ?? "Session"
+            return Handoff(origin: account.origin, route: .session(key), title: title)
+        }
+        let titles: [String: String] = ["sessions": "Sessions", "history": "History", "search": "Search", "settings": "Settings"]
+        let hash = Handoff.hash(route)
+        return Handoff(origin: account.origin, route: route, title: hash.hasPrefix("review") ? "Review" : titles[hash] ?? "Inbox")
+    }
+
+    /// Another of your devices handed this place over: the same host's account, then the
+    /// place. False (and says why) when this device isn't set up for that host.
+    @discardableResult
+    func continueHandoff(_ handoff: Handoff) -> Bool {
+        guard app.account(origin: handoff.origin) != nil else {
+            toast("Set up \(URL(string: handoff.origin)?.host ?? handoff.origin) on this device to continue there.", error: true)
+            return false
+        }
+        useAccount(handoff.origin)
+        switch handoff.route {
+        case .session(let key): open(key)
+        case .review(let target): openReview(target)
+        case .settings(let section): sheet = .settings(section)
+        default: show(handoff.route)
+        }
+        return true
+    }
+
     // MARK: Switcher and search results
 
     /// Resume an ended or saved conversation from History and open it.

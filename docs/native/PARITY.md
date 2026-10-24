@@ -6,7 +6,7 @@ Last reconciled: **24 October 2026**. This is the completion companion to [SPEC.
 
 Statuses: `unstarted`, `implemented` (code exists; its stated evidence is all that ran), `verified` (the named test/platform ran and passed), `blocked` (needs something this machine or session can't provide), `substituted` (a web/host mechanism replaced by a native one, or deliberately kept on the host). `[x]` marks verified rows only.
 
-**Current outcome:** every P0/P1 capability has native code. The non-UI core (protocol, auth, streams, models, keyboard routing, workspace, persistence, review logic) is compiled and tested on Linux: **140 unit tests** and **19 integration tests against a disposable `ah`** with real tmux and fake agents. The UIKit/SwiftUI layer is written but has **never been compiled** (no Xcode or iOS SDK here), so no screen, device, APNs delivery or hardware-keyboard behavior is verified. **No implementation-phase exit gate is closed**; G-0 needs one Apple build and run.
+**Current outcome:** every P0/P1 capability has native code. The non-UI core (protocol, auth, streams, models, keyboard routing, workspace, persistence, review logic) is compiled and tested on Linux: **141 unit tests** and **19 integration tests against a disposable `ah`** with real tmux and fake agents. The UIKit/SwiftUI layer is written but has **never been compiled** (no Xcode or iOS SDK here), so no screen, device, APNs delivery or hardware-keyboard behavior is verified. **No implementation-phase exit gate is closed**; G-0 needs one Apple build and run.
 
 Evidence shorthand used below: **UT** = `swift test` (Linux, Swift 6.2); **IT** = `scripts/integration.sh` (Linux, disposable `ah` on branches `native/1-device-auth` + `native/2-apns`); **UI** = SwiftUI/UIKit source, syntax-checked only.
 
@@ -45,7 +45,7 @@ Evidence shorthand used below: **UT** = `swift test` (Linux, Swift 6.2); **IT** 
 | [ ] | P0-04 rich GUI | Feed IT-verified with the Claude adapter; other adapters rely on the same server-normalized feed. |
 | [ ] | P0-05 composer/queue/drafts | IT-verified (B-09); keyboard behavior UI-only. |
 | [ ] | P0-06 terminal | IT-verified through SwiftTerm on Linux; iOS input/IME unverified. |
-| [ ] | P0-07 identity, deep links, presence, cache, restoration | IT-verified, including the sealed session list; Handoff not built. |
+| [ ] | P0-07 identity, deep links, presence, cache, restoration | IT-verified, including the sealed session list and Handoff between windows; Handoff between devices needs signed devices. |
 | [ ] | P0-08 APNs | Host side tested; device delivery blocked on signing (AP-01, AP-09). |
 | [ ] | P1-01 iPad workspace | Model UT/IT-verified; UIKit layout UI-only. |
 | [ ] | P1-02 all 89 commands | Handlers tested; hardware mapping unverified. |
@@ -77,7 +77,7 @@ Evidence shorthand used below: **UT** = `swift test` (Linux, Swift 6.2); **IT** 
 | F-007 | Persisted conversations, host registry, transcript identity; session remains after process death | P0 | HistoryView, SessionModel.resume | implemented | [AUDIT.md:74](../../AUDIT.md#L74); UI History/EndedBanner; host persistence unchanged |
 | F-008 | Native-safe authentication, device revocation and network trust | P0 | NativeAuth, AccountSession, ah native/1-device-auth | implemented | [AUDIT.md:75](../../AUDIT.md#L75); IT enrolls/refuses foreign signature/revocation closes streams+terminals; ah security suite (10 native tests); device Face ID unverified |
 | F-009 | Multi-host hub merges state, proxies peer HTTP/SSE/WebSocket under `/h/<host>` | P0 | HubStore peers (/h/<peer>) | implemented | [AUDIT.md:76](../../AUDIT.md#L76); peer streams merged with host/uid keys; not exercised by IT (single host) |
-| F-010 | Registered/present devices, "On Desk too", viewed status, focus/handoff | P0 | SessionModel.otherDevices, api.focus | implemented | [AUDIT.md:77](../../AUDIT.md#L77); presence + focus; Handoff (NSUserActivity between devices) not built |
+| F-010 | Registered/present devices, "On Desk too", viewed status, focus/handoff | P0 | SessionModel.otherDevices, api.focus | implemented | [AUDIT.md:77](../../AUDIT.md#L77); presence + focus; Handoff (`NSUserActivity` with the host origin and the web hash; the host's web page as the fallback): UT handoffCarriesTheWebHashBothWays, IT continuing in another window; device-to-device needs signing |
 | F-011 | Live catalog/preset updates based on agent CLI versions; hooks and discovery | P2 | HubStore.presets, AgentsSettings | implemented | [AUDIT.md:78](../../AUDIT.md#L78); live presets from state; check versions in Settings |
 | F-012 | CLI/script protocol (`ah list/new/attach/send/wait/read/answer/stop/...`) | P3 | Retain host CLI | substituted | [AUDIT.md:79](../../AUDIT.md#L79); Retained on the host: no iOS CLI port |
 | F-013 | List all active sessions grouped by project, host or status | P0 | SessionListView, SessionOrdering | implemented | [AUDIT.md:85](../../AUDIT.md#L85); UT ordering/sections; UI |
@@ -372,7 +372,7 @@ Source: [SPEC restoration requirement](../../SPEC.md#nonnegotiable-technology-de
 | [ ] | R-06 | Reconcile deleted/ended/moved sessions, unavailable hosts and changed review revisions; recover to truthful reachable routes — *RestorationReconciler; IT* | P0 | implemented |
 | [ ] | R-07 | Restore scroll/turn/selection/focus/surface preference safely, including rotation/window resize and UI transitions — *scroll anchors/surface/composer focus; IT* | P0 | implemented |
 | [ ] | R-08 | Synced per-session drafts with debounce, device/source identity, expiry and multi-device conflict/stale-overwrite handling — *DraftSync; IT* | P0 | implemented |
-| [ ] | R-09 | Handoff, other-device presence and focus lifecycle; scene-safe device identity and reconnect without duplicate presence — *presence/focus; Handoff not built* | P0 | implemented |
+| [ ] | R-09 | Handoff, other-device presence and focus lifecycle; scene-safe device identity and reconnect without duplicate presence — *presence/focus; Handoff model and continuation: UT, IT; between devices needs signed devices* | P0 | implemented |
 | [ ] | R-10 | Design account-bound sensitive caching; Keychain/CryptoKit encryption before storing transcript pages, drafts or sensitive pending UI state — *SealedCache (HKDF + AES-GCM); IT* | P0 | implemented |
 | [ ] | R-11 | Bounded retention, storage quotas, fast encrypted cache read, expiry and deletion on sign-out/revocation/account change — *bounded cache, cleared on forget; IT* | P0 | implemented |
 | [x] | R-12 | Incremental GRDB metadata/cache migrations and failure recovery preserving history/data; future/corrupt/mismatched payload tests — *GRDB migrator; UT SceneStoreTests run on Linux* | P0 | verified |
