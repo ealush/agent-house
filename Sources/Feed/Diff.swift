@@ -178,3 +178,47 @@ struct FileDiff: Equatable, Sendable, Identifiable {
         return out
     }
 }
+
+/// Walking a diff's commentable lines by keyboard (`web/Git.tsx`'s roving lines): every
+/// added, removed and context line across the files, in order; hunk and file headers are
+/// skipped. ↑↓ (or k/j) move and stop at the ends, Home/End jump, nothing is chosen until
+/// the first move.
+struct DiffCursor: Equatable, Sendable {
+    struct Position: Hashable, Sendable {
+        let file: Int
+        let line: Int
+    }
+
+    private(set) var positions: [Position]
+    private(set) var index: Int?
+
+    init(files: [[DiffLine]], maxLines: Int? = nil) {
+        positions = files.enumerated().flatMap { file, lines in
+            lines.prefix(maxLines ?? lines.count).enumerated().compactMap { line, diff in
+                diff.kind == .hunk || diff.kind == .file ? nil : Position(file: file, line: line)
+            }
+        }
+    }
+
+    var current: Position? { index.map { positions[$0] } }
+
+    mutating func move(_ step: Int) {
+        guard !positions.isEmpty else { return }
+        guard let index else {
+            self.index = step >= 0 ? 0 : positions.count - 1
+            return
+        }
+        self.index = min(positions.count - 1, max(0, index + step))
+    }
+
+    mutating func home() { if !positions.isEmpty { index = 0 } }
+    mutating func end() { if !positions.isEmpty { index = positions.count - 1 } }
+    mutating func clear() { index = nil }
+
+    /// The diff changed (a poll): keep the cursor on the same place when it still exists.
+    mutating func update(files: [[DiffLine]], maxLines: Int? = nil) {
+        let kept = current
+        self = DiffCursor(files: files, maxLines: maxLines)
+        if let kept, let i = positions.firstIndex(of: kept) { index = i }
+    }
+}

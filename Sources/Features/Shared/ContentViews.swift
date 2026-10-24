@@ -266,6 +266,10 @@ struct DiffLinesView: View {
     /// Tap a line to act on it (comment, attach to the reviewer).
     var onLine: ((DiffLine) -> Void)? = nil
     var selected: Set<Int> = []
+    /// The keyboard cursor's line, outlined.
+    var cursor: Int? = nil
+    /// Gives each line a scroll id "<prefix>:<index>" so the cursor can be kept in view.
+    var idPrefix: String? = nil
     @Environment(\.theme) private var theme
     @State private var showAll = false
 
@@ -276,8 +280,10 @@ struct DiffLinesView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(shown.enumerated()), id: \.offset) { index, line in
                         DiffLineRow(line: line, selected: selected.contains(index))
+                            .overlay { if cursor == index { Rectangle().strokeBorder(theme.accentStrong, lineWidth: 1.5) } }
                             .contentShape(Rectangle())
                             .onTapGesture { onLine?(line) }
+                            .id(idPrefix.map { "\($0):\(index)" } ?? "\(index)")
                     }
                 }
             }

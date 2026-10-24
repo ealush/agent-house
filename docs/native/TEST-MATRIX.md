@@ -7,7 +7,7 @@ Environment, 24 October 2026: Arch Linux, official Swift 6.2 toolchain in `~/.ca
 | Check | Invocation | Result (24 October 2026) |
 | --- | --- | --- |
 | Workspace, links, plists, provenance, 89-command rows | `./scripts/verify.sh --static` | PASS |
-| Unit tests (all non-UI sources) | `swift test` (here: `swiftw test`) | PASS — 137 tests in 3 suites |
+| Unit tests (all non-UI sources) | `swift test` (here: `swiftw test`) | PASS — 138 tests in 3 suites |
 | Integration against a disposable `ah` | `AH_SOURCE=<ah checkout with native branches> ./scripts/integration.sh` | PASS — 18 tests in 3 suites |
 | Backend suite on `native/1-device-auth` + `native/2-apns` | `npm test`, `npx tsc --noEmit` in `ah` | PASS — 552/552, typecheck clean |
 | UI layer syntax | `swiftc -frontend -parse` on `Sources/Features`, `Sources/Platform`, `App`, `Tests/UI` | PASS (syntax only; not type-checked) |

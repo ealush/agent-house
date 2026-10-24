@@ -6,7 +6,7 @@ Last reconciled: **24 October 2026**. This is the completion companion to [SPEC.
 
 Statuses: `unstarted`, `implemented` (code exists; its stated evidence is all that ran), `verified` (the named test/platform ran and passed), `blocked` (needs something this machine or session can't provide), `substituted` (a web/host mechanism replaced by a native one, or deliberately kept on the host). `[x]` marks verified rows only.
 
-**Current outcome:** every P0/P1 capability has native code. The non-UI core (protocol, auth, streams, models, keyboard routing, workspace, persistence, review logic) is compiled and tested on Linux: **137 unit tests** and **18 integration tests against a disposable `ah`** with real tmux and fake agents. The UIKit/SwiftUI layer is written but has **never been compiled** (no Xcode or iOS SDK here), so no screen, device, APNs delivery or hardware-keyboard behavior is verified. **No implementation-phase exit gate is closed**; G-0 needs one Apple build and run.
+**Current outcome:** every P0/P1 capability has native code. The non-UI core (protocol, auth, streams, models, keyboard routing, workspace, persistence, review logic) is compiled and tested on Linux: **138 unit tests** and **18 integration tests against a disposable `ah`** with real tmux and fake agents. The UIKit/SwiftUI layer is written but has **never been compiled** (no Xcode or iOS SDK here), so no screen, device, APNs delivery or hardware-keyboard behavior is verified. **No implementation-phase exit gate is closed**; G-0 needs one Apple build and run.
 
 Evidence shorthand used below: **UT** = `swift test` (Linux, Swift 6.2); **IT** = `scripts/integration.sh` (Linux, disposable `ah` on branches `native/1-device-auth` + `native/2-apns`); **UI** = SwiftUI/UIKit source, syntax-checked only.
 
@@ -515,7 +515,7 @@ Source: [AUDIT contextual bindings](../../AUDIT.md#contextual-bindings-and-behav
 | [ ] | K-07 | Review j/k when not typing and eligible primary action via Cmd/Ctrl+Enter — *SceneModel.handle + UIKit routing; UT KeyboardTests* | P1 | implemented |
 | [ ] | K-08 | Composer Enter/Shift+Enter, empty-Enter queue steering, empty-Escape stop, slash/path completion and first-keystroke focus — *SceneModel.handle + UIKit routing; UT KeyboardTests* | P0 | implemented |
 | [ ] | K-09 | Ask digits/arrows/Space/custom text/Ctrl+Enter submission and honest unsupported-picker terminal fallback — *AskPanelView digits/Space/⌘⏎* | P0 | implemented |
-| [ ] | K-10 | Diff-line navigation, Enter/Space comment, Cmd/Ctrl+Enter send and Escape cancel — *diff lines are tap targets; keyboard line navigation not built* | P1 | unstarted |
+| [ ] | K-10 | Diff-line navigation, Enter/Space comment, Cmd/Ctrl+Enter send and Escape cancel — *`DiffCursor`: UT theDiffCursorWalksCommentableLinesAcrossFiles; ↑↓/j/k, Home/End, Return/Space, inline comment box with ⌘↵/⌃↵ and Esc; UI never compiled* | P1 | implemented |
 | [ ] | K-11 | Roving lists retain intended item/focus through reorder; scoped main-action dispatch respects dialogs/controls — *SceneModel.handle + UIKit routing; UT KeyboardTests* | P1 | implemented |
 | [ ] | K-12 | Which-key modifier-hold HUD, native shortcut discoverability, key hints, rebindings and conflict feedback — *SceneModel.handle + UIKit routing; UT KeyboardTests* | P1 | implemented |
 

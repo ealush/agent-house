@@ -31,76 +31,153 @@ private struct DiffPanel: View {
     @Environment(\.theme) private var theme
     @State private var commenting: (file: String, line: DiffLine)?
     @State private var comment = ""
+    @State private var cursor = DiffCursor(files: [])
+    @FocusState private var listFocused: Bool
+    @FocusState private var commentFocused: Bool
+    private static let maxLines = 400
+
+    private var commentable: Bool { !session.isShell }
 
     var body: some View {
-        List {
-            if let changes = model.changes {
-                Section {
-                    HStack {
-                        Label(changes.branch, systemImage: "arrow.triangle.branch")
-                        Spacer()
-                        Text("+\(model.totals.add)").foregroundStyle(theme.done)
-                        Text("−\(model.totals.del)").foregroundStyle(theme.danger)
-                    }
-                    .font(.callout.monospacedDigit())
-                    if changes.truncated { Text("The diff is long; showing the start.").font(.caption).foregroundStyle(theme.limited) }
-                    if !session.isShell { Text("Tap a line to comment for the agent.").font(.caption).foregroundStyle(theme.muted) }
-                }
-                if model.files.isEmpty && model.untracked.isEmpty {
-                    Text("No uncommitted changes.").foregroundStyle(theme.muted)
-                }
-                ForEach(model.files) { file in
+        ScrollViewReader { proxy in
+            List {
+                if let changes = model.changes {
                     Section {
-                        DiffLinesView(lines: file.lines, maxLines: 400, onLine: { line in
-                            guard !session.isShell, line.kind != .hunk, line.kind != .file else { return }
-                            commenting = (file.path, line)
-                        })
-                        .listRowInsets(EdgeInsets())
-                    } header: {
                         HStack {
-                            Text(file.path).font(.caption.monospaced()).lineLimit(1).truncationMode(.head)
+                            Label(changes.branch, systemImage: "arrow.triangle.branch")
                             Spacer()
-                            Text("+\(file.additions) −\(file.deletions)").font(.caption2.monospacedDigit())
+                            Text("+\(model.totals.add)").foregroundStyle(theme.done)
+                            Text("−\(model.totals.del)").foregroundStyle(theme.danger)
+                        }
+                        .font(.callout.monospacedDigit())
+                        if changes.truncated { Text("The diff is long; showing the start.").font(.caption).foregroundStyle(theme.limited) }
+                        if commentable {
+                            Text(scene.hardwareKeyboard ? "↑↓ walk the lines; Return comments for the agent." : "Tap a line to comment for the agent.").font(.caption).foregroundStyle(theme.muted)
                         }
                     }
-                }
-                if !model.untracked.isEmpty {
-                    Section("New files") {
-                        ForEach(model.untracked, id: \.path) { Text($0.path).font(.caption.monospaced()) }
+                    if model.files.isEmpty && model.untracked.isEmpty {
+                        Text("No uncommitted changes.").foregroundStyle(theme.muted)
                     }
+                    ForEach(Array(model.files.enumerated()), id: \.element.id) { fileIndex, file in
+                        Section {
+                            DiffLinesView(lines: file.lines, maxLines: Self.maxLines, onLine: { line in open(file.path, line) },
+                                          cursor: cursor.current?.file == fileIndex ? cursor.current?.line : nil, idPrefix: "f\(fileIndex)")
+                                .listRowInsets(EdgeInsets())
+                        } header: {
+                            HStack {
+                                Text(file.path).font(.caption.monospaced()).lineLimit(1).truncationMode(.head)
+                                Spacer()
+                                Text("+\(file.additions) −\(file.deletions)").font(.caption2.monospacedDigit())
+                            }
+                        }
+                    }
+                    if !model.untracked.isEmpty {
+                        Section("New files") {
+                            ForEach(model.untracked, id: \.path) { Text($0.path).font(.caption.monospaced()) }
+                        }
+                    }
+                } else if let error = model.error {
+                    Banner(text: error, tone: .error)
+                } else {
+                    ProgressView()
                 }
-            } else if let error = model.error {
-                Banner(text: error, tone: .error)
-            } else {
-                ProgressView()
+            }
+            .listStyle(.insetGrouped)
+            .focusable(commentable && commenting == nil)
+            .focused($listFocused)
+            .onKeyPress(phases: .down) { press in
+                guard commenting == nil else { return .ignored }
+                switch press.key {
+                case .downArrow, KeyEquivalent("j"): cursor.move(1)
+                case .upArrow, KeyEquivalent("k"): cursor.move(-1)
+                case .home: cursor.home()
+                case .end: cursor.end()
+                case .return, .space:
+                    guard let at = cursor.current, model.files.indices.contains(at.file) else { return .ignored }
+                    let file = model.files[at.file]
+                    open(file.path, file.lines[at.line])
+                    return .handled
+                case .escape:
+                    guard cursor.current != nil else { return .ignored }
+                    cursor.clear()
+                    return .handled
+                default:
+                    return .ignored
+                }
+                if let at = cursor.current { withAnimation(.snappy(duration: 0.12)) { proxy.scrollTo("f\(at.file):\(at.line)", anchor: .center) } }
+                return .handled
             }
         }
-        .listStyle(.insetGrouped)
+        .safeAreaInset(edge: .bottom) {
+            if let target = commenting { commentBox(target) }
+        }
         .task {
             await model.load()
             model.watch()
         }
+        .onChange(of: model.files) { _, files in cursor.update(files: files.map(\.lines), maxLines: Self.maxLines) }
         .onDisappear { model.stop() }
         .refreshable { await model.load() }
-        .alert("Comment for the agent", isPresented: Binding(get: { commenting != nil }, set: { if !$0 { commenting = nil } })) {
-            TextField("What should change here?", text: $comment)
-            Button("Send") {
-                guard let target = commenting else { return }
-                let text = comment
-                comment = ""
-                commenting = nil
-                Task {
-                    if let result = await model.send(comment: text, file: target.file, line: target.line) {
-                        scene.toast(result.outcome == .queued ? "Queued for the agent" : "Sent to the agent")
-                    }
-                }
-            }
-            Button("Cancel", role: .cancel) { comment = "" }
-        } message: {
-            if let target = commenting {
-                Text("\(target.file)\(target.line.number.map { ":\($0)" } ?? "")\n\(target.line.text.trimmingCharacters(in: .whitespaces))")
+    }
+
+    private func open(_ file: String, _ line: DiffLine) {
+        guard commentable, line.kind != .hunk, line.kind != .file else { return }
+        commenting = (file, line)
+        comment = ""
+        commentFocused = true
+    }
+
+    private func cancel() {
+        commenting = nil
+        comment = ""
+        listFocused = true
+    }
+
+    private func send() {
+        guard let target = commenting, !comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let text = comment
+        cancel()
+        Task {
+            if let result = await model.send(comment: text, file: target.file, line: target.line) {
+                scene.toast(result.outcome == .queued ? "Queued for the agent" : "Sent to the agent")
             }
         }
+    }
+
+    /// Commenting on a line: ⌘↵ / ⌃↵ sends, Esc cancels and puts the keyboard back on the line.
+    private func commentBox(_ target: (file: String, line: DiffLine)) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("\(target.file)\(target.line.number.map { ":\($0)" } ?? "")\(target.line.kind == .del ? " (removed line)" : "")")
+                .font(.caption.monospaced()).foregroundStyle(theme.muted).lineLimit(1).truncationMode(.head)
+            Text(target.line.text.trimmingCharacters(in: .whitespaces)).font(.caption.monospaced()).lineLimit(2)
+            TextField("Comment for the agent…", text: $comment, axis: .vertical)
+                .lineLimit(2...6)
+                .textFieldStyle(.roundedBorder)
+                .focused($commentFocused)
+                .onKeyPress(.return, phases: .down) { press in
+                    guard press.modifiers.contains(.command) || press.modifiers.contains(.control) else { return .ignored }
+                    send()
+                    return .handled
+                }
+                .onKeyPress(.escape) {
+                    cancel()
+                    return .handled
+                }
+            HStack {
+                Text(scene.hardwareKeyboard ? "⌘↵ sends · esc cancels" : "").font(.caption2).foregroundStyle(theme.faint)
+                Spacer()
+                Button("Cancel", action: cancel).buttonStyle(.bordered)
+                Button("Send to agent", action: send)
+                    .buttonStyle(.borderedProminent)
+                    .tint(theme.accentStrong)
+                    .disabled(comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .controlSize(.small)
+        }
+        .padding(12)
+        .background(theme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(theme.faint.opacity(0.35), lineWidth: 0.5))
+        .padding(10)
     }
 }
 

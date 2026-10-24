@@ -84,3 +84,27 @@ private func stack(_ layers: [Layer]) -> ReviewStack {
     #expect(FilesModel.mention("/code/web/a b.ts", shell: true) == "'/code/web/a b.ts'")
     #expect(FilesModel.mention("/code/web/a.ts", shell: false) == "@/code/web/a.ts")
 }
+
+@Test func theDiffCursorWalksCommentableLinesAcrossFiles() {
+    let a = [DiffLine(kind: .file, text: "a.swift", number: nil), DiffLine(kind: .hunk, text: "@@", number: nil), DiffLine(kind: .ctx, text: "x", number: 1), DiffLine(kind: .add, text: "y", number: 2)]
+    let b = [DiffLine(kind: .hunk, text: "@@", number: nil), DiffLine(kind: .del, text: "z", number: 7)]
+    var cursor = DiffCursor(files: [a, b])
+    #expect(cursor.current == nil, "nothing until the first move")
+    cursor.move(1)
+    #expect(cursor.current == .init(file: 0, line: 2), "hunks and file headers are skipped")
+    cursor.move(1)
+    cursor.move(1)
+    #expect(cursor.current == .init(file: 1, line: 1), "on into the next file")
+    cursor.move(1)
+    #expect(cursor.current == .init(file: 1, line: 1), "stops at the end")
+    cursor.home()
+    #expect(cursor.current == .init(file: 0, line: 2))
+    var fresh = DiffCursor(files: [a, b])
+    fresh.move(-1)
+    #expect(fresh.current == .init(file: 1, line: 1), "↑ first goes to the last line")
+    // A poll that changes the diff keeps the cursor where it was when it can.
+    cursor.end()
+    cursor.update(files: [a + [DiffLine(kind: .add, text: "new", number: 3)], b])
+    #expect(cursor.current == .init(file: 1, line: 1))
+    #expect(DiffCursor(files: [a], maxLines: 3).positions == [.init(file: 0, line: 2)], "only lines on screen")
+}
