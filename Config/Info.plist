@@ -40,6 +40,19 @@
         <string>dev.ealush.ah.native.scene</string>
         <string>dev.ealush.ah.native.handoff</string>
     </array>
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>dev.ealush.ah.native.session</string>
+            <key>UTTypeDescription</key>
+            <string>Agent Hub session</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+            </array>
+        </dict>
+    </array>
     <key>UIApplicationSceneManifest</key>
     <dict>
         <key>UIApplicationSupportsMultipleScenes</key>

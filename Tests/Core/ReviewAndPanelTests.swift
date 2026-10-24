@@ -81,8 +81,28 @@ private func stack(_ layers: [Layer]) -> ReviewStack {
     #expect(HistoryFilter.matches(row, "login"))
     #expect(HistoryFilter.matches(row, "CODEX"))
     #expect(!HistoryFilter.matches(row, "billing"))
-    #expect(FilesModel.mention("/code/web/a b.ts", shell: true) == "'/code/web/a b.ts'")
-    #expect(FilesModel.mention("/code/web/a.ts", shell: false) == "@/code/web/a.ts")
+    #expect(FilesModel.mention("/code/web/a b.ts", shell: true) == "'/code/web/a b.ts' ")
+    #expect(FilesModel.mention("/code/web/a.ts", shell: false) == "@/code/web/a.ts ")
+}
+
+@Test func filePathsGoInRelativeToTheSessionAndDrawByKind() {
+    #expect(FilesModel.mention("/code/web/src/a.ts", shell: false, cwd: "/code/web") == "@src/a.ts ")
+    #expect(FilesModel.mention("/code/web/a b.ts", shell: true, cwd: "/code/web/") == "'a b.ts' ")
+    #expect(FilesModel.mention("/code/api/x.ts", shell: false, cwd: "/code/web") == "@/code/api/x.ts ")
+    #expect(FilesModel.relative("/code/web", to: "/code/web") == ".")
+    #expect(FilesModel.relative("/code/webby/a", to: "/code/web") == "/code/webby/a")
+    #expect(FilesModel.crumbs("/code/web").map(\.path) == ["/", "/code", "/code/web"])
+    #expect(FilesModel.crumbs("/").map(\.name) == ["/"])
+    let entry = { (name: String) in FsEntry(name: name, type: .file, size: 1, mtime: 0) }
+    #expect(FilesModel.Kind(entry("router.ts")) == .code)
+    #expect(FilesModel.Kind(entry("README.md")) == .text)
+    #expect(FilesModel.Kind(entry("Makefile")) == .text)
+    #expect(FilesModel.Kind(entry("shot.PNG")) == .image)
+    #expect(FilesModel.Kind(entry("build.tar.gz")) == .archive)
+    #expect(FilesModel.Kind(FsEntry(name: "src", type: .dir, size: 0, mtime: 0)) == .folder)
+    #expect(FilesModel.Kind(entry("router.ts")).readsAsText)
+    #expect(FilesModel.text(Data("hi\n".utf8)) == "hi\n")
+    #expect(FilesModel.text(Data([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01])) == nil)
 }
 
 @Test func theDiffCursorWalksCommentableLinesAcrossFiles() {

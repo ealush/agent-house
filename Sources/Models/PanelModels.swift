@@ -153,10 +153,81 @@ final class FilesModel {
         }
     }
 
-    /// How a path goes into a prompt: an @-mention for agents, shell-quoted for a shell.
-    nonisolated static func mention(_ path: String, shell: Bool) -> String {
-        shell ? Uploads.shellQuote(path) : "@\(path)"
+    /// How a path goes into a prompt: an @-mention for agents, shell-quoted for a shell,
+    /// relative to the session's folder when it's inside it (`../ah/web/Files.tsx`).
+    nonisolated static func mention(_ path: String, shell: Bool, cwd: String? = nil) -> String {
+        let shown = cwd.map { relative(path, to: $0) } ?? path
+        return (shell ? Uploads.shellQuote(shown) : "@\(shown)") + " "
     }
+
+    /// `path` from `cwd`: "." for the folder itself, the rest of the path inside it, or the
+    /// path unchanged outside it.
+    nonisolated static func relative(_ path: String, to cwd: String) -> String {
+        let base = cwd.hasSuffix("/") && cwd.count > 1 ? String(cwd.dropLast()) : cwd
+        if path == base { return "." }
+        return path.hasPrefix(base + "/") ? String(path.dropFirst(base.count + 1)) : path
+    }
+
+    /// The folders from the root down to `path`, for a breadcrumb bar.
+    nonisolated static func crumbs(_ path: String) -> [(name: String, path: String)] {
+        var out: [(String, String)] = [("/", "/")]
+        var walked = ""
+        for part in path.split(separator: "/") {
+            walked += "/" + part
+            out.append((String(part), walked))
+        }
+        return out
+    }
+
+    /// What a file is, by its name: how it's drawn and how it previews.
+    enum Kind: Equatable, Sendable {
+        case folder, image, pdf, code, text, archive, media, other
+
+        nonisolated init(_ entry: FsEntry) {
+            guard entry.type != .dir else { self = .folder; return }
+            let name = entry.name.lowercased()
+            let ext = name.split(separator: ".").count > 1 ? String(name.split(separator: ".").last!) : ""
+            switch ext {
+            case "png", "jpg", "jpeg", "gif", "webp", "avif", "heic", "svg", "ico", "bmp", "tiff": self = .image
+            case "pdf": self = .pdf
+            case "swift", "ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "rb", "go", "rs", "c", "h", "cc", "cpp", "hpp", "m", "mm",
+                 "java", "kt", "kts", "cs", "php", "sh", "bash", "zsh", "fish", "lua", "sql", "html", "htm", "css", "scss", "vue",
+                 "svelte", "json", "jsonl", "yaml", "yml", "toml", "xml", "ini", "conf", "gradle", "dockerfile", "zig", "ex", "exs", "hs":
+                self = .code
+            case "md", "markdown", "txt", "log", "csv", "tsv", "rst", "env", "lock", "gitignore", "diff", "patch": self = .text
+            case "zip", "tar", "gz", "tgz", "bz2", "xz", "7z", "rar", "dmg", "deb", "rpm": self = .archive
+            case "mp3", "m4a", "wav", "aac", "flac", "mp4", "mov", "m4v", "webm", "mkv": self = .media
+            default:
+                let plain = ["makefile", "dockerfile", "license", "readme", "procfile", "gemfile", "podfile", ".gitignore", ".env"]
+                self = plain.contains(name) || name.hasPrefix(".") ? .text : .other
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .folder: return "folder.fill"
+            case .image: return "photo"
+            case .pdf: return "doc.richtext"
+            case .code: return "chevron.left.forwardslash.chevron.right"
+            case .text: return "doc.text"
+            case .archive: return "archivebox"
+            case .media: return "play.rectangle"
+            case .other: return "doc"
+            }
+        }
+
+        /// Shown as text in the app (Quick Look takes `.ts` for a video, for one).
+        var readsAsText: Bool { self == .code || self == .text }
+    }
+
+    /// Text to show for a file's bytes, or nil when they aren't text: UTF-8 without NULs.
+    nonisolated static func text(_ data: Data) -> String? {
+        guard !data.prefix(8192).contains(0) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// Larger files open in Quick Look or download instead.
+    nonisolated static let previewLimit = 1024 * 1024
 }
 
 /// Full-text search over transcripts and side chats, on every host (`../ah/web/SearchView.tsx`).

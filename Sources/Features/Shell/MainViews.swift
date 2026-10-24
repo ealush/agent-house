@@ -158,7 +158,7 @@ private struct SingleSessionView: View {
         GeometryReader { proxy in
             SessionScreen(session: session, scene: scene)
                 .overlay { if let zone, zone != .center { DropZoneHighlight(zone: zone) } }
-                .onDrop(of: [.plainText], delegate: PaneDrop(scene: scene, path: nil, size: proxy.size, zone: $zone))
+                .onDrop(of: [.agentHubSession], delegate: PaneDrop(scene: scene, path: nil, size: proxy.size, zone: $zone))
         }
     }
 }
@@ -298,7 +298,7 @@ private struct PaneView: View {
         .onContinuousHover { phase in
             if case .active = phase { scene.hoverFocus(tile.path) }
         }
-        .onDrop(of: [.plainText], delegate: PaneDrop(scene: scene, path: tile.path, size: size, zone: $zone))
+        .onDrop(of: [.agentHubSession], delegate: PaneDrop(scene: scene, path: tile.path, size: size, zone: $zone))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Pane \(index + 1) of \(count)\(focused ? ", focused" : "")")
     }
@@ -341,7 +341,7 @@ struct PaneDrop: DropDelegate {
     let size: CGSize
     @Binding var zone: LayoutNode.Drop?
 
-    func validateDrop(info: DropInfo) -> Bool { info.hasItemsConforming(to: [.plainText]) }
+    func validateDrop(info: DropInfo) -> Bool { info.hasItemsConforming(to: [.agentHubSession]) }
 
     func dropEntered(info: DropInfo) {
         scene.workspace.dragging = true
@@ -362,12 +362,12 @@ struct PaneDrop: DropDelegate {
         let target = zone ?? .center
         zone = nil
         scene.workspace.dragging = false
-        guard let provider = info.itemProviders(for: [.plainText]).first else { return false }
+        guard let provider = info.itemProviders(for: [.agentHubSession]).first else { return false }
         let path = path
         let scene = scene
-        _ = provider.loadObject(ofClass: NSString.self) { object, _ in
-            guard let text = (object as? NSString).map(String.init) else { return }
-            Task { @MainActor in scene.dropText(text, onto: path, where: target) }
+        _ = provider.loadDataRepresentation(forTypeIdentifier: UTType.agentHubSession.identifier) { data, _ in
+            guard let data, let drag = try? JSONDecoder().decode(SessionDrag.self, from: data) else { return }
+            Task { @MainActor in scene.dropText(drag.key, onto: path, where: target) }
         }
         return true
     }

@@ -200,7 +200,7 @@ struct SessionListView: View {
                     ForEach(section.rows) { row in
                         SessionRowView(row: row, multiHost: false) { scene.open(row.key) }
                             .tag(row.key)
-                            .draggable(row.key)
+                            .draggable(SessionDrag(key: row.key))
                             .contextMenu { rowMenu(row) }
                             .swipeActions(edge: .trailing) {
                                 Button(row.dto.pinned ? "Unpin" : "Pin") {

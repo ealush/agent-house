@@ -188,62 +188,99 @@ private struct FilesPanel: View {
     let session: SessionModel
     let scene: SceneModel
     @Environment(\.theme) private var theme
+    @State private var selection: String?
     @State private var previewURL: URL?
+    @State private var reading: FileText?
+    @State private var sharing: URL?
     @State private var importing = false
     @State private var newFolder: String?
+    @State private var dropping = false
+    @FocusState private var listFocused: Bool
+
+    /// The session's own folder: where Files opens, and what inserted paths are relative to.
+    private var cwd: String? { session.row?.dto.cwd ?? session.history?.dto.cwd }
 
     var body: some View {
-        List {
+        List(selection: $selection) {
             if let listing = model.listing {
-                Section {
-                    if listing.parent != nil {
-                        Button { Task { await model.up() } } label: { Label("..", systemImage: "arrow.turn.left.up") }
-                    }
-                    ForEach(listing.entries, id: \.name) { entry in
-                        Button {
-                            Task { await open(entry) }
-                        } label: {
-                            HStack {
-                                Image(systemName: entry.type == .dir ? "folder.fill" : "doc").foregroundStyle(entry.type == .dir ? theme.accent : theme.muted)
-                                Text(entry.name).lineLimit(1)
-                                Spacer()
-                                if entry.type == .file { Text(ByteCountFormatter.string(fromByteCount: Int64(entry.size), countStyle: .file)).font(.caption).foregroundStyle(theme.faint) }
-                            }
-                        }
-                        .contextMenu {
-                            Button("Insert path in message", systemImage: "text.insert") {
-                                session.composer.insert(FilesModel.mention(model.child(entry), shell: session.isShell))
-                                scene.requestFocus(.composer(session.key))
-                            }
-                            Button("Copy path", systemImage: "doc.on.doc") { UIPasteboard.general.string = model.child(entry) }
-                            if entry.type == .file {
-                                Button("Save to Files…", systemImage: "square.and.arrow.down") { Task { await download(entry) } }
-                            }
-                        }
-                    }
-                } header: {
-                    Text(listing.path).font(.caption.monospaced()).lineLimit(1).truncationMode(.head)
+                if listing.entries.isEmpty {
+                    Text("Empty folder. Drop files here to upload them.")
+                        .font(.callout)
+                        .foregroundStyle(theme.muted)
+                        .listRowBackground(Color.clear)
                 }
-                if let roots = listing.roots, roots.count > 1 {
-                    Section("Roots") {
-                        ForEach(roots, id: \.self) { root in Button(root) { Task { await model.open(root) } } }
-                    }
+                ForEach(listing.entries, id: \.name) { entry in
+                    row(entry)
+                        .tag(entry.name)
                 }
+            } else if model.error == nil {
+                ProgressView().frame(maxWidth: .infinity).listRowBackground(Color.clear)
             }
-            if let error = model.error { Banner(text: error, tone: .error) }
-            ForEach(model.uploading, id: \.self) { name in Label("Uploading \(name)…", systemImage: "arrow.up.circle") }
+            if let error = model.error { Banner(text: error, tone: .error).listRowBackground(Color.clear) }
+            ForEach(model.uploading, id: \.self) { name in
+                Label("Uploading \(name)…", systemImage: "arrow.up.circle").foregroundStyle(theme.muted)
+            }
+        }
+        .listStyle(.plain)
+        .focused($listFocused)
+        .safeAreaInset(edge: .top, spacing: 0) { pathBar }
+        .overlay {
+            if dropping {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(theme.accent, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+                    .background(theme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay {
+                        Label("Drop to upload into \(model.listing.map { ($0.path as NSString).lastPathComponent } ?? "this folder")", systemImage: "arrow.down.doc")
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(theme.accent)
+                    }
+                    .padding(8)
+                    .allowsHitTesting(false)
+            }
+        }
+        .onDrop(of: [.fileURL, .item], isTargeted: $dropping) { providers in
+            upload(providers)
+            return true
         }
         .toolbar {
-            ToolbarItemGroup {
-                Toggle(isOn: $model.showHidden) { Image(systemName: "eye") }.accessibilityLabel("Show hidden files")
-                Button { importing = true } label: { Image(systemName: "square.and.arrow.up") }.accessibilityLabel("Upload here")
-                Button { newFolder = "" } label: { Image(systemName: "folder.badge.plus") }.accessibilityLabel("New folder")
+            ToolbarItemGroup(placement: .primaryAction) {
+                Menu {
+                    Button("Upload Files…", systemImage: "square.and.arrow.up") { importing = true }
+                    Button("New Folder…", systemImage: "folder.badge.plus") { newFolder = "" }
+                    Divider()
+                    Toggle(isOn: $model.showHidden) { Label("Show Hidden Files", systemImage: "eye") }
+                    if let path = model.listing?.path {
+                        Divider()
+                        Button("Insert This Folder", systemImage: "text.insert") { insert(path) }
+                        Button("Copy Path", systemImage: "doc.on.doc") { UIPasteboard.general.string = path }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .accessibilityLabel("Folder actions")
             }
         }
-        .task { await model.open(session.row?.dto.cwd) }
+        .task { await model.open(cwd) }
         .onChange(of: model.showHidden) { _, _ in Task { await model.reload() } }
+        .onChange(of: model.listing?.path) { _, _ in selection = nil }
         .refreshable { await model.reload() }
+        .onKeyPress(.return) {
+            guard let selection, let entry = model.listing?.entries.first(where: { $0.name == selection }) else { return .ignored }
+            Task { await open(entry) }
+            return .handled
+        }
+        .onKeyPress(.upArrow, phases: .down) { press in
+            guard press.modifiers.contains(.command) else { return .ignored }
+            Task { await model.up() }
+            return .handled
+        }
         .quickLookPreview($previewURL)
+        .sheet(item: $reading) { file in
+            FileTextSheet(file: file, insert: { insert(file.path) })
+        }
+        .sheet(item: Binding(get: { sharing.map(SharedFile.init) }, set: { sharing = $0?.url })) { shared in
+            ActivitySheet(items: [shared.url])
+        }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }
             for url in urls {
@@ -261,22 +298,229 @@ private struct FilesPanel: View {
         }
     }
 
+    // MARK: Path bar
+
+    /// Where you are: the folder's name, relative to the session's folder when inside it,
+    /// opening a menu of every folder above (as Files and Finder do), with the way up and
+    /// back to the session's folder beside it.
+    private var pathBar: some View {
+        let path = model.listing?.path ?? cwd ?? "/"
+        let crumbs = FilesModel.crumbs(path)
+        return HStack(spacing: 10) {
+            Button { Task { await model.up() } } label: { Image(systemName: "chevron.up") }
+                .disabled(model.listing?.parent == nil)
+                .accessibilityLabel("Enclosing folder")
+            Menu {
+                ForEach(Array(crumbs.dropLast().reversed().enumerated()), id: \.offset) { _, crumb in
+                    Button { Task { await model.open(crumb.path) } } label: {
+                        Label {
+                            Text(crumb.name)
+                            Text(crumb.path)
+                        } icon: {
+                            Image(systemName: crumb.path == cwd ? "house" : "folder")
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "folder.fill").foregroundStyle(theme.accent)
+                    Text(cwd.map { FilesModel.relative(path, to: $0) == "." ? (path as NSString).lastPathComponent : FilesModel.relative(path, to: $0) } ?? path)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(theme.text)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                    Image(systemName: "chevron.down").font(.caption2.weight(.semibold)).foregroundStyle(theme.faint)
+                }
+            }
+            .accessibilityLabel("Folder \(path)")
+            Spacer(minLength: 0)
+            Menu {
+                if let cwd { Button("Session Folder", systemImage: "house") { Task { await model.open(cwd) } } }
+                if let roots = model.listing?.roots, !roots.isEmpty {
+                    Section("Folders you can browse") {
+                        ForEach(roots, id: \.self) { root in Button(root, systemImage: "folder") { Task { await model.open(root) } } }
+                    }
+                }
+            } label: {
+                Image(systemName: "house")
+            } primaryAction: {
+                if let cwd { Task { await model.open(cwd) } }
+            }
+            .accessibilityLabel("Session folder")
+        }
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(.bar)
+        .overlay(alignment: .bottom) { Divider() }
+    }
+
+    // MARK: Rows
+
+    private func row(_ entry: FsEntry) -> some View {
+        let kind = FilesModel.Kind(entry)
+        let path = model.child(entry)
+        return HStack(spacing: 10) {
+            Image(systemName: kind.symbol)
+                .font(.body)
+                .foregroundStyle(kind == .folder ? theme.accent : theme.muted)
+                .frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(entry.name).lineLimit(1).truncationMode(.middle)
+                Text(detail(entry)).font(.caption).foregroundStyle(theme.faint).lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            Button { insert(path) } label: { Image(systemName: "text.insert") }
+                .buttonStyle(.borderless)
+                .foregroundStyle(theme.muted)
+                .accessibilityLabel("Insert \(entry.name) in the message")
+            if entry.type == .dir {
+                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(theme.faint)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { Task { await open(entry) } }
+        .draggable(FilesModel.mention(path, shell: session.isShell, cwd: cwd).trimmingCharacters(in: .whitespaces))
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button { insert(path) } label: { Label("Insert", systemImage: "text.insert") }.tint(theme.accent)
+        }
+        .swipeActions(edge: .leading) {
+            if entry.type == .file {
+                Button { Task { await share(entry) } } label: { Label("Share", systemImage: "square.and.arrow.up") }.tint(.blue)
+            }
+        }
+        .contextMenu {
+            Button(entry.type == .dir ? "Open" : "Preview", systemImage: entry.type == .dir ? "folder" : "eye") { Task { await open(entry) } }
+            Button("Insert in Message", systemImage: "text.insert") { insert(path) }
+            Button("Copy Path", systemImage: "doc.on.doc") { UIPasteboard.general.string = path }
+            if entry.type == .file {
+                Button("Share or Save…", systemImage: "square.and.arrow.up") { Task { await share(entry) } }
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAction(named: "Insert in message") { insert(path) }
+        .accessibilityIdentifier("file:\(entry.name)")
+    }
+
+    private func detail(_ entry: FsEntry) -> String {
+        let when = Date(timeIntervalSince1970: entry.mtime / (entry.mtime > 1e11 ? 1000 : 1))
+        let age = when.formatted(.relative(presentation: .named, unitsStyle: .abbreviated))
+        guard entry.type == .file else { return age }
+        return "\(ByteCountFormatter.string(fromByteCount: Int64(entry.size), countStyle: .file)) · \(age)"
+    }
+
+    // MARK: Actions
+
+    private func insert(_ path: String) {
+        session.composer.insert(FilesModel.mention(path, shell: session.isShell, cwd: cwd))
+        scene.requestFocus(.composer(session.key))
+        Haptics.tap()
+    }
+
     private func open(_ entry: FsEntry) async {
         let path = model.child(entry)
         if entry.type == .dir {
             await model.open(path)
             return
         }
+        let kind = FilesModel.Kind(entry)
+        if entry.size > Double(FilesModel.previewLimit) && kind != .image && kind != .pdf {
+            await share(entry)
+            return
+        }
         guard let data = await model.data(path) else { return }
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent(entry.name)
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? data.write(to: url, options: [.completeFileProtection])
-        previewURL = url
+        if kind != .image, kind != .pdf, kind != .media, let text = FilesModel.text(data) {
+            reading = FileText(path: path, text: text, kind: kind)
+            return
+        }
+        previewURL = temporaryCopy(data, named: entry.name)
     }
 
-    private func download(_ entry: FsEntry) async {
-        await open(entry)
+    private func share(_ entry: FsEntry) async {
+        guard let data = await model.data(model.child(entry)) else { return }
+        sharing = temporaryCopy(data, named: entry.name)
     }
+
+    private func temporaryCopy(_ data: Data, named name: String) -> URL? {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent(name)
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        return (try? data.write(to: url, options: [.completeFileProtection])) == nil ? nil : url
+    }
+
+    /// Files dropped from another app (Files, Photos, a Mac's Finder) upload into this folder.
+    private func upload(_ providers: [NSItemProvider]) {
+        for provider in providers {
+            let type = provider.registeredTypeIdentifiers.first { UTType($0)?.conforms(to: .data) == true } ?? UTType.data.identifier
+            let name = provider.suggestedName
+            _ = provider.loadFileRepresentation(forTypeIdentifier: type) { url, _ in
+                guard let url, let data = try? Data(contentsOf: url) else { return }
+                let file = name.map { n in url.pathExtension.isEmpty || n.hasSuffix(".\(url.pathExtension)") ? n : "\(n).\(url.pathExtension)" } ?? url.lastPathComponent
+                Task { @MainActor in await model.upload(name: file, data: data) }
+            }
+        }
+    }
+}
+
+/// A text file from the host, read in place: monospaced with line numbers, selectable.
+private struct FileText: Identifiable {
+    let path: String
+    let text: String
+    let kind: FilesModel.Kind
+    var id: String { path }
+}
+
+private struct FileTextSheet: View {
+    let file: FileText
+    let insert: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        NavigationStack {
+            ScrollView([.vertical, .horizontal]) {
+                let lines = file.text.split(separator: "\n", omittingEmptySubsequences: false)
+                let width = String(lines.count).count
+                Text(lines.enumerated().map { index, line in
+                    AttributedString(String(index + 1).leftPadded(to: width) + "  ", attributes: AttributeContainer().foregroundColor(theme.faint))
+                        + AttributedString(String(line) + "\n")
+                }.reduce(AttributedString(), +))
+                .font(.system(.footnote, design: .monospaced))
+                .textSelection(.enabled)
+                .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .navigationTitle((file.path as NSString).lastPathComponent)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
+                ToolbarItemGroup(placement: .primaryAction) {
+                    Button { UIPasteboard.general.string = file.text } label: { Image(systemName: "doc.on.doc") }.accessibilityLabel("Copy")
+                    Button {
+                        insert()
+                        dismiss()
+                    } label: {
+                        Label("Insert", systemImage: "text.insert")
+                    }
+                }
+            }
+        }
+    }
+}
+
+private extension String {
+    func leftPadded(to width: Int) -> String { String(repeating: " ", count: max(0, width - count)) + self }
+}
+
+private struct SharedFile: Identifiable {
+    let url: URL
+    var id: URL { url }
+}
+
+/// The system share sheet (Save to Files, AirDrop, another app).
+private struct ActivitySheet: UIViewControllerRepresentable {
+    let items: [Any]
+    func makeUIViewController(context: Context) -> UIActivityViewController { UIActivityViewController(activityItems: items, applicationActivities: nil) }
+    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
 
 // MARK: Side chat

@@ -1,4 +1,6 @@
 import UIKit
+import CoreTransferable
+import UniformTypeIdentifiers
 
 extension KeyPress {
     /// A hardware key as UIKit reports it: the physical key's HID usage, what the layout
@@ -107,4 +109,20 @@ enum Haptics {
     static func warning() { UINotificationFeedbackGenerator().notificationOccurred(.warning) }
     static func failure() { UINotificationFeedbackGenerator().notificationOccurred(.error) }
     static func selection() { UISelectionFeedbackGenerator().selectionChanged() }
+}
+
+/// A session (by key) or a pane (`pane:…`) on the move between the sidebar and panes. Its
+/// own content type, so a pane reacts to sessions and panes only, never to a file path or
+/// a queued message dragged past it (those travel as plain text).
+struct SessionDrag: Codable, Transferable {
+    let key: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .agentHubSession)
+    }
+}
+
+extension UTType {
+    /// Declared in Info.plist (UTExportedTypeDeclarations).
+    static let agentHubSession = UTType(exportedAs: "dev.ealush.ah.native.session")
 }

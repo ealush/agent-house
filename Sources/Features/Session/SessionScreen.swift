@@ -36,9 +36,12 @@ struct SessionScreen: View {
             }
             if !narrow, let panel = session.panel {
                 Divider()
-                PanelView(panel: panel, session: session, scene: scene)
-                    .frame(width: max(280, min(640, panelWidth - CGFloat(scene.panelWidthDelta))))
-                    .transition(.move(edge: .trailing))
+                NavigationStack {
+                    PanelView(panel: panel, session: session, scene: scene)
+                        .modifier(PanelChrome(panel: panel, session: session, scene: scene))
+                }
+                .frame(width: max(280, min(640, panelWidth - CGFloat(scene.panelWidthDelta))))
+                .transition(.move(edge: .trailing))
             }
         }
         .background(theme.background)
@@ -46,9 +49,7 @@ struct SessionScreen: View {
         .sheet(item: Binding(get: { narrow ? session.panel : nil }, set: { session.panel = $0 })) { panel in
             NavigationStack {
                 PanelView(panel: panel, session: session, scene: scene)
-                    .navigationTitle(panel.title)
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { session.panel = nil } } }
+                    .modifier(PanelChrome(panel: panel, session: session, scene: scene, sheet: true))
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
@@ -74,6 +75,45 @@ struct SessionScreen: View {
     }
 }
 
+/// A panel's bar, beside the session or in a phone sheet: its name, a title menu that
+/// switches to any other panel this session offers, and a way out.
+private struct PanelChrome: ViewModifier {
+    let panel: SceneSnapshot.Panel
+    let session: SessionModel
+    let scene: SceneModel
+    var sheet = false
+
+    func body(content: Content) -> some View {
+        content
+            .navigationTitle(panel.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarTitleMenu {
+                ForEach(SceneSnapshot.Panel.allCases.filter { scene.isAvailable($0.command) }, id: \.self) { other in
+                    Button {
+                        session.panel = other
+                    } label: {
+                        Label(other.title, systemImage: other.symbol)
+                    }
+                    .disabled(other == panel)
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: sheet ? .confirmationAction : .cancellationAction) {
+                    if sheet {
+                        Button("Done") { session.panel = nil }
+                    } else {
+                        Button {
+                            withAnimation(.snappy(duration: 0.2)) { session.panel = nil }
+                        } label: {
+                            Image(systemName: "xmark")
+                        }
+                        .accessibilityLabel("Close \(panel.title)")
+                    }
+                }
+            }
+    }
+}
+
 extension SceneSnapshot.Panel: Identifiable {
     var id: String { rawValue }
 }
@@ -86,6 +126,11 @@ private struct SessionHeader: View {
     var paneFocused = true
     @Environment(\.theme) private var theme
     @FocusState private var renameFocused: Bool
+    /// The header's own width: a pane beside a panel, or a quarter of a split, is narrow.
+    @State private var width: CGFloat = 1000
+
+    /// Narrow: the status is a dot, the view switch one button, splitting via the menus.
+    private var tight: Bool { width < 560 }
 
     /// The detail column has no navigation bar while it shows sessions, so the leading
     /// header (the single session, or the top-left pane) offers the sidebar back.
@@ -124,20 +169,32 @@ private struct SessionHeader: View {
                     Text(session.title)
                         .font(compact ? .subheadline.weight(.semibold) : .headline)
                         .lineLimit(1)
+                        .layoutPriority(1)
                         .accessibilityAddTraits(.isHeader)
                 }
-                if let row = session.row { StatusPill(word: row.word) }
+                if let row = session.row { StatusPill(word: row.word, compact: tight).fixedSize() }
                 Spacer(minLength: 4)
                 if session.isLive && session.hasGUI && !session.isShell {
-                    Picker("View", selection: Binding(get: { session.surface }, set: { scene.setSurface($0, for: session.key) })) {
-                        Image(systemName: "text.bubble").accessibilityLabel("GUI").tag(SceneSnapshot.Surface.gui)
-                        Image(systemName: "terminal").accessibilityLabel("Terminal").tag(SceneSnapshot.Surface.terminal)
+                    if tight {
+                        let other: SceneSnapshot.Surface = session.surface == .gui ? .terminal : .gui
+                        Button {
+                            scene.setSurface(other, for: session.key)
+                        } label: {
+                            Image(systemName: other == .terminal ? "terminal" : "text.bubble")
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel(other == .terminal ? "Terminal" : "GUI")
+                    } else {
+                        Picker("View", selection: Binding(get: { session.surface }, set: { scene.setSurface($0, for: session.key) })) {
+                            Image(systemName: "text.bubble").accessibilityLabel("GUI").tag(SceneSnapshot.Surface.gui)
+                            Image(systemName: "terminal").accessibilityLabel("Terminal").tag(SceneSnapshot.Surface.terminal)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 96)
                     }
-                    .pickerStyle(.segmented)
-                    .frame(width: 96)
                 }
                 PanelsMenu(session: session)
-                if !scene.narrow {
+                if !scene.narrow && !tight {
                     Menu {
                         PaneMenuItems(scene: scene, path: pane)
                     } label: {
@@ -167,6 +224,7 @@ private struct SessionHeader: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .background(.bar)
         .opacity(pane == nil || paneFocused ? 1 : 0.72)
         .contextMenu {
@@ -182,7 +240,7 @@ private struct PaneDragHandle: ViewModifier {
 
     func body(content: Content) -> some View {
         if let pane {
-            content.draggable(LayoutNode.encode(pane)).accessibilityHint("Drag onto another pane to move it")
+            content.draggable(SessionDrag(key: LayoutNode.encode(pane))).accessibilityHint("Drag onto another pane to move it")
         } else {
             content
         }
