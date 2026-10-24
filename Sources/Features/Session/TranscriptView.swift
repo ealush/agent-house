@@ -134,8 +134,104 @@ struct TranscriptView: View {
                 if let index = browsing { withAnimation(.snappy) { reader.scrollTo(blocks[index].id, anchor: .center) } }
                 return .handled
             }
+            .overlay(alignment: .leading) {
+                let items = session.railItems
+                if items.count > 1 {
+                    let top = scene.scrollAnchors[session.key]?.seq
+                    MessageRail(items: items, active: FeedProjection.activeRail(items, topSeq: top, atLatest: top == nil) ?? items.count - 1) { item in
+                        guard let seq = item.seq else {
+                            withAnimation(.snappy) { reader.scrollTo("bottom", anchor: .bottom) }
+                            return
+                        }
+                        Task {
+                            guard await session.reveal(seq: seq) else { return }
+                            await Task.yield()
+                            if let block = session.blocks.first(where: { $0.seq == seq }) {
+                                withAnimation(.snappy) { reader.scrollTo(block.id, anchor: .top) }
+                            }
+                        }
+                    }
+                }
+            }
         }
         .background(theme.background)
+    }
+}
+
+/// The conversation's outline (`web/gui/MessageRail.tsx`): one tick per message you sent on
+/// the transcript's leading edge; the bright one is the turn in view. Tap a tick, or press
+/// and slide like an iPhone's section index, to go there. Past fifteen it's a window that
+/// follows the reading, faded where more lie beyond.
+private struct MessageRail: View {
+    let items: [RailItem]
+    let active: Int
+    let jump: (RailItem) -> Void
+    @State private var hover: Int?
+    @State private var scrub: Int?
+    @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private let pitch: CGFloat = 12
+
+    var body: some View {
+        let range = FeedProjection.railRange(count: items.count, lead: scrub ?? active)
+        let tip = scrub ?? hover
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(range), id: \.self) { i in
+                Capsule()
+                    .fill(i == active ? theme.accent : theme.faint.opacity(i == tip ? 0.95 : 0.55))
+                    .frame(width: i == active || i == tip ? 14 : 8, height: 2.5)
+                    .frame(width: 26, height: pitch, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onHover { inside in
+                        if inside { hover = i } else if hover == i { hover = nil }
+                    }
+                    .accessibilityElement()
+                    .accessibilityLabel("Message \(i + 1) of \(items.count): \(String(items[i].text.prefix(120)))")
+                    .accessibilityAddTraits(i == active ? [.isButton, .isSelected] : .isButton)
+                    .accessibilityAction { jump(items[i]) }
+            }
+        }
+        .padding(.vertical, 4)
+        .mask {
+            LinearGradient(stops: [
+                .init(color: range.lowerBound > 0 ? .clear : .black, location: 0),
+                .init(color: .black, location: 0.12),
+                .init(color: .black, location: 0.88),
+                .init(color: range.upperBound < items.count ? .clear : .black, location: 1),
+            ], startPoint: .top, endPoint: .bottom)
+        }
+        .overlay(alignment: .topLeading) {
+            if let tip, range.contains(tip) {
+                Text(preview(items[tip].text))
+                    .font(.caption)
+                    .lineLimit(2)
+                    .frame(maxWidth: 260, alignment: .leading)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(theme.surface, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.faint.opacity(0.35), lineWidth: 0.5))
+                    .shadow(color: .black.opacity(0.15), radius: 8, y: 3)
+                    .offset(x: 30, y: 4 + CGFloat(tip - range.lowerBound) * pitch - 10)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+        .gesture(DragGesture(minimumDistance: 0).onChanged { value in
+            let i = range.lowerBound + Int((value.location.y - 4) / pitch)
+            scrub = min(items.count - 1, max(0, i))
+        }.onEnded { _ in
+            if let scrub { jump(items[scrub]) }
+            scrub = nil
+        })
+        .animation(reduceMotion ? nil : .snappy(duration: 0.15), value: active)
+        .padding(.leading, 2)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Your messages")
+    }
+
+    private func preview(_ text: String) -> String {
+        let flat = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return flat.isEmpty ? "Attachment" : flat
     }
 }
 

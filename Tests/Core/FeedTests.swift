@@ -158,3 +158,28 @@ private let result = ToolResult(callId: "c1", text: "ok", isError: false, data: 
     guard case .unknown(let type, let title, let json) = try widget(#"{"type":"sparkline","title":"S","points":[1,2]}"#) else { Issue.record("unknown"); return }
     #expect(type == "sparkline" && title == "S" && json.contains("\"points\""))
 }
+
+@Test func theRailListsEveryMessageYouSentOldestFirstThenWhatsSending() {
+    let prompts = [FeedPrompt(seq: 2, at: 1, text: "first"), FeedPrompt(seq: 9, at: 3, text: "second")]
+    let blocks: [FeedBlock] = [
+        .user(key: "9", seq: 9, at: 3, parts: [.text("second, as drawn")]),
+        .agent(key: "10", seq: 10, at: 4, items: []),
+        .user(key: "14", seq: 14, at: 5, parts: [.text("third")]),
+    ]
+    let items = FeedProjection.railItems(prompts: prompts, blocks: blocks, outgoing: [(id: 7, text: "fourth")])
+    #expect(items.map(\.id) == ["2", "9", "14", "out:7"])
+    #expect(items.map(\.text) == ["first", "second, as drawn", "third", "fourth"], "what's drawn wins over the host's list")
+    #expect(items.last?.seq == nil)
+    // The lit tick: the newest at the end, else the last of yours at or above the top.
+    #expect(FeedProjection.activeRail(items, topSeq: nil, atLatest: true) == 3)
+    #expect(FeedProjection.activeRail(items, topSeq: 10, atLatest: false) == 1)
+    #expect(FeedProjection.activeRail(items, topSeq: 1, atLatest: false) == 0)
+    #expect(FeedProjection.activeRail([], topSeq: 3, atLatest: false) == nil)
+}
+
+@Test func pastFifteenTicksTheRailIsAWindowAroundWhatYouRead() {
+    #expect(FeedProjection.railRange(count: 6, lead: 5) == 0..<6)
+    #expect(FeedProjection.railRange(count: 40, lead: 0) == 0..<15)
+    #expect(FeedProjection.railRange(count: 40, lead: 20) == 13..<28)
+    #expect(FeedProjection.railRange(count: 40, lead: 39) == 25..<40)
+}

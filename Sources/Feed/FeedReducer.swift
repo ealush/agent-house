@@ -296,3 +296,43 @@ extension String {
         String(drop(while: { $0.isWhitespace }))
     }
 }
+
+// MARK: The message rail (`../ah/web/gui/MessageRail.tsx`)
+
+/// One tick per message you sent: what the host lists (the whole conversation, since a
+/// reload draws only the newest page), what arrived since, then what's still sending.
+struct RailItem: Equatable, Sendable, Identifiable {
+    /// The message's seq, or "out:<id>" while it's still sending.
+    let id: String
+    /// Where to page in to reach it; nil while sending.
+    let seq: Int?
+    let text: String
+}
+
+extension FeedProjection {
+    /// Past this many ticks the rail is a window that follows what you're reading.
+    static let railWindow = 15
+
+    static func railItems(prompts: [FeedPrompt], blocks: [FeedBlock], outgoing: [(id: Int, text: String)]) -> [RailItem] {
+        var bySeq: [Int: String] = [:]
+        for prompt in prompts { bySeq[prompt.seq] = prompt.text }
+        for block in blocks where block.isUser { bySeq[block.seq] = block.text }
+        let sent = bySeq.keys.sorted().map { RailItem(id: String($0), seq: $0, text: bySeq[$0]!) }
+        return sent + outgoing.map { RailItem(id: "out:\($0.id)", seq: nil, text: $0.text) }
+    }
+
+    /// The tick for the turn you're reading: the newest at the end of the transcript,
+    /// otherwise the last of yours that starts at or above the top of the screen.
+    static func activeRail(_ items: [RailItem], topSeq: Int?, atLatest: Bool) -> Int? {
+        guard !items.isEmpty else { return nil }
+        guard !atLatest, let topSeq else { return items.count - 1 }
+        return items.lastIndex { ($0.seq ?? .max) <= topSeq } ?? 0
+    }
+
+    /// Which ticks show: all of them, or a window of `railWindow` centred on `lead`.
+    static func railRange(count: Int, lead: Int) -> Range<Int> {
+        guard count > railWindow else { return 0..<count }
+        let first = max(0, min(count - railWindow, lead - railWindow / 2))
+        return first..<(first + railWindow)
+    }
+}

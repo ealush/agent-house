@@ -84,6 +84,11 @@ final class SessionModel: Identifiable {
     /// Optimistic bubbles still waiting for the transcript (queued ones live in the tray).
     var outgoing: [Outbox.Item] { outbox.items(for: key).filter { $0.state != .queued } }
 
+    /// The message rail: every message you sent here, oldest first.
+    var railItems: [RailItem] {
+        FeedProjection.railItems(prompts: prompts, blocks: blocks, outgoing: outgoing.map { ($0.id, $0.text) })
+    }
+
     /// The tool call a permission prompt is asking about, while it waits: the newest call
     /// without a result.
     var awaitingCall: String? {
