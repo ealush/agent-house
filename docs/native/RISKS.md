@@ -1,10 +1,10 @@
 # Risks and outstanding gates
 
-Updated 24 October 2026.
+Updated 25 October 2026.
 
 | Priority | Gate | State and next proof |
 | --- | --- | --- |
-| P0 | **No Apple build has run.** This machine is Linux: no Xcode, iOS SDK or simulator. | Every non-UI source compiles and is tested on Linux (Swift 6.2): 141 unit tests and 19 integration tests against a real disposable `ah`. The UIKit/SwiftUI layer (`Sources/Features`, `Sources/Platform`, `App`) has only been syntax-checked (`swiftc -parse`) and cross-referenced against model declarations; it has **never been type-checked**. Expect a round of compile fixes on the first `./scripts/verify.sh` on a Mac. Then run the UI tests and the device matrix in TEST-MATRIX. |
+| P0 | **The screens haven't been exercised.** | The app builds with Xcode 27.1, and `./scripts/verify.sh` passes on an iOS 27 simulator (25 October 2026, by hand on the owner's Mac; the GitHub `Native checks` job can't start until Actions billing is fixed). The 2 UI tests cover setup only. No one has walked setup → Inbox → session → terminal against a real host (gate G-0), and none of the workspace spec's pointer, hover or hardware-keyboard behavior has been seen running. Next: the G-0 walk on a simulator against a loopback `ah` on the native branches, then the device matrix in TEST-MATRIX. |
 | P0 | Signing, APNs key and provisioning need the account owner | `Config/AgentHubNative.entitlements` declares `aps-environment` and time-sensitive notifications; a team ID, bundle ID, APNs auth key (`.p8`, key ID, team ID, topic) and a device are needed. The host side is built and tested with a loopback fake APNs gateway; real delivery is unverified. |
 | P0 | Backend branches are local | `ah` `native/1-device-auth` (native enrollment, bearer sessions, device removal, preview session) and `native/2-apns` pass the full `ah` suite (552) and typecheck; they're committed locally, not pushed or reviewed. The app requires them on the host. |
 | P0 | Secure Enclave and Face ID behavior | Built against documented APIs (`SecureEnclave.P256.Signing.PrivateKey`, `SecAccessControl` `.userPresence`); the simulator falls back to a software key. Needs a device check: enrollment, sign-in prompt, lock, key loss after passcode removal. |

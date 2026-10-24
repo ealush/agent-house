@@ -1,6 +1,6 @@
 # Test matrix and evidence
 
-Environment, 24 October 2026: Arch Linux, official Swift 6.2 toolchain in `~/.cache/ah-native-swift-validation` (wrapper `swiftw`). No Xcode, iOS SDK or simulator. Requirement status lives in [PARITY.md](PARITY.md); this file records what ran.
+Environments: Arch Linux with the official Swift 6.2 toolchain in `~/.cache/ah-native-swift-validation` (wrapper `swiftw`), 24 October 2026; macOS 27.0.1 with Xcode 27.1 and an iPhone 18 Pro simulator (iOS 27.0), 25 October 2026. Requirement status lives in [PARITY.md](PARITY.md); this file records what ran.
 
 ## Commands
 
@@ -10,8 +10,8 @@ Environment, 24 October 2026: Arch Linux, official Swift 6.2 toolchain in `~/.ca
 | Unit tests (all non-UI sources) | `swift test` (here: `swiftw test`) | PASS — 141 tests in 3 suites |
 | Integration against a disposable `ah` | `AH_SOURCE=<ah checkout with native branches> ./scripts/integration.sh` | PASS — 19 tests in 3 suites |
 | Backend suite on `native/1-device-auth` + `native/2-apns` | `npm test`, `npx tsc --noEmit` in `ah` | PASS — 552/552, typecheck clean |
-| UI layer syntax | `swiftc -frontend -parse` on `Sources/Features`, `Sources/Platform`, `App`, `Tests/UI` | PASS (syntax only; not type-checked) |
-| Xcode build, unit + UI tests on a simulator | `./scripts/verify.sh` on macOS | **Not run** — no Mac |
+| Xcode build, unit + UI tests on a simulator | `./scripts/verify.sh` on macOS (by hand; CI blocked by Actions billing) | PASS (25 October 2026) — app and tests build; 122 unit tests, 2 UI tests (setup screen). Every stack layer passes on its own. |
+| Setup → Inbox → session → terminal on a simulator against a real host (G-0) | Manual | **Not run** |
 | Device journeys, APNs delivery, hardware keyboard | Signed iPhone/iPad | **Not run** — needs signing and devices |
 
 `scripts/integration.sh` starts `ah` from `AH_SOURCE` through its own test helper (isolated home, port and tmux socket), with fake agents named `ahit-agent`, `ahit-claude` and `ahit-picker`, runs the suites serially (see the `ah` window-creation race in RISKS) and tears everything down. `AH_IT_LOG` keeps the host log.
