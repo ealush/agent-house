@@ -214,3 +214,34 @@ struct CompletionTrigger: Equatable, Sendable {
         return (head + item.value + tail, start + item.value.utf16.count)
     }
 }
+
+// MARK: New session options beyond the presets (`../ah/web/NewDialog.tsx`, `ModelPicker.tsx`)
+
+extension LaunchState {
+    /// The agent takes a model it doesn't list ("Other model version").
+    static func takesCustomModel(_ preset: PresetDTO) -> Bool { preset.modelArgs != nil }
+
+    /// A model id typed by hand: a letter or digit, then letters, digits and `_ . : / @ -`,
+    /// 80 characters at most (the web's `/^[A-Za-z0-9][\w.:/@-]{0,79}$/`).
+    static func isValidModelID(_ id: String) -> Bool {
+        let scalars = Array(id.unicodeScalars)
+        guard let first = scalars.first, scalars.count <= 80, first.isASCII, first.properties.isAlphabetic || ("0"..."9").contains(first) else { return false }
+        return scalars.dropFirst().allSatisfy { s in
+            s.isASCII && (s.properties.isAlphabetic || ("0"..."9").contains(s) || "_.:/@-".unicodeScalars.contains(s))
+        }
+    }
+
+    /// The model a new session asks for: a valid typed id wins over the list; the
+    /// default (or nothing) sends nothing, so the agent's own default stays in charge.
+    static func chosenModel(listed: String?, typed: String, preset: PresetDTO) -> String? {
+        let custom = typed.trimmingCharacters(in: .whitespaces)
+        if takesCustomModel(preset), !custom.isEmpty, isValidModelID(custom) { return custom }
+        return listed != nil && listed != preset.defaultModel ? listed : nil
+    }
+
+    /// The tmux sessions to offer and which one starts chosen: the host's default when it
+    /// exists, else the first; nil when there are none (a new one must be named).
+    static func tmuxChoices(sessions: [String], defaultSession: String) -> (choices: [String], initial: String?) {
+        (sessions, sessions.contains(defaultSession) ? defaultSession : sessions.first)
+    }
+}

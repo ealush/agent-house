@@ -150,3 +150,22 @@ import Testing
     #expect(link.sessionKey(localHost: "other") == "box/ah-1")
     #expect(DeepLink.session(host: nil, uid: "ah-1").sessionKey(localHost: "box") == "ah-1")
 }
+
+@Test func newSessionsTakeATypedModelAndAnyTmuxSession() throws {
+    #expect(LaunchState.isValidModelID("claude-opus-5-5"))
+    #expect(LaunchState.isValidModelID("org/model:v1.2@latest"))
+    #expect(!LaunchState.isValidModelID("-leading-dash"))
+    #expect(!LaunchState.isValidModelID("has space"))
+    #expect(!LaunchState.isValidModelID("ünïcode"))
+    #expect(!LaunchState.isValidModelID(String(repeating: "a", count: 81)))
+    #expect(!LaunchState.isValidModelID(""))
+    let json = Data(#"{"id":"claude","name":"Claude","command":"claude","models":[{"id":"opus","name":"Opus"},{"id":"sonnet","name":"Sonnet"}],"defaultModel":"sonnet","modelArgs":["--model","{model}"],"available":true}"#.utf8)
+    let preset = try JSONDecoder().decode(PresetDTO.self, from: json)
+    #expect(LaunchState.takesCustomModel(preset))
+    #expect(LaunchState.chosenModel(listed: "opus", typed: "  claude-opus-5-5 ", preset: preset) == "claude-opus-5-5")
+    #expect(LaunchState.chosenModel(listed: "opus", typed: "bad id", preset: preset) == "opus", "an invalid typed id never goes out")
+    #expect(LaunchState.chosenModel(listed: "sonnet", typed: "", preset: preset) == nil, "the default sends nothing")
+    #expect(LaunchState.tmuxChoices(sessions: ["work", "ah"], defaultSession: "ah") == (["work", "ah"], "ah"))
+    #expect(LaunchState.tmuxChoices(sessions: ["work"], defaultSession: "ah").initial == "work")
+    #expect(LaunchState.tmuxChoices(sessions: [], defaultSession: "ah").initial == nil)
+}

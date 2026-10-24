@@ -56,6 +56,11 @@ struct NewSessionSheet: View {
     @State private var model: String?
     @State private var effort: String?
     @State private var label = ""
+    /// "Other model version", for agents that take any model id.
+    @State private var customModel = ""
+    /// The tmux session it goes into; `newTmux` names a new one.
+    @State private var tmuxSession: String?
+    @State private var newTmux = ""
     @State private var extraArgs = ""
     @State private var prompt = ""
     @State private var projects: [String] = []
@@ -80,6 +85,12 @@ struct NewSessionSheet: View {
                         ForEach(hub.hosts, id: \.name) { h in
                             Text(h.name + (h.online ? "" : " (offline)")).tag(h.isSelf ? String?.none : Optional(h.name))
                         }
+                    }
+                    .onChange(of: host) { _, next in
+                        // Each host has its own tmux sessions.
+                        let tmux = LaunchState.tmuxChoices(sessions: hub.state(host: next)?.sessions ?? [], defaultSession: hub.state(host: next)?.defaultSession ?? "")
+                        tmuxSession = tmux.initial
+                        newTmux = tmux.initial == nil ? (hub.state(host: next)?.defaultSession ?? "") : ""
                     }
                 }
                 Section("Agent") {
@@ -138,6 +149,16 @@ struct NewSessionSheet: View {
                                 Text("Default").tag(String?.none)
                                 ForEach(models, id: \.id) { m in Text(m.name).tag(Optional(m.id)) }
                             }
+                            .disabled(LaunchState.chosenModel(listed: nil, typed: customModel, preset: preset) != nil)
+                        }
+                        if LaunchState.takesCustomModel(preset) {
+                            TextField("Other model version (optional)", text: $customModel)
+                                .font(.body.monospaced())
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                            if !customModel.trimmingCharacters(in: .whitespaces).isEmpty && !LaunchState.isValidModelID(customModel.trimmingCharacters(in: .whitespaces)) {
+                                Text("A model id is letters, digits and . _ : / @ -, starting with a letter or digit.").font(.caption).foregroundStyle(theme.danger)
+                            }
                         }
                         let levels = LaunchState.levels(preset, model: model)
                         if !levels.isEmpty {
@@ -155,6 +176,13 @@ struct NewSessionSheet: View {
                 }
                 Section("More") {
                     TextField("Name (optional)", text: $label)
+                    Picker("tmux session", selection: $tmuxSession) {
+                        ForEach(hub?.state(host: host)?.sessions ?? [], id: \.self) { Text($0).tag(Optional($0)) }
+                        Text("New session…").tag(String?.none)
+                    }
+                    if tmuxSession == nil {
+                        TextField("New tmux session name", text: $newTmux).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    }
                     Toggle("Isolated git worktree", isOn: $worktree).disabled(dirState == .new)
                     if preset?.resume != nil { Toggle("Resume its last conversation here", isOn: $resume) }
                     TextField("Extra arguments", text: $extraArgs).font(.body.monospaced()).textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -166,13 +194,16 @@ struct NewSessionSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { scene.sheet = nil } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(busy ? "Starting…" : "Start") { Task { await start() } }
-                        .disabled(busy || preset == nil || cwd.trimmingCharacters(in: .whitespaces).isEmpty || dirProblem != nil)
+                        .disabled(busy || preset == nil || cwd.trimmingCharacters(in: .whitespaces).isEmpty || dirProblem != nil || (tmuxSession == nil && newTmux.trimmingCharacters(in: .whitespaces).isEmpty))
                         .keyboardShortcut(.return, modifiers: .command)
                 }
             }
             .task {
                 host = context.host
                 cwd = context.cwd ?? (context.project ? "" : "~")
+                let tmux = LaunchState.tmuxChoices(sessions: hub?.state(host: host)?.sessions ?? [], defaultSession: hub?.state(host: host)?.defaultSession ?? "")
+                tmuxSession = tmux.initial
+                if tmux.initial == nil { newTmux = hub?.state(host: host)?.defaultSession ?? "" }
                 if let first = context.preset.flatMap({ id in presets.first { $0.id == id } }) ?? presets.first {
                     presetID = first.id
                     applyDefaults(first)
@@ -196,6 +227,7 @@ struct NewSessionSheet: View {
         mode = "default"
         model = p.defaultModel
         effort = p.defaultEffort
+        customModel = ""
         resume = false
     }
 
@@ -214,10 +246,10 @@ struct NewSessionSheet: View {
             if dirState == .new || dirProblem != nil { return }
         }
         let create = dirState == .new
-        let chosenModel = model != nil && model != preset.defaultModel ? model : nil
+        let chosenModel = LaunchState.chosenModel(listed: model, typed: customModel, preset: preset)
         let chosenEffort = effort != nil && (effort != preset.defaultEffort || chosenModel != nil) ? effort : nil
         let request = NewSessionRequest(
-            preset: preset.id, cwd: cwd.trimmingCharacters(in: .whitespaces), session: hub.state(host: host)?.defaultSession ?? "", label: label,
+            preset: preset.id, cwd: cwd.trimmingCharacters(in: .whitespaces), session: tmuxSession ?? newTmux.trimmingCharacters(in: .whitespaces), label: label,
             resume: resume && preset.resume != nil, worktree: worktree && !create, create: create ? true : nil, git: create ? gitInit : nil,
             mode: mode == "default" ? nil : mode, model: chosenModel, effort: chosenEffort,
             extraArgs: extraArgs.trimmingCharacters(in: .whitespaces).isEmpty ? nil : extraArgs.trimmingCharacters(in: .whitespaces))

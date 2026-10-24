@@ -6,7 +6,7 @@ Last reconciled: **24 October 2026**. This is the completion companion to [SPEC.
 
 Statuses: `unstarted`, `implemented` (code exists; its stated evidence is all that ran), `verified` (the named test/platform ran and passed), `blocked` (needs something this machine or session can't provide), `substituted` (a web/host mechanism replaced by a native one, or deliberately kept on the host). `[x]` marks verified rows only.
 
-**Current outcome:** every P0/P1 capability has native code. The non-UI core (protocol, auth, streams, models, keyboard routing, workspace, persistence, review logic) is compiled and tested on Linux: **138 unit tests** and **18 integration tests against a disposable `ah`** with real tmux and fake agents. The UIKit/SwiftUI layer is written but has **never been compiled** (no Xcode or iOS SDK here), so no screen, device, APNs delivery or hardware-keyboard behavior is verified. **No implementation-phase exit gate is closed**; G-0 needs one Apple build and run.
+**Current outcome:** every P0/P1 capability has native code. The non-UI core (protocol, auth, streams, models, keyboard routing, workspace, persistence, review logic) is compiled and tested on Linux: **140 unit tests** and **19 integration tests against a disposable `ah`** with real tmux and fake agents. The UIKit/SwiftUI layer is written but has **never been compiled** (no Xcode or iOS SDK here), so no screen, device, APNs delivery or hardware-keyboard behavior is verified. **No implementation-phase exit gate is closed**; G-0 needs one Apple build and run.
 
 Evidence shorthand used below: **UT** = `swift test` (Linux, Swift 6.2); **IT** = `scripts/integration.sh` (Linux, disposable `ah` on branches `native/1-device-auth` + `native/2-apns`); **UI** = SwiftUI/UIKit source, syntax-checked only.
 
@@ -83,7 +83,7 @@ Evidence shorthand used below: **UT** = `swift test` (Linux, Swift 6.2); **IT** 
 | F-013 | List all active sessions grouped by project, host or status | P0 | SessionListView, SessionOrdering | implemented | [AUDIT.md:85](../../AUDIT.md#L85); UT ordering/sections; UI |
 | F-014 | Open/select a session from lists, Inbox, History and switcher | P0 | SceneModel.open | implemented | [AUDIT.md:86](../../AUDIT.md#L86); Inbox/Sessions/History/switcher/search; IT scene routing |
 | F-015 | New session: Shell/Agent; choose installed available preset, project, machine | P0 | NewSessionSheet | implemented | [AUDIT.md:87](../../AUDIT.md#L87); UI; SceneModel.start |
-| F-016 | New session: model, custom model id, reasoning effort, permission mode | P0 | NewSessionSheet, LaunchPickerSheet, LaunchState | implemented | [AUDIT.md:88](../../AUDIT.md#L88); UT launch plans; custom model id entry not offered |
+| F-016 | New session: model, custom model id, reasoning effort, permission mode | P0 | NewSessionSheet, LaunchPickerSheet, LaunchState | implemented | [AUDIT.md:88](../../AUDIT.md#L88); UT launch plans, newSessionsTakeATypedModelAndAnyTmuxSession (“Other model version” for agents with modelArgs, validated like the web); sheet UI never compiled |
 | F-017 | Optional initial prompt; sends when new session ready | P0 | SceneModel.start | implemented | [AUDIT.md:89](../../AUDIT.md#L89); prompt sent after create; UI |
 | F-018 | Message delivery: type now / answer if waiting / queue if busy / resume if ended | P0 | ComposerModel, Outbox | implemented | [AUDIT.md:90](../../AUDIT.md#L90); IT composerSendsOptimistically…, sendDeliversQueuesWhileBusy… |
 | F-019 | Stop/interruption (Escape for agent, Ctrl-C shell), correctly settle state | P0 | ComposerModel.stop, SessionModel.interrupt | implemented | [AUDIT.md:91](../../AUDIT.md#L91); IT sendDeliversQueuesWhileBusyAndSteersOrStops |
@@ -105,7 +105,7 @@ Evidence shorthand used below: **UT** = `swift test` (Linux, Swift 6.2); **IT** 
 | F-035 | Saved unsent draft per session across devices (source device), 14d expiry | P0 | DraftSync | implemented | [AUDIT.md:107](../../AUDIT.md#L107); IT draftsFollowTheSessionAcrossDevices…, draftsFillAnUntouchedBox… |
 | F-036 | Session/branch selector, new branch, dirty marker, PR link | P1 | BranchSheet, DiffModel.pull | implemented | [AUDIT.md:108](../../AUDIT.md#L108); UI |
 | F-037 | Terminate session with confirmation (record stays in History) | P1 | ConfirmTerminateSheet, SceneModel.terminate | implemented | [AUDIT.md:109](../../AUDIT.md#L109); UI |
-| F-038 | Custom tmux session/name; launch args; optional continue/isolated worktree; multi-host create | P2 | NewSessionSheet | implemented | [AUDIT.md:110](../../AUDIT.md#L110); label/args/resume/worktree/host; custom tmux session name not exposed |
+| F-038 | Custom tmux session/name; launch args; optional continue/isolated worktree; multi-host create | P2 | NewSessionSheet | implemented | [AUDIT.md:110](../../AUDIT.md#L110); label/args/resume/worktree/host and a tmux session picker with New session… (per host); IT aNewSessionGoesIntoTheTmuxSessionYouName |
 | F-039 | New project folder (one level within root) + optional `git init` | P2 | NewSessionSheet | implemented | [AUDIT.md:111](../../AUDIT.md#L111); new folder + git init; UI |
 | F-040 | "Run in project" command hierarchy | P2 | Palette provider .projects | implemented | [AUDIT.md:112](../../AUDIT.md#L112); UT palette |
 | F-041 | Hide ended/saved record from History without deleting transcript | P2 | HistoryRowView | implemented | [AUDIT.md:113](../../AUDIT.md#L113); Hide from History; UI |
@@ -611,7 +611,7 @@ Source: SPEC implementation gates, Apple standards and definition of excellence.
 | [ ] | Q-05 | VoiceOver reading/actions, Dynamic Type, touch targets, contrast, Reduce Motion and semantic status labels — *needs devices* | P0 | blocked |
 | [ ] | Q-06 | Native bars/materials/type/SF Symbols, sheets/detents, toolbars, safe areas, keyboard layout/dictation and haptics — *needs devices* | P1 | blocked |
 | [x] | Q-07 | GRDB migration/reopen/window isolation/delete/future-version tests, then all restoration/cache migration regressions — *UT SceneStoreTests on Linux* | P0 | verified |
-| [x] | Q-08 | Disposable backend/tmux/synthetic-agent integration fixtures; no production agents/user secrets as fixtures — *scripts/integration.sh: disposable ah + tmux + fake agents, 18 tests* | P0 | verified |
+| [x] | Q-08 | Disposable backend/tmux/synthetic-agent integration fixtures; no production agents/user secrets as fixtures — *scripts/integration.sh: disposable ah + tmux + fake agents, 19 tests* | P0 | verified |
 | [ ] | Q-09 | Disconnect/reconnect/server restart/VPN loss, suspend/wake, cancellation, late responses, memory/storage pressure and no leaked competing tasks — *IT revocation/reconnect; device suspend/wake pending* | P0 | implemented |
 | [ ] | Q-10 | Real terminal ANSI/colors/Unicode/graphemes, IME/modifiers, selection/copy/paste/links/scrollback and touch input — *IT SwiftTerm on Linux; iOS input/IME pending* | P0 | implemented |
 | [ ] | Q-11 | Terminal exact resize/redraw, network interruption, two independent viewers, input targeting and current tmux-address re-resolution — *IT resize/re-resolve; device pending* | P0 | implemented |

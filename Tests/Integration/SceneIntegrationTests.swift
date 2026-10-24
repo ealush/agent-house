@@ -36,6 +36,18 @@ struct SceneIntegrationTests {
         KeyPress(hidUsage: hid, characters: characters, modifiers: modifiers)
     }
 
+    @Test func aNewSessionGoesIntoTheTmuxSessionYouName() async throws {
+        let (app, account, _) = try await signedInApp()
+        let scene = SceneModel(sceneID: "tmux", app: app)
+        scene.restore()
+        scene.sheet = nil
+        let key = try #require(await scene.start(NewSessionRequest(preset: "shell", cwd: "~", session: "ahit-named", label: "named-tmux")))
+        let row = try await waitFor("row") { account.hub.row(key) }
+        #expect(row.dto.session == "ahit-named")
+        #expect(scene.route == .session(key))
+        account.deactivate()
+    }
+
     @Test func hardwareKeysDriveTheWorkspace() async throws {
         let (app, account, _) = try await signedInApp()
         let a = try await LiveHost.launch(account.api, preset: "shell", label: "keys-a")
