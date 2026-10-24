@@ -449,13 +449,32 @@ final class PreviewModel {
         }
     }
 
+    private(set) var busy = false
+
     func start(_ port: Int) async {
+        busy = true
+        defer { busy = false }
         do {
             _ = try await api.startPreview(uid, target: port)
             await load()
         } catch {
             self.error = APIError.wrap(error).message
         }
+    }
+
+    /// Keeps the offered ports fresh while the panel is up: a dev server takes a moment to
+    /// start listening (the web refreshes every 4 s too).
+    func watch(every interval: Duration = .seconds(4)) async {
+        while !Task.isCancelled {
+            await load()
+            try? await Task.sleep(for: interval)
+        }
+    }
+
+    /// A typed port, when it is one.
+    nonisolated static func port(_ typed: String) -> Int? {
+        guard let n = Int(typed.trimmingCharacters(in: .whitespaces)), (1...65535).contains(n) else { return nil }
+        return n
     }
 
     func stop() async {

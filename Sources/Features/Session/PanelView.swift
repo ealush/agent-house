@@ -787,41 +787,184 @@ private struct PreviewPanel: View {
     let session: SessionModel
     @Environment(\.theme) private var theme
     @State private var cookie: PreviewCookie?
+    @State private var browser = PreviewBrowser()
+    @State private var typed = ""
+    @FocusState private var portFocused: Bool
 
     var body: some View {
-        VStack(spacing: 0) {
+        Group {
             if let info = model.info {
                 if let preview = info.preview, let url = PreviewModel.url(origin: session.api.origin, port: preview.port) {
-                    HStack {
-                        Text("Port \(preview.target) via \(preview.port)").font(.caption.monospaced())
-                        Spacer()
-                        Button("Stop") { Task { await model.stop() } }.buttonStyle(.bordered).controlSize(.small)
+                    live(preview, url: url, others: info.ports.filter { $0 != preview.target })
+                } else {
+                    picker(info)
+                }
+            } else if let error = model.error {
+                ContentUnavailableView("Can’t reach the preview", systemImage: "exclamationmark.triangle", description: Text(error))
+            } else {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .task { await model.watch() }
+    }
+
+    // MARK: Live
+
+    private func live(_ preview: PreviewDTO, url: URL, others: [Int]) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 14) {
+                Button { browser.view?.goBack() } label: { Image(systemName: "chevron.backward") }
+                    .disabled(!browser.canGoBack)
+                    .accessibilityLabel("Back")
+                Button { browser.view?.goForward() } label: { Image(systemName: "chevron.forward") }
+                    .disabled(!browser.canGoForward)
+                    .accessibilityLabel("Forward")
+                Menu {
+                    Section("Previewing localhost:\(preview.target) through ah") {
+                        ForEach(others, id: \.self) { port in
+                            Button("Switch to localhost:\(String(port))", systemImage: "arrow.left.arrow.right") { Task { await model.start(port) } }
+                        }
+                        Button("Stop the Preview", systemImage: "stop.circle", role: .destructive) { Task { await model.stop() } }
                     }
-                    .padding(8)
-                    if let cookie {
-                        PreviewWebView(url: url, cookie: cookie, hubHost: session.api.origin.host ?? "")
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "lock.fill").font(.caption2).foregroundStyle(theme.faint)
+                        Text(browser.title.isEmpty ? "localhost:\(String(preview.target))" : browser.title)
+                            .font(.callout)
+                            .lineLimit(1)
+                            .foregroundStyle(theme.text)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity)
+                    .background(theme.raised, in: Capsule())
+                }
+                .accessibilityLabel("Preview of localhost:\(preview.target)")
+                Button {
+                    if browser.loading { browser.view?.stopLoading() } else { browser.view?.reload() }
+                } label: {
+                    Image(systemName: browser.loading ? "xmark" : "arrow.clockwise")
+                }
+                .keyboardShortcut("r", modifiers: .command)
+                .accessibilityLabel(browser.loading ? "Stop loading" : "Reload")
+            }
+            .buttonStyle(.borderless)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(.bar)
+            .overlay(alignment: .bottom) {
+                if browser.loading {
+                    ProgressView(value: browser.progress).progressViewStyle(.linear).tint(theme.accent).frame(height: 2)
+                } else {
+                    Divider()
+                }
+            }
+            if let cookie {
+                PreviewWebView(url: url, cookie: cookie, hubHost: session.api.origin.host ?? "", browser: browser)
+                    .id(preview.port * 100_000 + preview.target)
+            } else {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .task { cookie = try? await session.api.previewSession() }
+            }
+        }
+    }
+
+    // MARK: Choosing a port
+
+    private func picker(_ info: PreviewInfo) -> some View {
+        ScrollView {
+            VStack(spacing: 18) {
+                Image(systemName: "safari")
+                    .font(.system(size: 40, weight: .light))
+                    .foregroundStyle(theme.accent)
+                    .padding(.top, 36)
+                VStack(spacing: 6) {
+                    Text("Preview a dev server").font(.headline)
+                    Text("Storybook, Vite, Next… running in this session. It runs on the host and shows here, through ah’s sign-in.")
+                        .font(.callout)
+                        .foregroundStyle(theme.muted)
+                        .multilineTextAlignment(.center)
+                }
+                if !info.live {
+                    Label("The session isn’t running.", systemImage: "moon.zzz").foregroundStyle(theme.muted)
+                } else {
+                    if info.ports.isEmpty {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("Waiting for something in this session to listen on a port…").font(.callout).foregroundStyle(theme.muted)
+                        }
                     } else {
-                        ProgressView().task { cookie = try? await session.api.previewSession() }
-                    }
-                } else if info.live {
-                    List {
-                        Section("Listening ports in this session") {
-                            if info.ports.isEmpty { Text("No dev server is listening yet.").foregroundStyle(theme.muted) }
+                        VStack(spacing: 8) {
                             ForEach(info.ports, id: \.self) { port in
-                                Button("Preview port \(port)") { Task { await model.start(port) } }
+                                Button {
+                                    Task { await model.start(port) }
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "network")
+                                        Text("localhost:\(String(port))").font(.body.monospacedDigit())
+                                        Spacer()
+                                        Image(systemName: "arrow.right.circle.fill").foregroundStyle(theme.accent)
+                                    }
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 11)
+                                    .background(theme.raised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityIdentifier("preview:\(port)")
                             }
                         }
                     }
-                } else {
-                    EmptyState(symbol: "safari", title: "Not running", message: "Previews need the session running.")
+                    HStack(spacing: 8) {
+                        TextField("Another port", text: $typed)
+                            .keyboardType(.numberPad)
+                            .focused($portFocused)
+                            .font(.body.monospacedDigit())
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 9)
+                            .background(theme.raised, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .onSubmit(startTyped)
+                        Button("Preview", action: startTyped)
+                            .buttonStyle(.borderedProminent)
+                            .disabled(PreviewModel.port(typed) == nil || model.busy)
+                    }
                 }
-            } else if let error = model.error {
-                Banner(text: error, tone: .error).padding()
-            } else {
-                ProgressView()
+                if let error = model.error { Banner(text: error, tone: .error) }
             }
+            .padding(.horizontal, 20)
+            .frame(maxWidth: 440)
+            .frame(maxWidth: .infinity)
         }
-        .task { await model.load() }
+    }
+
+    private func startTyped() {
+        guard let port = PreviewModel.port(typed) else { return }
+        typed = ""
+        Task { await model.start(port) }
+    }
+}
+
+/// The preview's web view as SwiftUI sees it: where it can go and how far it has loaded.
+@MainActor
+@Observable
+private final class PreviewBrowser {
+    @ObservationIgnored weak var view: WKWebView?
+    var canGoBack = false
+    var canGoForward = false
+    var loading = false
+    var progress = 0.0
+    var title = ""
+    @ObservationIgnored private var watches: [NSKeyValueObservation] = []
+
+    func attach(_ view: WKWebView) {
+        self.view = view
+        watches = [
+            view.observe(\.canGoBack) { [weak self] v, _ in MainActor.assumeIsolated { self?.canGoBack = v.canGoBack } },
+            view.observe(\.canGoForward) { [weak self] v, _ in MainActor.assumeIsolated { self?.canGoForward = v.canGoForward } },
+            view.observe(\.isLoading) { [weak self] v, _ in MainActor.assumeIsolated { self?.loading = v.isLoading } },
+            view.observe(\.estimatedProgress) { [weak self] v, _ in MainActor.assumeIsolated { self?.progress = v.estimatedProgress } },
+            view.observe(\.title) { [weak self] v, _ in MainActor.assumeIsolated { self?.title = v.title ?? "" } },
+        ]
     }
 }
 
@@ -829,6 +972,7 @@ private struct PreviewWebView: UIViewRepresentable {
     let url: URL
     let cookie: PreviewCookie
     let hubHost: String
+    let browser: PreviewBrowser
 
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
@@ -836,6 +980,10 @@ private struct PreviewWebView: UIViewRepresentable {
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = context.coordinator
         view.allowsBackForwardNavigationGestures = true
+        #if DEBUG
+        view.isInspectable = true
+        #endif
+        browser.attach(view)
         let name = url.scheme == "https" ? cookie.names.https : cookie.names.http
         // Host-only (from the origin URL, no Domain attribute), as a __Host- cookie must be.
         var properties: [HTTPCookiePropertyKey: Any] = [.name: name, .value: cookie.value, .path: "/", .originURL: url, .expires: Date(timeIntervalSince1970: cookie.expiresAt / 1000)]

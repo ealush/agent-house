@@ -128,3 +128,11 @@ private func stack(_ layers: [Layer]) -> ReviewStack {
     #expect(cursor.current == .init(file: 1, line: 1))
     #expect(DiffCursor(files: [a], maxLines: 3).positions == [.init(file: 0, line: 2)], "only lines on screen")
 }
+
+@Test func aTypedPreviewPortMustBeARealPort() {
+    #expect(PreviewModel.port("5173") == 5173)
+    #expect(PreviewModel.port(" 6006 ") == 6006)
+    #expect(PreviewModel.port("0") == nil)
+    #expect(PreviewModel.port("70000") == nil)
+    #expect(PreviewModel.port("vite") == nil)
+}
