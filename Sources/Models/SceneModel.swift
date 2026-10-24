@@ -263,8 +263,8 @@ final class SceneModel {
             return copy
         }
         guard let stored else {
+            // With no host yet the window's root is setup itself; no sheet on top of it.
             restored = true
-            if app.accounts.isEmpty { sheet = .setup }
             return
         }
         if let origin = stored.hostOrigin, app.account(origin: origin) != nil { accountOrigin = origin }
