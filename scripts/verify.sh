@@ -34,5 +34,6 @@ xcodebuild test \
   -scheme AgentHubNative \
   -destination "$destination" \
   -derivedDataPath DerivedData \
+  -skipPackagePluginValidation \
   CODE_SIGNING_ALLOWED=NO
 

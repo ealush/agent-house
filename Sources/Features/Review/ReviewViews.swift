@@ -365,7 +365,7 @@ struct LayerView: View {
             .sheet(isPresented: $addingFinding) {
                 NewFindingSheet(model: model, path: selectedLines?.path, lines: selectedLines?.lines ?? [])
             }
-            .sheet(item: Binding(get: { dispatching.map { DispatchKind(kind: $0) } }, set: { dispatching = $0.map { .some($0.kind) } })) { item in
+            .sheet(item: Binding(get: { dispatching.map { DispatchKind(kind: $0) } }, set: { (item: DispatchKind?) in dispatching = item.map { $0.kind } })) { item in
                 DispatchSheet(scene: scene, model: model, layer: layer, kind: item.kind)
             }
             .sheet(item: $resolving) { finding in

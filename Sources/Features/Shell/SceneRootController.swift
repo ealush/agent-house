@@ -407,11 +407,11 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
         if scene.narrow { syncPhone() }
     }
 
-    func splitViewController(_ svc: UISplitViewController, willHideColumn column: UISplitViewController.Column) {
+    func splitViewController(_ svc: UISplitViewController, willHide column: UISplitViewController.Column) {
         if column == .primary, !scene.narrow, scene.workspace.sidebarVisible { scene.workspace.sidebarVisible = false }
     }
 
-    func splitViewController(_ svc: UISplitViewController, willShowColumn column: UISplitViewController.Column) {
+    func splitViewController(_ svc: UISplitViewController, willShow column: UISplitViewController.Column) {
         if column == .primary, !scene.narrow, !scene.workspace.sidebarVisible { scene.workspace.sidebarVisible = true }
     }
 

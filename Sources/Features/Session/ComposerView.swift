@@ -343,7 +343,7 @@ struct ComposerTextField: UIViewRepresentable {
 
         /// The software keyboard's Send key.
         func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
-            guard text == "\n", !textView.isHardwareReturn else { return true }
+            guard text == "\n", (textView as? ComposerTextView)?.isHardwareReturn != true else { return true }
             send()
             return false
         }

@@ -173,7 +173,7 @@ struct WorkspaceView: View {
 
     var body: some View {
         let workspace = scene.workspace
-        let geometry = workspace.layout?.tiles() ?? ([], [])
+        let geometry = workspace.layout?.tiles() ?? (tiles: [], seams: [])
         let focused = workspace.focusPath
         GeometryReader { proxy in
             let size = proxy.size
