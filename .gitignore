@@ -80,3 +80,4 @@ __pycache__/
 *.p12
 *.mobileprovision
 
+tour-out/

@@ -440,6 +440,13 @@ final class SceneModel {
     /// once the host's state arrives.
     func restore() {
         let journal = app.services.scenes
+        #if DEBUG
+        // UI tours start every window from scratch (TourUITests passes it).
+        if ProcessInfo.processInfo.arguments.contains("-AHFreshWindow") {
+            restored = true
+            return
+        }
+        #endif
         let stored = (try? journal.load(sceneID: sceneID)) ?? (try? journal.mostRecent()).flatMap { latest -> SceneSnapshot? in
             var copy = latest
             copy.sceneID = sceneID
