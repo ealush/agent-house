@@ -16,6 +16,8 @@ enum APIError: Error, Equatable, Sendable, LocalizedError {
     case server(status: Int, message: String)
     /// No answer at all: offline, Tailscale down, timeout.
     case transport(String)
+    /// Something on this device failed before or after the request (Keychain, device key).
+    case device(String)
     case decoding(String)
     case cancelled
 
@@ -43,7 +45,10 @@ enum APIError: Error, Equatable, Sendable, LocalizedError {
         let ns = error as NSError
         if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled { return .cancelled }
         if error is DecodingError { return .decoding(String(describing: error)) }
-        return .transport(ns.localizedDescription)
+        if ns.domain == NSURLErrorDomain || ns.domain == NSPOSIXErrorDomain || ns.domain == "kCFErrorDomainCFNetwork" {
+            return .transport(ns.localizedDescription)
+        }
+        return .device((error as? LocalizedError)?.errorDescription ?? ns.localizedDescription)
     }
 
     var errorDescription: String? { message }
@@ -56,6 +61,7 @@ enum APIError: Error, Equatable, Sendable, LocalizedError {
         case .notFound(let m), .conflict(let m), .tooManyAttempts(let m): return m
         case .server(_, let m): return m
         case .transport(let m): return "Can’t reach your host. \(m)"
+        case .device(let m): return m
         case .decoding: return "The host answered in a form this app doesn’t understand. Update the app or the host."
         case .cancelled: return "Cancelled."
         }
