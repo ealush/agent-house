@@ -6,7 +6,7 @@ Last reconciled: **24 October 2026**. This is the completion companion to [SPEC.
 
 Statuses: `unstarted`, `implemented` (code exists; its stated evidence is all that ran), `verified` (the named test/platform ran and passed), `blocked` (needs something this machine or session can't provide), `substituted` (a web/host mechanism replaced by a native one, or deliberately kept on the host). `[x]` marks verified rows only.
 
-**Current outcome:** every P0/P1 capability has native code. The non-UI core (protocol, auth, streams, models, keyboard routing, workspace, persistence, review logic) is compiled and tested on Linux: **126 unit tests** and **18 integration tests against a disposable `ah`** with real tmux and fake agents. The UIKit/SwiftUI layer is written but has **never been compiled** (no Xcode or iOS SDK here), so no screen, device, APNs delivery or hardware-keyboard behavior is verified. **No implementation-phase exit gate is closed**; G-0 needs one Apple build and run.
+**Current outcome:** every P0/P1 capability has native code. The non-UI core (protocol, auth, streams, models, keyboard routing, workspace, persistence, review logic) is compiled and tested on Linux: **128 unit tests** and **18 integration tests against a disposable `ah`** with real tmux and fake agents. The UIKit/SwiftUI layer is written but has **never been compiled** (no Xcode or iOS SDK here), so no screen, device, APNs delivery or hardware-keyboard behavior is verified. **No implementation-phase exit gate is closed**; G-0 needs one Apple build and run.
 
 Evidence shorthand used below: **UT** = `swift test` (Linux, Swift 6.2); **IT** = `scripts/integration.sh` (Linux, disposable `ah` on branches `native/1-device-auth` + `native/2-apns`); **UI** = SwiftUI/UIKit source, syntax-checked only.
 
@@ -144,7 +144,7 @@ Evidence shorthand used below: **UT** = `swift test` (Linux, Swift 6.2); **IT** 
 | F-074 | Hardware keyboard on iPad, all bindings, key hints, which-key overlay | P1 | MenuCommands, SceneRootController, WhichKeyHUD | implemented | [AUDIT.md:158](../../AUDIT.md#L158); UT matcher/which-key; hardware keyboard unverified |
 | F-075 | iPad width adapts: wide sidebar, medium-width overlay, compact phone UI | P1 | MainSplitController | implemented | [AUDIT.md:159](../../AUDIT.md#L159); split ↔ compact tabs; UI |
 | F-076 | iPad long press/right-click menus, pointer hover, drag reordering, edge reveal sidebar | P1 | SessionListView, context menus | implemented | [AUDIT.md:160](../../AUDIT.md#L160); UI |
-| F-077 | Drag sidebar session onto edge of pane to split | P1 | PaneView dropDestination | implemented | [AUDIT.md:161](../../AUDIT.md#L161); drop replaces a pane; edge-split targets not built |
+| F-077 | Drag sidebar session onto edge of pane to split | P1 | PaneDrop (edge or center zones) | implemented | [AUDIT.md:161](../../AUDIT.md#L161); UT droppingOnPanesSplitsSwapsAndCarriesTheKeyboard; drop zones highlighted; panes drag too; UI never compiled |
 | F-078 | Scratchpad floating shell from anywhere | P1 | SceneModel.toggleScratchpad, ScratchpadView | implemented | [AUDIT.md:162](../../AUDIT.md#L162); UI |
 | F-079 | Split/open in new pane from switcher (Ctrl+Enter) | P1 | SwitcherState.asTile | implemented | [AUDIT.md:163](../../AUDIT.md#L163); open-in-pane command; Ctrl+Enter inside the switcher not wired |
 | F-080 | FLIP pane transitions, gliding list selection, spring/reduced motion | P2 | SwiftUI animations | implemented | [AUDIT.md:164](../../AUDIT.md#L164); system Reduce Motion; UI |
@@ -526,42 +526,42 @@ Source: the owner's [WORKSPACE-SPEC.md](../../WORKSPACE-SPEC.md) (24 October 202
 | Done | ID | Requirement (WORKSPACE-SPEC section) — *evidence* | Priority | Status |
 | --- | --- | --- | --- | --- |
 | [ ] | KW-01 | §1 A global shortcut opens the palette from anywhere — *⌘⇧P/⌃⇧P menu key command with priority over text; UI unverified* | P1 | implemented |
-| [ ] | KW-02 | §1 Nested categories walked in place: arrows move, Enter/→ opens or runs, ⌫/← goes back — *Enter/⌫ written; →/← not yet* | P1 | implemented |
-| [ ] | KW-03 | §1 Every row: icon, label, keycaps right-aligned — *an SF Symbol for every command: UT everyCommandHasItsOwnIcon* | P1 | implemented |
+| [ ] | KW-02 | §1 Nested categories walked in place: arrows move, ↵ runs or opens, → opens a category or a session's choices, ← / ⌫ go back, crumbs click back — *UI written, never compiled* | P1 | implemented |
+| [ ] | KW-03 | §1 Every row: icon, label, keycaps right-aligned (two-key chords as both steps) — *an SF Symbol for every command: UT everyCommandHasItsOwnIcon; UI written, never compiled* | P1 | implemented |
 | [ ] | KW-04 | §1 Forgiving fuzzy search from any level reaches nested commands — *UT KeyboardTests (PaletteTree.search)* | P1 | implemented |
 | [ ] | KW-05 | §1 Context-sensitive: only what can run in this window and pane — *UT KeyboardTests; IT hardwareKeysDriveTheWorkspace* | P1 | implemented |
-| [ ] | KW-06 | §1 Recently used actions surfaced without reordering unpredictably — *recents break ties only: UT recentRowsComeFirstOnlyAmongEqualMatches; IT recentPaletteRows; the Recent list UI comes with the workspace UI layer* | P2 | implemented |
-| [ ] | KW-07 | §1 Sessions in the same search, set apart from actions, with identifying context (status, project, branch, host, on screen); a Go to → Sessions branch (`go-to-session`) — *IT hardwareKeysDriveTheWorkspace* | P1 | implemented |
+| [ ] | KW-06 | §1 Recently used actions surfaced without reordering unpredictably — *Recent heads an empty palette; in search recency only breaks ties: UT recentRowsComeFirstOnlyAmongEqualMatches; IT recentPaletteRows; UI written, never compiled* | P2 | implemented |
+| [ ] | KW-07 | §1 Sessions in the same search, set apart from actions (agent mark, “Session” tag, status, project, branch, host, on screen); a Go to → Sessions branch (`go-to-session`); ⌘↵ opens one as a pane — *IT hardwareKeysDriveTheWorkspace; UI written, never compiled* | P1 | implemented |
 | [ ] | KW-08 | §1 Session destinations: switch to (or focus its pane), open as a pane, move to workspace N — *Enter runs, → opens the choices: UT, IT (sendSession, goTo)* | P1 | implemented |
-| [ ] | KW-09 | §1 Compact floating surface, keycaps, clear selection, smooth level transitions, depth without heavy translucency | P1 | unstarted |
-| [ ] | KW-10 | §2 Shortcut editor search by name, category or shortcut, typed (“ctrl shift p”, “⌃⇧P”) or pressed; modified/unbound filters — *model: UT theEditorFindsCommandsByNameGroupOrKeys* | P1 | implemented |
-| [ ] | KW-11 | §2 Record a new combination straight from the keyboard — *ChordRecorder; UI unverified* | P1 | implemented |
+| [ ] | KW-09 | §1 Compact floating surface on a solid elevated fill with a hairline and shadow, keycaps, tinted selection that follows the pointer, push/fade between levels, key hints in a footer — *UI written, never compiled* | P1 | implemented |
+| [ ] | KW-10 | §2 Shortcut editor search by name, category or shortcut, typed (“ctrl shift p”, “⌃⇧P”) or pressed; changed/no-shortcut filters — *UT theEditorFindsCommandsByNameGroupOrKeys; UI written, never compiled* | P1 | implemented |
+| [ ] | KW-11 | §2 Record a new combination straight from the keyboard, one key or two (Return keeps, Esc cancels) — *UI written, never compiled* | P1 | implemented |
 | [ ] | KW-12 | §2 Two-key chords where appropriate (“⌃K ⌃S”), with a legend of what can follow and a 2 s timeout — *UT twoKeyChords…, aTwoKeyChordWaits…; menu keeps them out of key equivalents* | P2 | implemented |
-| [ ] | KW-13 | §2 Conflicts detected (scope-aware, including a key that starts another two-key chord) and resolvable by taking the shortcut over; keys iPadOS or typing keep are refused — *model: UT conflictsAreFound…, keysTheSystem…* | P1 | implemented |
-| [ ] | KW-14 | §2 Reset one shortcut or all of them — *Settings → Shortcuts; UI unverified* | P1 | implemented |
-| [ ] | KW-15 | §2 App-wide and context-only shortcuts told apart | P2 | unstarted |
-| [ ] | KW-16 | §2 Palette, menu bar, which-key and the editor always show the same bindings — *one `KeyBindings`; menu rebuilt on change* | P1 | implemented |
-| [ ] | KW-17 | §2 Which-key overlay for held modifiers — *UT KeyboardTests (whichKey)* | P2 | implemented |
+| [ ] | KW-13 | §2 Conflicts detected (scope-aware, including a key that starts another two-key chord) with a banner that takes the shortcut over or cancels; keys iPadOS or typing keep are refused with the reason — *UT conflictsAreFound…, keysTheSystem…; UI written, never compiled* | P1 | implemented |
+| [ ] | KW-14 | §2 Reset one shortcut (per row), remove or change any one of several, or reset all (confirmed) — *UT addingRemovingAndResettingShortcuts; UI written, never compiled* | P1 | implemented |
+| [ ] | KW-15 | §2 App-wide and context-only shortcuts told apart: each row says where it works (“Not while typing or in a dialog”, “only from the start of the text”…) — *UI written, never compiled* | P2 | implemented |
+| [ ] | KW-16 | §2 Palette, menu bar, which-key, pane menus, the cheat sheet and the editor always show the same bindings — *one `KeyBindings`; menu rebuilt on change; UI written, never compiled* | P1 | implemented |
+| [ ] | KW-17 | §2 Which-key overlay for held modifiers, and a legend of second keys while a two-key chord waits — *UT KeyboardTests, twoKeyChords…; UI written, never compiled* | P2 | implemented |
 | [ ] | KW-18 | §3 Split the focused pane right, below, left or above, recursively — *UT TilingFocusTests, WorkspaceModelTests; IT* | P1 | implemented |
-| [ ] | KW-19 | §3 Resize by dragging dividers or by key — *UT LayoutTests; drag UI unverified* | P1 | implemented |
-| [ ] | KW-20 | §3 Move and swap panes by key or by dragging — *UT TilingFocusTests, LayoutTests; IT (swap)* | P1 | implemented |
+| [ ] | KW-19 | §3 Resize by dragging dividers (hover highlight) or by key — *UT LayoutTests; UI written, never compiled* | P1 | implemented |
+| [ ] | KW-20 | §3 Move and swap panes by key, from a pane's menu, or by dragging its mark onto another pane (edge splits beside, center swaps) — *UT TilingFocusTests (dropping…), LayoutTests; IT (swap); UI written, never compiled* | P1 | implemented |
 | [ ] | KW-21 | §3 Close a pane; its neighbors reclaim the space — *UT WorkspaceModelTests* | P1 | implemented |
-| [ ] | KW-22 | §3 Maximize and return to the arrangement — *UT; UI unverified* | P1 | implemented |
-| [ ] | KW-23 | §3 Workspaces 1–9 with next/previous — *UT TilingFocusTests; IT* | P1 | implemented |
+| [ ] | KW-22 | §3 Maximize and return to the arrangement; a badge says which pane of how many and restores — *UT; UI written, never compiled* | P1 | implemented |
+| [ ] | KW-23 | §3 Workspaces 1–9 with next/previous, and a strip at the foot of the sidebar (current, in use, tap to go, send here) — *UT TilingFocusTests; IT; UI written, never compiled* | P1 | implemented |
 | [ ] | KW-24 | §3 Balance sizes; flip a split — *UT TilingFocusTests; IT (⌃⇧=)* | P1 | implemented |
 | [ ] | KW-25 | §3 Every workspace capability is in the palette — *UT everyCommandHasAPlaceInThePaletteTree* | P1 | implemented |
-| [ ] | KW-26 | §3 One unmistakable active pane (accent border), minimal chrome — *UI border; unverified* | P1 | implemented |
+| [ ] | KW-26 | §3 One unmistakable active pane: a 2 pt accent border, other panes' headers dimmed, a hairline otherwise; no extra chrome — *UI written, never compiled* | P1 | implemented |
 | [ ] | KW-27 | §4 Directional focus follows the real spatial arrangement — *UT LayoutTests (neighbor)* | P1 | implemented |
-| [ ] | KW-28 | §4 Moving focus moves the real keyboard focus; each pane remembers its composer or terminal — *model: UT TilingFocusTests, IT; responders not yet reporting* | P0 | implemented |
-| [ ] | KW-29 | §4 Hover-to-focus without flicker during drags, overlays or layout changes — *model gating: UT TilingFocusTests; no pointer UI yet* | P1 | implemented |
+| [ ] | KW-28 | §4 Moving focus moves the real keyboard focus; each pane remembers its composer or terminal; clicking into another pane's composer makes it the focused pane — *model: UT TilingFocusTests, IT; composer and terminal report focus; UI written, never compiled* | P0 | implemented |
+| [ ] | KW-29 | §4 Hover-to-focus without flicker during drags, overlays or layout changes; a Settings switch and a palette command turn it off — *model gating: UT TilingFocusTests; `onContinuousHover`; UI written, never compiled* | P1 | implemented |
 | [ ] | KW-30 | §4 Focus stays right through split, move, swap, close, maximize, session and workspace switches — *model: UT, IT* | P0 | implemented |
-| [ ] | KW-31 | §4 Temporary interfaces give the keyboard back on dismissal; deliberate navigation focuses the destination — *model: UT, IT; presentation hook not yet* | P0 | implemented |
+| [ ] | KW-31 | §4 Temporary interfaces give the keyboard back on dismissal (including swipe-to-dismiss); deliberate navigation focuses the destination; an empty pane's search takes the keyboard after a split — *model: UT, IT; UI written, never compiled* | P0 | implemented |
 | [ ] | KW-32 | §4 Global shortcuts reachable from pane content without breaking typing — *scopes and caret edges: UT KeyboardTests* | P0 | implemented |
-| [ ] | KW-33 | §5 One capability, four paths: palette, shortcut, a pane's context menu, a visible control — *palette, keys, menu bar; pane menus not yet* | P1 | implemented |
-| [ ] | KW-34 | §6 Motion with spatial continuity for split, close, maximize, palette levels; Reduce Motion respected | P1 | unstarted |
-| [ ] | KW-35 | §6 Clear hover, pressed, selected and disabled states | P2 | unstarted |
-| [ ] | KW-36 | §6 A window too small for the layout shows the focused pane with a pane strip — *`LayoutNode.fits`: UT TilingFocusTests; no UI yet* | P1 | implemented |
-| [ ] | KW-37 | §6 Accessibility: VoiceOver names for panes and focus, Dynamic Type — *labels written; needs a device* | P1 | implemented |
+| [ ] | KW-33 | §5 One capability, four paths: palette, shortcut (and menu bar), a pane's context menu, and a visible control (the header's pane/split menu, the maximize badge, the workspace strip) — all call `SceneModel.perform` — *UI written, never compiled* | P1 | implemented |
+| [ ] | KW-34 | §6 Motion with spatial continuity: panes animate their boxes, new panes scale in, closed ones fade, maximize grows in place, palette levels push; Reduce Motion turns movement into fades — *UI written, never compiled* | P1 | implemented |
+| [ ] | KW-35 | §6 Clear hover (pointer highlight on rows, seams, strip), pressed, selected and disabled (menu items unavailable here are disabled) states — *UI written, never compiled* | P2 | implemented |
+| [ ] | KW-36 | §6 A window too small for the layout shows the focused pane with a strip of pane tabs (others stay alive underneath) — *`LayoutNode.fits`: UT TilingFocusTests; UI written, never compiled* | P1 | implemented |
+| [ ] | KW-37 | §6 Accessibility: panes say “Pane 2 of 3, focused”, palette rows are buttons with selection, keycaps read as the chord, Reduce Motion respected — *labels written; needs a device*  | P1 | implemented |
 | [ ] | KW-38 | §7 Everything in the quality bar without a mouse, on an iPad with a keyboard | P0 | blocked |
 
 Native workspace commands (DECISIONS: Keyboard-first workspace). The web's 89 stay as above; these add to them, with defaults that clash with none (UT `nativeCommandsKeepTheWebCatalogAndClashWithNothing`).

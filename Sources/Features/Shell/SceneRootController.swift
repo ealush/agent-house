@@ -1,3 +1,4 @@
+import GameController
 import SwiftUI
 import UIKit
 
@@ -80,6 +81,15 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
         registerForTraitChanges([UITraitHorizontalSizeClass.self]) { (self: Self, _: UITraitCollection) in
             self.scene.narrow = self.traitCollection.horizontalSizeClass == .compact
         }
+        // Navigation moves the keyboard focus only while a hardware keyboard is attached.
+        scene.hardwareKeyboard = GCKeyboard.coalesced != nil
+        for name in [Notification.Name.GCKeyboardDidConnect, .GCKeyboardDidDisconnect] {
+            NotificationCenter.default.addObserver(self, selector: #selector(keyboardsChanged), name: name, object: nil)
+        }
+    }
+
+    @objc private func keyboardsChanged() {
+        scene.hardwareKeyboard = GCKeyboard.coalesced != nil
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -149,12 +159,19 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
         return nil
     }
 
+    /// One modal at a time, from window state. The window hears when one covers it and when
+    /// all are gone, so the keyboard goes back where it was (or where a command sent it).
     private func syncModal(allowed: Bool) {
         let wanted: Modal? = allowed ? wantedModal : nil
         guard wanted != shownModal else { return }
         shownModal = wanted
+        if wanted != nil { scene.modalWillPresent() }
         let present = { [weak self] in
-            guard let self, let wanted, self.shownModal == wanted else { return }
+            guard let self else { return }
+            guard let wanted, self.shownModal == wanted else {
+                if self.shownModal == nil { self.scene.modalDidDismiss() }
+                return
+            }
             let controller = self.makeModal(wanted)
             controller.presentationController?.delegate = self
             self.modalController = controller
@@ -229,6 +246,7 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
         case nil: break
         }
         shownModal = nil
+        scene.modalDidDismiss()
     }
 
     // MARK: Keyboard

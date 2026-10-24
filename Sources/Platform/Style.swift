@@ -128,26 +128,44 @@ struct PulseRing: View {
     }
 }
 
-/// Keycaps for a chord: ⌃ ⇧ K.
+/// Keycaps for a chord: ⌃ ⇧ K, or both steps of a two-key chord: ⌃ K · ⌃ S.
 struct Keycaps: View {
-    let parts: [String]
+    /// One group of caps per key pressed.
+    let groups: [[String]]
+    private let spoken: String
     @Environment(\.theme) private var theme
 
-    init(_ chord: Chord) { parts = chord.parts(mac: true) }
-    init(parts: [String]) { self.parts = parts }
+    init(_ chord: Chord) {
+        groups = chord.steps.map { $0.parts(mac: true) }
+        spoken = chord.formatted(mac: true)
+    }
+
+    init(parts: [String]) {
+        groups = [parts]
+        spoken = parts.joined(separator: " ")
+    }
 
     var body: some View {
-        HStack(spacing: 3) {
-            ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
-                Text(part)
-                    .font(.caption2.weight(.semibold).monospaced())
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(theme.raised, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).stroke(.quaternary))
+        HStack(spacing: 5) {
+            ForEach(Array(groups.enumerated()), id: \.offset) { index, parts in
+                if index > 0 { Text("then").font(.caption2).foregroundStyle(theme.faint) }
+                HStack(spacing: 3) {
+                    ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
+                        Text(part)
+                            .font(.caption2.weight(.semibold).monospaced())
+                            .foregroundStyle(theme.text2)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .frame(minWidth: 18)
+                            .background(theme.raised, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(theme.faint.opacity(0.4), lineWidth: 0.5))
+                            .shadow(color: .black.opacity(0.12), radius: 0, y: 1)
+                    }
+                }
             }
         }
-        .accessibilityLabel(parts.joined(separator: " "))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken)
     }
 }
 

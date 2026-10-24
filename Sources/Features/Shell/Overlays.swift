@@ -1,20 +1,34 @@
 import SwiftUI
 
-/// The command palette (⇧⌘P): what you can do right now, by category, with each binding
-/// shown on its row. Typing searches the whole tree; ↑↓ move, ⏎ runs, ⌫ on empty goes up.
+/// The command palette (⇧⌘P): everything you can do right now, by category, with each
+/// binding as keycaps on its row and sessions in the same search. Typing searches the whole
+/// tree; ↑↓ move, ↵ runs, → opens a category or a session's choices, ← / ⌫ go back, ⌘↵
+/// opens a session as a new pane, Esc steps out. An empty palette starts with Recent.
 struct PaletteView: View {
     @Bindable var scene: SceneModel
     @State private var selection = 0
+    @State private var forward = true
     @FocusState private var focused: Bool
     @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private struct Item: Identifiable {
+        let id: String
+        let node: PaletteNode
+        let trail: [PaletteNode]
+        /// Shown above the first row of a section.
+        let section: String?
+    }
 
     private var tree: PaletteNode { scene.paletteTree() }
+    private var query: String { scene.palette?.query ?? "" }
+    private var path: [String] { scene.palette?.path ?? [] }
 
-    /// The category walked into, by the path of keys.
-    private var scope: (node: PaletteNode, trail: [PaletteNode]) {
+    /// The category (or session) walked into, by the path of keys.
+    private func scope(_ tree: PaletteNode) -> (node: PaletteNode, trail: [PaletteNode]) {
         var node = tree
         var trail: [PaletteNode] = []
-        for key in scene.palette?.path ?? [] {
+        for key in path {
             guard let next = node.children?.first(where: { $0.key == key }) else { break }
             trail.append(next)
             node = next
@@ -22,62 +36,151 @@ struct PaletteView: View {
         return (node, trail)
     }
 
-    private var rows: [(node: PaletteNode, trail: [PaletteNode])] {
-        let query = scene.palette?.query ?? ""
-        let scope = scope.node
-        if query.trimmingCharacters(in: .whitespaces).isEmpty { return (scope.children ?? []).map { ($0, []) } }
-        return PaletteTree.search(scope, query).prefix(60).map { ($0.node, $0.trail) }
+    private func items(_ tree: PaletteNode) -> [Item] {
+        let (node, _) = scope(tree)
+        if !query.trimmingCharacters(in: .whitespaces).isEmpty {
+            return PaletteTree.search(node, query, recent: scene.app.preferences.recentPalette).prefix(80).map { hit in
+                Item(id: (hit.trail.map(\.key) + [hit.node.key]).joined(separator: "/"), node: hit.node, trail: hit.trail, section: nil)
+            }
+        }
+        let children = (node.children ?? []).enumerated().map { index, child in
+            Item(id: child.key, node: child, trail: [], section: path.isEmpty && index == 0 ? "All commands" : nil)
+        }
+        guard path.isEmpty else { return children }
+        let recent = scene.recentPaletteRows().enumerated().map { index, row in
+            Item(id: "recent/" + row.key, node: row, trail: [], section: index == 0 ? "Recent" : nil)
+        }
+        return recent.isEmpty ? children.map { Item(id: $0.id, node: $0.node, trail: [], section: nil) } : recent + children
     }
 
     var body: some View {
-        let rows = rows
+        let tree = tree
+        let scope = scope(tree)
+        let items = items(tree)
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                ForEach(scope.trail) { crumb in
-                    Text(crumb.label).font(.caption.weight(.semibold)).padding(.horizontal, 8).padding(.vertical, 3).background(theme.raised, in: Capsule())
-                }
-                TextField(scope.trail.isEmpty ? "Search commands" : "Search \(scope.trail.last!.label)", text: Binding(get: { scene.palette?.query ?? "" }, set: { scene.palette?.query = $0; selection = 0 }))
-                    .textFieldStyle(.plain)
-                    .font(.title3)
-                    .focused($focused)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .onSubmit { activate(rows) }
-                    .onKeyPress(.upArrow) { move(-1, rows.count); return .handled }
-                    .onKeyPress(.downArrow) { move(1, rows.count); return .handled }
-                    .onKeyPress(.escape) { back(); return .handled }
-                    .onKeyPress(.delete) {
-                        guard (scene.palette?.query ?? "").isEmpty, !(scene.palette?.path.isEmpty ?? true) else { return .ignored }
-                        scene.palette?.path.removeLast()
-                        selection = 0
-                        return .handled
-                    }
-                    .accessibilityLabel("Command palette")
-            }
-            .padding(14)
-            Divider()
+            header(scope.trail, items)
+            Divider().overlay(theme.faint.opacity(0.25))
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(Array(rows.enumerated()), id: \.element.node.id) { index, row in
-                            PaletteRow(node: row.node, trail: row.trail, selected: index == selection, bindings: scene.app.keyBindings)
-                                .id(index)
+                    LazyVStack(alignment: .leading, spacing: 1) {
+                        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                            if let section = item.section {
+                                Text(section.uppercased())
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(theme.faint)
+                                    .padding(.horizontal, 18)
+                                    .padding(.top, index == 0 ? 6 : 12)
+                                    .padding(.bottom, 4)
+                                    .accessibilityAddTraits(.isHeader)
+                            }
+                            PaletteRow(node: item.node, trail: item.trail, selected: index == selection, bindings: scene.app.keyBindings)
+                                .id(item.id)
                                 .contentShape(Rectangle())
-                                .onTapGesture { selection = index; activate(rows) }
+                                .onTapGesture {
+                                    selection = index
+                                    activate(items)
+                                }
+                                .onHover { inside in if inside { selection = index } }
                         }
-                        if rows.isEmpty { Text("Nothing matches").foregroundStyle(theme.muted).padding(24) }
+                        if items.isEmpty {
+                            Text(query.isEmpty ? "Nothing here can run right now" : "Nothing matches “\(query)”")
+                                .foregroundStyle(theme.muted)
+                                .frame(maxWidth: .infinity)
+                                .padding(28)
+                        }
                     }
+                    .padding(.vertical, 6)
                 }
-                .onChange(of: selection) { _, new in proxy.scrollTo(new, anchor: .center) }
+                .id(path.joined(separator: "/"))
+                .transition(reduceMotion ? .opacity : .push(from: forward ? .trailing : .leading))
+                .onChange(of: selection) { _, new in
+                    if items.indices.contains(new) { proxy.scrollTo(items[new].id, anchor: nil) }
+                }
             }
-            .frame(maxHeight: 420)
+            .frame(maxHeight: 440)
+            .clipped()
+            Divider().overlay(theme.faint.opacity(0.25))
+            footer(items)
         }
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .frame(maxWidth: 620)
+        .background(theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(theme.faint.opacity(0.35), lineWidth: 0.5))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.28), radius: 30, y: 16)
+        .frame(maxWidth: 640)
         .padding(.horizontal, 16)
-        .shadow(radius: 30, y: 10)
         .onAppear { focused = true }
         .task { await scene.openPalette() }
+        .onChange(of: items.count) { _, count in if selection >= count { selection = max(0, count - 1) } }
+    }
+
+    private func header(_ trail: [PaletteNode], _ items: [Item]) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").foregroundStyle(theme.faint)
+            ForEach(trail) { crumb in
+                Text(crumb.label)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(theme.raised, in: Capsule())
+                    .onTapGesture { goBack(to: trail.firstIndex(of: crumb) ?? 0) }
+            }
+            TextField(trail.isEmpty ? "Search commands and sessions" : "Search \(trail.last!.label)", text: Binding(get: { query }, set: { scene.palette?.query = $0; selection = 0 }))
+                .textFieldStyle(.plain)
+                .font(.title3)
+                .focused($focused)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.go)
+                .onSubmit { activate(items) }
+                .onKeyPress(.upArrow) { move(-1, items.count); return .handled }
+                .onKeyPress(.downArrow) { move(1, items.count); return .handled }
+                .onKeyPress(.rightArrow) { enter(items) ? .handled : .ignored }
+                .onKeyPress(.leftArrow) {
+                    guard query.isEmpty, !path.isEmpty else { return .ignored }
+                    back()
+                    return .handled
+                }
+                .onKeyPress(.escape) { back(); return .handled }
+                .onKeyPress(.delete) {
+                    guard query.isEmpty, !path.isEmpty else { return .ignored }
+                    back()
+                    return .handled
+                }
+                .onKeyPress(.return, phases: .down) { press in
+                    guard press.modifiers.contains(.command), items.indices.contains(selection), case .openSession(let key) = items[selection].node.action else { return .ignored }
+                    scene.run(.openAsPane(key))
+                    return .handled
+                }
+                .accessibilityLabel("Command palette")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 13)
+    }
+
+    private func footer(_ items: [Item]) -> some View {
+        let selected = items.indices.contains(selection) ? items[selection].node : nil
+        return HStack(spacing: 14) {
+            hint(["↑", "↓"], "move")
+            hint(["↵"], selected?.isCategory == true ? "open" : "run")
+            if selected?.isCategory == true || selected?.hasChoices == true { hint(["→"], selected?.hasChoices == true ? "more" : "open") }
+            if case .openSession? = selected?.action, !scene.narrow { hint(["⌘", "↵"], "as a pane") }
+            if !path.isEmpty { hint(["←"], "back") }
+            Spacer()
+            hint(["esc"], path.isEmpty && query.isEmpty ? "close" : "back")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .font(.caption)
+        .foregroundStyle(theme.muted)
+        .accessibilityHidden(true)
+    }
+
+    private func hint(_ keys: [String], _ label: String) -> some View {
+        HStack(spacing: 4) {
+            Keycaps(parts: keys)
+            Text(label)
+        }
     }
 
     private func move(_ by: Int, _ count: Int) {
@@ -85,21 +188,46 @@ struct PaletteView: View {
         selection = (selection + by + count) % count
     }
 
-    private func back() {
-        if !(scene.palette?.query ?? "").isEmpty { scene.palette?.query = "" }
-        else if !(scene.palette?.path.isEmpty ?? true) { scene.palette?.path.removeLast() }
-        else { scene.palette = nil }
+    private func walk(_ change: () -> Void, forward isForward: Bool) {
+        forward = isForward
+        if reduceMotion { change() } else { withAnimation(.snappy(duration: 0.18)) { change() } }
         selection = 0
     }
 
-    private func activate(_ rows: [(node: PaletteNode, trail: [PaletteNode])]) {
-        guard rows.indices.contains(selection) else { return }
-        let row = rows[selection]
-        if row.node.isCategory {
-            scene.palette?.path += row.trail.map(\.key) + [row.node.key]
+    private func back() {
+        if !query.isEmpty {
             scene.palette?.query = ""
             selection = 0
-        } else if let action = row.node.action {
+        } else if !path.isEmpty {
+            walk({ scene.palette?.path.removeLast() }, forward: false)
+        } else {
+            scene.palette = nil
+        }
+    }
+
+    private func goBack(to index: Int) {
+        walk({ scene.palette?.path = Array(path.prefix(index + 1)) }, forward: false)
+    }
+
+    /// → on a category or a session: walk into it. False when the row has nothing inside.
+    private func enter(_ items: [Item]) -> Bool {
+        guard items.indices.contains(selection) else { return false }
+        let item = items[selection]
+        guard item.node.isCategory || item.node.hasChoices else { return false }
+        let keys = item.trail.map(\.key) + [item.node.key]
+        walk({
+            scene.palette?.path += keys
+            scene.palette?.query = ""
+        }, forward: true)
+        return true
+    }
+
+    private func activate(_ items: [Item]) {
+        guard items.indices.contains(selection) else { return }
+        let item = items[selection]
+        if item.node.isCategory {
+            _ = enter(items)
+        } else if let action = item.node.action {
             scene.run(action)
         }
     }
@@ -112,31 +240,72 @@ private struct PaletteRow: View {
     let bindings: KeyBindings
     @Environment(\.theme) private var theme
 
+    private var sessionKey: String? {
+        if case .openSession(let key) = node.action { return key }
+        return nil
+    }
+
     var body: some View {
-        HStack(spacing: 10) {
-            if let agent = node.agent { AgentMark(agent: agent, size: 20) }
-            else { Image(systemName: node.icon ?? (node.isCategory ? "folder" : "command")).frame(width: 20).foregroundStyle(theme.muted) }
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 4) {
-                    ForEach(trail) { t in Text(t.label + " ›").foregroundStyle(theme.faint) }
-                    Text(node.label)
-                }
-                .font(.callout)
-                if let detail = node.detail, !detail.isEmpty { Text(detail).font(.caption).foregroundStyle(theme.muted).lineLimit(1) }
+        HStack(spacing: 12) {
+            if sessionKey != nil || node.agent != nil {
+                AgentMark(agent: node.agent, size: 22)
+            } else {
+                Image(systemName: node.icon ?? (node.isCategory ? "folder" : "command"))
+                    .symbolRenderingMode(.hierarchical)
+                    .font(.body)
+                    .frame(width: 22)
+                    .foregroundStyle(selected ? theme.accent : theme.muted)
             }
-            Spacer()
-            if node.isCategory {
-                Text("\(node.leafCount)").font(.caption).foregroundStyle(theme.faint)
-                Image(systemName: "chevron.right").font(.caption).foregroundStyle(theme.faint)
-            } else if case .command(let id) = node.action, let chord = bindings.chords(id).first {
-                Keycaps(chord)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    ForEach(trail) { crumb in
+                        Text(crumb.label).foregroundStyle(theme.faint)
+                        Image(systemName: "chevron.compact.right").font(.caption2).foregroundStyle(theme.faint)
+                    }
+                    Text(node.label).foregroundStyle(theme.text)
+                }
+                .font(.body)
+                .lineLimit(1)
+                if let detail = node.detail, !detail.isEmpty {
+                    Text(detail).font(.caption).foregroundStyle(theme.muted).lineLimit(1)
+                }
+            }
+            Spacer(minLength: 8)
+            trailing
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background {
+            if selected {
+                RoundedRectangle(cornerRadius: 9, style: .continuous).fill(theme.accentStrong.opacity(0.16))
+                    .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(theme.accentStrong.opacity(0.35), lineWidth: 0.5))
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .background(selected ? theme.accentStrong.opacity(0.18) : .clear)
+        .padding(.horizontal, 6)
         .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
+        .accessibilityHint(node.isCategory ? "Opens \(node.label)" : sessionKey != nil ? "Session" : "")
+    }
+
+    @ViewBuilder private var trailing: some View {
+        if node.isCategory {
+            HStack(spacing: 6) {
+                Text("\(node.leafCount)").font(.caption.monospacedDigit()).foregroundStyle(theme.faint)
+                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(theme.faint)
+            }
+        } else if sessionKey != nil {
+            HStack(spacing: 6) {
+                Text("Session")
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(theme.raised, in: Capsule())
+                    .foregroundStyle(theme.muted)
+                if node.hasChoices { Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(theme.faint) }
+            }
+        } else if case .command(let id) = node.action, let chord = bindings.hint(id) {
+            Keycaps(chord)
+        }
     }
 }
 
@@ -208,31 +377,41 @@ struct SwitcherView: View {
     }
 }
 
-/// Every command and its binding (⌘/), searchable; edits live in Settings → Shortcuts.
+/// Every command and its shortcuts (⌘/), searchable by name or keys; edits live in
+/// Settings → Shortcuts. Dimmed rows can't run in this window right now.
 struct ShortcutsView: View {
     let scene: SceneModel
     @State private var query = ""
     @Environment(\.theme) private var theme
 
     var body: some View {
+        let bindings = scene.app.keyBindings
+        let found = KeymapSearch.commands(query, bindings: bindings).filter { !bindings.chords($0.id).isEmpty }
         NavigationStack {
             List {
                 ForEach([CommandGroup.navigate, .session, .workspace], id: \.self) { group in
-                    let commands = CommandCatalog.all.filter { $0.group == group && (query.isEmpty || $0.label.localizedCaseInsensitiveContains(query)) && !scene.app.keyBindings.chords($0.id).isEmpty }
+                    let commands = found.filter { $0.group == group }
                     if !commands.isEmpty {
                         Section(group.rawValue) {
                             ForEach(commands) { c in
-                                HStack {
-                                    Text(c.label).foregroundStyle(scene.isAvailable(c.id) ? theme.text : theme.faint)
+                                HStack(spacing: 10) {
+                                    Image(systemName: CommandCatalog.icon(c.id)).frame(width: 22).foregroundStyle(theme.muted)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(c.label).foregroundStyle(scene.isAvailable(c.id) ? theme.text : theme.faint)
+                                        Text(CommandCatalog.whenLabel(c.id)).font(.caption2).foregroundStyle(theme.faint)
+                                    }
                                     Spacer()
-                                    Keycaps(scene.app.keyBindings.chords(c.id)[0])
+                                    HStack(spacing: 6) {
+                                        ForEach(Array(bindings.chords(c.id).enumerated()), id: \.offset) { _, chord in Keycaps(chord) }
+                                    }
                                 }
+                                .accessibilityElement(children: .combine)
                             }
                         }
                     }
                 }
             }
-            .searchable(text: $query)
+            .searchable(text: $query, prompt: "Name or keys, like “ctrl shift p”")
             .navigationTitle("Keyboard shortcuts")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Done") { scene.showingShortcuts = false } }
@@ -242,51 +421,72 @@ struct ShortcutsView: View {
     }
 }
 
-/// Held modifiers show what one more key does (which-key), after a short pause.
+/// Held modifiers show what one more key does (which-key), after a short pause; while a
+/// two-key chord waits, what the second key can be.
 struct WhichKeyHUD: View {
     let rows: [CommandMatcher.WhichKeyRow]
+    /// The first key of a chord in progress, as "⌃K".
+    var pending: String?
     @Environment(\.theme) private var theme
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 12)], alignment: .leading, spacing: 6) {
-            ForEach(rows, id: \.id.rawValue) { row in
-                HStack(spacing: 8) {
-                    Text(row.key).font(.callout.monospaced().weight(.semibold)).frame(minWidth: 24).padding(.horizontal, 6).padding(.vertical, 2).background(theme.raised, in: RoundedRectangle(cornerRadius: 5))
-                    Text(row.label).font(.callout).lineLimit(1)
+        VStack(alignment: .leading, spacing: 10) {
+            if let pending {
+                HStack(spacing: 6) {
+                    Text(pending).font(.callout.monospaced().weight(.bold)).foregroundStyle(theme.accent)
+                    Text("then…").font(.callout).foregroundStyle(theme.muted)
+                    Spacer()
+                    Text("esc cancels").font(.caption).foregroundStyle(theme.faint)
+                }
+            }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 12)], alignment: .leading, spacing: 6) {
+                ForEach(rows, id: \.id.rawValue) { row in
+                    HStack(spacing: 8) {
+                        Text(row.key).font(.callout.monospaced().weight(.semibold)).frame(minWidth: 24).padding(.horizontal, 6).padding(.vertical, 2).background(theme.raised, in: RoundedRectangle(cornerRadius: 5))
+                        Text(row.label).font(.callout).lineLimit(1)
+                    }
                 }
             }
         }
         .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(theme.faint.opacity(0.35), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.2), radius: 20, y: 8)
         .frame(maxWidth: 760)
         .padding(16)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Available shortcuts")
+        .accessibilityLabel(pending.map { "\($0) pressed, waiting for the second key" } ?? "Available shortcuts")
     }
 }
 
-/// Pane and resize modes: which keys do what until Escape.
+/// Pane and resize modes: which keys do what until Escape (the model's own legend).
 struct SubmapHUD: View {
     let mode: WorkspaceModel.Submap
     @Environment(\.theme) private var theme
 
     var body: some View {
-        let keys: [(String, String)] = mode == .pane
-            ? [("hjkl / arrows", "Focus"), ("⇧ hjkl", "Move"), ("v", "Split right"), ("s", "Split below"), ("x", "Close"), ("p", "Replace"), ("f", "Zoom"), ("t", "Flip"), ("o", "Open beside"), ("n", "New"), ("r", "Resize"), ("1–9", "Workspace"), ("esc", "Done")]
-            : [("hjkl / arrows", "Resize"), ("⇧", "Bigger steps"), ("esc", "Done")]
-        HStack(spacing: 14) {
-            Text(mode == .pane ? "PANE" : "RESIZE").font(.caption.weight(.heavy)).foregroundStyle(theme.brand)
-            ForEach(keys, id: \.0) { k in
-                HStack(spacing: 4) {
-                    Text(k.0).font(.caption.monospaced().weight(.semibold))
-                    Text(k.1).font(.caption).foregroundStyle(theme.muted)
+        let keys = WorkspaceModel.submapKeys[mode] ?? []
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 14) {
+                Text(mode == .pane ? "PANE" : "RESIZE").font(.caption.weight(.heavy)).foregroundStyle(theme.brand)
+                ForEach(Array(keys.enumerated()), id: \.offset) { _, entry in
+                    HStack(spacing: 4) {
+                        Keycaps(parts: entry.keys)
+                        Text(entry.label).font(.caption).foregroundStyle(theme.muted)
+                    }
                 }
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(.regularMaterial, in: Capsule())
+        .background(theme.surface, in: Capsule())
+        .overlay(Capsule().strokeBorder(theme.faint.opacity(0.35), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.18), radius: 16, y: 6)
+        .frame(maxWidth: 900)
+        .fixedSize(horizontal: false, vertical: true)
         .padding(12)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(mode == .pane ? "Pane mode" : "Resize mode")
     }
 }
 

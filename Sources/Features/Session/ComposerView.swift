@@ -333,12 +333,14 @@ struct ComposerTextField: UIViewRepresentable {
             parent.scene.keyScope = .field
             parent.scene.fieldState = fieldState(textView)
             parent.scene.composerFocused = parent.session.key
+            parent.scene.didFocus(.composer(parent.session.key))
             parent.scene.scheduleSave()
         }
 
         func textViewDidEndEditing(_ textView: UITextView) {
             parent.scene.keyScope = .app
             if parent.scene.composerFocused == parent.session.key { parent.scene.composerFocused = nil }
+            parent.scene.didBlur(.composer(parent.session.key))
         }
 
         /// The software keyboard's Send key.

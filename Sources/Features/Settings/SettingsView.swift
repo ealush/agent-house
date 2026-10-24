@@ -260,70 +260,196 @@ private struct AppearanceSection: View {
 
 // MARK: Shortcuts
 
+/// The keymap editor (VS Code's keybindings, made native): search by name, group or keys
+/// (typed, or pressed), every shortcut a command has, where it applies, what changed. A
+/// shortcut is recorded straight from the keyboard, one key or two; a clash says with what
+/// and offers to take the shortcut over. The palette, menu bar and which-key read the same
+/// bindings, so a change shows everywhere at once.
 private struct ShortcutsSection: View {
     @Bindable var app: AppModel
     @State private var query = ""
-    @State private var recording: CommandID?
-    @State private var error: String?
+    @State private var filter: KeymapSearch.Filter = .all
+    @State private var pressed: Chord?
+    @State private var recordingSearch = false
+    @State private var recording: Recording?
+    @State private var problem: Problem?
     @State private var confirmReset = false
     @Environment(\.theme) private var theme
 
+    struct Recording: Equatable {
+        let id: CommandID
+        /// The shortcut being changed; nil adds one.
+        let replacing: Chord?
+    }
+
+    struct Problem: Equatable {
+        let id: CommandID
+        let chord: Chord
+        let replacing: Chord?
+        let message: String
+        /// The command that has it, when taking it over is possible.
+        let holder: CommandID?
+    }
+
     var body: some View {
+        let commands = pressed.map { KeymapSearch.commands(pressing: $0, bindings: app.keyBindings) } ?? KeymapSearch.commands(query, bindings: app.keyBindings, filter: filter)
         List {
-            if let error { Banner(text: error, tone: .error) }
-            ForEach([CommandGroup.navigate, .session, .workspace], id: \.self) { group in
-                Section(group.rawValue) {
-                    ForEach(CommandCatalog.all.filter { $0.group == group && matches($0) }) { command in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(command.label)
-                                Text(command.detail).font(.caption).foregroundStyle(theme.muted).lineLimit(2)
-                            }
-                            Spacer()
-                            if recording == command.id {
-                                ChordRecorder { chord in
-                                    recording = nil
-                                    guard let chord else { return }
-                                    error = app.keyBindings.set(command.id, chord)
-                                }
-                                .frame(width: 140, height: 30)
-                            } else {
-                                let chords = app.keyBindings.chords(command.id)
-                                Button {
-                                    error = nil
-                                    recording = command.id
-                                } label: {
-                                    if chords.isEmpty { Text("Set").font(.caption) } else { Keycaps(chords[0]) }
-                                }
-                                .buttonStyle(.borderless)
-                            }
+            Section {
+                Toggle("Focus follows the pointer", isOn: $app.preferences.focusFollowsPointer)
+                Picker("Show", selection: $filter) {
+                    Text("All").tag(KeymapSearch.Filter.all)
+                    Text("Changed").tag(KeymapSearch.Filter.modified)
+                    Text("No shortcut").tag(KeymapSearch.Filter.unbound)
+                }
+                .pickerStyle(.segmented)
+                HStack {
+                    if recordingSearch {
+                        Text("Press the keys to look up").foregroundStyle(theme.muted)
+                        Spacer()
+                        ChordRecorder { chord in
+                            recordingSearch = false
+                            pressed = chord
                         }
-                        .swipeActions {
-                            Button("Reset") { app.keyBindings.reset(command.id) }
-                            Button("Clear", role: .destructive) { error = app.keyBindings.set(command.id, nil) }
+                        .frame(width: 170, height: 30)
+                    } else if let pressed {
+                        Text("Bound to").foregroundStyle(theme.muted)
+                        Keycaps(pressed)
+                        Spacer()
+                        Button("Clear") { self.pressed = nil }
+                    } else {
+                        Button("Find by pressing keys", systemImage: "keyboard") { recordingSearch = true }
+                    }
+                }
+            } footer: {
+                Text("With a trackpad or mouse, the pane under the pointer takes the keyboard. A shortcut needs ⌃, ⌥ or ⌘; a two-key shortcut’s second key may be bare.")
+            }
+            if let problem {
+                Section {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label(problem.message, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(theme.danger)
+                        HStack {
+                            if let holder = problem.holder {
+                                Button("Use it for \(CommandCatalog.label(problem.id)) instead of \(CommandCatalog.label(holder))") { takeOver(problem) }
+                                    .buttonStyle(.borderedProminent)
+                                    .tint(theme.accentStrong)
+                            }
+                            Button("Cancel") { self.problem = nil }.buttonStyle(.bordered)
+                        }
+                        .controlSize(.small)
+                    }
+                }
+            }
+            ForEach([CommandGroup.navigate, .session, .workspace], id: \.self) { group in
+                let rows = commands.filter { $0.group == group }
+                if !rows.isEmpty {
+                    Section(group.rawValue) {
+                        ForEach(rows) { command in
+                            ShortcutRow(command: command, app: app, recording: $recording) { chord in record(command.id, chord) }
                         }
                     }
                 }
             }
+            if commands.isEmpty {
+                Text(pressed != nil ? "Nothing is bound to those keys." : "No command matches.").foregroundStyle(theme.muted)
+            }
             Section {
                 Button("Reset every shortcut", role: .destructive) { confirmReset = true }
-            } footer: {
-                Text("A shortcut needs ⌘, ⌃ or ⌥, and never takes a key a text box or the terminal needs.")
+                    .disabled(app.keyBindings.modified.isEmpty)
             }
         }
-        .searchable(text: $query)
+        .searchable(text: $query, prompt: "Name, group or keys, like “ctrl shift p”")
         .onChange(of: app.keyBindings) { _, _ in UIMenuSystem.main.setNeedsRebuild() }
         .confirmationDialog("Reset every shortcut to its default?", isPresented: $confirmReset, titleVisibility: .visible) {
             Button("Reset all", role: .destructive) { app.keyBindings.resetAll() }
         }
     }
 
-    private func matches(_ c: Command) -> Bool {
-        query.isEmpty || c.label.localizedCaseInsensitiveContains(query) || c.terms.contains { $0.localizedCaseInsensitiveContains(query) }
+    /// A recorder finished: replace the shortcut being changed, or add one.
+    private func record(_ id: CommandID, _ chord: Chord?) {
+        let replacing = recording?.replacing
+        recording = nil
+        problem = nil
+        guard let chord else { return }
+        var bindings = app.keyBindings
+        if let replacing { bindings.remove(id, replacing) }
+        if let error = bindings.set(id, chord, adding: true) {
+            problem = Problem(id: id, chord: chord, replacing: replacing, message: error, holder: bindings.conflict(id, chord))
+        } else {
+            app.keyBindings = bindings
+        }
+    }
+
+    private func takeOver(_ problem: Problem) {
+        var bindings = app.keyBindings
+        if let replacing = problem.replacing { bindings.remove(problem.id, replacing) }
+        if bindings.set(problem.id, problem.chord, adding: true, takingOver: true) == nil { app.keyBindings = bindings }
+        self.problem = nil
     }
 }
 
-/// Captures the next chord from a hardware keyboard (Escape cancels).
+private struct ShortcutRow: View {
+    let command: Command
+    @Bindable var app: AppModel
+    @Binding var recording: ShortcutsSection.Recording?
+    let finished: (Chord?) -> Void
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        let id = command.id
+        let chords = app.keyBindings.chords(id)
+        let changed = app.keyBindings.isOverridden(id)
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: CommandCatalog.icon(id)).frame(width: 22).foregroundStyle(theme.muted)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(command.label)
+                    if changed {
+                        Circle().fill(theme.accent).frame(width: 6, height: 6).accessibilityLabel("Changed")
+                    }
+                }
+                Text(command.detail).font(.caption).foregroundStyle(theme.muted).lineLimit(2)
+                Text(CommandCatalog.whenLabel(id)).font(.caption2).foregroundStyle(theme.faint)
+            }
+            Spacer(minLength: 8)
+            if recording?.id == id {
+                ChordRecorder(done: finished).frame(width: 170, height: 30)
+            } else {
+                HStack(spacing: 6) {
+                    ForEach(Array(chords.enumerated()), id: \.offset) { _, chord in
+                        Menu {
+                            Button("Change…", systemImage: "keyboard") { recording = ShortcutsSection.Recording(id: id, replacing: chord) }
+                            Button("Remove", systemImage: "minus.circle", role: .destructive) { app.keyBindings.remove(id, chord) }
+                        } label: {
+                            Keycaps(chord)
+                        }
+                        .accessibilityLabel("\(chord.formatted()), change or remove")
+                    }
+                    Button {
+                        recording = ShortcutsSection.Recording(id: id, replacing: nil)
+                    } label: {
+                        Image(systemName: chords.isEmpty ? "plus.circle" : "plus")
+                    }
+                    .accessibilityLabel(chords.isEmpty ? "Add a shortcut" : "Add another shortcut")
+                    if changed {
+                        Button {
+                            app.keyBindings.reset(id)
+                        } label: {
+                            Image(systemName: "arrow.uturn.backward")
+                        }
+                        .accessibilityLabel("Reset to the default")
+                    }
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// Captures a shortcut from a hardware keyboard: one chord, or a second key right after
+/// for a two-key chord. Return keeps what's shown, Escape cancels, and a single chord is
+/// kept after a short pause.
 struct ChordRecorder: UIViewRepresentable {
     let done: (Chord?) -> Void
 
@@ -338,6 +464,8 @@ struct ChordRecorder: UIViewRepresentable {
 
     final class RecorderView: UILabel {
         var done: (Chord?) -> Void = { _ in }
+        private var first: Chord?
+        private var settle: Task<Void, Never>?
 
         override init(frame: CGRect) {
             super.init(frame: frame)
@@ -355,15 +483,39 @@ struct ChordRecorder: UIViewRepresentable {
 
         override var canBecomeFirstResponder: Bool { true }
 
+        private func finish(_ chord: Chord?) {
+            settle?.cancel()
+            settle = nil
+            first = nil
+            done(chord)
+        }
+
         override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
             guard let key = presses.first?.key else { return super.pressesBegan(presses, with: event) }
             let press = KeyPress(key)
             if KeyPress.modifierUsages.contains(press.hidUsage) { return }
-            if press.key == "Escape" && press.modifiers.isEmpty {
-                done(nil)
+            let bare = press.modifiers.isEmpty
+            if press.key == "Escape" && bare {
+                finish(nil)
                 return
             }
-            done(press.chord)
+            if press.key == "Enter" && bare, let first {
+                finish(first)
+                return
+            }
+            guard let chord = press.chord else { return }
+            if let first {
+                finish(first.followed(by: chord))
+                return
+            }
+            first = chord
+            text = chord.formatted() + " …"
+            accessibilityValue = chord.formatted()
+            settle = Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(1400))
+                guard !Task.isCancelled, let self, let first = self.first else { return }
+                self.finish(first)
+            }
         }
     }
 }

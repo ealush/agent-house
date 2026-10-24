@@ -193,18 +193,24 @@ final class TerminalController: NSObject, TerminalViewDelegate {
 final class AppTerminalView: TerminalView {
     weak var controller: TerminalController?
     weak var scene: SceneModel?
+    /// The session this terminal shows, for the window's focus bookkeeping.
+    var sessionKey: String?
     var sticky: StickyModifiers?
     private var panRemainder: CGFloat = 0
 
     override func becomeFirstResponder() -> Bool {
         let became = super.becomeFirstResponder()
-        if became { scene?.keyScope = .terminal }
+        if became {
+            scene?.keyScope = .terminal
+            if let sessionKey { scene?.didFocus(.terminal(sessionKey)) }
+        }
         return became
     }
 
     override func resignFirstResponder() -> Bool {
         let resigned = super.resignFirstResponder()
         if resigned, scene?.keyScope == .terminal { scene?.keyScope = .app }
+        if resigned, let sessionKey { scene?.didBlur(.terminal(sessionKey)) }
         return resigned
     }
 
@@ -281,6 +287,7 @@ struct TerminalViewRepresentable: UIViewRepresentable {
     func makeUIView(context: Context) -> AppTerminalView {
         let view = controller.view
         view.scene = scene
+        view.sessionKey = sessionKey
         view.sticky = sticky
         view.installTouchScrolling()
         return view

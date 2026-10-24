@@ -240,3 +240,37 @@ private func windowWithoutHost() throws -> SceneModel {
     await scene.tapPane(scene.workspace.focusPath!)
     #expect(scene.focusRequest?.target == .chooser([.first, .second]))
 }
+
+@Test func panesTravelAsDragTextAndBadTextIsRefused() {
+    #expect(LayoutNode.encode([.first, .second]) == "pane:f.s")
+    #expect(LayoutNode.decodePath("pane:f.s") == [.first, .second])
+    #expect(LayoutNode.decodePath("pane:") == [])
+    #expect(LayoutNode.decodePath("pane:x") == nil)
+    #expect(LayoutNode.decodePath("abc123") == nil, "a session key isn't a pane")
+}
+
+@MainActor
+@Test func droppingOnPanesSplitsSwapsAndCarriesTheKeyboard() throws {
+    let scene = try windowWithoutHost()
+    scene.open("a")
+    // A sidebar session dropped on the single view's right edge splits beside it.
+    scene.dropText("b", onto: nil, where: .right)
+    #expect(scene.workspace.layout?.keys == ["a", "b"])
+    #expect(scene.focusRequest?.target == .composer("b"))
+    // Dropping the left pane on the right one's center swaps them.
+    scene.dropText(LayoutNode.encode([.first]), onto: [.second], where: .center)
+    #expect(scene.workspace.layout?.keys == ["b", "a"])
+    // A new session dropped on a pane's bottom edge splits it.
+    scene.dropText("c", onto: [.first], where: .bottom)
+    #expect(scene.workspace.layout?.keys == ["b", "c", "a"])
+    #expect(scene.workspace.focusedKey == "c")
+    // An empty pane picks a session, or cancels and closes.
+    scene.workspace.split(.horizontal)
+    let chooser = scene.workspace.focusPath!
+    scene.fillPane(chooser, with: "d")
+    #expect(scene.workspace.focusedKey == "d")
+    #expect(scene.focusRequest?.target == .composer("d"))
+    scene.workspace.split(.vertical)
+    scene.cancelChooser(scene.workspace.focusPath!)
+    #expect(scene.workspace.layout?.keys.contains { LayoutNode.isPick($0) } == false)
+}

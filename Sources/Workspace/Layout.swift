@@ -75,6 +75,26 @@ indirect enum LayoutNode: Hashable, Codable, Sendable {
         return rest.isEmpty ? nil : rest
     }
 
+    // MARK: Dragging a pane
+
+    /// A pane as drag-and-drop text: "pane:" and its path (f/s steps), or "pane:" for the root.
+    static let panePrefix = "pane:"
+    static func encode(_ path: Path) -> String { panePrefix + path.map { $0 == .first ? "f" : "s" }.joined(separator: ".") }
+    static func decodePath(_ text: String) -> Path? {
+        guard text.hasPrefix(panePrefix) else { return nil }
+        let rest = text.dropFirst(panePrefix.count)
+        if rest.isEmpty { return [] }
+        var path: Path = []
+        for step in rest.split(separator: ".") {
+            switch step {
+            case "f": path.append(.first)
+            case "s": path.append(.second)
+            default: return nil
+            }
+        }
+        return path
+    }
+
     // MARK: Reading
 
     struct Leaf: Hashable, Sendable {

@@ -7,7 +7,7 @@ Environment, 24 October 2026: Arch Linux, official Swift 6.2 toolchain in `~/.ca
 | Check | Invocation | Result (24 October 2026) |
 | --- | --- | --- |
 | Workspace, links, plists, provenance, 89-command rows | `./scripts/verify.sh --static` | PASS |
-| Unit tests (all non-UI sources) | `swift test` (here: `swiftw test`) | PASS — 126 tests in 3 suites |
+| Unit tests (all non-UI sources) | `swift test` (here: `swiftw test`) | PASS — 128 tests in 3 suites |
 | Integration against a disposable `ah` | `AH_SOURCE=<ah checkout with native branches> ./scripts/integration.sh` | PASS — 18 tests in 3 suites |
 | Backend suite on `native/1-device-auth` + `native/2-apns` | `npm test`, `npx tsc --noEmit` in `ah` | PASS — 552/552, typecheck clean |
 | UI layer syntax | `swiftc -frontend -parse` on `Sources/Features`, `Sources/Platform`, `App`, `Tests/UI` | PASS (syntax only; not type-checked) |
@@ -39,7 +39,7 @@ Environment, 24 October 2026: Arch Linux, official Swift 6.2 toolchain in `~/.ca
 1. On a Mac: `brew install xcodegen && ./scripts/verify.sh` — expect compile fixes in the UI layer, which has never been type-checked.
 2. Simulator: pairing UI test, then setup → Inbox → session → terminal against a host running the native branches (Debug simulator builds may use a loopback host).
 3. Signed device: Secure Enclave enrollment and Face ID sign-in, APNs delivery/actions/badge, background and relaunch.
-4. iPad with keyboard and trackpad: all 89 commands, pane mode, which-key, Stage Manager sizes, two windows.
+4. iPad with keyboard and trackpad: all 89 commands plus the 13 native ones, pane mode, which-key and two-key chords, Stage Manager sizes (including the one-pane-at-a-time fallback), two windows. Walk WORKSPACE-SPEC §7 without the mouse, then check hover focus, pane and divider drags, pane menus and that the keyboard returns after every sheet.
 5. A disposable GitHub stack: review → request fixes → re-review → exact-head merge.
 6. Accessibility pass (VoiceOver, Dynamic Type, Reduce Motion) and performance on large transcripts.
 

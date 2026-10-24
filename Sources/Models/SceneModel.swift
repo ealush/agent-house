@@ -890,6 +890,43 @@ final class SceneModel {
         scheduleSave()
     }
 
+    // MARK: Panes by pointer
+
+    /// Something dropped on a pane (nil: the single view): a session from the sidebar, or
+    /// another pane by its encoded path. An edge splits beside it; the center replaces the
+    /// pane's session, or swaps two panes.
+    func dropText(_ text: String, onto path: LayoutNode.Path?, where zone: LayoutNode.Drop) {
+        following {
+            if let from = LayoutNode.decodePath(text) {
+                guard let path else { return }
+                workspace.dropPane(from: from, to: path, where: zone)
+            } else if !text.isEmpty {
+                workspace.drop(text, onto: path, where: zone)
+            }
+            syncRouteToWorkspace()
+        }
+        suppressHover()
+        pruneSessions()
+        scheduleSave()
+    }
+
+    /// An empty pane picked a session.
+    func fillPane(_ path: LayoutNode.Path, with key: String) {
+        following { workspace.fill(path, with: key) }
+        pruneSessions()
+        scheduleSave()
+    }
+
+    /// An empty pane cancelled: what it replaced comes back, or it closes.
+    func cancelChooser(_ path: LayoutNode.Path) {
+        following {
+            workspace.cancelChooser(path)
+            syncRouteToWorkspace()
+        }
+        pruneSessions()
+        scheduleSave()
+    }
+
     // MARK: Palette
 
     /// Live palette branches for what's on screen now (`palette.ts` providers).

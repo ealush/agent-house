@@ -184,6 +184,8 @@ struct SessionListView: View {
     var selection: String?
     @Environment(\.theme) private var theme
     @State private var savedGroups: [String] = []
+    /// "Focus the session list" (⌃⇧0) puts the keyboard here.
+    @FocusState private var listFocused: Bool
 
     var body: some View {
         let sections = SessionOrdering.sections(hub.rows, multiHost: hub.multiHost, saved: savedGroups)
@@ -213,6 +215,8 @@ struct SessionListView: View {
         }
         .listStyle(.sidebar)
         .refreshable { hub.resync() }
+        .focused($listFocused)
+        .onChange(of: scene.focusRequest) { _, request in if request?.target == .sidebar { listFocused = true } }
     }
 
     @ViewBuilder

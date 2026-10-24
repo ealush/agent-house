@@ -9,6 +9,8 @@ struct SessionScreen: View {
     /// In an iPad pane: the pane is focused (its border, and where keys go).
     var paneFocused = true
     var compactHeader = false
+    /// Where this session sits in a split (nil: the single view or a phone).
+    var pane: LayoutNode.Path? = nil
     @Environment(\.theme) private var theme
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var panelWidth: CGFloat = 380
@@ -18,7 +20,7 @@ struct SessionScreen: View {
     var body: some View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
-                SessionHeader(session: session, scene: scene, compact: compactHeader)
+                SessionHeader(session: session, scene: scene, compact: compactHeader, pane: pane, paneFocused: paneFocused)
                 if let history = session.history, !session.isLive {
                     EndedBanner(session: session, scene: scene, item: history)
                 }
@@ -80,6 +82,8 @@ private struct SessionHeader: View {
     @Bindable var session: SessionModel
     let scene: SceneModel
     var compact: Bool
+    var pane: LayoutNode.Path?
+    var paneFocused = true
     @Environment(\.theme) private var theme
     @FocusState private var renameFocused: Bool
 
@@ -87,6 +91,7 @@ private struct SessionHeader: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 AgentMark(agent: session.row?.dto.agent ?? (session.isShell ? nil : session.history?.dto.harness), size: 24)
+                    .modifier(PaneDragHandle(pane: pane))
                 if session.renaming != nil {
                     TextField("Name", text: Binding(get: { session.renaming ?? "" }, set: { session.renaming = $0 }))
                         .font(.headline)
@@ -115,6 +120,14 @@ private struct SessionHeader: View {
                     .frame(width: 96)
                 }
                 PanelsMenu(session: session)
+                if !scene.narrow {
+                    Menu {
+                        PaneMenuItems(scene: scene, path: pane)
+                    } label: {
+                        Image(systemName: pane == nil ? "rectangle.split.2x1" : "rectangle.split.2x2")
+                    }
+                    .accessibilityLabel(pane == nil ? "Split" : "Pane")
+                }
                 SessionMenu(session: session, scene: scene)
             }
             if !compact, let row = session.row {
@@ -138,6 +151,24 @@ private struct SessionHeader: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(.bar)
+        .opacity(pane == nil || paneFocused ? 1 : 0.72)
+        .contextMenu {
+            if !scene.narrow { PaneMenuItems(scene: scene, path: pane) }
+        }
+    }
+}
+
+/// In a split, a session's mark drags its pane onto another (an edge splits beside it,
+/// the center swaps them).
+private struct PaneDragHandle: ViewModifier {
+    let pane: LayoutNode.Path?
+
+    func body(content: Content) -> some View {
+        if let pane {
+            content.draggable(LayoutNode.encode(pane)).accessibilityHint("Drag onto another pane to move it")
+        } else {
+            content
+        }
     }
 }
 
