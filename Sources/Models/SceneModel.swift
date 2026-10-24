@@ -495,6 +495,7 @@ final class SceneModel {
 
     func didEnterBackground() {
         scheduleSave(now: true)
+        hub?.saveCache(force: true)
         for model in sessions.values { Task { await model.background() } }
     }
 

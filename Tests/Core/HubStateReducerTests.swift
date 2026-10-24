@@ -148,3 +148,28 @@ func invalidBaselineOrPatchCannotRemainActionable(_ payload: String) throws {
     #expect(updates == 2)
     #expect(reducer.state?.windows.isEmpty == true)
 }
+
+@Test func theStateRoundTripsThroughTheSealedCacheEncoding() throws {
+    let json = Data(#"{"api":28,"hostname":"desk","windows":[{"id":"%1","uid":"u1","name":"fix","statusSource":"hook","project":"ah","projectPath":"/p/ah","status":"waiting","ask":{"kind":"tool","text":"Run tests?"},"fork":{"parentUid":"u0","parentTitle":"root","rootUid":"u0","forks":1}}],"history":[{"ref":"claude:1","kind":"ended","harness":"claude","title":"old","cwd":"/p/ah","project":"ah","at":5}]}"#.utf8)
+    let state = try JSONDecoder().decode(HubStateDTO.self, from: json)
+    let again = try JSONDecoder().decode(HubStateDTO.self, from: JSONEncoder().encode(state))
+    #expect(again == state)
+}
+
+@MainActor
+@Test func aColdStartPaintsLastTimesListUntilTheHostAnswers() throws {
+    let json = Data(#"{"api":28,"hostname":"desk","windows":[{"id":"%1","uid":"u1","name":"fix","statusSource":"hook","project":"ah","projectPath":"/p/ah","status":"idle"}]}"#.utf8)
+    let state = try JSONDecoder().decode(HubStateDTO.self, from: json)
+    let hub = HubStore(api: APIClient(origin: URL(string: "https://desk.example.ts.net")!, transport: URLSessionTransport(), credentials: AccountCredentials(token: nil, onRejected: {}), device: DeviceDescriptor(name: "iPad", client: "c")))
+    var stored: [HubStateDTO] = []
+    hub.useCache(HubStore.StateCache(load: { state }, store: { stored.append($0) }))
+    #expect(hub.showingCached)
+    #expect(hub.rows.map(\.key) == ["u1"])
+    #expect(hub.hostname == "desk")
+    #expect(hub.phase == .connecting, "still says it's connecting")
+    hub.saveCache(state, now: Date())
+    hub.saveCache(state, now: Date().addingTimeInterval(1))
+    #expect(stored.count == 1, "at most every \(HubStore.cacheInterval) s")
+    hub.saveCache(state, force: true)
+    #expect(stored.count == 2)
+}

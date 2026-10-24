@@ -6,7 +6,7 @@ Last reconciled: **24 October 2026**. This is the completion companion to [SPEC.
 
 Statuses: `unstarted`, `implemented` (code exists; its stated evidence is all that ran), `verified` (the named test/platform ran and passed), `blocked` (needs something this machine or session can't provide), `substituted` (a web/host mechanism replaced by a native one, or deliberately kept on the host). `[x]` marks verified rows only.
 
-**Current outcome:** every P0/P1 capability has native code. The non-UI core (protocol, auth, streams, models, keyboard routing, workspace, persistence, review logic) is compiled and tested on Linux: **128 unit tests** and **18 integration tests against a disposable `ah`** with real tmux and fake agents. The UIKit/SwiftUI layer is written but has **never been compiled** (no Xcode or iOS SDK here), so no screen, device, APNs delivery or hardware-keyboard behavior is verified. **No implementation-phase exit gate is closed**; G-0 needs one Apple build and run.
+**Current outcome:** every P0/P1 capability has native code. The non-UI core (protocol, auth, streams, models, keyboard routing, workspace, persistence, review logic) is compiled and tested on Linux: **130 unit tests** and **18 integration tests against a disposable `ah`** with real tmux and fake agents. The UIKit/SwiftUI layer is written but has **never been compiled** (no Xcode or iOS SDK here), so no screen, device, APNs delivery or hardware-keyboard behavior is verified. **No implementation-phase exit gate is closed**; G-0 needs one Apple build and run.
 
 Evidence shorthand used below: **UT** = `swift test` (Linux, Swift 6.2); **IT** = `scripts/integration.sh` (Linux, disposable `ah` on branches `native/1-device-auth` + `native/2-apns`); **UI** = SwiftUI/UIKit source, syntax-checked only.
 
@@ -45,7 +45,7 @@ Evidence shorthand used below: **UT** = `swift test` (Linux, Swift 6.2); **IT** 
 | [ ] | P0-04 rich GUI | Feed IT-verified with the Claude adapter; other adapters rely on the same server-normalized feed. |
 | [ ] | P0-05 composer/queue/drafts | IT-verified (B-09); keyboard behavior UI-only. |
 | [ ] | P0-06 terminal | IT-verified through SwiftTerm on Linux; iOS input/IME unverified. |
-| [ ] | P0-07 identity, deep links, presence, cache, restoration | IT-verified; Handoff and session-list cache not built. |
+| [ ] | P0-07 identity, deep links, presence, cache, restoration | IT-verified, including the sealed session list; Handoff not built. |
 | [ ] | P0-08 APNs | Host side tested; device delivery blocked on signing (AP-01, AP-09). |
 | [ ] | P1-01 iPad workspace | Model UT/IT-verified; UIKit layout UI-only. |
 | [ ] | P1-02 all 89 commands | Handlers tested; hardware mapping unverified. |
@@ -129,7 +129,7 @@ Evidence shorthand used below: **UT** = `swift test` (Linux, Swift 6.2); **IT** 
 | F-059 | Agent asking: command, permission, edit diff, multi-choice form, unsupported picker fallback to Terminal | P1 | AskPanelView, ScreenChoicesView | implemented | [AUDIT.md:136](../../AUDIT.md#L136); terminal fallback; IT |
 | F-060 | Blank GUI and empty Inbox offer recent conversations | P1 | InboxView | implemented | [AUDIT.md:137](../../AUDIT.md#L137); recent conversations on empty; UI |
 | F-061 | Terminal scrollback as selectable text; selectable last screen when ended | P2 | ScrollbackSheet, EndedScreen | implemented | [AUDIT.md:138](../../AUDIT.md#L138); UI |
-| F-062 | Cache newest GUI page and session list encrypted per signed-in browser, fast first paint | P2 | SessionModel.FeedCache, SealedCache | implemented | [AUDIT.md:139](../../AUDIT.md#L139); IT theNewestTranscriptPageIsSealedAndPaintsBeforeTheStream; session-list cache not built |
+| F-062 | Cache newest GUI page and session list encrypted per signed-in browser, fast first paint | P2 | SessionModel.FeedCache, HubStore.useCache, SealedCache | implemented | [AUDIT.md:139](../../AUDIT.md#L139); IT theNewestTranscriptPageIsSealedAndPaintsBeforeTheStream (page and list, ciphertext at rest, cold start paints); UT aColdStartPaintsLastTimesListUntilTheHostAnswers |
 | F-063 | Inline GFM specialized GitHub rendering of descriptions/review threads | P2 | MarkdownView | implemented | [AUDIT.md:140](../../AUDIT.md#L140); PR descriptions, threads; UT |
 | F-064 | Cached scroll position, session recentness, keyboard focus/selection state across navigation | P0 | SceneSnapshot scroll/focus | implemented | [AUDIT.md:141](../../AUDIT.md#L141); IT aRelaunchedWindowReopensWhereItWas… |
 | F-065 | Split right and below; independent sessions in tiled panes | P1 | WorkspaceModel, WorkspaceView | implemented | [AUDIT.md:149](../../AUDIT.md#L149); UT LayoutTests/WorkspaceModelTests; IT hardwareKeysDriveTheWorkspace |

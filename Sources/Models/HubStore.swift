@@ -16,7 +16,19 @@ final class HubStore {
     /// The newest validated hub state seen this run, kept through a disconnect so the UI can
     /// say "as of …" instead of going blank.
     private(set) var lastUpdated: Date?
+    /// The hub's session list as it was last time, sealed for this sign-in: shown until the
+    /// host answers, so a cold launch isn't blank. Never used to decide what still exists.
+    private(set) var cachedState: HubStateDTO?
     var onSignedOut: (@MainActor () -> Void)?
+
+    struct StateCache {
+        let load: @MainActor () -> HubStateDTO?
+        let store: @MainActor (HubStateDTO) -> Void
+    }
+
+    @ObservationIgnored private var stateCache: StateCache?
+    @ObservationIgnored private var lastCached = Date.distantPast
+    static let cacheInterval: TimeInterval = 10
 
     @ObservationIgnored private var hubStream: StateStream?
     @ObservationIgnored private var hubTask: Task<Void, Never>?
@@ -77,7 +89,11 @@ final class HubStore {
 
     private func apply(hub update: StateUpdate) {
         hub = update
-        if update.state != nil { lastUpdated = Date() }
+        if let state = update.state {
+            lastUpdated = Date()
+            cachedState = nil
+            saveCache(state)
+        }
         if update.phase == .signedOut {
             onSignedOut?()
             return
@@ -115,19 +131,44 @@ final class HubStore {
         }
     }
 
+    // MARK: Sealed session list
+
+    /// The sign-in's cache is ready: paint last time's list now if the host hasn't answered.
+    func useCache(_ cache: StateCache) {
+        stateCache = cache
+        if let live = hub.state {
+            saveCache(live, force: true)
+        } else {
+            cachedState = cache.load()
+        }
+    }
+
+    /// Seal the newest state, at most every `cacheInterval` unless forced (backgrounding).
+    func saveCache(_ state: HubStateDTO? = nil, force: Bool = false, now: Date = Date()) {
+        guard let stateCache, let state = state ?? hub.state else { return }
+        guard force || now.timeIntervalSince(lastCached) >= Self.cacheInterval else { return }
+        lastCached = now
+        stateCache.store(state)
+    }
+
+    /// What the screens show: the live state, or last time's until it arrives.
+    var shownState: HubStateDTO? { hub.state ?? cachedState }
+    var showingCached: Bool { hub.state == nil && cachedState != nil }
+
     // MARK: Reading
 
-    var hostname: String? { hub.state?.hostname }
+    var hostname: String? { shownState?.hostname }
     var phase: ConnectionPhase { hub.phase }
-    var hosts: [HostDTO] { hub.state?.hosts ?? [] }
+    var hosts: [HostDTO] { shownState?.hosts ?? [] }
     var multiHost: Bool { hosts.count > 1 }
     var focus: FocusDTO? { hub.state?.focus }
-    var reviewAlerts: [ReviewStateDTO.Alert] { hub.state?.review?.alerts ?? [] }
-    var review: ReviewStateDTO? { hub.state?.review }
+    var reviewAlerts: [ReviewStateDTO.Alert] { shownState?.review?.alerts ?? [] }
+    var review: ReviewStateDTO? { shownState?.review }
 
-    /// Every live session across hosts, before optimistic hides.
+    /// Every live session across hosts, before optimistic hides (last time's on the hub
+    /// itself until it answers).
     private var allRows: [SessionRow] {
-        guard let local = hub.state else { return [] }
+        guard let local = shownState else { return [] }
         var rows = local.windows.map { SessionRow(key: $0.uid, host: local.hostname, isLocal: true, dto: $0) }
         for host in hosts where !host.isSelf {
             guard let state = peers[host.name]?.state else { continue }
@@ -142,7 +183,7 @@ final class HubStore {
     }
 
     var history: [HistoryRow] {
-        guard let local = hub.state else { return [] }
+        guard let local = shownState else { return [] }
         var rows = local.history.map { HistoryRow(host: local.hostname, isLocal: true, dto: $0) }
         for host in hosts where !host.isSelf {
             guard let state = peers[host.name]?.state else { continue }
@@ -170,7 +211,7 @@ final class HubStore {
     }
 
     func presets(host: String?) -> [PresetDTO] {
-        guard let host, host != hostname else { return hub.state?.presets ?? [] }
+        guard let host, host != hostname else { return shownState?.presets ?? [] }
         return peers[host]?.state?.presets ?? []
     }
 

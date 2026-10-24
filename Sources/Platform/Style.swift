@@ -238,10 +238,14 @@ struct Banner: View {
 struct ConnectionBanner: View {
     let phase: ConnectionPhase
     let lastUpdated: Date?
+    /// Showing last time's sealed list until the host answers.
+    var cached = false
     let retry: () -> Void
 
     var body: some View {
         switch phase {
+        case .connecting where cached:
+            Banner(text: "Connecting… These are your sessions from last time.", tone: .info)
         case .live, .connecting, .signedOut:
             EmptyView()
         case .polling:

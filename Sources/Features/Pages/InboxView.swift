@@ -11,7 +11,7 @@ struct InboxView: View {
         let inbox = hub.inbox(narrow: scene.narrow)
         List {
             Section {
-                ConnectionBanner(phase: hub.phase, lastUpdated: hub.lastUpdated) { hub.resync() }
+                ConnectionBanner(phase: hub.phase, lastUpdated: hub.lastUpdated, cached: hub.showingCached) { hub.resync() }
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
             } header: {
@@ -190,7 +190,7 @@ struct SessionListView: View {
     var body: some View {
         let sections = SessionOrdering.sections(hub.rows, multiHost: hub.multiHost, saved: savedGroups)
         List(selection: Binding(get: { selection }, set: { if let key = $0 { scene.open(key) } })) {
-            ConnectionBanner(phase: hub.phase, lastUpdated: hub.lastUpdated) { hub.resync() }
+            ConnectionBanner(phase: hub.phase, lastUpdated: hub.lastUpdated, cached: hub.showingCached) { hub.resync() }
                 .listRowBackground(Color.clear)
             ForEach(sections) { section in
                 Section(section.id) {

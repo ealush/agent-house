@@ -174,6 +174,10 @@ final class AccountSession: Identifiable {
     private func loadCacheKey() async {
         guard let server = try? await api.cacheKey(), let device = try? services.vault.deviceCacheKey() else { return }
         cacheKey = SealedCache.key(device: device, server: server, origin: origin)
+        hub.useCache(HubStore.StateCache(
+            load: { [weak self] in self?.cached(HubStateDTO.self, kind: .state, key: "hub") },
+            store: { [weak self] state in self?.cache(state, kind: .state, key: "hub") }
+        ))
     }
 
     /// Seal for this sign-in, or nothing when there is no key.

@@ -2,8 +2,8 @@ import Foundation
 
 /// API 28 state (`../ah/server/core.ts` State), pinned in SOURCE.json. Fields an older
 /// server may omit get the defaults `web/api.ts normalize()` gives them. These values
-/// stay in memory; the scene journal never stores them.
-struct HubStateDTO: Decodable, Equatable, Sendable {
+/// stay in memory or in the sealed cache; the scene journal never stores them.
+struct HubStateDTO: Codable, Equatable, Sendable {
     static let supportedAPIVersion = 28
 
     var api: Int
@@ -106,7 +106,7 @@ struct OmarchyStampDTO: Codable, Equatable, Sendable {
     let font: String?
 }
 
-struct SessionDTO: Decodable, Equatable, Sendable {
+struct SessionDTO: Codable, Equatable, Sendable {
     /// Transient tmux address; never use this as the navigation identity.
     let id: String
     let uid: String

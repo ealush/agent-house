@@ -100,6 +100,17 @@ struct ModelIntegrationTests {
         let raw = try await app.services.database.pool.read { db in try Data.fetchAll(db, sql: "SELECT sealed FROM cacheEntry WHERE kind = 'feed'") }
         #expect(!raw.isEmpty && raw.allSatisfy { !String(decoding: $0, as: UTF8.self).contains("harness") })
 
+        // The session list is sealed too, and a cold start paints it before the host answers.
+        account.hub.saveCache(force: true)
+        let list = try #require(account.cached(HubStateDTO.self, kind: .state, key: "hub"))
+        #expect(list.windows.contains { $0.uid == agent.uid })
+        let lists = try await app.services.database.pool.read { db in try Data.fetchAll(db, sql: "SELECT sealed FROM cacheEntry WHERE kind = 'state'") }
+        #expect(!lists.isEmpty && lists.allSatisfy { !String(decoding: $0, as: UTF8.self).contains("cache-agent") })
+        let cold = HubStore(api: account.api)
+        cold.useCache(HubStore.StateCache(load: { account.cached(HubStateDTO.self, kind: .state, key: "hub") }, store: { _ in }))
+        #expect(cold.showingCached)
+        #expect(cold.row(agent.uid)?.title == account.hub.row(agent.uid)?.title)
+
         // Another window opening the session paints the cached page before its own stream answers.
         let later = SceneModel(sceneID: "cache-window-2", app: app)
         later.useAccount(account.origin)
