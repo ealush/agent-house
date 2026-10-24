@@ -806,13 +806,15 @@ struct LaunchPickerSheet: View {
         } label: {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                    if let detail, !detail.isEmpty { Text(detail).font(.caption).foregroundStyle(.secondary) }
+                    Text(setting == .effort ? title.capitalized : title).foregroundStyle(Color(uiColor: .label))
+                    if let detail, !detail.isEmpty { Text(detail).font(.caption).foregroundStyle(Color(uiColor: .secondaryLabel)) }
                 }
                 Spacer()
-                if current { Image(systemName: "checkmark") }
+                if current { Image(systemName: "checkmark").fontWeight(.semibold).foregroundStyle(.tint) }
             }
+            .contentShape(Rectangle())
         }
+        .accessibilityAddTraits(current ? .isSelected : [])
     }
 }
 

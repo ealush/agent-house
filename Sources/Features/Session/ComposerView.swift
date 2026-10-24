@@ -181,44 +181,55 @@ struct LaunchChips: View {
         if let preset = launch.preset {
             HStack(spacing: 6) {
                 if !(preset.models ?? []).isEmpty || preset.modelArgs != nil || preset.settingsCommands?.model != nil {
-                    chip("Model", launch.modelLabel ?? "Default") { scene.sheet = .modelPicker(session.key) }
+                    chip("Model", "cpu", launch.modelLabel ?? "Default") { scene.sheet = .modelPicker(session.key) }
                 }
                 if !launch.levels.isEmpty || preset.settingsCommands?.effort != nil {
-                    chip("Effort", launch.effort.map { $0.prefix(1).uppercased() + $0.dropFirst() } ?? "Default") { scene.sheet = .effortPicker(session.key) }
+                    chip("Effort", "gauge.with.dots.needle.50percent", launch.effort.map(\.capitalized) ?? "Default") { scene.sheet = .effortPicker(session.key) }
                 }
                 if let modes = preset.modes, modes.count > 1 {
+                    let current = launch.mode ?? modes.first { $0.id == "default" }
                     Menu {
-                        ForEach(modes, id: \.id) { mode in
-                            Button {
-                                scene.applyPlan(session.planMode(mode.id))
-                            } label: {
-                                if mode.id == launch.mode?.id { Label((mode.dangerous == true ? "⚠ " : "") + mode.name, systemImage: "checkmark") }
-                                else { Text((mode.dangerous == true ? "⚠ " : "") + mode.name) }
+                        Picker("Permissions", selection: Binding(get: { current?.id ?? "default" }, set: { scene.applyPlan(session.planMode($0)) })) {
+                            ForEach(modes, id: \.id) { mode in
+                                Label(mode.name, systemImage: mode.dangerous == true ? "exclamationmark.shield" : Self.symbol(mode.id)).tag(mode.id)
                             }
                         }
-                        Text(launch.footer(.mode))
+                        Section { Text(launch.footer(.mode)) }
                     } label: {
-                        chipLabel("Permissions", launch.mode.map { $0.id == "default" ? "Default" : (($0.dangerous == true ? "⚠ " : "") + $0.name) } ?? "Default", danger: launch.mode?.dangerous == true)
+                        chipLabel("Permissions", current?.dangerous == true ? "exclamationmark.shield.fill" : "lock.shield", current?.name ?? "Default", danger: current?.dangerous == true)
                     }
+                    .menuOrder(.fixed)
                 }
             }
         }
     }
 
-    private func chip(_ name: String, _ value: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { chipLabel(name, value, danger: false) }.buttonStyle(.plain)
+    /// Permission modes by what they let the agent do.
+    private static func symbol(_ mode: String) -> String {
+        switch mode {
+        case "plan": return "list.bullet.clipboard"
+        case "accept-edits": return "pencil.and.list.clipboard"
+        case "auto": return "wand.and.stars"
+        default: return "hand.raised"
+        }
     }
 
-    private func chipLabel(_ name: String, _ value: String, danger: Bool) -> some View {
+    private func chip(_ name: String, _ symbol: String, _ value: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) { chipLabel(name, symbol, value, danger: false) }.buttonStyle(.plain)
+    }
+
+    private func chipLabel(_ name: String, _ symbol: String, _ value: String, danger: Bool) -> some View {
         HStack(spacing: 4) {
-            Text(name).foregroundStyle(theme.faint)
+            Image(systemName: symbol).foregroundStyle(danger ? theme.danger : theme.faint)
             Text(value).foregroundStyle(danger ? theme.danger : theme.text2).lineLimit(1)
         }
         .font(.caption)
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
         .background(theme.surface, in: Capsule())
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(name), \(value)")
+        .accessibilityAddTraits(.isButton)
     }
 }
 
