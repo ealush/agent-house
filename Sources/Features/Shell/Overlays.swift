@@ -147,9 +147,14 @@ struct PaletteView: View {
                     back()
                     return .handled
                 }
+                // A hardware Return is handled here, not left to onSubmit: once a field has a
+                // Return handler, a press it ignores doesn't reach submit.
                 .onKeyPress(.return, phases: .down) { press in
-                    guard press.modifiers.contains(.command), items.indices.contains(selection), case .openSession(let key) = items[selection].node.action else { return .ignored }
-                    scene.run(.openAsPane(key))
+                    if press.modifiers.contains(.command), items.indices.contains(selection), case .openSession(let key) = items[selection].node.action {
+                        scene.run(.openAsPane(key))
+                    } else {
+                        activate(items)
+                    }
                     return .handled
                 }
                 .accessibilityLabel("Command palette")
@@ -364,8 +369,8 @@ struct SwitcherView: View {
                     .onKeyPress(.downArrow) { if !all.isEmpty { selection = (selection + 1) % all.count }; return .handled }
                     .onKeyPress(.escape) { scene.switcher = nil; return .handled }
                     .onKeyPress(.return, phases: .down) { press in
-                        guard press.modifiers.contains(.command) || press.modifiers.contains(.control) else { return .ignored }
-                        choose(all, split: true)
+                        // Handled here for a hardware Return; onSubmit stays for the on-screen key.
+                        choose(all, split: press.modifiers.contains(.command) || press.modifiers.contains(.control))
                         return .handled
                     }
             }

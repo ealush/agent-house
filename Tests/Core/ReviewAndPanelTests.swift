@@ -136,3 +136,23 @@ private func stack(_ layers: [Layer]) -> ReviewStack {
     #expect(PreviewModel.port("70000") == nil)
     #expect(PreviewModel.port("vite") == nil)
 }
+
+private func tree(_ path: String, size: Double?, partial: Bool = false, at: Double, dirty: Int = 0, ahead: Int = 0, live: Bool = false, orphan: Bool = false) throws -> WorktreeInfo {
+    var object: [String: Any] = ["path": path, "branch": "ah/\(path)", "repo": "/code/web", "head": "abc", "dirty": dirty, "ahead": ahead,
+                                 "sizePartial": partial, "sizeTooLarge": false, "lastActivityAt": at, "live": live ? [["id": "u1", "name": "Fix"]] : [], "sessions": [], "orphan": orphan]
+    if let size { object["sizeBytes"] = size }
+    return try JSONDecoder().decode(WorktreeInfo.self, from: JSONSerialization.data(withJSONObject: object))
+}
+
+@Test func worktreesSortBySizeOrActivityAndCleanUpOnlyCleanOrphansByDefault() throws {
+    let a = try tree("a", size: 100, at: 3), b = try tree("b", size: nil, at: 9), c = try tree("c", size: 500, partial: true, at: 1), d = try tree("d", size: 300, at: 5)
+    #expect(WorktreesModel.sorted([a, b, c, d], bySize: true).map(\.path) == ["d", "a", "c", "b"], "unmeasured and partial sizes sort last, as on the web")
+    #expect(WorktreesModel.sorted([a, b, c, d], bySize: false).map(\.path) == ["b", "d", "a", "c"])
+
+    let trees = [try tree("clean", size: 10, at: 1, orphan: true), try tree("dirty", size: 20, at: 2, dirty: 2, orphan: true), try tree("used", size: 30, at: 3, live: true)]
+    let chosen = WorktreesModel.cleanupSelection(trees)
+    #expect(chosen == ["clean"], "a dirty orphan is listed but not chosen for you")
+    #expect(WorktreesModel.bytes(trees, in: chosen) == 10)
+    #expect(WorktreesModel.bytes(trees, in: ["clean", "dirty"]) == 30)
+    #expect(trees.filter(WorktreesModel.inUse).map(\.path) == ["used"])
+}

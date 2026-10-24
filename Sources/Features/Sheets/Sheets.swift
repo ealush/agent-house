@@ -15,7 +15,7 @@ struct SceneSheet: View {
         case .sendTo(let key): sessionSheet(key) { SendToSheet(scene: scene, session: $0) }
         case .continueIn(let key, let preset): sessionSheet(key) { ContinueInSheet(scene: scene, session: $0, preset: preset) }
         case .branch(let key): sessionSheet(key) { BranchSheet(scene: scene, session: $0) }
-        case .worktrees: if let hub = scene.hub { WorktreesView(model: WorktreesModel(api: hub.api)) }
+        case .worktrees: if let hub = scene.hub { WorktreesView(model: WorktreesModel(api: hub.api), scene: scene) }
         case .settings(let section): SettingsView(scene: scene, section: section.flatMap(SettingsSection.init(rawValue:)))
         case .confirmTerminate(let key): sessionSheet(key) { ConfirmTerminateSheet(scene: scene, session: $0) }
         case .confirmPlan(let key, let plan): sessionSheet(key) { ConfirmPlanSheet(scene: scene, session: $0, plan: plan) }
@@ -773,7 +773,9 @@ struct BranchSheet: View {
 
 struct WorktreesView: View {
     @State var model: WorktreesModel
-    @State private var forcing: Set<String> = []
+    let scene: SceneModel
+    @State private var removing: WorktreeInfo?
+    @State private var confirmingBulk = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
 
@@ -781,41 +783,175 @@ struct WorktreesView: View {
         NavigationStack {
             List {
                 if let error = model.error { Banner(text: error, tone: .error) }
-                ForEach(model.results, id: \.path) { r in
-                    Label("\(r.path): \(r.ok ? "removed" : (r.error ?? "kept"))", systemImage: r.ok ? "checkmark" : "xmark").font(.caption)
-                }
-                ForEach(model.trees) { tree in
-                    let inUse = WorktreesModel.inUse(tree)
-                    HStack(alignment: .top) {
-                        Image(systemName: model.selected.contains(tree.path) ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(inUse ? theme.faint : theme.brand)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(tree.branch).font(.callout.monospaced())
-                            Text("\(tree.repo) · \(WorktreesModel.size(tree.sizeBytes))").font(.caption).foregroundStyle(theme.muted)
-                            if inUse { Text("In use by \(tree.live.map(\.name).joined(separator: ", "))").font(.caption).foregroundStyle(theme.run) }
-                            if WorktreesModel.needsForce(tree) {
-                                Toggle("Remove anyway (\(tree.dirty) uncommitted, \(tree.ahead) unpushed)", isOn: Binding(get: { forcing.contains(tree.path) }, set: { on in if on { forcing.insert(tree.path) } else { forcing.remove(tree.path) } }))
-                                    .font(.caption).tint(theme.danger)
-                            }
+                if !model.results.isEmpty {
+                    Section("Just now") {
+                        ForEach(model.results, id: \.path) { r in
+                            Label((r.path as NSString).lastPathComponent + (r.ok ? " removed" : ": " + (r.error ?? "kept")), systemImage: r.ok ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .font(.callout)
+                                .foregroundStyle(r.ok ? theme.done : theme.danger)
                         }
                     }
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        guard !inUse else { return }
-                        if model.selected.contains(tree.path) { model.selected.remove(tree.path) } else { model.selected.insert(tree.path) }
+                }
+                let sections = model.sections
+                if model.trees.isEmpty && model.error == nil {
+                    ContentUnavailableView("No worktrees", systemImage: "square.on.square.dashed", description: Text("Start a session with “Its own worktree” to give an agent a branch and checkout of its own."))
+                }
+                if !sections.inUse.isEmpty {
+                    Section("In use") { ForEach(sections.inUse) { row($0) } }
+                }
+                if !sections.free.isEmpty {
+                    Section {
+                        ForEach(sections.free) { row($0) }
+                    } header: {
+                        Text("Not in use")
+                    } footer: {
+                        Text("Removing a worktree deletes its checkout; its branch is kept.")
                     }
                 }
             }
             .navigationTitle("Worktrees")
+            .navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .bottom, spacing: 0) { if model.cleaningUp { cleanupBar } }
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
-                ToolbarItem(placement: .destructiveAction) {
-                    Button("Remove \(model.selected.count)", role: .destructive) { Task { await model.removeSelected(forcing: forcing) } }
-                        .disabled(model.selected.isEmpty)
+                ToolbarItem(placement: .cancellationAction) {
+                    if model.cleaningUp { Button("Cancel") { model.endCleanup() } } else { Button("Done") { dismiss() } }
+                }
+                ToolbarItemGroup(placement: .primaryAction) {
+                    if !model.cleaningUp {
+                        Menu {
+                            Picker("Sort", selection: $model.bySize) {
+                                Label("Recently Active", systemImage: "clock").tag(false)
+                                Label("Largest", systemImage: "internaldrive").tag(true)
+                            }
+                        } label: {
+                            Image(systemName: "arrow.up.arrow.down")
+                        }
+                        .accessibilityLabel("Sort")
+                        Button("Clean Up…") { model.startCleanup() }
+                            .disabled(model.orphans.isEmpty)
+                    }
                 }
             }
-            .task { await model.load() }
+            .task { await model.watch() }
             .refreshable { await model.load() }
+            .confirmationDialog("Remove \(removing?.branch ?? "")?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible, presenting: removing) { tree in
+                Button("Remove Worktree", role: .destructive) { Task { await model.remove(tree, force: WorktreesModel.needsForce(tree)) } }
+            } message: { tree in
+                Text(removeMessage(tree))
+            }
+            .confirmationDialog("Remove \(model.selected.count) worktree\(model.selected.count == 1 ? "" : "s")?", isPresented: $confirmingBulk, titleVisibility: .visible) {
+                Button("Remove \(model.selected.count)", role: .destructive) {
+                    Task { await model.removeSelected(forcing: Set(model.trees.filter { model.selected.contains($0.path) && WorktreesModel.needsForce($0) }.map(\.path))) }
+                }
+            } message: {
+                Text("About \(WorktreesModel.size(model.selectedBytes)) comes back. Branches are kept. Each one is checked again first: one that came back into use or changed is skipped and reported.")
+            }
+        }
+    }
+
+    // MARK: Rows
+
+    private func row(_ tree: WorktreeInfo) -> some View {
+        let inUse = WorktreesModel.inUse(tree)
+        let chosen = model.selected.contains(tree.path)
+        return HStack(alignment: .top, spacing: 12) {
+            if model.cleaningUp && tree.orphan {
+                Image(systemName: chosen ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(chosen ? theme.accent : theme.faint)
+            } else {
+                Image(systemName: "arrow.triangle.branch").foregroundStyle(inUse ? theme.run : theme.muted).frame(width: 22).padding(.top, 2)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(tree.branch).font(.callout.monospaced()).lineLimit(1).truncationMode(.middle)
+                Text("\((tree.repo as NSString).lastPathComponent) · \(size(tree)) · \(age(tree))").font(.caption).foregroundStyle(theme.muted)
+                HStack(spacing: 6) {
+                    if tree.dirty > 0 { badge("\(tree.dirty) uncommitted", theme.limited) }
+                    if tree.ahead > 0 { badge("\(tree.ahead) unpushed", theme.limited) }
+                    if tree.orphan { badge("orphaned", theme.faint) }
+                    ForEach(tree.live, id: \.id) { live in
+                        Button { open(live.id) } label: {
+                            Label(live.name, systemImage: "arrow.up.right.square").font(.caption.weight(.semibold)).foregroundStyle(theme.run)
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .onTapGesture { if model.cleaningUp && tree.orphan { model.toggle(tree) } }
+        .swipeActions(edge: .trailing) {
+            if !inUse && !model.cleaningUp {
+                Button("Remove", systemImage: "trash", role: .destructive) { removing = tree }
+            }
+        }
+        .contextMenu {
+            Button("Open a Shell Here", systemImage: "terminal") { shell(tree) }
+            Button("Copy Path", systemImage: "doc.on.doc") { UIPasteboard.general.string = tree.path }
+            if !inUse {
+                Divider()
+                Button("Remove…", systemImage: "trash", role: .destructive) { removing = tree }
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var cleanupBar: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(model.selected.count) of \(model.orphans.count) orphaned chosen").font(.callout.weight(.semibold))
+                Text("\(WorktreesModel.size(model.selectedBytes)) to reclaim").font(.caption).foregroundStyle(theme.muted)
+            }
+            Spacer()
+            Button("Remove", role: .destructive) { confirmingBulk = true }
+                .buttonStyle(.borderedProminent)
+                .tint(theme.danger)
+                .disabled(model.selected.isEmpty)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
+    }
+
+    private func badge(_ text: String, _ color: Color) -> some View {
+        Text(text).font(.caption2.weight(.semibold)).foregroundStyle(color)
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(color.opacity(0.12), in: Capsule())
+    }
+
+    private func size(_ tree: WorktreeInfo) -> String {
+        if tree.sizeTooLarge { return "too large to measure" }
+        return WorktreesModel.size(tree.sizeBytes) + (tree.sizePartial ? "+" : "")
+    }
+
+    private func age(_ tree: WorktreeInfo) -> String {
+        let at = Date(timeIntervalSince1970: tree.lastActivityAt / (tree.lastActivityAt > 1e11 ? 1000 : 1))
+        return at.formatted(.relative(presentation: .named, unitsStyle: .abbreviated))
+    }
+
+    private func removeMessage(_ tree: WorktreeInfo) -> String {
+        var parts: [String] = []
+        if tree.dirty > 0 { parts.append("\(tree.dirty) uncommitted change\(tree.dirty == 1 ? "" : "s") will be deleted.") }
+        if tree.ahead > 0 { parts.append("\(tree.ahead) commit\(tree.ahead == 1 ? " isn’t" : "s aren’t") pushed anywhere; they stay on the branch.") }
+        parts.append("The checkout is removed; the branch is kept.")
+        return parts.joined(separator: " ")
+    }
+
+    // MARK: Actions
+
+    private func open(_ key: String) {
+        dismiss()
+        scene.sheet = nil
+        scene.open(key)
+    }
+
+    private func shell(_ tree: WorktreeInfo) {
+        Task {
+            let request = NewSessionRequest(preset: "shell", cwd: tree.path, session: scene.hub?.hub.state?.defaultSession ?? "", label: tree.branch)
+            if await scene.start(request) != nil { scene.sheet = nil }
         }
     }
 }

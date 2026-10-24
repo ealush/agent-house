@@ -549,11 +549,76 @@ final class WorktreesModel {
         do {
             results = try await api.removeWorktrees(paths, force: paths.filter { forcing.contains($0) })
             selected = []
+            cleaningUp = false
             await load()
         } catch {
             self.error = APIError.wrap(error).message
         }
     }
+
+    /// Refreshes while shown: sizes are measured in the background and arrive later, and
+    /// sessions come and go (the web polls every 2 s too).
+    func watch(every interval: Duration = .seconds(2)) async {
+        while !Task.isCancelled {
+            await load()
+            try? await Task.sleep(for: interval)
+        }
+    }
+
+    /// Largest first instead of most recently active first.
+    var bySize = false
+    /// Choosing orphans to remove together.
+    private(set) var cleaningUp = false
+
+    /// Worktrees a running session works in, then the rest.
+    var sections: (inUse: [WorktreeInfo], free: [WorktreeInfo]) {
+        let sorted = Self.sorted(trees, bySize: bySize)
+        return (sorted.filter(Self.inUse), sorted.filter { !Self.inUse($0) })
+    }
+
+    /// By size: measured ones largest first, unmeasured or partial ones last (their place
+    /// is unknown); otherwise the most recently active first.
+    nonisolated static func sorted(_ trees: [WorktreeInfo], bySize: Bool) -> [WorktreeInfo] {
+        trees.sorted { a, b in
+            if bySize {
+                let ua = a.sizePartial || a.sizeBytes == nil, ub = b.sizePartial || b.sizeBytes == nil
+                if ua != ub { return !ua }
+                return (a.sizeBytes ?? -1) > (b.sizeBytes ?? -1)
+            }
+            return a.lastActivityAt > b.lastActivityAt
+        }
+    }
+
+    var orphans: [WorktreeInfo] { trees.filter(\.orphan) }
+
+    /// Clean orphans start checked; dirty ones are listed unchecked, so removing one is a
+    /// deliberate choice (and forces only that one).
+    func startCleanup() {
+        selected = Self.cleanupSelection(trees)
+        results = []
+        cleaningUp = true
+    }
+
+    func endCleanup() {
+        selected = []
+        cleaningUp = false
+    }
+
+    func toggle(_ tree: WorktreeInfo) {
+        if selected.contains(tree.path) { selected.remove(tree.path) } else { selected.insert(tree.path) }
+    }
+
+    nonisolated static func cleanupSelection(_ trees: [WorktreeInfo]) -> Set<String> {
+        Set(trees.filter { $0.orphan && $0.dirty == 0 && $0.ahead == 0 }.map(\.path))
+    }
+
+    nonisolated static func bytes(_ trees: [WorktreeInfo], in paths: Set<String>) -> Double {
+        trees.filter { paths.contains($0.path) }.reduce(0) { $0 + ($1.sizeBytes ?? 0) }
+    }
+
+    /// What removing the chosen ones frees.
+    var selectedBytes: Double { Self.bytes(trees, in: selected) }
+    var totalBytes: Double { trees.reduce(0) { $0 + ($1.sizeBytes ?? 0) } }
 
     nonisolated static func size(_ bytes: Double?) -> String {
         guard let bytes else { return "measuring…" }
