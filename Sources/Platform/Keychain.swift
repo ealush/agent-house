@@ -12,9 +12,13 @@ final class KeychainSecretStore: SecretStore, @unchecked Sendable {
         self.service = service
     }
 
-    struct Failure: Error, CustomStringConvertible {
+    struct Failure: Error, CustomStringConvertible, LocalizedError {
         let status: OSStatus
         var description: String { "Keychain error \(status)" }
+        var errorDescription: String? {
+            let reason = SecCopyErrorMessageString(status, nil) as String? ?? "error \(status)"
+            return "This device’s Keychain couldn’t keep the sign-in (\(reason))."
+        }
     }
 
     private func query(_ account: String) -> [String: Any] {
@@ -59,8 +63,8 @@ struct SecureEnclaveDeviceKey: DeviceKey {
     }
 }
 
-/// Device keys by host origin. The Simulator has no Secure Enclave, so there (and only
-/// there) a software key in the Keychain stands in.
+/// Device keys by host origin. In the Simulator (and only there) a software key in the
+/// Keychain stands in: it has no Face ID or passcode to approve an Enclave signature.
 final class SecureEnclaveKeyStore: DeviceKeyStore, @unchecked Sendable {
     private let store: KeychainSecretStore
 
@@ -94,22 +98,22 @@ final class SecureEnclaveKeyStore: DeviceKeyStore, @unchecked Sendable {
     }
 
     func create(origin: String) throws -> any DeviceKey {
-        if SecureEnclave.isAvailable {
-            var error: Unmanaged<CFError>?
-            guard let access = SecAccessControlCreateWithFlags(kCFAllocatorDefault, kSecAttrAccessibleWhenUnlockedThisDeviceOnly, [.privateKeyUsage, .userPresence], &error) else {
-                throw error!.takeRetainedValue() as Error
-            }
-            let key = try SecureEnclave.P256.Signing.PrivateKey(compactRepresentable: false, accessControl: access)
-            let publicKey = key.publicKey.x963Representation
-            try store.set(try JSONEncoder().encode(Stored(kind: "enclave", blob: key.dataRepresentation, publicKey: publicKey)), for: account(origin))
-            return SecureEnclaveDeviceKey(blob: key.dataRepresentation, publicKeyX963: publicKey)
-        }
         #if targetEnvironment(simulator)
+        // An Apple silicon Mac's simulator reports an Enclave, but it has no Face ID or
+        // passcode to approve a signature, so sign-in would always fail there.
         let key = SoftwareDeviceKey()
         try store.set(try JSONEncoder().encode(Stored(kind: "software", blob: key.rawRepresentation, publicKey: key.publicKeyX963)), for: account(origin))
         return key
         #else
-        throw Failure.noSecureEnclave
+        guard SecureEnclave.isAvailable else { throw Failure.noSecureEnclave }
+        var error: Unmanaged<CFError>?
+        guard let access = SecAccessControlCreateWithFlags(kCFAllocatorDefault, kSecAttrAccessibleWhenUnlockedThisDeviceOnly, [.privateKeyUsage, .userPresence], &error) else {
+            throw error!.takeRetainedValue() as Error
+        }
+        let key = try SecureEnclave.P256.Signing.PrivateKey(compactRepresentable: false, accessControl: access)
+        let publicKey = key.publicKey.x963Representation
+        try store.set(try JSONEncoder().encode(Stored(kind: "enclave", blob: key.dataRepresentation, publicKey: publicKey)), for: account(origin))
+        return SecureEnclaveDeviceKey(blob: key.dataRepresentation, publicKeyX963: publicKey)
         #endif
     }
 
