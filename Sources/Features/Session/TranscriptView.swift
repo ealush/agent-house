@@ -271,7 +271,26 @@ private struct BlockRow: View {
     var body: some View {
         switch block {
         case .user(_, _, let at, let parts):
-            UserBubble(text: parts.compactMap { if case .text(let t) = $0 { return t } else { return nil } }.joined(separator: "\n"), at: at, media: parts)
+            let text = parts.compactMap { if case .text(let t) = $0 { return t } else { return nil } }.joined(separator: "\n")
+            UserBubble(text: text, at: at, media: parts)
+                .contextMenu {
+                    Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = text }
+                    if session.isLive {
+                        Button("Edit & Send Again", systemImage: "pencil") {
+                            session.composer.compose(text)
+                            Haptics.tap()
+                        }
+                        Button("Send Again", systemImage: "arrow.clockwise") {
+                            session.composer.compose(text)
+                            session.composer.submit(working: session.working)
+                            Haptics.tap()
+                        }
+                        if !session.isShell {
+                            Divider()
+                            Button("Restore Files from Before This…", systemImage: "clock.arrow.circlepath") { session.panel = .snapshots }
+                        }
+                    }
+                }
         case .agent(_, _, _, let items):
             VStack(alignment: .leading, spacing: 12) {
                 ForEach(items) { item in
@@ -284,7 +303,14 @@ private struct BlockRow: View {
                 }
             }
             .contextMenu {
-                Button("Copy message", systemImage: "doc.on.doc") { UIPasteboard.general.string = block.text }
+                Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = block.text }
+                if session.isLive && !block.text.isEmpty {
+                    Button("Quote in Reply", systemImage: "text.quote") {
+                        let quoted = block.text.split(separator: "\n", omittingEmptySubsequences: false).prefix(12).map { "> \($0)" }.joined(separator: "\n")
+                        session.composer.compose(quoted + "\n\n")
+                        Haptics.tap()
+                    }
+                }
             }
         case .notice(_, _, _, let kind, let text):
             HStack(spacing: 8) {
