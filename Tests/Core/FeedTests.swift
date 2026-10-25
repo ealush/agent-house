@@ -126,6 +126,17 @@ private let result = ToolResult(callId: "c1", text: "ok", isError: false, data: 
     #expect(ToolGroupSummary.hiddenCount(total: 5, showAll: false) == 2)
 }
 
+@Test func aPlanUpForApprovalReadsAsThePlan() {
+    let plan = ToolCall(id: "p", name: "ExitPlanMode", args: ["plan": .string("## Move sessions to Postgres\n\n1. Add a table\n2. Use it")])
+    let waiting = ToolPresentation(call: plan, result: nil, awaiting: true)
+    #expect(waiting.kind == .plan && waiting.label == "Propose a plan" && waiting.status == .awaiting)
+    #expect(waiting.summary == "Move sessions to Postgres", "named by its heading")
+    #expect(waiting.body == .plan("## Move sessions to Postgres\n\n1. Add a table\n2. Use it"))
+    #expect(ToolKind.plan.opensByDefault && ToolKind.plan.foldsWhenDone, "open while it asks, one line once decided")
+    let approved = ToolPresentation(call: plan, result: ToolResult(callId: "p", text: "User has approved your plan.", isError: false, data: nil, images: nil, truncated: nil))
+    #expect(approved.label == "Proposed a plan" && approved.status == .done)
+}
+
 @Test func diffsInEveryShapeAgentsProduce() {
     let git = DiffParser.patchLines("diff --git a/x b/x\nindex 1..2\n--- a/x\n+++ b/x\n@@ -10,2 +10,3 @@ func\n ctx\n-gone\n+new\n+more")
     #expect(git.map(\.kind) == [.file, .hunk, .ctx, .del, .add, .add])

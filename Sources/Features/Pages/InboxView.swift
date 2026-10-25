@@ -141,7 +141,12 @@ private struct AskCard: View {
             .buttonStyle(.plain)
             .hoverEffect(.highlight)
             if let ask = row.dto.ask {
-                AskSummaryView(parts: AskParts(ask, detail: row.dto.detail), showTerminalText: false)
+                if AskParts.isForm(ask) {
+                    // The form below says the question; the card only says what this is.
+                    Text(AskParts.kindLabel(ask.kind)).font(.caption.weight(.semibold)).foregroundStyle(theme.brand).textCase(.uppercase)
+                } else {
+                    AskSummaryView(parts: AskParts(ask, detail: row.dto.detail), showTerminalText: false)
+                }
             }
             AskPanelView(target: AskTarget(row: row, hub: hub) { text, error in scene.toast(text, error: error) }, compact: true, onReply: {
                 scene.open(row.key)

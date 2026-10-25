@@ -11,6 +11,31 @@ struct AskParts: Equatable, Sendable {
     let question: String?
     /// The rest of what the screen shows, for "Show terminal text".
     let context: String?
+    /// The question dialog's last step: each question and the answer given, to check before submitting.
+    var review: [Reviewed] = []
+
+    struct Reviewed: Equatable, Sendable, Hashable {
+        let question: String
+        let answer: String
+    }
+
+    /// Claude's question dialog ends on a review ("Review your answers", then "● question" /
+    /// "→ answer" pairs, then "Ready to submit your answers?"). Empty for anything else.
+    static func reviewed(_ text: String) -> [Reviewed] {
+        guard text.contains("Ready to submit your answers?") else { return [] }
+        var out: [Reviewed] = []
+        var question: String?
+        for raw in text.split(separator: "\n") {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("●") {
+                question = line.dropFirst().trimmingCharacters(in: .whitespaces)
+            } else if line.hasPrefix("→"), let q = question {
+                out.append(Reviewed(question: q, answer: line.dropFirst().trimmingCharacters(in: .whitespaces)))
+                question = nil
+            }
+        }
+        return out
+    }
 
     static func kindLabel(_ kind: AskDTO.Kind) -> String {
         switch kind {
@@ -34,6 +59,20 @@ struct AskParts: Equatable, Sendable {
         let kind = Self.kindLabel(ask.kind)
         let text = ask.text
         let question = ScreenText.questionLine(text)
+        // The question dialog's review, whatever reported it (a hook's ask still carries the
+        // questions): what you answered, and whether to send it.
+        let review = Self.reviewed(text)
+        if !review.isEmpty, !(ask.options ?? []).isEmpty {
+            self.init(kind: "Check your answers", question: "Ready to submit your answers?")
+            self.review = review
+            return
+        }
+        // Claude's plan mode, done planning: what's being approved is the plan (drawn above, in
+        // the transcript), and the rows say how edits go from here.
+        if (ask.options ?? []).contains(where: { $0.label.hasPrefix("No, keep planning") }) {
+            self.init(kind: "Plan ready", question: "Start on this plan?")
+            return
+        }
         switch ask.kind {
         case .command:
             let lines = ScreenText.clean(text).split(separator: "\n", omittingEmptySubsequences: false)
@@ -74,6 +113,11 @@ struct AskParts: Equatable, Sendable {
             let context = ScreenText.clean(text, dropping: question)
             self.init(kind: kind, question: question, context: context.isEmpty ? nil : context)
         }
+    }
+
+    /// The agent's question dialog, answered as a form: the form says the question itself.
+    static func isForm(_ ask: AskDTO) -> Bool {
+        ask.kind == .choice && (!(ask.questions ?? []).isEmpty || ask.dialog != nil) && (reviewed(ask.text).isEmpty || (ask.options ?? []).isEmpty)
     }
 
     /// One line for a lock screen or a list row (`server/push.ts askLine`).
@@ -209,6 +253,40 @@ struct QuestionForm: Equatable, Sendable {
     mutating func clearOther(_ qi: Int) {
         drafts[qi].other = false
         drafts[qi].text = ""
+    }
+
+    /// Where the keyboard's cursor can rest: each question's options, then its "Something
+    /// else" row, then (unless a pick answers) the Answer button.
+    enum Spot: Hashable, Sendable {
+        case option(Int, Int)
+        case other(Int)
+        case submit
+    }
+
+    var spots: [Spot] {
+        questions.indices.flatMap { qi in questions[qi].options.indices.map { Spot.option(qi, $0) } + [.other(qi)] } + (instant ? [] : [.submit])
+    }
+
+    /// The spot `by` rows from `spot`, stopping at either end.
+    func step(_ spot: Spot, by: Int) -> Spot {
+        let all = spots
+        guard let at = all.firstIndex(of: spot) else { return all.first ?? spot }
+        return all[max(0, min(all.count - 1, at + by))]
+    }
+
+    /// The question a spot belongs to.
+    static func question(of spot: Spot) -> Int? {
+        switch spot {
+        case .option(let qi, _), .other(let qi): return qi
+        case .submit: return nil
+        }
+    }
+
+    /// Where the cursor goes after question `qi` is answered: the next open question's
+    /// first row, else the Answer button.
+    func after(_ qi: Int) -> Spot {
+        if let open = questions.indices.first(where: { $0 > qi && !answered($0) }) ?? firstOpen { return .option(open, 0) }
+        return instant ? .option(qi, 0) : .submit
     }
 
     /// What goes to the host: a typed answer to a single choice replaces the pick; multi keeps both.

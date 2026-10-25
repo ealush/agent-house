@@ -151,3 +151,16 @@ extension UTType {
     static let agentHubSession = UTType(exportedAs: "dev.ealush.ah.native.session")
     static let agentHubGroup = UTType(exportedAs: "dev.ealush.ah.native.group")
 }
+
+extension UIResponder {
+    nonisolated(unsafe) private static weak var found: UIResponder?
+
+    /// Whatever has the keyboard in the app right now.
+    @MainActor static var current: UIResponder? {
+        found = nil
+        UIApplication.shared.sendAction(#selector(UIResponder.recordFirstResponder), to: nil, from: nil, for: nil)
+        return found
+    }
+
+    @objc private func recordFirstResponder() { UIResponder.found = self }
+}

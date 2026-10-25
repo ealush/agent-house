@@ -290,9 +290,17 @@ final class SceneModel {
             return nil
         }()
         guard let key else { return .page }
+        let model = session(key)
+        // A waiting session's answer controls come first in the GUI, as Reply does.
+        if let model, model.surface == .gui, let ask = answerFocus(model) { return ask }
         if let remembered = focusMemory[key] { return remembered }
-        guard let model = session(key) else { return .composer(key) }
+        guard let model else { return .composer(key) }
         return model.surface == .gui && model.hasGUI ? .composer(key) : .terminal(key)
+    }
+
+    /// The answer controls of a session waiting on you, when it shows some.
+    func answerFocus(_ model: SessionModel) -> FocusTarget? {
+        model.waiting && model.row?.dto.ask != nil ? .ask(model.key) : nil
     }
 
     /// Put the keyboard where it belongs now (with a hardware keyboard only).
@@ -890,9 +898,13 @@ final class SceneModel {
         case "focus-sidebar":
             if narrow { show(.sessions) } else { workspace.sidebarVisible = true }
             requestFocus(.sidebar)
-        case "focus-main", "reply":
+        case "focus-main":
             guard let s else { return }
             requestFocus(s.surface == .gui && s.hasGUI ? .composer(s.key) : .terminal(s.key))
+        case "reply":
+            // Waiting on you: its answer controls first (digits pick), else the input.
+            guard let s else { return }
+            requestFocus(answerFocus(s) ?? (s.surface == .gui && s.hasGUI ? .composer(s.key) : .terminal(s.key)))
         case "focus-pane-left": workspace.focusPane(.left)
         case "focus-pane-right": workspace.focusPane(.right)
         case "focus-pane-up": workspace.focusPane(.up)

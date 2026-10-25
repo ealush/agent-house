@@ -38,6 +38,21 @@ enum LiveHost {
         return data
     }
 
+    /// The test host's own tmux server, by its socket path (never the developer's tmux, which
+    /// a `TMUX` in the environment would otherwise pick). Stands in for an agent's hook here.
+    static func tmux(_ args: String...) throws {
+        guard let dir = environment["AH_IT_DIR"] else { throw APIError(status: 0, body: Data("AH_IT_DIR is not set".utf8)) }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["tmux", "-S", "\(dir)/tmux/tmux-\(getuid())/default"] + args
+        var env = environment
+        env["TMUX"] = nil
+        process.environment = env
+        try process.run()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { throw APIError(status: Int(process.terminationStatus), body: Data("tmux \(args.first ?? "") failed".utf8)) }
+    }
+
     static func setupCode() async throws -> String {
         let data = try await hostCall("POST", "/api/auth/code")
         return try JSONDecoder().decode(SetupCode.self, from: data).code

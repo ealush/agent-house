@@ -40,6 +40,13 @@ process.env.AH_REBUILD_CMD = 'sleep 1';
 const agentNode = runner('ahit-agent');
 const claudeNode = runner('ahit-claude');
 const pickerNode = runner('ahit-picker');
+const questionNode = runner('ahit-question');
+const demoNode = runner('ahit-demo');
+// The question dialog logs every key it gets here (tests run one at a time and clear it).
+const questionKeys = join(dir, 'question-keys.log');
+const demoAgent = new URL('./demo/agent.mjs', import.meta.url).pathname;
+// Claude Code's own screen rules, so ah reads these stand-ins' pickers as it reads Claude's.
+const claudeRules = ['Do you want to (proceed|make this edit|create|allow)', '^\\s*❯\\s*1\\.\\s*Yes', 'Enter to select · .*to navigate', 'trust this folder|Enter to confirm · Esc to cancel'];
 
 const ah = await startAh({
   idleAfter: 1,
@@ -60,10 +67,16 @@ const ah = await startAh({
     },
     // A permission prompt Approve/Deny can answer.
     { id: 'test-claude', name: 'Picker', command: `exec ${pickerNode} ${fixture('picker.js')} permission ${keys}`, match: '^ahit-picker$', waitingPatterns: ['Do you want to proceed'], approveKeys: ['Enter'], denyKeys: ['Escape'] },
+    // Claude's AskUserQuestion dialog (Color, then multi-select Toppings, then the review),
+    // redrawn as keys arrive. Logs every key to question-keys.log.
+    { id: 'ask-dialog', name: 'Questions', command: `exec ${questionNode} ${fixture('picker.js')} question ${questionKeys}`, match: '^ahit-question$', waitingPatterns: claudeRules, questions: 'claude' },
+    // The demo's scripted Claude: /ask, /plan and /trust open Claude Code's own pickers,
+    // and its transcript is Claude-shaped (the plan's ExitPlanMode call, the answers).
+    { id: 'demo-claude', name: 'Demo agent', command: `exec ${demoNode} ${demoAgent} --scenario=none`, match: '^ahit-demo$', feed: 'claude', waitingPatterns: claudeRules, questions: 'claude' },
   ],
 }, dir);
 
-process.stdout.write(JSON.stringify({ port: ah.port, localToken: ah.localToken(), dir: ah.dir, keys }) + '\n');
+process.stdout.write(JSON.stringify({ port: ah.port, localToken: ah.localToken(), dir: ah.dir, keys, questionKeys }) + '\n');
 // ah's own log goes to stderr, which scripts/integration.sh can keep (AH_IT_LOG).
 setInterval(() => {
   const log = ah.log();

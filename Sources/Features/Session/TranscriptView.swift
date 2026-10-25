@@ -589,6 +589,8 @@ private struct ToolBodyView: View {
                     }
                 }
             }
+        case .plan(let plan):
+            MarkdownView(plan, compact: true)
         case .delegated(let prompt, let result):
             if let prompt { MarkdownView(prompt, compact: true) }
             if let result { MarkdownView(result, compact: true) }

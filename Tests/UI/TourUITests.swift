@@ -13,7 +13,7 @@ import XCTest
 ///   tapat:<x>,<y>         a point, as fractions of the window
 ///   press:<label or id>   long press
 ///   pressat:<x>,<y>       long press at a point, as fractions of the window
-///   type:<text>           into whatever has focus
+///   type:<text>           into whatever has focus (`\n` presses Return)
 ///   key:<key>[+cmd+shift+alt+ctrl]  a hardware key (keys: return, escape, tab, up, down,
 ///                         left, right, delete, space, or one character)
 ///   swipe:<up|down|left|right>
@@ -75,7 +75,8 @@ final class TourUITests: XCTestCase {
                 let xy = argument.split(separator: ",").compactMap { Double($0) }
                 app.coordinate(withNormalizedOffset: CGVector(dx: xy[0], dy: xy[1])).press(forDuration: 1.0)
             case "type":
-                target.typeText(argument)
+                // `\n` is Return on the on-screen keyboard.
+                target.typeText(argument.replacingOccurrences(of: "\\n", with: "\n"))
             case "key":
                 let parts = argument.split(separator: "+").map(String.init)
                 var flags: XCUIElement.KeyModifierFlags = []

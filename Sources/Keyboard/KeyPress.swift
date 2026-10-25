@@ -48,6 +48,8 @@ struct KeyPress: Equatable, Sendable {
     var key: String? {
         if let digit = Self.digits[hidUsage] { return digit }
         if let name = Self.named[hidUsage] { return name }
+        // Return without the usual key code (some keyboards, synthesized events).
+        if characters == "\r" { return "Enter" }
         if let mark = Self.punctuation[hidUsage], characters.count == 1 { return mark }
         guard let first = characters.first else { return nil }
         if characters.count == 1 { return String(first).lowercased() }

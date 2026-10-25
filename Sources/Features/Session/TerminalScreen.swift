@@ -29,7 +29,7 @@ struct TerminalScreen: View {
                 }
             }
             if session.waiting, session.row?.dto.ask != nil {
-                AskPanelView(target: AskTarget(session: session), onReply: { scene.requestFocus(.terminal(session.key)) })
+                AskPanelView(target: AskTarget(session: session), keyboard: AskKeyboard(scene: scene, key: session.key, leave: .terminal(session.key)), onReply: { scene.requestFocus(.terminal(session.key)) })
                     .padding(10)
             }
             if scene.app.preferences.showsKeyBar(hardwareKeyboard: scene.hardwareKeyboard) {

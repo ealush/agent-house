@@ -6,6 +6,9 @@
 // file in the checkout, and a reply. No model, network or secret is involved.
 //
 //   node agent.mjs [--scenario=onboarding|api|review|approve|none]   (default: by folder)
+//
+// Typing /ask, /plan or /trust opens Claude Code's question dialog, plan approval or
+// folder-trust picker, for the app's answer-from-anywhere views.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -278,7 +281,187 @@ function answer(yes) {
   box();
 }
 
+// ---------- Claude Code's own pickers, opened by typing /ask, /plan or /trust
+//
+// Drawn as Claude Code draws them (ah's test/fixtures/picker.js is the reference), so ah
+// reads them off the screen the same way, and they take the same keys: digits, arrows,
+// Tab, Enter, Esc. Answering writes what Claude writes once it's answered.
+
+const QUESTIONS = [
+  {
+    header: 'Storage', question: 'Where should sign-in sessions be stored?', multiSelect: false,
+    options: [
+      { label: 'Postgres', description: 'The main database; sessions survive deploys' },
+      { label: 'Redis', description: 'Fastest; lost on restart unless persisted' },
+      { label: 'Signed cookies', description: 'Nothing stored server-side; can’t revoke one' },
+    ],
+  },
+  {
+    header: 'Events', question: 'Which events should the audit log keep?', multiSelect: true,
+    options: [
+      { label: 'Sign-ins', description: 'Every successful and failed sign-in' },
+      { label: 'Role changes', description: 'Who granted what, and when' },
+      { label: 'Exports', description: 'Downloads of workspace data' },
+    ],
+  },
+];
+const PLAN = `## Move sessions to Postgres
+
+1. Add a \`sessions\` table (id, user, created, expires, revoked)
+2. Read and write sessions through \`SessionStore\` instead of memory
+3. Revoke on sign-out and on password change
+4. Backfill nothing: existing sessions expire on their own within a day`;
+
+/** The picker on screen: null, or what it is and where its cursor and answers are. */
+let picker = null;
+const CHAT = '────────────────────────────────────────';
+
+function pickerLines() {
+  const p = picker;
+  if (p.kind === 'ask') {
+    const tab = (i) => `${i < p.q ? '☒' : '☐'} ${QUESTIONS[i].header}`;
+    const bar = `←  ${QUESTIONS.map((_, i) => tab(i)).join('  ')}  ✔ Submit  →`;
+    if (p.q < QUESTIONS.length) {
+      const q = QUESTIONS[p.q];
+      const n = q.options.length;
+      const mark = (i) => (p.cursor === i ? '❯' : ' ');
+      const rows = q.options.flatMap((o, i) => [
+        `${mark(i + 1)} ${i + 1}. ${q.multiSelect ? `[${p.picked.has(i) ? '✔' : ' '}] ` : ''}${o.label}`,
+        `     ${o.description}`,
+      ]);
+      const other = q.multiSelect ? `[${p.other ? '✔' : ' '}] ${p.other || 'Type something'}` : p.typing ? p.other : 'Type something.';
+      return [bar, '', q.question, '', ...rows, `${mark(n + 1)} ${n + 1}. ${other}`, ...(q.multiSelect ? [`${mark(n + 2)}    Submit`] : []), CHAT, `  ${n + 2}. Chat about this`, '', 'Enter to select · Tab/Arrow keys to navigate · Esc to cancel'];
+    }
+    return [bar, '', 'Review your answers', '', ...QUESTIONS.flatMap((q, i) => [` ● ${q.question}`, `   → ${p.answers[i]}`]), '', 'Ready to submit your answers?', '', `${p.cursor === 1 ? '❯' : ' '} 1. Submit answers`, `${p.cursor === 2 ? '❯' : ' '} 2. Cancel`];
+  }
+  if (p.kind === 'plan') {
+    const rows = ['Yes, and auto-accept edits', 'Yes, and manually approve edits', 'No, keep planning'];
+    return ['', ' Ready to code?', '', ' Here is Claude’s plan:', ` ╭${'─'.repeat(60)}╮`, ...PLAN.split('\n').map((l) => ` │ ${l}`), ` ╰${'─'.repeat(60)}╯`, '', ' Would you like to proceed?', '', ...rows.map((r, i) => ` ${p.cursor === i + 1 ? '❯' : ' '} ${i + 1}. ${r}`), ''];
+  }
+  const rows = ['Yes, I trust this folder', 'No, exit'];
+  return ['', ` Do you trust the files in this folder?`, '', `   ${cwd}`, '', ' Claude Code may read, write or run files here.', '', ...rows.map((r, i) => ` ${p.cursor === i + 1 ? '❯' : ' '} ${r}`), '', ' Enter to confirm · Esc to cancel', ''];
+}
+
+const drawPicker = () => process.stdout.write(`\x1b[2J\x1b[H${pickerLines().join('\r\n')}\r\n`);
+
+function openPicker(kind) {
+  picker = { kind, q: 0, cursor: 1, picked: new Set(), other: '', typing: false, answers: [] };
+  clock = Math.max(clock, Date.now());
+  if (kind === 'ask') {
+    user('Add an audit log for sign-ins, and move sessions out of memory while you’re at it.', 1);
+    say('Two decisions first, then I’ll write it.', 3);
+  } else if (kind === 'plan') {
+    user('Plan the move of sign-in sessions to Postgres before changing anything.', 1);
+    think('Plan mode: read the session code, write a plan, and ask before editing.');
+    read('README.md');
+    // Like any tool that asks first, the call is in the transcript while it waits.
+    picker.call = `toolu_${id.slice(0, 6)}_${++calls}`;
+    line('assistant', [{ type: 'tool_use', id: picker.call, name: 'ExitPlanMode', input: { plan: PLAN } }], {}, 2);
+  }
+  drawPicker();
+}
+
+/** Closes the picker, says what happened in the transcript, and goes back to the prompt box. */
+function closePicker(outcome) {
+  const p = picker;
+  picker = null;
+  clock = Math.max(clock, Date.now());
+  process.stdout.write('\x1b[2J\x1b[H');
+  if (p.kind === 'ask') {
+    const call = `toolu_${id.slice(0, 6)}_${++calls}`;
+    line('assistant', [{ type: 'tool_use', id: call, name: 'AskUserQuestion', input: { questions: QUESTIONS } }], {}, 1);
+    if (outcome === 'submitted') {
+      const answers = Object.fromEntries(QUESTIONS.map((q, i) => [q.question, p.answers[i]]));
+      const text = `User has answered your questions: ${QUESTIONS.map((q, i) => `"${q.question}"="${p.answers[i]}"`).join(', ')}. You can now continue with the user's answers in mind.`;
+      line('user', [{ type: 'tool_result', tool_use_id: call, content: text }], { toolUseResult: { questions: QUESTIONS, answers } }, 2);
+      say(`Going with **${p.answers[0]}** for sessions, and the audit log keeps **${p.answers[1]}**. I’ll start with the sessions table.`, 3);
+      process.stdout.write(`${accent('⏺')} Sessions: ${p.answers[0]} · Audit: ${p.answers[1]}\n`);
+    } else {
+      line('user', [{ type: 'tool_result', tool_use_id: call, content: 'User declined to answer questions', is_error: true }], {}, 2);
+      process.stdout.write(`${dim('  ⎿  You declined to answer.')}\n`);
+    }
+  } else if (p.kind === 'plan') {
+    const call = p.call;
+    if (outcome === 1 || outcome === 2) {
+      line('user', [{ type: 'tool_result', tool_use_id: call, content: 'User has approved your plan. You can now start coding.' }], { toolUseResult: { plan: PLAN } }, 2);
+      say(outcome === 1 ? 'Plan approved; edits will go through without asking. Starting with the table.' : 'Plan approved; I’ll ask before each edit. Starting with the table.', 3);
+      process.stdout.write(`${accent('⏺')} Plan approved.\n`);
+    } else {
+      line('user', [{ type: 'tool_result', tool_use_id: call, content: "The user doesn't want to proceed with this tool use. The tool use was rejected.", is_error: true }], {}, 2);
+      process.stdout.write(`${dim('  ⎿  Still planning. Tell me what to change.')}\n`);
+    }
+  } else {
+    process.stdout.write(outcome === 1 ? `${accent('⏺')} Trusted ${cwd}.\n` : `${dim('  ⎿  Not trusted; nothing here will run.')}\n`);
+  }
+  box();
+}
+
+/** One key into the picker on screen, the way Claude Code takes it. */
+function pickerKey(s) {
+  const p = picker;
+  const up = s === '\x1b[A' || s === '\x1bOA';
+  const down = s === '\x1b[B' || s === '\x1bOB' || s === '\t';
+  if (s === '\x1b') return closePicker('cancelled');
+  if (p.kind === 'trust' || p.kind === 'plan') {
+    const n = p.kind === 'plan' ? 3 : 2;
+    if (up) p.cursor = Math.max(1, p.cursor - 1);
+    else if (down) p.cursor = Math.min(n, p.cursor + 1);
+    else if (s === '\r') return closePicker(p.cursor);
+    else if (p.kind === 'plan' && /^[1-3]$/.test(s)) return closePicker(Number(s));
+    return drawPicker();
+  }
+  if (p.q === QUESTIONS.length) {
+    if (up || down) p.cursor = up ? 1 : 2;
+    else if (s === '1' || (s === '\r' && p.cursor === 1)) return closePicker('submitted');
+    else if (s === '2' || (s === '\r' && p.cursor === 2)) return closePicker('cancelled');
+    return drawPicker();
+  }
+  const q = QUESTIONS[p.q];
+  const n = q.options.length;
+  const next = (answer) => {
+    p.answers[p.q] = answer;
+    p.q += 1;
+    p.cursor = 1;
+    p.picked = new Set();
+    p.other = '';
+    p.typing = false;
+  };
+  if (!q.multiSelect) {
+    if (p.typing && s === '\r') next(p.other.trim() || 'No answer');
+    else if (p.typing && s === '\x7f') p.other = p.other.slice(0, -1);
+    else if (p.typing && !up && !down) p.other += s;
+    else if (up) p.cursor = Math.max(1, p.cursor - 1);
+    else if (down) p.cursor = Math.min(n + 1, p.cursor + 1);
+    else if (new RegExp(`^[1-${n}]$`).test(s)) next(q.options[Number(s) - 1].label);
+    else if (s === String(n + 1) || (s === '\r' && p.cursor === n + 1)) {
+      p.typing = true;
+      p.cursor = n + 1;
+    } else if (s === '\r') next(q.options[p.cursor - 1].label);
+    return drawPicker();
+  }
+  const done = () => next([...[...p.picked].sort().map((i) => q.options[i].label), p.other.trim()].filter(Boolean).join(', ') || 'Nothing');
+  if (new RegExp(`^[1-${n}]$`).test(s) && p.cursor !== n + 1) {
+    const i = Number(s) - 1;
+    if (p.picked.has(i)) p.picked.delete(i);
+    else p.picked.add(i);
+  } else if (up) p.cursor = Math.max(1, p.cursor - 1);
+  else if (down) p.cursor = Math.min(n + 2, p.cursor + 1);
+  else if (s === '\x1b[C' || s === '\x1bOC' || (s === '\r' && p.cursor >= n + 1)) done();
+  else if (s === '\r' && p.cursor <= n) {
+    const i = p.cursor - 1;
+    if (p.picked.has(i)) p.picked.delete(i);
+    else p.picked.add(i);
+  } else if (p.cursor === n + 1 && s === '\x7f') p.other = p.other.slice(0, -1);
+  else if (p.cursor === n + 1 && /^[ -~]$/.test(s)) p.other += s;
+  drawPicker();
+}
+
 process.stdin.on('data', (chunk) => {
+  if (picker) {
+    // One send-keys can carry several keys ("Down Down Down"): take them one at a time.
+    for (const s of chunk.toString().match(/\x1b\[[A-D]|\x1bO[A-D]|[\s\S]/g) ?? []) if (picker) pickerKey(s);
+    return;
+  }
   for (const char of chunk.toString()) {
     if (pending) {
       if (char === '\r' || char === '\n' || char === '1' || char === '2') answer(true);
@@ -301,6 +484,11 @@ process.stdin.on('data', (chunk) => {
     const prompt = typed.trim();
     typed = '';
     if (!prompt) continue;
+    const opens = { '/ask': 'ask', '/plan': 'plan', '/trust': 'trust' }[prompt];
+    if (opens && !busy) {
+      openPicker(opens);
+      return;
+    }
     if (busy) queue.push(prompt);
     else turn(prompt);
   }

@@ -1,3 +1,4 @@
+import OSLog
 import SwiftUI
 
 /// One session, in a phone push or an iPad pane: its header, the GUI or the terminal (both
@@ -32,7 +33,7 @@ struct SessionScreen: View {
                 surface
                 if session.surface == .gui && session.hasGUI {
                     if session.waiting, session.row?.dto.ask != nil {
-                        AskPanelView(target: AskTarget(session: session), onReply: { scene.requestFocus(.composer(session.key)) }, onUseTerminal: { scene.setSurface(.terminal, for: session.key) })
+                        AskPanelView(target: AskTarget(session: session), keyboard: AskKeyboard(scene: scene, key: session.key, leave: .composer(session.key)), onReply: { scene.requestFocus(.composer(session.key)) }, onUseTerminal: { scene.setSurface(.terminal, for: session.key) })
                             .padding(.horizontal, 12)
                             .padding(.bottom, 6)
                     }
@@ -51,6 +52,14 @@ struct SessionScreen: View {
         }
         .background(theme.background)
         .overlay(alignment: .top) { NoticeStack(session: session) }
+        // The agent asks while you're in an empty composer: the keys go to its question
+        // (digits pick), and an on-screen keyboard steps aside for the choices.
+        .onChange(of: session.surface == .gui && scene.answerFocus(session) != nil) { _, asking in
+            Logger(subsystem: "dev.ealush.ah.native", category: "keyboard").debug("asking \(asking, privacy: .public) with the keyboard at \(String(describing: scene.currentFocus), privacy: .public), composer empty \(session.composer.isEmpty, privacy: .public)")
+            guard asking, scene.currentFocus == .composer(session.key), session.composer.isEmpty else { return }
+            // Not a text input: taking the keyboard puts the on-screen one away too.
+            scene.requestFocus(.ask(session.key))
+        }
         .sheet(item: Binding(get: { narrow ? session.panel : nil }, set: { session.panel = $0 })) { panel in
             NavigationStack {
                 PanelView(panel: panel, session: session, scene: scene)

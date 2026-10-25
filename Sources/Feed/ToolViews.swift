@@ -4,7 +4,7 @@ import Foundation
 /// tool name to a view kind, its verbs and its one-line summary. The UI layer renders
 /// `ToolPresentation`; adding a view is adding a case here.
 enum ToolKind: Equatable, Sendable {
-    case shell, edit, write, patch, read, search, web, webSearch, webExtract, todos, question, agent, generic
+    case shell, edit, write, patch, read, search, web, webSearch, webExtract, todos, question, plan, agent, generic
 
     init(name: String) {
         switch name {
@@ -19,6 +19,7 @@ enum ToolKind: Equatable, Sendable {
         case "web_extract": self = .webExtract
         case "TodoWrite", "update_plan": self = .todos
         case "AskUserQuestion": self = .question
+        case "ExitPlanMode", "exit_plan_mode": self = .plan
         case "Task", "Agent": self = .agent
         default: self = .generic
         }
@@ -37,15 +38,16 @@ enum ToolKind: Equatable, Sendable {
         case .webSearch: return ("Searched the web", "Fetch")
         case .todos: return ("Updated the plan", "Update the plan")
         case .question: return ("Asked", nil)
+        case .plan: return ("Proposed a plan", "Propose a plan")
         case .agent: return ("Delegated", "Delegate")
         case .generic: return ("", nil)
         }
     }
 
     /// Expanded without a tap: plans and questions are the point of the call.
-    var opensByDefault: Bool { self == .todos || self == .question }
-    /// Folds once answered: an answered question reads fine as one line.
-    var foldsWhenDone: Bool { self == .question }
+    var opensByDefault: Bool { self == .todos || self == .question || self == .plan }
+    /// Folds once answered: an answered question (or an approved plan) reads fine as one line.
+    var foldsWhenDone: Bool { self == .question || self == .plan }
 }
 
 enum ToolStatus: String, Equatable, Sendable {
@@ -82,6 +84,8 @@ enum ToolBody: Equatable, Sendable {
     case web(url: String?, prompt: String?, output: ToolResult?)
     case checklist([ChecklistItem])
     case questions([AnsweredQuestion], waiting: Bool)
+    /// A plan put up for approval (Claude's plan mode), as Markdown.
+    case plan(String)
     case delegated(prompt: String?, result: String?)
     case generic(arguments: String?, output: ToolResult?)
 }
@@ -163,6 +167,12 @@ struct ToolPresentation: Equatable, Sendable {
             let answers = (result?.data?["answers"]?.object ?? [:]).sorted { $0.key < $1.key }.map(\.value.text)
             return answers.isEmpty ? first : "\(first) → \(answers.joined(separator: " · "))"
         case .agent: return (call["description"] ?? call["subagent_type"]).text
+        case .plan:
+            // Its title: the first heading, else its first line.
+            let plan = call["plan"].text
+            let lines = plan.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            let heading = lines.first { $0.hasPrefix("#") }.map { $0.drop { $0 == "#" }.trimmingCharacters(in: .whitespaces) }
+            return firstLine(heading ?? lines.first ?? "", max: 80)
         case .generic:
             // The first string argument; keys in a stable order since JSON objects have none here.
             let preferred = ["command", "file_path", "path", "query", "pattern", "url", "description", "prompt", "input"]
@@ -216,6 +226,8 @@ struct ToolPresentation: Equatable, Sendable {
                 )
             }
             return .questions(questions, waiting: result == nil)
+        case .plan:
+            return .plan(call["plan"].text)
         case .agent:
             let prompt = call["prompt"].text
             return .delegated(prompt: prompt.isEmpty ? nil : prompt, result: result?.text)

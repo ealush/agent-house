@@ -132,6 +132,39 @@ import Testing
     #expect(!empty.answered(0), "blank typing isn't an answer")
 }
 
+@Test func theKeyboardWalksEveryRowOfTheQuestions() {
+    let color = AskDTO.Question(question: "Pick a color", header: nil, multiSelect: false, options: [.init(label: "Red", description: nil, checked: nil), .init(label: "Green", description: nil, checked: nil)])
+    let toppings = AskDTO.Question(question: "Toppings", header: nil, multiSelect: true, options: [.init(label: "Cheese", description: nil, checked: nil)])
+    var form = QuestionForm(questions: [color, toppings])
+    #expect(form.spots == [.option(0, 0), .option(0, 1), .other(0), .option(1, 0), .other(1), .submit])
+    #expect(form.step(.option(0, 1), by: 1) == .other(0))
+    #expect(form.step(.other(0), by: 1) == .option(1, 0), "down from a question's last row is the next question")
+    #expect(form.step(.option(0, 0), by: -1) == .option(0, 0), "stops at the top")
+    #expect(form.step(.submit, by: 1) == .submit, "and at the bottom")
+    _ = form.choose(0, 1)
+    #expect(form.after(0) == .option(1, 0), "answering one question moves on to the next open one")
+    _ = form.choose(1, 0)
+    #expect(form.after(1) == .submit, "everything answered: the Answer button")
+    #expect(QuestionForm(questions: [color]).spots.last == .other(0), "a pick answers a lone single choice: no Answer button")
+}
+
+@Test func theQuestionReviewShowsWhatYouAnswered() {
+    let text = "←  ☒ Storage  ☒ Events  ✔ Submit  →\nReview your answers\n ● Where should sign-in sessions be stored?\n   → Postgres\n ● Which events should the audit log keep?\n   → Sign-ins, Exports, API keys\nReady to submit your answers?"
+    let options = [AskDTO.ScreenOption(key: "1", label: "Submit answers"), AskDTO.ScreenOption(key: "2", label: "Cancel")]
+    let screen = AskParts(AskDTO(kind: .screen, text: text, questions: nil, options: options, dialog: nil))
+    #expect(screen.kind == "Check your answers")
+    #expect(screen.review == [.init(question: "Where should sign-in sessions be stored?", answer: "Postgres"), .init(question: "Which events should the audit log keep?", answer: "Sign-ins, Exports, API keys")])
+    #expect(screen.context == nil, "the answers are the point, not the terminal text")
+    // A hook still reporting the questions at the review: the review wins.
+    let hooked = AskParts(AskDTO(kind: .choice, text: text, questions: [AskDTO.Question(question: "Where should sign-in sessions be stored?", header: nil, multiSelect: false, options: [])], options: options, dialog: nil))
+    #expect(hooked.review.count == 2)
+    #expect(!AskParts.isForm(AskDTO(kind: .choice, text: text, questions: [AskDTO.Question(question: "Where should sign-in sessions be stored?", header: nil, multiSelect: false, options: [])], options: options, dialog: nil)), "the review is buttons, not the form")
+    #expect(AskParts.isForm(AskDTO(kind: .choice, text: "Pick", questions: nil, options: nil, dialog: AskDTO.Dialog(question: "Pick", multiSelect: false, options: [], total: 1, answered: 0))))
+    #expect(AskParts.reviewed("Do you want to proceed?\n ● not a review").isEmpty)
+    let plan = AskParts(AskDTO(kind: .screen, text: "Would you like to proceed?", questions: nil, options: [.init(key: "1", label: "Yes, and auto-accept edits"), .init(key: "3", label: "No, keep planning")], dialog: nil))
+    #expect(plan.kind == "Plan ready" && plan.question == "Start on this plan?", "a plan is named as one, not as a generic prompt")
+}
+
 @Test func deepLinksFromPushRoutesAndURLs() {
     // server/push.ts strips "/#" from the web hash: a bare uid, or a review layer.
     #expect(DeepLink(route: "ah-1a2b", host: "box") == .session(host: "box", uid: "ah-1a2b"))
@@ -238,4 +271,20 @@ import Testing
     let catalog = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../App/Assets.xcassets/Agents").standardized
     let sets = Set(((try? FileManager.default.contentsOfDirectory(atPath: catalog.path)) ?? []).filter { $0.hasSuffix(".imageset") }.map { String($0.dropLast(9)) })
     #expect(sets == AgentLogo.known)
+}
+
+@Test func answerControlsReadTheKeysTheWebPanelDoes() {
+    let press = { (usage: Int, chars: String, mods: KeyPress.Modifiers) in AskKey(KeyPress(hidUsage: usage, characters: chars, modifiers: mods)) }
+    #expect(press(0x1F, "2", []) == .digit(2))
+    #expect(press(0x1F, "@", [.shift]) == nil, "Shift+2 isn't a pick")
+    #expect(press(0x51, "", []) == .down)
+    #expect(press(0x2B, "\t", [.shift]) == .up)
+    #expect(press(0x2C, " ", []) == .choose)
+    #expect(press(0x28, "\r", []) == .choose)
+    #expect(press(0x28, "\r", [.command]) == .submit)
+    #expect(press(0, "\r", [.command]) == .submit, "a Return without its usual key code is still Return")
+    #expect(press(0x29, "", []) == .leave)
+    #expect(press(0x1C, "y", []) == .letter("y"))
+    #expect(press(0x0E, "k", [.command]) == nil, "⌘K is the window's (the palette)")
+    #expect(press(0x27, "0", []) == nil, "no row 0")
 }

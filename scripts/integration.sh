@@ -39,6 +39,9 @@ line=$(head -n1 "$fifo.out")
 export AH_IT_PORT=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["port"])' "$line")
 export AH_IT_TOKEN=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["localToken"])' "$line")
 export AH_IT_KEYS=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["keys"])' "$line")
+export AH_IT_QUESTION_KEYS=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["questionKeys"])' "$line")
+# The host's own folder: its private tmux server (TMUX_TMPDIR) lives under it.
+export AH_IT_DIR=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["dir"])' "$line")
 echo "integration host on 127.0.0.1:$AH_IT_PORT"
 # Serialized: ah has a create-window race when the tmux session is new (two
 # concurrent POST /api/windows both run tmux new-session); see docs/native/RISKS.md.
