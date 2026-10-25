@@ -81,7 +81,7 @@ actor TokenBox: CredentialProvider {
     init(_ token: String? = nil) { self.token = token }
     func set(_ token: String?) { self.token = token }
     func bearer() async -> String? { token }
-    func rejected() async { rejections += 1 }
+    func rejected(bearer: String?) async { rejections += 1 }
 }
 
 struct Timeout: Error, CustomStringConvertible {

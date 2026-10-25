@@ -6,7 +6,9 @@ import FoundationNetworking
 /// The bearer secret for requests, and what to do when the host says it's no longer valid.
 protocol CredentialProvider: Sendable {
     func bearer() async -> String?
-    func rejected() async
+    /// The host refused `bearer`, the one the request carried: a late answer to an earlier
+    /// sign-in mustn't end a newer one.
+    func rejected(bearer: String?) async
 }
 
 /// Typed client for one host's API (`../ah/web/api.ts`), addressed through the hub:
@@ -56,13 +58,19 @@ struct APIClient: Sendable {
         return request
     }
 
+    /// The bearer a request carries, if any.
+    static func bearer(of request: URLRequest) -> String? {
+        guard let header = request.value(forHTTPHeaderField: "Authorization"), header.hasPrefix("Bearer ") else { return nil }
+        return String(header.dropFirst("Bearer ".count))
+    }
+
     func send(_ request: URLRequest) async throws -> Data {
         do {
             try Task.checkCancellation()
             let (data, response) = try await transport.data(for: request)
             guard (200..<300).contains(response.statusCode) else {
                 let error = APIError(status: response.statusCode, body: data)
-                if case .unauthorized = error { await credentials.rejected() }
+                if case .unauthorized = error { await credentials.rejected(bearer: Self.bearer(of: request)) }
                 throw error
             }
             return data
@@ -99,7 +107,7 @@ struct APIClient: Sendable {
                     if body.count > 4096 { break }
                 }
                 let error = APIError(status: response.statusCode, body: body)
-                if case .unauthorized = error { await credentials.rejected() }
+                if case .unauthorized = error { await credentials.rejected(bearer: Self.bearer(of: request)) }
                 throw error
             }
             return stream
