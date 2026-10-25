@@ -29,6 +29,15 @@ sys.exit("Install an iOS 26+ iPhone simulator, or set AH_SIMULATOR_DESTINATION."
 ')
   destination="platform=iOS Simulator,id=$device_id"
 fi
+# The Mac app (Mac Catalyst) builds from the same target; signing waits for the account owner.
+xcodebuild build \
+  -project AgentHubNative.xcodeproj \
+  -scheme AgentHubNative \
+  -destination 'platform=macOS,variant=Mac Catalyst' \
+  -derivedDataPath DerivedData \
+  -skipPackagePluginValidation \
+  -quiet \
+  CODE_SIGNING_ALLOWED=NO
 xcodebuild test \
   -project AgentHubNative.xcodeproj \
   -scheme AgentHubNative \

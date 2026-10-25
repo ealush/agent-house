@@ -354,6 +354,16 @@ struct DeviceDescriptor: Sendable, Equatable {
         return trimmed.isEmpty ? "iPhone" : trimmed
     }
 
+    /// A Mac's name from its host name ("Evyatars-MacBook-Pro.local" → "Evyatars MacBook Pro"):
+    /// on a Mac the system calls the device an iPad.
+    static func macName(hostName: String) -> String {
+        var name = hostName
+        if name.hasSuffix(".local") { name = String(name.dropLast(".local".count)) }
+        let words = name.replacingOccurrences(of: "-", with: " ")
+        let cleaned = sanitizedName(words)
+        return cleaned == "iPhone" ? "Mac" : cleaned
+    }
+
     static func newClientID() -> String {
         String(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(12))
     }

@@ -197,3 +197,9 @@ import Testing
     let changed = LaunchState.forkRequest(name: "", prompt: "Rewrite the parser", mode: "plan", modes: 3, inherited: ("opus", "high"), picked: ("sonnet", nil))
     #expect(changed == ForkRequest(prompt: "Rewrite the parser", model: "sonnet", effort: "default", mode: "plan"))
 }
+
+@Test func aMacIsNamedForItsHostName() {
+    #expect(DeviceDescriptor.macName(hostName: "Evyatars-MacBook-Pro.local") == "Evyatars MacBook Pro")
+    #expect(DeviceDescriptor.macName(hostName: "studio") == "studio")
+    #expect(DeviceDescriptor.macName(hostName: "") == "Mac")
+}

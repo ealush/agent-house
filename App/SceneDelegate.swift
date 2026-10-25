@@ -13,6 +13,14 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options: UIScene.ConnectionOptions) {
         guard let windowScene = scene as? UIWindowScene, let delegate = UIApplication.shared.delegate as? AppDelegate else { return }
+        #if targetEnvironment(macCatalyst)
+        // A Mac window: content up into the title bar, and never so small the panes give up.
+        windowScene.sizeRestrictions?.minimumSize = CGSize(width: 860, height: 560)
+        if let titlebar = windowScene.titlebar {
+            titlebar.titleVisibility = .hidden
+            titlebar.toolbar = nil
+        }
+        #endif
         let window = KeyboardSensingWindow(windowScene: windowScene)
         self.window = window
         guard let app = delegate.app else {

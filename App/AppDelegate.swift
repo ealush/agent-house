@@ -13,12 +13,13 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         do {
+            let ephemeral = Self.ephemeral
             let services = AppServices(
-                database: try AppDatabase(),
-                vault: CredentialVault(store: KeychainSecretStore()),
-                keys: SecureEnclaveKeyStore(),
+                database: try AppDatabase(directory: ephemeral ? FileManager.default.temporaryDirectory.appendingPathComponent("ah-ephemeral-\(UUID().uuidString)") : nil),
+                vault: CredentialVault(store: ephemeral ? MemorySecretStore() : KeychainSecretStore()),
+                keys: ephemeral ? MemoryDeviceKeyStore() : SecureEnclaveKeyStore(),
                 transport: URLSessionTransport(),
-                device: DeviceDescriptor(name: DeviceDescriptor.sanitizedName(UIDevice.current.model), client: DeviceDescriptor.newClientID()),
+                device: DeviceDescriptor(name: Self.deviceName, client: DeviceDescriptor.newClientID()),
                 allowLoopback: Self.allowLoopback)
             app = AppModel(services: services)
         } catch {
@@ -26,6 +27,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             return true
         }
         app.activateAll()
+        #if DEBUG
+        DebugHooks.install(app: app)
+        #endif
         let push = PushRegistrar.shared
         UNUserNotificationCenter.current().delegate = self
         push.installCategories()
@@ -34,9 +38,28 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         return true
     }
 
-    /// Loopback hosts are for the simulator against a local `ah` only.
+    private static var deviceName: String {
+        #if targetEnvironment(macCatalyst)
+        return DeviceDescriptor.macName(hostName: ProcessInfo.processInfo.hostName)
+        #else
+        return DeviceDescriptor.sanitizedName(UIDevice.current.model)
+        #endif
+    }
+
+    /// Debug builds started with `AH_EPHEMERAL=1` keep everything for this run only: secrets
+    /// and device keys in memory, a throwaway database. That's how a Mac build signed to run
+    /// locally (no keychain entitlement) runs at all; a signed build uses the Keychain.
+    private static var ephemeral: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.environment["AH_EPHEMERAL"] == "1"
+        #else
+        return false
+        #endif
+    }
+
+    /// Loopback hosts are for debug builds in the simulator or on a Mac, against a local `ah`.
     private static var allowLoopback: Bool {
-        #if DEBUG && targetEnvironment(simulator)
+        #if DEBUG && (targetEnvironment(simulator) || targetEnvironment(macCatalyst))
         return true
         #else
         return false
