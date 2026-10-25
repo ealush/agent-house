@@ -639,7 +639,7 @@ private struct NotificationsSection: View {
                 Toggle("When a session finishes", isOn: binding(\.finished)).disabled(!app.preferences.notifications.enabled)
                 Toggle("Hide what it says on the lock screen", isOn: binding(\.privatePreview)).disabled(!app.preferences.notifications.enabled)
             } footer: {
-                Text("Approve and Deny appear on a notification only for a plain permission prompt, and need the device unlocked. The icon badge counts sessions waiting on you.")
+                Text("Approve and Deny appear on a notification only for a plain permission prompt; Reply on a session that finished. Both need the device unlocked. The icon badge counts sessions waiting on you.")
             }
             if let registration = model.status?.registration {
                 Section("Registered with this host") {

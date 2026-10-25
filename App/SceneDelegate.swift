@@ -126,6 +126,14 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
     }
 
+    /// Words that couldn't be sent from a notification, waiting in the session's composer.
+    static func draft(_ text: String, into key: String) {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let target = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+        guard let session = (target?.delegate as? SceneDelegate)?.model?.session(key), session.composer.text.isEmpty else { return }
+        session.composer.text = text
+    }
+
     /// From the app delegate (a notification tap): the foreground window, else the most recent.
     static func open(_ link: DeepLink, origin: String?) {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }

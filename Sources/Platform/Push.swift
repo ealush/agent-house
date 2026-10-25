@@ -27,12 +27,18 @@ final class PushRegistrar {
     static let approvalCategory = "AH_APPROVAL"
     static let approveAction = "AH_APPROVE"
     static let denyAction = "AH_DENY"
+    /// A finished session: Reply sends a follow-up without opening the app.
+    static let replyCategory = "AH_REPLY"
+    static let replyAction = "AH_REPLY_SEND"
 
     func installCategories() {
-        let approve = UNNotificationAction(identifier: Self.approveAction, title: "Approve", options: [.authenticationRequired])
-        let deny = UNNotificationAction(identifier: Self.denyAction, title: "Deny", options: [.destructive, .authenticationRequired])
-        let category = UNNotificationCategory(identifier: Self.approvalCategory, actions: [approve, deny], intentIdentifiers: [], hiddenPreviewsBodyPlaceholder: "An agent needs you", options: [.hiddenPreviewsShowTitle])
-        UNUserNotificationCenter.current().setNotificationCategories([category])
+        let approve = UNNotificationAction(identifier: Self.approveAction, title: "Approve", options: [.authenticationRequired], icon: UNNotificationActionIcon(systemImageName: "checkmark"))
+        let deny = UNNotificationAction(identifier: Self.denyAction, title: "Deny", options: [.destructive, .authenticationRequired], icon: UNNotificationActionIcon(systemImageName: "xmark"))
+        let approval = UNNotificationCategory(identifier: Self.approvalCategory, actions: [approve, deny], intentIdentifiers: [], hiddenPreviewsBodyPlaceholder: "An agent needs you", options: [.hiddenPreviewsShowTitle])
+        let reply = UNTextInputNotificationAction(identifier: Self.replyAction, title: "Reply", options: [.authenticationRequired], icon: UNNotificationActionIcon(systemImageName: "arrowshape.turn.up.left"),
+                                                  textInputButtonTitle: "Send", textInputPlaceholder: "Tell the agent what’s next")
+        let finished = UNNotificationCategory(identifier: Self.replyCategory, actions: [reply], intentIdentifiers: [], hiddenPreviewsBodyPlaceholder: "A session finished", options: [.hiddenPreviewsShowTitle])
+        UNUserNotificationCenter.current().setNotificationCategories([approval, finished])
     }
 
     func refreshAuthorization() async {

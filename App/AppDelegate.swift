@@ -124,20 +124,21 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         [.banner, .list, .sound]
     }
 
-    /// A tap opens the session or review layer in the most recent window; Approve and Deny
-    /// answer from the notification itself (both require the device unlocked).
+    /// A tap opens the session or review layer in the most recent window; Approve, Deny and
+    /// Reply answer from the notification itself (all require the device unlocked).
     /// UIKit finishes handling a response on the main thread (it refreshes the window's
     /// snapshot); the `async` form of this method completes on another thread and aborts.
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping @Sendable () -> Void) {
         let payload = PushPayload(response.notification.request.content.userInfo)
         let action = response.actionIdentifier
+        let reply = (response as? UNTextInputNotificationResponse)?.userText
         Task { @MainActor in
-            if let payload { self.route(payload, action: action) }
+            if let payload { self.route(payload, action: action, reply: reply) }
             completionHandler()
         }
     }
 
-    private func route(_ payload: PushPayload, action: String) {
+    private func route(_ payload: PushPayload, action: String, reply: String? = nil) {
         guard let app else { return }
         let account = app.accounts.first { $0.status == .signedIn && ($0.hostname == payload.link.host || $0.hub.hosts.contains { $0.name == payload.link.host }) } ?? app.accounts.first
         if action == PushRegistrar.approveAction || action == PushRegistrar.denyAction {
@@ -150,6 +151,19 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
                 } catch {
                     // The session moved on (answered elsewhere, ended): opening it shows where it is.
                     SceneDelegate.open(payload.link, origin: account.origin)
+                }
+            }
+            return
+        }
+        if action == PushRegistrar.replyAction, let text = reply?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+            guard let account, let key = payload.link.sessionKey(localHost: account.hostname) else { return }
+            Task {
+                do {
+                    _ = try await account.hub.client(forKey: key).send(SessionKey(key)?.uid ?? key, text: text)
+                } catch {
+                    // Not delivered (ended, signed out): open it with the words in the box.
+                    SceneDelegate.open(payload.link, origin: account.origin)
+                    SceneDelegate.draft(text, into: key)
                 }
             }
             return
