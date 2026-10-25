@@ -191,6 +191,36 @@ enum FeedProjection {
         return blocks
     }
 
+    /// How long each answered turn took: from your message to the agent's last entry before
+    /// your next one, keyed by the agent block that starts the answer (its first entry's seq).
+    /// Turns without both ends (history cut mid-turn, timestamps missing) are left out.
+    static func turnDurations(_ entries: [FeedEntry]) -> [String: Double] {
+        var out: [String: Double] = [:]
+        var asked: Double?
+        var answer: (key: String, end: Double)?
+        func close() {
+            if let asked, let answer, asked > 0, answer.end > asked { out[answer.key] = (answer.end - asked) / 1000 }
+            answer = nil
+        }
+        for entry in entries {
+            let speaks = entry.parts.contains { !$0.isNotice && !$0.isToolResult }
+            if entry.role == .user && speaks {
+                close()
+                asked = entry.at
+                continue
+            }
+            guard asked != nil else { continue }
+            if answer == nil {
+                guard entry.role != .user || !speaks, entry.parts.contains(where: { !$0.isNotice }) else { continue }
+                answer = (String(entry.seq), entry.at)
+            } else {
+                answer!.end = max(answer!.end, entry.at)
+            }
+        }
+        close()
+        return out
+    }
+
     /// Prose of the newest assistant turn that said something.
     static func lastAssistantText(_ entries: [FeedEntry]) -> String {
         for block in project(entries).reversed() where block.isAgent {

@@ -14,6 +14,21 @@ struct TranscriptView: View {
 
     private var stepsHidden: Bool { scene.app.preferences.stepsHidden }
 
+    /// Where each finished turn ends (the block before your next message, or the last one
+    /// once the agent is done), with how long it took.
+    static func turnEnds(_ blocks: [FeedBlock], durations: [String: Double], working: Bool) -> [String: Double] {
+        var out: [String: Double] = [:]
+        var start: String?
+        for (index, block) in blocks.enumerated() {
+            if block.isUser { start = nil; continue }
+            if block.isAgent && start == nil { start = block.id }
+            let next = index + 1 < blocks.count ? blocks[index + 1] : nil
+            let ends = next.map(\.isUser) ?? !working
+            if ends, let start, let seconds = durations[start] { out[block.id] = seconds }
+        }
+        return out
+    }
+
     var body: some View {
         let blocks = session.blocks
         ScrollViewReader { reader in
@@ -41,11 +56,15 @@ struct TranscriptView: View {
                             }
                         }
                     }
+                    let ends = Self.turnEnds(blocks, durations: FeedProjection.turnDurations(session.feed.entries), working: session.working)
                     ForEach(Array(blocks.enumerated()), id: \.element.id) { index, block in
                         BlockRow(block: block, session: session, stepsHidden: stepsHidden, isLast: index == blocks.count - 1)
                             .id(block.id)
                             .padding(.horizontal, 2)
                             .background(browsing == index ? theme.accent.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 12))
+                        if let seconds = ends[block.id] {
+                            TurnFooter(seconds: seconds)
+                        }
                     }
                     ForEach(session.outgoing) { item in
                         UserBubble(text: item.text, pending: item.state == .sending ? "Sending…" : "Typed in · waiting for the transcript")
@@ -570,6 +589,20 @@ struct ChecklistView: View {
                 .accessibilityLabel("\(item.state == .done ? "Done" : item.state == .active ? "In progress" : "To do"): \(item.text)")
             }
         }
+    }
+}
+
+/// The end of an answered turn: how long the agent took.
+private struct TurnFooter: View {
+    let seconds: Double
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        Label("Done in \(WorkingRow.elapsed(seconds))", systemImage: "checkmark.circle")
+            .font(.caption2)
+            .foregroundStyle(theme.faint)
+            .padding(.leading, 4)
+            .accessibilityLabel("The agent took \(WorkingRow.elapsed(seconds))")
     }
 }
 

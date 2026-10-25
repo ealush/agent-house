@@ -191,3 +191,20 @@ private let result = ToolResult(callId: "c1", text: "ok", isError: false, data: 
     #expect(ComposerModel.placeholder(isShell: false, working: false, queued: 0, touchOnly: false) == "Send a follow-up · / commands · @ files")
     #expect(ComposerModel.placeholder(isShell: true, working: true, queued: 0, touchOnly: false) == "Type or paste a command")
 }
+
+@Test func eachAnsweredTurnKnowsHowLongItTook() {
+    let entries = [
+        entry(1, .assistant, [.text("From before you came in")]),
+        entry(3, .user, [.text("Fix the login flash")]),
+        entry(5, .assistant, [.toolCall(call)]),
+        entry(8, .tool, [.toolResult(result)]),
+        entry(15, .assistant, [.text("Fixed.")]),
+        entry(20, .user, [.text("Thanks")]),
+        entry(21, .assistant, [.text("Anytime.")]),
+    ]
+    let durations = FeedProjection.turnDurations(entries)
+    #expect(durations["5"] == 12, "from the message at 3 s to the last answer at 15 s")
+    #expect(durations["21"] == 1)
+    #expect(durations["1"] == nil, "a turn whose question isn't in view")
+    #expect(FeedProjection.project(entries).contains { $0.id == "5" }, "keyed by the agent block that answers")
+}

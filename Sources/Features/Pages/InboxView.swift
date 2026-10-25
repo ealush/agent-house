@@ -185,6 +185,7 @@ struct SessionRowView: View {
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(row.title), \(row.word.rawValue). \(detail)")
+        .accessibilityIdentifier("session:\(row.title)")
     }
 
     private var detail: String {
