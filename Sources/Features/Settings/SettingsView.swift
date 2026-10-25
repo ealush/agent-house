@@ -13,16 +13,11 @@ struct SettingsView: View {
         NavigationSplitView {
             List(selection: $section) {
                 Section("This device") {
-                    NavigationLink(value: SettingsSection.security) { Label("Hosts and security", systemImage: "lock.shield") }
+                    NavigationLink(value: SettingsSection.security) { SettingsRowLabel(section: .security, title: "Hosts and security") }
                 }
                 Section("Agent Hub") {
                     ForEach(SettingsSection.allCases.filter { $0 != .security }, id: \.self) { s in
-                        NavigationLink(value: s) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Label(s.title, systemImage: s.symbol)
-                                Text(s.summary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                            }
-                        }
+                        NavigationLink(value: s) { SettingsRowLabel(section: s, title: s.title) }
                     }
                 }
             }
@@ -40,6 +35,58 @@ struct SettingsView: View {
             }
         }
         .onAppear { if section == nil && sizeClass == .regular { section = .security } }
+    }
+}
+
+/// A section in Settings' list, as iOS Settings draws one: its symbol white on a colored
+/// tile, its name, and what's in it.
+private struct SettingsRowLabel: View {
+    let section: SettingsSection
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: section.tileSymbol)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 30, height: 30)
+                .background(section.tile.gradient, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                Text(section.summary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+private extension SettingsSection {
+    /// Its symbol, filled where there's a filled one (white on a tile reads better solid).
+    var tileSymbol: String {
+        switch self {
+        case .security: return "lock.shield.fill"
+        case .notifications: return "bell.badge.fill"
+        case .agents: return "person.2.fill"
+        case .subscriptions: return "key.fill"
+        case .system: return "gearshape.2.fill"
+        default: return symbol
+        }
+    }
+
+    /// Each section's tile, in iOS Settings' palette.
+    var tile: Color {
+        switch self {
+        case .security: return .blue
+        case .appearance: return .indigo
+        case .shortcuts: return .gray
+        case .notifications: return .red
+        case .agents: return .orange
+        case .subscriptions: return .green
+        case .environment: return .teal
+        case .search: return .purple
+        case .system: return Color(white: 0.45)
+        }
     }
 }
 
