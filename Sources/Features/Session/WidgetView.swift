@@ -174,19 +174,50 @@ struct WidgetView: View {
     }
 
     private func tableView(title: String, columns: [String], rows: [[String]]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let width = max(columns.count, rows.map(\.count).max() ?? 0)
+        let numeric = (0..<width).map { Self.isNumeric(column: $0, rows: rows) }
+        return VStack(alignment: .leading, spacing: 8) {
             if !title.isEmpty { Text(title).font(.headline) }
-            ScrollView(.horizontal) {
-                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 0) {
                     if !columns.isEmpty {
-                        GridRow { ForEach(columns.indices, id: \.self) { Text(columns[$0]).font(.caption.weight(.semibold)).foregroundStyle(theme.muted) } }
-                        Divider()
+                        GridRow {
+                            ForEach(0..<width, id: \.self) { c in
+                                Text(c < columns.count ? columns[c] : "")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(theme.muted)
+                                    .gridColumnAlignment(numeric[c] ? .trailing : .leading)
+                            }
+                        }
+                        .padding(.bottom, 6)
                     }
                     ForEach(rows.indices, id: \.self) { r in
-                        GridRow { ForEach(rows[r].indices, id: \.self) { Text(rows[r][$0]).font(.callout) } }
+                        Divider().gridCellUnsizedAxes(.horizontal).overlay(theme.faint.opacity(0.2))
+                        GridRow {
+                            ForEach(0..<width, id: \.self) { c in
+                                let cell = c < rows[r].count ? rows[r][c] : ""
+                                Text(cell)
+                                    .font(numeric[c] ? .callout.monospacedDigit() : .callout)
+                                    .fontWeight(c == 0 ? .medium : .regular)
+                                    .foregroundStyle(theme.text)
+                            }
+                        }
+                        .padding(.vertical, 7)
                     }
                 }
+                .padding(.horizontal, 2)
             }
+        }
+    }
+
+    /// A column of numbers (units and signs allowed: "412 ms", "+24", "12%", "$3.20") lines
+    /// up on the right.
+    static func isNumeric(column: Int, rows: [[String]]) -> Bool {
+        let cells = rows.compactMap { column < $0.count ? $0[column].trimmingCharacters(in: .whitespaces) : nil }.filter { !$0.isEmpty }
+        guard !cells.isEmpty else { return false }
+        return cells.allSatisfy { cell in
+            let core = cell.trimmingCharacters(in: CharacterSet(charactersIn: "+-−$€£%×x ").union(.letters))
+            return !core.isEmpty && Double(core.replacingOccurrences(of: ",", with: "")) != nil
         }
     }
 
