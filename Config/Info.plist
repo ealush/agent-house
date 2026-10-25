@@ -52,6 +52,16 @@
                 <string>public.data</string>
             </array>
         </dict>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>dev.ealush.ah.native.group</string>
+            <key>UTTypeDescription</key>
+            <string>Agent Hub sidebar group</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+            </array>
+        </dict>
     </array>
     <key>UIApplicationSceneManifest</key>
     <dict>

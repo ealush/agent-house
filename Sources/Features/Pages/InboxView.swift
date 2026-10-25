@@ -159,6 +159,16 @@ struct SessionRowView: View {
                     HStack(spacing: 6) {
                         if row.dto.pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint) }
                         Text(row.title).foregroundStyle(onAccent ? .white : theme.text).lineLimit(1)
+                        if let fork = row.dto.fork {
+                            // A fork (or a session others were forked from): its lineage at a glance.
+                            HStack(spacing: 2) {
+                                Image(systemName: "arrow.branch")
+                                if fork.forks > 0 { Text("\(fork.forks)") }
+                            }
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint)
+                            .accessibilityLabel(fork.parentTitle.isEmpty ? "\(fork.forks) forks" : "Fork of \(fork.parentTitle)")
+                        }
                     }
                     Text(detail).font(.caption).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.muted).lineLimit(1)
                 }
@@ -180,23 +190,82 @@ struct SessionRowView: View {
     }
 }
 
+/// A block's header in the sidebar: its project (or host), a button to start a session
+/// there, and a menu to move the block. Dragging a header onto another moves it there.
+private struct GroupHeader: View {
+    let scene: SceneModel
+    let hub: HubStore
+    let section: SessionOrdering.Section
+    let first: Bool
+    let last: Bool
+    @Environment(\.theme) private var theme
+    @State private var targeted = false
+
+    private var newHere: SceneModel.NewSessionContext {
+        if hub.multiHost {
+            let host = section.rows.first.flatMap { $0.isLocal ? nil : $0.host }
+            return SceneModel.NewSessionContext(host: host)
+        }
+        return SceneModel.NewSessionContext(cwd: section.rows.first?.dto.projectPath, host: section.rows.first.flatMap { $0.isLocal ? nil : $0.host })
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(section.id)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            // Tap: a new session here. Hold: move the block (a sidebar header takes no
+            // context menu of its own).
+            Menu {
+                Button("New Session Here", systemImage: "plus") { scene.sheet = .newSession(newHere) }
+                Divider()
+                Button("Move Up", systemImage: "arrow.up") { withAnimation(.snappy) { scene.moveGroup(section.id, by: -1) } }.disabled(first)
+                Button("Move Down", systemImage: "arrow.down") { withAnimation(.snappy) { scene.moveGroup(section.id, by: 1) } }.disabled(last)
+            } label: {
+                Image(systemName: "plus")
+                    .font(.caption.weight(.semibold))
+            } primaryAction: {
+                scene.sheet = .newSession(newHere)
+            }
+            .menuStyle(.button)
+            .buttonStyle(.borderless)
+            .accessibilityLabel("New session in \(section.id)")
+            .accessibilityHint("Hold for more")
+        }
+        .padding(.vertical, 2)
+        .overlay(alignment: .top) {
+            if targeted { Rectangle().fill(theme.accent).frame(height: 2).offset(y: -4) }
+        }
+        .contentShape(Rectangle())
+        .draggable(GroupDrag(id: section.id)) {
+            Label(section.id, systemImage: "folder").padding(8).background(.regularMaterial, in: Capsule())
+        }
+        .dropDestination(for: GroupDrag.self) { items, _ in
+            guard let dragged = items.first, dragged.id != section.id else { return false }
+            withAnimation(.snappy) { scene.moveGroup(dragged.id, to: section.id, after: false) }
+            return true
+        } isTargeted: { targeted = $0 }
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
 /// The session list, grouped as the sidebar groups it, with pin, rename and terminate at hand.
 struct SessionListView: View {
     @Bindable var scene: SceneModel
     let hub: HubStore
     var selection: String?
     @Environment(\.theme) private var theme
-    @State private var savedGroups: [String] = []
     /// "Focus the session list" (⌃⇧0) puts the keyboard here.
     @FocusState private var listFocused: Bool
 
     var body: some View {
-        let sections = SessionOrdering.sections(hub.rows, multiHost: hub.multiHost, saved: savedGroups)
+        let sections = scene.sidebarSections
         List(selection: Binding(get: { selection }, set: { if let key = $0 { scene.open(key) } })) {
             ConnectionBanner(phase: hub.phase, lastUpdated: hub.lastUpdated, cached: hub.showingCached) { hub.resync() }
                 .listRowBackground(Color.clear)
             ForEach(sections) { section in
-                Section(section.id) {
+                Section {
                     ForEach(section.rows) { row in
                         SessionRowView(row: row, multiHost: false) { scene.open(row.key) }
                             .tag(row.key)
@@ -210,6 +279,8 @@ struct SessionListView: View {
                             }
                     }
                     .onMove { from, to in move(section: section, from: from, to: to) }
+                } header: {
+                    GroupHeader(scene: scene, hub: hub, section: section, first: section.id == sections.first?.id, last: section.id == sections.last?.id)
                 }
             }
             if hub.rows.isEmpty {

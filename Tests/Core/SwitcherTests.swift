@@ -105,3 +105,15 @@ private func past(_ ref: String, title: String, harness: String = "claude", proj
     let risky = LaunchState.remembered(.init(mode: "dangerous", model: "claude-opus-5-5", effort: "ultra"), preset: preset)
     #expect(risky == ("default", "claude-opus-5-5", "medium"), "a dangerous mode and an unknown effort aren't restored; a typed model id is")
 }
+
+@Test func sidebarBlockOrderIsKeptPerGrouping() throws {
+    var order = DevicePreferences.GroupOrder()
+    order.set(["api", "web"], multiHost: false)
+    order.set(["desk", "laptop"], multiHost: true)
+    #expect(order.saved(multiHost: false) == ["api", "web"])
+    #expect(order.saved(multiHost: true) == ["desk", "laptop"])
+    let moved = SessionOrdering.saveGroupMove(visible: ["web", "api", "infra"], saved: [], from: "infra", to: "web", after: false)
+    #expect(moved == ["infra", "web", "api"])
+    let decoded = try JSONDecoder().decode(DevicePreferences.self, from: Data(#"{"groupOrder":{"project":["b","a"],"host":[]}}"#.utf8))
+    #expect(decoded.groupOrder.project == ["b", "a"])
+}

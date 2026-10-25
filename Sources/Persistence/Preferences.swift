@@ -48,6 +48,20 @@ struct DevicePreferences: Codable, Equatable, Sendable {
     var recentPalette: [String] = []
     /// New session's last choices for each agent, by preset id.
     var launchMemory: [String: LaunchMemory] = [:]
+    /// The sidebar's blocks as dragged on this device (`../ah/web/groupOrder.ts`); empty
+    /// until a block is moved. Session order lives on the host.
+    var groupOrder = GroupOrder()
+
+    struct GroupOrder: Codable, Equatable, Sendable {
+        var project: [String] = []
+        var host: [String] = []
+
+        func saved(multiHost: Bool) -> [String] { multiHost ? host : project }
+
+        mutating func set(_ order: [String], multiHost: Bool) {
+            if multiHost { host = order } else { project = order }
+        }
+    }
 
     struct LaunchMemory: Codable, Equatable, Sendable {
         var mode: String?
@@ -57,7 +71,7 @@ struct DevicePreferences: Codable, Equatable, Sendable {
 
     init() {}
 
-    private enum CodingKeys: String, CodingKey { case appearance, deviceName, stepsHidden, keyBar, terminalFontSize, inboxGrouping, notifications, recentAgents, focusFollowsPointer, recentPalette, launchMemory }
+    private enum CodingKeys: String, CodingKey { case appearance, deviceName, stepsHidden, keyBar, terminalFontSize, inboxGrouping, notifications, recentAgents, focusFollowsPointer, recentPalette, launchMemory, groupOrder }
 
     private enum LegacyKeys: String, CodingKey { case keyBarVisible }
 
@@ -77,6 +91,7 @@ struct DevicePreferences: Codable, Equatable, Sendable {
         focusFollowsPointer = (try? c.decode(Bool.self, forKey: .focusFollowsPointer)) ?? true
         recentPalette = (try? c.decode([String].self, forKey: .recentPalette)) ?? []
         launchMemory = (try? c.decode([String: LaunchMemory].self, forKey: .launchMemory)) ?? [:]
+        groupOrder = (try? c.decode(GroupOrder.self, forKey: .groupOrder)) ?? GroupOrder()
     }
 
     enum KeyBarMode: String, Codable, Sendable, CaseIterable {

@@ -392,7 +392,31 @@ final class SceneModel {
 
     var sidebarOrder: [SessionRow] {
         guard let hub else { return [] }
-        return SessionOrdering.sidebarOrder(hub.rows, multiHost: hub.multiHost)
+        return SessionOrdering.sidebarOrder(hub.rows, multiHost: hub.multiHost, saved: app.preferences.groupOrder.saved(multiHost: hub.multiHost))
+    }
+
+    /// The sidebar's blocks, in the order this device keeps.
+    var sidebarSections: [SessionOrdering.Section] {
+        guard let hub else { return [] }
+        return SessionOrdering.sections(hub.rows, multiHost: hub.multiHost, saved: app.preferences.groupOrder.saved(multiHost: hub.multiHost))
+    }
+
+    /// A block dragged onto another (or moved up or down a step): saved on this device.
+    func moveGroup(_ id: String, to target: String, after: Bool) {
+        guard let hub else { return }
+        let visible = sidebarSections.map(\.id)
+        var order = app.preferences.groupOrder
+        let saved = order.saved(multiHost: hub.multiHost)
+        order.set(SessionOrdering.saveGroupMove(visible: visible, saved: saved, from: id, to: target, after: after), multiHost: hub.multiHost)
+        app.preferences.groupOrder = order
+    }
+
+    func moveGroup(_ id: String, by step: Int) {
+        let ids = sidebarSections.map(\.id)
+        guard let at = ids.firstIndex(of: id) else { return }
+        let to = at + step
+        guard ids.indices.contains(to) else { return }
+        moveGroup(id, to: ids[to], after: step > 0)
     }
 
     /// Open a session: in a split it replaces the focused pane, on a phone it pushes.

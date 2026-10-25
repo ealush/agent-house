@@ -122,7 +122,17 @@ struct SessionDrag: Codable, Transferable {
     }
 }
 
+/// A sidebar block (project or host) on the move to a new place in the list.
+struct GroupDrag: Codable, Transferable {
+    let id: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .agentHubGroup)
+    }
+}
+
 extension UTType {
     /// Declared in Info.plist (UTExportedTypeDeclarations).
     static let agentHubSession = UTType(exportedAs: "dev.ealush.ah.native.session")
+    static let agentHubGroup = UTType(exportedAs: "dev.ealush.ah.native.group")
 }
