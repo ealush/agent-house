@@ -186,7 +186,7 @@ private struct ScreenChoicesView: View {
                         if sent == option.key { ProgressView().controlSize(.small) }
                     }
                     .padding(10)
-                    .background(index == 0 ? theme.accent.opacity(0.1) : theme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(index == 0 ? theme.accent.opacity(0.1) : theme.text.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(sent != nil)

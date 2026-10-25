@@ -202,10 +202,10 @@ struct LaunchChips: View {
         if let preset = launch.preset {
             HStack(spacing: 6) {
                 if !(preset.models ?? []).isEmpty || preset.modelArgs != nil || preset.settingsCommands?.model != nil {
-                    chip("Model", "cpu", launch.modelLabel ?? "Default") { scene.sheet = .modelPicker(session.key) }
+                    chip("Model", "cpu", launch.modelLabel ?? "Default model") { scene.sheet = .modelPicker(session.key) }
                 }
                 if !launch.levels.isEmpty || preset.settingsCommands?.effort != nil {
-                    chip("Effort", "gauge.with.dots.needle.50percent", launch.effort.map(\.capitalized) ?? "Default") { scene.sheet = .effortPicker(session.key) }
+                    chip("Effort", "gauge.with.dots.needle.50percent", launch.effort.map(\.capitalized) ?? "Default effort") { scene.sheet = .effortPicker(session.key) }
                 }
                 if let modes = preset.modes, modes.count > 1 {
                     let current = launch.mode ?? modes.first { $0.id == "default" }

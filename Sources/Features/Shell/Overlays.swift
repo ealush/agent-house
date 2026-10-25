@@ -168,7 +168,8 @@ struct PaletteView: View {
         return HStack(spacing: 14) {
             hint(["↑", "↓"], "move")
             hint(["↵"], selected?.isCategory == true ? "open" : "run")
-            if selected?.isCategory == true || selected?.hasChoices == true { hint(["→"], selected?.hasChoices == true ? "more" : "open") }
+            // → opens a category too, but saying so twice is noise; it's named only for choices.
+            if selected?.hasChoices == true { hint(["→"], "more") }
             if case .openSession? = selected?.action, !scene.narrow { hint(["⌘", "↵"], "as a pane") }
             if !path.isEmpty { hint(["←"], "back") }
             Spacer()

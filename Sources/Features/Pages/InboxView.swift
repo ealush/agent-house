@@ -164,45 +164,57 @@ struct SessionRowView: View {
     let multiHost: Bool
     /// The sidebar: titles get the room, and only a status that needs you takes words.
     var dense = false
+    /// In a list that selects (the sidebar): the list opens it, and the row is plain content,
+    /// so a selected row in a focused list gets the list's white-on-accent treatment.
+    var selectable = false
     let open: () -> Void
     @Environment(\.theme) private var theme
     /// Increased when the row is selected in a focused list (filled with the accent).
     @Environment(\.backgroundProminence) private var prominence
 
     var body: some View {
-        let onAccent = prominence == .increased
-        Button(action: open) {
-            HStack(spacing: 10) {
-                AgentMark(agent: row.dto.agent)
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        if row.dto.pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint) }
-                        Text(row.title).foregroundStyle(onAccent ? .white : theme.text).lineLimit(1)
-                        if let fork = row.dto.fork {
-                            // A fork (or a session others were forked from): its lineage at a glance.
-                            HStack(spacing: 2) {
-                                Image(systemName: "arrow.branch")
-                                if fork.forks > 0 { Text("\(fork.forks)") }
-                            }
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint)
-                            .accessibilityLabel(fork.parentTitle.isEmpty ? "\(fork.forks) forks" : "Fork of \(fork.parentTitle)")
-                        }
-                    }
-                    Text(detail).font(.caption).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.muted).lineLimit(1)
-                }
-                Spacer(minLength: 4)
-                VStack(alignment: .trailing, spacing: 2) {
-                    StatusPill(word: row.word, compact: dense && !row.word.asksForAttention)
-                    if row.dto.queued > 0 { Text("\(row.dto.queued) queued").font(.caption2).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint) }
-                }
-            }
-            .contentShape(Rectangle())
+        if selectable {
+            content.contentShape(Rectangle())
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(row.title), \(row.word.rawValue). \(detail)")
+                .accessibilityIdentifier("session:\(row.title)")
+                .accessibilityAddTraits(.isButton)
+        } else {
+            Button(action: open) { content.contentShape(Rectangle()) }
+                .buttonStyle(.plain)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(row.title), \(row.word.rawValue). \(detail)")
+                .accessibilityIdentifier("session:\(row.title)")
         }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(row.title), \(row.word.rawValue). \(detail)")
-        .accessibilityIdentifier("session:\(row.title)")
+    }
+
+    private var content: some View {
+        let onAccent = prominence == .increased
+        return HStack(spacing: 10) {
+            AgentMark(agent: row.dto.agent)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    if row.dto.pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint) }
+                    Text(row.title).foregroundStyle(onAccent ? .white : theme.text).lineLimit(1)
+                    if let fork = row.dto.fork {
+                        // A fork (or a session others were forked from): its lineage at a glance.
+                        HStack(spacing: 2) {
+                            Image(systemName: "arrow.branch")
+                            if fork.forks > 0 { Text("\(fork.forks)") }
+                        }
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint)
+                        .accessibilityLabel(fork.parentTitle.isEmpty ? "\(fork.forks) forks" : "Fork of \(fork.parentTitle)")
+                    }
+                }
+                Text(detail).font(.caption).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.muted).lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            VStack(alignment: .trailing, spacing: 2) {
+                StatusPill(word: row.word, compact: dense && !row.word.asksForAttention)
+                if row.dto.queued > 0 { Text("\(row.dto.queued) queued").font(.caption2).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint) }
+            }
+        }
     }
 
     private var detail: String {
@@ -287,7 +299,7 @@ struct SessionListView: View {
             ForEach(sections) { section in
                 Section {
                     ForEach(section.rows) { row in
-                        SessionRowView(row: row, multiHost: false, dense: !scene.narrow) { scene.open(row.key) }
+                        SessionRowView(row: row, multiHost: false, dense: !scene.narrow, selectable: !scene.narrow) { scene.open(row.key) }
                             .tag(row.key)
                             .draggable(SessionDrag(key: row.key))
                             .contextMenu { rowMenu(row) }

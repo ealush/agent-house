@@ -167,7 +167,7 @@ struct TranscriptView: View {
             }
             .overlay(alignment: .leading) {
                 let items = session.railItems
-                if items.count > 1 {
+                if items.count > 2 {
                     let top = scene.scrollAnchors[session.key]?.seq
                     MessageRail(items: items, active: FeedProjection.activeRail(items, topSeq: top, atLatest: top == nil) ?? items.count - 1) { item in
                         guard let seq = item.seq else {
@@ -387,10 +387,34 @@ private struct PartView: View {
             MarkdownView(text)
         case .reasoning(let text):
             if !stepsHidden {
-                DisclosureGroup(isExpanded: $showReasoning) {
-                    MarkdownView(text, compact: true).foregroundStyle(theme.muted)
-                } label: {
-                    Label("Thinking", systemImage: "brain").font(.footnote).foregroundStyle(theme.muted)
+                // Folded like a tool step: what it thought about, a line of it, and the same
+                // small chevron.
+                VStack(alignment: .leading, spacing: 8) {
+                    Button {
+                        withAnimation(.snappy(duration: 0.2)) { showReasoning.toggle() }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "brain").foregroundStyle(theme.faint)
+                            Text("Thinking").foregroundStyle(theme.muted)
+                            if !showReasoning {
+                                Text(text.split(whereSeparator: \.isWhitespace).joined(separator: " "))
+                                    .foregroundStyle(theme.faint)
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(theme.faint).rotationEffect(.degrees(showReasoning ? 90 : 0))
+                        }
+                        .font(.footnote)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(showReasoning ? "Hide thinking" : "Show thinking")
+                    if showReasoning {
+                        MarkdownView(text, compact: true).foregroundStyle(theme.muted)
+                            .padding(.leading, 12)
+                            .overlay(alignment: .leading) { Rectangle().fill(theme.faint.opacity(0.3)).frame(width: 2) }
+                            .transition(.opacity)
+                    }
                 }
             }
         case .media(_, let src, let alt):
