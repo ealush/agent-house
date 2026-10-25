@@ -87,6 +87,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         builder.remove(menu: .format)
         builder.remove(menu: .toolbar)
         builder.insertChild(MenuCommands.palette(bindings: app.keyBindings), atStartOfMenu: .application)
+        if builder.menu(for: .newScene) != nil {
+            builder.replace(menu: .newScene, with: MenuCommands.newWindow())
+        }
         // ⌘, opens the app's own Settings, not the system Settings app's page for it.
         if builder.menu(for: .preferences) != nil {
             builder.replace(menu: .preferences, with: MenuCommands.settings())
@@ -99,6 +102,10 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             builder.insertSibling(menu, afterMenu: previous)
             previous = menu.identifier
         }
+    }
+
+    @objc func newWindow(_ sender: Any?) {
+        UIApplication.shared.requestSceneSessionActivation(nil, userActivity: nil, options: nil) { _ in }
     }
 
     // MARK: APNs

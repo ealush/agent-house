@@ -111,7 +111,7 @@ struct SetupView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if !app.accounts.isEmpty {
-                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) }
                 }
             }
             .onAppear { field = .address }

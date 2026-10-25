@@ -150,9 +150,9 @@ struct ResolveThreadSheet: View {
             .navigationTitle("Reply and resolve")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Resolve") { Task { await model.resolveThread(finding, reply: reply); dismiss() } }
+                    Button("Resolve") { Task { await model.resolveThread(finding, reply: reply); dismiss() } }.keyboardShortcut(.return, modifiers: .command)
                 }
             }
         }

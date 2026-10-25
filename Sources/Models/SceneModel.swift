@@ -635,6 +635,13 @@ final class SceneModel {
 
     /// A hardware key press from wherever focus is. True when a command took it.
     func handle(_ press: KeyPress, scope: KeyScope, field: FieldState = FieldState()) -> Bool {
+        let scope = effectiveScope(scope)
+        // Esc closes a sheet even when nothing in it has the keyboard (its Cancel button's
+        // shortcut only answers from inside it).
+        if modalShown, sheet != nil, pendingChord == nil, press.key == "Escape", press.modifiers.isEmpty {
+            sheet = nil
+            return true
+        }
         if let lead = pendingChord, scope != .ask, let next = press.chord {
             finishChord(lead, next, scope: scope)
             return true
@@ -768,8 +775,17 @@ final class SceneModel {
     func allowsMenuCommand(_ id: CommandID, chord: Chord?) -> Bool {
         if pendingChord != nil, chord != nil { return true }
         guard isAvailable(id) else { return false }
-        guard let chord else { return true }
-        return CommandMatcher.match(chord, scope: keyScope, bindings: app.keyBindings, field: fieldState) == id
+        guard let chord else {
+            // Chosen from the menu bar: behind a sheet, only what works over one.
+            return !modalShown || CommandCatalog.all.first { $0.id == id }?.scopes.contains(.dialog) == true
+        }
+        return CommandMatcher.match(chord, scope: effectiveScope(keyScope), bindings: app.keyBindings, field: fieldState) == id
+    }
+
+    /// Behind a sheet, the palette or the switcher, a key reaches only the commands that work
+    /// over a dialog (the switcher, Settings): a page must not change under an open sheet.
+    private func effectiveScope(_ scope: KeyScope) -> KeyScope {
+        modalShown && scope != .ask ? .dialog : scope
     }
 
     /// Run a command: the same path for its key, the palette, the menu bar, a pane's menu

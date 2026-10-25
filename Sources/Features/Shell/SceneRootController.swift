@@ -328,6 +328,12 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
     /// would only get in the way).
     func sawKeys(_ event: UIPressesEvent) {
         let presses = event.allPresses.filter { $0.key != nil }
+        // Esc cancels the sheet in front, wherever the keyboard is: with nothing in the sheet
+        // focused, neither its Cancel button nor the scene would ever hear it.
+        if scene.sheet != nil, scene.palette == nil, scene.switcher == nil,
+           presses.contains(where: { $0.phase == .began && $0.key?.keyCode == .keyboardEscape && $0.key?.modifierFlags.intersection([.command, .control, .alternate, .shift]).isEmpty == true }) {
+            scene.sheet = nil
+        }
         let isModifier = { (press: UIPress) in KeyPress.modifierUsages.contains(press.key!.keyCode.rawValue) }
         let armed = presses.contains { $0.phase == .began && isModifier($0) } && !presses.contains { $0.phase == .began && !isModifier($0) }
         whichKeyTask?.cancel()

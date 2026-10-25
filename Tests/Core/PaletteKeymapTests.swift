@@ -153,3 +153,29 @@ private let ctrlK = Chord("k", ctrl: true)
     scene.runMenuCommand("switcher", chord: Chord(",", ctrl: true))
     #expect(scene.sheet == .settings(nil) && scene.switcher == nil)
 }
+
+@MainActor
+@Test func behindASheetKeysReachOnlyDialogCommandsAndEscapeClosesIt() throws {
+    let services = AppServices(
+        database: try AppDatabase(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)),
+        vault: CredentialVault(store: MemorySecretStore()), keys: MemoryDeviceKeyStore(),
+        transport: URLSessionTransport(), device: DeviceDescriptor(name: "iPad", client: DeviceDescriptor.newClientID()), allowLoopback: true
+    )
+    let scene = SceneModel(sceneID: "modal", app: AppModel(services: services))
+    // The Apple keys sit beside ah's own.
+    #expect(scene.app.keyBindings.chords("new-session").contains(Chord("n", meta: true)))
+    #expect(scene.app.keyBindings.chords("interrupt").contains(Chord(".", meta: true)))
+    let cmdComma = KeyPress(hidUsage: 0x36, characters: ",", modifiers: [.command])
+    #expect(scene.handle(cmdComma, scope: .field), "⌘, opens Settings while typing")
+    #expect(scene.sheet == .settings(nil))
+    scene.modalWillPresent()
+    // A command that would change what's under the sheet doesn't reach the app (with no
+    // host, Settings and the shortcut table are what's available).
+    #expect(!scene.allowsMenuCommand("show-shortcuts", chord: Chord("/", meta: true)))
+    #expect(!scene.allowsMenuCommand("show-shortcuts", chord: nil))
+    #expect(scene.allowsMenuCommand("go-settings", chord: Chord(",", meta: true)), "Settings works over a dialog")
+    #expect(scene.handle(KeyPress(hidUsage: 0x29, characters: "", modifiers: []), scope: .app))
+    #expect(scene.sheet == nil, "Esc closes the sheet though nothing in it has the keyboard")
+    scene.modalDidDismiss()
+    #expect(scene.allowsMenuCommand("show-shortcuts", chord: Chord("/", meta: true)))
+}

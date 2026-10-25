@@ -492,7 +492,7 @@ private struct FileTextSheet: View {
             .navigationTitle((file.path as NSString).lastPathComponent)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
                 ToolbarItemGroup(placement: .primaryAction) {
                     Button { UIPasteboard.general.string = file.text } label: { Image(systemName: "doc.on.doc") }.accessibilityLabel("Copy")
                     Button {
@@ -646,7 +646,7 @@ private struct PastChatsView: View {
             .searchable(text: $query)
             .navigationTitle("Past chats")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) } }
             .task(id: query) {
                 try? await Task.sleep(for: .milliseconds(250))
                 do {

@@ -58,12 +58,14 @@ enum MenuCommands {
     static func menus(bindings: KeyBindings) -> [UIMenu] {
         let groups: [(CommandGroup, String)] = [(.navigate, "Go"), (.session, "Session"), (.workspace, "Workspace")]
         return groups.map { group, title in
-            let commands = CommandCatalog.all.filter { $0.group == group && $0.id != "command-palette" }
+            // The palette and Settings have their own items in the app menu.
+            let commands = CommandCatalog.all.filter { $0.group == group && $0.id != "command-palette" && $0.id != "go-settings" }
             let children: [UIMenuElement] = commands.map { command in
                 // A two-key chord can't be a menu key equivalent; the menu shows it in the title's
                 // discoverability text and `chordStarts` catches its first key.
                 let singles = bindings.chords(command.id).filter { !$0.isSequence }
-                let chord = singles.first { !$0.meta } ?? singles.first
+                // The ⌘ chord where there is one, as the menu bar and the ⌘-hold overlay expect.
+                let chord = singles.first { $0.meta } ?? singles.first
                 if let chord, command.field == nil {
                     let element = UIKeyCommand(title: command.label, image: nil, action: action, input: chord.keyCommandInput, modifierFlags: chord.modifierFlags, propertyList: command.id.rawValue, alternates: [], discoverabilityTitle: command.detail, attributes: [], state: .off)
                     element.wantsPriorityOverSystemBehavior = command.scopes.contains(.field)
@@ -89,6 +91,12 @@ enum MenuCommands {
             return element
         }
         return UIMenu(title: "", identifier: UIMenu.Identifier("dev.ealush.ah.native.chords"), options: .displayInline, children: elements)
+    }
+
+    /// New Window on ⌥⌘N: ⌘N makes a session, as ⌘N makes the main thing in Mail or Notes.
+    static func newWindow() -> UIMenu {
+        let element = UIKeyCommand(title: "New Window", image: UIImage(systemName: "macwindow.badge.plus"), action: #selector(AppDelegate.newWindow(_:)), input: "n", modifierFlags: [.command, .alternate], propertyList: nil, alternates: [], discoverabilityTitle: "Open another window", attributes: [], state: .off)
+        return UIMenu(title: "", identifier: UIMenu.Identifier("dev.ealush.ah.native.new-window"), options: .displayInline, children: [element])
     }
 
     /// Settings… on ⌘, as every app has it, whatever else Settings is bound to.

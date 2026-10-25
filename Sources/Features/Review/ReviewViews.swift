@@ -131,7 +131,7 @@ private struct StartReviewView: View {
             }
         }
         .navigationTitle("Start a review")
-        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) } }
         .task { if model.repos.isEmpty { await model.loadList() } }
     }
 
@@ -709,7 +709,7 @@ private struct NewFindingSheet: View {
             }
             .navigationTitle("New finding")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") {
                         let numbers = lines.compactMap(\.number)
@@ -717,7 +717,7 @@ private struct NewFindingSheet: View {
                             await model.addFinding(title: title, body: body_, severity: severity, path: path, lines: numbers.isEmpty ? nil : numbers.min()!...numbers.max()!)
                             dismiss()
                         }
-                    }
+                    }.keyboardShortcut(.return, modifiers: .command)
                     .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
@@ -771,7 +771,7 @@ private struct DispatchSheet: View {
             }
             .navigationTitle(kind == "restack" ? "Restack \(layer.name)" : kind == "merge" ? "Ask the agent to merge" : "Request fixes")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(sending ? "Sending…" : "Send") {
                         sending = true
@@ -783,7 +783,7 @@ private struct DispatchSheet: View {
                             }
                             sending = false
                         }
-                    }
+                    }.keyboardShortcut(.return, modifiers: .command)
                     .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty || sending)
                 }
             }
@@ -837,7 +837,7 @@ private struct MergeLayerSheet: View {
             }
             .navigationTitle("Merge #\(layer.pr)")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(outcome == nil ? "Cancel" : "Done") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button(outcome == nil ? "Cancel" : "Done") { dismiss() }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(merging ? "Merging…" : "Merge") {
                         merging = true
@@ -900,7 +900,7 @@ private struct StackMergeSheet: View {
             }
             .navigationTitle(plan.lands.isEmpty ? "Nothing can merge yet" : "Merge \(plan.lands.count) layer\(plan.lands.count == 1 ? "" : "s")")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(result == nil ? "Cancel" : "Done") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button(result == nil ? "Cancel" : "Done") { dismiss() }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(merging ? "Merging…" : "Merge") {
                         merging = true
