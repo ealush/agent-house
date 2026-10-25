@@ -197,15 +197,30 @@ struct LaunchChips: View {
     let scene: SceneModel
     @Environment(\.theme) private var theme
 
+    /// How much each chip says: its value, its value unless it's the default (then just its
+    /// symbol), or only symbols. The roomiest that fits the box wins.
+    enum Density { case full, compact, symbols }
+
     var body: some View {
+        if session.launch.preset != nil {
+            ViewThatFits(in: .horizontal) {
+                chips(.full)
+                chips(.compact)
+                chips(.symbols)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func chips(_ density: Density) -> some View {
         let launch = session.launch
         if let preset = launch.preset {
             HStack(spacing: 6) {
                 if !(preset.models ?? []).isEmpty || preset.modelArgs != nil || preset.settingsCommands?.model != nil {
-                    chip("Model", "cpu", launch.modelLabel ?? "Default model") { scene.sheet = .modelPicker(session.key) }
+                    chip("Model", "cpu", launch.modelLabel, fallback: "Default model", density) { scene.sheet = .modelPicker(session.key) }
                 }
                 if !launch.levels.isEmpty || preset.settingsCommands?.effort != nil {
-                    chip("Effort", "gauge.with.dots.needle.50percent", launch.effort.map(\.capitalized) ?? "Default effort") { scene.sheet = .effortPicker(session.key) }
+                    chip("Effort", "gauge.with.dots.needle.50percent", launch.effort.map(\.capitalized), fallback: "Default effort", density) { scene.sheet = .effortPicker(session.key) }
                 }
                 if let modes = preset.modes, modes.count > 1 {
                     let current = launch.mode ?? modes.first { $0.id == "default" }
@@ -217,11 +232,13 @@ struct LaunchChips: View {
                         }
                         Section { Text(launch.footer(.mode)) }
                     } label: {
-                        chipLabel("Permissions", current?.dangerous == true ? "exclamationmark.shield.fill" : "lock.shield", current?.name ?? "Default", danger: current?.dangerous == true)
+                        // The mode in force always says its name until there's room for nothing else.
+                        chipLabel("Permissions", current?.dangerous == true ? "exclamationmark.shield.fill" : "lock.shield", density == .symbols ? nil : current?.name ?? "Default", spoken: current?.name ?? "Default", danger: current?.dangerous == true)
                     }
                     .menuOrder(.fixed)
                 }
             }
+            .fixedSize()
         }
     }
 
@@ -235,21 +252,26 @@ struct LaunchChips: View {
         }
     }
 
-    private func chip(_ name: String, _ symbol: String, _ value: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { chipLabel(name, symbol, value, danger: false) }.buttonStyle(.plain)
+    private func chip(_ name: String, _ symbol: String, _ value: String?, fallback: String, _ density: Density, action: @escaping () -> Void) -> some View {
+        let shown: String? = switch density {
+        case .full: value ?? fallback
+        case .compact: value
+        case .symbols: nil
+        }
+        return Button(action: action) { chipLabel(name, symbol, shown, spoken: value ?? fallback, danger: false) }.buttonStyle(.plain)
     }
 
-    private func chipLabel(_ name: String, _ symbol: String, _ value: String, danger: Bool) -> some View {
+    private func chipLabel(_ name: String, _ symbol: String, _ value: String?, spoken: String, danger: Bool) -> some View {
         HStack(spacing: 4) {
             Image(systemName: symbol).foregroundStyle(danger ? theme.danger : theme.faint)
-            Text(value).foregroundStyle(danger ? theme.danger : theme.text2).lineLimit(1)
+            if let value { Text(value).foregroundStyle(danger ? theme.danger : theme.text2).lineLimit(1) }
         }
         .font(.caption)
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
         .background(theme.surface, in: Capsule())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(name), \(value)")
+        .accessibilityLabel("\(name), \(spoken)")
         .accessibilityAddTraits(.isButton)
     }
 }
@@ -496,7 +518,7 @@ struct ComposerTextField: UIViewRepresentable {
 /// pasted screenshot into an attachment instead of nothing.
 final class ComposerTextView: UITextView {
     weak var coordinator: ComposerTextField.Coordinator?
-    var placeholder = "" { didSet { placeholderLabel.text = placeholder } }
+    var placeholder = "" { didSet { if placeholder != oldValue { setNeedsLayout() } } }
     /// The current Return came from a hardware key (handled in pressesBegan).
     fileprivate(set) var isHardwareReturn = false
     private let placeholderLabel = UILabel()
@@ -517,6 +539,9 @@ final class ComposerTextView: UITextView {
     override func layoutSubviews() {
         super.layoutSubviews()
         placeholderLabel.frame = CGRect(x: textContainerInset.left + 5, y: textContainerInset.top, width: bounds.width - 20, height: placeholderLabel.font.lineHeight)
+        // Hints drop from the end, whole, rather than end mid-word in an ellipsis.
+        let font = placeholderLabel.font ?? .preferredFont(forTextStyle: .body)
+        placeholderLabel.text = ComposerModel.fitting(placeholder, width: placeholderLabel.frame.width) { ($0 as NSString).size(withAttributes: [.font: font]).width }
         placeholderLabel.isHidden = !text.isEmpty
     }
 

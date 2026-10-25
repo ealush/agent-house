@@ -72,6 +72,8 @@ struct NewSessionSheet: View {
     @State private var browsing = false
     @FocusState private var promptFocused: Bool
     @FocusState private var folderFocused: Bool
+    /// The folder as text to edit; otherwise it reads as a path with its folder picked out.
+    @State private var editingFolder = false
 
     private var hub: HubStore? { scene.hub }
     private var presets: [PresetDTO] {
@@ -124,12 +126,20 @@ struct NewSessionSheet: View {
                 Section {
                     HStack(spacing: 10) {
                         Image(systemName: dirState == .new ? "folder.badge.plus" : "folder").foregroundStyle(theme.accent)
-                        TextField("~/code/project", text: $cwd)
-                            .font(.body.monospaced())
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .focused($folderFocused)
-                            .onSubmit { Task { await checkDir() } }
+                        if editingFolder || cwd.isEmpty {
+                            TextField("~/code/project", text: $cwd)
+                                .font(.body.monospaced())
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .focused($folderFocused)
+                                .onSubmit { Task { await checkDir() } }
+                                .onChange(of: folderFocused) { _, focused in if !focused { editingFolder = false } }
+                        } else {
+                            Button(action: editFolder) { PathLabel(path: cwd) }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Folder \(cwd)")
+                                .accessibilityHint("Edit the path")
+                        }
                         Button {
                             browsing = true
                         } label: {
@@ -148,7 +158,7 @@ struct NewSessionSheet: View {
                                 if let root {
                                     projectChip("New Folder", systemImage: "plus", on: dirState == .new) {
                                         cwd = root.hasSuffix("/") ? root : root + "/"
-                                        folderFocused = true
+                                        editFolder()
                                     }
                                 }
                             }
@@ -259,6 +269,12 @@ struct NewSessionSheet: View {
         resume = false
     }
 
+    private func editFolder() {
+        editingFolder = true
+        // The field appears in this update; focus it once it's there.
+        DispatchQueue.main.async { folderFocused = true }
+    }
+
     private func checkDir() async {
         guard let hub else { return }
         let status = try? await hub.client(host: host).dir(cwd.trimmingCharacters(in: .whitespaces))
@@ -307,6 +323,26 @@ struct NewSessionSheet: View {
 }
 
 // MARK: Folder picker
+
+/// A path with its last folder picked out: the parents fade and give way first.
+private struct PathLabel: View {
+    let path: String
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        let trimmed = path.hasSuffix("/") && path.count > 1 ? String(path.dropLast()) : path
+        let name = (trimmed as NSString).lastPathComponent
+        let parent = (trimmed as NSString).deletingLastPathComponent
+        HStack(spacing: 0) {
+            if !parent.isEmpty {
+                Text(parent == "/" ? "/" : parent + "/").foregroundStyle(theme.muted).lineLimit(1).truncationMode(.head)
+            }
+            Text(name).fontWeight(.semibold).foregroundStyle(theme.text).lineLimit(1).layoutPriority(1)
+            Spacer(minLength: 0)
+        }
+        .contentShape(Rectangle())
+    }
+}
 
 /// The host's folders, one level at a time, to pick where something starts.
 struct FolderPicker: View {

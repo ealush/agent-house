@@ -355,6 +355,13 @@ final class ComposerModel {
         return "Send a follow-up · / commands · @ files"
     }
 
+    /// The longest run of a placeholder's " · " hints, from the start, that fits the width.
+    nonisolated static func fitting(_ placeholder: String, width: Double, measure: (String) -> Double) -> String {
+        var parts = placeholder.components(separatedBy: " · ")
+        while parts.count > 1, measure(parts.joined(separator: " · ")) > width { parts.removeLast() }
+        return parts.joined(separator: " · ")
+    }
+
     func takeEvents() -> [Event] {
         defer { events = [] }
         return events
