@@ -92,8 +92,18 @@ struct PageView: View {
     let route: SceneSnapshot.Route
     @State private var review: ReviewModel?
     @State private var search: SearchModel?
+    @Environment(\.theme) private var theme
 
+    /// Pages sit on the theme's background like sessions and the sidebar do (in dark mode
+    /// the system's pure black stood apart from them).
     var body: some View {
+        page
+            .scrollContentBackground(.hidden)
+            .background(theme.background.ignoresSafeArea())
+    }
+
+    @ViewBuilder
+    private var page: some View {
         if let hub = scene.hub {
             switch route {
             case .inbox, .settings, .worktrees, .session:
