@@ -19,6 +19,9 @@ struct TerminalScreen: View {
             ZStack(alignment: .top) {
                 if let controller {
                     TerminalViewRepresentable(controller: controller, scene: scene, sessionKey: session.key, sticky: StickyModifiers(ctrl: $ctrl, alt: $alt, shift: $shift))
+                        // A little breathing room inside the terminal's own background.
+                        .padding(.horizontal, 10)
+                        .padding(.top, 6)
                         .ignoresSafeArea(.container, edges: .bottom)
                 }
                 if let controller {
