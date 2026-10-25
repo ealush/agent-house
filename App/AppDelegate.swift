@@ -89,11 +89,15 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
 
     /// A tap opens the session or review layer in the most recent window; Approve and Deny
     /// answer from the notification itself (both require the device unlocked).
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        let userInfo = response.notification.request.content.userInfo
+    /// UIKit finishes handling a response on the main thread (it refreshes the window's
+    /// snapshot); the `async` form of this method completes on another thread and aborts.
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping @Sendable () -> Void) {
+        let payload = PushPayload(response.notification.request.content.userInfo)
         let action = response.actionIdentifier
-        guard let payload = PushPayload(userInfo) else { return }
-        await MainActor.run { self.route(payload, action: action) }
+        Task { @MainActor in
+            if let payload { self.route(payload, action: action) }
+            completionHandler()
+        }
     }
 
     private func route(_ payload: PushPayload, action: String) {
