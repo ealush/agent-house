@@ -78,6 +78,17 @@ struct TerminalPalette: Equatable, Sendable {
     /// black, red, green, yellow, blue, magenta, cyan, white, then the bright eight.
     var ansi: [String]
 
+    /// A dark background (relative luminance under a half): bars over it go dark too.
+    var isDark: Bool {
+        let hex = background.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+        guard hex.count == 6, let value = UInt32(hex, radix: 16) else { return true }
+        let channel = { (shift: UInt32) -> Double in
+            let c = Double((value >> shift) & 0xff) / 255
+            return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0) < 0.5
+    }
+
     static let dark = TerminalPalette(
         background: "#15161f", foreground: "#e6e6ef", cursor: "#f47199", selection: "#3a3d55",
         ansi: ["#15161f", "#ff8a80", "#81d88a", "#f5b84b", "#82aaff", "#f47199", "#4dd9ea", "#c9cad3",

@@ -38,3 +38,11 @@ import Testing
     let on = try JSONDecoder().decode(DevicePreferences.self, from: Data(#"{"keyBarVisible": true}"#.utf8))
     #expect(on.keyBar == .auto)
 }
+
+@Test func terminalPalettesKnowWhetherTheyreDark() {
+    #expect(TerminalPalette.dark.isDark)
+    #expect(!TerminalPalette.light.isDark)
+    var odd = TerminalPalette.light
+    odd.background = "not a color"
+    #expect(odd.isDark, "an unreadable color is taken as the usual dark")
+}

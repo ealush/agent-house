@@ -11,6 +11,9 @@ struct SessionScreen: View {
     var compactHeader = false
     /// Where this session sits in a split (nil: the single view or a phone).
     var pane: LayoutNode.Path? = nil
+    /// Pushed on a phone: the navigation bar carries the title, status and actions, so the
+    /// header only shows while renaming.
+    var inNavigationBar = false
     @Environment(\.theme) private var theme
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var panelWidth: CGFloat = 380
@@ -20,7 +23,9 @@ struct SessionScreen: View {
     var body: some View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
-                SessionHeader(session: session, scene: scene, compact: compactHeader, pane: pane, paneFocused: paneFocused)
+                if !inNavigationBar || session.renaming != nil {
+                    SessionHeader(session: session, scene: scene, compact: compactHeader, pane: pane, paneFocused: paneFocused)
+                }
                 if let history = session.history, !session.isLive {
                     EndedBanner(session: session, scene: scene, item: history)
                 }
@@ -72,6 +77,48 @@ struct SessionScreen: View {
             // An ended session without a transcript: its last screen, read-only.
             EndedScreen(session: session)
         }
+    }
+}
+
+/// A phone's session bar: the title, what it's doing and where (as the subtitle), and the
+/// header's actions as toolbar items.
+struct SessionNavigationChrome: ViewModifier {
+    @Bindable var session: SessionModel
+    let scene: SceneModel
+    @Environment(\.theme) private var theme
+
+    /// The terminal fills the screen under a see-through bar: over a dark one the bar's title
+    /// and buttons have to be light.
+    private var overDarkTerminal: Bool {
+        !(session.surface == .gui && session.hasGUI) && theme.palette.terminal.isDark
+    }
+
+    private var subtitle: String {
+        guard let row = session.row else { return session.isLive ? "" : "Ended" }
+        return [row.word.rawValue, row.dto.project, row.dto.branch].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .navigationTitle(session.title)
+            .navigationSubtitle(subtitle)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(overDarkTerminal ? .dark : nil, for: .navigationBar)
+            .toolbar {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if session.isLive && session.hasGUI && !session.isShell {
+                        let other: SceneSnapshot.Surface = session.surface == .gui ? .terminal : .gui
+                        Button {
+                            scene.setSurface(other, for: session.key)
+                        } label: {
+                            Image(systemName: other == .terminal ? "terminal" : "text.bubble")
+                        }
+                        .accessibilityLabel(other == .terminal ? "Terminal" : "GUI")
+                    }
+                    PanelsMenu(session: session)
+                    SessionMenu(session: session, scene: scene)
+                }
+            }
     }
 }
 

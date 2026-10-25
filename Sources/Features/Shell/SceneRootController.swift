@@ -548,6 +548,8 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
         navigationItem.largeTitleDisplayMode = .never
         navigationItem.title = session.title
         navigationItem.backButtonDisplayMode = .minimal
+        // A session gets the whole screen: the composer and terminal sit where the tabs were.
+        hidesBottomBarWhenPushed = true
     }
 
     @MainActor required dynamic init?(coder: NSCoder) { fatalError() }
@@ -558,6 +560,7 @@ struct SessionPage: View {
     let scene: SceneModel
 
     var body: some View {
-        SessionScreen(session: session, scene: scene, compactHeader: true)
+        SessionScreen(session: session, scene: scene, compactHeader: true, inNavigationBar: true)
+            .modifier(SessionNavigationChrome(session: session, scene: scene))
     }
 }
