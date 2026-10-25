@@ -117,3 +117,56 @@ private func past(_ ref: String, title: String, harness: String = "claude", proj
     let decoded = try JSONDecoder().decode(DevicePreferences.self, from: Data(#"{"groupOrder":{"project":["b","a"],"host":[]}}"#.utf8))
     #expect(decoded.groupOrder.project == ["b", "a"])
 }
+
+// Siri, Shortcuts and quick actions (`ShortcutCatalog`, `QuickAction`).
+
+private func shortcut(_ uid: String, _ title: String, status: String = "idle", project: String = "orbit-web", activity: Double = 0, host: String = "desk", showHost: Bool = false) throws -> ShortcutSession {
+    let object: [String: Any] = ["id": "%\(uid)", "uid": uid, "name": title, "title": title, "statusSource": "hook", "project": project, "projectPath": "/p/\(project)",
+                                 "status": status, "command": "node", "agent": "claude", "activity": activity]
+    let dto = try JSONDecoder().decode(SessionDTO.self, from: JSONSerialization.data(withJSONObject: object))
+    return ShortcutSession(origin: "https://desk.example.ts.net", row: SessionRow(key: uid, host: host, isLocal: true, dto: dto), showHost: showHost)
+}
+
+@Test func siriNamesSessionsThatNeedYouFirstThenWorkingThenRecent() throws {
+    let idleOld = try shortcut("a", "Release notes", activity: 10)
+    let idleNew = try shortcut("b", "Users latency", project: "orbit-api", activity: 50)
+    let working = try shortcut("c", "Welcome flow", status: "busy", activity: 5)
+    let waiting = try shortcut("d", "Rotate API keys", status: "waiting", project: "orbit-infra", activity: 1)
+    let ranked = ShortcutCatalog.ranked([idleOld, idleNew, working, waiting])
+    #expect(ranked.map(\.key) == ["d", "c", "b", "a"])
+    #expect(waiting.subtitle == "orbit-infra · needs you")
+    #expect(try shortcut("e", "Docs", host: "mac", showHost: true).subtitle == "mac · orbit-web · idle", "with more than one host, the host reads first")
+
+    // An id carries the host's origin and the session key, and comes back apart.
+    #expect(waiting.id == "https://desk.example.ts.net#d")
+    #expect(ShortcutSession.parse(waiting.id)! == ("https://desk.example.ts.net", "d"))
+    #expect(ShortcutSession.parse("nohash") == nil && ShortcutSession.parse("#d") == nil)
+
+    // Spoken names match loosely; filler words don't count against them.
+    #expect(ShortcutCatalog.matching("the welcome flow session", in: ranked).first?.key == "c")
+    #expect(ShortcutCatalog.matching("api", in: ranked).map(\.key).contains("b"))
+    #expect(ShortcutCatalog.matching("", in: ranked).count == 4)
+}
+
+@Test func siriSaysWhatNeedsYouInASentence() throws {
+    let a = try shortcut("a", "Rotate API keys", status: "waiting")
+    let b = try shortcut("b", "Welcome flow", status: "waiting")
+    let c = try shortcut("c", "Users latency", status: "waiting")
+    let d = try shortcut("d", "Docs", status: "waiting")
+    let busy = try shortcut("e", "Release notes", status: "busy")
+    #expect(ShortcutCatalog.needsYouSummary([]) == "Nothing needs you.")
+    #expect(ShortcutCatalog.needsYouSummary([busy]) == "Nothing needs you. One is working.")
+    #expect(ShortcutCatalog.needsYouSummary([a, busy]) == "Rotate API keys needs you. One is working.")
+    #expect(ShortcutCatalog.needsYouSummary([a, b]) == "2 sessions need you: Rotate API keys and Welcome flow.")
+    #expect(ShortcutCatalog.needsYouSummary([a, b, c, d]) == "4 sessions need you: Rotate API keys, Welcome flow, Users latency and 1 more.")
+    #expect(ShortcutCatalog.sentSummary(.delivered, title: "Docs") == "Sent to Docs.")
+    #expect(ShortcutCatalog.sentSummary(.queued, title: "Docs") == "Queued for Docs; it goes in when the agent is free.")
+}
+
+@Test func quickActionsRunPaletteCommandsAndTheInboxCountsOnly() {
+    #expect(QuickAction.allCases.map(\.command.rawValue) == ["new-session", "go-search", "go-inbox"])
+    #expect(QuickAction.allCases.allSatisfy { action in CommandCatalog.all.contains { $0.id == action.command } }, "each runs a real command")
+    #expect(QuickAction.inboxTitle(needsYou: 0) == "Inbox")
+    #expect(QuickAction.inboxTitle(needsYou: 1) == "1 Needs You")
+    #expect(QuickAction.inboxTitle(needsYou: 3) == "3 Need You")
+}

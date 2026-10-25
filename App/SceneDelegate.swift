@@ -54,6 +54,18 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         if let response = options.notificationResponse, let payload = PushPayload(response.notification.request.content.userInfo) {
             open(payload.link, origin: nil)
         }
+        if let item = options.shortcutItem { _ = perform(item) }
+    }
+
+    /// A Home Screen quick action, chosen while the app was running or as it launched.
+    func windowScene(_ windowScene: UIWindowScene, performActionFor shortcutItem: UIApplicationShortcutItem) async -> Bool {
+        perform(shortcutItem)
+    }
+
+    private func perform(_ item: UIApplicationShortcutItem) -> Bool {
+        guard let action = QuickAction(rawValue: item.type), let model else { return false }
+        model.perform(action.command)
+        return true
     }
 
     func sceneDidDisconnect(_ scene: UIScene) {

@@ -21,11 +21,22 @@ import XCTest
 ///   rotate:<landscape|portrait>
 ///   wait:<seconds>
 ///   relaunch              terminate and launch again
+///   home                  go to the Home Screen
+///   activate              bring the app back to the front
+///   sb-tap:<label>        tap on the Home Screen, Spotlight or a notification (SpringBoard)
+///   sb-press:<label>      long press there (an app icon's quick actions, a notification)
+///   spotlight             open Spotlight from the Home Screen
+///   notifications         pull down Notification Center
+///   sb-type:<text>        type into SpringBoard (Spotlight's field, a notification's reply)
+///   sb-wait:<text>        wait up to two minutes for SpringBoard to show something containing it
+///   open-app:<bundle id>  bring another app forward; tap, press, type and tree act on it
+///   use-app               back to Agent Hub as the app the steps act on
 ///
 /// TEST_RUNNER_AH_TOUR_OUT=<folder on the Mac> also writes shots and trees there.
 @MainActor
 final class TourUITests: XCTestCase {
     private let environment = ProcessInfo.processInfo.environment
+    private let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
 
     func testTour() throws {
         let steps = (environment["AH_TOUR"] ?? "").split(separator: ";").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
@@ -36,6 +47,7 @@ final class TourUITests: XCTestCase {
         app.launchArguments += ["-AHFreshWindow"]
         app.launch()
         try enrollIfNeeded(app)
+        var target = app
         for step in steps {
             let (verb, argument) = split(step)
             switch verb {
@@ -47,23 +59,23 @@ final class TourUITests: XCTestCase {
                 shot.lifetime = .keepAlways
                 add(shot)
             case "tree":
-                save(Data(app.debugDescription.utf8), argument + ".txt")
-                let tree = XCTAttachment(string: app.debugDescription)
+                save(Data(target.debugDescription.utf8), argument + ".txt")
+                let tree = XCTAttachment(string: target.debugDescription)
                 tree.name = argument
                 tree.lifetime = .keepAlways
                 add(tree)
             case "tap":
-                element(app, argument)?.tap()
+                element(target, argument)?.tap()
             case "tapat":
                 let xy = argument.split(separator: ",").compactMap { Double($0) }
                 app.coordinate(withNormalizedOffset: CGVector(dx: xy[0], dy: xy[1])).tap()
             case "press":
-                element(app, argument)?.press(forDuration: 1.0)
+                element(target, argument)?.press(forDuration: 1.0)
             case "pressat":
                 let xy = argument.split(separator: ",").compactMap { Double($0) }
                 app.coordinate(withNormalizedOffset: CGVector(dx: xy[0], dy: xy[1])).press(forDuration: 1.0)
             case "type":
-                app.typeText(argument)
+                target.typeText(argument)
             case "key":
                 let parts = argument.split(separator: "+").map(String.init)
                 var flags: XCUIElement.KeyModifierFlags = []
@@ -96,6 +108,30 @@ final class TourUITests: XCTestCase {
             case "relaunch":
                 app.terminate()
                 app.launch()
+            case "home":
+                XCUIDevice.shared.press(.home)
+            case "activate":
+                app.activate()
+            case "open-app":
+                target = XCUIApplication(bundleIdentifier: argument)
+                target.activate()
+            case "use-app":
+                target = app
+                app.activate()
+            case "sb-tap":
+                element(springboard, argument)?.tap()
+            case "sb-press":
+                element(springboard, argument)?.press(forDuration: 1.2)
+            case "sb-wait":
+                let shown = springboard.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", argument)).firstMatch
+                XCTAssertTrue(shown.waitForExistence(timeout: 120), "SpringBoard never showed \(argument)")
+            case "sb-type":
+                springboard.typeText(argument)
+            case "spotlight":
+                springboard.swipeDown()
+            case "notifications":
+                let top = springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.005))
+                top.press(forDuration: 0.1, thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.7)))
             default:
                 XCTFail("Unknown tour step \(step)")
             }
@@ -115,6 +151,17 @@ final class TourUITests: XCTestCase {
 
     /// The first element whose identifier or label matches, preferring hittable ones.
     private func element(_ app: XCUIApplication, _ name: String) -> XCUIElement? {
+        if name.hasPrefix("~") {
+            // `~text`: the first hittable element whose label contains it (a notification's text).
+            let query = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", String(name.dropFirst())))
+            let deadline = Date().addingTimeInterval(8)
+            repeat {
+                if let hit = query.allElementsBoundByIndex.first(where: { $0.exists && $0.isHittable }) { return hit }
+                Thread.sleep(forTimeInterval: 0.25)
+            } while Date() < deadline
+            XCTFail("No hittable element containing \(name.dropFirst())")
+            return nil
+        }
         let query = app.descendants(matching: .any).matching(NSPredicate(format: "identifier == %@ OR label == %@", name, name))
         let deadline = Date().addingTimeInterval(5)
         repeat {

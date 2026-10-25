@@ -80,6 +80,25 @@
             </array>
         </dict>
     </dict>
+    <key>UIApplicationShortcutItems</key>
+    <array>
+        <dict>
+            <key>UIApplicationShortcutItemType</key>
+            <string>dev.ealush.ah.native.new-session</string>
+            <key>UIApplicationShortcutItemTitle</key>
+            <string>New Session</string>
+            <key>UIApplicationShortcutItemIconSymbolName</key>
+            <string>plus.bubble</string>
+        </dict>
+        <dict>
+            <key>UIApplicationShortcutItemType</key>
+            <string>dev.ealush.ah.native.search</string>
+            <key>UIApplicationShortcutItemTitle</key>
+            <string>Search</string>
+            <key>UIApplicationShortcutItemIconSymbolName</key>
+            <string>magnifyingglass</string>
+        </dict>
+    </array>
     <key>UILaunchScreen</key>
     <dict>
         <key>UIColorName</key>

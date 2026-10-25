@@ -163,7 +163,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     private func observeBadge() {
         guard let app else { return }
         withObservationTracking {
-            PushRegistrar.shared.updateBadge(app.badgeCount)
+            let count = app.badgeCount
+            PushRegistrar.shared.updateBadge(count)
+            QuickActions.update(needsYou: count, signedIn: app.accounts.contains { $0.status == .signedIn })
         } onChange: {
             Task { @MainActor [weak self] in self?.observeBadge() }
         }
