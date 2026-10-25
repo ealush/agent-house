@@ -276,15 +276,15 @@ struct DiffLinesView: View {
     var body: some View {
         let shown = (showAll || maxLines == nil) ? lines : Array(lines.prefix(maxLines!))
         VStack(alignment: .leading, spacing: 0) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(shown.enumerated()), id: \.offset) { index, line in
-                        DiffLineRow(line: line, selected: selected.contains(index))
-                            .overlay { if cursor == index { Rectangle().strokeBorder(theme.accentStrong, lineWidth: 1.5) } }
-                            .contentShape(Rectangle())
-                            .onTapGesture { onLine?(line) }
-                            .id(idPrefix.map { "\($0):\(index)" } ?? "\(index)")
-                    }
+            // Long lines wrap under their own text (numbers and signs stay put): a side panel
+            // or a phone is narrow, and sideways scrolling hides half of every change.
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(shown.enumerated()), id: \.offset) { index, line in
+                    DiffLineRow(line: line, selected: selected.contains(index))
+                        .overlay { if cursor == index { Rectangle().strokeBorder(theme.accentStrong, lineWidth: 1.5) } }
+                        .contentShape(Rectangle())
+                        .onTapGesture { onLine?(line) }
+                        .id(idPrefix.map { "\($0):\(index)" } ?? "\(index)")
                 }
             }
             if let maxLines, lines.count > maxLines, !showAll {
@@ -303,9 +303,9 @@ struct DiffLineRow: View {
     @Environment(\.theme) private var theme
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
             Text(line.number.map(String.init) ?? "")
-                .frame(width: 44, alignment: .trailing)
+                .frame(width: 38, alignment: .trailing)
                 .foregroundStyle(theme.faint)
                 .padding(.trailing, 6)
             Text(sign)
@@ -314,7 +314,9 @@ struct DiffLineRow: View {
             Text(line.text.isEmpty ? " " : line.text)
                 .foregroundStyle(line.kind == .hunk || line.kind == .file ? theme.muted : theme.text)
                 .fontWeight(line.kind == .file ? .semibold : .regular)
-                .padding(.trailing, 12)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, 10)
         }
         .font(.system(.footnote, design: .monospaced))
         .padding(.vertical, 1)
