@@ -7,6 +7,10 @@
 // conversation, a worktree, shells, and an ended one in History. Agents run under ah's own
 // Claude Code preset, so launch choices (model, effort, permissions) are the real ones.
 //
+// Stack review has three stacked pull requests in orbit-api, behind a stand-in `gh`
+// (scripts/demo/gh.mjs) and a bare repository as their GitHub, and a scripted model
+// (scripts/demo/model.mjs) answers briefings, the reviewer thread and side chat.
+//
 //   AH_SOURCE=../ah node scripts/demo/host.mjs [--dir <state dir>]
 //
 // Prints one JSON line {port, localToken, dir} once the sessions are up, then runs until
@@ -16,6 +20,7 @@ import { mkdirSync, mkdtempSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { startModel } from './model.mjs';
 
 const source = resolve(process.env.AH_SOURCE ?? new URL('../../../ah', import.meta.url).pathname);
 const { startAh, cleanup } = await import(pathToFileURL(join(source, 'test/helpers.ts')).href);
@@ -32,6 +37,9 @@ const bin = join(dir, 'bin');
 mkdirSync(bin, { recursive: true });
 const agent = join(here, 'agent.mjs');
 writeFileSync(join(bin, 'claude'), `#!/bin/bash\n# Not Claude Code: the demo's scripted stand-in (scripts/demo/agent.mjs).\n"${process.execPath}" "${agent}" "$@"\n`, { mode: 0o755 });
+writeFileSync(join(bin, 'gh'), `#!/bin/sh\n# Not GitHub's gh: the demo's stand-in (scripts/demo/gh.mjs).\nexec "${process.execPath}" "${join(here, 'gh.mjs')}" "$@"\n`, { mode: 0o755 });
+const github = join(dir, 'github');
+process.env.AH_GH_STATE = join(github, 'state.json');
 
 // ---------- projects
 
@@ -78,6 +86,7 @@ function seed() {
   git(api, 'commit', '-qam', 'Extract Ledger from Payments');
   git(api, 'commit', '-q', '--allow-empty', '-m', 'Move refunds behind the ledger');
   git(api, 'checkout', '-q', 'main');
+  seedPullRequests(api);
 
   const infra = join(files, 'orbit-infra');
   mkdirSync(infra, { recursive: true });
@@ -87,6 +96,92 @@ function seed() {
   git(infra, 'add', '-A');
   git(infra, 'commit', '-qm', 'Infra scripts');
 }
+/**
+ * Three stacked pull requests on orbit-api (cache the users query, then invalidate it, then
+ * measure it), pushed to a bare repository that plays GitHub for `gh` and `git fetch`.
+ */
+function seedPullRequests(api) {
+  const remote = join(github, 'orbit-api.git');
+  mkdirSync(remote, { recursive: true });
+  git(remote, 'init', '-q', '--bare', '-b', 'main');
+  git(api, 'remote', 'add', 'origin', remote);
+  const users = (body) => `import { db } from '../db';\n\n${body}`;
+  const layers = [
+    {
+      number: 101,
+      branch: 'cache/users-query',
+      title: 'Cache the users query for 30 seconds',
+      body: 'The users list ran one teams query per user. This keeps the whole list for 30 s.\n\n- p95 412 ms → 38 ms on the bench\n- Stale for at most 30 s; #102 drops it on writes',
+      checks: [{ name: 'test', status: 'COMPLETED', conclusion: 'SUCCESS' }, { name: 'lint', status: 'COMPLETED', conclusion: 'SUCCESS' }],
+      files: {
+        'src/routes/users.ts': users("const TTL_MS = 30_000;\nlet cached: { at: number; users: unknown[] } | null = null;\n\nexport async function listUsers() {\n  if (cached && Date.now() - cached.at < TTL_MS) return cached.users;\n  const users = await db.users.all();\n  for (const u of users) u.teams = await db.teams.forUser(u.id);\n  cached = { at: Date.now(), users };\n  return users;\n}\n"),
+        'test/users.test.ts': "import { listUsers } from '../src/routes/users';\n\ntest('a second call within 30 s reads the cache', async () => {\n  const first = await listUsers();\n  expect(await listUsers()).toBe(first);\n});\n",
+      },
+    },
+    {
+      number: 102,
+      branch: 'cache/invalidate',
+      title: 'Drop the users cache when teams change',
+      body: 'Adding someone to a team now forgets the cached users list, so the next read is fresh.',
+      checks: [{ name: 'test', status: 'COMPLETED', conclusion: 'SUCCESS' }, { name: 'lint', status: 'COMPLETED', conclusion: 'SUCCESS' }],
+      files: {
+        'src/routes/users.ts': users("const TTL_MS = 30_000;\nlet cached: { at: number; users: unknown[] } | null = null;\n\nexport async function listUsers() {\n  if (cached && Date.now() - cached.at < TTL_MS) return cached.users;\n  const users = await db.users.all();\n  for (const u of users) u.teams = await db.teams.forUser(u.id);\n  cached = { at: Date.now(), users };\n  return users;\n}\n\n/** The next listUsers reads the database again. */\nexport function forgetUsers() {\n  cached = null;\n}\n"),
+        'src/routes/teams.ts': "import { db } from '../db';\nimport { forgetUsers } from './users';\n\nexport async function addMember(team: string, user: string) {\n  await db.teams.add(team, user);\n  forgetUsers();\n}\n",
+      },
+    },
+    {
+      number: 103,
+      branch: 'cache/metrics',
+      title: 'Count users-cache hits and misses',
+      body: 'Exposes the hit rate on /metrics so the 30 s TTL can be tuned from data.',
+      draft: true,
+      checks: [{ name: 'test', status: 'COMPLETED', conclusion: 'SUCCESS' }, { name: 'lint', status: 'COMPLETED', conclusion: 'FAILURE' }],
+      files: {
+        'src/routes/users.ts': users("const TTL_MS = 30_000;\nlet cached: { at: number; users: unknown[] } | null = null;\nexport const usersCache = { hits: 0, misses: 0 };\n\nexport async function listUsers() {\n  if (cached && Date.now() - cached.at < TTL_MS) {\n    usersCache.hits++;\n    return cached.users;\n  }\n  usersCache.misses++;\n  const users = await db.users.all();\n  for (const u of users) u.teams = await db.teams.forUser(u.id);\n  cached = { at: Date.now(), users };\n  return users;\n}\n\n/** The next listUsers reads the database again. */\nexport function forgetUsers() {\n  cached = null;\n}\n"),
+        'src/routes/metrics.ts': "import { usersCache } from './users';\n\nexport function metrics() {\n  const total = usersCache.hits + usersCache.misses;\n  return { usersCacheHitRate: total ? usersCache.hits / total : 0 };\n}\n",
+      },
+    },
+  ];
+  const prs = [];
+  let base = 'main';
+  for (const layer of layers) {
+    git(api, 'checkout', '-q', '-b', layer.branch, base);
+    for (const [path, text] of Object.entries(layer.files)) put(api, path, text);
+    git(api, 'add', '-A');
+    git(api, 'commit', '-qm', layer.title);
+    const head = git(api, 'rev-parse', 'HEAD').trim();
+    const [additions, deletions] = git(api, 'diff', '--numstat', `${base}..${layer.branch}`)
+      .trim()
+      .split('\n')
+      .reduce(([a, d], row) => [a + Number(row.split('\t')[0]), d + Number(row.split('\t')[1])], [0, 0]);
+    prs.push({
+      number: layer.number,
+      title: layer.title,
+      url: `https://github.com/orbit/orbit-api/pull/${layer.number}`,
+      body: layer.body,
+      state: 'OPEN',
+      isDraft: !!layer.draft,
+      headRefName: layer.branch,
+      baseRefName: base,
+      headRefOid: head,
+      baseRefOid: git(api, 'rev-parse', base).trim(),
+      isCrossRepository: false,
+      mergeable: 'MERGEABLE',
+      mergeStateStatus: 'CLEAN',
+      author: { login: 'orbit-dev' },
+      statusCheckRollup: layer.checks,
+      additions,
+      deletions,
+      updatedAt: new Date().toISOString(),
+      mergedAt: '',
+    });
+    base = layer.branch;
+  }
+  git(api, 'checkout', '-q', 'main');
+  git(api, 'push', '-q', 'origin', 'main', ...layers.map((l) => l.branch), ...prs.map((p) => `${p.headRefOid}:refs/pull/${p.number}/head`));
+  writeFileSync(process.env.AH_GH_STATE, JSON.stringify({ repo: 'orbit/orbit-api', remote, prs, stacks: [{ number: 12, prs: prs.map((p) => p.number) }] }, null, 2));
+}
+
 if (fresh) seed();
 
 // No presets of our own: ah's defaults (Shell, Claude Code, Codex…), with `claude` found first.
@@ -113,6 +208,14 @@ const call = async (method, path, body) => {
   if (!res.ok) throw new Error(`${method} ${path}: ${res.status} ${await res.text()}`);
   return res.status === 204 ? null : res.json();
 };
+// The scripted model, on a new port each start: point the demo's subscription at it.
+const model = await startModel();
+{
+  const name = 'Demo model (scripted)';
+  const existing = (await call('GET', '/api/subscriptions')).find((s) => s.name === name);
+  const saved = await call('POST', '/api/subscriptions', { ...(existing ? { id: existing.id } : {}), name, baseUrl: `http://127.0.0.1:${model.port}/v1`, model: 'demo-briefer', apiKey: 'demo' });
+  if (!existing) await call('POST', '/api/subscriptions/default', { id: saved.id });
+}
 const open = (preset, cwd, label, session, extra = {}) => call('POST', '/api/windows', { preset, cwd: join(files, cwd), session, label, ...extra });
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -141,6 +244,8 @@ if (fresh) {
   const ended = await open('shell', 'orbit-web', 'Release notes 1.42', 'tools');
   await wait(1200);
   await call('POST', `/api/sessions/${ended.uid}/terminate`);
+  // The cache stack, under review.
+  await call('POST', '/api/review/stacks', { root: join(files, 'orbit-api'), prs: [101, 102, 103] }).catch((err) => process.stderr.write(`review stack: ${err.message}\n`));
 }
 
 const info = JSON.stringify({ port: ah.port, localToken: ah.localToken(), dir });
@@ -170,6 +275,7 @@ const stop = async () => {
   if (done) return;
   done = true;
   // Keep the state dir with --dir (so a restart keeps the app's enrollment); drop a temp one.
+  model.close();
   if (dirArg > 0) await ah.stop();
   else await cleanup(ah).catch(() => {});
   process.exit(0);
