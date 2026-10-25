@@ -12,6 +12,7 @@ struct SceneSheet: View {
         case .setup: SetupView(app: scene.app) { session in scene.useAccount(session.origin); scene.sheet = nil }
         case .newSession(let context): NewSessionSheet(scene: scene, context: context)
         case .fork(let key): sessionSheet(key) { ForkSheet(scene: scene, session: $0) }
+        case .forks(let key): sessionSheet(key) { ForksSheet(scene: scene, session: $0) }
         case .sendTo(let key): sessionSheet(key) { SendToSheet(scene: scene, session: $0) }
         case .continueIn(let key, let preset): sessionSheet(key) { ContinueInSheet(scene: scene, session: $0, preset: preset) }
         case .branch(let key): sessionSheet(key) { BranchSheet(scene: scene, session: $0) }
@@ -371,6 +372,101 @@ struct FolderPicker: View {
                 if model.listing == nil { await model.open(nil) }
             }
         }
+    }
+}
+
+// MARK: Forks
+
+/// A session's fork family: the conversation they grew from and every line forked from it,
+/// with how far each has gone, to open one or put two side by side.
+struct ForksSheet: View {
+    let scene: SceneModel
+    let session: SessionModel
+    @State private var changed: [String: Int] = [:]
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.theme) private var theme
+
+    private var lines: [ForkFamily.Line] {
+        guard let row = session.row else { return [] }
+        return ForkFamily.lines(of: row, rows: session.hub.rows, history: session.hub.history)
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if lines.isEmpty {
+                    ContentUnavailableView("No forks", systemImage: "arrow.branch", description: Text("Fork this session to try another approach on its own branch."))
+                }
+                ForEach(lines) { line in
+                    HStack(spacing: 12) {
+                        Image(systemName: line.isRoot ? "circle.circle" : "arrow.branch")
+                            .foregroundStyle(line.isCurrent ? theme.accent : theme.muted)
+                            .frame(width: 22)
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 6) {
+                                Text(line.title).font(.body.weight(line.isCurrent ? .semibold : .regular)).lineLimit(1)
+                                if line.isCurrent { Text("this one").font(.caption2.weight(.semibold)).foregroundStyle(theme.accent) }
+                            }
+                            Text(detail(line)).font(.caption).foregroundStyle(theme.muted).lineLimit(1)
+                        }
+                        Spacer(minLength: 8)
+                        if let word = line.word { StatusPill(word: word, compact: true) }
+                        if let key = line.key, !line.isCurrent {
+                            Menu {
+                                Button("Open", systemImage: "arrow.right.circle") { open(key) }
+                                if !scene.narrow { Button("Open Beside This One", systemImage: "rectangle.split.2x1") { beside(key) } }
+                            } label: {
+                                Text("Open").font(.callout.weight(.semibold))
+                            } primaryAction: {
+                                open(key)
+                            }
+                            .buttonStyle(.bordered)
+                            .buttonBorderShape(.capsule)
+                            .controlSize(.small)
+                        } else if line.key == nil {
+                            Text("ended").font(.caption).foregroundStyle(theme.faint)
+                        }
+                    }
+                    .padding(.vertical, 3)
+                }
+            }
+            .navigationTitle("Forks")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss(); scene.sheet = nil } }
+                ToolbarItem(placement: .primaryAction) {
+                    if session.isLive { Button("Fork…", systemImage: "plus") { scene.sheet = .fork(session.key) } }
+                }
+            }
+            .task { await loadChanges() }
+        }
+    }
+
+    private func detail(_ line: ForkFamily.Line) -> String {
+        var parts: [String] = []
+        if line.isRoot { parts.append("where it started") }
+        if let branch = line.branch { parts.append(branch) }
+        if let count = changed[line.uid] { parts.append(count == 0 ? "no changes" : "\(count) file\(count == 1 ? "" : "s") changed") }
+        return parts.joined(separator: " · ")
+    }
+
+    /// Each line's uncommitted files, as they come in.
+    private func loadChanges() async {
+        for line in lines where line.key != nil {
+            if let changes = try? await session.hub.client(forKey: line.key!).changes(line.uid) {
+                changed[line.uid] = changes.files.count
+            }
+        }
+    }
+
+    private func open(_ key: String) {
+        scene.sheet = nil
+        scene.open(key)
+    }
+
+    private func beside(_ key: String) {
+        scene.sheet = nil
+        scene.run(.openAsPane(key))
     }
 }
 

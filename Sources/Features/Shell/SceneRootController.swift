@@ -218,7 +218,7 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
             case .confirmTerminate, .confirmPlan:
                 controller.modalPresentationStyle = .formSheet
                 controller.sheetPresentationController?.detents = [.custom { _ in 300 }]
-            case .modelPicker, .effortPicker, .sessionMenu, .fork, .branch:
+            case .modelPicker, .effortPicker, .sessionMenu, .fork, .forks, .branch:
                 controller.modalPresentationStyle = .formSheet
                 controller.sheetPresentationController?.detents = [.medium(), .large()]
                 controller.sheetPresentationController?.prefersGrabberVisible = true

@@ -89,6 +89,7 @@ final class SceneModel {
         case setup
         case newSession(NewSessionContext)
         case fork(String)
+        case forks(String)
         case sendTo(String)
         case branch(String)
         case worktrees
@@ -106,6 +107,7 @@ final class SceneModel {
             case .setup: return "setup"
             case .newSession: return "new"
             case .fork(let k): return "fork:\(k)"
+            case .forks(let k): return "forks:\(k)"
             case .sendTo(let k): return "send:\(k)"
             case .branch(let k): return "branch:\(k)"
             case .worktrees: return "worktrees"

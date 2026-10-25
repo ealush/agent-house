@@ -330,3 +330,24 @@ private func row(_ key: String, _ title: String, status: String) throws -> Sessi
     #expect(scene.nudges.isEmpty)
     #expect(scene.workspace.focusedKey == "c" || scene.route == .session("c"))
 }
+
+private func forked(_ key: String, _ title: String, root: String?, created: Double) throws -> SessionRow {
+    var object: [String: Any] = ["id": "%\(key)", "uid": key, "name": title, "title": title, "statusSource": "hook", "project": "web", "projectPath": "/p/web", "status": "idle", "command": "node", "agent": "claude", "branch": "ah/\(key)", "createdAt": created]
+    if let root { object["fork"] = ["parentUid": root, "parentTitle": "Root", "rootUid": root, "forks": 0] }
+    return SessionRow(key: key, host: "desk", isLocal: true, dto: try JSONDecoder().decode(SessionDTO.self, from: JSONSerialization.data(withJSONObject: object)))
+}
+
+@Test func aForkKnowsItsFamily() throws {
+    let root = try forked("r", "Parser", root: nil, created: 1)
+    let a = try forked("a", "Parser (fork)", root: "r", created: 3)
+    let b = try forked("b", "Parser (risky)", root: "r", created: 2)
+    let other = try forked("x", "Unrelated", root: nil, created: 4)
+    let lines = ForkFamily.lines(of: a, rows: [other, a, root, b], history: [])
+    #expect(lines.map(\.uid) == ["r", "b", "a"], "the root first, then forks as they were opened")
+    #expect(lines.first?.isRoot == true && lines.last?.isCurrent == true)
+    #expect(ForkFamily.lines(of: other, rows: [other, a, root, b], history: []).isEmpty, "no family, no list")
+    // The root ended: it comes from History, with nowhere to open it as a live session.
+    let past = HistoryRow(host: "desk", isLocal: true, dto: try JSONDecoder().decode(HistoryItemDTO.self, from: JSONSerialization.data(withJSONObject: ["ref": "r", "kind": "ended", "harness": "claude", "title": "Parser", "cwd": "/p", "project": "web", "at": 0] as [String: Any])))
+    let orphaned = ForkFamily.lines(of: a, rows: [a, b], history: [past])
+    #expect(orphaned.first?.key == nil && orphaned.first?.title == "Parser")
+}

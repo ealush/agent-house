@@ -272,8 +272,15 @@ private struct SessionHeader: View {
                     if !session.otherDevices.isEmpty {
                         Label("Also open on \(session.otherDevices.joined(separator: ", "))", systemImage: "rectangle.on.rectangle").foregroundStyle(theme.faint)
                     }
-                    if let fork = row.dto.fork, !fork.parentTitle.isEmpty {
-                        Label("Fork of \(fork.parentTitle)", systemImage: "arrow.triangle.branch").foregroundStyle(theme.faint).lineLimit(1)
+                    if let fork = row.dto.fork {
+                        Button {
+                            scene.sheet = .forks(session.key)
+                        } label: {
+                            Label(fork.parentTitle.isEmpty ? "\(fork.forks) fork\(fork.forks == 1 ? "" : "s")" : "Fork of \(fork.parentTitle)", systemImage: "arrow.branch").lineLimit(1)
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(theme.faint)
+                        .accessibilityHint("Show the fork family")
                     }
                 }
                 .font(.caption)
@@ -338,6 +345,7 @@ struct SessionMenu: View {
                 Section {
                     if session.row?.dto.branch != nil { Button("Switch Branch…", systemImage: "arrow.triangle.branch") { scene.sheet = .branch(session.key) } }
                     if !session.isShell { Button("Fork…", systemImage: "arrow.branch") { scene.sheet = .fork(session.key) } }
+                    if session.row?.dto.fork != nil { Button("Forks…", systemImage: "arrow.triangle.branch") { scene.sheet = .forks(session.key) } }
                     if session.row?.dto.feed != nil { Button("Send To…", systemImage: "paperplane") { scene.sheet = .sendTo(session.key) } }
                     if let queued = session.row?.dto.queued, queued > 0 {
                         Button("Send Queued Now (\(queued))", systemImage: "arrow.up.to.line") { scene.perform("send-now") }
