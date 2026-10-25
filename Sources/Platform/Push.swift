@@ -72,7 +72,15 @@ final class PushRegistrar {
     }
 
     func didFail(_ error: any Error) {
-        lastError = error.localizedDescription
+        lastError = Self.explain(error)
+    }
+
+    /// A build signed without the Push Notifications capability (a free Personal Team can't
+    /// have it) is refused a device token: say what that means rather than the system's text.
+    nonisolated static func explain(_ error: any Error) -> String {
+        let text = error.localizedDescription
+        guard text.contains("aps-environment") else { return text }
+        return "This build can’t receive notifications from your hosts: it’s signed without the Push Notifications capability, which a Personal Team can’t add. While Agent Hub is open, it still tells you when a session needs you."
     }
 
     /// Sends this device's token and opt-ins to every signed-in host (or withdraws them).

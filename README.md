@@ -24,7 +24,7 @@ brew install xcodegen
 ./scripts/verify.sh             # static checks + unit and UI tests on a simulator
 ```
 
-For a device, copy `Config/Local.xcconfig.example` to `Config/Local.xcconfig` with your team and bundle ID. APNs needs an auth key configured on the host (`apns` in its config: `teamId`, `keyId`, `keyFile`, `topic`).
+Device builds sign with the owner's Personal Team (`Config/Base.xcconfig`); to use another, copy `Config/Local.xcconfig.example` to `Config/Local.xcconfig` with your team and bundle ID. A Personal Team can't sign push, so the entitlements are empty for now (see RISKS). With a paid team, APNs also needs an auth key configured on the host (`apns` in its config: `teamId`, `keyId`, `keyFile`, `topic`).
 
 ## Anywhere with Swift 6.2
 

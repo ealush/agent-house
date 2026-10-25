@@ -2,12 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- APNs. Xcode signs distribution builds with "production"; the app reports which
-         one it was built for (PushRegistrar.environment) so the host uses the matching gateway. -->
-    <key>aps-environment</key>
-    <string>development</string>
-    <!-- "Needs you" alerts are time-sensitive (they break through Focus when allowed). -->
-    <key>com.apple.developer.usernotifications.time-sensitive</key>
-    <true/>
+    <!-- Empty while the app is signed by a free Personal Team, which can't sign Push
+         Notifications (aps-environment) or Time Sensitive Notifications
+         (com.apple.developer.usernotifications.time-sensitive); Xcode refuses the profile.
+         Until a paid team signs it, the host's APNs alerts can't reach the app; its own
+         in-app nudges still do. Restore both with a paid team. -->
 </dict>
 </plist>
