@@ -64,6 +64,25 @@ final class SceneModel {
         accountOrigin = app.accounts.first?.origin
     }
 
+    @ObservationIgnored private var watchedHub: ObjectIdentifier?
+
+    /// Every change to a host's session list reaches `notice`, as it happens (a view's
+    /// update pass can fold several changes into one and miss a working → done). Started
+    /// once a host is signed in (and again for another host).
+    func watchSessionsIfNeeded() {
+        guard let hub, ObjectIdentifier(hub) != watchedHub else { return }
+        watchedHub = ObjectIdentifier(hub)
+        watchSessions(hub)
+    }
+
+    private func watchSessions(_ hub: HubStore) {
+        guard watchedHub == ObjectIdentifier(hub) else { return }
+        let rows = withObservationTracking { hub.rows } onChange: { [weak self, weak hub] in
+            Task { @MainActor in if let hub { self?.watchSessions(hub) } }
+        }
+        notice(rows)
+    }
+
     // MARK: Presentation
 
     enum Sheet: Equatable, Identifiable, Sendable {
@@ -159,6 +178,54 @@ final class SceneModel {
         let text: String
         let isError: Bool
     }
+
+    /// A session you're not looking at that just started needing you, or just finished.
+    struct Nudge: Equatable, Identifiable, Sendable {
+        enum Kind: Sendable { case needsYou, finished }
+        let id: Int
+        let key: String
+        let title: String
+        let agent: String?
+        let kind: Kind
+    }
+
+    /// At most three, newest last.
+    private(set) var nudges: [Nudge] = []
+    @ObservationIgnored private var seenWords: [String: StatusWord] = [:]
+    @ObservationIgnored private var nudgeID = 0
+
+    /// Fed every change to the session list: a session off screen that turns to needing you,
+    /// or from working to done, gets a nudge with a way to it. The first look at a list
+    /// nudges nothing (that's the Inbox's job), and a nudge leaves once its session is on
+    /// screen or (needing you) was answered elsewhere.
+    func notice(_ rows: [SessionRow]) {
+        var now: [String: StatusWord] = [:]
+        for row in rows {
+            now[row.key] = row.word
+            guard let before = seenWords[row.key], before != row.word, !onScreen(row.key) else { continue }
+            let kind: Nudge.Kind? = row.word == .needsYou ? .needsYou : (row.word == .done && before == .working ? .finished : nil)
+            guard let kind else { continue }
+            nudges.removeAll { $0.key == row.key }
+            nudgeID += 1
+            nudges.append(Nudge(id: nudgeID, key: row.key, title: row.title, agent: row.dto.agent, kind: kind))
+            if nudges.count > 3 { nudges.removeFirst(nudges.count - 3) }
+        }
+        let stale = nudges.filter { onScreen($0.key) || now[$0.key] == nil || ($0.kind == .needsYou && now[$0.key] != .needsYou) }
+        if !stale.isEmpty { nudges.removeAll { n in stale.contains { $0.id == n.id } } }
+        seenWords = now
+    }
+
+    private func onScreen(_ key: String) -> Bool {
+        if case .session(let open) = route, open == key { return true }
+        return workspace.visibleKeys.contains(key)
+    }
+
+    func openNudge(_ nudge: Nudge) {
+        dismissNudge(nudge.id)
+        open(nudge.key)
+    }
+
+    func dismissNudge(_ id: Int) { nudges.removeAll { $0.id == id } }
 
     /// Ask a responder to take the keyboard. While a sheet or the palette is up, the request
     /// waits and is delivered once it's gone, so nothing behind it steals the keyboard.
@@ -515,6 +582,7 @@ final class SceneModel {
 
     /// Called whenever the host's state changes: applies a pending restore once there is state.
     func reconcileIfReady() {
+        watchSessionsIfNeeded()
         guard let pending = pendingRestore, let hub, hub.hub.state != nil else { return }
         pendingRestore = nil
         let outcome = RestorationReconciler.reconcile(pending) { hub.presence(of: $0) }

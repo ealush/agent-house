@@ -307,3 +307,26 @@ private func windowWithoutHost() throws -> SceneModel {
     scene.modalDidDismiss()
     #expect(scene.focusRequest?.nonce == before, "the layout changed under the palette: no going back to the old composer")
 }
+
+private func row(_ key: String, _ title: String, status: String) throws -> SessionRow {
+    let object: [String: Any] = ["id": "%\(key)", "uid": key, "name": title, "title": title, "statusSource": "hook", "project": "web", "projectPath": "/p/web", "status": status, "command": "node", "agent": "claude"]
+    return SessionRow(key: key, host: "desk", isLocal: true, dto: try JSONDecoder().decode(SessionDTO.self, from: JSONSerialization.data(withJSONObject: object)))
+}
+
+@MainActor
+@Test func sessionsOffScreenNudgeWhenTheyNeedYouOrFinish() throws {
+    let scene = try windowWithoutHost()
+    scene.open("a")
+    scene.notice([try row("a", "Here", status: "busy"), try row("b", "Keys", status: "busy"), try row("c", "Docs", status: "busy")])
+    #expect(scene.nudges.isEmpty, "a first look nudges nothing")
+    scene.notice([try row("a", "Here", status: "attention"), try row("b", "Keys", status: "waiting"), try row("c", "Docs", status: "attention")])
+    #expect(scene.nudges.map(\.key) == ["b", "c"], "the open session is on screen: no nudge for it")
+    #expect(scene.nudges.first?.kind == .needsYou && scene.nudges.last?.kind == .finished)
+    // Answered from another device: the nudge goes.
+    scene.notice([try row("a", "Here", status: "idle"), try row("b", "Keys", status: "busy"), try row("c", "Docs", status: "attention")])
+    #expect(scene.nudges.map(\.key) == ["c"])
+    // Opening it from the nudge takes you there and clears it.
+    scene.openNudge(scene.nudges[0])
+    #expect(scene.nudges.isEmpty)
+    #expect(scene.workspace.focusedKey == "c" || scene.route == .session("c"))
+}

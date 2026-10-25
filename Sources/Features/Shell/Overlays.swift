@@ -652,6 +652,69 @@ struct SubmapHUD: View {
     }
 }
 
+/// Sessions you're not looking at that need you or just finished: a card each, with the
+/// way there. "Finished" leaves on its own; "needs you" stays until you go or it's answered.
+struct NudgeStack: View {
+    let scene: SceneModel
+    @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 8) {
+            ForEach(scene.nudges) { nudge in
+                card(nudge)
+                    .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
+            }
+        }
+        // Below a session's header or a page's bar, never over their buttons.
+        .padding(.top, scene.narrow ? 54 : 72)
+        .padding(.horizontal, 16)
+        .animation(reduceMotion ? nil : .spring(duration: 0.4, bounce: 0.25), value: scene.nudges.map(\.id))
+        .onChange(of: scene.nudges.last?.id) { _, id in
+            guard let nudge = scene.nudges.last, nudge.id == id else { return }
+            if nudge.kind == .needsYou { Haptics.warning() } else { Haptics.success() }
+            UIAccessibility.post(notification: .announcement, argument: "\(nudge.title) \(nudge.kind == .needsYou ? "needs you" : "finished")")
+        }
+    }
+
+    private func card(_ nudge: SceneModel.Nudge) -> some View {
+        HStack(spacing: 10) {
+            AgentMark(agent: nudge.agent, size: 28)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(nudge.title).font(.subheadline.weight(.semibold)).lineLimit(1)
+                Label(nudge.kind == .needsYou ? "Needs you" : "Finished", systemImage: nudge.kind == .needsYou ? "hand.raised.fill" : "checkmark.circle.fill")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(nudge.kind == .needsYou ? theme.accent : theme.done)
+            }
+            Spacer(minLength: 12)
+            Button("Open") { scene.openNudge(nudge) }
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
+                .controlSize(.small)
+            Button { scene.dismissNudge(nudge.id) } label: { Image(systemName: "xmark").font(.caption.weight(.semibold)) }
+                .buttonStyle(.borderless)
+                .foregroundStyle(theme.faint)
+                .accessibilityLabel("Dismiss")
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: 380)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder((nudge.kind == .needsYou ? theme.accent : theme.done).opacity(0.35), lineWidth: 0.75))
+        .shadow(color: .black.opacity(0.15), radius: 16, y: 6)
+        .task {
+            guard nudge.kind == .finished else { return }
+            try? await Task.sleep(for: .seconds(6))
+            scene.dismissNudge(nudge.id)
+        }
+        .gesture(DragGesture(minimumDistance: 12).onEnded { value in
+            if value.translation.height < -20 || abs(value.translation.width) > 60 { scene.dismissNudge(nudge.id) }
+        })
+        .accessibilityElement(children: .contain)
+    }
+}
+
 /// Brief window-level messages, newest last.
 struct ToastStack: View {
     let scene: SceneModel

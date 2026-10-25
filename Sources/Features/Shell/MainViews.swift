@@ -669,6 +669,7 @@ struct OverlayLayer: View {
                 SubmapHUD(mode: mode).frame(maxHeight: .infinity, alignment: .top).allowsHitTesting(false)
             }
             ToastStack(scene: scene).frame(maxHeight: .infinity, alignment: .bottom)
+            NudgeStack(scene: scene).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: scene.narrow ? .top : .topTrailing)
         }
     }
 }
