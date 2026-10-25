@@ -7,6 +7,7 @@ struct TranscriptView: View {
     @Bindable var session: SessionModel
     @Bindable var scene: SceneModel
     @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var topID: String?
     @State private var browsing: Int?
     @State private var loadingOlder = false
@@ -69,6 +70,8 @@ struct TranscriptView: View {
                     ForEach(session.outgoing) { item in
                         UserBubble(text: item.text, pending: item.state == .sending ? "Sending…" : "Typed in · waiting for the transcript")
                             .id("out-\(item.id)")
+                            // Springs up out of the box it was typed in.
+                            .transition(reduceMotion ? .opacity : .asymmetric(insertion: .scale(scale: 0.85, anchor: .bottomTrailing).combined(with: .opacity).combined(with: .offset(y: 24)), removal: .opacity))
                     }
                     if session.working {
                         // A new turn (the newest message you sent) starts the clock again.
@@ -79,6 +82,8 @@ struct TranscriptView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
+                .animation(reduceMotion ? nil : .spring(duration: 0.35, bounce: 0.3), value: session.outgoing.map(\.id))
+                .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: session.working)
                 .scrollTargetLayout()
             }
             .scrollPosition(id: $topID, anchor: .top)
