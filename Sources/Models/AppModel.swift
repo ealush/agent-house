@@ -40,9 +40,11 @@ actor AccountCredentials: CredentialProvider {
     func set(_ token: String?) { self.token = token }
     func bearer() async -> String? { token }
 
-    func rejected() async {
-        guard token != nil else { return }
-        token = nil
+    /// Only a refusal of the bearer in use now ends the sign-in: a request that went out
+    /// before a lock and comes back refused after the next sign-in is no news.
+    func rejected(bearer: String?) async {
+        guard let token, bearer == token else { return }
+        self.token = nil
         await onRejected()
     }
 }

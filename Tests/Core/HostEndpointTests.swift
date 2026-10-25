@@ -50,3 +50,23 @@ private actor RecordingCredentials: CredentialProvider {
     await #expect(throws: APIError.self) { _ = try await api.send(request) }
     #expect(await credentials.refused == ["first"], "the account can tell a late refusal of an old sign-in from one of the current")
 }
+
+@Test func aLateRefusalOfAnOldSignInLeavesTheNewOneAlone() async {
+    let signedOut = SignedOutCount()
+    let credentials = AccountCredentials(token: "old") { await signedOut.add() }
+    // Locked, then signed in again while a request with the old bearer was still out.
+    await credentials.set("new")
+    await credentials.rejected(bearer: "old")
+    #expect(await credentials.bearer() == "new")
+    #expect(await signedOut.count == 0)
+    // The current bearer refused: the account signs out, once.
+    await credentials.rejected(bearer: "new")
+    await credentials.rejected(bearer: "new")
+    #expect(await credentials.bearer() == nil)
+    #expect(await signedOut.count == 1)
+}
+
+private actor SignedOutCount {
+    private(set) var count = 0
+    func add() { count += 1 }
+}
