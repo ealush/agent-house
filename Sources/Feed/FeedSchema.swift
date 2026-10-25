@@ -14,6 +14,49 @@ struct FeedEntry: Codable, Equatable, Sendable, Identifiable {
     /// Milliseconds since the epoch as the adapter reported it.
     let at: Double
     let parts: [FeedPart]
+
+    init(seq: Int, id: String, role: Role, step: String, at: Double, parts: [FeedPart]) {
+        self.seq = seq
+        self.id = id
+        self.role = role
+        self.step = step
+        self.at = at
+        self.parts = parts
+    }
+
+    private enum CodingKeys: String, CodingKey { case seq, id, role, step, at, parts }
+
+    /// A part this app can't read (a malformed widget, a field of the wrong type) becomes an
+    /// unknown part, not a failed entry: one odd part mustn't keep a whole transcript away.
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        seq = try c.decode(Int.self, forKey: .seq)
+        id = try c.decode(String.self, forKey: .id)
+        role = try c.decode(Role.self, forKey: .role)
+        step = try c.decode(String.self, forKey: .step)
+        at = try c.decode(Double.self, forKey: .at)
+        parts = try c.decode([Lossy].self, forKey: .parts).map(\.part)
+    }
+
+    private struct Lossy: Decodable {
+        let part: FeedPart
+        init(from decoder: any Decoder) throws {
+            do {
+                part = try FeedPart(from: decoder)
+            } catch {
+                let type = (try? decoder.container(keyedBy: AnyKey.self).decode(String.self, forKey: AnyKey("type"))) ?? "?"
+                part = .unknown(type: type)
+            }
+        }
+    }
+
+    private struct AnyKey: CodingKey {
+        let stringValue: String
+        var intValue: Int? { nil }
+        init(_ value: String) { stringValue = value }
+        init?(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { nil }
+    }
 }
 
 struct ToolCall: Codable, Equatable, Sendable, Identifiable {

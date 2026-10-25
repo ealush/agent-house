@@ -109,6 +109,38 @@ struct IntegrationTests {
         #expect(typed.contains("KEY:"))
     }
 
+    @Test func aLongSessionsTranscriptStillLoads() async throws {
+        // A session full of screenshots sends a snapshot of megabytes as one line: it used to
+        // be refused (1 MiB line limit) and retried forever ("Connecting to the transcript…").
+        let device = try await LiveHost.enrolled()
+        let api = device.api
+        let agent = try await LiveHost.launch(api, preset: "claude", label: "long-transcript")
+        defer { Task { try? await api.terminate(agent.uid) } }
+        let ready = try await until("transcript adopted", timeout: 25) { try await api.state().windows.first { $0.uid == agent.uid && $0.harnessId != nil } }
+        let id = try #require(ready.harnessId)
+        let dir = try #require(LiveHost.environment["AH_IT_DIR"])
+        let projects = URL(fileURLWithPath: "\(dir)/claude/projects")
+        let file = try #require((FileManager.default.enumerator(at: projects, includingPropertiesForKeys: nil)?.allObjects as? [URL])?.first { $0.lastPathComponent == "\(id).jsonl" })
+        // Eight long replies (ah keeps up to 256 KB of each): 1.6 MB in the snapshot's one line.
+        let big = String(repeating: "screenshot ", count: 18_000) + "end"
+        let handle = try FileHandle(forWritingTo: file)
+        try handle.seekToEnd()
+        for n in 1...8 {
+            let line = #"{"type":"assistant","uuid":"big-\#(n)","sessionId":"\#(id)","cwd":"\#(ready.cwd)","timestamp":"2026-10-26T00:00:0\#(n).000Z","message":{"role":"assistant","content":[{"type":"text","text":"\#(big)"}]}}"#
+            try handle.write(contentsOf: Data((line + "\n").utf8))
+        }
+        try handle.close()
+
+        let feed = FeedStream(api: api, ref: agent.uid)
+        let updates = await feed.updates()
+        await feed.start()
+        let longReplies: @Sendable (FeedState) -> Int = { state in state.entries.filter { $0.parts.contains { if case .text(let t) = $0 { return t.count == big.count } else { return false } } }.count }
+        let state = try? await next(updates, "the snapshot with the long replies", timeout: 20) { state in state.status == .live && longReplies(state) == 8 }
+        let last = await feed.current
+        #expect(state != nil, "status \(last.status), reason \(last.reason ?? "-"), \(last.entries.count) entries, \(longReplies(last)) long")
+        await feed.stop()
+    }
+
     @Test func guiFeedCarriesTypedTranscriptToolCallsAndWidgets() async throws {
         let device = try await LiveHost.enrolled()
         let api = device.api

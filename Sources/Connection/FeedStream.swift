@@ -67,17 +67,28 @@ actor FeedStream {
         return !page.entries.isEmpty
     }
 
+    /// ah sends a snapshot as one line of JSON; a long session's (screenshots, long outputs)
+    /// runs to megabytes. Room for that, with a ceiling against a runaway stream.
+    static let largestEvent = 64 << 20
+
     private func run() async {
         var backoff = Duration.milliseconds(500)
+        var unreadable = 0
         while !Task.isCancelled {
             do {
                 let bytes = try await api.feedStream(ref)
-                var parser = ServerSentEventParser()
-                backoff = .milliseconds(500)
+                var parser = ServerSentEventParser(maximumLineBytes: Self.largestEvent, maximumEventBytes: Self.largestEvent)
                 for try await chunk in bytes {
                     try Task.checkCancellation()
                     for event in try parser.append(chunk) {
-                        if let message = try FeedMessage.decode(event) { apply(.message(message)) }
+                        if let message = try FeedMessage.decode(event) {
+                            // Only something read resets the wait: a stream that opens and then
+                            // fails the same way mustn't come back every half second (each try
+                            // re-renders the session, and the bar's buttons twitch with it).
+                            unreadable = 0
+                            backoff = .milliseconds(500)
+                            apply(.message(message))
+                        }
                     }
                 }
             } catch {
@@ -86,6 +97,15 @@ actor FeedStream {
                 if case .unauthorized = failure {
                     apply(.disconnected)
                     return
+                }
+                // The same transcript failing to read every time won't read next time either:
+                // say so (with the terminal at hand) instead of "Connecting…" forever.
+                if error is ServerSentEventParser.ParseError || error is DecodingError {
+                    unreadable += 1
+                    if unreadable >= 3 {
+                        apply(.message(.unavailable(reason: "unreadable")))
+                        return
+                    }
                 }
             }
             apply(.disconnected)

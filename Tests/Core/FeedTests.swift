@@ -223,3 +223,22 @@ private let result = ToolResult(callId: "c1", text: "ok", isError: false, data: 
     #expect(durations["1"] == nil, "a turn whose question isn't in view")
     #expect(FeedProjection.project(entries).contains { $0.id == "5" }, "keyed by the agent block that answers")
 }
+
+@Test func aLongSessionsSnapshotReadsInOneLine() throws {
+    // ah sends a snapshot as one line of JSON; a session full of screenshots runs to megabytes.
+    let big = String(repeating: "x", count: 5_000_000)
+    let entry = #"{"seq":1,"id":"a","role":"assistant","step":"llm_call","at":0,"parts":[{"type":"text","text":"\#(big)"}]}"#
+    let line = Data("event: snapshot\ndata: {\"type\":\"snapshot\",\"reason\":\"initial\",\"harness\":\"claude\",\"entries\":[\(entry)],\"floor\":0,\"head\":1,\"hasOlder\":false}\n\n".utf8)
+    var parser = ServerSentEventParser(maximumLineBytes: FeedStream.largestEvent, maximumEventBytes: FeedStream.largestEvent)
+    let events = try parser.append(line)
+    guard case .snapshot(_, _, let entries, _, _, _)? = try FeedMessage.decode(try #require(events.first)) else { Issue.record("not a snapshot"); return }
+    #expect(entries.first?.parts == [.text(big)])
+    var old = ServerSentEventParser()
+    #expect(throws: ServerSentEventParser.ParseError.lineTooLarge, "the old 1 MiB line limit is what kept it out") { _ = try old.append(line) }
+}
+
+@Test func anOddPartDoesNotKeepTheEntryAway() throws {
+    let json = #"{"seq":3,"id":"b","role":"assistant","step":"llm_call","at":0,"parts":[{"type":"widget","widget":{"title":"no type"}},{"type":"text","text":"still here"}]}"#
+    let entry = try JSONDecoder().decode(FeedEntry.self, from: Data(json.utf8))
+    #expect(entry.parts == [.unknown(type: "widget"), .text("still here")])
+}

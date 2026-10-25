@@ -125,7 +125,8 @@ actor StateStream {
     private func streamOnce() async throws {
         var reducer = HubStateReducer()
         let bytes = try await api.eventStream("/api/events")
-        var parser = ServerSentEventParser()
+        // A host with many sessions and a long History sends a large first state.
+        var parser = ServerSentEventParser(maximumLineBytes: 32 << 20, maximumEventBytes: 32 << 20)
         for try await chunk in bytes {
             try Task.checkCancellation()
             for event in try parser.append(chunk) {

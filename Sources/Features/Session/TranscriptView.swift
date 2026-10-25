@@ -88,6 +88,19 @@ struct TranscriptView: View {
             }
             .scrollPosition(id: $topID, anchor: .top)
             .defaultScrollAnchor(.bottom)
+            // A fresh scroll view when the transcript arrives in an empty view (or the host
+            // sends a new copy): the bottom anchor only holds for content there from the start,
+            // and a long transcript poured into an empty lazy list was laid out but not drawn.
+            .id(blocks.isEmpty ? -1 : session.feed.epoch)
+            // …and once it has settled, onto the newest message again: with a long transcript
+            // the first layout's guesses move it, and what's drawn can sit apart from it.
+            .task(id: blocks.isEmpty ? -1 : session.feed.epoch) {
+                guard !blocks.isEmpty, scene.scrollAnchors[session.key]?.seq == nil else { return }
+                for delay in [150, 600] {
+                    try? await Task.sleep(for: .milliseconds(delay))
+                    reader.scrollTo("bottom", anchor: .bottom)
+                }
+            }
             .scrollDismissesKeyboard(.interactively)
             .overlay {
                 // A live agent that hasn't written anything yet is a fresh conversation, not a
@@ -861,6 +874,7 @@ private struct UnavailableFeed: View {
         let message: String = switch reason {
         case "no-adapter": "This agent has no structured transcript, so it’s terminal-only."
         case "no-transcript": "The agent hasn’t written its transcript yet."
+        case "unreadable": "Its transcript couldn’t be read here. The terminal shows everything."
         default: "There’s no transcript for this session."
         }
         EmptyState(symbol: "terminal", title: "No GUI for this session", message: message, action: ("Use the terminal", useTerminal))
