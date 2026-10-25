@@ -17,13 +17,30 @@ struct InboxView: View {
             } header: {
                 Text(inbox.summary).font(.subheadline).foregroundStyle(theme.muted).textCase(nil)
             }
-            if let focus = hub.focus, focus.client != scene.device.client, let row = hub.row(focus.key), Date().timeIntervalSince1970 * 1000 - focus.at < 15 * 60_000 {
+            // Another device's place, not this one's from an earlier launch (window ids are
+            // per launch, so the name tells this device apart too).
+            if let focus = hub.focus, focus.client != scene.device.client, focus.device != scene.device.name, let row = hub.row(focus.key), Date().timeIntervalSince1970 * 1000 - focus.at < 15 * 60_000 {
                 Section {
                     Button {
                         scene.open(row.key)
                     } label: {
                         Label("Continue “\(row.title)” from \(focus.device)", systemImage: "arrow.turn.down.right")
                     }
+                }
+            }
+            if inbox.waiting.isEmpty && inbox.reviews.isEmpty && inbox.running.isEmpty && !hub.rows.isEmpty {
+                Section {
+                    HStack(spacing: 12) {
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.title2)
+                            .foregroundStyle(theme.done)
+                            .symbolEffect(.bounce, value: inbox.rest.count)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("All caught up").font(.headline)
+                            Text("Nothing needs you, and nothing's running.").font(.callout).foregroundStyle(theme.muted)
+                        }
+                    }
+                    .padding(.vertical, 6)
                 }
             }
             if !inbox.waiting.isEmpty || !inbox.reviews.isEmpty {
