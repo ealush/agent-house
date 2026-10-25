@@ -19,6 +19,14 @@ struct SetupView: View {
 
     enum Field { case address, code, label }
 
+    /// Pairing again with a host that removed this device: its address is already known.
+    private func prefill() {
+        guard address.isEmpty, let known = app.pairAgainAddress else { return }
+        address = known
+        app.pairAgainAddress = nil
+        field = .code
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -114,7 +122,10 @@ struct SetupView: View {
                     ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) }
                 }
             }
-            .onAppear { field = .address }
+            .onAppear {
+                field = .address
+                prefill()
+            }
         }
         .interactiveDismissDisabled(app.accounts.isEmpty || busy)
     }
@@ -141,6 +152,8 @@ struct SetupView: View {
 struct SignInView: View {
     let account: AccountSession
     let app: AppModel
+    /// Forget this host here and open Setup on its address (a removed device).
+    let pairAgain: () -> Void
     @Environment(\.theme) private var theme
     @State private var confirmForget = false
 
@@ -166,8 +179,17 @@ struct SignInView: View {
                 ProgressView("Signing in…")
             case .unenrolled(let reason):
                 Text(reason).font(.callout).foregroundStyle(theme.muted).multilineTextAlignment(.center)
-                Text("This device is no longer enrolled with this host. Pair it again with a new setup code.").font(.callout).multilineTextAlignment(.center)
-                Button("Forget this host") { Task { await app.removeLocally(account) } }.buttonStyle(.bordered)
+                Button(action: pairAgain) {
+                    Label("Pair Again", systemImage: "link").frame(maxWidth: 280)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .tint(theme.accentStrong)
+                .keyboardShortcut(.defaultAction)
+                Text("You’ll need a setup code from a device that’s still signed in, or `ah auth code` on the host.")
+                    .font(.footnote)
+                    .foregroundStyle(theme.faint)
+                    .multilineTextAlignment(.center)
             case .signedIn:
                 ProgressView()
             }

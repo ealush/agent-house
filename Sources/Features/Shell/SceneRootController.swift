@@ -152,7 +152,14 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
             return host(SetupView(app: scene.app) { [scene] session in scene.useAccount(session.origin) })
         case .signIn:
             guard let account = scene.account else { return UIViewController() }
-            return host(SignInView(account: account, app: scene.app))
+            return host(SignInView(account: account, app: scene.app) { [scene] in
+                Task {
+                    await scene.app.pairAgain(account)
+                    // With other hosts still here the window shows one of them: Setup comes up
+                    // as a sheet instead of taking the window.
+                    if !scene.app.accounts.isEmpty { scene.sheet = .setup }
+                }
+            })
         case .main:
             return MainSplitController(root: self)
         }

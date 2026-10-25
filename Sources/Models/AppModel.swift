@@ -122,7 +122,7 @@ final class AccountSession: Identifiable {
         status = .signingIn
         do {
             guard let key = try services.keys.key(origin: origin) else {
-                status = .unenrolled("This device’s key is gone. Enroll again with a code from your host.")
+                status = .unenrolled("This device’s key is gone. Pair it again with a new setup code.")
                 return
             }
             let credential = try await NativeAuth(api: api).signIn(deviceId: account.deviceId, label: account.label, key: key)
@@ -133,7 +133,7 @@ final class AccountSession: Identifiable {
             activate()
         } catch let error as APIError {
             if case .unauthorized(let message) = error, message.contains("unknown device") {
-                status = .unenrolled("This host no longer knows this device. Enroll again with a code from your host.")
+                status = .unenrolled("This host no longer knows this device. Pair it again with a new setup code.")
             } else {
                 status = .needsSignIn(error.message)
             }
@@ -292,5 +292,14 @@ final class AppModel {
     func removeLocally(_ session: AccountSession) async {
         await session.forget()
         accounts.removeAll { $0.origin == session.origin }
+    }
+
+    /// The address Setup starts with after "Pair Again": the host that forgot this device.
+    var pairAgainAddress: String?
+
+    /// A host that removed this device: forget it here and pair again with a new code.
+    func pairAgain(_ session: AccountSession) async {
+        pairAgainAddress = session.origin
+        await removeLocally(session)
     }
 }

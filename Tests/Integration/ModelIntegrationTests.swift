@@ -200,4 +200,24 @@ struct ModelIntegrationTests {
         if case .unenrolled = account.status {} else { Issue.record("expected unenrolled") }
         #expect(try app.services.accounts.all().isEmpty)
     }
+
+    @Test func aDeviceTheHostRemovedPairsAgainFromItsAddress() async throws {
+        let app = try app()
+        let account = try await app.enroll(address: LiveHost.origin.absoluteString, code: try await LiveHost.setupCode(), label: "Removed iPad")
+        _ = try await LiveHost.hostCall("DELETE", "/api/auth/devices/\(account.account.deviceId)")
+        await account.lock()
+        await account.signIn()
+        guard case .unenrolled(let reason) = account.status else {
+            Issue.record("expected unenrolled, got \(account.status)")
+            return
+        }
+        #expect(reason.contains("Pair it again"))
+        await app.pairAgain(account)
+        #expect(app.accounts.isEmpty)
+        #expect(app.pairAgainAddress == account.origin, "Setup opens on the host that removed it")
+        // And a new code pairs it again.
+        let again = try await app.enroll(address: try #require(app.pairAgainAddress), code: try await LiveHost.setupCode(), label: "Removed iPad")
+        #expect(again.status == .signedIn)
+        again.deactivate()
+    }
 }
