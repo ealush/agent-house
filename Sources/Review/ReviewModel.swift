@@ -168,6 +168,11 @@ final class ReviewModel {
     private(set) var loading: Set<String> = []
     private(set) var error: String?
     var selectedPR: Int?
+    /// The selected layer's briefing is being written: the host's job, watched until it's in.
+    private(set) var summarizing = false
+    /// Why there's no briefing and none is coming (no model to write it, nothing fetched yet).
+    private(set) var briefingBlocked: String?
+    private var briefingWatch: Task<Void, Never>?
     /// Lines, files or findings attached to the next question for the reviewer.
     var attachments: [AskContext] = []
 
@@ -217,7 +222,16 @@ final class ReviewModel {
         selectedPR = pr
         diff = nil
         description = nil
+        briefingWatch?.cancel()
+        summarizing = false
+        briefingBlocked = nil
         guard let id = stack?.id else { return }
+        // The briefing writes itself for an open layer that has none, and the next layer's
+        // gets started too, so it's ready when you move on.
+        if let stack, Self.wantsBriefing(pr, in: stack) {
+            Task { await brief() }
+            if let next = Self.nextOpen(after: pr, in: stack) { Task { _ = try? await review.summarize(id, pr: next) } }
+        }
         // A layer you reviewed before opens on what changed since.
         let l = stack?.layers.first { $0.pr == pr }
         diffScope = (l.map(LayerConfidence.init)?.review == .changedSinceReview) ? .since : .this
@@ -369,9 +383,60 @@ final class ReviewModel {
         }
     }
 
-    func summarize(force: Bool = false) async {
+    /// Asks the host for the selected layer's briefing (`force`: write it again) and watches
+    /// until it's written.
+    func brief(force: Bool = false) async {
         guard let id = stack?.id, let pr = selectedPR else { return }
-        await load("summary") { _ = try await review.summarize(id, pr: pr, force: force) }
+        briefingBlocked = nil
+        await load("summary") {
+            let start = try await review.summarize(id, pr: pr, force: force)
+            if start.started {
+                watchBriefing(id: id, pr: pr)
+            } else {
+                briefingBlocked = Self.blockedReason(start.reason)
+            }
+        }
+    }
+
+    private func watchBriefing(id: String, pr: Int) {
+        briefingWatch?.cancel()
+        summarizing = true
+        briefingWatch = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                guard let self, !Task.isCancelled else { return }
+                let busy = try? await self.review.busy(id, pr: pr)
+                if busy?.summarizing == true { continue }
+                if let fresh = try? await self.review.stack(id), self.stack?.id == id { self.stack = fresh }
+                if self.selectedPR == pr {
+                    self.summarizing = false
+                    if (self.layer?.current?.summary ?? "").isEmpty, busy != nil {
+                        self.briefingBlocked = "The model didn’t write a briefing this time. Try again, or pick another model in Settings."
+                    }
+                }
+                return
+            }
+        }
+    }
+
+    nonisolated static func wantsBriefing(_ pr: Int, in stack: ReviewStack) -> Bool {
+        guard let layer = stack.layers.first(where: { $0.pr == pr }), layer.state == "open", let current = layer.current else { return false }
+        return current.summary?.isEmpty ?? true
+    }
+
+    nonisolated static func nextOpen(after pr: Int, in stack: ReviewStack) -> Int? {
+        let open = stack.layers.filter { $0.state == "open" }.map(\.pr)
+        guard let at = open.firstIndex(of: pr), at + 1 < open.count else { return nil }
+        return open[at + 1]
+    }
+
+    /// The host's reason a briefing didn't start, said for a person; nil when there's one already.
+    nonisolated static func blockedReason(_ reason: String?) -> String? {
+        switch reason {
+        case "no subscription": return "Briefings need a model. Add a subscription in Settings and they write themselves."
+        case "not fetched yet": return "This layer hasn’t been fetched yet. Sync the stack, then it can be briefed."
+        default: return nil
+        }
     }
 
     // MARK: Merge

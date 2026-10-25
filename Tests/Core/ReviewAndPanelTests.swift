@@ -196,3 +196,17 @@ private func snap(_ id: Int, turn: Int, kind: String = "turn", prompt: String = 
     #expect(SnapshotsModel.stats(snap(9, turn: 9)) == "1 file changed")
     #expect(SnapshotsModel.isAgentWorking("The agent is working; stop it first or confirm the interrupt"))
 }
+
+// MARK: Briefings
+
+@Test func briefingsWriteThemselvesForOpenLayersWithoutOneAndTheNextIsPrepared() {
+    // The fixture's revisions carry no summary.
+    let s = stack([layer(1), layer(2), layer(3)])
+    #expect(ReviewModel.wantsBriefing(1, in: s))
+    #expect(!ReviewModel.wantsBriefing(9, in: s))
+    #expect(ReviewModel.nextOpen(after: 1, in: s) == 2)
+    #expect(ReviewModel.nextOpen(after: 3, in: s) == nil)
+    #expect(ReviewModel.blockedReason("no subscription")?.contains("Settings") == true)
+    #expect(ReviewModel.blockedReason("not fetched yet") != nil)
+    #expect(ReviewModel.blockedReason("cached") == nil)
+}

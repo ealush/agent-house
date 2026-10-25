@@ -408,13 +408,46 @@ struct LayerView: View {
         section("Understand", "lightbulb") {
             if let summary = layer.current?.summary, !summary.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Model briefing — a summary, not evidence").font(.caption).foregroundStyle(theme.faint)
+                    HStack {
+                        Text("Model briefing — a summary, not evidence").font(.caption).foregroundStyle(theme.faint)
+                        Spacer()
+                        if model.summarizing {
+                            ProgressView().controlSize(.mini)
+                        } else {
+                            Button("Write Again", systemImage: "arrow.clockwise") { Task { await model.brief(force: true) } }
+                                .labelStyle(.iconOnly)
+                                .buttonStyle(.borderless)
+                                .font(.caption)
+                                .help("Write the briefing again")
+                        }
+                    }
                     MarkdownView(summary, compact: true)
                 }
                 .padding(10)
                 .background(theme.raised.opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            } else if model.summarizing {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Writing a briefing…").font(.subheadline)
+                        Text("The model reads this layer’s diff and its stack. It shows here when it’s done.").font(.caption).foregroundStyle(theme.muted)
+                    }
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(theme.raised.opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            } else if let blocked = model.briefingBlocked {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(blocked, systemImage: "text.bubble").font(.callout).foregroundStyle(theme.muted)
+                    HStack {
+                        if blocked.contains("Settings") {
+                            Button("Open Settings") { scene.sheet = .settings(SettingsSection.subscriptions.rawValue) }.buttonStyle(.bordered)
+                        }
+                        Button("Try Again") { Task { await model.brief() } }.buttonStyle(.borderless)
+                    }
+                }
             } else {
-                Button("Brief me on this layer") { Task { await model.summarize() } }.buttonStyle(.bordered)
+                Button("Brief me on this layer", systemImage: "text.bubble") { Task { await model.brief() } }.buttonStyle(.bordered)
             }
             if let description = model.description, !description.body.isEmpty {
                 DisclosureGroup("The PR’s description") {
