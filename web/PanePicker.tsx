@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Win } from './api.ts';
 import { look } from './agents.ts';
 import { AgentLogo } from './logos.tsx';
@@ -41,9 +41,11 @@ export function PanePicker({
   const [i, setI] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLUListElement>(null);
-  // Two frames: a split remounts the neighbouring terminal, which takes focus as it mounts.
-  useEffect(() => {
+  // Take the first keystroke before painting; waiting for compositing frames can
+  // lose it on a busy glass surface. Reclaim after the neighbouring terminal mounts.
+  useLayoutEffect(() => {
     if (!focus) return;
+    input.current?.focus({ preventScroll: true });
     let inner = 0;
     const outer = requestAnimationFrame(() => {
       inner = requestAnimationFrame(() => input.current?.focus({ preventScroll: true }));

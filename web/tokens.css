@@ -63,22 +63,24 @@
   --scrim: rgba(4, 5, 7, 0.62);
   --glow-opacity: 0.5;
 
-  /* Liquid glass, for chrome that floats over content (never content itself).
-     Clear enough to show what's behind it, blurred and its color lifted; lit
-     from above, so a sheen falls across the top and a rim catches the light.
-     A surface takes --glass-fill over a transparent 1px border, and
-     --glass-depth ahead of its elevation shadow. */
-  --glass-tint: color-mix(in srgb, var(--raised) 62%, transparent);
+  /* Glass filters the live backdrop. Every fill layer must remain translucent:
+     a border-box gradient also paints the interior, hiding the backdrop there.
+     The thin rim lives in inset shadows, never underneath the tinted fill.
+     Denser panel/sheet materials protect text over busy content. */
+  --glass-tint: color-mix(in srgb, var(--surface) 70%, transparent);
   --glass: var(--glass-tint);
-  --glass-blur: blur(22px) saturate(2) brightness(1.06);
+  --glass-blur: blur(20px) saturate(1.55);
+  --glass-secondary: color-mix(in srgb, var(--text) 90%, var(--text-2));
   --glass-sheen:
-    radial-gradient(130% 70% at 18% -12%, rgb(255 255 255 / 0.16), transparent 62%),
-    linear-gradient(180deg, rgb(255 255 255 / 0.06), transparent 40%, transparent 78%, rgb(255 255 255 / 0.04));
+    linear-gradient(155deg, rgb(255 255 255 / 0.07), transparent 38%, rgb(255 255 255 / 0.02));
   --glass-rim: linear-gradient(150deg, rgb(255 255 255 / 0.5), rgb(255 255 255 / 0.1) 28%, rgb(255 255 255 / 0.04) 62%, rgb(255 255 255 / 0.26));
-  --glass-fill: var(--glass-sheen), linear-gradient(var(--glass-tint), var(--glass-tint)) padding-box, var(--glass-rim) border-box;
-  --glass-depth: inset 0 1px 0 rgb(255 255 255 / 0.14), inset 0 10px 18px -14px rgb(255 255 255 / 0.22), inset 0 -12px 22px -16px rgb(0 0 0 / 0.4);
-  --glass-panel: color-mix(in srgb, var(--raised) 78%, var(--bg)); /* tall glass: the sidebar */
-  --glass-press: rgb(255 255 255 / 0.1);
+  --glass-fill: var(--glass-sheen), linear-gradient(var(--glass-tint), var(--glass-tint));
+  --glass-depth: inset 0 0 0 1px rgb(255 255 255 / 0.08), inset 0 1px 0 rgb(255 255 255 / 0.2), inset 0 -1px 0 rgb(0 0 0 / 0.16);
+  --glass-panel: color-mix(in srgb, var(--surface) 78%, transparent);
+  --glass-panel-fill: var(--glass-sheen), linear-gradient(var(--glass-panel), var(--glass-panel));
+  --glass-sheet: color-mix(in srgb, var(--surface) 84%, transparent);
+  --glass-sheet-fill: var(--glass-sheen), linear-gradient(var(--glass-sheet), var(--glass-sheet));
+  --glass-press: rgb(255 255 255 / 0.08);
 
   /* agents: one tint each, on their mark and chip only */
   --c-shell: #d8d8d8;
@@ -161,16 +163,14 @@
   --scrim: rgba(28, 29, 39, 0.32);
   --glow-opacity: 0.25;
 
-  /* Light glass is white frost: denser than dark (over a dark terminal a thin
-     frost turns muddy), brightened behind, with a white sheen and a white rim
-     over a hairline that keeps its edge on a white page. */
-  --glass-tint: color-mix(in srgb, #ffffff 70%, transparent);
-  --glass-blur: blur(22px) saturate(1.9) brightness(1.12);
+  /* White frost transmits the backdrop's color without the old opaque rim
+     gradient whitening the entire interior. */
+  --glass-tint: color-mix(in srgb, var(--surface) 64%, transparent);
+  --glass-blur: blur(20px) saturate(1.45);
   --glass-sheen:
-    radial-gradient(130% 70% at 18% -12%, rgb(255 255 255 / 0.75), transparent 62%),
-    linear-gradient(180deg, rgb(255 255 255 / 0.35), transparent 45%);
+    linear-gradient(155deg, rgb(255 255 255 / 0.18), transparent 40%, rgb(255 255 255 / 0.04));
   --glass-rim: linear-gradient(150deg, #ffffff, rgb(255 255 255 / 0.55) 25%, rgb(35 42 54 / 0.12) 62%, rgb(255 255 255 / 0.85));
-  --glass-depth: inset 0 1px 0 rgb(255 255 255 / 0.95), inset 0 -12px 22px -18px rgb(35 42 54 / 0.18);
+  --glass-depth: inset 0 0 0 1px rgb(35 42 54 / 0.1), inset 0 1px 0 rgb(255 255 255 / 0.9), inset 0 -1px 0 rgb(35 42 54 / 0.08);
   --glass-press: rgb(35 42 54 / 0.06);
 
   --c-shell: #555555;
@@ -218,6 +218,7 @@
   :root[data-theme] {
     --glass-tint: var(--raised);
     --glass-panel: var(--raised);
+    --glass-sheet: var(--raised);
     --glass-blur: none;
     --glass-sheen: linear-gradient(transparent, transparent);
     --glass-depth: 0 0 transparent;
@@ -229,9 +230,21 @@
   :root[data-theme] {
     --glass-tint: var(--raised);
     --glass-panel: var(--raised);
+    --glass-sheet: var(--raised);
     --glass-blur: none;
     --glass-sheen: linear-gradient(transparent, transparent);
-    --glass-depth: 0 0 transparent;
+    --glass-depth: inset 0 0 0 1px var(--muted);
     --glass-rim: linear-gradient(var(--muted), var(--muted));
+  }
+}
+
+/* Browsers without backdrop compositing get readable, solid materials. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root,
+  :root[data-theme] {
+    --glass-tint: var(--raised);
+    --glass-panel: var(--raised);
+    --glass-sheet: var(--raised);
+    --glass-sheen: linear-gradient(transparent, transparent);
   }
 }
