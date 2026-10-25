@@ -16,7 +16,7 @@ struct ComposerView: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            QueueTrayView(queue: session.queue, composer: composer)
+            QueueTrayView(queue: session.queue, composer: composer, working: session.working, hardwareKeyboard: scene.hardwareKeyboard)
             if !composer.suggestions.isEmpty {
                 SuggestionList(items: composer.suggestions, index: suggestionIndex) { composer.accept($0) }
             }
@@ -146,19 +146,40 @@ struct ComposerView: View {
                 }
                 .accessibilityLabel("Stop the turn")
             } else {
+                // While it works a message waits its turn: the button says so, and holding it
+                // (or ⌘Return) sends now instead.
+                let queues = session.working && !session.isShell
                 Button {
                     composer.submit(working: session.working)
                 } label: {
                     Group {
                         if session.isShell { Text("Run").font(.callout.weight(.semibold)).padding(.horizontal, 10) }
-                        else { Image(systemName: "arrow.up").font(.callout.weight(.bold)) }
+                        else if queues {
+                            HStack(spacing: 4) {
+                                Image(systemName: "text.line.last.and.arrowtriangle.forward")
+                                Text("Queue")
+                            }
+                            .font(.callout.weight(.semibold))
+                            .padding(.horizontal, 10)
+                        } else { Image(systemName: "arrow.up").font(.callout.weight(.bold)) }
                     }
                     .frame(minWidth: 34, minHeight: 34)
                     .background(composer.canSend ? theme.accentStrong : theme.faint.opacity(0.3), in: Capsule())
                     .foregroundStyle(.white)
+                    .contentTransition(.symbolEffect(.replace))
                 }
                 .disabled(!composer.canSend)
-                .accessibilityLabel(session.isShell ? "Run" : "Send")
+                .contextMenu {
+                    if queues && composer.canSend {
+                        Button("Send Now (Stops the Turn)", systemImage: "bolt.fill") {
+                            Haptics.threshold()
+                            composer.submit(working: true, steer: true)
+                        }
+                    }
+                }
+                .animation(.snappy(duration: 0.2), value: queues)
+                .accessibilityLabel(session.isShell ? "Run" : queues ? "Queue" : "Send")
+                .accessibilityHint(queues ? "Sends when this turn ends. Hold to send now." : "")
             }
         }
         .font(.body)
@@ -419,6 +440,11 @@ struct ComposerTextField: UIViewRepresentable {
                 return true
             case "Enter" where mods == [.shift]:
                 return false
+            case "Enter" where mods == [.command] && parent.session.working && !composer.isEmpty && !composer.isShell:
+                // ⌘Return while it works: don't queue, send now (the turn stops).
+                Haptics.threshold()
+                composer.submit(working: true, steer: true)
+                return true
             case "Escape":
                 if !composer.suggestions.isEmpty {
                     composer.dismissSuggestions()
@@ -538,60 +564,112 @@ final class ComposerTextView: UITextView {
 struct QueueTrayView: View {
     @Bindable var queue: QueueModel
     let composer: ComposerModel
+    var working = false
+    var hardwareKeyboard = false
     @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         if !queue.isEmpty {
-            VStack(spacing: 4) {
-                ForEach(Array(queue.items.enumerated()), id: \.element.id) { index, item in
-                    HStack(spacing: 8) {
-                        Image(systemName: "line.3.horizontal").foregroundStyle(theme.faint).accessibilityHidden(true)
-                        Text(Uploads.summary(item.text)).font(.callout).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
-                        if queue.sending.contains(item.id) {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Button("Send now") { Task { await queue.steer(item) } }
-                                .font(.caption.weight(.semibold))
-                                .buttonStyle(.bordered)
-                                .accessibilityHint("Stops the current turn and sends this now")
-                        }
-                        Menu {
-                            Button("Edit", systemImage: "pencil") {
-                                Task { if let text = await queue.edit(item) { composer.compose(text) } }
-                            }
-                            if index > 0 { Button("Move up", systemImage: "arrow.up") { Task { await queue.move(item.id, to: index - 1) } } }
-                            if index < queue.items.count - 1 { Button("Move down", systemImage: "arrow.down") { Task { await queue.move(item.id, to: index + 1) } } }
-                            Button("Cancel", systemImage: "xmark", role: .destructive) { Task { await queue.cancel(item) } }
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 8) {
+                    Image(systemName: "text.line.first.and.arrowtriangle.forward").foregroundStyle(theme.accent)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Up next · \(queue.items.count + queue.pendingRows.count)").font(.footnote.weight(.semibold))
+                        Text(working ? "Sent one by one when this turn ends" : "Sending…").font(.caption2).foregroundStyle(theme.muted)
+                    }
+                    Spacer()
+                    if let first = queue.items.first, !queue.sending.contains(first.id) {
+                        Button {
+                            Haptics.threshold()
+                            Task { await queue.steer(first) }
                         } label: {
-                            Image(systemName: "ellipsis.circle")
+                            HStack(spacing: 4) {
+                                Image(systemName: "bolt.fill")
+                                Text("Steer now")
+                                if hardwareKeyboard { Text("↵").foregroundStyle(.white.opacity(0.75)) }
+                            }
+                            .font(.caption.weight(.semibold))
                         }
-                        .accessibilityLabel("More for this queued message")
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(theme.raised.opacity(0.8), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .draggable(item.id) {
-                        Text(Uploads.summary(item.text)).padding(8).background(theme.raised, in: RoundedRectangle(cornerRadius: 10))
-                    }
-                    .dropDestination(for: String.self) { ids, _ in
-                        guard let id = ids.first, id != item.id else { return false }
-                        Task { await queue.move(id, to: index) }
-                        return true
+                        .buttonStyle(.borderedProminent)
+                        .buttonBorderShape(.capsule)
+                        .controlSize(.small)
+                        .accessibilityHint("Stops the current turn and sends the first queued message now")
                     }
                 }
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
+                .padding(.bottom, 6)
+                ForEach(Array(queue.items.enumerated()), id: \.element.id) { index, item in
+                    row(index: index, item: item)
+                        .transition(reduceMotion ? .opacity : .asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), removal: .scale(scale: 0.9).combined(with: .opacity)))
+                }
                 ForEach(queue.pendingRows) { pending in
-                    HStack {
-                        ProgressView().controlSize(.mini)
+                    HStack(spacing: 10) {
+                        ProgressView().controlSize(.mini).frame(width: 20)
                         Text(Uploads.summary(pending.text)).font(.callout).foregroundStyle(theme.muted).lineLimit(1)
                         Spacer()
                     }
                     .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
+                    .padding(.vertical, 7)
                 }
-                if let error = queue.error { Text(error).font(.caption).foregroundStyle(theme.danger) }
+                if let error = queue.error {
+                    Label(error, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(theme.danger).padding(.horizontal, 12).padding(.bottom, 8)
+                }
             }
+            .padding(.bottom, 4)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(theme.accent.opacity(0.2), lineWidth: 0.5))
+            .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: queue.items.map(\.id))
+            .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: queue.sending)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Queued messages")
+        }
+    }
+
+    private func row(index: Int, item: QueueItem) -> some View {
+        HStack(spacing: 10) {
+            Text("\(index + 1)")
+                .font(.caption2.weight(.bold).monospacedDigit())
+                .foregroundStyle(theme.accent)
+                .frame(width: 20, height: 20)
+                .background(theme.accent.opacity(0.12), in: Circle())
+            Text(Uploads.summary(item.text)).font(.callout).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
+            if queue.sending.contains(item.id) {
+                ProgressView().controlSize(.small)
+            } else {
+                HStack(spacing: 14) {
+                    Button { Haptics.threshold(); Task { await queue.steer(item) } } label: { Image(systemName: "bolt") }
+                        .accessibilityLabel("Send now")
+                        .accessibilityHint("Stops the current turn and sends this now")
+                    Button { Task { if let text = await queue.edit(item) { composer.compose(text) } } } label: { Image(systemName: "pencil") }
+                        .accessibilityLabel("Edit")
+                    Button(role: .destructive) { Task { await queue.cancel(item) } } label: { Image(systemName: "xmark") }
+                        .accessibilityLabel("Cancel")
+                }
+                .buttonStyle(.borderless)
+                .font(.callout)
+                .foregroundStyle(theme.muted)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .contentShape(Rectangle())
+        .contextMenu {
+            Button("Send Now", systemImage: "bolt") { Task { await queue.steer(item) } }
+            Button("Edit", systemImage: "pencil") { Task { if let text = await queue.edit(item) { composer.compose(text) } } }
+            if index > 0 { Button("Move Up", systemImage: "arrow.up") { Task { await queue.move(item.id, to: index - 1) } } }
+            if index < queue.items.count - 1 { Button("Move Down", systemImage: "arrow.down") { Task { await queue.move(item.id, to: index + 1) } } }
+            Divider()
+            Button("Cancel", systemImage: "xmark", role: .destructive) { Task { await queue.cancel(item) } }
+        }
+        .draggable(item.id) {
+            Text(Uploads.summary(item.text)).padding(8).background(theme.raised, in: RoundedRectangle(cornerRadius: 10))
+        }
+        .dropDestination(for: String.self) { ids, _ in
+            guard let id = ids.first, id != item.id else { return false }
+            Task { await queue.move(id, to: index) }
+            return true
         }
     }
 }

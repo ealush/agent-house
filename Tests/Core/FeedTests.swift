@@ -183,3 +183,11 @@ private let result = ToolResult(callId: "c1", text: "ok", isError: false, data: 
     #expect(FeedProjection.railRange(count: 40, lead: 20) == 13..<28)
     #expect(FeedProjection.railRange(count: 40, lead: 39) == 25..<40)
 }
+
+@Test func whileItWorksTheBoxSaysItQueuesAndHowToSendNow() {
+    #expect(ComposerModel.placeholder(isShell: false, working: true, queued: 0, touchOnly: false).contains("⌘↵ sends now"))
+    #expect(ComposerModel.placeholder(isShell: false, working: true, queued: 2, touchOnly: false).contains("steers the next"))
+    #expect(ComposerModel.placeholder(isShell: false, working: true, queued: 0, touchOnly: true) == "Add to this… (queued until it’s free)", "no key hints without a keyboard")
+    #expect(ComposerModel.placeholder(isShell: false, working: false, queued: 0, touchOnly: false) == "Send a follow-up · / commands · @ files")
+    #expect(ComposerModel.placeholder(isShell: true, working: true, queued: 0, touchOnly: false) == "Type or paste a command")
+}

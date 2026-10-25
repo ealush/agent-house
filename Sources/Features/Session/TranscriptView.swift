@@ -52,7 +52,9 @@ struct TranscriptView: View {
                             .id("out-\(item.id)")
                     }
                     if session.working {
-                        WorkingRow(detail: session.row?.dto.detail)
+                        // A new turn (the newest message you sent) starts the clock again.
+                        WorkingRow(detail: session.row?.dto.detail, queued: session.queue.items.count, hardwareKeyboard: scene.hardwareKeyboard)
+                            .id(blocks.last { if case .user = $0 { return true } else { return false } }?.id ?? "working")
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
@@ -64,14 +66,19 @@ struct TranscriptView: View {
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
             .overlay {
+                // A live agent that hasn't written anything yet is a fresh conversation, not a
+                // missing GUI: say what's ready and offer a start.
+                let fresh = session.isLive && !session.isShell && session.outgoing.isEmpty && blocks.isEmpty
                 switch session.feed.status {
+                case .unavailable where fresh && session.feed.reason == "no-transcript":
+                    StartConversation(session: session, scene: scene)
                 case .unavailable:
                     UnavailableFeed(reason: session.feed.reason) { scene.setSurface(.terminal, for: session.key) }
                 case .connecting where blocks.isEmpty:
                     ProgressView("Connecting to the transcript…")
                 default:
-                    if blocks.isEmpty && session.feed.status == .live && session.outgoing.isEmpty {
-                        EmptyState(symbol: "text.bubble", title: "Nothing here yet", message: "Send the first message below.")
+                    if fresh && session.feed.status == .live {
+                        StartConversation(session: session, scene: scene)
                     }
                 }
             }
@@ -566,16 +573,181 @@ struct ChecklistView: View {
     }
 }
 
+/// The agent at work: what it says it's doing (with a slow shimmer), how long it's been at
+/// it, and how to stop or steer from the keyboard. Still under Reduce Motion.
 private struct WorkingRow: View {
     let detail: String?
+    let queued: Int
+    let hardwareKeyboard: Bool
     @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var since = Date()
 
     var body: some View {
-        HStack(spacing: 8) {
-            ProgressView().controlSize(.small)
-            Text(detail ?? "Working…").font(.footnote).foregroundStyle(theme.muted).lineLimit(1)
+        HStack(spacing: 10) {
+            Image(systemName: "sparkle")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(theme.accent)
+                .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion)
+            Text(detail.flatMap { $0.isEmpty ? nil : $0 } ?? "Working")
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(theme.text2)
+                .lineLimit(1)
+                .modifier(Shimmer(active: !reduceMotion))
+            TimelineView(.periodic(from: since, by: 1)) { context in
+                Text(Self.elapsed(context.date.timeIntervalSince(since)))
+                    .font(.footnote.monospacedDigit())
+                    .foregroundStyle(theme.faint)
+            }
+            Spacer(minLength: 8)
+            if hardwareKeyboard {
+                HStack(spacing: 4) {
+                    Keycaps(parts: ["esc"])
+                    Text("stop").font(.caption2).foregroundStyle(theme.faint)
+                    if queued > 0 {
+                        Keycaps(parts: ["↵"]).padding(.leading, 6)
+                        Text("steer next").font(.caption2).foregroundStyle(theme.faint)
+                    }
+                }
+            }
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(theme.accent.opacity(0.06), in: Capsule())
+        .overlay(Capsule().strokeBorder(theme.accent.opacity(0.18), lineWidth: 0.5))
+        .transition(.opacity.combined(with: .move(edge: .bottom)))
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("The agent is working. \(detail ?? "")")
+    }
+
+    static func elapsed(_ seconds: TimeInterval) -> String {
+        let s = max(0, Int(seconds))
+        return s < 60 ? "\(s)s" : "\(s / 60)m \(s % 60)s"
+    }
+}
+
+/// A light band that sweeps across text now and then: something is happening.
+private struct Shimmer: ViewModifier {
+    let active: Bool
+    @State private var phase: CGFloat = -1
+
+    func body(content: Content) -> some View {
+        if active {
+            content
+                .overlay {
+                    GeometryReader { proxy in
+                        LinearGradient(colors: [.clear, .white.opacity(0.55), .clear], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: proxy.size.width * 0.5)
+                            .offset(x: phase * proxy.size.width * 1.5)
+                            .blendMode(.plusLighter)
+                    }
+                    .mask(content)
+                    .allowsHitTesting(false)
+                }
+                .onAppear {
+                    withAnimation(.easeInOut(duration: 1.6).delay(0.4).repeatForever(autoreverses: false)) { phase = 1 }
+                }
+        } else {
+            content
+        }
+    }
+}
+
+/// A fresh conversation: who's ready and where, a few ways to start, and this project's
+/// recent conversations to pick up instead (`Blank` in `../ah/web/gui/GuiSurface.tsx`).
+private struct StartConversation: View {
+    let session: SessionModel
+    let scene: SceneModel
+    @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var appeared = false
+
+    private static let starters: [(symbol: String, text: String)] = [
+        ("sparkles", "Explain how this project fits together"),
+        ("checklist", "Run the tests and fix what fails"),
+        ("magnifyingglass", "Find TODOs worth doing next"),
+    ]
+
+    private var recent: [HistoryRow] {
+        guard let row = session.row else { return [] }
+        return session.hub.history
+            .filter { $0.dto.project == row.dto.project && $0.dto.harness == (row.dto.agent ?? "") }
+            .sorted { $0.dto.at > $1.dto.at }
+            .prefix(3)
+            .map { $0 }
+    }
+
+    private var place: String {
+        guard let row = session.row else { return "" }
+        let launch = session.launch
+        return [row.dto.project, row.dto.branch, launch.modelLabel, launch.effort?.capitalized].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 22) {
+                VStack(spacing: 12) {
+                    AgentMark(agent: session.row?.dto.agent, size: 58)
+                        .shadow(color: theme.accent.opacity(0.35), radius: appeared ? 22 : 6)
+                        .scaleEffect(appeared || reduceMotion ? 1 : 0.85)
+                    Text("\(session.launch.preset?.name ?? "The agent") is ready")
+                        .font(.title2.weight(.semibold))
+                    Text(place).font(.callout).foregroundStyle(theme.muted).multilineTextAlignment(.center)
+                }
+                VStack(spacing: 8) {
+                    ForEach(Self.starters, id: \.text) { starter in
+                        Button {
+                            session.composer.compose(starter.text)
+                            scene.requestFocus(.composer(session.key))
+                            Haptics.tap()
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: starter.symbol).foregroundStyle(theme.accent).frame(width: 22)
+                                Text(starter.text).foregroundStyle(theme.text)
+                                Spacer()
+                                Image(systemName: "arrow.up.left").font(.caption).foregroundStyle(theme.faint)
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 11)
+                            .background(theme.raised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                if !recent.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Or pick up where you left off").font(.footnote.weight(.semibold)).foregroundStyle(theme.muted)
+                        ForEach(recent, id: \.id) { item in
+                            Button {
+                                Task { await scene.resume(item) }
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "clock.arrow.circlepath").foregroundStyle(theme.faint).frame(width: 22)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(item.dto.title).foregroundStyle(theme.text).lineLimit(1)
+                                        Text(Date(timeIntervalSince1970: item.dto.at / (item.dto.at > 1e11 ? 1000 : 1)).formatted(.relative(presentation: .named))).font(.caption).foregroundStyle(theme.faint)
+                                    }
+                                    Spacer()
+                                    Text("Resume").font(.caption.weight(.semibold)).foregroundStyle(theme.accent)
+                                }
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 9)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: 460)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 40)
+            .frame(maxWidth: .infinity)
+            .opacity(appeared ? 1 : 0)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .onAppear {
+            if reduceMotion { appeared = true } else { withAnimation(.spring(duration: 0.5, bounce: 0.3)) { appeared = true } }
+        }
     }
 }
 

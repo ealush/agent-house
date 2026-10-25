@@ -345,9 +345,13 @@ final class ComposerModel {
     func showsStop(working: Bool) -> Bool { !isShell && working && isEmpty && !justSent }
 
     func placeholder(working: Bool, queued: Int, touchOnly: Bool) -> String {
+        Self.placeholder(isShell: isShell, working: working, queued: queued, touchOnly: touchOnly)
+    }
+
+    nonisolated static func placeholder(isShell: Bool, working: Bool, queued: Int, touchOnly: Bool) -> String {
         if isShell { return "Type or paste a command" }
-        if working && queued > 0 { return touchOnly ? "Add to the queue" : "Add to the queue · Return steers the next one · Esc stops" }
-        if working { return touchOnly ? "Add to this… (queued until it’s free)" : "Add to this… (queued until it’s free · Esc stops)" }
+        if working && queued > 0 { return touchOnly ? "Add to the queue" : "Add to the queue · ↵ on empty steers the next · ⌘↵ sends now · esc stops" }
+        if working { return touchOnly ? "Add to this… (queued until it’s free)" : "Add to this… queued until it’s free · ⌘↵ sends now · esc stops" }
         return "Send a follow-up · / commands · @ files"
     }
 
@@ -372,14 +376,17 @@ final class ComposerModel {
     // MARK: Sending
 
     /// Return in the box. False when there was nothing to send (an empty box steers instead).
+    ///
+    /// `steer`: while the agent works, don't wait for the turn to end: send this now (the turn
+    /// stops, as a queued message's Send now does). ⌘Return in the box.
     @discardableResult
-    func submit(working: Bool) -> Bool {
+    func submit(working: Bool, steer: Bool = false) -> Bool {
         let typed = text
         let sentFiles = attachments
         guard !isEmpty, !isUploading else { return false }
         let message = (sentFiles.compactMap(\.path).map(Uploads.shellQuote) + [typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : typed]).filter { !$0.isEmpty }.joined(separator: " ")
         // The server decides; this only picks where it shows until the server says.
-        let state: Outbox.Item.State = (working || outbox.isLanding(key: key)) && !isShell ? .queued : .sending
+        let state: Outbox.Item.State = (working || outbox.isLanding(key: key)) && !isShell && !steer ? .queued : .sending
         let id = outbox.add(key: key, text: message, state: state)
         recent = [message] + recent.filter { $0 != message }
         cursor = -1
@@ -396,6 +403,13 @@ final class ComposerModel {
             await self?.drafts.saveNow("")
             do {
                 let result = try await api.send(uid, text: message)
+                if steer, result.outcome == .queued, let queued = result.queueId {
+                    // Queued behind the turn: send it now instead.
+                    let now = try await api.sendNow(uid, item: queued)
+                    self?.outbox.update(id, state: .sent, confirmedAt: Date().timeIntervalSince1970)
+                    self?.events.append(.sent(now))
+                    return
+                }
                 self?.outbox.update(id, state: result.outcome == .queued ? .queued : .sent, confirmedAt: Date().timeIntervalSince1970)
                 self?.events.append(.sent(result))
             } catch {
