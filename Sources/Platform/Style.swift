@@ -179,8 +179,11 @@ struct AgentMark: View {
     let agent: String?
     var size: CGFloat = 22
     @Environment(\.theme) private var theme
+    /// Grows with the text beside it (Dynamic Type), as list icons do.
+    @ScaledMetric(relativeTo: .body) private var scale: CGFloat = 1
 
     var body: some View {
+        let size = (self.size * min(scale, 2)).rounded()
         let shape = RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
         Group {
             if let agent, let key = AgentLogo.key(agent) {

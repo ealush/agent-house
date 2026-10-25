@@ -101,6 +101,7 @@ private struct AskCard: View {
     let scene: SceneModel
     let hub: HubStore
     @Environment(\.theme) private var theme
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -110,11 +111,12 @@ private struct AskCard: View {
                 HStack(spacing: 10) {
                     AgentMark(agent: row.dto.agent)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(row.title).font(.headline).foregroundStyle(theme.text).lineLimit(1)
+                        Text(row.title).font(.headline).foregroundStyle(theme.text).lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
                         Text([hub.multiHost ? row.host : nil, row.dto.project].compactMap { $0 }.joined(separator: " · ")).font(.caption).foregroundStyle(theme.muted)
+                        if typeSize.isAccessibilitySize { Elapsed(seconds: row.dto.activity).font(.caption).foregroundStyle(theme.faint) }
                     }
                     Spacer()
-                    Elapsed(seconds: row.dto.activity).font(.caption).foregroundStyle(theme.faint)
+                    if !typeSize.isAccessibilitySize { Elapsed(seconds: row.dto.activity).font(.caption).foregroundStyle(theme.faint) }
                 }
             }
             .buttonStyle(.plain)
@@ -171,6 +173,7 @@ struct SessionRowView: View {
     @Environment(\.theme) private var theme
     /// Increased when the row is selected in a focused list (filled with the accent).
     @Environment(\.backgroundProminence) private var prominence
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         if selectable {
@@ -189,6 +192,9 @@ struct SessionRowView: View {
     }
 
     private var content: some View {
+        // At accessibility text sizes the status goes under the title, so the title keeps the
+        // row's width instead of a few letters.
+        let stacked = typeSize.isAccessibilitySize
         let onAccent = prominence == .increased
         return HStack(spacing: 10) {
             AgentMark(agent: row.dto.agent)
@@ -207,13 +213,18 @@ struct SessionRowView: View {
                         .accessibilityLabel(fork.parentTitle.isEmpty ? "\(fork.forks) forks" : "Fork of \(fork.parentTitle)")
                     }
                 }
-                Text(detail).font(.caption).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.muted).lineLimit(1)
+                Text(detail).font(.caption).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.muted).lineLimit(stacked ? 2 : 1)
+                if stacked { status(onAccent: onAccent, compact: false) }
             }
             Spacer(minLength: 4)
-            VStack(alignment: .trailing, spacing: 2) {
-                StatusPill(word: row.word, compact: dense && !row.word.asksForAttention)
-                if row.dto.queued > 0 { Text("\(row.dto.queued) queued").font(.caption2).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint) }
-            }
+            if !stacked { status(onAccent: onAccent, compact: dense && !row.word.asksForAttention) }
+        }
+    }
+
+    private func status(onAccent: Bool, compact: Bool) -> some View {
+        VStack(alignment: .trailing, spacing: 2) {
+            StatusPill(word: row.word, compact: compact)
+            if row.dto.queued > 0 { Text("\(row.dto.queued) queued").font(.caption2).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint) }
         }
     }
 
@@ -394,6 +405,7 @@ struct HistoryRowView: View {
     let scene: SceneModel
     let hub: HubStore
     @Environment(\.theme) private var theme
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         Button {
@@ -408,9 +420,10 @@ struct HistoryRowView: View {
                     }
                     Text([hub.multiHost ? item.host : nil, item.dto.project, item.dto.fork.map { "fork of \($0.parentTitle)" }].compactMap { $0 }.joined(separator: " · "))
                         .font(.caption).foregroundStyle(theme.muted).lineLimit(1)
+                    if typeSize.isAccessibilitySize { Elapsed(seconds: item.dto.at).font(.caption).foregroundStyle(theme.faint) }
                 }
                 Spacer()
-                Elapsed(seconds: item.dto.at).font(.caption).foregroundStyle(theme.faint)
+                if !typeSize.isAccessibilitySize { Elapsed(seconds: item.dto.at).font(.caption).foregroundStyle(theme.faint) }
             }
         }
         .buttonStyle(.plain)
