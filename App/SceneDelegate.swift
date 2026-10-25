@@ -35,6 +35,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
         model.restore()
         model.clipboard = { UIPasteboard.general.string = $0 }
+        if UIApplication.shared.supportsMultipleScenes {
+            model.openWindow = { link, origin in Self.newWindow(link, origin: origin) }
+        }
         self.model = model
         let root = SceneRootController(scene: model)
         self.root = root
@@ -44,7 +47,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             root?.sawKeys(event)
         }
         window.makeKeyAndVisible()
-        windowScene.title = nil
+        followTitle(windowScene)
 
         for context in options.urlContexts { handle(context.url) }
         if let activity = options.userActivities.first(where: { $0.activityType == Handoff.activityType }), let handoff = Handoff(userInfo: activity.userInfo ?? [:]) {
@@ -66,6 +69,19 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard let action = QuickAction(rawValue: item.type), let model else { return false }
         model.perform(action.command)
         return true
+    }
+
+    /// Keeps the window named after what it shows.
+    private func followTitle(_ windowScene: UIWindowScene) {
+        guard let model else { return }
+        withObservationTracking {
+            windowScene.title = model.windowTitle
+        } onChange: {
+            Task { @MainActor [weak self, weak windowScene] in
+                guard let windowScene else { return }
+                self?.followTitle(windowScene)
+            }
+        }
     }
 
     func sceneDidDisconnect(_ scene: UIScene) {
@@ -132,6 +148,18 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         let target = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
         guard let session = (target?.delegate as? SceneDelegate)?.model?.session(key), session.composer.text.isEmpty else { return }
         session.composer.text = text
+    }
+
+    /// Another window, opening at `link` (or wherever a new window starts) on `origin`'s host.
+    static func newWindow(_ link: DeepLink?, origin: String?) {
+        let activity = NSUserActivity(activityType: activityType)
+        var info: [String: Any] = [:]
+        if let link { info["link"] = link.url.absoluteString }
+        if let origin { info["origin"] = origin }
+        activity.userInfo = info
+        let options = UIWindowScene.ActivationRequestOptions()
+        options.preferredPresentationStyle = .standard
+        UIApplication.shared.requestSceneSessionActivation(nil, userActivity: activity, options: options) { _ in }
     }
 
     /// From the app delegate (a notification tap): the foreground window, else the most recent.

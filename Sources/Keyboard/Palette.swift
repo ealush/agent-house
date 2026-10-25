@@ -96,6 +96,7 @@ enum PaletteTree {
         .category(key: "workspace", label: "Workspace", icon: "rectangle.split.2x2", detail: "Splits, panes and the sidebar", children: [
             .command("pane-mode"),
             .command("focus-follows-pointer"),
+            .category(key: "windows", label: "Windows", icon: "macwindow.on.rectangle", detail: "Another window, or this session in one", terms: ["window", "stage manager"], children: [.command("new-window"), .command("open-in-new-window")]),
             .category(key: "tiles", label: "Open as a new pane", icon: "rectangle.split.2x1", detail: "Beside the focused pane, along its longer side", children: [.command("open-in-pane"), .provider(.tiles)]),
             .category(key: "split", label: "Split", icon: "rectangle.split.2x1", detail: "Open, replace, flip, close panes", terms: ["pane"], children: [
                 .command("split-right"), .command("split-below"), .command("split-left"), .command("split-above"), .command("replace-pane"), .command("toggle-split"),

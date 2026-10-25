@@ -294,6 +294,8 @@ enum CommandCatalog {
         Command("workspace-next", .workspace, "Next workspace", "The next workspace with something in it, or the next number when no other has.", chords: [c("]", ctrl: true, alt: true)]),
         Command("workspace-prev", .workspace, "Previous workspace", "The previous workspace with something in it, or the previous number.", chords: [c("[", ctrl: true, alt: true)]),
         Command("go-to-session", .navigate, "Go to session…", "Search every session in the palette and jump to it, or open it as a pane or in another workspace.", terms: ["switch", "find", "session"]),
+        Command("new-window", .workspace, "New window", "Open another Agent Hub window, side by side or on its own (iPad and Mac).", terms: ["window", "scene", "stage manager"]),
+        Command("open-in-new-window", .workspace, "Open session in new window", "Move the focused session into a window of its own (iPad and Mac).", terms: ["window", "tear off", "detach"]),
         Command("focus-follows-pointer", .workspace, "Focus follows the pointer", "With a trackpad or mouse, hovering over a pane makes it the focused one. Again to turn it off.", terms: ["hover", "mouse", "trackpad", "focus"]),
     ]
 
@@ -335,6 +337,7 @@ enum CommandCatalog {
         "swap-pane-up": "arrow.up.arrow.down", "swap-pane-down": "arrow.up.arrow.down", "focus-pane-next": "arrow.forward.square",
         "focus-pane-prev": "arrow.backward.square", "workspace-next": "chevron.right.square", "workspace-prev": "chevron.left.square",
         "go-to-session": "rectangle.stack", "focus-follows-pointer": "cursorarrow.motionlines",
+        "new-window": "macwindow.badge.plus", "open-in-new-window": "rectangle.portrait.on.rectangle.portrait.angled",
     ]
     static func label(_ id: CommandID) -> String { byID[id]?.label ?? id.rawValue }
 

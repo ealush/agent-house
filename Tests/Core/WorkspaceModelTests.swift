@@ -187,3 +187,25 @@ import Testing
     guard case .split(_, let free, _, _)? = ws.layout else { Issue.record("still a split"); return }
     #expect(free == 0.8)
 }
+
+@MainActor
+@Test func aWindowIsNamedAfterWhatItShows() throws {
+    let services = AppServices(
+        database: try AppDatabase(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)),
+        vault: CredentialVault(store: MemorySecretStore()), keys: MemoryDeviceKeyStore(),
+        transport: URLSessionTransport(), device: DeviceDescriptor(name: "iPad", client: DeviceDescriptor.newClientID()), allowLoopback: true
+    )
+    let scene = SceneModel(sceneID: "titles", app: AppModel(services: services))
+    #expect(scene.windowTitle == "Inbox")
+    scene.show(.review(ReviewRoute()))
+    #expect(scene.windowTitle == "Review")
+    scene.show(.settings(nil))
+    #expect(scene.windowTitle == "Settings")
+    // A session no host lists (yet) still names the window plainly.
+    scene.open("abc")
+    #expect(scene.windowTitle == "Session")
+    scene.workspace.split(.horizontal)
+    #expect(scene.windowTitle == "New Pane", "a split goes to its new, empty pane")
+    scene.workspace.focus([.first])
+    #expect(scene.windowTitle == "Session", "then after the focused pane's session")
+}

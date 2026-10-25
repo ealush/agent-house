@@ -375,6 +375,9 @@ struct SessionRowMenu: View {
         if !scene.narrow {
             Button("Open as a new pane", systemImage: "rectangle.split.2x1") { scene.run(.openAsPane(row.key)) }
         }
+        if scene.openWindow != nil {
+            Button("Open in New Window", systemImage: "macwindow.badge.plus") { scene.openInNewWindow(row.key) }
+        }
         Button(row.dto.pinned ? "Unpin" : "Pin", systemImage: "pin") {
             Task { try? await hub.client(forKey: row.key).pin(row.uid, pinned: !row.dto.pinned); hub.refresh() }
         }

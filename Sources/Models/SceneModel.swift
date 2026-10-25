@@ -31,6 +31,9 @@ final class SceneModel {
     private(set) var pendingChord: Chord?
     /// Set by the platform layer.
     var clipboard: (String) -> Void = { _ in }
+    /// Opens another window (at a link, signed in to an origin); nil where there's only one
+    /// window (iPhone).
+    var openWindow: ((DeepLink?, String?) -> Void)?
     /// Where the keyboard is now, set by the focused responder (a composer, a terminal). The
     /// menu's key commands match through it, so they never take a key that responder owns.
     @ObservationIgnored var keyScope: KeyScope = .app
@@ -434,6 +437,25 @@ final class SceneModel {
 
     var focusedSession: SessionModel? { workspace.focusedKey.flatMap(session) }
 
+    /// The window's name in Stage Manager, the app switcher and the Mac's Window menu: the
+    /// session in front, else the page.
+    var windowTitle: String {
+        if workspace.layout != nil {
+            guard let key = workspace.focusedKey else { return "New Pane" }
+            return hub?.row(key)?.title ?? "Session"
+        }
+        switch route {
+        case .session(let key): return hub?.row(key)?.title ?? hub?.history.first { $0.id == key }?.dto.title ?? "Session"
+        case .inbox: return "Inbox"
+        case .sessions: return "Sessions"
+        case .history: return "History"
+        case .search: return "Search"
+        case .review: return "Review"
+        case .settings: return "Settings"
+        case .worktrees: return "Worktrees"
+        }
+    }
+
     /// Disconnect sessions no longer on screen (their streams and timers stop).
     func pruneSessions() {
         var keep = Set(workspace.visibleKeys)
@@ -497,6 +519,12 @@ final class SceneModel {
         if let hub, hub.row(key) != nil { Task { try? await hub.client(forKey: key).focus(key: key) } }
         pruneSessions()
         scheduleSave()
+    }
+
+    /// A session in a window of its own, beside this one.
+    func openInNewWindow(_ key: String) {
+        guard let row = hub?.row(key) else { return }
+        openWindow?(.session(host: row.isLocal ? nil : row.host, uid: row.uid), account?.origin)
     }
 
     /// A page (Inbox, History, Review…): leaves the split.
@@ -737,6 +765,8 @@ final class SceneModel {
         if id.sendToWorkspaceNumber != nil { return ws.focusedKey != nil }
         switch id.rawValue {
         case "go-to-session", "workspace-next", "workspace-prev", "focus-follows-pointer": return true
+        case "new-window": return openWindow != nil
+        case "open-in-new-window": return openWindow != nil && live
         case "split-left", "split-above": return !narrow && (ws.focusedKey != nil || ws.chooserFocused)
         case "balance-panes", "focus-pane-next", "focus-pane-prev", "swap-pane-left", "swap-pane-right", "swap-pane-up", "swap-pane-down": return ws.splitOpen
         case "command-palette", "switcher", "new-session", "new-project", "cycle-prev", "cycle-next", "go-inbox", "go-history", "go-review",
@@ -817,6 +847,8 @@ final class SceneModel {
         switch id.rawValue {
         case "command-palette": palette = palette == nil ? PaletteState() : nil
         case "go-to-session": palette = PaletteState(path: ["go", "sessions"])
+        case "new-window": openWindow?(nil, account?.origin)
+        case "open-in-new-window": if let key { openInNewWindow(key) }
         case "split-left":
             workspace.split(.horizontal, before: true)
             syncRouteToWorkspace()
