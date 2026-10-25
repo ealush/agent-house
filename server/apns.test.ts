@@ -69,7 +69,8 @@ test('payloads: full or private previews; approve/deny only for answerable asks'
   const quiet = apnsPayload(alert, 'waiting', 'private');
   assert.deepEqual(quiet.aps.alert, { title: 'A session needs you' }, 'nothing about the session on the lock screen');
   assert.equal(apnsPayload({ ...alert, answerable: false }, 'waiting', 'full').aps.category, undefined);
-  assert.equal(apnsPayload(alert, 'done', 'full').aps.category, undefined, 'a finished turn has nothing to approve');
+  assert.equal(apnsPayload(alert, 'done', 'full').aps.category, 'AH_REPLY', 'a finished turn takes a reply, nothing to approve');
+  assert.equal(apnsPayload({ ...alert, route: 'review/s1/101' }, 'done', 'full').aps.category, undefined, 'a review layer has no session to reply to');
 });
 
 test('registration needs configuration and a well-formed token; one per sign-in', () => {

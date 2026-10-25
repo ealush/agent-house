@@ -87,6 +87,8 @@ export function apnsPayload(alert: ApnsAlert, event: 'waiting' | 'done', preview
       'interruption-level': event === 'waiting' ? 'time-sensitive' : 'active',
       // Approve/Deny on the notification only where one tap is safe (a known permission prompt).
       ...(event === 'waiting' && alert.answerable ? { category: 'AH_APPROVAL' } : {}),
+      // A finished session takes a reply from the notification (the app sends it like any message).
+      ...(event === 'done' && !alert.route.startsWith('review') ? { category: 'AH_REPLY' } : {}),
     },
     ah: { v: 1, host: alert.host, route: alert.route, event },
   };
