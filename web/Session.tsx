@@ -1190,7 +1190,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
           </Suspense>
           {tab !== 'main' && <div className="session-main" style={{ minHeight: 0 }}>{panelView(tab)}</div>}
           {view === 'gui' && (
-            <ComposerBar ref={composer} client={client} target={w.uid} agent={w.agent} w={w} onSent={onSent} onChange={refresh} focusKey={focus} active={active}
+            <ComposerBar ref={composer} compact={narrow || touchScreen} client={client} target={w.uid} agent={w.agent} w={w} onSent={onSent} onChange={refresh} focusKey={focus} active={active}
               onSettingsOpen={() => switchView('terminal', true)}
               onRelaunched={(uid) => {
                 refresh();

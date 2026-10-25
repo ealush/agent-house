@@ -1,11 +1,11 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import { useHardwareKeyboard } from './hardwareKeyboard.ts';
-import { askConfirm, showError, showNotice } from './ask.tsx';
+import { showError, showNotice } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { shellQuote, type HostApi, type SendResult, type Win } from './api.ts';
 import { clipboardFiles } from './clipboard.ts';
-import { ModelPicker, EffortPicker, Popover, effectiveModel, effortsFor, usePreset } from './ModelPicker.tsx';
-import { shortModel } from './logos.tsx';
+import { Popover } from './ModelPicker.tsx';
+import { ComposerOptions } from './ComposerOptions.tsx';
 import { SuggestList, triggerAt, useSuggestions } from './Suggest.tsx';
 import { useLaunch, useLaunchPalette } from './useLaunch.ts';
 import { addOutgoing, removeOutgoing, updateOutgoing, useOutbox } from './outbox.ts';
@@ -50,6 +50,8 @@ type Props = {
   focusKey?: number;
   /** The focused pane's composer takes the model/effort commands. */
   active?: boolean;
+  /** A phone or touch-first tablet gets the mobile writing surface. */
+  compact?: boolean;
 };
 
 export type ComposerHandle = { attach: (files: File[]) => void; focus: () => void };
@@ -79,10 +81,12 @@ const SpeechRecognition: (new () => Recognition) | undefined = (window as any).S
 
 const toast = (msg: string) => window.dispatchEvent(new CustomEvent('ah:toast', { detail: msg }));
 
-export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBar({ client, target, agent, w, onSent, onChange, onNotice = toast, onSettingsOpen, onRelaunched, focusKey, active = false }, ref) {
+export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBar({ client, target, agent, w, onSent, onChange, onNotice = toast, onSettingsOpen, onRelaunched, focusKey, active = false, compact = false }, ref) {
   // A hardware keyboard on a touch screen has keys to name.
-  const touchOnly = TOUCH_SCREEN && !useHardwareKeyboard();
+  const hardwareKeyboard = useHardwareKeyboard();
+  const touchOnly = TOUCH_SCREEN && !hardwareKeyboard;
   const area = useRef<HTMLTextAreaElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   const tray = useRef<QueueTrayHandle>(null);
   const [text, setText] = useState(() => drafts.get(target) ?? '');
   // The unsent text also lives on the host, so it follows you to your next device.
@@ -102,8 +106,8 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
   // Sends go out one after another, so fast follow-ups keep their order.
   const sending = useRef<Promise<void>>(Promise.resolve());
   const cursor = useRef(-1);
+  const beforeRecall = useRef('');
   const isShell = !agent;
-  const preset = usePreset(w?.host ?? '', agent);
   const working = !!w && w.status === 'busy';
   const outbox = useOutbox(target);
 
@@ -189,8 +193,20 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
   useLayoutEffect(() => {
     const el = area.current;
     if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight}px`;
+    const resize = () => {
+      el.style.height = 'auto';
+      el.style.height = `${el.scrollHeight}px`;
+    };
+    resize();
+    // Rotation and a split-view resize can both rewrap a draft.
+    let width = el.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (el.clientWidth === width) return;
+      width = el.clientWidth;
+      resize();
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
   }, [text]);
 
   function submit() {
@@ -236,8 +252,10 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
   function recall(step: 1 | -1) {
     const list = recent.current;
     if (!list.length) return;
+    if (cursor.current < 0) beforeRecall.current = text;
     cursor.current = Math.max(-1, Math.min(list.length - 1, cursor.current + step));
-    setText(cursor.current < 0 ? '' : list[cursor.current]);
+    setText(cursor.current < 0 ? beforeRecall.current : list[cursor.current]);
+    area.current?.focus({ preventScroll: true });
   }
 
   async function attach(picked: FileList | File[] | null) {
@@ -304,12 +322,14 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
   // ---------- model / effort / mode chip
 
   const launch = useLaunch({ client, w, agent, onNotice, onSent, onSettingsOpen, onRelaunched });
-  const { models, model, modelLabel, effort, mode, levels, openSettings, choose, chooseMode } = launch;
   useLaunchPalette(launch, active && !!w);
 
   const empty = !text.trim() && !files.length;
   const canSend = !empty && !busy && !uploading;
   const showStop = !isShell && working && empty && !justSent;
+  const landing = outbox.some((o) => o.state === 'queued' || (Date.now() - o.at < 5000 && (o.state === 'sending' || o.state === 'sent')));
+  const queues = !isShell && (working || landing);
+  const actionLabel = isShell ? 'Run' : queues ? 'Queue' : 'Send';
 
   return (
     <>
@@ -324,7 +344,8 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
       />
     )}
     <form
-      className={`composer ${isShell ? 'cmd' : ''} ${listening ? 'listening' : ''}`}
+      className={`composer ${compact ? 'mobile' : ''} ${isShell ? 'cmd' : ''} ${listening ? 'listening' : ''}`}
+      aria-label={isShell ? 'Command composer' : 'Message composer'}
       onSubmit={(e) => {
         e.preventDefault();
         submit();
@@ -361,18 +382,24 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
           ref={area}
           rows={1}
           value={text}
-          enterKeyHint="send"
+          enterKeyHint={touchOnly ? 'enter' : 'send'}
+          aria-label={isShell ? 'Command' : 'Message'}
           autoCapitalize={isShell ? 'off' : 'sentences'}
           autoCorrect={isShell ? 'off' : 'on'}
           spellCheck={!isShell}
-          placeholder={isShell ? 'Type or paste a command' : working && (w?.queued ?? 0) > 0 ? (touchOnly ? 'Add to the queue' : 'Add to the queue · Enter steers the next one · Esc stops') : working ? (touchOnly ? 'Add to this… (queued until it’s free)' : 'Add to this… (queued until it’s free · Esc stops)') : 'Send a follow-up · / commands · @ files'}
+          placeholder={isShell ? 'Type a command…' : compact ? queues ? 'Add a follow-up…' : 'Message…' : working && (w?.queued ?? 0) > 0 ? 'Add to the queue · Enter steers the next one · Esc stops' : working ? 'Add to this… (queued until it’s free · Esc stops)' : 'Send a follow-up · / commands · @ files'}
           onChange={(e) => {
             setText(e.target.value);
+            cursor.current = -1;
             setCaret(e.target.selectionStart ?? e.target.value.length);
           }}
           onSelect={syncCaret}
           onClick={syncCaret}
           onKeyDown={(e) => {
+            // Safari can report the final IME Enter as keyCode 229 after isComposing clears.
+            if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
+            // The phone's Return is for paragraphs. Hardware keyboards retain Enter-to-send.
+            if (touchOnly && e.key === 'Enter' && !e.metaKey && !e.ctrlKey) return;
             if (suggesting && !e.nativeEvent.isComposing) {
               if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                 e.preventDefault();
@@ -419,61 +446,24 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
       </div>
 
       <div className="composer-tools">
-        <div className="composer-settings">
-          {preset && (models.length > 0 || preset.modelArgs || preset.settingsCommands?.model) && (
-            <Popover className="tool-chip" title="Model version" label={<ChipLabel name="Model" value={modelLabel ?? 'Default'} />} command="pick-model" active={active}>
-              {(close) => (
-                <ModelPicker preset={preset} value={{ model: model?.id, effort }}
-                  disabled={!preset.switchModel && !preset.modelArgs}
-                  onPick={(p) => void choose({ model: p.model ?? 'default' }, close)}
-                  footer={!models.length && preset.settingsCommands?.model
-                    ? <button type="button" className="picker-native" onClick={() => openSettings('model', close)}>Choose model in terminal…</button>
-                    : <span>{preset.switchModel ? 'Changes this session' : 'Restarts this session with it'}</span>} />
-              )}
-            </Popover>
-          )}
-          {preset && (levels.length > 0 || preset.settingsCommands?.effort) && (
-            <Popover className="tool-chip" title="Reasoning effort" label={<ChipLabel name="Effort" value={effort ? effort.charAt(0).toUpperCase() + effort.slice(1) : 'Default'} />} command="pick-effort" active={active}>
-              {(close) => (
-                <EffortPicker levels={levels} value={effort} disabled={!preset.switchEffort && !preset.effort}
-                  onPick={(level) => void choose({ effort: level ?? 'default' }, close)}
-                  footer={!levels.length && preset.settingsCommands?.effort
-                    ? <button type="button" className="picker-native" onClick={() => openSettings('effort', close)}>Choose effort in terminal…</button>
-                    : <span>{preset.switchEffort ? 'Changes this session' : 'Restarts this session with it'}</span>} />
-              )}
-            </Popover>
-          )}
-          {preset && (preset.modes?.length ?? 0) > 1 && (
-            <Popover className={`tool-chip ${mode?.dangerous ? 'danger' : ''}`} title="Permission level" label={<ChipLabel name="Permissions" value={mode && mode.id !== 'default' ? `${mode.dangerous ? '⚠ ' : ''}${mode.name}` : 'Default'} />}>
-              {(close) => (
-                <div className="picker" aria-label="Permissions">
-                  <div className="picker-title">Permissions</div>
-                  {preset.modes!.map((m) => (
-                    <div key={m.id} className={`picker-row ${m.id === mode?.id ? 'on' : ''}`}>
-                      <button type="button" className="picker-name" title={m.description} onClick={() => void chooseMode(m.id, close)}>
-                        <span>
-                          {m.dangerous ? '⚠ ' : ''}{m.name}
-                          {m.description ? <span className="hint"> — {m.description}</span> : null}
-                        </span>
-                        {m.id === mode?.id && <span className="check">✓</span>}
-                      </button>
-                    </div>
-                  ))}
-                  <div className="picker-foot"><span>{preset.modeCycle ? 'Changes this session' : 'Restarts this session with it'}</span></div>
-                </div>
-              )}
-            </Popover>
-          )}
-
-        </div>
+        {compact && (
+          <Popover className="icon-btn composer-add" title="Add to message" label={<Icon name="plus" size={22} />}>
+            {(close) => <div className="picker composer-add-menu">
+              <button type="button" onClick={() => { close(); fileInput.current?.click(); }}><Icon name="attach" size={20} /><span>Attach files</span></button>
+              <button type="button" onClick={() => { close(); recall(1); }}><Icon name="recall" size={20} /><span>Previous message</span></button>
+              {cursor.current >= 0 && <button type="button" onClick={() => { close(); cursor.current = -1; setText(beforeRecall.current); area.current?.focus({ preventScroll: true }); }}><Icon name="edit" size={20} /><span>Restore draft</span></button>}
+            </div>}
+          </Popover>
+        )}
+        <ComposerOptions launch={launch} compact={compact} active={active} />
 
         <div className="composer-actions">
-          <button type="button" className="icon-btn" title="Previous messages (↑)" onClick={() => recall(1)}>
+          {!compact && <button type="button" className="icon-btn" title="Previous messages (↑)" aria-label="Previous message" onClick={() => recall(1)}>
             <Icon name="recall" />
-          </button>
-          <label className="icon-btn" title={isShell ? 'Attach a file (uploaded to the host, path inserted)' : 'Attach a file (uploaded to the host, sent with the message)'}>
+          </button>}
+          <label className={`icon-btn composer-attach ${compact ? 'hidden' : ''}`} title={isShell ? 'Attach a file (uploaded to the host, path inserted)' : 'Attach a file (uploaded to the host, sent with the message)'}>
             <Icon name="attach" />
-            <input type="file" multiple hidden onChange={(e) => {
+            <input ref={fileInput} type="file" multiple hidden onChange={(e) => {
               attach(e.target.files);
               // Picking the same file again should attach it again.
               e.target.value = '';
@@ -490,8 +480,9 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
             </button>
           ) : (
             // Pressing it leaves focus (and a phone's keyboard) in the box, as a messaging app does.
-            <button type="submit" className="send-btn" disabled={!canSend} aria-label={isShell ? 'Run' : 'Send'} onMouseDown={(e) => e.preventDefault()}>
-              {isShell ? 'Run' : <Icon name="up" />}
+            <button type="submit" className="send-btn" disabled={!canSend} aria-label={actionLabel} title={queues ? 'Queue after the current response' : actionLabel}
+              onMouseDown={(e) => e.preventDefault()}>
+              {compact && queues ? <><Icon name="queue" size={18} /><span>Queue</span></> : isShell ? 'Run' : <Icon name="up" size={compact ? 22 : 18} />}
             </button>
           )}
         </div>
@@ -500,12 +491,3 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
     </>
   );
 });
-
-/** A setting chip says which setting and the value in force: "Model Opus 5.5", "Effort Default". */
-function ChipLabel({ name, value }: { name: string; value: string }) {
-  return (
-    <>
-      <span className="chip-key">{name}</span> {value}
-    </>
-  );
-}
