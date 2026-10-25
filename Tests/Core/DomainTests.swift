@@ -208,3 +208,17 @@ import Testing
     #expect(StatusWord.needsYou.asksForAttention && StatusWord.limited.asksForAttention)
     #expect(!StatusWord.idle.asksForAttention && !StatusWord.working.asksForAttention && !StatusWord.done.asksForAttention && !StatusWord.newOutput.asksForAttention)
 }
+
+@Test func aScreenPromptStillSaysWhatItWouldRun() {
+    let text = "[me@box infra]$ claude\n✻ Welcome\n Bash command\n   ./keys/rotate.sh\n   Rotate the API signing keys\n Do you want to proceed?"
+    let ask = AskDTO(kind: .screen, text: text, questions: nil, options: nil, dialog: nil)
+    let parts = AskParts(ask)
+    #expect(parts.kind == "Wants to run a command")
+    #expect(parts.command == "./keys/rotate.sh")
+    #expect(parts.description == "Rotate the API signing keys")
+    #expect(parts.question == nil, "the generic question adds nothing")
+    #expect(AskParts.line(ask) == "Wants to run ./keys/rotate.sh")
+    // A screen prompt without a command stays a plain question.
+    let plain = AskParts(AskDTO(kind: .screen, text: "Overwrite the file?", questions: nil, options: nil, dialog: nil))
+    #expect(plain.command == nil && plain.question == "Overwrite the file?")
+}

@@ -53,6 +53,23 @@ struct AskParts: Equatable, Sendable {
         case .choice:
             let q = ask.dialog?.question ?? ask.questions?.first?.question ?? (text.isEmpty ? nil : text)
             self.init(kind: kind, question: q)
+        case .screen:
+            // Read off the screen, a permission prompt still names its command under a
+            // "Bash command" heading: show what you'd be approving, not just the question.
+            let lines = ScreenText.clean(text).split(separator: "\n", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
+            if let heading = lines.lastIndex(where: Self.isHeading), heading + 1 < lines.count, !lines[heading + 1].isEmpty, lines[heading + 1] != question {
+                let after = lines[(heading + 2)...].prefix { !$0.isEmpty && $0 != question }
+                self.init(
+                    kind: Self.kindLabel(.command),
+                    command: lines[heading + 1],
+                    description: after.count == 1 ? after.first : nil,
+                    question: question.flatMap { Self.isGeneric($0) ? nil : $0 },
+                    context: ScreenText.clean(text)
+                )
+            } else {
+                let context = ScreenText.clean(text, dropping: question)
+                self.init(kind: kind, question: question, context: context.isEmpty ? nil : context)
+            }
         default:
             let context = ScreenText.clean(text, dropping: question)
             self.init(kind: kind, question: question, context: context.isEmpty ? nil : context)
@@ -73,7 +90,10 @@ struct AskParts: Equatable, Sendable {
             return cmd.map { short("Wants to run \($0)") } ?? "Wants to run a command"
         case .choice, .question: return short("Asks: \(first(ask.text))")
         case .tool: return short(first(ask.text))
-        case .screen: return "Wants your answer"
+        case .screen:
+            let lines = ask.text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            if let heading = lines.lastIndex(where: isHeading), heading + 1 < lines.count { return short("Wants to run \(lines[heading + 1])") }
+            return "Wants your answer"
         }
     }
 
