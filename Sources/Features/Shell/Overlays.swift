@@ -358,7 +358,7 @@ struct SwitcherView: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").foregroundStyle(theme.faint)
-                TextField(tile ? "Open as a new pane…" : scene.hardwareKeyboard ? "Jump, resume, or search conversations…  h:claude p:vest in:chats" : "Jump, resume or search…",
+                TextField(tile ? "Open as a new pane…" : scene.hardwareKeyboard ? "Jump, resume, or search conversations…  h:claude p:\(scene.hub?.rows.first?.dto.project ?? "api") in:chats" : "Jump, resume or search…",
                           text: Binding(get: { query }, set: { scene.switcher?.query = $0; selection = 0; content?.update($0) }))
                     .textFieldStyle(.plain)
                     .font(.title3)

@@ -251,7 +251,7 @@ private struct FilesPanel: View {
                     Toggle(isOn: $model.showHidden) { Label("Show Hidden Files", systemImage: "eye") }
                     if let path = model.listing?.path {
                         Divider()
-                        Button("Insert This Folder", systemImage: "text.insert") { insert(path) }
+                        Button("Mention This Folder", systemImage: "at") { insert(path) }
                         Button("Copy Path", systemImage: "doc.on.doc") { UIPasteboard.general.string = path }
                     }
                 } label: {
@@ -370,10 +370,12 @@ private struct FilesPanel: View {
                 Text(detail(entry)).font(.caption).foregroundStyle(theme.faint).lineLimit(1)
             }
             Spacer(minLength: 4)
-            Button { insert(path) } label: { Image(systemName: "text.insert") }
+            // The composer's own mention mark: this puts @path in the message.
+            Button { insert(path) } label: { Image(systemName: "at.circle") }
                 .buttonStyle(.borderless)
                 .foregroundStyle(theme.muted)
-                .accessibilityLabel("Insert \(entry.name) in the message")
+                .help("Mention in the message")
+                .accessibilityLabel("Mention \(entry.name) in the message")
             if entry.type == .dir {
                 Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(theme.faint)
             }
@@ -382,7 +384,7 @@ private struct FilesPanel: View {
         .onTapGesture { Task { await open(entry) } }
         .draggable(FilesModel.mention(path, shell: session.isShell, cwd: cwd).trimmingCharacters(in: .whitespaces))
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button { insert(path) } label: { Label("Insert", systemImage: "text.insert") }.tint(theme.accent)
+            Button { insert(path) } label: { Label("Mention", systemImage: "at") }.tint(theme.accent)
         }
         .swipeActions(edge: .leading) {
             if entry.type == .file {
@@ -391,14 +393,14 @@ private struct FilesPanel: View {
         }
         .contextMenu {
             Button(entry.type == .dir ? "Open" : "Preview", systemImage: entry.type == .dir ? "folder" : "eye") { Task { await open(entry) } }
-            Button("Insert in Message", systemImage: "text.insert") { insert(path) }
+            Button("Mention in Message", systemImage: "at") { insert(path) }
             Button("Copy Path", systemImage: "doc.on.doc") { UIPasteboard.general.string = path }
             if entry.type == .file {
                 Button("Share or Save…", systemImage: "square.and.arrow.up") { Task { await share(entry) } }
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityAction(named: "Insert in message") { insert(path) }
+        .accessibilityAction(named: "Mention in message") { insert(path) }
         .accessibilityIdentifier("file:\(entry.name)")
     }
 
@@ -499,7 +501,7 @@ private struct FileTextSheet: View {
                         insert()
                         dismiss()
                     } label: {
-                        Label("Insert", systemImage: "text.insert")
+                        Label("Mention", systemImage: "at")
                     }
                 }
             }
