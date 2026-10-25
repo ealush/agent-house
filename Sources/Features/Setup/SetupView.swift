@@ -23,13 +23,22 @@ struct SetupView: View {
         NavigationStack {
             Form {
                 Section {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Image(systemName: "point.3.connected.trianglepath.dotted").font(.largeTitle).foregroundStyle(theme.brand)
-                        Text("Connect to Agent Hub").font(.title2.weight(.semibold))
+                    VStack(spacing: 14) {
+                        Image("AppMark")
+                            .resizable()
+                            .frame(width: 88, height: 88)
+                            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                            .shadow(color: theme.brand.opacity(0.35), radius: 18, y: 8)
+                            .accessibilityHidden(true)
+                        Text("Connect to Agent Hub").font(.title.weight(.bold))
                         Text("Your host stays private on your tailnet. This device gets its own key, which you can remove from any other device.")
-                            .font(.callout).foregroundStyle(theme.muted)
+                            .font(.callout)
+                            .foregroundStyle(theme.muted)
+                            .multilineTextAlignment(.center)
                     }
-                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .listRowBackground(Color.clear)
                 }
                 Section {
                     TextField("https://your-host.your-tailnet.ts.net", text: $address)
@@ -79,16 +88,25 @@ struct SetupView: View {
                     Button {
                         Task { await enroll() }
                     } label: {
-                        HStack {
-                            Spacer()
-                            if busy { ProgressView() } else { Text("Connect").fontWeight(.semibold) }
-                            Spacer()
+                        Group {
+                            if busy { ProgressView().tint(.white) } else { Text("Connect").fontWeight(.semibold) }
                         }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
                     }
+                    .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.capsule)
+                    .controlSize(.large)
                     .disabled(busy || address.trimmingCharacters(in: .whitespaces).isEmpty || code.trimmingCharacters(in: .whitespaces).isEmpty)
                     .accessibilityIdentifier("connectHost")
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
                 }
             }
+            // A comfortable column on a big screen, not a form across the whole iPad.
+            .frame(maxWidth: 600)
+            .frame(maxWidth: .infinity)
+            .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
             .navigationTitle(app.accounts.isEmpty ? "" : "Add a host")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
