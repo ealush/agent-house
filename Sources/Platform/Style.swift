@@ -173,27 +173,43 @@ struct Keycaps: View {
     }
 }
 
-/// An agent's mark: its SF Symbol stand-in and initial, tinted; a shell is a terminal.
+/// An agent's mark (`../ah/web/logos.tsx`): its own logo on a small mat, an app-icon logo edge
+/// to edge, an agent without one its initial in its tint; a shell is a terminal.
 struct AgentMark: View {
     let agent: String?
     var size: CGFloat = 22
     @Environment(\.theme) private var theme
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
-                .fill(theme.raised)
-            if let agent {
-                Text(String(agent.prefix(1)).uppercased())
-                    .font(.system(size: size * 0.5, weight: .bold, design: .rounded))
-                    .foregroundStyle(theme.accent)
+        let shape = RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+        Group {
+            if let agent, let key = AgentLogo.key(agent) {
+                if AgentLogo.tiles.contains(key) {
+                    Image("Agents/\(key)").resizable().scaledToFill().clipShape(shape)
+                } else {
+                    // White single-color marks are template images: drawn in ink.
+                    Image("Agents/\(key)").resizable().scaledToFit()
+                        .foregroundStyle(theme.text)
+                        .padding(size * 0.17)
+                        .background(theme.raised, in: shape)
+                }
+            } else if let agent {
+                let tint = AgentLogo.tint(agent)
+                Text(AgentLogo.initial(agent))
+                    .font(.system(size: size * 0.52, weight: .bold, design: .rounded))
+                    .foregroundStyle(theme.followsSystem ? Color(uiColor: .dynamic(dark: tint.dark, light: tint.light)) : Color(uiColor: UIColor(hex: theme.palette.isDark ? tint.dark : tint.light)))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(theme.raised, in: shape)
             } else {
                 Image(systemName: "terminal")
                     .font(.system(size: size * 0.45, weight: .semibold))
                     .foregroundStyle(theme.muted)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(theme.raised, in: shape)
             }
         }
         .frame(width: size, height: size)
+        .overlay(shape.strokeBorder(theme.text.opacity(0.06), lineWidth: 0.5))
         .accessibilityHidden(true)
     }
 }

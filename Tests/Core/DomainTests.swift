@@ -222,3 +222,20 @@ import Testing
     let plain = AskParts(AskDTO(kind: .screen, text: "Overwrite the file?", questions: nil, options: nil, dialog: nil))
     #expect(plain.command == nil && plain.question == "Overwrite the file?")
 }
+
+// Port of ../ah/web/logos.tsx's logoKey.
+@Test func agentsFindTheirOwnLogoByIdAliasOrName() {
+    #expect(AgentLogo.key("claude") == "claude")
+    #expect(AgentLogo.key("Codex") == "codex")
+    #expect(AgentLogo.key("custom-qwen-code") == "qwen", "an agent added on the host, by its usual name")
+    #expect(AgentLogo.key("custom-kilo") == "kilocode", "by an alias")
+    #expect(AgentLogo.key("cursor-agent") == "cursor")
+    #expect(AgentLogo.key("custom-mytool") == nil)
+    #expect(AgentLogo.initial("custom-mytool") == "M")
+    #expect(AgentLogo.initial("custom-") == "?")
+    #expect(AgentLogo.tiles.isSubset(of: AgentLogo.known))
+    // Every logo the app names is in the asset catalog (scripts/agent-logos.sh).
+    let catalog = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../App/Assets.xcassets/Agents").standardized
+    let sets = Set(((try? FileManager.default.contentsOfDirectory(atPath: catalog.path)) ?? []).filter { $0.hasSuffix(".imageset") }.map { String($0.dropLast(9)) })
+    #expect(sets == AgentLogo.known)
+}
