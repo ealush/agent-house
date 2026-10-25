@@ -306,13 +306,17 @@ final class SessionModel: Identifiable {
             }
             return nil
         case .relaunch(let change, _, _, _):
-            var replacement: String?
-            await run("relaunch") {
+            do {
                 let result = try await api.relaunch(ref, model: change.model, effort: change.effort, mode: change.mode)
                 notify("Relaunched with \(launch.describe(change))")
-                replacement = result.uid
+                return result.uid
+            } catch {
+                // Just after a send the host still counts the agent as busy, before this
+                // list has caught up: the same words as when the list already knows.
+                let message = APIError.wrap(error).message
+                notify(Self.refusedWhileBusy(message) ? "Wait until the session is idle to relaunch" : "Couldn’t relaunch: \(message)", tone: .error)
+                return nil
             }
-            return replacement
         case .switchMode(let id, _):
             do {
                 if try await api.switchMode(ref, mode: id).switched {
@@ -326,6 +330,10 @@ final class SessionModel: Identifiable {
             guard let row else { return nil }
             return await apply(launch.relaunchPlan(LaunchState.Change(mode: id), session: row.dto))
         }
+    }
+
+    nonisolated static func refusedWhileBusy(_ message: String) -> Bool {
+        message.range(of: "relaunch when the session is idle", options: .caseInsensitive) != nil
     }
 
     // MARK: Session management

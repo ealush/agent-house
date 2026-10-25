@@ -48,7 +48,16 @@ const ah = await startAh({
     // Busy for a while after each prompt, then done; Esc interrupts.
     { id: 'test-agent', name: 'Test agent', command: `exec ${agentNode} ${fixture('agent.js')} --turn=2500`, match: '^ahit-agent$' },
     // Writes a Claude-shaped transcript: user turn, Bash tool call + result, prose, a widget.
-    { id: 'claude', name: 'Fixture', command: `exec ${claudeNode} ${fixture('transcript-agent.js')}`, match: '^ahit-claude$', feed: 'claude' },
+    // Resumable (fork, relaunch), with launch choices: models and permission modes relaunch,
+    // effort switches live by typing its command.
+    {
+      id: 'claude', name: 'Fixture', command: `exec ${claudeNode} ${fixture('transcript-agent.js')}`, match: '^ahit-claude$', feed: 'claude',
+      resume: `exec ${claudeNode} ${fixture('transcript-agent.js')}`, resumeId: `exec ${claudeNode} ${fixture('transcript-agent.js')} --resume {id}`,
+      models: [{ id: 'fast', name: 'Fast', args: ['--model', 'fast'] }, { id: 'deep', name: 'Deep', args: ['--model', 'deep'] }],
+      effort: { args: ['--effort', '{level}'], levels: ['low', 'medium', 'high'] },
+      switchEffort: '/effort {level}',
+      modes: [{ id: 'default', name: 'Ask first' }, { id: 'auto', name: 'Run anything', args: ['--auto'], dangerous: true }],
+    },
     // A permission prompt Approve/Deny can answer.
     { id: 'test-claude', name: 'Picker', command: `exec ${pickerNode} ${fixture('picker.js')} permission ${keys}`, match: '^ahit-picker$', waitingPatterns: ['Do you want to proceed'], approveKeys: ['Enter'], denyKeys: ['Escape'] },
   ],
