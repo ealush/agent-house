@@ -731,6 +731,9 @@ final class SceneModel {
         let agent = row?.dto.agent != nil
         let gui = s?.surface == .gui && (s?.hasGUI ?? false)
         if let n = id.workspaceNumber { return (1...9).contains(n) }
+        if id.rawValue.hasPrefix("panel-"), let panel = SceneSnapshot.Panel(rawValue: String(id.rawValue.dropFirst(6))) {
+            return s.map { panel.applies(to: $0) } ?? false
+        }
         if id.sendToWorkspaceNumber != nil { return ws.focusedKey != nil }
         switch id.rawValue {
         case "go-to-session", "workspace-next", "workspace-prev", "focus-follows-pointer": return true
@@ -740,7 +743,7 @@ final class SceneModel {
              "go-search", "go-settings", "worktrees", "show-shortcuts", "reload-page", "focus-sidebar", "scratchpad":
             return true
         case "toggle-sidebar": return !narrow
-        case "focus-main", "reply", "session-menu", "toggle-panel", "panel-files", "panel-chat", "panel-preview", "copy-attach": return s != nil
+        case "focus-main", "reply", "session-menu", "toggle-panel", "copy-attach": return s != nil
         case "focus-pane-left", "focus-pane-right", "focus-pane-up", "focus-pane-down", "move-pane-left", "move-pane-right", "move-pane-up", "move-pane-down", "toggle-split":
             return ws.splitOpen
         case "exit-split": return ws.layout != nil
@@ -759,12 +762,10 @@ final class SceneModel {
         case "send-now": return !(s?.queue.items.isEmpty ?? true) || (row?.dto.queued ?? 0) > 0
         case "clear-queue": return (row?.dto.queued ?? 0) > 0 || !(s?.queue.items.isEmpty ?? true)
         case "pick-model", "pick-effort": return live && agent
-        case "switch-branch", "panel-diff": return row?.dto.branch != nil
+        case "switch-branch": return row?.dto.branch != nil
         case "rename", "pin", "terminate", "scrollback": return live
         case "fork": return agent || s?.history != nil
         case "send-to": return row?.dto.feed != nil
-        case "panel-queue", "panel-snapshots": return agent
-        case "panel-stack": return row?.dto.branch != nil
         case "toggle-keys": return s?.surface == .terminal
         default: return false
         }
@@ -1392,6 +1393,19 @@ enum SettingsSection: String, CaseIterable, Sendable {
         case .environment: return "list.bullet.indent"
         case .search: return "magnifyingglass"
         case .system: return "gearshape.2"
+        }
+    }
+}
+
+extension SceneSnapshot.Panel {
+    /// Whether this session has this panel: Diff and Stack need a branch, Queue and Snapshots
+    /// an agent (a shell has neither).
+    @MainActor
+    func applies(to session: SessionModel) -> Bool {
+        switch self {
+        case .diff, .stack: return session.row?.dto.branch != nil
+        case .queue, .snapshots: return session.row?.dto.agent != nil
+        case .files, .chat, .preview: return true
         }
     }
 }

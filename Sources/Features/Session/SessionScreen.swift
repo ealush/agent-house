@@ -136,7 +136,7 @@ private struct PanelChrome: ViewModifier {
             .navigationTitle(panel.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbarTitleMenu {
-                ForEach(SceneSnapshot.Panel.allCases.filter { scene.isAvailable($0.command) }, id: \.self) { other in
+                ForEach(SceneSnapshot.Panel.allCases.filter { $0.applies(to: session) }, id: \.self) { other in
                     Button {
                         session.panel = other
                     } label: {
@@ -316,7 +316,9 @@ private struct PanelsMenu: View {
 
     var body: some View {
         Menu {
-            ForEach(SceneSnapshot.Panel.allCases) { panel in
+            // Only what this session has: no Diff or Stack without a branch, no Queue or
+            // Snapshots in a shell.
+            ForEach(SceneSnapshot.Panel.allCases.filter { $0.applies(to: session) }) { panel in
                 Button {
                     session.panel = session.panel == panel ? nil : panel
                 } label: {

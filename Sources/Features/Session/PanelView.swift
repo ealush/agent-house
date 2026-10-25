@@ -549,6 +549,9 @@ private struct ChatPanel: View {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     if model.subscriptions.isEmpty {
                         EmptyState(symbol: "key", title: "No chat model yet", message: "Add a subscription in Settings to discuss this work with another model, outside the agent’s context.", action: ("Open Settings", { scene.sheet = .settings(SettingsSection.subscriptions.rawValue) }))
+                    } else if model.messages.isEmpty && !model.sending {
+                        EmptyState(symbol: "bubble.left.and.text.bubble.right", title: "Ask about this change", message: "A review, an explanation, or a plan. Nothing here reaches the agent unless you send it over.")
+                            .padding(.top, 40)
                     }
                     ForEach(Array(model.messages.enumerated()), id: \.offset) { _, message in
                         if message.role == .user {
@@ -594,14 +597,29 @@ private struct ChatPanel: View {
                         Text(model.activeSubscription?.name ?? "Model").font(.caption)
                     }
                 }
-                TextField("Ask about this work", text: $draft, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit(send)
-                Button(action: send) { Image(systemName: "arrow.up.circle.fill").font(.title2) }
-                    .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty || model.sending)
+                // The same box as the session's composer, a size smaller.
+                let empty = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                HStack(alignment: .bottom, spacing: 8) {
+                    TextField("Ask about this change…", text: $draft, axis: .vertical)
+                        .lineLimit(1...6)
+                        .onSubmit(send)
+                        .padding(.vertical, 7)
+                    Button(action: send) {
+                        Image(systemName: "arrow.up")
+                            .font(.callout.weight(.bold))
+                            .frame(width: 30, height: 30)
+                            .background(empty || model.sending ? theme.faint.opacity(0.3) : theme.accentStrong, in: Circle())
+                            .foregroundStyle(.white)
+                    }
+                    .disabled(empty || model.sending)
+                    .accessibilityLabel("Ask")
+                }
+                .padding(.leading, 12)
+                .padding(.trailing, 5)
+                .padding(.vertical, 3)
+                .background(theme.raised, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             }
             .padding(10)
-            .background(.bar)
         }
         .task { await model.load() }
         .sheet(isPresented: $browsing) { PastChatsView(api: model.api) }
@@ -688,7 +706,8 @@ private struct QueuePanel: View {
     var body: some View {
         List {
             if session.queue.items.isEmpty {
-                Text("Nothing queued. Messages you send while the agent works wait here.").foregroundStyle(theme.muted)
+                EmptyState(symbol: "text.line.last.and.arrowtriangle.forward", title: "Nothing queued", message: "Messages you send while the agent works wait here, in order. Drag to reorder, or send one now to stop the turn and go first.")
+                    .listRowBackground(Color.clear)
             }
             ForEach(session.queue.items) { item in
                 VStack(alignment: .leading, spacing: 4) {
@@ -1284,6 +1303,10 @@ private struct StackPanel: View {
                         Label("Review “\(review.title)”", systemImage: "checkmark.seal")
                     }
                 }
+                if stack.branches.isEmpty {
+                    EmptyState(symbol: "square.stack.3d.up", title: "Not a stack", message: "\(session.row?.dto.branch ?? "This branch") isn’t part of a stack. When the agent stacks branches with gh stack, they show here bottom to top, with their pull requests and checks.")
+                        .listRowBackground(Color.clear)
+                } else {
                 Section("Bottom to top, onto \(stack.trunk)") {
                     ForEach(stack.branches, id: \.branch) { branch in
                         VStack(alignment: .leading, spacing: 4) {
@@ -1300,6 +1323,7 @@ private struct StackPanel: View {
                             }
                         }
                     }
+                }
                 }
             } else if let error {
                 Banner(text: error, tone: .error)
