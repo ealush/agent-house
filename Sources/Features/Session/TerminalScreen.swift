@@ -1,6 +1,7 @@
 import SwiftTerm
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 /// A session's real terminal: SwiftTerm's emulator fed by a WebSocket to a tmux viewer of
 /// its own, so this device looks independently of every other. Keys go out only on a live
@@ -12,6 +13,7 @@ struct TerminalScreen: View {
     @State private var ctrl = false
     @State private var alt = false
     @State private var shift = false
+    @State private var dropping = false
     @Environment(\.theme) private var theme
 
     var body: some View {
@@ -27,13 +29,26 @@ struct TerminalScreen: View {
                 if let controller {
                     TerminalStatusOverlay(controller: controller, session: session)
                 }
+                if dropping {
+                    Label("Drop to upload, and type its path", systemImage: "arrow.down.doc")
+                        .font(.callout.weight(.medium))
+                        .padding(.horizontal, 14).padding(.vertical, 10)
+                        .background(.thinMaterial, in: Capsule())
+                        .padding(.top, 16)
+                }
+            }
+            // Files dropped from Files, Photos or Finder upload to the host, and their paths are
+            // typed in (`../ah/web/TerminalSurface.tsx`).
+            .onDrop(of: [.fileURL, .image, .data], isTargeted: $dropping) { providers in
+                controller?.upload(providers)
+                return controller != nil
             }
             if session.waiting, session.row?.dto.ask != nil {
                 AskPanelView(target: AskTarget(session: session), keyboard: AskKeyboard(scene: scene, key: session.key, leave: .terminal(session.key)), onReply: { scene.requestFocus(.terminal(session.key)) })
                     .padding(10)
             }
             if scene.app.preferences.showsKeyBar(hardwareKeyboard: scene.hardwareKeyboard) {
-                KeyBar(ctrl: $ctrl, alt: $alt, shift: $shift) { bytes in
+                KeyBar(ctrl: $ctrl, alt: $alt, shift: $shift, hideKeyboard: controller?.hasKeyboard == true ? { controller?.view.endEditing(true) } : nil) { bytes in
                     controller?.send(bytes)
                 } paste: {
                     controller?.paste()
@@ -48,6 +63,7 @@ struct TerminalScreen: View {
         }
         .onDisappear { controller?.stop() }
         .onChange(of: theme.palette.terminal) { _, palette in controller?.apply(palette) }
+        .onChange(of: scene.app.preferences.terminalFontSize) { _, size in controller?.setFontSize(size) }
     }
 }
 
@@ -65,6 +81,8 @@ final class TerminalController: NSObject, TerminalViewDelegate {
     let view: AppTerminalView
     private let connection: TerminalConnection
     private(set) var status: Status = .connecting
+    /// The terminal has the keyboard (the key bar offers to put an on-screen one away).
+    var hasKeyboard = false
     private var events: Task<Void, Never>?
     private var lastSize: (cols: Int, rows: Int) = (0, 0)
 
@@ -85,6 +103,8 @@ final class TerminalController: NSObject, TerminalViewDelegate {
         }
         super.init()
         view.terminalDelegate = self
+        // One key row, the app's (`KeyBar`), not SwiftTerm's own as well.
+        view.inputAccessoryView = nil
         view.optionAsMetaKey = true
         view.allowMouseReporting = true
         view.isScrollEnabled = false
@@ -151,9 +171,51 @@ final class TerminalController: NSObject, TerminalViewDelegate {
     }
 
     /// Paste as the application asked for it: SwiftTerm brackets it when the app turned
-    /// bracketed paste on, and hands the bytes back through `send(source:data:)`.
+    /// bracketed paste on, and hands the bytes back through `send(source:data:)`. Images (a
+    /// screenshot) upload instead, and their paths are typed in.
     func paste() {
         view.paste(nil)
+    }
+
+    func setFontSize(_ size: Double) {
+        guard abs(view.font.pointSize - size) > 0.1 else { return }
+        view.font = UIFont.monospacedSystemFont(ofSize: size, weight: .regular)
+    }
+
+    /// Uploads to the host, then types the paths (quoted when they need it) where the cursor is.
+    func upload(files: [(name: String, data: Data)]) {
+        guard !files.isEmpty else { return }
+        let api = session.api
+        Task { [weak self] in
+            do {
+                var paths: [String] = []
+                for file in files { paths.append(try await api.upload(name: file.name, data: file.data)) }
+                self?.send(Uploads.typed(paths))
+                _ = self?.view.becomeFirstResponder()
+            } catch {
+                self?.session.notify("Couldn’t upload: \(APIError.wrap(error).message)", tone: .error)
+            }
+        }
+    }
+
+    /// Dropped items: each one's file (or image) data, under its own name, in the order dropped.
+    func upload(_ providers: [NSItemProvider]) {
+        let group = DispatchGroup()
+        let collected = DroppedFiles()
+        for (index, provider) in providers.enumerated() {
+            let type = provider.registeredTypeIdentifiers.first { UTType($0)?.conforms(to: .data) == true } ?? UTType.data.identifier
+            let name = provider.suggestedName
+            group.enter()
+            _ = provider.loadFileRepresentation(forTypeIdentifier: type) { url, _ in
+                defer { group.leave() }
+                guard let url, let data = try? Data(contentsOf: url) else { return }
+                let file = name.map { n in url.pathExtension.isEmpty || n.hasSuffix(".\(url.pathExtension)") ? n : "\(n).\(url.pathExtension)" } ?? url.lastPathComponent
+                collected.add(index, file, data)
+            }
+        }
+        group.notify(queue: .main) { [weak self] in
+            MainActor.assumeIsolated { self?.upload(files: collected.inOrder) }
+        }
     }
 
     /// Touch scrolling scrolls tmux's history by exact lines (`server/terminal.ts scrollLines`).
@@ -204,6 +266,7 @@ final class AppTerminalView: TerminalView {
     override func becomeFirstResponder() -> Bool {
         let became = super.becomeFirstResponder()
         if became {
+            controller?.hasKeyboard = true
             scene?.keyScope = .terminal
             if let sessionKey { scene?.didFocus(.terminal(sessionKey)) }
         }
@@ -212,6 +275,7 @@ final class AppTerminalView: TerminalView {
 
     override func resignFirstResponder() -> Bool {
         let resigned = super.resignFirstResponder()
+        if resigned { controller?.hasKeyboard = false }
         if resigned, scene?.keyScope == .terminal { scene?.keyScope = .app }
         if resigned, let sessionKey { scene?.didBlur(.terminal(sessionKey)) }
         return resigned
@@ -254,31 +318,93 @@ final class AppTerminalView: TerminalView {
         pan.allowedScrollTypesMask = .all
         pan.maximumNumberOfTouches = 1
         addGestureRecognizer(pan)
+        scrollPan = pan
         let pinch = UIPinchGestureRecognizer(target: self, action: #selector(pinched(_:)))
         addGestureRecognizer(pinch)
+        // A tap on a terminal that hasn't the keyboard takes it. SwiftTerm otherwise sends a
+        // program that tracks the mouse (tmux does) the click instead, and a phone could never
+        // type into it; the next tap reaches the program as usual.
+        let focus = UITapGestureRecognizer(target: self, action: #selector(focusTapped))
+        addGestureRecognizer(focus)
+        focusTap = focus
+        for other in gestureRecognizers ?? [] where other !== focus {
+            if let tap = other as? UITapGestureRecognizer, tap.numberOfTapsRequired == 1 { tap.require(toFail: focus) }
+        }
     }
 
+    private weak var scrollPan: UIPanGestureRecognizer?
+    private weak var focusTap: UITapGestureRecognizer?
+
+    /// The focusing tap only while the terminal hasn't the keyboard; touch scrolling only while
+    /// nothing is selected (a drag then extends the selection, SwiftTerm's own).
+    override func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
+        if gesture === focusTap { return !isFirstResponder }
+        if gesture === scrollPan { return (getSelection() ?? "").isEmpty }
+        return super.gestureRecognizerShouldBegin(gesture)
+    }
+
+    @objc private func focusTapped() {
+        _ = becomeFirstResponder()
+    }
+
+    /// A flick keeps scrolling and slows down, like any scroll view (`../ah/web/Terminal.tsx`).
+    private var momentum: Task<Void, Never>?
+
     @objc private func panned(_ pan: UIPanGestureRecognizer) {
-        let lineHeight = font.lineHeight
-        let dy = pan.translation(in: self).y + panRemainder
+        if pan.state == .began { momentum?.cancel() }
+        let dy = pan.translation(in: self).y
         pan.setTranslation(.zero, in: self)
+        scrollBy(dy, at: pan.location(in: self))
+        if pan.state == .ended {
+            let velocity = pan.velocity(in: self).y
+            let point = pan.location(in: self)
+            momentum = Task { @MainActor [weak self] in
+                var speed = velocity
+                while abs(speed) > 120, !Task.isCancelled {
+                    try? await Task.sleep(for: .milliseconds(16))
+                    speed *= 0.94
+                    self?.scrollBy(speed * 0.016, at: point)
+                }
+                self?.panRemainder = 0
+            }
+        }
+    }
+
+    private func scrollBy(_ distance: CGFloat, at point: CGPoint) {
+        let lineHeight = font.lineHeight
+        let dy = distance + panRemainder
         let lines = Int(dy / lineHeight)
         panRemainder = dy - CGFloat(lines) * lineHeight
         guard lines != 0 else { return }
-        let point = pan.location(in: self)
         let column = max(1, Int(point.x / max(1, font.pointSize * 0.6)) + 1)
         let row = max(1, Int(point.y / max(1, lineHeight)) + 1)
         // Finger down moves the text down: older output, a positive line count.
         controller?.scroll(lines: lines, column: column, row: row)
-        if pan.state == .ended { panRemainder = 0 }
     }
 
     @objc private func pinched(_ pinch: UIPinchGestureRecognizer) {
         guard pinch.state == .changed || pinch.state == .ended else { return }
-        let size = min(28, max(8, font.pointSize * pinch.scale))
-        pinch.scale = 1
-        font = UIFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        let size = TerminalTextSize.clamped(font.pointSize * pinch.scale)
+        if abs(size - font.pointSize) >= 1 {
+            pinch.scale = 1
+            font = UIFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        }
+        // Kept for this device: every terminal opens at the size you pinched to.
+        if pinch.state == .ended { scene?.app.preferences.terminalFontSize = font.pointSize }
     }
+
+    /// A pasted image (a screenshot) uploads and its path is typed in; text pastes as text.
+    override func paste(_ sender: Any?) {
+        let board = UIPasteboard.general
+        if !board.hasStrings, board.hasImages, let images = board.images, !images.isEmpty {
+            controller?.upload(files: images.enumerated().compactMap { index, image in
+                image.pngData().map { (name: images.count == 1 ? "paste.png" : "paste-\(index + 1).png", data: $0) }
+            })
+            return
+        }
+        super.paste(sender)
+    }
+
 }
 
 struct TerminalViewRepresentable: UIViewRepresentable {
@@ -346,6 +472,8 @@ struct KeyBar: View {
     @Binding var ctrl: Bool
     @Binding var alt: Bool
     @Binding var shift: Bool
+    /// Puts the on-screen keyboard away; nil while the terminal hasn't the keyboard.
+    var hideKeyboard: (() -> Void)? = nil
     let send: (String) -> Void
     let paste: () -> Void
     @Environment(\.theme) private var theme
@@ -378,6 +506,18 @@ struct KeyBar: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
         }
+        // Always in reach at the end, however far the keys scroll.
+        .safeAreaInset(edge: .trailing, spacing: 0) {
+            if let hideKeyboard {
+                Button(action: hideKeyboard) {
+                    Image(systemName: "keyboard.chevron.compact.down")
+                }
+                .accessibilityLabel("Hide keyboard")
+                .buttonStyle(KeyCapStyle(on: false))
+                .padding(.trailing, 10)
+                .padding(.leading, 4)
+            }
+        }
         .background(theme.surface)
     }
 }
@@ -406,5 +546,23 @@ private struct KeyToggleStyle: ToggleStyle {
         }
         .buttonStyle(KeyCapStyle(on: configuration.isOn))
         .accessibilityAddTraits(configuration.isOn ? .isSelected : [])
+    }
+}
+
+/// Files read from dropped items as they arrive, on whatever queue each lands.
+private final class DroppedFiles: @unchecked Sendable {
+    private let lock = NSLock()
+    private var files: [(index: Int, name: String, data: Data)] = []
+
+    func add(_ index: Int, _ name: String, _ data: Data) {
+        lock.lock()
+        files.append((index, name, data))
+        lock.unlock()
+    }
+
+    var inOrder: [(name: String, data: Data)] {
+        lock.lock()
+        defer { lock.unlock() }
+        return files.sorted { $0.index < $1.index }.map { (name: $0.name, data: $0.data) }
     }
 }

@@ -321,7 +321,7 @@ private struct AppearanceSection: View {
                 }
             }
             Section("Terminal") {
-                Stepper("Font size \(Int(app.preferences.terminalFontSize))", value: $app.preferences.terminalFontSize, in: 9...24, step: 1)
+                Stepper("Font size \(Int(app.preferences.terminalFontSize))", value: $app.preferences.terminalFontSize, in: TerminalTextSize.range, step: 1)
                 Picker("On-screen keys", selection: $app.preferences.keyBar) {
                     Text("Without a keyboard").tag(DevicePreferences.KeyBarMode.auto)
                     Text("Always").tag(DevicePreferences.KeyBarMode.on)

@@ -86,7 +86,7 @@ enum PaletteTree {
                 .command("panel-diff"), .command("panel-files"), .command("panel-chat"), .command("panel-queue"), .command("panel-snapshots"), .command("panel-preview"), .command("panel-stack"), .command("toggle-panel"),
             ]),
             .category(key: "view", label: "View", icon: "eye", detail: "GUI or terminal, steps, copy, scroll", children: [
-                .command("toggle-view"), .command("toggle-steps"), .command("browse-messages"), .command("copy-last"), .command("jump-latest"), .command("scrollback"), .command("toggle-keys"),
+                .command("toggle-view"), .command("toggle-steps"), .command("browse-messages"), .command("copy-last"), .command("jump-latest"), .command("scrollback"), .command("toggle-keys"), .command("terminal-text-bigger"), .command("terminal-text-smaller"), .command("terminal-text-reset"),
             ]),
             .category(key: "manage", label: "Manage", icon: "pencil", detail: "Rename, fork, hand off, pin, stop", children: [
                 .command("rename"), .command("switch-branch"), .command("fork"), .command("send-to"), .command("pin"), .command("copy-attach"), .command("session-menu"), .command("terminate"),

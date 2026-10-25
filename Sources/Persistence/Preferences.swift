@@ -37,7 +37,7 @@ struct DevicePreferences: Codable, Equatable, Sendable {
     var stepsHidden = false
     /// The terminal's on-screen key row: on touch only (auto), always, or never.
     var keyBar: KeyBarMode = .auto
-    var terminalFontSize: Double = 13
+    var terminalFontSize: Double = TerminalTextSize.standard
     var inboxGrouping: InboxGrouping = .status
     var notifications = Notifications()
     /// Agents chosen recently in New session, newest first.
@@ -84,7 +84,7 @@ struct DevicePreferences: Codable, Equatable, Sendable {
         stepsHidden = (try? c.decode(Bool.self, forKey: .stepsHidden)) ?? false
         // Older rows stored a switch: on meant "when it helps", off meant never.
         keyBar = (try? c.decode(KeyBarMode.self, forKey: .keyBar)) ?? ((try? legacy.decode(Bool.self, forKey: .keyBarVisible)) == false ? .off : .auto)
-        terminalFontSize = (try? c.decode(Double.self, forKey: .terminalFontSize)) ?? 13
+        terminalFontSize = TerminalTextSize.clamped((try? c.decode(Double.self, forKey: .terminalFontSize)) ?? TerminalTextSize.standard)
         inboxGrouping = (try? c.decode(InboxGrouping.self, forKey: .inboxGrouping)) ?? .status
         notifications = (try? c.decode(Notifications.self, forKey: .notifications)) ?? Notifications()
         recentAgents = (try? c.decode([String].self, forKey: .recentAgents)) ?? []
@@ -162,4 +162,16 @@ struct PreferenceRepository: Sendable {
             try db.execute(sql: "DELETE FROM sessionSurface WHERE rowid NOT IN (SELECT rowid FROM sessionSurface ORDER BY updatedAt DESC LIMIT ?)", arguments: [Self.surfaceLimit])
         }
     }
+}
+
+/// The terminal's text size on this device: pinched, stepped with ⌘= / ⌘- (⌘0 resets) or set
+/// in Settings, and the same for every terminal it opens.
+enum TerminalTextSize {
+    static let standard: Double = 13
+    static let range: ClosedRange<Double> = 8...28
+
+    static func clamped(_ size: Double) -> Double { min(range.upperBound, max(range.lowerBound, size.rounded())) }
+
+    /// One point bigger or smaller, within the range.
+    static func step(_ size: Double, by: Int) -> Double { clamped(size + Double(by)) }
 }

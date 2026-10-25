@@ -176,6 +176,12 @@ enum Uploads {
         return String(file[range.upperBound...])
     }
 
+    /// Files pasted or dropped on a terminal, typed in as their uploaded paths
+    /// (`../ah/web/TerminalSurface.tsx sendFiles`): quoted, space-separated, with a space after.
+    static func typed(_ paths: [String]) -> String {
+        paths.isEmpty ? "" : paths.map(shellQuote).joined(separator: " ") + " "
+    }
+
     /// How a path goes into a prompt: shell-quoted when it needs it (`web/api.ts shellQuote`).
     static func shellQuote(_ path: String) -> String {
         let safe = path.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "_@%+=:,./-".contains($0)) }

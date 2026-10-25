@@ -805,6 +805,7 @@ final class SceneModel {
         case "fork": return agent || s?.history != nil
         case "send-to": return row?.dto.feed != nil
         case "toggle-keys": return s?.surface == .terminal
+        case "terminal-text-bigger", "terminal-text-smaller", "terminal-text-reset": return s?.surface == .terminal || workspace.scratchVisible
         default: return false
         }
     }
@@ -993,6 +994,9 @@ final class SceneModel {
             clipboard(s.attachCommand)
             toast("Copied “\(s.attachCommand)”")
         case "toggle-keys": app.preferences.keyBar = app.preferences.showsKeyBar(hardwareKeyboard: hardwareKeyboard) ? .off : .on
+        case "terminal-text-bigger": app.preferences.terminalFontSize = TerminalTextSize.step(app.preferences.terminalFontSize, by: 1)
+        case "terminal-text-smaller": app.preferences.terminalFontSize = TerminalTextSize.step(app.preferences.terminalFontSize, by: -1)
+        case "terminal-text-reset": app.preferences.terminalFontSize = TerminalTextSize.standard
         case "terminate": if let key { sheet = .confirmTerminate(key) }
         default: break
         }

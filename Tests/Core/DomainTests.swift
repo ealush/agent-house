@@ -288,3 +288,12 @@ import Testing
     #expect(press(0x0E, "k", [.command]) == nil, "⌘K is the window's (the palette)")
     #expect(press(0x27, "0", []) == nil, "no row 0")
 }
+
+@Test func terminalTextSizeStepsWithinItsRangeAndDroppedFilesTypeTheirPaths() {
+    #expect(TerminalTextSize.step(13, by: 1) == 14)
+    #expect(TerminalTextSize.step(28, by: 1) == 28, "never past the largest")
+    #expect(TerminalTextSize.step(8, by: -1) == 8, "never under the smallest")
+    #expect(TerminalTextSize.clamped(15.6) == 16, "whole points, as pinching settles")
+    #expect(Uploads.typed(["/up/a.png", "/up/my shot.png"]) == "/up/a.png '/up/my shot.png' ", "quoted when needed, a space after, ready for more")
+    #expect(Uploads.typed([]) == "")
+}
