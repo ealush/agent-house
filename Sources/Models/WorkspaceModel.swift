@@ -203,20 +203,52 @@ final class WorkspaceModel {
         selected = keep
     }
 
+    /// The smallest a pane gets: below it, the window shows one pane at a time instead.
+    static let minimumPane = (width: 300.0, height: 220.0)
+    /// The panes' area in points (the view reports it), so resizing never squeezes a pane
+    /// below `minimumPane` and tips the whole window into one-at-a-time.
+    @ObservationIgnored var canvas: (width: Double, height: Double)?
+
+    func fits(_ node: LayoutNode) -> Bool {
+        guard let canvas else { return true }
+        return node.fits(width: canvas.width, height: canvas.height, minWidth: Self.minimumPane.width, minHeight: Self.minimumPane.height)
+    }
+
     /// Keyboard resize: the nearest divider in a split; with a single session, the side
-    /// panel's edge (returned in points: negative widens it).
+    /// panel's edge (returned in points: negative widens it). A step that would squeeze a
+    /// pane too small goes only as far as it can.
     func nudge(_ dir: LayoutNode.Move, big: Bool = false) -> Double? {
         if let layout, splitOpen, !zoom {
-            self.layout = layout.nudgingDivider(from: focusPath ?? layout.leaves().first?.path ?? [], dir, step: big ? 0.15 : 0.05)
+            let from = focusPath ?? layout.leaves().first?.path ?? []
+            let full = big ? 0.15 : 0.05
+            for step in [full, full / 2, full / 4, full / 8] {
+                let next = layout.nudgingDivider(from: from, dir, step: step)
+                if fits(next) || !fits(layout) {
+                    self.layout = next
+                    return nil
+                }
+            }
             return nil
         }
         guard dir == .left || dir == .right else { return nil }
         return (dir == .left ? -1 : 1) * (big ? 120 : 40)
     }
 
+    /// Dragging a divider: as far toward `ratio` as keeps every pane big enough.
     func setRatio(at path: LayoutNode.Path, _ ratio: Double) {
         guard let layout else { return }
-        self.layout = layout.settingRatio(at: path, ratio)
+        let wanted = layout.settingRatio(at: path, ratio)
+        guard !fits(wanted), fits(layout), case .split(_, let start, _, _)? = layout.node(at: path) else {
+            self.layout = wanted
+            return
+        }
+        // The furthest point between where it is and where it was dragged that still fits.
+        var lo = 0.0, hi = 1.0
+        for _ in 0..<14 {
+            let mid = (lo + hi) / 2
+            if fits(layout.settingRatio(at: path, start + (ratio - start) * mid)) { lo = mid } else { hi = mid }
+        }
+        self.layout = layout.settingRatio(at: path, start + (ratio - start) * lo)
     }
 
     /// Replace pane: the focused pane becomes its chooser, remembering what it showed.

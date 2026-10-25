@@ -175,8 +175,24 @@ final class SceneModel {
 
     /// A composer or terminal took the keyboard. Its session remembers that spot, and its
     /// pane becomes the focused one, so the pane that looks focused is the one getting keys.
-    func didFocus(_ target: FocusTarget) {
+    func didFocus(_ target: FocusTarget, now: Date = Date()) {
+        // UIKit gives the keyboard back to whatever had it when a modal went up; if focus was
+        // asked for elsewhere meanwhile (a split from the palette), ask again so that wins.
+        if let delivering, now < delivering.until {
+            if delivering.target != target {
+                currentFocus = target
+                focusNonce += 1
+                focusRequest = FocusRequest(target: delivering.target, nonce: focusNonce)
+                return
+            }
+            self.delivering = nil
+        }
         currentFocus = target
+        if case .chooser(let path) = target, workspace.layout?.node(at: path) != nil, workspace.focusPath != path {
+            workspace.focus(path)
+            scheduleSave()
+            return
+        }
         guard let key = target.sessionKey else { return }
         switch target {
         case .composer, .terminal: focusMemory[key] = target
@@ -275,11 +291,18 @@ final class SceneModel {
     // MARK: Presented over the window
 
     /// A sheet, the palette, the switcher or the shortcut table is about to cover the window.
+    /// Where focus stood when a modal went up: a command run from it that moved panes or pages
+    /// keeps the keyboard from going back to the old spot.
+    @ObservationIgnored private var spotAtModal: FocusSpot?
+    /// Focus handed out as a modal closed, for a moment: see `didFocus`.
+    @ObservationIgnored private var delivering: (target: FocusTarget, until: Date)?
+
     func modalWillPresent() {
         guard !modalShown else { return }
         modalShown = true
         focusBeforeModal = currentFocus
         nonceAtModal = focusNonce
+        spotAtModal = focusSpot
     }
 
     /// Everything presented is gone: deliver focus asked for meanwhile, or put the keyboard
@@ -289,11 +312,13 @@ final class SceneModel {
         modalShown = false
         let back = focusBeforeModal
         focusBeforeModal = nil
+        defer { spotAtModal = nil }
         if let deferred = deferredFocus {
             deferredFocus = nil
             focusNonce += 1
             focusRequest = FocusRequest(target: deferred, nonce: focusNonce)
-        } else if focusNonce == nonceAtModal, let back {
+            delivering = (deferred, Date().addingTimeInterval(0.5))
+        } else if focusNonce == nonceAtModal, spotAtModal == nil || spotAtModal == focusSpot, let back {
             focusNonce += 1
             focusRequest = FocusRequest(target: back, nonce: focusNonce)
         }

@@ -159,3 +159,31 @@ import Testing
     scene.openReview(ReviewRoute(stack: "s1"))
     #expect(scene.pushedReview == nil, "an iPad's detail shows the stack itself")
 }
+
+@MainActor
+@Test func resizingStopsWhereAPaneWouldGetTooSmall() throws {
+    let ws = WorkspaceModel()
+    ws.open("a")
+    ws.split(.horizontal)
+    ws.fill([.second], with: "b")
+    ws.focus([.first])
+    // 700 pt wide: each pane needs 300, so the divider can't pass about 0.57.
+    ws.canvas = (700, 800)
+    for _ in 0..<6 { _ = ws.nudge(.right) }
+    let layout = try #require(ws.layout)
+    #expect(ws.fits(layout), "the right pane never drops below the minimum")
+    guard case .split(_, let ratio, _, _) = layout else { Issue.record("still a split"); return }
+    #expect(ratio > 0.52 && ratio <= 300.0 / 700 + 0.15 + 0.01)
+    // A drag past the limit stops at it; a drag that fits goes all the way.
+    ws.setRatio(at: [], 0.95)
+    guard case .split(_, let dragged, _, _)? = ws.layout else { Issue.record("still a split"); return }
+    #expect(ws.fits(ws.layout!) && dragged > 0.55 && dragged < 0.58)
+    ws.setRatio(at: [], 0.5)
+    guard case .split(_, let back, _, _)? = ws.layout else { Issue.record("still a split"); return }
+    #expect(back == 0.5)
+    // Without a known canvas (or a window already too small) nothing is held back.
+    ws.canvas = nil
+    ws.setRatio(at: [], 0.8)
+    guard case .split(_, let free, _, _)? = ws.layout else { Issue.record("still a split"); return }
+    #expect(free == 0.8)
+}

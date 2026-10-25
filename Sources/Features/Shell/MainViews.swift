@@ -197,7 +197,7 @@ struct WorkspaceView: View {
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    static let minimumPane = CGSize(width: 300, height: 220)
+    static let minimumPane = CGSize(width: WorkspaceModel.minimumPane.width, height: WorkspaceModel.minimumPane.height)
     private let gap: CGFloat = 2
     private let stripHeight: CGFloat = 36
 
@@ -226,6 +226,7 @@ struct WorkspaceView: View {
         GeometryReader { proxy in
             let size = proxy.size
             let fits = workspace.layout?.fits(width: size.width, height: size.height, minWidth: Self.minimumPane.width, minHeight: Self.minimumPane.height) ?? true
+            let _ = workspace.canvas = (Double(size.width), Double(size.height))
             let single = workspace.zoom || !fits
             let top: CGFloat = single && !workspace.zoom ? stripHeight : 0
             let entries = identified(geometry.tiles)
@@ -579,6 +580,7 @@ private struct ChooserPane: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { if scene.focusRequest?.target == .chooser(path) || scene.workspace.focusPath == path { focused = true } }
         .onChange(of: scene.focusRequest) { _, request in if request?.target == .chooser(path) { focused = true } }
+        .onChange(of: focused) { _, now in if now { scene.didFocus(.chooser(path)) } else { scene.didBlur(.chooser(path)) } }
     }
 }
 

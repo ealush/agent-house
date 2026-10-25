@@ -274,3 +274,36 @@ private func windowWithoutHost() throws -> SceneModel {
     scene.cancelChooser(scene.workspace.focusPath!)
     #expect(scene.workspace.layout?.keys.contains { LayoutNode.isPick($0) } == false)
 }
+
+@MainActor
+@Test func whatACommandFocusedWinsOverTheKeyboardUIKitGivesBack() throws {
+    let scene = try windowWithoutHost()
+    scene.open("a")
+    scene.workspace.openTile("b", wide: true)
+    scene.workspace.focus([.first])
+    scene.didFocus(.composer("a"))
+    scene.modalWillPresent()
+    scene.requestFocus(.composer("b"))
+    scene.workspace.focus([.second])
+    scene.modalDidDismiss()
+    // UIKit restores the composer that had the keyboard before the palette.
+    scene.didFocus(.composer("a"))
+    #expect(scene.workspace.focusedKey == "b", "the old composer doesn't pull the pane focus back")
+    #expect(scene.focusRequest?.target == .composer("b"), "the asked-for focus is asked for again")
+    scene.didFocus(.composer("b"))
+    // Later, the user moving focus is just that.
+    scene.didFocus(.composer("a"), now: Date().addingTimeInterval(1))
+    #expect(scene.workspace.focusedKey == "a")
+}
+
+@MainActor
+@Test func closingThePaletteAfterASplitDoesntSendTheKeyboardBack() throws {
+    let scene = try windowWithoutHost()
+    scene.open("a")
+    scene.didFocus(.composer("a"))
+    let before = scene.focusRequest?.nonce
+    scene.modalWillPresent()
+    scene.workspace.openTile("b", wide: true)
+    scene.modalDidDismiss()
+    #expect(scene.focusRequest?.nonce == before, "the layout changed under the palette: no going back to the old composer")
+}
