@@ -238,27 +238,54 @@ private struct SuggestionList: View {
     let index: Int
     let pick: (CompletionTrigger.Item) -> Void
     @Environment(\.theme) private var theme
+    private static let rowHeight: CGFloat = 34
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(items.prefix(12).enumerated()), id: \.offset) { i, item in
-                    Button { pick(item) } label: {
-                        HStack {
-                            Text(item.label).font(.callout.monospaced()).foregroundStyle(theme.text)
-                            if let detail = item.detail { Text(detail).font(.caption).foregroundStyle(theme.muted).lineLimit(1) }
-                            Spacer()
+        let shown = Array(items.prefix(12))
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 1) {
+                    ForEach(Array(shown.enumerated()), id: \.offset) { i, item in
+                        Button { pick(item) } label: {
+                            HStack(spacing: 9) {
+                                Image(systemName: symbol(item))
+                                    .font(.footnote)
+                                    .foregroundStyle(i == index ? theme.accent : theme.faint)
+                                    .frame(width: 18)
+                                Text(item.label).font(.callout.monospaced()).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
+                                if let detail = item.detail {
+                                    Text(detail).font(.caption).foregroundStyle(theme.muted).lineLimit(1)
+                                }
+                                Spacer(minLength: 0)
+                                if i == index { Image(systemName: "return").font(.caption2).foregroundStyle(theme.faint) }
+                            }
+                            .padding(.horizontal, 10)
+                            .frame(height: Self.rowHeight)
+                            .background(i == index ? theme.accent.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                            .contentShape(Rectangle())
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .background(i == index ? theme.accent.opacity(0.15) : .clear)
+                        .buttonStyle(.plain)
+                        .id(i)
                     }
-                    .buttonStyle(.plain)
                 }
+                .padding(4)
             }
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(height: min(CGFloat(shown.count) * (Self.rowHeight + 1) + 8, 7 * (Self.rowHeight + 1) + 8))
+            .onChange(of: index) { _, i in proxy.scrollTo(i) }
         }
-        .frame(maxHeight: 220)
-        .background(theme.raised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(theme.faint.opacity(0.3), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.12), radius: 14, y: 4)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Suggestions")
+    }
+
+    /// A slash command, or a file by its kind.
+    private func symbol(_ item: CompletionTrigger.Item) -> String {
+        if item.label.hasPrefix("/") { return "command" }
+        let name = (item.value as NSString).lastPathComponent
+        return FilesModel.Kind(FsEntry(name: name, type: item.value.hasSuffix("/") ? .dir : .file, size: 0, mtime: 0)).symbol
     }
 }
 
