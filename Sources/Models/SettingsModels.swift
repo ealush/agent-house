@@ -41,6 +41,17 @@ final class SecuritySettings {
     func removePasskey(_ passkey: AuthOverview.Passkey) async { await act("Removed \(passkey.label).") { try await api.removePasskey(passkey.id) } }
     func removeDevice(_ device: AuthOverview.Device) async { await act("Removed \(device.label).") { try await api.removeDevice(device.id) } }
     func removeToken(_ token: AuthOverview.Token) async { await act("Revoked \(token.name).") { try await api.removeToken(token.id) } }
+
+    /// A token just made: its name and secret, shown once and kept only until dismissed.
+    private(set) var newToken: (name: String, secret: String)?
+
+    func createToken(name: String) async {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        await act(nil) { newToken = (name, try await api.createToken(name: name)) }
+    }
+
+    func dismissToken() { newToken = nil }
     func clearPrompts() async { await act("Prompt history cleared.") { try await api.clearPrompts() } }
 
     /// The audit log as rows: when, what, from where.
@@ -268,14 +279,19 @@ final class SearchSettings {
     }
 }
 
-/// Settings → System (`web/System.tsx`), minus what's for the host's desktop or the web build
-/// (the Omarchy launcher, rebuilding the web UI): agent hooks, screen-rule audit, restart, uploads.
+/// Settings → System (`web/System.tsx`): agent hooks, screen-rule audit, the host's app
+/// launcher, restart and rebuild, uploads.
 @MainActor
 @Observable
 final class SystemSettings {
     let api: APIClient
     private(set) var hooks: HooksStatus?
     private(set) var messages: [String] = []
+    private(set) var desktop: DesktopStatus?
+    private(set) var desktopMessages: [String] = []
+    private(set) var rebuilding = false
+    /// Why the last rebuild failed, as the build said it (the host sends the end of its log).
+    private(set) var buildLog: String?
     private(set) var error: String?
     private(set) var notice: String?
 
@@ -283,6 +299,33 @@ final class SystemSettings {
 
     func load() async {
         do { hooks = try await api.hooks() } catch { self.error = APIError.wrap(error).message }
+        do { desktop = try await api.desktop() } catch { self.error = APIError.wrap(error).message }
+    }
+
+    func setDesktop(install: Bool) async {
+        do {
+            let result = try await api.setDesktop(install: install)
+            desktop = result.status
+            desktopMessages = result.messages
+            error = nil
+        } catch {
+            self.error = APIError.wrap(error).message
+        }
+    }
+
+    /// Clears the host's web build, builds it again, and restarts once it's built.
+    func rebuild() async {
+        guard !rebuilding else { return }
+        rebuilding = true
+        buildLog = nil
+        notice = nil
+        defer { rebuilding = false }
+        do {
+            try await api.rebuild()
+            notice = "Built. Agent Hub is restarting; sessions keep running and this reconnects in a moment."
+        } catch {
+            buildLog = APIError.wrap(error).message
+        }
     }
 
     func setHooks(install: Bool) async {

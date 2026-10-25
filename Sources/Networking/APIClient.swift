@@ -259,6 +259,15 @@ struct APIClient: Sendable {
     func hooks() async throws -> HooksStatus { try await call("GET", "/api/system/hooks") }
     func setHooks(install: Bool) async throws -> HooksAction { try await call("POST", "/api/system/hooks", json: ["action": install ? "install" : "uninstall"]) }
     func resetScreenAudit() async throws { try await perform("DELETE", "/api/system/screen-audit") }
+    /// Agent Hub in the host's app launcher (on Omarchy, through its web-app installer).
+    func desktop() async throws -> DesktopStatus { try await call("GET", "/api/system/desktop") }
+    func setDesktop(install: Bool) async throws -> DesktopAction { try await call("POST", "/api/system/desktop", json: ["action": install ? "install" : "uninstall"]) }
+    /// Builds the web app again from the host's checkout, then restarts: minutes, not seconds.
+    func rebuild() async throws {
+        var request = await request("POST", "/api/system/rebuild")
+        request.timeoutInterval = 15 * 60
+        _ = try await send(request)
+    }
     func omarchyTheme() async throws -> OmarchyTheme? { try await call("GET", "/api/omarchy/theme") }
     func harnesses() async throws -> Harnesses { try await call("GET", "/api/harnesses") }
     func checkHarnesses() async throws -> Harnesses { try await call("POST", "/api/harnesses/check") }
@@ -309,6 +318,8 @@ struct APIClient: Sendable {
     func signOutEverywhere() async throws { try await perform("POST", "/api/auth/signout-all") }
     func removePasskey(_ id: String) async throws { try await perform("DELETE", "/api/auth/passkeys/\(Self.enc(id))") }
     func removeDevice(_ id: String) async throws { try await perform("DELETE", "/api/auth/devices/\(Self.enc(id))") }
+    /// A machine token for scripts; its secret comes back this once and is never stored here.
+    func createToken(name: String) async throws -> String { try await call("POST", "/api/auth/tokens", json: ["name": name], as: CreatedToken.self).token }
     func removeToken(_ id: String) async throws { try await perform("DELETE", "/api/auth/tokens/\(Self.enc(id))") }
     func logout() async throws { try await perform("POST", "/api/auth/logout") }
     func cacheKey() async throws -> String {

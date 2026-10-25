@@ -8,7 +8,7 @@
 // until stdin closes (or SIGTERM), and cleans everything up.
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { mkdtempSync, mkdirSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -25,6 +25,15 @@ const runner = (name) => {
   symlinkSync(node, join(bin, name));
   return join(bin, name);
 };
+// Host tools Settings → System reaches, kept inside this host: Omarchy's web-app installer
+// would add a launcher to this machine's real desktop, and restart/rebuild would restart
+// this machine's own ah. The stand-ins write the launcher into this host's XDG_DATA_HOME.
+const tool = (name, script) => writeFileSync(join(bin, name), `#!/bin/sh\n# Stand-in for ${name}: this test host's own data folder only.\n${script}\n`, { mode: 0o755 });
+tool('omarchy-webapp-install', 'mkdir -p "$XDG_DATA_HOME/applications" && printf "[Desktop Entry]\\nName=%s\\nExec=xdg-open %s\\n" "$1" "$2" > "$XDG_DATA_HOME/applications/$1.desktop"');
+tool('omarchy-webapp-remove', 'rm -f "$XDG_DATA_HOME/applications/$1.desktop"');
+process.env.PATH = `${bin}:${process.env.PATH}`;
+process.env.AH_RESTART_CMD = 'true';
+process.env.AH_REBUILD_CMD = 'sleep 1';
 const agentNode = runner('ahit-agent');
 const claudeNode = runner('ahit-claude');
 const pickerNode = runner('ahit-picker');

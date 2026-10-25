@@ -525,3 +525,16 @@ struct PromptsResult: Codable, Equatable, Sendable { let prompts: [FeedPrompt] }
 struct PreviewStart: Codable, Equatable, Sendable { let preview: PreviewDTO }
 struct BulkRemoveResponse: Codable, Equatable, Sendable { let results: [BulkRemoveResult] }
 struct HooksAction: Codable, Equatable, Sendable { let messages: [String]; let status: HooksStatus }
+
+/// `bind`: a Hyprland binding to paste by hand (the host never edits its bindings).
+struct DesktopStatus: Codable, Equatable, Sendable {
+    let installed: Bool
+    let omarchy: Bool
+    let url: String
+    let file: String
+    let bind: String
+}
+
+struct DesktopAction: Codable, Equatable, Sendable { let messages: [String]; let status: DesktopStatus }
+
+struct CreatedToken: Codable, Sendable { let token: String }

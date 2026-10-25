@@ -91,6 +91,13 @@ enum MenuCommands {
         return UIMenu(title: "", identifier: UIMenu.Identifier("dev.ealush.ah.native.chords"), options: .displayInline, children: elements)
     }
 
+    /// Settings… on ⌘, as every app has it, whatever else Settings is bound to.
+    static func settings() -> UIMenu {
+        let element = UIKeyCommand(title: "Settings…", image: UIImage(systemName: "gearshape"), action: action, input: ",", modifierFlags: .command, propertyList: "go-settings", alternates: [], discoverabilityTitle: "Open settings", attributes: [], state: .off)
+        element.wantsPriorityOverSystemBehavior = true
+        return UIMenu(title: "", identifier: UIMenu.Identifier("dev.ealush.ah.native.settings"), options: .displayInline, children: [element])
+    }
+
     /// The palette's own chord, at the top of the app menu.
     static func palette(bindings: KeyBindings) -> UIMenu {
         let chord = bindings.hint("command-palette") ?? Chord("p", meta: true, shift: true)

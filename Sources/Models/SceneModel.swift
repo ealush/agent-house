@@ -1361,7 +1361,7 @@ enum SettingsSection: String, CaseIterable, Sendable {
         case .subscriptions: return "Model providers for side chat and review"
         case .environment: return "Variables every session starts with"
         case .search: return "The full-text index"
-        case .system: return "Hooks, screen rules, restart, uploads"
+        case .system: return "Hooks, launcher, restart, rebuild, uploads"
         }
     }
 

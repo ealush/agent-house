@@ -87,6 +87,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         builder.remove(menu: .format)
         builder.remove(menu: .toolbar)
         builder.insertChild(MenuCommands.palette(bindings: app.keyBindings), atStartOfMenu: .application)
+        // ⌘, opens the app's own Settings, not the system Settings app's page for it.
+        if builder.menu(for: .preferences) != nil {
+            builder.replace(menu: .preferences, with: MenuCommands.settings())
+        } else {
+            builder.insertChild(MenuCommands.settings(), atStartOfMenu: .application)
+        }
         builder.insertChild(MenuCommands.chordStarts(bindings: app.keyBindings), atEndOfMenu: .application)
         var previous = UIMenu.Identifier.view
         for menu in MenuCommands.menus(bindings: app.keyBindings) {

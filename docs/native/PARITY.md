@@ -149,7 +149,7 @@ Evidence shorthand used below: **UT** = `swift test` (Linux, Swift 6.2); **IT** 
 | F-079 | Split/open in new pane from switcher (Ctrl+Enter) | P1 | SwitcherState.asTile, SwitcherView ⌘↵/⌃↵ | implemented | [AUDIT.md:163](../../AUDIT.md#L163); open-in-pane command and ⌘↵/⌃↵ in the switcher; UI compiles, not yet seen running |
 | F-080 | FLIP pane transitions, gliding list selection, spring/reduced motion | P2 | SwiftUI animations | implemented | [AUDIT.md:164](../../AUDIT.md#L164); system Reduce Motion; UI |
 | F-081 | Stage Manager window control inset setting for standalone PWA | P2 | System window controls | substituted | [AUDIT.md:165](../../AUDIT.md#L165); PWA inset setting has no native equivalent; iPadOS draws window controls |
-| F-082 | Omarchy desktop launcher / Hyprland shortcut to open ah | P3 | Host desktop | substituted | [AUDIT.md:166](../../AUDIT.md#L166); Omarchy/Hyprland launcher is host-desktop only |
+| F-082 | Omarchy desktop launcher / Hyprland shortcut to open ah | P3 | SystemSection (Desktop) | implemented | [AUDIT.md:166](../../AUDIT.md#L166); add/remove the host's launcher entry, copy the Hyprland bind; integration test |
 | F-083 | Bottom bar Inbox / Sessions / History / Commands with counts | P0 | MainSplitController tabs | implemented | [AUDIT.md:172](../../AUDIT.md#L172); Inbox/Sessions/History/Review/Search tabs, Inbox badge; Commands via palette |
 | F-084 | Push/pop session navigation and interactive edge swipe back | P0 | UINavigationController per tab | implemented | [AUDIT.md:173](../../AUDIT.md#L173); push/pop + edge swipe; UI |
 | F-085 | Keyboard-aware composer, stable focus, safe areas; no page jump on typing | P0 | ComposerTextField | implemented | [AUDIT.md:174](../../AUDIT.md#L174); UI |
@@ -203,7 +203,7 @@ Evidence shorthand used below: **UT** = `swift test` (Linux, Swift 6.2); **IT** 
 | F-133 | Search index enable/rebuild; source scope/speaker/time filter | P2 | SearchView filters, SearchSection | implemented | [AUDIT.md:241](../../AUDIT.md#L241); scope/speaker/time/host; UI |
 | F-134 | **Security:** device name; lock now; sign out; one-time device enrollment code | P0 | SecuritySection, AppearanceSection | implemented | [AUDIT.md:247](../../AUDIT.md#L247); device name, lock, remove device, setup codes; UI |
 | F-135 | **Security:** passkeys list/add/remove; signed-in device list, revoke, sign out others | P0 | SecuritySection | implemented | [AUDIT.md:248](../../AUDIT.md#L248); passkeys list/remove; adding passkeys substituted by device enrollment (DECISIONS) |
-| F-136 | **Security:** machine/host bearer tokens list & revoke | P1 | SecuritySection | implemented | [AUDIT.md:249](../../AUDIT.md#L249); tokens list/revoke; UI |
+| F-136 | **Security:** machine/host bearer tokens list, make & revoke | P1 | SecuritySection, NewTokenCard | implemented | [AUDIT.md:249](../../AUDIT.md#L249); make (secret shown once, never stored, local-only clipboard that expires), list with last use, revoke; integration test |
 | F-137 | **Security:** optional host-only master password status, prompt history clear, recent activity/audit log | P2 | SecuritySection | implemented | [AUDIT.md:250](../../AUDIT.md#L250); master password status, prompt history clear, activity; UI |
 | F-138 | **Appearance:** System, Dark, Light, Omarchy (host colors/font sync) | P0 | AppearanceSection, ThemeModel | implemented | [AUDIT.md:251](../../AUDIT.md#L251); UT Omarchy mapping; UI |
 | F-139 | **Appearance:** Window buttons `In a window/Always/Never` | P3 | System window controls | substituted | [AUDIT.md:252](../../AUDIT.md#L252); PWA-only setting |
@@ -217,8 +217,8 @@ Evidence shorthand used below: **UT** = `swift test` (Linux, Swift 6.2); **IT** 
 | F-147 | **Environment:** add/edit/delete global values, secret mask, stale running sessions, restart one/all idle | P1 | EnvironmentSection | implemented | [AUDIT.md:260](../../AUDIT.md#L260); UI |
 | F-148 | **Search:** enabled, index status/details, rebuild | P2 | SearchSection | implemented | [AUDIT.md:261](../../AUDIT.md#L261); UI |
 | F-149 | **System:** hook status per agent, install/remove, screen-rule audit and clear | P2 | SystemSection | implemented | [AUDIT.md:262](../../AUDIT.md#L262); UI |
-| F-150 | **System:** Add/remove Omarchy desktop launcher; copy Hyprland bind | P3 | Host desktop | substituted | [AUDIT.md:263](../../AUDIT.md#L263); launcher/Hyprland bind are host-desktop only |
-| F-151 | **System:** Restart server, rebuild and restart, reload UI, uploads disk usage, clear uploads | P2 | SystemSection | implemented | [AUDIT.md:264](../../AUDIT.md#L264); restart + clear uploads; web rebuild/reload stays host/web; no uploads-usage endpoint exists in the source |
+| F-150 | **System:** Add/remove Omarchy desktop launcher; copy Hyprland bind | P3 | SystemSection (Desktop) | implemented | [AUDIT.md:263](../../AUDIT.md#L263); `/api/system/desktop`; integration test |
+| F-151 | **System:** Restart server, rebuild and restart, reload UI, uploads disk usage, clear uploads | P2 | SystemSection | implemented | [AUDIT.md:264](../../AUDIT.md#L264); restart, rebuild and restart (build output shown on failure), clear uploads; reload UI is the web page's own; no uploads-usage endpoint exists in the source |
 | F-152 | Host `config.json`: `port`, host, `defaultSession`, `projectRoots`, `idleAfter`, `peers`, `files.roots`, `promptHistory`, `snapshots`, `preview.ports`, auth, presets | P3 | Settings | substituted | [AUDIT.md:265](../../AUDIT.md#L265); Host config stays host/CLI authority; the meaningful GUI controls are in Settings |
 
 ## Keyboard command checklist
@@ -634,11 +634,11 @@ These are deliberate specification boundaries, not pending requests to clone web
 | F-012 — host CLI/script protocol | Keep in `ah`; do not port a CLI/server/tmux host to iOS | Preserve host behavior and backend compatibility, Q-20 |
 | F-043 — host CLI installation/update implementation | Host owns executable installation; native may inspect/detect or request meaningful remote actions | SET-29–SET-33; no simulated on-device CLI installs |
 | F-081, F-139 — PWA window-button insets | Do not copy; use native safe areas/window chrome | T-01/T-02, Q-02/Q-06; no fake window-buttons setting |
-| F-082, F-150 — Omarchy launcher/Hyprland bind | Host/web/CLI only; no native desktop-launcher control | Retain source behavior, Q-20 |
+| F-082, F-150 — Omarchy launcher/Hyprland bind | Every backend capability gets a native path (owner, 2026-10-25): the app adds/removes the host's launcher entry and copies the bind | Integration test; demo and test hosts stand in for Omarchy's installer so nothing touches the real desktop |
 | F-094 — Safari viewport/visualViewport/synthetic haptic hacks | Do not copy; native keyboard/safe-area/haptic behavior | F-085, F-091, Q-06 |
 | F-095 — PWA install/service worker/manifest | Do not copy; native lifecycle, app distribution and APNs replace relevant intent | B-04 is groundwork; AP-01–AP-09, Q-17 |
 | F-137 master-password set/remove | Keep host-only command; native status/admin boundaries as meaningful | SET-13; no native password-management bypass |
-| F-151 web rebuild/reload | Keep web build/reload maintenance on host/web; native refresh/reconnect and server restart are separate real actions | N-04–N-05, SET-58; no fake web-build progress in native |
+| F-151 web rebuild/reload | Rebuild and restart is a backend action, so the app runs it (real request, the host's build output on failure); reloading the web page has no native meaning | N-04–N-05, SET-58; no fake web-build progress in native |
 | F-152 entire host config editor | Keep host config/CLI authority; do not invent parity for knobs absent from the source GUI | Meaningful existing controls via SET/N; record any future scope decision |
 | Web CSS/DOM/layout heuristics, IndexedDB and cached web shell | Native layout/focus/preferences and account-bound encrypted GRDB cache | R/K/Q lists; no React/PWA/WKWebView app shell |
 | Web VAPID push | Preserve existing clients; implement actual APNs separately | AP-01–AP-09; Web Push is not native notification completion |

@@ -238,6 +238,35 @@ struct IntegrationTests {
         #expect(split.uploads.first?.name == "screen_shot.png")
         #expect(split.rest == "what is this?")
     }
+
+    @Test @MainActor func hostAdminFromSettingsReachesTheLauncherRebuildAndTokens() async throws {
+        let device = try await LiveHost.enrolled(label: "Admin iPad")
+        let system = SystemSettings(api: device.api)
+        await system.load()
+        let before = try #require(system.desktop)
+        #expect(!before.installed && before.bind.contains("bindd"))
+        await system.setDesktop(install: true)
+        #expect(system.desktop?.installed == true && !system.desktopMessages.isEmpty && system.error == nil)
+        await system.setDesktop(install: false)
+        #expect(system.desktop?.installed == false)
+
+        await system.rebuild()
+        #expect(system.buildLog == nil && system.notice != nil && !system.rebuilding)
+
+        let security = SecuritySettings(api: device.api)
+        await security.createToken(name: "  backup script ")
+        let made = try #require(security.newToken)
+        #expect(made.name == "backup script" && made.secret.count >= 20)
+        let token = try #require(security.overview?.tokens.first { $0.name == "backup script" })
+        // The secret is a working bearer for the host's API.
+        let script = LiveHost.client(TokenBox(made.secret), device: "script")
+        _ = try await script.state()
+        security.dismissToken()
+        #expect(security.newToken == nil)
+        await security.removeToken(token)
+        #expect(security.overview?.tokens.contains { $0.id == token.id } == false)
+        await #expect(throws: APIError.self) { _ = try await script.state() }
+    }
 }
 
 /// SwiftTerm's emulator without a view: the same engine the iOS terminal view drives.

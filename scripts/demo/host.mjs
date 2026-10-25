@@ -94,6 +94,12 @@ process.env.PATH = `${bin}:${process.env.PATH}`;
 // Settings → System must never reach this machine's own ah: its restart would run
 // `systemctl --user restart ah`, and a rebuild would build and restart that too. The demo
 // host isn't a unit, so restarting it does nothing, and a rebuild only takes a moment.
+// Omarchy's web-app installer would add a launcher to this machine's real desktop: these
+// stand-ins write it into the demo's own XDG_DATA_HOME instead.
+for (const [name, script] of [
+  ['omarchy-webapp-install', 'mkdir -p "$XDG_DATA_HOME/applications" && printf "[Desktop Entry]\\nName=%s\\nExec=xdg-open %s\\n" "$1" "$2" > "$XDG_DATA_HOME/applications/$1.desktop"'],
+  ['omarchy-webapp-remove', 'rm -f "$XDG_DATA_HOME/applications/$1.desktop"'],
+]) writeFileSync(join(bin, name), `#!/bin/sh\n# Not Omarchy's ${name}: the demo host's own data folder only.\n${script}\n`, { mode: 0o755 });
 process.env.AH_RESTART_CMD = 'true';
 process.env.AH_REBUILD_CMD = 'sleep 2';
 const ah = await startAh({ idleAfter: 2 }, dir);

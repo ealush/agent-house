@@ -75,6 +75,8 @@ private struct SecuritySection: View {
     @State private var model: SecuritySettings
     @State private var confirmRemove = false
     @State private var confirmOthers = false
+    @State private var naming = false
+    @State private var tokenName = ""
     @Environment(\.theme) private var theme
 
     init(scene: SceneModel, account: AccountSession) {
@@ -166,16 +168,25 @@ private struct SecuritySection: View {
                         }
                     }
                 }
-                if !overview.tokens.isEmpty {
-                    Section("API tokens") {
-                        ForEach(overview.tokens) { token in
-                            HStack {
+                Section {
+                    if let made = model.newToken {
+                        NewTokenCard(name: made.name, secret: made.secret, scene: scene) { model.dismissToken() }
+                    }
+                    ForEach(overview.tokens) { token in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
                                 Text(token.name)
-                                Spacer()
-                                Button("Revoke", role: .destructive) { Task { await model.removeToken(token) } }.buttonStyle(.borderless)
+                                Text(tokenUse(token)).font(.caption).foregroundStyle(theme.muted)
                             }
+                            Spacer()
+                            Button("Revoke", role: .destructive) { Task { await model.removeToken(token) } }.buttonStyle(.borderless)
                         }
                     }
+                    Button("New token…", systemImage: "key") { naming = true }
+                } header: {
+                    Text("API tokens")
+                } footer: {
+                    Text("For scripts and other tools that call this host’s API. A token is shown once, when it’s made.")
                 }
                 Section {
                     LabeledContent("Master password", value: overview.password ? "Set" : "Not set")
@@ -212,6 +223,25 @@ private struct SecuritySection: View {
         .confirmationDialog("Sign out every other device?", isPresented: $confirmOthers, titleVisibility: .visible) {
             Button("Sign out others", role: .destructive) { Task { await model.signOutOthers() } }
         }
+        .alert("New API token", isPresented: $naming) {
+            TextField("Name, like “backup script”", text: $tokenName)
+            Button("Cancel", role: .cancel) { tokenName = "" }
+            Button("Make Token") {
+                let name = tokenName
+                tokenName = ""
+                Task { await model.createToken(name: name) }
+            }
+        } message: {
+            Text("Name it for what will use it, so you know what to revoke later.")
+        }
+        // The secret never outlives this screen.
+        .onDisappear { model.dismissToken() }
+    }
+
+    private func tokenUse(_ token: AuthOverview.Token) -> String {
+        let made = "Made \(Elapsed.format(Date(timeIntervalSince1970: token.createdAt / 1000), now: .now))"
+        guard token.lastUsedAt > 0 else { return made + " · never used" }
+        return made + " · used \(Elapsed.format(Date(timeIntervalSince1970: token.lastUsedAt / 1000), now: .now))"
     }
 
     private func statusWord(_ status: AccountSession.Status) -> String {
@@ -906,6 +936,43 @@ private struct SearchSection: View {
     }
 }
 
+/// A token's secret, the one time it's shown: copy it, then it's gone.
+private struct NewTokenCard: View {
+    let name: String
+    let secret: String
+    let scene: SceneModel
+    let done: () -> Void
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("“\(name)” is ready", systemImage: "checkmark.seal.fill")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(theme.done)
+            Text(secret)
+                .font(.callout.monospaced())
+                .textSelection(.enabled)
+                .lineLimit(2)
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(theme.sunken, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            Text("Copy it now: it isn’t shown again, and this app doesn’t keep it.").font(.caption).foregroundStyle(theme.muted)
+            HStack {
+                Button("Copy", systemImage: "doc.on.doc") {
+                    UIPasteboard.general.setItems([[UIPasteboard.typeAutomatic: secret]], options: [.localOnly: true, .expirationDate: Date.now.addingTimeInterval(120)])
+                    Haptics.success()
+                    scene.toast("Copied. It clears from the clipboard in 2 minutes.")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(theme.accent)
+                Spacer()
+                Button("Done", action: done).buttonStyle(.bordered)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
 // MARK: System
 
 private struct SystemSection: View {
@@ -913,6 +980,7 @@ private struct SystemSection: View {
     let scene: SceneModel
     @State private var confirmRestart = false
     @State private var confirmUploads = false
+    @State private var confirmRebuild = false
     @Environment(\.theme) private var theme
 
     var body: some View {
@@ -944,9 +1012,67 @@ private struct SystemSection: View {
                     }
                 }
             }
-            Section("Host") {
+            if let desktop = model.desktop {
+                Section {
+                    LabeledContent("In the app launcher", value: desktop.installed ? "Yes" : "No")
+                    Button(desktop.installed ? "Remove from the launcher" : "Add to the launcher", systemImage: desktop.installed ? "minus.circle" : "plus.app") {
+                        Task { await model.setDesktop(install: !desktop.installed) }
+                    }
+                    ForEach(model.desktopMessages, id: \.self) { Text($0).font(.caption).foregroundStyle(theme.muted) }
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("Hyprland shortcut").font(.subheadline)
+                            Spacer()
+                            Button("Copy") {
+                                UIPasteboard.general.string = desktop.bind
+                                Haptics.tap()
+                                scene.toast("Copied the binding")
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                        Text(desktop.bind)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(theme.text2)
+                            .textSelection(.enabled)
+                            .padding(8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(theme.sunken, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+                } header: {
+                    Text("Desktop")
+                } footer: {
+                    Text(desktop.omarchy
+                        ? "On the host’s Omarchy desktop, Agent Hub opens \(desktop.url) in its own window from SUPER+SPACE. Paste the shortcut into ~/.config/hypr/bindings.conf to open it with SUPER+ALT+A."
+                        : "On the host’s desktop, Agent Hub opens \(desktop.url) from the app launcher. The shortcut is for Hyprland’s bindings.conf.")
+                }
+            }
+            Section {
                 Button("Clear uploaded files…", role: .destructive) { confirmUploads = true }
                 Button("Restart Agent Hub…", role: .destructive) { confirmRestart = true }
+                Button(role: .destructive) {
+                    confirmRebuild = true
+                } label: {
+                    HStack {
+                        Text(model.rebuilding ? "Building…" : "Rebuild and restart…")
+                        if model.rebuilding { Spacer(); ProgressView() }
+                    }
+                }
+                .disabled(model.rebuilding)
+                if let log = model.buildLog {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("The build failed; nothing was restarted.", systemImage: "exclamationmark.triangle.fill")
+                            .font(.subheadline)
+                            .foregroundStyle(theme.danger)
+                        ScrollView(.horizontal) {
+                            Text(log).font(.caption2.monospaced()).foregroundStyle(theme.text2).textSelection(.enabled)
+                        }
+                        .frame(maxHeight: 180)
+                    }
+                }
+            } header: {
+                Text("Host")
+            } footer: {
+                Text("Rebuild clears the host’s web build, builds it again from its checkout, then restarts. Sessions keep running through both.")
             }
             Section("This app") {
                 LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—")
@@ -954,12 +1080,20 @@ private struct SystemSection: View {
             }
         }
         .task { await model.load() }
-        .confirmationDialog("Restart Agent Hub?", isPresented: $confirmRestart, titleVisibility: .visible) {
+        .alert("Restart Agent Hub?", isPresented: $confirmRestart) {
+            Button("Cancel", role: .cancel) {}
             Button("Restart", role: .destructive) { Task { await model.restartServer() } }
         } message: {
             Text("Sessions keep running in tmux; every device reconnects in a moment.")
         }
-        .confirmationDialog("Clear uploaded files?", isPresented: $confirmUploads, titleVisibility: .visible) {
+        .alert("Rebuild and restart Agent Hub?", isPresented: $confirmRebuild) {
+            Button("Cancel", role: .cancel) {}
+            Button("Rebuild and Restart", role: .destructive) { Task { await model.rebuild() } }
+        } message: {
+            Text("The web build is cleared and built again from the host’s checkout, which can take a few minutes. If it fails, nothing restarts and the build’s output shows here.")
+        }
+        .alert("Clear uploaded files?", isPresented: $confirmUploads) {
+            Button("Cancel", role: .cancel) {}
             Button("Clear", role: .destructive) { Task { await model.clearUploads() } }
         } message: {
             Text("Files sent to agents are deleted from the host. Sessions that still reference them won’t find them.")
