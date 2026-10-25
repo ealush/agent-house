@@ -90,7 +90,8 @@ struct SessionNavigationChrome: ViewModifier {
     /// The terminal fills the screen under a see-through bar: over a dark one the bar's title
     /// and buttons have to be light.
     private var overDarkTerminal: Bool {
-        !(session.surface == .gui && session.hasGUI) && theme.palette.terminal.isDark
+        // A live terminal only: an ended session shows its last screen on the page's ground.
+        session.isLive && !(session.surface == .gui && session.hasGUI) && theme.palette.terminal.isDark
     }
 
     private var subtitle: String {
