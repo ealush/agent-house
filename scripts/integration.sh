@@ -10,6 +10,9 @@ cd "$(dirname "$0")/.."
 SWIFT=${SWIFT:-swift}
 export AH_SOURCE=${AH_SOURCE:-../ah}
 
+# Every route this ah answers has a way in from the app (or a stated reason it doesn't).
+node scripts/backend-coverage.mjs
+
 fifo=$(mktemp -u)
 mkfifo "$fifo"
 # The host lives as long as this fd stays open; closing it cleans the host up.
