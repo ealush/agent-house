@@ -91,6 +91,11 @@ if (fresh) seed();
 
 // No presets of our own: ah's defaults (Shell, Claude Code, Codex…), with `claude` found first.
 process.env.PATH = `${bin}:${process.env.PATH}`;
+// Settings → System must never reach this machine's own ah: its restart would run
+// `systemctl --user restart ah`, and a rebuild would build and restart that too. The demo
+// host isn't a unit, so restarting it does nothing, and a rebuild only takes a moment.
+process.env.AH_RESTART_CMD = 'true';
+process.env.AH_REBUILD_CMD = 'sleep 2';
 const ah = await startAh({ idleAfter: 2 }, dir);
 
 const call = async (method, path, body) => {
