@@ -153,7 +153,7 @@ struct TranscriptView: View {
                     UIPasteboard.general.string = blocks[current].text
                     scene.toast("Copied the message")
                 case KeyEquivalent("r"):
-                    scene.toast("Open Snapshots to restore the files to before this message")
+                    session.restoreRequest = blocks[current].text
                     session.panel = .snapshots
                 case .escape:
                     browsing = nil
@@ -292,7 +292,10 @@ private struct BlockRow: View {
                         }
                         if !session.isShell {
                             Divider()
-                            Button("Restore Files from Before This…", systemImage: "clock.arrow.circlepath") { session.panel = .snapshots }
+                            Button("Restore Files from Before This…", systemImage: "clock.arrow.circlepath") {
+                                session.restoreRequest = text
+                                session.panel = .snapshots
+                            }
                         }
                     }
                 }

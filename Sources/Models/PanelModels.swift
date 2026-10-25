@@ -393,6 +393,15 @@ final class SnapshotsModel {
     private(set) var list: SnapshotList?
     private(set) var error: String?
     private(set) var restoring: Int?
+    /// Said after a restore the agent couldn't be told about.
+    private(set) var notice: String?
+
+    /// How a restore went: a working agent has to be stopped first, and the caller asks.
+    enum Outcome: Equatable, Sendable {
+        case restored(SnapshotRestore)
+        case agentWorking
+        case failed
+    }
 
     init(api: APIClient, uid: String) {
         self.api = api
@@ -408,6 +417,14 @@ final class SnapshotsModel {
         }
     }
 
+    /// Keeps the list current while the panel shows: a new turn adds a row.
+    func watch(every interval: Duration = .seconds(3)) async {
+        while !Task.isCancelled {
+            if restoring == nil { await load() }
+            try? await Task.sleep(for: interval)
+        }
+    }
+
     func setEnabled(_ enabled: Bool) async {
         do {
             try await api.toggleSnapshots(uid, enabled: enabled)
@@ -418,17 +435,75 @@ final class SnapshotsModel {
     }
 
     /// Restore the files to before `turn`; `interrupt` stops a working agent first.
-    func restore(turn: Int, interrupt: Bool) async -> SnapshotRestore? {
+    func restore(turn: Int, interrupt: Bool) async -> Outcome {
         restoring = turn
         defer { restoring = nil }
         do {
             let result = try await api.restoreSnapshot(uid, turn: turn, interrupt: interrupt)
+            notice = result.notified ? nil : Self.unnotified
             await load()
-            return result
+            return .restored(result)
         } catch {
-            self.error = APIError.wrap(error).message
-            return nil
+            let message = APIError.wrap(error).message
+            if !interrupt, Self.isAgentWorking(message) { return .agentWorking }
+            self.error = message
+            return .failed
         }
+    }
+
+    func dismissNotice() { notice = nil }
+
+    nonisolated static let unnotified = "Restored, but the agent couldn’t be told. Ask it to run git status and re-read the changed files before it goes on."
+
+    nonisolated static func isAgentWorking(_ message: String) -> Bool {
+        message.range(of: "agent is working", options: .caseInsensitive) != nil
+    }
+
+    /// Newest first, as a timeline reads.
+    nonisolated static func timeline(_ list: SnapshotList) -> [SnapshotInfo] {
+        list.snapshots.sorted { ($0.turn, $0.id) > ($1.turn, $1.id) }
+    }
+
+    /// The host keeps a prompt's first 120 characters: say when it was cut.
+    nonisolated static func excerpt(_ snap: SnapshotInfo) -> String {
+        snap.promptExcerpt.count >= 120 ? snap.promptExcerpt + "…" : snap.promptExcerpt
+    }
+
+    nonisolated static func title(_ snap: SnapshotInfo) -> String {
+        snap.kind == "safety" ? "Safety copy" : "Before turn \(snap.turn)"
+    }
+
+    /// What changed between the snapshot before this one and this one.
+    nonisolated static func stats(_ snap: SnapshotInfo, oldest: Bool = false) -> String {
+        if snap.filesChanged == 0 { return oldest ? "The first one kept" : "No changes" }
+        return "\(snap.filesChanged) file\(snap.filesChanged == 1 ? "" : "s") changed"
+    }
+
+    /// The snapshot taken before `prompt` was sent (the host keeps its first 120 characters,
+    /// whitespace collapsed): the newest, if the same words went more than once.
+    nonisolated static func match(prompt: String, in list: SnapshotList) -> SnapshotInfo? {
+        let words = prompt.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        let key = String(words.prefix(120))
+        guard !key.isEmpty else { return nil }
+        return timeline(list).first { $0.kind == "turn" && $0.promptExcerpt == key }
+    }
+
+    /// What a restore of `snap` would do, said before it's done.
+    nonisolated static func confirmation(_ snap: SnapshotInfo, in list: SnapshotList) -> (title: String, message: String) {
+        let later = list.snapshots.filter { $0.turn > snap.turn && $0.kind == "turn" }.count
+        var parts: [String]
+        if snap.kind == "safety" {
+            parts = ["Files go back to how they were when this safety copy was taken."]
+        } else {
+            parts = ["Files go back to how they were before turn \(snap.turn)."]
+        }
+        if later > 0 { parts.append("Changes from \(later) later turn\(later == 1 ? "" : "s") are undone.") }
+        parts.append("The current files are saved first, so you can come back.")
+        if !snap.branch.isEmpty, let branch = list.branch, snap.branch != branch {
+            parts.append("It was taken on \(snap.branch); you’re on \(branch) now.")
+        }
+        let title = snap.kind == "safety" ? "Restore this safety copy?" : "Restore to before turn \(snap.turn)?"
+        return (title, parts.joined(separator: " "))
     }
 }
 

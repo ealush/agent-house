@@ -320,7 +320,7 @@ enum CommandCatalog {
         "interrupt": "stop.circle", "send-now": "paperplane", "clear-queue": "trash", "pick-model": "cpu", "pick-effort": "speedometer",
         "copy-last": "doc.on.doc", "jump-latest": "arrow.down.to.line", "browse-messages": "text.bubble", "switch-branch": "arrow.triangle.branch",
         "rename": "pencil", "fork": "arrow.triangle.pull", "send-to": "arrowshape.turn.up.right", "pin": "pin", "panel-diff": "plusminus",
-        "panel-files": "folder", "panel-chat": "bubble.left.and.bubble.right", "panel-queue": "list.bullet.rectangle", "panel-snapshots": "camera",
+        "panel-files": "folder", "panel-chat": "bubble.left.and.bubble.right", "panel-queue": "list.bullet.rectangle", "panel-snapshots": "clock.arrow.circlepath",
         "panel-preview": "safari", "panel-stack": "square.stack.3d.up", "session-menu": "ellipsis.circle", "scrollback": "scroll",
         "copy-attach": "link", "toggle-keys": "keyboard.chevron.compact.down", "terminate": "power",
         "split-right": "rectangle.split.2x1", "split-below": "rectangle.split.1x2", "split-left": "rectangle.lefthalf.inset.filled",

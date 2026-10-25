@@ -21,6 +21,8 @@ final class SessionModel: Identifiable {
     private(set) var notices: [Notice] = []
     var surface: SceneSnapshot.Surface
     var panel: SceneSnapshot.Panel?
+    /// A message to restore the files to before: Snapshots finds its turn and asks.
+    var restoreRequest: String?
     /// A rename in progress (⌃⌥N): Return saves, Escape cancels.
     var renaming: String?
     private(set) var busy: Set<String> = []

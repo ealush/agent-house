@@ -727,53 +727,300 @@ private struct SnapshotsPanel: View {
     let scene: SceneModel
     @Environment(\.theme) private var theme
     @State private var confirming: SnapshotInfo?
+    @State private var stopFirst: SnapshotInfo?
+    /// The last restore, for its Undo.
+    @State private var undo: SnapshotRestore?
+    /// The row a "Restore Files from Before This…" landed on, lit for a moment.
+    @State private var highlight: Int?
 
     var body: some View {
-        List {
-            if let list = model.list {
-                Section {
-                    Toggle("Snapshot every turn", isOn: Binding(get: { list.enabled }, set: { on in Task { await model.setEnabled(on) } }))
-                        .disabled(!list.available)
-                    if !list.available { Text("Snapshots need a git repository.").font(.caption).foregroundStyle(theme.muted) }
-                    if list.partial { Text("Some files were too large to keep.").font(.caption).foregroundStyle(theme.limited) }
-                }
-                ForEach(list.snapshots.reversed()) { snap in
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text(snap.kind == "safety" ? "Safety copy" : "Turn \(snap.turn)").font(.subheadline.weight(.semibold))
-                            Spacer()
-                            Elapsed(seconds: snap.createdAt / 1000).font(.caption).foregroundStyle(theme.faint)
-                        }
-                        if !snap.promptExcerpt.isEmpty { Text(snap.promptExcerpt).font(.caption).foregroundStyle(theme.muted).lineLimit(2) }
-                        Text("\(snap.filesChanged) files · +\(snap.insertions) −\(snap.deletions)").font(.caption2.monospacedDigit()).foregroundStyle(theme.faint)
+        ScrollViewReader { proxy in
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                if let list = model.list {
+                    intro(list)
+                    if let notice = model.notice {
+                        Banner(text: notice, tone: .warning, action: ("OK", { model.dismissNotice() }))
                     }
-                    .swipeActions {
-                        Button("Restore") { confirming = snap }.tint(.orange)
+                    if let undo {
+                        restoredCard(undo)
                     }
-                    .contextMenu { Button("Restore files to before this turn", systemImage: "clock.arrow.circlepath") { confirming = snap } }
+                    if let error = model.error { Banner(text: error, tone: .error) }
+                    if !list.available {
+                        empty("No git here", "folder.badge.questionmark", "Snapshots need the session’s folder to be a git repository.")
+                    } else if list.snapshots.isEmpty {
+                        empty("No snapshots yet", "clock.arrow.circlepath", "The files are saved before each turn starts. The next turn takes the first one.")
+                    } else {
+                        timeline(list)
+                        Text("Kept under refs/ah-snapshots, so git gc leaves them alone while they’re listed here.")
+                            .font(.caption2)
+                            .foregroundStyle(theme.faint)
+                            .padding(.top, 4)
+                    }
+                } else if let error = model.error {
+                    Banner(text: error, tone: .error, action: ("Retry", { Task { await model.load() } }))
+                } else {
+                    ProgressView().frame(maxWidth: .infinity).padding(.top, 40)
                 }
-            } else if let error = model.error {
-                Banner(text: error, tone: .error)
-            } else {
-                ProgressView()
             }
+            .padding(16)
+            .animation(.snappy(duration: 0.25), value: model.list)
+            .animation(.snappy(duration: 0.25), value: undo)
         }
-        .task { await model.load() }
-        .confirmationDialog("Restore the files to before turn \(confirming?.turn ?? 0)?", isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }), titleVisibility: .visible) {
-            Button("Restore", role: .destructive) { restore(interrupt: false) }
-            if session.working { Button("Stop the agent and restore", role: .destructive) { restore(interrupt: true) } }
-        } message: {
-            Text("A safety snapshot of the current files is taken first, so this can be undone.")
+        .background(theme.background)
+        .onChange(of: model.list, initial: true) { _, _ in answerRequest(proxy) }
+        .onChange(of: session.restoreRequest) { _, _ in answerRequest(proxy) }
+        }
+        .task { await model.watch() }
+        .alert(confirmTitle, isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }), presenting: confirming) { snap in
+            Button("Cancel", role: .cancel) {}
+            Button("Restore", role: .destructive) { restore(snap, interrupt: false) }
+        } message: { snap in
+            if let list = model.list { Text(SnapshotsModel.confirmation(snap, in: list).message) }
+        }
+        .alert("The agent is working", isPresented: Binding(get: { stopFirst != nil }, set: { if !$0 { stopFirst = nil } }), presenting: stopFirst) { snap in
+            Button("Cancel", role: .cancel) {}
+            Button("Stop and Restore", role: .destructive) { restore(snap, interrupt: true) }
+        } message: { _ in
+            Text("Stop the current turn and restore now? A safety copy of the files is still taken first.")
         }
     }
 
-    private func restore(interrupt: Bool) {
-        guard let snap = confirming else { return }
-        confirming = nil
+    /// Lands on the snapshot taken before the message asked about, and asks to restore it.
+    private func answerRequest(_ proxy: ScrollViewProxy) {
+        guard let prompt = session.restoreRequest, let list = model.list else { return }
+        session.restoreRequest = nil
+        guard let snap = SnapshotsModel.match(prompt: prompt, in: list) else {
+            scene.toast(list.available ? "No snapshot was taken before that message." : "Snapshots need a git repository.")
+            return
+        }
+        withAnimation(.snappy) { proxy.scrollTo(snap.id, anchor: .center) }
+        highlight = snap.id
+        confirming = snap
         Task {
-            if let result = await model.restore(turn: snap.turn, interrupt: interrupt) {
-                scene.toast("Restored to before turn \(result.restored.turn). Safety copy kept as turn \(result.safety.turn).")
+            try? await Task.sleep(for: .seconds(2))
+            withAnimation(.easeOut(duration: 0.6)) { if highlight == snap.id { highlight = nil } }
+        }
+    }
+
+    private var confirmTitle: String {
+        guard let confirming, let list = model.list else { return "" }
+        return SnapshotsModel.confirmation(confirming, in: list).title
+    }
+
+    // MARK: Parts
+
+    private func intro(_ list: SnapshotList) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(theme.accent)
+                    .frame(width: 36, height: 36)
+                    .background(theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Rewind the files").font(.headline)
+                    Text("The files are saved before every turn, with what changed since the one before. Restore one to put them back; what’s there now is saved first.")
+                        .font(.caption)
+                        .foregroundStyle(theme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
+            if list.available {
+                Toggle(isOn: Binding(get: { list.enabled }, set: { on in Haptics.selection(); Task { await model.setEnabled(on) } })) {
+                    Text("Save before every turn").font(.subheadline)
+                }
+                .tint(theme.accent)
+            }
+            if list.partial && list.available {
+                Label("Turns typed straight into the terminal may be missed.", systemImage: "info.circle")
+                    .font(.caption2)
+                    .foregroundStyle(theme.faint)
+            }
+        }
+        .padding(14)
+        .background(theme.raised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func restoredCard(_ result: SnapshotRestore) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(theme.done).font(.title3)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(result.restored.kind == "safety" ? "Safety copy restored" : "Back to before turn \(result.restored.turn)").font(.subheadline.weight(.semibold))
+                Text("What was there is kept as a safety copy.").font(.caption).foregroundStyle(theme.muted)
+            }
+            Spacer(minLength: 8)
+            Button("Undo") { restore(result.safety, interrupt: false, isUndo: true) }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(model.restoring != nil)
+            Button { undo = nil } label: { Image(systemName: "xmark").font(.caption.weight(.bold)) }
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.faint)
+                .accessibilityLabel("Dismiss")
+        }
+        .padding(12)
+        .background(theme.done.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .transition(.move(edge: .top).combined(with: .opacity))
+    }
+
+    private func empty(_ title: String, _ icon: String, _ text: String) -> some View {
+        ContentUnavailableView {
+            Label(title, systemImage: icon)
+        } description: {
+            Text(text)
+        }
+        .padding(.top, 24)
+    }
+
+    private func timeline(_ list: SnapshotList) -> some View {
+        let rows = SnapshotsModel.timeline(list)
+        return VStack(alignment: .leading, spacing: 0) {
+            nowRow(list)
+            ForEach(Array(rows.enumerated()), id: \.element.id) { index, snap in
+                SnapshotRow(
+                    snap: snap,
+                    currentBranch: list.branch,
+                    last: index == rows.count - 1,
+                    restoring: model.restoring == snap.turn,
+                    busy: model.restoring != nil,
+                    restore: { confirming = snap }
+                )
+                .id(snap.id)
+                .background(theme.accent.opacity(highlight == snap.id ? 0.14 : 0), in: RoundedRectangle(cornerRadius: 12, style: .continuous).inset(by: -6))
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+    }
+
+    /// The top of the timeline: the files as they are.
+    private func nowRow(_ list: SnapshotList) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(spacing: 0) {
+                Circle().fill(theme.accent).frame(width: 12, height: 12)
+                    .overlay(Circle().stroke(theme.accent.opacity(0.25), lineWidth: 5))
+                    .padding(.top, 4)
+                Rectangle().fill(theme.faint.opacity(0.35)).frame(width: 2).frame(maxHeight: .infinity)
+            }
+            .frame(width: 18)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Now").font(.subheadline.weight(.semibold))
+                if let branch = list.branch {
+                    Label(branch, systemImage: "arrow.triangle.branch").font(.caption).foregroundStyle(theme.muted)
+                }
+            }
+            .padding(.bottom, 16)
+        }
+    }
+
+    private func restore(_ snap: SnapshotInfo, interrupt: Bool, isUndo: Bool = false) {
+        confirming = nil
+        stopFirst = nil
+        Task {
+            switch await model.restore(turn: snap.turn, interrupt: interrupt) {
+            case .restored(let result):
+                Haptics.success()
+                undo = isUndo ? nil : result
+                if isUndo { scene.toast("Undone: the files are back as they were.") }
+            case .agentWorking:
+                Haptics.warning()
+                stopFirst = snap
+            case .failed:
+                Haptics.failure()
+            }
+        }
+    }
+}
+
+/// One snapshot on the timeline: when, what was asked, and how much changed since the one before.
+private struct SnapshotRow: View {
+    let snap: SnapshotInfo
+    let currentBranch: String?
+    let last: Bool
+    let restoring: Bool
+    let busy: Bool
+    let restore: () -> Void
+    @Environment(\.theme) private var theme
+
+    private var safety: Bool { snap.kind == "safety" }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(spacing: 0) {
+                ZStack {
+                    Circle().fill(theme.background).frame(width: 18, height: 18)
+                    if safety {
+                        Image(systemName: "lifepreserver.fill").font(.system(size: 13)).foregroundStyle(theme.limited)
+                    } else {
+                        Circle().strokeBorder(theme.muted, lineWidth: 2).frame(width: 12, height: 12)
+                    }
+                }
+                .padding(.top, 2)
+                if !last { Rectangle().fill(theme.faint.opacity(0.35)).frame(width: 2).frame(maxHeight: .infinity) }
+            }
+            .frame(width: 18)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(SnapshotsModel.title(snap)).font(.subheadline.weight(.semibold))
+                    Spacer(minLength: 8)
+                    Elapsed(seconds: snap.createdAt).font(.caption.monospacedDigit()).foregroundStyle(theme.faint)
+                }
+                if !snap.promptExcerpt.isEmpty {
+                    Text(SnapshotsModel.excerpt(snap))
+                        .font(.callout)
+                        .foregroundStyle(theme.text2)
+                        .lineLimit(3)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(theme.raised, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                HStack(spacing: 8) {
+                    Text(SnapshotsModel.stats(snap, oldest: last)).foregroundStyle(theme.muted).lineLimit(1)
+                        .help("Since the snapshot before this one")
+                    if snap.insertions > 0 { Text("+\(snap.insertions)").foregroundStyle(theme.done) }
+                    if snap.deletions > 0 { Text("−\(snap.deletions)").foregroundStyle(theme.danger) }
+                    Spacer(minLength: 8)
+                    Button(action: restore) {
+                        if restoring {
+                            ProgressView().controlSize(.mini)
+                        } else {
+                            Label("Restore", systemImage: "arrow.uturn.backward")
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
+                    .controlSize(.small)
+                    .disabled(busy)
+                }
+                .font(.caption.monospacedDigit())
+                notes
+            }
+            .padding(.bottom, last ? 0 : 18)
+        }
+        .contentShape(Rectangle())
+        .contextMenu {
+            Button(safety ? "Restore This Safety Copy" : "Restore Files to Before Turn \(snap.turn)", systemImage: "arrow.uturn.backward", action: restore)
+                .disabled(busy)
+            Button("Copy Commit", systemImage: "doc.on.doc") { UIPasteboard.general.string = snap.commit }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAction(named: "Restore", restore)
+    }
+
+    @ViewBuilder
+    private var notes: some View {
+        let otherBranch = !snap.branch.isEmpty && currentBranch != nil && snap.branch != currentBranch
+        if otherBranch || !snap.skipped.isEmpty || snap.submodules {
+            VStack(alignment: .leading, spacing: 3) {
+                if otherBranch { Label("Taken on \(snap.branch)", systemImage: "arrow.triangle.branch").foregroundStyle(theme.limited) }
+                if !snap.skipped.isEmpty {
+                    Label("\(snap.skipped.count) oversized file\(snap.skipped.count == 1 ? "" : "s") not kept", systemImage: "externaldrive.badge.xmark")
+                        .foregroundStyle(theme.faint)
+                }
+                if snap.submodules { Label("Submodules aren’t included", systemImage: "shippingbox").foregroundStyle(theme.faint) }
+            }
+            .font(.caption2)
         }
     }
 }

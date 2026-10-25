@@ -156,3 +156,43 @@ private func tree(_ path: String, size: Double?, partial: Bool = false, at: Doub
     #expect(WorktreesModel.bytes(trees, in: ["clean", "dirty"]) == 30)
     #expect(trees.filter(WorktreesModel.inUse).map(\.path) == ["used"])
 }
+
+// MARK: Snapshots
+
+private func snap(_ id: Int, turn: Int, kind: String = "turn", prompt: String = "", branch: String = "main") -> SnapshotInfo {
+    SnapshotInfo(id: id, uid: "u1", turn: turn, commit: "c\(id)", kind: kind, promptExcerpt: prompt, branch: branch, createdAt: 1_700_000_000, filesChanged: 1, insertions: 2, deletions: 0, skipped: [], submodules: false)
+}
+
+@Test func snapshotTimelineIsNewestFirstAndMatchesPromptsAsTheHostKeepsThem() {
+    let long = String(repeating: "word ", count: 40)
+    let list = SnapshotList(snapshots: [
+        snap(1, turn: 1, prompt: "Cache the users query"),
+        snap(2, turn: 2, prompt: String(long.split(separator: " ").joined(separator: " ").prefix(120))),
+        snap(3, turn: 3, kind: "safety", prompt: "Before restoring turn 1"),
+        snap(4, turn: 4, prompt: "Cache the users query"),
+    ], enabled: true, available: true, partial: false, branch: "main")
+    #expect(SnapshotsModel.timeline(list).map(\.turn) == [4, 3, 2, 1])
+    // Whitespace collapses, and the same words twice land on the newest.
+    #expect(SnapshotsModel.match(prompt: "Cache  the\nusers query", in: list)?.id == 4)
+    // The host keeps the first 120 characters.
+    #expect(SnapshotsModel.match(prompt: long, in: list)?.id == 2)
+    // Safety copies aren't before any message.
+    #expect(SnapshotsModel.match(prompt: "Before restoring turn 1", in: list) == nil)
+    #expect(SnapshotsModel.match(prompt: "  ", in: list) == nil)
+    #expect(SnapshotsModel.excerpt(list.snapshots[1]).hasSuffix("…"))
+    #expect(SnapshotsModel.excerpt(list.snapshots[0]) == "Cache the users query")
+}
+
+@Test func snapshotConfirmationSaysWhatComesUndone() {
+    let list = SnapshotList(snapshots: [snap(1, turn: 1), snap(2, turn: 2), snap(3, turn: 3, kind: "safety"), snap(4, turn: 4)], enabled: true, available: true, partial: false, branch: "feature")
+    let first = SnapshotsModel.confirmation(list.snapshots[0], in: list)
+    #expect(first.title == "Restore to before turn 1?")
+    #expect(first.message.contains("Changes from 2 later turns are undone."))
+    #expect(first.message.contains("It was taken on main; you’re on feature now."))
+    let latest = SnapshotsModel.confirmation(list.snapshots[3], in: list)
+    #expect(!latest.message.contains("later turn"))
+    #expect(SnapshotsModel.confirmation(list.snapshots[2], in: list).title == "Restore this safety copy?")
+    #expect(SnapshotsModel.title(list.snapshots[2]) == "Safety copy")
+    #expect(SnapshotsModel.stats(snap(9, turn: 9)) == "1 file changed")
+    #expect(SnapshotsModel.isAgentWorking("The agent is working; stop it first or confirm the interrupt"))
+}

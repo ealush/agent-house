@@ -12,6 +12,7 @@ import XCTest
 ///   tap:<label or id>     the first hittable element with that label or identifier
 ///   tapat:<x>,<y>         a point, as fractions of the window
 ///   press:<label or id>   long press
+///   pressat:<x>,<y>       long press at a point, as fractions of the window
 ///   type:<text>           into whatever has focus
 ///   key:<key>[+cmd+shift+alt+ctrl]  a hardware key (keys: return, escape, tab, up, down,
 ///                         left, right, delete, space, or one character)
@@ -58,6 +59,9 @@ final class TourUITests: XCTestCase {
                 app.coordinate(withNormalizedOffset: CGVector(dx: xy[0], dy: xy[1])).tap()
             case "press":
                 element(app, argument)?.press(forDuration: 1.0)
+            case "pressat":
+                let xy = argument.split(separator: ",").compactMap { Double($0) }
+                app.coordinate(withNormalizedOffset: CGVector(dx: xy[0], dy: xy[1])).press(forDuration: 1.0)
             case "type":
                 app.typeText(argument)
             case "key":
