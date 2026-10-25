@@ -219,6 +219,7 @@ struct StackCockpitView: View {
             }
         }
         .navigationTitle(model.stack?.title ?? "Stack")
+        .navigationBarTitleDisplayMode(scene.narrow ? .inline : .automatic)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button { Task { await model.refresh() } } label: { Image(systemName: "arrow.clockwise") }.accessibilityLabel("Sync with GitHub")
@@ -248,9 +249,14 @@ struct StackCockpitView: View {
     }
 
     private func spine(_ stack: ReviewStack) -> some View {
-        List(selection: Binding(get: { model.selectedPR }, set: { pr in if let pr { Task { await model.select(pr) } } })) {
+        // On a phone a layer pushes, so no row stays lit after coming back.
+        List(selection: Binding(get: { scene.narrow ? nil : model.selectedPR }, set: { pr in if let pr { Task { await model.select(pr) } } })) {
             Section {
                 VStack(alignment: .leading, spacing: 6) {
+                    if scene.narrow {
+                        // The bar's title is one short line on a phone; the stack's name is read here.
+                        Text(stack.title).font(.title3.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+                    }
                     Text("\(stack.repo) → \(stack.trunk)").font(.caption).foregroundStyle(theme.muted)
                     if let next = stack.next, let layer = stack.layers.first(where: { $0.pr == next }) {
                         Label("Up next: \(layer.name) — \(layer.title)", systemImage: "arrow.right.circle").font(.subheadline.weight(.semibold))
