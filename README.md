@@ -11,6 +11,7 @@ Start with [AUDIT.md](AUDIT.md) and [SPEC.md](SPEC.md) (the port's source docume
 - The whole app is written: pairing and Face ID sign-in, Inbox, sessions (GUI transcript with tools and widgets, composer with queue/drafts/attachments, asks and forms, SwiftTerm terminal), panels (diff, files, side chat, queue, snapshots, preview, stack), History, Search, the iPad split/panes/workspaces/scratchpad, all 89 keyboard commands in the menu bar, palette and switcher, stack review through exact-head merge, all nine Settings sections, APNs with Approve/Deny actions, deep links, restoration and an encrypted transcript cache.
 - Everything except the UI layer compiles and passes on Linux: **141 unit tests** and **19 integration tests against a disposable `ah`** (real tmux, fake agents).
 - **The whole app builds in Xcode** (27.1, Swift 6 strict concurrency). `./scripts/verify.sh` passes on an iOS 27 simulator, run by hand on 25 October 2026 (122 unit tests, 2 UI tests); CI hasn't run it yet. Nobody has yet tapped through the screens against a real host, and no device, APNs or hardware-keyboard check has run.
+- **It runs on the Mac too** (Mac Catalyst), and has been walked against a disposable demo host on the iPad and iPhone simulators and the Mac: Inbox, sessions, Files, Preview, branches, forks, worktrees, panes and the keyboard (`scripts/demo/`, see TEST-MATRIX).
 - The app needs the host on `ah` branches `native/1-device-auth` and `native/2-apns` (local, not yet pushed).
 
 ## On a Mac

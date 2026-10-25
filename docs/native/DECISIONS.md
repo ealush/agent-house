@@ -66,3 +66,14 @@ Following the owner's [WORKSPACE-SPEC.md](../../WORKSPACE-SPEC.md).
 | The session list is painted from the sealed cache, never trusted | Once a sign-in has its cache key, `HubStore` shows last time's hub state (sealed every 10 s while live and on backgrounding) until the host answers, with a banner saying so. It is only for showing: restoration still waits for live state, peers wait for their own streams, and the first live snapshot replaces it entirely. `HubStateDTO` and `SessionDTO` became `Codable` (their keys already covered every field). |
 | A content hit in an ended conversation opens its record, not a resume | The web resumes the session to show the matching turn. Natively an ended session's transcript reads without running anything, so a search result opens the record at that turn (older pages load until it's there) and Resume stays a deliberate choice. A live session opens on the GUI at the turn; a side-chat hit opens its Chat panel. |
 | Handoff carries the web's hash, not app state | The activity holds only the host origin and the web app's hash for the place (`#<uid>`, `#<host>/<uid>`, `#review/<stack>/<pr>`), so the same activity opens the app on another device or, as `webpageURL`, the host's web app in a browser (https hosts only). A device not set up for that host says so instead of guessing. [NSUserActivity](https://developer.apple.com/documentation/foundation/nsuseractivity), set on the window scene. |
+
+## Seeing it run — 25 October 2026
+
+| Decision | Why |
+| --- | --- |
+| Mac app as Mac Catalyst at iPad scale | One target, the same UIKit/SwiftUI code, real Mac windows with the menu bar, pointer and system window tiling. "Optimize for Mac" would restyle every control and needs its own design pass; "Designed for iPad" can't be built and run without a signing team. |
+| Debug-only `AH_EPHEMERAL`, `AH_DEBUG_PAIR`, `AH_SNAPSHOT_DIR` | A Mac build signed only to run locally has no keychain entitlement, and macOS won't load an ad-hoc test bundle into the UI-test runner. These let it run unattended for proof without writing secrets anywhere: everything stays in memory for one run. Never in release builds. |
+| Demo agents run under ah's own Claude Code preset | `scripts/demo/host.mjs` puts a `claude` script on the host's PATH, so launch choices (models, efforts, permission modes) are the real ones and nothing in the app is special-cased for the demo. |
+| Sessions and panes drag as their own content type | `dev.ealush.ah.native.session` (and `.group` for sidebar blocks), declared in Info.plist: a pane must not react to a file path or queued message dragged past it. |
+| Resizing stops at the minimum pane size | Squeezing a pane below 300 × 220 pt tipped the whole window into one-pane-at-a-time; the model now knows the canvas and clamps. |
+
