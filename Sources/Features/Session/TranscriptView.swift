@@ -277,7 +277,7 @@ private struct BlockRow: View {
                 ForEach(items) { item in
                     switch item {
                     case .part(_, let part):
-                        PartView(part: part, session: session, stepsHidden: stepsHidden)
+                        PartView(part: part, session: session, stepsHidden: stepsHidden, answered: !isLast)
                     case .tools(_, let calls):
                         ToolGroupView(calls: calls, session: session, stepsHidden: stepsHidden)
                     }
@@ -342,6 +342,8 @@ private struct PartView: View {
     let part: FeedPart
     let session: SessionModel
     let stepsHidden: Bool
+    /// A turn the conversation has moved past: its choices are history, not buttons.
+    var answered = false
     @Environment(\.theme) private var theme
     @State private var showReasoning = false
 
@@ -360,7 +362,7 @@ private struct PartView: View {
         case .media(_, let src, let alt):
             HostImage(source: src, alt: alt ?? "")
         case .widget(let widget):
-            WidgetView(model: WidgetModel(widget), reply: { text in Task { await session.reply(text) } })
+            WidgetView(model: WidgetModel(widget), answered: answered, reply: { text in Task { await session.reply(text) } })
         case .notice(_, let text):
             Text(text).font(.footnote).foregroundStyle(theme.muted)
         case .toolCall, .toolResult:

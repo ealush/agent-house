@@ -4,6 +4,9 @@ import SwiftUI
 /// Generative UI: every `ah-widget` type drawn natively, with unknown ones shown as their data.
 struct WidgetView: View {
     let model: WidgetModel
+    /// In a turn the conversation has moved past: choices and actions are kept to read,
+    /// not to press (a late tap would answer a question nobody's asking).
+    var answered = false
     /// Sends a reply to the agent (choices, card actions).
     let reply: (String) -> Void
     @Environment(\.theme) private var theme
@@ -42,7 +45,7 @@ struct WidgetView: View {
                 if !actions.isEmpty {
                     HStack {
                         ForEach(Array(actions.enumerated()), id: \.offset) { i, action in
-                            ReplyButton(label: action.label, prominent: i == 0, disabled: picked != nil) {
+                            ReplyButton(label: action.label, prominent: i == 0, disabled: answered || picked != nil) {
                                 picked = i
                                 reply(action.reply)
                             }
@@ -73,9 +76,10 @@ struct WidgetView: View {
                         .background(picked == i ? theme.accent.opacity(0.15) : theme.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }
                     .buttonStyle(.plain)
-                    .disabled(picked != nil && picked != i)
+                    .disabled(answered || (picked != nil && picked != i))
                 }
             }
+            .opacity(answered && picked == nil ? 0.55 : 1)
         case .table(let title, let columns, let rows):
             tableView(title: title, columns: columns, rows: rows)
         case .checklist(let title, let items):
