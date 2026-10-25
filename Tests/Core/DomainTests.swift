@@ -203,3 +203,8 @@ import Testing
     #expect(DeviceDescriptor.macName(hostName: "studio") == "studio")
     #expect(DeviceDescriptor.macName(hostName: "") == "Mac")
 }
+
+@Test func onlyStatusesThatNeedYouAskForWords() {
+    #expect(StatusWord.needsYou.asksForAttention && StatusWord.limited.asksForAttention)
+    #expect(!StatusWord.idle.asksForAttention && !StatusWord.working.asksForAttention && !StatusWord.done.asksForAttention && !StatusWord.newOutput.asksForAttention)
+}

@@ -11,6 +11,10 @@ enum StatusWord: String, CaseIterable, Sendable {
     case newOutput = "new output"
     case idle
 
+    /// Worth words where room is short (the sidebar): it can't go on without you. The rest
+    /// read from the dot's color.
+    var asksForAttention: Bool { self == .needsYou || self == .limited }
+
     init(status: SessionDTO.Status, agent: String?, limit: String?) {
         // Stopped on the plan's usage limit is neither done nor idle: it can't go on yet.
         if let limit, !limit.isEmpty, status != .busy && status != .waiting {

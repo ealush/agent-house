@@ -411,3 +411,20 @@ struct EmptyState: View {
         }
     }
 }
+
+/// A search snippet with its matched words picked out (the host marks them \u{1}…\u{2}).
+struct HighlightedSnippet: View {
+    let snippet: String
+    var lines = 2
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        SwitcherSearch.highlights(snippet).reduce(Text("")) { text, run in
+            text + (run.marked ? Text(run.text).bold().foregroundColor(theme.accent) : Text(run.text))
+        }
+        .font(.caption)
+        .foregroundStyle(theme.text2)
+        .lineLimit(lines)
+    }
+}
+

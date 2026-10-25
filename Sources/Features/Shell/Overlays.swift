@@ -499,14 +499,7 @@ private struct SwitcherRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.title + (row.fork ? " ⑂" : "")).font(.callout).lineLimit(1).foregroundStyle(theme.text)
                 Text(row.subtitle(multiHost)).font(.caption).foregroundStyle(theme.muted).lineLimit(1)
-                if let snippet = row.snippet {
-                    SwitcherSearch.highlights(snippet).reduce(Text("")) { text, run in
-                        text + (run.marked ? Text(run.text).bold().foregroundColor(theme.accent) : Text(run.text))
-                    }
-                    .font(.caption)
-                    .foregroundStyle(theme.text2)
-                    .lineLimit(2)
-                }
+                if let snippet = row.snippet { HighlightedSnippet(snippet: snippet) }
             }
             Spacer(minLength: 8)
             if let word = row.status {

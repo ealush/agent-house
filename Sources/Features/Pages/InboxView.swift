@@ -145,6 +145,8 @@ private struct ReviewAlertRow: View {
 struct SessionRowView: View {
     let row: SessionRow
     let multiHost: Bool
+    /// The sidebar: titles get the room, and only a status that needs you takes words.
+    var dense = false
     let open: () -> Void
     @Environment(\.theme) private var theme
     /// Increased when the row is selected in a focused list (filled with the accent).
@@ -174,7 +176,7 @@ struct SessionRowView: View {
                 }
                 Spacer(minLength: 4)
                 VStack(alignment: .trailing, spacing: 2) {
-                    StatusPill(word: row.word)
+                    StatusPill(word: row.word, compact: dense && !row.word.asksForAttention)
                     if row.dto.queued > 0 { Text("\(row.dto.queued) queued").font(.caption2).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint) }
                 }
             }
@@ -267,7 +269,7 @@ struct SessionListView: View {
             ForEach(sections) { section in
                 Section {
                     ForEach(section.rows) { row in
-                        SessionRowView(row: row, multiHost: false) { scene.open(row.key) }
+                        SessionRowView(row: row, multiHost: false, dense: !scene.narrow) { scene.open(row.key) }
                             .tag(row.key)
                             .draggable(SessionDrag(key: row.key))
                             .contextMenu { rowMenu(row) }
@@ -425,6 +427,15 @@ struct SearchView: View {
     @State var model: SearchModel
     @Environment(\.theme) private var theme
 
+    /// Where and when: the project (the folder's name), how long ago, and the host when
+    /// there's more than one.
+    private func searchMeta(_ hit: SearchHit, live: SessionRow?) -> String {
+        let project = live?.dto.project ?? (hit.cwd as NSString).lastPathComponent
+        let when = hit.at > 0 ? Date(timeIntervalSince1970: hit.at / 1000).formatted(.relative(presentation: .named)) : nil
+        let host = (scene.hub?.multiHost ?? false) ? hit.host : nil
+        return [project, when, host].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
     var body: some View {
         List {
             if let response = model.response {
@@ -440,18 +451,27 @@ struct SearchView: View {
                     Button {
                         scene.openHit(hit)
                     } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Image(systemName: hit.kind == "chat" ? "bubble.left.and.text.bubble.right" : "text.bubble")
-                                Text(hit.title).font(.subheadline.weight(.semibold)).lineLimit(1)
-                                Spacer()
-                                Text("\(hit.matches)").font(.caption).foregroundStyle(theme.faint)
+                        let live = hit.uid.flatMap { uid in scene.hub?.rows.first { $0.uid == uid } }
+                        HStack(alignment: .top, spacing: 12) {
+                            AgentMark(agent: hit.kind == "chat" ? nil : hit.harness, size: 26)
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(alignment: .firstTextBaseline) {
+                                    Text(live?.title ?? hit.title).font(.subheadline.weight(.semibold)).lineLimit(1)
+                                    if hit.kind == "chat" { Text("side chat").font(.caption2.weight(.semibold)).foregroundStyle(theme.muted) }
+                                    Spacer()
+                                    Text("\(hit.matches) match\(hit.matches == 1 ? "" : "es")").font(.caption).foregroundStyle(theme.faint)
+                                }
+                                ForEach(Array(hit.excerpts.prefix(2).enumerated()), id: \.offset) { _, excerpt in
+                                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                        Text(excerpt.role == "user" ? "You" : "Agent").font(.caption2.weight(.semibold)).foregroundStyle(theme.faint).frame(width: 38, alignment: .leading)
+                                        HighlightedSnippet(snippet: excerpt.snippet, lines: 3)
+                                    }
+                                }
+                                Text(searchMeta(hit, live: live)).font(.caption2).foregroundStyle(theme.faint).lineLimit(1)
                             }
-                            ForEach(Array(hit.excerpts.prefix(2).enumerated()), id: \.offset) { _, excerpt in
-                                Text(excerpt.snippet).font(.caption).foregroundStyle(theme.muted).lineLimit(3)
-                            }
-                            Text([hit.host, hit.cwd].joined(separator: " · ")).font(.caption2).foregroundStyle(theme.faint)
                         }
+                        .padding(.vertical, 4)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
