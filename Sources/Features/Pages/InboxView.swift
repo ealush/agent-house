@@ -55,12 +55,20 @@ struct InboxView: View {
             }
             if !inbox.running.isEmpty {
                 Section("Working") {
-                    ForEach(inbox.running) { row in SessionRowView(row: row, multiHost: hub.multiHost) { scene.open(row.key) } }
+                    ForEach(inbox.running) { row in
+                        SessionRowView(row: row, multiHost: hub.multiHost) { scene.open(row.key) }
+                            .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
+                            .swipeActions(edge: .trailing) { PinSwipe(row: row, hub: hub) }
+                    }
                 }
             }
             if !inbox.rest.isEmpty {
                 Section("Idle and done") {
-                    ForEach(inbox.rest) { row in SessionRowView(row: row, multiHost: hub.multiHost) { scene.open(row.key) } }
+                    ForEach(inbox.rest) { row in
+                        SessionRowView(row: row, multiHost: hub.multiHost) { scene.open(row.key) }
+                            .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
+                            .swipeActions(edge: .trailing) { PinSwipe(row: row, hub: hub) }
+                    }
                 }
             }
             if hub.rows.isEmpty {
@@ -324,13 +332,8 @@ struct SessionListView: View {
                         SessionRowView(row: row, multiHost: false, dense: !scene.narrow, selectable: !scene.narrow) { scene.open(row.key) }
                             .tag(row.key)
                             .draggable(SessionDrag(key: row.key))
-                            .contextMenu { rowMenu(row) }
-                            .swipeActions(edge: .trailing) {
-                                Button(row.dto.pinned ? "Unpin" : "Pin") {
-                                    Task { try? await hub.client(forKey: row.key).pin(row.uid, pinned: !row.dto.pinned); hub.refresh() }
-                                }
-                                .tint(.orange)
-                            }
+                            .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
+                            .swipeActions(edge: .trailing) { PinSwipe(row: row, hub: hub) }
                     }
                     .onMove { from, to in move(section: section, from: from, to: to) }
                 } header: {
@@ -347,8 +350,27 @@ struct SessionListView: View {
         .onChange(of: scene.focusRequest) { _, request in if request?.target == .sidebar { listFocused = true } }
     }
 
-    @ViewBuilder
-    private func rowMenu(_ row: SessionRow) -> some View {
+    private func move(section: SessionOrdering.Section, from: IndexSet, to: Int) {
+        guard let index = from.first else { return }
+        let dragged = section.rows[index]
+        let target = to >= section.rows.count ? section.rows.last! : section.rows[to]
+        let orders = SessionOrdering.movedOrders(section.rows, dragged: dragged.key, target: target.key, after: to >= section.rows.count)
+        Task {
+            for (key, order) in orders {
+                try? await hub.client(forKey: key).order(SessionKey(key)?.uid ?? key, order)
+            }
+            hub.refresh()
+        }
+    }
+}
+
+/// A session's long-press menu, the same wherever its row is (sidebar, Sessions, Inbox).
+struct SessionRowMenu: View {
+    let row: SessionRow
+    let scene: SceneModel
+    let hub: HubStore
+
+    var body: some View {
         Button("Open", systemImage: "arrow.up.right") { scene.open(row.key) }
         if !scene.narrow {
             Button("Open as a new pane", systemImage: "rectangle.split.2x1") { scene.run(.openAsPane(row.key)) }
@@ -367,18 +389,18 @@ struct SessionListView: View {
         Divider()
         Button("Terminate…", systemImage: "xmark.octagon", role: .destructive) { scene.sheet = .confirmTerminate(row.key) }
     }
+}
 
-    private func move(section: SessionOrdering.Section, from: IndexSet, to: Int) {
-        guard let index = from.first else { return }
-        let dragged = section.rows[index]
-        let target = to >= section.rows.count ? section.rows.last! : section.rows[to]
-        let orders = SessionOrdering.movedOrders(section.rows, dragged: dragged.key, target: target.key, after: to >= section.rows.count)
-        Task {
-            for (key, order) in orders {
-                try? await hub.client(forKey: key).order(SessionKey(key)?.uid ?? key, order)
-            }
-            hub.refresh()
+/// Swipe a session to pin it (or unpin), wherever its row is.
+struct PinSwipe: View {
+    let row: SessionRow
+    let hub: HubStore
+
+    var body: some View {
+        Button(row.dto.pinned ? "Unpin" : "Pin", systemImage: row.dto.pinned ? "pin.slash" : "pin") {
+            Task { try? await hub.client(forKey: row.key).pin(row.uid, pinned: !row.dto.pinned); hub.refresh() }
         }
+        .tint(.orange)
     }
 }
 
