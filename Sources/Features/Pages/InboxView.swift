@@ -80,8 +80,19 @@ struct InboxView: View {
         .navigationTitle("Inbox")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                Button { scene.perform("go-search") } label: { Image(systemName: "magnifyingglass") }.accessibilityLabel("Search")
+                // A phone has a Search tab, and no sidebar: its Inbox, the first page, holds
+                // what the sidebar's bar would.
+                if scene.narrow {
+                    MoreMenu(scene: scene)
+                } else {
+                    Button { scene.perform("go-search") } label: { Image(systemName: "magnifyingglass") }.accessibilityLabel("Search")
+                }
                 Button { scene.perform("new-session") } label: { Image(systemName: "plus") }.accessibilityLabel("New session")
+            }
+            if scene.narrow {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { scene.perform("go-settings") } label: { Image(systemName: "gearshape") }.accessibilityLabel("Settings")
+                }
             }
         }
     }

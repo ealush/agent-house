@@ -16,15 +16,41 @@ struct SidebarView: View {
             }
             .background(theme.background)
             .toolbar {
-                ToolbarItem(placement: .primaryAction) {
+                // At hand by touch: what otherwise only a key or the palette reaches.
+                ToolbarItemGroup(placement: .primaryAction) {
                     Button { scene.perform("new-session") } label: { Label("New session", systemImage: "plus") }
-                }
-                ToolbarItem(placement: .secondaryAction) {
-                    Button { scene.perform("go-settings") } label: { Label("Settings", systemImage: "gearshape") }
+                    MoreMenu(scene: scene, settings: true)
                 }
             }
             .navigationTitle(hub.hostname ?? "Agent Hub")
         }
+    }
+}
+
+/// What has no button of its own: a new project, worktrees, every command, the keys, and (in
+/// the sidebar) Settings.
+struct MoreMenu: View {
+    let scene: SceneModel
+    /// Where Settings has no button of its own (the iPad sidebar's bar, which keeps its title room).
+    var settings = false
+
+    var body: some View {
+        Menu {
+            if settings {
+                Button("Settings…", systemImage: "gearshape") { scene.perform("go-settings") }
+                Divider()
+            }
+            Button("New Project…", systemImage: "folder.badge.plus") { scene.perform("new-project") }
+            Button("Worktrees…", systemImage: "arrow.triangle.branch") { scene.perform("worktrees") }
+            Divider()
+            Button("All Commands…", systemImage: "command") { scene.perform("command-palette") }
+            if scene.hardwareKeyboard {
+                Button("Keyboard Shortcuts", systemImage: "keyboard") { scene.perform("show-shortcuts") }
+            }
+        } label: {
+            Label("More", systemImage: "ellipsis")
+        }
+        .menuOrder(.fixed)
     }
 }
 
