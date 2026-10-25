@@ -14,6 +14,8 @@ struct TerminalScreen: View {
     @State private var alt = false
     @State private var shift = false
     @State private var dropping = false
+    /// Bumped to attach afresh (back from the background).
+    @State private var attachment = 0
     @Environment(\.theme) private var theme
 
     var body: some View {
@@ -56,12 +58,21 @@ struct TerminalScreen: View {
             }
         }
         .background(Color(uiColor: UIColor(hex: theme.palette.terminal.background)))
-        .task(id: session.key) {
+        .task(id: "\(session.key)#\(attachment)") {
             let made = TerminalController(session: session, fontSize: scene.app.preferences.terminalFontSize, palette: theme.palette.terminal)
             controller = made
             made.start()
         }
         .onDisappear { controller?.stop() }
+        // An attached terminal counts as this device looking (ah's viewers): leaving the app
+        // detaches it, so what happens meanwhile isn't taken as seen; coming back reattaches.
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+            controller?.stop()
+            controller = nil
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            if controller == nil { attachment += 1 }
+        }
         .onChange(of: theme.palette.terminal) { _, palette in controller?.apply(palette) }
         .onChange(of: scene.app.preferences.terminalFontSize) { _, size in controller?.setFontSize(size) }
     }

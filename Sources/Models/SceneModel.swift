@@ -83,7 +83,7 @@ final class SceneModel {
         let rows = withObservationTracking { hub.rows } onChange: { [weak self, weak hub] in
             Task { @MainActor in if let hub { self?.watchSessions(hub) } }
         }
-        notice(rows)
+        notice(rows, live: !hub.showingCached)
     }
 
     // MARK: Presentation
@@ -202,12 +202,17 @@ final class SceneModel {
     /// Fed every change to the session list: a session off screen that turns to needing you,
     /// or from working to done, gets a nudge with a way to it. The first look at a list
     /// nudges nothing (that's the Inbox's job), and a nudge leaves once its session is on
-    /// screen or (needing you) was answered elsewhere.
-    func notice(_ rows: [SessionRow]) {
+    /// screen or (needing you) was answered elsewhere. A list read from the cache at launch
+    /// isn't a look: what changed since it was sealed is the Inbox's to show, not a nudge's.
+    func notice(_ rows: [SessionRow], live: Bool = true) {
+        guard live else {
+            seenWords = [:]
+            return
+        }
         var now: [String: StatusWord] = [:]
         for row in rows {
             now[row.key] = row.word
-            guard let before = seenWords[row.key], before != row.word, !onScreen(row.key) else { continue }
+            guard let before = seenWords[row.key], before != row.word, !shows(row.key) else { continue }
             let kind: Nudge.Kind? = row.word == .needsYou ? .needsYou : (row.word == .done && before == .working ? .finished : nil)
             guard let kind else { continue }
             nudges.removeAll { $0.key == row.key }
@@ -215,12 +220,13 @@ final class SceneModel {
             nudges.append(Nudge(id: nudgeID, key: row.key, title: row.title, agent: row.dto.agent, kind: kind))
             if nudges.count > 3 { nudges.removeFirst(nudges.count - 3) }
         }
-        let stale = nudges.filter { onScreen($0.key) || now[$0.key] == nil || ($0.kind == .needsYou && now[$0.key] != .needsYou) }
+        let stale = nudges.filter { shows($0.key) || now[$0.key] == nil || ($0.kind == .needsYou && now[$0.key] != .needsYou) }
         if !stale.isEmpty { nudges.removeAll { n in stale.contains { $0.id == n.id } } }
         seenWords = now
     }
 
-    private func onScreen(_ key: String) -> Bool {
+    /// The session is in front in this window: its route, or one of its visible panes.
+    func shows(_ key: String) -> Bool {
         if case .session(let open) = route, open == key { return true }
         return workspace.visibleKeys.contains(key)
     }
@@ -525,6 +531,7 @@ final class SceneModel {
             if workspace.layout == nil { route = .session(key) }
         }
         if let hub, hub.row(key) != nil { Task { try? await hub.client(forKey: key).focus(key: key) } }
+        app.didShowSessions?([key])
         pruneSessions()
         scheduleSave()
     }

@@ -223,6 +223,9 @@ final class AppModel {
     var keyBindings: KeyBindings {
         didSet { if keyBindings != oldValue { try? services.preferences.save(keyBindings) } }
     }
+    /// A window just showed these sessions (the platform takes their alerts out of
+    /// Notification Center: you've seen them).
+    @ObservationIgnored var didShowSessions: ((Set<String>) -> Void)?
 
     init(services: AppServices) {
         self.services = services

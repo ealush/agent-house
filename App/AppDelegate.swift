@@ -35,6 +35,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         push.installCategories()
         Task { await push.registerIfAuthorized() }
         observeBadge()
+        LocalAlerts.watch(app)
+        app.didShowSessions = { [weak app] keys in
+            guard let app else { return }
+            Task { await AlertJanitor.sweep(app, seen: keys) }
+        }
         return true
     }
 
@@ -119,9 +124,37 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         PushRegistrar.shared.didFail(error)
     }
 
-    /// Foreground: the session list already shows it, so only a banner for another session.
+    /// While the app runs (`AlertRules`): nothing for the session you're looking at, Notification
+    /// Center only while the app is in front (its own nudge says it), a banner otherwise.
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.banner, .list, .sound]
+        let payload = PushPayload(notification.request.content.userInfo)
+        return await MainActor.run {
+            // An alert can land already answered (here or elsewhere): look again once it's in.
+            if let app = self.app {
+                Task {
+                    try? await Task.sleep(for: .seconds(1))
+                    await AlertJanitor.sweep(app)
+                }
+            }
+            return self.presentation(of: payload)
+        }
+    }
+
+    private func presentation(of payload: PushPayload?) -> UNNotificationPresentationOptions {
+        let key = payload.flatMap { p in app.flatMap { AlertJanitor.session(p.link, in: $0)?.key } }
+        let active = UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
+        let onScreen = key.map { key in
+            UIApplication.shared.connectedScenes.contains { scene in
+                scene.activationState == .foregroundActive && ((scene.delegate as? SceneDelegate)?.model?.shows(key) ?? false)
+            }
+        } ?? false
+        let decided = AlertRules.presentation(key: key, onScreen: onScreen, appActive: active)
+        alertLog.debug("an alert arrived in front: \(String(describing: decided), privacy: .public)")
+        switch decided {
+        case .banner: return [.banner, .list, .sound]
+        case .listOnly: return [.list]
+        case .nothing: return []
+        }
     }
 
     /// A tap opens the session or review layer in the most recent window; Approve, Deny and
@@ -180,6 +213,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             let count = app.badgeCount
             PushRegistrar.shared.updateBadge(count)
             QuickActions.update(needsYou: count, signedIn: app.accounts.contains { $0.status == .signedIn })
+            // Fewer waiting: some "needs you" alert may be answered (here or elsewhere).
+            Task { await AlertJanitor.sweep(app) }
         } onChange: {
             Task { @MainActor [weak self] in self?.observeBadge() }
         }

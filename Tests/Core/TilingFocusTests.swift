@@ -331,6 +331,20 @@ private func row(_ key: String, _ title: String, status: String) throws -> Sessi
     #expect(scene.workspace.focusedKey == "c" || scene.route == .session("c"))
 }
 
+@MainActor
+@Test func theCachedListAtLaunchIsNotALook() throws {
+    let scene = try windowWithoutHost()
+    // Sealed while it was working; by the time the host answers, it needs you. That's
+    // the Inbox's news, not a nudge popping up over a cold launch.
+    scene.notice([try row("b", "Keys", status: "busy")], live: false)
+    scene.notice([try row("b", "Keys", status: "waiting")])
+    #expect(scene.nudges.isEmpty)
+    // From then on, changes nudge as usual.
+    scene.notice([try row("b", "Keys", status: "busy")])
+    scene.notice([try row("b", "Keys", status: "waiting")])
+    #expect(scene.nudges.map(\.key) == ["b"])
+}
+
 private func forked(_ key: String, _ title: String, root: String?, created: Double) throws -> SessionRow {
     var object: [String: Any] = ["id": "%\(key)", "uid": key, "name": title, "title": title, "statusSource": "hook", "project": "web", "projectPath": "/p/web", "status": "idle", "command": "node", "agent": "claude", "branch": "ah/\(key)", "createdAt": created]
     if let root { object["fork"] = ["parentUid": root, "parentTitle": "Root", "rootUid": root, "forks": 0] }

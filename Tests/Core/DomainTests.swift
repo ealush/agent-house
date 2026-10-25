@@ -297,3 +297,43 @@ import Testing
     #expect(Uploads.typed(["/up/a.png", "/up/my shot.png"]) == "/up/a.png '/up/my shot.png' ", "quoted when needed, a space after, ready for more")
     #expect(Uploads.typed([]) == "")
 }
+
+@Test func alertsStayOutOfTheWayOfWhatYouAreDoing() {
+    #expect(AlertRules.presentation(key: "a", onScreen: true, appActive: true) == .nothing, "you're looking at it")
+    #expect(AlertRules.presentation(key: "a", onScreen: false, appActive: true) == .listOnly, "the app's own nudge says it")
+    #expect(AlertRules.presentation(key: "a", onScreen: false, appActive: false) == .banner)
+    #expect(AlertRules.presentation(key: nil, onScreen: false, appActive: true) == .banner, "a stack review has no nudge")
+    let delivered = [
+        AlertRules.Delivered(id: "1", key: "keys", event: "waiting"),
+        AlertRules.Delivered(id: "2", key: "docs", event: "waiting"),
+        AlertRules.Delivered(id: "3", key: "web", event: "done"),
+        AlertRules.Delivered(id: "4", key: "api", event: "done"),
+        AlertRules.Delivered(id: "5", key: nil, event: "waiting"),
+    ]
+    #expect(AlertRules.stale(delivered, waiting: ["keys"], seen: ["api"]) == ["2", "4"], "answered elsewhere, or opened here; a finished one stays until seen")
+    let offline = [AlertRules.Delivered(id: "6", key: "docs", event: "waiting", live: false)]
+    #expect(AlertRules.stale(offline, waiting: [], seen: []).isEmpty, "a host that isn't live can't say it was answered")
+    #expect(AlertRules.stale(offline, waiting: [], seen: ["docs"]) == ["6"], "but opening it is still seeing it")
+}
+
+@Test func theAppWorksOutTheHostsAlertsFromItsOwnLists() throws {
+    func row(_ status: String, ask: [String: Any]? = nil, answerable: Bool = false, limit: String? = nil) throws -> SessionRow {
+        var object: [String: Any] = ["id": "@1", "uid": "u1", "name": "keys", "title": "Rotate keys", "statusSource": "screen", "project": "infra", "projectPath": "/p/infra", "status": status, "command": "claude", "agent": "claude", "answerable": answerable]
+        if let ask { object["ask"] = ask }
+        if let limit { object["limit"] = limit }
+        return SessionRow(key: "u1", host: "box", isLocal: true, dto: try JSONDecoder().decode(SessionDTO.self, from: JSONSerialization.data(withJSONObject: object)))
+    }
+    var watcher = AlertWatcher()
+    let start = Date()
+    #expect(watcher.observe(origin: "h", rows: [try row("waiting")], now: start).isEmpty, "the first look alerts nothing")
+    #expect(watcher.observe(origin: "h", rows: [try row("busy")], now: start).isEmpty)
+    let asked = watcher.observe(origin: "h", rows: [try row("waiting", ask: ["kind": "command", "text": "Bash command\n./keys/rotate.sh"], answerable: true)], now: start.addingTimeInterval(40))
+    #expect(asked == [.init(id: "h#u1", event: .waiting, title: "Rotate keys needs you", body: "infra · Wants to run ./keys/rotate.sh", host: "box", uid: "u1", answerable: true)])
+    _ = watcher.observe(origin: "h", rows: [try row("busy")], now: start.addingTimeInterval(50))
+    #expect(watcher.observe(origin: "h", rows: [try row("attention")], now: start.addingTimeInterval(60)).isEmpty, "within 30 s of the last alert: quiet")
+    _ = watcher.observe(origin: "h", rows: [try row("busy")], now: start.addingTimeInterval(80))
+    let done = watcher.observe(origin: "h", rows: [try row("attention")], now: start.addingTimeInterval(90), agentName: { $0 == "claude" ? "Claude Code" : $0 })
+    #expect(done.first?.title == "Rotate keys finished" && done.first?.body == "infra · Claude Code" && done.first?.answerable == false)
+    #expect(watcher.observe(origin: "h", rows: [try row("idle")], now: start.addingTimeInterval(200)).isEmpty, "settling to idle isn't news")
+    #expect(watcher.observe(origin: "other", rows: [try row("waiting")], now: start).isEmpty, "each host has its own first look")
+}

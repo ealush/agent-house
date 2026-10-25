@@ -617,8 +617,12 @@ private struct NotificationsSection: View {
 
     var body: some View {
         Form {
-            if let error = model.error ?? push.lastError { Banner(text: error, tone: .error) }
-            if let status = model.status, !status.configured {
+            if push.pushUnavailable {
+                Banner(text: PushRegistrar.unavailableNote, tone: .info)
+            } else if let error = model.error ?? push.lastError {
+                Banner(text: error, tone: .error)
+            }
+            if !push.pushUnavailable, let status = model.status, !status.configured {
                 Banner(text: "This host has no APNs key configured, so it can’t notify this device yet. Its owner adds one under `apns` in the host’s config.", tone: .warning)
             }
             if push.authorization == .denied {

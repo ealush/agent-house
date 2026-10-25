@@ -90,14 +90,25 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func sceneWillEnterForeground(_ scene: UIScene) {
         model?.willEnterForeground()
+        LocalAlerts.endBackground()
         if let app = model?.app {
             app.resyncAll()
             Task { await PushRegistrar.shared.registerIfAuthorized() }
         }
     }
 
+    /// Back in front: alerts for the sessions on screen are read, and "needs you" alerts
+    /// answered meanwhile (on another device) go.
+    func sceneDidBecomeActive(_ scene: UIScene) {
+        guard let model else { return }
+        var shown = Set(model.workspace.visibleKeys)
+        if case .session(let key) = model.route { shown.insert(key) }
+        Task { await AlertJanitor.sweep(model.app, seen: shown) }
+    }
+
     func sceneDidEnterBackground(_ scene: UIScene) {
         model?.didEnterBackground()
+        if let app = model?.app { LocalAlerts.keepWatching(app) }
     }
 
     /// The system keeps this with the scene session; GRDB holds the window's real state.
