@@ -210,6 +210,23 @@ struct StackSummary: Codable, Equatable, Sendable, Identifiable {
     let spine: [Spine]
 }
 
+extension StackSummary {
+    /// Where the stack stands, in words: how many layers are in each state (the ones that
+    /// want something first), and the layer up next.
+    var statusLine: String {
+        let order: [(LayerStatus, String)] = [
+            (.changes, "with changes asked"), (.rereview, "to re-review"), (.fixing, "being fixed"), (.unreviewed, "to review"),
+            (.approved, "reviewed"), (.merged, "merged"), (.skipped, "skipped"), (.closed, "closed"),
+        ]
+        var parts = order.compactMap { status, words -> String? in
+            let n = spine.filter { $0.status == status }.count
+            return n > 0 ? "\(n) \(words)" : nil
+        }
+        if let next, merged < layers { parts.append("next up #\(next)") }
+        return parts.joined(separator: " · ")
+    }
+}
+
 struct Candidate: Codable, Equatable, Sendable, Hashable, Identifiable {
     var id: Int { number }
     let number: Int

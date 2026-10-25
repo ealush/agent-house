@@ -17,18 +17,26 @@ struct ReviewHomeView: View {
                 Button {
                     scene.openReview(ReviewRoute(stack: stack.id))
                 } label: {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text(stack.title).font(.headline).foregroundStyle(theme.text)
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .firstTextBaseline) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(stack.title).font(.headline).foregroundStyle(theme.text)
+                                Text("\(stack.repo) → \(stack.trunk)").font(.caption).foregroundStyle(theme.muted)
+                            }
                             Spacer()
                             if stack.needsYou > 0 {
-                                Text("\(stack.needsYou) need you").font(.caption.weight(.semibold)).foregroundStyle(theme.brand)
+                                Text("\(stack.needsYou) need\(stack.needsYou == 1 ? "s" : "") you")
+                                    .font(.caption.weight(.semibold))
+                                    .padding(.horizontal, 8).padding(.vertical, 3)
+                                    .background(theme.brand.opacity(0.14), in: Capsule())
+                                    .foregroundStyle(theme.brand)
                             }
                         }
-                        Text("\(stack.repo) → \(stack.trunk) · \(stack.merged)/\(stack.layers) merged").font(.caption).foregroundStyle(theme.muted)
-                        SpineDots(spine: stack.spine)
+                        SpineBar(spine: stack.spine)
+                        Text(stack.statusLine).font(.caption).foregroundStyle(theme.muted)
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
@@ -47,23 +55,34 @@ struct ReviewHomeView: View {
     }
 }
 
-/// Each layer as a dot in the shared status vocabulary, bottom to top.
-struct SpineDots: View {
+/// The stack as one bar, bottom layer first: a segment per layer in its status's color, with
+/// its PR number under it while they fit.
+struct SpineBar: View {
     let spine: [StackSummary.Spine]
     @Environment(\.theme) private var theme
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(alignment: .top, spacing: 4) {
             ForEach(spine, id: \.pr) { layer in
-                Capsule()
-                    .fill(color(layer.status))
-                    .frame(width: 18, height: 6)
-                    .accessibilityLabel("#\(layer.pr) \(layer.status.word)")
+                VStack(alignment: .leading, spacing: 4) {
+                    Capsule()
+                        .fill(LayerColor.color(layer.status, theme))
+                        .frame(height: 6)
+                    if spine.count <= 8 {
+                        Text("#\(layer.pr)").font(.caption2.monospacedDigit()).foregroundStyle(theme.faint)
+                    }
+                }
+                .frame(maxWidth: 140)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("#\(layer.pr) \(layer.status.word)")
             }
         }
     }
+}
 
-    private func color(_ status: LayerStatus) -> Color {
+/// A layer status's color in the shared vocabulary.
+enum LayerColor {
+    static func color(_ status: LayerStatus, _ theme: Theme) -> Color {
         switch status.tone {
         case .needs: return theme.brand
         case .busy: return theme.run

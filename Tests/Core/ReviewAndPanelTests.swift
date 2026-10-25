@@ -210,3 +210,10 @@ private func snap(_ id: Int, turn: Int, kind: String = "turn", prompt: String = 
     #expect(ReviewModel.blockedReason("not fetched yet") != nil)
     #expect(ReviewModel.blockedReason("cached") == nil)
 }
+
+@Test func aStackSaysWhereItStandsWantsFirst() {
+    let summary = StackSummary(id: "s1", title: "Cache", repo: "o/api", trunk: "main", state: "open", source: "chain", ghStack: nil, layers: 3, merged: 1, needsYou: 1, next: 102, syncedAt: 0, spine: [
+        .init(pr: 101, role: "layer", status: .merged), .init(pr: 102, role: "layer", status: .rereview), .init(pr: 103, role: "layer", status: .unreviewed),
+    ])
+    #expect(summary.statusLine == "1 to re-review · 1 to review · 1 merged · next up #102")
+}

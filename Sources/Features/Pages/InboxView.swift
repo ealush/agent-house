@@ -456,6 +456,8 @@ struct SearchView: View {
     @Bindable var scene: SceneModel
     @State var model: SearchModel
     @Environment(\.theme) private var theme
+    /// Coming to Search means typing: the field takes the keyboard when it's empty.
+    @FocusState private var fieldFocused: Bool
 
     /// Where and when: the project (the folder's name), how long ago, and the host when
     /// there's more than one.
@@ -517,6 +519,7 @@ struct SearchView: View {
             if let error = model.error { Banner(text: error, tone: .error) }
         }
         .searchable(text: $model.query.q, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search every conversation")
+        .searchFocused($fieldFocused)
         .searchScopes($model.query.scopeOrAll) {
             Text("All").tag("all")
             Text("Transcripts").tag("transcripts")
@@ -551,6 +554,7 @@ struct SearchView: View {
         }
         .onAppear {
             if let saved = scene.search, model.query.q.isEmpty { model.query = saved }
+            if model.query.q.isEmpty { fieldFocused = true }
         }
         .navigationTitle("Search")
     }
