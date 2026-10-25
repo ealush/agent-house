@@ -141,3 +141,21 @@ import Testing
     #expect(!ws.sidebarVisible)
     #expect(ws.journalSpaces == snapshot.workspaces)
 }
+
+@MainActor
+@Test func aPhonesReviewTabPushesTheStackOverItsList() throws {
+    let services = AppServices(
+        database: try AppDatabase(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)),
+        vault: CredentialVault(store: MemorySecretStore()), keys: MemoryDeviceKeyStore(),
+        transport: URLSessionTransport(), device: DeviceDescriptor(name: "iPhone", client: DeviceDescriptor.newClientID()), allowLoopback: true
+    )
+    let scene = SceneModel(sceneID: "phone-review", app: AppModel(services: services))
+    scene.narrow = true
+    scene.openReview(ReviewRoute(stack: "s1"))
+    #expect(scene.pushedReview == ReviewRoute(stack: "s1"), "the tab's root is the list, so the stack is pushed")
+    scene.pushedReview = nil
+    #expect(scene.route == .review(ReviewRoute()), "back returns to the list")
+    scene.narrow = false
+    scene.openReview(ReviewRoute(stack: "s1"))
+    #expect(scene.pushedReview == nil, "an iPad's detail shows the stack itself")
+}

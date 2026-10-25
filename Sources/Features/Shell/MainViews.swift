@@ -106,7 +106,11 @@ struct PageView: View {
                     if target.stack != nil {
                         StackCockpitView(scene: scene, model: review, route: target)
                     } else {
+                        // A phone's Review tab keeps the list as its root and pushes the stack.
                         ReviewHomeView(scene: scene, model: review)
+                            .navigationDestination(item: $scene.pushedReview) { target in
+                                StackCockpitView(scene: scene, model: review, route: target)
+                            }
                     }
                 } else {
                     Color.clear.onAppear { review = ReviewModel(api: hub.api) }

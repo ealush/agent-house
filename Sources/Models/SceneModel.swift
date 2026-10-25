@@ -236,6 +236,18 @@ final class SceneModel {
 
     func openReview(_ target: ReviewRoute) { show(.review(target)) }
 
+    /// On a phone, the stack the Review tab shows over its list (its root is always the
+    /// list); going back returns to the list.
+    var pushedReview: ReviewRoute? {
+        get {
+            guard narrow, case .review(let target) = route, target.stack != nil else { return nil }
+            return target
+        }
+        set {
+            if let newValue { openReview(newValue) } else if pushedReview != nil { show(.review(ReviewRoute())) }
+        }
+    }
+
     // MARK: Restoration
 
     func snapshot() -> SceneSnapshot {
