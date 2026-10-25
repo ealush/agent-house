@@ -1,11 +1,13 @@
 import XCTest
 
 /// Pairing on a fresh install. Needs no host: an address that isn't a valid tailnet HTTPS
-/// origin is refused before anything leaves the device.
+/// origin is refused before anything leaves the device. Each launch is ephemeral (debug
+/// builds), so a simulator that was paired before still opens on pairing.
 @MainActor
 final class HostSetupUITests: XCTestCase {
     func testPlainHTTPAddressIsRefusedBeforeEnrolling() {
         let app = XCUIApplication()
+        app.launchEnvironment["AH_EPHEMERAL"] = "1"
         app.launch()
         let address = app.textFields["hostAddress"]
         XCTAssertTrue(address.waitForExistence(timeout: 10), "a fresh install opens on pairing")
@@ -22,6 +24,7 @@ final class HostSetupUITests: XCTestCase {
 
     func testConnectNeedsAnAddressAndACode() {
         let app = XCUIApplication()
+        app.launchEnvironment["AH_EPHEMERAL"] = "1"
         app.launch()
         let connect = app.buttons["connectHost"]
         XCTAssertTrue(connect.waitForExistence(timeout: 10))
