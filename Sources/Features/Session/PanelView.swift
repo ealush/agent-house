@@ -877,6 +877,7 @@ private struct SnapshotsPanel: View {
                 .disabled(model.restoring != nil)
             Button { undo = nil } label: { Image(systemName: "xmark").font(.caption.weight(.bold)) }
                 .buttonStyle(.plain)
+                .hoverEffect(.highlight)
                 .foregroundStyle(theme.faint)
                 .accessibilityLabel("Dismiss")
         }
@@ -1179,6 +1180,7 @@ private struct PreviewPanel: View {
                                     .background(theme.raised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                                 }
                                 .buttonStyle(.plain)
+                                .hoverEffect(.highlight)
                                 .accessibilityIdentifier("preview:\(port)")
                             }
                         }

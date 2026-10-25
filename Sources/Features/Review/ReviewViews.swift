@@ -39,6 +39,7 @@ struct ReviewHomeView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .hoverEffect(.highlight)
             }
         }
         .navigationTitle("Review")

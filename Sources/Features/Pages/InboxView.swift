@@ -139,6 +139,7 @@ private struct AskCard: View {
                 }
             }
             .buttonStyle(.plain)
+            .hoverEffect(.highlight)
             if let ask = row.dto.ask {
                 AskSummaryView(parts: AskParts(ask, detail: row.dto.detail), showTerminalText: false)
             }
@@ -204,6 +205,7 @@ struct SessionRowView: View {
         } else {
             Button(action: open) { content.contentShape(Rectangle()) }
                 .buttonStyle(.plain)
+                .hoverEffect(.highlight)
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("\(row.title), \(row.word.rawValue). \(detail)")
                 .accessibilityIdentifier("session:\(row.title)")
@@ -463,6 +465,7 @@ struct HistoryRowView: View {
             }
         }
         .buttonStyle(.plain)
+        .hoverEffect(.highlight)
         .swipeActions(edge: .leading) {
             Button("Resume") { resume() }.tint(.green)
         }
@@ -555,6 +558,7 @@ struct SearchView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .hoverEffect(.highlight)
                 }
                 if response.results.count < response.total {
                     Button("More results") { Task { await model.more() } }

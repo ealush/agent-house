@@ -409,6 +409,7 @@ struct SwitcherView: View {
                                 Label("See all results for “\(text)”", systemImage: "arrow.right").font(.callout)
                             }
                             .buttonStyle(.plain)
+                            .hoverEffect(.highlight)
                             .foregroundStyle(theme.accent)
                             .padding(.horizontal, 18)
                             .padding(.vertical, 10)

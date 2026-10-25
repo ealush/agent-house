@@ -191,6 +191,7 @@ private struct ScreenChoicesView: View {
                     .background(index == 0 ? theme.accent.opacity(0.1) : theme.text.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 .buttonStyle(.plain)
+                .hoverEffect(.highlight)
                 .disabled(sent != nil)
             }
         }
@@ -261,6 +262,7 @@ struct QuestionFormView: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .hoverEffect(.highlight)
                             .accessibilityAddTraits(on ? .isSelected : [])
                         }
                         if otherOpen.contains(qi) {

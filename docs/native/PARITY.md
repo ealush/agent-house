@@ -625,6 +625,26 @@ Source: SPEC implementation gates, Apple standards and definition of excellence.
 | [ ] | Q-19 | Run Linux core and macOS simulator CI, and fix failures before any review-ready shipping claim — *CI runs on push; not pushed without authorization* | P0 | blocked |
 | [ ] | Q-20 | Backward-compatible backend/web/CLI/security regression evidence; meaningful independent stack-layer checks; publish/push/deploy only when user instructs — *ah suite 552/552 and tsc on native/1-device-auth + native/2-apns* | P0 | implemented |
 
+## Platform integration
+
+How the app reaches into iOS beyond its own windows. Verified scope in each row.
+
+| Done | ID | Integration | Where | Evidence |
+| --- | --- | --- | --- | --- |
+| [ ] | PL-01 | App Intents: Open Session, What Needs Me, New Session, Send Message, Show Inbox; App Shortcuts phrases (Siri, Spotlight, Action button) | [AppIntents.swift](../../Sources/Platform/AppIntents.swift), [AppShortcuts.swift](../../Sources/Models/AppShortcuts.swift) | UT ranking, matching, spoken summaries; builds for iOS; not yet run from Siri on a device |
+| [ ] | PL-02 | Home Screen quick actions: New Session, Search, Inbox with a live count | [QuickActions.swift](../../Sources/Platform/QuickActions.swift), Info.plist | UT commands and titles; simulator |
+| [ ] | PL-03 | Notification actions: Approve/Deny on answerable asks, Reply on a finished session | [Push.swift](../../Sources/Platform/Push.swift), AppDelegate | simulator push payloads; APNs delivery needs signing |
+| [x] | PL-04 | Badge: sessions that need you, across hosts | AppDelegate | UT inbox badge; simulator |
+| [ ] | PL-05 | Windows: multiple scenes, state restoration per window, titles, New Window, Open in New Window | SceneDelegate, SceneModel | UT titles, restoration IT; simulator |
+| [x] | PL-06 | Handoff between devices | [Handoff.swift](../../Sources/Domain/Handoff.swift) | UT |
+| [x] | PL-07 | Keyboard: UIKeyCommand menus, ⌘-hold overlay, rebinding | Keyboard | UT + IT |
+| [ ] | PL-08 | Pointer: hover highlight on every custom control, focus follows pointer | Features | simulator |
+| [x] | PL-09 | Drag and drop: sessions to panes and groups, files into Files and the composer | Features | UI tours |
+| [x] | PL-10 | QuickLook and the share sheet for host files | PanelView | UI tour |
+| [x] | PL-11 | Face ID / Secure Enclave device key; Keychain bearer | NativeAuth, Keychain | UT + IT (software key) |
+| [ ] | PL-12 | Live Activities and widgets | — | Not built: a working session's state reaches a suspended app only by push, and ah has no Live Activity push yet (RISKS) |
+| [ ] | PL-13 | Share extension (send text or a link into a new session) | — | Not built: an extension needs a shared keychain group, which needs signing (RISKS) |
+
 ## Host and browser exclusions
 
 These are deliberate specification boundaries, not pending requests to clone web/host code onto iOS. F IDs remain in the audit table so the source capability is not lost. Their native replacement or retained host behavior still needs the listed evidence; absence of an excluded artifact does not make an entire product feature complete.

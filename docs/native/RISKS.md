@@ -14,3 +14,6 @@ Updated 25 October 2026.
 | P1 | Review confidence | Exact-head merge re-syncs and refuses a moved head; "No checks reported" is never treated as passing; nothing is marked reviewed for you. Needs a disposable GitHub stack fixture to verify end to end. |
 | P2 | Preview isolation | Non-persistent `WKWebView` with a host-only preview cookie; HMR/WebSocket behavior through the proxy needs a device check. |
 | P2 | Release packaging | App icon, privacy manifest review, App Store metadata and distribution signing. |
+| P2 | Live Activities and widgets | A working session's progress would go stale on the Lock Screen: a suspended app hears nothing until a push arrives, and ah sends no Live Activity pushes. Needs an ActivityKit push-to-update path in ah, plus a widget extension with signing. |
+| P2 | Share extension | Sending text or a link into a new session from another app needs an extension that can read the device's sign-in: a shared keychain access group, which needs a signed team. |
+| P2 | Siri on a device | The App Intents build and their logic is unit tested, but no phrase has been spoken to Siri on a device yet; App Shortcuts registration is only visible on a signed install. |

@@ -76,6 +76,7 @@ struct WidgetView: View {
                         .background(picked == i ? theme.accent.opacity(0.15) : theme.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }
                     .buttonStyle(.plain)
+                    .hoverEffect(.highlight)
                     .disabled(answered || (picked != nil && picked != i))
                 }
             }
@@ -142,6 +143,7 @@ struct WidgetView: View {
                         }
                     }
                     .buttonStyle(.plain)
+                    .hoverEffect(.highlight)
                     .disabled({ if case .unsupported = link.target { return true } else { return false } }())
                 }
             }

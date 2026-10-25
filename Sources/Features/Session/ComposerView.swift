@@ -258,7 +258,7 @@ struct LaunchChips: View {
         case .compact: value
         case .symbols: nil
         }
-        return Button(action: action) { chipLabel(name, symbol, shown, spoken: value ?? fallback, danger: false) }.buttonStyle(.plain)
+        return Button(action: action) { chipLabel(name, symbol, shown, spoken: value ?? fallback, danger: false) }.buttonStyle(.plain).hoverEffect(.highlight)
     }
 
     private func chipLabel(_ name: String, _ symbol: String, _ value: String?, spoken: String, danger: Bool) -> some View {
@@ -308,6 +308,7 @@ private struct SuggestionList: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .hoverEffect(.highlight)
                         .id(i)
                     }
                 }

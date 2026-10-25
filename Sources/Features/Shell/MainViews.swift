@@ -90,6 +90,7 @@ private struct PageLinks: View {
             .background(active ? theme.accentStrong.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
+        .hoverEffect(.highlight)
         .foregroundStyle(active ? theme.text : theme.muted)
         .accessibilityLabel(badge > 0 ? "\(title), \(badge) need you" : title)
         .accessibilityAddTraits(active ? .isSelected : [])
@@ -447,6 +448,7 @@ private struct PaneStrip: View {
                         .foregroundStyle(active ? theme.text : theme.muted)
                     }
                     .buttonStyle(.plain)
+                    .hoverEffect(.highlight)
                     .accessibilityAddTraits(active ? .isSelected : [])
                 }
             }
@@ -483,6 +485,7 @@ private struct ZoomBadge: View {
             .shadow(color: .black.opacity(0.15), radius: 8, y: 3)
         }
         .buttonStyle(.plain)
+        .hoverEffect(.highlight)
         .padding(10)
         .accessibilityLabel("Maximized, pane \(index + 1) of \(count). Restore the layout")
     }

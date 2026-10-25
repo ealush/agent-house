@@ -118,6 +118,7 @@ struct NewSessionSheet: View {
                                     .overlay(Capsule().stroke(presetID == p.id ? theme.accentStrong : .clear))
                                 }
                                 .buttonStyle(.plain)
+                                .hoverEffect(.highlight)
                                 .accessibilityAddTraits(presetID == p.id ? .isSelected : [])
                             }
                         }
@@ -137,6 +138,7 @@ struct NewSessionSheet: View {
                         } else {
                             Button(action: editFolder) { PathLabel(path: cwd) }
                                 .buttonStyle(.plain)
+                                .hoverEffect(.highlight)
                                 .accessibilityLabel("Folder \(cwd)")
                                 .accessibilityHint("Edit the path")
                         }
@@ -293,6 +295,7 @@ struct NewSessionSheet: View {
                 .overlay(Capsule().stroke(on ? theme.accentStrong : .clear))
         }
         .buttonStyle(.plain)
+        .hoverEffect(.highlight)
         .accessibilityAddTraits(on ? .isSelected : [])
     }
 

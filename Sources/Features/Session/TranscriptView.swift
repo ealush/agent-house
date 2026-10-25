@@ -408,6 +408,7 @@ private struct PartView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .hoverEffect(.highlight)
                     .accessibilityLabel(showReasoning ? "Hide thinking" : "Show thinking")
                     if showReasoning {
                         MarkdownView(text, compact: true).foregroundStyle(theme.muted)
@@ -456,6 +457,7 @@ private struct ToolGroupView: View {
                     .foregroundStyle(summary.failed > 0 ? theme.danger : theme.muted)
                 }
                 .buttonStyle(.plain)
+                .hoverEffect(.highlight)
                 if unfolded { rows(calls) }
             } else {
                 let hidden = ToolGroupSummary.hiddenCount(total: calls.count, showAll: showAll)
@@ -463,6 +465,7 @@ private struct ToolGroupView: View {
                     Button("\(hidden) earlier step\(hidden == 1 ? "" : "s")") { withAnimation(.snappy) { showAll = true } }
                         .font(.footnote)
                         .buttonStyle(.plain)
+                        .hoverEffect(.highlight)
                         .foregroundStyle(theme.muted)
                 }
                 rows(Array(calls.suffix(calls.count - hidden)))
@@ -510,6 +513,7 @@ struct ToolRowView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .hoverEffect(.highlight)
             .accessibilityLabel("\(view.label) \(view.summary), \(view.status.accessibilityLabel)")
             .accessibilityHint(open ? "Collapses the details" : "Shows the details")
             if open {
@@ -605,6 +609,7 @@ private struct ToolBodyView: View {
                 Label(path, systemImage: "doc.text").font(.caption.monospaced()).lineLimit(1).truncationMode(.head)
             }
             .buttonStyle(.plain)
+            .hoverEffect(.highlight)
             .foregroundStyle(theme.accent)
         }
     }
@@ -805,6 +810,7 @@ private struct StartConversation: View {
                             .background(theme.raised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                         }
                         .buttonStyle(.plain)
+                        .hoverEffect(.highlight)
                     }
                 }
                 if !recent.isEmpty {
@@ -827,6 +833,7 @@ private struct StartConversation: View {
                                 .padding(.vertical, 9)
                             }
                             .buttonStyle(.plain)
+                            .hoverEffect(.highlight)
                         }
                     }
                 }
