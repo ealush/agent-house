@@ -420,7 +420,8 @@ private struct ShortcutRow: View {
                 ChordRecorder(done: finished).frame(width: 170, height: 30)
             } else {
                 HStack(spacing: 6) {
-                    ForEach(Array(chords.enumerated()), id: \.offset) { _, chord in
+                    ForEach(Array(chords.enumerated()), id: \.offset) { i, chord in
+                        if i > 0 { Text("or").font(.caption2).foregroundStyle(theme.faint) }
                         Menu {
                             Button("Change…", systemImage: "keyboard") { recording = ShortcutsSection.Recording(id: id, replacing: chord) }
                             Button("Remove", systemImage: "minus.circle", role: .destructive) { app.keyBindings.remove(id, chord) }

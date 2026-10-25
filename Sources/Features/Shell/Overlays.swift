@@ -567,7 +567,11 @@ struct ShortcutsView: View {
                                     }
                                     Spacer()
                                     HStack(spacing: 6) {
-                                        ForEach(Array(bindings.chords(c.id).enumerated()), id: \.offset) { _, chord in Keycaps(chord) }
+                                        // Alternatives, not one long chord: "or" between them.
+                                        ForEach(Array(bindings.chords(c.id).enumerated()), id: \.offset) { i, chord in
+                                            if i > 0 { Text("or").font(.caption2).foregroundStyle(theme.faint) }
+                                            Keycaps(chord)
+                                        }
                                     }
                                 }
                                 .accessibilityElement(children: .combine)
