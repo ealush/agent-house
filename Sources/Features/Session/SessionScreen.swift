@@ -405,17 +405,33 @@ private struct EndedBanner: View {
 private struct EndedScreen: View {
     let session: SessionModel
     @State private var text: String?
+    @State private var loaded = false
     @Environment(\.theme) private var theme
 
     var body: some View {
-        ScrollView {
-            Text(text ?? "No saved screen.")
-                .font(theme.mono)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
+        Group {
+            if let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                ScrollView {
+                    Text(text)
+                        .font(theme.mono)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                }
+            } else if loaded {
+                ContentUnavailableView {
+                    Label("This shell has ended", systemImage: "moon.zzz")
+                } description: {
+                    Text("Its last screen wasn’t kept. Resume starts it again in the same folder.")
+                }
+            } else {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
-        .task { text = await session.scrollback() }
+        .task {
+            text = await session.scrollback(quietly: true)
+            loaded = true
+        }
     }
 }
 

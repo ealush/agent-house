@@ -63,7 +63,9 @@ final class SessionModel: Identifiable {
     var isLive: Bool { row != nil }
     var title: String { row?.title ?? history?.dto.title ?? "Session" }
     var isShell: Bool { row.map { $0.dto.agent == nil } ?? (history?.dto.harness == "shell") }
-    var hasGUI: Bool { row.map { $0.dto.feed != nil } ?? true }
+    /// Live: whether the host reads a transcript for it. Ended: any agent's conversation has
+    /// one; a shell never did (it shows its last screen instead).
+    var hasGUI: Bool { row.map { $0.dto.feed != nil } ?? !isShell }
     var working: Bool { row?.dto.status == .busy }
     var waiting: Bool { row?.dto.status == .waiting }
     var turnLive: Bool { working || waiting }
@@ -422,9 +424,10 @@ final class SessionModel: Identifiable {
     }
 
     /// The terminal's scrollback as selectable text.
-    func scrollback() async -> String? {
+    /// `quietly`: an ended session may have no screen left to read, and that's no error.
+    func scrollback(quietly: Bool = false) async -> String? {
         do { return try await api.capture(ref) } catch {
-            notify("Couldn’t read the scrollback: \(APIError.wrap(error).message)", tone: .error)
+            if !quietly { notify("Couldn’t read the scrollback: \(APIError.wrap(error).message)", tone: .error) }
             return nil
         }
     }
