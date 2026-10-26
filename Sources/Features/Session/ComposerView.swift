@@ -11,6 +11,8 @@ struct ComposerView: View {
     @Bindable var scene: SceneModel
     @Environment(\.theme) private var theme
     @State private var pickingPhotos: [PhotosPickerItem] = []
+    @State private var choosingPhotos = false
+    @State private var takingPhoto = false
     @State private var importingFiles = false
     @State private var suggestionIndex = 0
 
@@ -46,10 +48,22 @@ struct ComposerView: View {
             for item in items {
                 Task {
                     if let data = try? await item.loadTransferable(type: Data.self) {
-                        await composer.attach(name: "photo.jpg", data: data, image: true, thumbnail: data)
+                        // Named for what it is (a HEIC stays a HEIC), so the agent reads it right.
+                        let ext = item.supportedContentTypes.first?.preferredFilenameExtension ?? "jpg"
+                        await composer.attach(name: "photo.\(ext)", data: data, image: true, thumbnail: data)
                     }
                 }
             }
+        }
+        // Presented from state, not from inside the menu: a PhotosPicker placed in a Menu never
+        // opened.
+        .photosPicker(isPresented: $choosingPhotos, selection: $pickingPhotos, matching: .images, photoLibrary: .shared())
+        .fullScreenCover(isPresented: $takingPhoto) {
+            CameraPicker { image in
+                guard let data = image.jpegData(compressionQuality: 0.85) else { return }
+                Task { await composer.attach(name: "photo.jpg", data: data, image: true, thumbnail: data) }
+            }
+            .ignoresSafeArea()
         }
         .fileImporter(isPresented: $importingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }
@@ -127,13 +141,15 @@ struct ComposerView: View {
             .accessibilityLabel("Previous messages")
             .buttonStyle(.borderless)
             Menu {
-                PhotosPicker(selection: $pickingPhotos, matching: .images) { Label("Photos", systemImage: "photo") }
-                Button("Files…", systemImage: "folder") { importingFiles = true }
-                Button("Paste image", systemImage: "doc.on.clipboard") { pasteImage() }
-                    .disabled(!UIPasteboard.general.hasImages)
+                Button("Photo Library", systemImage: "photo.on.rectangle") { choosingPhotos = true }
+                if CameraPicker.isAvailable { Button("Take Photo", systemImage: "camera") { takingPhoto = true } }
+                Button("Choose Files", systemImage: "folder") { importingFiles = true }
+                if UIPasteboard.general.hasImages { Button("Paste Image", systemImage: "doc.on.clipboard") { pasteImage() } }
             } label: {
                 Image(systemName: "paperclip")
             }
+            // In the order written, wherever the menu opens: the library first.
+            .menuOrder(.fixed)
             .accessibilityLabel("Attach")
             if composer.showsStop(working: session.working) {
                 Button {
@@ -188,6 +204,37 @@ struct ComposerView: View {
     private func pasteImage() {
         guard let image = UIPasteboard.general.image, let data = image.pngData() else { return }
         Task { await composer.attach(name: "paste.png", data: data, image: true, thumbnail: data) }
+    }
+}
+
+/// The camera, for a photo to attach (devices that have one).
+struct CameraPicker: UIViewControllerRepresentable {
+    let took: (UIImage) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    static var isAvailable: Bool { UIImagePickerController.isSourceTypeAvailable(.camera) }
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ picker: UIImagePickerController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: CameraPicker
+        init(_ parent: CameraPicker) { self.parent = parent }
+
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            if let image = info[.originalImage] as? UIImage { parent.took(image) }
+            parent.dismiss()
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) { parent.dismiss() }
     }
 }
 
