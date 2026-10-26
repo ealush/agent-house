@@ -1,0 +1,19 @@
+# Risks and outstanding gates
+
+Updated 25 October 2026.
+
+| Priority | Gate | State and next proof |
+| --- | --- | --- |
+| P0 | **The screens haven't been exercised.** | The app builds with Xcode 27.1, and `./scripts/verify.sh` passes on an iOS 27 simulator (25 October 2026, by hand on the owner's Mac; the GitHub `Native checks` job can't start until Actions billing is fixed). The 2 UI tests cover setup only. No one has walked setup → Inbox → session → terminal against a real host (gate G-0), and none of the workspace spec's pointer, hover or hardware-keyboard behavior has been seen running. Next: the G-0 walk on a simulator against a loopback `ah` on the native branches, then the device matrix in TEST-MATRIX. |
+| P0 | Push needs a paid team | The app is signed for now by the owner's free Personal Team (`DEVELOPMENT_TEAM = 8C85FBA6H7` in `Config/Base.xcconfig`). Xcode refuses a Personal Team profile with Push Notifications (`aps-environment`) or Time Sensitive Notifications, so `Config/AgentHubNative.entitlements` is empty: the app gets no device token and the host's APNs alerts can't reach it (Settings says so); in-app nudges still work while it's open. With a paid team: restore both entitlements, add an APNs auth key (`.p8`, key ID, team ID, topic) on the host. The host side is built and tested with a loopback fake APNs gateway; real delivery is unverified. |
+| P0 | Backend branches are local | `ah` `native/1-device-auth` (native enrollment, bearer sessions, device removal, preview session) and `native/2-apns` pass the full `ah` suite (552) and typecheck; they're committed locally, not pushed or reviewed. The app requires them on the host. |
+| P0 | Secure Enclave and Face ID behavior | Built against documented APIs (`SecureEnclave.P256.Signing.PrivateKey`, `SecAccessControl` `.userPresence`); the simulator falls back to a software key. Needs a device check: enrollment, sign-in prompt, lock, key loss after passcode removal. |
+| P1 | `ah` window-creation race | Two concurrent `POST /api/windows` on one host can collide on a tmux session name (observed in integration; suites run serially). Native creates one at a time, but two devices could still race. Fix belongs in `ah`. |
+| P1 | Linux toolchain lacks `URLSessionWebSocketTask` | FoundationNetworking in the Linux toolchain was built without WebSocket support, so integration tests use a test-only raw WebSocket client. The app's `URLSessionTransport` WebSocket path is exercised only on Apple platforms. |
+| P1 | Keyboard on real hardware | All 89 commands route through tested `SceneModel` logic; the `UIKeyCommand` mapping, `canPerformAction` deferral to text/terminal, Colemak/physical-key handling and system-shortcut conflicts need an iPad with a hardware keyboard. |
+| P1 | Review confidence | Exact-head merge re-syncs and refuses a moved head; "No checks reported" is never treated as passing; nothing is marked reviewed for you. Needs a disposable GitHub stack fixture to verify end to end. |
+| P2 | Preview isolation | Non-persistent `WKWebView` with a host-only preview cookie; HMR/WebSocket behavior through the proxy needs a device check. |
+| P2 | Release packaging | App icon, privacy manifest review, App Store metadata and distribution signing. |
+| P2 | Live Activities and widgets | A working session's progress would go stale on the Lock Screen: a suspended app hears nothing until a push arrives, and ah sends no Live Activity pushes. Needs an ActivityKit push-to-update path in ah, plus a widget extension with signing. |
+| P2 | Share extension | Sending text or a link into a new session from another app needs an extension that can read the device's sign-in: a shared keychain access group, which needs a signed team. |
+| P2 | Siri on a device | The App Intents build and their logic is unit tested, but no phrase has been spoken to Siri on a device yet; App Shortcuts registration is only visible on a signed install. |
