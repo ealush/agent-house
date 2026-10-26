@@ -80,6 +80,11 @@ struct AskTarget {
     func answerDialog(question: String, answer: QuestionAnswer) async {
         await run("answer") { try await api.answerQuestion(row.uid, question: question, answer: answer) }
     }
+
+    /// "Chat about this": no answer; the conversation goes on in words.
+    func chatAbout(question: String?) async {
+        await run("open the chat") { try await api.chatAboutQuestions(row.uid, question: question) }
+    }
 }
 
 /// Where the keyboard comes from and goes back to: the window's focus requests (`.ask(key)`
@@ -146,17 +151,21 @@ struct AskPanelView: View {
                     }
                 }
                 if ask.kind == .choice, !questions.isEmpty {
-                    QuestionFormView(form: QuestionForm(questions: questions), progress: nil, keys: keys, leave: leave) { answers in
+                    QuestionFormView(form: QuestionForm(questions: questions), progress: nil, keys: keys, leave: leave, chat: { await target.chatAbout(question: nil) }) { answers in
                         await target.answerQuestions(answers)
                     }
                     .id(questions.map(\.question).joined(separator: "\n"))
                 } else if let dialog {
-                    let question = AskDTO.Question(question: dialog.question, header: nil, multiSelect: dialog.multiSelect, options: dialog.options)
+                    // Read off the screen, only the highlighted option's preview is known; the
+                    // others still answer as a preview question does.
+                    let options = dialog.previews == true ? dialog.options.map { AskDTO.Option(label: $0.label, description: $0.description, checked: $0.checked, preview: $0.preview ?? "") } : dialog.options
+                    let question = AskDTO.Question(question: dialog.question, header: nil, multiSelect: dialog.multiSelect, options: options)
                     QuestionFormView(
                         form: QuestionForm(questions: [question], initial: [dialog.options.enumerated().compactMap { $0.element.checked == true ? $0.offset : nil }]),
                         progress: dialog.total > 1 ? "Question \(min(dialog.answered + 1, dialog.total)) of \(dialog.total)" : nil,
                         keys: keys,
-                        leave: leave
+                        leave: leave,
+                        chat: { await target.chatAbout(question: dialog.question) }
                     ) { answers in
                         if let answer = answers.first { await target.answerDialog(question: dialog.question, answer: answer) }
                     }
@@ -617,46 +626,82 @@ struct QuestionFormView: View {
     let progress: String?
     let keys: AskKeyInput
     var leave: () -> Void = {}
+    /// The dialog's "Chat about this": decline the questions and talk it over instead.
+    var chat: (() async -> Void)? = nil
     @Environment(\.theme) private var theme
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @FocusState private var typing: Int?
+    @FocusState private var noting: Int?
+    @State private var chatting = false
 
-    init(form: QuestionForm, progress: String?, keys: AskKeyInput, leave: @escaping () -> Void = {}, submit: @escaping ([QuestionAnswer]) async -> Void) {
+    init(form: QuestionForm, progress: String?, keys: AskKeyInput, leave: @escaping () -> Void = {}, chat: (() async -> Void)? = nil, submit: @escaping ([QuestionAnswer]) async -> Void) {
         _model = State(initialValue: QuestionFormModel(form: form, submit: submit))
         self.progress = progress
         self.keys = keys
         self.leave = leave
+        self.chat = chat
     }
 
     var body: some View {
         Group {
-            if model.phase == .sent {
+            if chatting {
+                Label("Back to the conversation: say what you'd like instead.", systemImage: "bubble.left.and.text.bubble.right").font(.callout).foregroundStyle(theme.muted)
+            } else if model.phase == .sent {
                 Label("Answer sent.", systemImage: "checkmark").font(.callout).foregroundStyle(theme.muted)
             } else {
                 VStack(alignment: .leading, spacing: 14) {
                     if let progress { Text(progress).font(.caption).foregroundStyle(theme.muted) }
                     ForEach(Array(model.form.questions.enumerated()), id: \.offset) { qi, question in
                         VStack(alignment: .leading, spacing: 6) {
-                            if let header = question.header { Text(header).font(.caption.weight(.bold)).foregroundStyle(theme.accent).textCase(.uppercase) }
-                            // The whole question, however long: it's what you're answering.
-                            (Text(question.question).font(.callout.weight(.medium)) + Text(question.multiSelect ? "  Pick any." : "").font(.caption).foregroundStyle(theme.muted))
-                                .fixedSize(horizontal: false, vertical: true)
-                            ForEach(Array(question.options.enumerated()), id: \.offset) { oi, option in
-                                optionRow(qi, oi, option, multi: question.multiSelect)
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                if let header = question.header {
+                                    Text(header)
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(theme.accent)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 3)
+                                        .background(theme.accent.opacity(0.14), in: Capsule())
+                                }
+                                // The whole question, however long: it's what you're answering.
+                                (Text(question.question).font(.callout.weight(.medium)) + Text(question.multiSelect ? "  Pick any." : "").font(.caption).foregroundStyle(theme.muted))
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
-                            otherRow(qi)
+                            if question.hasPreviews {
+                                previewed(qi, question)
+                            } else {
+                                ForEach(Array(question.options.enumerated()), id: \.offset) { oi, option in
+                                    optionRow(qi, oi, option, multi: question.multiSelect)
+                                }
+                                otherRow(qi)
+                            }
                         }
                     }
-                    if !model.form.instant {
-                        Button {
-                            Task { await model.send() }
-                        } label: {
-                            Text(model.phase == .sending ? "Sending…" : "Answer").frame(maxWidth: .infinity)
+                    HStack(spacing: 12) {
+                        if !model.form.instant {
+                            Button {
+                                Task { await model.send() }
+                            } label: {
+                                Text(model.phase == .sending ? "Sending…" : "Answer").frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(theme.accentStrong)
+                            .disabled(!model.form.complete || model.phase == .sending)
+                            .keyboardShortcut(.return, modifiers: .command)
+                            .modifier(CursorRing(on: keys.focused && model.cursor == .submit))
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(theme.accentStrong)
-                        .disabled(!model.form.complete || model.phase == .sending)
-                        .keyboardShortcut(.return, modifiers: .command)
-                        .modifier(CursorRing(on: keys.focused && model.cursor == .submit))
+                        if let chat {
+                            Button("Chat about this") {
+                                Task {
+                                    chatting = true
+                                    await chat()
+                                }
+                            }
+                            .font(.callout)
+                            .buttonStyle(.borderless)
+                            .tint(.secondary)
+                            .disabled(model.phase != .idle)
+                            .accessibilityHint("Declines the questions and goes back to the conversation")
+                        }
                     }
                 }
             }
@@ -695,6 +740,39 @@ struct QuestionFormView: View {
         .accessibilityAddTraits(on ? .isSelected : [])
     }
 
+    /// A question whose options carry previews: the options, the picked one's preview beside
+    /// them (under them on a phone), and notes on the pick.
+    @ViewBuilder
+    private func previewed(_ qi: Int, _ question: AskDTO.Question) -> some View {
+        let options = VStack(alignment: .leading, spacing: 2) {
+            ForEach(Array(question.options.enumerated()), id: \.offset) { oi, option in
+                optionRow(qi, oi, option, multi: false)
+            }
+        }
+        let picked = model.form.drafts[qi].picked.first ?? question.options.firstIndex { $0.preview != nil } ?? 0
+        let preview = VStack(alignment: .leading, spacing: 8) {
+            PreviewBox(text: question.options[safe: picked]?.preview, label: question.options[safe: picked]?.label ?? "")
+            TextField("Add notes on this design…", text: Binding(get: { model.form.drafts[qi].notes }, set: { model.form.setNotes(qi, $0) }))
+                .textFieldStyle(.roundedBorder)
+                .font(.callout)
+                .focused($noting, equals: qi)
+                .submitLabel(.done)
+                .onSubmit { keys.take() }
+                .accessibilityLabel("Notes on your pick for: \(question.question)")
+        }
+        if sizeClass == .regular {
+            HStack(alignment: .top, spacing: 14) {
+                options.frame(maxWidth: 260, alignment: .leading)
+                preview
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                options
+                preview
+            }
+        }
+    }
+
     @ViewBuilder
     private func otherRow(_ qi: Int) -> some View {
         if model.otherOpen.contains(qi) {
@@ -711,5 +789,40 @@ struct QuestionFormView: View {
                 .padding(.horizontal, 6)
                 .modifier(CursorRing(on: keys.focused && model.cursor == .other(qi)))
         }
+    }
+}
+
+/// An option's preview as Claude Code draws it: monospaced, in a box, scrolling sideways
+/// rather than wrapping a mockup.
+private struct PreviewBox: View {
+    let text: String?
+    let label: String
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        Group {
+            if let text, !text.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    Text(text)
+                        .font(.system(.footnote, design: .monospaced))
+                        .foregroundStyle(theme.text)
+                        .fixedSize()
+                        .textSelection(.enabled)
+                        .padding(12)
+                }
+            } else {
+                // A dialog read off the screen only shows the highlighted option's preview.
+                Text("\(label)'s preview shows in the terminal when it's highlighted.")
+                    .font(.caption)
+                    .foregroundStyle(theme.muted)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.sunken, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(uiColor: .separator), lineWidth: 0.5))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(text.flatMap { $0.isEmpty ? nil : "Preview of \(label): \($0)" } ?? "No preview of \(label) here")
     }
 }

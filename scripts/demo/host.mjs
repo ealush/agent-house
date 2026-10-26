@@ -199,6 +199,8 @@ process.env.AH_RESTART_CMD = 'true';
 process.env.AH_REBUILD_CMD = 'sleep 2';
 // ah's own default lets the file browser read its uploads (\`~/.cache/ah/uploads\`); the demo
 // keeps its cache in its own folder, so it names that one, and sent images draw.
+// The scripted agent's /design calls ah's Claude Code hook, as Claude Code does.
+process.env.AH_DEMO_HOOK = join(source, 'bin', 'ah-hook.js');
 mkdirSync(join(dir, 'cache', 'ah', 'uploads'), { recursive: true });
 const ah = await startAh({ idleAfter: 2, files: { roots: [join(dir, 'files'), join(dir, 'cache', 'ah', 'uploads')] } }, dir);
 

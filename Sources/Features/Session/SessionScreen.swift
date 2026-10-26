@@ -19,6 +19,10 @@ struct SessionScreen: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var panelWidth: CGFloat = 380
     @State private var previewURL: URL?
+    /// The screen's height and the question's: a long question scrolls inside a panel of at
+    /// most a little over half the screen, so the conversation and its bar stay in view.
+    @State private var screenHeight: CGFloat = 800
+    @State private var askHeight: CGFloat = 0
 
     private var narrow: Bool { sizeClass == .compact || scene.narrow }
     /// How wide the conversation and its composer grow on a big screen: past this, lines get
@@ -41,9 +45,17 @@ struct SessionScreen: View {
                         if session.surface == .gui && session.hasGUI {
                             VStack(spacing: 0) {
                                 if session.waiting, session.row?.dto.ask != nil {
-                                    AskPanelView(target: AskTarget(session: session), keyboard: AskKeyboard(scene: scene, key: session.key, leave: .composer(session.key)), onReply: { scene.requestFocus(.composer(session.key)) }, onUseTerminal: { scene.setSurface(.terminal, for: session.key) })
-                                        .padding(.horizontal, 12)
-                                        .padding(.bottom, 6)
+                                    ScrollView {
+                                        AskPanelView(target: AskTarget(session: session), keyboard: AskKeyboard(scene: scene, key: session.key, leave: .composer(session.key)), onReply: { scene.requestFocus(.composer(session.key)) }, onUseTerminal: { scene.setSurface(.terminal, for: session.key) })
+                                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { askHeight = $0 }
+                                    }
+                                    .scrollBounceBehavior(.basedOnSize)
+                                    .scrollIndicators(.automatic)
+                                    // A drag puts the keyboard away: the choices come back into view.
+                                    .scrollDismissesKeyboard(.immediately)
+                                    .frame(height: min(askHeight, screenHeight * 0.55))
+                                    .padding(.horizontal, 12)
+                                    .padding(.bottom, 6)
                                 }
                                 ComposerView(session: session, composer: session.composer, scene: scene)
                             }
@@ -63,6 +75,7 @@ struct SessionScreen: View {
             }
         }
         .background(theme.background)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { screenHeight = $0 }
         // Images in the conversation (what you attached, what the agent drew) load from the
         // host, and a host path you tap opens in Quick Look.
         .environment(\.hostFiles, HostFiles(

@@ -18,6 +18,7 @@ import XCTest
 ///                         left, right, delete, space, or one character)
 ///   swipe:<up|down|left|right>
 ///   drag:<label>><label>  press, hold and drag one element onto another
+///   dragat:<x>,<y>><x>,<y>  drag from one point to another, as fractions of the window
 ///   rotate:<landscape|portrait>
 ///   wait:<seconds>
 ///   relaunch              terminate and launch again
@@ -101,6 +102,13 @@ final class TourUITests: XCTestCase {
                 let ends = argument.split(separator: ">").map(String.init)
                 if ends.count == 2, let from = element(app, ends[0]), let to = element(app, ends[1]) {
                     from.press(forDuration: 0.8, thenDragTo: to)
+                }
+            case "dragat":
+                // A plain drag between two points, as fractions of the window (scrolls, dismisses).
+                let ends = argument.split(separator: ">").map { $0.split(separator: ",").compactMap { Double($0) } }
+                if ends.count == 2, ends.allSatisfy({ $0.count == 2 }) {
+                    let at = { (p: [Double]) in target.coordinate(withNormalizedOffset: CGVector(dx: p[0], dy: p[1])) }
+                    at(ends[0]).press(forDuration: 0.05, thenDragTo: at(ends[1]))
                 }
             case "rotate":
                 XCUIDevice.shared.orientation = argument == "portrait" ? .portrait : .landscapeLeft

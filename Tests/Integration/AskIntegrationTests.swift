@@ -122,6 +122,44 @@ struct AskIntegrationTests {
         #expect(keys.range(of: #"^213(\x{1B}\[B|\x{1B}OB){3}Fox\t\r1$"#, options: .regularExpression) != nil, "typed: \(keys.debugDescription)")
     }
 
+    @Test func aPreviewQuestionIsAnsweredWithNotesOffTheScreen() async throws {
+        let api = try await LiveHost.enrolled().api
+        let session = try await LiveHost.launch(api, preset: "demo-claude", label: "design")
+        defer { Task { try? await api.terminate(session.uid) } }
+        _ = try await until("agent ready", timeout: 20) { try await api.state().windows.first { $0.uid == session.uid && $0.agent == "demo-claude" && $0.status != .busy } }
+        _ = try await api.send(session.uid, text: "/design")
+
+        // Claude Code 2.1.300's preview dialog: the highlighted option's preview boxed beside them.
+        let layout = try #require(try await waiting(api, session.uid, "the preview question") { $0.dialog?.previews == true }.ask?.dialog)
+        #expect(layout.options.map(\.label) == ["Stacked", "Sidebar", "Tabs"], "the box isn't part of the labels")
+        #expect(layout.options[0].preview?.contains("Profile") == true)
+        #expect(layout.options[1].preview == nil, "only the highlighted option's preview is on screen")
+        let question = AskDTO.Question(question: layout.question, header: nil, multiSelect: false, options: layout.options.map { AskDTO.Option(label: $0.label, description: $0.description, checked: $0.checked, preview: $0.preview ?? "") })
+        var form = QuestionForm(questions: [question])
+        #expect(!form.instant && !form.spots.contains(.other(0)))
+        _ = form.choose(0, 1)
+        form.setNotes(0, "roomier please")
+        try await api.answerQuestion(session.uid, question: layout.question, answer: try #require(form.answers.first))
+
+        let extras = try #require(try await waiting(api, session.uid, "the second question") { $0.dialog?.answered == 1 }.ask?.dialog)
+        #expect(extras.previews == nil && extras.multiSelect)
+        try await api.answerQuestion(session.uid, question: extras.question, answer: QuestionAnswer(picked: [0, 2]))
+        let review = try #require(try await waiting(api, session.uid, "the review") { ($0.options ?? []).count == 2 }.ask?.options)
+        _ = try await api.choose(session.uid, key: review[0].key)
+        try await screen(api, session.uid, shows: "Layout: Sidebar (notes: roomier please) · Extras: Dark mode, Keyboard shortcuts")
+    }
+
+    @Test func chatAboutThisDeclinesTheQuestions() async throws {
+        let api = try await LiveHost.enrolled().api
+        let session = try await LiveHost.launch(api, preset: "demo-claude", label: "design chat")
+        defer { Task { try? await api.terminate(session.uid) } }
+        _ = try await until("agent ready", timeout: 20) { try await api.state().windows.first { $0.uid == session.uid && $0.agent == "demo-claude" && $0.status != .busy } }
+        _ = try await api.send(session.uid, text: "/design")
+        let layout = try #require(try await waiting(api, session.uid, "the preview question") { $0.dialog?.previews == true }.ask?.dialog)
+        try await api.chatAboutQuestions(session.uid, question: layout.question)
+        try await screen(api, session.uid, shows: "You chose to chat about it.")
+    }
+
     @Test func aFolderTrustListIsAnsweredByMovingItsCursor() async throws {
         let api = try await LiveHost.enrolled().api
         let session = try await LiveHost.launch(api, preset: "demo-claude", label: "trust")

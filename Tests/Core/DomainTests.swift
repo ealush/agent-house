@@ -337,3 +337,32 @@ import Testing
     #expect(watcher.observe(origin: "h", rows: [try row("idle")], now: start.addingTimeInterval(200)).isEmpty, "settling to idle isn't news")
     #expect(watcher.observe(origin: "other", rows: [try row("waiting")], now: start).isEmpty, "each host has its own first look")
 }
+
+// MARK: Questions with previews, notes and "Chat about this"
+
+@Test func aQuestionWithPreviewsTakesAPickAndNotesNotATypedAnswer() throws {
+    let json = #"{"question":"Which layout?","header":"Layout","multiSelect":false,"options":[{"label":"Stacked","preview":"+--+\n|  |"},{"label":"Inline","description":"Side by side"}]}"#
+    let question = try JSONDecoder().decode(AskDTO.Question.self, from: Data(json.utf8))
+    #expect(question.hasPreviews)
+    #expect(question.options[0].preview == "+--+\n|  |")
+    #expect(question.options[1].preview == nil)
+    var form = QuestionForm(questions: [question])
+    #expect(!form.instant, "a pick shows its preview first; it doesn't answer at once")
+    #expect(!form.spots.contains(.other(0)), "no Something else row")
+    #expect(form.choose(0, 1) == false)
+    form.setNotes(0, "  make it\ncompact ")
+    #expect(form.complete)
+    #expect(form.answers == [QuestionAnswer(picked: [1], notes: "make it compact")])
+    let plain = QuestionForm(questions: [AskDTO.Question(question: "Q", header: nil, multiSelect: false, options: [AskDTO.Option(label: "A", description: nil, checked: nil)])])
+    #expect(plain.instant && plain.spots.contains(.other(0)), "without previews, nothing changes")
+}
+
+@Test func answersCarryNotesAndTheDialogSaysWhenItHasPreviews() throws {
+    let encoded = String(decoding: try JSONEncoder().encode(QuestionAnswer(picked: [0], notes: "n")), as: UTF8.self)
+    #expect(encoded.contains(#""notes":"n""#))
+    #expect(!String(decoding: try JSONEncoder().encode(QuestionAnswer(picked: [0])), as: UTF8.self).contains("notes"))
+    let dialog = try JSONDecoder().decode(AskDTO.Dialog.self, from: Data(#"{"question":"Q","multiSelect":false,"options":[{"label":"A","preview":"x"}],"total":1,"answered":0,"cursor":1,"previews":true}"#.utf8))
+    #expect(dialog.previews == true)
+    let old = try JSONDecoder().decode(AskDTO.Dialog.self, from: Data(#"{"question":"Q","multiSelect":false,"options":[],"total":1,"answered":0}"#.utf8))
+    #expect(old.previews == nil, "an older host's dialog still reads")
+}
