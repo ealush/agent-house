@@ -27,6 +27,10 @@ panels, so conversation color and motion show through without making controls
 hard to read. Focus on the composer adds a restrained edge and a single glass
 rim instead of a double outline.
 
+Bottom-up drawer headers share one translucent bar. Close and Back stay inside
+that surface as 44px icon targets instead of appearing as separate glass
+bubbles.
+
 The mobile conversation opts out of the main area's named view-transition
 capture, which otherwise creates a backdrop boundary around the glass. Header
 and composer filters belong to backing pseudo-elements, keeping their controls
@@ -48,6 +52,8 @@ theme tokens, including Omarchy's palette.
 ## Evidence and limits
 
 ![Translucent mobile conversation controls](screenshots/mobile-glass-followup.png)
+
+![Integrated close control on the settings drawer](screenshots/mobile-drawer-close-followup.png)
 
 `test/ui/glass.test.ts` paints the production CSS over changing backgrounds
 and reads screenshot pixels. It checks transmission, real blur, small-label
