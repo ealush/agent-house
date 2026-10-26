@@ -190,7 +190,8 @@ struct WorkspaceView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     static let minimumPane = CGSize(width: WorkspaceModel.minimumPane.width, height: WorkspaceModel.minimumPane.height)
-    private let gap: CGFloat = 2
+    /// Panes are cards with a gutter between them, as iPadOS tiles windows.
+    private let gap: CGFloat = 10
     private let stripHeight: CGFloat = 36
 
     private struct Entry: Identifiable {
@@ -247,13 +248,14 @@ struct WorkspaceView: View {
                     PaneStrip(scene: scene, tiles: geometry.tiles, focused: focused)
                         .frame(width: size.width, height: stripHeight)
                 }
-                if workspace.zoom {
+                // A maximized session says so in its own header; an empty chooser has none.
+                if workspace.zoom, entries.first(where: { $0.tile.path == focused }).map({ LayoutNode.isPick($0.tile.sessionKey) }) ?? false {
                     ZoomBadge(scene: scene, count: entries.count, index: entries.firstIndex { $0.tile.path == focused } ?? 0)
                         .frame(width: size.width, alignment: .topTrailing)
                 }
             }
         }
-        .background(theme.faint.opacity(0.25))
+        .background(theme.raised)
         .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: geometry.tiles.map(\.box))
         .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: workspace.zoom)
         .animation(reduceMotion ? nil : .snappy(duration: 0.15), value: focused)
@@ -269,6 +271,7 @@ private struct PaneView: View {
     let size: CGSize
     @State private var zone: LayoutNode.Drop?
     @Environment(\.theme) private var theme
+    static let corner: CGFloat = 16
 
     var body: some View {
         Group {
@@ -282,9 +285,11 @@ private struct PaneView: View {
         }
         .background(theme.background)
         .overlay { if let zone { DropZoneHighlight(zone: zone) } }
+        .clipShape(RoundedRectangle(cornerRadius: Self.corner, style: .continuous))
+        // The focused pane wears a tint ring; the rest a hairline.
         .overlay {
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .strokeBorder(focused ? theme.accentStrong : theme.faint.opacity(0.18), lineWidth: focused ? 2 : 0.5)
+            RoundedRectangle(cornerRadius: Self.corner, style: .continuous)
+                .strokeBorder(focused ? theme.accentStrong.opacity(0.9) : Color(uiColor: .separator), lineWidth: focused ? 1.5 : 0.5)
                 .allowsHitTesting(false)
         }
         .simultaneousGesture(TapGesture().onEnded { Task { await scene.tapPane(tile.path) } })
@@ -525,11 +530,11 @@ private struct ChooserPane: View {
 
     var body: some View {
         let rows = rows
-        VStack(spacing: 12) {
-            Text("Open in this pane").font(.headline)
+        VStack(spacing: 14) {
+            Text("Open in This Pane").font(.headline)
             HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundStyle(theme.faint)
-                TextField("Search sessions", text: $query)
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("Search Sessions", text: $query)
                     .textFieldStyle(.plain)
                     .focused($focused)
                     .textInputAutocapitalization(.never)
@@ -540,41 +545,64 @@ private struct ChooserPane: View {
                     .onKeyPress(.downArrow) { if !rows.isEmpty { selection = (selection + 1) % rows.count }; return .handled }
                     .onKeyPress(.escape) { scene.cancelChooser(path); return .handled }
             }
-            .padding(10)
-            .background(theme.raised, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .frame(maxWidth: 420)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(.fill.tertiary, in: Capsule())
             VStack(spacing: 2) {
+                // What the web's pane picker leads with: a shell here, or a new session.
+                if query.isEmpty {
+                    action("New Shell", "terminal") { Task { await scene.newShell(into: path) } }
+                    action("New Session…", "plus") {
+                        scene.workspace.focus(path)
+                        scene.sheet = .newSession(SceneModel.NewSessionContext(intoPane: path))
+                    }
+                    Divider().padding(.vertical, 4)
+                }
                 ForEach(Array(rows.enumerated()), id: \.element.key) { index, row in
                     HStack(spacing: 10) {
-                        AgentMark(agent: row.dto.agent, size: 20)
-                        Text(row.title).font(.callout).lineLimit(1)
+                        AgentMark(agent: row.dto.agent, size: 22)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(row.title).font(.callout).lineLimit(1)
+                            Text(row.dto.project).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
                         Spacer()
                         StatusPill(word: row.word, compact: true)
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(index == selection ? theme.accentStrong.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .background(index == selection ? theme.accentStrong.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     .contentShape(Rectangle())
                     .onTapGesture { scene.fillPane(path, with: row.key) }
                     .onHover { if $0 { selection = index } }
+                    .accessibilityAddTraits(.isButton)
                 }
             }
-            .frame(maxWidth: 420)
-            HStack {
-                Button("New session") {
-                    scene.workspace.focus(path)
-                    scene.sheet = .newSession(SceneModel.NewSessionContext(intoPane: path))
-                }
-                .buttonStyle(.bordered)
-                Button("Cancel") { scene.cancelChooser(path) }
-            }
-            .font(.callout)
+            Button("Cancel", role: .cancel) { scene.cancelChooser(path) }
+                .buttonStyle(.borderless)
+                .tint(.secondary)
+                .font(.callout)
         }
+        .frame(maxWidth: 420)
         .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { if scene.focusRequest?.target == .chooser(path) || scene.workspace.focusPath == path { focused = true } }
         .onChange(of: scene.focusRequest) { _, request in if request?.target == .chooser(path) { focused = true } }
         .onChange(of: focused) { _, now in if now { scene.didFocus(.chooser(path)) } else { scene.didBlur(.chooser(path)) } }
+    }
+
+    private func action(_ title: String, _ symbol: String, run: @escaping () -> Void) -> some View {
+        Button(action: run) {
+            HStack(spacing: 10) {
+                Image(systemName: symbol).font(.body).foregroundStyle(theme.accent).frame(width: 22)
+                Text(title).font(.callout)
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .hoverEffect(.highlight)
     }
 }
 
@@ -630,6 +658,7 @@ struct WorkspaceStrip: View {
                 Button {
                     scene.perform(.workspace(n))
                 } label: {
+                    // The current one filled with the tint, one in use marked with a dot.
                     Text("\(n)")
                         .font(.footnote.monospacedDigit().weight(n == current ? .semibold : .regular))
                         .foregroundStyle(n == current ? Color.white : occupied.contains(n) ? Color.primary : Color(uiColor: .tertiaryLabel))
@@ -667,7 +696,6 @@ struct OverlayLayer: View {
         ZStack {
             if !scene.whichKey.isEmpty || scene.pendingChord != nil {
                 WhichKeyHUD(rows: scene.whichKey, pending: scene.pendingChord?.formatted()).frame(maxHeight: .infinity, alignment: .bottom).allowsHitTesting(false)
-                    // The current one filled with the tint, one in use marked with a dot.
             }
             if let mode = scene.workspace.submap {
                 SubmapHUD(mode: mode).frame(maxHeight: .infinity, alignment: .top).allowsHitTesting(false)

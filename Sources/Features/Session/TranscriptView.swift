@@ -82,6 +82,9 @@ struct TranscriptView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
+                // A readable column on a wide screen, centered; the scroll view stays full width.
+                .frame(maxWidth: SessionScreen.readableWidth)
+                .frame(maxWidth: .infinity)
                 .animation(reduceMotion ? nil : .spring(duration: 0.35, bounce: 0.3), value: session.outgoing.map(\.id))
                 .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: session.working)
                 .scrollTargetLayout()

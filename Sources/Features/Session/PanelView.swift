@@ -255,8 +255,9 @@ private struct FilesPanel: View {
                         Button("Copy Path", systemImage: "doc.on.doc") { UIPasteboard.general.string = path }
                     }
                 } label: {
-                    Image(systemName: "ellipsis.circle")
+                    Image(systemName: "ellipsis")
                 }
+                .tint(.primary)
                 .accessibilityLabel("Folder actions")
             }
         }
@@ -496,7 +497,7 @@ private struct FileTextSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() }.keyboardShortcut(.cancelAction) }
                 ToolbarItemGroup(placement: .primaryAction) {
-                    Button { UIPasteboard.general.string = file.text } label: { Image(systemName: "doc.on.doc") }.accessibilityLabel("Copy")
+                    Button { UIPasteboard.general.string = file.text } label: { Image(systemName: "doc.on.doc") }.accessibilityLabel("Copy").tint(.primary)
                     Button {
                         insert()
                         dismiss()

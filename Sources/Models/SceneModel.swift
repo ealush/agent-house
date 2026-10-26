@@ -1388,6 +1388,15 @@ final class SceneModel {
         }
     }
 
+    /// A new shell in an empty pane (the chooser's New Shell): in the project, tmux session and
+    /// host of the nearest pane's session, as the web's pane picker does.
+    func newShell(into path: LayoutNode.Path) async {
+        guard let hub else { return }
+        let near = workspace.layout?.leaves().map(\.sessionKey).filter { !LayoutNode.isPick($0) }.compactMap { hub.row($0) }.first
+        let request = NewSessionRequest(preset: "shell", cwd: near?.dto.projectPath ?? "~", session: near?.dto.session ?? hub.hub.state?.defaultSession ?? "", label: "")
+        _ = await start(request, host: near.flatMap { $0.isLocal ? nil : $0.host }, intoPane: path)
+    }
+
     /// Terminate after the confirmation sheet.
     func terminate(_ key: String) async {
         guard let s = session(key) else { return }

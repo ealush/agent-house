@@ -21,6 +21,9 @@ struct SessionScreen: View {
     @State private var previewURL: URL?
 
     private var narrow: Bool { sizeClass == .compact || scene.narrow }
+    /// How wide the conversation and its composer grow on a big screen: past this, lines get
+    /// too long to read.
+    static let readableWidth: CGFloat = 860
 
     var body: some View {
         HStack(spacing: 0) {
@@ -44,6 +47,8 @@ struct SessionScreen: View {
                                 }
                                 ComposerView(session: session, composer: session.composer, scene: scene)
                             }
+                            .frame(maxWidth: Self.readableWidth)
+                            .frame(maxWidth: .infinity)
                         }
                     }
             }
@@ -138,10 +143,8 @@ private struct PanelChrome: ViewModifier {
                     if sheet {
                         Button(role: .close) { session.panel = nil }.keyboardShortcut(.cancelAction)
                     } else {
-                        Button {
+                        Button(role: .close) {
                             withAnimation(.snappy(duration: 0.2)) { session.panel = nil }
-                        } label: {
-                            Image(systemName: "xmark")
                         }
                         .accessibilityLabel("Close \(panel.title)")
                     }
@@ -209,6 +212,22 @@ private struct SessionHeader: View {
                         .accessibilityAddTraits(.isHeader)
                 }
                 if let row = session.row { StatusPill(word: row.word, compact: tight).fixedSize() }
+                if let pane, scene.workspace.zoom, let leaves = scene.workspace.layout?.leaves(), let index = leaves.firstIndex(where: { $0.path == pane }) {
+                    // Maximized: which pane of how many, and the way back to the split.
+                    Button {
+                        scene.perform("maximize-pane")
+                    } label: {
+                        Label("\(index + 1) of \(leaves.count)", systemImage: "arrow.down.right.and.arrow.up.left")
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(.fill.tertiary, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .fixedSize()
+                    .hoverEffect(.highlight)
+                    .accessibilityLabel("Maximized, pane \(index + 1) of \(leaves.count). Restore the layout")
+                }
                 Spacer(minLength: 4)
                 if session.isLive && session.hasGUI && !session.isShell {
                     if tight {
@@ -277,6 +296,8 @@ private struct SessionHeader: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        // Glyphs in the label color, as a bar's are; status and branch keep their own.
+        .tint(.primary)
         .background(.bar)
         .opacity(pane == nil || paneFocused ? 1 : 0.72)
         .contextMenu {
