@@ -91,14 +91,15 @@ struct TerminalPalette: Equatable, Sendable {
         return 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0) < 0.5
     }
 
+    // The system's black ground, so a terminal sits in its pane like the conversation does.
     static let dark = TerminalPalette(
-        background: "#15161f", foreground: "#e6e6ef", cursor: "#f47199", selection: "#3a3d55",
-        ansi: ["#15161f", "#ff8a80", "#81d88a", "#f5b84b", "#82aaff", "#f47199", "#4dd9ea", "#c9cad3",
+        background: "#000000", foreground: "#e6e6ef", cursor: "#f47199", selection: "#3a3a3c",
+        ansi: ["#1c1c1e", "#ff8a80", "#81d88a", "#f5b84b", "#82aaff", "#f47199", "#4dd9ea", "#c9cad3",
                "#5c5f77", "#ffa49c", "#a4e6ab", "#ffd27f", "#a6c3ff", "#ff9fbe", "#86e8f3", "#ffffff"]
     )
 
     static let light = TerminalPalette(
-        background: "#fbfbfd", foreground: "#1c1d27", cursor: "#c2185b", selection: "#d6d8e3",
+        background: "#ffffff", foreground: "#1c1d27", cursor: "#c2185b", selection: "#d1d1d6",
         ansi: ["#1c1d27", "#c62828", "#276b2b", "#8a5a00", "#1d4fb8", "#c2185b", "#00737d", "#5f6272",
                "#686b7a", "#e53935", "#2e7d32", "#a66d00", "#2962ff", "#d81b60", "#00838f", "#1c1d27"]
     )
