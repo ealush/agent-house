@@ -366,3 +366,9 @@ import Testing
     let old = try JSONDecoder().decode(AskDTO.Dialog.self, from: Data(#"{"question":"Q","multiSelect":false,"options":[],"total":1,"answered":0}"#.utf8))
     #expect(old.previews == nil, "an older host's dialog still reads")
 }
+
+@Test func aCancelledRequestIsNotAnErrorToShow() {
+    #expect(APIError.shown(CancellationError()) == nil)
+    #expect(APIError.shown(URLError(.cancelled)) == nil)
+    #expect(APIError.shown(URLError(.notConnectedToInternet)) != nil)
+}

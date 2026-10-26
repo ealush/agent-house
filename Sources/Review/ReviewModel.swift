@@ -190,7 +190,7 @@ final class ReviewModel {
             try await body()
             error = nil
         } catch {
-            self.error = APIError.wrap(error).message
+            self.error = APIError.shown(error)
         }
     }
 

@@ -25,12 +25,12 @@ final class DiffModel {
 
     func load() async {
         do {
-            let c = try await api.changes(uid)
+            let c = try await settled { [api, uid] in try await api.changes(uid) }
             changes = c
             files = FileDiff.files(in: c.patch)
             error = nil
         } catch {
-            self.error = APIError.wrap(error).message
+            self.error = APIError.shown(error)
         }
     }
 
@@ -339,7 +339,7 @@ final class SideChatModel {
             subscriptions = (try? await subs) ?? []
             error = nil
         } catch {
-            self.error = APIError.wrap(error).message
+            self.error = APIError.shown(error)
         }
     }
 
@@ -410,10 +410,10 @@ final class SnapshotsModel {
 
     func load() async {
         do {
-            list = try await api.snapshots(uid)
+            list = try await settled { [api, uid] in try await api.snapshots(uid) }
             error = nil
         } catch {
-            self.error = APIError.wrap(error).message
+            self.error = APIError.shown(error)
         }
     }
 
@@ -523,10 +523,10 @@ final class PreviewModel {
 
     func load() async {
         do {
-            info = try await api.preview(uid)
+            info = try await settled { [api, uid] in try await api.preview(uid) }
             error = nil
         } catch {
-            self.error = APIError.wrap(error).message
+            self.error = APIError.shown(error)
         }
     }
 
@@ -596,10 +596,10 @@ final class WorktreesModel {
 
     func load() async {
         do {
-            trees = try await api.worktrees()
+            trees = try await settled { [api] in try await api.worktrees() }
             error = nil
         } catch {
-            self.error = APIError.wrap(error).message
+            self.error = APIError.shown(error)
         }
     }
 

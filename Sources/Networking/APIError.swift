@@ -53,6 +53,14 @@ enum APIError: Error, Equatable, Sendable, LocalizedError {
 
     var errorDescription: String? { message }
 
+    /// What a page shows for a failed request: its message, or nothing for a cancellation (a
+    /// page that went away, or a load handed to another task, has nothing to report).
+    static func shown(_ error: Error) -> String? {
+        let wrapped = wrap(error)
+        if case .cancelled = wrapped { return nil }
+        return wrapped.message
+    }
+
     /// A sentence for the user: what the server said, or what reaching it failed on.
     var message: String {
         switch self {

@@ -16,10 +16,10 @@ final class SecuritySettings {
 
     func load() async {
         do {
-            overview = try await api.authOverview()
+            overview = try await settled { [api] in try await api.authOverview() }
             error = nil
         } catch {
-            self.error = APIError.wrap(error).message
+            self.error = APIError.shown(error)
         }
     }
 
@@ -90,11 +90,11 @@ final class AgentsSettings {
             harnesses = try await body()
             error = nil
         } catch {
-            self.error = APIError.wrap(error).message
+            self.error = APIError.shown(error)
         }
     }
 
-    func load() async { await run { try await api.harnesses() } }
+    func load() async { await run { [api] in try await settled { try await api.harnesses() } } }
     func check() async {
         checking = true
         defer { checking = false }
@@ -143,10 +143,10 @@ final class SubscriptionsSettings {
 
     func load() async {
         do {
-            list = try await api.subscriptions()
+            list = try await settled { [api] in try await api.subscriptions() }
             error = nil
         } catch {
-            self.error = APIError.wrap(error).message
+            self.error = APIError.shown(error)
         }
     }
 
@@ -203,10 +203,10 @@ final class EnvironmentSettings {
 
     func load() async {
         do {
-            state = try await api.env()
+            state = try await settled { [api] in try await api.env() }
             error = nil
         } catch {
-            self.error = APIError.wrap(error).message
+            self.error = APIError.shown(error)
         }
     }
 
@@ -267,7 +267,7 @@ final class SearchSettings {
     init(api: APIClient) { self.api = api }
 
     func load() async {
-        do { status = try await api.searchStatus() } catch { self.error = APIError.wrap(error).message }
+        do { status = try await settled { [api] in try await api.searchStatus() } } catch { self.error = APIError.shown(error) }
     }
 
     func setEnabled(_ on: Bool) async {
@@ -298,8 +298,8 @@ final class SystemSettings {
     init(api: APIClient) { self.api = api }
 
     func load() async {
-        do { hooks = try await api.hooks() } catch { self.error = APIError.wrap(error).message }
-        do { desktop = try await api.desktop() } catch { self.error = APIError.wrap(error).message }
+        do { hooks = try await settled { [api] in try await api.hooks() } } catch { self.error = APIError.shown(error) }
+        do { desktop = try await settled { [api] in try await api.desktop() } } catch { self.error = APIError.shown(error) }
     }
 
     func setDesktop(install: Bool) async {
@@ -378,7 +378,7 @@ final class NotificationSettings {
     init(api: APIClient) { self.api = api }
 
     func load() async {
-        do { status = try await api.apnsStatus() } catch { self.error = APIError.wrap(error).message }
+        do { status = try await settled { [api] in try await api.apnsStatus() } } catch { self.error = APIError.shown(error) }
     }
 
     /// Register (or update) this sign-in's token with what it wants to hear about.
@@ -395,4 +395,12 @@ final class NotificationSettings {
             self.error = APIError.wrap(error).message
         }
     }
+}
+
+/// A Settings page's load outlives the view task that asked for it. SwiftUI cancels a page's
+/// `.task` while a phone's navigation settles; the request went with it, and the page stayed
+/// on "Cancelled." under a spinner. The load now finishes in a task of its own.
+@MainActor
+func settled<T: Sendable>(_ body: @escaping @Sendable () async throws -> T) async throws -> T {
+    try await Task { try await body() }.value
 }
