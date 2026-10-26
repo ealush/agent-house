@@ -8,13 +8,9 @@ struct SidebarView: View {
 
     var body: some View {
         if let hub = scene.hub {
-            VStack(spacing: 0) {
-                PageLinks(scene: scene, hub: hub)
-                SessionListView(scene: scene, hub: hub, selection: scene.workspace.focusedKey)
-                Divider()
-                WorkspaceStrip(scene: scene)
-            }
-            .background(theme.background)
+            // On the system's sidebar glass, not a painted ground.
+            SessionListView(scene: scene, hub: hub, selection: scene.workspace.focusedKey, showsPages: true)
+                .safeAreaInset(edge: .bottom, spacing: 0) { WorkspaceStrip(scene: scene) }
             .toolbar {
                 // At hand by touch: what otherwise only a key or the palette reaches.
                 ToolbarItem(placement: .primaryAction) { MoreMenu(scene: scene, settings: true).tint(.primary) }
@@ -53,49 +49,6 @@ struct MoreMenu: View {
             Label("More", systemImage: "ellipsis")
         }
         .menuOrder(.fixed)
-    }
-}
-
-private struct PageLinks: View {
-    let scene: SceneModel
-    let hub: HubStore
-    @Environment(\.theme) private var theme
-
-    var body: some View {
-        let waiting = hub.rows.filter { $0.dto.status == .waiting }.count
-        HStack(spacing: 4) {
-            link("Inbox", "tray", .inbox, badge: waiting + hub.reviewAlerts.count)
-            link("History", "clock.arrow.circlepath", .history)
-            link("Review", "checkmark.rectangle.stack", .review(ReviewRoute()))
-            link("Search", "magnifyingglass", .search)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-    }
-
-    private func link(_ title: String, _ symbol: String, _ route: SceneSnapshot.Route, badge: Int = 0) -> some View {
-        let active = scene.workspace.layout == nil && scene.route.page == route.page
-        return Button {
-            scene.show(route)
-        } label: {
-            VStack(spacing: 2) {
-                Image(systemName: symbol).font(.body)
-                    .overlay(alignment: .topTrailing) {
-                        if badge > 0 {
-                            Text("\(badge)").font(.caption2.weight(.bold)).padding(.horizontal, 4).background(theme.brand, in: Capsule()).foregroundStyle(.white).offset(x: 10, y: -6)
-                        }
-                    }
-                Text(title).font(.caption2)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 6)
-            .background(active ? theme.accentStrong.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 10))
-        }
-        .buttonStyle(.plain)
-        .hoverEffect(.highlight)
-        .foregroundStyle(active ? theme.text : theme.muted)
-        .accessibilityLabel(badge > 0 ? "\(title), \(badge) need you" : title)
-        .accessibilityAddTraits(active ? .isSelected : [])
     }
 }
 
@@ -678,10 +631,15 @@ struct WorkspaceStrip: View {
                     scene.perform(.workspace(n))
                 } label: {
                     Text("\(n)")
-                        .font(.caption.monospacedDigit().weight(n == current ? .bold : .regular))
-                        .frame(maxWidth: .infinity, minHeight: 24)
-                        .background(n == current ? theme.accentStrong.opacity(0.25) : occupied.contains(n) ? theme.raised : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        .foregroundStyle(n == current ? theme.text : occupied.contains(n) ? theme.text2 : theme.faint)
+                        .font(.footnote.monospacedDigit().weight(n == current ? .semibold : .regular))
+                        .foregroundStyle(n == current ? Color.white : occupied.contains(n) ? Color.primary : Color(uiColor: .tertiaryLabel))
+                        .frame(width: 26, height: 26)
+                        .background { if n == current { Circle().fill(theme.accentStrong) } }
+                        .overlay(alignment: .bottom) {
+                            if occupied.contains(n) && n != current { Circle().fill(Color.secondary).frame(width: 3, height: 3).offset(y: 2) }
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 30)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .hoverEffect(.highlight)
@@ -692,8 +650,12 @@ struct WorkspaceStrip: View {
                 .accessibilityLabel("Workspace \(n)\(n == current ? ", current" : occupied.contains(n) ? ", in use" : "")")
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .glassEffect(.regular, in: Capsule())
+        .padding(.horizontal, 12)
+        .padding(.bottom, 10)
+        .animation(.snappy(duration: 0.25), value: current)
     }
 }
 
@@ -705,6 +667,7 @@ struct OverlayLayer: View {
         ZStack {
             if !scene.whichKey.isEmpty || scene.pendingChord != nil {
                 WhichKeyHUD(rows: scene.whichKey, pending: scene.pendingChord?.formatted()).frame(maxHeight: .infinity, alignment: .bottom).allowsHitTesting(false)
+                    // The current one filled with the tint, one in use marked with a dot.
             }
             if let mode = scene.workspace.submap {
                 SubmapHUD(mode: mode).frame(maxHeight: .infinity, alignment: .top).allowsHitTesting(false)

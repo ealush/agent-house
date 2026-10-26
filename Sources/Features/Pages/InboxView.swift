@@ -331,15 +331,46 @@ struct SessionListView: View {
     @Bindable var scene: SceneModel
     let hub: HubStore
     var selection: String?
+    /// The iPad sidebar: the pages lead the list as rows of their own, as Mail's mailboxes do.
+    var showsPages = false
     @Environment(\.theme) private var theme
     /// "Focus the session list" (⌃⇧0) puts the keyboard here.
     @FocusState private var listFocused: Bool
 
+    private static let pages: [(title: String, symbol: String, route: SceneSnapshot.Route)] = [
+        ("Inbox", "tray", .inbox),
+        ("History", "clock.arrow.circlepath", .history),
+        ("Review", "checkmark.rectangle.stack", .review(ReviewRoute())),
+        ("Search", "magnifyingglass", .search),
+    ]
+
+    /// A page row's tag; session rows are tagged with their key.
+    private static func tag(_ route: SceneSnapshot.Route) -> String { "page:\(route.page)" }
+
+    private var selected: String? {
+        if showsPages, scene.workspace.layout == nil, scene.route.page != "session" { return Self.tag(scene.route) }
+        return selection
+    }
+
     var body: some View {
         let sections = scene.sidebarSections
-        List(selection: Binding(get: { selection }, set: { if let key = $0 { scene.open(key) } })) {
+        List(selection: Binding(get: { selected }, set: { tag in
+            guard let tag else { return }
+            if let page = Self.pages.first(where: { Self.tag($0.route) == tag }) { scene.show(page.route) } else { scene.open(tag) }
+        })) {
             ConnectionBanner(phase: hub.phase, lastUpdated: hub.lastUpdated, cached: hub.showingCached) { hub.resync() }
                 .listRowBackground(Color.clear)
+            if showsPages {
+                Section {
+                    ForEach(Self.pages, id: \.title) { page in
+                        let waiting = page.route.page == "inbox" ? hub.rows.filter { $0.dto.status == .waiting }.count + hub.reviewAlerts.count : 0
+                        Label(page.title, systemImage: page.symbol)
+                            .badge(waiting)
+                            .tag(Self.tag(page.route))
+                            .accessibilityLabel(waiting > 0 ? "\(page.title), \(waiting) need you" : page.title)
+                    }
+                }
+            }
             ForEach(sections) { section in
                 Section {
                     ForEach(section.rows) { row in
