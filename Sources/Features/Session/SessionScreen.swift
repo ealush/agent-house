@@ -18,8 +18,16 @@ struct SessionScreen: View {
     @Environment(\.theme) private var theme
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var panelWidth: CGFloat = 380
+    @State private var previewURL: URL?
+    /// The screen's height and the question's: a long question scrolls inside a panel of at
+    /// most a little over half the screen, so the conversation and its bar stay in view.
+    @State private var screenHeight: CGFloat = 800
+    @State private var askHeight: CGFloat = 0
 
     private var narrow: Bool { sizeClass == .compact || scene.narrow }
+    /// How wide the conversation and its composer grow on a big screen: past this, lines get
+    /// too long to read.
+    static let readableWidth: CGFloat = 860
 
     var body: some View {
         HStack(spacing: 0) {
@@ -30,15 +38,31 @@ struct SessionScreen: View {
                 if let history = session.history, !session.isLive {
                     EndedBanner(session: session, scene: scene, item: history)
                 }
+                // The question and the composer float over the transcript, which scrolls on
+                // beneath them (and fades under, at the bar's edge).
                 surface
-                if session.surface == .gui && session.hasGUI {
-                    if session.waiting, session.row?.dto.ask != nil {
-                        AskPanelView(target: AskTarget(session: session), keyboard: AskKeyboard(scene: scene, key: session.key, leave: .composer(session.key)), onReply: { scene.requestFocus(.composer(session.key)) }, onUseTerminal: { scene.setSurface(.terminal, for: session.key) })
-                            .padding(.horizontal, 12)
-                            .padding(.bottom, 6)
+                    .safeAreaBar(edge: .bottom, spacing: 0) {
+                        if session.surface == .gui && session.hasGUI {
+                            VStack(spacing: 0) {
+                                if session.waiting, session.row?.dto.ask != nil {
+                                    ScrollView {
+                                        AskPanelView(target: AskTarget(session: session), keyboard: AskKeyboard(scene: scene, key: session.key, leave: .composer(session.key)), onReply: { scene.requestFocus(.composer(session.key)) }, onUseTerminal: { scene.setSurface(.terminal, for: session.key) })
+                                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { askHeight = $0 }
+                                    }
+                                    .scrollBounceBehavior(.basedOnSize)
+                                    .scrollIndicators(.automatic)
+                                    // A drag puts the keyboard away: the choices come back into view.
+                                    .scrollDismissesKeyboard(.immediately)
+                                    .frame(height: min(askHeight, screenHeight * 0.55))
+                                    .padding(.horizontal, 12)
+                                    .padding(.bottom, 6)
+                                }
+                                ComposerView(session: session, composer: session.composer, scene: scene)
+                            }
+                            .frame(maxWidth: Self.readableWidth)
+                            .frame(maxWidth: .infinity)
+                        }
                     }
-                    ComposerView(session: session, composer: session.composer, scene: scene)
-                }
             }
             if !narrow, let panel = session.panel {
                 Divider()
@@ -50,7 +74,14 @@ struct SessionScreen: View {
                 .transition(.move(edge: .trailing))
             }
         }
-        .background(theme.background)
+        .background(theme.surface)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { screenHeight = $0 }
+        // Images in the conversation (what you attached, what the agent drew) load from the
+        // host, and a host path you tap opens in Quick Look.
+        .environment(\.hostFiles, HostFiles(
+            load: { [hub = session.hub, key = session.key] path in try? await hub.client(forKey: key).file(path) },
+            open: { path in Task { await preview(path) } }))
+        .quickLookPreview($previewURL)
         .overlay(alignment: .top) { NoticeStack(session: session) }
         // The agent asks while you're in an empty composer: the keys go to its question
         // (digits pick), and an on-screen keyboard steps aside for the choices.
@@ -68,12 +99,21 @@ struct SessionScreen: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
+        .onChange(of: session.isShell, initial: true) { _, shell in session.composer.isShell = shell }
+        .onChange(of: session.hasGUI) { _, _ in session.stateChanged() }
         .onChange(of: session.row?.dto.queued) { _, _ in session.stateChanged() }
         .onChange(of: session.row?.dto.status) { old, new in
             if old == .busy && new != .busy { Haptics.success() }
             if new == .waiting { Haptics.warning() }
         }
         .accessibilityElement(children: .contain)
+    }
+
+    private func preview(_ path: String) async {
+        guard let data = try? await session.hub.client(forKey: session.key).file(path) else { return }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent((path as NSString).lastPathComponent)
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if (try? data.write(to: url, options: [.completeFileProtection])) != nil { previewURL = url }
     }
 
     @ViewBuilder
@@ -86,49 +126,6 @@ struct SessionScreen: View {
             // An ended session without a transcript: its last screen, read-only.
             EndedScreen(session: session)
         }
-    }
-}
-
-/// A phone's session bar: the title, what it's doing and where (as the subtitle), and the
-/// header's actions as toolbar items.
-struct SessionNavigationChrome: ViewModifier {
-    @Bindable var session: SessionModel
-    let scene: SceneModel
-    @Environment(\.theme) private var theme
-
-    /// The terminal fills the screen under a see-through bar: over a dark one the bar's title
-    /// and buttons have to be light.
-    private var overDarkTerminal: Bool {
-        // A live terminal only: an ended session shows its last screen on the page's ground.
-        session.isLive && !(session.surface == .gui && session.hasGUI) && theme.palette.terminal.isDark
-    }
-
-    private var subtitle: String {
-        guard let row = session.row else { return session.isLive ? "" : "Ended" }
-        return [row.word.rawValue, row.dto.project, row.dto.branch].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
-    }
-
-    func body(content: Content) -> some View {
-        content
-            .navigationTitle(session.title)
-            .navigationSubtitle(subtitle)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(overDarkTerminal ? .dark : nil, for: .navigationBar)
-            .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    if session.isLive && session.hasGUI && !session.isShell {
-                        let other: SceneSnapshot.Surface = session.surface == .gui ? .terminal : .gui
-                        Button {
-                            scene.setSurface(other, for: session.key)
-                        } label: {
-                            Image(systemName: other == .terminal ? "terminal" : "text.bubble")
-                        }
-                        .accessibilityLabel(other == .terminal ? "Terminal" : "GUI")
-                    }
-                    PanelsMenu(session: session)
-                    SessionMenu(session: session, scene: scene)
-                }
-            }
     }
 }
 
@@ -157,12 +154,10 @@ private struct PanelChrome: ViewModifier {
             .toolbar {
                 ToolbarItem(placement: sheet ? .confirmationAction : .cancellationAction) {
                     if sheet {
-                        Button("Done") { session.panel = nil }.keyboardShortcut(.cancelAction)
+                        Button(role: .close) { session.panel = nil }.keyboardShortcut(.cancelAction)
                     } else {
-                        Button {
+                        Button(role: .close) {
                             withAnimation(.snappy(duration: 0.2)) { session.panel = nil }
-                        } label: {
-                            Image(systemName: "xmark")
                         }
                         .accessibilityLabel("Close \(panel.title)")
                     }
@@ -213,7 +208,7 @@ private struct SessionHeader: View {
                     .modifier(PaneDragHandle(pane: pane))
                 if session.renaming != nil {
                     TextField("Name", text: Binding(get: { session.renaming ?? "" }, set: { session.renaming = $0 }))
-                        .font(.headline)
+                        .font(.ah(.headline))
                         .textFieldStyle(.roundedBorder)
                         .focused($renameFocused)
                         .onSubmit { Task { await session.commitRename() } }
@@ -224,12 +219,28 @@ private struct SessionHeader: View {
                         .onAppear { renameFocused = true }
                 } else {
                     Text(session.title)
-                        .font(compact ? .subheadline.weight(.semibold) : .headline)
+                        .font(compact ? .ah(.subheadline).weight(.semibold) : .ah(.headline))
                         .lineLimit(1)
                         .layoutPriority(1)
                         .accessibilityAddTraits(.isHeader)
                 }
                 if let row = session.row { StatusPill(word: row.word, compact: tight).fixedSize() }
+                if let pane, scene.workspace.zoom, let leaves = scene.workspace.layout?.leaves(), let index = leaves.firstIndex(where: { $0.path == pane }) {
+                    // Maximized: which pane of how many, and the way back to the split.
+                    Button {
+                        scene.perform("maximize-pane")
+                    } label: {
+                        Label("\(index + 1) of \(leaves.count)", systemImage: "arrow.down.right.and.arrow.up.left")
+                            .font(.ah(.caption).weight(.semibold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(.fill.tertiary, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .fixedSize()
+                    .hoverEffect(.highlight)
+                    .accessibilityLabel("Maximized, pane \(index + 1) of \(leaves.count). Restore the layout")
+                }
                 Spacer(minLength: 4)
                 if session.isLive && session.hasGUI && !session.isShell {
                     if tight {
@@ -292,12 +303,14 @@ private struct SessionHeader: View {
                         .accessibilityHint("Show the fork family")
                     }
                 }
-                .font(.caption)
+                .font(.ah(.caption))
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        // Glyphs in the label color, as a bar's are; status and branch keep their own.
+        .tint(.primary)
         .background(.bar)
         .opacity(pane == nil || paneFocused ? 1 : 0.72)
         .contextMenu {
@@ -348,41 +361,66 @@ struct SessionMenu: View {
 
     var body: some View {
         Menu {
-            if session.isLive {
+            ForEach(Array(SessionAction.sections(session, scene).enumerated()), id: \.offset) { _, section in
                 Section {
-                    Button("Rename", systemImage: "pencil") { scene.perform("rename") }
-                    Button(session.row?.dto.pinned == true ? "Unpin" : "Pin", systemImage: session.row?.dto.pinned == true ? "pin.slash" : "pin") { Task { await session.togglePin() } }
-                }
-                Section {
-                    if session.row?.dto.branch != nil { Button("Switch Branch…", systemImage: "arrow.triangle.branch") { scene.sheet = .branch(session.key) } }
-                    if !session.isShell { Button("Fork…", systemImage: "arrow.branch") { scene.sheet = .fork(session.key) } }
-                    if session.row?.dto.fork != nil { Button("Forks…", systemImage: "arrow.triangle.branch") { scene.sheet = .forks(session.key) } }
-                    if session.row?.dto.feed != nil { Button("Send To…", systemImage: "paperplane") { scene.sheet = .sendTo(session.key) } }
-                    if let queued = session.row?.dto.queued, queued > 0 {
-                        Button("Send Queued Now (\(queued))", systemImage: "arrow.up.to.line") { scene.perform("send-now") }
+                    ForEach(section) { action in
+                        Button(action.title, systemImage: action.symbol, role: action.destructive ? .destructive : nil, action: action.run)
                     }
                 }
-                Section {
-                    if session.surface == .gui {
-                        Button(scene.app.preferences.stepsHidden ? "Show Steps" : "Hide Steps", systemImage: scene.app.preferences.stepsHidden ? "list.bullet.indent" : "list.bullet") { scene.perform("toggle-steps") }
-                        Button("Copy Last Reply", systemImage: "doc.on.doc") { scene.perform("copy-last") }
-                    }
-                    Button("Scrollback as Text", systemImage: "text.alignleft") { scene.perform("scrollback") }
-                    Button("Copy Attach Command", systemImage: "terminal") { scene.perform("copy-attach") }
-                    Button("All Commands…", systemImage: "command") { scene.perform("command-palette") }
-                }
-                Button("Terminate…", systemImage: "xmark.octagon", role: .destructive) { scene.sheet = .confirmTerminate(session.key) }
-            } else {
-                Button("Resume", systemImage: "play") {
-                    Task { if let key = await session.resume() { scene.open(key) } }
-                }
-                Button("Fork…", systemImage: "arrow.branch") { scene.sheet = .fork(session.key) }
-                Button(session.history?.dto.pinned == true ? "Unpin" : "Pin", systemImage: "pin") { Task { await session.togglePin() } }
             }
         } label: {
             Image(systemName: "ellipsis.circle")
         }
         .accessibilityLabel("Session menu")
+    }
+}
+
+/// One entry of the session menu. The iPad header draws them as a SwiftUI menu, the phone's
+/// navigation bar as a UIMenu: one list, so the two never drift apart.
+struct SessionAction: Identifiable {
+    let title: String
+    let symbol: String
+    var destructive = false
+    let run: @MainActor () -> Void
+
+    var id: String { title }
+
+    @MainActor
+    static func sections(_ session: SessionModel, _ scene: SceneModel) -> [[SessionAction]] {
+        guard session.isLive else {
+            return [[
+                SessionAction(title: "Resume", symbol: "play") { Task { if let key = await session.resume() { scene.open(key) } } },
+                SessionAction(title: "Fork…", symbol: "arrow.branch") { scene.sheet = .fork(session.key) },
+                SessionAction(title: session.history?.dto.pinned == true ? "Unpin" : "Pin", symbol: "pin") { Task { await session.togglePin() } },
+            ]]
+        }
+        let pinned = session.row?.dto.pinned == true
+        var work: [SessionAction] = []
+        if session.row?.dto.branch != nil { work.append(SessionAction(title: "Switch Branch…", symbol: "arrow.triangle.branch") { scene.sheet = .branch(session.key) }) }
+        if !session.isShell { work.append(SessionAction(title: "Fork…", symbol: "arrow.branch") { scene.sheet = .fork(session.key) }) }
+        if session.row?.dto.fork != nil { work.append(SessionAction(title: "Forks…", symbol: "arrow.triangle.branch") { scene.sheet = .forks(session.key) }) }
+        if session.row?.dto.feed != nil { work.append(SessionAction(title: "Send To…", symbol: "paperplane") { scene.sheet = .sendTo(session.key) }) }
+        if let queued = session.row?.dto.queued, queued > 0 {
+            work.append(SessionAction(title: "Send Queued Now (\(queued))", symbol: "arrow.up.to.line") { scene.perform("send-now") })
+        }
+        var view: [SessionAction] = []
+        if session.surface == .gui {
+            let hidden = scene.app.preferences.stepsHidden
+            view.append(SessionAction(title: hidden ? "Show Steps" : "Hide Steps", symbol: hidden ? "list.bullet.indent" : "list.bullet") { scene.perform("toggle-steps") })
+            view.append(SessionAction(title: "Copy Last Reply", symbol: "doc.on.doc") { scene.perform("copy-last") })
+        }
+        view.append(SessionAction(title: "Scrollback as Text", symbol: "text.alignleft") { scene.perform("scrollback") })
+        view.append(SessionAction(title: "Copy Attach Command", symbol: "terminal") { scene.perform("copy-attach") })
+        view.append(SessionAction(title: "All Commands…", symbol: "command") { scene.perform("command-palette") })
+        return [
+            [
+                SessionAction(title: "Rename", symbol: "pencil") { scene.perform("rename") },
+                SessionAction(title: pinned ? "Unpin" : "Pin", symbol: pinned ? "pin.slash" : "pin") { Task { await session.togglePin() } },
+            ],
+            work,
+            view,
+            [SessionAction(title: "Terminate…", symbol: "xmark.octagon", destructive: true) { scene.sheet = .confirmTerminate(session.key) }],
+        ].filter { !$0.isEmpty }
     }
 }
 
@@ -397,8 +435,8 @@ private struct EndedBanner: View {
         HStack(spacing: 10) {
             Image(systemName: "moon.zzz").foregroundStyle(theme.muted)
             VStack(alignment: .leading, spacing: 2) {
-                Text("This session has ended").font(.subheadline.weight(.semibold))
-                Text("Resume it to continue, or just send a message: that resumes it first.").font(.caption).foregroundStyle(theme.muted)
+                Text("This session has ended").font(.ah(.subheadline).weight(.semibold))
+                Text("Resume it to continue, or just send a message: that resumes it first.").font(.ah(.caption)).foregroundStyle(theme.muted)
             }
             Spacer()
             Button("Resume") {
@@ -455,7 +493,7 @@ private struct NoticeStack: View {
         VStack(spacing: 6) {
             ForEach(session.notices) { notice in
                 Text(notice.text)
-                    .font(.footnote)
+                    .font(.ah(.footnote))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(.regularMaterial, in: Capsule())

@@ -22,7 +22,7 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() }.keyboardShortcut(.cancelAction) } }
         } detail: {
             NavigationStack {
                 if let section, let account = scene.account {
@@ -54,7 +54,7 @@ private struct SettingsRowLabel: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                Text(section.summary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(section.summary).font(.ah(.caption)).foregroundStyle(.secondary).lineLimit(1)
             }
         }
         .padding(.vertical, 2)
@@ -144,11 +144,11 @@ private struct SecuritySection: View {
                         HStack {
                             VStack(alignment: .leading) {
                                 Text(other.hostname).foregroundStyle(theme.text)
-                                Text(other.origin).font(.caption.monospaced()).foregroundStyle(theme.muted)
+                                Text(other.origin).font(.ahMono(.caption)).foregroundStyle(theme.muted)
                             }
                             Spacer()
                             if other.origin == account.origin { Image(systemName: "checkmark").foregroundStyle(theme.brand) }
-                            Text(statusWord(other.status)).font(.caption).foregroundStyle(theme.muted)
+                            Text(statusWord(other.status)).font(.ah(.caption)).foregroundStyle(theme.muted)
                         }
                     }
                 }
@@ -167,11 +167,11 @@ private struct SecuritySection: View {
             Section {
                 if let code = model.code {
                     HStack {
-                        Text(code.code).font(.system(.title, design: .monospaced).weight(.semibold)).textSelection(.enabled)
+                        Text(code.code).font(.ahMono(.title).weight(.semibold)).textSelection(.enabled)
                         Spacer()
                         Button("Copy") { UIPasteboard.general.string = code.code }
                     }
-                    Text("Valid for \(code.ttlMinutes) minutes, once.").font(.caption).foregroundStyle(theme.muted)
+                    Text("Valid for \(code.ttlMinutes) minutes, once.").font(.ah(.caption)).foregroundStyle(theme.muted)
                 }
                 Button(model.code == nil ? "Issue a setup code" : "Issue a new code", systemImage: "number") { Task { await model.newCode() } }
             } header: {
@@ -185,7 +185,7 @@ private struct SecuritySection: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(signIn.label + (signIn.current ? " (this one)" : ""))
-                                Text("\(signIn.via) · last seen \(Elapsed.format(Date(timeIntervalSince1970: signIn.lastSeenAt / 1000), now: .now))").font(.caption).foregroundStyle(theme.muted)
+                                Text("\(signIn.via) · last seen \(Elapsed.format(Date(timeIntervalSince1970: signIn.lastSeenAt / 1000), now: .now))").font(.ah(.caption)).foregroundStyle(theme.muted)
                             }
                             Spacer()
                             if !signIn.current { Button("Sign out") { Task { await model.revoke(signIn) } }.buttonStyle(.borderless) }
@@ -223,7 +223,7 @@ private struct SecuritySection: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(token.name)
-                                Text(tokenUse(token)).font(.caption).foregroundStyle(theme.muted)
+                                Text(tokenUse(token)).font(.ah(.caption)).foregroundStyle(theme.muted)
                             }
                             Spacer()
                             Button("Revoke", role: .destructive) { Task { await model.removeToken(token) } }.buttonStyle(.borderless)
@@ -246,8 +246,8 @@ private struct SecuritySection: View {
                 Section("Activity") {
                     ForEach(Array(model.activity.prefix(60).enumerated()), id: \.offset) { _, row in
                         VStack(alignment: .leading, spacing: 2) {
-                            HStack { Text(row.event).font(.callout); Spacer(); Text(row.at).font(.caption2).foregroundStyle(theme.faint) }
-                            if !row.detail.isEmpty { Text(row.detail).font(.caption).foregroundStyle(theme.muted).lineLimit(2) }
+                            HStack { Text(row.event).font(.ah(.callout)); Spacer(); Text(row.at).font(.ah(.caption2)).foregroundStyle(theme.faint) }
+                            if !row.detail.isEmpty { Text(row.detail).font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(2) }
                         }
                     }
                 }
@@ -489,8 +489,8 @@ private struct ShortcutRow: View {
                         Circle().fill(theme.accent).frame(width: 6, height: 6).accessibilityLabel("Changed")
                     }
                 }
-                Text(command.detail).font(.caption).foregroundStyle(theme.muted).lineLimit(2)
-                Text(CommandCatalog.whenLabel(id)).font(.caption2).foregroundStyle(theme.faint)
+                Text(command.detail).font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(2)
+                Text(CommandCatalog.whenLabel(id)).font(.ah(.caption2)).foregroundStyle(theme.faint)
             }
             Spacer(minLength: 8)
             if recording?.id == id {
@@ -498,7 +498,7 @@ private struct ShortcutRow: View {
             } else {
                 HStack(spacing: 6) {
                     ForEach(Array(chords.enumerated()), id: \.offset) { i, chord in
-                        if i > 0 { Text("or").font(.caption2).foregroundStyle(theme.faint) }
+                        if i > 0 { Text("or").font(.ah(.caption2)).foregroundStyle(theme.faint) }
                         Menu {
                             Button("Change…", systemImage: "keyboard") { recording = ShortcutsSection.Recording(id: id, replacing: chord) }
                             Button("Remove", systemImage: "minus.circle", role: .destructive) { app.keyBindings.remove(id, chord) }
@@ -552,7 +552,7 @@ struct ChordRecorder: UIViewRepresentable {
         override init(frame: CGRect) {
             super.init(frame: frame)
             text = "Press a shortcut…"
-            font = .preferredFont(forTextStyle: .caption1)
+            font = AhType.uiFont(.caption)
             textAlignment = .center
             isUserInteractionEnabled = true
             layer.cornerRadius = 6
@@ -687,12 +687,12 @@ private struct AgentsSection: View {
                             HStack {
                                 AgentMark(agent: agent.id, size: 20)
                                 Text(agent.name)
-                                if let version = agent.version { Text(version).font(.caption.monospaced()).foregroundStyle(theme.muted) }
+                                if let version = agent.version { Text(version).font(.ahMono(.caption)).foregroundStyle(theme.muted) }
                                 Spacer()
                                 Toggle("Offer", isOn: Binding(get: { !agent.hidden }, set: { on in Task { await model.setHidden(agent, !on) } })).labelsHidden()
                             }
-                            if !agent.installed { Text("Not installed on the host").font(.caption).foregroundStyle(theme.limited) }
-                            ForEach(agent.changes, id: \.self) { change in Text("• \(change)").font(.caption).foregroundStyle(theme.muted) }
+                            if !agent.installed { Text("Not installed on the host").font(.ah(.caption)).foregroundStyle(theme.limited) }
+                            ForEach(agent.changes, id: \.self) { change in Text("• \(change)").font(.ah(.caption)).foregroundStyle(theme.muted) }
                         }
                         .swipeActions { if agent.custom { Button("Remove", role: .destructive) { Task { await model.remove(agent) } } } }
                     }
@@ -719,17 +719,18 @@ private struct AgentsSection: View {
             NavigationStack {
                 Form {
                     TextField("Name", text: $name)
-                    TextField("Command", text: $command).font(.body.monospaced()).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    TextField("Resume command (optional)", text: $resume).font(.body.monospaced()).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    TextField("Command", text: $command).font(.ahMono(.body)).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    TextField("Resume command (optional)", text: $resume).font(.ahMono(.body)).textInputAutocapitalization(.never).autocorrectionDisabled()
                 }
                 .navigationTitle("Add an agent")
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { adding = false }.keyboardShortcut(.cancelAction) }
+                    ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { adding = false }.keyboardShortcut(.cancelAction) }
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Add") {
                             Task { await model.add(name: name, command: command, resume: resume.isEmpty ? nil : resume); adding = false }
                         }.keyboardShortcut(.return, modifiers: .command)
                         .disabled(name.isEmpty || command.isEmpty)
+                            .buttonStyle(.glassProminent)
                     }
                 }
             }
@@ -758,10 +759,10 @@ private struct SubscriptionsSection: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(s.name).foregroundStyle(theme.text)
-                                Text("\(s.model) · \(s.hasKey ? "key \(s.keyHint)" : "no key")").font(.caption).foregroundStyle(theme.muted)
+                                Text("\(s.model) · \(s.hasKey ? "key \(s.keyHint)" : "no key")").font(.ah(.caption)).foregroundStyle(theme.muted)
                             }
                             Spacer()
-                            if s.isDefault { Text("Default").font(.caption).foregroundStyle(theme.brand) }
+                            if s.isDefault { Text("Default").font(.ah(.caption)).foregroundStyle(theme.brand) }
                         }
                     }
                     .swipeActions {
@@ -840,13 +841,13 @@ private struct SubscriptionEditor: View {
                         draft.envName = on ? (SubscriptionsSettings.provider(for: draft.baseUrl)?.envName ?? "MODEL_API_KEY") : nil
                     }))
                     if draft.envName != nil {
-                        TextField("Variable", text: Binding(get: { draft.envName ?? "" }, set: { draft.envName = $0 })).font(.body.monospaced()).textInputAutocapitalization(.characters)
+                        TextField("Variable", text: Binding(get: { draft.envName ?? "" }, set: { draft.envName = $0 })).font(.ahMono(.body)).textInputAutocapitalization(.characters)
                     }
                 }
             }
             .navigationTitle(draft.id == nil ? "Add a provider" : draft.name)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: close).keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel, action: close).keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         var out = draft
@@ -854,6 +855,7 @@ private struct SubscriptionEditor: View {
                         Task { if await model.save(out) { close() } }
                     }.keyboardShortcut(.return, modifiers: .command)
                     .disabled(draft.name.isEmpty || draft.baseUrl.isEmpty || draft.model.isEmpty)
+                        .buttonStyle(.glassProminent)
                 }
             }
         }
@@ -885,9 +887,9 @@ private struct EnvironmentSection: View {
                             editing = EnvVarDraft(original: v.name, name: v.name, value: v.value ?? "", secret: v.secret)
                         } label: {
                             HStack {
-                                Text(v.name).font(.callout.monospaced()).foregroundStyle(theme.text)
+                                Text(v.name).font(.ahMono(.callout)).foregroundStyle(theme.text)
                                 Spacer()
-                                Text(v.secret ? (v.hint ?? "••••") : (v.value ?? "")).font(.caption.monospaced()).foregroundStyle(theme.muted).lineLimit(1)
+                                Text(v.secret ? (v.hint ?? "••••") : (v.value ?? "")).font(.ahMono(.caption)).foregroundStyle(theme.muted).lineLimit(1)
                             }
                         }
                         .swipeActions { Button("Remove", role: .destructive) { Task { await model.remove(v) } } }
@@ -898,7 +900,7 @@ private struct EnvironmentSection: View {
                 }
                 if !state.exports.isEmpty {
                     Section("From subscriptions") {
-                        ForEach(state.exports, id: \.name) { e in LabeledContent(e.name, value: e.subscription).font(.callout.monospaced()) }
+                        ForEach(state.exports, id: \.name) { e in LabeledContent(e.name, value: e.subscription).font(.ahMono(.callout)) }
                     }
                 }
                 if !state.stale.isEmpty {
@@ -907,7 +909,7 @@ private struct EnvironmentSection: View {
                             HStack {
                                 VStack(alignment: .leading) {
                                     Text(s.title)
-                                    if let why = s.restart { Text(why).font(.caption).foregroundStyle(theme.muted) }
+                                    if let why = s.restart { Text(why).font(.ah(.caption)).foregroundStyle(theme.muted) }
                                 }
                                 Spacer()
                                 if s.restart == nil {
@@ -938,23 +940,24 @@ private struct EnvEditor: View {
     var body: some View {
         NavigationStack {
             Form {
-                TextField("NAME", text: $draft.name).font(.body.monospaced()).textInputAutocapitalization(.characters).autocorrectionDisabled().disabled(draft.original != nil)
+                TextField("NAME", text: $draft.name).font(.ahMono(.body)).textInputAutocapitalization(.characters).autocorrectionDisabled().disabled(draft.original != nil)
                 if draft.secret {
                     SecureField(draft.original == nil ? "Value" : "New value (leave empty to keep)", text: $draft.value)
                 } else {
-                    TextField("Value", text: $draft.value, axis: .vertical).font(.body.monospaced()).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    TextField("Value", text: $draft.value, axis: .vertical).font(.ahMono(.body)).textInputAutocapitalization(.never).autocorrectionDisabled()
                 }
                 Toggle("Secret", isOn: $draft.secret)
             }
             .navigationTitle(draft.original ?? "New variable")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: close).keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel, action: close).keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         let value: String? = draft.secret && draft.original != nil && draft.value.isEmpty ? nil : draft.value
                         Task { if await model.save(name: draft.name, value: value, secret: draft.secret) { close() } }
                     }.keyboardShortcut(.return, modifiers: .command)
                     .disabled(draft.name.isEmpty)
+                        .buttonStyle(.glassProminent)
                 }
             }
         }
@@ -998,16 +1001,16 @@ private struct NewTokenCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label("“\(name)” is ready", systemImage: "checkmark.seal.fill")
-                .font(.subheadline.weight(.semibold))
+                .font(.ah(.subheadline).weight(.semibold))
                 .foregroundStyle(theme.done)
             Text(secret)
-                .font(.callout.monospaced())
+                .font(.ahMono(.callout))
                 .textSelection(.enabled)
                 .lineLimit(2)
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(theme.sunken, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            Text("Copy it now: it isn’t shown again, and this app doesn’t keep it.").font(.caption).foregroundStyle(theme.muted)
+            Text("Copy it now: it isn’t shown again, and this app doesn’t keep it.").font(.ah(.caption)).foregroundStyle(theme.muted)
             HStack {
                 Button("Copy", systemImage: "doc.on.doc") {
                     UIPasteboard.general.setItems([[UIPasteboard.typeAutomatic: secret]], options: [.localOnly: true, .expirationDate: Date.now.addingTimeInterval(120)])
@@ -1044,7 +1047,7 @@ private struct SystemSection: View {
                     LabeledContent("Codex", value: hooks.codex.wired ? "Wired" : hooks.codex.otherNotify ? "Another notify program is set" : "Not wired")
                     let wired = hooks.claude.wired == hooks.claude.of && hooks.codex.wired
                     Button(wired ? "Remove the hooks" : "Install the hooks") { Task { await model.setHooks(install: !wired) } }
-                    ForEach(model.messages, id: \.self) { Text($0).font(.caption).foregroundStyle(theme.muted) }
+                    ForEach(model.messages, id: \.self) { Text($0).font(.ah(.caption)).foregroundStyle(theme.muted) }
                 } header: {
                     Text("Agent hooks")
                 } footer: {
@@ -1056,7 +1059,7 @@ private struct SystemSection: View {
                             let a = audit[agent]!
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("\(agent): \(a.missed) missed of \(a.checked)")
-                                if let last = a.last { Text("Last miss: \(last.ask)").font(.caption).foregroundStyle(theme.muted).lineLimit(2) }
+                                if let last = a.last { Text("Last miss: \(last.ask)").font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(2) }
                             }
                         }
                         Button("Reset the audit") { Task { await model.resetAudit() } }
@@ -1069,10 +1072,10 @@ private struct SystemSection: View {
                     Button(desktop.installed ? "Remove from the launcher" : "Add to the launcher", systemImage: desktop.installed ? "minus.circle" : "plus.app") {
                         Task { await model.setDesktop(install: !desktop.installed) }
                     }
-                    ForEach(model.desktopMessages, id: \.self) { Text($0).font(.caption).foregroundStyle(theme.muted) }
+                    ForEach(model.desktopMessages, id: \.self) { Text($0).font(.ah(.caption)).foregroundStyle(theme.muted) }
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
-                            Text("Hyprland shortcut").font(.subheadline)
+                            Text("Hyprland shortcut").font(.ah(.subheadline))
                             Spacer()
                             Button("Copy") {
                                 UIPasteboard.general.string = desktop.bind
@@ -1082,7 +1085,7 @@ private struct SystemSection: View {
                             .buttonStyle(.borderless)
                         }
                         Text(desktop.bind)
-                            .font(.caption.monospaced())
+                            .font(.ahMono(.caption))
                             .foregroundStyle(theme.text2)
                             .textSelection(.enabled)
                             .padding(8)
@@ -1112,10 +1115,10 @@ private struct SystemSection: View {
                 if let log = model.buildLog {
                     VStack(alignment: .leading, spacing: 6) {
                         Label("The build failed; nothing was restarted.", systemImage: "exclamationmark.triangle.fill")
-                            .font(.subheadline)
+                            .font(.ah(.subheadline))
                             .foregroundStyle(theme.danger)
                         ScrollView(.horizontal) {
-                            Text(log).font(.caption2.monospaced()).foregroundStyle(theme.text2).textSelection(.enabled)
+                            Text(log).font(.ahMono(.caption2)).foregroundStyle(theme.text2).textSelection(.enabled)
                         }
                         .frame(maxHeight: 180)
                     }

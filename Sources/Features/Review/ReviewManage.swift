@@ -32,7 +32,7 @@ struct StackManageSheet: View {
                         ForEach(stack.methods, id: \.self) { Text($0).tag($0) }
                     }
                     TextField("Plan file (optional)", text: $planPath)
-                        .font(.callout.monospaced())
+                        .font(.ahMono(.callout))
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .onSubmit { Task { await model.update(StackPatch(planPath: .some(planPath.isEmpty ? nil : planPath))) } }
@@ -79,7 +79,7 @@ struct StackManageSheet: View {
                     Section {
                         Button("Make it a GitHub stack") { Task { await model.link() } }
                             .disabled(stack.link?.ok == false)
-                        if let why = stack.link?.why { Text(why).font(.caption).foregroundStyle(theme.muted) }
+                        if let why = stack.link?.why { Text(why).font(.ah(.caption)).foregroundStyle(theme.muted) }
                     } footer: {
                         Text("GitHub then tracks the chain as one stack, and new PRs pushed onto it join this review.")
                     }
@@ -93,7 +93,7 @@ struct StackManageSheet: View {
             .environment(\.editMode, .constant(.active))
             .navigationTitle("Manage stack")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button(role: .close) { dismiss() } } }
             .task { owners = await model.owners() }
             .confirmationDialog("Delete this review?", isPresented: $confirmDelete, titleVisibility: .visible) {
                 Button("Delete", role: .destructive) { Task { await model.remove(); dismiss() } }
@@ -144,15 +144,16 @@ struct ResolveThreadSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Thread") { Text(finding.title).font(.callout) }
+                Section("Thread") { Text(finding.title).font(.ah(.callout)) }
                 Section("Your reply") { TextEditor(text: $reply).frame(minHeight: 120) }
             }
             .navigationTitle("Reply and resolve")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Resolve") { Task { await model.resolveThread(finding, reply: reply); dismiss() } }.keyboardShortcut(.return, modifiers: .command)
+                        .buttonStyle(.glassProminent)
                 }
             }
         }

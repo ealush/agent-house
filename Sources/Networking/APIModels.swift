@@ -87,6 +87,8 @@ struct ForkResult: Codable, Equatable, Sendable {
 struct QuestionAnswer: Codable, Equatable, Sendable {
     var picked: [Int]
     var text: String? = nil
+    /// Notes on the pick of a question with previews (the dialog's "n to add notes").
+    var notes: String? = nil
 }
 
 struct SlashCommand: Codable, Equatable, Sendable, Hashable {

@@ -44,7 +44,7 @@ struct TranscriptView: View {
                             }
                         } label: {
                             Label(loadingOlder ? "Loading…" : "Earlier messages", systemImage: "arrow.up")
-                                .font(.footnote)
+                                .font(.ah(.footnote))
                         }
                         .buttonStyle(.bordered)
                         .frame(maxWidth: .infinity)
@@ -68,7 +68,7 @@ struct TranscriptView: View {
                         }
                     }
                     ForEach(session.outgoing) { item in
-                        UserBubble(text: item.text, pending: item.state == .sending ? "Sending…" : "Typed in · waiting for the transcript")
+                        UserBubble(text: item.text, pending: item.state == .sending ? "Sending…" : "Sent")
                             .id("out-\(item.id)")
                             // Springs up out of the box it was typed in.
                             .transition(reduceMotion ? .opacity : .asymmetric(insertion: .scale(scale: 0.85, anchor: .bottomTrailing).combined(with: .opacity).combined(with: .offset(y: 24)), removal: .opacity))
@@ -82,6 +82,9 @@ struct TranscriptView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
+                // A readable column on a wide screen, centered; the scroll view stays full width.
+                .frame(maxWidth: SessionScreen.readableWidth)
+                .frame(maxWidth: .infinity)
                 .animation(reduceMotion ? nil : .spring(duration: 0.35, bounce: 0.3), value: session.outgoing.map(\.id))
                 .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: session.working)
                 .scrollTargetLayout()
@@ -107,11 +110,15 @@ struct TranscriptView: View {
                 // missing GUI: say what's ready and offer a start.
                 let fresh = session.isLive && !session.isShell && session.outgoing.isEmpty && blocks.isEmpty
                 switch session.feed.status {
-                case .unavailable where fresh && session.feed.reason == "no-transcript":
-                    StartConversation(session: session, scene: scene)
+                case .unavailable where session.isLive && !session.isShell && session.feed.reason == "no-transcript":
+                    // Once you've sent something, your message and the working row say what's
+                    // happening: the transcript is on its way, nothing is missing.
+                    if fresh { StartConversation(session: session, scene: scene) }
+                case .unavailable where !session.outgoing.isEmpty || !blocks.isEmpty:
+                    EmptyView()
                 case .unavailable:
                     UnavailableFeed(reason: session.feed.reason) { scene.setSurface(.terminal, for: session.key) }
-                case .connecting where blocks.isEmpty:
+                case .connecting where blocks.isEmpty && session.outgoing.isEmpty:
                     ProgressView("Connecting to the transcript…")
                 default:
                     if fresh && session.feed.status == .live {
@@ -198,7 +205,7 @@ struct TranscriptView: View {
                 }
             }
         }
-        .background(theme.background)
+        .background(theme.surface)
     }
 }
 
@@ -247,7 +254,7 @@ private struct MessageRail: View {
         .overlay(alignment: .topLeading) {
             if let tip, range.contains(tip) {
                 Text(preview(items[tip].text))
-                    .font(.caption)
+                    .font(.ah(.caption))
                     .lineLimit(2)
                     .frame(maxWidth: 260, alignment: .leading)
                     .padding(.horizontal, 10)
@@ -338,7 +345,7 @@ private struct BlockRow: View {
                 Image(systemName: kind == .compacted ? "arrow.down.right.and.arrow.up.left" : kind == .interrupted ? "stop.circle" : "info.circle")
                 Text(text)
             }
-            .font(.footnote)
+            .font(.ah(.footnote))
             .foregroundStyle(theme.muted)
             .frame(maxWidth: .infinity)
         }
@@ -362,7 +369,7 @@ struct UserBubble: View {
                         if upload.image {
                             HostImage(source: upload.path, alt: upload.name).frame(maxWidth: 160)
                         } else {
-                            Label(upload.name, systemImage: "doc").font(.caption).padding(8).background(theme.raised, in: Capsule())
+                            Label(upload.name, systemImage: "doc").font(.ah(.caption)).padding(8).background(theme.raised, in: Capsule())
                         }
                     }
                 }
@@ -371,10 +378,12 @@ struct UserBubble: View {
                 MarkdownView(split.rest, compact: true)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
-                    .background(theme.accentStrong.opacity(0.16), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    // ah's Message: your words on a raised card with a hairline.
+                    .background(theme.raised, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(theme.line, lineWidth: 1))
             }
             if let pending {
-                Text(pending).font(.caption2).foregroundStyle(theme.faint)
+                Text(pending).font(.ah(.caption2)).foregroundStyle(theme.faint)
             }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
@@ -415,9 +424,9 @@ private struct PartView: View {
                                     .lineLimit(1)
                             }
                             Spacer(minLength: 0)
-                            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(theme.faint).rotationEffect(.degrees(showReasoning ? 90 : 0))
+                            Image(systemName: "chevron.right").font(.ah(.caption2)).foregroundStyle(theme.faint).rotationEffect(.degrees(showReasoning ? 90 : 0))
                         }
-                        .font(.footnote)
+                        .font(.ah(.footnote))
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -436,11 +445,11 @@ private struct PartView: View {
         case .widget(let widget):
             WidgetView(model: WidgetModel(widget), answered: answered, reply: { text in Task { await session.reply(text) } })
         case .notice(_, let text):
-            Text(text).font(.footnote).foregroundStyle(theme.muted)
+            Text(text).font(.ah(.footnote)).foregroundStyle(theme.muted)
         case .toolCall, .toolResult:
             EmptyView()
         case .unknown(let type):
-            Text("Unsupported content (\(type))").font(.caption).foregroundStyle(theme.faint)
+            Text("Unsupported content (\(type))").font(.ah(.caption)).foregroundStyle(theme.faint)
         }
     }
 }
@@ -466,7 +475,7 @@ private struct ToolGroupView: View {
                         Text(summary.foldedLabel)
                         Image(systemName: "chevron.right").rotationEffect(.degrees(unfolded ? 90 : 0))
                     }
-                    .font(.footnote)
+                    .font(.ah(.footnote))
                     .foregroundStyle(summary.failed > 0 ? theme.danger : theme.muted)
                 }
                 .buttonStyle(.plain)
@@ -476,7 +485,7 @@ private struct ToolGroupView: View {
                 let hidden = ToolGroupSummary.hiddenCount(total: calls.count, showAll: showAll)
                 if hidden > 0 {
                     Button("\(hidden) earlier step\(hidden == 1 ? "" : "s")") { withAnimation(.snappy) { showAll = true } }
-                        .font(.footnote)
+                        .font(.ah(.footnote))
                         .buttonStyle(.plain)
                         .hoverEffect(.highlight)
                         .foregroundStyle(theme.muted)
@@ -512,16 +521,16 @@ struct ToolRowView: View {
             } label: {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     statusMark
-                    Text(view.label).font(.footnote.weight(.semibold)).foregroundStyle(theme.text)
-                    Text(view.summary).font(.footnote.monospaced()).foregroundStyle(theme.muted).lineLimit(1).truncationMode(.middle)
+                    Text(view.label).font(.ah(.footnote).weight(.semibold)).foregroundStyle(theme.text)
+                    Text(view.summary).font(.ahMono(.footnote)).foregroundStyle(theme.muted).lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 0)
                     if view.status == .running || view.status == .awaiting || view.status == .stopped {
                         Text(view.status == .awaiting ? "Waiting for you" : view.status == .stopped ? "No result" : "Running…")
-                            .font(.caption2)
+                            .font(.ah(.caption2))
                             .foregroundStyle(view.status == .awaiting ? theme.brand : theme.faint)
                     }
-                    if view.truncated { Text("trimmed").font(.caption2).foregroundStyle(theme.faint) }
-                    Image(systemName: "chevron.right").font(.caption2).foregroundStyle(theme.faint).rotationEffect(.degrees(open ? 90 : 0))
+                    if view.truncated { Text("trimmed").font(.ah(.caption2)).foregroundStyle(theme.faint) }
+                    Image(systemName: "chevron.right").font(.ah(.caption2)).foregroundStyle(theme.faint).rotationEffect(.degrees(open ? 90 : 0))
                 }
                 .contentShape(Rectangle())
             }
@@ -535,19 +544,26 @@ struct ToolRowView: View {
             }
         }
         .padding(10)
-        .background(theme.raised.opacity(view.status == .awaiting ? 1 : 0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(view.status == .awaiting ? theme.brand.opacity(0.6) : .clear, lineWidth: 1.5))
+        // ah's ToolRow: a raised card with a hairline; what waits on you is pink-edged.
+        .background(view.status == .awaiting ? theme.accentTint : theme.raised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(view.status == .awaiting ? theme.accentLine : theme.line, lineWidth: 1))
     }
 
+    /// The row's state as ah's dot: green done, a cyan ring running, pink waiting on you, red
+    /// failed, an empty ring when it ended without a result.
     @ViewBuilder
     private var statusMark: some View {
-        switch view.status {
-        case .running: ProgressView().controlSize(.mini)
-        case .awaiting: Image(systemName: "hand.raised.fill").foregroundStyle(theme.brand).font(.caption)
-        case .stopped: Image(systemName: "minus.circle").foregroundStyle(theme.faint).font(.caption)
-        case .error: Image(systemName: "xmark.circle.fill").foregroundStyle(theme.danger).font(.caption)
-        case .done: Image(systemName: "checkmark.circle.fill").foregroundStyle(theme.done).font(.caption)
+        Group {
+            switch view.status {
+            case .running: Circle().strokeBorder(theme.run, lineWidth: 2).overlay { PulseRing(color: theme.run) }
+            case .awaiting: Circle().fill(theme.brand)
+            case .stopped: Circle().strokeBorder(theme.faint, lineWidth: 1.5)
+            case .error: Circle().fill(theme.danger)
+            case .done: Circle().fill(theme.done)
+            }
         }
+        .frame(width: 8, height: 8)
+        .frame(width: 14)
     }
 }
 
@@ -561,7 +577,7 @@ private struct ToolBodyView: View {
     var body: some View {
         switch body_ {
         case .shell(let command, let description, let output):
-            if let description { Text(description).font(.caption).foregroundStyle(theme.muted) }
+            if let description { Text(description).font(.ah(.caption)).foregroundStyle(theme.muted) }
             CodeBlockView(code: "$ \(command)", tone: .command)
             OutputView(result: output)
         case .fileDiff(let path, let lines, let error):
@@ -575,30 +591,30 @@ private struct ToolBodyView: View {
             FileLink(path: path)
             OutputView(result: output)
         case .search(let scope, let output):
-            if let scope { Text("in \(scope)").font(.caption).foregroundStyle(theme.muted) }
+            if let scope { Text("in \(scope)").font(.ah(.caption)).foregroundStyle(theme.muted) }
             OutputView(result: output, empty: "No matches")
         case .web(let url, let prompt, let output):
             if let url { MarkdownView("<\(url)>", compact: true) }
-            if let prompt { Text(prompt).font(.caption).foregroundStyle(theme.muted) }
+            if let prompt { Text(prompt).font(.ah(.caption)).foregroundStyle(theme.muted) }
             OutputView(result: output)
         case .checklist(let items):
             ChecklistView(title: nil, items: items)
         case .questions(let questions, let waiting):
             if waiting {
-                Text("Waiting for your answer below.").font(.caption).foregroundStyle(theme.muted)
+                Text("Waiting for your answer below.").font(.ah(.caption)).foregroundStyle(theme.muted)
             } else {
                 ForEach(questions, id: \.question) { q in
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(q.question).font(.callout.weight(.semibold))
+                        Text(q.question).font(.ah(.callout).weight(.semibold))
                         ForEach(Array(q.choices.enumerated()), id: \.offset) { i, choice in
                             HStack {
                                 Image(systemName: q.picked(choice) ? "checkmark.circle.fill" : "circle").foregroundStyle(q.picked(choice) ? theme.done : theme.faint)
                                 Text(choice)
                                 if let d = q.descriptions[i] { Text("— \(d)").foregroundStyle(theme.muted) }
                             }
-                            .font(.caption)
+                            .font(.ah(.caption))
                         }
-                        if let answer = q.answer { Text("Answer: \(answer)").font(.caption) }
+                        if let answer = q.answer { Text("Answer: \(answer)").font(.ah(.caption)) }
                     }
                 }
             }
@@ -621,7 +637,7 @@ private struct ToolBodyView: View {
             Button {
                 hostFiles?.open(path)
             } label: {
-                Label(path, systemImage: "doc.text").font(.caption.monospaced()).lineLimit(1).truncationMode(.head)
+                Label(path, systemImage: "doc.text").font(.ahMono(.caption)).lineLimit(1).truncationMode(.head)
             }
             .buttonStyle(.plain)
             .hoverEffect(.highlight)
@@ -637,7 +653,7 @@ private struct ToolBodyView: View {
             if let result {
                 let text = result.text.replacingOccurrences(of: "\n+$", with: "", options: .regularExpression)
                 if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Text(empty).font(.caption).foregroundStyle(theme.faint)
+                    Text(empty).font(.ah(.caption)).foregroundStyle(theme.faint)
                 } else {
                     CodeBlockView(code: text, tone: result.isError ? .error : .plain)
                 }
@@ -654,7 +670,7 @@ struct ChecklistView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if let title, !title.isEmpty { Text(title).font(.subheadline.weight(.semibold)) }
+            if let title, !title.isEmpty { Text(title).font(.ah(.subheadline).weight(.semibold)) }
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: item.state == .done ? "checkmark.circle.fill" : item.state == .active ? "circle.dotted.circle" : "circle")
@@ -664,7 +680,7 @@ struct ChecklistView: View {
                         .foregroundStyle(item.state == .done ? theme.muted : theme.text)
                         .fontWeight(item.state == .active ? .semibold : .regular)
                 }
-                .font(.callout)
+                .font(.ah(.callout))
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("\(item.state == .done ? "Done" : item.state == .active ? "In progress" : "To do"): \(item.text)")
             }
@@ -679,7 +695,7 @@ private struct TurnFooter: View {
 
     var body: some View {
         Label("Done in \(WorkingRow.elapsed(seconds))", systemImage: "checkmark.circle")
-            .font(.caption2)
+            .font(.ah(.caption2))
             .foregroundStyle(theme.faint)
             .padding(.leading, 4)
             .accessibilityLabel("The agent took \(WorkingRow.elapsed(seconds))")
@@ -699,35 +715,33 @@ private struct WorkingRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "sparkle")
-                .font(.footnote.weight(.semibold))
+                .font(.ah(.footnote).weight(.semibold))
                 .foregroundStyle(theme.accent)
                 .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion)
             Text(detail.flatMap { $0.isEmpty ? nil : $0 } ?? "Working")
-                .font(.footnote.weight(.medium))
+                .font(.ah(.footnote).weight(.medium))
                 .foregroundStyle(theme.text2)
                 .lineLimit(1)
                 .modifier(Shimmer(active: !reduceMotion))
             TimelineView(.periodic(from: since, by: 1)) { context in
                 Text(Self.elapsed(context.date.timeIntervalSince(since)))
-                    .font(.footnote.monospacedDigit())
+                    .font(.ah(.footnote).monospacedDigit())
                     .foregroundStyle(theme.faint)
             }
             Spacer(minLength: 8)
             if hardwareKeyboard {
                 HStack(spacing: 4) {
                     Keycaps(parts: ["esc"])
-                    Text("stop").font(.caption2).foregroundStyle(theme.faint)
+                    Text("stop").font(.ah(.caption2)).foregroundStyle(theme.faint)
                     if queued > 0 {
                         Keycaps(parts: ["↵"]).padding(.leading, 6)
-                        Text("steer next").font(.caption2).foregroundStyle(theme.faint)
+                        Text("steer next").font(.ah(.caption2)).foregroundStyle(theme.faint)
                     }
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(theme.accent.opacity(0.06), in: Capsule())
-        .overlay(Capsule().strokeBorder(theme.accent.opacity(0.18), lineWidth: 0.5))
+        // A quiet line in the agent's column, not a card: the pulse and the clock say enough.
+        .padding(.vertical, 6)
         .transition(.opacity.combined(with: .move(edge: .bottom)))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("The agent is working. \(detail ?? "")")
@@ -801,11 +815,10 @@ private struct StartConversation: View {
             VStack(spacing: 22) {
                 VStack(spacing: 12) {
                     AgentMark(agent: session.row?.dto.agent, size: 58)
-                        .shadow(color: theme.accent.opacity(0.35), radius: appeared ? 22 : 6)
                         .scaleEffect(appeared || reduceMotion ? 1 : 0.85)
                     Text("\(session.launch.preset?.name ?? "The agent") is ready")
-                        .font(.title2.weight(.semibold))
-                    Text(place).font(.callout).foregroundStyle(theme.muted).multilineTextAlignment(.center)
+                        .font(.ah(.title2).weight(.semibold))
+                    Text(place).font(.ah(.callout)).foregroundStyle(theme.muted).multilineTextAlignment(.center)
                 }
                 VStack(spacing: 8) {
                     ForEach(Self.starters, id: \.text) { starter in
@@ -818,7 +831,7 @@ private struct StartConversation: View {
                                 Image(systemName: starter.symbol).foregroundStyle(theme.accent).frame(width: 22)
                                 Text(starter.text).foregroundStyle(theme.text)
                                 Spacer()
-                                Image(systemName: "arrow.up.left").font(.caption).foregroundStyle(theme.faint)
+                                Image(systemName: "arrow.up.left").font(.ah(.caption)).foregroundStyle(theme.faint)
                             }
                             .padding(.horizontal, 14)
                             .padding(.vertical, 11)
@@ -830,7 +843,7 @@ private struct StartConversation: View {
                 }
                 if !recent.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Or pick up where you left off").font(.footnote.weight(.semibold)).foregroundStyle(theme.muted)
+                        Text("Or pick up where you left off").font(.ah(.footnote).weight(.semibold)).foregroundStyle(theme.muted)
                         ForEach(recent, id: \.id) { item in
                             Button {
                                 Task { await scene.resume(item) }
@@ -839,10 +852,10 @@ private struct StartConversation: View {
                                     Image(systemName: "clock.arrow.circlepath").foregroundStyle(theme.faint).frame(width: 22)
                                     VStack(alignment: .leading, spacing: 1) {
                                         Text(item.dto.title).foregroundStyle(theme.text).lineLimit(1)
-                                        Text(Date(timeIntervalSince1970: item.dto.at / (item.dto.at > 1e11 ? 1000 : 1)).formatted(.relative(presentation: .named))).font(.caption).foregroundStyle(theme.faint)
+                                        Text(Date(timeIntervalSince1970: item.dto.at / (item.dto.at > 1e11 ? 1000 : 1)).formatted(.relative(presentation: .named))).font(.ah(.caption)).foregroundStyle(theme.faint)
                                     }
                                     Spacer()
-                                    Text("Resume").font(.caption.weight(.semibold)).foregroundStyle(theme.accent)
+                                    Text("Resume").font(.ah(.caption).weight(.semibold)).foregroundStyle(theme.accent)
                                 }
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 9)

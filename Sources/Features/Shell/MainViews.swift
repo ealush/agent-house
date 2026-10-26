@@ -1,7 +1,9 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The iPad sidebar: the pages, then every session in the web's order and groups.
+/// The iPad sidebar, as ah's design system draws it: one floating glass panel over the ground
+/// holding its own head (the wordmark, the host, its menus), Search or jump, the pages, every
+/// session in the web's order and groups, the workspaces and New session.
 struct SidebarView: View {
     @Bindable var scene: SceneModel
     @Environment(\.theme) private var theme
@@ -9,21 +11,111 @@ struct SidebarView: View {
     var body: some View {
         if let hub = scene.hub {
             VStack(spacing: 0) {
-                PageLinks(scene: scene, hub: hub)
-                SessionListView(scene: scene, hub: hub, selection: scene.workspace.focusedKey)
-                Divider()
-                WorkspaceStrip(scene: scene)
-            }
-            .background(theme.background)
-            .toolbar {
-                // At hand by touch: what otherwise only a key or the palette reaches.
-                ToolbarItemGroup(placement: .primaryAction) {
-                    Button { scene.perform("new-session") } label: { Label("New session", systemImage: "plus") }
-                    MoreMenu(scene: scene, settings: true)
+                head(hub)
+                Button { scene.perform("switcher") } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass").foregroundStyle(theme.faint)
+                        Text("Search or jump to").foregroundStyle(theme.muted)
+                        Spacer(minLength: 4)
+                        if scene.hardwareKeyboard, let chord = scene.app.keyBindings.hint("switcher") { Keycaps(chord) }
+                    }
+                    .font(.ah(.subheadline))
+                    .padding(.horizontal, 12)
+                    .frame(height: 38)
+                    .background(theme.sunken, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(theme.line, lineWidth: 1))
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .hoverEffect(.highlight)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 4)
+                SessionListView(scene: scene, hub: hub, selection: scene.workspace.focusedKey, showsPages: true)
+                    .scrollContentBackground(.hidden)
+                VStack(spacing: 8) {
+                    WorkspaceStrip(scene: scene)
+                    Button { scene.perform("new-session") } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "plus")
+                            Text("New session").font(.ah(.callout).weight(.medium))
+                            Spacer(minLength: 4)
+                            if scene.hardwareKeyboard, let chord = scene.app.keyBindings.hint("new-session") { Keycaps(chord) }
+                        }
+                        .foregroundStyle(theme.text)
+                        .padding(.horizontal, 12)
+                        .frame(height: 40)
+                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(theme.lineStrong, lineWidth: 1))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .hoverEffect(.highlight)
+                    .padding(.horizontal, 12)
+                }
+                .padding(.bottom, 12)
             }
-            .navigationTitle(hub.hostname ?? "Agent Hub")
+            .background {
+                // Glass that floats over the ground: tinted, blurred, with a lit rim.
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(theme.glassTint)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(LinearGradient(colors: [.white.opacity(0.22), .white.opacity(0.04), .white.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1))
+                    .shadow(color: theme.shadow, radius: 20, y: 10)
+            }
+            .padding(8)
+            .background(theme.background.ignoresSafeArea())
+            // The keyboard is for the panes; the sidebar keeps its height under it.
+            .ignoresSafeArea(.keyboard)
         }
+    }
+
+    private func head(_ hub: HubStore) -> some View {
+        HStack(spacing: 8) {
+            AhWordmark()
+            if let host = hub.hostname {
+                HStack(spacing: 5) {
+                    Circle().fill(hub.phase == .live ? theme.done : theme.limited).frame(width: 7, height: 7)
+                    Text(host).font(.ah(.caption)).foregroundStyle(theme.text2).lineLimit(1)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(theme.text.opacity(0.06), in: Capsule())
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Host \(host)\(hub.phase == .live ? "" : ", reconnecting")")
+            }
+            Spacer(minLength: 4)
+            MoreMenu(scene: scene, settings: true)
+                .labelStyle(.iconOnly)
+                .tint(.primary)
+                .frame(width: 32, height: 32)
+            Button { scene.perform("toggle-sidebar") } label: { Image(systemName: "sidebar.left") }
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.muted)
+                .frame(width: 32, height: 32)
+                .accessibilityLabel("Hide Sidebar")
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
+    }
+}
+
+/// ah's wordmark: the prompt mark and "ah" with its pink full stop.
+struct AhWordmark: View {
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        HStack(spacing: 7) {
+            // The prompt mark: a white ">_" on ah's pink.
+            Text(">_")
+                .font(.custom(AhType.mono, size: 12, relativeTo: .caption).weight(.bold))
+                .foregroundStyle(.white)
+                .frame(width: 26, height: 26)
+                .background(theme.accentStrong, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            (Text("ah").foregroundStyle(theme.text) + Text(".").foregroundStyle(theme.brand))
+                .font(.custom(AhType.ui, size: 22, relativeTo: .title3).weight(.bold))
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("ah")
     }
 }
 
@@ -51,49 +143,6 @@ struct MoreMenu: View {
             Label("More", systemImage: "ellipsis")
         }
         .menuOrder(.fixed)
-    }
-}
-
-private struct PageLinks: View {
-    let scene: SceneModel
-    let hub: HubStore
-    @Environment(\.theme) private var theme
-
-    var body: some View {
-        let waiting = hub.rows.filter { $0.dto.status == .waiting }.count
-        HStack(spacing: 4) {
-            link("Inbox", "tray", .inbox, badge: waiting + hub.reviewAlerts.count)
-            link("History", "clock.arrow.circlepath", .history)
-            link("Review", "checkmark.rectangle.stack", .review(ReviewRoute()))
-            link("Search", "magnifyingglass", .search)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-    }
-
-    private func link(_ title: String, _ symbol: String, _ route: SceneSnapshot.Route, badge: Int = 0) -> some View {
-        let active = scene.workspace.layout == nil && scene.route.page == route.page
-        return Button {
-            scene.show(route)
-        } label: {
-            VStack(spacing: 2) {
-                Image(systemName: symbol).font(.body)
-                    .overlay(alignment: .topTrailing) {
-                        if badge > 0 {
-                            Text("\(badge)").font(.caption2.weight(.bold)).padding(.horizontal, 4).background(theme.brand, in: Capsule()).foregroundStyle(.white).offset(x: 10, y: -6)
-                        }
-                    }
-                Text(title).font(.caption2)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 6)
-            .background(active ? theme.accentStrong.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 10))
-        }
-        .buttonStyle(.plain)
-        .hoverEffect(.highlight)
-        .foregroundStyle(active ? theme.text : theme.muted)
-        .accessibilityLabel(badge > 0 ? "\(title), \(badge) need you" : title)
-        .accessibilityAddTraits(active ? .isSelected : [])
     }
 }
 
@@ -134,11 +183,11 @@ struct PageView: View {
         if let hub = scene.hub {
             switch route {
             case .inbox, .settings, .worktrees, .session:
-                InboxView(scene: scene, hub: hub).navigationTitle("Inbox")
+                InboxView(scene: scene, hub: hub)
             case .sessions:
-                SessionListView(scene: scene, hub: hub, selection: nil).navigationTitle("Sessions")
+                SessionListView(scene: scene, hub: hub, selection: nil).ahPage("Sessions")
             case .history:
-                HistoryView(scene: scene, hub: hub).navigationTitle("History")
+                HistoryView(scene: scene, hub: hub).ahPage("History")
             case .search:
                 if let search { SearchView(scene: scene, model: search) } else { Color.clear.onAppear { search = SearchModel(api: hub.api) } }
             case .review(let target):
@@ -174,7 +223,7 @@ struct DetailView: View {
             } else if case .session(let key) = scene.route, let session = scene.session(key) {
                 SingleSessionView(scene: scene, session: session)
             } else {
-                NavigationStack { PageView(scene: scene, route: scene.route) }
+                NavigationStack { PageView(scene: scene, route: scene.route) }.modifier(AhPanel())
             }
             if scene.workspace.scratchVisible, let key = scene.workspace.scratchKey, let session = scene.session(key) {
                 ScratchpadView(scene: scene, session: session)
@@ -196,6 +245,7 @@ private struct SingleSessionView: View {
             SessionScreen(session: session, scene: scene)
                 .overlay { if let zone, zone != .center { DropZoneHighlight(zone: zone) } }
                 .onDrop(of: [.agentHubSession], delegate: PaneDrop(scene: scene, path: nil, size: proxy.size, zone: $zone))
+                .modifier(AhPanel())
         }
     }
 }
@@ -209,7 +259,7 @@ private struct ScratchpadView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Label("Scratchpad", systemImage: "terminal").font(.caption.weight(.semibold))
+                Label("Scratchpad", systemImage: "terminal").font(.ah(.caption).weight(.semibold))
                 Spacer()
                 Button { Task { await scene.toggleScratchpad() } } label: { Image(systemName: "chevron.down") }.accessibilityLabel("Hide the scratchpad")
             }
@@ -235,7 +285,8 @@ struct WorkspaceView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     static let minimumPane = CGSize(width: WorkspaceModel.minimumPane.width, height: WorkspaceModel.minimumPane.height)
-    private let gap: CGFloat = 2
+    /// Panes are cards with a gutter between them, as iPadOS tiles windows.
+    private let gap: CGFloat = 10
     private let stripHeight: CGFloat = 36
 
     private struct Entry: Identifiable {
@@ -292,13 +343,15 @@ struct WorkspaceView: View {
                     PaneStrip(scene: scene, tiles: geometry.tiles, focused: focused)
                         .frame(width: size.width, height: stripHeight)
                 }
-                if workspace.zoom {
+                // A maximized session says so in its own header; an empty chooser has none.
+                if workspace.zoom, entries.first(where: { $0.tile.path == focused }).map({ LayoutNode.isPick($0.tile.sessionKey) }) ?? false {
                     ZoomBadge(scene: scene, count: entries.count, index: entries.firstIndex { $0.tile.path == focused } ?? 0)
                         .frame(width: size.width, alignment: .topTrailing)
                 }
             }
         }
-        .background(theme.faint.opacity(0.25))
+        // ah's ground behind the panels.
+        .background(theme.background)
         .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: geometry.tiles.map(\.box))
         .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: workspace.zoom)
         .animation(reduceMotion ? nil : .snappy(duration: 0.15), value: focused)
@@ -314,6 +367,7 @@ private struct PaneView: View {
     let size: CGSize
     @State private var zone: LayoutNode.Drop?
     @Environment(\.theme) private var theme
+    static let corner: CGFloat = 16
 
     var body: some View {
         Group {
@@ -325,11 +379,13 @@ private struct PaneView: View {
                 EmptyState(symbol: "questionmark.square.dashed", title: "Session ended", message: "Pick another for this pane.")
             }
         }
-        .background(theme.background)
+        .background(theme.surface)
         .overlay { if let zone { DropZoneHighlight(zone: zone) } }
+        .clipShape(RoundedRectangle(cornerRadius: Self.corner, style: .continuous))
+        // The focused pane wears a tint ring; the rest a hairline.
         .overlay {
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .strokeBorder(focused ? theme.accentStrong : theme.faint.opacity(0.18), lineWidth: focused ? 2 : 0.5)
+            RoundedRectangle(cornerRadius: Self.corner, style: .continuous)
+                .strokeBorder(focused ? theme.accentStrong.opacity(0.9) : Color(uiColor: .separator), lineWidth: focused ? 1.5 : 0.5)
                 .allowsHitTesting(false)
         }
         .simultaneousGesture(TapGesture().onEnded { Task { await scene.tapPane(tile.path) } })
@@ -439,7 +495,7 @@ private struct PaneStrip: View {
                         HStack(spacing: 6) {
                             if let row { StatusPill(word: row.word, compact: true) }
                             Text(LayoutNode.isPick(tile.sessionKey) ? "Empty pane" : (row?.title ?? scene.session(tile.sessionKey)?.title ?? "Session"))
-                                .font(.caption.weight(active ? .semibold : .regular))
+                                .font(.ah(.caption).weight(active ? .semibold : .regular))
                                 .lineLimit(1)
                         }
                         .padding(.horizontal, 10)
@@ -477,7 +533,7 @@ private struct ZoomBadge: View {
                 Text("Maximized · \(index + 1) of \(count)")
                 if let chord = scene.app.keyBindings.hint("maximize-pane") { Keycaps(chord) }
             }
-            .font(.caption.weight(.semibold))
+            .font(.ah(.caption).weight(.semibold))
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(theme.surface, in: Capsule())
@@ -570,11 +626,11 @@ private struct ChooserPane: View {
 
     var body: some View {
         let rows = rows
-        VStack(spacing: 12) {
-            Text("Open in this pane").font(.headline)
+        VStack(spacing: 14) {
+            Text("Open in This Pane").font(.ah(.headline))
             HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundStyle(theme.faint)
-                TextField("Search sessions", text: $query)
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("Search Sessions", text: $query)
                     .textFieldStyle(.plain)
                     .focused($focused)
                     .textInputAutocapitalization(.never)
@@ -585,41 +641,64 @@ private struct ChooserPane: View {
                     .onKeyPress(.downArrow) { if !rows.isEmpty { selection = (selection + 1) % rows.count }; return .handled }
                     .onKeyPress(.escape) { scene.cancelChooser(path); return .handled }
             }
-            .padding(10)
-            .background(theme.raised, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .frame(maxWidth: 420)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(.fill.tertiary, in: Capsule())
             VStack(spacing: 2) {
+                // What the web's pane picker leads with: a shell here, or a new session.
+                if query.isEmpty {
+                    action("New Shell", "terminal") { Task { await scene.newShell(into: path) } }
+                    action("New Session…", "plus") {
+                        scene.workspace.focus(path)
+                        scene.sheet = .newSession(SceneModel.NewSessionContext(intoPane: path))
+                    }
+                    Divider().padding(.vertical, 4)
+                }
                 ForEach(Array(rows.enumerated()), id: \.element.key) { index, row in
                     HStack(spacing: 10) {
-                        AgentMark(agent: row.dto.agent, size: 20)
-                        Text(row.title).font(.callout).lineLimit(1)
+                        AgentMark(agent: row.dto.agent, size: 22)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(row.title).font(.ah(.callout)).lineLimit(1)
+                            Text(row.dto.project).font(.ah(.caption)).foregroundStyle(.secondary).lineLimit(1)
+                        }
                         Spacer()
                         StatusPill(word: row.word, compact: true)
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(index == selection ? theme.accentStrong.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .background(index == selection ? theme.accentStrong.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     .contentShape(Rectangle())
                     .onTapGesture { scene.fillPane(path, with: row.key) }
                     .onHover { if $0 { selection = index } }
+                    .accessibilityAddTraits(.isButton)
                 }
             }
-            .frame(maxWidth: 420)
-            HStack {
-                Button("New session") {
-                    scene.workspace.focus(path)
-                    scene.sheet = .newSession(SceneModel.NewSessionContext(intoPane: path))
-                }
-                .buttonStyle(.bordered)
-                Button("Cancel") { scene.cancelChooser(path) }
-            }
-            .font(.callout)
+            Button("Cancel", role: .cancel) { scene.cancelChooser(path) }
+                .buttonStyle(.borderless)
+                .tint(.secondary)
+                .font(.ah(.callout))
         }
+        .frame(maxWidth: 420)
         .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { if scene.focusRequest?.target == .chooser(path) || scene.workspace.focusPath == path { focused = true } }
         .onChange(of: scene.focusRequest) { _, request in if request?.target == .chooser(path) { focused = true } }
         .onChange(of: focused) { _, now in if now { scene.didFocus(.chooser(path)) } else { scene.didBlur(.chooser(path)) } }
+    }
+
+    private func action(_ title: String, _ symbol: String, run: @escaping () -> Void) -> some View {
+        Button(action: run) {
+            HStack(spacing: 10) {
+                Image(systemName: symbol).font(.ah(.body)).foregroundStyle(theme.accent).frame(width: 22)
+                Text(title).font(.ah(.callout))
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .hoverEffect(.highlight)
     }
 }
 
@@ -675,11 +754,17 @@ struct WorkspaceStrip: View {
                 Button {
                     scene.perform(.workspace(n))
                 } label: {
+                    // The current one filled with the tint, one in use marked with a dot.
                     Text("\(n)")
-                        .font(.caption.monospacedDigit().weight(n == current ? .bold : .regular))
-                        .frame(maxWidth: .infinity, minHeight: 24)
-                        .background(n == current ? theme.accentStrong.opacity(0.25) : occupied.contains(n) ? theme.raised : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        .foregroundStyle(n == current ? theme.text : occupied.contains(n) ? theme.text2 : theme.faint)
+                        .font(.ah(.footnote).monospacedDigit().weight(n == current ? .semibold : .regular))
+                        .foregroundStyle(n == current ? Color.white : occupied.contains(n) ? Color.primary : Color(uiColor: .tertiaryLabel))
+                        .frame(width: 26, height: 26)
+                        .background { if n == current { Circle().fill(theme.accentStrong) } }
+                        .overlay(alignment: .bottom) {
+                            if occupied.contains(n) && n != current { Circle().fill(Color.secondary).frame(width: 3, height: 3).offset(y: 2) }
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 30)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .hoverEffect(.highlight)
@@ -690,8 +775,12 @@ struct WorkspaceStrip: View {
                 .accessibilityLabel("Workspace \(n)\(n == current ? ", current" : occupied.contains(n) ? ", in use" : "")")
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .glassEffect(.regular, in: Capsule())
+        .padding(.horizontal, 12)
+        .padding(.bottom, 10)
+        .animation(.snappy(duration: 0.25), value: current)
     }
 }
 

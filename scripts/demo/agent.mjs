@@ -7,11 +7,12 @@
 //
 //   node agent.mjs [--scenario=onboarding|api|review|approve|none]   (default: by folder)
 //
-// Typing /ask, /plan or /trust opens Claude Code's question dialog, plan approval or
+// Typing /ask (or /design, with previews) opens Claude Code's question dialog; /plan or /trust, its plan approval or
 // folder-trust picker, for the app's answer-from-anywhere views.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 
 const cwd = process.cwd();
 const args = process.argv.slice(2);
@@ -220,6 +221,8 @@ async function turn(prompt) {
   clock = Math.max(clock, Date.now());
   const abort = new AbortController();
   current = abort;
+  // Like Claude Code, a new conversation's transcript appears a moment after its first prompt.
+  if (n === 0) await sleep(4000, abort.signal);
   user(prompt, 20);
   process.stdout.write(`\n${accent('>')} ${prompt}\n\n`);
   const frames = ['·', '✢', '✳', '✶', '✻', '✽'];
@@ -305,6 +308,27 @@ const QUESTIONS = [
     ],
   },
 ];
+// `/design`: a question whose options carry previews, as Claude Code 2.1.300 draws it (the
+// highlighted option's preview boxed beside the options, notes, no free-text row), then a
+// plain multi-choice one.
+const DESIGN = [
+  {
+    header: 'Layout', question: 'Which layout for the settings page?', multiSelect: false,
+    options: [
+      { label: 'Stacked', description: 'Sections one above the other', preview: '+----------------+\n| Profile        |\n+----------------+\n| Security       |\n+----------------+' },
+      { label: 'Sidebar', description: 'A list of sections beside the page', preview: '+-------+--------+\n| Prof. | Name   |\n| Sec.  | Email  |\n| Notif.| Avatar |\n+-------+--------+' },
+      { label: 'Tabs', description: 'One section at a time', preview: '[Profile][Security]\n+----------------+\n| Name           |\n| Email          |\n+----------------+' },
+    ],
+  },
+  {
+    header: 'Extras', question: 'Which extras should it have?', multiSelect: true,
+    options: [
+      { label: 'Dark mode', description: 'A dark color theme toggle' },
+      { label: 'Search', description: 'Find a setting by name' },
+      { label: 'Keyboard shortcuts', description: 'Jump between sections with keys' },
+    ],
+  },
+];
 const PLAN = `## Move sessions to Postgres
 
 1. Add a \`sessions\` table (id, user, created, expires, revoked)
@@ -312,27 +336,49 @@ const PLAN = `## Move sessions to Postgres
 3. Revoke on sign-out and on password change
 4. Backfill nothing: existing sessions expire on their own within a day`;
 
+/**
+ * ah's Claude Code hook (bin/ah-hook.js), called the way Claude Code calls it: `/design` records
+ * its questions at PreToolUse, as a real session with ah's hooks does, so the app gets every
+ * option's preview, not just the one on screen. SessionEnd hands the window back to reading
+ * the screen afterwards. (`/ask` stays hookless: the dialog read off the screen.)
+ */
+function hook(event, extra = {}) {
+  if (!process.env.AH_DEMO_HOOK) return;
+  spawnSync(process.execPath, [process.env.AH_DEMO_HOOK, 'claude'], { input: JSON.stringify({ session_id: id, hook_event_name: event, ...extra }) });
+}
+
 /** The picker on screen: null, or what it is and where its cursor and answers are. */
 let picker = null;
 const CHAT = '────────────────────────────────────────';
 
 function pickerLines() {
   const p = picker;
-  if (p.kind === 'ask') {
+  if (p.qs) {
+    const QUESTIONS = p.qs;
     const tab = (i) => `${i < p.q ? '☒' : '☐'} ${QUESTIONS[i].header}`;
     const bar = `←  ${QUESTIONS.map((_, i) => tab(i)).join('  ')}  ✔ Submit  →`;
     if (p.q < QUESTIONS.length) {
       const q = QUESTIONS[p.q];
       const n = q.options.length;
       const mark = (i) => (p.cursor === i ? '❯' : ' ');
+      if (q.options.some((o) => o.preview)) {
+        // The highlighted option's preview, boxed to the right of the options.
+        const shown = q.options[Math.min(p.cursor, n) - 1].preview.split('\n');
+        const width = 42;
+        const box = [`┌${'─'.repeat(width)}┐`, ...shown.map((l) => `│ ${l.padEnd(width - 2)} │`), `└${'─'.repeat(width)}┘`, `Notes: ${p.typing ? `${p.notes}▏` : p.notes || 'press n to add notes'}`];
+        const left = q.options.map((o, i) => `${mark(i + 1)} ${i + 1}. ${o.label}`);
+        const rows = Array.from({ length: Math.max(left.length, box.length) }, (_, i) => `${(left[i] ?? '').padEnd(34)}${box[i] ?? ''}`.trimEnd());
+        return [bar, '', q.question, '', ...rows, CHAT, `${mark(n + 1)} Chat about this`, '', 'Enter to select · ↑/↓ to navigate · n to add notes · Tab to switch questions · Esc to cancel'];
+      }
       const rows = q.options.flatMap((o, i) => [
         `${mark(i + 1)} ${i + 1}. ${q.multiSelect ? `[${p.picked.has(i) ? '✔' : ' '}] ` : ''}${o.label}`,
         `     ${o.description}`,
       ]);
       const other = q.multiSelect ? `[${p.other ? '✔' : ' '}] ${p.other || 'Type something'}` : p.typing ? p.other : 'Type something.';
-      return [bar, '', q.question, '', ...rows, `${mark(n + 1)} ${n + 1}. ${other}`, ...(q.multiSelect ? [`${mark(n + 2)}    Submit`] : []), CHAT, `  ${n + 2}. Chat about this`, '', 'Enter to select · Tab/Arrow keys to navigate · Esc to cancel'];
+      const chatRow = q.multiSelect ? n + 3 : n + 2;
+      return [bar, '', q.question, '', ...rows, `${mark(n + 1)} ${n + 1}. ${other}`, ...(q.multiSelect ? [`${mark(n + 2)}    Submit`] : []), CHAT, `${mark(chatRow)} ${n + 2}. Chat about this`, '', 'Enter to select · Tab/Arrow keys to navigate · Esc to cancel'];
     }
-    return [bar, '', 'Review your answers', '', ...QUESTIONS.flatMap((q, i) => [` ● ${q.question}`, `   → ${p.answers[i]}`]), '', 'Ready to submit your answers?', '', `${p.cursor === 1 ? '❯' : ' '} 1. Submit answers`, `${p.cursor === 2 ? '❯' : ' '} 2. Cancel`];
+    return [bar, '', 'Review your answers', '', ...QUESTIONS.flatMap((q, i) => [` ● ${q.question}`, `   → ${p.answers[i]}`, ...(p.notes_[i] ? [`     Notes: ${p.notes_[i]}`] : [])]), '', 'Ready to submit your answers?', '', `${p.cursor === 1 ? '❯' : ' '} 1. Submit answers`, `${p.cursor === 2 ? '❯' : ' '} 2. Cancel`];
   }
   if (p.kind === 'plan') {
     const rows = ['Yes, and auto-accept edits', 'Yes, and manually approve edits', 'No, keep planning'];
@@ -345,9 +391,13 @@ function pickerLines() {
 const drawPicker = () => process.stdout.write(`\x1b[2J\x1b[H${pickerLines().join('\r\n')}\r\n`);
 
 function openPicker(kind) {
-  picker = { kind, q: 0, cursor: 1, picked: new Set(), other: '', typing: false, answers: [] };
+  picker = { kind, q: 0, cursor: 1, picked: new Set(), other: '', typing: false, notes: '', answers: [], notes_: [], qs: kind === 'ask' ? QUESTIONS : kind === 'design' ? DESIGN : null };
   clock = Math.max(clock, Date.now());
-  if (kind === 'ask') {
+  if (kind === 'design') {
+    user('Redesign the settings page. Ask me about the layout first.', 1);
+    say('Two choices first; the layout ones come with a sketch.', 3);
+    hook('PreToolUse', { tool_name: 'AskUserQuestion', tool_input: { questions: DESIGN } });
+  } else if (kind === 'ask') {
     user('Add an audit log for sign-ins, and move sessions out of memory while you’re at it.', 1);
     say('Two decisions first, then I’ll write it.', 3);
   } else if (kind === 'plan') {
@@ -366,16 +416,28 @@ function closePicker(outcome) {
   const p = picker;
   picker = null;
   clock = Math.max(clock, Date.now());
+  if (p.kind === 'design') hook('SessionEnd');
   process.stdout.write('\x1b[2J\x1b[H');
-  if (p.kind === 'ask') {
+  if (p.qs) {
+    const QUESTIONS = p.qs;
     const call = `toolu_${id.slice(0, 6)}_${++calls}`;
     line('assistant', [{ type: 'tool_use', id: call, name: 'AskUserQuestion', input: { questions: QUESTIONS } }], {}, 1);
     if (outcome === 'submitted') {
       const answers = Object.fromEntries(QUESTIONS.map((q, i) => [q.question, p.answers[i]]));
-      const text = `User has answered your questions: ${QUESTIONS.map((q, i) => `"${q.question}"="${p.answers[i]}"`).join(', ')}. You can now continue with the user's answers in mind.`;
-      line('user', [{ type: 'tool_result', tool_use_id: call, content: text }], { toolUseResult: { questions: QUESTIONS, answers } }, 2);
-      say(`Going with **${p.answers[0]}** for sessions, and the audit log keeps **${p.answers[1]}**. I’ll start with the sessions table.`, 3);
-      process.stdout.write(`${accent('⏺')} Sessions: ${p.answers[0]} · Audit: ${p.answers[1]}\n`);
+      const annotations = Object.fromEntries(QUESTIONS.flatMap((q, i) => (p.notes_[i] ? [[q.question, { notes: p.notes_[i] }]] : [])));
+      const text = `User has answered your questions: ${QUESTIONS.map((q, i) => `"${q.question}"="${p.answers[i]}"${p.notes_[i] ? ` user notes: ${p.notes_[i]}` : ''}`).join(', ')}. You can now continue with the user's answers in mind.`;
+      line('user', [{ type: 'tool_result', tool_use_id: call, content: text }], { toolUseResult: { questions: QUESTIONS, answers, annotations } }, 2);
+      if (p.kind === 'design') {
+        say(`A **${p.answers[0]}** layout${p.notes_[0] ? ` (noted: “${p.notes_[0]}”)` : ''}, with ${p.answers[1]}. Sketching it now.`, 3);
+        process.stdout.write(`${accent('⏺')} Layout: ${p.answers[0]}${p.notes_[0] ? ` (notes: ${p.notes_[0]})` : ''} · Extras: ${p.answers[1]}\n`);
+      } else {
+        say(`Going with **${p.answers[0]}** for sessions, and the audit log keeps **${p.answers[1]}**. I’ll start with the sessions table.`, 3);
+        process.stdout.write(`${accent('⏺')} Sessions: ${p.answers[0]} · Audit: ${p.answers[1]}\n`);
+      }
+    } else if (outcome === 'chat') {
+      line('user', [{ type: 'tool_result', tool_use_id: call, content: 'User declined to answer questions', is_error: true }], {}, 2);
+      say('Sure, let’s talk it through. What would you change about these choices?', 3);
+      process.stdout.write(`${dim('  ⎿  You chose to chat about it.')}\n`);
     } else {
       line('user', [{ type: 'tool_result', tool_use_id: call, content: 'User declined to answer questions', is_error: true }], {}, 2);
       process.stdout.write(`${dim('  ⎿  You declined to answer.')}\n`);
@@ -410,6 +472,7 @@ function pickerKey(s) {
     else if (p.kind === 'plan' && /^[1-3]$/.test(s)) return closePicker(Number(s));
     return drawPicker();
   }
+  const QUESTIONS = p.qs;
   if (p.q === QUESTIONS.length) {
     if (up || down) p.cursor = up ? 1 : 2;
     else if (s === '1' || (s === '\r' && p.cursor === 1)) return closePicker('submitted');
@@ -420,18 +483,36 @@ function pickerKey(s) {
   const n = q.options.length;
   const next = (answer) => {
     p.answers[p.q] = answer;
+    p.notes_[p.q] = p.notes.trim();
     p.q += 1;
     p.cursor = 1;
     p.picked = new Set();
     p.other = '';
+    p.notes = '';
     p.typing = false;
+    // One single-choice question has no review: its answer is final.
+    if (QUESTIONS.length === 1 && !q.multiSelect) return closePicker('submitted');
   };
+  if (q.options.some((o) => o.preview)) {
+    // Digits only move the cursor; Enter picks. n opens notes; Enter keeps them and picks.
+    if (p.typing && s === '\r') next(q.options[p.cursor - 1].label);
+    else if (p.typing && s === '\x7f') p.notes = p.notes.slice(0, -1);
+    else if (p.typing && /^[ -~]$/.test(s)) p.notes += s;
+    else if (up) p.cursor = Math.max(1, p.cursor - 1);
+    else if (down) p.cursor = Math.min(n + 1, p.cursor + 1);
+    else if (new RegExp(`^[1-${n}]$`).test(s)) p.cursor = Number(s);
+    else if (s === 'n' && p.cursor <= n) p.typing = true;
+    else if (s === '\r' && p.cursor === n + 1) return closePicker('chat');
+    else if (s === '\r') next(q.options[p.cursor - 1].label);
+    return drawPicker();
+  }
   if (!q.multiSelect) {
     if (p.typing && s === '\r') next(p.other.trim() || 'No answer');
     else if (p.typing && s === '\x7f') p.other = p.other.slice(0, -1);
     else if (p.typing && !up && !down) p.other += s;
     else if (up) p.cursor = Math.max(1, p.cursor - 1);
-    else if (down) p.cursor = Math.min(n + 1, p.cursor + 1);
+    else if (down) p.cursor = Math.min(n + 2, p.cursor + 1);
+    else if (s === String(n + 2) || (s === '\r' && p.cursor === n + 2)) return closePicker('chat');
     else if (new RegExp(`^[1-${n}]$`).test(s)) next(q.options[Number(s) - 1].label);
     else if (s === String(n + 1) || (s === '\r' && p.cursor === n + 1)) {
       p.typing = true;
@@ -445,7 +526,8 @@ function pickerKey(s) {
     if (p.picked.has(i)) p.picked.delete(i);
     else p.picked.add(i);
   } else if (up) p.cursor = Math.max(1, p.cursor - 1);
-  else if (down) p.cursor = Math.min(n + 2, p.cursor + 1);
+  else if (down) p.cursor = Math.min(n + 3, p.cursor + 1);
+  else if (s === '\r' && p.cursor === n + 3) return closePicker('chat');
   else if (s === '\x1b[C' || s === '\x1bOC' || (s === '\r' && p.cursor >= n + 1)) done();
   else if (s === '\r' && p.cursor <= n) {
     const i = p.cursor - 1;
@@ -484,7 +566,7 @@ process.stdin.on('data', (chunk) => {
     const prompt = typed.trim();
     typed = '';
     if (!prompt) continue;
-    const opens = { '/ask': 'ask', '/plan': 'plan', '/trust': 'trust' }[prompt];
+    const opens = { '/ask': 'ask', '/design': 'design', '/plan': 'plan', '/trust': 'trust' }[prompt];
     if (opens && !busy) {
       openPicker(opens);
       return;

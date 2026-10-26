@@ -12,6 +12,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     private(set) var startupError: String?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        AhType.applyToBars()
         do {
             let ephemeral = Self.ephemeral
             let services = AppServices(

@@ -153,6 +153,10 @@ struct APIClient: Sendable {
     func answerQuestion(_ uid: String, question: String, answer: QuestionAnswer) async throws {
         try await perform("POST", "\(s(uid))/questions", json: CurrentQuestion(current: .init(question: question, answer: answer)))
     }
+    /// The dialog's "Chat about this": declines its questions and hands the conversation back.
+    func chatAboutQuestions(_ uid: String, question: String?) async throws {
+        try await perform("POST", "\(s(uid))/questions", json: ChatAboutQuestions(question: question))
+    }
     func queue(_ uid: String) async throws -> [QueueItem] { try await call("GET", "\(s(uid))/queue") }
     func clearQueue(_ uid: String, item: String? = nil) async throws {
         try await perform("DELETE", "\(s(uid))/queue" + (item.map { "/\(Self.enc($0))" } ?? ""))
@@ -393,6 +397,10 @@ private struct SendBody: Encodable { let text: String; let enter: Bool }
 private struct CurrentQuestion: Encodable {
     struct Current: Encodable { let question: String; let answer: QuestionAnswer }
     let current: Current
+}
+private struct ChatAboutQuestions: Encodable {
+    let chat = true
+    let question: String?
 }
 private struct LaunchChange: Encodable { let model: String?; let effort: String?; let mode: String? }
 private struct ModelsQuery: Encodable { let baseUrl: String; let apiKey: String?; let id: String? }

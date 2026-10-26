@@ -66,7 +66,7 @@ struct PaletteView: View {
                         ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                             if let section = item.section {
                                 Text(section.uppercased())
-                                    .font(.caption2.weight(.semibold))
+                                    .font(.ah(.caption2).weight(.semibold))
                                     .foregroundStyle(theme.faint)
                                     .padding(.horizontal, 18)
                                     .padding(.top, index == 0 ? 6 : 12)
@@ -118,7 +118,7 @@ struct PaletteView: View {
             Image(systemName: "magnifyingglass").foregroundStyle(theme.faint)
             ForEach(trail) { crumb in
                 Text(crumb.label)
-                    .font(.caption.weight(.semibold))
+                    .font(.ah(.caption).weight(.semibold))
                     .lineLimit(1)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
@@ -127,7 +127,7 @@ struct PaletteView: View {
             }
             TextField(trail.isEmpty ? "Search commands and sessions" : "Search \(trail.last!.label)", text: Binding(get: { query }, set: { scene.palette?.query = $0; selection = 0 }))
                 .textFieldStyle(.plain)
-                .font(.title3)
+                .font(.ah(.title3))
                 .focused($focused)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -177,7 +177,7 @@ struct PaletteView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .font(.caption)
+        .font(.ah(.caption))
         .foregroundStyle(theme.muted)
         .accessibilityHidden(true)
     }
@@ -258,7 +258,7 @@ private struct PaletteRow: View {
             } else {
                 Image(systemName: node.icon ?? (node.isCategory ? "folder" : "command"))
                     .symbolRenderingMode(.hierarchical)
-                    .font(.body)
+                    .font(.ah(.body))
                     .frame(width: 22)
                     .foregroundStyle(selected ? theme.accent : theme.muted)
             }
@@ -266,14 +266,14 @@ private struct PaletteRow: View {
                 HStack(spacing: 4) {
                     ForEach(trail) { crumb in
                         Text(crumb.label).foregroundStyle(theme.faint)
-                        Image(systemName: "chevron.compact.right").font(.caption2).foregroundStyle(theme.faint)
+                        Image(systemName: "chevron.compact.right").font(.ah(.caption2)).foregroundStyle(theme.faint)
                     }
                     Text(node.label).foregroundStyle(theme.text)
                 }
-                .font(.body)
+                .font(.ah(.body))
                 .lineLimit(1)
                 if let detail = node.detail, !detail.isEmpty {
-                    Text(detail).font(.caption).foregroundStyle(theme.muted).lineLimit(1)
+                    Text(detail).font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(1)
                 }
             }
             Spacer(minLength: 8)
@@ -296,18 +296,18 @@ private struct PaletteRow: View {
     @ViewBuilder private var trailing: some View {
         if node.isCategory {
             HStack(spacing: 6) {
-                Text("\(node.leafCount)").font(.caption.monospacedDigit()).foregroundStyle(theme.faint)
-                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(theme.faint)
+                Text("\(node.leafCount)").font(.ah(.caption).monospacedDigit()).foregroundStyle(theme.faint)
+                Image(systemName: "chevron.right").font(.ah(.caption).weight(.semibold)).foregroundStyle(theme.faint)
             }
         } else if sessionKey != nil {
             HStack(spacing: 6) {
                 Text("Session")
-                    .font(.caption2.weight(.semibold))
+                    .font(.ah(.caption2).weight(.semibold))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(theme.raised, in: Capsule())
                     .foregroundStyle(theme.muted)
-                if node.hasChoices { Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(theme.faint) }
+                if node.hasChoices { Image(systemName: "chevron.right").font(.ah(.caption).weight(.semibold)).foregroundStyle(theme.faint) }
             }
         } else if case .command(let id) = node.action, let chord = bindings.hint(id) {
             Keycaps(chord)
@@ -361,7 +361,7 @@ struct SwitcherView: View {
                 TextField(tile ? "Open as a new pane…" : scene.hardwareKeyboard ? "Jump, resume, or search conversations…  h:claude p:\(scene.hub?.rows.first?.dto.project ?? "api") in:chats" : "Jump, resume or search…",
                           text: Binding(get: { query }, set: { scene.switcher?.query = $0; selection = 0; content?.update($0) }))
                     .textFieldStyle(.plain)
-                    .font(.title3)
+                    .font(.ah(.title3))
                     .focused($focused)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -383,12 +383,12 @@ struct SwitcherView: View {
                     LazyVStack(alignment: .leading, spacing: 1) {
                         ForEach(Array(all.enumerated()), id: \.element.id) { index, row in
                             if let head = heading(row, index: index, found: found) {
-                                Text(head.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(theme.faint)
+                                Text(head.uppercased()).font(.ah(.caption2).weight(.semibold)).foregroundStyle(theme.faint)
                                     .padding(.horizontal, 18).padding(.top, index == 0 ? 6 : 12).padding(.bottom, 4)
                                     .accessibilityAddTraits(.isHeader)
                             }
                             if case .hit = row, index == found.live.count + found.past.count, let note = content?.note {
-                                Text(note).font(.caption).foregroundStyle(theme.muted).padding(.horizontal, 18)
+                                Text(note).font(.ah(.caption)).foregroundStyle(theme.muted).padding(.horizontal, 18)
                             }
                             SwitcherRow(row: display(row), selected: index == selection, multiHost: scene.hub?.multiHost == true)
                                 .id(row.id)
@@ -397,7 +397,7 @@ struct SwitcherView: View {
                                 .onHover { if $0 { selection = index } }
                         }
                         if found.hits.isEmpty, let note = content?.note, !tile {
-                            Text(note).font(.caption).foregroundStyle(theme.muted).padding(.horizontal, 18).padding(.vertical, 8)
+                            Text(note).font(.ah(.caption)).foregroundStyle(theme.muted).padding(.horizontal, 18).padding(.vertical, 8)
                         }
                         if all.isEmpty {
                             Text("Nothing matches. Try h:claude or p:ah.").foregroundStyle(theme.muted).frame(maxWidth: .infinity).padding(24)
@@ -406,7 +406,7 @@ struct SwitcherView: View {
                             Button {
                                 scene.showAllResults(text)
                             } label: {
-                                Label("See all results for “\(text)”", systemImage: "arrow.right").font(.callout)
+                                Label("See all results for “\(text)”", systemImage: "arrow.right").font(.ah(.callout))
                             }
                             .buttonStyle(.plain)
                             .hoverEffect(.highlight)
@@ -428,7 +428,7 @@ struct SwitcherView: View {
                 Spacer()
                 HStack(spacing: 4) { Keycaps(parts: ["esc"]); Text("close") }
             }
-            .font(.caption)
+            .font(.ah(.caption))
             .foregroundStyle(theme.muted)
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
@@ -499,15 +499,15 @@ private struct SwitcherRow: View {
         HStack(alignment: .top, spacing: 10) {
             AgentMark(agent: row.agent, size: 22)
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.title + (row.fork ? " ⑂" : "")).font(.callout).lineLimit(1).foregroundStyle(theme.text)
-                Text(row.subtitle(multiHost)).font(.caption).foregroundStyle(theme.muted).lineLimit(1)
+                Text(row.title + (row.fork ? " ⑂" : "")).font(.ah(.callout)).lineLimit(1).foregroundStyle(theme.text)
+                Text(row.subtitle(multiHost)).font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(1)
                 if let snippet = row.snippet { HighlightedSnippet(snippet: snippet) }
             }
             Spacer(minLength: 8)
             if let word = row.status {
                 StatusPill(word: word, compact: true)
             } else if let tag = row.tag {
-                Text(tag).font(.caption2.weight(.semibold)).padding(.horizontal, 6).padding(.vertical, 2).background(theme.raised, in: Capsule()).foregroundStyle(theme.muted)
+                Text(tag).font(.ah(.caption2).weight(.semibold)).padding(.horizontal, 6).padding(.vertical, 2).background(theme.raised, in: Capsule()).foregroundStyle(theme.muted)
             }
         }
         .padding(.horizontal, 12)
@@ -558,13 +558,13 @@ struct ShortcutsView: View {
                                     Image(systemName: CommandCatalog.icon(c.id)).frame(width: 22).foregroundStyle(theme.muted)
                                     VStack(alignment: .leading, spacing: 1) {
                                         Text(c.label).foregroundStyle(scene.isAvailable(c.id) ? theme.text : theme.faint)
-                                        Text(CommandCatalog.whenLabel(c.id)).font(.caption2).foregroundStyle(theme.faint)
+                                        Text(CommandCatalog.whenLabel(c.id)).font(.ah(.caption2)).foregroundStyle(theme.faint)
                                     }
                                     Spacer()
                                     HStack(spacing: 6) {
                                         // Alternatives, not one long chord: "or" between them.
                                         ForEach(Array(bindings.chords(c.id).enumerated()), id: \.offset) { i, chord in
-                                            if i > 0 { Text("or").font(.caption2).foregroundStyle(theme.faint) }
+                                            if i > 0 { Text("or").font(.ah(.caption2)).foregroundStyle(theme.faint) }
                                             Keycaps(chord)
                                         }
                                     }
@@ -578,7 +578,7 @@ struct ShortcutsView: View {
             .searchable(text: $query, prompt: "Name or keys, like “ctrl shift p”")
             .navigationTitle("Keyboard shortcuts")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Done") { scene.showingShortcuts = false }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .close) { scene.showingShortcuts = false }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .primaryAction) { Button("Edit…") { scene.showingShortcuts = false; scene.sheet = .settings(SettingsSection.shortcuts.rawValue) } }
             }
         }
@@ -597,17 +597,17 @@ struct WhichKeyHUD: View {
         VStack(alignment: .leading, spacing: 10) {
             if let pending {
                 HStack(spacing: 6) {
-                    Text(pending).font(.callout.monospaced().weight(.bold)).foregroundStyle(theme.accent)
-                    Text("then…").font(.callout).foregroundStyle(theme.muted)
+                    Text(pending).font(.ahMono(.callout).weight(.bold)).foregroundStyle(theme.accent)
+                    Text("then…").font(.ah(.callout)).foregroundStyle(theme.muted)
                     Spacer()
-                    Text("esc cancels").font(.caption).foregroundStyle(theme.faint)
+                    Text("esc cancels").font(.ah(.caption)).foregroundStyle(theme.faint)
                 }
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 12)], alignment: .leading, spacing: 6) {
                 ForEach(rows, id: \.id.rawValue) { row in
                     HStack(spacing: 8) {
-                        Text(row.key).font(.callout.monospaced().weight(.semibold)).frame(minWidth: 24).padding(.horizontal, 6).padding(.vertical, 2).background(theme.raised, in: RoundedRectangle(cornerRadius: 5))
-                        Text(row.label).font(.callout).lineLimit(1)
+                        Text(row.key).font(.ahMono(.callout).weight(.semibold)).frame(minWidth: 24).padding(.horizontal, 6).padding(.vertical, 2).background(theme.raised, in: RoundedRectangle(cornerRadius: 5))
+                        Text(row.label).font(.ah(.callout)).lineLimit(1)
                     }
                 }
             }
@@ -632,11 +632,11 @@ struct SubmapHUD: View {
         let keys = WorkspaceModel.submapKeys[mode] ?? []
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 14) {
-                Text(mode == .pane ? "PANE" : "RESIZE").font(.caption.weight(.heavy)).foregroundStyle(theme.brand)
+                Text(mode == .pane ? "PANE" : "RESIZE").font(.ah(.caption).weight(.heavy)).foregroundStyle(theme.brand)
                 ForEach(Array(keys.enumerated()), id: \.offset) { _, entry in
                     HStack(spacing: 4) {
                         Keycaps(parts: entry.keys)
-                        Text(entry.label).font(.caption).foregroundStyle(theme.muted)
+                        Text(entry.label).font(.ah(.caption)).foregroundStyle(theme.muted)
                     }
                 }
             }
@@ -683,9 +683,9 @@ struct NudgeStack: View {
         HStack(spacing: 10) {
             AgentMark(agent: nudge.agent, size: 28)
             VStack(alignment: .leading, spacing: 1) {
-                Text(nudge.title).font(.subheadline.weight(.semibold)).lineLimit(1)
+                Text(nudge.title).font(.ah(.subheadline).weight(.semibold)).lineLimit(1)
                 Label(nudge.kind == .needsYou ? "Needs you" : "Finished", systemImage: nudge.kind == .needsYou ? "hand.raised.fill" : "checkmark.circle.fill")
-                    .font(.caption.weight(.medium))
+                    .font(.ah(.caption).weight(.medium))
                     .foregroundStyle(nudge.kind == .needsYou ? theme.accent : theme.done)
             }
             Spacer(minLength: 12)
@@ -693,7 +693,7 @@ struct NudgeStack: View {
                 .buttonStyle(.borderedProminent)
                 .buttonBorderShape(.capsule)
                 .controlSize(.small)
-            Button { scene.dismissNudge(nudge.id) } label: { Image(systemName: "xmark").font(.caption.weight(.semibold)) }
+            Button { scene.dismissNudge(nudge.id) } label: { Image(systemName: "xmark").font(.ah(.caption).weight(.semibold)) }
                 .buttonStyle(.borderless)
                 .foregroundStyle(theme.faint)
                 .accessibilityLabel("Dismiss")
@@ -726,7 +726,7 @@ struct ToastStack: View {
         VStack(spacing: 6) {
             ForEach(scene.toasts) { toast in
                 Text(toast.text)
-                    .font(.footnote)
+                    .font(.ah(.footnote))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
                     .background(.regularMaterial, in: Capsule())

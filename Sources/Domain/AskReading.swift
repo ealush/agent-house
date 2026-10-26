@@ -210,6 +210,8 @@ struct QuestionForm: Equatable, Sendable {
         var text = ""
         /// "Something else": a typed answer.
         var other = false
+        /// Notes on the pick, for a question with previews.
+        var notes = ""
     }
 
     let questions: [AskDTO.Question]
@@ -220,8 +222,9 @@ struct QuestionForm: Equatable, Sendable {
         drafts = questions.indices.map { Draft(picked: initial?[safe: $0] ?? []) }
     }
 
-    /// Answers the moment it's picked: one single-choice question.
-    var instant: Bool { questions.count == 1 && !questions[0].multiSelect }
+    /// Answers the moment it's picked: one single-choice question. Not one with previews: a
+    /// pick shows its preview first, and takes notes.
+    var instant: Bool { questions.count == 1 && !questions[0].multiSelect && !questions[0].hasPreviews }
 
     func answered(_ i: Int) -> Bool {
         let d = drafts[i]
@@ -255,6 +258,11 @@ struct QuestionForm: Equatable, Sendable {
         drafts[qi].text = ""
     }
 
+    mutating func setNotes(_ qi: Int, _ notes: String) {
+        guard drafts.indices.contains(qi) else { return }
+        drafts[qi].notes = notes
+    }
+
     /// Where the keyboard's cursor can rest: each question's options, then its "Something
     /// else" row, then (unless a pick answers) the Answer button.
     enum Spot: Hashable, Sendable {
@@ -264,7 +272,8 @@ struct QuestionForm: Equatable, Sendable {
     }
 
     var spots: [Spot] {
-        questions.indices.flatMap { qi in questions[qi].options.indices.map { Spot.option(qi, $0) } + [.other(qi)] } + (instant ? [] : [.submit])
+        // A question with previews has no "Something else" row.
+        questions.indices.flatMap { qi in questions[qi].options.indices.map { Spot.option(qi, $0) } + (questions[qi].hasPreviews ? [] : [.other(qi)]) } + (instant ? [] : [.submit])
     }
 
     /// The spot `by` rows from `spot`, stopping at either end.
@@ -293,6 +302,10 @@ struct QuestionForm: Equatable, Sendable {
     var answers: [QuestionAnswer] {
         drafts.enumerated().map { i, d in
             let typed = d.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if questions[i].hasPreviews {
+                let notes = d.notes.split(whereSeparator: \.isNewline).joined(separator: " ").trimmingCharacters(in: .whitespaces)
+                return QuestionAnswer(picked: d.picked, notes: notes.isEmpty ? nil : notes)
+            }
             return QuestionAnswer(picked: d.other && !questions[i].multiSelect ? [] : d.picked, text: d.other && !typed.isEmpty ? typed : nil)
         }
     }

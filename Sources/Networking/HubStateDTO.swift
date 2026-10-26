@@ -226,12 +226,18 @@ struct AskDTO: Codable, Equatable, Sendable {
         let header: String?
         let multiSelect: Bool
         let options: [Option]
+
+        /// Options with previews: Claude Code shows the highlighted one's beside them, takes
+        /// notes on the pick, and has no free-text answer.
+        var hasPreviews: Bool { options.contains { $0.preview != nil } }
     }
 
     struct Option: Codable, Equatable, Sendable {
         let label: String
         let description: String?
         let checked: Bool?
+        /// What the option looks like (a mockup, a snippet), shown beside the options.
+        var preview: String? = nil
     }
 
     struct ScreenOption: Codable, Equatable, Sendable {
@@ -245,6 +251,8 @@ struct AskDTO: Codable, Equatable, Sendable {
         let options: [Option]
         let total: Int
         let answered: Int
+        /// Drawn with previews; only the option under the dialog's cursor carries its own.
+        var previews: Bool? = nil
     }
 }
 

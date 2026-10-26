@@ -33,7 +33,7 @@ struct TerminalScreen: View {
                 }
                 if dropping {
                     Label("Drop to upload, and type its path", systemImage: "arrow.down.doc")
-                        .font(.callout.weight(.medium))
+                        .font(.ah(.callout).weight(.medium))
                         .padding(.horizontal, 14).padding(.vertical, 10)
                         .background(.thinMaterial, in: Capsule())
                         .padding(.top, 16)
@@ -106,7 +106,7 @@ final class TerminalController: NSObject, TerminalViewDelegate {
 
     init(session: SessionModel, fontSize: Double, palette: TerminalPalette) {
         self.session = session
-        view = AppTerminalView(frame: .zero, font: UIFont.monospacedSystemFont(ofSize: fontSize, weight: .regular))
+        view = AppTerminalView(frame: .zero, font: AhType.terminalFont(fontSize))
         let hub = session.hub
         let key = session.key
         connection = TerminalConnection(api: session.api, columns: 80, rows: 24) {
@@ -190,7 +190,7 @@ final class TerminalController: NSObject, TerminalViewDelegate {
 
     func setFontSize(_ size: Double) {
         guard abs(view.font.pointSize - size) > 0.1 else { return }
-        view.font = UIFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        view.font = AhType.terminalFont(size)
     }
 
     /// Uploads to the host, then types the paths (quoted when they need it) where the cursor is.
@@ -398,7 +398,7 @@ final class AppTerminalView: TerminalView {
         let size = TerminalTextSize.clamped(font.pointSize * pinch.scale)
         if abs(size - font.pointSize) >= 1 {
             pinch.scale = 1
-            font = UIFont.monospacedSystemFont(ofSize: size, weight: .regular)
+            font = AhType.terminalFont(size)
         }
         // Kept for this device: every terminal opens at the size you pinched to.
         if pinch.state == .ended { scene?.app.preferences.terminalFontSize = font.pointSize }
@@ -460,12 +460,12 @@ private struct TerminalStatusOverlay: View {
         case .live:
             EmptyView()
         case .connecting:
-            Label("Attaching…", systemImage: "bolt.horizontal").font(.caption).padding(8).background(.thinMaterial, in: Capsule()).padding(.top, 8)
+            Label("Attaching…", systemImage: "bolt.horizontal").font(.ah(.caption)).padding(8).background(.thinMaterial, in: Capsule()).padding(.top, 8)
         case .reconnecting(let reason):
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
-                Text("Reconnecting. Keys typed now aren’t sent.").font(.caption)
-                Button("Retry") { controller.reconnect() }.font(.caption).buttonStyle(.bordered)
+                Text("Reconnecting. Keys typed now aren’t sent.").font(.ah(.caption))
+                Button("Retry") { controller.reconnect() }.font(.ah(.caption)).buttonStyle(.bordered)
             }
             .padding(8)
             .background(.thinMaterial, in: Capsule())
@@ -538,7 +538,7 @@ private struct KeyCapStyle: ButtonStyle {
     @Environment(\.theme) private var theme
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.callout.monospaced())
+            .font(.ahMono(.callout))
             .padding(.horizontal, 12)
             .frame(minWidth: 44, minHeight: 36)
             .background(on || configuration.isPressed ? theme.accent.opacity(0.3) : theme.raised, in: RoundedRectangle(cornerRadius: 8, style: .continuous))

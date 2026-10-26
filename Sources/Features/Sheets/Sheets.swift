@@ -34,7 +34,7 @@ struct SceneSheet: View {
         } else {
             NavigationStack {
                 EmptyState(symbol: "questionmark.square.dashed", title: "That session is gone", message: "It ended or moved while this was opening.")
-                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { scene.sheet = nil }.keyboardShortcut(.cancelAction) } }
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .close) { scene.sheet = nil }.keyboardShortcut(.cancelAction) } }
             }
         }
     }
@@ -129,7 +129,7 @@ struct NewSessionSheet: View {
                         Image(systemName: dirState == .new ? "folder.badge.plus" : "folder").foregroundStyle(theme.accent)
                         if editingFolder || cwd.isEmpty {
                             TextField("~/code/project", text: $cwd)
-                                .font(.body.monospaced())
+                                .font(.ahMono(.body))
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
                                 .focused($folderFocused)
@@ -168,7 +168,7 @@ struct NewSessionSheet: View {
                         }
                     }
                     if let problem = dirProblem {
-                        Label(problem, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(theme.danger)
+                        Label(problem, systemImage: "exclamationmark.triangle.fill").font(.ah(.caption)).foregroundStyle(theme.danger)
                     } else if dirState == .new {
                         let folder = cwd.trimmingCharacters(in: .whitespaces)
                         Label {
@@ -176,7 +176,7 @@ struct NewSessionSheet: View {
                         } icon: {
                             Image(systemName: "sparkles")
                         }
-                        .font(.callout)
+                        .font(.ah(.callout))
                         Toggle("Initialize a git repository", isOn: $gitInit)
                     } else if preset?.isShell == false {
                         Toggle(isOn: $worktree) {
@@ -211,17 +211,18 @@ struct NewSessionSheet: View {
                         TextField("New tmux session name", text: $newTmux).textInputAutocapitalization(.never).autocorrectionDisabled()
                     }
                     if preset?.resume != nil { Toggle("Resume its last conversation here", isOn: $resume) }
-                    TextField("Extra arguments", text: $extraArgs).font(.body.monospaced()).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    TextField("Extra arguments", text: $extraArgs).font(.ahMono(.body)).textInputAutocapitalization(.never).autocorrectionDisabled()
                 }
             }
             .navigationTitle(context.project ? "New project" : "New session")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { scene.sheet = nil }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(busy ? "Starting…" : "Start") { Task { await start() } }
                         .disabled(busy || preset == nil || cwd.trimmingCharacters(in: .whitespaces).isEmpty || dirProblem != nil || (tmuxSession == nil && newTmux.trimmingCharacters(in: .whitespaces).isEmpty))
                         .keyboardShortcut(.return, modifiers: .command)
+                        .buttonStyle(.glassProminent)
                 }
             }
             .task(id: "\(host ?? "")|\(cwd)") {
@@ -287,7 +288,7 @@ struct NewSessionSheet: View {
     private func projectChip(_ title: String, systemImage: String, on: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
-                .font(.callout)
+                .font(.ah(.callout))
                 .lineLimit(1)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
@@ -381,7 +382,7 @@ struct FolderPicker: View {
                                     Image(systemName: "folder.fill").foregroundStyle(theme.accent)
                                 }
                                 Spacer()
-                                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(theme.faint)
+                                Image(systemName: "chevron.right").font(.ah(.caption).weight(.semibold)).foregroundStyle(theme.faint)
                             }
                         }
                     }
@@ -397,13 +398,14 @@ struct FolderPicker: View {
             .navigationTitle(model.listing.map { ($0.path as NSString).lastPathComponent } ?? "Folders")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Choose") {
                         if let path = model.listing?.path { pick(path) }
                         dismiss()
                     }.keyboardShortcut(.return, modifiers: .command)
                     .disabled(model.listing == nil)
+                        .buttonStyle(.glassProminent)
                 }
             }
             .task {
@@ -443,10 +445,10 @@ struct ForksSheet: View {
                             .frame(width: 22)
                         VStack(alignment: .leading, spacing: 3) {
                             HStack(spacing: 6) {
-                                Text(line.title).font(.body.weight(line.isCurrent ? .semibold : .regular)).lineLimit(1)
-                                if line.isCurrent { Text("this one").font(.caption2.weight(.semibold)).foregroundStyle(theme.accent) }
+                                Text(line.title).font(.ah(.body).weight(line.isCurrent ? .semibold : .regular)).lineLimit(1)
+                                if line.isCurrent { Text("this one").font(.ah(.caption2).weight(.semibold)).foregroundStyle(theme.accent) }
                             }
-                            Text(detail(line)).font(.caption).foregroundStyle(theme.muted).lineLimit(1)
+                            Text(detail(line)).font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(1)
                         }
                         Spacer(minLength: 8)
                         if let word = line.word { StatusPill(word: word, compact: true) }
@@ -455,7 +457,7 @@ struct ForksSheet: View {
                                 Button("Open", systemImage: "arrow.right.circle") { open(key) }
                                 if !scene.narrow { Button("Open Beside This One", systemImage: "rectangle.split.2x1") { beside(key) } }
                             } label: {
-                                Text("Open").font(.callout.weight(.semibold))
+                                Text("Open").font(.ah(.callout).weight(.semibold))
                             } primaryAction: {
                                 open(key)
                             }
@@ -463,7 +465,7 @@ struct ForksSheet: View {
                             .buttonBorderShape(.capsule)
                             .controlSize(.small)
                         } else if line.key == nil {
-                            Text("ended").font(.caption).foregroundStyle(theme.faint)
+                            Text("ended").font(.ah(.caption)).foregroundStyle(theme.faint)
                         }
                     }
                     .padding(.vertical, 3)
@@ -472,7 +474,7 @@ struct ForksSheet: View {
             .navigationTitle("Forks")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss(); scene.sheet = nil }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss(); scene.sheet = nil }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .primaryAction) {
                     if session.isLive { Button("Fork…", systemImage: "plus") { scene.sheet = .fork(session.key) } }
                 }
@@ -559,7 +561,7 @@ struct ForkSheet: View {
             .navigationTitle("Fork “\(session.title)”")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { scene.sheet = nil }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(busy ? "Forking…" : "Fork") {
                         busy = true
@@ -576,6 +578,7 @@ struct ForkSheet: View {
                         }
                     }.keyboardShortcut(.return, modifiers: .command)
                     .disabled(busy || info?.canFork != true)
+                        .buttonStyle(.glassProminent)
                 }
             }
             .task {
@@ -623,7 +626,7 @@ struct LaunchOptionRows: View {
             }
             if let chosen = modes.first(where: { $0.id == mode }), chosen.dangerous == true {
                 Label(chosen.description ?? "Runs without asking before it acts.", systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
+                    .font(.ah(.caption))
                     .foregroundStyle(theme.danger)
             }
         }
@@ -638,11 +641,11 @@ struct LaunchOptionRows: View {
         }
         if LaunchState.takesCustomModel(preset) {
             TextField("Other model version (optional)", text: $customModel)
-                .font(.body.monospaced())
+                .font(.ahMono(.body))
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
             if !customModel.trimmingCharacters(in: .whitespaces).isEmpty && !LaunchState.isValidModelID(customModel.trimmingCharacters(in: .whitespaces)) {
-                Text("A model id is letters, digits and . _ : / @ -, starting with a letter or digit.").font(.caption).foregroundStyle(theme.danger)
+                Text("A model id is letters, digits and . _ : / @ -, starting with a letter or digit.").font(.ah(.caption)).foregroundStyle(theme.danger)
             }
         }
         let levels = LaunchState.levels(preset, model: model)
@@ -696,23 +699,24 @@ struct SendToSheet: View {
                         }
                         .onChange(of: subscription) { _, _ in Task { await draft() } }
                     } else if !loading {
-                        Text("No chat subscription yet, so there’s no summary. Add one under Settings → Subscriptions.").font(.caption).foregroundStyle(theme.muted)
+                        Text("No chat subscription yet, so there’s no summary. Add one under Settings → Subscriptions.").font(.ah(.caption)).foregroundStyle(theme.muted)
                     }
                 } footer: {
                     Text("A summary of this session, then its latest reply. A busy session queues it until the agent is free.")
                 }
                 Section {
                     if loading { ProgressView("Reading the session…") }
-                    TextEditor(text: $text).frame(minHeight: 220).font(.callout)
+                    TextEditor(text: $text).frame(minHeight: 220).font(.ah(.callout))
                 }
             }
             .navigationTitle("Send to…")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { scene.sheet = nil }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(busy ? "Sending…" : "Send") { Task { await send() } }.keyboardShortcut(.return, modifiers: .command)
                         .disabled(busy || loading || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .buttonStyle(.glassProminent)
                 }
             }
             .task {
@@ -762,7 +766,7 @@ struct ContinueInSheet: View {
             Form {
                 Section {
                     if loading { ProgressView("Reading the conversation…") }
-                    TextEditor(text: $text).frame(minHeight: 260).font(.callout.monospaced())
+                    TextEditor(text: $text).frame(minHeight: 260).font(.ahMono(.callout))
                 } footer: {
                     Text("\(name) starts in the same folder with this as its first message. Nothing is summarized by a model.")
                 }
@@ -770,7 +774,7 @@ struct ContinueInSheet: View {
             .navigationTitle("Continue in \(name)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { scene.sheet = nil }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Start") {
                         guard let row = session.row else { return }
@@ -780,6 +784,7 @@ struct ContinueInSheet: View {
                         Task { await scene.start(request, host: row.isLocal ? nil : row.host, prompt: prompt) }
                     }.keyboardShortcut(.return, modifiers: .command)
                     .disabled(loading || text.isEmpty)
+                        .buttonStyle(.glassProminent)
                 }
             }
             .task {
@@ -848,13 +853,13 @@ struct BranchSheet: View {
                                         .foregroundStyle(b.current ? theme.accent : theme.muted)
                                         .frame(width: 20)
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(b.name).font(.callout.monospaced()).foregroundStyle(b.worktree != nil && !b.current ? theme.muted : theme.text)
+                                        Text(b.name).font(.ahMono(.callout)).foregroundStyle(b.worktree != nil && !b.current ? theme.muted : theme.text)
                                         if b.current, branches.dirty > 0 {
-                                            Text("\(branches.dirty) uncommitted change\(branches.dirty == 1 ? "" : "s")").font(.caption).foregroundStyle(theme.limited)
+                                            Text("\(branches.dirty) uncommitted change\(branches.dirty == 1 ? "" : "s")").font(.ah(.caption)).foregroundStyle(theme.limited)
                                         } else if let tree = b.worktree, !b.current {
-                                            Text("Checked out in \((tree as NSString).lastPathComponent)").font(.caption).foregroundStyle(theme.faint)
+                                            Text("Checked out in \((tree as NSString).lastPathComponent)").font(.ah(.caption)).foregroundStyle(theme.faint)
                                         } else if b.remote {
-                                            Text("Remote · checks out with tracking").font(.caption).foregroundStyle(theme.faint)
+                                            Text("Remote · checks out with tracking").font(.ah(.caption)).foregroundStyle(theme.faint)
                                         }
                                     }
                                     Spacer()
@@ -884,7 +889,7 @@ struct BranchSheet: View {
             }
             .navigationTitle("Switch branch")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { scene.sheet = nil }.keyboardShortcut(.cancelAction) } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction) } }
             .task { await model.loadBranches() }
             .alert("“\(held?.name ?? "")” is checked out elsewhere", isPresented: Binding(get: { held != nil }, set: { if !$0 { held = nil } })) {
                 Button("OK", role: .cancel) { held = nil }
@@ -922,7 +927,7 @@ struct WorktreesView: View {
                     Section("Just now") {
                         ForEach(model.results, id: \.path) { r in
                             Label((r.path as NSString).lastPathComponent + (r.ok ? " removed" : ": " + (r.error ?? "kept")), systemImage: r.ok ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                .font(.callout)
+                                .font(.ah(.callout))
                                 .foregroundStyle(r.ok ? theme.done : theme.danger)
                         }
                     }
@@ -949,7 +954,7 @@ struct WorktreesView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) { if model.cleaningUp { cleanupBar } }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    if model.cleaningUp { Button("Cancel") { model.endCleanup() }.keyboardShortcut(.cancelAction) } else { Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
+                    if model.cleaningUp { Button(role: .cancel) { model.endCleanup() }.keyboardShortcut(.cancelAction) } else { Button(role: .close) { dismiss() }.keyboardShortcut(.cancelAction) }
                 }
                 ToolbarItemGroup(placement: .primaryAction) {
                     if !model.cleaningUp {
@@ -992,21 +997,21 @@ struct WorktreesView: View {
         return HStack(alignment: .top, spacing: 12) {
             if model.cleaningUp && tree.orphan {
                 Image(systemName: chosen ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
+                    .font(.ah(.title3))
                     .foregroundStyle(chosen ? theme.accent : theme.faint)
             } else {
                 Image(systemName: "arrow.triangle.branch").foregroundStyle(inUse ? theme.run : theme.muted).frame(width: 22).padding(.top, 2)
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text(tree.branch).font(.callout.monospaced()).lineLimit(1).truncationMode(.middle)
-                Text("\((tree.repo as NSString).lastPathComponent) · \(size(tree)) · \(age(tree))").font(.caption).foregroundStyle(theme.muted)
+                Text(tree.branch).font(.ahMono(.callout)).lineLimit(1).truncationMode(.middle)
+                Text("\((tree.repo as NSString).lastPathComponent) · \(size(tree)) · \(age(tree))").font(.ah(.caption)).foregroundStyle(theme.muted)
                 HStack(spacing: 6) {
                     if tree.dirty > 0 { badge("\(tree.dirty) uncommitted", theme.limited) }
                     if tree.ahead > 0 { badge("\(tree.ahead) unpushed", theme.limited) }
                     if tree.orphan { badge("orphaned", theme.faint) }
                     ForEach(tree.live, id: \.id) { live in
                         Button { open(live.id) } label: {
-                            Label(live.name, systemImage: "arrow.up.right.square").font(.caption.weight(.semibold)).foregroundStyle(theme.run)
+                            Label(live.name, systemImage: "arrow.up.right.square").font(.ah(.caption).weight(.semibold)).foregroundStyle(theme.run)
                         }
                         .buttonStyle(.borderless)
                     }
@@ -1036,8 +1041,8 @@ struct WorktreesView: View {
     private var cleanupBar: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(model.selected.count) of \(model.orphans.count) orphaned chosen").font(.callout.weight(.semibold))
-                Text("\(WorktreesModel.size(model.selectedBytes)) to reclaim").font(.caption).foregroundStyle(theme.muted)
+                Text("\(model.selected.count) of \(model.orphans.count) orphaned chosen").font(.ah(.callout).weight(.semibold))
+                Text("\(WorktreesModel.size(model.selectedBytes)) to reclaim").font(.ah(.caption)).foregroundStyle(theme.muted)
             }
             Spacer()
             Button("Remove", role: .destructive) { confirmingBulk = true }
@@ -1052,7 +1057,7 @@ struct WorktreesView: View {
     }
 
     private func badge(_ text: String, _ color: Color) -> some View {
-        Text(text).font(.caption2.weight(.semibold)).foregroundStyle(color)
+        Text(text).font(.ah(.caption2).weight(.semibold)).foregroundStyle(color)
             .padding(.horizontal, 6).padding(.vertical, 2)
             .background(color.opacity(0.12), in: Capsule())
     }
@@ -1100,7 +1105,7 @@ struct ConfirmTerminateSheet: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Terminate “\(session.title)”?").font(.title3.weight(.semibold))
+                Text("Terminate “\(session.title)”?").font(.ah(.title3).weight(.semibold))
                 Text("Its process stops now. The conversation stays in History and can be resumed.").foregroundStyle(.secondary)
                 if session.working { Label("It’s in the middle of a turn.", systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
                 Spacer()
@@ -1132,11 +1137,11 @@ struct ConfirmPlanSheet: View {
             VStack(alignment: .leading, spacing: 16) {
                 switch plan {
                 case .relaunch(_, let title, let body, let dangerous):
-                    Text(title).font(.title3.weight(.semibold))
+                    Text(title).font(.ah(.title3).weight(.semibold))
                     Text(body).foregroundStyle(.secondary)
                     if dangerous { Label("Permission checks are off in the new session.", systemImage: "exclamationmark.shield").foregroundStyle(.red) }
                 case .switchMode(let id, _):
-                    Text("Turn off permission checks?").font(.title3.weight(.semibold))
+                    Text("Turn off permission checks?").font(.ah(.title3).weight(.semibold))
                     Text("“\(session.launch.preset?.modes?.first { $0.id == id }?.name ?? id)” lets the agent run commands and edit files without asking.").foregroundStyle(.secondary)
                 default:
                     EmptyView()
@@ -1175,7 +1180,7 @@ struct ScrollbackSheet: View {
             .navigationTitle("Scrollback")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .primaryAction) { ShareLink(item: text) }
             }
         }
@@ -1208,7 +1213,7 @@ struct LaunchPickerSheet: View {
             }
             .navigationTitle(setting == .model ? "Model" : "Reasoning effort")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { scene.sheet = nil }.keyboardShortcut(.cancelAction) } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction) } }
         }
         .presentationDetents([.medium, .large])
     }
@@ -1221,7 +1226,7 @@ struct LaunchPickerSheet: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(setting == .effort ? title.capitalized : title).foregroundStyle(Color(uiColor: .label))
-                    if let detail, !detail.isEmpty { Text(detail).font(.caption).foregroundStyle(Color(uiColor: .secondaryLabel)) }
+                    if let detail, !detail.isEmpty { Text(detail).font(.ah(.caption)).foregroundStyle(Color(uiColor: .secondaryLabel)) }
                 }
                 Spacer()
                 if current { Image(systemName: "checkmark").fontWeight(.semibold).foregroundStyle(.tint) }
@@ -1256,7 +1261,7 @@ struct SessionMenuSheet: View {
             }
             .navigationTitle(session.title)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { scene.sheet = nil }.keyboardShortcut(.cancelAction) } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .close) { scene.sheet = nil }.keyboardShortcut(.cancelAction) } }
         }
         .presentationDetents([.medium, .large])
     }

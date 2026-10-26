@@ -64,7 +64,7 @@ private struct BlockView: View {
         switch block {
         case .heading(let level, let inlines):
             Text(InlineText.attributed(inlines, theme: theme))
-                .font(level == 1 ? .title2.bold() : level == 2 ? .title3.bold() : .headline)
+                .font(level == 1 ? .ah(.title2).bold() : level == 2 ? .ah(.title3).bold() : .ah(.headline))
                 .foregroundStyle(theme.text)
                 .accessibilityAddTraits(.isHeader)
                 .padding(.top, 4)
@@ -180,14 +180,14 @@ private struct TableBlock: View {
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
                 GridRow {
                     ForEach(header.indices, id: \.self) { i in
-                        Text(InlineText.attributed(header[i], theme: theme)).font(.callout.weight(.semibold)).gridColumnAlignment(alignment(i))
+                        Text(InlineText.attributed(header[i], theme: theme)).font(.ah(.callout).weight(.semibold)).gridColumnAlignment(alignment(i))
                     }
                 }
                 Divider()
                 ForEach(rows.indices, id: \.self) { r in
                     GridRow {
                         ForEach(rows[r].indices, id: \.self) { i in
-                            Text(InlineText.attributed(rows[r][i], theme: theme)).font(.callout).foregroundStyle(theme.text2)
+                            Text(InlineText.attributed(rows[r][i], theme: theme)).font(.ah(.callout)).foregroundStyle(theme.text2)
                         }
                     }
                 }
@@ -221,7 +221,7 @@ struct CodeBlockView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 if let language, !language.isEmpty {
-                    Text(language).font(.caption2.monospaced()).foregroundStyle(theme.faint)
+                    Text(language).font(.ahMono(.caption2)).foregroundStyle(theme.faint)
                 }
                 Spacer()
                 Button {
@@ -235,7 +235,7 @@ struct CodeBlockView: View {
                 } label: {
                     Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
                         .labelStyle(.iconOnly)
-                        .font(.caption)
+                        .font(.ah(.caption))
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel(copied ? "Copied" : "Copy code")
@@ -289,7 +289,7 @@ struct DiffLinesView: View {
             }
             if let maxLines, lines.count > maxLines, !showAll {
                 Button("Show all \(lines.count) lines") { showAll = true }
-                    .font(.caption)
+                    .font(.ah(.caption))
                     .padding(8)
             }
         }
@@ -318,7 +318,7 @@ struct DiffLineRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.trailing, 10)
         }
-        .font(.system(.footnote, design: .monospaced))
+        .font(.ahMono(.footnote))
         .padding(.vertical, 1)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(background)
@@ -372,7 +372,7 @@ struct HostImage: View {
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     .accessibilityLabel(alt.isEmpty ? "Image" : alt)
             } else if failed {
-                Label(alt.isEmpty ? "Image not available" : alt, systemImage: "photo").font(.caption).foregroundStyle(theme.muted)
+                Label(alt.isEmpty ? "Image not available" : alt, systemImage: "photo").font(.ah(.caption)).foregroundStyle(theme.muted)
             } else {
                 ProgressView().frame(height: 60)
             }
@@ -424,7 +424,7 @@ struct HighlightedSnippet: View {
         SwitcherSearch.highlights(snippet).reduce(Text("")) { text, run in
             text + (run.marked ? Text(run.text).bold().foregroundColor(theme.accent) : Text(run.text))
         }
-        .font(.caption)
+        .font(.ah(.caption))
         .foregroundStyle(theme.text2)
         .lineLimit(lines)
     }

@@ -9,6 +9,10 @@ struct ReviewHomeView: View {
 
     var body: some View {
         List {
+            Section { } header: {
+                let waiting = model.stacks.reduce(0) { $0 + $1.needsYou }
+                AhLargeTitle(title: "Review", tagline: model.stacks.isEmpty ? nil : "\(model.stacks.count) stack\(model.stacks.count == 1 ? "" : "s") in review\(waiting > 0 ? ". \(waiting) need\(waiting == 1 ? "s" : "") you." : ".")").textCase(nil)
+            }
             if let error = model.error { Banner(text: error, tone: .error) }
             if model.stacks.isEmpty && !model.loading.contains("stacks") {
                 EmptyState(symbol: "square.stack.3d.up", title: "No stacks in review", message: "Start from a PR chain, a GitHub stack, or PRs you pick.", action: ("Start a review", { starting = true }))
@@ -20,20 +24,20 @@ struct ReviewHomeView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(alignment: .firstTextBaseline) {
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(stack.title).font(.headline).foregroundStyle(theme.text)
-                                Text("\(stack.repo) → \(stack.trunk)").font(.caption).foregroundStyle(theme.muted)
+                                Text(stack.title).font(.ah(.headline)).foregroundStyle(theme.text)
+                                Text("\(stack.repo) → \(stack.trunk)").font(.ah(.caption)).foregroundStyle(theme.muted)
                             }
                             Spacer()
                             if stack.needsYou > 0 {
                                 Text("\(stack.needsYou) need\(stack.needsYou == 1 ? "s" : "") you")
-                                    .font(.caption.weight(.semibold))
+                                    .font(.ah(.caption).weight(.semibold))
                                     .padding(.horizontal, 8).padding(.vertical, 3)
                                     .background(theme.brand.opacity(0.14), in: Capsule())
                                     .foregroundStyle(theme.brand)
                             }
                         }
                         SpineBar(spine: stack.spine)
-                        Text(stack.statusLine).font(.caption).foregroundStyle(theme.muted)
+                        Text(stack.statusLine).font(.ah(.caption)).foregroundStyle(theme.muted)
                     }
                     .padding(.vertical, 6)
                     .contentShape(Rectangle())
@@ -42,10 +46,12 @@ struct ReviewHomeView: View {
                 .hoverEffect(.highlight)
             }
         }
-        .navigationTitle("Review")
+        .ahPage("Review")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button { starting = true } label: { Label("Start a review", systemImage: "plus") }
+                Button { starting = true } label: { Label("Start a review", systemImage: "plus").foregroundStyle(theme.background) }
+                    .buttonStyle(.glassProminent)
+                    .tint(theme.text)
             }
         }
         .task { await model.loadList() }
@@ -70,7 +76,7 @@ struct SpineBar: View {
                         .fill(LayerColor.color(layer.status, theme))
                         .frame(height: 6)
                     if spine.count <= 8 {
-                        Text("#\(layer.pr)").font(.caption2.monospacedDigit()).foregroundStyle(theme.faint)
+                        Text("#\(layer.pr)").font(.ah(.caption2).monospacedDigit()).foregroundStyle(theme.faint)
                     }
                 }
                 .frame(maxWidth: 140)
@@ -151,7 +157,7 @@ private struct StartReviewView: View {
             }
         }
         .navigationTitle("Start a review")
-        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) } }
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction) } }
         .task { if model.repos.isEmpty { await model.loadList() } }
     }
 
@@ -177,7 +183,7 @@ private struct StartReviewView: View {
                 HStack {
                     Text(String(repeating: "  ", count: depth) + "#\(tree.pr.number) \(tree.pr.title)").lineLimit(1)
                     Spacer()
-                    Text("+\(tree.pr.additions) −\(tree.pr.deletions)").font(.caption.monospacedDigit())
+                    Text("+\(tree.pr.additions) −\(tree.pr.deletions)").font(.ah(.caption).monospacedDigit())
                 }
             }
             .disabled(tree.pr.inStack != nil)
@@ -223,11 +229,13 @@ struct StackCockpitView: View {
         .navigationBarTitleDisplayMode(scene.narrow ? .inline : .automatic)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                Button { Task { await model.refresh() } } label: { Image(systemName: "arrow.clockwise") }.accessibilityLabel("Sync with GitHub")
+                Button { Task { await model.refresh() } } label: { Image(systemName: "arrow.clockwise") }.accessibilityLabel("Sync with GitHub").tint(.primary)
                 Button { mergingStack = true } label: { Label("Merge the stack", systemImage: "arrow.triangle.merge") }
                     .disabled(model.stack == nil)
+                    .tint(.primary)
                 Button { managing = true } label: { Label("Manage", systemImage: "slider.horizontal.3") }
                     .disabled(model.stack == nil)
+                    .tint(.primary)
             }
         }
         .task(id: route) { await model.open(route) }
@@ -256,28 +264,28 @@ struct StackCockpitView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     if scene.narrow {
                         // The bar's title is one short line on a phone; the stack's name is read here.
-                        Text(stack.title).font(.title3.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+                        Text(stack.title).font(.ah(.title3).weight(.semibold)).fixedSize(horizontal: false, vertical: true)
                     }
-                    Text("\(stack.repo) → \(stack.trunk)").font(.caption).foregroundStyle(theme.muted)
+                    Text("\(stack.repo) → \(stack.trunk)").font(.ah(.caption)).foregroundStyle(theme.muted)
                     if let next = stack.next, let layer = stack.layers.first(where: { $0.pr == next }) {
-                        Label("Up next: \(layer.name) — \(layer.title)", systemImage: "arrow.right.circle").font(.subheadline.weight(.semibold))
+                        Label("Up next: \(layer.name) — \(layer.title)", systemImage: "arrow.right.circle").font(.ah(.subheadline).weight(.semibold))
                     }
                     if let origin = stack.origin {
-                        Button { scene.open(origin.key) } label: { Label("Made in “\(origin.title)”", systemImage: "terminal") }.font(.caption)
+                        Button { scene.open(origin.key) } label: { Label("Made in “\(origin.title)”", systemImage: "terminal") }.font(.ah(.caption))
                     }
                     if let owner = stack.owner, owner.uid != stack.origin?.uid {
-                        Button { scene.open(owner.key) } label: { Label("Fixes go to “\(owner.title)”", systemImage: "wrench.and.screwdriver") }.font(.caption)
+                        Button { scene.open(owner.key) } label: { Label("Fixes go to “\(owner.title)”", systemImage: "wrench.and.screwdriver") }.font(.ah(.caption))
                     }
-                    if let syncError = stack.syncError { Text(syncError).font(.caption).foregroundStyle(theme.danger) }
+                    if let syncError = stack.syncError { Text(syncError).font(.ah(.caption)).foregroundStyle(theme.danger) }
                 }
             }
             Section("Pinned decisions") {
                 ForEach(stack.decisions) { decision in
-                    Text(decision.text).font(.callout)
+                    Text(decision.text).font(.ah(.callout))
                         .swipeActions { Button("Unpin", role: .destructive) { Task { await model.removeDecision(decision.id) } } }
                 }
                 TextField("Pin a decision the whole stack follows", text: $decision)
-                    .font(.callout)
+                    .font(.ah(.callout))
                     .onSubmit {
                         let text = decision.trimmingCharacters(in: .whitespacesAndNewlines)
                         decision = ""
@@ -316,10 +324,10 @@ private struct LayerRow: View {
         let confidence = LayerConfidence(layer: layer)
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(layer.name).font(.subheadline.weight(.semibold))
-                Text(layer.title).font(.subheadline).lineLimit(1)
+                Text(layer.name).font(.ah(.subheadline).weight(.semibold))
+                Text(layer.title).font(.ah(.subheadline)).lineLimit(1)
                 Spacer()
-                Text(layer.status.word).font(.caption.weight(.semibold)).foregroundStyle(tone(layer.status))
+                Text(layer.status.word).font(.ah(.caption).weight(.semibold)).foregroundStyle(tone(layer.status))
             }
             HStack(spacing: 8) {
                 Label(confidence.checksText, systemImage: checksSymbol(confidence.checks)).foregroundStyle(checksColor(confidence.checks))
@@ -327,7 +335,7 @@ private struct LayerRow: View {
                 else if layer.open > 0 { Label("\(layer.open) open", systemImage: "flag").foregroundStyle(theme.muted) }
                 if confidence.review == .changedSinceReview { Label("changed", systemImage: "arrow.triangle.2.circlepath").foregroundStyle(theme.brand) }
             }
-            .font(.caption2)
+            .font(.ah(.caption2))
         }
         .accessibilityElement(children: .combine)
     }
@@ -406,26 +414,26 @@ struct LayerView: View {
     private func header(_ layer: Layer, _ confidence: LayerConfidence) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("#\(layer.pr)").font(.title3.monospacedDigit()).foregroundStyle(theme.muted)
-                Text(layer.title).font(.title3.weight(.semibold))
-                if layer.draft { Text("Draft").font(.caption).padding(4).background(theme.raised, in: Capsule()) }
+                Text("#\(layer.pr)").font(.ah(.title3).monospacedDigit()).foregroundStyle(theme.muted)
+                Text(layer.title).font(.ah(.title3).weight(.semibold))
+                if layer.draft { Text("Draft").font(.ah(.caption)).padding(4).background(theme.raised, in: Capsule()) }
             }
-            Text("\(layer.headRef) → \(layer.baseRef) · head \(layer.headSha.prefix(7)) · by \(layer.author)").font(.caption.monospaced()).foregroundStyle(theme.muted)
+            Text("\(layer.headRef) → \(layer.baseRef) · head \(layer.headSha.prefix(7)) · by \(layer.author)").font(.ahMono(.caption)).foregroundStyle(theme.muted)
             if !confidence.missing.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Before this can merge").font(.caption.weight(.semibold)).foregroundStyle(theme.muted)
-                    ForEach(confidence.missing, id: \.self) { item in Label(item, systemImage: "circle").font(.callout) }
+                    Text("Before this can merge").font(.ah(.caption).weight(.semibold)).foregroundStyle(theme.muted)
+                    ForEach(confidence.missing, id: \.self) { item in Label(item, systemImage: "circle").font(.ah(.callout)) }
                 }
                 .padding(10)
                 .background(theme.raised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
-            if let url = URL(string: layer.url) { Link("Open on GitHub", destination: url).font(.caption) }
+            if let url = URL(string: layer.url) { Link("Open on GitHub", destination: url).font(.ah(.caption)) }
         }
     }
 
     private func section<Content: View>(_ title: String, _ symbol: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label(title, systemImage: symbol).font(.headline).accessibilityAddTraits(.isHeader)
+            Label(title, systemImage: symbol).font(.ah(.headline)).accessibilityAddTraits(.isHeader)
             content()
         }
     }
@@ -435,7 +443,7 @@ struct LayerView: View {
             if let summary = layer.current?.summary, !summary.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
-                        Text("Model briefing — a summary, not evidence").font(.caption).foregroundStyle(theme.faint)
+                        Text("Model briefing — a summary, not evidence").font(.ah(.caption)).foregroundStyle(theme.faint)
                         Spacer()
                         if model.summarizing {
                             ProgressView().controlSize(.mini)
@@ -443,7 +451,7 @@ struct LayerView: View {
                             Button("Write Again", systemImage: "arrow.clockwise") { Task { await model.brief(force: true) } }
                                 .labelStyle(.iconOnly)
                                 .buttonStyle(.borderless)
-                                .font(.caption)
+                                .font(.ah(.caption))
                                 .help("Write the briefing again")
                         }
                     }
@@ -455,8 +463,8 @@ struct LayerView: View {
                 HStack(spacing: 10) {
                     ProgressView()
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Writing a briefing…").font(.subheadline)
-                        Text("The model reads this layer’s diff and its stack. It shows here when it’s done.").font(.caption).foregroundStyle(theme.muted)
+                        Text("Writing a briefing…").font(.ah(.subheadline))
+                        Text("The model reads this layer’s diff and its stack. It shows here when it’s done.").font(.ah(.caption)).foregroundStyle(theme.muted)
                     }
                 }
                 .padding(10)
@@ -464,7 +472,7 @@ struct LayerView: View {
                 .background(theme.raised.opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             } else if let blocked = model.briefingBlocked {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label(blocked, systemImage: "text.bubble").font(.callout).foregroundStyle(theme.muted)
+                    Label(blocked, systemImage: "text.bubble").font(.ah(.callout)).foregroundStyle(theme.muted)
                     HStack {
                         if blocked.contains("Settings") {
                             Button("Open Settings") { scene.sheet = .settings(SettingsSection.subscriptions.rawValue) }.buttonStyle(.bordered)
@@ -491,15 +499,15 @@ struct LayerView: View {
             }
             .pickerStyle(.segmented)
             if let diff = model.diff {
-                Text("\(diff.from.prefix(7))…\(diff.to.prefix(7))\(diff.kind == "range" ? " · range-diff (rebased)" : "")").font(.caption.monospaced()).foregroundStyle(theme.faint)
-                if diff.truncated { Label("This diff is long; only its start is shown here.", systemImage: "scissors").font(.caption).foregroundStyle(theme.limited) }
+                Text("\(diff.from.prefix(7))…\(diff.to.prefix(7))\(diff.kind == "range" ? " · range-diff (rebased)" : "")").font(.ahMono(.caption)).foregroundStyle(theme.faint)
+                if diff.truncated { Label("This diff is long; only its start is shown here.", systemImage: "scissors").font(.ah(.caption)).foregroundStyle(theme.limited) }
                 if diff.text.isEmpty {
                     Text(model.diffScope == .since ? "Nothing changed since your review." : "No changes.").foregroundStyle(theme.muted)
                 } else {
                     ForEach(FileDiff.files(in: diff.text)) { file in
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
-                                Text(file.path).font(.caption.monospaced().weight(.semibold))
+                                Text(file.path).font(.ahMono(.caption).weight(.semibold))
                                 Spacer()
                                 Menu {
                                     Button("Ask the reviewer about this file") { model.attach(.file(pr: layer.pr, path: file.path)) }
@@ -518,7 +526,7 @@ struct LayerView: View {
             }
             if let selected = selectedLines {
                 HStack {
-                    Text("\(selected.path):\(selected.lines.first?.number ?? 0)").font(.caption.monospaced())
+                    Text("\(selected.path):\(selected.lines.first?.number ?? 0)").font(.ahMono(.caption))
                     Spacer()
                     Button("Add a finding here") { addingFinding = true }.buttonStyle(.bordered).controlSize(.small)
                 }
@@ -533,7 +541,7 @@ struct LayerView: View {
                     UserBubble(text: message.text)
                 } else {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Reviewer (a model)").font(.caption2).foregroundStyle(theme.faint)
+                        Text("Reviewer (a model)").font(.ah(.caption2)).foregroundStyle(theme.faint)
                         MarkdownView(message.text, compact: true)
                     }
                 }
@@ -546,7 +554,7 @@ struct LayerView: View {
                             Button {
                                 model.attachments.removeAll { $0.key == context.key }
                             } label: {
-                                Label(label(context), systemImage: "xmark").font(.caption)
+                                Label(label(context), systemImage: "xmark").font(.ah(.caption))
                             }
                             .buttonStyle(.bordered)
                         }
@@ -559,19 +567,19 @@ struct LayerView: View {
                     let text = question
                     question = ""
                     Task { await model.ask(text) }
-                } label: { Image(systemName: "arrow.up.circle.fill").font(.title2) }
+                } label: { Image(systemName: "arrow.up.circle.fill").font(.ah(.title2)) }
                 .disabled(question.trimmingCharacters(in: .whitespaces).isEmpty)
                 .keyboardShortcut(.return, modifiers: .command)
             }
             Divider()
             let findings = model.findings(for: layer.pr)
             HStack {
-                Text("Findings").font(.subheadline.weight(.semibold))
+                Text("Findings").font(.ah(.subheadline).weight(.semibold))
                 Spacer()
-                Button("Import GitHub threads") { Task { let n = await model.importThreads(); scene.toast(n == 0 ? "No new threads" : "Imported \(n)") } }.font(.caption)
-                Button("Add") { selectedLines = nil; addingFinding = true }.font(.caption)
+                Button("Import GitHub threads") { Task { let n = await model.importThreads(); scene.toast(n == 0 ? "No new threads" : "Imported \(n)") } }.font(.ah(.caption))
+                Button("Add") { selectedLines = nil; addingFinding = true }.font(.ah(.caption))
             }
-            if findings.isEmpty { Text("No findings on this layer.").font(.callout).foregroundStyle(theme.muted) }
+            if findings.isEmpty { Text("No findings on this layer.").font(.ah(.callout)).foregroundStyle(theme.muted) }
             ForEach(findings) { finding in FindingRow(finding: finding, model: model) { resolving = finding } }
         }
     }
@@ -596,19 +604,19 @@ struct LayerView: View {
                     Text(gate.label)
                     if let detail = gate.detail { Text(detail).foregroundStyle(theme.muted) }
                 }
-                .font(.callout)
+                .font(.ah(.callout))
             }
             if let verdict = confidence.verdict {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Re-review of the fixes — the model’s verdict, for you to accept or not").font(.caption).foregroundStyle(theme.faint)
-                    Text(verdict.summary).font(.callout)
+                    Text("Re-review of the fixes — the model’s verdict, for you to accept or not").font(.ah(.caption)).foregroundStyle(theme.faint)
+                    Text(verdict.summary).font(.ah(.callout))
                     ForEach(verdict.items, id: \.id) { item in
-                        Label("Finding \(item.id): \(item.verdict) — \(item.evidence)", systemImage: item.verdict == "addressed" ? "checkmark" : item.verdict == "partly" ? "circle.lefthalf.filled" : "xmark").font(.caption)
+                        Label("Finding \(item.id): \(item.verdict) — \(item.evidence)", systemImage: item.verdict == "addressed" ? "checkmark" : item.verdict == "partly" ? "circle.lefthalf.filled" : "xmark").font(.ah(.caption))
                     }
                     if !verdict.unrequested.isEmpty {
-                        Text("Changes nobody asked for:").font(.caption.weight(.semibold)).foregroundStyle(theme.limited)
+                        Text("Changes nobody asked for:").font(.ah(.caption).weight(.semibold)).foregroundStyle(theme.limited)
                         ForEach(verdict.unrequested, id: \.self) { change in
-                            Text("• \(change.title)\(change.path.map { " (\($0))" } ?? "")").font(.caption)
+                            Text("• \(change.title)\(change.path.map { " (\($0))" } ?? "")").font(.ah(.caption))
                         }
                     }
                     Button("Accept these fixes") { Task { await model.acceptFixes() } }.buttonStyle(.bordered)
@@ -659,7 +667,7 @@ struct LayerView: View {
                 }
                 Button("Ask the agent to merge…") { dispatching = .some("merge") }.buttonStyle(.bordered).disabled(!confidence.readyToMerge)
             }
-            .font(.callout)
+            .font(.ah(.callout))
             Button {
                 merging = true
             } label: {
@@ -669,7 +677,7 @@ struct LayerView: View {
             .tint(theme.done)
             .disabled(!confidence.readyToMerge)
             if !confidence.readyToMerge {
-                Text("Merging opens once you’ve reviewed this exact revision and nothing blocks it.").font(.caption).foregroundStyle(theme.muted)
+                Text("Merging opens once you’ve reviewed this exact revision and nothing blocks it.").font(.ah(.caption)).foregroundStyle(theme.muted)
             }
         }
     }
@@ -689,16 +697,16 @@ private struct FindingRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(finding.severity.rawValue).font(.caption2.weight(.bold)).textCase(.uppercase)
+                Text(finding.severity.rawValue).font(.ah(.caption2).weight(.bold)).textCase(.uppercase)
                     .foregroundStyle(finding.severity == .blocking ? theme.danger : finding.severity == .should ? theme.limited : theme.muted)
-                Text(finding.title).font(.callout.weight(.medium))
+                Text(finding.title).font(.ah(.callout).weight(.medium))
                 Spacer()
-                Text(finding.state.rawValue).font(.caption).foregroundStyle(theme.faint)
+                Text(finding.state.rawValue).font(.ah(.caption)).foregroundStyle(theme.faint)
             }
             if !finding.body.isEmpty { MarkdownView(finding.body, compact: true) }
             HStack(spacing: 6) {
-                Text("from \(finding.source)").font(.caption2).foregroundStyle(theme.faint)
-                if let path = finding.path { Text("\(path)\(finding.lineStart.map { ":\($0)" } ?? "")").font(.caption2.monospaced()).foregroundStyle(theme.faint) }
+                Text("from \(finding.source)").font(.ah(.caption2)).foregroundStyle(theme.faint)
+                if let path = finding.path { Text("\(path)\(finding.lineStart.map { ":\($0)" } ?? "")").font(.ahMono(.caption2)).foregroundStyle(theme.faint) }
             }
         }
         .contextMenu {
@@ -728,14 +736,14 @@ private struct NewFindingSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                if let path { Section("Where") { Text("\(path)\(lines.first?.number.map { ":\($0)" } ?? "")").font(.caption.monospaced()) } }
+                if let path { Section("Where") { Text("\(path)\(lines.first?.number.map { ":\($0)" } ?? "")").font(.ahMono(.caption)) } }
                 TextField("What’s wrong", text: $title)
                 TextField("Details (optional)", text: $body_, axis: .vertical)
                 Picker("Severity", selection: $severity) { ForEach(Finding.Severity.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
             }
             .navigationTitle("New finding")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") {
                         let numbers = lines.compactMap(\.number)
@@ -745,6 +753,7 @@ private struct NewFindingSheet: View {
                         }
                     }.keyboardShortcut(.return, modifiers: .command)
                     .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .buttonStyle(.glassProminent)
                 }
             }
         }
@@ -776,7 +785,7 @@ private struct DispatchSheet: View {
                     }
                 }
                 Section {
-                    TextEditor(text: $text).frame(minHeight: 160).font(.callout)
+                    TextEditor(text: $text).frame(minHeight: 160).font(.ah(.callout))
                     if kind == nil {
                         Button("Draft from the findings") {
                             Task { text = await model.draftDispatch(findings: Array(selected)) ?? text }
@@ -797,7 +806,7 @@ private struct DispatchSheet: View {
             }
             .navigationTitle(kind == "restack" ? "Restack \(layer.name)" : kind == "merge" ? "Ask the agent to merge" : "Request fixes")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(sending ? "Sending…" : "Send") {
                         sending = true
@@ -811,6 +820,7 @@ private struct DispatchSheet: View {
                         }
                     }.keyboardShortcut(.return, modifiers: .command)
                     .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty || sending)
+                        .buttonStyle(.glassProminent)
                 }
             }
             .task {
@@ -845,7 +855,7 @@ private struct MergeLayerSheet: View {
                 Section("What’s known") {
                     Label(confidence.reviewText, systemImage: "checkmark.seal")
                     Label(confidence.checksText, systemImage: confidence.checks == .passing ? "checkmark.circle" : "exclamationmark.triangle")
-                    if confidence.checks == .none { Text("No CI ran on this head. Merging relies on your review alone.").font(.caption) }
+                    if confidence.checks == .none { Text("No CI ran on this head. Merging relies on your review alone.").font(.ah(.caption)) }
                     Label("\(confidence.openFindings) open finding\(confidence.openFindings == 1 ? "" : "s"), \(confidence.blockingFindings) blocking", systemImage: "flag")
                 }
                 if let outcome {
@@ -863,7 +873,7 @@ private struct MergeLayerSheet: View {
             }
             .navigationTitle("Merge #\(layer.pr)")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(outcome == nil ? "Cancel" : "Done") { dismiss() }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: outcome == nil ? .cancel : .close) { dismiss() }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(merging ? "Merging…" : "Merge") {
                         merging = true
@@ -874,6 +884,7 @@ private struct MergeLayerSheet: View {
                         }
                     }
                     .disabled(merging || outcome != nil)
+                        .buttonStyle(.glassProminent)
                 }
             }
         }
@@ -910,7 +921,7 @@ private struct StackMergeSheet: View {
                                 .foregroundStyle(row.state == .ready ? theme.done : row.state == .waits ? theme.faint : theme.limited)
                             VStack(alignment: .leading) {
                                 Text("#\(row.layer.pr) \(row.layer.title)").lineLimit(1)
-                                if let why = row.why { Text(why).font(.caption).foregroundStyle(theme.muted) }
+                                if let why = row.why { Text(why).font(.ah(.caption)).foregroundStyle(theme.muted) }
                             }
                         }
                     }
@@ -926,7 +937,7 @@ private struct StackMergeSheet: View {
             }
             .navigationTitle(plan.lands.isEmpty ? "Nothing can merge yet" : "Merge \(plan.lands.count) layer\(plan.lands.count == 1 ? "" : "s")")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(result == nil ? "Cancel" : "Done") { dismiss() }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: result == nil ? .cancel : .close) { dismiss() }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(merging ? "Merging…" : "Merge") {
                         merging = true
@@ -936,6 +947,7 @@ private struct StackMergeSheet: View {
                         }
                     }
                     .disabled(plan.lands.isEmpty || merging || result != nil)
+                        .buttonStyle(.glassProminent)
                 }
             }
         }

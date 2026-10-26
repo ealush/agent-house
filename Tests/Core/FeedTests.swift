@@ -198,12 +198,15 @@ private let result = ToolResult(callId: "c1", text: "ok", isError: false, data: 
 @Test func whileItWorksTheBoxSaysItQueuesAndHowToSendNow() {
     #expect(ComposerModel.placeholder(isShell: false, working: true, queued: 0, touchOnly: false).contains("⌘↵ sends now"))
     #expect(ComposerModel.placeholder(isShell: false, working: true, queued: 2, touchOnly: false).contains("steers the next"))
-    #expect(ComposerModel.placeholder(isShell: false, working: true, queued: 0, touchOnly: true) == "Add to this… (queued until it’s free)", "no key hints without a keyboard")
+    #expect(ComposerModel.placeholder(isShell: false, working: true, queued: 0, touchOnly: true) == "Add to the queue · sent when it’s free", "no key hints without a keyboard")
+    #expect(ComposerModel.placeholder(isShell: false, working: false, queued: 0, touchOnly: true, agent: "Claude Code") == "Message Claude Code · / commands · @ files")
+    #expect(ComposerModel.placeholder(isShell: false, working: false, queued: 0, touchOnly: true, waiting: true) == "Reply to answer")
+    #expect(ComposerModel.placeholder(isShell: false, working: false, queued: 0, touchOnly: true, ended: true) == "Message to resume")
     // Narrow: whole hints drop from the end.
     let width: (String) -> Double = { Double($0.count) }
     #expect(ComposerModel.fitting("Send a follow-up · / commands · @ files", width: 30, measure: width) == "Send a follow-up · / commands")
     #expect(ComposerModel.fitting("Send a follow-up · / commands · @ files", width: 5, measure: width) == "Send a follow-up")
-    #expect(ComposerModel.placeholder(isShell: false, working: false, queued: 0, touchOnly: false) == "Send a follow-up · / commands · @ files")
+    #expect(ComposerModel.placeholder(isShell: false, working: false, queued: 0, touchOnly: false) == "Message the agent · / commands · @ files")
     #expect(ComposerModel.placeholder(isShell: true, working: true, queued: 0, touchOnly: false) == "Type or paste a command")
 }
 

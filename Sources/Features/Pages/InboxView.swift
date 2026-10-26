@@ -15,7 +15,7 @@ struct InboxView: View {
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
             } header: {
-                Text(inbox.summary).font(.subheadline).foregroundStyle(theme.muted).textCase(nil)
+                AhLargeTitle(title: "Inbox", tagline: inbox.summary).textCase(nil)
             }
             // Another device's place, not this one's from an earlier launch (window ids are
             // per launch, so the name tells this device apart too).
@@ -32,43 +32,51 @@ struct InboxView: View {
                 Section {
                     HStack(spacing: 12) {
                         Image(systemName: "checkmark.seal.fill")
-                            .font(.title2)
+                            .font(.ah(.title2))
                             .foregroundStyle(theme.done)
                             .symbolEffect(.bounce, value: inbox.rest.count)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("All caught up").font(.headline)
-                            Text("Nothing needs you, and nothing's running.").font(.callout).foregroundStyle(theme.muted)
+                            Text("All caught up").font(.ah(.headline))
+                            Text("Nothing needs you, and nothing's running.").font(.ah(.callout)).foregroundStyle(theme.muted)
                         }
                     }
                     .padding(.vertical, 6)
                 }
             }
             if !inbox.waiting.isEmpty || !inbox.reviews.isEmpty {
-                Section("Needs you") {
+                Section {
                     ForEach(inbox.waiting) { row in
                         AskCard(row: row, scene: scene, hub: hub)
                     }
                     ForEach(inbox.reviews, id: \.self) { alert in
                         ReviewAlertRow(alert: alert) { scene.openReview(ReviewRoute(stack: alert.stackId, pr: alert.pr)) }
                     }
+                } header: {
+                    AhSectionHeader(title: "Needs you", count: inbox.waiting.count + inbox.reviews.count)
                 }
             }
             if !inbox.running.isEmpty {
-                Section("Working") {
+                Section {
                     ForEach(inbox.running) { row in
                         SessionRowView(row: row, multiHost: hub.multiHost) { scene.open(row.key) }
                             .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
                             .swipeActions(edge: .trailing) { PinSwipe(row: row, hub: hub) }
+                            .ahRow()
                     }
+                } header: {
+                    AhSectionHeader(title: "Working", count: inbox.running.count)
                 }
             }
             if !inbox.rest.isEmpty {
-                Section("Idle and done") {
+                Section {
                     ForEach(inbox.rest) { row in
                         SessionRowView(row: row, multiHost: hub.multiHost) { scene.open(row.key) }
                             .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
                             .swipeActions(edge: .trailing) { PinSwipe(row: row, hub: hub) }
+                            .ahRow()
                     }
+                } header: {
+                    AhSectionHeader(title: "Idle and done", count: inbox.rest.count)
                 }
             }
             if hub.rows.isEmpty {
@@ -85,21 +93,30 @@ struct InboxView: View {
         }
         .listStyle(.insetGrouped)
         .refreshable { hub.resync() }
-        .navigationTitle("Inbox")
+        .ahPage("Inbox")
         .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
+            // Bar glyphs in the label color; only the primary action (New) carries the tint, in
+            // a glass of its own, as iOS 26 bars do.
+            ToolbarItem(placement: .primaryAction) {
                 // A phone has a Search tab, and no sidebar: its Inbox, the first page, holds
                 // what the sidebar's bar would.
                 if scene.narrow {
-                    MoreMenu(scene: scene)
+                    MoreMenu(scene: scene).tint(.primary)
                 } else {
-                    Button { scene.perform("go-search") } label: { Image(systemName: "magnifyingglass") }.accessibilityLabel("Search")
+                    Button { scene.perform("go-search") } label: { Image(systemName: "magnifyingglass") }.accessibilityLabel("Search").tint(.primary)
                 }
-                Button { scene.perform("new-session") } label: { Image(systemName: "plus") }.accessibilityLabel("New session")
+            }
+            ToolbarSpacer(.fixed, placement: .primaryAction)
+            ToolbarItem(placement: .primaryAction) {
+                // ah's one light circle: New (ink on a light ground).
+                Button { scene.perform("new-session") } label: { Image(systemName: "plus").foregroundStyle(theme.background) }
+                    .buttonStyle(.glassProminent)
+                    .tint(theme.text)
+                    .accessibilityLabel("New session")
             }
             if scene.narrow {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button { scene.perform("go-settings") } label: { Image(systemName: "gearshape") }.accessibilityLabel("Settings")
+                    Button { scene.perform("go-settings") } label: { Image(systemName: "gearshape") }.accessibilityLabel("Settings").tint(.primary)
                 }
             }
         }
@@ -130,12 +147,12 @@ private struct AskCard: View {
                 HStack(spacing: 10) {
                     AgentMark(agent: row.dto.agent)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(row.title).font(.headline).foregroundStyle(theme.text).lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
-                        Text([hub.multiHost ? row.host : nil, row.dto.project].compactMap { $0 }.joined(separator: " · ")).font(.caption).foregroundStyle(theme.muted)
-                        if typeSize.isAccessibilitySize { Elapsed(seconds: row.dto.activity).font(.caption).foregroundStyle(theme.faint) }
+                        Text(row.title).font(.ah(.headline)).foregroundStyle(theme.text).lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
+                        Text([hub.multiHost ? row.host : nil, row.dto.project].compactMap { $0 }.joined(separator: " · ")).font(.ah(.caption)).foregroundStyle(theme.muted)
+                        if typeSize.isAccessibilitySize { Elapsed(seconds: row.dto.activity).font(.ah(.caption)).foregroundStyle(theme.faint) }
                     }
                     Spacer()
-                    if !typeSize.isAccessibilitySize { Elapsed(seconds: row.dto.activity).font(.caption).foregroundStyle(theme.faint) }
+                    if !typeSize.isAccessibilitySize { Elapsed(seconds: row.dto.activity).font(.ah(.caption)).foregroundStyle(theme.faint) }
                 }
             }
             .buttonStyle(.plain)
@@ -143,7 +160,7 @@ private struct AskCard: View {
             if let ask = row.dto.ask {
                 if AskParts.isForm(ask) {
                     // The form below says the question; the card only says what this is.
-                    Text(AskParts.kindLabel(ask.kind)).font(.caption.weight(.semibold)).foregroundStyle(theme.brand).textCase(.uppercase)
+                    Text(AskParts.kindLabel(ask.kind)).font(.ah(.subheadline).weight(.semibold)).foregroundStyle(theme.brand)
                 } else {
                     AskSummaryView(parts: AskParts(ask, detail: row.dto.detail), showTerminalText: false)
                 }
@@ -154,6 +171,8 @@ private struct AskCard: View {
             })
         }
         .padding(.vertical, 6)
+        // ah's AskCard: what needs you is the one pink-edged thing on the page.
+        .listRowBackground(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(theme.accentTint).overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(theme.accentLine, lineWidth: 1)))
         .accessibilityElement(children: .contain)
     }
 }
@@ -168,8 +187,8 @@ private struct ReviewAlertRow: View {
             HStack(spacing: 10) {
                 Image(systemName: "checkmark.seal").foregroundStyle(theme.brand)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.subheadline.weight(.semibold))
-                    Text("\(alert.stackTitle) · #\(alert.pr) \(alert.title)").font(.caption).foregroundStyle(theme.muted).lineLimit(1)
+                    Text(title).font(.ah(.subheadline).weight(.semibold))
+                    Text("\(alert.stackTitle) · #\(alert.pr) \(alert.title)").font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(1)
                 }
             }
         }
@@ -226,7 +245,7 @@ struct SessionRowView: View {
             AgentMark(agent: row.dto.agent)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    if row.dto.pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint) }
+                    if row.dto.pinned { Image(systemName: "pin.fill").font(.ah(.caption2)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint) }
                     Text(row.title).foregroundStyle(onAccent ? .white : theme.text).lineLimit(1)
                     if let fork = row.dto.fork {
                         // A fork (or a session others were forked from): its lineage at a glance.
@@ -234,12 +253,12 @@ struct SessionRowView: View {
                             Image(systemName: "arrow.branch")
                             if fork.forks > 0 { Text("\(fork.forks)") }
                         }
-                        .font(.caption2.weight(.semibold))
+                        .font(.ah(.caption2).weight(.semibold))
                         .foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint)
                         .accessibilityLabel(fork.parentTitle.isEmpty ? "\(fork.forks) forks" : "Fork of \(fork.parentTitle)")
                     }
                 }
-                Text(detail).font(.caption).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.muted).lineLimit(stacked ? 2 : 1)
+                Text(detail).font(.ah(.caption)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.muted).lineLimit(stacked ? 2 : 1)
                 if stacked { status(onAccent: onAccent, compact: false) }
             }
             Spacer(minLength: 4)
@@ -250,7 +269,7 @@ struct SessionRowView: View {
     private func status(onAccent: Bool, compact: Bool) -> some View {
         VStack(alignment: .trailing, spacing: 2) {
             StatusPill(word: row.word, compact: compact)
-            if row.dto.queued > 0 { Text("\(row.dto.queued) queued").font(.caption2).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint) }
+            if row.dto.queued > 0 { Text("\(row.dto.queued) queued").font(.ah(.caption2)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint) }
         }
     }
 
@@ -280,7 +299,11 @@ private struct GroupHeader: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Text(section.id)
+            // ah's SectionHeader overline: the project in small tracked capitals.
+            Text(section.id.uppercased())
+                .font(.ah(.caption).weight(.semibold))
+                .tracking(1)
+                .foregroundStyle(theme.muted)
                 .lineLimit(1)
             Spacer(minLength: 4)
             // Tap: a new session here. Hold: move the block (a sidebar header takes no
@@ -292,12 +315,14 @@ private struct GroupHeader: View {
                 Button("Move Down", systemImage: "arrow.down") { withAnimation(.snappy) { scene.moveGroup(section.id, by: 1) } }.disabled(last)
             } label: {
                 Image(systemName: "plus")
-                    .font(.caption.weight(.semibold))
+                    .font(.ah(.caption).weight(.semibold))
             } primaryAction: {
                 scene.sheet = .newSession(newHere)
             }
             .menuStyle(.button)
             .buttonStyle(.borderless)
+            // Secondary, like a section header's own controls; the tint is for New in the bar.
+            .tint(.secondary)
             .accessibilityLabel("New session in \(section.id)")
             .accessibilityHint("Hold for more")
         }
@@ -324,15 +349,50 @@ struct SessionListView: View {
     @Bindable var scene: SceneModel
     let hub: HubStore
     var selection: String?
+    /// The iPad sidebar: the pages lead the list as rows of their own, as Mail's mailboxes do.
+    var showsPages = false
     @Environment(\.theme) private var theme
     /// "Focus the session list" (⌃⇧0) puts the keyboard here.
     @FocusState private var listFocused: Bool
 
+    private static let pages: [(title: String, symbol: String, route: SceneSnapshot.Route)] = [
+        ("Inbox", "tray", .inbox),
+        ("History", "clock.arrow.circlepath", .history),
+        ("Review", "checkmark.rectangle.stack", .review(ReviewRoute())),
+        ("Search", "magnifyingglass", .search),
+    ]
+
+    /// A page row's tag; session rows are tagged with their key.
+    private static func tag(_ route: SceneSnapshot.Route) -> String { "page:\(route.page)" }
+
+    private var selected: String? {
+        if showsPages, scene.workspace.layout == nil, scene.route.page != "session" { return Self.tag(scene.route) }
+        return selection
+    }
+
     var body: some View {
         let sections = scene.sidebarSections
-        List(selection: Binding(get: { selection }, set: { if let key = $0 { scene.open(key) } })) {
+        List(selection: Binding(get: { selected }, set: { tag in
+            guard let tag else { return }
+            if let page = Self.pages.first(where: { Self.tag($0.route) == tag }) { scene.show(page.route) } else { scene.open(tag) }
+        })) {
             ConnectionBanner(phase: hub.phase, lastUpdated: hub.lastUpdated, cached: hub.showingCached) { hub.resync() }
                 .listRowBackground(Color.clear)
+            if scene.narrow && !showsPages {
+                Section { } header: { AhLargeTitle(title: "Sessions", tagline: hub.inbox(narrow: true).summary).textCase(nil) }
+            }
+            if showsPages {
+                Section {
+                    ForEach(Self.pages, id: \.title) { page in
+                        let waiting = page.route.page == "inbox" ? hub.rows.filter { $0.dto.status == .waiting }.count + hub.reviewAlerts.count : 0
+                        // Icons rest muted; the current page's in the accent (ah's nav item).
+                        Label { Text(page.title).font(.ah(.callout)) } icon: { Image(systemName: page.symbol).foregroundStyle(Self.tag(page.route) == selected ? theme.accent : theme.muted) }
+                            .badge(waiting)
+                            .tag(Self.tag(page.route))
+                            .accessibilityLabel(waiting > 0 ? "\(page.title), \(waiting) need you" : page.title)
+                    }
+                }
+            }
             ForEach(sections) { section in
                 Section {
                     ForEach(section.rows) { row in
@@ -428,6 +488,7 @@ struct HistoryView: View {
             if labels.last != label && !labels.contains(label) { labels.append(label) }
         }
         List {
+            Section { } header: { AhLargeTitle(title: "History", tagline: rows.isEmpty ? nil : "\(rows.count) conversation\(rows.count == 1 ? "" : "s") to pick up.").textCase(nil) }
             if rows.isEmpty {
                 EmptyState(symbol: "clock", title: scene.historyFilter.isEmpty ? "No history yet" : "Nothing matches", message: "Ended and past conversations appear here.")
             }
@@ -458,15 +519,15 @@ struct HistoryRowView: View {
                 AgentMark(agent: item.dto.harness == "shell" ? nil : item.dto.harness)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 4) {
-                        if item.dto.pinned { Image(systemName: "pin.fill").font(.caption2) }
+                        if item.dto.pinned { Image(systemName: "pin.fill").font(.ah(.caption2)) }
                         Text(item.dto.title).lineLimit(1).foregroundStyle(theme.text)
                     }
                     Text([hub.multiHost ? item.host : nil, item.dto.project, item.dto.fork.map { "fork of \($0.parentTitle)" }].compactMap { $0 }.joined(separator: " · "))
-                        .font(.caption).foregroundStyle(theme.muted).lineLimit(1)
-                    if typeSize.isAccessibilitySize { Elapsed(seconds: item.dto.at).font(.caption).foregroundStyle(theme.faint) }
+                        .font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(1)
+                    if typeSize.isAccessibilitySize { Elapsed(seconds: item.dto.at).font(.ah(.caption)).foregroundStyle(theme.faint) }
                 }
                 Spacer()
-                if !typeSize.isAccessibilitySize { Elapsed(seconds: item.dto.at).font(.caption).foregroundStyle(theme.faint) }
+                if !typeSize.isAccessibilitySize { Elapsed(seconds: item.dto.at).font(.ah(.caption)).foregroundStyle(theme.faint) }
             }
         }
         .buttonStyle(.plain)
@@ -545,18 +606,18 @@ struct SearchView: View {
                             AgentMark(agent: hit.kind == "chat" ? nil : hit.harness, size: 26)
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack(alignment: .firstTextBaseline) {
-                                    Text(live?.title ?? hit.title).font(.subheadline.weight(.semibold)).lineLimit(1)
-                                    if hit.kind == "chat" { Text("side chat").font(.caption2.weight(.semibold)).foregroundStyle(theme.muted) }
+                                    Text(live?.title ?? hit.title).font(.ah(.subheadline).weight(.semibold)).lineLimit(1)
+                                    if hit.kind == "chat" { Text("side chat").font(.ah(.caption2).weight(.semibold)).foregroundStyle(theme.muted) }
                                     Spacer()
-                                    Text("\(hit.matches) match\(hit.matches == 1 ? "" : "es")").font(.caption).foregroundStyle(theme.faint)
+                                    Text("\(hit.matches) match\(hit.matches == 1 ? "" : "es")").font(.ah(.caption)).foregroundStyle(theme.faint)
                                 }
                                 ForEach(Array(hit.excerpts.prefix(2).enumerated()), id: \.offset) { _, excerpt in
                                     HStack(alignment: .firstTextBaseline, spacing: 6) {
-                                        Text(excerpt.role == "user" ? "You" : "Agent").font(.caption2.weight(.semibold)).foregroundStyle(theme.faint).frame(width: 38, alignment: .leading)
+                                        Text(excerpt.role == "user" ? "You" : "Agent").font(.ah(.caption2).weight(.semibold)).foregroundStyle(theme.faint).frame(width: 38, alignment: .leading)
                                         HighlightedSnippet(snippet: excerpt.snippet, lines: 3)
                                     }
                                 }
-                                Text(searchMeta(hit, live: live)).font(.caption2).foregroundStyle(theme.faint).lineLimit(1)
+                                Text(searchMeta(hit, live: live)).font(.ah(.caption2)).foregroundStyle(theme.faint).lineLimit(1)
                             }
                         }
                         .padding(.vertical, 4)
@@ -601,8 +662,10 @@ struct SearchView: View {
                         }
                     }
                 } label: {
-                    Label("Filters", systemImage: model.query.role != nil || model.query.from != nil || model.query.host != nil ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                    Label("Filters", systemImage: "line.3.horizontal.decrease")
                 }
+                // Tinted while a filter is on, as Mail's is.
+                .tint(model.query.role != nil || model.query.from != nil || model.query.host != nil ? theme.accent : .primary)
             }
         }
         .onChange(of: model.query) { _, query in

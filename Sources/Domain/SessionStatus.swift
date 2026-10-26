@@ -11,6 +11,9 @@ enum StatusWord: String, CaseIterable, Sendable {
     case newOutput = "new output"
     case idle
 
+    /// As ah's design system writes it, everywhere: "needs you", "idle".
+    var label: String { rawValue }
+
     /// Worth words where room is short (the sidebar): it can't go on without you. The rest
     /// read from the dot's color.
     var asksForAttention: Bool { self == .needsYou || self == .limited }

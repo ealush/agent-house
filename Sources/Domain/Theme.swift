@@ -1,9 +1,10 @@
 import Foundation
 
-/// ah's visual identity as color tokens (`../ah/web/tokens.css`), for dark, light and a host's
-/// Omarchy theme (`web/theme.ts`). Hex strings here; the platform layer makes colors. Status
-/// semantics stay the same everywhere: needs you is the brand mark, working is cyan, done is
-/// green, limited is amber.
+/// ah's design system as color tokens (`../ah/web/tokens.css`), for dark, light and a host's
+/// Omarchy theme (`web/theme.ts`): a ground behind floating panels, surfaces, raised cards and
+/// sunken fields, hairlines, and pink only for what needs you. Hex strings here; the platform
+/// layer makes colors. Status semantics stay the same everywhere: needs you is the brand mark,
+/// working is cyan, done is green, limited is amber.
 struct ThemePalette: Equatable, Sendable {
     var background: String
     var surface: String
@@ -58,6 +59,21 @@ struct ThemePalette: Equatable, Sendable {
         )
     }
 
+    // The design system's derived layers, from the palette (so a host's Omarchy theme gets them too).
+    var lineStrong: String { isDark ? "#ffffff29" : "#00000029" }
+    var accentTint: String { Self.alpha(brand, isDark ? 0.12 : 0.07) }
+    var accentLine: String { Self.alpha(brand, isDark ? 0.45 : 0.35) }
+    var runTint: String { Self.alpha(run, isDark ? 0.12 : 0.08) }
+    var doneTint: String { Self.alpha(done, isDark ? 0.12 : 0.08) }
+    var limitedTint: String { Self.alpha(limited, isDark ? 0.12 : 0.08) }
+    var glassTint: String { Self.alpha(raised, isDark ? 0.62 : 0.66) }
+
+    /// "#rrggbb" with an alpha: "#rrggbbaa".
+    static func alpha(_ hex: String, _ a: Double) -> String {
+        let digits = hex.hasPrefix("#") ? String(hex.dropFirst().prefix(6)) : String(hex.prefix(6))
+        return "#" + digits + String(format: "%02x", Int((a * 255).rounded()))
+    }
+
     func color(for word: StatusWord) -> String {
         switch word {
         case .needsYou: return brand
@@ -89,6 +105,7 @@ struct TerminalPalette: Equatable, Sendable {
         return 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0) < 0.5
     }
 
+    // ah's sunken ground: the terminal sits in its panel like a code block.
     static let dark = TerminalPalette(
         background: "#15161f", foreground: "#e6e6ef", cursor: "#f47199", selection: "#3a3d55",
         ansi: ["#15161f", "#ff8a80", "#81d88a", "#f5b84b", "#82aaff", "#f47199", "#4dd9ea", "#c9cad3",
