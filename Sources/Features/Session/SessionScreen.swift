@@ -18,6 +18,7 @@ struct SessionScreen: View {
     @Environment(\.theme) private var theme
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var panelWidth: CGFloat = 380
+    @State private var previewURL: URL?
 
     private var narrow: Bool { sizeClass == .compact || scene.narrow }
 
@@ -57,6 +58,12 @@ struct SessionScreen: View {
             }
         }
         .background(theme.background)
+        // Images in the conversation (what you attached, what the agent drew) load from the
+        // host, and a host path you tap opens in Quick Look.
+        .environment(\.hostFiles, HostFiles(
+            load: { [hub = session.hub, key = session.key] path in try? await hub.client(forKey: key).file(path) },
+            open: { path in Task { await preview(path) } }))
+        .quickLookPreview($previewURL)
         .overlay(alignment: .top) { NoticeStack(session: session) }
         // The agent asks while you're in an empty composer: the keys go to its question
         // (digits pick), and an on-screen keyboard steps aside for the choices.
@@ -74,12 +81,21 @@ struct SessionScreen: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
+        .onChange(of: session.isShell, initial: true) { _, shell in session.composer.isShell = shell }
+        .onChange(of: session.hasGUI) { _, _ in session.stateChanged() }
         .onChange(of: session.row?.dto.queued) { _, _ in session.stateChanged() }
         .onChange(of: session.row?.dto.status) { old, new in
             if old == .busy && new != .busy { Haptics.success() }
             if new == .waiting { Haptics.warning() }
         }
         .accessibilityElement(children: .contain)
+    }
+
+    private func preview(_ path: String) async {
+        guard let data = try? await session.hub.client(forKey: session.key).file(path) else { return }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent((path as NSString).lastPathComponent)
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if (try? data.write(to: url, options: [.completeFileProtection])) != nil { previewURL = url }
     }
 
     @ViewBuilder

@@ -581,7 +581,7 @@ final class SceneModel {
             return workspace.focusedKey
         }()
         if let key, let model = sessions[key] {
-            placement = SceneSnapshot.SessionPlacement(key: key, surface: model.surface, panel: model.panel, scroll: scrollAnchors[key], composerFocused: composerFocused == key)
+            placement = SceneSnapshot.SessionPlacement(key: key, surface: model.chosenSurface, panel: model.panel, scroll: scrollAnchors[key], composerFocused: composerFocused == key)
         } else if let key {
             placement = SceneSnapshot.SessionPlacement(key: key, surface: .gui)
         }

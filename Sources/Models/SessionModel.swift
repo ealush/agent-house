@@ -19,7 +19,14 @@ final class SessionModel: Identifiable {
     private(set) var feed = FeedState.initial
     private(set) var prompts: [FeedPrompt] = []
     private(set) var notices: [Notice] = []
-    var surface: SceneSnapshot.Surface
+    /// The view this device chose for it.
+    private(set) var chosenSurface: SceneSnapshot.Surface
+    /// The view it shows: the chosen one, except that a session without a transcript (a shell,
+    /// an agent ah has no reader for, or one whose reader isn't attached yet) shows its terminal.
+    var surface: SceneSnapshot.Surface {
+        get { chosenSurface == .gui && hasGUI ? .gui : .terminal }
+        set { chosenSurface = newValue }
+    }
     var panel: SceneSnapshot.Panel?
     /// A message to restore the files to before: Snapshots finds its turn and asks.
     var restoreRequest: String?
@@ -53,9 +60,10 @@ final class SessionModel: Identifiable {
         let isShell = row.map { $0.dto.agent == nil } ?? false
         composer = ComposerModel(api: api, outbox: outbox, key: key, uid: ref, isShell: isShell)
         queue = QueueModel(api: api, outbox: outbox, uid: ref, key: key)
-        // Agents open in the GUI unless this device chose the terminal; shells and agents
-        // without a transcript adapter are terminal-only.
-        if row != nil && row?.dto.feed == nil { self.surface = .terminal } else { self.surface = surface }
+        // Agents open in the GUI unless this device chose the terminal. Not pinned to the
+        // terminal when the host hasn't attached a transcript reader yet: a session opened
+        // right after it started would have stayed there.
+        chosenSurface = surface
     }
 
     // MARK: What it is now
@@ -205,6 +213,8 @@ final class SessionModel: Identifiable {
     /// Something changed the queue or status: keep the tray's poll in step.
     func stateChanged() {
         queue.watch(queued: row?.dto.queued ?? 0)
+        // Opened as it started, before the host attached a transcript reader: read it now.
+        if hasGUI { startFeed() }
     }
 
     // MARK: Notices

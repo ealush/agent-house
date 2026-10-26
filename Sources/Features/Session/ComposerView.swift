@@ -432,18 +432,28 @@ struct ComposerTextField: UIViewRepresentable {
         view.textContainerInset = UIEdgeInsets(top: 6, left: 2, bottom: 6, right: 2)
         view.isScrollEnabled = true
         view.returnKeyType = .send
-        view.autocapitalizationType = composer.isShell ? .none : .sentences
-        view.autocorrectionType = composer.isShell ? .no : .default
-        view.spellCheckingType = composer.isShell ? .no : .default
-        view.smartQuotesType = composer.isShell ? .no : .default
-        view.accessibilityLabel = composer.isShell ? "Command" : "Message"
         view.accessibilityIdentifier = "composer"
         view.text = composer.text
+        setTraits(view)
         return view
+    }
+
+    /// Commands aren't sentences: no capitals, corrections or curly quotes in a shell.
+    private func setTraits(_ view: ComposerTextView) {
+        let shell = composer.isShell
+        view.autocapitalizationType = shell ? .none : .sentences
+        view.autocorrectionType = shell ? .no : .default
+        view.spellCheckingType = shell ? .no : .default
+        view.smartQuotesType = shell ? .no : .default
+        view.accessibilityLabel = shell ? "Command" : "Message"
     }
 
     func updateUIView(_ view: ComposerTextView, context: Context) {
         context.coordinator.parent = self
+        if (view.autocapitalizationType == .none) != composer.isShell {
+            setTraits(view)
+            if view.isFirstResponder { view.reloadInputViews() }
+        }
         if view.text != composer.text {
             view.text = composer.text
             let end = view.endOfDocument

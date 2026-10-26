@@ -107,11 +107,15 @@ struct TranscriptView: View {
                 // missing GUI: say what's ready and offer a start.
                 let fresh = session.isLive && !session.isShell && session.outgoing.isEmpty && blocks.isEmpty
                 switch session.feed.status {
-                case .unavailable where fresh && session.feed.reason == "no-transcript":
-                    StartConversation(session: session, scene: scene)
+                case .unavailable where session.isLive && !session.isShell && session.feed.reason == "no-transcript":
+                    // Once you've sent something, your message and the working row say what's
+                    // happening: the transcript is on its way, nothing is missing.
+                    if fresh { StartConversation(session: session, scene: scene) }
+                case .unavailable where !session.outgoing.isEmpty || !blocks.isEmpty:
+                    EmptyView()
                 case .unavailable:
                     UnavailableFeed(reason: session.feed.reason) { scene.setSurface(.terminal, for: session.key) }
-                case .connecting where blocks.isEmpty:
+                case .connecting where blocks.isEmpty && session.outgoing.isEmpty:
                     ProgressView("Connecting to the transcript…")
                 default:
                     if fresh && session.feed.status == .live {

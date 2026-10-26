@@ -197,7 +197,10 @@ for (const [name, script] of [
 ]) writeFileSync(join(bin, name), `#!/bin/sh\n# Not Omarchy's ${name}: the demo host's own data folder only.\n${script}\n`, { mode: 0o755 });
 process.env.AH_RESTART_CMD = 'true';
 process.env.AH_REBUILD_CMD = 'sleep 2';
-const ah = await startAh({ idleAfter: 2 }, dir);
+// ah's own default lets the file browser read its uploads (\`~/.cache/ah/uploads\`); the demo
+// keeps its cache in its own folder, so it names that one, and sent images draw.
+mkdirSync(join(dir, 'cache', 'ah', 'uploads'), { recursive: true });
+const ah = await startAh({ idleAfter: 2, files: { roots: [join(dir, 'files'), join(dir, 'cache', 'ah', 'uploads')] } }, dir);
 
 const call = async (method, path, body) => {
   const res = await fetch(`http://localhost:${ah.port}${path}`, {

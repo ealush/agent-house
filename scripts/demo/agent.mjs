@@ -220,6 +220,8 @@ async function turn(prompt) {
   clock = Math.max(clock, Date.now());
   const abort = new AbortController();
   current = abort;
+  // Like Claude Code, a new conversation's transcript appears a moment after its first prompt.
+  if (n === 0) await sleep(4000, abort.signal);
   user(prompt, 20);
   process.stdout.write(`\n${accent('>')} ${prompt}\n\n`);
   const frames = ['·', '✢', '✳', '✶', '✻', '✽'];

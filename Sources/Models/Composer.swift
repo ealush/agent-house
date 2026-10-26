@@ -306,7 +306,9 @@ final class ComposerModel {
     private let outbox: Outbox
     let key: String
     let uid: String
-    let isShell: Bool
+    /// A shell takes commands, an agent messages. Follows the session: a just-started agent
+    /// is listed before ah knows which agent it is.
+    var isShell: Bool
     let drafts: DraftSync
 
     var text = "" {
