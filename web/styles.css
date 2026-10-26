@@ -4835,6 +4835,17 @@ ul.queue-items {
   view-transition-name: none;
 }
 
+.mobile-session-chrome.floating,
+.mobile-composer-dock.floating {
+  /* Let the live conversation read through the controls, with enough blur to
+     keep it from competing with the labels and input. */
+  --glass-tint: color-mix(in srgb, var(--surface) 36%, transparent);
+  --glass-panel: color-mix(in srgb, var(--surface) 39%, transparent);
+  --glass-sheet: color-mix(in srgb, var(--surface) 46%, transparent);
+  --glass-blur: blur(24px) saturate(1.7);
+  --glass-sheen: linear-gradient(155deg, rgb(255 255 255 / 0.065), transparent 42%, rgb(255 255 255 / 0.02));
+}
+
 .mobile-session-chrome.floating {
   position: absolute;
   inset: 0 0 auto;
@@ -4895,7 +4906,7 @@ ul.queue-items {
   width: min(804px, 100%);
   margin: 0;
   padding: 10px 8px 8px;
-  border: 1px solid var(--line-2);
+  border: 1px solid transparent;
   border-radius: 16px;
   background: none;
   box-shadow: var(--elev-1);
@@ -4916,6 +4927,14 @@ ul.queue-items {
   backdrop-filter: var(--glass-blur);
   box-shadow: var(--glass-depth);
   pointer-events: none;
+}
+
+.mobile-composer-dock > .composer.mobile:focus-within {
+  border-color: transparent;
+}
+
+.mobile-composer-dock > .composer.mobile:focus-within::before {
+  box-shadow: var(--glass-depth), inset 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent);
 }
 
 .mobile-composer-dock > .queue-tray {
@@ -4949,7 +4968,7 @@ ul.queue-items {
 }
 
 .composer.mobile:focus-within {
-  border-color: var(--accent-line);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--line-2));
 }
 
 .composer.mobile .composer-input {
@@ -9057,5 +9076,28 @@ label:has(> input[type='checkbox'][switch]) {
 
   :root:not([data-native-switch]) input[type='checkbox'][switch]:checked::before {
     transform: translateX(20px);
+  }
+}
+
+/* Locally tuned mobile glass must still honor system transparency preferences
+   and remain readable when the browser cannot composite backdrops. */
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .mobile-session-chrome.floating,
+  .mobile-composer-dock.floating {
+    --glass-tint: var(--raised);
+    --glass-panel: var(--raised);
+    --glass-sheet: var(--raised);
+    --glass-blur: none;
+    --glass-sheen: linear-gradient(transparent, transparent);
+  }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .mobile-session-chrome.floating,
+  .mobile-composer-dock.floating {
+    --glass-tint: var(--raised);
+    --glass-panel: var(--raised);
+    --glass-sheet: var(--raised);
+    --glass-sheen: linear-gradient(transparent, transparent);
   }
 }
