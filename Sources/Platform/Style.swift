@@ -71,7 +71,119 @@ struct Theme: Equatable, Sendable {
 
     var mono: Font {
         if let name = palette.monoFont, UIFont(name: name, size: 13) != nil { return .custom(name, size: 13, relativeTo: .callout) }
-        return .system(.callout, design: .monospaced)
+        return .ahMono(.callout)
+    }
+
+    // ah's layers (the design system's names): hairlines, what needs you, status grounds, glass.
+    var line: Color { pair(\.line) }
+    var lineStrong: Color { pair(\.lineStrong) }
+    var accentTint: Color { pair(\.accentTint) }
+    var accentLine: Color { pair(\.accentLine) }
+    var glassTint: Color { pair(\.glassTint) }
+    func tint(_ word: StatusWord) -> Color {
+        switch word {
+        case .needsYou: return accentTint
+        case .working: return pair(\.runTint)
+        case .done, .newOutput: return pair(\.doneTint)
+        case .limited: return pair(\.limitedTint)
+        case .idle: return Color.clear
+        }
+    }
+}
+
+// MARK: Type
+
+/// ah's type (the design system): Rubik for what people read, JetBrains Mono for what machines
+/// read, at the iOS text styles' sizes so Dynamic Type scales both.
+enum AhType {
+    static let ui = "Rubik"
+    static let mono = "JetBrains Mono"
+
+    static func size(_ style: Font.TextStyle) -> CGFloat {
+        switch style {
+        case .largeTitle: 34
+        case .title: 28
+        case .title2: 22
+        case .title3: 20
+        case .headline: 17
+        case .body: 16
+        case .callout: 15
+        case .subheadline: 14
+        case .footnote: 13
+        case .caption: 12
+        case .caption2: 11
+        default: 16
+        }
+    }
+
+    static func weight(_ style: Font.TextStyle) -> Font.Weight {
+        switch style {
+        case .largeTitle, .title: .bold
+        case .title2, .title3, .headline: .semibold
+        case .caption: .medium
+        default: .regular
+        }
+    }
+
+    static func uiStyle(_ style: Font.TextStyle) -> UIFont.TextStyle {
+        switch style {
+        case .largeTitle: .largeTitle
+        case .title: .title1
+        case .title2: .title2
+        case .title3: .title3
+        case .headline: .headline
+        case .callout: .callout
+        case .subheadline: .subheadline
+        case .footnote: .footnote
+        case .caption: .caption1
+        case .caption2: .caption2
+        default: .body
+        }
+    }
+
+    /// The terminal's face: JetBrains Mono (glyphs it lacks, like a Nerd Font's, fall back).
+    static func terminalFont(_ size: CGFloat) -> UIFont {
+        UIFont(name: "JetBrainsMono-Regular", size: size) ?? UIFont.monospacedSystemFont(ofSize: size, weight: .regular)
+    }
+
+    /// Bars and tabs in ah's face, everywhere in the app (SwiftUI's bars are UIKit's too).
+    @MainActor
+    static func applyToBars() {
+        let nav = UINavigationBar.appearance()
+        nav.titleTextAttributes = [.font: uiFont(.headline)]
+        nav.largeTitleTextAttributes = [.font: uiFont(.largeTitle)]
+        UITabBarItem.appearance().setTitleTextAttributes([.font: uiFont(.caption2, weight: .medium)], for: .normal)
+        UIBarButtonItem.appearance().setTitleTextAttributes([.font: uiFont(.body, weight: .medium)], for: .normal)
+    }
+
+    /// The same face for UIKit text (the composer, bar titles), scaled by Dynamic Type.
+    static func uiFont(_ style: Font.TextStyle, weight: UIFont.Weight? = nil, mono: Bool = false) -> UIFont {
+        let size = size(style)
+        let w: UIFont.Weight = weight ?? {
+            switch Self.weight(style) {
+            case .bold: return .bold
+            case .semibold: return .semibold
+            case .medium: return .medium
+            default: return .regular
+            }
+        }()
+        let descriptor = UIFontDescriptor(fontAttributes: [.family: mono ? Self.mono : Self.ui])
+            .addingAttributes([.traits: [UIFontDescriptor.TraitKey.weight: w]])
+        let base = UIFont(descriptor: descriptor, size: size)
+        let font = base.familyName == (mono ? Self.mono : Self.ui) ? base : (mono ? UIFont.monospacedSystemFont(ofSize: size, weight: w) : UIFont.systemFont(ofSize: size, weight: w))
+        return UIFontMetrics(forTextStyle: uiStyle(style)).scaledFont(for: font)
+    }
+}
+
+extension Font {
+    /// Rubik at a text style's size and weight, scaled with Dynamic Type.
+    static func ah(_ style: Font.TextStyle) -> Font {
+        .custom(AhType.ui, size: AhType.size(style), relativeTo: style).weight(AhType.weight(style))
+    }
+
+    /// JetBrains Mono, for commands, paths, code and the terminal.
+    static func ahMono(_ style: Font.TextStyle) -> Font {
+        .custom(AhType.mono, size: AhType.size(style) - 1, relativeTo: style)
     }
 }
 
@@ -106,7 +218,7 @@ struct StatusPill: View {
                 }
             if !compact {
                 Text(word.label)
-                    .font(.caption.weight(.semibold))
+                    .font(.ah(.caption).weight(.semibold))
                     .foregroundStyle(onAccent ? Color.white.opacity(0.9) : word == .idle ? theme.muted : theme.status(word))
             }
         }
@@ -152,11 +264,11 @@ struct Keycaps: View {
     var body: some View {
         HStack(spacing: 5) {
             ForEach(Array(groups.enumerated()), id: \.offset) { index, parts in
-                if index > 0 { Text("then").font(.caption2).foregroundStyle(theme.faint) }
+                if index > 0 { Text("then").font(.ah(.caption2)).foregroundStyle(theme.faint) }
                 HStack(spacing: 3) {
                     ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
                         Text(part)
-                            .font(.caption2.weight(.semibold).monospaced())
+                            .font(.ah(.caption2).weight(.semibold))
                             .foregroundStyle(theme.text2)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 2)
@@ -247,7 +359,7 @@ struct Banner: View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Image(systemName: tone == .error ? "exclamationmark.triangle.fill" : tone == .warning ? "wifi.exclamationmark" : "info.circle")
                 .foregroundStyle(tone == .error ? theme.danger : tone == .warning ? theme.limited : theme.muted)
-            Text(text).font(.callout).foregroundStyle(theme.text2).frame(maxWidth: .infinity, alignment: .leading)
+            Text(text).font(.ah(.callout)).foregroundStyle(theme.text2).frame(maxWidth: .infinity, alignment: .leading)
             if let action {
                 Button(action.title, action: action.run).buttonStyle(.bordered).controlSize(.small)
             }

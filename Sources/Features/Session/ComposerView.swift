@@ -24,7 +24,7 @@ struct ComposerView: View {
             }
             if let from = composer.drafts.from {
                 Label("Continued from \(from)", systemImage: "arrow.turn.down.right")
-                    .font(.caption2).foregroundStyle(theme.muted)
+                    .font(.ah(.caption2)).foregroundStyle(theme.muted)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             // One Liquid Glass field over the transcript, as Messages has it: what you attach
@@ -113,8 +113,8 @@ struct ComposerView: View {
                             Image(uiImage: image).resizable().scaledToFill().frame(width: 64, height: 64)
                         } else {
                             VStack(alignment: .leading, spacing: 4) {
-                                Image(systemName: "doc.fill").font(.title3).foregroundStyle(.secondary)
-                                Text(file.name).font(.caption2).foregroundStyle(.primary).lineLimit(2)
+                                Image(systemName: "doc.fill").font(.ah(.title3)).foregroundStyle(.secondary)
+                                Text(file.name).font(.ah(.caption2)).foregroundStyle(.primary).lineLimit(2)
                             }
                             .padding(8)
                             .frame(width: 112, height: 64, alignment: .topLeading)
@@ -128,7 +128,7 @@ struct ComposerView: View {
                             withAnimation(.snappy(duration: 0.2)) { composer.removeAttachment(file.id) }
                         } label: {
                             Image(systemName: "xmark.circle.fill")
-                                .font(.body)
+                                .font(.ah(.body))
                                 .symbolRenderingMode(.palette)
                                 .foregroundStyle(.white, .black.opacity(0.55))
                                 .padding(3)
@@ -162,7 +162,7 @@ struct ComposerView: View {
                 }
             } label: {
                 Image(systemName: "plus")
-                    .font(.body.weight(.medium))
+                    .font(.ah(.body).weight(.medium))
                     .foregroundStyle(.secondary)
                     .frame(width: 32, height: 32)
                     .background(.fill.tertiary, in: Circle())
@@ -200,7 +200,7 @@ struct ComposerView: View {
             } label: {
                 if queues { Label("Queue", systemImage: "text.line.last.and.arrowtriangle.forward") } else { Text("Run") }
             }
-            .font(.subheadline.weight(.semibold))
+            .font(.ah(.subheadline).weight(.semibold))
             .buttonStyle(.borderedProminent)
             .buttonBorderShape(.capsule)
             .controlSize(.small)
@@ -345,7 +345,7 @@ struct LaunchChips: View {
             Image(systemName: symbol).imageScale(.small).foregroundStyle(danger ? AnyShapeStyle(theme.danger) : AnyShapeStyle(.secondary))
             if let value { Text(value).lineLimit(1).foregroundStyle(danger ? AnyShapeStyle(theme.danger) : AnyShapeStyle(.primary)) }
         }
-        .font(.footnote.weight(.medium))
+        .font(.ah(.footnote).weight(.medium))
         .padding(.horizontal, value == nil ? 8 : 10)
         .frame(minWidth: 32, minHeight: 32)
         .background(.fill.tertiary, in: Capsule())
@@ -372,15 +372,15 @@ private struct SuggestionList: View {
                         Button { pick(item) } label: {
                             HStack(spacing: 9) {
                                 Image(systemName: symbol(item))
-                                    .font(.footnote)
+                                    .font(.ah(.footnote))
                                     .foregroundStyle(i == index ? theme.accent : theme.faint)
                                     .frame(width: 18)
-                                Text(item.label).font(.callout.monospaced()).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
+                                Text(item.label).font(.ahMono(.callout)).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
                                 if let detail = item.detail {
-                                    Text(detail).font(.caption).foregroundStyle(theme.muted).lineLimit(1)
+                                    Text(detail).font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(1)
                                 }
                                 Spacer(minLength: 0)
-                                if i == index { Image(systemName: "return").font(.caption2).foregroundStyle(theme.faint) }
+                                if i == index { Image(systemName: "return").font(.ah(.caption2)).foregroundStyle(theme.faint) }
                             }
                             .padding(.horizontal, 10)
                             .frame(height: Self.rowHeight)
@@ -426,7 +426,7 @@ struct ComposerTextField: UIViewRepresentable {
         let view = ComposerTextView()
         view.delegate = context.coordinator
         view.coordinator = context.coordinator
-        view.font = .preferredFont(forTextStyle: .body)
+        view.font = AhType.uiFont(.body)
         view.adjustsFontForContentSizeCategory = true
         view.backgroundColor = .clear
         view.textContainerInset = UIEdgeInsets(top: 6, left: 2, bottom: 6, right: 2)
@@ -616,7 +616,7 @@ final class ComposerTextView: UITextView {
 
     override init(frame: CGRect, textContainer: NSTextContainer?) {
         super.init(frame: frame, textContainer: textContainer)
-        placeholderLabel.font = .preferredFont(forTextStyle: .body)
+        placeholderLabel.font = AhType.uiFont(.body)
         placeholderLabel.adjustsFontForContentSizeCategory = true
         placeholderLabel.textColor = .placeholderText
         placeholderLabel.numberOfLines = 1
@@ -631,7 +631,7 @@ final class ComposerTextView: UITextView {
         super.layoutSubviews()
         placeholderLabel.frame = CGRect(x: textContainerInset.left + 5, y: textContainerInset.top, width: bounds.width - 20, height: placeholderLabel.font.lineHeight)
         // Hints drop from the end, whole, rather than end mid-word in an ellipsis.
-        let font = placeholderLabel.font ?? .preferredFont(forTextStyle: .body)
+        let font = placeholderLabel.font ?? AhType.uiFont(.body)
         placeholderLabel.text = ComposerModel.fitting(placeholder, width: placeholderLabel.frame.width) { ($0 as NSString).size(withAttributes: [.font: font]).width }
         placeholderLabel.isHidden = !text.isEmpty
     }
@@ -691,8 +691,8 @@ struct QueueTrayView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "text.line.first.and.arrowtriangle.forward").foregroundStyle(theme.accent)
                     VStack(alignment: .leading, spacing: 0) {
-                        Text("Up next · \(queue.items.count + queue.pendingRows.count)").font(.footnote.weight(.semibold))
-                        Text(working ? "Sent one by one when this turn ends" : "Sending…").font(.caption2).foregroundStyle(theme.muted)
+                        Text("Up next · \(queue.items.count + queue.pendingRows.count)").font(.ah(.footnote).weight(.semibold))
+                        Text(working ? "Sent one by one when this turn ends" : "Sending…").font(.ah(.caption2)).foregroundStyle(theme.muted)
                     }
                     Spacer()
                     if let first = queue.items.first, !queue.sending.contains(first.id) {
@@ -705,7 +705,7 @@ struct QueueTrayView: View {
                                 Text("Steer now")
                                 if hardwareKeyboard { Text("↵").foregroundStyle(.white.opacity(0.75)) }
                             }
-                            .font(.caption.weight(.semibold))
+                            .font(.ah(.caption).weight(.semibold))
                         }
                         .buttonStyle(.borderedProminent)
                         .buttonBorderShape(.capsule)
@@ -723,14 +723,14 @@ struct QueueTrayView: View {
                 ForEach(queue.pendingRows) { pending in
                     HStack(spacing: 10) {
                         ProgressView().controlSize(.mini).frame(width: 20)
-                        Text(Uploads.summary(pending.text)).font(.callout).foregroundStyle(theme.muted).lineLimit(1)
+                        Text(Uploads.summary(pending.text)).font(.ah(.callout)).foregroundStyle(theme.muted).lineLimit(1)
                         Spacer()
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 7)
                 }
                 if let error = queue.error {
-                    Label(error, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(theme.danger).padding(.horizontal, 12).padding(.bottom, 8)
+                    Label(error, systemImage: "exclamationmark.triangle.fill").font(.ah(.caption)).foregroundStyle(theme.danger).padding(.horizontal, 12).padding(.bottom, 8)
                 }
             }
             .padding(.bottom, 4)
@@ -746,11 +746,11 @@ struct QueueTrayView: View {
     private func row(index: Int, item: QueueItem) -> some View {
         HStack(spacing: 10) {
             Text("\(index + 1)")
-                .font(.caption2.weight(.bold).monospacedDigit())
+                .font(.ah(.caption2).weight(.bold).monospacedDigit())
                 .foregroundStyle(theme.accent)
                 .frame(width: 20, height: 20)
                 .background(theme.accent.opacity(0.12), in: Circle())
-            Text(Uploads.summary(item.text)).font(.callout).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
+            Text(Uploads.summary(item.text)).font(.ah(.callout)).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
             if queue.sending.contains(item.id) {
                 ProgressView().controlSize(.small)
             } else {
@@ -764,7 +764,7 @@ struct QueueTrayView: View {
                         .accessibilityLabel("Cancel")
                 }
                 .buttonStyle(.borderless)
-                .font(.callout)
+                .font(.ah(.callout))
                 .foregroundStyle(theme.muted)
             }
         }

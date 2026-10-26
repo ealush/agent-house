@@ -49,10 +49,10 @@ private struct DiffPanel: View {
                             Text("+\(model.totals.add)").foregroundStyle(theme.done)
                             Text("−\(model.totals.del)").foregroundStyle(theme.danger)
                         }
-                        .font(.callout.monospacedDigit())
-                        if changes.truncated { Text("The diff is long; showing the start.").font(.caption).foregroundStyle(theme.limited) }
+                        .font(.ah(.callout).monospacedDigit())
+                        if changes.truncated { Text("The diff is long; showing the start.").font(.ah(.caption)).foregroundStyle(theme.limited) }
                         if commentable {
-                            Text(scene.hardwareKeyboard ? "↑↓ walk the lines; Return comments for the agent." : "Tap a line to comment for the agent.").font(.caption).foregroundStyle(theme.muted)
+                            Text(scene.hardwareKeyboard ? "↑↓ walk the lines; Return comments for the agent." : "Tap a line to comment for the agent.").font(.ah(.caption)).foregroundStyle(theme.muted)
                         }
                     }
                     if model.files.isEmpty && model.untracked.isEmpty {
@@ -65,15 +65,15 @@ private struct DiffPanel: View {
                                 .listRowInsets(EdgeInsets())
                         } header: {
                             HStack {
-                                Text(file.path).font(.caption.monospaced()).lineLimit(1).truncationMode(.head)
+                                Text(file.path).font(.ahMono(.caption)).lineLimit(1).truncationMode(.head)
                                 Spacer()
-                                Text("+\(file.additions) −\(file.deletions)").font(.caption2.monospacedDigit())
+                                Text("+\(file.additions) −\(file.deletions)").font(.ah(.caption2).monospacedDigit())
                             }
                         }
                     }
                     if !model.untracked.isEmpty {
                         Section("New files") {
-                            ForEach(model.untracked, id: \.path) { Text($0.path).font(.caption.monospaced()) }
+                            ForEach(model.untracked, id: \.path) { Text($0.path).font(.ahMono(.caption)) }
                         }
                     }
                 } else if let error = model.error {
@@ -148,8 +148,8 @@ private struct DiffPanel: View {
     private func commentBox(_ target: (file: String, line: DiffLine)) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("\(target.file)\(target.line.number.map { ":\($0)" } ?? "")\(target.line.kind == .del ? " (removed line)" : "")")
-                .font(.caption.monospaced()).foregroundStyle(theme.muted).lineLimit(1).truncationMode(.head)
-            Text(target.line.text.trimmingCharacters(in: .whitespaces)).font(.caption.monospaced()).lineLimit(2)
+                .font(.ahMono(.caption)).foregroundStyle(theme.muted).lineLimit(1).truncationMode(.head)
+            Text(target.line.text.trimmingCharacters(in: .whitespaces)).font(.ahMono(.caption)).lineLimit(2)
             TextField("Comment for the agent…", text: $comment, axis: .vertical)
                 .lineLimit(2...6)
                 .textFieldStyle(.roundedBorder)
@@ -164,7 +164,7 @@ private struct DiffPanel: View {
                     return .handled
                 }
             HStack {
-                Text(scene.hardwareKeyboard ? "⌘↵ sends · esc cancels" : "").font(.caption2).foregroundStyle(theme.faint)
+                Text(scene.hardwareKeyboard ? "⌘↵ sends · esc cancels" : "").font(.ah(.caption2)).foregroundStyle(theme.faint)
                 Spacer()
                 Button("Cancel", action: cancel).buttonStyle(.bordered)
                 Button("Send to agent", action: send)
@@ -205,7 +205,7 @@ private struct FilesPanel: View {
             if let listing = model.listing {
                 if listing.entries.isEmpty {
                     Text("Empty folder. Drop files here to upload them.")
-                        .font(.callout)
+                        .font(.ah(.callout))
                         .foregroundStyle(theme.muted)
                         .listRowBackground(Color.clear)
                 }
@@ -231,7 +231,7 @@ private struct FilesPanel: View {
                     .background(theme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .overlay {
                         Label("Drop to upload into \(model.listing.map { ($0.path as NSString).lastPathComponent } ?? "this folder")", systemImage: "arrow.down.doc")
-                            .font(.callout.weight(.semibold))
+                            .font(.ah(.callout).weight(.semibold))
                             .foregroundStyle(theme.accent)
                     }
                     .padding(8)
@@ -326,11 +326,11 @@ private struct FilesPanel: View {
                 HStack(spacing: 4) {
                     Image(systemName: "folder.fill").foregroundStyle(theme.accent)
                     Text(cwd.map { FilesModel.relative(path, to: $0) == "." ? (path as NSString).lastPathComponent : FilesModel.relative(path, to: $0) } ?? path)
-                        .font(.callout.weight(.semibold))
+                        .font(.ah(.callout).weight(.semibold))
                         .foregroundStyle(theme.text)
                         .lineLimit(1)
                         .truncationMode(.head)
-                    Image(systemName: "chevron.down").font(.caption2.weight(.semibold)).foregroundStyle(theme.faint)
+                    Image(systemName: "chevron.down").font(.ah(.caption2).weight(.semibold)).foregroundStyle(theme.faint)
                 }
             }
             .accessibilityLabel("Folder \(path)")
@@ -363,12 +363,12 @@ private struct FilesPanel: View {
         let path = model.child(entry)
         return HStack(spacing: 10) {
             Image(systemName: kind.symbol)
-                .font(.body)
+                .font(.ah(.body))
                 .foregroundStyle(kind == .folder ? theme.accent : theme.muted)
                 .frame(width: 22)
             VStack(alignment: .leading, spacing: 1) {
                 Text(entry.name).lineLimit(1).truncationMode(.middle)
-                Text(detail(entry)).font(.caption).foregroundStyle(theme.faint).lineLimit(1)
+                Text(detail(entry)).font(.ah(.caption)).foregroundStyle(theme.faint).lineLimit(1)
             }
             Spacer(minLength: 4)
             // The composer's own mention mark: this puts @path in the message.
@@ -378,7 +378,7 @@ private struct FilesPanel: View {
                 .help("Mention in the message")
                 .accessibilityLabel("Mention \(entry.name) in the message")
             if entry.type == .dir {
-                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(theme.faint)
+                Image(systemName: "chevron.right").font(.ah(.caption).weight(.semibold)).foregroundStyle(theme.faint)
             }
         }
         .contentShape(Rectangle())
@@ -487,7 +487,7 @@ private struct FileTextSheet: View {
                     AttributedString(String(index + 1).leftPadded(to: width) + "  ", attributes: AttributeContainer().foregroundColor(theme.faint))
                         + AttributedString(String(line) + "\n")
                 }.reduce(AttributedString(), +))
-                .font(.system(.footnote, design: .monospaced))
+                .font(.ahMono(.footnote))
                 .textSelection(.enabled)
                 .padding()
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -540,7 +540,7 @@ private struct ChatPanel: View {
         VStack(spacing: 0) {
             // Inline, so it shows in an iPad side panel as well as a phone sheet.
             HStack {
-                Text("Side chat").font(.caption.weight(.semibold)).foregroundStyle(theme.muted)
+                Text("Side chat").font(.ah(.caption).weight(.semibold)).foregroundStyle(theme.muted)
                 Spacer()
                 Button { browsing = true } label: { Image(systemName: "clock.arrow.circlepath") }.accessibilityLabel("Past chats")
                 Button { Task { await model.clear() } } label: { Image(systemName: "trash") }.accessibilityLabel("Clear the chat")
@@ -597,7 +597,7 @@ private struct ChatPanel: View {
                             Button(sub.name) { Task { await model.pick(sub.id) } }
                         }
                     } label: {
-                        Text(model.activeSubscription?.name ?? "Model").font(.caption)
+                        Text(model.activeSubscription?.name ?? "Model").font(.ah(.caption))
                     }
                 }
                 // The same box as the session's composer, a size smaller.
@@ -609,7 +609,7 @@ private struct ChatPanel: View {
                         .padding(.vertical, 7)
                     Button(action: send) {
                         Image(systemName: "arrow.up")
-                            .font(.callout.weight(.bold))
+                            .font(.ah(.callout).weight(.bold))
                             .frame(width: 30, height: 30)
                             .background(empty || model.sending ? theme.faint.opacity(0.3) : theme.accentStrong, in: Circle())
                             .foregroundStyle(.white)
@@ -656,9 +656,9 @@ private struct PastChatsView: View {
                             HStack {
                                 Text(chat.title).lineLimit(1)
                                 Spacer()
-                                Text(Elapsed.format(Date(timeIntervalSince1970: chat.lastAt / 1000), now: .now)).font(.caption).foregroundStyle(theme.faint)
+                                Text(Elapsed.format(Date(timeIntervalSince1970: chat.lastAt / 1000), now: .now)).font(.ah(.caption)).foregroundStyle(theme.faint)
                             }
-                            Text(chat.preview).font(.caption).foregroundStyle(theme.muted).lineLimit(2)
+                            Text(chat.preview).font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(2)
                         }
                     }
                 }
@@ -715,7 +715,7 @@ private struct QueuePanel: View {
             ForEach(session.queue.items) { item in
                 VStack(alignment: .leading, spacing: 4) {
                     Text(Uploads.summary(item.text)).lineLimit(4)
-                    Elapsed(seconds: item.at).font(.caption).foregroundStyle(theme.faint)
+                    Elapsed(seconds: item.at).font(.ah(.caption)).foregroundStyle(theme.faint)
                 }
                 .swipeActions(edge: .leading) {
                     Button("Send now") { Task { await session.queue.steer(item) } }.tint(.orange)
@@ -775,7 +775,7 @@ private struct SnapshotsPanel: View {
                     } else {
                         timeline(list)
                         Text("Kept under refs/ah-snapshots, so git gc leaves them alone while they’re listed here.")
-                            .font(.caption2)
+                            .font(.ah(.caption2))
                             .foregroundStyle(theme.faint)
                             .padding(.top, 4)
                     }
@@ -836,27 +836,27 @@ private struct SnapshotsPanel: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "clock.arrow.circlepath")
-                    .font(.title3.weight(.semibold))
+                    .font(.ah(.title3).weight(.semibold))
                     .foregroundStyle(theme.accent)
                     .frame(width: 36, height: 36)
                     .background(theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Rewind the files").font(.headline)
+                    Text("Rewind the files").font(.ah(.headline))
                     Text("The files are saved before every turn, with what changed since the one before. Restore one to put them back; what’s there now is saved first.")
-                        .font(.caption)
+                        .font(.ah(.caption))
                         .foregroundStyle(theme.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             if list.available {
                 Toggle(isOn: Binding(get: { list.enabled }, set: { on in Haptics.selection(); Task { await model.setEnabled(on) } })) {
-                    Text("Save before every turn").font(.subheadline)
+                    Text("Save before every turn").font(.ah(.subheadline))
                 }
                 .tint(theme.accent)
             }
             if list.partial && list.available {
                 Label("Turns typed straight into the terminal may be missed.", systemImage: "info.circle")
-                    .font(.caption2)
+                    .font(.ah(.caption2))
                     .foregroundStyle(theme.faint)
             }
         }
@@ -866,17 +866,17 @@ private struct SnapshotsPanel: View {
 
     private func restoredCard(_ result: SnapshotRestore) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(theme.done).font(.title3)
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(theme.done).font(.ah(.title3))
             VStack(alignment: .leading, spacing: 1) {
-                Text(result.restored.kind == "safety" ? "Safety copy restored" : "Back to before turn \(result.restored.turn)").font(.subheadline.weight(.semibold))
-                Text("What was there is kept as a safety copy.").font(.caption).foregroundStyle(theme.muted)
+                Text(result.restored.kind == "safety" ? "Safety copy restored" : "Back to before turn \(result.restored.turn)").font(.ah(.subheadline).weight(.semibold))
+                Text("What was there is kept as a safety copy.").font(.ah(.caption)).foregroundStyle(theme.muted)
             }
             Spacer(minLength: 8)
             Button("Undo") { restore(result.safety, interrupt: false, isUndo: true) }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(model.restoring != nil)
-            Button { undo = nil } label: { Image(systemName: "xmark").font(.caption.weight(.bold)) }
+            Button { undo = nil } label: { Image(systemName: "xmark").font(.ah(.caption).weight(.bold)) }
                 .buttonStyle(.plain)
                 .hoverEffect(.highlight)
                 .foregroundStyle(theme.faint)
@@ -927,9 +927,9 @@ private struct SnapshotsPanel: View {
             }
             .frame(width: 18)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Now").font(.subheadline.weight(.semibold))
+                Text("Now").font(.ah(.subheadline).weight(.semibold))
                 if let branch = list.branch {
-                    Label(branch, systemImage: "arrow.triangle.branch").font(.caption).foregroundStyle(theme.muted)
+                    Label(branch, systemImage: "arrow.triangle.branch").font(.ah(.caption)).foregroundStyle(theme.muted)
                 }
             }
             .padding(.bottom, 16)
@@ -984,13 +984,13 @@ private struct SnapshotRow: View {
             .frame(width: 18)
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(SnapshotsModel.title(snap)).font(.subheadline.weight(.semibold))
+                    Text(SnapshotsModel.title(snap)).font(.ah(.subheadline).weight(.semibold))
                     Spacer(minLength: 8)
-                    Elapsed(seconds: snap.createdAt).font(.caption.monospacedDigit()).foregroundStyle(theme.faint)
+                    Elapsed(seconds: snap.createdAt).font(.ah(.caption).monospacedDigit()).foregroundStyle(theme.faint)
                 }
                 if !snap.promptExcerpt.isEmpty {
                     Text(SnapshotsModel.excerpt(snap))
-                        .font(.callout)
+                        .font(.ah(.callout))
                         .foregroundStyle(theme.text2)
                         .lineLimit(3)
                         .padding(.horizontal, 10)
@@ -1016,7 +1016,7 @@ private struct SnapshotRow: View {
                     .controlSize(.small)
                     .disabled(busy)
                 }
-                .font(.caption.monospacedDigit())
+                .font(.ah(.caption).monospacedDigit())
                 notes
             }
             .padding(.bottom, last ? 0 : 18)
@@ -1043,7 +1043,7 @@ private struct SnapshotRow: View {
                 }
                 if snap.submodules { Label("Submodules aren’t included", systemImage: "shippingbox").foregroundStyle(theme.faint) }
             }
-            .font(.caption2)
+            .font(.ah(.caption2))
         }
     }
 }
@@ -1098,9 +1098,9 @@ private struct PreviewPanel: View {
                     }
                 } label: {
                     HStack(spacing: 5) {
-                        Image(systemName: "lock.fill").font(.caption2).foregroundStyle(theme.faint)
+                        Image(systemName: "lock.fill").font(.ah(.caption2)).foregroundStyle(theme.faint)
                         Text(browser.title.isEmpty ? "localhost:\(String(preview.target))" : browser.title)
-                            .font(.callout)
+                            .font(.ah(.callout))
                             .lineLimit(1)
                             .foregroundStyle(theme.text)
                     }
@@ -1150,9 +1150,9 @@ private struct PreviewPanel: View {
                     .foregroundStyle(theme.accent)
                     .padding(.top, 36)
                 VStack(spacing: 6) {
-                    Text("Preview a dev server").font(.headline)
+                    Text("Preview a dev server").font(.ah(.headline))
                     Text("Storybook, Vite, Next… running in this session. It runs on the host and shows here, through ah’s sign-in.")
-                        .font(.callout)
+                        .font(.ah(.callout))
                         .foregroundStyle(theme.muted)
                         .multilineTextAlignment(.center)
                 }
@@ -1162,7 +1162,7 @@ private struct PreviewPanel: View {
                     if info.ports.isEmpty {
                         HStack(spacing: 8) {
                             ProgressView().controlSize(.small)
-                            Text("Waiting for something in this session to listen on a port…").font(.callout).foregroundStyle(theme.muted)
+                            Text("Waiting for something in this session to listen on a port…").font(.ah(.callout)).foregroundStyle(theme.muted)
                         }
                     } else {
                         VStack(spacing: 8) {
@@ -1172,7 +1172,7 @@ private struct PreviewPanel: View {
                                 } label: {
                                     HStack {
                                         Image(systemName: "network")
-                                        Text("localhost:\(String(port))").font(.body.monospacedDigit())
+                                        Text("localhost:\(String(port))").font(.ah(.body).monospacedDigit())
                                         Spacer()
                                         Image(systemName: "arrow.right.circle.fill").foregroundStyle(theme.accent)
                                     }
@@ -1190,7 +1190,7 @@ private struct PreviewPanel: View {
                         TextField("Another port", text: $typed)
                             .keyboardType(.numberPad)
                             .focused($portFocused)
-                            .font(.body.monospacedDigit())
+                            .font(.ah(.body).monospacedDigit())
                             .padding(.horizontal, 12)
                             .padding(.vertical, 9)
                             .background(theme.raised, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -1317,14 +1317,14 @@ private struct StackPanel: View {
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
                                 Image(systemName: branch.current ? "largecircle.fill.circle" : "circle").foregroundStyle(branch.current ? theme.accent : theme.faint)
-                                Text(branch.branch).font(.callout.monospaced())
+                                Text(branch.branch).font(.ahMono(.callout))
                                 Spacer()
-                                if let layer = branch.layer { Text(layer.status.word).font(.caption).foregroundStyle(theme.muted) }
+                                if let layer = branch.layer { Text(layer.status.word).font(.ah(.caption)).foregroundStyle(theme.muted) }
                             }
                             if let pr = branch.pr {
                                 Link("#\(pr.number) \(pr.title)", destination: URL(string: pr.url) ?? URL(string: "https://github.com")!)
-                                    .font(.caption)
-                                Text(LayerConfidence.checksLabel(pr.checks)).font(.caption2).foregroundStyle(theme.faint)
+                                    .font(.ah(.caption))
+                                Text(LayerConfidence.checksLabel(pr.checks)).font(.ah(.caption2)).foregroundStyle(theme.faint)
                             }
                         }
                     }

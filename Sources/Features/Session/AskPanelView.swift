@@ -11,24 +11,24 @@ struct AskSummaryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(parts.kind).font(.subheadline.weight(.semibold)).foregroundStyle(theme.brand)
+            Text(parts.kind).font(.ah(.subheadline).weight(.semibold)).foregroundStyle(theme.brand)
             if let command = parts.command {
                 CodeBlockView(code: "$ \(command)", tone: .command)
             }
             if let description = parts.description {
-                Text(description).font(.callout).foregroundStyle(theme.muted)
+                Text(description).font(.ah(.callout)).foregroundStyle(theme.muted)
             }
             if !parts.review.isEmpty {
                 ReviewList(items: parts.review)
             }
             if let question = parts.question {
-                Text(question).font(.callout.weight(.medium)).foregroundStyle(theme.text)
+                Text(question).font(.ah(.callout).weight(.medium)).foregroundStyle(theme.text)
             }
             if showTerminalText, let context = parts.context, parts.command != nil || context != parts.question {
                 DisclosureGroup("Show terminal text", isExpanded: $showRaw) {
                     CodeBlockView(code: context)
                 }
-                .font(.caption)
+                .font(.ah(.caption))
                 .foregroundStyle(theme.muted)
             }
         }
@@ -145,7 +145,7 @@ struct AskPanelView: View {
                 let dialog = !review && ask.kind == .choice && questions.isEmpty ? ask.dialog : nil
                 if !compact {
                     if !questions.isEmpty || dialog != nil {
-                        Text(AskParts.kindLabel(ask.kind)).font(.subheadline.weight(.semibold)).foregroundStyle(theme.brand)
+                        Text(AskParts.kindLabel(ask.kind)).font(.ah(.subheadline).weight(.semibold)).foregroundStyle(theme.brand)
                     } else {
                         AskSummaryView(parts: parts)
                     }
@@ -177,7 +177,7 @@ struct AskPanelView: View {
                     ApproveDenyView(target: target, compact: compact, onReply: onReply, keys: keys, leave: leave)
                 }
                 if let onUseTerminal {
-                    Button("Answer in terminal", action: onUseTerminal).font(.caption).buttonStyle(.borderless)
+                    Button("Answer in terminal", action: onUseTerminal).font(.ah(.caption)).buttonStyle(.borderless)
                 }
             }
             .padding(compact ? 0 : 14)
@@ -350,8 +350,8 @@ private struct ReviewList: View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(items, id: \.self) { item in
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(item.question).font(.caption).foregroundStyle(theme.muted)
-                    Text(item.answer).font(.callout.weight(.medium)).foregroundStyle(theme.text)
+                    Text(item.question).font(.ah(.caption)).foregroundStyle(theme.muted)
+                    Text(item.answer).font(.ah(.callout).weight(.medium)).foregroundStyle(theme.text)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityElement(children: .combine)
@@ -471,7 +471,7 @@ private struct ScreenChoicesView: View {
                 } label: {
                     HStack(spacing: 10) {
                         Text(option.key.hasPrefix("nav:") ? "\(index + 1)" : option.key.uppercased())
-                            .font(.caption.monospaced().weight(.bold))
+                            .font(.ahMono(.caption).weight(.bold))
                             .frame(width: 22, height: 22)
                             .background(theme.surface, in: RoundedRectangle(cornerRadius: 6))
                         // Every choice reads in full, even with the keyboard up: the transcript gives way.
@@ -645,25 +645,25 @@ struct QuestionFormView: View {
     var body: some View {
         Group {
             if chatting {
-                Label("Back to the conversation: say what you'd like instead.", systemImage: "bubble.left.and.text.bubble.right").font(.callout).foregroundStyle(theme.muted)
+                Label("Back to the conversation: say what you'd like instead.", systemImage: "bubble.left.and.text.bubble.right").font(.ah(.callout)).foregroundStyle(theme.muted)
             } else if model.phase == .sent {
-                Label("Answer sent.", systemImage: "checkmark").font(.callout).foregroundStyle(theme.muted)
+                Label("Answer sent.", systemImage: "checkmark").font(.ah(.callout)).foregroundStyle(theme.muted)
             } else {
                 VStack(alignment: .leading, spacing: 14) {
-                    if let progress { Text(progress).font(.caption).foregroundStyle(theme.muted) }
+                    if let progress { Text(progress).font(.ah(.caption)).foregroundStyle(theme.muted) }
                     ForEach(Array(model.form.questions.enumerated()), id: \.offset) { qi, question in
                         VStack(alignment: .leading, spacing: 6) {
                             HStack(alignment: .firstTextBaseline, spacing: 8) {
                                 if let header = question.header {
                                     Text(header)
-                                        .font(.caption.weight(.semibold))
+                                        .font(.ah(.caption).weight(.semibold))
                                         .foregroundStyle(theme.accent)
                                         .padding(.horizontal, 8)
                                         .padding(.vertical, 3)
                                         .background(theme.accent.opacity(0.14), in: Capsule())
                                 }
                                 // The whole question, however long: it's what you're answering.
-                                (Text(question.question).font(.callout.weight(.medium)) + Text(question.multiSelect ? "  Pick any." : "").font(.caption).foregroundStyle(theme.muted))
+                                (Text(question.question).font(.ah(.callout).weight(.medium)) + Text(question.multiSelect ? "  Pick any." : "").font(.ah(.caption)).foregroundStyle(theme.muted))
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                             if question.hasPreviews {
@@ -696,7 +696,7 @@ struct QuestionFormView: View {
                                     await chat()
                                 }
                             }
-                            .font(.callout)
+                            .font(.ah(.callout))
                             .buttonStyle(.borderless)
                             .tint(.secondary)
                             .disabled(model.phase != .idle)
@@ -725,7 +725,7 @@ struct QuestionFormView: View {
                     .foregroundStyle(on ? theme.accent : theme.faint)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(oi + 1). \(option.label)").foregroundStyle(theme.text)
-                    if let d = option.description { Text(d).font(.caption).foregroundStyle(theme.muted) }
+                    if let d = option.description { Text(d).font(.ah(.caption)).foregroundStyle(theme.muted) }
                 }
                 .fixedSize(horizontal: false, vertical: true)
             }
@@ -754,7 +754,7 @@ struct QuestionFormView: View {
             PreviewBox(text: question.options[safe: picked]?.preview, label: question.options[safe: picked]?.label ?? "")
             TextField("Add notes on this design…", text: Binding(get: { model.form.drafts[qi].notes }, set: { model.form.setNotes(qi, $0) }))
                 .textFieldStyle(.roundedBorder)
-                .font(.callout)
+                .font(.ah(.callout))
                 .focused($noting, equals: qi)
                 .submitLabel(.done)
                 .onSubmit { keys.take() }
@@ -784,7 +784,7 @@ struct QuestionFormView: View {
                 .accessibilityLabel("Your answer to: \(model.form.questions[qi].question)")
         } else {
             Button("\(model.form.questions[qi].options.count + 1). Something else…") { model.openOther(qi) }
-                .font(.callout)
+                .font(.ah(.callout))
                 .buttonStyle(.borderless)
                 .padding(.horizontal, 6)
                 .modifier(CursorRing(on: keys.focused && model.cursor == .other(qi)))
@@ -804,7 +804,7 @@ private struct PreviewBox: View {
             if let text, !text.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     Text(text)
-                        .font(.system(.footnote, design: .monospaced))
+                        .font(.ahMono(.footnote))
                         .foregroundStyle(theme.text)
                         .fixedSize()
                         .textSelection(.enabled)
@@ -813,7 +813,7 @@ private struct PreviewBox: View {
             } else {
                 // A dialog read off the screen only shows the highlighted option's preview.
                 Text("\(label)'s preview shows in the terminal when it's highlighted.")
-                    .font(.caption)
+                    .font(.ah(.caption))
                     .foregroundStyle(theme.muted)
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)

@@ -32,7 +32,7 @@ struct StackManageSheet: View {
                         ForEach(stack.methods, id: \.self) { Text($0).tag($0) }
                     }
                     TextField("Plan file (optional)", text: $planPath)
-                        .font(.callout.monospaced())
+                        .font(.ahMono(.callout))
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .onSubmit { Task { await model.update(StackPatch(planPath: .some(planPath.isEmpty ? nil : planPath))) } }
@@ -79,7 +79,7 @@ struct StackManageSheet: View {
                     Section {
                         Button("Make it a GitHub stack") { Task { await model.link() } }
                             .disabled(stack.link?.ok == false)
-                        if let why = stack.link?.why { Text(why).font(.caption).foregroundStyle(theme.muted) }
+                        if let why = stack.link?.why { Text(why).font(.ah(.caption)).foregroundStyle(theme.muted) }
                     } footer: {
                         Text("GitHub then tracks the chain as one stack, and new PRs pushed onto it join this review.")
                     }
@@ -144,7 +144,7 @@ struct ResolveThreadSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Thread") { Text(finding.title).font(.callout) }
+                Section("Thread") { Text(finding.title).font(.ah(.callout)) }
                 Section("Your reply") { TextEditor(text: $reply).frame(minHeight: 120) }
             }
             .navigationTitle("Reply and resolve")

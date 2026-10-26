@@ -38,9 +38,9 @@ struct SetupView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                             .shadow(color: theme.brand.opacity(0.35), radius: 18, y: 8)
                             .accessibilityHidden(true)
-                        Text("Connect to Agent Hub").font(.title.weight(.bold))
+                        Text("Connect to Agent Hub").font(.ah(.title).weight(.bold))
                         Text("Your host stays private on your tailnet. This device gets its own key, which you can remove from any other device.")
-                            .font(.callout)
+                            .font(.ah(.callout))
                             .foregroundStyle(theme.muted)
                             .multilineTextAlignment(.center)
                     }
@@ -65,7 +65,7 @@ struct SetupView: View {
                 }
                 Section {
                     TextField("Setup code", text: $code)
-                        .font(.title3.monospaced())
+                        .font(.ahMono(.title3))
                         .textInputAutocapitalization(.characters)
                         .autocorrectionDisabled()
                         .textContentType(.oneTimeCode)
@@ -161,11 +161,11 @@ struct SignInView: View {
         VStack(spacing: 20) {
             Spacer()
             Image(systemName: "lock.shield").font(.system(size: 56)).foregroundStyle(theme.brand)
-            Text(account.hostname).font(.title2.weight(.semibold))
-            Text(account.origin).font(.footnote.monospaced()).foregroundStyle(theme.muted)
+            Text(account.hostname).font(.ah(.title2).weight(.semibold))
+            Text(account.origin).font(.ahMono(.footnote)).foregroundStyle(theme.muted)
             switch account.status {
             case .needsSignIn(let reason):
-                if let reason { Text(reason).font(.callout).foregroundStyle(theme.muted).multilineTextAlignment(.center) }
+                if let reason { Text(reason).font(.ah(.callout)).foregroundStyle(theme.muted).multilineTextAlignment(.center) }
                 Button {
                     Task { await account.signIn() }
                 } label: {
@@ -178,7 +178,7 @@ struct SignInView: View {
             case .signingIn:
                 ProgressView("Signing in…")
             case .unenrolled(let reason):
-                Text(reason).font(.callout).foregroundStyle(theme.muted).multilineTextAlignment(.center)
+                Text(reason).font(.ah(.callout)).foregroundStyle(theme.muted).multilineTextAlignment(.center)
                 Button(action: pairAgain) {
                     Label("Pair Again", systemImage: "link").frame(maxWidth: 280)
                 }
@@ -187,7 +187,7 @@ struct SignInView: View {
                 .tint(theme.accentStrong)
                 .keyboardShortcut(.defaultAction)
                 Text("You’ll need a setup code from a device that’s still signed in, or `ah auth code` on the host.")
-                    .font(.footnote)
+                    .font(.ah(.footnote))
                     .foregroundStyle(theme.faint)
                     .multilineTextAlignment(.center)
             case .signedIn:
@@ -195,7 +195,7 @@ struct SignInView: View {
             }
             Spacer()
             if case .needsSignIn = account.status {
-                Button("Forget this host on this device…", role: .destructive) { confirmForget = true }.font(.footnote)
+                Button("Forget this host on this device…", role: .destructive) { confirmForget = true }.font(.ah(.footnote))
             }
         }
         .padding(24)

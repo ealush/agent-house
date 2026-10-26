@@ -164,7 +164,7 @@ private struct ScratchpadView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Label("Scratchpad", systemImage: "terminal").font(.caption.weight(.semibold))
+                Label("Scratchpad", systemImage: "terminal").font(.ah(.caption).weight(.semibold))
                 Spacer()
                 Button { Task { await scene.toggleScratchpad() } } label: { Image(systemName: "chevron.down") }.accessibilityLabel("Hide the scratchpad")
             }
@@ -399,7 +399,7 @@ private struct PaneStrip: View {
                         HStack(spacing: 6) {
                             if let row { StatusPill(word: row.word, compact: true) }
                             Text(LayoutNode.isPick(tile.sessionKey) ? "Empty pane" : (row?.title ?? scene.session(tile.sessionKey)?.title ?? "Session"))
-                                .font(.caption.weight(active ? .semibold : .regular))
+                                .font(.ah(.caption).weight(active ? .semibold : .regular))
                                 .lineLimit(1)
                         }
                         .padding(.horizontal, 10)
@@ -437,7 +437,7 @@ private struct ZoomBadge: View {
                 Text("Maximized · \(index + 1) of \(count)")
                 if let chord = scene.app.keyBindings.hint("maximize-pane") { Keycaps(chord) }
             }
-            .font(.caption.weight(.semibold))
+            .font(.ah(.caption).weight(.semibold))
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(theme.surface, in: Capsule())
@@ -531,7 +531,7 @@ private struct ChooserPane: View {
     var body: some View {
         let rows = rows
         VStack(spacing: 14) {
-            Text("Open in This Pane").font(.headline)
+            Text("Open in This Pane").font(.ah(.headline))
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 TextField("Search Sessions", text: $query)
@@ -562,8 +562,8 @@ private struct ChooserPane: View {
                     HStack(spacing: 10) {
                         AgentMark(agent: row.dto.agent, size: 22)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(row.title).font(.callout).lineLimit(1)
-                            Text(row.dto.project).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            Text(row.title).font(.ah(.callout)).lineLimit(1)
+                            Text(row.dto.project).font(.ah(.caption)).foregroundStyle(.secondary).lineLimit(1)
                         }
                         Spacer()
                         StatusPill(word: row.word, compact: true)
@@ -580,7 +580,7 @@ private struct ChooserPane: View {
             Button("Cancel", role: .cancel) { scene.cancelChooser(path) }
                 .buttonStyle(.borderless)
                 .tint(.secondary)
-                .font(.callout)
+                .font(.ah(.callout))
         }
         .frame(maxWidth: 420)
         .padding(20)
@@ -593,8 +593,8 @@ private struct ChooserPane: View {
     private func action(_ title: String, _ symbol: String, run: @escaping () -> Void) -> some View {
         Button(action: run) {
             HStack(spacing: 10) {
-                Image(systemName: symbol).font(.body).foregroundStyle(theme.accent).frame(width: 22)
-                Text(title).font(.callout)
+                Image(systemName: symbol).font(.ah(.body)).foregroundStyle(theme.accent).frame(width: 22)
+                Text(title).font(.ah(.callout))
                 Spacer()
             }
             .padding(.horizontal, 10)
@@ -660,7 +660,7 @@ struct WorkspaceStrip: View {
                 } label: {
                     // The current one filled with the tint, one in use marked with a dot.
                     Text("\(n)")
-                        .font(.footnote.monospacedDigit().weight(n == current ? .semibold : .regular))
+                        .font(.ah(.footnote).monospacedDigit().weight(n == current ? .semibold : .regular))
                         .foregroundStyle(n == current ? Color.white : occupied.contains(n) ? Color.primary : Color(uiColor: .tertiaryLabel))
                         .frame(width: 26, height: 26)
                         .background { if n == current { Circle().fill(theme.accentStrong) } }

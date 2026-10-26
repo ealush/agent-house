@@ -15,7 +15,7 @@ struct InboxView: View {
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
             } header: {
-                Text(inbox.summary).font(.subheadline).foregroundStyle(theme.muted).textCase(nil)
+                Text(inbox.summary).font(.ah(.subheadline)).foregroundStyle(theme.muted).textCase(nil)
             }
             // Another device's place, not this one's from an earlier launch (window ids are
             // per launch, so the name tells this device apart too).
@@ -32,12 +32,12 @@ struct InboxView: View {
                 Section {
                     HStack(spacing: 12) {
                         Image(systemName: "checkmark.seal.fill")
-                            .font(.title2)
+                            .font(.ah(.title2))
                             .foregroundStyle(theme.done)
                             .symbolEffect(.bounce, value: inbox.rest.count)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("All caught up").font(.headline)
-                            Text("Nothing needs you, and nothing's running.").font(.callout).foregroundStyle(theme.muted)
+                            Text("All caught up").font(.ah(.headline))
+                            Text("Nothing needs you, and nothing's running.").font(.ah(.callout)).foregroundStyle(theme.muted)
                         }
                     }
                     .padding(.vertical, 6)
@@ -137,12 +137,12 @@ private struct AskCard: View {
                 HStack(spacing: 10) {
                     AgentMark(agent: row.dto.agent)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(row.title).font(.headline).foregroundStyle(theme.text).lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
-                        Text([hub.multiHost ? row.host : nil, row.dto.project].compactMap { $0 }.joined(separator: " · ")).font(.caption).foregroundStyle(theme.muted)
-                        if typeSize.isAccessibilitySize { Elapsed(seconds: row.dto.activity).font(.caption).foregroundStyle(theme.faint) }
+                        Text(row.title).font(.ah(.headline)).foregroundStyle(theme.text).lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
+                        Text([hub.multiHost ? row.host : nil, row.dto.project].compactMap { $0 }.joined(separator: " · ")).font(.ah(.caption)).foregroundStyle(theme.muted)
+                        if typeSize.isAccessibilitySize { Elapsed(seconds: row.dto.activity).font(.ah(.caption)).foregroundStyle(theme.faint) }
                     }
                     Spacer()
-                    if !typeSize.isAccessibilitySize { Elapsed(seconds: row.dto.activity).font(.caption).foregroundStyle(theme.faint) }
+                    if !typeSize.isAccessibilitySize { Elapsed(seconds: row.dto.activity).font(.ah(.caption)).foregroundStyle(theme.faint) }
                 }
             }
             .buttonStyle(.plain)
@@ -150,7 +150,7 @@ private struct AskCard: View {
             if let ask = row.dto.ask {
                 if AskParts.isForm(ask) {
                     // The form below says the question; the card only says what this is.
-                    Text(AskParts.kindLabel(ask.kind)).font(.subheadline.weight(.semibold)).foregroundStyle(theme.brand)
+                    Text(AskParts.kindLabel(ask.kind)).font(.ah(.subheadline).weight(.semibold)).foregroundStyle(theme.brand)
                 } else {
                     AskSummaryView(parts: AskParts(ask, detail: row.dto.detail), showTerminalText: false)
                 }
@@ -175,8 +175,8 @@ private struct ReviewAlertRow: View {
             HStack(spacing: 10) {
                 Image(systemName: "checkmark.seal").foregroundStyle(theme.brand)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.subheadline.weight(.semibold))
-                    Text("\(alert.stackTitle) · #\(alert.pr) \(alert.title)").font(.caption).foregroundStyle(theme.muted).lineLimit(1)
+                    Text(title).font(.ah(.subheadline).weight(.semibold))
+                    Text("\(alert.stackTitle) · #\(alert.pr) \(alert.title)").font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(1)
                 }
             }
         }
@@ -233,7 +233,7 @@ struct SessionRowView: View {
             AgentMark(agent: row.dto.agent)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    if row.dto.pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint) }
+                    if row.dto.pinned { Image(systemName: "pin.fill").font(.ah(.caption2)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint) }
                     Text(row.title).foregroundStyle(onAccent ? .white : theme.text).lineLimit(1)
                     if let fork = row.dto.fork {
                         // A fork (or a session others were forked from): its lineage at a glance.
@@ -241,12 +241,12 @@ struct SessionRowView: View {
                             Image(systemName: "arrow.branch")
                             if fork.forks > 0 { Text("\(fork.forks)") }
                         }
-                        .font(.caption2.weight(.semibold))
+                        .font(.ah(.caption2).weight(.semibold))
                         .foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint)
                         .accessibilityLabel(fork.parentTitle.isEmpty ? "\(fork.forks) forks" : "Fork of \(fork.parentTitle)")
                     }
                 }
-                Text(detail).font(.caption).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.muted).lineLimit(stacked ? 2 : 1)
+                Text(detail).font(.ah(.caption)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.muted).lineLimit(stacked ? 2 : 1)
                 if stacked { status(onAccent: onAccent, compact: false) }
             }
             Spacer(minLength: 4)
@@ -257,7 +257,7 @@ struct SessionRowView: View {
     private func status(onAccent: Bool, compact: Bool) -> some View {
         VStack(alignment: .trailing, spacing: 2) {
             StatusPill(word: row.word, compact: compact)
-            if row.dto.queued > 0 { Text("\(row.dto.queued) queued").font(.caption2).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint) }
+            if row.dto.queued > 0 { Text("\(row.dto.queued) queued").font(.ah(.caption2)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint) }
         }
     }
 
@@ -299,7 +299,7 @@ private struct GroupHeader: View {
                 Button("Move Down", systemImage: "arrow.down") { withAnimation(.snappy) { scene.moveGroup(section.id, by: 1) } }.disabled(last)
             } label: {
                 Image(systemName: "plus")
-                    .font(.caption.weight(.semibold))
+                    .font(.ah(.caption).weight(.semibold))
             } primaryAction: {
                 scene.sheet = .newSession(newHere)
             }
@@ -498,15 +498,15 @@ struct HistoryRowView: View {
                 AgentMark(agent: item.dto.harness == "shell" ? nil : item.dto.harness)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 4) {
-                        if item.dto.pinned { Image(systemName: "pin.fill").font(.caption2) }
+                        if item.dto.pinned { Image(systemName: "pin.fill").font(.ah(.caption2)) }
                         Text(item.dto.title).lineLimit(1).foregroundStyle(theme.text)
                     }
                     Text([hub.multiHost ? item.host : nil, item.dto.project, item.dto.fork.map { "fork of \($0.parentTitle)" }].compactMap { $0 }.joined(separator: " · "))
-                        .font(.caption).foregroundStyle(theme.muted).lineLimit(1)
-                    if typeSize.isAccessibilitySize { Elapsed(seconds: item.dto.at).font(.caption).foregroundStyle(theme.faint) }
+                        .font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(1)
+                    if typeSize.isAccessibilitySize { Elapsed(seconds: item.dto.at).font(.ah(.caption)).foregroundStyle(theme.faint) }
                 }
                 Spacer()
-                if !typeSize.isAccessibilitySize { Elapsed(seconds: item.dto.at).font(.caption).foregroundStyle(theme.faint) }
+                if !typeSize.isAccessibilitySize { Elapsed(seconds: item.dto.at).font(.ah(.caption)).foregroundStyle(theme.faint) }
             }
         }
         .buttonStyle(.plain)
@@ -585,18 +585,18 @@ struct SearchView: View {
                             AgentMark(agent: hit.kind == "chat" ? nil : hit.harness, size: 26)
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack(alignment: .firstTextBaseline) {
-                                    Text(live?.title ?? hit.title).font(.subheadline.weight(.semibold)).lineLimit(1)
-                                    if hit.kind == "chat" { Text("side chat").font(.caption2.weight(.semibold)).foregroundStyle(theme.muted) }
+                                    Text(live?.title ?? hit.title).font(.ah(.subheadline).weight(.semibold)).lineLimit(1)
+                                    if hit.kind == "chat" { Text("side chat").font(.ah(.caption2).weight(.semibold)).foregroundStyle(theme.muted) }
                                     Spacer()
-                                    Text("\(hit.matches) match\(hit.matches == 1 ? "" : "es")").font(.caption).foregroundStyle(theme.faint)
+                                    Text("\(hit.matches) match\(hit.matches == 1 ? "" : "es")").font(.ah(.caption)).foregroundStyle(theme.faint)
                                 }
                                 ForEach(Array(hit.excerpts.prefix(2).enumerated()), id: \.offset) { _, excerpt in
                                     HStack(alignment: .firstTextBaseline, spacing: 6) {
-                                        Text(excerpt.role == "user" ? "You" : "Agent").font(.caption2.weight(.semibold)).foregroundStyle(theme.faint).frame(width: 38, alignment: .leading)
+                                        Text(excerpt.role == "user" ? "You" : "Agent").font(.ah(.caption2).weight(.semibold)).foregroundStyle(theme.faint).frame(width: 38, alignment: .leading)
                                         HighlightedSnippet(snippet: excerpt.snippet, lines: 3)
                                     }
                                 }
-                                Text(searchMeta(hit, live: live)).font(.caption2).foregroundStyle(theme.faint).lineLimit(1)
+                                Text(searchMeta(hit, live: live)).font(.ah(.caption2)).foregroundStyle(theme.faint).lineLimit(1)
                             }
                         }
                         .padding(.vertical, 4)

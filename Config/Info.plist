@@ -22,6 +22,12 @@
     <string>$(CURRENT_PROJECT_VERSION)</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
+    <key>UIAppFonts</key>
+    <array>
+        <string>Rubik-Variable.ttf</string>
+        <string>Rubik-Italic-Variable.ttf</string>
+        <string>JetBrainsMono-Variable.ttf</string>
+    </array>
     <key>NSCameraUsageDescription</key>
     <string>Take a photo to attach to a message for your agent.</string>
     <key>NSFaceIDUsageDescription</key>

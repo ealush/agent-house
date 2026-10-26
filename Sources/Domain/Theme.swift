@@ -1,10 +1,10 @@
 import Foundation
 
-/// Color tokens for dark, light and a host's Omarchy theme (`web/theme.ts`). Dark and light
-/// are iOS's own grounds, cards, grays and separators (the app sits among system lists,
-/// sheets and bars), with ah's pink as the accent. Hex strings here; the platform layer makes
-/// colors. Status semantics stay the same everywhere: needs you is the brand mark, working is
-/// cyan, done is green, limited is amber.
+/// ah's design system as color tokens (`../ah/web/tokens.css`), for dark, light and a host's
+/// Omarchy theme (`web/theme.ts`): a ground behind floating panels, surfaces, raised cards and
+/// sunken fields, hairlines, and pink only for what needs you. Hex strings here; the platform
+/// layer makes colors. Status semantics stay the same everywhere: needs you is the brand mark,
+/// working is cyan, done is green, limited is amber.
 struct ThemePalette: Equatable, Sendable {
     var background: String
     var surface: String
@@ -28,17 +28,16 @@ struct ThemePalette: Equatable, Sendable {
     var terminal: TerminalPalette
 
     static let dark = ThemePalette(
-        // systemBackground, systemGray5, secondarySystemBackground, separator, label…
-        background: "#000000", surface: "#2c2c2e", raised: "#1c1c1e", sunken: "#1c1c1e", line: "#54545899",
-        text: "#ffffff", text2: "#ebebf5", muted: "#a1a1a6", faint: "#7c7c82",
+        background: "#191a25", surface: "#202231", raised: "#2a2c3e", sunken: "#15161f", line: "#ffffff14",
+        text: "#ffffff", text2: "#c9cad3", muted: "#a2a4b3", faint: "#8d8fa3",
         brand: "#e91e63", accent: "#f47199", accentStrong: "#d81b60", accentInk: "#ffffff",
         run: "#4dd9ea", done: "#81d88a", limited: "#f5b84b", danger: "#ff8a80", monoFont: nil, isDark: true,
         terminal: .dark
     )
 
     static let light = ThemePalette(
-        background: "#ffffff", surface: "#e5e5ea", raised: "#f2f2f7", sunken: "#f2f2f7", line: "#3c3c434a",
-        text: "#000000", text2: "#3c3c43", muted: "#636366", faint: "#727277",
+        background: "#eef0f4", surface: "#ffffff", raised: "#f5f6f9", sunken: "#eceef3", line: "#00000014",
+        text: "#1c1d27", text2: "#474a58", muted: "#5f6272", faint: "#686b7a",
         brand: "#e91e63", accent: "#c2185b", accentStrong: "#d81b60", accentInk: "#ffffff",
         run: "#00737d", done: "#276b2b", limited: "#8a5a00", danger: "#c62828", monoFont: nil, isDark: false,
         terminal: .light
@@ -58,6 +57,21 @@ struct ThemePalette: Equatable, Sendable {
             monoFont: theme.font, isDark: theme.mode != "light",
             terminal: TerminalPalette.omarchy(theme)
         )
+    }
+
+    // The design system's derived layers, from the palette (so a host's Omarchy theme gets them too).
+    var lineStrong: String { isDark ? "#ffffff29" : "#00000029" }
+    var accentTint: String { Self.alpha(brand, isDark ? 0.12 : 0.07) }
+    var accentLine: String { Self.alpha(brand, isDark ? 0.45 : 0.35) }
+    var runTint: String { Self.alpha(run, isDark ? 0.12 : 0.08) }
+    var doneTint: String { Self.alpha(done, isDark ? 0.12 : 0.08) }
+    var limitedTint: String { Self.alpha(limited, isDark ? 0.12 : 0.08) }
+    var glassTint: String { Self.alpha(raised, isDark ? 0.62 : 0.66) }
+
+    /// "#rrggbb" with an alpha: "#rrggbbaa".
+    static func alpha(_ hex: String, _ a: Double) -> String {
+        let digits = hex.hasPrefix("#") ? String(hex.dropFirst().prefix(6)) : String(hex.prefix(6))
+        return "#" + digits + String(format: "%02x", Int((a * 255).rounded()))
     }
 
     func color(for word: StatusWord) -> String {
@@ -91,15 +105,15 @@ struct TerminalPalette: Equatable, Sendable {
         return 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0) < 0.5
     }
 
-    // The system's black ground, so a terminal sits in its pane like the conversation does.
+    // ah's sunken ground: the terminal sits in its panel like a code block.
     static let dark = TerminalPalette(
-        background: "#000000", foreground: "#e6e6ef", cursor: "#f47199", selection: "#3a3a3c",
-        ansi: ["#1c1c1e", "#ff8a80", "#81d88a", "#f5b84b", "#82aaff", "#f47199", "#4dd9ea", "#c9cad3",
+        background: "#15161f", foreground: "#e6e6ef", cursor: "#f47199", selection: "#3a3d55",
+        ansi: ["#15161f", "#ff8a80", "#81d88a", "#f5b84b", "#82aaff", "#f47199", "#4dd9ea", "#c9cad3",
                "#5c5f77", "#ffa49c", "#a4e6ab", "#ffd27f", "#a6c3ff", "#ff9fbe", "#86e8f3", "#ffffff"]
     )
 
     static let light = TerminalPalette(
-        background: "#ffffff", foreground: "#1c1d27", cursor: "#c2185b", selection: "#d1d1d6",
+        background: "#fbfbfd", foreground: "#1c1d27", cursor: "#c2185b", selection: "#d6d8e3",
         ansi: ["#1c1d27", "#c62828", "#276b2b", "#8a5a00", "#1d4fb8", "#c2185b", "#00737d", "#5f6272",
                "#686b7a", "#e53935", "#2e7d32", "#a66d00", "#2962ff", "#d81b60", "#00838f", "#1c1d27"]
     )

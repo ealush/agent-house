@@ -40,7 +40,7 @@ struct WidgetView: View {
         switch model {
         case .card(let title, let body, _, let actions):
             VStack(alignment: .leading, spacing: 10) {
-                if !title.isEmpty { Text(title).font(.headline) }
+                if !title.isEmpty { Text(title).font(.ah(.headline)) }
                 if !body.isEmpty { MarkdownView(body, compact: true) }
                 if !actions.isEmpty {
                     HStack {
@@ -55,7 +55,7 @@ struct WidgetView: View {
             }
         case .choices(let prompt, let options):
             VStack(alignment: .leading, spacing: 8) {
-                if !prompt.isEmpty { Text(prompt).font(.headline) }
+                if !prompt.isEmpty { Text(prompt).font(.ah(.headline)) }
                 ForEach(Array(options.enumerated()), id: \.offset) { i, option in
                     Button {
                         guard picked == nil else { return }
@@ -64,10 +64,10 @@ struct WidgetView: View {
                         reply(option.reply)
                     } label: {
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            if i < 9 { Text("\(i + 1)").font(.caption.monospaced().weight(.bold)).foregroundStyle(theme.muted) }
+                            if i < 9 { Text("\(i + 1)").font(.ahMono(.caption).weight(.bold)).foregroundStyle(theme.muted) }
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(option.label).foregroundStyle(theme.text)
-                                if let d = option.description { Text(d).font(.caption).foregroundStyle(theme.muted) }
+                                if let d = option.description { Text(d).font(.ah(.caption)).foregroundStyle(theme.muted) }
                             }
                             Spacer()
                             if picked == i { Image(systemName: "checkmark").foregroundStyle(theme.done) }
@@ -87,13 +87,13 @@ struct WidgetView: View {
             ChecklistView(title: title, items: items)
         case .stats(let title, let items):
             VStack(alignment: .leading, spacing: 8) {
-                if !title.isEmpty { Text(title).font(.headline) }
+                if !title.isEmpty { Text(title).font(.ah(.headline)) }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), alignment: .leading)], spacing: 10) {
                     ForEach(Array(items.enumerated()), id: \.offset) { _, stat in
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(stat.label).font(.caption).foregroundStyle(theme.muted)
-                            Text(stat.value).font(.title3.weight(.semibold)).monospacedDigit()
-                            if let delta = stat.delta { Text(delta).font(.caption).foregroundStyle(tone(stat.tone)) }
+                            Text(stat.label).font(.ah(.caption)).foregroundStyle(theme.muted)
+                            Text(stat.value).font(.ah(.title3).weight(.semibold)).monospacedDigit()
+                            if let delta = stat.delta { Text(delta).font(.ah(.caption)).foregroundStyle(tone(stat.tone)) }
                         }
                         .accessibilityElement(children: .combine)
                     }
@@ -102,9 +102,9 @@ struct WidgetView: View {
         case .barChart(let title, let unit, let data):
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    if !title.isEmpty { Text(title).font(.headline) }
+                    if !title.isEmpty { Text(title).font(.ah(.headline)) }
                     Spacer()
-                    Button(asTable ? "Chart" : "Table") { asTable.toggle() }.font(.caption).buttonStyle(.bordered)
+                    Button(asTable ? "Chart" : "Table") { asTable.toggle() }.font(.ah(.caption)).buttonStyle(.bordered)
                 }
                 if asTable {
                     tableView(title: "", columns: ["", unit.isEmpty ? "Value" : unit], rows: data.map { [$0.label, $0.value.plainString] })
@@ -113,7 +113,7 @@ struct WidgetView: View {
                         BarMark(x: .value(unit.isEmpty ? "Value" : unit, bar.value), y: .value("Label", bar.label))
                             .foregroundStyle(theme.accent)
                             .annotation(position: .trailing) {
-                                Text(bar.value.plainString + (unit.isEmpty ? "" : " \(unit)")).font(.caption2).foregroundStyle(theme.muted)
+                                Text(bar.value.plainString + (unit.isEmpty ? "" : " \(unit)")).font(.ah(.caption2)).foregroundStyle(theme.muted)
                             }
                     }
                     .frame(height: CGFloat(max(1, data.count)) * 28 + 20)
@@ -122,13 +122,13 @@ struct WidgetView: View {
             }
         case .progress(let label, let value, let max):
             VStack(alignment: .leading, spacing: 6) {
-                if !label.isEmpty { Text(label).font(.headline) }
+                if !label.isEmpty { Text(label).font(.ah(.headline)) }
                 ProgressView(value: value, total: max).tint(theme.accent)
-                Text("\(value.plainString) / \(max.plainString)").font(.caption).foregroundStyle(theme.muted).monospacedDigit()
+                Text("\(value.plainString) / \(max.plainString)").font(.ah(.caption)).foregroundStyle(theme.muted).monospacedDigit()
             }
         case .links(let title, let items):
             VStack(alignment: .leading, spacing: 8) {
-                if !title.isEmpty { Text(title).font(.headline) }
+                if !title.isEmpty { Text(title).font(.ah(.headline)) }
                 ForEach(Array(items.enumerated()), id: \.offset) { _, link in
                     Button {
                         switch link.target {
@@ -139,7 +139,7 @@ struct WidgetView: View {
                     } label: {
                         VStack(alignment: .leading, spacing: 2) {
                             Label(link.label, systemImage: linkSymbol(link.target)).foregroundStyle(theme.accent)
-                            if let d = link.description { Text(d).font(.caption).foregroundStyle(theme.muted) }
+                            if let d = link.description { Text(d).font(.ah(.caption)).foregroundStyle(theme.muted) }
                         }
                     }
                     .buttonStyle(.plain)
@@ -149,31 +149,31 @@ struct WidgetView: View {
             }
         case .image(let title, let source, let alt, let caption):
             VStack(alignment: .leading, spacing: 6) {
-                if !title.isEmpty { Text(title).font(.headline) }
+                if !title.isEmpty { Text(title).font(.ah(.headline)) }
                 switch source {
                 case .inline(let data):
                     if let image = UIImage(data: data) { Image(uiImage: image).resizable().scaledToFit().accessibilityLabel(alt) }
                 case .hostFile(let path):
                     HostImage(source: path, alt: alt)
                 case .unavailable(let raw):
-                    Label("Image not available: \(raw)", systemImage: "photo").font(.caption).foregroundStyle(theme.muted)
+                    Label("Image not available: \(raw)", systemImage: "photo").font(.ah(.caption)).foregroundStyle(theme.muted)
                 }
-                if !caption.isEmpty { Text(caption).font(.caption).foregroundStyle(theme.muted) }
+                if !caption.isEmpty { Text(caption).font(.ah(.caption)).foregroundStyle(theme.muted) }
             }
         case .code(let title, let code):
             VStack(alignment: .leading, spacing: 6) {
-                if !title.isEmpty { Text(title).font(.headline) }
+                if !title.isEmpty { Text(title).font(.ah(.headline)) }
                 CodeBlockView(code: code)
             }
         case .diff(let title, let lines):
             VStack(alignment: .leading, spacing: 6) {
-                if !title.isEmpty { Text(title).font(.headline) }
+                if !title.isEmpty { Text(title).font(.ah(.headline)) }
                 DiffLinesView(lines: lines, maxLines: 200)
             }
         case .unknown(let type, let title, let json):
             VStack(alignment: .leading, spacing: 6) {
-                Text(title).font(.headline)
-                Text("“\(type)” isn’t a widget this app knows; here are its fields.").font(.caption).foregroundStyle(theme.muted)
+                Text(title).font(.ah(.headline))
+                Text("“\(type)” isn’t a widget this app knows; here are its fields.").font(.ah(.caption)).foregroundStyle(theme.muted)
                 CodeBlockView(code: json, language: "json")
             }
         }
@@ -183,14 +183,14 @@ struct WidgetView: View {
         let width = max(columns.count, rows.map(\.count).max() ?? 0)
         let numeric = (0..<width).map { Self.isNumeric(column: $0, rows: rows) }
         return VStack(alignment: .leading, spacing: 8) {
-            if !title.isEmpty { Text(title).font(.headline) }
+            if !title.isEmpty { Text(title).font(.ah(.headline)) }
             ScrollView(.horizontal, showsIndicators: false) {
                 Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 0) {
                     if !columns.isEmpty {
                         GridRow {
                             ForEach(0..<width, id: \.self) { c in
                                 Text(c < columns.count ? columns[c] : "")
-                                    .font(.caption.weight(.semibold))
+                                    .font(.ah(.caption).weight(.semibold))
                                     .foregroundStyle(theme.muted)
                                     .gridColumnAlignment(numeric[c] ? .trailing : .leading)
                             }
@@ -203,7 +203,7 @@ struct WidgetView: View {
                             ForEach(0..<width, id: \.self) { c in
                                 let cell = c < rows[r].count ? rows[r][c] : ""
                                 Text(cell)
-                                    .font(numeric[c] ? .callout.monospacedDigit() : .callout)
+                                    .font(numeric[c] ? .ah(.callout).monospacedDigit() : .ah(.callout))
                                     .fontWeight(c == 0 ? .medium : .regular)
                                     .foregroundStyle(theme.text)
                             }

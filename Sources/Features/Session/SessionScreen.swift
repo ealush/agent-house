@@ -208,7 +208,7 @@ private struct SessionHeader: View {
                     .modifier(PaneDragHandle(pane: pane))
                 if session.renaming != nil {
                     TextField("Name", text: Binding(get: { session.renaming ?? "" }, set: { session.renaming = $0 }))
-                        .font(.headline)
+                        .font(.ah(.headline))
                         .textFieldStyle(.roundedBorder)
                         .focused($renameFocused)
                         .onSubmit { Task { await session.commitRename() } }
@@ -219,7 +219,7 @@ private struct SessionHeader: View {
                         .onAppear { renameFocused = true }
                 } else {
                     Text(session.title)
-                        .font(compact ? .subheadline.weight(.semibold) : .headline)
+                        .font(compact ? .ah(.subheadline).weight(.semibold) : .ah(.headline))
                         .lineLimit(1)
                         .layoutPriority(1)
                         .accessibilityAddTraits(.isHeader)
@@ -231,7 +231,7 @@ private struct SessionHeader: View {
                         scene.perform("maximize-pane")
                     } label: {
                         Label("\(index + 1) of \(leaves.count)", systemImage: "arrow.down.right.and.arrow.up.left")
-                            .font(.caption.weight(.semibold))
+                            .font(.ah(.caption).weight(.semibold))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
                             .background(.fill.tertiary, in: Capsule())
@@ -303,7 +303,7 @@ private struct SessionHeader: View {
                         .accessibilityHint("Show the fork family")
                     }
                 }
-                .font(.caption)
+                .font(.ah(.caption))
             }
         }
         .padding(.horizontal, 16)
@@ -435,8 +435,8 @@ private struct EndedBanner: View {
         HStack(spacing: 10) {
             Image(systemName: "moon.zzz").foregroundStyle(theme.muted)
             VStack(alignment: .leading, spacing: 2) {
-                Text("This session has ended").font(.subheadline.weight(.semibold))
-                Text("Resume it to continue, or just send a message: that resumes it first.").font(.caption).foregroundStyle(theme.muted)
+                Text("This session has ended").font(.ah(.subheadline).weight(.semibold))
+                Text("Resume it to continue, or just send a message: that resumes it first.").font(.ah(.caption)).foregroundStyle(theme.muted)
             }
             Spacer()
             Button("Resume") {
@@ -493,7 +493,7 @@ private struct NoticeStack: View {
         VStack(spacing: 6) {
             ForEach(session.notices) { notice in
                 Text(notice.text)
-                    .font(.footnote)
+                    .font(.ah(.footnote))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(.regularMaterial, in: Capsule())
