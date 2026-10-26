@@ -89,49 +89,6 @@ struct SessionScreen: View {
     }
 }
 
-/// A phone's session bar: the title, what it's doing and where (as the subtitle), and the
-/// header's actions as toolbar items.
-struct SessionNavigationChrome: ViewModifier {
-    @Bindable var session: SessionModel
-    let scene: SceneModel
-    @Environment(\.theme) private var theme
-
-    /// The terminal fills the screen under a see-through bar: over a dark one the bar's title
-    /// and buttons have to be light.
-    private var overDarkTerminal: Bool {
-        // A live terminal only: an ended session shows its last screen on the page's ground.
-        session.isLive && !(session.surface == .gui && session.hasGUI) && theme.palette.terminal.isDark
-    }
-
-    private var subtitle: String {
-        guard let row = session.row else { return session.isLive ? "" : "Ended" }
-        return [row.word.rawValue, row.dto.project, row.dto.branch].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
-    }
-
-    func body(content: Content) -> some View {
-        content
-            .navigationTitle(session.title)
-            .navigationSubtitle(subtitle)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(overDarkTerminal ? .dark : nil, for: .navigationBar)
-            .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    if session.isLive && session.hasGUI && !session.isShell {
-                        let other: SceneSnapshot.Surface = session.surface == .gui ? .terminal : .gui
-                        Button {
-                            scene.setSurface(other, for: session.key)
-                        } label: {
-                            Image(systemName: other == .terminal ? "terminal" : "text.bubble")
-                        }
-                        .accessibilityLabel(other == .terminal ? "Terminal" : "GUI")
-                    }
-                    PanelsMenu(session: session)
-                    SessionMenu(session: session, scene: scene)
-                }
-            }
-    }
-}
-
 /// A panel's bar, beside the session or in a phone sheet: its name, a title menu that
 /// switches to any other panel this session offers, and a way out.
 private struct PanelChrome: ViewModifier {
@@ -348,41 +305,66 @@ struct SessionMenu: View {
 
     var body: some View {
         Menu {
-            if session.isLive {
+            ForEach(Array(SessionAction.sections(session, scene).enumerated()), id: \.offset) { _, section in
                 Section {
-                    Button("Rename", systemImage: "pencil") { scene.perform("rename") }
-                    Button(session.row?.dto.pinned == true ? "Unpin" : "Pin", systemImage: session.row?.dto.pinned == true ? "pin.slash" : "pin") { Task { await session.togglePin() } }
-                }
-                Section {
-                    if session.row?.dto.branch != nil { Button("Switch Branch…", systemImage: "arrow.triangle.branch") { scene.sheet = .branch(session.key) } }
-                    if !session.isShell { Button("Fork…", systemImage: "arrow.branch") { scene.sheet = .fork(session.key) } }
-                    if session.row?.dto.fork != nil { Button("Forks…", systemImage: "arrow.triangle.branch") { scene.sheet = .forks(session.key) } }
-                    if session.row?.dto.feed != nil { Button("Send To…", systemImage: "paperplane") { scene.sheet = .sendTo(session.key) } }
-                    if let queued = session.row?.dto.queued, queued > 0 {
-                        Button("Send Queued Now (\(queued))", systemImage: "arrow.up.to.line") { scene.perform("send-now") }
+                    ForEach(section) { action in
+                        Button(action.title, systemImage: action.symbol, role: action.destructive ? .destructive : nil, action: action.run)
                     }
                 }
-                Section {
-                    if session.surface == .gui {
-                        Button(scene.app.preferences.stepsHidden ? "Show Steps" : "Hide Steps", systemImage: scene.app.preferences.stepsHidden ? "list.bullet.indent" : "list.bullet") { scene.perform("toggle-steps") }
-                        Button("Copy Last Reply", systemImage: "doc.on.doc") { scene.perform("copy-last") }
-                    }
-                    Button("Scrollback as Text", systemImage: "text.alignleft") { scene.perform("scrollback") }
-                    Button("Copy Attach Command", systemImage: "terminal") { scene.perform("copy-attach") }
-                    Button("All Commands…", systemImage: "command") { scene.perform("command-palette") }
-                }
-                Button("Terminate…", systemImage: "xmark.octagon", role: .destructive) { scene.sheet = .confirmTerminate(session.key) }
-            } else {
-                Button("Resume", systemImage: "play") {
-                    Task { if let key = await session.resume() { scene.open(key) } }
-                }
-                Button("Fork…", systemImage: "arrow.branch") { scene.sheet = .fork(session.key) }
-                Button(session.history?.dto.pinned == true ? "Unpin" : "Pin", systemImage: "pin") { Task { await session.togglePin() } }
             }
         } label: {
             Image(systemName: "ellipsis.circle")
         }
         .accessibilityLabel("Session menu")
+    }
+}
+
+/// One entry of the session menu. The iPad header draws them as a SwiftUI menu, the phone's
+/// navigation bar as a UIMenu: one list, so the two never drift apart.
+struct SessionAction: Identifiable {
+    let title: String
+    let symbol: String
+    var destructive = false
+    let run: @MainActor () -> Void
+
+    var id: String { title }
+
+    @MainActor
+    static func sections(_ session: SessionModel, _ scene: SceneModel) -> [[SessionAction]] {
+        guard session.isLive else {
+            return [[
+                SessionAction(title: "Resume", symbol: "play") { Task { if let key = await session.resume() { scene.open(key) } } },
+                SessionAction(title: "Fork…", symbol: "arrow.branch") { scene.sheet = .fork(session.key) },
+                SessionAction(title: session.history?.dto.pinned == true ? "Unpin" : "Pin", symbol: "pin") { Task { await session.togglePin() } },
+            ]]
+        }
+        let pinned = session.row?.dto.pinned == true
+        var work: [SessionAction] = []
+        if session.row?.dto.branch != nil { work.append(SessionAction(title: "Switch Branch…", symbol: "arrow.triangle.branch") { scene.sheet = .branch(session.key) }) }
+        if !session.isShell { work.append(SessionAction(title: "Fork…", symbol: "arrow.branch") { scene.sheet = .fork(session.key) }) }
+        if session.row?.dto.fork != nil { work.append(SessionAction(title: "Forks…", symbol: "arrow.triangle.branch") { scene.sheet = .forks(session.key) }) }
+        if session.row?.dto.feed != nil { work.append(SessionAction(title: "Send To…", symbol: "paperplane") { scene.sheet = .sendTo(session.key) }) }
+        if let queued = session.row?.dto.queued, queued > 0 {
+            work.append(SessionAction(title: "Send Queued Now (\(queued))", symbol: "arrow.up.to.line") { scene.perform("send-now") })
+        }
+        var view: [SessionAction] = []
+        if session.surface == .gui {
+            let hidden = scene.app.preferences.stepsHidden
+            view.append(SessionAction(title: hidden ? "Show Steps" : "Hide Steps", symbol: hidden ? "list.bullet.indent" : "list.bullet") { scene.perform("toggle-steps") })
+            view.append(SessionAction(title: "Copy Last Reply", symbol: "doc.on.doc") { scene.perform("copy-last") })
+        }
+        view.append(SessionAction(title: "Scrollback as Text", symbol: "text.alignleft") { scene.perform("scrollback") })
+        view.append(SessionAction(title: "Copy Attach Command", symbol: "terminal") { scene.perform("copy-attach") })
+        view.append(SessionAction(title: "All Commands…", symbol: "command") { scene.perform("command-palette") })
+        return [
+            [
+                SessionAction(title: "Rename", symbol: "pencil") { scene.perform("rename") },
+                SessionAction(title: pinned ? "Unpin" : "Pin", symbol: pinned ? "pin.slash" : "pin") { Task { await session.togglePin() } },
+            ],
+            work,
+            view,
+            [SessionAction(title: "Terminate…", symbol: "xmark.octagon", destructive: true) { scene.sheet = .confirmTerminate(session.key) }],
+        ].filter { !$0.isEmpty }
     }
 }
 

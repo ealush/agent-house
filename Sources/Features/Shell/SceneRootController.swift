@@ -416,6 +416,7 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
     private var scene: SceneModel { root.scene }
     private let tabBar = UITabBarController()
     private var navs: [String: UINavigationController] = [:]
+    private var awaitingTransition = false
     private static let pages: [(id: String, title: String, symbol: String, route: SceneSnapshot.Route)] = [
         ("inbox", "Inbox", "tray", .inbox),
         ("sessions", "Sessions", "terminal", .sessions),
@@ -513,6 +514,18 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
         }
         guard let id = tabBar.selectedTab?.identifier, let page = Self.pages.first(where: { $0.id == id }) else { return }
         let nav = nav(for: id, route: page.route)
+        // UIKit holds a push back until a running transition (a sheet going away, another
+        // push) ends, and the stack doesn't list it till then: pushing on every update meanwhile
+        // stacked the same session several deep. Push once, when the stack is still.
+        if let transition = nav.transitionCoordinator {
+            guard !awaitingTransition else { return }
+            awaitingTransition = true
+            transition.animate(alongsideTransition: nil) { [weak self] _ in
+                self?.awaitingTransition = false
+                self?.setNeedsUpdateProperties()
+            }
+            return
+        }
         if case .session(let key) = scene.route {
             if let top = nav.topViewController as? SessionHostController, top.key == key { return }
             guard let session = scene.session(key) else { return }
@@ -550,22 +563,100 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
     }
 }
 
-/// A session pushed on a phone tab.
+/// A session pushed on a phone tab. Its bar is UIKit's own (title, subtitle and items set on
+/// the navigation item), so it slides in and out with the push; a SwiftUI toolbar is only
+/// filled in once the push has landed, and its buttons faded in late and vanished on Back.
 @MainActor
 final class SessionHostController: UIHostingController<Themed<SessionPage>> {
     let key: String
+    private let session: SessionModel
+    private unowned let scene: SceneModel
+    private let theme: ThemeModel
+    private lazy var surfaceItem = UIBarButtonItem(primaryAction: UIAction { [unowned self] _ in
+        scene.setSurface(session.surface == .gui ? .terminal : .gui, for: session.key)
+    })
+    private lazy var panelsItem = UIBarButtonItem(image: UIImage(systemName: "sidebar.right"), menu: UIMenu(children: [
+        UIDeferredMenuElement.uncached { [weak self] done in done(self?.panelActions() ?? []) },
+    ]))
+    private lazy var menuItem = UIBarButtonItem(image: UIImage(systemName: "ellipsis"), menu: UIMenu(children: [
+        UIDeferredMenuElement.uncached { [weak self] done in done(self?.sessionActions() ?? []) },
+    ]))
 
     init(key: String, root: SceneRootController, session: SessionModel) {
         self.key = key
+        self.session = session
+        self.scene = root.scene
+        self.theme = root.theme
         super.init(rootView: Themed(app: root.scene.app, theme: root.theme) { SessionPage(session: session, scene: root.scene) })
         navigationItem.largeTitleDisplayMode = .never
-        navigationItem.title = session.title
         navigationItem.backButtonDisplayMode = .minimal
+        panelsItem.accessibilityLabel = "Panels"
+        menuItem.accessibilityLabel = "Session menu"
+        navigationItem.rightBarButtonItems = [menuItem, panelsItem, surfaceItem]
         // A session gets the whole screen: the composer and terminal sit where the tabs were.
         hidesBottomBarWhenPushed = true
+        updateBar()
     }
 
     @MainActor required dynamic init?(coder: NSCoder) { fatalError() }
+
+    override func updateProperties() {
+        super.updateProperties()
+        updateBar()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        updateBar()
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        navigationController?.navigationBar.overrideUserInterfaceStyle = .unspecified
+    }
+
+    /// What the bar says follows the session: its name, what it's doing and where, and the
+    /// way to the other view.
+    private func updateBar() {
+        navigationItem.title = session.title
+        navigationItem.subtitle = subtitle
+        let switches = session.isLive && session.hasGUI && !session.isShell
+        surfaceItem.isHidden = !switches
+        let other: SceneSnapshot.Surface = session.surface == .gui ? .terminal : .gui
+        surfaceItem.image = UIImage(systemName: other == .terminal ? "terminal" : "text.bubble")
+        surfaceItem.accessibilityLabel = other == .terminal ? "Terminal" : "GUI"
+        // The live terminal fills the screen under a see-through bar: over a dark one its title
+        // and buttons go light.
+        let palette = theme.theme(scene.app.preferences.appearance).palette
+        let overDarkTerminal = session.isLive && !(session.surface == .gui && session.hasGUI) && palette.terminal.isDark
+        if isViewLoaded, view.window != nil {
+            navigationController?.navigationBar.overrideUserInterfaceStyle = overDarkTerminal ? .dark : .unspecified
+        }
+    }
+
+    private var subtitle: String {
+        guard let row = session.row else { return session.isLive ? "" : "Ended" }
+        return [row.word.rawValue, row.dto.project, row.dto.branch].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    private func panelActions() -> [UIMenuElement] {
+        // Only what this session has: no Diff or Stack without a branch, no Queue or Snapshots
+        // in a shell.
+        SceneSnapshot.Panel.allCases.filter { $0.applies(to: session) }.map { panel in
+            UIAction(title: panel.title, image: UIImage(systemName: panel.symbol), state: session.panel == panel ? .on : .off) { [weak self] _ in
+                guard let self else { return }
+                session.panel = session.panel == panel ? nil : panel
+            }
+        }
+    }
+
+    private func sessionActions() -> [UIMenuElement] {
+        SessionAction.sections(session, scene).map { section in
+            UIMenu(options: .displayInline, children: section.map { action in
+                UIAction(title: action.title, image: UIImage(systemName: action.symbol), attributes: action.destructive ? .destructive : []) { _ in action.run() }
+            })
+        }
+    }
 }
 
 struct SessionPage: View {
@@ -574,6 +665,5 @@ struct SessionPage: View {
 
     var body: some View {
         SessionScreen(session: session, scene: scene, compactHeader: true, inNavigationBar: true)
-            .modifier(SessionNavigationChrome(session: session, scene: scene))
     }
 }
