@@ -12,6 +12,20 @@ use more tint to protect longer text. Secondary labels use stronger ink.
 The composer settings sheet shares one backdrop rather than stacking a second
 frosted header over it. Conversation text keeps its regular reading ground.
 
+## Desktop frame
+
+The desktop sidebar now sits over a faint, theme-aware color field with a more
+translucent backing plate. The selected destination and session use a quiet
+accent wash and inset edge to make the active workspace easier to spot.
+
+The session header completes the frame with a soft theme-aware tint, a compact
+agent mark, and a clearer title hierarchy. Its view and action controls share
+one softly lit glass capsule, with the active view held in a subtle lens.
+
+![Desktop sidebar and active session chrome](screenshots/desktop-sidebar-chrome.png)
+
+![Desktop session header and glass controls](screenshots/desktop-chrome-polish.png)
+
 ## Mobile conversation
 
 The phone/touch-tablet header and composer now float over the actual feed.
