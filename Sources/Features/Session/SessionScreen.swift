@@ -30,15 +30,21 @@ struct SessionScreen: View {
                 if let history = session.history, !session.isLive {
                     EndedBanner(session: session, scene: scene, item: history)
                 }
+                // The question and the composer float over the transcript, which scrolls on
+                // beneath them (and fades under, at the bar's edge).
                 surface
-                if session.surface == .gui && session.hasGUI {
-                    if session.waiting, session.row?.dto.ask != nil {
-                        AskPanelView(target: AskTarget(session: session), keyboard: AskKeyboard(scene: scene, key: session.key, leave: .composer(session.key)), onReply: { scene.requestFocus(.composer(session.key)) }, onUseTerminal: { scene.setSurface(.terminal, for: session.key) })
-                            .padding(.horizontal, 12)
-                            .padding(.bottom, 6)
+                    .safeAreaBar(edge: .bottom, spacing: 0) {
+                        if session.surface == .gui && session.hasGUI {
+                            VStack(spacing: 0) {
+                                if session.waiting, session.row?.dto.ask != nil {
+                                    AskPanelView(target: AskTarget(session: session), keyboard: AskKeyboard(scene: scene, key: session.key, leave: .composer(session.key)), onReply: { scene.requestFocus(.composer(session.key)) }, onUseTerminal: { scene.setSurface(.terminal, for: session.key) })
+                                        .padding(.horizontal, 12)
+                                        .padding(.bottom, 6)
+                                }
+                                ComposerView(session: session, composer: session.composer, scene: scene)
+                            }
+                        }
                     }
-                    ComposerView(session: session, composer: session.composer, scene: scene)
-                }
             }
             if !narrow, let panel = session.panel {
                 Divider()

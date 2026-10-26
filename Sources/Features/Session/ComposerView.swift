@@ -27,14 +27,19 @@ struct ComposerView: View {
                     .font(.caption2).foregroundStyle(theme.muted)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            if !composer.attachments.isEmpty { attachments }
-            VStack(spacing: 8) {
+            // One Liquid Glass field over the transcript, as Messages has it: what you attach
+            // inside it above the text, and the row of controls along its foot.
+            VStack(alignment: .leading, spacing: 6) {
+                if !composer.attachments.isEmpty { attachments }
                 ComposerTextField(composer: composer, session: session, scene: scene, suggestionIndex: $suggestionIndex)
                     .frame(minHeight: 36)
+                    .padding(.horizontal, 4)
                 tools
             }
-            .padding(10)
-            .background(theme.raised, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .padding(.horizontal, 8)
+            .padding(.top, 8)
+            .padding(.bottom, 8)
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
@@ -103,102 +108,127 @@ struct ComposerView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(composer.attachments) { file in
-                    ZStack(alignment: .topTrailing) {
-                        Group {
-                            if file.image, let data = file.thumbnail, let image = UIImage(data: data) {
-                                Image(uiImage: image).resizable().scaledToFill().frame(width: 56, height: 56).clipped()
-                            } else {
-                                Label(file.name, systemImage: "doc").font(.caption).lineLimit(1).padding(8).frame(height: 56)
+                    Group {
+                        if file.image, let data = file.thumbnail, let image = UIImage(data: data) {
+                            Image(uiImage: image).resizable().scaledToFill().frame(width: 64, height: 64)
+                        } else {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Image(systemName: "doc.fill").font(.title3).foregroundStyle(.secondary)
+                                Text(file.name).font(.caption2).foregroundStyle(.primary).lineLimit(2)
                             }
+                            .padding(8)
+                            .frame(width: 112, height: 64, alignment: .topLeading)
+                            .background(.fill.tertiary)
                         }
-                        .background(theme.raised)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .overlay { if file.path == nil { ProgressView() } }
-                        Button {
-                            composer.removeAttachment(file.id)
-                        } label: {
-                            Image(systemName: "xmark.circle.fill").symbolRenderingMode(.palette).foregroundStyle(.white, .black.opacity(0.6))
-                        }
-                        .accessibilityLabel("Remove \(file.name)")
-                        .offset(x: 6, y: -6)
                     }
+                    .overlay { if file.path == nil { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity).background(.black.opacity(0.25)) } }
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(alignment: .topTrailing) {
+                        Button {
+                            withAnimation(.snappy(duration: 0.2)) { composer.removeAttachment(file.id) }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.body)
+                                .symbolRenderingMode(.palette)
+                                .foregroundStyle(.white, .black.opacity(0.55))
+                                .padding(3)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Remove \(file.name)")
+                    }
+                    .accessibilityElement(children: .contain)
                     .accessibilityLabel(file.path == nil ? "Uploading \(file.name)" : file.name)
+                    .transition(.scale(scale: 0.8).combined(with: .opacity))
                 }
             }
-            .padding(.top, 6)
+            .padding(.horizontal, 4)
+            .padding(.top, 2)
         }
+        .animation(.snappy(duration: 0.25), value: composer.attachments.map(\.id))
     }
 
     private var tools: some View {
-        HStack(spacing: 6) {
-            if !session.isShell && session.isLive { LaunchChips(session: session, scene: scene) }
-            Spacer(minLength: 0)
-            Button {
-                composer.recall(1)
-            } label: {
-                Image(systemName: "clock.arrow.circlepath")
-            }
-            .accessibilityLabel("Previous messages")
-            .buttonStyle(.borderless)
+        HStack(spacing: 8) {
             Menu {
-                Button("Photo Library", systemImage: "photo.on.rectangle") { choosingPhotos = true }
-                if CameraPicker.isAvailable { Button("Take Photo", systemImage: "camera") { takingPhoto = true } }
-                Button("Choose Files", systemImage: "folder") { importingFiles = true }
-                if UIPasteboard.general.hasImages { Button("Paste Image", systemImage: "doc.on.clipboard") { pasteImage() } }
+                Section {
+                    Button("Photo Library", systemImage: "photo.on.rectangle") { choosingPhotos = true }
+                    if CameraPicker.isAvailable { Button("Take Photo", systemImage: "camera") { takingPhoto = true } }
+                    Button("Choose Files", systemImage: "folder") { importingFiles = true }
+                    if UIPasteboard.general.hasImages { Button("Paste Image", systemImage: "doc.on.clipboard") { pasteImage() } }
+                }
+                if !composer.recent.isEmpty {
+                    // ↑ in an empty box does this from a keyboard.
+                    Button("Previous Message", systemImage: "clock.arrow.circlepath") { composer.recall(1) }
+                }
             } label: {
-                Image(systemName: "paperclip")
+                Image(systemName: "plus")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 32, height: 32)
+                    .background(.fill.tertiary, in: Circle())
+                    .contentShape(Circle())
             }
             // In the order written, wherever the menu opens: the library first.
             .menuOrder(.fixed)
+            .tint(.primary)
             .accessibilityLabel("Attach")
-            if composer.showsStop(working: session.working) {
-                Button {
-                    Task { await composer.stop() }
-                } label: {
-                    Image(systemName: "stop.fill")
-                        .frame(width: 34, height: 34)
-                        .background(theme.danger.opacity(0.9), in: Circle())
-                        .foregroundStyle(.white)
-                }
-                .accessibilityLabel("Stop the turn")
-            } else {
-                // While it works a message waits its turn: the button says so, and holding it
-                // (or ⌘Return) sends now instead.
-                let queues = session.working && !session.isShell
-                Button {
-                    composer.submit(working: session.working)
-                } label: {
-                    Group {
-                        if session.isShell { Text("Run").font(.callout.weight(.semibold)).padding(.horizontal, 10) }
-                        else if queues {
-                            HStack(spacing: 4) {
-                                Image(systemName: "text.line.last.and.arrowtriangle.forward")
-                                Text("Queue")
-                            }
-                            .font(.callout.weight(.semibold))
-                            .padding(.horizontal, 10)
-                        } else { Image(systemName: "arrow.up").font(.callout.weight(.bold)) }
-                    }
-                    .frame(minWidth: 34, minHeight: 34)
-                    .background(composer.canSend ? theme.accentStrong : theme.faint.opacity(0.3), in: Capsule())
-                    .foregroundStyle(.white)
-                    .contentTransition(.symbolEffect(.replace))
-                }
-                .disabled(!composer.canSend)
-                .contextMenu {
-                    if queues && composer.canSend {
-                        Button("Send Now (Stops the Turn)", systemImage: "bolt.fill") {
-                            Haptics.threshold()
-                            composer.submit(working: true, steer: true)
-                        }
-                    }
-                }
-                .animation(.snappy(duration: 0.2), value: queues)
-                .accessibilityLabel(session.isShell ? "Run" : queues ? "Queue" : "Send")
-                .accessibilityHint(queues ? "Sends when this turn ends. Hold to send now." : "")
-            }
+            if !session.isShell && session.isLive { LaunchChips(session: session, scene: scene) }
+            Spacer(minLength: 0)
+            sendButton
         }
-        .font(.body)
+    }
+
+    @ViewBuilder
+    private var sendButton: some View {
+        if composer.showsStop(working: session.working) {
+            Button {
+                Task { await composer.stop() }
+            } label: {
+                Image(systemName: "stop.circle.fill")
+                    .font(.system(size: 30))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(Color(uiColor: .systemBackground), .primary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Stop the turn")
+        } else if session.isShell || (session.working && composer.canSend) {
+            // While it works a message waits its turn: the button says so, and holding it (or
+            // ⌘Return) sends now instead.
+            let queues = !session.isShell
+            Button {
+                composer.submit(working: session.working)
+            } label: {
+                if queues { Label("Queue", systemImage: "text.line.last.and.arrowtriangle.forward") } else { Text("Run") }
+            }
+            .font(.subheadline.weight(.semibold))
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
+            .controlSize(.small)
+            .tint(theme.accentStrong)
+            .disabled(!composer.canSend)
+            .contextMenu {
+                if queues {
+                    Button("Send Now (Stops the Turn)", systemImage: "bolt.fill") {
+                        Haptics.threshold()
+                        composer.submit(working: true, steer: true)
+                    }
+                }
+            }
+            .accessibilityLabel(queues ? "Queue" : "Run")
+            .accessibilityHint(queues ? "Sends when this turn ends. Hold to send now." : "")
+        } else {
+            Button {
+                composer.submit(working: session.working)
+            } label: {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 30))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, composer.canSend ? theme.accentStrong : Color(uiColor: .tertiaryLabel))
+            }
+            .buttonStyle(.plain)
+            .disabled(!composer.canSend)
+            .accessibilityLabel("Send")
+        }
     }
 
     private func pasteImage() {
@@ -244,8 +274,8 @@ struct LaunchChips: View {
     let scene: SceneModel
     @Environment(\.theme) private var theme
 
-    /// How much each chip says: its value, its value unless it's the default (then just its
-    /// symbol), or only symbols. The roomiest that fits the box wins.
+    /// How much each chip says: its value (or that it's the default), its value or just what
+    /// it sets, or only symbols. The roomiest that fits the box wins.
     enum Density { case full, compact, symbols }
 
     var body: some View {
@@ -283,6 +313,8 @@ struct LaunchChips: View {
                         chipLabel("Permissions", current?.dangerous == true ? "exclamationmark.shield.fill" : "lock.shield", density == .symbols ? nil : current?.name ?? "Default", spoken: current?.name ?? "Default", danger: current?.dangerous == true)
                     }
                     .menuOrder(.fixed)
+                    // A menu tints its label with the accent; this chip reads like its neighbors.
+                    .tint(.primary)
                 }
             }
             .fixedSize()
@@ -302,7 +334,7 @@ struct LaunchChips: View {
     private func chip(_ name: String, _ symbol: String, _ value: String?, fallback: String, _ density: Density, action: @escaping () -> Void) -> some View {
         let shown: String? = switch density {
         case .full: value ?? fallback
-        case .compact: value
+        case .compact: value ?? name
         case .symbols: nil
         }
         return Button(action: action) { chipLabel(name, symbol, shown, spoken: value ?? fallback, danger: false) }.buttonStyle(.plain).hoverEffect(.highlight)
@@ -310,13 +342,14 @@ struct LaunchChips: View {
 
     private func chipLabel(_ name: String, _ symbol: String, _ value: String?, spoken: String, danger: Bool) -> some View {
         HStack(spacing: 4) {
-            Image(systemName: symbol).foregroundStyle(danger ? theme.danger : theme.faint)
-            if let value { Text(value).foregroundStyle(danger ? theme.danger : theme.text2).lineLimit(1) }
+            Image(systemName: symbol).imageScale(.small).foregroundStyle(danger ? AnyShapeStyle(theme.danger) : AnyShapeStyle(.secondary))
+            if let value { Text(value).lineLimit(1).foregroundStyle(danger ? AnyShapeStyle(theme.danger) : AnyShapeStyle(.primary)) }
         }
-        .font(.caption)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(theme.surface, in: Capsule())
+        .font(.footnote.weight(.medium))
+        .padding(.horizontal, value == nil ? 8 : 10)
+        .frame(minWidth: 32, minHeight: 32)
+        .background(.fill.tertiary, in: Capsule())
+        .contentShape(Capsule())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(name), \(spoken)")
         .accessibilityAddTraits(.isButton)
