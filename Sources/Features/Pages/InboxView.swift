@@ -15,7 +15,7 @@ struct InboxView: View {
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
             } header: {
-                Text(inbox.summary).font(.ah(.subheadline)).foregroundStyle(theme.muted).textCase(nil)
+                AhLargeTitle(title: "Inbox", tagline: inbox.summary).textCase(nil)
             }
             // Another device's place, not this one's from an earlier launch (window ids are
             // per launch, so the name tells this device apart too).
@@ -44,31 +44,39 @@ struct InboxView: View {
                 }
             }
             if !inbox.waiting.isEmpty || !inbox.reviews.isEmpty {
-                Section("Needs you") {
+                Section {
                     ForEach(inbox.waiting) { row in
                         AskCard(row: row, scene: scene, hub: hub)
                     }
                     ForEach(inbox.reviews, id: \.self) { alert in
                         ReviewAlertRow(alert: alert) { scene.openReview(ReviewRoute(stack: alert.stackId, pr: alert.pr)) }
                     }
+                } header: {
+                    AhSectionHeader(title: "Needs you", count: inbox.waiting.count + inbox.reviews.count)
                 }
             }
             if !inbox.running.isEmpty {
-                Section("Working") {
+                Section {
                     ForEach(inbox.running) { row in
                         SessionRowView(row: row, multiHost: hub.multiHost) { scene.open(row.key) }
                             .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
                             .swipeActions(edge: .trailing) { PinSwipe(row: row, hub: hub) }
+                            .ahRow()
                     }
+                } header: {
+                    AhSectionHeader(title: "Working", count: inbox.running.count)
                 }
             }
             if !inbox.rest.isEmpty {
-                Section("Idle and done") {
+                Section {
                     ForEach(inbox.rest) { row in
                         SessionRowView(row: row, multiHost: hub.multiHost) { scene.open(row.key) }
                             .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
                             .swipeActions(edge: .trailing) { PinSwipe(row: row, hub: hub) }
+                            .ahRow()
                     }
+                } header: {
+                    AhSectionHeader(title: "Idle and done", count: inbox.rest.count)
                 }
             }
             if hub.rows.isEmpty {
@@ -85,7 +93,7 @@ struct InboxView: View {
         }
         .listStyle(.insetGrouped)
         .refreshable { hub.resync() }
-        .navigationTitle("Inbox")
+        .ahPage("Inbox")
         .toolbar {
             // Bar glyphs in the label color; only the primary action (New) carries the tint, in
             // a glass of its own, as iOS 26 bars do.
@@ -100,8 +108,10 @@ struct InboxView: View {
             }
             ToolbarSpacer(.fixed, placement: .primaryAction)
             ToolbarItem(placement: .primaryAction) {
-                Button { scene.perform("new-session") } label: { Image(systemName: "plus") }
+                // ah's one light circle: New (ink on a light ground).
+                Button { scene.perform("new-session") } label: { Image(systemName: "plus").foregroundStyle(theme.background) }
                     .buttonStyle(.glassProminent)
+                    .tint(theme.text)
                     .accessibilityLabel("New session")
             }
             if scene.narrow {
@@ -161,6 +171,8 @@ private struct AskCard: View {
             })
         }
         .padding(.vertical, 6)
+        // ah's AskCard: what needs you is the one pink-edged thing on the page.
+        .listRowBackground(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(theme.accentTint).overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(theme.accentLine, lineWidth: 1)))
         .accessibilityElement(children: .contain)
     }
 }
@@ -287,7 +299,11 @@ private struct GroupHeader: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Text(section.id)
+            // ah's SectionHeader overline: the project in small tracked capitals.
+            Text(section.id.uppercased())
+                .font(.ah(.caption).weight(.semibold))
+                .tracking(1)
+                .foregroundStyle(theme.muted)
                 .lineLimit(1)
             Spacer(minLength: 4)
             // Tap: a new session here. Hold: move the block (a sidebar header takes no
@@ -362,11 +378,15 @@ struct SessionListView: View {
         })) {
             ConnectionBanner(phase: hub.phase, lastUpdated: hub.lastUpdated, cached: hub.showingCached) { hub.resync() }
                 .listRowBackground(Color.clear)
+            if scene.narrow && !showsPages {
+                Section { } header: { AhLargeTitle(title: "Sessions", tagline: hub.inbox(narrow: true).summary).textCase(nil) }
+            }
             if showsPages {
                 Section {
                     ForEach(Self.pages, id: \.title) { page in
                         let waiting = page.route.page == "inbox" ? hub.rows.filter { $0.dto.status == .waiting }.count + hub.reviewAlerts.count : 0
-                        Label(page.title, systemImage: page.symbol)
+                        // Icons rest muted; the current page's in the accent (ah's nav item).
+                        Label { Text(page.title).font(.ah(.callout)) } icon: { Image(systemName: page.symbol).foregroundStyle(Self.tag(page.route) == selected ? theme.accent : theme.muted) }
                             .badge(waiting)
                             .tag(Self.tag(page.route))
                             .accessibilityLabel(waiting > 0 ? "\(page.title), \(waiting) need you" : page.title)
@@ -468,6 +488,7 @@ struct HistoryView: View {
             if labels.last != label && !labels.contains(label) { labels.append(label) }
         }
         List {
+            Section { } header: { AhLargeTitle(title: "History", tagline: rows.isEmpty ? nil : "\(rows.count) conversation\(rows.count == 1 ? "" : "s") to pick up.").textCase(nil) }
             if rows.isEmpty {
                 EmptyState(symbol: "clock", title: scene.historyFilter.isEmpty ? "No history yet" : "Nothing matches", message: "Ended and past conversations appear here.")
             }

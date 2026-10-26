@@ -9,6 +9,10 @@ struct ReviewHomeView: View {
 
     var body: some View {
         List {
+            Section { } header: {
+                let waiting = model.stacks.reduce(0) { $0 + $1.needsYou }
+                AhLargeTitle(title: "Review", tagline: model.stacks.isEmpty ? nil : "\(model.stacks.count) stack\(model.stacks.count == 1 ? "" : "s") in review\(waiting > 0 ? ". \(waiting) need\(waiting == 1 ? "s" : "") you." : ".")").textCase(nil)
+            }
             if let error = model.error { Banner(text: error, tone: .error) }
             if model.stacks.isEmpty && !model.loading.contains("stacks") {
                 EmptyState(symbol: "square.stack.3d.up", title: "No stacks in review", message: "Start from a PR chain, a GitHub stack, or PRs you pick.", action: ("Start a review", { starting = true }))
@@ -42,11 +46,12 @@ struct ReviewHomeView: View {
                 .hoverEffect(.highlight)
             }
         }
-        .navigationTitle("Review")
+        .ahPage("Review")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button { starting = true } label: { Label("Start a review", systemImage: "plus") }
+                Button { starting = true } label: { Label("Start a review", systemImage: "plus").foregroundStyle(theme.background) }
                     .buttonStyle(.glassProminent)
+                    .tint(theme.text)
             }
         }
         .task { await model.loadList() }

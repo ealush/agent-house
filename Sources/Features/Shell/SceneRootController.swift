@@ -430,7 +430,8 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
         super.init(style: .doubleColumn)
         delegate = self
         preferredSplitBehavior = .tile
-        primaryBackgroundStyle = .sidebar
+        // The sidebar draws its own floating glass panel over ah's ground (ah's design system).
+        primaryBackgroundStyle = .none
         preferredPrimaryColumnWidthFraction = 0.28
         minimumPrimaryColumnWidth = 280
         maximumPrimaryColumnWidth = 380
@@ -438,7 +439,11 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
         let detail = root.host(DetailView(scene: root.scene))
         setViewController(detail, for: .secondary)
         tabBar.tabs = Self.pages.map { page in
-            UITab(title: page.title, image: UIImage(systemName: page.symbol), identifier: page.id) { [unowned self] _ in self.nav(for: page.id, route: page.route) }
+            // Search is iOS 26's round tab apart from the rest, as ah's design system keeps its
+            // search-and-jump apart from the tabs.
+            page.id == "search"
+                ? UISearchTab { [unowned self] _ in self.nav(for: page.id, route: page.route) } as UITab
+                : UITab(title: page.title, image: UIImage(systemName: page.symbol), identifier: page.id) { [unowned self] _ in self.nav(for: page.id, route: page.route) }
         }
         tabBar.delegate = self
         tabBar.mode = .tabBar
@@ -446,6 +451,16 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    /// A tab's page id (the search tab is the system's own, with its own identifier).
+    private static func id(of tab: UITab?) -> String? {
+        guard let tab else { return nil }
+        return tab is UISearchTab ? "search" : tab.identifier
+    }
+
+    private func tab(_ id: String) -> UITab? {
+        id == "search" ? tabBar.tabs.first { $0 is UISearchTab } : tabBar.tab(forIdentifier: id)
+    }
 
     private func nav(for id: String, route: SceneSnapshot.Route) -> UINavigationController {
         if let existing = navs[id] { return existing }
@@ -472,6 +487,10 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
     /// height. Pages keep it for their titles and toolbars. Also run on layout: on restore the
     /// split view wraps the detail in its navigation controller after the first update.
     private func syncDetailBar() {
+        // The sidebar's head is its own: no bar above the panel.
+        if let nav = viewController(for: .primary)?.navigationController, !nav.isNavigationBarHidden {
+            nav.setNavigationBarHidden(true, animated: false)
+        }
         let showsSessions: Bool = {
             if scene.workspace.layout != nil { return true }
             if case .session = scene.route { return true }
@@ -509,10 +528,10 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
     }
 
     private func syncPhone() {
-        if let id = routeTab, tabBar.selectedTab?.identifier != id, let tab = tabBar.tab(forIdentifier: id) {
+        if let id = routeTab, Self.id(of: tabBar.selectedTab) != id, let tab = tab(id) {
             tabBar.selectedTab = tab
         }
-        guard let id = tabBar.selectedTab?.identifier, let page = Self.pages.first(where: { $0.id == id }) else { return }
+        guard let id = Self.id(of: tabBar.selectedTab), let page = Self.pages.first(where: { $0.id == id }) else { return }
         let nav = nav(for: id, route: page.route)
         // UIKit holds a push back until a running transition (a sheet going away, another
         // push) ends, and the stack doesn't list it till then: pushing on every update meanwhile
@@ -541,7 +560,7 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
     }
 
     func tabBarController(_ tabBarController: UITabBarController, didSelectTab selectedTab: UITab, previousTab: UITab?) {
-        guard let page = Self.pages.first(where: { $0.id == selectedTab.identifier }) else { return }
+        guard let page = Self.pages.first(where: { $0.id == Self.id(of: selectedTab) }) else { return }
         let nav = nav(for: page.id, route: page.route)
         if let top = nav.topViewController as? SessionHostController {
             scene.open(top.key)
@@ -558,7 +577,7 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
     func navigationController(_ navigationController: UINavigationController, didShow viewController: UIViewController, animated: Bool) {
         if viewController === navigationController.viewControllers.first, case .session = scene.route {
             scene.closeSession()
-            if let id = tabBar.selectedTab?.identifier, let page = Self.pages.first(where: { $0.id == id }) { scene.show(page.route) }
+            if let id = Self.id(of: tabBar.selectedTab), let page = Self.pages.first(where: { $0.id == id }) { scene.show(page.route) }
         }
     }
 }

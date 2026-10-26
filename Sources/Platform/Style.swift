@@ -80,6 +80,16 @@ struct Theme: Equatable, Sendable {
     var accentTint: Color { pair(\.accentTint) }
     var accentLine: Color { pair(\.accentLine) }
     var glassTint: Color { pair(\.glassTint) }
+    /// Data in charts: blue, never the signal pink.
+    var chart: Color { appearance(dark: UIColor(red: 0.43, green: 0.61, blue: 0.96, alpha: 1), light: UIColor(red: 0.18, green: 0.37, blue: 0.82, alpha: 1)) }
+    /// ah's elevation shadow: deep on the dark ground, soft and blue-grey on the light one.
+    var shadow: Color { appearance(dark: UIColor.black.withAlphaComponent(0.42), light: UIColor(red: 0.14, green: 0.16, blue: 0.21, alpha: 0.16)) }
+
+    /// A color for the appearance in force: the theme's own when it sets one, else the system's.
+    private func appearance(dark: UIColor, light: UIColor) -> Color {
+        if !followsSystem { return Color(uiColor: palette.isDark ? dark : light) }
+        return Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? dark : light })
+    }
     func tint(_ word: StatusWord) -> Color {
         switch word {
         case .needsYou: return accentTint
@@ -201,6 +211,7 @@ extension EnvironmentValues {
 /// A session's status as a dot and a word, with its meaning spoken.
 struct StatusPill: View {
     let word: StatusWord
+    /// The dot alone (compact rows, the sidebar).
     var compact = false
     @Environment(\.theme) private var theme
     /// Increased on a selected row filled with the accent (a focused list): status colors
@@ -208,22 +219,48 @@ struct StatusPill: View {
     @Environment(\.backgroundProminence) private var prominence
 
     var body: some View {
-        let onAccent = prominence == .increased
-        HStack(spacing: 5) {
-            Circle()
-                .fill(onAccent ? Color.white : theme.status(word))
-                .frame(width: 8, height: 8)
-                .overlay {
-                    if word == .working { PulseRing(color: onAccent ? .white : theme.status(word)) }
-                }
-            if !compact {
-                Text(word.label)
-                    .font(.ah(.caption).weight(.semibold))
-                    .foregroundStyle(onAccent ? Color.white.opacity(0.9) : word == .idle ? theme.muted : theme.status(word))
-            }
+        Group {
+            if compact { StatusDot(word: word, onAccent: prominence == .increased) } else { pill }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(word.label)
+    }
+
+    /// ah's StatusPill: the word in its status color on its tint; only "needs you" is filled,
+    /// the loudest thing on screen. Idle is quiet.
+    private var pill: some View {
+        let filled = word == .needsYou
+        return Text(word.rawValue)
+            .font(.ah(.caption).weight(.semibold))
+            .foregroundStyle(filled ? Color.white : word == .idle ? theme.text2 : theme.status(word))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 2)
+            .background(filled ? theme.accentStrong : word == .idle ? theme.text.opacity(0.06) : theme.tint(word), in: Capsule())
+    }
+}
+
+/// The pill's short form: pink with a halo for needs you, a cyan ring for working, green for
+/// done, amber for limited, nothing for idle.
+struct StatusDot: View {
+    let word: StatusWord
+    var onAccent = false
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        let color = onAccent ? Color.white : theme.status(word)
+        Group {
+            switch word {
+            case .working:
+                Circle().strokeBorder(color, lineWidth: 2).overlay { PulseRing(color: color) }
+            case .needsYou:
+                Circle().fill(color).background(Circle().fill(color.opacity(0.25)).padding(-3))
+            case .idle:
+                Color.clear
+            default:
+                Circle().fill(color)
+            }
+        }
+        .frame(width: 8, height: 8)
     }
 }
 

@@ -27,8 +27,8 @@ struct ComposerView: View {
                     .font(.ah(.caption2)).foregroundStyle(theme.muted)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            // One Liquid Glass field over the transcript, as Messages has it: what you attach
-            // inside it above the text, and the row of controls along its foot.
+            // ah's Composer: one raised card floating over the transcript, what you attach inside
+            // it above the text, and the row of controls along its foot.
             VStack(alignment: .leading, spacing: 6) {
                 if !composer.attachments.isEmpty { attachments }
                 ComposerTextField(composer: composer, session: session, scene: scene, suggestionIndex: $suggestionIndex)
@@ -39,7 +39,9 @@ struct ComposerView: View {
             .padding(.horizontal, 8)
             .padding(.top, 8)
             .padding(.bottom, 8)
-            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .background(theme.raised, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(theme.lineStrong, lineWidth: 1))
+            .shadow(color: theme.shadow, radius: 16, y: 8)
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
@@ -148,7 +150,10 @@ struct ComposerView: View {
     }
 
     private var tools: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
+            // The value in force for each setting, before Send.
+            if !session.isShell && session.isLive { LaunchChips(session: session, scene: scene) }
+            Spacer(minLength: 0)
             Menu {
                 Section {
                     Button("Photo Library", systemImage: "photo.on.rectangle") { choosingPhotos = true }
@@ -161,19 +166,16 @@ struct ComposerView: View {
                     Button("Previous Message", systemImage: "clock.arrow.circlepath") { composer.recall(1) }
                 }
             } label: {
-                Image(systemName: "plus")
-                    .font(.ah(.body).weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 32, height: 32)
-                    .background(.fill.tertiary, in: Circle())
-                    .contentShape(Circle())
+                Image(systemName: "paperclip")
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(theme.muted)
+                    .frame(width: 34, height: 34)
+                    .contentShape(Rectangle())
             }
             // In the order written, wherever the menu opens: the library first.
             .menuOrder(.fixed)
             .tint(.primary)
             .accessibilityLabel("Attach")
-            if !session.isShell && session.isLive { LaunchChips(session: session, scene: scene) }
-            Spacer(minLength: 0)
             sendButton
         }
     }
@@ -184,10 +186,12 @@ struct ComposerView: View {
             Button {
                 Task { await composer.stop() }
             } label: {
-                Image(systemName: "stop.circle.fill")
-                    .font(.system(size: 30))
-                    .symbolRenderingMode(.palette)
-                    .foregroundStyle(Color(uiColor: .systemBackground), .primary)
+                // ah's Stop: an ink circle.
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(theme.background)
+                    .frame(width: 32, height: 32)
+                    .background(theme.text, in: Circle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Stop the turn")
@@ -220,10 +224,13 @@ struct ComposerView: View {
             Button {
                 composer.submit(working: session.working)
             } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 30))
-                    .symbolRenderingMode(.palette)
-                    .foregroundStyle(.white, composer.canSend ? theme.accentStrong : Color(uiColor: .tertiaryLabel))
+                // ah's Send: the accent-filled circle, the one pink control.
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .background(theme.accentStrong, in: Circle())
+                    .opacity(composer.canSend ? 1 : 0.45)
             }
             .buttonStyle(.plain)
             .disabled(!composer.canSend)
@@ -310,7 +317,7 @@ struct LaunchChips: View {
                         Section { Text(launch.footer(.mode)) }
                     } label: {
                         // The mode in force always says its name until there's room for nothing else.
-                        chipLabel("Permissions", current?.dangerous == true ? "exclamationmark.shield.fill" : "lock.shield", density == .symbols ? nil : current?.name ?? "Default", spoken: current?.name ?? "Default", danger: current?.dangerous == true)
+                        chipLabel("Permissions", current?.dangerous == true ? "exclamationmark.shield.fill" : "lock.shield", density == .symbols ? nil : current?.name ?? "Default", spoken: current?.name ?? "Default", danger: current?.dangerous == true, labelled: density == .full)
                     }
                     .menuOrder(.fixed)
                     // A menu tints its label with the accent; this chip reads like its neighbors.
@@ -332,23 +339,26 @@ struct LaunchChips: View {
     }
 
     private func chip(_ name: String, _ symbol: String, _ value: String?, fallback: String, _ density: Density, action: @escaping () -> Void) -> some View {
-        let shown: String? = switch density {
-        case .full: value ?? fallback
-        case .compact: value ?? name
-        case .symbols: nil
-        }
-        return Button(action: action) { chipLabel(name, symbol, shown, spoken: value ?? fallback, danger: false) }.buttonStyle(.plain).hoverEffect(.highlight)
+        // At its default with no room for the label, a chip says what it sets ("Model").
+        let shown: String? = density == .symbols ? nil : value ?? (density == .full ? "Default" : name)
+        return Button(action: action) { chipLabel(name, symbol, shown, spoken: value ?? fallback, danger: false, labelled: density == .full) }.buttonStyle(.plain).hoverEffect(.highlight)
     }
 
-    private func chipLabel(_ name: String, _ symbol: String, _ value: String?, spoken: String, danger: Bool) -> some View {
+    /// ah's setting chip: a quiet label and the value in force ("Model Opus 5.5"); the label
+    /// drops first, then the value, leaving the symbol.
+    private func chipLabel(_ name: String, _ symbol: String, _ value: String?, spoken: String, danger: Bool, labelled: Bool = true) -> some View {
         HStack(spacing: 4) {
-            Image(systemName: symbol).imageScale(.small).foregroundStyle(danger ? AnyShapeStyle(theme.danger) : AnyShapeStyle(.secondary))
-            if let value { Text(value).lineLimit(1).foregroundStyle(danger ? AnyShapeStyle(theme.danger) : AnyShapeStyle(.primary)) }
+            if value == nil { Image(systemName: symbol).imageScale(.small).foregroundStyle(theme.muted) }
+            if labelled, value != nil { Text(name).foregroundStyle(theme.muted) }
+            if let value {
+                if danger { Image(systemName: "exclamationmark.triangle.fill").imageScale(.small).foregroundStyle(theme.danger) }
+                Text(value).foregroundStyle(danger ? theme.danger : theme.text).lineLimit(1)
+            }
         }
         .font(.ah(.footnote).weight(.medium))
         .padding(.horizontal, value == nil ? 8 : 10)
-        .frame(minWidth: 32, minHeight: 32)
-        .background(.fill.tertiary, in: Capsule())
+        .frame(minWidth: 32, minHeight: 30)
+        .overlay(Capsule().strokeBorder(theme.lineStrong, lineWidth: 1))
         .contentShape(Capsule())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(name), \(spoken)")
@@ -459,7 +469,7 @@ struct ComposerTextField: UIViewRepresentable {
             let end = view.endOfDocument
             view.selectedTextRange = view.textRange(from: end, to: end)
         }
-        view.placeholder = composer.placeholder(working: session.working, queued: session.row?.dto.queued ?? 0, touchOnly: !scene.hardwareKeyboard)
+        view.placeholder = composer.placeholder(working: session.working, queued: session.row?.dto.queued ?? 0, touchOnly: !scene.hardwareKeyboard, agent: session.launch.preset?.name, waiting: session.waiting, ended: !session.isLive)
         view.textColor = UIColor(theme.text)
         if let request = scene.focusRequest, request.nonce != context.coordinator.handledFocus {
             context.coordinator.handledFocus = request.nonce

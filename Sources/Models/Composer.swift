@@ -346,16 +346,19 @@ final class ComposerModel {
     /// Stop replaces Send only for a working agent and an empty box, and not right after a send.
     func showsStop(working: Bool) -> Bool { !isShell && working && isEmpty && !justSent }
 
-    func placeholder(working: Bool, queued: Int, touchOnly: Bool) -> String {
-        Self.placeholder(isShell: isShell, working: working, queued: queued, touchOnly: touchOnly)
+    func placeholder(working: Bool, queued: Int, touchOnly: Bool, agent: String? = nil, waiting: Bool = false, ended: Bool = false) -> String {
+        Self.placeholder(isShell: isShell, working: working, queued: queued, touchOnly: touchOnly, agent: agent, waiting: waiting, ended: ended)
     }
 
-    nonisolated static func placeholder(isShell: Bool, working: Bool, queued: Int, touchOnly: Bool) -> String {
+    /// What Send will do now (ah's Composer): message the agent, add to its queue, answer it, or
+    /// resume it. Keys are named only when there's a keyboard.
+    nonisolated static func placeholder(isShell: Bool, working: Bool, queued: Int, touchOnly: Bool, agent: String? = nil, waiting: Bool = false, ended: Bool = false) -> String {
         if isShell { return "Type or paste a command" }
-        if working && queued > 0 { return touchOnly ? "Add to the queue" : "Add to the queue · ↵ on empty steers the next · ⌘↵ sends now · esc stops" }
-        if working { return touchOnly ? "Queue a message" : "Add to this… queued until it’s free · ⌘↵ sends now · esc stops" }
-        // By touch a field says what it takes, as Messages' does; keys get their hints.
-        return touchOnly ? "Message" : "Send a follow-up · / commands · @ files"
+        if ended { return "Message to resume" }
+        if waiting { return "Reply to answer" }
+        if working && queued > 0 { return touchOnly ? "Add to the queue · sent when it’s free" : "Add to the queue · ↵ on empty steers the next · ⌘↵ sends now · esc stops" }
+        if working { return touchOnly ? "Add to the queue · sent when it’s free" : "Add to the queue · sent when it’s free · ⌘↵ sends now · esc stops" }
+        return "Message \(agent ?? "the agent") · / commands · @ files"
     }
 
     /// The longest run of a placeholder's " · " hints, from the start, that fits the width.

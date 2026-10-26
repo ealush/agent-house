@@ -74,7 +74,7 @@ struct SessionScreen: View {
                 .transition(.move(edge: .trailing))
             }
         }
-        .background(theme.background)
+        .background(theme.surface)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { screenHeight = $0 }
         // Images in the conversation (what you attached, what the agent drew) load from the
         // host, and a host path you tap opens in Quick Look.

@@ -1,27 +1,121 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The iPad sidebar: the pages, then every session in the web's order and groups.
+/// The iPad sidebar, as ah's design system draws it: one floating glass panel over the ground
+/// holding its own head (the wordmark, the host, its menus), Search or jump, the pages, every
+/// session in the web's order and groups, the workspaces and New session.
 struct SidebarView: View {
     @Bindable var scene: SceneModel
     @Environment(\.theme) private var theme
 
     var body: some View {
         if let hub = scene.hub {
-            // On the system's sidebar glass, not a painted ground.
-            SessionListView(scene: scene, hub: hub, selection: scene.workspace.focusedKey, showsPages: true)
-                .safeAreaInset(edge: .bottom, spacing: 0) { WorkspaceStrip(scene: scene) }
-            .toolbar {
-                // At hand by touch: what otherwise only a key or the palette reaches.
-                ToolbarItem(placement: .primaryAction) { MoreMenu(scene: scene, settings: true).tint(.primary) }
-                ToolbarSpacer(.fixed, placement: .primaryAction)
-                ToolbarItem(placement: .primaryAction) {
-                    Button { scene.perform("new-session") } label: { Label("New session", systemImage: "plus") }
-                        .buttonStyle(.glassProminent)
+            VStack(spacing: 0) {
+                head(hub)
+                Button { scene.perform("switcher") } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass").foregroundStyle(theme.faint)
+                        Text("Search or jump to").foregroundStyle(theme.muted)
+                        Spacer(minLength: 4)
+                        if scene.hardwareKeyboard, let chord = scene.app.keyBindings.hint("switcher") { Keycaps(chord) }
+                    }
+                    .font(.ah(.subheadline))
+                    .padding(.horizontal, 12)
+                    .frame(height: 38)
+                    .background(theme.sunken, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(theme.line, lineWidth: 1))
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .hoverEffect(.highlight)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 4)
+                SessionListView(scene: scene, hub: hub, selection: scene.workspace.focusedKey, showsPages: true)
+                    .scrollContentBackground(.hidden)
+                VStack(spacing: 8) {
+                    WorkspaceStrip(scene: scene)
+                    Button { scene.perform("new-session") } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "plus")
+                            Text("New session").font(.ah(.callout).weight(.medium))
+                            Spacer(minLength: 4)
+                            if scene.hardwareKeyboard, let chord = scene.app.keyBindings.hint("new-session") { Keycaps(chord) }
+                        }
+                        .foregroundStyle(theme.text)
+                        .padding(.horizontal, 12)
+                        .frame(height: 40)
+                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(theme.lineStrong, lineWidth: 1))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .hoverEffect(.highlight)
+                    .padding(.horizontal, 12)
+                }
+                .padding(.bottom, 12)
             }
-            .navigationTitle(hub.hostname ?? "Agent Hub")
+            .background {
+                // Glass that floats over the ground: tinted, blurred, with a lit rim.
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(theme.glassTint)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(LinearGradient(colors: [.white.opacity(0.22), .white.opacity(0.04), .white.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1))
+                    .shadow(color: theme.shadow, radius: 20, y: 10)
+            }
+            .padding(8)
+            .background(theme.background.ignoresSafeArea())
+            // The keyboard is for the panes; the sidebar keeps its height under it.
+            .ignoresSafeArea(.keyboard)
         }
+    }
+
+    private func head(_ hub: HubStore) -> some View {
+        HStack(spacing: 8) {
+            AhWordmark()
+            if let host = hub.hostname {
+                HStack(spacing: 5) {
+                    Circle().fill(hub.phase == .live ? theme.done : theme.limited).frame(width: 7, height: 7)
+                    Text(host).font(.ah(.caption)).foregroundStyle(theme.text2).lineLimit(1)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(theme.text.opacity(0.06), in: Capsule())
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Host \(host)\(hub.phase == .live ? "" : ", reconnecting")")
+            }
+            Spacer(minLength: 4)
+            MoreMenu(scene: scene, settings: true)
+                .labelStyle(.iconOnly)
+                .tint(.primary)
+                .frame(width: 32, height: 32)
+            Button { scene.perform("toggle-sidebar") } label: { Image(systemName: "sidebar.left") }
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.muted)
+                .frame(width: 32, height: 32)
+                .accessibilityLabel("Hide Sidebar")
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
+    }
+}
+
+/// ah's wordmark: the prompt mark and "ah" with its pink full stop.
+struct AhWordmark: View {
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        HStack(spacing: 7) {
+            // The prompt mark: a white ">_" on ah's pink.
+            Text(">_")
+                .font(.custom(AhType.mono, size: 12, relativeTo: .caption).weight(.bold))
+                .foregroundStyle(.white)
+                .frame(width: 26, height: 26)
+                .background(theme.accentStrong, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            (Text("ah").foregroundStyle(theme.text) + Text(".").foregroundStyle(theme.brand))
+                .font(.custom(AhType.ui, size: 22, relativeTo: .title3).weight(.bold))
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("ah")
     }
 }
 
@@ -89,11 +183,11 @@ struct PageView: View {
         if let hub = scene.hub {
             switch route {
             case .inbox, .settings, .worktrees, .session:
-                InboxView(scene: scene, hub: hub).navigationTitle("Inbox")
+                InboxView(scene: scene, hub: hub)
             case .sessions:
-                SessionListView(scene: scene, hub: hub, selection: nil).navigationTitle("Sessions")
+                SessionListView(scene: scene, hub: hub, selection: nil).ahPage("Sessions")
             case .history:
-                HistoryView(scene: scene, hub: hub).navigationTitle("History")
+                HistoryView(scene: scene, hub: hub).ahPage("History")
             case .search:
                 if let search { SearchView(scene: scene, model: search) } else { Color.clear.onAppear { search = SearchModel(api: hub.api) } }
             case .review(let target):
@@ -129,7 +223,7 @@ struct DetailView: View {
             } else if case .session(let key) = scene.route, let session = scene.session(key) {
                 SingleSessionView(scene: scene, session: session)
             } else {
-                NavigationStack { PageView(scene: scene, route: scene.route) }
+                NavigationStack { PageView(scene: scene, route: scene.route) }.modifier(AhPanel())
             }
             if scene.workspace.scratchVisible, let key = scene.workspace.scratchKey, let session = scene.session(key) {
                 ScratchpadView(scene: scene, session: session)
@@ -151,6 +245,7 @@ private struct SingleSessionView: View {
             SessionScreen(session: session, scene: scene)
                 .overlay { if let zone, zone != .center { DropZoneHighlight(zone: zone) } }
                 .onDrop(of: [.agentHubSession], delegate: PaneDrop(scene: scene, path: nil, size: proxy.size, zone: $zone))
+                .modifier(AhPanel())
         }
     }
 }
@@ -255,7 +350,8 @@ struct WorkspaceView: View {
                 }
             }
         }
-        .background(theme.raised)
+        // ah's ground behind the panels.
+        .background(theme.background)
         .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: geometry.tiles.map(\.box))
         .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: workspace.zoom)
         .animation(reduceMotion ? nil : .snappy(duration: 0.15), value: focused)
@@ -283,7 +379,7 @@ private struct PaneView: View {
                 EmptyState(symbol: "questionmark.square.dashed", title: "Session ended", message: "Pick another for this pane.")
             }
         }
-        .background(theme.background)
+        .background(theme.surface)
         .overlay { if let zone { DropZoneHighlight(zone: zone) } }
         .clipShape(RoundedRectangle(cornerRadius: Self.corner, style: .continuous))
         // The focused pane wears a tint ring; the rest a hairline.

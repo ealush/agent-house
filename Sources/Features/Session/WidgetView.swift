@@ -111,7 +111,7 @@ struct WidgetView: View {
                 } else {
                     Chart(Array(data.enumerated()), id: \.offset) { _, bar in
                         BarMark(x: .value(unit.isEmpty ? "Value" : unit, bar.value), y: .value("Label", bar.label))
-                            .foregroundStyle(theme.accent)
+                            .foregroundStyle(theme.chart) // ah draws data in blue; pink is only for what needs you
                             .annotation(position: .trailing) {
                                 Text(bar.value.plainString + (unit.isEmpty ? "" : " \(unit)")).font(.ah(.caption2)).foregroundStyle(theme.muted)
                             }

@@ -205,7 +205,7 @@ struct TranscriptView: View {
                 }
             }
         }
-        .background(theme.background)
+        .background(theme.surface)
     }
 }
 
@@ -378,7 +378,9 @@ struct UserBubble: View {
                 MarkdownView(split.rest, compact: true)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
-                    .background(theme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    // ah's Message: your words on a raised card with a hairline.
+                    .background(theme.raised, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(theme.line, lineWidth: 1))
             }
             if let pending {
                 Text(pending).font(.ah(.caption2)).foregroundStyle(theme.faint)
@@ -542,19 +544,26 @@ struct ToolRowView: View {
             }
         }
         .padding(10)
-        .background(theme.raised.opacity(view.status == .awaiting ? 1 : 0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(view.status == .awaiting ? theme.brand.opacity(0.6) : .clear, lineWidth: 1.5))
+        // ah's ToolRow: a raised card with a hairline; what waits on you is pink-edged.
+        .background(view.status == .awaiting ? theme.accentTint : theme.raised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(view.status == .awaiting ? theme.accentLine : theme.line, lineWidth: 1))
     }
 
+    /// The row's state as ah's dot: green done, a cyan ring running, pink waiting on you, red
+    /// failed, an empty ring when it ended without a result.
     @ViewBuilder
     private var statusMark: some View {
-        switch view.status {
-        case .running: ProgressView().controlSize(.mini)
-        case .awaiting: Image(systemName: "hand.raised.fill").foregroundStyle(theme.brand).font(.ah(.caption))
-        case .stopped: Image(systemName: "minus.circle").foregroundStyle(theme.faint).font(.ah(.caption))
-        case .error: Image(systemName: "xmark.circle.fill").foregroundStyle(theme.danger).font(.ah(.caption))
-        case .done: Image(systemName: "checkmark.circle.fill").foregroundStyle(theme.done).font(.ah(.caption))
+        Group {
+            switch view.status {
+            case .running: Circle().strokeBorder(theme.run, lineWidth: 2).overlay { PulseRing(color: theme.run) }
+            case .awaiting: Circle().fill(theme.brand)
+            case .stopped: Circle().strokeBorder(theme.faint, lineWidth: 1.5)
+            case .error: Circle().fill(theme.danger)
+            case .done: Circle().fill(theme.done)
+            }
         }
+        .frame(width: 8, height: 8)
+        .frame(width: 14)
     }
 }
 

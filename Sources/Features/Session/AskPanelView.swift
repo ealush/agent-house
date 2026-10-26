@@ -185,9 +185,11 @@ struct AskPanelView: View {
                 // The request count goes in as a value, so a new one always reaches the view.
                 if keyboard != nil { AskKeyCatcher(keys: keys, wanted: keys.wanted) }
             }
-            .background(compact ? .clear : theme.raised, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            // A focus ring while the keyboard answers it, as iOS draws focus; none otherwise.
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(compact || !keys.focused ? .clear : theme.brand.opacity(0.9), lineWidth: 1.5))
+            // ah's AskCard: the tint and edge of what needs you; a stronger ring while the
+            // keyboard answers it.
+            .background(compact ? .clear : theme.accentTint, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(compact ? .clear : theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(compact ? .clear : keys.focused ? theme.brand : theme.accentLine, lineWidth: keys.focused ? 1.5 : 1))
             .accessibilityElement(children: .contain)
             .accessibilityLabel("\(row.title) needs you")
             // The window asks for the answer controls: take the keyboard.
