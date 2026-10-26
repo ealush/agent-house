@@ -25,7 +25,7 @@ import { SnapshotStore, type SnapshotInfo } from './snapshots.ts';
 import { QueueManager, starting, type LaunchChange, type QueueItem } from './queue.ts';
 import { Push } from './push.ts';
 import { omarchyStamp } from './omarchy.ts';
-import { claudeQuestionGroups, cursorKeys, dialogAt, dialogSteps, parsePicker, parseQuestionDialog, type Answer, type Step } from './choices.ts';
+import { chatSteps, claudeQuestionGroups, cursorKeys, dialogAt, dialogSteps, parsePicker, parseQuestionDialog, type Answer, type Step } from './choices.ts';
 import type { Peers } from './peers.ts';
 import { fingerprint } from './env.ts';
 import type { TranscriptSource } from './search.ts';
@@ -841,6 +841,28 @@ export class Core {
           return true;
         },
         stale: 'the question on screen has changed; answer it again',
+      },
+    ]);
+  }
+
+  /**
+   * The dialog's "Chat about this": declines its questions and hands the conversation back, to
+   * talk the choice over with the agent. `question`, when given, is the question the caller saw;
+   * a different one on screen means the request is stale.
+   */
+  async chatAboutQuestions(uid: string, question?: string) {
+    const w = await this.askingWindow(uid);
+    let steps: Step[] = [];
+    await this.typeChecked(w, [
+      {
+        steps: () => steps,
+        ready: (screen: string) => {
+          const dialog = parseQuestionDialog(screen.split('\n').map((l) => l.trimEnd()));
+          if (!dialog || (question !== undefined && dialog.question !== question)) return false;
+          steps = chatSteps(dialog, dialog.cursor);
+          return true;
+        },
+        stale: 'the question on screen has changed; try again',
       },
     ]);
   }

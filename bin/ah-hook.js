@@ -66,7 +66,12 @@ function choiceAsk(input = {}) {
       multiSelect: q.multiSelect === true,
       options: q.options
         .filter((o) => o && typeof o.label === 'string')
-        .map((o) => ({ label: short(o.label, 200), description: typeof o.description === 'string' ? short(o.description, 300) : undefined })),
+        .map((o) => ({
+          label: short(o.label, 200),
+          description: typeof o.description === 'string' ? short(o.description, 300) : undefined,
+          // A mockup or snippet the dialog shows beside the options.
+          ...(typeof o.preview === 'string' && o.preview.trim() ? { preview: short(o.preview, 2000) } : {}),
+        })),
     }));
   return questions.length ? { kind: 'choice', text: questions[0].question, questions } : null;
 }
