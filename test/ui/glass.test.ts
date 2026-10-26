@@ -6,8 +6,9 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium, webkit, devices, type Browser, type Page } from 'playwright-core';
+import { readPixels } from './paint.ts';
 
-const chrome = [process.env.AH_CHROMIUM, '/usr/bin/chromium', '/usr/bin/google-chrome-stable'].find((p) => p && existsSync(p));
+const chrome = [process.env.AH_CHROMIUM, chromium.executablePath(), '/usr/bin/chromium', '/usr/bin/google-chrome-stable'].find((p) => p && existsSync(p));
 const wk = process.env.AH_GLASS_WEBKIT;
 const skip = !chrome && !wk ? 'no test browser' : false;
 const shots = process.env.AH_GLASS_SHOTS;
@@ -37,17 +38,9 @@ async function fixture(theme: string, contrast: 'no-preference' | 'more' = 'no-p
 }
 
 async function centerPixel(page: Page): Promise<number[]> {
-  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   const surface = page.locator('.sample');
   const box = (await surface.boundingBox())!;
-  const png = await page.screenshot({ animations: 'disabled' });
-  // Decode the screenshot with the browser's image decoder; no image dependency.
-  return page.evaluate(async ({ src, x, y }) => {
-    const img = new Image(); img.src = src; await img.decode();
-    const canvas = document.createElement('canvas'); canvas.width = img.width; canvas.height = img.height;
-    const ctx = canvas.getContext('2d')!; ctx.drawImage(img, 0, 0);
-    return [...ctx.getImageData(Math.round(x), Math.round(y), 1, 1).data].slice(0, 3);
-  }, { src: `data:image/png;base64,${png.toString('base64')}`, x: box.x + 134, y: box.y + 74 });
+  return (await readPixels(page, [{ x: box.x + 134, y: box.y + 74 }]))[0];
 }
 
 for (const theme of ['light', 'dark']) {

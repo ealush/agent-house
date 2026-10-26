@@ -28,7 +28,7 @@ jobs:
       - run: pnpm build
       - run: pnpm test
 
-  # The real page in a browser (Chrome ships on the runner), against a throwaway ah.
+  # The real page in Playwright's matching browser, against a throwaway ah.
   ui:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -43,6 +43,7 @@ jobs:
           cache: pnpm
       - run: sudo apt-get update && sudo apt-get install -y tmux build-essential python3
       - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright-core install --with-deps chromium
       - run: pnpm build
       - run: pnpm test:ui
         env:

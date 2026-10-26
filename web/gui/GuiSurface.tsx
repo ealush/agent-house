@@ -263,6 +263,15 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
   const prevFirst = useRef<number | undefined>(undefined);
   const prevOut = useRef(0);
 
+  function jumpLatest() {
+    stick.current = true;
+    const el = scroller.current;
+    if (!el) return;
+    // Mobile insets can resize as the writing field loses focus. Land at the
+    // current end immediately instead of finishing a smooth scroll at a stale end.
+    el.scrollTo({ top: el.scrollHeight, behavior: el.closest('.mobile-chat') ? 'instant' : 'smooth' });
+  }
+
   const askRef = useRef<AskHandle>(null);
   // Typing into the agent's input goes through the same path as the terminal.
   useImperativeHandle(ref, () => ({
@@ -283,10 +292,7 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
       last.scrollIntoView({ block: 'nearest' });
       return true;
     },
-    jumpLatest: () => {
-      stick.current = true;
-      scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' });
-    },
+    jumpLatest,
   }));
 
 
@@ -510,10 +516,7 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
         {away && (
           <button
             className="btn small gui-latest"
-            onClick={() => {
-              stick.current = true;
-              scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' });
-            }}
+            onClick={jumpLatest}
           >
             ↓ Latest
           </button>

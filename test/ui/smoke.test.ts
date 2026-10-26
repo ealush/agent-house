@@ -4,7 +4,8 @@
 // don't offer agent-only actions, and a prompt on an agent's screen can be
 // answered from the inbox. No real agent runs: a stand-in `claude` draws one.
 //
-// Needs Chromium or Chrome (AH_CHROMIUM, or a usual path); skipped otherwise.
+// Prefers Playwright's matching Chromium (playwright-core install chromium), then
+// a system browser; AH_CHROMIUM overrides both. Skipped if none is installed.
 // AH_UI_DIST serves an existing build (CI's dist/); by default the page is built
 // into a temp dir, so the live ah's dist/ is never touched.
 import { after, before, test } from 'node:test';
@@ -18,7 +19,7 @@ import { chromium, devices, type Browser, type BrowserContext, type Page } from 
 import { cleanup, startAh, type Ah } from '../helpers.ts';
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
-const CHROME = [process.env.AH_CHROMIUM, '/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable'].find(
+const CHROME = [process.env.AH_CHROMIUM, chromium.executablePath(), '/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable'].find(
   (p): p is string => !!p && existsSync(p),
 );
 const skip = CHROME ? false : 'no Chromium or Chrome (set AH_CHROMIUM)';

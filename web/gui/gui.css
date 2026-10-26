@@ -1061,6 +1061,26 @@
   padding: 10px 12px 16px;
 }
 
+/* The conversation paints behind the mobile glass. Insets reserve a readable
+   resting position for its first/last messages, including a growing draft/queue. */
+.session-main.mobile-chat > .gui .gui-feed {
+  padding-top: calc(var(--mobile-header-height, 120px) + 12px);
+  padding-bottom: calc(var(--mobile-composer-height, 112px) + 16px);
+}
+
+.session-main.mobile-chat > .gui .gui-scroll {
+  scroll-padding-top: calc(var(--mobile-header-height, 120px) + 12px);
+  scroll-padding-bottom: calc(var(--mobile-composer-height, 112px) + 16px);
+}
+
+.session-main.mobile-chat > .gui .gui-latest {
+  bottom: calc(var(--mobile-composer-height, 112px) + 12px);
+  background: var(--glass-sheet-fill);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  z-index: 3;
+}
+
 .narrow .gui .msg.agent .chip {
   display: none;
 }

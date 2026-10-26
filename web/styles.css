@@ -4825,6 +4825,118 @@ ul.queue-items {
 }
 
 /* Mobile chat: writing first, one stable action row, settings on demand. */
+.mobile-session-chrome {
+  flex: none;
+}
+
+/* A named transition capture becomes a backdrop boundary for all of its
+   descendants. Keep mobile conversation glass live over the actual feed. */
+.main:has(.mobile-session-chrome.floating) {
+  view-transition-name: none;
+}
+
+.mobile-session-chrome.floating {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 6;
+  --muted: var(--glass-secondary);
+  --faint: var(--glass-secondary);
+}
+
+/* The backing plate owns the filter, so navigation menus keep their viewport
+   coordinates and the controls themselves stay sharp. */
+.mobile-session-chrome.floating::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--glass-panel-fill);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border-bottom: 1px solid var(--line);
+  pointer-events: none;
+}
+
+.mobile-session-chrome > * {
+  position: relative;
+}
+
+.mobile-session-chrome.floating .nav-group,
+.mobile-session-chrome.floating .seg-tabs {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.mobile-composer-dock {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 10px max(8px, var(--safe-bottom));
+  pointer-events: none;
+  --muted: var(--glass-secondary);
+  --faint: var(--glass-secondary);
+}
+
+.mobile-composer-dock.floating {
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 7;
+  max-height: calc(100% - var(--mobile-header-height, 120px) - 8px);
+}
+
+.mobile-composer-dock > * {
+  pointer-events: auto;
+}
+
+.mobile-composer-dock > .composer.mobile {
+  z-index: 0;
+  width: min(804px, 100%);
+  margin: 0;
+  padding: 10px 8px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 16px;
+  background: none;
+  box-shadow: var(--elev-1);
+  --muted: var(--glass-secondary);
+  --faint: var(--glass-secondary);
+}
+
+/* The plate is separate from the form so suggestions and Add can filter the
+   conversation above it, rather than being trapped in the form's backdrop. */
+.mobile-composer-dock > .composer.mobile::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-depth);
+  pointer-events: none;
+}
+
+.mobile-composer-dock > .queue-tray {
+  flex: 0 1 auto;
+  min-height: 40px;
+  width: min(780px, calc(100% - 24px));
+  margin: 0 auto -12px;
+  max-height: min(25dvh, 180px);
+  background: var(--glass-sheet-fill);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+
+.mobile-composer-dock.floating textarea {
+  max-height: min(28dvh, 192px, max(48px, calc(var(--keyboard-vh, 100dvh) - var(--safe-top) - var(--mobile-header-height, 120px) - 180px)));
+}
+
+:root[data-keyboard] .mobile-session-chrome.floating .seg-tabs {
+  display: none;
+}
+
 .session-main > .composer.mobile {
   width: min(804px, calc(100% - 20px));
   margin: 8px auto max(8px, var(--safe-bottom));
@@ -4881,7 +4993,7 @@ ul.queue-items {
 }
 
 .composer.mobile .composer-add {
-  background: var(--surface);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
 }
 
 .composer.mobile .composer-attach {

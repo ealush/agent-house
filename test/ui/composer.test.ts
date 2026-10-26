@@ -8,9 +8,10 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, webkit, devices, type Browser, type BrowserContextOptions } from 'playwright-core';
 import { startAh, cleanup, http, until, type Ah } from '../helpers.ts';
+import { readPixels } from './paint.ts';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
-const chrome = [process.env.AH_CHROMIUM, '/usr/bin/chromium', '/usr/bin/google-chrome-stable'].find((p) => p && existsSync(p));
+const chrome = [process.env.AH_CHROMIUM, chromium.executablePath(), '/usr/bin/chromium', '/usr/bin/google-chrome-stable'].find((p) => p && existsSync(p));
 const webkitPath = process.env.AH_COMPOSER_WEBKIT;
 const skip = chrome || webkitPath ? false : 'no Chromium or WebKit';
 const shots = process.env.AH_COMPOSER_SHOTS;
@@ -196,6 +197,96 @@ test('desktop: chips and Enter-to-send remain, and recall returns to the unsent 
   if (shots) await page.screenshot({ path: join(shots, 'desktop.png') });
   assert.deepEqual(errors, []);
   await ctx.close();
+});
+
+test('mobile: real conversation scrolls behind glass; growing drafts and a keyboard keep messages reachable', { skip, timeout: 60_000 }, async () => {
+  const text = 'Mobile glass scroll check. ' + 'Keep the conversation readable while the controls float above it. '.repeat(100);
+  ah.tmux('send-keys', '-t', 'it:', '-l', text);
+  ah.tmux('send-keys', '-t', 'it:', 'Enter');
+  for (const [name, options] of [['phone', devices['iPhone 15 Pro']], ['ipad', devices['iPad Pro 11']]] as const) {
+    const { ctx, page, composer, input, errors } = await open(options);
+    const scroll = page.locator('.gui-scroll');
+    const feed = page.locator('.gui-feed');
+    const header = page.locator('.mobile-session-chrome');
+    const dock = page.locator('.mobile-composer-dock');
+    await page.waitForFunction(() => {
+      const el = document.querySelector('.gui-scroll')!;
+      return el.scrollHeight > el.clientHeight * 2;
+    });
+    const top = (await header.boundingBox())!;
+    const viewport = (await scroll.boundingBox())!;
+    assert.ok(viewport.y < top.y + top.height, 'the actual feed extends behind the header');
+    const field = (await composer.boundingBox())!;
+    assert.ok(viewport.y + viewport.height > field.y + field.height - 1, 'the actual feed extends behind the composer');
+    assert.match(await composer.evaluate((el) => getComputedStyle(el, '::before').backdropFilter), /blur\(/);
+    await scroll.evaluate((el) => { el.scrollTop = (el.scrollHeight - el.clientHeight) * .4; });
+    await page.locator('.gui-latest').waitFor();
+    const reading = await scroll.evaluate((el) => el.scrollTop);
+    await input.fill('A draft with room to think.\n'.repeat(15));
+    await page.waitForFunction(() => {
+      const dock = document.querySelector('.mobile-composer-dock')!;
+      const feed = document.querySelector('.gui-feed')!;
+      return parseFloat(getComputedStyle(feed).paddingBottom) >= dock.getBoundingClientRect().height;
+    });
+    assert.ok(Math.abs(await scroll.evaluate((el) => el.scrollTop) - reading) < 2, 'growing the draft keeps the reading position');
+    const latest = (await page.locator('.gui-latest').boundingBox())!;
+    assert.ok(latest.y + latest.height < (await dock.boundingBox())!.y, 'Latest stays above the writing surface');
+    if (shots) await page.screenshot({ path: join(shots, `${name}-floating-glass.png`) });
+    await page.locator('.gui-latest').tap();
+    await until(async () => scroll.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop < 2), 5000, 'latest message reached').catch(async (e) => {
+      console.error('Latest geometry:', name, await scroll.evaluate((el) => ({ top: el.scrollTop, height: el.scrollHeight, viewport: el.clientHeight })), await page.evaluate(() => document.activeElement?.tagName));
+      if (shots) await page.screenshot({ path: join(shots, `${name}-latest-failure.png`) });
+      throw e;
+    });
+    const last = (await feed.locator('.msg').last().boundingBox())!;
+    assert.ok(last.y + last.height <= (await dock.boundingBox())!.y, 'last message clears the composer');
+    await input.fill('');
+
+    await scroll.evaluate((el) => { el.scrollTop = (el.scrollHeight - el.clientHeight) * .4; });
+    await page.locator('.gui-latest').waitFor();
+    const textBox = (await composer.boundingBox())!;
+    const textPoints = Array.from({ length: 80 }, (_, i) => ({ x: textBox.x + textBox.width * .4 + (i % 20) * textBox.width * .025, y: textBox.y + 8 + Math.floor(i / 20) * 6 }));
+    const textBlurred = await readPixels(page, textPoints);
+    await composer.evaluate((el) => el.style.setProperty('--glass-blur', 'none'));
+    const textSharp = await readPixels(page, textPoints);
+    const textDelta = textBlurred.reduce((sum, rgb, i) => sum + rgb.reduce((s, n, channel) => s + Math.abs(n - textSharp[i][channel]), 0), 0) / (textPoints.length * 3);
+    assert.ok(textDelta > 1, `${name}: the real transcript's lettering is softened under the composer (pixel delta ${textDelta.toFixed(2)})`);
+    await composer.evaluate((el) => el.style.removeProperty('--glass-blur'));
+
+    // A controlled paint probe in the REAL app tree catches ancestor captures
+    // or masks blocking blur. Preserve the transcript's layout, then restore it.
+    const probe = await page.addStyleTag({ content: '.gui-feed > * { visibility: hidden !important; } .gui-scroll { background: repeating-linear-gradient(90deg, #000 0 4px, #fff 4px 8px); }' });
+    const h = (await header.boundingBox())!;
+    const c = (await composer.boundingBox())!;
+    const points = [{ x: h.x + h.width / 2, y: h.y + h.height - 4 }, { x: c.x + c.width / 2, y: c.y + 12 }];
+    const filtered = await readPixels(page, points);
+    await header.evaluate((el) => el.style.setProperty('--glass-blur', 'none'));
+    await composer.evaluate((el) => el.style.setProperty('--glass-blur', 'none'));
+    const sharp = await readPixels(page, points);
+    for (let i = 0; i < points.length; i++) assert.ok(Math.max(...filtered[i].map((n, channel) => Math.abs(n - sharp[i][channel]))) >= 12, `${name}: ${i === 0 ? 'header' : 'composer'} blurs the real feed (${filtered[i]} vs ${sharp[i]})`);
+    await header.evaluate((el) => el.style.removeProperty('--glass-blur'));
+    await composer.evaluate((el) => el.style.removeProperty('--glass-blur'));
+    await probe.evaluate((el) => el.remove());
+
+    if (name === 'phone') {
+      // Exercise the real viewport tracker with a controlled visual viewport;
+      // this checks geometry, not an actual iOS keyboard or PWA compositor.
+      await input.focus();
+      await page.evaluate(() => {
+        Object.defineProperty(visualViewport, 'height', { configurable: true, value: 360 });
+        visualViewport!.dispatchEvent(new Event('resize'));
+      });
+      await page.waitForFunction(() => document.documentElement.hasAttribute('data-keyboard') && getComputedStyle(document.querySelector('.mobile-session-chrome .seg-tabs')!).display === 'none');
+      await page.waitForFunction(() => {
+        const h = document.querySelector('.mobile-session-chrome')!.getBoundingClientRect();
+        const d = document.querySelector('.mobile-composer-dock')!.getBoundingClientRect();
+        return d.bottom <= 361 && d.top >= h.bottom;
+      });
+      if (shots) await page.screenshot({ path: join(shots, 'phone-keyboard-geometry.png') });
+    }
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  }
 });
 
 test('phone: a working agent offers Queue, and the follow-up really enters its queue', { skip, timeout: 60_000 }, async () => {

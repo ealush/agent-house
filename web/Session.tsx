@@ -16,6 +16,7 @@ import { HostPresetsContext } from './ModelPicker.tsx';
 import { recentFor, ResumeContext } from './recent.ts';
 import { defaultView, surfaceFor, VIEW_LABEL, viewsFor, type SurfaceHandle, type View } from './surface.ts';
 import { ComposerBar, type ComposerHandle } from './Composer.tsx';
+import { MobileOverlay } from './MobileOverlay.tsx';
 import { useFileDrop } from './useFileDrop.ts';
 import { BranchPicker, BranchSheet, ChangesPanel, PrLink } from './Git.tsx';
 import { ReviewContext, useReviewFor } from './reviewContext.ts';
@@ -968,8 +969,11 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
     </div>
   );
 
+  const mobileGlass = narrow || touchScreen;
+  const floatGlass = mobileGlass && view === 'gui' && tab === 'main';
   return (
     <>
+      <MobileOverlay enabled={mobileGlass} edge="top" floating={floatGlass}>
       <header className="session-head">
         {narrow && (
           <button className="icon-btn" onClick={onBack} aria-label="Back">
@@ -1170,8 +1174,9 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
         </div>
       )}
 
+      </MobileOverlay>
       <div className="session-body" ref={body}>
-        <div className="session-main" {...fileDrop.handlers}>
+        <div className={`session-main${floatGlass ? ' mobile-chat' : ''}`} {...fileDrop.handlers}>
           <Suspense fallback={<div className="surface" />}>
             <Surface
               key={`${view}:${w.key}`}
@@ -1190,12 +1195,14 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
           </Suspense>
           {tab !== 'main' && <div className="session-main" style={{ minHeight: 0 }}>{panelView(tab)}</div>}
           {view === 'gui' && (
+            <MobileOverlay enabled={mobileGlass} edge="bottom" floating={floatGlass}>
             <ComposerBar ref={composer} compact={narrow || touchScreen} client={client} target={w.uid} agent={w.agent} w={w} onSent={onSent} onChange={refresh} focusKey={focus} active={active}
               onSettingsOpen={() => switchView('terminal', true)}
               onRelaunched={(uid) => {
                 refresh();
                 if (onOpenKey) onOpenKey(keyOnThisHost(uid));
               }} />
+            </MobileOverlay>
           )}
           {fileDrop.over && <div className="drop-hint">Drop to attach to your message</div>}
         </div>

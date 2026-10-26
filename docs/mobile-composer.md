@@ -36,21 +36,27 @@ chips and its keyboard workflow.
 - Attachments still upload to the real host before sending. Refused sends restore
   text and attachments through the existing delivery flow.
 - Text remeasures when its width changes, including rotation and tablet resizing.
+- On mobile, the header and composer float over the conversation with live
+  backdrop blur. Their measured heights reserve scroll insets, including draft
+  growth and queued messages. The last response and Latest action stay clear.
+- Panel tabs step aside while the software keyboard is open. Back and the
+  conversation menu remain available. Desktop and terminal layout keep their
+  existing flow.
 
 ## Mobile interface findings
 
-The session currently puts its title/status, GUI/terminal switch and panel tabs
-above the conversation. On a phone those are two persistent rows. Combined with
+The earlier layout put its title/status, GUI/terminal switch and panel tabs
+above the conversation. On a phone those were two persistent rows. Combined with
 the previous wrapping composer toolbar, navigation and configuration competed
 with the conversation at both ends of the screen. A native-feeling chat should
 give those tasks different levels of prominence.
 
-This pass removes that competition at the writing end. The next mobile review
-should measure the remaining header with the keyboard open, then consider a
-smaller conversation header and contextual access to panels. Keep Back, agent
-status and interruptions easy to find. Message actions, reading older turns
-during streaming and returning to the latest response also need an on-device
-interaction review before claiming the whole mobile chat experience is finished.
+The composer now prioritizes writing. The mobile conversation uses a measured
+overlay header and hides its panel strip while the keyboard is open. Back,
+agent status and the conversation menu remain available. Message actions,
+reading older turns during streaming and returning to the latest response
+still need an on-device interaction review before claiming the whole mobile
+chat experience is finished.
 
 ## Verification
 
@@ -65,6 +71,12 @@ six tests in Chromium. The five mobile composer cases also pass in headless
 WebKit, including queue contents verified through the host API. Desktop
 headless WebKit times out while booting both this branch and unchanged `main`
 in this Linux environment; no desktop Safari verification is claimed.
+
+Combined release evidence (2026-10-26): typecheck and all 43 Chromium browser
+checks pass, including the seventh composer case for the real conversation
+behind the mobile overlays. The same release's backend passed 552 tests and
+the native Swift client passed 33 integration tests against a disposable host.
+See [release evidence](releases/2026-10-26-mobile-native.md) and screenshots.
 
 Browser emulation is not a physical iPhone/iPad check. Before shipping, verify
 Safari and the home-screen app with the actual keyboard: dictation/autocorrect,

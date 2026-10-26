@@ -286,6 +286,10 @@ an APNs key from the Apple Developer account that signs the app:
 Keep the `.p8` file owner-only (`chmod 600`). Without `apns`, the app works but can't
 register for notifications. Web Push for browsers is unaffected either way.
 
+Native device sign-in, streams and terminals ship in the same build as the mobile
+web app. See the [26 October release verification](docs/releases/2026-10-26-mobile-native.md)
+for native-client integration results, mobile screenshots and remaining device-test limits.
+
 ## Layout
 
 ```
