@@ -143,7 +143,7 @@ private struct AskCard: View {
             if let ask = row.dto.ask {
                 if AskParts.isForm(ask) {
                     // The form below says the question; the card only says what this is.
-                    Text(AskParts.kindLabel(ask.kind)).font(.caption.weight(.semibold)).foregroundStyle(theme.brand).textCase(.uppercase)
+                    Text(AskParts.kindLabel(ask.kind)).font(.subheadline.weight(.semibold)).foregroundStyle(theme.brand)
                 } else {
                     AskSummaryView(parts: AskParts(ask, detail: row.dto.detail), showTerminalText: false)
                 }

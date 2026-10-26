@@ -11,7 +11,7 @@ struct AskSummaryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(parts.kind).font(.caption.weight(.semibold)).foregroundStyle(theme.brand).textCase(.uppercase)
+            Text(parts.kind).font(.subheadline.weight(.semibold)).foregroundStyle(theme.brand)
             if let command = parts.command {
                 CodeBlockView(code: "$ \(command)", tone: .command)
             }
@@ -140,7 +140,7 @@ struct AskPanelView: View {
                 let dialog = !review && ask.kind == .choice && questions.isEmpty ? ask.dialog : nil
                 if !compact {
                     if !questions.isEmpty || dialog != nil {
-                        Text(AskParts.kindLabel(ask.kind)).font(.caption.weight(.semibold)).foregroundStyle(theme.brand).textCase(.uppercase)
+                        Text(AskParts.kindLabel(ask.kind)).font(.subheadline.weight(.semibold)).foregroundStyle(theme.brand)
                     } else {
                         AskSummaryView(parts: parts)
                     }
@@ -177,7 +177,8 @@ struct AskPanelView: View {
                 if keyboard != nil { AskKeyCatcher(keys: keys, wanted: keys.wanted) }
             }
             .background(compact ? .clear : theme.raised, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(compact ? .clear : theme.brand.opacity(keys.focused ? 0.9 : 0.4), lineWidth: keys.focused ? 1.5 : 1))
+            // A focus ring while the keyboard answers it, as iOS draws focus; none otherwise.
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(compact || !keys.focused ? .clear : theme.brand.opacity(0.9), lineWidth: 1.5))
             .accessibilityElement(children: .contain)
             .accessibilityLabel("\(row.title) needs you")
             // The window asks for the answer controls: take the keyboard.

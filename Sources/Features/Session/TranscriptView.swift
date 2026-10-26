@@ -375,7 +375,7 @@ struct UserBubble: View {
                 MarkdownView(split.rest, compact: true)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
-                    .background(theme.accentStrong.opacity(0.16), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .background(theme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             }
             if let pending {
                 Text(pending).font(.caption2).foregroundStyle(theme.faint)

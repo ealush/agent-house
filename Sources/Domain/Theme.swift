@@ -1,9 +1,10 @@
 import Foundation
 
-/// ah's visual identity as color tokens (`../ah/web/tokens.css`), for dark, light and a host's
-/// Omarchy theme (`web/theme.ts`). Hex strings here; the platform layer makes colors. Status
-/// semantics stay the same everywhere: needs you is the brand mark, working is cyan, done is
-/// green, limited is amber.
+/// Color tokens for dark, light and a host's Omarchy theme (`web/theme.ts`). Dark and light
+/// are iOS's own grounds, cards, grays and separators (the app sits among system lists,
+/// sheets and bars), with ah's pink as the accent. Hex strings here; the platform layer makes
+/// colors. Status semantics stay the same everywhere: needs you is the brand mark, working is
+/// cyan, done is green, limited is amber.
 struct ThemePalette: Equatable, Sendable {
     var background: String
     var surface: String
@@ -27,16 +28,17 @@ struct ThemePalette: Equatable, Sendable {
     var terminal: TerminalPalette
 
     static let dark = ThemePalette(
-        background: "#191a25", surface: "#202231", raised: "#2a2c3e", sunken: "#15161f", line: "#ffffff14",
-        text: "#ffffff", text2: "#c9cad3", muted: "#a2a4b3", faint: "#8d8fa3",
+        // systemBackground, systemGray5, secondarySystemBackground, separator, label…
+        background: "#000000", surface: "#2c2c2e", raised: "#1c1c1e", sunken: "#1c1c1e", line: "#54545899",
+        text: "#ffffff", text2: "#ebebf5", muted: "#a1a1a6", faint: "#7c7c82",
         brand: "#e91e63", accent: "#f47199", accentStrong: "#d81b60", accentInk: "#ffffff",
         run: "#4dd9ea", done: "#81d88a", limited: "#f5b84b", danger: "#ff8a80", monoFont: nil, isDark: true,
         terminal: .dark
     )
 
     static let light = ThemePalette(
-        background: "#eef0f4", surface: "#ffffff", raised: "#f5f6f9", sunken: "#eceef3", line: "#00000014",
-        text: "#1c1d27", text2: "#474a58", muted: "#5f6272", faint: "#686b7a",
+        background: "#ffffff", surface: "#e5e5ea", raised: "#f2f2f7", sunken: "#f2f2f7", line: "#3c3c434a",
+        text: "#000000", text2: "#3c3c43", muted: "#636366", faint: "#727277",
         brand: "#e91e63", accent: "#c2185b", accentStrong: "#d81b60", accentInk: "#ffffff",
         run: "#00737d", done: "#276b2b", limited: "#8a5a00", danger: "#c62828", monoFont: nil, isDark: false,
         terminal: .light
