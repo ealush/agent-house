@@ -68,7 +68,7 @@ struct TranscriptView: View {
                         }
                     }
                     ForEach(session.outgoing) { item in
-                        UserBubble(text: item.text, pending: item.state == .sending ? "Sending…" : "Typed in · waiting for the transcript")
+                        UserBubble(text: item.text, pending: item.state == .sending ? "Sending…" : "Sent")
                             .id("out-\(item.id)")
                             // Springs up out of the box it was typed in.
                             .transition(reduceMotion ? .opacity : .asymmetric(insertion: .scale(scale: 0.85, anchor: .bottomTrailing).combined(with: .opacity).combined(with: .offset(y: 24)), removal: .opacity))
@@ -728,10 +728,8 @@ private struct WorkingRow: View {
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(theme.accent.opacity(0.06), in: Capsule())
-        .overlay(Capsule().strokeBorder(theme.accent.opacity(0.18), lineWidth: 0.5))
+        // A quiet line in the agent's column, not a card: the pulse and the clock say enough.
+        .padding(.vertical, 6)
         .transition(.opacity.combined(with: .move(edge: .bottom)))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("The agent is working. \(detail ?? "")")
@@ -805,7 +803,6 @@ private struct StartConversation: View {
             VStack(spacing: 22) {
                 VStack(spacing: 12) {
                     AgentMark(agent: session.row?.dto.agent, size: 58)
-                        .shadow(color: theme.accent.opacity(0.35), radius: appeared ? 22 : 6)
                         .scaleEffect(appeared || reduceMotion ? 1 : 0.85)
                     Text("\(session.launch.preset?.name ?? "The agent") is ready")
                         .font(.title2.weight(.semibold))

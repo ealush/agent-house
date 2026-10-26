@@ -11,6 +11,9 @@ enum StatusWord: String, CaseIterable, Sendable {
     case newOutput = "new output"
     case idle
 
+    /// As a label shows it, in sentence case: "Needs you", "Idle".
+    var label: String { rawValue.prefix(1).uppercased() + rawValue.dropFirst() }
+
     /// Worth words where room is short (the sidebar): it can't go on without you. The rest
     /// read from the dot's color.
     var asksForAttention: Bool { self == .needsYou || self == .limited }

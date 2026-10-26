@@ -119,7 +119,7 @@ struct SetupView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if !app.accounts.isEmpty {
-                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) }
+                    ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction) }
                 }
             }
             .onAppear {

@@ -87,19 +87,26 @@ struct InboxView: View {
         .refreshable { hub.resync() }
         .navigationTitle("Inbox")
         .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
+            // Bar glyphs in the label color; only the primary action (New) carries the tint, in
+            // a glass of its own, as iOS 26 bars do.
+            ToolbarItem(placement: .primaryAction) {
                 // A phone has a Search tab, and no sidebar: its Inbox, the first page, holds
                 // what the sidebar's bar would.
                 if scene.narrow {
-                    MoreMenu(scene: scene)
+                    MoreMenu(scene: scene).tint(.primary)
                 } else {
-                    Button { scene.perform("go-search") } label: { Image(systemName: "magnifyingglass") }.accessibilityLabel("Search")
+                    Button { scene.perform("go-search") } label: { Image(systemName: "magnifyingglass") }.accessibilityLabel("Search").tint(.primary)
                 }
-                Button { scene.perform("new-session") } label: { Image(systemName: "plus") }.accessibilityLabel("New session")
+            }
+            ToolbarSpacer(.fixed, placement: .primaryAction)
+            ToolbarItem(placement: .primaryAction) {
+                Button { scene.perform("new-session") } label: { Image(systemName: "plus") }
+                    .buttonStyle(.glassProminent)
+                    .accessibilityLabel("New session")
             }
             if scene.narrow {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button { scene.perform("go-settings") } label: { Image(systemName: "gearshape") }.accessibilityLabel("Settings")
+                    Button { scene.perform("go-settings") } label: { Image(systemName: "gearshape") }.accessibilityLabel("Settings").tint(.primary)
                 }
             }
         }
@@ -601,8 +608,10 @@ struct SearchView: View {
                         }
                     }
                 } label: {
-                    Label("Filters", systemImage: model.query.role != nil || model.query.from != nil || model.query.host != nil ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                    Label("Filters", systemImage: "line.3.horizontal.decrease")
                 }
+                // Tinted while a filter is on, as Mail's is.
+                .tint(model.query.role != nil || model.query.from != nil || model.query.host != nil ? theme.accent : .primary)
             }
         }
         .onChange(of: model.query) { _, query in

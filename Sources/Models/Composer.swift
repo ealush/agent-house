@@ -353,8 +353,9 @@ final class ComposerModel {
     nonisolated static func placeholder(isShell: Bool, working: Bool, queued: Int, touchOnly: Bool) -> String {
         if isShell { return "Type or paste a command" }
         if working && queued > 0 { return touchOnly ? "Add to the queue" : "Add to the queue · ↵ on empty steers the next · ⌘↵ sends now · esc stops" }
-        if working { return touchOnly ? "Add to this… (queued until it’s free)" : "Add to this… queued until it’s free · ⌘↵ sends now · esc stops" }
-        return "Send a follow-up · / commands · @ files"
+        if working { return touchOnly ? "Queue a message" : "Add to this… queued until it’s free · ⌘↵ sends now · esc stops" }
+        // By touch a field says what it takes, as Messages' does; keys get their hints.
+        return touchOnly ? "Message" : "Send a follow-up · / commands · @ files"
     }
 
     /// The longest run of a placeholder's " · " hints, from the start, that fits the width.

@@ -17,9 +17,11 @@ struct SidebarView: View {
             .background(theme.background)
             .toolbar {
                 // At hand by touch: what otherwise only a key or the palette reaches.
-                ToolbarItemGroup(placement: .primaryAction) {
+                ToolbarItem(placement: .primaryAction) { MoreMenu(scene: scene, settings: true).tint(.primary) }
+                ToolbarSpacer(.fixed, placement: .primaryAction)
+                ToolbarItem(placement: .primaryAction) {
                     Button { scene.perform("new-session") } label: { Label("New session", systemImage: "plus") }
-                    MoreMenu(scene: scene, settings: true)
+                        .buttonStyle(.glassProminent)
                 }
             }
             .navigationTitle(hub.hostname ?? "Agent Hub")

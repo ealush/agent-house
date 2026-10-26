@@ -22,7 +22,7 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() }.keyboardShortcut(.cancelAction) } }
         } detail: {
             NavigationStack {
                 if let section, let account = scene.account {
@@ -724,12 +724,13 @@ private struct AgentsSection: View {
                 }
                 .navigationTitle("Add an agent")
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { adding = false }.keyboardShortcut(.cancelAction) }
+                    ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { adding = false }.keyboardShortcut(.cancelAction) }
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Add") {
                             Task { await model.add(name: name, command: command, resume: resume.isEmpty ? nil : resume); adding = false }
                         }.keyboardShortcut(.return, modifiers: .command)
                         .disabled(name.isEmpty || command.isEmpty)
+                            .buttonStyle(.glassProminent)
                     }
                 }
             }
@@ -846,7 +847,7 @@ private struct SubscriptionEditor: View {
             }
             .navigationTitle(draft.id == nil ? "Add a provider" : draft.name)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: close).keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel, action: close).keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         var out = draft
@@ -854,6 +855,7 @@ private struct SubscriptionEditor: View {
                         Task { if await model.save(out) { close() } }
                     }.keyboardShortcut(.return, modifiers: .command)
                     .disabled(draft.name.isEmpty || draft.baseUrl.isEmpty || draft.model.isEmpty)
+                        .buttonStyle(.glassProminent)
                 }
             }
         }
@@ -948,13 +950,14 @@ private struct EnvEditor: View {
             }
             .navigationTitle(draft.original ?? "New variable")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: close).keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel, action: close).keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         let value: String? = draft.secret && draft.original != nil && draft.value.isEmpty ? nil : draft.value
                         Task { if await model.save(name: draft.name, value: value, secret: draft.secret) { close() } }
                     }.keyboardShortcut(.return, modifiers: .command)
                     .disabled(draft.name.isEmpty)
+                        .buttonStyle(.glassProminent)
                 }
             }
         }

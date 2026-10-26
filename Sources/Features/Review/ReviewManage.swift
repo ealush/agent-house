@@ -93,7 +93,7 @@ struct StackManageSheet: View {
             .environment(\.editMode, .constant(.active))
             .navigationTitle("Manage stack")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button(role: .close) { dismiss() } } }
             .task { owners = await model.owners() }
             .confirmationDialog("Delete this review?", isPresented: $confirmDelete, titleVisibility: .visible) {
                 Button("Delete", role: .destructive) { Task { await model.remove(); dismiss() } }
@@ -150,9 +150,10 @@ struct ResolveThreadSheet: View {
             .navigationTitle("Reply and resolve")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Resolve") { Task { await model.resolveThread(finding, reply: reply); dismiss() } }.keyboardShortcut(.return, modifiers: .command)
+                        .buttonStyle(.glassProminent)
                 }
             }
         }

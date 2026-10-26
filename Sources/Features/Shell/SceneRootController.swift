@@ -636,7 +636,7 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
 
     private var subtitle: String {
         guard let row = session.row else { return session.isLive ? "" : "Ended" }
-        return [row.word.rawValue, row.dto.project, row.dto.branch].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+        return [row.word.label, row.dto.project, row.dto.branch].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     private func panelActions() -> [UIMenuElement] {

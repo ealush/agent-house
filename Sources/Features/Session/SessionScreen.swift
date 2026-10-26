@@ -136,7 +136,7 @@ private struct PanelChrome: ViewModifier {
             .toolbar {
                 ToolbarItem(placement: sheet ? .confirmationAction : .cancellationAction) {
                     if sheet {
-                        Button("Done") { session.panel = nil }.keyboardShortcut(.cancelAction)
+                        Button(role: .close) { session.panel = nil }.keyboardShortcut(.cancelAction)
                     } else {
                         Button {
                             withAnimation(.snappy(duration: 0.2)) { session.panel = nil }

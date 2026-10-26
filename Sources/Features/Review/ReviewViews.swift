@@ -46,6 +46,7 @@ struct ReviewHomeView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { starting = true } label: { Label("Start a review", systemImage: "plus") }
+                    .buttonStyle(.glassProminent)
             }
         }
         .task { await model.loadList() }
@@ -151,7 +152,7 @@ private struct StartReviewView: View {
             }
         }
         .navigationTitle("Start a review")
-        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) } }
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction) } }
         .task { if model.repos.isEmpty { await model.loadList() } }
     }
 
@@ -223,11 +224,13 @@ struct StackCockpitView: View {
         .navigationBarTitleDisplayMode(scene.narrow ? .inline : .automatic)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                Button { Task { await model.refresh() } } label: { Image(systemName: "arrow.clockwise") }.accessibilityLabel("Sync with GitHub")
+                Button { Task { await model.refresh() } } label: { Image(systemName: "arrow.clockwise") }.accessibilityLabel("Sync with GitHub").tint(.primary)
                 Button { mergingStack = true } label: { Label("Merge the stack", systemImage: "arrow.triangle.merge") }
                     .disabled(model.stack == nil)
+                    .tint(.primary)
                 Button { managing = true } label: { Label("Manage", systemImage: "slider.horizontal.3") }
                     .disabled(model.stack == nil)
+                    .tint(.primary)
             }
         }
         .task(id: route) { await model.open(route) }
@@ -735,7 +738,7 @@ private struct NewFindingSheet: View {
             }
             .navigationTitle("New finding")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") {
                         let numbers = lines.compactMap(\.number)
@@ -745,6 +748,7 @@ private struct NewFindingSheet: View {
                         }
                     }.keyboardShortcut(.return, modifiers: .command)
                     .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .buttonStyle(.glassProminent)
                 }
             }
         }
@@ -797,7 +801,7 @@ private struct DispatchSheet: View {
             }
             .navigationTitle(kind == "restack" ? "Restack \(layer.name)" : kind == "merge" ? "Ask the agent to merge" : "Request fixes")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(sending ? "Sending…" : "Send") {
                         sending = true
@@ -811,6 +815,7 @@ private struct DispatchSheet: View {
                         }
                     }.keyboardShortcut(.return, modifiers: .command)
                     .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty || sending)
+                        .buttonStyle(.glassProminent)
                 }
             }
             .task {
@@ -863,7 +868,7 @@ private struct MergeLayerSheet: View {
             }
             .navigationTitle("Merge #\(layer.pr)")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(outcome == nil ? "Cancel" : "Done") { dismiss() }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: outcome == nil ? .cancel : .close) { dismiss() }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(merging ? "Merging…" : "Merge") {
                         merging = true
@@ -874,6 +879,7 @@ private struct MergeLayerSheet: View {
                         }
                     }
                     .disabled(merging || outcome != nil)
+                        .buttonStyle(.glassProminent)
                 }
             }
         }
@@ -926,7 +932,7 @@ private struct StackMergeSheet: View {
             }
             .navigationTitle(plan.lands.isEmpty ? "Nothing can merge yet" : "Merge \(plan.lands.count) layer\(plan.lands.count == 1 ? "" : "s")")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(result == nil ? "Cancel" : "Done") { dismiss() }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: result == nil ? .cancel : .close) { dismiss() }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(merging ? "Merging…" : "Merge") {
                         merging = true
@@ -936,6 +942,7 @@ private struct StackMergeSheet: View {
                         }
                     }
                     .disabled(plan.lands.isEmpty || merging || result != nil)
+                        .buttonStyle(.glassProminent)
                 }
             }
         }

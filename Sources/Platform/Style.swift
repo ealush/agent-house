@@ -105,13 +105,13 @@ struct StatusPill: View {
                     if word == .working { PulseRing(color: onAccent ? .white : theme.status(word)) }
                 }
             if !compact {
-                Text(word.rawValue)
+                Text(word.label)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(onAccent ? Color.white.opacity(0.9) : word == .idle ? theme.muted : theme.status(word))
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(word.rawValue.capitalized)
+        .accessibilityLabel(word.label)
     }
 }
 
