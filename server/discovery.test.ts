@@ -1,5 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseClaude, parseCodex, parseGemini, parseGrok, parseMuse, parseOpencode, promptTitle } from './discovery.ts';
 
@@ -8,6 +11,42 @@ const fixture = (name: string) => fileURLToPath(new URL(`./fixtures/${name}`, im
 test('claude transcript metadata', async () => {
   const t = await parseClaude(fixture('claude.jsonl'), 123);
   assert.deepEqual(t, { harness: 'claude', harnessId: 'claude', cwd: '/home/u/code/proj', title: 'Fix flaky login test', model: 'claude-opus-5-5', updatedAt: 123, file: fixture('claude.jsonl') });
+});
+
+test('claude transcript with an oversized image line stays discoverable', async () => {
+  // A pasted screenshot rides inline as base64, so the line carrying the first
+  // prompt can be larger than the head budget below and is cut mid-line there.
+  const dir = await mkdtemp(join(tmpdir(), 'ah-claude-'));
+  const file = join(dir, 'img-heavy.jsonl');
+  const big = 'A'.repeat(700 * 1024);
+  const lines = [
+    JSON.stringify({ type: 'mode', mode: 'normal', sessionId: 'img-heavy' }),
+    JSON.stringify({ parentUuid: null, isSidechain: false, promptId: 'p1', type: 'user', message: { role: 'user', content: [{ type: 'text', text: 'fix the image viewer' }, { type: 'image', source: { type: 'base64', media_type: 'image/png', data: big } }] } }),
+    JSON.stringify({ parentUuid: 'x', isSidechain: false, type: 'attachment', userType: 'external', cwd: '/home/u/code/proj', sessionId: 'img-heavy' }),
+    JSON.stringify({ parentUuid: 'y', isSidechain: false, type: 'assistant', message: { model: 'claude-opus-5-5', content: [{ type: 'text', text: 'on it' }] } }),
+  ];
+  await writeFile(file, `${lines.join('\n')}\n`);
+  const t = await parseClaude(file, 123);
+  assert.equal(t?.harnessId, 'img-heavy');
+  assert.equal(t?.cwd, '/home/u/code/proj');
+  assert.equal(t?.title, 'fix the image viewer');
+  assert.equal(t?.model, 'claude-opus-5-5');
+});
+
+test('claude transcript with a pathological single line still yields its prompt', async () => {
+  // One line no budget can hold: only the prompt at its start is recovered.
+  const dir = await mkdtemp(join(tmpdir(), 'ah-claude-'));
+  const file = join(dir, 'huge-line.jsonl');
+  const big = 'A'.repeat(9 * 1024 * 1024);
+  const lines = [
+    JSON.stringify({ parentUuid: null, isSidechain: false, promptId: 'p1', type: 'user', message: { role: 'user', content: [{ type: 'text', text: 'fix the image viewer' }, { type: 'image', source: { type: 'base64', media_type: 'image/png', data: big } }] } }),
+    JSON.stringify({ parentUuid: 'x', isSidechain: false, type: 'attachment', userType: 'external', cwd: '/home/u/code/proj', sessionId: 'huge-line' }),
+  ];
+  await writeFile(file, `${lines.join('\n')}\n`);
+  const t = await parseClaude(file, 123);
+  assert.equal(t?.harnessId, 'huge-line');
+  assert.equal(t?.cwd, '/home/u/code/proj');
+  assert.equal(t?.title, 'fix the image viewer');
 });
 
 test('codex rollout metadata', async () => {

@@ -60,6 +60,29 @@ async function scanHead(file: string, maxBytes: number, visit: (line: string) =>
   }
 }
 
+/**
+ * Complete lines from the start of a file: at most `maxLines` of them and
+ * `maxBytes` of them in total. Unlike scanHead the lines are never cut
+ * mid-line; one oversized line still visits (and still counts as one line).
+ */
+async function scanLines(file: string, maxLines: number, maxBytes: number, visit: (line: string) => boolean | void) {
+  const stream = createReadStream(file, { encoding: 'utf8' });
+  const rl = createInterface({ input: stream, crlfDelay: Infinity });
+  let bytes = 0;
+  try {
+    let n = 0;
+    for await (const line of rl) {
+      if (++n > maxLines) break;
+      if (visit(line)) break;
+      bytes += line.length;
+      if (bytes >= maxBytes) break;
+    }
+  } finally {
+    rl.close();
+    stream.destroy();
+  }
+}
+
 async function readTail(file: string, bytes: number): Promise<string[]> {
   const fh = await open(file, 'r');
   try {
@@ -99,11 +122,29 @@ export function promptTitle(text: unknown): string | null {
 
 // ---------- Claude Code: ~/.claude/projects/<encoded-cwd>/<session-id>.jsonl
 
+/**
+ * The first user text off a line too large to parse whole: a pasted
+ * screenshot rides inline as base64, so the prompt sits at the start of a
+ * megabyte line. Reads only the line's prefix and unescapes one text value.
+ */
+const PREFIX_TEXT = /"content":\s*(?:"((?:[^"\\]|\\.){0,4000})"|\[\s*\{\s*"type":\s*"text",\s*"text":\s*"((?:[^"\\]|\\.){0,4000})")/;
+function prefixUserText(line: string): string | null {
+  if (!line.includes('"type":"user"') && !line.includes('"type": "user"')) return null;
+  const m = line.slice(0, 16 * 1024).match(PREFIX_TEXT);
+  const raw = m?.[1] ?? m?.[2];
+  if (raw == null) return null;
+  try {
+    return JSON.parse(`"${raw}"`);
+  } catch {
+    return raw;
+  }
+}
+
 export async function parseClaude(file: string, mtime: number): Promise<Transcript | null> {
   const harnessId = file.split('/').pop()!.replace(/\.jsonl$/, '');
   let cwd = '';
   let prompt: string | null = null;
-  await scanHead(file, 512 * 1024, (line) => {
+  const visit = (line: string) => {
     if (!line.includes('"user"') && !line.includes('"cwd"')) return;
     const d = json(line);
     if (!d) return;
@@ -113,7 +154,22 @@ export async function parseClaude(file: string, mtime: number): Promise<Transcri
       prompt = promptTitle(typeof c === 'string' ? c : c?.find?.((p: any) => p.type === 'text')?.text);
     }
     return !!(cwd && prompt);
-  });
+  };
+  await scanHead(file, 512 * 1024, visit);
+  if (!prompt || !cwd) {
+    // The head budget above can end mid-line, and a truncated line never
+    // parses: the first prompt is lost exactly when the session opens with an
+    // attached image. Retry over complete lines, bounded so one pathological
+    // file cannot stall discovery; a line no budget can hold still yields the
+    // prompt at its start.
+    await scanLines(file, 120, 16 * 1024 * 1024, (line) => {
+      if (line.length > 8 * 1024 * 1024) {
+        prompt ??= promptTitle(prefixUserText(line));
+        return !!(cwd && prompt);
+      }
+      return visit(line);
+    });
+  }
   if (!prompt) return null; // never got past startup
 
   let title: string | null = null;
