@@ -208,6 +208,7 @@ code,
 /* The sidebar floats beside the page as a glass panel, its corners the page's,
    the way iPadOS and macOS 27 draw one. */
 .sidebar {
+  position: relative;
   width: 264px;
   flex: none;
   display: flex;
@@ -218,8 +219,31 @@ code,
   gap: 4px;
   border: 1px solid transparent;
   border-radius: 16px;
-  background: var(--glass-sheen), linear-gradient(var(--glass-panel), var(--glass-panel)) padding-box, var(--glass-rim) border-box;
+  background: none;
   box-shadow: var(--glass-depth), var(--elev-0);
+}
+
+/* Keep the filter off the navigation container: it would make the rows' fixed
+   menus position against the sidebar instead of the viewport. */
+.sidebar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--glass-panel-fill);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  pointer-events: none;
+}
+
+.sidebar > * {
+  position: relative;
+}
+
+/* Secondary labels need stronger ink when their ground can change under them. */
+:where(.sidebar, .nav-group, .icon-btn.round, .tabbar, .tabdock-cmd, .menu, .popover, .toast, .whichkey, .seg-tabs, .sheet-bar, .sheet-cancel, .press-list, .composer-options) {
+  --muted: var(--glass-secondary);
+  --faint: var(--glass-secondary);
 }
 
 .narrow .sidebar {
@@ -4798,6 +4822,369 @@ ul.queue-items {
 .tool-chip.danger {
   color: var(--danger);
   border-color: color-mix(in srgb, var(--danger) 33%, transparent);
+}
+
+/* Mobile chat: writing first, one stable action row, settings on demand. */
+.mobile-session-chrome {
+  flex: none;
+}
+
+/* A named transition capture becomes a backdrop boundary for all of its
+   descendants. Keep mobile conversation glass live over the actual feed. */
+.main:has(.mobile-session-chrome.floating) {
+  view-transition-name: none;
+}
+
+.mobile-session-chrome.floating {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 6;
+  --muted: var(--glass-secondary);
+  --faint: var(--glass-secondary);
+}
+
+/* The backing plate owns the filter, so navigation menus keep their viewport
+   coordinates and the controls themselves stay sharp. */
+.mobile-session-chrome.floating::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--glass-panel-fill);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border-bottom: 1px solid var(--line);
+  pointer-events: none;
+}
+
+.mobile-session-chrome > * {
+  position: relative;
+}
+
+.mobile-session-chrome.floating .nav-group,
+.mobile-session-chrome.floating .seg-tabs {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.mobile-composer-dock {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 10px max(8px, var(--safe-bottom));
+  pointer-events: none;
+  --muted: var(--glass-secondary);
+  --faint: var(--glass-secondary);
+}
+
+.mobile-composer-dock.floating {
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 7;
+  max-height: calc(100% - var(--mobile-header-height, 120px) - 8px);
+}
+
+.mobile-composer-dock > * {
+  pointer-events: auto;
+}
+
+.mobile-composer-dock > .composer.mobile {
+  z-index: 0;
+  width: min(804px, 100%);
+  margin: 0;
+  padding: 10px 8px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 16px;
+  background: none;
+  box-shadow: var(--elev-1);
+  --muted: var(--glass-secondary);
+  --faint: var(--glass-secondary);
+}
+
+/* The plate is separate from the form so suggestions and Add can filter the
+   conversation above it, rather than being trapped in the form's backdrop. */
+.mobile-composer-dock > .composer.mobile::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-depth);
+  pointer-events: none;
+}
+
+.mobile-composer-dock > .queue-tray {
+  flex: 0 1 auto;
+  min-height: 40px;
+  width: min(780px, calc(100% - 24px));
+  margin: 0 auto -12px;
+  max-height: min(25dvh, 180px);
+  background: var(--glass-sheet-fill);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+
+.mobile-composer-dock.floating textarea {
+  max-height: min(28dvh, 192px, max(48px, calc(var(--keyboard-vh, 100dvh) - var(--safe-top) - var(--mobile-header-height, 120px) - 180px)));
+}
+
+:root[data-keyboard] .mobile-session-chrome.floating .seg-tabs {
+  display: none;
+}
+
+.session-main > .composer.mobile {
+  width: min(804px, calc(100% - 20px));
+  margin: 8px auto max(8px, var(--safe-bottom));
+  padding: 10px 8px 8px;
+  gap: 4px;
+  border: 1px solid var(--line-2);
+  border-radius: 16px;
+  background: var(--raised);
+  box-shadow: var(--elev-0);
+}
+
+.composer.mobile:focus-within {
+  border-color: var(--accent-line);
+}
+
+.composer.mobile .composer-input {
+  padding: 0 6px;
+  font-size: 17px;
+}
+
+.composer.mobile textarea {
+  min-height: 36px;
+  max-height: min(28dvh, 192px);
+  padding: 4px 0 8px;
+  font-size: 17px;
+  line-height: 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.composer.mobile textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+.composer.mobile .composer-tools {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 2px;
+}
+
+.composer.mobile .composer-actions {
+  margin-inline-start: auto;
+  gap: 4px;
+}
+
+.composer.mobile .icon-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  color: var(--muted);
+}
+
+.composer.mobile .composer-add {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.composer.mobile .composer-attach {
+  display: none;
+}
+
+.composer-model {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 44px;
+  max-width: 240px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.composer-model > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-model > svg {
+  flex: none;
+}
+
+.composer-model.danger {
+  color: var(--danger);
+}
+
+.composer.mobile .send-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 44px;
+  min-width: 44px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 13px;
+}
+
+.composer.mobile .send-btn:has(span) {
+  padding-inline: 14px;
+}
+
+.composer.mobile .composer-files {
+  padding: 2px 6px 8px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+
+.composer.mobile .composer-file {
+  flex: none;
+}
+
+.composer.mobile .composer-file-remove::before {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.composer-add-menu > button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  text-align: start;
+}
+
+.dialog.composer-options[open] {
+  display: flex;
+  flex-direction: column;
+  inset: auto 0 0;
+  width: min(440px, 100%);
+  height: auto;
+  max-height: min(76dvh, var(--vh));
+  margin: auto auto 0;
+  padding: 0 0 max(12px, var(--safe-bottom));
+  border-radius: 16px 16px 0 0;
+  overflow: hidden;
+  background: var(--glass-sheet-fill);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-depth), var(--elev-2);
+  --sheet-safe: 10px;
+}
+
+.dialog.composer-options .sheet-title {
+  opacity: 1;
+  animation: none;
+}
+
+/* The sheet already filters the scene; its separate scroll body never runs
+   behind this bar, so a second frosted layer only creates a white stripe. */
+.dialog.composer-options .sheet-bar {
+  background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+:root[data-keyboard] .dialog.composer-options[open] {
+  bottom: calc(100% - var(--keyboard-vh) - var(--keyboard-top, 0px));
+  max-height: var(--keyboard-vh);
+}
+
+.composer.mobile .suggest-hint {
+  display: none;
+}
+
+:root[data-hw-keyboard] .composer.mobile .suggest-hint {
+  display: block;
+}
+
+.composer-options-body {
+  min-height: 0;
+  padding: 8px 16px 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.composer-options-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 16px;
+}
+
+.composer-options-head h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 17px;
+}
+
+.composer-options .picker-title {
+  display: none;
+}
+
+.composer-options .picker-name,
+.composer-options .picker-native {
+  min-height: 48px;
+}
+
+.composer-option-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 64px;
+  padding: 12px 4px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  text-align: start;
+}
+
+.composer-option-row > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.composer-option-row strong,
+.composer-option-row > span > span {
+  display: block;
+}
+
+.composer-option-row strong {
+  font-weight: 500;
+}
+
+.composer-option-row > span > span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px), ((pointer: coarse) and (max-height: 500px) and (max-width: 1000px)) {
+  .composer-options-head {
+    display: none;
+  }
 }
 
 .dim {

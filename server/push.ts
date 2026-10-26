@@ -8,6 +8,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { homedir, hostname } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { WindowView } from './sessions.ts';
+import type { Apns } from './apns.ts';
 
 export type PushEvents = { waiting: boolean; done: boolean };
 type Subscription = { endpoint: string; keys: { p256dh: string; auth: string } };
@@ -25,6 +26,8 @@ export class Push {
   private last = new Map<string, string>(); // uid → last status seen
   private lastSent = new Map<string, number>();
   private primed = false;
+  /** Native app delivery (server/apns.ts), beside Web Push; main.ts wires it. */
+  apns: Apns | null = null;
 
   constructor() {
     if (existsSync(KEYS_FILE)) {
@@ -83,9 +86,11 @@ export class Push {
         tag: w.uid,
         url: `/#${w.uid}`,
         badge: waiting,
-      });
+      }, w.answerable);
     }
     this.primed = true;
+    // Native badges also follow changes that alert nobody (answered on another device).
+    this.apns?.badge(Number(waiting));
   }
 
   /** A needs-you alert that isn't a session's status (stack review): goes where "needs you" goes. */
@@ -93,7 +98,19 @@ export class Push {
     this.send('waiting', payload);
   }
 
-  private send(event: keyof PushEvents, payload: Record<string, string>) {
+  /** `answerable`: one-tap Approve/Deny is safe for this alert (native notification actions). */
+  private send(event: keyof PushEvents, payload: Record<string, string>, answerable = false) {
+    if (this.apns) {
+      void this.apns.send(event, {
+        title: payload.title,
+        body: payload.body,
+        tag: payload.tag,
+        route: payload.url.replace(/^\/#/, ''),
+        host: hostname(),
+        badge: Number(payload.badge ?? this.lastWaiting()),
+        answerable,
+      });
+    }
     for (const [endpoint, d] of this.devices) {
       if (!d.events[event]) continue;
       webpush.sendNotification(d.subscription, JSON.stringify(payload), { TTL: 600, urgency: event === 'waiting' ? 'high' : 'normal' }).catch((err) => {
@@ -102,6 +119,10 @@ export class Push {
         else console.error(`push to ${d.label || 'device'} failed:`, err?.statusCode ?? err);
       });
     }
+  }
+
+  private lastWaiting(): number {
+    return [...this.last.values()].filter((s) => s === 'waiting').length;
   }
 
   private persist() {

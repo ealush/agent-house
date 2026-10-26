@@ -272,6 +272,24 @@ State lives in `~/.local/state/ah/` and uploads in `~/.cache/ah/uploads/`, all o
 See [SECURITY.md](SECURITY.md) for the threat model, the tested invariants, and what each
 state file holds.
 
+### Native iPhone/iPad app
+
+The native app (a separate project, `ah-native`) signs in with a device key it enrolls
+using the same one-time code as a new browser (`node bin/ah.js auth code`, or Settings →
+Security on a signed-in device). Its notifications go through Apple's APNs, which needs
+an APNs key from the Apple Developer account that signs the app:
+
+```json
+{ "apns": { "teamId": "ABCDE12345", "keyId": "KEY1234567", "keyFile": "~/.config/ah/AuthKey_KEY1234567.p8", "topic": "<the app's bundle id>" } }
+```
+
+Keep the `.p8` file owner-only (`chmod 600`). Without `apns`, the app works but can't
+register for notifications. Web Push for browsers is unaffected either way.
+
+Native device sign-in, streams and terminals ship in the same build as the mobile
+web app. See the [26 October release verification](docs/releases/2026-10-26-mobile-native.md)
+for native-client integration results, mobile screenshots and remaining device-test limits.
+
 ## Layout
 
 ```

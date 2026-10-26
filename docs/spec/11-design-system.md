@@ -53,9 +53,13 @@ ground, pink cursor) use the same values.
 
 ## DS-4 · Material
 
-- **Liquid glass** for floating chrome (sidebar, tab bar, bar buttons, nav
-  capsules, menus): `--glass-fill` over a transparent 1 px border,
-  `--glass-blur`, `--glass-depth` before the elevation shadow; pressed glass
+- **Glass** for floating chrome (sidebar, tab bar, bar buttons, nav
+  capsules, menus): translucent `--glass-fill`, live `--glass-blur`,
+  `--glass-depth` for thin inset edges before the elevation shadow. Never
+  paint a rim gradient under a translucent fill: `border-box` also covers
+  the interior. Panels and sheets use denser translucent fills, with stronger
+  secondary ink. The sidebar filters a backing pseudo-element so its fixed
+  menus still use the viewport. Pressed glass
   swells (1.08) and springs back. Never put a view-transition-name, filter,
   opacity or mask on a glass element's ancestor (it stops the blur).
 - **Elevation**: two steps (`--elev-1` menus, popovers, toasts; `--elev-2`

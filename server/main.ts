@@ -39,6 +39,7 @@ import { Peers, proxyHttp, proxyWs, peerUrlAllowed } from './peers.ts';
 import { SearchIndexer, combineResponses, type SearchParams } from './search.ts';
 import { Auth, AuthError, clearCookies, type Caller } from './auth.ts';
 import { Gate, LOOPBACK_BIND } from './gate.ts';
+import { Apns, ApnsError } from './apns.ts';
 import { HttpError, send, readBody, readJson, str, safeDecode } from './http.ts';
 import { rebuildFailure, rebuildWeb } from './rebuild.ts';
 import { slashCommands, projectFiles } from './complete.ts';
@@ -85,6 +86,10 @@ try {
   process.exit(1);
 }
 const core = new Core(config, viewers);
+// Native app push: delivered beside Web Push; a sign-in that ends stops its alerts.
+const apns = new Apns(config.apns);
+core.push.apns = apns;
+auth.onSessionEnd = (id) => apns.forgetSession(id);
 // Each agent CLI's current modes and efforts, and the host's hidden and added agents.
 core.harnesses = new Harnesses();
 core.applyHarnesses();
@@ -175,7 +180,28 @@ export const PUBLIC_ROUTES = new Set([
   'POST /api/auth/login/verify',
   'POST /api/auth/password/login',
   'POST /api/auth/logout',
+  // The native app's sign-in: enrollment still needs a host-issued code (or a session) inside.
+  'POST /api/auth/native/enroll/options',
+  'POST /api/auth/native/enroll/verify',
+  'POST /api/auth/native/login/options',
+  'POST /api/auth/native/login/verify',
 ]);
+
+/** Native sign-in routes: writes before there is a caller, so they can't carry a bearer yet. */
+const NATIVE_SIGN_IN = /^(?:\/h\/[\w.-]{1,64})?\/api\/auth\/native\/(?:enroll|login)\/(?:options|verify)$/;
+
+/**
+ * The native app has no Origin: it isn't a web page. Its writes and terminals skip the
+ * same-Origin check only when nothing ambient rides along: no Origin and no cookie, and
+ * either a native bearer sign-in or the native sign-in routes themselves. A browser always
+ * sends Origin on writes and WebSockets, can't attach Authorization or X-AH cross-site
+ * without a preflight ah never grants, and never sees a native bearer secret, so the
+ * browser's CSRF defenses are unchanged.
+ */
+function nativeWithoutOrigin(req: IncomingMessage, caller: Caller | null, path: string): boolean {
+  if (req.headers.origin !== undefined || req.headers.cookie !== undefined) return false;
+  return auth.isNative(caller) || NATIVE_SIGN_IN.test(path);
+}
 
 function audit(req: IncomingMessage, event: string, detail: Record<string, unknown> = {}) {
   auth.audit(event, { ...detail, from: String(req.headers['tailscale-user-login'] ?? 'local') });
@@ -816,6 +842,34 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     return send(res, 200, { ok: true });
   }
 
+  // Native app push (server/apns.ts): one registration per native sign-in.
+  if (route('GET', /^\/api\/push\/apns$/)) return send(res, 200, apns.status(caller.kind === 'session' ? caller.session.id : null));
+  if (route('PUT', /^\/api\/push\/apns$/)) {
+    if (caller.kind !== 'session' || !auth.isNative(caller)) throw new HttpError(403, 'only the native app registers for APNs');
+    const body = await readJson(req);
+    const events = body.events as { waiting?: unknown; done?: unknown } | undefined;
+    try {
+      apns.register({
+        token: str(body.token, 'token', 200),
+        environment: str(body.environment, 'environment', 20) as never,
+        events: { waiting: events?.waiting !== false, done: events?.done === true },
+        preview: body.preview === 'private' ? 'private' : 'full',
+        sessionId: caller.session.id,
+        deviceId: caller.session.keyId ?? '',
+        label: caller.session.label,
+      });
+    } catch (err) {
+      if (err instanceof ApnsError) throw new HttpError(err.status, err.message);
+      throw err;
+    }
+    audit(req, 'push.apns.register', { device: caller.session.keyId });
+    return send(res, 200, apns.status(caller.session.id));
+  }
+  if (route('DELETE', /^\/api\/push\/apns$/)) {
+    if (caller.kind === 'session') apns.unregister(caller.session.id);
+    return send(res, 200, { ok: true });
+  }
+
   if (route('POST', /^\/api\/push\/status$/)) return send(res, 200, { events: core.push.settings(str((await readJson(req)).endpoint, 'endpoint', 2048)) });
 
   // ---------- worktrees, prompts
@@ -1156,6 +1210,19 @@ async function authApi(req: IncomingMessage, res: ServerResponse, path: string, 
     const body = await readJson(req);
     return signedIn(await auth.passwordLogin(req, str(body.password, 'password', 512), label(body)));
   }
+  if (route('POST', /^\/api\/auth\/native\/enroll\/options$/)) {
+    const body = await readJson(req);
+    return send(res, 200, auth.nativeEnrollOptions(req, caller, typeof body.code === 'string' ? body.code : undefined));
+  }
+  if (route('POST', /^\/api\/auth\/native\/enroll\/verify$/)) {
+    const body = await readJson(req);
+    return send(res, 200, auth.nativeEnrollVerify(req, str(body.challengeId, 'challenge', 40), str(body.publicKey, 'publicKey', 100), str(body.signature, 'signature', 200), label(body)));
+  }
+  if (route('POST', /^\/api\/auth\/native\/login\/options$/)) return send(res, 200, auth.nativeLoginOptions(req));
+  if (route('POST', /^\/api\/auth\/native\/login\/verify$/)) {
+    const body = await readJson(req);
+    return send(res, 200, auth.nativeLoginVerify(req, str(body.challengeId, 'challenge', 40), str(body.deviceId, 'deviceId', 20), str(body.signature, 'signature', 200), label(body)));
+  }
   if (route('POST', /^\/api\/auth\/logout$/)) {
     if (caller?.kind === 'session') auth.endSession(caller.session.id, 'signed out');
     res.setHeader('set-cookie', clearCookies());
@@ -1185,6 +1252,11 @@ async function authApi(req: IncomingMessage, res: ServerResponse, path: string, 
   }
   if ((m = route('DELETE', /^\/api\/auth\/passkeys\/([\w-]{1,512})$/))) {
     auth.removePasskey(m[1]);
+    return send(res, 200, { ok: true });
+  }
+  if (route('POST', /^\/api\/auth\/native\/preview-session$/)) return send(res, 200, auth.nativePreviewSession(caller));
+  if ((m = route('DELETE', /^\/api\/auth\/devices\/(\w{1,20})$/))) {
+    auth.removeDevice(m[1]);
     return send(res, 200, { ok: true });
   }
   if (route('POST', /^\/api\/auth\/tokens$/)) return send(res, 200, { token: auth.createToken(str((await readJson(req)).name, 'name', 60)) });
@@ -1282,9 +1354,9 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   }
   const method = req.method ?? 'GET';
   try {
-    // CSRF: a custom header can't be sent cross-site without a preflight we never answer.
-    if (method !== 'GET' && method !== 'HEAD' && (req.headers['x-ah'] !== '1' || !gate.originOk(req))) throw new HttpError(403, 'forbidden');
     const caller = auth.identify(req);
+    // CSRF: a custom header can't be sent cross-site without a preflight we never answer.
+    if (method !== 'GET' && method !== 'HEAD' && (req.headers['x-ah'] !== '1' || !(gate.originOk(req) || nativeWithoutOrigin(req, caller, safeDecode(url.pathname))))) throw new HttpError(403, 'forbidden');
 
     // /h/<host>/… addresses a host: ourselves (served here) or a peer (proxied).
     let path = safeDecode(url.pathname);
@@ -1327,7 +1399,11 @@ function upgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
   };
   const verdict = gate.check(req);
   if (!verdict.ok) return reject(`${verdict.status} Forbidden`);
-  if (!gate.originOk(req)) return reject('403 Forbidden');
+  // A WebSocket has no preflight: a browser's needs ah's exact Origin. The native app's
+  // carries its bearer sign-in and no Origin or cookie at all.
+  const caller = auth.identify(req);
+  const native = req.headers.origin === undefined && req.headers.cookie === undefined && auth.isNative(caller);
+  if (!gate.originOk(req) && !native) return reject('403 Forbidden');
   let url: URL;
   try {
     url = new URL(req.url ?? '/', 'http://x');
@@ -1336,7 +1412,6 @@ function upgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
   }
   const m = safeDecode(url.pathname).match(/^(?:\/h\/([\w.-]{1,64}))?\/ws\/(@\d+)$/);
   if (!m) return reject('404 Not Found');
-  const caller = auth.identify(req);
   if (!caller) return reject('401 Unauthorized');
   const [, host, windowId] = m;
   const peer = host && host !== hostname() ? peers.get(host) : null;
