@@ -49,3 +49,28 @@ test('the Claude hook records each step of a turn, and clears the ask when it en
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('the Claude hook keeps a question option\'s preview for the form', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ah-hook-'));
+  const sock = join(dir, 's');
+  const env = { ...process.env };
+  delete env.TMUX;
+  const tmux = (...args: string[]) => execFileSync('tmux', ['-S', sock, ...args], { env, encoding: 'utf8' });
+  try {
+    tmux('-f', '/dev/null', 'new-session', '-d', '-s', 'hooktest');
+    const pane = tmux('display-message', '-p', '-t', 'hooktest', '#{pane_id}').trim();
+    const pid = tmux('display-message', '-p', '#{pid}').trim();
+    const input = { questions: [{ question: 'Which layout?', header: 'Layout', multiSelect: false, options: [{ label: 'Stacked', description: 'One above the other', preview: '+----+\n| A  |\n+----+' }, { label: 'Inline' }] }] };
+    const r = spawnSync(process.execPath, [HOOK, 'claude'], { input: JSON.stringify({ session_id: 'c1', hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: input }), env: { ...env, TMUX: `${sock},${pid},0`, TMUX_PANE: pane }, encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    const ask = JSON.parse(tmux('show-options', '-w', '-v', '-q', '-t', pane, '@ah-ask').trim());
+    assert.equal(ask.kind, 'choice');
+    assert.equal(ask.questions[0].options[0].preview, '+----+\n| A  |\n+----+');
+    assert.equal(ask.questions[0].options[1].preview, undefined);
+  } finally {
+    try {
+      tmux('kill-server');
+    } catch {}
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

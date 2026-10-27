@@ -12,11 +12,21 @@ export type Question = {
   question: string;
   header?: string;
   multiSelect: boolean;
-  options: Array<{ label: string; description?: string }>;
+  /** `preview`: what the option looks like (a mockup, a snippet), shown beside the options. */
+  options: Array<{ label: string; description?: string; preview?: string }>;
 };
 
-/** One answer per question: picked option indexes (0-based) and/or free text ("Type something"). */
-export type Answer = { picked: number[]; text?: string };
+/**
+ * One answer per question: picked option indexes (0-based) and/or free text ("Type something").
+ * A question whose options carry previews has no free-text row; it takes `notes` on the pick
+ * instead (the dialog's "n to add notes").
+ */
+export type Answer = { picked: number[]; text?: string; notes?: string };
+
+/** Previews make Claude Code draw a different dialog: ↑/↓ and Enter, notes, no free-text row. */
+export function hasPreviews(q: Pick<Question, 'options'>): boolean {
+  return q.options.some((o) => !!o.preview);
+}
 
 /** A step: tmux key names, or literal text. */
 export type Step = { keys: string[] } | { text: string };
@@ -150,7 +160,11 @@ export function readQuestions(input: unknown): Question[] | null {
       multiSelect: q.multiSelect === true,
       options: q.options
         .filter((o: unknown) => o && typeof (o as { label?: unknown }).label === 'string')
-        .map((o: { label: string; description?: unknown }) => ({ label: o.label, description: typeof o.description === 'string' ? o.description : undefined })),
+        .map((o: { label: string; description?: unknown; preview?: unknown }) => ({
+          label: o.label,
+          description: typeof o.description === 'string' ? o.description : undefined,
+          ...(typeof o.preview === 'string' && o.preview.trim() ? { preview: o.preview.slice(0, 4000) } : {}),
+        })),
     });
   }
   return out;
@@ -166,6 +180,12 @@ export function checkAnswers(questions: Question[], answers: Answer[]): void {
     if (a.picked.some((p) => !Number.isInteger(p) || p < 0 || p >= q.options.length)) throw new Error(`question ${i + 1}: unknown option`);
     if (new Set(a.picked).size !== a.picked.length) throw new Error(`question ${i + 1}: an option is picked twice`);
     if (/[\r\n]/.test(text)) throw new Error(`question ${i + 1}: the typed answer must be one line`);
+    const notes = typeof a.notes === 'string' ? a.notes.trim() : '';
+    if (/[\r\n]/.test(notes)) throw new Error(`question ${i + 1}: notes must be one line`);
+    if (hasPreviews(q)) {
+      if (text) throw new Error(`question ${i + 1}: this question takes a pick (and notes), not a typed answer`);
+      if (a.picked.length !== 1) throw new Error(`question ${i + 1}: pick one option`);
+    } else if (notes) throw new Error(`question ${i + 1}: notes go with an option's preview`);
     if (!q.multiSelect && a.picked.length + (text ? 1 : 0) !== 1) throw new Error(`question ${i + 1}: pick one option or type an answer`);
     if (q.multiSelect && a.picked.length === 0 && !text) throw new Error(`question ${i + 1}: pick at least one option`);
     // Option rows hold at most 9 digits, and the free-text row sits after them.
@@ -199,6 +219,7 @@ export function claudeQuestionGroups(questions: Question[], answers: Answer[]): 
     const a = answers[i];
     const text = a.text?.trim() ?? '';
     const n = q.options.length;
+    if (hasPreviews(q)) return previewSteps(1, a);
     if (!q.multiSelect) return text ? [{ keys: [String(n + 1)] }, { text }, { keys: ['Enter'] }] : [{ keys: [String(a.picked[0] + 1)] }];
     const steps: Step[] = [...a.picked].sort((x, y) => x - y).map((p) => ({ keys: [String(p + 1)] }));
     if (text) steps.push({ keys: Array(n).fill('Down') }, { text }, { keys: ['Tab'] }, { keys: ['Enter'] });
@@ -207,6 +228,32 @@ export function claudeQuestionGroups(questions: Question[], answers: Answer[]): 
   });
   if (questions.length > 1 || questions.some((q) => q.multiSelect)) groups.push([{ keys: ['1'] }]);
   return groups;
+}
+
+/**
+ * A preview question (verified against v2.1.300): digits only move the cursor; ↑/↓ to the
+ * option, then Enter picks it and moves on. "n" opens its notes; typed text lands there, and
+ * Enter keeps the notes and picks the option in one go.
+ */
+function previewSteps(cursor: number, a: Answer): Step[] {
+  const move = a.picked[0] + 1 - cursor;
+  const steps: Step[] = move ? [{ keys: Array(Math.abs(move)).fill(move > 0 ? 'Down' : 'Up') }] : [];
+  const notes = a.notes?.trim() ?? '';
+  if (notes) steps.push({ keys: ['n'] }, { text: notes });
+  steps.push({ keys: ['Enter'] });
+  return steps;
+}
+
+/**
+ * "Chat about this": the dialog's last row, under its rule. Choosing it declines the questions
+ * and hands the conversation back, so you can talk it over with the agent instead. From the
+ * question's first row it's past the options, the free-text row and (multi choice) Submit;
+ * a preview question has only its options above it (verified against v2.1.300).
+ */
+export function chatSteps(q: Pick<Question, 'options' | 'multiSelect'> & { previews?: boolean }, cursor = 1): Step[] {
+  const rows = (q.previews ?? hasPreviews(q)) ? q.options.length : q.options.length + (q.multiSelect ? 2 : 1);
+  const move = rows + 1 - cursor;
+  return [...(move > 0 ? [{ keys: Array(move).fill('Down') }] : []), { keys: ['Enter'] }];
 }
 
 /**
@@ -242,7 +289,10 @@ export function pickerAtStart(screen: string, questions: Question[]): boolean {
 export type ScreenQuestion = {
   question: string;
   multiSelect: boolean;
-  options: Array<{ label: string; description?: string; checked?: boolean }>;
+  /** `preview`: only the option under the cursor shows its preview on screen. */
+  options: Array<{ label: string; description?: string; checked?: boolean; preview?: string }>;
+  /** Drawn with previews: the box beside the options, notes, no free-text row. */
+  previews?: boolean;
   /** 1-based row the cursor is on: options, then "Type something", then (multi) Submit. */
   cursor: number;
   /** Tab bar: how many questions there are and how many are answered. */
@@ -272,8 +322,18 @@ export function parseQuestionDialog(lines: string[]): ScreenQuestion | null {
   let multiSelect = false;
   let cursor = 0;
   let other = false;
-  for (const line of body.slice(first)) {
-    if (/^\s*[─━]{3,}/.test(line)) break; // "Chat about this" sits under the rule
+  // A preview question draws the cursor option's preview in a box to the right of the options.
+  const boxAt = body.slice(first).map((l) => l.search(/[┌│└]/)).filter((c) => c > 0);
+  const previews = boxAt.length > 0;
+  const column = previews ? Math.min(...boxAt) : Infinity;
+  const preview: string[] = [];
+  for (const raw of body.slice(first)) {
+    if (/^\s*[─━]{3,}/.test(raw)) break; // "Chat about this" sits under the rule
+    const box = previews ? raw.slice(column) : '';
+    const line = previews ? raw.slice(0, column).trimEnd() : raw;
+    const inner = box.match(/^│ ?(.*?) ?│\s*$/);
+    if (inner) preview.push(inner[1].trimEnd());
+    if (previews && !line.trim()) continue; // the box's own rows, and its notes line
     const m = line.match(ROW);
     if (m) {
       if (m[3] !== undefined) multiSelect = true;
@@ -292,13 +352,17 @@ export function parseQuestionDialog(lines: string[]): ScreenQuestion | null {
       last.description = [last.description, line.trim()].filter(Boolean).join(' ');
     }
   }
-  if (!question || !options.length || !other || !cursor) return null;
-  return { question, multiSelect, options, cursor, total: tabs.length, answered: tabs.filter((t) => t === '☒').length };
+  if (!question || !options.length || !cursor || (!other && !previews)) return null;
+  if (previews && options[cursor - 1] && preview.length) options[cursor - 1].preview = preview.join('\n');
+  return { question, multiSelect, options, cursor, total: tabs.length, answered: tabs.filter((t) => t === '☒').length, ...(previews ? { previews } : {}) };
 }
 
 /** Keys for the question on screen, from its current state (ticks and cursor). */
 export function dialogSteps(q: ScreenQuestion, a: Answer): Step[] {
-  checkAnswers([{ question: q.question, multiSelect: q.multiSelect, options: q.options }], [a]);
+  // Only the cursor's preview is on screen; the dialog's shape is what counts.
+  const options = q.previews ? q.options.map((o) => ({ ...o, preview: o.preview ?? ' ' })) : q.options;
+  checkAnswers([{ question: q.question, multiSelect: q.multiSelect, options }], [a]);
+  if (q.previews) return previewSteps(q.cursor, a);
   const text = a.text?.trim() ?? '';
   const n = q.options.length;
   if (!q.multiSelect) return text ? [{ keys: [String(n + 1)] }, { text }, { keys: ['Enter'] }] : [{ keys: [String(a.picked[0] + 1)] }];

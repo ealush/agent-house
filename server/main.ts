@@ -453,7 +453,14 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     const answerOf = (a: any) => ({
       picked: Array.isArray(a?.picked) ? a.picked.slice(0, 9) : [],
       ...(a?.text !== undefined ? { text: str(a.text, 'text', 2000) } : {}),
+      ...(a?.notes !== undefined ? { notes: str(a.notes, 'notes', 2000) } : {}),
     });
+    if (body.chat === true) {
+      // "Chat about this": decline the questions and talk it over instead.
+      await core.chatAboutQuestions(m[1], body.question === undefined ? undefined : str(body.question, 'question', 2000));
+      audit(req, 'session.questions.chat', { uid: m[1] });
+      return send(res, 200, { ok: true });
+    }
     if (body.current) {
       // One question: the one the dialog shows now.
       const current = body.current as { question?: unknown; answer?: unknown };

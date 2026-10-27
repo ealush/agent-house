@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkAnswers, claudeQuestionSteps, cursorKeys, dialogSteps, parsePicker, parseQuestionDialog, parseScreenOptions, pickerAtStart, readQuestions, type Question } from './choices.ts';
+import { chatSteps, checkAnswers, claudeQuestionSteps, cursorKeys, dialogSteps, parsePicker, parseQuestionDialog, parseScreenOptions, pickerAtStart, readQuestions, type Question } from './choices.ts';
 
 // Screens captured from Claude Code 2.1.288 and Codex.
 const CLAUDE_PERMISSION = `
@@ -207,4 +207,67 @@ test("an option the window wrapped inside a path rejoins without a space", () =>
   ];
   const labels = parsePicker(screen)?.options.map((o) => o.label);
   assert.deepEqual(labels, ['Yes', 'Yes, and always allow access to /tmp/claude-1000/-home-me-code-ah/e5664374-cf7c-4a39-b47e/code/demo from this project', 'No']);
+});
+
+// A question whose options carry previews, captured from Claude Code 2.1.300: the cursor
+// option's preview in a box beside the options, notes, no free-text row.
+const DIALOG_PREVIEW = `
+←  ☐ Layout  ☐ Extras  ✔ Submit  →
+Which layout?
+❯ 1. Stacked                      ┌──────────────────────────────────────────┐
+  2. Inline                       │ +----------------+                       │
+                                  │ | Header         |                       │
+                                  │ +----------------+                       │
+                                  │ | Content        |                       │
+                                  │ +----------------+                       │
+                                  └──────────────────────────────────────────┘
+                                  Notes: press n to add notes
+────────────────────
+  Chat about this
+Enter to select · ↑/↓ to navigate · n to add notes · Tab to switch questions · Esc to cancel`;
+
+const PREVIEWED: Question[] = [
+  { question: 'Which layout?', header: 'Layout', multiSelect: false, options: [{ label: 'Stacked', preview: '+--+\n|  |' }, { label: 'Inline', preview: '+-+-+' }] },
+  { question: 'Which extras?', header: 'Extras', multiSelect: true, options: [{ label: 'Dark mode' }, { label: 'Animations' }, { label: 'Tooltips' }] },
+];
+
+test('keeps an option\'s preview', () => {
+  assert.deepEqual(readQuestions({ questions: [{ question: 'Q', options: [{ label: 'A', preview: 'box' }, { label: 'B', preview: '  ' }] }] })?.[0].options, [
+    { label: 'A', description: undefined, preview: 'box' },
+    { label: 'B', description: undefined },
+  ]);
+});
+
+test('a preview question is answered by arrows and Enter, with notes by n', () => {
+  assert.deepEqual(claudeQuestionSteps(PREVIEWED, [{ picked: [1], notes: 'make it compact' }, { picked: [0, 2] }]), [
+    { keys: ['Down'] }, { keys: ['n'] }, { text: 'make it compact' }, { keys: ['Enter'] },
+    { keys: ['1'] }, { keys: ['3'] }, { keys: ['Right'] },
+    { keys: ['1'] },
+  ]);
+  assert.deepEqual(claudeQuestionSteps(PREVIEWED.slice(0, 1), [{ picked: [0] }]), [{ keys: ['Enter'] }], 'one question: Enter submits it');
+  assert.throws(() => checkAnswers(PREVIEWED.slice(0, 1), [{ picked: [], text: 'other' }]), /takes a pick/);
+  assert.throws(() => checkAnswers(PREVIEWED.slice(1), [{ picked: [0], notes: 'x' }]), /notes go with/);
+  assert.throws(() => checkAnswers(PREVIEWED.slice(0, 1), [{ picked: [0], notes: 'two\nlines' }]), /one line/);
+});
+
+test('reads a preview dialog off the screen', () => {
+  const lines = DIALOG_PREVIEW.split('\n');
+  const d = parseQuestionDialog(lines);
+  assert.ok(d);
+  assert.deepEqual(d.options.map((o) => o.label), ['Stacked', 'Inline'], 'the box is not part of the labels');
+  assert.equal(d.previews, true);
+  assert.equal(d.cursor, 1);
+  assert.equal(d.options[0].preview?.split('\n')[1].trim(), '| Header         |');
+  assert.equal(d.options[1].preview, undefined, 'only the cursor\'s preview is drawn');
+  assert.deepEqual(dialogSteps(d, { picked: [1], notes: 'compact' }), [{ keys: ['Down'] }, { keys: ['n'] }, { text: 'compact' }, { keys: ['Enter'] }]);
+  assert.ok(pickerAtStart(DIALOG_PREVIEW, PREVIEWED));
+});
+
+test('"Chat about this" is past the options, the free-text row and Submit', () => {
+  const two = [{ label: 'Small' }, { label: 'Large' }];
+  const three = [{ label: 'A' }, { label: 'B' }, { label: 'C' }];
+  assert.deepEqual(chatSteps({ options: two, multiSelect: false }), [{ keys: ['Down', 'Down', 'Down'] }, { keys: ['Enter'] }]);
+  assert.deepEqual(chatSteps({ options: three, multiSelect: true }), [{ keys: ['Down', 'Down', 'Down', 'Down', 'Down'] }, { keys: ['Enter'] }]);
+  assert.deepEqual(chatSteps({ options: two, multiSelect: false, previews: true }), [{ keys: ['Down', 'Down'] }, { keys: ['Enter'] }]);
+  assert.deepEqual(chatSteps({ options: two, multiSelect: false, previews: true }, 2), [{ keys: ['Down'] }, { keys: ['Enter'] }]);
 });

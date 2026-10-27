@@ -77,7 +77,10 @@ export type Ask = {
   dialog?: ScreenQuestion;
 };
 
-/** Claude Code's question dialog: its footer, and the free-text row only that dialog has. */
+/**
+ * Claude Code's question dialog: its footer, and the free-text row only that dialog has; or,
+ * with option previews, the notes hint its footer carries instead.
+ */
 const QUESTION_DIALOG = /Enter to select/;
 /** The dialog's last step: a review with "1. Submit answers / 2. Cancel". */
 const isQuestionReview = (tail: string[]) => {
@@ -86,7 +89,7 @@ const isQuestionReview = (tail: string[]) => {
 };
 export const isQuestionDialog = (tail: string[]) => {
   const text = tail.join('\n');
-  return QUESTION_DIALOG.test(text) && /Type something/.test(text);
+  return QUESTION_DIALOG.test(text) && (/Type something/.test(text) || /n to add notes/.test(text));
 };
 
 export type HistoryItem = {
