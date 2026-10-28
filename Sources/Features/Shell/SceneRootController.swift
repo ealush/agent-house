@@ -113,6 +113,8 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
         let appearance = scene.app.preferences.appearance
         theme.follow(scene.hub, appearance: appearance)
         view.window?.overrideUserInterfaceStyle = theme.theme(appearance).interfaceStyle
+        // UIKit's own controls (the tab bar's selection) take the theme's accent, not the asset's pink.
+        view.window?.tintColor = theme.theme(appearance).uiAccent
         if case .main = next { scene.reconcileIfReady() }
         advertise(scene.handoff)
     }

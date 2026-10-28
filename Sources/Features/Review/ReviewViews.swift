@@ -13,9 +13,10 @@ struct ReviewHomeView: View {
                 let waiting = model.stacks.reduce(0) { $0 + $1.needsYou }
                 AhLargeTitle(title: "Review", tagline: model.stacks.isEmpty ? nil : "\(model.stacks.count) stack\(model.stacks.count == 1 ? "" : "s") in review\(waiting > 0 ? ". \(waiting) need\(waiting == 1 ? "s" : "") you." : ".")").textCase(nil)
             }
-            if let error = model.error { Banner(text: error, tone: .error) }
+            if let error = model.error { Banner(text: error, tone: .error).listRowBackground(Color.clear) }
             if model.stacks.isEmpty && !model.loading.contains("stacks") {
                 EmptyState(symbol: "square.stack.3d.up", title: "No stacks in review", message: "Start from a PR chain, a GitHub stack, or PRs you pick.", action: ("Start a review", { starting = true }))
+                    .listRowBackground(Color.clear)
             }
             ForEach(model.stacks) { stack in
                 Button {
@@ -44,6 +45,7 @@ struct ReviewHomeView: View {
                 }
                 .buttonStyle(.plain)
                 .hoverEffect(.highlight)
+                .ahRow()
             }
         }
         .ahPage("Review")

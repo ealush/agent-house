@@ -69,14 +69,24 @@ struct AhPage: ViewModifier {
 extension View {
     func ahPage(_ title: String) -> some View { modifier(AhPage(title: title)) }
 
-    /// A row on the panel's surface (lists on ah's ground).
-    func ahRow() -> some View { modifier(AhRowGround()) }
+    /// A row on the theme's card (lists on ah's ground), its separators in the theme's hairline.
+    /// Off, the row keeps the list's own ground (an iPad sidebar's glass).
+    func ahRow(_ on: Bool = true) -> some View { modifier(AhRowGround(on: on)) }
 }
 
 private struct AhRowGround: ViewModifier {
+    let on: Bool
     @Environment(\.theme) private var theme
     @Environment(\.horizontalSizeClass) private var sizeClass
-    func body(content: Content) -> some View { content.listRowBackground(sizeClass == .compact ? theme.surface : theme.raised) }
+    func body(content: Content) -> some View {
+        if on {
+            content
+                .listRowBackground(sizeClass == .compact ? theme.card : theme.raised)
+                .listRowSeparatorTint(theme.line)
+        } else {
+            content
+        }
+    }
 }
 
 /// ah's main panel on a big screen: the surface, rounded, inset from the window over the

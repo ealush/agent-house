@@ -367,6 +367,27 @@ import Testing
     #expect(old.previews == nil, "an older host's dialog still reads")
 }
 
+@Test func rowsSitOnACardThatRisesOffTheGround() {
+    // ah's own palettes: the surface.
+    #expect(ThemePalette.dark.card == ThemePalette.dark.surface)
+    #expect(ThemePalette.light.card == ThemePalette.light.surface)
+    #expect(ThemePalette.dark.tile == ThemePalette.dark.raised)
+    // Tokyo Night's dark_background sits below its ground: rows take lighter_background, and
+    // an agent's tile steps above that.
+    let tokyo = OmarchyTheme(name: "tokyo-night", mode: "dark", colors: [
+        "background": "#1a1b26", "dark_background": "#13141c", "lighter_background": "#24283b",
+        "foreground": "#a9b1d6", "bright_foreground": "#c0caf5", "accent": "#7aa2f7", "selection": "#292e42",
+    ], font: nil)
+    let palette = try! #require(ThemePalette.omarchy(tokyo))
+    #expect(palette.card == "#24283b")
+    #expect(palette.tile != palette.card && ThemePalette.luminance(palette.tile) > ThemePalette.luminance(palette.card))
+    // No lighter layer at all (raised falls back to the foreground): a card mixed from the
+    // ground, never the foreground.
+    let bare = try! #require(ThemePalette.omarchy(OmarchyTheme(name: "bare", mode: "dark", colors: ["background": "#1a1b26", "foreground": "#a9b1d6", "accent": "#7aa2f7"], font: nil)))
+    #expect(bare.card != bare.raised && bare.card != bare.background)
+    #expect(ThemePalette.luminance(bare.card) < ThemePalette.luminance(bare.background) + 0.08)
+}
+
 @Test func aCancelledRequestIsNotAnErrorToShow() {
     #expect(APIError.shown(CancellationError()) == nil)
     #expect(APIError.shown(URLError(.cancelled)) == nil)

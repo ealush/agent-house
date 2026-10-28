@@ -67,6 +67,48 @@ struct ThemePalette: Equatable, Sendable {
     var doneTint: String { Self.alpha(done, isDark ? 0.12 : 0.08) }
     var limitedTint: String { Self.alpha(limited, isDark ? 0.12 : 0.08) }
     var glassTint: String { Self.alpha(raised, isDark ? 0.62 : 0.66) }
+    /// The card a list's rows sit on over the ground: the first of surface and raised that rises
+    /// a step off it. ah's own surface does; an Omarchy theme's (its dark_background) sits below
+    /// the ground, so its rows take the lighter background. A theme with neither (raised falls
+    /// back to the foreground) gets a card mixed from its ground.
+    var card: String {
+        [surface, raised].first { rises($0, over: background) } ?? Self.mix(background, isDark ? text : "#ffffff", isDark ? 0.06 : 0.6)
+    }
+    /// A tile on a card (an agent's mark): raised, or a step above the card when raised is the
+    /// card itself or no step at all.
+    var tile: String {
+        let darkJump = isDark && Self.luminance(raised) > Self.luminance(card) + Self.step
+        return raised != card && !darkJump ? raised : Self.mix(card, isDark ? text : "#000000", isDark ? 0.08 : 0.05)
+    }
+
+    /// How far a dark layer may rise over the one below it and still read as a layer.
+    private static let step = 0.08
+    private func rises(_ layer: String, over ground: String) -> Bool {
+        let l = Self.luminance(layer), g = Self.luminance(ground)
+        return l > g && (!isDark || l < g + Self.step)
+    }
+
+    /// The relative luminance of "#rrggbb" (WCAG), 0 for anything unreadable.
+    static func luminance(_ hex: String) -> Double {
+        let digits = hex.hasPrefix("#") ? String(hex.dropFirst().prefix(6)) : String(hex.prefix(6))
+        guard digits.count == 6, let value = UInt32(digits, radix: 16) else { return 0 }
+        let channel = { (shift: UInt32) -> Double in
+            let c = Double((value >> shift) & 0xff) / 255
+            return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0)
+    }
+
+    /// "#rrggbb" a fraction of the way from one color to another.
+    static func mix(_ from: String, _ to: String, _ t: Double) -> String {
+        func rgb(_ hex: String) -> [Double] {
+            let digits = hex.hasPrefix("#") ? String(hex.dropFirst().prefix(6)) : String(hex.prefix(6))
+            let value = UInt32(digits, radix: 16) ?? 0
+            return [16, 8, 0].map { Double((value >> UInt32($0)) & 0xff) }
+        }
+        let mixed = zip(rgb(from), rgb(to)).map { Int(($0 + ($1 - $0) * t).rounded()) }
+        return String(format: "#%02x%02x%02x", mixed[0], mixed[1], mixed[2])
+    }
 
     /// "#rrggbb" with an alpha: "#rrggbbaa".
     static func alpha(_ hex: String, _ a: Double) -> String {
@@ -97,12 +139,8 @@ struct TerminalPalette: Equatable, Sendable {
     /// A dark background (relative luminance under a half): bars over it go dark too.
     var isDark: Bool {
         let hex = background.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
-        guard hex.count == 6, let value = UInt32(hex, radix: 16) else { return true }
-        let channel = { (shift: UInt32) -> Double in
-            let c = Double((value >> shift) & 0xff) / 255
-            return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
-        }
-        return 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0) < 0.5
+        guard hex.count == 6, UInt32(hex, radix: 16) != nil else { return true }
+        return ThemePalette.luminance(background) < 0.5
     }
 
     // ah's sunken ground: the terminal sits in its panel like a code block.
