@@ -104,7 +104,16 @@ struct TranscriptView: View {
                     reader.scrollTo("bottom", anchor: .bottom)
                 }
             }
-            .scrollDismissesKeyboard(.interactively)
+            // The composer isn't the keyboard's accessory (as Messages' field is), so an
+            // interactive dismissal only began once a drag crossed the whole composer into the
+            // keyboard: in practice the keyboard couldn't be put away. Scrolling the transcript or
+            // tapping it puts it away, as in chat apps. A hardware keyboard keeps the composer's
+            // focus: there's nothing on screen to put away.
+            .scrollDismissesKeyboard(scene.hardwareKeyboard ? .never : .immediately)
+            .simultaneousGesture(TapGesture().onEnded {
+                guard !scene.hardwareKeyboard, scene.composerFocused != nil else { return }
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            })
             .overlay {
                 // A live agent that hasn't written anything yet is a fresh conversation, not a
                 // missing GUI: say what's ready and offer a start.
