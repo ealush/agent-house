@@ -31,6 +31,10 @@ final class SceneModel {
     private(set) var pendingChord: Chord?
     /// Set by the platform layer.
     var clipboard: (String) -> Void = { _ in }
+    /// The clipboard's text, read only when you ask to open a link from it.
+    var pasteboard: () -> String? = { nil }
+    /// The system's share sheet, for a link (set by the window).
+    var share: (URL) -> Void = { _ in }
     /// Opens another window (at a link, signed in to an origin); nil where there's only one
     /// window (iPhone).
     var openWindow: ((DeepLink?, String?) -> Void)?
@@ -772,7 +776,8 @@ final class SceneModel {
 
     /// Whether a command can run right now in this window (the palette lists only these).
     func isAvailable(_ id: CommandID) -> Bool {
-        guard hub != nil else { return ["go-settings", "show-shortcuts", "command-palette"].contains(id.rawValue) }
+        // A link names its own host: it can open before this window has one.
+        guard hub != nil else { return ["go-settings", "show-shortcuts", "command-palette", "open-link"].contains(id.rawValue) }
         let ws = workspace
         let s = focusedSession
         let row = s?.row
@@ -795,6 +800,8 @@ final class SceneModel {
             return true
         case "toggle-sidebar": return !narrow
         case "focus-main", "reply", "session-menu", "toggle-panel", "copy-attach": return s != nil
+        case "copy-link", "share-link": return accountOrigin != nil
+        case "open-link": return true
         case "focus-pane-left", "focus-pane-right", "focus-pane-up", "focus-pane-down", "move-pane-left", "move-pane-right", "move-pane-up", "move-pane-down", "toggle-split":
             return ws.splitOpen
         case "exit-split": return ws.layout != nil
@@ -871,6 +878,14 @@ final class SceneModel {
         case "go-to-session": palette = PaletteState(path: ["go", "sessions"])
         case "new-window": openWindow?(nil, account?.origin)
         case "open-in-new-window": if let key { openInNewWindow(key) }
+        case "copy-link": copyLink(to: place)
+        case "share-link": shareLink(to: place)
+        case "open-link":
+            guard let text = pasteboard(), let link = AppLink(text: text) else {
+                toast("There’s no link on the clipboard", error: true)
+                return
+            }
+            follow(link)
         case "split-left":
             workspace.split(.horizontal, before: true)
             syncRouteToWorkspace()
@@ -1142,6 +1157,15 @@ final class SceneModel {
         return true
     }
 
+    /// Where a link typed or pasted into a search field points, to offer it as a row: nil for
+    /// text that isn't one, or a web address that names no place in ah.
+    func pastedLink(_ text: String) -> (link: AppLink, summary: String)? {
+        guard let link = AppLink(text: text), link.origin == nil || link.place.route != .inbox else { return nil }
+        var title: String?
+        if case .session(let key) = link.place.route { title = hub?.row(key)?.title }
+        return (link, link.place.summary(title: title))
+    }
+
     /// Goes to a place: a page, a Settings section, a review, or a session with its view, its
     /// panel and a message brought into sight. Until the window's own state is back it waits,
     /// or the restore would land on top of it.
@@ -1164,6 +1188,22 @@ final class SceneModel {
         default:
             show(place.route)
         }
+    }
+
+    /// The web link to a place on this window's host: what Copy Link copies.
+    func link(to place: Place) -> URL? {
+        accountOrigin.flatMap { AppLink.webURL(origin: $0, place: place) }
+    }
+
+    func copyLink(to place: Place) {
+        guard let url = link(to: place) else { return }
+        clipboard(url.absoluteString)
+        toast(place.message != nil ? "Copied a link to the message" : "Copied the link")
+    }
+
+    func shareLink(to place: Place) {
+        guard let url = link(to: place) else { return }
+        share(url)
     }
 
     /// Where this window is, as a place a link can name (the focused session with its view).
@@ -1396,6 +1436,7 @@ final class SceneModel {
         case .continueIn(let preset):
             if let key = workspace.focusedKey { sheet = .continueIn(key: key, preset: preset) }
         case .settings(let section): sheet = .settings(section)
+        case .openLink(let text): if let link = AppLink(text: text) { follow(link) }
         }
     }
 

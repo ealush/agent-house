@@ -299,6 +299,9 @@ enum CommandCatalog {
         Command("terminal-text-reset", .session, "Default terminal text size", "Back to the standard size.", chords: [c("0", meta: true)], scopes: [.app, .terminal], terms: ["zoom", "font", "size", "actual"]),
         Command("new-window", .workspace, "New window", "Open another Agent Hub window, side by side or on its own (iPad and Mac).", terms: ["window", "scene", "stage manager"]),
         Command("open-in-new-window", .workspace, "Open session in new window", "Move the focused session into a window of its own (iPad and Mac).", terms: ["window", "tear off", "detach"]),
+        Command("copy-link", .navigate, "Copy link", "A link to what's on screen: the session with its view and panel, a page, a review. It opens here and in the web app.", chords: [c("c", meta: true, alt: true)], terms: ["share", "url", "deep link"]),
+        Command("share-link", .navigate, "Share link…", "Send a link to what's on screen through the share sheet.", terms: ["url", "deep link", "airdrop"]),
+        Command("open-link", .navigate, "Open link from clipboard", "Go to the place an ah link names: a session, a message, a page or a Settings section.", terms: ["url", "deep link", "paste"]),
         Command("focus-follows-pointer", .workspace, "Focus follows the pointer", "With a trackpad or mouse, hovering over a pane makes it the focused one. Again to turn it off.", terms: ["hover", "mouse", "trackpad", "focus"]),
     ]
 
@@ -340,6 +343,7 @@ enum CommandCatalog {
         "swap-pane-up": "arrow.up.arrow.down", "swap-pane-down": "arrow.up.arrow.down", "focus-pane-next": "arrow.forward.square",
         "focus-pane-prev": "arrow.backward.square", "workspace-next": "chevron.right.square", "workspace-prev": "chevron.left.square",
         "go-to-session": "rectangle.stack", "focus-follows-pointer": "cursorarrow.motionlines",
+        "copy-link": "link", "share-link": "square.and.arrow.up", "open-link": "arrow.up.forward.square",
         "new-window": "macwindow.badge.plus", "open-in-new-window": "rectangle.portrait.on.rectangle.portrait.angled",
     ]
     static func label(_ id: CommandID) -> String { byID[id]?.label ?? id.rawValue }

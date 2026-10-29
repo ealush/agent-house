@@ -128,7 +128,7 @@ private func split(_ d: LayoutNode.Direction, _ r: Double, _ a: LayoutNode, _ b:
 
 @Test func nativeCommandsKeepTheWebCatalogAndClashWithNothing() {
     #expect(CommandCatalog.web.count == 89)
-    #expect(CommandCatalog.native.count == 18)
+    #expect(CommandCatalog.native.count == 21)
     #expect(Set(CommandCatalog.all.map(\.id)).count == CommandCatalog.all.count)
     var seen: [Chord: CommandID] = [:]
     for command in CommandCatalog.all {
@@ -140,6 +140,7 @@ private func split(_ d: LayoutNode.Direction, _ r: Double, _ a: LayoutNode, _ b:
     #expect(CommandMatcher.match(Chord("=", ctrl: true, shift: true), scope: .app) == "balance-panes")
     #expect(CommandMatcher.match(Chord("Tab", ctrl: true), scope: .field) == "focus-pane-next")
     #expect(CommandMatcher.match(Chord("]", ctrl: true, alt: true), scope: .terminal) == "workspace-next")
+    #expect(CommandMatcher.match(Chord("c", meta: true, alt: true), scope: .app) == "copy-link")
 }
 
 // MARK: The keyboard follows the focused pane
@@ -364,4 +365,36 @@ private func forked(_ key: String, _ title: String, root: String?, created: Doub
     let past = HistoryRow(host: "desk", isLocal: true, dto: try JSONDecoder().decode(HistoryItemDTO.self, from: JSONSerialization.data(withJSONObject: ["ref": "r", "kind": "ended", "harness": "claude", "title": "Parser", "cwd": "/p", "project": "web", "at": 0] as [String: Any])))
     let orphaned = ForkFamily.lines(of: a, rows: [a, b], history: [past])
     #expect(orphaned.first?.key == nil && orphaned.first?.title == "Parser")
+}
+
+// MARK: Links
+
+@MainActor
+@Test func copyLinkNamesWhatsOnScreenAndALinkWaitsForTheWindowsState() throws {
+    let scene = try windowWithoutHost()
+    var copied: String?
+    scene.clipboard = { copied = $0 }
+    #expect(!scene.isAvailable("copy-link"), "no host, no link")
+    #expect(scene.isAvailable("open-link"), "a link names its own host")
+    scene.useAccount("https://desk.tail1234.ts.net")
+    scene.copyLink(to: scene.place)
+    #expect(copied == "https://desk.tail1234.ts.net/")
+    scene.copyLink(to: Place(.session("a1b2c3"), message: 9))
+    #expect(copied == "https://desk.tail1234.ts.net/#a1b2c3?m=9")
+    #expect(scene.toasts.last?.text == "Copied a link to the message")
+
+    // Before the window's own state is back, a link's place waits instead of being covered.
+    scene.go(Place(.history))
+    #expect(scene.route == .inbox)
+
+    // Nothing on the clipboard that's a link: said so.
+    scene.pasteboard = { "not a link" }
+    scene.perform("open-link")
+    #expect(scene.toasts.last?.text == "There’s no link on the clipboard")
+
+    // Typed into a search field, a link to a place is offered; other text and addresses aren't.
+    #expect(scene.pastedLink("https://desk.tail1234.ts.net/#history")?.summary == "History")
+    #expect(scene.pastedLink("agenthub://desk/a1b2c3?m=4")?.summary == "a1b2c3 · message 4")
+    #expect(scene.pastedLink("https://example.com/pricing") == nil)
+    #expect(scene.pastedLink("users latency") == nil)
 }

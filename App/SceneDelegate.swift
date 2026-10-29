@@ -35,6 +35,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
         model.restore()
         model.clipboard = { UIPasteboard.general.string = $0 }
+        model.pasteboard = { UIPasteboard.general.string }
+        model.share = { [weak window] url in Self.share(url, from: window) }
         if UIApplication.shared.supportsMultipleScenes {
             model.openWindow = { link, origin in Self.newWindow(link, origin: origin) }
         }
@@ -162,6 +164,20 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         let target = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
         guard let session = (target?.delegate as? SceneDelegate)?.model?.session(key), session.composer.text.isEmpty else { return }
         session.composer.text = text
+    }
+
+    /// The share sheet for a link, over whatever this window shows (a popover from its top
+    /// edge on an iPad).
+    private static func share(_ url: URL, from window: UIWindow?) {
+        guard var top = window?.rootViewController else { return }
+        while let presented = top.presentedViewController, !presented.isBeingDismissed { top = presented }
+        let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        if let popover = sheet.popoverPresentationController {
+            popover.sourceView = top.view
+            popover.sourceRect = CGRect(x: top.view.bounds.maxX - 60, y: top.view.safeAreaInsets.top + 8, width: 1, height: 1)
+            popover.permittedArrowDirections = .up
+        }
+        top.present(sheet, animated: true)
     }
 
     /// Another window, opening at `link` (or wherever a new window starts) on `origin`'s host.

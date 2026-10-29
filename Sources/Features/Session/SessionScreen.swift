@@ -392,6 +392,7 @@ struct SessionAction: Identifiable {
                 SessionAction(title: "Resume", symbol: "play") { Task { if let key = await session.resume() { scene.open(key) } } },
                 SessionAction(title: "Fork…", symbol: "arrow.branch") { scene.sheet = .fork(session.key) },
                 SessionAction(title: session.history?.dto.pinned == true ? "Unpin" : "Pin", symbol: "pin") { Task { await session.togglePin() } },
+                SessionAction(title: "Copy Link", symbol: "link") { scene.copyLink(to: Place(.session(session.key))) },
             ]]
         }
         let pinned = session.row?.dto.pinned == true
@@ -411,6 +412,9 @@ struct SessionAction: Identifiable {
         }
         view.append(SessionAction(title: "Scrollback as Text", symbol: "text.alignleft") { scene.perform("scrollback") })
         view.append(SessionAction(title: "Copy Attach Command", symbol: "terminal") { scene.perform("copy-attach") })
+        let here = Place(.session(session.key), surface: session.surface == .terminal ? .terminal : nil, panel: session.panel)
+        view.append(SessionAction(title: "Copy Link", symbol: "link") { scene.copyLink(to: here) })
+        view.append(SessionAction(title: "Share Link…", symbol: "square.and.arrow.up") { scene.shareLink(to: here) })
         view.append(SessionAction(title: "All Commands…", symbol: "command") { scene.perform("command-palette") })
         return [
             [

@@ -39,9 +39,13 @@ struct PaletteView: View {
     private func items(_ tree: PaletteNode) -> [Item] {
         let (node, _) = scope(tree)
         if !query.trimmingCharacters(in: .whitespaces).isEmpty {
-            return PaletteTree.search(node, query, recent: scene.app.preferences.recentPalette).prefix(80).map { hit in
+            let found = PaletteTree.search(node, query, recent: scene.app.preferences.recentPalette).prefix(80).map { hit in
                 Item(id: (hit.trail.map(\.key) + [hit.node.key]).joined(separator: "/"), node: hit.node, trail: hit.trail, section: nil)
             }
+            // A pasted link: go where it points, first.
+            guard let pasted = scene.pastedLink(query) else { return found }
+            let open = PaletteNode(key: "open-link", label: "Open Link", icon: "arrow.up.forward.square", detail: pasted.summary, action: .openLink(query))
+            return [Item(id: "open-link", node: open, trail: [], section: nil)] + found
         }
         let children = (node.children ?? []).enumerated().map { index, child in
             Item(id: child.key, node: child, trail: [], section: path.isEmpty && index == 0 ? "All commands" : nil)
@@ -327,12 +331,14 @@ struct SwitcherView: View {
     @Environment(\.theme) private var theme
 
     private enum Row: Identifiable {
+        case link(AppLink, String)
         case live(SessionRow)
         case past(HistoryRow)
         case hit(SearchHit)
 
         var id: String {
             switch self {
+            case .link: return "link"
             case .live(let row): return "live:" + row.key
             case .past(let row): return "past:" + row.id
             case .hit(let hit): return "hit:\(hit.host):\(hit.kind):\(hit.ref ?? hit.uid ?? hit.title)"
@@ -353,7 +359,9 @@ struct SwitcherView: View {
 
     var body: some View {
         let found = rows()
-        let all: [Row] = found.live.map(Row.live) + found.past.map(Row.past) + found.hits.map(Row.hit)
+        // A pasted link: go where it points, first.
+        let lead: [Row] = tile ? [] : scene.pastedLink(query).map { [Row.link($0.link, $0.summary)] } ?? []
+        let all: [Row] = lead + found.live.map(Row.live) + found.past.map(Row.past) + found.hits.map(Row.hit)
         let text = SwitcherSearch.parse(query).text.trimmingCharacters(in: .whitespaces)
         VStack(spacing: 0) {
             HStack(spacing: 8) {
@@ -382,12 +390,12 @@ struct SwitcherView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 1) {
                         ForEach(Array(all.enumerated()), id: \.element.id) { index, row in
-                            if let head = heading(row, index: index, found: found) {
+                            if let head = heading(row, index: index - lead.count, found: found) {
                                 Text(head.uppercased()).font(.ah(.caption2).weight(.semibold)).foregroundStyle(theme.faint)
                                     .padding(.horizontal, 18).padding(.top, index == 0 ? 6 : 12).padding(.bottom, 4)
                                     .accessibilityAddTraits(.isHeader)
                             }
-                            if case .hit = row, index == found.live.count + found.past.count, let note = content?.note {
+                            if case .hit = row, index - lead.count == found.live.count + found.past.count, let note = content?.note {
                                 Text(note).font(.ah(.caption)).foregroundStyle(theme.muted).padding(.horizontal, 18)
                             }
                             SwitcherRow(row: display(row), selected: index == selection, multiHost: scene.hub?.multiHost == true)
@@ -451,6 +459,8 @@ struct SwitcherView: View {
 
     private func display(_ row: Row) -> SwitcherViewRow {
         switch row {
+        case .link(_, let summary):
+            return SwitcherViewRow(title: "Open Link", detail: [summary])
         case .live(let r):
             return SwitcherViewRow(agent: r.dto.agent, title: r.title, fork: r.dto.fork != nil, host: r.host, detail: [r.dto.project, r.dto.branch ?? ""], status: r.word)
         case .past(let h):
@@ -466,6 +476,7 @@ struct SwitcherView: View {
 
     private func heading(_ row: Row, index: Int, found: (live: [SessionRow], past: [HistoryRow], hits: [SearchHit])) -> String? {
         switch row {
+        case .link: return nil
         case .live: return index == 0 && !found.past.isEmpty ? "Sessions" : nil
         case .past: return index == found.live.count ? "History" : nil
         case .hit: return index == found.live.count + found.past.count ? "In conversations" : nil
@@ -475,6 +486,9 @@ struct SwitcherView: View {
     private func choose(_ all: [Row], split: Bool) {
         guard all.indices.contains(selection) else { return }
         switch all[selection] {
+        case .link(let link, _):
+            scene.switcher = nil
+            scene.follow(link)
         case .live(let row):
             if split && !scene.narrow && scene.switcher?.intoPane == nil {
                 scene.switcher?.asTile = true

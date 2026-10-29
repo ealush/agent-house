@@ -61,7 +61,7 @@ struct TranscriptView: View {
                     }
                     let ends = Self.turnEnds(blocks, durations: FeedProjection.turnDurations(session.feed.entries), working: session.working)
                     ForEach(Array(blocks.enumerated()), id: \.element.id) { index, block in
-                        BlockRow(block: block, session: session, stepsHidden: stepsHidden, isLast: index == blocks.count - 1)
+                        BlockRow(block: block, session: session, scene: scene, stepsHidden: stepsHidden, isLast: index == blocks.count - 1)
                             .id(block.id)
                             .padding(.horizontal, 2)
                             .background(browsing == index || linked == block.id ? theme.accent.opacity(linked == block.id ? 0.14 : 0.08) : .clear, in: RoundedRectangle(cornerRadius: 12))
@@ -319,6 +319,7 @@ private struct MessageRail: View {
 private struct BlockRow: View {
     let block: FeedBlock
     let session: SessionModel
+    let scene: SceneModel
     let stepsHidden: Bool
     let isLast: Bool
     @Environment(\.theme) private var theme
@@ -330,6 +331,7 @@ private struct BlockRow: View {
             UserBubble(text: text, at: at, media: parts)
                 .contextMenu {
                     Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = text }
+                    LinkButtons(place: messagePlace, scene: scene)
                     if session.isLive {
                         Button("Edit & Send Again", systemImage: "pencil") {
                             session.composer.compose(text)
@@ -362,6 +364,7 @@ private struct BlockRow: View {
             }
             .contextMenu {
                 Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = block.text }
+                LinkButtons(place: messagePlace, scene: scene)
                 if session.isLive && !block.text.isEmpty {
                     Button("Quote in Reply", systemImage: "text.quote") {
                         let quoted = block.text.split(separator: "\n", omittingEmptySubsequences: false).prefix(12).map { "> \($0)" }.joined(separator: "\n")
@@ -379,6 +382,22 @@ private struct BlockRow: View {
             .foregroundStyle(theme.muted)
             .frame(maxWidth: .infinity)
         }
+    }
+}
+
+extension BlockRow {
+    /// This message, as a link names it: the session's GUI at the block's first entry.
+    fileprivate var messagePlace: Place { Place(.session(session.key), message: block.seq) }
+}
+
+/// Copy Link and Share Link for a place, in a context menu.
+struct LinkButtons: View {
+    let place: Place
+    let scene: SceneModel
+
+    var body: some View {
+        Button("Copy Link", systemImage: "link") { scene.copyLink(to: place) }
+        Button("Share Link…", systemImage: "square.and.arrow.up") { scene.shareLink(to: place) }
     }
 }
 

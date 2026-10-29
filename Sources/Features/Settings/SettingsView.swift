@@ -18,6 +18,7 @@ struct SettingsView: View {
                 Section("Agent Hub") {
                     ForEach(SettingsSection.allCases.filter { $0 != .security }, id: \.self) { s in
                         NavigationLink(value: s) { SettingsRowLabel(section: s, title: s.title) }
+                            .contextMenu { LinkButtons(place: Place(.settings(s.rawValue)), scene: scene) }
                     }
                 }
             }
@@ -110,6 +111,12 @@ private struct SettingsDetail: View {
             }
         }
         .navigationTitle(section == .security ? "Hosts and security" : section.title)
+        // A link straight to this section (the overflow menu), here or in the web app.
+        .toolbar {
+            ToolbarItemGroup(placement: .secondaryAction) {
+                LinkButtons(place: Place(.settings(section == .security ? nil : section.rawValue)), scene: scene)
+            }
+        }
         .id("\(account.origin)|\(section.rawValue)")
     }
 }

@@ -77,6 +77,24 @@ struct Place: Equatable, Sendable, Hashable {
         }
     }
 
+    /// What the place is, briefly (a palette row's detail); `title` names a session.
+    func summary(title: String? = nil) -> String {
+        switch route {
+        case .inbox, .worktrees: return "Inbox"
+        case .sessions: return "Sessions"
+        case .history: return "History"
+        case .search: return "Search"
+        case .review(let target): return target.stack == nil ? "Review" : target.pr.map { "Review · #\($0)" } ?? "Review · a stack"
+        case .settings(let section): return "Settings · " + (section.flatMap(SettingsSection.init(rawValue:))?.title ?? SettingsSection.security.title)
+        case .session(let key):
+            var parts = [title ?? key]
+            if surface == .terminal { parts.append("terminal") }
+            if let panel { parts.append(panel.title) }
+            if let message { parts.append("message \(message)") }
+            return parts.joined(separator: " · ")
+        }
+    }
+
     /// A session key a link may name: "uid", or "host/uid" with a hostname-safe host.
     static func isSessionKey(_ path: String) -> Bool {
         let parts = path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
