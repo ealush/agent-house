@@ -10,6 +10,8 @@ struct TranscriptView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var topID: String?
     @State private var browsing: Int?
+    /// The message a link opened, marked for a moment.
+    @State private var linked: String?
     @State private var loadingOlder = false
     @FocusState private var browseFocused: Bool
 
@@ -62,7 +64,7 @@ struct TranscriptView: View {
                         BlockRow(block: block, session: session, stepsHidden: stepsHidden, isLast: index == blocks.count - 1)
                             .id(block.id)
                             .padding(.horizontal, 2)
-                            .background(browsing == index ? theme.accent.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 12))
+                            .background(browsing == index || linked == block.id ? theme.accent.opacity(linked == block.id ? 0.14 : 0.08) : .clear, in: RoundedRectangle(cornerRadius: 12))
                         if let seconds = ends[block.id] {
                             TurnFooter(seconds: seconds)
                         }
@@ -101,8 +103,27 @@ struct TranscriptView: View {
                 guard !blocks.isEmpty, scene.scrollAnchors[session.key]?.seq == nil else { return }
                 for delay in [150, 600] {
                     try? await Task.sleep(for: .milliseconds(delay))
+                    // A link to a message holds the transcript there instead.
+                    guard session.pendingMessage == nil, linked == nil else { return }
                     reader.scrollTo("bottom", anchor: .bottom)
                 }
+            }
+            // A link to a message: once the transcript is here, page back to it, bring it to the
+            // top and mark it a moment (the block that holds it, when it's inside a turn).
+            .task(id: "\(session.pendingMessage ?? -1)/\(blocks.isEmpty)") {
+                guard let seq = session.pendingMessage, !blocks.isEmpty else { return }
+                defer { session.pendingMessage = nil }
+                guard await session.reveal(seq: seq) else {
+                    scene.toast("That message isn’t in this transcript any more")
+                    return
+                }
+                await Task.yield()
+                let all = session.blocks
+                guard let block = all.first(where: { $0.seq == seq }) ?? all.last(where: { $0.seq <= seq }) else { return }
+                withAnimation(reduceMotion ? nil : .snappy) { reader.scrollTo(block.id, anchor: .top) }
+                linked = block.id
+                try? await Task.sleep(for: .seconds(2))
+                withAnimation(.easeOut(duration: 0.6)) { linked = nil }
             }
             // The composer isn't the keyboard's accessory (as Messages' field is), so an
             // interactive dismissal only began once a drag crossed the whole composer into the

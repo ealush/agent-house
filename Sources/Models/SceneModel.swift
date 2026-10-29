@@ -48,6 +48,8 @@ final class SceneModel {
     @ObservationIgnored private var focusNonce = 0
     @ObservationIgnored private var restored = false
     @ObservationIgnored private var pendingRestore: SceneSnapshot?
+    /// A link's place that arrived before the window's own state was back.
+    @ObservationIgnored private var pendingPlace: Place?
     @ObservationIgnored private var panelDelta: Double = 0
     /// Where the keyboard is now (a composer or terminal), as the responders report it.
     @ObservationIgnored private(set) var currentFocus: FocusTarget?
@@ -643,6 +645,10 @@ final class SceneModel {
         for notice in outcome.notices { toast(notice) }
         restored = true
         pruneSessions()
+        if let place = pendingPlace {
+            pendingPlace = nil
+            go(place)
+        }
     }
 
     var isRestored: Bool { restored }
@@ -1115,13 +1121,59 @@ final class SceneModel {
             return false
         }
         useAccount(handoff.origin)
-        switch handoff.route {
-        case .session(let key): open(key)
-        case .review(let target): openReview(target)
-        case .settings(let section): sheet = .settings(section)
-        default: show(handoff.route)
-        }
+        go(Place(handoff.route))
         return true
+    }
+
+    // MARK: Links
+
+    /// A link from outside (opened, pasted, handed over): the account that serves its host,
+    /// then its place. A host this device hasn't set up says so.
+    @discardableResult
+    func follow(_ link: AppLink) -> Bool {
+        let accounts = app.accounts.map { AppLink.Account(origin: $0.origin, hostname: $0.hostname, peers: $0.hub.hosts.map(\.name)) }
+        guard let (origin, place) = link.resolve(accounts, preferred: accountOrigin) else {
+            let name = link.origin.flatMap { URL(string: $0)?.host } ?? link.host ?? "that host"
+            toast("Set up \(name) on this device to open its links.", error: true)
+            return false
+        }
+        useAccount(origin)
+        go(place)
+        return true
+    }
+
+    /// Goes to a place: a page, a Settings section, a review, or a session with its view, its
+    /// panel and a message brought into sight. Until the window's own state is back it waits,
+    /// or the restore would land on top of it.
+    func go(_ place: Place) {
+        guard restored else {
+            pendingPlace = place
+            return
+        }
+        switch place.route {
+        case .session(let key):
+            open(key)
+            guard let session = session(key) else { return }
+            if let surface = place.surface ?? (place.message != nil ? .gui : nil) { setSurface(surface, for: key) }
+            if let panel = place.panel { session.panel = panel }
+            if let seq = place.message { session.pendingMessage = seq }
+        case .review(let target):
+            openReview(target)
+        case .settings(let section):
+            sheet = .settings(section)
+        default:
+            show(place.route)
+        }
+    }
+
+    /// Where this window is, as a place a link can name (the focused session with its view).
+    var place: Place {
+        var key: String?
+        if case .session(let shown) = route { key = shown } else if workspace.layout != nil { key = workspace.focusedKey }
+        if let key, let session = sessions[key] {
+            return Place(.session(key), surface: session.surface == .terminal ? .terminal : nil, panel: session.panel)
+        }
+        return Place(route)
     }
 
     // MARK: Switcher and search results

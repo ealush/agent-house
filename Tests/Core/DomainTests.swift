@@ -203,6 +203,67 @@ import Testing
     #expect(LaunchState.tmuxChoices(sessions: [], defaultSession: "ah").initial == nil)
 }
 
+@Test func placesReadAndWriteTheWebHash() {
+    // Pages, review and settings, as the web's fromHash reads them.
+    #expect(Place(hash: "").route == .inbox)
+    #expect(Place(hash: "#history").route == .history)
+    #expect(Place(hash: "review/stk1/42").route == .review(ReviewRoute(stack: "stk1", pr: 42)))
+    #expect(Place(hash: "settings/agents").route == .settings("agents"))
+    #expect(Place(hash: "settings/security").route == .settings(nil), "Security is bare settings, as on the web")
+    #expect(Place(hash: "settings/nope").route == .settings(nil))
+    #expect(Place(.settings("environment")).hash == "settings/environment")
+    // A session with its view, a panel and a message.
+    let message = Place(hash: "a1b2c3?m=42")
+    #expect(message == Place(.session("a1b2c3"), message: 42))
+    #expect(Place(hash: "laptop/zz9y8x?view=terminal").surface == .terminal)
+    #expect(Place(hash: "a1b2c3?panel=diff&m=7") == Place(.session("a1b2c3"), panel: .diff, message: 7))
+    #expect(Place(.session("a1b2c3"), surface: .terminal, panel: .files, message: 3).hash == "a1b2c3?view=terminal&panel=files&m=3")
+    for hash in ["a1b2c3", "laptop/zz9y8x?m=12", "a1b2c3?view=terminal&panel=snapshots", "review/stk1/42", "settings/system", "history", ""] {
+        #expect(Place(hash: hash).hash == hash, "\(hash) round-trips")
+    }
+    // Options only belong to a session, and only known ones count.
+    #expect(Place(hash: "history?m=4") == Place(.history))
+    #expect(Place(hash: "a1b2c3?panel=nope&view=sideways&m=-1") == Place(.session("a1b2c3")))
+    #expect(Place(.history, message: 4).hash == "history")
+    // Nothing but a session key opens a session.
+    #expect(Place(hash: "../etc/passwd").route == .inbox)
+    #expect(Place(hash: "a/b/c1234").route == .inbox)
+    #expect(Place(hash: "bad host!/abcd1").route == .inbox)
+}
+
+@Test func linksNameAPlaceOnOneOfYourHosts() throws {
+    let desk = AppLink.Account(origin: "https://desk.tail1234.ts.net", hostname: "desk", peers: ["laptop"])
+    let other = AppLink.Account(origin: "https://box.tail1234.ts.net", hostname: "box", peers: [])
+    let accounts = [other, desk]
+    let place = Place(.session("a1b2c3"), message: 42)
+
+    // A web link is the host's own address with the place as its hash.
+    let web = try #require(AppLink.webURL(origin: desk.origin, place: place))
+    #expect(web.absoluteString == "https://desk.tail1234.ts.net/#a1b2c3?m=42")
+    let fromWeb = try #require(AppLink(url: web))
+    #expect(fromWeb.resolve(accounts)! == (desk.origin, place))
+    #expect(AppLink(url: URL(string: "https://elsewhere.example/#a1b2c3")!)!.resolve(accounts) == nil, "not one of your hosts")
+    #expect(AppLink.webURL(origin: desk.origin, place: Place(.inbox))?.absoluteString == "https://desk.tail1234.ts.net/")
+
+    // An app link names the host: by its full name (the web app's "Open in Agent Hub") or hostname.
+    let app = try #require(AppLink.appURL(host: "desk.tail1234.ts.net", place: place))
+    #expect(app.absoluteString == "agenthub://desk.tail1234.ts.net/a1b2c3?m=42")
+    #expect(AppLink(url: app)!.resolve(accounts)! == (desk.origin, place))
+    #expect(AppLink(url: URL(string: "agenthub://desk/settings/agents")!)!.resolve(accounts)! == (desk.origin, Place(.settings("agents"))))
+    // A peer's name opens its session through the host that reaches it.
+    #expect(AppLink(url: URL(string: "agenthub://laptop/zz9y8x?view=terminal")!)!.resolve(accounts)! == (desk.origin, Place(.session("laptop/zz9y8x"), surface: .terminal)))
+    // "local" is this window's host.
+    #expect(AppLink(url: URL(string: "agenthub://local/history")!)!.resolve(accounts, preferred: desk.origin)! == (desk.origin, Place(.history)))
+    // The links this app already made (notifications, new windows) still open.
+    #expect(AppLink(url: DeepLink.session(host: "box", uid: "ah-1234").url)!.resolve(accounts)! == (other.origin, Place(.session("ah-1234"))))
+    #expect(AppLink(url: URL(string: "agenthub://unknown/a1b2c3")!)!.resolve(accounts) == nil)
+
+    // Pasted text: the link alone, trimmed; anything else isn't one.
+    #expect(AppLink(text: "  <https://desk.tail1234.ts.net/#history>\n")?.place == Place(.history))
+    #expect(AppLink(text: "see https://desk.tail1234.ts.net/#history") == nil)
+    #expect(AppLink(text: "mailto:me@example.com") == nil)
+}
+
 @Test func handoffCarriesTheWebHashBothWays() throws {
     let origin = "https://desk.tail1234.ts.net"
     let session = Handoff(origin: origin, route: .session("a1b2c3"), title: "fix login")

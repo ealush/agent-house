@@ -117,6 +117,9 @@ final class TourUITests: XCTestCase {
             case "relaunch":
                 app.terminate()
                 app.launch()
+            case "url":
+                // A link opened from outside (agenthub: or a host's web link), as the system hands it over.
+                if let url = URL(string: argument) { app.open(url) }
             case "home":
                 XCUIDevice.shared.press(.home)
             case "activate":

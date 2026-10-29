@@ -38,34 +38,9 @@ struct Handoff: Equatable, Sendable {
         self.init(origin: origin, route: Self.route(hash: hash), title: "")
     }
 
-    static func hash(_ route: SceneSnapshot.Route) -> String {
-        switch route {
-        case .session(let key): return key
-        case .inbox, .worktrees: return ""
-        case .sessions: return "sessions"
-        case .history: return "history"
-        case .search: return "search"
-        case .settings: return "settings"
-        case .review(let target): return target.fragment
-        }
-    }
+    static func hash(_ route: SceneSnapshot.Route) -> String { Place(route).hash }
 
-    /// `fromHash`: pages by name, review with its place, a session key ("uid" or
-    /// "host/uid"), anything else the Inbox.
-    static func route(hash raw: String) -> SceneSnapshot.Route {
-        var h = raw.hasPrefix("#") ? String(raw.dropFirst()) : raw
-        h = h.removingPercentEncoding ?? h
-        if h == "security" || h == "settings" || h.hasPrefix("settings/") { return .settings(nil) }
-        if h == "review" || h.hasPrefix("review/") { return .review(ReviewRoute(fragment: h)) }
-        switch h {
-        case "history": return .history
-        case "sessions": return .sessions
-        case "search": return .search
-        default: break
-        }
-        let parts = h.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
-        let hostOK = parts.count == 2 && !parts[0].isEmpty && parts[0].allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "." || $0 == "-" || $0 == "_") }
-        if let uid = parts.last, (parts.count == 1 || hostOK), (4...40).contains(uid.count), DeepLink.isUID(uid) { return .session(h) }
-        return .inbox
-    }
+    /// The web's `fromHash` (`Place`): a page, review with its place, settings with its
+    /// section, a session key ("uid" or "host/uid"), anything else the Inbox.
+    static func route(hash raw: String) -> SceneSnapshot.Route { Place(hash: raw).route }
 }

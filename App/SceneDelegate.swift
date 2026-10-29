@@ -130,9 +130,11 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         for context in URLContexts { handle(context.url) }
     }
 
+    /// An `agenthub:` link (the web app's "Open in Agent Hub", another window's, a shortcut's)
+    /// or one of your hosts' web links.
     private func handle(_ url: URL) {
-        guard let link = DeepLink(url: url) else { return }
-        open(link, origin: nil)
+        guard let link = AppLink(url: url) else { return }
+        model?.follow(link)
     }
 
     /// Goes to a link in this window: picks the account that serves its host, then the place.
@@ -143,13 +145,14 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         else if let host = link.host, let account = app.accounts.first(where: { $0.hostname == host || $0.hub.hosts.contains { $0.name == host } }) {
             model.useAccount(account.origin)
         }
+        // Through `go`: a notification that launched the app waits for the window's own state.
         switch link {
         case .session:
-            if let key = link.sessionKey(localHost: model.hub?.hostname) { model.open(key) }
+            if let key = link.sessionKey(localHost: model.hub?.hostname) { model.go(Place(.session(key))) }
         case .review(_, let route):
-            model.openReview(route)
+            model.go(Place(.review(route)))
         case .inbox:
-            model.show(.inbox)
+            model.go(Place(.inbox))
         }
     }
 
