@@ -145,6 +145,40 @@ struct ModelIntegrationTests {
         account.deactivate()
     }
 
+    @Test func aVideoAttachesFromDiskWellPastTheOldLimitAndLeavesNoFile() async throws {
+        let phone = try app(device: "iPhone")
+        let account = try await phone.enroll(address: LiveHost.origin.absoluteString, code: try await LiveHost.setupCode(), label: "Phone")
+        let shell = try await LiveHost.launch(account.api, preset: "shell", label: "video")
+        let composer = ComposerModel(api: account.api, outbox: phone.outbox, key: shell.uid, uid: shell.uid, isShell: false)
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mov")
+        try Data(count: 51 * 1024 * 1024).write(to: file)
+
+        composer.attachVideo(name: "video.mov") { (file, Data([1])) }
+        #expect(composer.attachments.map(\.name) == ["video.mov"], "the tile shows before the upload lands")
+        #expect(composer.isUploading)
+        let path = try await waitFor("the upload", timeout: 60) { composer.attachments.first?.path }
+        #expect(Uploads.split(path).uploads.first?.image == false)
+        #expect(composer.attachments.first?.thumbnail == Data([1]))
+        #expect(!composer.isUploading)
+        #expect(!FileManager.default.fileExists(atPath: file.path), "the device's copy goes once it's up")
+
+        // Removing the tile stops it: nothing comes back, and no failure is reported.
+        composer.removeAttachment(composer.attachments[0].id)
+        composer.attachVideo(name: "second.mov") {
+            try await Task.sleep(for: .seconds(30))
+            return (file, nil)
+        }
+        composer.removeAttachment(composer.attachments[0].id)
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(composer.attachments.isEmpty && composer.takeEvents().isEmpty)
+
+        // A file that can't be had says so.
+        composer.attachVideo(name: "gone.mov") { throw CocoaError(.fileNoSuchFile) }
+        _ = try await waitFor("the failure") { composer.takeEvents().first }
+        #expect(composer.attachments.isEmpty)
+        account.deactivate()
+    }
+
     @Test func draftsFillAnUntouchedBoxButNeverOverwriteTyping() async throws {
         let phone = try app(device: "iPhone")
         let pad = try app(device: "iPad")
