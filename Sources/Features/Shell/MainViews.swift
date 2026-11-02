@@ -195,10 +195,19 @@ struct PageView: View {
                     if target.stack != nil {
                         StackCockpitView(scene: scene, model: review, route: target)
                     } else {
-                        // A phone's Review tab keeps the list as its root and pushes the stack.
+                        // A phone's Review tab keeps the list as its root; the scene's path pushes
+                        // the stack and its layers. Declared here, it stands while they're up.
                         ReviewHomeView(scene: scene, model: review)
-                            .navigationDestination(item: $scene.pushedReview) { target in
-                                StackCockpitView(scene: scene, model: review, route: target)
+                            .navigationDestination(for: ReviewRoute.self) { target in
+                                Group {
+                                    if target.pr == nil {
+                                        StackCockpitView(scene: scene, model: review, route: target)
+                                    } else {
+                                        LayerPage(scene: scene, model: review, route: target)
+                                    }
+                                }
+                                .scrollContentBackground(.hidden)
+                                .background(theme.background.ignoresSafeArea())
                             }
                     }
                 } else {
@@ -208,6 +217,16 @@ struct PageView: View {
         } else {
             ProgressView()
         }
+    }
+}
+
+/// The Review tab on a phone: the list, under the scene's path.
+struct ReviewTab: View {
+    @Bindable var scene: SceneModel
+    let route: SceneSnapshot.Route
+
+    var body: some View {
+        NavigationStack(path: $scene.reviewPath) { PageView(scene: scene, route: route) }
     }
 }
 

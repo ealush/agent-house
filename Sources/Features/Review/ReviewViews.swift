@@ -240,7 +240,8 @@ struct StackCockpitView: View {
                     .tint(.primary)
             }
         }
-        .task(id: route) { await model.open(route) }
+        // On a phone a layer is its own page, which picks it; here it would only race that one.
+        .task(id: route) { await model.open(route, selecting: !scene.narrow) }
         .sheet(isPresented: $mergingStack) {
             if let stack = model.stack { StackMergeSheet(model: model, stack: stack) }
         }
@@ -281,6 +282,7 @@ struct StackCockpitView: View {
                     if let syncError = stack.syncError { Text(syncError).font(.ah(.caption)).foregroundStyle(theme.danger) }
                 }
             }
+            .ahRow(scene.narrow)
             Section("Pinned decisions") {
                 ForEach(stack.decisions) { decision in
                     Text(decision.text).font(.ah(.callout))
@@ -294,6 +296,7 @@ struct StackCockpitView: View {
                         if !text.isEmpty { Task { await model.addDecision(text) } }
                     }
             }
+            .ahRow(scene.narrow)
             Section("Layers, bottom to top") {
                 ForEach(stack.layers) { layer in
                     LayerRow(layer: layer)
@@ -305,15 +308,41 @@ struct StackCockpitView: View {
                         }
                 }
             }
+            .ahRow(scene.narrow)
             if stack.planPath != nil {
                 Section("Plan") {
                     if let plan = model.plan?.text { MarkdownView(plan, compact: true) } else { Button("Show the plan") { Task { await model.loadPlan() } } }
                 }
+                .ahRow(scene.narrow)
             }
         }
         .listStyle(.sidebar)
-        .navigationDestination(for: ReviewRoute.self) { route in
-            LayerView(scene: scene, model: model).task { if let pr = route.pr { await model.select(pr) } }
+    }
+}
+
+/// A layer pushed on a phone. A link or a restored window can land here with its stack still
+/// to load.
+struct LayerPage: View {
+    @Bindable var scene: SceneModel
+    @Bindable var model: ReviewModel
+    let route: ReviewRoute
+
+    var body: some View {
+        Group {
+            if model.layer != nil, model.selectedPR == route.pr {
+                LayerView(scene: scene, model: model)
+            } else if let error = model.error {
+                Banner(text: error, tone: .error).padding()
+            } else {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .task(id: route) {
+            if model.stack?.id != route.stack {
+                await model.open(route)
+            } else if let pr = route.pr, model.selectedPR != pr {
+                await model.select(pr)
+            }
         }
     }
 }

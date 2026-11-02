@@ -466,7 +466,9 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
 
     private func nav(for id: String, route: SceneSnapshot.Route) -> UINavigationController {
         if let existing = navs[id] { return existing }
-        let page = root.host(NavigationStack { PageView(scene: root.scene, route: route) })
+        let page: UIViewController = id == "review"
+            ? root.host(ReviewTab(scene: root.scene, route: route))
+            : root.host(NavigationStack { PageView(scene: root.scene, route: route) })
         let nav = UINavigationController(rootViewController: page)
         nav.delegate = self
         nav.setNavigationBarHidden(true, animated: false)
@@ -566,8 +568,8 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
         let nav = nav(for: page.id, route: page.route)
         if let top = nav.topViewController as? SessionHostController {
             scene.open(top.key)
-        } else if scene.route != page.route {
-            scene.show(page.route)
+        } else if scene.route != scene.tabRoute(page.route) {
+            scene.show(scene.tabRoute(page.route))
         }
     }
 
@@ -579,7 +581,7 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
     func navigationController(_ navigationController: UINavigationController, didShow viewController: UIViewController, animated: Bool) {
         if viewController === navigationController.viewControllers.first, case .session = scene.route {
             scene.closeSession()
-            if let id = Self.id(of: tabBar.selectedTab), let page = Self.pages.first(where: { $0.id == id }) { scene.show(page.route) }
+            if let id = Self.id(of: tabBar.selectedTab), let page = Self.pages.first(where: { $0.id == id }) { scene.show(scene.tabRoute(page.route)) }
         }
     }
 }

@@ -14,7 +14,21 @@ final class SceneModel {
     let workspace = WorkspaceModel()
 
     private(set) var accountOrigin: String?
-    var route: SceneSnapshot.Route = .inbox
+    var route: SceneSnapshot.Route = .inbox {
+        didSet {
+            guard case .review(let target) = route else { return }
+            let path = Self.reviewPath(to: target)
+            if path != reviewPath { reviewPath = path }
+        }
+    }
+    /// On a phone, what's pushed over the Review tab's list: a stack, then one of its layers.
+    /// It outlives the route, so a session opened from a stack comes back to that stack.
+    var reviewPath: [ReviewRoute] = [] {
+        didSet {
+            guard case .review(let target) = route, Self.reviewPath(to: target) != reviewPath else { return }
+            route = .review(reviewPath.last ?? ReviewRoute())
+        }
+    }
     /// Compact width (iPhone, narrow Stage Manager): tabs and pushes instead of a sidebar and panes.
     var narrow = false
     var historyFilter = ""
@@ -566,16 +580,15 @@ final class SceneModel {
 
     func openReview(_ target: ReviewRoute) { show(.review(target)) }
 
-    /// On a phone, the stack the Review tab shows over its list (its root is always the
-    /// list); going back returns to the list.
-    var pushedReview: ReviewRoute? {
-        get {
-            guard narrow, case .review(let target) = route, target.stack != nil else { return nil }
-            return target
-        }
-        set {
-            if let newValue { openReview(newValue) } else if pushedReview != nil { show(.review(ReviewRoute())) }
-        }
+    private static func reviewPath(to target: ReviewRoute) -> [ReviewRoute] {
+        guard let stack = target.stack else { return [] }
+        return [ReviewRoute(stack: stack)] + (target.pr == nil ? [] : [ReviewRoute(stack: stack, pr: target.pr)])
+    }
+
+    /// Where a phone's tab opens to: Review's keeps the stack or layer you left it on.
+    func tabRoute(_ page: SceneSnapshot.Route) -> SceneSnapshot.Route {
+        guard case .review = page else { return page }
+        return .review(reviewPath.last ?? ReviewRoute())
     }
 
     // MARK: Restoration

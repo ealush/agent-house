@@ -398,3 +398,30 @@ private func forked(_ key: String, _ title: String, root: String?, created: Doub
     #expect(scene.pastedLink("https://example.com/pricing") == nil)
     #expect(scene.pastedLink("users latency") == nil)
 }
+
+@MainActor
+@Test func theReviewPathFollowsTheRouteAndOutlivesIt() throws {
+    let scene = try windowWithoutHost()
+    let stack = ReviewRoute(stack: "abcd")
+    let layer = ReviewRoute(stack: "abcd", pr: 7)
+
+    scene.openReview(layer)
+    #expect(scene.reviewPath == [stack, layer], "a link to a layer has its stack under it")
+    scene.reviewPath = [stack]
+    #expect(scene.route == .review(stack), "back from the layer")
+
+    // A session opened from the stack: the stack stays pushed, and the tab returns to it.
+    scene.open("a")
+    #expect(scene.reviewPath == [stack])
+    #expect(scene.tabRoute(.review(ReviewRoute())) == .review(stack))
+    #expect(scene.tabRoute(.history) == .history)
+
+    scene.show(.review(stack))
+    scene.reviewPath.append(layer)
+    #expect(scene.route == .review(layer), "pushing a layer is the route")
+    scene.reviewPath = []
+    #expect(scene.route == .review(ReviewRoute()), "back to the list")
+
+    scene.show(.review(ReviewRoute(pick: true)))
+    #expect(scene.route == .review(ReviewRoute(pick: true)) && scene.reviewPath.isEmpty, "the picker has nothing pushed")
+}
