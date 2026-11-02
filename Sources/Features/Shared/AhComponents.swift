@@ -74,6 +74,31 @@ extension View {
     func ahRow(_ on: Bool = true) -> some View { modifier(AhRowGround(on: on)) }
 }
 
+/// A form in ah's layers: on the page's ground, its rows on the theme's card.
+struct AhForm<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        Form { Group { content }.ahRow() }.ahFormGround()
+    }
+}
+
+private struct AhFormGround: ViewModifier {
+    @Environment(\.theme) private var theme
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    func body(content: Content) -> some View {
+        content
+            .scrollContentBackground(.hidden)
+            .background(sizeClass == .compact ? theme.background : theme.surface)
+    }
+}
+
+extension View {
+    /// What `AhForm` puts behind a form, for a list that reads as one.
+    func ahFormGround() -> some View { modifier(AhFormGround()) }
+}
+
 private struct AhRowGround: ViewModifier {
     let on: Bool
     @Environment(\.theme) private var theme

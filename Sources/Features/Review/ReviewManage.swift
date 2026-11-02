@@ -24,7 +24,7 @@ struct StackManageSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            AhForm {
                 if let error = model.error { Banner(text: error, tone: .error) }
                 Section("Stack") {
                     TextField("Name", text: $title).onSubmit { Task { await model.update(StackPatch(title: title)) } }
@@ -143,7 +143,7 @@ struct ResolveThreadSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            AhForm {
                 Section("Thread") { Text(finding.title).font(.ah(.callout)) }
                 Section("Your reply") { TextEditor(text: $reply).frame(minHeight: 120) }
             }

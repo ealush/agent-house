@@ -737,7 +737,7 @@ private struct NewFindingSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            AhForm {
                 if let path { Section("Where") { Text("\(path)\(lines.first?.number.map { ":\($0)" } ?? "")").font(.ahMono(.caption)) } }
                 TextField("What’s wrong", text: $title)
                 TextField("Details (optional)", text: $body_, axis: .vertical)
@@ -778,7 +778,7 @@ private struct DispatchSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            AhForm {
                 if kind == nil {
                     Section("Findings to fix") {
                         ForEach(model.findings(for: layer.pr).filter(\.isOpen)) { finding in
@@ -847,7 +847,7 @@ private struct MergeLayerSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            AhForm {
                 Section("What lands") {
                     LabeledContent("PR", value: "#\(layer.pr) \(layer.title)")
                     LabeledContent("Into", value: layer.baseRef)
@@ -914,7 +914,7 @@ private struct StackMergeSheet: View {
     var body: some View {
         let plan = StackMergePlan(stack: stack, method: method)
         NavigationStack {
-            Form {
+            AhForm {
                 Picker("Method", selection: $method) { ForEach(stack.methods, id: \.self) { Text($0).tag($0) } }
                 Section("Bottom to top") {
                     ForEach(plan.rows) { row in

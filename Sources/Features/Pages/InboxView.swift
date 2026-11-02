@@ -402,7 +402,7 @@ struct SessionListView: View {
                             .draggable(SessionDrag(key: row.key))
                             .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
                             .swipeActions(edge: .trailing) { PinSwipe(row: row, hub: hub) }
-                            .ahRow(scene.narrow)
+                            .ahRow(!showsPages)
                     }
                     .onMove { from, to in move(section: section, from: from, to: to) }
                 } header: {

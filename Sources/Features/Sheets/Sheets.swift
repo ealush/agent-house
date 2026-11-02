@@ -85,7 +85,7 @@ struct NewSessionSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            AhForm {
                 if let error { Banner(text: error, tone: .error) }
                 if let hub, hub.multiHost {
                     Picker("Host", selection: $host) {
@@ -530,7 +530,7 @@ struct ForkSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            AhForm {
                 if let info {
                     if !info.canFork {
                         Banner(text: info.reason ?? "This session can’t be forked.", tone: .error)
@@ -683,7 +683,7 @@ struct SendToSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            AhForm {
                 if let error { Banner(text: error, tone: .error) }
                 Section {
                     Picker("To", selection: $target) {
@@ -763,7 +763,7 @@ struct ContinueInSheet: View {
     var body: some View {
         let name = scene.hub?.presets(host: nil).first { $0.id == preset }?.name ?? preset
         NavigationStack {
-            Form {
+            AhForm {
                 Section {
                     if loading { ProgressView("Reading the conversation…") }
                     TextEditor(text: $text).frame(minHeight: 260).font(.ahMono(.callout))
