@@ -28,6 +28,9 @@ final class SessionModel: Identifiable {
         set { chosenSurface = newValue }
     }
     var panel: SceneSnapshot.Panel?
+    /// A message a link asked for (its transcript seq): the transcript brings it into sight once
+    /// it has loaded, then clears it.
+    var pendingMessage: Int?
     /// A message to restore the files to before: Snapshots finds its turn and asks.
     var restoreRequest: String?
     /// A rename in progress (⌃⌥N): Return saves, Escape cancels.

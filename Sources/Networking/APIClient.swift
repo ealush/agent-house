@@ -64,10 +64,15 @@ struct APIClient: Sendable {
         return String(header.dropFirst("Bearer ".count))
     }
 
-    func send(_ request: URLRequest) async throws -> Data {
+    func send(_ request: URLRequest, fromFile file: URL? = nil) async throws -> Data {
         do {
             try Task.checkCancellation()
-            let (data, response) = try await transport.data(for: request)
+            let (data, response): (Data, HTTPURLResponse)
+            if let file {
+                (data, response) = try await transport.upload(for: request, fromFile: file)
+            } else {
+                (data, response) = try await transport.data(for: request)
+            }
             guard (200..<300).contains(response.statusCode) else {
                 let error = APIError(status: response.statusCode, body: data)
                 if case .unauthorized = error { await credentials.rejected(bearer: Self.bearer(of: request)) }
@@ -312,6 +317,15 @@ struct APIClient: Sendable {
     func upload(name: String, data: Data) async throws -> String {
         let req = await request("POST", "/api/upload", query: [URLQueryItem(name: "name", value: name)], body: data, contentType: "application/octet-stream")
         return try JSONDecoder().decode(UploadedPath.self, from: try await send(req)).path
+    }
+
+    /// The same from a file on disk, for what's too big to hold in memory (a video).
+    func upload(name: String, file: URL) async throws -> String {
+        var req = await request("POST", "/api/upload", query: [URLQueryItem(name: "name", value: name)], contentType: "application/octet-stream")
+        req.httpBody = nil
+        // Between bytes: the host only answers once the last one lands.
+        req.timeoutInterval = 120
+        return try JSONDecoder().decode(UploadedPath.self, from: try await send(req, fromFile: file)).path
     }
 
     // MARK: Account management (Settings → Security)

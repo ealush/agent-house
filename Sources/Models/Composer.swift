@@ -318,6 +318,7 @@ final class ComposerModel {
         }
     }
     private(set) var attachments: [Attachment] = []
+    private var videoUploads: [Int: Task<Void, Never>] = [:]
     private(set) var recent: [String] = []
     private var cursor = -1
     private(set) var justSent = false
@@ -504,7 +505,48 @@ final class ComposerModel {
         }
     }
 
-    func removeAttachment(_ id: Int) { attachments.removeAll { $0.id == id } }
+    /// A video: its tile shows at once, `load` brings the file to this device (from iCloud, that
+    /// can take minutes), then it uploads from disk and the file goes. Removing the tile stops it.
+    func attachVideo(name: String, load: @escaping @Sendable () async throws -> (file: URL, thumbnail: Data?)) {
+        nextAttachment += 1
+        let id = nextAttachment
+        if !isShell { attachments.append(Attachment(id: id, name: name, image: false, path: nil)) }
+        videoUploads[id] = Task { [weak self, api] in
+            defer { self?.videoUploads[id] = nil }
+            do {
+                let loaded = try await load()
+                defer { try? FileManager.default.removeItem(at: loaded.file) }
+                self?.setThumbnail(loaded.thumbnail, id)
+                let path = try await api.upload(name: name, file: loaded.file)
+                self?.finishVideo(id, path: path)
+            } catch {
+                guard !Task.isCancelled else { return }
+                self?.failVideo(id, name: name, error)
+            }
+        }
+    }
+
+    private func setThumbnail(_ thumbnail: Data?, _ id: Int) {
+        if let i = attachments.firstIndex(where: { $0.id == id }) { attachments[i].thumbnail = thumbnail }
+    }
+
+    private func finishVideo(_ id: Int, path: String) {
+        if isShell {
+            text += (text.isEmpty || text.hasSuffix(" ") ? "" : " ") + Uploads.shellQuote(path) + " "
+        } else if let i = attachments.firstIndex(where: { $0.id == id }) {
+            attachments[i].path = path
+        }
+    }
+
+    private func failVideo(_ id: Int, name: String, _ error: any Error) {
+        attachments.removeAll { $0.id == id }
+        events.append(.failed("Couldn’t attach \(name): \(APIError.wrap(error).message)"))
+    }
+
+    func removeAttachment(_ id: Int) {
+        videoUploads[id]?.cancel()
+        attachments.removeAll { $0.id == id }
+    }
 
     // MARK: Completion
 

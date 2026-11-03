@@ -10,6 +10,8 @@ struct TranscriptView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var topID: String?
     @State private var browsing: Int?
+    /// The message a link opened, marked for a moment.
+    @State private var linked: String?
     @State private var loadingOlder = false
     @FocusState private var browseFocused: Bool
 
@@ -59,10 +61,10 @@ struct TranscriptView: View {
                     }
                     let ends = Self.turnEnds(blocks, durations: FeedProjection.turnDurations(session.feed.entries), working: session.working)
                     ForEach(Array(blocks.enumerated()), id: \.element.id) { index, block in
-                        BlockRow(block: block, session: session, stepsHidden: stepsHidden, isLast: index == blocks.count - 1)
+                        BlockRow(block: block, session: session, scene: scene, stepsHidden: stepsHidden, isLast: index == blocks.count - 1)
                             .id(block.id)
                             .padding(.horizontal, 2)
-                            .background(browsing == index ? theme.accent.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 12))
+                            .background(browsing == index || linked == block.id ? theme.accent.opacity(linked == block.id ? 0.14 : 0.08) : .clear, in: RoundedRectangle(cornerRadius: 12))
                         if let seconds = ends[block.id] {
                             TurnFooter(seconds: seconds)
                         }
@@ -101,10 +103,38 @@ struct TranscriptView: View {
                 guard !blocks.isEmpty, scene.scrollAnchors[session.key]?.seq == nil else { return }
                 for delay in [150, 600] {
                     try? await Task.sleep(for: .milliseconds(delay))
+                    // A link to a message holds the transcript there instead.
+                    guard session.pendingMessage == nil, linked == nil else { return }
                     reader.scrollTo("bottom", anchor: .bottom)
                 }
             }
-            .scrollDismissesKeyboard(.interactively)
+            // A link to a message: once the transcript is here, page back to it, bring it to the
+            // top and mark it a moment (the block that holds it, when it's inside a turn).
+            .task(id: "\(session.pendingMessage ?? -1)/\(blocks.isEmpty)") {
+                guard let seq = session.pendingMessage, !blocks.isEmpty else { return }
+                defer { session.pendingMessage = nil }
+                guard await session.reveal(seq: seq) else {
+                    scene.toast("That message isn’t in this transcript any more")
+                    return
+                }
+                await Task.yield()
+                let all = session.blocks
+                guard let block = all.first(where: { $0.seq == seq }) ?? all.last(where: { $0.seq <= seq }) else { return }
+                withAnimation(reduceMotion ? nil : .snappy) { reader.scrollTo(block.id, anchor: .top) }
+                linked = block.id
+                try? await Task.sleep(for: .seconds(2))
+                withAnimation(.easeOut(duration: 0.6)) { linked = nil }
+            }
+            // The composer isn't the keyboard's accessory (as Messages' field is), so an
+            // interactive dismissal only began once a drag crossed the whole composer into the
+            // keyboard: in practice the keyboard couldn't be put away. Scrolling the transcript or
+            // tapping it puts it away, as in chat apps. A hardware keyboard keeps the composer's
+            // focus: there's nothing on screen to put away.
+            .scrollDismissesKeyboard(scene.hardwareKeyboard ? .never : .immediately)
+            .simultaneousGesture(TapGesture().onEnded {
+                guard !scene.hardwareKeyboard, scene.composerFocused != nil else { return }
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            })
             .overlay {
                 // A live agent that hasn't written anything yet is a fresh conversation, not a
                 // missing GUI: say what's ready and offer a start.
@@ -289,6 +319,7 @@ private struct MessageRail: View {
 private struct BlockRow: View {
     let block: FeedBlock
     let session: SessionModel
+    let scene: SceneModel
     let stepsHidden: Bool
     let isLast: Bool
     @Environment(\.theme) private var theme
@@ -300,6 +331,7 @@ private struct BlockRow: View {
             UserBubble(text: text, at: at, media: parts)
                 .contextMenu {
                     Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = text }
+                    LinkButtons(place: messagePlace, scene: scene)
                     if session.isLive {
                         Button("Edit & Send Again", systemImage: "pencil") {
                             session.composer.compose(text)
@@ -332,6 +364,7 @@ private struct BlockRow: View {
             }
             .contextMenu {
                 Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = block.text }
+                LinkButtons(place: messagePlace, scene: scene)
                 if session.isLive && !block.text.isEmpty {
                     Button("Quote in Reply", systemImage: "text.quote") {
                         let quoted = block.text.split(separator: "\n", omittingEmptySubsequences: false).prefix(12).map { "> \($0)" }.joined(separator: "\n")
@@ -349,6 +382,22 @@ private struct BlockRow: View {
             .foregroundStyle(theme.muted)
             .frame(maxWidth: .infinity)
         }
+    }
+}
+
+extension BlockRow {
+    /// This message, as a link names it: the session's GUI at the block's first entry.
+    fileprivate var messagePlace: Place { Place(.session(session.key), message: block.seq) }
+}
+
+/// Copy Link and Share Link for a place, in a context menu.
+struct LinkButtons: View {
+    let place: Place
+    let scene: SceneModel
+
+    var body: some View {
+        Button("Copy Link", systemImage: "link") { scene.copyLink(to: place) }
+        Button("Share Link…", systemImage: "square.and.arrow.up") { scene.shareLink(to: place) }
     }
 }
 

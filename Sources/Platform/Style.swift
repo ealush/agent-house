@@ -38,10 +38,15 @@ struct Theme: Equatable, Sendable {
         followsSystem ? .unspecified : (palette.isDark ? .dark : .light)
     }
 
-    private func pair(_ key: KeyPath<ThemePalette, String>) -> Color {
-        if followsSystem { return Color(uiColor: .dynamic(dark: ThemePalette.dark[keyPath: key], light: ThemePalette.light[keyPath: key])) }
-        return Color(uiColor: UIColor(hex: palette[keyPath: key]))
+    private func pair(_ key: KeyPath<ThemePalette, String>) -> Color { Color(uiColor: uiPair(key)) }
+
+    private func uiPair(_ key: KeyPath<ThemePalette, String>) -> UIColor {
+        if followsSystem { return .dynamic(dark: ThemePalette.dark[keyPath: key], light: ThemePalette.light[keyPath: key]) }
+        return UIColor(hex: palette[keyPath: key])
     }
+
+    /// The accent for UIKit's own controls (the tab bar, bar buttons), which don't read SwiftUI's tint.
+    var uiAccent: UIColor { uiPair(\.accent) }
 
     var background: Color { pair(\.background) }
     var surface: Color { pair(\.surface) }
@@ -80,6 +85,8 @@ struct Theme: Equatable, Sendable {
     var accentTint: Color { pair(\.accentTint) }
     var accentLine: Color { pair(\.accentLine) }
     var glassTint: Color { pair(\.glassTint) }
+    var card: Color { pair(\.card) }
+    var tile: Color { pair(\.tile) }
     /// Data in charts: blue, never the signal pink.
     var chart: Color { appearance(dark: UIColor(red: 0.43, green: 0.61, blue: 0.96, alpha: 1), light: UIColor(red: 0.18, green: 0.37, blue: 0.82, alpha: 1)) }
     /// ah's elevation shadow: deep on the dark ground, soft and blue-grey on the light one.
@@ -343,7 +350,7 @@ struct AgentMark: View {
                     Image("Agents/\(key)").resizable().scaledToFit()
                         .foregroundStyle(theme.text)
                         .padding(size * 0.17)
-                        .background(theme.raised, in: shape)
+                        .background(theme.tile, in: shape)
                 }
             } else if let agent {
                 let tint = AgentLogo.tint(agent)
@@ -351,13 +358,13 @@ struct AgentMark: View {
                     .font(.system(size: size * 0.52, weight: .bold, design: .rounded))
                     .foregroundStyle(theme.followsSystem ? Color(uiColor: .dynamic(dark: tint.dark, light: tint.light)) : Color(uiColor: UIColor(hex: theme.palette.isDark ? tint.dark : tint.light)))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(theme.raised, in: shape)
+                    .background(theme.tile, in: shape)
             } else {
                 Image(systemName: "terminal")
                     .font(.system(size: size * 0.45, weight: .semibold))
                     .foregroundStyle(theme.muted)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(theme.raised, in: shape)
+                    .background(theme.tile, in: shape)
             }
         }
         .frame(width: size, height: size)

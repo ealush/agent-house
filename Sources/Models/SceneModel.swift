@@ -14,7 +14,21 @@ final class SceneModel {
     let workspace = WorkspaceModel()
 
     private(set) var accountOrigin: String?
-    var route: SceneSnapshot.Route = .inbox
+    var route: SceneSnapshot.Route = .inbox {
+        didSet {
+            guard case .review(let target) = route else { return }
+            let path = Self.reviewPath(to: target)
+            if path != reviewPath { reviewPath = path }
+        }
+    }
+    /// On a phone, what's pushed over the Review tab's list: a stack, then one of its layers.
+    /// It outlives the route, so a session opened from a stack comes back to that stack.
+    var reviewPath: [ReviewRoute] = [] {
+        didSet {
+            guard case .review(let target) = route, Self.reviewPath(to: target) != reviewPath else { return }
+            route = .review(reviewPath.last ?? ReviewRoute())
+        }
+    }
     /// Compact width (iPhone, narrow Stage Manager): tabs and pushes instead of a sidebar and panes.
     var narrow = false
     var historyFilter = ""
@@ -31,6 +45,10 @@ final class SceneModel {
     private(set) var pendingChord: Chord?
     /// Set by the platform layer.
     var clipboard: (String) -> Void = { _ in }
+    /// The clipboard's text, read only when you ask to open a link from it.
+    var pasteboard: () -> String? = { nil }
+    /// The system's share sheet, for a link (set by the window).
+    var share: (URL) -> Void = { _ in }
     /// Opens another window (at a link, signed in to an origin); nil where there's only one
     /// window (iPhone).
     var openWindow: ((DeepLink?, String?) -> Void)?
@@ -48,6 +66,8 @@ final class SceneModel {
     @ObservationIgnored private var focusNonce = 0
     @ObservationIgnored private var restored = false
     @ObservationIgnored private var pendingRestore: SceneSnapshot?
+    /// A link's place that arrived before the window's own state was back.
+    @ObservationIgnored private var pendingPlace: Place?
     @ObservationIgnored private var panelDelta: Double = 0
     /// Where the keyboard is now (a composer or terminal), as the responders report it.
     @ObservationIgnored private(set) var currentFocus: FocusTarget?
@@ -560,16 +580,15 @@ final class SceneModel {
 
     func openReview(_ target: ReviewRoute) { show(.review(target)) }
 
-    /// On a phone, the stack the Review tab shows over its list (its root is always the
-    /// list); going back returns to the list.
-    var pushedReview: ReviewRoute? {
-        get {
-            guard narrow, case .review(let target) = route, target.stack != nil else { return nil }
-            return target
-        }
-        set {
-            if let newValue { openReview(newValue) } else if pushedReview != nil { show(.review(ReviewRoute())) }
-        }
+    private static func reviewPath(to target: ReviewRoute) -> [ReviewRoute] {
+        guard let stack = target.stack else { return [] }
+        return [ReviewRoute(stack: stack)] + (target.pr == nil ? [] : [ReviewRoute(stack: stack, pr: target.pr)])
+    }
+
+    /// Where a phone's tab opens to: Review's keeps the stack or layer you left it on.
+    func tabRoute(_ page: SceneSnapshot.Route) -> SceneSnapshot.Route {
+        guard case .review = page else { return page }
+        return .review(reviewPath.last ?? ReviewRoute())
     }
 
     // MARK: Restoration
@@ -643,6 +662,10 @@ final class SceneModel {
         for notice in outcome.notices { toast(notice) }
         restored = true
         pruneSessions()
+        if let place = pendingPlace {
+            pendingPlace = nil
+            go(place)
+        }
     }
 
     var isRestored: Bool { restored }
@@ -766,7 +789,8 @@ final class SceneModel {
 
     /// Whether a command can run right now in this window (the palette lists only these).
     func isAvailable(_ id: CommandID) -> Bool {
-        guard hub != nil else { return ["go-settings", "show-shortcuts", "command-palette"].contains(id.rawValue) }
+        // A link names its own host: it can open before this window has one.
+        guard hub != nil else { return ["go-settings", "show-shortcuts", "command-palette", "open-link"].contains(id.rawValue) }
         let ws = workspace
         let s = focusedSession
         let row = s?.row
@@ -789,6 +813,8 @@ final class SceneModel {
             return true
         case "toggle-sidebar": return !narrow
         case "focus-main", "reply", "session-menu", "toggle-panel", "copy-attach": return s != nil
+        case "copy-link", "share-link": return accountOrigin != nil
+        case "open-link": return true
         case "focus-pane-left", "focus-pane-right", "focus-pane-up", "focus-pane-down", "move-pane-left", "move-pane-right", "move-pane-up", "move-pane-down", "toggle-split":
             return ws.splitOpen
         case "exit-split": return ws.layout != nil
@@ -865,6 +891,14 @@ final class SceneModel {
         case "go-to-session": palette = PaletteState(path: ["go", "sessions"])
         case "new-window": openWindow?(nil, account?.origin)
         case "open-in-new-window": if let key { openInNewWindow(key) }
+        case "copy-link": copyLink(to: place)
+        case "share-link": shareLink(to: place)
+        case "open-link":
+            guard let text = pasteboard(), let link = AppLink(text: text) else {
+                toast("There’s no link on the clipboard", error: true)
+                return
+            }
+            follow(link)
         case "split-left":
             workspace.split(.horizontal, before: true)
             syncRouteToWorkspace()
@@ -1115,13 +1149,84 @@ final class SceneModel {
             return false
         }
         useAccount(handoff.origin)
-        switch handoff.route {
-        case .session(let key): open(key)
-        case .review(let target): openReview(target)
-        case .settings(let section): sheet = .settings(section)
-        default: show(handoff.route)
-        }
+        go(Place(handoff.route))
         return true
+    }
+
+    // MARK: Links
+
+    /// A link from outside (opened, pasted, handed over): the account that serves its host,
+    /// then its place. A host this device hasn't set up says so.
+    @discardableResult
+    func follow(_ link: AppLink) -> Bool {
+        let accounts = app.accounts.map { AppLink.Account(origin: $0.origin, hostname: $0.hostname, peers: $0.hub.hosts.map(\.name)) }
+        guard let (origin, place) = link.resolve(accounts, preferred: accountOrigin) else {
+            let name = link.origin.flatMap { URL(string: $0)?.host } ?? link.host ?? "that host"
+            toast("Set up \(name) on this device to open its links.", error: true)
+            return false
+        }
+        useAccount(origin)
+        go(place)
+        return true
+    }
+
+    /// Where a link typed or pasted into a search field points, to offer it as a row: nil for
+    /// text that isn't one, or a web address that names no place in ah.
+    func pastedLink(_ text: String) -> (link: AppLink, summary: String)? {
+        guard let link = AppLink(text: text), link.origin == nil || link.place.route != .inbox else { return nil }
+        var title: String?
+        if case .session(let key) = link.place.route { title = hub?.row(key)?.title }
+        return (link, link.place.summary(title: title))
+    }
+
+    /// Goes to a place: a page, a Settings section, a review, or a session with its view, its
+    /// panel and a message brought into sight. Until the window's own state is back it waits,
+    /// or the restore would land on top of it.
+    func go(_ place: Place) {
+        guard restored else {
+            pendingPlace = place
+            return
+        }
+        switch place.route {
+        case .session(let key):
+            open(key)
+            guard let session = session(key) else { return }
+            if let surface = place.surface ?? (place.message != nil ? .gui : nil) { setSurface(surface, for: key) }
+            if let panel = place.panel { session.panel = panel }
+            if let seq = place.message { session.pendingMessage = seq }
+        case .review(let target):
+            openReview(target)
+        case .settings(let section):
+            sheet = .settings(section)
+        default:
+            show(place.route)
+        }
+    }
+
+    /// The web link to a place on this window's host: what Copy Link copies.
+    func link(to place: Place) -> URL? {
+        accountOrigin.flatMap { AppLink.webURL(origin: $0, place: place) }
+    }
+
+    func copyLink(to place: Place) {
+        guard let url = link(to: place) else { return }
+        clipboard(url.absoluteString)
+        toast(place.message != nil ? "Copied a link to the message" : "Copied the link")
+    }
+
+    func shareLink(to place: Place) {
+        guard let url = link(to: place) else { return }
+        share(url)
+    }
+
+    /// Where this window is, as a place a link can name (the focused session with its view).
+    var place: Place {
+        var key: String?
+        if case .session(let shown) = route { key = shown } else if workspace.layout != nil { key = workspace.focusedKey }
+        if let key, let session = sessions[key] {
+            return Place(.session(key), surface: session.surface == .terminal ? .terminal : nil, panel: session.panel)
+        }
+        return Place(route)
     }
 
     // MARK: Switcher and search results
@@ -1344,6 +1449,7 @@ final class SceneModel {
         case .continueIn(let preset):
             if let key = workspace.focusedKey { sheet = .continueIn(key: key, preset: preset) }
         case .settings(let section): sheet = .settings(section)
+        case .openLink(let text): if let link = AppLink(text: text) { follow(link) }
         }
     }
 

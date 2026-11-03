@@ -7,10 +7,20 @@ import FoundationNetworking
 /// `URLSessionTransport` is the real one; tests substitute their own.
 protocol HTTPTransport: Sendable {
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse)
+    /// Sends `file` as the request's body, from disk rather than from memory.
+    func upload(for request: URLRequest, fromFile file: URL) async throws -> (Data, HTTPURLResponse)
     /// Opens a streaming response. The stream ends when the server closes it, fails on a
     /// network error, and cancels the request when the consumer stops iterating.
     func stream(for request: URLRequest) async throws -> (HTTPURLResponse, AsyncThrowingStream<Data, any Error>)
     func webSocket(for request: URLRequest) -> any WebSocketConnection
+}
+
+extension HTTPTransport {
+    func upload(for request: URLRequest, fromFile file: URL) async throws -> (Data, HTTPURLResponse) {
+        var request = request
+        request.httpBody = try Data(contentsOf: file)
+        return try await data(for: request)
+    }
 }
 
 enum WebSocketMessage: Equatable, Sendable {
@@ -60,6 +70,14 @@ final class URLSessionTransport: NSObject, HTTPTransport, @unchecked Sendable {
         guard let http = response as? HTTPURLResponse else { throw APIError.transport("no HTTP response") }
         return (data, http)
     }
+
+    #if !canImport(FoundationNetworking)
+    func upload(for request: URLRequest, fromFile file: URL) async throws -> (Data, HTTPURLResponse) {
+        let (data, response) = try await session.upload(for: request, fromFile: file)
+        guard let http = response as? HTTPURLResponse else { throw APIError.transport("no HTTP response") }
+        return (data, http)
+    }
+    #endif
 
     func stream(for request: URLRequest) async throws -> (HTTPURLResponse, AsyncThrowingStream<Data, any Error>) {
         let streamConfiguration = URLSessionTransport.makeConfiguration()

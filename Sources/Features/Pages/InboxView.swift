@@ -82,11 +82,12 @@ struct InboxView: View {
             if hub.rows.isEmpty {
                 Section {
                     EmptyState(symbol: "tray", title: "No sessions running", message: "Start one, or pick up where you left off.", action: ("New session", { scene.perform("new-session") }))
+                        .listRowBackground(Color.clear)
                 }
                 let recent = Array(hub.history.prefix(3))
                 if !recent.isEmpty {
                     Section("Recent conversations") {
-                        ForEach(recent) { item in HistoryRowView(item: item, scene: scene, hub: hub) }
+                        ForEach(recent) { item in HistoryRowView(item: item, scene: scene, hub: hub).ahRow() }
                     }
                 }
             }
@@ -401,6 +402,7 @@ struct SessionListView: View {
                             .draggable(SessionDrag(key: row.key))
                             .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
                             .swipeActions(edge: .trailing) { PinSwipe(row: row, hub: hub) }
+                            .ahRow(!showsPages)
                     }
                     .onMove { from, to in move(section: section, from: from, to: to) }
                 } header: {
@@ -409,6 +411,7 @@ struct SessionListView: View {
             }
             if hub.rows.isEmpty {
                 EmptyState(symbol: "terminal", title: "No sessions", message: "Start one with New session.", action: ("New session", { scene.perform("new-session") }))
+                    .listRowBackground(Color.clear)
             }
         }
         .listStyle(.sidebar)
@@ -491,10 +494,11 @@ struct HistoryView: View {
             Section { } header: { AhLargeTitle(title: "History", tagline: rows.isEmpty ? nil : "\(rows.count) conversation\(rows.count == 1 ? "" : "s") to pick up.").textCase(nil) }
             if rows.isEmpty {
                 EmptyState(symbol: "clock", title: scene.historyFilter.isEmpty ? "No history yet" : "Nothing matches", message: "Ended and past conversations appear here.")
+                    .listRowBackground(Color.clear)
             }
             ForEach(order, id: \.self) { day in
                 Section(day) {
-                    ForEach(days[day] ?? []) { item in HistoryRowView(item: item, scene: scene, hub: hub) }
+                    ForEach(days[day] ?? []) { item in HistoryRowView(item: item, scene: scene, hub: hub).ahRow() }
                 }
             }
         }
@@ -591,11 +595,14 @@ struct SearchView: View {
             if let response = model.response {
                 if !response.enabled {
                     Banner(text: "Search is off on this host. Turn it on in Settings → Search.", tone: .warning)
+                        .listRowBackground(Color.clear)
                 } else if response.building {
                     Banner(text: "The index is still building; results may be incomplete.", tone: .info)
+                        .listRowBackground(Color.clear)
                 }
                 ForEach(response.notes, id: \.self) { note in
                     Banner(text: "\(note.host): \(note.error)", tone: .warning)
+                        .listRowBackground(Color.clear)
                 }
                 ForEach(Array(response.results.enumerated()), id: \.offset) { _, hit in
                     Button {
@@ -625,17 +632,20 @@ struct SearchView: View {
                     }
                     .buttonStyle(.plain)
                     .hoverEffect(.highlight)
+                    .ahRow()
                 }
                 if response.results.count < response.total {
                     Button("More results") { Task { await model.more() } }
+                        .ahRow()
                 }
                 if response.results.isEmpty && response.enabled {
                     Text("No matches.").foregroundStyle(theme.muted)
+                        .ahRow()
                 }
             } else if model.searching {
-                ProgressView()
+                ProgressView().listRowBackground(Color.clear)
             }
-            if let error = model.error { Banner(text: error, tone: .error) }
+            if let error = model.error { Banner(text: error, tone: .error).listRowBackground(Color.clear) }
         }
         .searchable(text: $model.query.q, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search every conversation")
         .searchFocused($fieldFocused)

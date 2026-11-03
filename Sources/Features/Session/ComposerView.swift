@@ -1,3 +1,4 @@
+import AVFoundation
 import PhotosUI
 import SwiftUI
 import UIKit
@@ -53,6 +54,13 @@ struct ComposerView: View {
             guard !items.isEmpty else { return }
             pickingPhotos = []
             for item in items {
+                if let ext = Self.videoExtension(item) {
+                    composer.attachVideo(name: "video.\(ext)") {
+                        guard let video = try await item.loadTransferable(type: LibraryVideo.self) else { throw CocoaError(.fileNoSuchFile) }
+                        return (video.file, await video.thumbnail())
+                    }
+                    continue
+                }
                 Task {
                     if let data = try? await item.loadTransferable(type: Data.self) {
                         // Named for what it is (a HEIC stays a HEIC), so the agent reads it right.
@@ -64,7 +72,8 @@ struct ComposerView: View {
         }
         // Presented from state, not from inside the menu: a PhotosPicker placed in a Menu never
         // opened.
-        .photosPicker(isPresented: $choosingPhotos, selection: $pickingPhotos, matching: .images, photoLibrary: .shared())
+        // `.current`: a video comes as it is, not transcoded first.
+        .photosPicker(isPresented: $choosingPhotos, selection: $pickingPhotos, matching: .any(of: [.images, .videos]), preferredItemEncoding: .current, photoLibrary: .shared())
         .fullScreenCover(isPresented: $takingPhoto) {
             CameraPicker { image in
                 guard let data = image.jpegData(compressionQuality: 0.85) else { return }
@@ -85,6 +94,13 @@ struct ComposerView: View {
             }
         }
         .onChange(of: composer.events.count) { _, count in if count > 0 { deliverEvents() } }
+    }
+
+    /// A picked item's file extension if it's a video (a Live Photo is a photo).
+    private static func videoExtension(_ item: PhotosPickerItem) -> String? {
+        let types = item.supportedContentTypes
+        guard !types.contains(where: { $0.conforms(to: .image) }), let movie = types.first(where: { $0.conforms(to: .movie) }) else { return nil }
+        return movie.preferredFilenameExtension ?? "mov"
     }
 
     private func deliverEvents() {
@@ -111,8 +127,13 @@ struct ComposerView: View {
             HStack(spacing: 8) {
                 ForEach(composer.attachments) { file in
                     Group {
-                        if file.image, let data = file.thumbnail, let image = UIImage(data: data) {
+                        if let data = file.thumbnail, let image = UIImage(data: data) {
                             Image(uiImage: image).resizable().scaledToFill().frame(width: 64, height: 64)
+                                .overlay(alignment: .bottomLeading) {
+                                    if !file.image {
+                                        Image(systemName: "play.fill").font(.ah(.caption2)).foregroundStyle(.white).shadow(radius: 2).padding(6)
+                                    }
+                                }
                         } else {
                             VStack(alignment: .leading, spacing: 4) {
                                 Image(systemName: "doc.fill").font(.ah(.title3)).foregroundStyle(.secondary)
@@ -797,5 +818,27 @@ struct QueueTrayView: View {
             Task { await queue.move(id, to: index) }
             return true
         }
+    }
+}
+
+/// A video out of the photo library, as a file of this app's own: too big to load as `Data`.
+private struct LibraryVideo: Transferable {
+    let file: URL
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(importedContentType: .movie) { received in
+            let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension(received.file.pathExtension)
+            try FileManager.default.copyItem(at: received.file, to: file)
+            return LibraryVideo(file: file)
+        }
+    }
+
+    /// Its first frame for the tile.
+    func thumbnail() async -> Data? {
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: file))
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 256, height: 256)
+        guard let frame = try? await generator.image(at: .zero).image else { return nil }
+        return UIImage(cgImage: frame).jpegData(compressionQuality: 0.7)
     }
 }

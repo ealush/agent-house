@@ -203,7 +203,7 @@ final class ReviewModel {
         }
     }
 
-    func open(_ route: ReviewRoute) async {
+    func open(_ route: ReviewRoute, selecting: Bool = true) async {
         guard let id = route.stack else {
             stack = nil
             await loadList()
@@ -213,8 +213,10 @@ final class ReviewModel {
             stack = try await review.stack(id)
             findings = try await review.findings(id)
         }
-        selectedPR = route.pr ?? stack?.next ?? stack?.layers.first { $0.state == "open" }?.pr
-        if let pr = selectedPR { await select(pr) }
+        if selecting {
+            selectedPR = route.pr ?? stack?.next ?? stack?.layers.first { $0.state == "open" }?.pr
+            if let pr = selectedPR { await select(pr) }
+        }
         await loadThread()
     }
 

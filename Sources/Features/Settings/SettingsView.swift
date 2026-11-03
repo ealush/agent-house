@@ -15,12 +15,16 @@ struct SettingsView: View {
                 Section("This device") {
                     NavigationLink(value: SettingsSection.security) { SettingsRowLabel(section: .security, title: "Hosts and security") }
                 }
+                .ahRow(sizeClass == .compact)
                 Section("Agent Hub") {
                     ForEach(SettingsSection.allCases.filter { $0 != .security }, id: \.self) { s in
                         NavigationLink(value: s) { SettingsRowLabel(section: s, title: s.title) }
+                            .contextMenu { LinkButtons(place: Place(.settings(s.rawValue)), scene: scene) }
                     }
                 }
+                .ahRow(sizeClass == .compact)
             }
+            .settingsListGround(sizeClass == .compact)
             .navigationTitle("Settings")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() }.keyboardShortcut(.cancelAction) } }
         } detail: {
@@ -35,6 +39,13 @@ struct SettingsView: View {
             }
         }
         .onAppear { if section == nil && sizeClass == .regular { section = .security } }
+    }
+}
+
+private extension View {
+    /// A phone's Settings list is a page on the ground; an iPad's stays the sidebar's glass.
+    @ViewBuilder func settingsListGround(_ on: Bool) -> some View {
+        if on { ahFormGround() } else { self }
     }
 }
 
@@ -110,6 +121,12 @@ private struct SettingsDetail: View {
             }
         }
         .navigationTitle(section == .security ? "Hosts and security" : section.title)
+        // A link straight to this section (the overflow menu), here or in the web app.
+        .toolbar {
+            ToolbarItemGroup(placement: .secondaryAction) {
+                LinkButtons(place: Place(.settings(section == .security ? nil : section.rawValue)), scene: scene)
+            }
+        }
         .id("\(account.origin)|\(section.rawValue)")
     }
 }
@@ -133,7 +150,7 @@ private struct SecuritySection: View {
     }
 
     var body: some View {
-        Form {
+        AhForm {
             if let error = model.error { Banner(text: error, tone: .error) }
             if let notice = model.notice { Banner(text: notice) }
             Section("Hosts on this device") {
@@ -307,7 +324,7 @@ private struct AppearanceSection: View {
     @Bindable var app: AppModel
 
     var body: some View {
-        Form {
+        AhForm {
             Picker("Appearance", selection: $app.preferences.appearance) {
                 ForEach(DevicePreferences.Appearance.allCases, id: \.self) { Text($0.label).tag($0) }
             }
@@ -375,6 +392,7 @@ private struct ShortcutsSection: View {
     var body: some View {
         let commands = pressed.map { KeymapSearch.commands(pressing: $0, bindings: app.keyBindings) } ?? KeymapSearch.commands(query, bindings: app.keyBindings, filter: filter)
         List {
+            Group {
             Section {
                 Toggle("Focus follows the pointer", isOn: $app.preferences.focusFollowsPointer)
                 Picker("Show", selection: $filter) {
@@ -438,7 +456,10 @@ private struct ShortcutsSection: View {
                 Button("Reset every shortcut", role: .destructive) { confirmReset = true }
                     .disabled(app.keyBindings.modified.isEmpty)
             }
+            }
+            .ahRow()
         }
+        .ahFormGround()
         .searchable(text: $query, prompt: "Name, group or keys, like “ctrl shift p”")
         .onChange(of: app.keyBindings) { _, _ in UIMenuSystem.main.setNeedsRebuild() }
         .confirmationDialog("Reset every shortcut to its default?", isPresented: $confirmReset, titleVisibility: .visible) {
@@ -616,7 +637,7 @@ private struct NotificationsSection: View {
     }
 
     var body: some View {
-        Form {
+        AhForm {
             if push.pushUnavailable {
                 Banner(text: PushRegistrar.unavailableNote, tone: .info)
             } else if let error = model.error ?? push.lastError {
@@ -678,7 +699,7 @@ private struct AgentsSection: View {
     @Environment(\.theme) private var theme
 
     var body: some View {
-        Form {
+        AhForm {
             if let error = model.error { Banner(text: error, tone: .error) }
             if let harnesses = model.harnesses {
                 Section {
@@ -717,7 +738,7 @@ private struct AgentsSection: View {
         .task { await model.load() }
         .sheet(isPresented: $adding) {
             NavigationStack {
-                Form {
+                AhForm {
                     TextField("Name", text: $name)
                     TextField("Command", text: $command).font(.ahMono(.body)).textInputAutocapitalization(.never).autocorrectionDisabled()
                     TextField("Resume command (optional)", text: $resume).font(.ahMono(.body)).textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -749,7 +770,7 @@ private struct SubscriptionsSection: View {
     @Environment(\.theme) private var theme
 
     var body: some View {
-        Form {
+        AhForm {
             if let error = model.error { Banner(text: error, tone: .error) }
             Section {
                 ForEach(model.list) { s in
@@ -820,7 +841,7 @@ private struct SubscriptionEditor: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            AhForm {
                 TextField("Name", text: $draft.name)
                 TextField("Base URL", text: $draft.baseUrl).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
                 Section {
@@ -878,7 +899,7 @@ private struct EnvironmentSection: View {
     }
 
     var body: some View {
-        Form {
+        AhForm {
             if let error = model.error { Banner(text: error, tone: .error) }
             if let state = model.state {
                 Section {
@@ -939,7 +960,7 @@ private struct EnvEditor: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            AhForm {
                 TextField("NAME", text: $draft.name).font(.ahMono(.body)).textInputAutocapitalization(.characters).autocorrectionDisabled().disabled(draft.original != nil)
                 if draft.secret {
                     SecureField(draft.original == nil ? "Value" : "New value (leave empty to keep)", text: $draft.value)
@@ -971,7 +992,7 @@ private struct SearchSection: View {
     @State var model: SearchSettings
 
     var body: some View {
-        Form {
+        AhForm {
             if let error = model.error { Banner(text: error, tone: .error) }
             if let status = model.status {
                 Toggle("Full-text search", isOn: Binding(get: { status.enabled }, set: { on in Task { await model.setEnabled(on) } }))
@@ -1038,7 +1059,7 @@ private struct SystemSection: View {
     @Environment(\.theme) private var theme
 
     var body: some View {
-        Form {
+        AhForm {
             if let error = model.error { Banner(text: error, tone: .error) }
             if let notice = model.notice { Banner(text: notice) }
             if let hooks = model.hooks {

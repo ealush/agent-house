@@ -35,6 +35,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
         model.restore()
         model.clipboard = { UIPasteboard.general.string = $0 }
+        model.pasteboard = { UIPasteboard.general.string }
+        model.share = { [weak window] url in Self.share(url, from: window) }
         if UIApplication.shared.supportsMultipleScenes {
             model.openWindow = { link, origin in Self.newWindow(link, origin: origin) }
         }
@@ -130,9 +132,11 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         for context in URLContexts { handle(context.url) }
     }
 
+    /// An `agenthub:` link (the web app's "Open in Agent Hub", another window's, a shortcut's)
+    /// or one of your hosts' web links.
     private func handle(_ url: URL) {
-        guard let link = DeepLink(url: url) else { return }
-        open(link, origin: nil)
+        guard let link = AppLink(url: url) else { return }
+        model?.follow(link)
     }
 
     /// Goes to a link in this window: picks the account that serves its host, then the place.
@@ -143,13 +147,14 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         else if let host = link.host, let account = app.accounts.first(where: { $0.hostname == host || $0.hub.hosts.contains { $0.name == host } }) {
             model.useAccount(account.origin)
         }
+        // Through `go`: a notification that launched the app waits for the window's own state.
         switch link {
         case .session:
-            if let key = link.sessionKey(localHost: model.hub?.hostname) { model.open(key) }
+            if let key = link.sessionKey(localHost: model.hub?.hostname) { model.go(Place(.session(key))) }
         case .review(_, let route):
-            model.openReview(route)
+            model.go(Place(.review(route)))
         case .inbox:
-            model.show(.inbox)
+            model.go(Place(.inbox))
         }
     }
 
@@ -159,6 +164,20 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         let target = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
         guard let session = (target?.delegate as? SceneDelegate)?.model?.session(key), session.composer.text.isEmpty else { return }
         session.composer.text = text
+    }
+
+    /// The share sheet for a link, over whatever this window shows (a popover from its top
+    /// edge on an iPad).
+    private static func share(_ url: URL, from window: UIWindow?) {
+        guard var top = window?.rootViewController else { return }
+        while let presented = top.presentedViewController, !presented.isBeingDismissed { top = presented }
+        let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        if let popover = sheet.popoverPresentationController {
+            popover.sourceView = top.view
+            popover.sourceRect = CGRect(x: top.view.bounds.maxX - 60, y: top.view.safeAreaInsets.top + 8, width: 1, height: 1)
+            popover.permittedArrowDirections = .up
+        }
+        top.present(sheet, animated: true)
     }
 
     /// Another window, opening at `link` (or wherever a new window starts) on `origin`'s host.

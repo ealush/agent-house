@@ -28,6 +28,7 @@ Evidence shorthand used below: **UT** = `swift test` (Linux, Swift 6.2); **IT** 
 | [x] | B-12 | Review model: confidence, exact-head merge, stack merge plan, management | [Review](../../Sources/Review) | verified: UT (no GitHub fixture) |
 | [x] | B-13 | Panel and settings models | [PanelModels](../../Sources/Models/PanelModels.swift), [SettingsModels](../../Sources/Models/SettingsModels.swift) | verified: UT |
 | [x] | B-14 | Deep links and push payload routing | [DeepLink](../../Sources/Domain/DeepLink.swift) | verified: UT |
+| [ ] | B-14a | Links to any place (session with its view/panel, a message, a page, a Settings section): the host's web link with the place as its hash, `agenthub://<host>/…` as the app link; Copy Link / Share Link (session menu, message menu, Settings), ⌥⌘C, Open Link in the palette | [AppLink](../../Sources/Domain/AppLink.swift) | UT (format, hosts, Copy Link); UI: not yet seen running |
 | [ ] | B-15 | UIKit shell: scenes, split/tabs, panes, presentation, menu commands, key routing | [App](../../App), [Shell](../../Sources/Features/Shell) | implemented: UI |
 | [ ] | B-16 | Screens: Inbox, Sessions, History, Search, session (transcript, widgets, composer, ask, terminal, panels) | [Features](../../Sources/Features) | implemented: UI |
 | [ ] | B-17 | Review screens, Settings (nine sections), sheets, palette/switcher/shortcuts, setup and sign-in | [Review](../../Sources/Features/Review), [Settings](../../Sources/Features/Settings), [Sheets](../../Sources/Features/Sheets), [Setup](../../Sources/Features/Setup) | implemented: UI |

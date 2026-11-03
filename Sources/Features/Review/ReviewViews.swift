@@ -13,9 +13,10 @@ struct ReviewHomeView: View {
                 let waiting = model.stacks.reduce(0) { $0 + $1.needsYou }
                 AhLargeTitle(title: "Review", tagline: model.stacks.isEmpty ? nil : "\(model.stacks.count) stack\(model.stacks.count == 1 ? "" : "s") in review\(waiting > 0 ? ". \(waiting) need\(waiting == 1 ? "s" : "") you." : ".")").textCase(nil)
             }
-            if let error = model.error { Banner(text: error, tone: .error) }
+            if let error = model.error { Banner(text: error, tone: .error).listRowBackground(Color.clear) }
             if model.stacks.isEmpty && !model.loading.contains("stacks") {
                 EmptyState(symbol: "square.stack.3d.up", title: "No stacks in review", message: "Start from a PR chain, a GitHub stack, or PRs you pick.", action: ("Start a review", { starting = true }))
+                    .listRowBackground(Color.clear)
             }
             ForEach(model.stacks) { stack in
                 Button {
@@ -44,6 +45,7 @@ struct ReviewHomeView: View {
                 }
                 .buttonStyle(.plain)
                 .hoverEffect(.highlight)
+                .ahRow()
             }
         }
         .ahPage("Review")
@@ -238,7 +240,8 @@ struct StackCockpitView: View {
                     .tint(.primary)
             }
         }
-        .task(id: route) { await model.open(route) }
+        // On a phone a layer is its own page, which picks it; here it would only race that one.
+        .task(id: route) { await model.open(route, selecting: !scene.narrow) }
         .sheet(isPresented: $mergingStack) {
             if let stack = model.stack { StackMergeSheet(model: model, stack: stack) }
         }
@@ -279,6 +282,7 @@ struct StackCockpitView: View {
                     if let syncError = stack.syncError { Text(syncError).font(.ah(.caption)).foregroundStyle(theme.danger) }
                 }
             }
+            .ahRow(scene.narrow)
             Section("Pinned decisions") {
                 ForEach(stack.decisions) { decision in
                     Text(decision.text).font(.ah(.callout))
@@ -292,6 +296,7 @@ struct StackCockpitView: View {
                         if !text.isEmpty { Task { await model.addDecision(text) } }
                     }
             }
+            .ahRow(scene.narrow)
             Section("Layers, bottom to top") {
                 ForEach(stack.layers) { layer in
                     LayerRow(layer: layer)
@@ -303,15 +308,41 @@ struct StackCockpitView: View {
                         }
                 }
             }
+            .ahRow(scene.narrow)
             if stack.planPath != nil {
                 Section("Plan") {
                     if let plan = model.plan?.text { MarkdownView(plan, compact: true) } else { Button("Show the plan") { Task { await model.loadPlan() } } }
                 }
+                .ahRow(scene.narrow)
             }
         }
         .listStyle(.sidebar)
-        .navigationDestination(for: ReviewRoute.self) { route in
-            LayerView(scene: scene, model: model).task { if let pr = route.pr { await model.select(pr) } }
+    }
+}
+
+/// A layer pushed on a phone. A link or a restored window can land here with its stack still
+/// to load.
+struct LayerPage: View {
+    @Bindable var scene: SceneModel
+    @Bindable var model: ReviewModel
+    let route: ReviewRoute
+
+    var body: some View {
+        Group {
+            if model.layer != nil, model.selectedPR == route.pr {
+                LayerView(scene: scene, model: model)
+            } else if let error = model.error {
+                Banner(text: error, tone: .error).padding()
+            } else {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .task(id: route) {
+            if model.stack?.id != route.stack {
+                await model.open(route)
+            } else if let pr = route.pr, model.selectedPR != pr {
+                await model.select(pr)
+            }
         }
     }
 }
@@ -735,7 +766,7 @@ private struct NewFindingSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            AhForm {
                 if let path { Section("Where") { Text("\(path)\(lines.first?.number.map { ":\($0)" } ?? "")").font(.ahMono(.caption)) } }
                 TextField("What’s wrong", text: $title)
                 TextField("Details (optional)", text: $body_, axis: .vertical)
@@ -776,7 +807,7 @@ private struct DispatchSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            AhForm {
                 if kind == nil {
                     Section("Findings to fix") {
                         ForEach(model.findings(for: layer.pr).filter(\.isOpen)) { finding in
@@ -845,7 +876,7 @@ private struct MergeLayerSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            AhForm {
                 Section("What lands") {
                     LabeledContent("PR", value: "#\(layer.pr) \(layer.title)")
                     LabeledContent("Into", value: layer.baseRef)
@@ -912,7 +943,7 @@ private struct StackMergeSheet: View {
     var body: some View {
         let plan = StackMergePlan(stack: stack, method: method)
         NavigationStack {
-            Form {
+            AhForm {
                 Picker("Method", selection: $method) { ForEach(stack.methods, id: \.self) { Text($0).tag($0) } }
                 Section("Bottom to top") {
                     ForEach(plan.rows) { row in

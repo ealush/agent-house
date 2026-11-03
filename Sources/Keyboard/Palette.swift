@@ -43,6 +43,8 @@ enum PaletteAction: Equatable, Sendable, Hashable {
     case runInProject(path: String, preset: String)
     case continueIn(preset: String)
     case settings(String)
+    /// Go to the place a pasted link names.
+    case openLink(String)
 
     /// How the palette remembers a row it ran, for Recent; nil for one-off rows.
     var recentKey: String? {
@@ -51,7 +53,7 @@ enum PaletteAction: Equatable, Sendable, Hashable {
         case .openSession(let key): return "session:\(key)"
         case .settings(let section): return "settings:\(section)"
         case .runInProject(let path, let preset): return "run:\(preset):\(path)"
-        case .openAsPane, .sendSession, .sendQueuedNow, .switchModel, .switchEffort, .switchMode, .continueIn: return nil
+        case .openAsPane, .sendSession, .sendQueuedNow, .switchModel, .switchEffort, .switchMode, .continueIn, .openLink: return nil
         }
     }
 }
@@ -77,6 +79,7 @@ enum PaletteTree {
             .category(key: "sessions", label: "Sessions", icon: "rectangle.stack", detail: "Every session, by name, project, branch or host", terms: ["switch", "jump"], children: [.provider(.sessions)]),
             .command("go-to-session"), .command("go-inbox"), .command("go-review"), .command("go-history"), .command("go-search"), .command("go-settings"),
             .command("worktrees"), .command("cycle-prev"), .command("cycle-next"), .command("focus-sidebar"), .command("focus-main"),
+            .command("copy-link"), .command("share-link"), .command("open-link"),
         ]),
         .category(key: "session", label: "Session", icon: "terminal", detail: "The focused session", children: [
             .category(key: "answer", label: "Answer", icon: "arrowshape.turn.up.left", detail: "Reply, approve, deny", children: [.command("reply"), .command("approve"), .command("deny")]),
