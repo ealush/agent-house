@@ -473,3 +473,30 @@ import Testing
     #expect(LaunchState.effortName("high") == "High")
     #expect(LaunchState.effortName("max") == "Max")
 }
+
+@Test func modelsReadAsPeopleSayThemAndAnAliasNamesWhatReallyRuns() throws {
+    #expect(LaunchState.shortModel("claude-fable-5-2") == "Fable 5.2")
+    #expect(LaunchState.shortModel("claude-haiku-4-5-20251001") == "Haiku 4.5")
+    #expect(LaunchState.shortModel("claude-opus-5-5[1m]") == "Opus 5.5")
+    #expect(LaunchState.shortModel("muse-wonder-1.0") == "Wonder 1.0")
+    #expect(LaunchState.shortModel("muse-wonder-full-1.0") == "Wonder Full 1.0")
+    #expect(LaunchState.shortModel("gpt-6.1-sol") == "6.1 Sol")
+    #expect(LaunchState.shortModel("grok-4.7-build-fast") == "4.7 Build")
+    #expect(LaunchState.shortModel("default") == nil)
+
+    let claude = try JSONDecoder().decode(PresetDTO.self, from: Data(#"{"id":"claude","name":"Claude","command":"claude","models":[{"id":"fable","name":"Fable 5.2"},{"id":"opus","name":"Opus 5.5"}],"available":true}"#.utf8))
+    func running(_ model: String?, agent: String = "claude") throws -> SessionDTO {
+        var object: [String: Any] = ["id": "%1", "uid": "1", "name": "s", "title": "s", "statusSource": "hook", "project": "ah", "projectPath": "/p/ah", "status": "idle", "command": "node", "agent": agent]
+        if let model { object["model"] = model }
+        return try JSONDecoder().decode(SessionDTO.self, from: JSONSerialization.data(withJSONObject: object))
+    }
+    let older = LaunchState(preset: claude, session: try running("claude-fable-5-1"))
+    #expect(older.model?.id == "fable", "the alias is still the choice")
+    #expect(older.modelLabel == "Fable 5.1", "named for what runs, not the alias's newest model")
+    #expect(LaunchState(preset: claude, session: try running("claude-fable-5-2")).modelLabel == "Fable 5.2")
+    #expect(LaunchState(preset: claude, session: try running("opus")).modelLabel == "Opus 5.5", "the alias itself keeps its name")
+
+    let muse = try JSONDecoder().decode(PresetDTO.self, from: Data(#"{"id":"muse","name":"Muse","command":"muse","models":[{"id":"muse-wonder-1.0","name":"Muse Wonder 1.0"},{"id":"muse-wonder-full-1.0","name":"Muse Wonder Full 1.0"}],"available":true}"#.utf8))
+    let full = LaunchState(preset: muse, session: try running("muse-wonder-full-1.0", agent: "muse"))
+    #expect(full.model?.id == "muse-wonder-full-1.0" && full.modelLabel == "Muse Wonder Full 1.0", "Full is never taken for Wonder")
+}
