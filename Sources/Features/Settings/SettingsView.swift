@@ -186,7 +186,11 @@ private struct SecuritySection: View {
                     HStack {
                         Text(code.code).font(.ahMono(.title).weight(.semibold)).textSelection(.enabled)
                         Spacer()
-                        Button("Copy") { UIPasteboard.general.string = code.code }
+                        Button("Copy") {
+                            UIPasteboard.general.string = code.code
+                            Haptics.tap()
+                            scene.toast("Copied the setup code")
+                        }
                     }
                     Text("Valid for \(code.ttlMinutes) minutes, once.").font(.ah(.caption)).foregroundStyle(theme.muted)
                 }
