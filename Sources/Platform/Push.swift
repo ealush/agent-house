@@ -91,9 +91,13 @@ final class PushRegistrar {
     /// Sends this device's token and opt-ins to every signed-in host (or withdraws them).
     func sync(_ app: AppModel) async {
         guard let token else { return }
-        for account in app.accounts where account.status == .signedIn {
-            await NotificationSettings(api: account.api).register(token: token, environment: Self.environment, preferences: app.preferences.notifications)
+        let preferences = app.preferences.notifications
+        let environment = Self.environment
+        // Every host at once: one slow or unreachable host doesn't hold up the others.
+        let registering = app.accounts.filter { $0.status == .signedIn }.map { account in
+            Task { @MainActor in await NotificationSettings(api: account.api).register(token: token, environment: environment, preferences: preferences) }
         }
+        for registration in registering { await registration.value }
     }
 
     /// The icon badge: sessions waiting on you, across hosts (never the unread count).

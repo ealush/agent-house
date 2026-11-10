@@ -436,10 +436,13 @@ struct SessionListView: View {
         let dragged = section.rows[index]
         let target = to >= section.rows.count ? section.rows.last! : section.rows[to]
         let orders = SessionOrdering.movedOrders(section.rows, dragged: dragged.key, target: target.key, after: to >= section.rows.count)
+        // Every row's new place at once, then the list: one after another, a long project's
+        // drag waited out a round trip per row before the order settled.
         Task {
-            for (key, order) in orders {
-                try? await hub.client(forKey: key).order(SessionKey(key)?.uid ?? key, order)
+            let writes = orders.map { key, order in
+                Task { @MainActor in try? await hub.client(forKey: key).order(SessionKey(key)?.uid ?? key, order) }
             }
+            for write in writes { _ = await write.value }
             hub.refresh()
         }
     }

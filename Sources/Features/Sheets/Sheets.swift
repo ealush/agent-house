@@ -469,8 +469,10 @@ struct ForksSheet: View {
                         }
                     }
                     .padding(.vertical, 3)
+                    .ahRow()
                 }
             }
+            .ahFormGround()
             .navigationTitle("Forks")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -491,12 +493,21 @@ struct ForksSheet: View {
         return parts.joined(separator: " · ")
     }
 
-    /// Each line's uncommitted files, as they come in.
+    /// Each line's uncommitted files, as they come in: all asked at once (one after another,
+    /// a family of five waited out five round trips for its last count).
     private func loadChanges() async {
-        for line in lines where line.key != nil {
-            if let changes = try? await session.hub.client(forKey: line.key!).changes(line.uid) {
-                changed[line.uid] = changes.files.count
-            }
+        let hub = session.hub
+        var counts: [(uid: String, count: Task<Int?, Never>)] = []
+        for line in lines {
+            guard let key = line.key else { continue }
+            let uid = line.uid
+            counts.append((uid, Task { @MainActor () -> Int? in
+                guard let changes = try? await hub.client(forKey: key).changes(uid) else { return nil }
+                return changes.files.count
+            }))
+        }
+        for (uid, count) in counts {
+            if let count = await count.value { changed[uid] = count }
         }
     }
 
@@ -1210,7 +1221,11 @@ struct LaunchPickerSheet: View {
                 } footer: {
                     Text(launch.footer(setting))
                 }
+                // The theme's card on its ground, like every other sheet: on the half sheet's
+                // pale glass, white names and grey hints washed out.
+                .ahRow()
             }
+            .ahFormGround()
             .navigationTitle(setting == .model ? "Model" : "Reasoning effort")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) } }
@@ -1241,6 +1256,7 @@ struct LaunchPickerSheet: View {
 struct SessionMenuSheet: View {
     let scene: SceneModel
     let session: SessionModel
+    @Environment(\.theme) private var theme
 
     var body: some View {
         NavigationStack {
@@ -1256,9 +1272,11 @@ struct SessionMenuSheet: View {
                             if let chord = scene.app.keyBindings.chords(item.id).first { Keycaps(chord) }
                         }
                     }
-                    .foregroundStyle(item.id == "terminate" ? .red : .primary)
+                    .foregroundStyle(item.id == "terminate" ? theme.danger : theme.text)
+                    .ahRow()
                 }
             }
+            .ahFormGround()
             .navigationTitle(session.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .close) { scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) } }
