@@ -66,17 +66,18 @@ type ClientMessage = { t: 'i'; d: string } | { t: 'r'; c: number; r: number } | 
  * copy mode, which leaves on its own at the bottom; an app that took the mouse
  * (vim, htop) still gets wheel reports, one per three lines like a real wheel.
  */
-export async function scrollLines(windowId: string, lines: number, wheel: (up: boolean) => void): Promise<void> {
-  if (!lines) return;
+export async function scrollLines(windowId: string, lines: number, wheel: (up: boolean) => void): Promise<boolean> {
+  if (!lines) return false;
   const [inMode, mouse, alternate] = (await tmux('display-message', '-p', '-t', windowId, '#{pane_in_mode} #{mouse_any_flag} #{alternate_on}')).trim().split(' ');
   const up = lines > 0;
   if (inMode !== '1' && (mouse === '1' || alternate === '1')) {
     for (let i = 0; i < Math.max(1, Math.round(Math.abs(lines) / 3)); i++) wheel(up);
-    return;
+    return false;
   }
-  if (!up && inMode !== '1') return; // already at the bottom
+  if (!up && inMode !== '1') return false; // already at the bottom
   if (inMode !== '1') await tmux('copy-mode', '-e', '-t', windowId);
   await tmux('send-keys', '-t', windowId, '-X', '-N', String(Math.min(500, Math.abs(lines))), up ? 'scroll-up' : 'scroll-down');
+  return true;
 }
 
 function clamp(n: number, min: number, max: number, fallback: number): number {
@@ -160,7 +161,18 @@ export async function attach(ws: WebSocket, windowId: string, cols: number, rows
       return;
     }
     if (msg.t === 'i' && typeof msg.d === 'string') {
-      term.write(msg.d);
+      const d = msg.d;
+      // Typing into history scrolled back by touch goes to the prompt, as in any terminal:
+      // copy mode would take the first keys as its own commands. Only copy mode this viewer's
+      // scrolling entered; one you entered yourself (prefix [) keeps its keys.
+      if (!queued && !scrolledBack && !scrolling) term.write(d);
+      else {
+        queued++;
+        typing = typing
+          .then(backToPrompt)
+          .then(() => !closed && term.write(d))
+          .finally(() => queued--);
+      }
     } else if (msg.t === 'r') {
       term.resize(clamp(msg.c, 2, 1000, 80), clamp(msg.r, 2, 500, 24));
     } else if (msg.t === 's' && Number.isFinite(msg.n)) {
@@ -174,15 +186,29 @@ export async function attach(ws: WebSocket, windowId: string, cols: number, rows
 
   let scrollDebt = 0;
   let scrollAt: [number, number] = [1, 1];
-  let scrolling = false;
-  async function drainScroll() {
-    scrolling = true;
-    while (scrollDebt && !closed) {
-      const n = scrollDebt;
-      scrollDebt = 0;
-      await scrollLines(windowId, n, (up) => term.write(`\x1b[<${up ? 64 : 65};${scrollAt[0]};${scrollAt[1]}M`)).catch(() => {});
-    }
-    scrolling = false;
+  let scrolling: Promise<void> | null = null;
+  let scrolledBack = false;
+  let typing: Promise<unknown> = Promise.resolve();
+  let queued = 0;
+  function drainScroll() {
+    const run = (async () => {
+      while (scrollDebt && !closed) {
+        const n = scrollDebt;
+        scrollDebt = 0;
+        if (await scrollLines(windowId, n, (up) => term.write(`\x1b[<${up ? 64 : 65};${scrollAt[0]};${scrollAt[1]}M`)).catch(() => false)) scrolledBack = true;
+      }
+    })();
+    scrolling = run;
+    void run.finally(() => {
+      if (scrolling === run) scrolling = null;
+    });
+  }
+  async function backToPrompt() {
+    if (scrolling) await scrolling;
+    if (!scrolledBack || closed) return;
+    scrolledBack = false;
+    const inMode = await tmux('display-message', '-p', '-t', windowId, '#{pane_in_mode}').catch(() => '0');
+    if (inMode.trim() === '1') await tmux('send-keys', '-t', windowId, '-X', 'cancel').catch(() => {});
   }
 
   ws.on('close', () => {

@@ -104,3 +104,31 @@ test('concurrent shell sends keep each paste and Enter together', async () => {
     return lines.includes('first-isolated') && lines.includes('second-isolated');
   }, 5000, 'two separately executed commands');
 });
+
+test('typing after a touch scroll back reaches the prompt whole; copy mode you entered keeps its keys', async () => {
+  const created = await http(ah, 'POST', '/api/windows', { cookie, body: { preset: 'shell', cwd: `${ah.dir}/files`, label: 'scrolled' } });
+  assert.equal(created.status, 201, created.body);
+  const { id } = created.json();
+  const v = viewer(id, 80, 12);
+  await v.opened;
+  v.ws.send(JSON.stringify({ t: 'i', d: 'seq 1 60\r' }));
+  await until(() => v.seen().includes('60'), 5000, 'history to scroll');
+  const inMode = () => ah.tmux('display', '-p', '-t', id, '#{pane_in_mode}').trim();
+
+  // A finger drags the history down: copy mode, scrolled back.
+  v.ws.send(JSON.stringify({ t: 's', n: 20, c: 1, r: 1 }));
+  await until(() => inMode() === '1', 5000, 'scrolled back');
+  // Typed right away, every key reaches the shell: none goes to copy mode as a command.
+  v.ws.send(JSON.stringify({ t: 'i', d: 'echo typed-$((6*7))' }));
+  v.ws.send(JSON.stringify({ t: 'i', d: '\r' }));
+  await until(() => v.seen().includes('typed-42'), 5000, 'the whole line ran');
+  assert.equal(inMode(), '0');
+
+  // Copy mode entered some other way (prefix [) isn't this viewer's to leave.
+  ah.tmux('copy-mode', '-t', id);
+  v.ws.send(JSON.stringify({ t: 'i', d: 'k' }));
+  await sleep(300);
+  assert.equal(inMode(), '1', 'still in the copy mode you entered');
+  ah.tmux('send-keys', '-t', id, '-X', 'cancel');
+  v.ws.close();
+});
