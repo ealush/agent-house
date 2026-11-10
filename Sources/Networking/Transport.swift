@@ -81,8 +81,10 @@ final class URLSessionTransport: NSObject, HTTPTransport, @unchecked Sendable {
 
     func stream(for request: URLRequest) async throws -> (HTTPURLResponse, AsyncThrowingStream<Data, any Error>) {
         let streamConfiguration = URLSessionTransport.makeConfiguration()
-        // A stream stays open for hours; only the idle timeout between bytes applies (pings come every 25 s).
-        streamConfiguration.timeoutIntervalForRequest = 60
+        // A stream stays open for hours; only the idle timeout between bytes applies. Pings come
+        // every 25 s: 40 lets one arrive late, and a host gone quiet (asleep, unreachable without
+        // a reset) reads as reconnecting sooner than at 60.
+        streamConfiguration.timeoutIntervalForRequest = 40
         streamConfiguration.timeoutIntervalForResource = 7 * 24 * 3600
         let delegate = StreamDelegate()
         let session = URLSession(configuration: streamConfiguration, delegate: delegate, delegateQueue: nil)
