@@ -43,7 +43,8 @@ export function usePressMenu(): { bind: (items: () => PressItem[]) => Partial<Re
       },
     };
   };
-  const menu = at && createPortal(<PressMenu anchor={at.el} items={at.items} onClose={() => setAt(null)} />, document.body);
+  // In the app, not the body: the lifted copy keeps the phone's row layout (.narrow .row).
+  const menu = at && createPortal(<PressMenu anchor={at.el} items={at.items} onClose={() => setAt(null)} />, at.el.closest('.app') ?? document.body);
   return { bind, menu };
 }
 
