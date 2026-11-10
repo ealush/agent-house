@@ -265,6 +265,8 @@ struct ComposerView: View {
                 .foregroundStyle(theme.text2)
                 .frame(width: control * 0.82, height: control * 0.82)
                 .glassEffect(.regular.interactive(), in: Circle())
+                .contentShape(.hoverEffect, Circle())
+                .hoverEffect(.highlight)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
@@ -282,6 +284,8 @@ struct ComposerView: View {
                     .padding(.top, 5)
                     .frame(width: 72, height: 12, alignment: .top)
                     .contentShape(Rectangle())
+                    .contentShape(.hoverEffect, Capsule())
+                    .hoverEffect(.highlight)
             }
             .buttonStyle(.plain)
             .transition(.opacity)
@@ -309,6 +313,8 @@ struct ComposerView: View {
                     .frame(width: control, height: control)
                     .glassEffect(.regular.interactive(), in: Circle())
                     .glassEffectID("attach", in: glass)
+                    .contentShape(.hoverEffect, Circle())
+                    .hoverEffect(.highlight)
             }
             // In the order written, wherever the menu opens: the library first.
             .menuOrder(.fixed)
@@ -599,7 +605,7 @@ struct LaunchChips: View {
         // At its default with no room for the label, a chip says what it sets ("Model").
         let shown: String? = density == .symbols ? nil : value ?? (density == .full ? "Default" : name)
         // A setting at its default reads as unset (muted), not as a value like the mode beside it.
-        return Button(action: action) { chipLabel(name, symbol, shown, spoken: value ?? fallback, danger: false, labelled: density == .full, unset: value == nil) }.buttonStyle(.plain).hoverEffect(.highlight)
+        return Button(action: action) { chipLabel(name, symbol, shown, spoken: value ?? fallback, danger: false, labelled: density == .full, unset: value == nil) }.buttonStyle(.plain)
     }
 
     /// ah's setting chip: a quiet label and the value in force ("Model Opus 5.5"); the label
@@ -619,6 +625,8 @@ struct LaunchChips: View {
         // Glass like the box they float over, so they read as part of it, out for a moment.
         .glassEffect(danger ? .regular.tint(theme.danger.opacity(0.22)).interactive() : .regular.interactive(), in: Capsule())
         .contentShape(Capsule())
+        // A pointer finds every chip, the menus' too.
+        .hoverEffect(.highlight)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(name), \(spoken)")
         .accessibilityAddTraits(.isButton)
