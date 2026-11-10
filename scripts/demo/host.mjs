@@ -186,6 +186,12 @@ if (fresh) seed();
 
 // No presets of our own: ah's defaults (Shell, Claude Code, Codex…), with `claude` found first.
 process.env.PATH = `${bin}:${process.env.PATH}`;
+// Sessions start login shells, and on macOS /etc/zprofile's path_helper puts the system's
+// paths (Homebrew's, with a real `claude` in it) back in front: the demo home's own profiles
+// put the stand-ins first again, so a session never starts the real agent.
+mkdirSync(join(dir, 'home'), { recursive: true });
+for (const profile of ['.zprofile', '.zshrc', '.bash_profile', '.bashrc'])
+  writeFileSync(join(dir, 'home', profile), `# The demo host's stand-ins (claude, gh) before anything else on the PATH.\nexport PATH="${bin}:$PATH"\n`);
 // Settings → System must never reach this machine's own ah: its restart would run
 // `systemctl --user restart ah`, and a rebuild would build and restart that too. The demo
 // host isn't a unit, so restarting it does nothing, and a rebuild only takes a moment.
