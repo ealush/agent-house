@@ -512,14 +512,35 @@ private struct ShortcutRow: View {
     @Binding var recording: ShortcutsSection.Recording?
     let finished: (Chord?) -> Void
     @Environment(\.theme) private var theme
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
         let id = command.id
-        let chords = app.keyBindings.chords(id)
+        // On a phone the keys go under the name: beside it, two chords and their buttons left
+        // the name a word wide, and broke "or" over two lines.
+        if sizeClass == .compact {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: CommandCatalog.icon(id)).frame(width: 22).foregroundStyle(theme.muted).padding(.top, 2)
+                VStack(alignment: .leading, spacing: 8) {
+                    labels(id)
+                    keys(id)
+                }
+            }
+            .accessibilityElement(children: .contain)
+        } else {
+            HStack(alignment: .center, spacing: 10) {
+                Image(systemName: CommandCatalog.icon(id)).frame(width: 22).foregroundStyle(theme.muted)
+                labels(id)
+                Spacer(minLength: 8)
+                keys(id)
+            }
+            .accessibilityElement(children: .contain)
+        }
+    }
+
+    private func labels(_ id: CommandID) -> some View {
         let changed = app.keyBindings.isOverridden(id)
-        HStack(alignment: .center, spacing: 10) {
-            Image(systemName: CommandCatalog.icon(id)).frame(width: 22).foregroundStyle(theme.muted)
-            VStack(alignment: .leading, spacing: 2) {
+        return VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(command.label)
                     if changed {
@@ -529,7 +550,12 @@ private struct ShortcutRow: View {
                 Text(command.detail).font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(2)
                 Text(CommandCatalog.whenLabel(id)).font(.ah(.caption2)).foregroundStyle(theme.faint)
             }
-            Spacer(minLength: 8)
+    }
+
+    @ViewBuilder
+    private func keys(_ id: CommandID) -> some View {
+        let chords = app.keyBindings.chords(id)
+        let changed = app.keyBindings.isOverridden(id)
             if recording?.id == id {
                 ChordRecorder(done: finished).frame(width: 170, height: 30)
             } else {
@@ -560,9 +586,8 @@ private struct ShortcutRow: View {
                     }
                 }
                 .buttonStyle(.borderless)
+                .fixedSize()
             }
-        }
-        .accessibilityElement(children: .contain)
     }
 }
 
