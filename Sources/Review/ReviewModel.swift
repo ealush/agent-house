@@ -209,15 +209,24 @@ final class ReviewModel {
             await loadList()
             return
         }
+        // The stack and its findings together, then the layer and the reviewer's thread
+        // together: four round trips one after another held the page on its spinner.
         await load("stack") {
-            stack = try await review.stack(id)
-            findings = try await review.findings(id)
+            async let fetched = review.stack(id)
+            async let found = review.findings(id)
+            stack = try await fetched
+            findings = try await found
         }
-        if selecting {
-            selectedPR = route.pr ?? stack?.next ?? stack?.layers.first { $0.state == "open" }?.pr
-            if let pr = selectedPR { await select(pr) }
+        let threading = Task { await loadThread() }
+        await withTaskCancellationHandler {
+            if selecting {
+                selectedPR = route.pr ?? stack?.next ?? stack?.layers.first { $0.state == "open" }?.pr
+                if let pr = selectedPR { await select(pr) }
+            }
+            await threading.value
+        } onCancel: {
+            threading.cancel()
         }
-        await loadThread()
     }
 
     func select(_ pr: Int) async {
@@ -237,8 +246,14 @@ final class ReviewModel {
         // A layer you reviewed before opens on what changed since.
         let l = stack?.layers.first { $0.pr == pr }
         diffScope = (l.map(LayerConfidence.init)?.review == .changedSinceReview) ? .since : .this
-        await loadDiff(diffScope)
-        await load("description") { description = try await review.description(id, pr: pr) }
+        // The diff and the PR's description together.
+        let describing = Task { await load("description") { description = try await review.description(id, pr: pr) } }
+        await withTaskCancellationHandler {
+            await loadDiff(diffScope)
+            await describing.value
+        } onCancel: {
+            describing.cancel()
+        }
     }
 
     func loadDiff(_ scope: DiffScope) async {
@@ -265,6 +280,7 @@ final class ReviewModel {
     func refresh() async {
         guard let id = stack?.id else { return }
         await load("sync") {
+            // In turn: a sync can change the findings it's followed by.
             stack = try await review.sync(id)
             findings = try await review.findings(id)
         }
@@ -311,8 +327,11 @@ final class ReviewModel {
         guard let id = stack?.id, let pr = selectedPR else { return }
         await load("finding") {
             _ = try await review.addFinding(id, NewFinding(ownerPr: pr, foundOnPr: pr, title: title, body: body, severity: severity.rawValue, path: path, lineStart: lines?.lowerBound, lineEnd: lines?.upperBound))
-            findings = try await review.findings(id)
-            stack = try await review.stack(id)
+            // Both at once, not one round trip after the other.
+            async let found = review.findings(id)
+            async let fetched = review.stack(id)
+            findings = try await found
+            stack = try await fetched
         }
     }
 
@@ -320,8 +339,11 @@ final class ReviewModel {
         guard let id = stack?.id else { return }
         await load("finding") {
             _ = try await review.updateFinding(id, finding: finding.id, FindingPatch(state: state?.rawValue, severity: severity?.rawValue, ownerPr: owner, note: note))
-            findings = try await review.findings(id)
-            stack = try await review.stack(id)
+            // Both at once, not one round trip after the other.
+            async let found = review.findings(id)
+            async let fetched = review.stack(id)
+            findings = try await found
+            stack = try await fetched
         }
     }
 
@@ -362,8 +384,10 @@ final class ReviewModel {
         var result: DispatchResult?
         await load("dispatch") {
             result = try await review.dispatch(id, pr: pr, findings: ids, text: text, targetUid: target, newSessionPreset: newSessionPreset, kind: kind)
-            stack = try await review.stack(id)
-            findings = try await review.findings(id)
+            async let fetched = review.stack(id)
+            async let found = review.findings(id)
+            stack = try await fetched
+            findings = try await found
         }
         return result
     }
