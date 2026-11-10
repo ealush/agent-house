@@ -379,6 +379,16 @@
   visibility: visible;
 }
 
+/* On a touch screen Copy is always there, so the code scrolls under it: it sits on the
+   block's own ground with a short fade before it, and the text goes under it rather than
+   showing on both sides of it. */
+@media (hover: none) {
+  .gui .code-snippet .code-copy {
+    background: var(--sunken);
+    box-shadow: -14px 0 10px -4px var(--sunken), 5px 0 0 var(--sunken);
+  }
+}
+
 :where(:root:not([data-touch])) .gui .code-copy:hover {
   background: var(--line);
   color: var(--text);
