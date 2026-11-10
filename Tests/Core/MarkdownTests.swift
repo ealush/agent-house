@@ -86,3 +86,50 @@ import Testing
     #expect(kept[2] == .code(language: nil, text: "a\nb"))
     #expect(Markdown.plain(kept) == "First line\nSecond bold\nstill bold\n\none\ntwo\n\na\nb")
 }
+
+@Test func proseRunsHoldWhatOneSelectionCanCross() {
+    let blocks = Markdown.parse("""
+    # Plan
+
+    First **step**.
+
+    - one
+    - two
+      1. nested
+
+    ```sh
+    ls
+    ```
+
+    After the code.
+
+    > quoted
+
+    ![shot](/tmp/x.png)
+
+    - item with code:
+
+      ```
+      x
+      ```
+    """)
+    let runs = Markdown.runs(blocks)
+    #expect(runs.count == 6)
+    guard case .prose(let first) = runs[0] else { Issue.record("heading, paragraph and list make one run"); return }
+    #expect(first.count == 3)
+    #expect(runs[1] == .block(.code(language: "sh", text: "ls")))
+    #expect(runs[2] == .prose([.paragraph([.text("After the code.")])]), "code ends a run; the prose after it starts another")
+    #expect(runs[3] == .block(.quote([.paragraph([.text("quoted")])])))
+    #expect(runs[4] == .block(.paragraph([.image(alt: "shot", src: "/tmp/x.png")])), "a paragraph with an image stands alone")
+    guard case .block(.list) = runs[5] else { Issue.record("a list holding code stands alone"); return }
+}
+
+@Test func quotingForAReply() {
+    #expect(Markdown.quote("one\n\ntwo") == "> one\n> \n> two\n\n")
+    #expect(Markdown.quote("a\nb\nc", limit: 2) == "> a\n> b\n\n")
+}
+
+@Test func selectedProseQuotesAsMarkdown() {
+    let drawn = "Shipped it.\n•\t`a.ts`: the flow\n12.\tstep\u{2028}more\n\u{FFFC}\ttask\nkept\ttab"
+    #expect(Markdown.source(ofSelected: drawn) == "Shipped it.\n- `a.ts`: the flow\n12. step\nmore\n- task\nkept\ttab")
+}

@@ -21,6 +21,29 @@ enum MarkdownBlock: Equatable, Sendable {
     }
 
     enum Alignment: Equatable, Sendable { case leading, center, trailing, none }
+
+    /// Text alone, which one run of selectable text can hold: a heading, a paragraph without
+    /// images, or a list whose items hold only such paragraphs and lists.
+    var isProse: Bool {
+        switch self {
+        case .heading: return true
+        case .paragraph(let inlines): return !inlines.contains { if case .image = $0 { true } else { false } }
+        case .list(_, _, let items):
+            return items.allSatisfy { $0.blocks.allSatisfy { block in
+                switch block {
+                case .paragraph, .list: return block.isProse
+                default: return false
+                }
+            } }
+        default: return false
+        }
+    }
+}
+
+/// A stretch of blocks as selectable text draws it (`Markdown.runs`).
+enum MarkdownRun: Equatable, Sendable {
+    case prose([MarkdownBlock])
+    case block(MarkdownBlock)
 }
 
 indirect enum MarkdownInline: Equatable, Sendable {
@@ -102,6 +125,44 @@ enum Markdown {
             case .rule: return "—"
             }
         }.joined(separator: "\n\n")
+    }
+
+    /// Blocks as selectable text draws them: paragraphs, headings and lists of plain items
+    /// that follow one another make one run, so a finger can select across them; code,
+    /// quotes, tables, rules, raw HTML and paragraphs holding images stand alone.
+    static func runs(_ blocks: [MarkdownBlock]) -> [MarkdownRun] {
+        var out: [MarkdownRun] = []
+        for block in blocks {
+            if block.isProse, case .prose(let run) = out.last {
+                out[out.count - 1] = .prose(run + [block])
+            } else {
+                out.append(block.isProse ? .prose([block]) : .block(block))
+            }
+        }
+        return out
+    }
+
+    /// Words going into a reply as a quote: each line behind `> `, at most `limit` lines.
+    static func quote(_ text: String, limit: Int = .max) -> String {
+        text.split(separator: "\n", omittingEmptySubsequences: false).prefix(limit).map { "> \($0)" }.joined(separator: "\n") + "\n\n"
+    }
+
+    /// Words selected in drawn prose, back as Markdown: a list's drawn marker (a bullet, a
+    /// task box, a number) and its tab become `- ` or `N. `, a line break inside a paragraph
+    /// a newline.
+    static func source(ofSelected text: String) -> String {
+        text.replacingOccurrences(of: "\u{2028}", with: "\n")
+            .replacingOccurrences(of: "\u{200B}", with: "")
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line -> String in
+                guard let tab = line.firstIndex(of: "\t") else { return String(line) }
+                let marker = line[..<tab]
+                let rest = line[line.index(after: tab)...]
+                if marker == "•" || marker == "\u{FFFC}" { return "- " + rest }
+                if marker.hasSuffix("."), marker.dropLast().allSatisfy(\.isNumber), !marker.dropLast().isEmpty { return marker + " " + rest }
+                return String(line)
+            }
+            .joined(separator: "\n")
     }
 
     // MARK: Inline

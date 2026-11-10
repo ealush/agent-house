@@ -27,6 +27,7 @@ struct MarkdownView: View {
     var compact = false
     @Environment(\.theme) private var theme
     @Environment(\.hostFiles) private var hostFiles
+    @Environment(\.textMenu) private var textMenu
 
     /// `keepingLineBreaks`: each new line in the text is one (your own words), not a space.
     init(_ text: String, compact: Bool = false, keepingLineBreaks: Bool = false) {
@@ -41,8 +42,18 @@ struct MarkdownView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: compact ? 6 : 10) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                BlockView(block: block)
+            if let textMenu {
+                // Selectable: prose that follows on is one text view, so a drag selects across it.
+                ForEach(Array(Markdown.runs(blocks).enumerated()), id: \.offset) { _, run in
+                    switch run {
+                    case .prose(let prose): SelectableProse(blocks: prose, compact: compact, menu: textMenu)
+                    case .block(let block): BlockView(block: block)
+                    }
+                }
+            } else {
+                ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                    BlockView(block: block)
+                }
             }
         }
         .environment(\.openURL, OpenURLAction { url in
@@ -108,6 +119,7 @@ private struct BlockView: View {
 private struct ParagraphView: View {
     let inlines: [MarkdownInline]
     @Environment(\.theme) private var theme
+    @Environment(\.textMenu) private var textMenu
 
     var body: some View {
         let images = inlines.compactMap { inline -> (String, String)? in
@@ -115,10 +127,15 @@ private struct ParagraphView: View {
             return nil
         }
         VStack(alignment: .leading, spacing: 8) {
-            Text(InlineText.attributed(inlines, theme: theme))
-                .foregroundStyle(theme.text2)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
+            if let textMenu {
+                let words = inlines.filter { if case .image = $0 { false } else { true } }
+                if !words.isEmpty { SelectableProse(blocks: [.paragraph(words)], menu: textMenu) }
+            } else {
+                Text(InlineText.attributed(inlines, theme: theme))
+                    .foregroundStyle(theme.text2)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             ForEach(Array(images.enumerated()), id: \.offset) { _, image in
                 HostImage(source: image.1, alt: image.0)
             }

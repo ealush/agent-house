@@ -215,6 +215,8 @@ struct TranscriptView: View {
                 if session.composer.trayOpen {
                     withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { session.composer.trayOpen = false }
                 }
+                // Words selected in a reply let go, as a page's do when you tap away from them.
+                UIApplication.shared.sendAction(#selector(ProseTextView.dropSelection), to: nil, from: nil, for: nil)
                 guard !scene.hardwareKeyboard, scene.composerFocused != nil else { return }
                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
             })
@@ -488,20 +490,20 @@ private struct BlockRow: View {
                 ForEach(items) { item in
                     switch item {
                     case .part(_, let part):
-                        PartView(part: part, session: session, stepsHidden: stepsHidden, answered: !isLast)
+                        if part.isWords {
+                            // The reply's words select under a finger (press, hold, drag); the
+                            // message's actions join their edit menu instead of a context menu,
+                            // which would take the press first. VoiceOver keeps them as actions.
+                            PartView(part: part, session: session, stepsHidden: stepsHidden, answered: !isLast)
+                                .environment(\.textMenu, wordsMenu)
+                                .accessibilityActions { agentMenu }
+                        } else {
+                            PartView(part: part, session: session, stepsHidden: stepsHidden, answered: !isLast)
+                                .contextMenu { agentMenu }
+                        }
                     case .tools(_, let calls):
                         ToolGroupView(calls: calls, session: session, stepsHidden: stepsHidden)
-                    }
-                }
-            }
-            .contextMenu {
-                Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = block.text }
-                LinkButtons(place: messagePlace, scene: scene)
-                if session.isLive && !block.text.isEmpty {
-                    Button("Quote in Reply", systemImage: "text.quote") {
-                        let quoted = block.text.split(separator: "\n", omittingEmptySubsequences: false).prefix(12).map { "> \($0)" }.joined(separator: "\n")
-                        session.composer.compose(quoted + "\n\n")
-                        Haptics.tap()
+                            .contextMenu { agentMenu }
                     }
                 }
             }
@@ -520,6 +522,39 @@ private struct BlockRow: View {
 extension BlockRow {
     /// This message, as a link names it: the session's GUI at the block's first entry.
     fileprivate var messagePlace: Place { Place(.session(session.key), message: block.seq) }
+
+    /// The agent's message, on a long press of its steps, pictures and widgets.
+    @ViewBuilder fileprivate var agentMenu: some View {
+        Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = block.text }
+        LinkButtons(place: messagePlace, scene: scene)
+        if session.isLive && !block.text.isEmpty {
+            Button("Quote in Reply", systemImage: "text.quote") {
+                session.composer.compose(Markdown.quote(block.text, limit: 12))
+                Haptics.tap()
+            }
+        }
+    }
+
+    /// After Copy in the edit menu of words selected in the agent's message: quoting just
+    /// those words, and the message's own actions folded under one item.
+    fileprivate var wordsMenu: TextMenu {
+        let (session, scene, text, place) = (session, scene, block.text, messagePlace)
+        return TextMenu { selected in
+            var items: [UIMenuElement] = []
+            if session.isLive {
+                items.append(UIAction(title: "Quote in Reply", image: UIImage(systemName: "text.quote")) { _ in
+                    session.composer.compose(Markdown.quote(Markdown.source(ofSelected: selected)))
+                    Haptics.tap()
+                })
+            }
+            items.append(UIMenu(title: "Message", image: UIImage(systemName: "text.bubble"), children: [
+                UIAction(title: "Copy Message", image: UIImage(systemName: "doc.on.doc")) { _ in UIPasteboard.general.string = text },
+                UIAction(title: "Copy Link", image: UIImage(systemName: "link")) { _ in scene.copyLink(to: place) },
+                UIAction(title: "Share Link…", image: UIImage(systemName: "square.and.arrow.up")) { _ in scene.shareLink(to: place) },
+            ]))
+            return items
+        }
+    }
 }
 
 /// Copy Link and Share Link for a place, in a context menu.

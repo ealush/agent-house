@@ -260,3 +260,10 @@ private let result = ToolResult(callId: "c1", text: "ok", isError: false, data: 
     outbox.retireSent(key: "a", userTurns: [(at: 900, text: "Something else")])
     #expect(outbox.items.map(\.id) == [older, again])
 }
+
+@Test func onlyTheAgentsWordsAreSelectableText() {
+    #expect(FeedPart.text("hi").isWords)
+    #expect(FeedPart.reasoning("hmm").isWords)
+    #expect(!FeedPart.notice(kind: .info, text: "x").isWords)
+    #expect(!FeedPart.media(kind: "image", src: "/a.png", alt: nil).isWords)
+}
