@@ -583,13 +583,18 @@ struct ShortcutsView: View {
                                             Keycaps(chord)
                                         }
                                     }
+                                    // The keys keep their width (a tight row broke "or" over two
+                                    // lines); the name beside them gives way instead.
+                                    .fixedSize()
                                 }
                                 .accessibilityElement(children: .combine)
+                                .ahRow()
                             }
                         }
                     }
                 }
             }
+            .ahFormGround()
             .searchable(text: $query, prompt: "Name or keys, like “ctrl shift p”")
             .navigationTitle("Keyboard shortcuts")
             .toolbar {

@@ -670,9 +670,14 @@ private struct PastChatsView: View {
                             Text(chat.preview).font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(2)
                         }
                     }
+                    .ahRow()
                 }
-                if chats.isEmpty && error == nil { Text("No side chats yet.").foregroundStyle(theme.muted) }
+                if chats.isEmpty && error == nil {
+                    EmptyState(symbol: "bubble.left.and.text.bubble.right", title: query.isEmpty ? "No side chats yet" : "Nothing matches", message: "Side chats you've had about this session's changes show here.")
+                        .listRowBackground(Color.clear)
+                }
             }
+            .ahFormGround()
             .searchable(text: $query)
             .navigationTitle("Past chats")
             .navigationBarTitleDisplayMode(.inline)
