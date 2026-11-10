@@ -191,13 +191,16 @@ struct ComposerView: View {
                     .font(.system(size: 17, weight: .medium))
                     .foregroundStyle(theme.muted)
                     .frame(width: 34, height: 34)
-                    .contentShape(Rectangle())
+                    .touchTarget()
             }
             // In the order written, wherever the menu opens: the library first.
             .menuOrder(.fixed)
             .tint(.primary)
             .accessibilityLabel("Attach")
+            // Send, Queue and Stop trade places with a spring rather than a cut.
             sendButton
+                .animation(.snappy(duration: 0.22), value: composer.showsStop(working: session.working))
+                .animation(.snappy(duration: 0.22), value: session.isShell || (session.working && composer.canSend))
         }
     }
 
@@ -213,8 +216,10 @@ struct ComposerView: View {
                     .foregroundStyle(theme.background)
                     .frame(width: 32, height: 32)
                     .background(theme.text, in: Circle())
+                    .touchTarget()
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.ahPress)
+            .transition(.scale(scale: 0.6).combined(with: .opacity))
             .accessibilityLabel("Stop the turn")
         } else if session.isShell || (session.working && composer.canSend) {
             // While it works a message waits its turn: the button says so, and holding it (or
@@ -252,8 +257,11 @@ struct ComposerView: View {
                     .frame(width: 32, height: 32)
                     .background(theme.accentStrong, in: Circle())
                     .opacity(composer.canSend ? 1 : 0.45)
+                    .animation(.snappy(duration: 0.2), value: composer.canSend)
+                    .touchTarget()
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.ahPress)
+            .transition(.scale(scale: 0.6).combined(with: .opacity))
             .disabled(!composer.canSend)
             .accessibilityLabel("Send")
         }

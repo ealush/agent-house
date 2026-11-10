@@ -564,7 +564,9 @@ struct ToolRowView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        // The whole card's top is the button (its padding in the label): a tap on the card's
+        // edge, beside the 16-point line of text, used to miss.
+        VStack(alignment: .leading, spacing: 0) {
             Button {
                 withAnimation(.snappy) { open.toggle() }
             } label: {
@@ -581,6 +583,9 @@ struct ToolRowView: View {
                     if view.truncated { Text("trimmed").font(.ah(.caption2)).foregroundStyle(theme.faint) }
                     Image(systemName: "chevron.right").font(.ah(.caption2)).foregroundStyle(theme.faint).rotationEffect(.degrees(open ? 90 : 0))
                 }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .frame(minHeight: 40)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -589,10 +594,11 @@ struct ToolRowView: View {
             .accessibilityHint(open ? "Collapses the details" : "Shows the details")
             if open {
                 ToolBodyView(body: view.body)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 10)
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .padding(10)
         // ah's ToolRow: a raised card with a hairline; what waits on you is pink-edged.
         .background(view.status == .awaiting ? theme.accentTint : theme.raised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(view.status == .awaiting ? theme.accentLine : theme.line, lineWidth: 1))

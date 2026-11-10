@@ -47,6 +47,38 @@ struct AhSectionHeader: View {
     }
 }
 
+/// A round control that gives under the finger, as the system's own do: a touch shrinks it a
+/// little, and letting go springs it back.
+struct AhPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.88 : 1)
+            .opacity(configuration.isPressed ? 0.85 : 1)
+            .animation(.spring(response: 0.25, dampingFraction: 0.6), value: configuration.isPressed)
+    }
+}
+
+extension ButtonStyle where Self == AhPressStyle {
+    static var ahPress: AhPressStyle { AhPressStyle() }
+}
+
+extension View {
+    /// Touches land a little past a small control's edge, to the 44 points a finger needs,
+    /// without the control taking more room.
+    func touchTarget(_ size: CGFloat = 44) -> some View { modifier(TouchTarget(size: size)) }
+}
+
+private struct TouchTarget: ViewModifier {
+    let size: CGFloat
+    @State private var drawn = CGSize.zero
+
+    func body(content: Content) -> some View {
+        content
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { drawn = $0 }
+            .contentShape(Rectangle().inset(by: -max(0, (size - min(drawn.width, drawn.height)) / 2)))
+    }
+}
+
 /// A page's filter field, under its large title as iOS keeps one (the bar's own search sits
 /// above a title that lives in the page).
 struct AhSearchField: View {
