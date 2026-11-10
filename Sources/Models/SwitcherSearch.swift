@@ -110,7 +110,9 @@ enum SwitcherSearch {
             if !buffer.isEmpty { out.append((buffer, marked)) }
             buffer = ""
         }
-        for ch in snippet {
+        // A snippet is the transcript's markdown: its emphasis and code marks would read as
+        // literal asterisks and backticks around the very words that matched.
+        for ch in plain(snippet) {
             if ch == "\u{1}" {
                 flush()
                 marked = true
@@ -123,6 +125,12 @@ enum SwitcherSearch {
         }
         flush()
         return out
+    }
+
+    /// Markdown's inline marks taken out of a snippet (`**bold**`, `__bold__`, `` `code` ``),
+    /// the words left as they are.
+    static func plain(_ snippet: String) -> String {
+        snippet.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "__", with: "").replacingOccurrences(of: "`", with: "")
     }
 }
 

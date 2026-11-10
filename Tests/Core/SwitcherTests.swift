@@ -170,3 +170,9 @@ private func shortcut(_ uid: String, _ title: String, status: String = "idle", p
     #expect(QuickAction.inboxTitle(needsYou: 1) == "1 Needs You")
     #expect(QuickAction.inboxTitle(needsYou: 3) == "3 Need You")
 }
+
+@Test func aSnippetReadsWithoutItsMarkdownMarks() {
+    let runs = SwitcherSearch.highlights("Going with **\u{1}Postgres\u{2}** for `sessions`")
+    #expect(runs.map(\.text).joined() == "Going with Postgres for sessions")
+    #expect(runs.first { $0.marked }?.text == "Postgres")
+}
