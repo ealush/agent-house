@@ -305,6 +305,10 @@
   text-decoration: none;
 }
 
+.gui .file-link {
+  overflow-wrap: anywhere;
+}
+
 :where(:root:not([data-touch])) .gui .md a:hover,
 :where(:root:not([data-touch])) .gui .file-link:hover {
   text-decoration: underline;

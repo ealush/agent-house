@@ -1,7 +1,7 @@
 // Tool calls as objects: the dispatch router picks a view by tool name, with a
 // default for everything else. A new visualization is a new entry in TOOLS; the
 // server already carries name, id, args and result, so nothing else changes.
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, Fragment, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { ToolCall, ToolResult } from '../../server/feed/schema.ts';
 import { DiffView } from './DiffView.tsx';
 import { patchLines, replaceLines, structuredLines } from './diff.ts';
@@ -54,7 +54,17 @@ function FileLink({ path }: { path: string }) {
   const gui = useGui();
   return (
     <a className="mono file-link" href={gui.fileUrl(gui.resolvePath(path))} target="_blank" rel="noreferrer noopener" title={path}>
-      {gui.displayPath(path)}
+      {/* A long path breaks after a slash, not mid-name, on a phone. */}
+      {gui.displayPath(path).split('/').map((part, i) => (
+        <Fragment key={i}>
+          {i > 0 && (
+            <>
+              /<wbr />
+            </>
+          )}
+          {part}
+        </Fragment>
+      ))}
     </a>
   );
 }
