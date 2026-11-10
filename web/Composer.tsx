@@ -447,10 +447,10 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
 
       <div className="composer-tools">
         {compact && (
-          <Popover className="icon-btn composer-add" title="Add to message" label={<Icon name="plus" size={22} />}>
+          <Popover className="icon-btn composer-add" title="Add to message" label={<Icon name="plus" size={22} />} keepFocus>
             {(close) => <div className="picker composer-add-menu">
               <button type="button" onClick={() => { close(); fileInput.current?.click(); }}><Icon name="attach" size={20} /><span>Attach files</span></button>
-              <button type="button" onClick={() => { close(); recall(1); }}><Icon name="recall" size={20} /><span>Previous message</span></button>
+              <button type="button" onClick={() => { close(); recall(1); area.current?.focus({ preventScroll: true }); }}><Icon name="recall" size={20} /><span>Previous message</span></button>
               {cursor.current >= 0 && <button type="button" onClick={() => { close(); cursor.current = -1; setText(beforeRecall.current); area.current?.focus({ preventScroll: true }); }}><Icon name="edit" size={20} /><span>Restore draft</span></button>}
             </div>}
           </Popover>
