@@ -462,14 +462,16 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
           {!compact && <button type="button" className="icon-btn" title="Previous messages (↑)" aria-label="Previous message" onClick={() => recall(1)}>
             <Icon name="recall" />
           </button>}
-          <label className={`icon-btn composer-attach ${compact ? 'hidden' : ''}`} title={isShell ? 'Attach a file (uploaded to the host, path inserted)' : 'Attach a file (uploaded to the host, sent with the message)'}>
+          {/* A button, so Tab reaches it (a label around a hidden input isn't focusable); the
+              input stays for it and for the phone's + menu. */}
+          <button type="button" className={`icon-btn composer-attach ${compact ? 'hidden' : ''}`} title={isShell ? 'Attach a file (uploaded to the host, path inserted)' : 'Attach a file (uploaded to the host, sent with the message)'} aria-label="Attach a file" onClick={() => fileInput.current?.click()}>
             <Icon name="attach" />
-            <input ref={fileInput} type="file" multiple hidden onChange={(e) => {
-              attach(e.target.files);
-              // Picking the same file again should attach it again.
-              e.target.value = '';
-            }} />
-          </label>
+          </button>
+          <input ref={fileInput} type="file" multiple hidden onChange={(e) => {
+            attach(e.target.files);
+            // Picking the same file again should attach it again.
+            e.target.value = '';
+          }} />
           {SpeechRecognition && !isShell && (
             <button type="button" className={`icon-btn ${listening ? 'live' : ''}`} title={listening ? 'Stop dictation' : 'Dictate'} aria-pressed={listening} onClick={toggleMic}>
               <Icon name="mic" />
