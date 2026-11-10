@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ModelPicker, EffortPicker, Popover } from './ModelPicker.tsx';
 import { Icon } from './icons.tsx';
@@ -17,6 +17,20 @@ export function ComposerOptions({ launch, compact, active }: { launch: Launch; c
   const hasModes = (preset?.modes?.length ?? 0) > 1;
   useCommand('pick-model', () => setSection('model'), compact && active && hasModel);
   useCommand('pick-effort', () => setSection('effort'), compact && active && hasEffort);
+  // Moving between its pages, the sheet keeps the height it has reached, as an iOS sheet does:
+  // a shorter page no longer drops its top edge, a taller one raises it once.
+  const tallest = useRef(0);
+  useLayoutEffect(() => {
+    const d = document.querySelector<HTMLElement>('dialog.composer-options');
+    if (!section || !d) {
+      tallest.current = 0;
+      return;
+    }
+    d.style.minHeight = '';
+    tallest.current = Math.max(tallest.current, d.getBoundingClientRect().height);
+    // Never past the sheet's own cap (76dvh, or what a keyboard leaves): min-height would win.
+    d.style.minHeight = `min(${tallest.current}px, 76dvh, var(--keyboard-vh, 100dvh))`;
+  }, [section]);
   if (!preset || !(hasModel || hasEffort || hasModes)) return null;
 
   const close = () => setSection(null);
