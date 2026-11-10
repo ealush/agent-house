@@ -577,7 +577,8 @@ private struct SuggestionList: View {
                             }
                             .padding(.horizontal, 10)
                             .frame(height: Self.rowHeight)
-                            .background(i == index ? theme.accent.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                            // Concentric with the list's corners: its radius less the inset.
+                            .background(i == index ? theme.accent.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -585,15 +586,14 @@ private struct SuggestionList: View {
                         .id(i)
                     }
                 }
-                .padding(4)
+                .padding(6)
             }
             .scrollBounceBehavior(.basedOnSize)
-            .frame(height: min(CGFloat(shown.count) * (Self.rowHeight + 1) + 8, 7 * (Self.rowHeight + 1) + 8))
+            .frame(height: min(CGFloat(shown.count) * (Self.rowHeight + 1) + 12, 7 * (Self.rowHeight + 1) + 12))
             .onChange(of: index) { _, i in proxy.scrollTo(i) }
         }
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(theme.faint.opacity(0.3), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.12), radius: 14, y: 4)
+        // The composer's glass and its corners, so the list reads as the box opening upward.
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Suggestions")
     }
@@ -952,13 +952,17 @@ struct QueueTrayView: View {
                 }
             }
             .padding(.bottom, 4)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(theme.accent.opacity(0.2), lineWidth: 0.5))
+            // The composer's glass, warmed with the accent: these are yours, waiting their turn.
+            .glassEffect(.regular.tint(theme.accent.opacity(0.06)), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: queue.items.map(\.id))
             .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: queue.sending)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Queued messages")
         }
+    }
+
+    private func queueGlyph(_ symbol: String) -> some View {
+        Image(systemName: symbol).frame(width: 34, height: 34).contentShape(Rectangle())
     }
 
     private func row(index: Int, item: QueueItem) -> some View {
@@ -972,22 +976,26 @@ struct QueueTrayView: View {
             if queue.sending.contains(item.id) {
                 ProgressView().controlSize(.small)
             } else {
-                HStack(spacing: 14) {
-                    Button { Haptics.threshold(); Task { await queue.steer(item) } } label: { Image(systemName: "bolt") }
+                // Glyph-sized to look at, finger-sized to hit: they sat 14 points apart on 16.
+                HStack(spacing: 2) {
+                    Button { Haptics.threshold(); Task { await queue.steer(item) } } label: { queueGlyph("bolt") }
                         .accessibilityLabel("Send now")
                         .accessibilityHint("Stops the current turn and sends this now")
-                    Button { Task { if let text = await queue.edit(item) { composer.compose(text) } } } label: { Image(systemName: "pencil") }
+                    Button { Task { if let text = await queue.edit(item) { composer.compose(text) } } } label: { queueGlyph("pencil") }
                         .accessibilityLabel("Edit")
-                    Button(role: .destructive) { Task { await queue.cancel(item) } } label: { Image(systemName: "xmark") }
+                    Button(role: .destructive) { Task { await queue.cancel(item) } } label: { queueGlyph("xmark") }
                         .accessibilityLabel("Cancel")
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.ahPress)
                 .font(.ah(.callout))
                 .foregroundStyle(theme.muted)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
+        // As tall while it sends as with its buttons; the last glyph's room is the margin.
+        .frame(minHeight: 34)
+        .padding(.leading, 12)
+        .padding(.trailing, 4)
+        .padding(.vertical, 3)
         .contentShape(Rectangle())
         .contextMenu {
             Button("Send Now", systemImage: "bolt") { Task { await queue.steer(item) } }
