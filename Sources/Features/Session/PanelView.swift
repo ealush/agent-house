@@ -30,6 +30,8 @@ private struct DiffPanel: View {
     let scene: SceneModel
     @Environment(\.theme) private var theme
     @State private var commenting: (file: String, line: DiffLine)?
+    /// Where the line being commented on sits, so it stays lit while you write.
+    @State private var commentingAt: (file: Int, line: Int)?
     @State private var comment = ""
     @State private var cursor = DiffCursor(files: [])
     @FocusState private var listFocused: Bool
@@ -61,9 +63,11 @@ private struct DiffPanel: View {
                     }
                     ForEach(Array(model.files.enumerated()), id: \.element.id) { fileIndex, file in
                         Section {
-                            DiffLinesView(lines: file.lines, maxLines: Self.maxLines, onLine: { line in open(file.path, line) },
+                            DiffLinesView(lines: file.lines, maxLines: Self.maxLines, onLineAt: { index, line in open(file.path, line, at: (fileIndex, index)) },
+                                          selected: commentingAt?.file == fileIndex ? [commentingAt!.line] : [],
                                           cursor: cursor.current?.file == fileIndex ? cursor.current?.line : nil, idPrefix: "f\(fileIndex)")
                                 .listRowInsets(EdgeInsets())
+                                .id("file\(fileIndex)")
                         } header: {
                             HStack {
                                 Text(file.path).font(.ahMono(.caption)).lineLimit(1).truncationMode(.head)
@@ -99,7 +103,7 @@ private struct DiffPanel: View {
                 case .return, .space:
                     guard let at = cursor.current, model.files.indices.contains(at.file) else { return .ignored }
                     let file = model.files[at.file]
-                    open(file.path, file.lines[at.line])
+                    open(file.path, file.lines[at.line], at: (at.file, at.line))
                     return .handled
                 case .escape:
                     guard cursor.current != nil else { return .ignored }
@@ -108,13 +112,27 @@ private struct DiffPanel: View {
                 default:
                     return .ignored
                 }
-                if let at = cursor.current { withAnimation(.snappy(duration: 0.12)) { proxy.scrollTo("f\(at.file):\(at.line)", anchor: .center) } }
+                if let at = cursor.current { withAnimation(.snappy(duration: 0.12)) { reveal(at.file, at.line, proxy) } }
                 return .handled
+            }
+            // The line being commented on stays in sight above the box and the keyboard.
+            .onChange(of: commentingAt.map { "\($0.file):\($0.line)" }) {
+                guard let at = commentingAt else { return }
+                Task {
+                    // Once the box and the keyboard have taken their room.
+                    try? await Task.sleep(for: .milliseconds(350))
+                    withAnimation(.snappy(duration: 0.3)) { reveal(at.file, at.line, proxy) }
+                }
             }
         }
         .safeAreaInset(edge: .bottom) {
-            if let target = commenting { commentBox(target) }
+            if let target = commenting {
+                commentBox(target)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
+        .animation(.snappy(duration: 0.28), value: commentingAt?.line)
+        .animation(.snappy(duration: 0.28), value: commenting == nil)
         .task {
             await model.load()
             model.watch()
@@ -124,15 +142,27 @@ private struct DiffPanel: View {
         .refreshable { await model.load() }
     }
 
-    private func open(_ file: String, _ line: DiffLine) {
+    /// Scrolls a line into view. A file's lines are one row of the list, and a list scrolls
+    /// only to rows, so this lines up the row's point at the line's height with the same
+    /// height of what's visible: the line lands in sight, near the middle for a middle line.
+    private func reveal(_ file: Int, _ line: Int, _ proxy: ScrollViewProxy) {
+        guard model.files.indices.contains(file) else { return }
+        let count = max(1, min(model.files[file].lines.count, Self.maxLines))
+        proxy.scrollTo("file\(file)", anchor: UnitPoint(x: 0.5, y: (Double(line) + 0.5) / Double(count)))
+    }
+
+    private func open(_ file: String, _ line: DiffLine, at place: (file: Int, line: Int)) {
         guard commentable, line.kind != .hunk, line.kind != .file else { return }
+        Haptics.selection()
         commenting = (file, line)
+        commentingAt = place
         comment = ""
         commentFocused = true
     }
 
     private func cancel() {
         commenting = nil
+        commentingAt = nil
         comment = ""
         listFocused = true
     }

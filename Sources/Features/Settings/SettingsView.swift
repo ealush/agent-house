@@ -55,18 +55,22 @@ private struct SettingsRowLabel: View {
     let section: SettingsSection
     let title: String
     @Environment(\.theme) private var theme
+    @Environment(\.dynamicTypeSize) private var typeSize
+    /// The tile grows with the text, as Settings' own do.
+    @ScaledMetric(relativeTo: .body) private var tile: CGFloat = 30
 
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: section.tileSymbol)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: tile / 2, weight: .semibold))
                 .foregroundStyle(.white)
-                .frame(width: 30, height: 30)
-                .background(section.tile.gradient, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .frame(width: tile, height: tile)
+                .background(section.tile.gradient, in: RoundedRectangle(cornerRadius: tile * 0.23, style: .continuous))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                Text(section.summary).font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(1)
+                // Whole at the largest sizes, where one line kept two words of it.
+                Text(section.summary).font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(typeSize.isAccessibilitySize ? 4 : 1)
             }
         }
         .padding(.vertical, 2)
