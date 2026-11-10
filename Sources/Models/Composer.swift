@@ -58,12 +58,14 @@ final class Outbox {
     }
 
     /// Sent bubbles leave once the transcript shows a user turn with the same text from
-    /// around then (an older identical message isn't this one), or after 30 seconds.
+    /// around then (an older identical message isn't this one), or after 30 seconds. One still
+    /// sending leaves too when the transcript has it: it landed, and waiting for the request to
+    /// answer drew the message twice until the next update.
     func retireSent(key: String, userTurns: [(at: Double, text: String)]) {
         let t = now()
         let done = items.filter { item in
-            guard item.key == key, item.state == .sent else { return false }
-            if t - item.at > 30 { return true }
+            guard item.key == key, item.state == .sent || item.state == .sending else { return false }
+            if item.state == .sent, t - item.at > 30 { return true }
             return userTurns.contains { turn in (turn.at == 0 || turn.at >= item.at - 10) && Outbox.sameText(turn.text, item.text) }
         }
         remove(done.map(\.id))

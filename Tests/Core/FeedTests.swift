@@ -245,3 +245,18 @@ private let result = ToolResult(callId: "c1", text: "ok", isError: false, data: 
     let entry = try JSONDecoder().decode(FeedEntry.self, from: Data(json.utf8))
     #expect(entry.parts == [.unknown(type: "widget"), .text("still here")])
 }
+
+@MainActor
+@Test func aSentBubbleLeavesOnceTheTranscriptHasItEvenBeforeTheRequestAnswers() {
+    let outbox = Outbox()
+    outbox.now = { 1000 }
+    let sending = outbox.add(key: "a", text: "Add a  skip button", state: .sending)
+    let older = outbox.add(key: "a", text: "Something else", state: .sent)
+    outbox.retireSent(key: "a", userTurns: [(at: 999, text: "Add a skip button")])
+    #expect(outbox.items.map(\.id) == [older], "the one the transcript shows leaves, sending or not")
+    _ = sending
+    // An identical message from long before isn't this one.
+    let again = outbox.add(key: "a", text: "Something else", state: .sending)
+    outbox.retireSent(key: "a", userTurns: [(at: 900, text: "Something else")])
+    #expect(outbox.items.map(\.id) == [older, again])
+}
