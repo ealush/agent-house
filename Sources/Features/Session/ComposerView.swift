@@ -182,7 +182,8 @@ struct ComposerView: View {
                     .transition(.scale(scale: 0.8).combined(with: .opacity))
                 }
             }
-            .padding(.horizontal, 4)
+            // Inset alike from the box's top and side, so a tile's corner sits concentric in
+            // the box's (its 22 less this 10).
             .padding(.top, 2)
         }
         .animation(.snappy(duration: 0.25), value: composer.attachments.map(\.id))
