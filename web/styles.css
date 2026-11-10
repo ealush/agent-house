@@ -9317,7 +9317,9 @@ select:not([multiple]) {
   color: var(--muted);
 }
 
+/* A block, centred on the row like the label: inline it sat on the text's baseline, 2.7px high. */
 .ios-chevron {
+  display: flex;
   color: var(--faint);
 }
 
