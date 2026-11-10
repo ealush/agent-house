@@ -211,6 +211,10 @@ struct TranscriptView: View {
                 withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { session.composer.trayOpen = false }
             }
             .simultaneousGesture(TapGesture().onEnded {
+                // A tap on the conversation folds what floats over it, as it puts the keyboard away.
+                if session.composer.trayOpen {
+                    withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { session.composer.trayOpen = false }
+                }
                 guard !scene.hardwareKeyboard, scene.composerFocused != nil else { return }
                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
             })
@@ -320,7 +324,8 @@ struct TranscriptView: View {
             // Read back up the conversation, the way to its newest message floats over the
             // composer: a glass ↓, there only while you're away from the end.
             .overlay(alignment: .bottom) {
-                if !atBottom && !blocks.isEmpty {
+                // Not while something floats there from the composer: they'd sit on each other.
+                if !atBottom && !blocks.isEmpty && !session.composer.floats {
                     Button {
                         Haptics.selection()
                         toEnd(reader)

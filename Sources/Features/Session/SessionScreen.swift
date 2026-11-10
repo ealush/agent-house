@@ -24,6 +24,9 @@ struct SessionScreen: View {
     /// most a little over half the screen, so the conversation and its bar stay in view.
     @State private var screenHeight: CGFloat = 800
     @State private var askHeight: CGFloat = 0
+    /// How tall the bar under the transcript is: what opens out of the composer floats just
+    /// above it.
+    @State private var barHeight: CGFloat = 0
 
     private var narrow: Bool { sizeClass == .compact || scene.narrow }
     /// How wide the conversation and its composer grow on a big screen: past this, lines get
@@ -74,8 +77,19 @@ struct SessionScreen: View {
                             }
                             .onChange(of: paneFocused) { _, focused in if !focused && !narrow { scene.composerTop = nil } }
                             .onDisappear { if narrow || paneFocused { scene.composerTop = nil } }
+                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { barHeight = $0 }
                             .frame(maxWidth: Self.readableWidth)
                             .frame(maxWidth: .infinity)
+                        }
+                    }
+                    // Over the transcript, above the bar and outside it (a view past the bar's
+                    // edge draws but takes no touch).
+                    .overlay(alignment: .bottom) {
+                        if session.surface == .gui && session.hasGUI {
+                            ComposerFloat(session: session, composer: session.composer, scene: scene)
+                                .frame(maxWidth: Self.readableWidth)
+                                .frame(maxWidth: .infinity)
+                                .padding(.bottom, barHeight)
                         }
                     }
             }

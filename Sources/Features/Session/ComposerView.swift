@@ -4,8 +4,9 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// The message bar under a GUI session (`../ah/web/Composer.tsx`): text, attachments, the
-/// model/effort/permission chips, recall, attach, and Send — or Stop while the agent works.
+/// The message bar under a GUI session (`../ah/web/Composer.tsx`): text, attachments, recall,
+/// attach, and Send — or Stop while the agent works. What opens out of it (suggestions, the
+/// settings chips) is `ComposerFloat`, over the transcript.
 struct ComposerView: View {
     @Bindable var session: SessionModel
     @Bindable var composer: ComposerModel
@@ -16,7 +17,6 @@ struct ComposerView: View {
     @State private var choosingPhotos = false
     @State private var takingPhoto = false
     @State private var importingFiles = false
-    @State private var suggestionIndex = 0
     /// The settings chips are out, floating over the box (a swipe up, or the grabber); the
     /// composer's, so going back to reading the transcript can fold them.
     private var trayOpen: Bool {
@@ -31,17 +31,12 @@ struct ComposerView: View {
     @State private var sendSize = CGSize.zero
     @Namespace private var glass
 
-    /// The session has settings to show: a live agent's model, effort and permissions.
-    private var hasTray: Bool { !session.isShell && session.isLive && session.launch.preset != nil }
-    /// Out only while nothing else floats there: suggestions take the spot while you type one.
+    private var hasTray: Bool { ComposerFloat.hasTray(session) }
     private var showsTray: Bool { trayOpen && hasTray && composer.suggestions.isEmpty }
 
     var body: some View {
         VStack(spacing: 8) {
             QueueTrayView(queue: session.queue, composer: composer, working: session.working, hardwareKeyboard: scene.hardwareKeyboard)
-            if !composer.suggestions.isEmpty {
-                SuggestionList(items: composer.suggestions, index: suggestionIndex) { composer.accept($0) }
-            }
             if let from = composer.drafts.from {
                 Label("Continued from \(from)", systemImage: "arrow.turn.down.right")
                     .font(.ah(.caption2)).foregroundStyle(theme.muted)
@@ -50,13 +45,14 @@ struct ComposerView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             // One slim glass field and the attach button beside it, as Messages has them; the
-            // settings chips wait folded away until a swipe up brings them out above the box.
+            // settings chips wait folded away until a swipe up brings them out, floating over
+            // the transcript above the box (`ComposerFloat`): nothing here changes height for
+            // them, so the transcript doesn't move.
             GlassEffectContainer(spacing: 10) {
                 VStack(alignment: .leading, spacing: 8) {
-                    if showsTray {
-                        tray.transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
-                    } else if hasTray, session.launch.mode?.dangerous == true, composer.suggestions.isEmpty {
-                        // Approvals off is never tucked away: its chip stays out, in red.
+                    if hasTray, session.launch.mode?.dangerous == true {
+                        // Approvals off is never tucked away: its chip stays out, in red, open
+                        // tray or not.
                         LaunchChips(session: session, scene: scene, onlyRisky: true)
                             .transition(.opacity)
                     }
@@ -71,7 +67,7 @@ struct ComposerView: View {
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
         .onChange(of: composer.text) { _, _ in
-            suggestionIndex = 0
+            composer.suggestionIndex = 0
             composer.updateSuggestions()
         }
         .onChange(of: pickingPhotos) { _, items in
@@ -225,7 +221,7 @@ struct ComposerView: View {
             // The text wraps short of Send, which sits in the box's corner (as Messages has it):
             // beside it in a row, the box was measured at one width and laid out at another,
             // and a long message lost its first line.
-            ComposerTextField(composer: composer, session: session, scene: scene, suggestionIndex: $suggestionIndex, trailingRoom: sendSize.width > 0 ? sendSize.width + 4 : 0, cornerHeight: sendSize.height)
+            ComposerTextField(composer: composer, session: session, scene: scene, trailingRoom: sendSize.width > 0 ? sendSize.width + 4 : 0, cornerHeight: sendSize.height)
                 .frame(minHeight: control - 12)
         }
         .padding(.leading, 10)
@@ -246,40 +242,6 @@ struct ComposerView: View {
         .accessibilityAction(named: trayOpen ? "Hide session settings" : "Show session settings") {
             withAnimation(.snappy(duration: 0.25)) { trayOpen.toggle() }
         }
-    }
-
-    /// What waits folded above the box: the settings in force, and the two ways into
-    /// suggestions a finger otherwise has to know about (/ for a command, @ for a file).
-    private var tray: some View {
-        HStack(spacing: 8) {
-            LaunchChips(session: session, scene: scene)
-            // A step apart from the settings, but with them: at the far end of a wide box,
-            // / and @ sat stranded half a screen away.
-            Spacer(minLength: 4).frame(maxWidth: 16)
-            // A command is the whole message, so / starts an empty box only.
-            if composer.text.isEmpty { trigger("/", label: "Insert a command") }
-            trigger("@", label: "Mention a file")
-        }
-    }
-
-    private func trigger(_ mark: String, label: String) -> some View {
-        Button {
-            Haptics.selection()
-            // Taken from the tray, which folds: picking a suggestion brought it back over the box.
-            withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { trayOpen = false }
-            composer.insert(mark)
-            scene.requestFocus(.composer(session.key))
-        } label: {
-            Text(mark)
-                .font(.ahMono(.body).weight(.semibold))
-                .foregroundStyle(theme.text2)
-                .frame(width: control * 0.82, height: control * 0.82)
-                .glassEffect(.regular.interactive(), in: Circle())
-                .contentShape(.hoverEffect, Circle())
-                .hoverEffect(.highlight)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
     }
 
     /// The tell that settings wait above: a sheet's grabber along the box's top edge, which a
@@ -407,6 +369,90 @@ struct ComposerView: View {
     }
 }
 
+/// What opens out of the composer, floating over the transcript just above it: the / and @
+/// suggestions while you type one, or else the settings tray a swipe up brings out. Over the
+/// transcript, not in the bar: in the bar each one made it taller as it came and went, the
+/// transcript's room changed under it, and it moved.
+struct ComposerFloat: View {
+    @Bindable var session: SessionModel
+    @Bindable var composer: ComposerModel
+    @Bindable var scene: SceneModel
+    @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ScaledMetric(relativeTo: .body) private var control: CGFloat = 44
+
+    /// The session has settings to show: a live agent's model, effort and permissions.
+    static func hasTray(_ session: SessionModel) -> Bool { !session.isShell && session.isLive && session.launch.preset != nil }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if !composer.suggestions.isEmpty {
+                SuggestionList(items: composer.suggestions, index: composer.suggestionIndex) { composer.accept($0) }
+                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+            } else if composer.trayOpen && Self.hasTray(session) {
+                tray
+                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: composer.suggestions.isEmpty)
+    }
+
+    /// What waits folded above the box: the settings in force, and the two ways into
+    /// suggestions a finger otherwise has to know about (/ for a command, @ for a file). A
+    /// dangerous permission mode isn't here: it's out in the bar already, in red.
+    private var tray: some View {
+        HStack(spacing: 8) {
+            LaunchChips(session: session, scene: scene, showsRisky: false)
+            // A step apart from the settings, but with them: at the far end of a wide box,
+            // / and @ sat stranded half a screen away.
+            Spacer(minLength: 4).frame(maxWidth: 16)
+            // A command is the whole message, so / starts an empty box only.
+            if composer.text.isEmpty { trigger("/", label: "Insert a command") }
+            trigger("@", label: "Mention a file")
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // Over the conversation's text: a shadow sets the glass off from what's under it, and
+        // the text fades out beneath the chips (as it does under the bar) rather than read
+        // through them.
+        .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
+        .background {
+            LinearGradient(colors: [theme.surface.opacity(0), theme.surface.opacity(0.92)], startPoint: .top, endPoint: .bottom)
+                .padding(.top, -28)
+                .padding(.horizontal, -12)
+                .padding(.bottom, -8)
+                .allowsHitTesting(false)
+        }
+        .gesture(ComposerSwipe { direction in
+            guard direction == .down else { return }
+            Haptics.selection()
+            withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { composer.trayOpen = false }
+        })
+    }
+
+    private func trigger(_ mark: String, label: String) -> some View {
+        Button {
+            Haptics.selection()
+            // Taken from the tray, which folds: picking a suggestion brought it back over the box.
+            withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { composer.trayOpen = false }
+            composer.insert(mark)
+            scene.requestFocus(.composer(session.key))
+        } label: {
+            Text(mark)
+                .font(.ahMono(.body).weight(.semibold))
+                .foregroundStyle(theme.text2)
+                .frame(width: control * 0.82, height: control * 0.82)
+                .glassEffect(.regular.interactive(), in: Circle())
+                .contentShape(.hoverEffect, Circle())
+                .hoverEffect(.highlight)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+}
+
 /// A vertical flick anywhere on the composer, the text box included. UIKit's, so it runs beside
 /// the text view's own gestures (a tap still places the caret), and steps aside when the text is
 /// long enough to scroll, so the drag scrolls it.
@@ -489,6 +535,8 @@ struct LaunchChips: View {
     /// Only a dangerous permission mode, if that's what's in force: the one setting that stays
     /// out when the rest fold away.
     var onlyRisky = false
+    /// A dangerous permission mode among the rest (not where it's already out on its own).
+    var showsRisky = true
     /// As tall as the / and @ beside them, at every text size.
     @ScaledMetric(relativeTo: .body) private var height: CGFloat = 36
     @Environment(\.theme) private var theme
@@ -556,7 +604,7 @@ struct LaunchChips: View {
                         }
                     }
                 }
-                if let modes = preset.modes, modes.count > 1, !onlyRisky || launch.mode?.dangerous == true {
+                if let modes = preset.modes, modes.count > 1, !onlyRisky || launch.mode?.dangerous == true, showsRisky || launch.mode?.dangerous != true {
                     let current = launch.mode ?? modes.first { $0.id == "default" }
                     Menu {
                         Picker("Permissions", selection: Binding(get: { current?.id ?? "default" }, set: { scene.applyPlan(session.planMode($0)) })) {
@@ -707,7 +755,6 @@ struct ComposerTextField: UIViewRepresentable {
     let composer: ComposerModel
     let session: SessionModel
     let scene: SceneModel
-    @Binding var suggestionIndex: Int
     /// Room kept clear at the end of each line for the button in the box's corner.
     var trailingRoom: CGFloat = 0
     /// How tall that button is: a long message's scroll bar stops above it.
@@ -840,7 +887,7 @@ struct ComposerTextField: UIViewRepresentable {
         func send() {
             let composer = parent.composer
             if !composer.suggestions.isEmpty {
-                composer.accept(composer.suggestions[min(parent.suggestionIndex, composer.suggestions.count - 1)])
+                composer.accept(composer.suggestions[min(composer.suggestionIndex, composer.suggestions.count - 1)])
                 return
             }
             // An empty box steers the next queued message, like its Steer button.
@@ -882,7 +929,7 @@ struct ComposerTextField: UIViewRepresentable {
                 return true
             case "ArrowUp" where mods.isEmpty:
                 if !composer.suggestions.isEmpty {
-                    parent.suggestionIndex = (parent.suggestionIndex - 1 + composer.suggestions.count) % composer.suggestions.count
+                    composer.suggestionIndex = (composer.suggestionIndex - 1 + composer.suggestions.count) % composer.suggestions.count
                     return true
                 }
                 if composer.text.isEmpty || composer.isRecalling {
@@ -892,7 +939,7 @@ struct ComposerTextField: UIViewRepresentable {
                 return false
             case "ArrowDown" where mods.isEmpty:
                 if !composer.suggestions.isEmpty {
-                    parent.suggestionIndex = (parent.suggestionIndex + 1) % composer.suggestions.count
+                    composer.suggestionIndex = (composer.suggestionIndex + 1) % composer.suggestions.count
                     return true
                 }
                 if composer.isRecalling {

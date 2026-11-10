@@ -332,6 +332,10 @@ final class ComposerModel {
     /// back through the transcript.
     var trayOpen = false
     private(set) var suggestions: [CompletionTrigger.Item] = []
+    /// The highlighted suggestion (Return or Tab takes it): the first, each time the text changes.
+    var suggestionIndex = 0
+    /// Something floats over the transcript above the box: suggestions, or the settings tray.
+    var floats: Bool { trayOpen || !suggestions.isEmpty }
     private var dismissedTrigger: String?
     private var commands: [SlashCommand]?
     private var suggestTask: Task<Void, Never>?
