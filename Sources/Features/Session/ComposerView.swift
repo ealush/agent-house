@@ -240,7 +240,9 @@ struct ComposerView: View {
     private var tray: some View {
         HStack(spacing: 8) {
             LaunchChips(session: session, scene: scene)
-            Spacer(minLength: 4)
+            // A step apart from the settings, but with them: at the far end of a wide box,
+            // / and @ sat stranded half a screen away.
+            Spacer(minLength: 4).frame(maxWidth: 16)
             // A command is the whole message, so / starts an empty box only.
             if composer.text.isEmpty { trigger("/", label: "Insert a command") }
             trigger("@", label: "Mention a file")
