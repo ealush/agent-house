@@ -3118,6 +3118,12 @@ a.btn {
   background: var(--raised);
 }
 
+/* A phone's section is a page of its own, on the sheet's ground: its cards are the list's
+   white (surface), as iOS Settings' groups are, not --raised, which all but vanished on it. */
+.settings-page .sec-card {
+  background: var(--surface);
+}
+
 /* A card lines its contents up at the start without stretching them; none may grow past it. */
 .sec-card > * {
   max-width: 100%;
