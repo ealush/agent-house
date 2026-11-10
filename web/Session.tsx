@@ -607,10 +607,14 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
   // lands: the surfaces are lazy (their ref is empty at first), and during the view
   // transition the session you left still holds focus. Never from a dialog or a field
   // somewhere else, which someone chose.
+  // Opening is what claims: the first key from a keyboard joined to a tablet turns `touch`
+  // off mid-session, and claiming then pulled that key's focus (a tab, a segment) into the composer.
+  const touchNow = useRef(touch);
+  touchNow.current = touch;
   useEffect(() => {
-    if (!active || touch) return;
+    if (!active || touchNow.current) return;
     return claimKeyboard();
-  }, [active, w.key, touch]);
+  }, [active, w.key]);
   useCommand('toggle-view', () => switchView(view === 'gui' ? 'terminal' : 'gui', true), active && views.length > 1);
   useCommand(
     'toggle-panel',
