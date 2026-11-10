@@ -116,23 +116,48 @@ private struct StartReviewView: View {
 
     var body: some View {
         List {
+            Group {
             if let error { Banner(text: error, tone: .error) }
             if repo == nil {
                 Section("Repository") {
                     ForEach(model.repos, id: \.root) { r in
-                        Button("\(r.repo) (\(r.trunk))") {
+                        Button {
                             repo = r
                             Task {
                                 do { candidates = try await model.review.candidates(root: r.root) } catch { self.error = APIError.wrap(error).message }
                             }
+                        } label: {
+                            // The checkout as well as the repository: one repo checked out three
+                            // times (worktrees) read as the same line three times.
+                            HStack(spacing: 10) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(r.repo).foregroundStyle(theme.text)
+                                    Text("\(Self.checkout(r.root)) · onto \(r.trunk)").font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(1).truncationMode(.head)
+                                }
+                                Spacer(minLength: 8)
+                                Image(systemName: "chevron.right").font(.ah(.footnote).weight(.semibold)).foregroundStyle(theme.faint)
+                            }
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
                     }
                 }
             } else if let candidates {
                 if !candidates.native.isEmpty {
                     Section("GitHub stacks") {
                         ForEach(candidates.native, id: \.number) { stack in
-                            Button("Stack #\(stack.number): \(stack.prs.map { "#\($0)" }.joined(separator: " → ")) onto \(stack.base)") { start(.native(stack.number)) }
+                            Button { start(.native(stack.number)) } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Stack #\(stack.number)").foregroundStyle(theme.text)
+                                        Text("\(stack.prs.map { "#\($0)" }.joined(separator: " → ")) onto \(stack.base)").font(.ah(.caption)).foregroundStyle(theme.muted)
+                                    }
+                                    Spacer(minLength: 8)
+                                    Image(systemName: "chevron.right").font(.ah(.footnote).weight(.semibold)).foregroundStyle(theme.faint)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -146,21 +171,44 @@ private struct StartReviewView: View {
                         } label: {
                             HStack {
                                 Image(systemName: picked.contains(pr.number) ? "checkmark.circle.fill" : "circle")
-                                Text("#\(pr.number) \(pr.title)").lineLimit(1)
-                                if let order = picked.firstIndex(of: pr.number) { Spacer(); Text("\(order + 1)").foregroundStyle(theme.muted) }
+                                    .foregroundStyle(picked.contains(pr.number) ? theme.accent : theme.faint)
+                                    .contentTransition(.symbolEffect(.replace))
+                                Text("#\(pr.number)").foregroundStyle(theme.muted).monospacedDigit()
+                                Text(pr.title).foregroundStyle(theme.text).lineLimit(1)
+                                if let order = picked.firstIndex(of: pr.number) { Spacer(); Text("\(order + 1)").foregroundStyle(theme.muted).monospacedDigit() }
                             }
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
                         .disabled(pr.inStack != nil)
                     }
-                    Button("Review these \(picked.count) PRs") { start(.manual(picked)) }.disabled(picked.isEmpty)
+                    // The one action here, said with its count, and only once there's a pick.
+                    Button { start(.manual(picked)) } label: {
+                        Text(picked.isEmpty ? "Pick PRs to review" : "Review \(picked.count) PR\(picked.count == 1 ? "" : "s")").fontWeight(.semibold).frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.capsule)
+                    .tint(theme.accentStrong)
+                    .disabled(picked.isEmpty)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
                 }
             } else {
                 ProgressView()
             }
+            }
+            .ahRow()
         }
+        .ahFormGround()
         .navigationTitle("Start a review")
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) } }
         .task { if model.repos.isEmpty { await model.loadList() } }
+    }
+
+    /// A checkout by its last two folders (`.worktrees/orbit-api`, `files/orbit-api`): enough
+    /// to tell a repository's checkouts apart.
+    static func checkout(_ root: String) -> String {
+        root.split(separator: "/").suffix(2).joined(separator: "/")
     }
 
     private func flatten(_ trees: [CandidateTree]) -> [Candidate] {
@@ -178,16 +226,26 @@ private struct StartReviewView: View {
         let tree: CandidateTree
         let depth: Int
         let pick: (Int) -> Void
+        @Environment(\.theme) private var theme
         var body: some View {
             Button {
                 pick(tree.pr.number)
             } label: {
-                HStack {
-                    Text(String(repeating: "  ", count: depth) + "#\(tree.pr.number) \(tree.pr.title)").lineLimit(1)
-                    Spacer()
-                    Text("+\(tree.pr.additions) −\(tree.pr.deletions)").font(.ah(.caption).monospacedDigit())
+                HStack(spacing: 8) {
+                    // A child sits under its parent with the branch's own glyph, not spaces.
+                    if depth > 0 {
+                        Image(systemName: "arrow.turn.down.right").font(.ah(.caption)).foregroundStyle(theme.faint).padding(.leading, CGFloat(depth - 1) * 14)
+                    }
+                    Text("#\(tree.pr.number)").foregroundStyle(theme.muted).monospacedDigit()
+                    Text(tree.pr.title).foregroundStyle(theme.text).lineLimit(1)
+                    Spacer(minLength: 8)
+                    Text("+\(tree.pr.additions)").foregroundStyle(theme.done)
+                    Text("−\(tree.pr.deletions)").foregroundStyle(theme.danger)
                 }
+                .font(.ah(.callout))
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
             .disabled(tree.pr.inStack != nil)
             ForEach(tree.children) { child in TreeRow(tree: child, depth: depth + 1, pick: pick) }
         }
