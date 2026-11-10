@@ -46,10 +46,20 @@ export function useSectionPart(): Section | null {
 
 // A phone's Settings is a list you go into, as iOS's: a section opened from the list
 // pushes, so Back pops to the list; one linked straight at returns to the list in place.
+// The list and its sections scroll in one sheet: a section starts at its top, and Back
+// finds the list where you left it (Settings.tsx).
 let fromList = false;
+let listTop = 0;
+const sheet = () => document.querySelector<HTMLElement>('dialog.settings-sheet');
 export function openSection(id: Section) {
   fromList = true;
+  listTop = sheet()?.scrollTop ?? 0;
   location.hash = `settings/${id}`;
+}
+/** Where the phone's Settings sheet scrolls to as it shows a section (its top) or the list (where it was). */
+export function placeSettingsScroll(section: Section | null) {
+  const el = sheet();
+  if (el) el.scrollTop = section ? 0 : listTop;
 }
 export function backToList() {
   if (fromList) history.back();

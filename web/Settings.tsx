@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect } from 'react';
 import { NotifySettings } from './NotifyDialog.tsx';
 import { Security } from './Security.tsx';
 import { SubscriptionsPanel } from './Subscriptions.tsx';
@@ -14,7 +14,7 @@ import { AgentsPanel } from './AgentsSettings.tsx';
 import { ShortcutsPanel } from './shortcuts.tsx';
 import { Glide } from './Glide.tsx';
 import { Icon } from './icons.tsx';
-import { openSection, SECTIONS, sectionHash, useSectionPart, type Section } from './settingsMenu.ts';
+import { openSection, placeSettingsScroll, SECTIONS, sectionHash, useSectionPart, type Section } from './settingsMenu.ts';
 import { getMode } from './theme.ts';
 
 /**
@@ -34,6 +34,9 @@ export function Settings({ onLocked, onNotifyChange, phone = false }: { onLocked
   const go = (id: Section) => {
     location.hash = sectionHash(id);
   };
+  useLayoutEffect(() => {
+    if (phone) placeSettingsScroll(part);
+  }, [phone, part]);
 
   if (phone && !part) return <SettingsList />;
 
