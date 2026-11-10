@@ -155,8 +155,10 @@ struct ComposerView: View {
                                 .symbolRenderingMode(.palette)
                                 .foregroundStyle(.white, .black.opacity(0.55))
                                 .padding(3)
+                                // The glyph is small; the finger's target isn't.
+                                .touchTarget()
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.ahPress)
                         .accessibilityLabel("Remove \(file.name)")
                     }
                     .accessibilityElement(children: .contain)
