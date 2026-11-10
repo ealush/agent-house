@@ -226,7 +226,7 @@
   .gui .msg-actions,
   .gui .msg-meta .msg-copy,
   .gui .msg-snap,
-  .gui .code-copy {
+  .gui .code-snippet .code-copy {
     visibility: visible;
   }
 }
