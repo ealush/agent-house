@@ -83,14 +83,16 @@ struct SidebarView: View {
                 .accessibilityLabel("Host \(host)\(hub.phase == .live ? "" : ", reconnecting")")
             }
             Spacer(minLength: 4)
-            MoreMenu(scene: scene, settings: true)
+            // Their 32 points inside the label, where touches land: outside it, only the glyph
+            // (18 by 6 for the ellipsis) took a tap.
+            MoreMenu(scene: scene, settings: true, square: 32)
                 .labelStyle(.iconOnly)
                 .tint(.primary)
-                .frame(width: 32, height: 32)
-            Button { scene.perform("toggle-sidebar") } label: { Image(systemName: "sidebar.left") }
+            Button { scene.perform("toggle-sidebar") } label: {
+                Image(systemName: "sidebar.left").frame(width: 32, height: 32).contentShape(Rectangle())
+            }
                 .buttonStyle(.plain)
                 .foregroundStyle(theme.muted)
-                .frame(width: 32, height: 32)
                 .accessibilityLabel("Hide Sidebar")
         }
         .padding(.horizontal, 14)
@@ -125,6 +127,8 @@ struct MoreMenu: View {
     let scene: SceneModel
     /// Where Settings has no button of its own (the iPad sidebar's bar, which keeps its title room).
     var settings = false
+    /// A square to take touches in, where the label isn't a bar's (which sizes its own).
+    var square: CGFloat? = nil
 
     var body: some View {
         Menu {
@@ -140,7 +144,11 @@ struct MoreMenu: View {
                 Button("Keyboard Shortcuts", systemImage: "keyboard") { scene.perform("show-shortcuts") }
             }
         } label: {
-            Label("More", systemImage: "ellipsis")
+            if let square {
+                Label("More", systemImage: "ellipsis").frame(width: square, height: square).contentShape(Rectangle())
+            } else {
+                Label("More", systemImage: "ellipsis")
+            }
         }
         .menuOrder(.fixed)
     }
