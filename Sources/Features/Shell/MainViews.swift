@@ -108,14 +108,18 @@ struct AhWordmark: View {
     var body: some View {
         HStack(spacing: 7) {
             // The prompt mark: a white ">_" on ah's pink.
+            // A logo: its glyph keeps the tile's size (scaled with the text, it spilled out of
+            // the 26-point tile as "…").
             Text(">_")
-                .font(.custom(AhType.mono, size: 12, relativeTo: .caption).weight(.bold))
+                .font(.custom(AhType.mono, fixedSize: 12).weight(.bold))
                 .foregroundStyle(.white)
                 .frame(width: 26, height: 26)
                 .background(theme.accentStrong, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             (Text("ah").foregroundStyle(theme.text) + Text(".").foregroundStyle(theme.brand))
                 .font(.custom(AhType.ui, size: 22, relativeTo: .title3).weight(.bold))
         }
+        // The name grows a little with the text, not past where the sidebar's bar has room.
+        .dynamicTypeSize(...DynamicTypeSize.xLarge)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("ah")
     }
