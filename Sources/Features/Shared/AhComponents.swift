@@ -47,6 +47,43 @@ struct AhSectionHeader: View {
     }
 }
 
+/// A page's filter field, under its large title as iOS keeps one (the bar's own search sits
+/// above a title that lives in the page).
+struct AhSearchField: View {
+    @Binding var text: String
+    let prompt: String
+    @Environment(\.theme) private var theme
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").foregroundStyle(theme.muted).accessibilityHidden(true)
+            TextField(prompt, text: $text)
+                .focused($focused)
+                .submitLabel(.search)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+            if !text.isEmpty {
+                Button {
+                    text = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(theme.faint)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear")
+                .transition(.opacity.combined(with: .scale(scale: 0.6)))
+            }
+        }
+        .font(.ah(.body))
+        .padding(.horizontal, 12)
+        .frame(minHeight: 44)
+        .background(theme.tile, in: Capsule())
+        .contentShape(Capsule())
+        .onTapGesture { focused = true }
+        .animation(.snappy(duration: 0.18), value: text.isEmpty)
+    }
+}
+
 /// A root page in ah's layers: rows on the panel's surface over the ground, the large title
 /// in the content, and the bar left to its buttons.
 struct AhPage: ViewModifier {

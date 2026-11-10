@@ -26,6 +26,7 @@ struct InboxView: View {
                     } label: {
                         Label("Continue “\(row.title)” from \(focus.device)", systemImage: "arrow.turn.down.right")
                     }
+                    .ahRow()
                 }
             }
             if inbox.waiting.isEmpty && inbox.reviews.isEmpty && inbox.running.isEmpty && !hub.rows.isEmpty {
@@ -41,6 +42,7 @@ struct InboxView: View {
                         }
                     }
                     .padding(.vertical, 6)
+                    .ahRow()
                 }
             }
             if !inbox.waiting.isEmpty || !inbox.reviews.isEmpty {
@@ -86,8 +88,10 @@ struct InboxView: View {
                 }
                 let recent = Array(hub.history.prefix(3))
                 if !recent.isEmpty {
-                    Section("Recent conversations") {
+                    Section {
                         ForEach(recent) { item in HistoryRowView(item: item, scene: scene, hub: hub).ahRow() }
+                    } header: {
+                        AhSectionHeader(title: "Recent conversations")
                     }
                 }
             }
@@ -491,18 +495,26 @@ struct HistoryView: View {
             if labels.last != label && !labels.contains(label) { labels.append(label) }
         }
         List {
-            Section { } header: { AhLargeTitle(title: "History", tagline: rows.isEmpty ? nil : "\(rows.count) conversation\(rows.count == 1 ? "" : "s") to pick up.").textCase(nil) }
+            Section {
+                AhSearchField(text: $scene.historyFilter, prompt: "Filter by title, project, agent")
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+            } header: {
+                AhLargeTitle(title: "History", tagline: rows.isEmpty ? nil : "\(rows.count) conversation\(rows.count == 1 ? "" : "s") to pick up.").textCase(nil)
+            }
             if rows.isEmpty {
                 EmptyState(symbol: "clock", title: scene.historyFilter.isEmpty ? "No history yet" : "Nothing matches", message: "Ended and past conversations appear here.")
                     .listRowBackground(Color.clear)
             }
             ForEach(order, id: \.self) { day in
-                Section(day) {
+                Section {
                     ForEach(days[day] ?? []) { item in HistoryRowView(item: item, scene: scene, hub: hub).ahRow() }
+                } header: {
+                    AhSectionHeader(title: day, count: days[day]?.count)
                 }
             }
         }
-        .searchable(text: $scene.historyFilter, prompt: "Filter by title, project, agent")
+        .scrollDismissesKeyboard(.immediately)
         .onChange(of: scene.historyFilter) { _, _ in scene.scheduleSave() }
         .navigationTitle("History")
     }
@@ -638,12 +650,18 @@ struct SearchView: View {
                     Button("More results") { Task { await model.more() } }
                         .ahRow()
                 }
-                if response.results.isEmpty && response.enabled {
-                    Text("No matches.").foregroundStyle(theme.muted)
-                        .ahRow()
+                if response.results.isEmpty && response.enabled && !model.searching {
+                    EmptyState(symbol: "magnifyingglass", title: "No matches", message: "Nothing said “\(model.query.q.trimmingCharacters(in: .whitespaces))”. Try fewer or different words.")
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
                 }
             } else if model.searching {
-                ProgressView().listRowBackground(Color.clear)
+                ProgressView().frame(maxWidth: .infinity).padding(.top, 24).listRowBackground(Color.clear)
+            } else if model.query.q.trimmingCharacters(in: .whitespaces).isEmpty {
+                // Before a word is typed: what this searches, not a blank page.
+                EmptyState(symbol: "text.magnifyingglass", title: "Search every conversation", message: "What you and your agents said, in transcripts and side chats, on every host.")
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             }
             if let error = model.error { Banner(text: error, tone: .error).listRowBackground(Color.clear) }
         }

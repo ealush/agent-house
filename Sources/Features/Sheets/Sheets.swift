@@ -34,7 +34,7 @@ struct SceneSheet: View {
         } else {
             NavigationStack {
                 EmptyState(symbol: "questionmark.square.dashed", title: "That session is gone", message: "It ended or moved while this was opening.")
-                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .close) { scene.sheet = nil }.keyboardShortcut(.cancelAction) } }
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .close) { scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) } }
             }
         }
     }
@@ -474,7 +474,7 @@ struct ForksSheet: View {
             .navigationTitle("Forks")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss(); scene.sheet = nil }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss(); scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .primaryAction) {
                     if session.isLive { Button("Fork…", systemImage: "plus") { scene.sheet = .fork(session.key) } }
                 }
@@ -954,7 +954,7 @@ struct WorktreesView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) { if model.cleaningUp { cleanupBar } }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    if model.cleaningUp { Button(role: .cancel) { model.endCleanup() }.keyboardShortcut(.cancelAction) } else { Button(role: .close) { dismiss() }.keyboardShortcut(.cancelAction) }
+                    if model.cleaningUp { Button(role: .cancel) { model.endCleanup() }.keyboardShortcut(.cancelAction) } else { Button(role: .close) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) }
                 }
                 ToolbarItemGroup(placement: .primaryAction) {
                     if !model.cleaningUp {
@@ -1180,7 +1180,7 @@ struct ScrollbackSheet: View {
             .navigationTitle("Scrollback")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .primaryAction) { ShareLink(item: text) }
             }
         }
@@ -1261,7 +1261,7 @@ struct SessionMenuSheet: View {
             }
             .navigationTitle(session.title)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .close) { scene.sheet = nil }.keyboardShortcut(.cancelAction) } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .close) { scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) } }
         }
         .presentationDetents([.medium, .large])
     }

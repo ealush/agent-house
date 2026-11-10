@@ -592,7 +592,7 @@ struct ShortcutsView: View {
             .searchable(text: $query, prompt: "Name or keys, like “ctrl shift p”")
             .navigationTitle("Keyboard shortcuts")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(role: .close) { scene.showingShortcuts = false }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .close) { scene.showingShortcuts = false }.keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .primaryAction) { Button("Edit…") { scene.showingShortcuts = false; scene.sheet = .settings(SettingsSection.shortcuts.rawValue) } }
             }
         }

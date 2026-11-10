@@ -397,19 +397,30 @@ struct Banner: View {
     let text: String
     var tone: Tone = .info
     var action: (title: String, run: () -> Void)?
+    /// A glyph of its own (a connection's), else the tone's.
+    var symbol: String? = nil
     @Environment(\.theme) private var theme
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Image(systemName: tone == .error ? "exclamationmark.triangle.fill" : tone == .warning ? "wifi.exclamationmark" : "info.circle")
+            Image(systemName: symbol ?? (tone == .error ? "exclamationmark.triangle.fill" : tone == .warning ? "exclamationmark.circle.fill" : "info.circle"))
                 .foregroundStyle(tone == .error ? theme.danger : tone == .warning ? theme.limited : theme.muted)
-            Text(text).font(.ah(.callout)).foregroundStyle(theme.text2).frame(maxWidth: .infinity, alignment: .leading)
+            // Backticked names (a config key) read as code, as everywhere else in the app.
+            Text((try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text))
+                .font(.ah(.callout)).foregroundStyle(theme.text2).frame(maxWidth: .infinity, alignment: .leading)
             if let action {
                 Button(action.title, action: action.run).buttonStyle(.bordered).controlSize(.small)
             }
         }
         .padding(12)
         .background(theme.raised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+extension View {
+    /// A banner as a form's own row: on the page's ground, not a card in a card.
+    func formBanner() -> some View {
+        listRowBackground(Color.clear).listRowInsets(EdgeInsets())
     }
 }
 
@@ -428,9 +439,9 @@ struct ConnectionBanner: View {
         case .live, .connecting, .signedOut:
             EmptyView()
         case .polling:
-            Banner(text: "Live updates are reconnecting; showing what the host said a moment ago.", tone: .warning)
+            Banner(text: "Live updates are reconnecting; showing what the host said a moment ago.", tone: .warning, symbol: "wifi.exclamationmark")
         case .offline(let message):
-            Banner(text: lastUpdated.map { "Offline. Shown as of \(Elapsed.format($0, now: .now)). \(message)" } ?? message, tone: .error, action: ("Retry", retry))
+            Banner(text: lastUpdated.map { "Offline. Shown as of \(Elapsed.format($0, now: .now)). \(message)" } ?? message, tone: .error, action: ("Retry", retry), symbol: "wifi.slash")
         }
     }
 }

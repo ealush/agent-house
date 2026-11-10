@@ -26,7 +26,7 @@ struct SettingsView: View {
             }
             .settingsListGround(sizeClass == .compact)
             .navigationTitle("Settings")
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() }.keyboardShortcut(.cancelAction) } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) } }
         } detail: {
             NavigationStack {
                 if let section, let account = scene.account {
@@ -151,8 +151,8 @@ private struct SecuritySection: View {
 
     var body: some View {
         AhForm {
-            if let error = model.error { Banner(text: error, tone: .error) }
-            if let notice = model.notice { Banner(text: notice) }
+            if let error = model.error { Banner(text: error, tone: .error).formBanner() }
+            if let notice = model.notice { Banner(text: notice).formBanner() }
             Section("Hosts on this device") {
                 ForEach(scene.app.accounts) { other in
                     Button {
@@ -639,17 +639,17 @@ private struct NotificationsSection: View {
     var body: some View {
         AhForm {
             if push.pushUnavailable {
-                Banner(text: PushRegistrar.unavailableNote, tone: .info)
+                Banner(text: PushRegistrar.unavailableNote, tone: .info).formBanner()
             } else if let error = model.error ?? push.lastError {
-                Banner(text: error, tone: .error)
+                Banner(text: error, tone: .error).formBanner()
             }
             if !push.pushUnavailable, let status = model.status, !status.configured {
-                Banner(text: "This host has no APNs key configured, so it can’t notify this device yet. Its owner adds one under `apns` in the host’s config.", tone: .warning)
+                Banner(text: "This host has no APNs key configured, so it can’t notify this device yet. Its owner adds one under `apns` in the host’s config.", tone: .warning).formBanner()
             }
             if push.authorization == .denied {
                 Banner(text: "Notifications are off for Agent Hub in iOS Settings.", tone: .warning, action: ("Open Settings", {
                     if let url = URL(string: UIApplication.openNotificationSettingsURLString) { UIApplication.shared.open(url) }
-                }))
+                })).formBanner()
             }
             Section {
                 Toggle("Notify this device", isOn: Binding(get: { app.preferences.notifications.enabled }, set: { on in
@@ -700,7 +700,7 @@ private struct AgentsSection: View {
 
     var body: some View {
         AhForm {
-            if let error = model.error { Banner(text: error, tone: .error) }
+            if let error = model.error { Banner(text: error, tone: .error).formBanner() }
             if let harnesses = model.harnesses {
                 Section {
                     ForEach(harnesses.agents) { agent in
@@ -771,7 +771,7 @@ private struct SubscriptionsSection: View {
 
     var body: some View {
         AhForm {
-            if let error = model.error { Banner(text: error, tone: .error) }
+            if let error = model.error { Banner(text: error, tone: .error).formBanner() }
             Section {
                 ForEach(model.list) { s in
                     Button {
@@ -900,7 +900,7 @@ private struct EnvironmentSection: View {
 
     var body: some View {
         AhForm {
-            if let error = model.error { Banner(text: error, tone: .error) }
+            if let error = model.error { Banner(text: error, tone: .error).formBanner() }
             if let state = model.state {
                 Section {
                     ForEach(state.vars) { v in
@@ -993,7 +993,7 @@ private struct SearchSection: View {
 
     var body: some View {
         AhForm {
-            if let error = model.error { Banner(text: error, tone: .error) }
+            if let error = model.error { Banner(text: error, tone: .error).formBanner() }
             if let status = model.status {
                 Toggle("Full-text search", isOn: Binding(get: { status.enabled }, set: { on in Task { await model.setEnabled(on) } }))
                 Section("Index") {
@@ -1060,8 +1060,8 @@ private struct SystemSection: View {
 
     var body: some View {
         AhForm {
-            if let error = model.error { Banner(text: error, tone: .error) }
-            if let notice = model.notice { Banner(text: notice) }
+            if let error = model.error { Banner(text: error, tone: .error).formBanner() }
+            if let notice = model.notice { Banner(text: notice).formBanner() }
             if let hooks = model.hooks {
                 Section {
                     LabeledContent("Claude", value: "\(hooks.claude.wired) of \(hooks.claude.of) hooks")

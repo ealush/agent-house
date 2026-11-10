@@ -156,14 +156,19 @@ private struct PanelChrome: ViewModifier {
             }
             .toolbar {
                 ToolbarItem(placement: sheet ? .confirmationAction : .cancellationAction) {
-                    if sheet {
-                        Button(role: .close) { session.panel = nil }.keyboardShortcut(.cancelAction)
-                    } else {
-                        Button(role: .close) {
-                            withAnimation(.snappy(duration: 0.2)) { session.panel = nil }
+                    Group {
+                        if sheet {
+                            Button(role: .close) { session.panel = nil }.keyboardShortcut(.cancelAction)
+                        } else {
+                            Button(role: .close) {
+                                withAnimation(.snappy(duration: 0.2)) { session.panel = nil }
+                            }
+                            .accessibilityLabel("Close \(panel.title)")
                         }
-                        .accessibilityLabel("Close \(panel.title)")
                     }
+                    // A bar glyph in the label color, as every other bar's is; the accent is
+                    // for the one primary action.
+                    .tint(.primary)
                 }
             }
     }
