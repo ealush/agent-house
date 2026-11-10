@@ -106,6 +106,7 @@ private struct LayerManageRow: View {
     let model: ReviewModel
     let layer: Layer
     @State private var role: String
+    @Environment(\.theme) private var theme
 
     init(model: ReviewModel, layer: Layer) {
         self.model = model
@@ -113,17 +114,29 @@ private struct LayerManageRow: View {
         _role = State(initialValue: layer.role)
     }
 
+    // The layer first (its number and title, whole width), its role under it as the field it
+    // is, and Skip said beside its switch: the role's field wore the number as its prompt, and
+    // the switch had no word.
     var body: some View {
-        HStack {
-            TextField("#\(layer.pr)", text: $role)
-                .frame(maxWidth: 110)
-                .onSubmit { patch(LayerPatch(role: role)) }
-            Text(layer.title).lineLimit(1).foregroundStyle(layer.status == .skipped ? .secondary : .primary)
-            Spacer()
-            Toggle("Skip", isOn: Binding(get: { layer.status == .skipped }, set: { on in patch(LayerPatch(skipped: on)) }))
-                .labelsHidden()
-                .accessibilityLabel("Skip #\(layer.pr)")
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("#\(layer.pr)").foregroundStyle(theme.muted).monospacedDigit()
+                    Text(layer.title).lineLimit(2).foregroundStyle(layer.status == .skipped ? theme.muted : theme.text)
+                }
+                TextField("Role (optional)", text: $role)
+                    .font(.ah(.caption))
+                    .foregroundStyle(theme.text2)
+                    .onSubmit { patch(LayerPatch(role: role)) }
+            }
+            Spacer(minLength: 6)
+            Toggle(isOn: Binding(get: { layer.status == .skipped }, set: { on in patch(LayerPatch(skipped: on)) })) {
+                Text("Skip").font(.ah(.caption)).foregroundStyle(theme.muted)
+            }
+            .fixedSize()
+            .accessibilityLabel("Skip #\(layer.pr)")
         }
+        .padding(.vertical, 2)
     }
 
     private func patch(_ p: LayerPatch) {
