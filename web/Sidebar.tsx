@@ -65,6 +65,8 @@ export function confirmTerminate(w: Win) {
 
 /** Desktop navigation: inbox, hosts, and every live session grouped by host (or project). */
 /** A shell's folder inside its project ("web/gui"), or "" at the project root. */
+const lastFolder = (path: string) => (path.includes('/') ? `…/${path.replace(/\/+$/, '').split('/').pop()}` : path);
+
 function subdir(w: Win): string {
   if (w.cwd === w.projectPath) return '';
   return w.cwd.startsWith(`${w.projectPath}/`) ? w.cwd.slice(w.projectPath.length + 1) : w.cwd;
@@ -201,7 +203,8 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
           </span>
           {/* The model is in the title's tooltip and the session's header: the row keeps its room for the title. */}
           {/* The group already names the project; a shell elsewhere in it says where. */}
-          {!w.agent && subdir(w) && <span className="side-model mono">{subdir(w)}</span>}
+          {/* Its last folder ("…/components"): the end of a path is the part that tells them apart. */}
+          {!w.agent && subdir(w) && <span className="side-model mono" title={subdir(w)}>{lastFolder(subdir(w))}</span>}
           {w.fork && (
             <span className="count" title={w.fork.parentTitle ? `Fork of ${w.fork.parentTitle}` : `${w.fork.forks} fork${w.fork.forks === 1 ? '' : 's'}`}>
               ⑂{w.fork.forks > 0 ? w.fork.forks : ''}

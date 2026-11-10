@@ -530,7 +530,7 @@ kbd {
 
 .side-session .name {
   flex: 1;
-  min-width: 0;
+  min-width: min(4.5em, 100%);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -732,8 +732,10 @@ button.pill {
   border-radius: 4px;
 }
 
+/* The name keeps its room first: the folder beside it gives way, down to nothing. */
 .side-model {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 92px;
   overflow: hidden;
   text-overflow: ellipsis;
