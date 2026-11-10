@@ -383,8 +383,10 @@ final class SessionModel: Identifiable {
 
     // MARK: Session management
 
-    func commitRename() async {
-        guard let name = renaming?.trimmingCharacters(in: .whitespaces), !name.isEmpty, name != title else {
+    /// The name being typed, or the one given (an alert hands its field's text over as it
+    /// closes, after it's cleared `renaming`).
+    func commitRename(_ given: String? = nil) async {
+        guard let name = (given ?? renaming)?.trimmingCharacters(in: .whitespaces), !name.isEmpty, name != title else {
             renaming = nil
             return
         }

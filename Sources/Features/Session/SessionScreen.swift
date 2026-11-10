@@ -32,7 +32,7 @@ struct SessionScreen: View {
     var body: some View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
-                if !inNavigationBar || session.renaming != nil {
+                if !inNavigationBar {
                     SessionHeader(session: session, scene: scene, compact: compactHeader, pane: pane, paneFocused: paneFocused)
                 }
                 if let history = session.history, !session.isLive {
@@ -87,6 +87,11 @@ struct SessionScreen: View {
             load: { [hub = session.hub, key = session.key] path in try? await hub.client(forKey: key).file(path) },
             open: { path in Task { await preview(path) } }))
         .quickLookPreview($previewURL)
+        // A phone renames as iOS does, in an alert with the name selected: a header of its own
+        // under the bar repeated the bar's buttons around a bare field.
+        .alert("Rename Session", isPresented: Binding(get: { inNavigationBar && session.renaming != nil }, set: { if !$0 { session.renaming = nil } })) {
+            RenameAlertFields(session: session)
+        }
         .overlay(alignment: .top) { NoticeStack(session: session) }
         // The agent asks while you're in an empty composer: the keys go to its question
         // (digits pick), and an on-screen keyboard steps aside for the choices.
@@ -227,7 +232,12 @@ private struct SessionHeader: View {
                 if session.renaming != nil {
                     TextField("Name", text: Binding(get: { session.renaming ?? "" }, set: { session.renaming = $0 }))
                         .font(.ah(.headline))
-                        .textFieldStyle(.roundedBorder)
+                        // The theme's field, not the system's black rounded box.
+                        .textFieldStyle(.plain)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(theme.tile, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.accent.opacity(0.6), lineWidth: 1))
                         .focused($renameFocused)
                         .onSubmit { Task { await session.commitRename() } }
                         .onKeyPress(.escape) {
@@ -533,5 +543,29 @@ private struct NoticeStack: View {
         }
         .padding(.top, 60)
         .animation(.snappy, value: session.notices.map(\.id))
+    }
+}
+
+/// The rename alert's field and buttons. The field keeps its own text: the alert clears the
+/// session's draft as it closes, before Rename's action has run.
+private struct RenameAlertFields: View {
+    let session: SessionModel
+    @State private var name: String
+
+    init(session: SessionModel) {
+        self.session = session
+        _name = State(initialValue: session.renaming ?? session.title)
+    }
+
+    var body: some View {
+        TextField("Name", text: $name)
+            .textInputAutocapitalization(.sentences)
+            .submitLabel(.done)
+        Button("Cancel", role: .cancel) {}
+        Button("Rename") {
+            let typed = name
+            Task { await session.commitRename(typed) }
+        }
+        .keyboardShortcut(.defaultAction)
     }
 }
