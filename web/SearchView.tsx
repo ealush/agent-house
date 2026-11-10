@@ -86,7 +86,7 @@ export function SearchView({
             autoFocus
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Words from a conversation or a side chat"
+            placeholder="Words to find"
             aria-label="Search conversations"
             autoCapitalize="off"
             autoCorrect="off"
@@ -95,7 +95,7 @@ export function SearchView({
         <label className="field">
           <span>In</span>
           <select value={scope} onChange={(e) => setScope(e.target.value as typeof scope)} aria-label="Scope">
-            <option value="all">Conversations and chats</option>
+            <option value="all">Everything</option>
             <option value="transcripts">Conversations only</option>
             <option value="chats">Side chats only</option>
           </select>
