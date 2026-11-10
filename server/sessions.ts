@@ -116,10 +116,14 @@ const HOME = homedir();
 // ---------- git
 
 type Repo = { root: string; project: string; branch: string | null; worktree: boolean };
-const repoCache = new Map<string, { root: string; gitDir: string; main: string } | null>();
+const repoCache = new Map<string, { found: { root: string; gitDir: string; main: string } | null; at: number }>();
+/** A folder that wasn't a repository is asked again after this: `git init` makes it one. */
+const NO_REPO_TTL = 5_000;
 
 function findRepo(dir: string) {
-  if (repoCache.has(dir)) return repoCache.get(dir)!;
+  const hit = repoCache.get(dir);
+  // Kept: a repository while its .git is there, and "none" for a few seconds.
+  if (hit && (hit.found ? existsSync(join(hit.found.root, '.git')) : Date.now() - hit.at < NO_REPO_TTL)) return hit.found;
   let found: { root: string; gitDir: string; main: string } | null = null;
   for (let cur = dir; cur && cur !== '/'; cur = dirname(cur)) {
     const dotgit = join(cur, '.git');
@@ -137,7 +141,7 @@ function findRepo(dir: string) {
     found = { root: cur, gitDir, main };
     break;
   }
-  repoCache.set(dir, found);
+  repoCache.set(dir, { found, at: Date.now() });
   return found;
 }
 

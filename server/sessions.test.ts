@@ -1,6 +1,9 @@
-import { test } from 'node:test';
+import { test, mock } from 'node:test';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import assert from 'node:assert/strict';
-import { computeStatus, footerMode, screenAsks, adoptTranscripts, hasToolWork, atShellPrompt, processNames, resetTime, screenLimit, shellDetail, trackContent, type StatusInput, type WindowView } from './sessions.ts';
+import { computeStatus, footerMode, screenAsks, adoptTranscripts, hasToolWork, atShellPrompt, processNames, resetTime, screenLimit, shellDetail, trackContent, repoInfo, type StatusInput, type WindowView } from './sessions.ts';
 import { loadConfig } from './config.ts';
 
 const base: StatusInput = { now: 1000, activity: 900, seen: 900, viewers: 0, idleAfter: 4, hook: null, screenWaiting: false };
@@ -272,4 +275,22 @@ test('an agent is told by its executable or the script its interpreter runs', ()
   assert.deepEqual(processNames(['node', '/usr/lib/node_modules/@anthropic-ai/claude-code/cli.mjs']), ['node', 'cli']);
   // Only an interpreter's script loses its extension: an editor opening gemini.js is not Gemini.
   assert.deepEqual(processNames(['vim', 'gemini.js']), ['vim', 'gemini.js']);
+});
+
+test('a folder that becomes a repository (git init) is seen as one within seconds', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ah-repo-'));
+  mock.timers.enable({ apis: ['Date'], now: 1_000_000 });
+  try {
+    assert.equal(repoInfo(dir), null);
+    mkdirSync(join(dir, '.git'));
+    writeFileSync(join(dir, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+    assert.equal(repoInfo(dir), null, 'remembered a moment');
+    mock.timers.tick(6_000);
+    assert.equal(repoInfo(dir)?.branch, 'main', 'asked again');
+    rmSync(join(dir, '.git'), { recursive: true });
+    assert.equal(repoInfo(dir), null, 'a removed repository goes at once');
+  } finally {
+    mock.timers.reset();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
