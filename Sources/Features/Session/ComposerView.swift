@@ -11,6 +11,7 @@ struct ComposerView: View {
     @Bindable var composer: ComposerModel
     @Bindable var scene: SceneModel
     @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pickingPhotos: [PhotosPickerItem] = []
     @State private var choosingPhotos = false
     @State private var takingPhoto = false
@@ -221,7 +222,7 @@ struct ComposerView: View {
                     .touchTarget()
             }
             .buttonStyle(.ahPress)
-            .transition(.scale(scale: 0.6).combined(with: .opacity))
+            .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
             .accessibilityLabel("Stop the turn")
         } else if session.isShell || (session.working && composer.canSend) {
             // While it works a message waits its turn: the button says so, and holding it (or
@@ -263,7 +264,7 @@ struct ComposerView: View {
                     .touchTarget()
             }
             .buttonStyle(.ahPress)
-            .transition(.scale(scale: 0.6).combined(with: .opacity))
+            .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
             .disabled(!composer.canSend)
             .accessibilityLabel("Send")
         }

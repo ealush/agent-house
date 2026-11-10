@@ -59,7 +59,7 @@ struct TranscriptView: View {
             reader.scrollTo("bottom", anchor: .bottom)
             try? await Task.sleep(for: .milliseconds(350))
             guard !Task.isCancelled, atBottom else { return }
-            withAnimation(.snappy(duration: 0.2)) { reader.scrollTo("bottom", anchor: .bottom) }
+            withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) { reader.scrollTo("bottom", anchor: .bottom) }
         }
     }
 
