@@ -553,6 +553,11 @@ private struct KeyCapStyle: ButtonStyle {
             .frame(minWidth: 44, minHeight: 36)
             .background(on || configuration.isPressed ? theme.accent.opacity(0.3) : theme.raised, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .foregroundStyle(theme.text)
+            // The cap stays 36 high (the bar's 6-point gutters make it a 48-point strip); the
+            // touch takes the gutter too, so a key is a finger's 44.
+            .contentShape(Rectangle().inset(by: -4))
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: configuration.isPressed)
     }
 }
 
