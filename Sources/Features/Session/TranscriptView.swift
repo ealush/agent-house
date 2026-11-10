@@ -647,7 +647,7 @@ struct ToolRowView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     statusMark
                     Text(view.label).font(.ah(.footnote).weight(.semibold)).foregroundStyle(theme.text)
-                    Text(view.summary).font(.ahMono(.footnote)).foregroundStyle(theme.muted).lineLimit(1).truncationMode(.middle)
+                    Text(view.summary).font(.ahMono(.footnote)).foregroundStyle(theme.muted).lineLimit(1).truncationMode(view.kind.summaryIsPath ? .middle : .tail)
                     Spacer(minLength: 0)
                     if view.status == .running || view.status == .awaiting || view.status == .stopped {
                         Text(view.status == .awaiting ? "Waiting for you" : view.status == .stopped ? "No result" : "Running…")

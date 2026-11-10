@@ -44,6 +44,10 @@ enum ToolKind: Equatable, Sendable {
         }
     }
 
+    /// Its one-line summary names a file: cut from the middle, keeping the file's name.
+    /// Anything else (a command, a question, a query) reads from the start, cut at the end.
+    var summaryIsPath: Bool { self == .edit || self == .write || self == .patch || self == .read }
+
     /// Expanded without a tap: plans and questions are the point of the call.
     var opensByDefault: Bool { self == .todos || self == .question || self == .plan }
     /// Folds once answered: an answered question (or an approved plan) reads fine as one line.
