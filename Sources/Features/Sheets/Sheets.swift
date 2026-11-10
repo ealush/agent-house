@@ -1077,8 +1077,10 @@ struct WorktreesView: View {
                 Text("\(WorktreesModel.size(model.selectedBytes)) to reclaim").font(.ah(.caption)).foregroundStyle(theme.muted)
             }
             Spacer()
+            // As Terminate: the danger color's words on its tint (white on the light red barely read).
             Button("Remove", role: .destructive) { confirmingBulk = true }
-                .buttonStyle(.borderedProminent)
+                .fontWeight(.semibold)
+                .buttonStyle(.bordered)
                 .tint(theme.danger)
                 .disabled(model.selected.isEmpty)
         }

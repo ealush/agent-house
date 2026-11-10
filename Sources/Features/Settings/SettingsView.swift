@@ -1081,7 +1081,8 @@ private struct NewTokenCard: View {
                     scene.toast("Copied. It clears from the clipboard in 2 minutes.")
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(theme.accent)
+                // The strong accent, as every filled button: white on the light one barely read.
+                .tint(theme.accentStrong)
                 Spacer()
                 Button("Done", action: done).buttonStyle(.bordered)
             }
