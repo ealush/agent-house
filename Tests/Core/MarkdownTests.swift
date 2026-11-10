@@ -74,3 +74,15 @@ import Testing
     #expect(LinkPolicy.classify("file:///etc/passwd") == .refused("file:///etc/passwd"))
     #expect(Markdown.plain(Markdown.parse("# T\n\nsome **bold**")) == "T\n\nsome bold")
 }
+
+@Test func yourOwnLineBreaksStayAsWritten() {
+    let source = "First line\nSecond **bold\nstill bold**\n\n- one\n  two\n\n```\na\nb\n```"
+    // As Markdown has it, a single new line is a space…
+    #expect(Markdown.parse(source)[0] == .paragraph([.text("First line\nSecond "), .strong([.text("bold\nstill bold")])]))
+    // …but in words you typed, each one is a new line, code untouched.
+    let kept = Markdown.parse(source, keepingLineBreaks: true)
+    #expect(kept[0] == .paragraph([.text("First line"), .lineBreak, .text("Second "), .strong([.text("bold"), .lineBreak, .text("still bold")])]))
+    #expect(kept[1] == .list(ordered: false, start: 1, items: [.init(task: nil, blocks: [.paragraph([.text("one"), .lineBreak, .text("two")])])]))
+    #expect(kept[2] == .code(language: nil, text: "a\nb"))
+    #expect(Markdown.plain(kept) == "First line\nSecond bold\nstill bold\n\none\ntwo\n\na\nb")
+}

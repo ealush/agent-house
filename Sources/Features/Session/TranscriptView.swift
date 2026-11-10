@@ -556,7 +556,8 @@ struct UserBubble: View {
                 }
             }
             if !split.rest.isEmpty {
-                MarkdownView(split.rest, compact: true)
+                // Your line breaks as you typed them: a new line in the box is one here too.
+                MarkdownView(split.rest, compact: true, keepingLineBreaks: true)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     // ah's Message: your words on a raised card with a hairline.

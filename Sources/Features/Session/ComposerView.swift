@@ -771,12 +771,16 @@ struct ComposerTextField: UIViewRepresentable {
         view.backgroundColor = .clear
         view.textContainerInset = UIEdgeInsets(top: 6, left: 2, bottom: 6, right: 2)
         view.isScrollEnabled = true
-        view.returnKeyType = .send
+        view.returnKeyType = Self.returnKey(hardwareKeyboard: scene.hardwareKeyboard)
         view.accessibilityIdentifier = "composer"
         view.text = composer.text
         setTraits(view)
         return view
     }
+
+    /// A touch keyboard's Return starts a new line, as in Messages (Send is the button); with a
+    /// hardware keyboard, Return sends and Shift- or Option-Return starts the new line.
+    private static func returnKey(hardwareKeyboard: Bool) -> UIReturnKeyType { hardwareKeyboard ? .send : .default }
 
     /// Commands aren't sentences: no capitals, corrections or curly quotes in a shell.
     private func setTraits(_ view: ComposerTextView) {
@@ -798,6 +802,10 @@ struct ComposerTextField: UIViewRepresentable {
         if view.verticalScrollIndicatorInsets != indicator { view.verticalScrollIndicatorInsets = indicator }
         if (view.autocapitalizationType == .none) != composer.isShell {
             setTraits(view)
+            if view.isFirstResponder { view.reloadInputViews() }
+        }
+        if view.returnKeyType != Self.returnKey(hardwareKeyboard: scene.hardwareKeyboard) {
+            view.returnKeyType = Self.returnKey(hardwareKeyboard: scene.hardwareKeyboard)
             if view.isFirstResponder { view.reloadInputViews() }
         }
         if view.text != composer.text {
@@ -871,9 +879,16 @@ struct ComposerTextField: UIViewRepresentable {
             parent.scene.didBlur(.composer(parent.session.key))
         }
 
-        /// The software keyboard's Send key.
+        /// The software keyboard's Return: a new line, unless it's taking a suggestion (or, with
+        /// a hardware keyboard about, it's the Send key it says it is).
         func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
             guard text == "\n", (textView as? ComposerTextView)?.isHardwareReturn != true else { return true }
+            let composer = parent.composer
+            if !composer.suggestions.isEmpty {
+                composer.accept(composer.suggestions[min(composer.suggestionIndex, composer.suggestions.count - 1)])
+                return false
+            }
+            guard parent.scene.hardwareKeyboard else { return true }
             send()
             return false
         }
@@ -910,6 +925,10 @@ struct ComposerTextField: UIViewRepresentable {
                 return true
             case "Enter" where mods == [.shift]:
                 return false
+            case "Enter" where mods == [.option]:
+                // A new line, as Shift-Return gives (and as a Mac's text fields have it).
+                textView.insertText("\n")
+                return true
             case "Enter" where mods == [.command] && parent.session.working && !composer.isEmpty && !composer.isShell:
                 // ⌘Return while it works: don't queue, send now (the turn stops).
                 Haptics.threshold()

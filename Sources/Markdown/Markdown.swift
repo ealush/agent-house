@@ -53,6 +53,43 @@ enum Markdown {
         return parser.blocks()
     }
 
+    /// As `parse`, with every line break kept as written (GitHub's comments do this): for words
+    /// you typed yourself, where a new line meant one, not a space.
+    static func parse(_ source: String, keepingLineBreaks: Bool) -> [MarkdownBlock] {
+        let blocks = parse(source)
+        return keepingLineBreaks ? blocks.map(hardBreaks) : blocks
+    }
+
+    private static func hardBreaks(_ block: MarkdownBlock) -> MarkdownBlock {
+        switch block {
+        case .heading(let level, let i): return .heading(level: level, hardBreaks(i))
+        case .paragraph(let i): return .paragraph(hardBreaks(i))
+        case .quote(let b): return .quote(b.map(hardBreaks))
+        case .list(let ordered, let start, let items):
+            return .list(ordered: ordered, start: start, items: items.map { MarkdownBlock.ListItem(task: $0.task, blocks: $0.blocks.map(hardBreaks)) })
+        case .table(let header, let alignments, let rows):
+            return .table(header: header.map(hardBreaks), alignments: alignments, rows: rows.map { $0.map(hardBreaks) })
+        case .code, .rule, .html: return block
+        }
+    }
+
+    /// A soft break is a "\n" left in a text run (drawn as a space); this makes each a break.
+    private static func hardBreaks(_ inlines: [MarkdownInline]) -> [MarkdownInline] {
+        inlines.flatMap { inline -> [MarkdownInline] in
+            switch inline {
+            case .text(let s) where s.contains("\n"):
+                return s.components(separatedBy: "\n").enumerated().flatMap { index, part -> [MarkdownInline] in
+                    (index > 0 ? [.lineBreak] : []) + (part.isEmpty ? [] : [.text(part)])
+                }
+            case .emphasis(let c): return [.emphasis(hardBreaks(c))]
+            case .strong(let c): return [.strong(hardBreaks(c))]
+            case .strike(let c): return [.strike(hardBreaks(c))]
+            case .link(let t, let url): return [.link(text: hardBreaks(t), url: url)]
+            default: return [inline]
+            }
+        }
+    }
+
     /// The plain text of parsed blocks (copying a message, VoiceOver).
     static func plain(_ blocks: [MarkdownBlock]) -> String {
         blocks.map { block -> String in

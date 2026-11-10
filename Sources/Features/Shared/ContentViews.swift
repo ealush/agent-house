@@ -28,8 +28,9 @@ struct MarkdownView: View {
     @Environment(\.theme) private var theme
     @Environment(\.hostFiles) private var hostFiles
 
-    init(_ text: String, compact: Bool = false) {
-        blocks = Markdown.parse(text)
+    /// `keepingLineBreaks`: each new line in the text is one (your own words), not a space.
+    init(_ text: String, compact: Bool = false, keepingLineBreaks: Bool = false) {
+        blocks = Markdown.parse(text, keepingLineBreaks: keepingLineBreaks)
         self.compact = compact
     }
 
