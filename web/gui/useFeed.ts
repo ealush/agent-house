@@ -23,6 +23,9 @@ const KEEP = 16;
 
 type Feed = {
   url: string;
+  /** The cache's key: the stream without its query, which names this page
+   *  (`client` is new on every load), so a reload finds what the last one saved. */
+  cacheKey: string;
   client: HostApi;
   ref: string;
   state: FeedState;
@@ -52,9 +55,9 @@ function dispatch(f: Feed, a: Action) {
   f.state = next;
   changed(f);
   if (a.type === 'snapshot' || a.type === 'append') {
-    saveCached(f.url, { harness: next.harness, entries: next.entries.slice(-CACHE_PAGE), hasOlder: next.hasOlder || next.entries.length > CACHE_PAGE });
+    saveCached(f.cacheKey, { harness: next.harness, entries: next.entries.slice(-CACHE_PAGE), hasOlder: next.hasOlder || next.entries.length > CACHE_PAGE });
   } else if (a.type === 'unavailable') {
-    dropCached(f.url);
+    dropCached(f.cacheKey);
   }
 }
 
@@ -89,9 +92,10 @@ function close(f: Feed) {
 
 function create(client: HostApi, ref: string): Feed {
   const view = { state: initialFeed, loadingOlder: false };
-  const f: Feed = { url: client.feedUrl(ref), client, ref, state: initialFeed, loadingOlder: false, view, listeners: new Set(), users: 0, es: null, retry: null, linger: null, closed: false };
+  const url = client.feedUrl(ref);
+  const f: Feed = { url, cacheKey: url.split('?')[0], client, ref, state: initialFeed, loadingOlder: false, view, listeners: new Set(), users: 0, es: null, retry: null, linger: null, closed: false };
   feeds.set(f.url, f);
-  void loadCached(f.url).then((cached) => cached && dispatch(f, { type: 'cached', ...cached }));
+  void loadCached(f.cacheKey).then((cached) => cached && dispatch(f, { type: 'cached', ...cached }));
   return f;
 }
 
