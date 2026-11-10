@@ -1121,13 +1121,14 @@ struct WorktreesView: View {
 struct ConfirmTerminateSheet: View {
     let scene: SceneModel
     let session: SessionModel
+    @Environment(\.theme) private var theme
 
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Terminate “\(session.title)”?").font(.ah(.title3).weight(.semibold))
                 Text("Its process stops now. The conversation stays in History and can be resumed.").foregroundStyle(.secondary)
-                if session.working { Label("It’s in the middle of a turn.", systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
+                if session.working { Label("It’s in the middle of a turn.", systemImage: "exclamationmark.triangle").foregroundStyle(theme.limited) }
                 Spacer()
                 Button(role: .destructive) {
                     scene.sheet = nil
@@ -1136,7 +1137,7 @@ struct ConfirmTerminateSheet: View {
                     Text("Terminate").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.red)
+                .tint(theme.danger)
                 .keyboardShortcut(.return, modifiers: .command)
                 Button("Cancel") { scene.sheet = nil }.frame(maxWidth: .infinity)
                     .keyboardShortcut(.cancelAction)
@@ -1151,6 +1152,7 @@ struct ConfirmPlanSheet: View {
     let scene: SceneModel
     let session: SessionModel
     let plan: LaunchState.Plan
+    @Environment(\.theme) private var theme
 
     var body: some View {
         NavigationStack {
@@ -1159,7 +1161,7 @@ struct ConfirmPlanSheet: View {
                 case .relaunch(_, let title, let body, let dangerous):
                     Text(title).font(.ah(.title3).weight(.semibold))
                     Text(body).foregroundStyle(.secondary)
-                    if dangerous { Label("Permission checks are off in the new session.", systemImage: "exclamationmark.shield").foregroundStyle(.red) }
+                    if dangerous { Label("Permission checks are off in the new session.", systemImage: "exclamationmark.shield").foregroundStyle(theme.danger) }
                 case .switchMode(let id, _):
                     Text("Turn off permission checks?").font(.ah(.title3).weight(.semibold))
                     Text("“\(session.launch.preset?.modes?.first { $0.id == id }?.name ?? id)” lets the agent run commands and edit files without asking.").foregroundStyle(.secondary)

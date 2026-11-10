@@ -485,12 +485,13 @@ struct SessionRowMenu: View {
 struct PinSwipe: View {
     let row: SessionRow
     let hub: HubStore
+    @Environment(\.theme) private var theme
 
     var body: some View {
         Button(row.dto.pinned ? "Unpin" : "Pin", systemImage: row.dto.pinned ? "pin.slash" : "pin") {
             Task { try? await hub.client(forKey: row.key).pin(row.uid, pinned: !row.dto.pinned); hub.refresh() }
         }
-        .tint(.orange)
+        .tint(theme.limited)
     }
 }
 
@@ -562,7 +563,7 @@ struct HistoryRowView: View {
         .buttonStyle(.plain)
         .hoverEffect(.highlight)
         .swipeActions(edge: .leading) {
-            Button("Resume") { resume() }.tint(.green)
+            Button("Resume") { resume() }.tint(theme.done)
         }
         .swipeActions(edge: .trailing) {
             Button("Hide", role: .destructive) {

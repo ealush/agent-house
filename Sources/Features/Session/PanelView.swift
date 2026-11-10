@@ -398,7 +398,7 @@ private struct FilesPanel: View {
         }
         .swipeActions(edge: .leading) {
             if entry.type == .file {
-                Button { Task { await share(entry) } } label: { Label("Share", systemImage: "square.and.arrow.up") }.tint(.blue)
+                Button { Task { await share(entry) } } label: { Label("Share", systemImage: "square.and.arrow.up") }.tint(theme.chart)
             }
         }
         .contextMenu {
@@ -733,7 +733,7 @@ private struct QueuePanel: View {
                 }
                 .ahRow()
                 .swipeActions(edge: .leading) {
-                    Button("Send now") { Task { await session.queue.steer(item) } }.tint(.orange)
+                    Button("Send now") { Task { await session.queue.steer(item) } }.tint(theme.limited)
                 }
                 .swipeActions(edge: .trailing) {
                     Button("Cancel", role: .destructive) { Task { await session.queue.cancel(item) } }

@@ -964,6 +964,7 @@ private struct MergeLayerSheet: View {
     let layer: Layer
     let confidence: LayerConfidence
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.theme) private var theme
     @State private var merging = false
     @State private var outcome: ReviewModel.MergeOutcome?
 
@@ -986,11 +987,11 @@ private struct MergeLayerSheet: View {
                     Section {
                         switch outcome {
                         case .merged(let next, let restack, let waiting):
-                            Label(waiting != nil ? "GitHub is finishing the merge" : "Merged", systemImage: "checkmark.circle").foregroundStyle(.green)
+                            Label(waiting != nil ? "GitHub is finishing the merge" : "Merged", systemImage: "checkmark.circle").foregroundStyle(theme.done)
                             if !restack.isEmpty { Text("Needs a restack: \(restack.map { "#\($0)" }.joined(separator: ", "))") }
                             if let next { Button("Review #\(next) next") { dismiss() } }
                         case .changed(let message), .refused(let message):
-                            Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                            Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(theme.limited)
                         }
                     }
                 }

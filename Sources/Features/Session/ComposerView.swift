@@ -401,7 +401,8 @@ private struct SuggestionList: View {
     let index: Int
     let pick: (CompletionTrigger.Item) -> Void
     @Environment(\.theme) private var theme
-    private static let rowHeight: CGFloat = 34
+    // A finger's worth on a phone (34 was a pointer's), still seven rows before it scrolls.
+    private static let rowHeight: CGFloat = 40
 
     var body: some View {
         let shown = Array(items.prefix(12))
