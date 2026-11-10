@@ -901,6 +901,12 @@ button.pill {
   overflow: hidden;
 }
 
+/* A list with nothing in it (History before anything ended, a filter that matched
+   nothing) is no card, not a bare hairline under the empty state. */
+.narrow .rows:empty {
+  display: none;
+}
+
 .row {
   display: grid;
   grid-template-columns: 24px minmax(160px, 1.1fr) minmax(0, 1.4fr) 13rem 72px;
