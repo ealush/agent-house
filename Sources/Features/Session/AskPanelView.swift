@@ -177,7 +177,8 @@ struct AskPanelView: View {
                     ApproveDenyView(target: target, compact: compact, onReply: onReply, keys: keys, leave: leave)
                 }
                 if let onUseTerminal {
-                    Button("Answer in terminal", action: onUseTerminal).font(.ah(.caption)).buttonStyle(.borderless)
+                    Button(action: onUseTerminal) { Label("Answer in terminal", systemImage: "apple.terminal") }
+                        .modifier(AskSecondaryAction())
                 }
             }
             .padding(compact ? 0 : 14)
@@ -692,15 +693,15 @@ struct QuestionFormView: View {
                             .modifier(CursorRing(on: keys.focused && model.cursor == .submit))
                         }
                         if let chat {
-                            Button("Chat about this") {
+                            Button {
                                 Task {
                                     chatting = true
                                     await chat()
                                 }
+                            } label: {
+                                Label("Chat about this", systemImage: "bubble.left.and.text.bubble.right")
                             }
-                            .font(.ah(.callout))
-                            .buttonStyle(.borderless)
-                            .tint(.secondary)
+                            .modifier(AskSecondaryAction())
                             .disabled(model.phase != .idle)
                             .accessibilityHint("Declines the questions and goes back to the conversation")
                         }
@@ -732,7 +733,8 @@ struct QuestionFormView: View {
                 .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 4)
+            // A finger's worth of row: 4 points each way left a one-line choice 28 high.
+            .padding(.vertical, 8)
             .padding(.horizontal, 6)
             .contentShape(Rectangle())
             .modifier(CursorRing(on: keys.focused && model.cursor == .option(qi, oi)))
@@ -785,11 +787,20 @@ struct QuestionFormView: View {
                 .onSubmit { if model.typed(qi) { keys.take() } }
                 .accessibilityLabel("Your answer to: \(model.form.questions[qi].question)")
         } else {
-            Button("\(model.form.questions[qi].options.count + 1). Something else…") { model.openOther(qi) }
-                .font(.ah(.callout))
-                .buttonStyle(.borderless)
+            // One more choice, drawn as the others are: its own glyph where their circles are.
+            Button { model.openOther(qi) } label: {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Image(systemName: "square.and.pencil").foregroundStyle(theme.faint)
+                    Text("\(model.form.questions[qi].options.count + 1). Something else…").foregroundStyle(theme.text2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 8)
                 .padding(.horizontal, 6)
-                .modifier(CursorRing(on: keys.focused && model.cursor == .other(qi)))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .hoverEffect(.highlight)
+            .modifier(CursorRing(on: keys.focused && model.cursor == .other(qi)))
         }
     }
 }
@@ -826,5 +837,20 @@ private struct PreviewBox: View {
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(uiColor: .separator), lineWidth: 0.5))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(text.flatMap { $0.isEmpty ? nil : "Preview of \(label): \($0)" } ?? "No preview of \(label) here")
+    }
+}
+
+/// The ways out of a question that aren't an answer (talk it over, the terminal): one quiet
+/// style, so neither reads as disabled or as the answer itself.
+private struct AskSecondaryAction: ViewModifier {
+    @Environment(\.theme) private var theme
+
+    func body(content: Content) -> some View {
+        content
+            .font(.ah(.footnote).weight(.medium))
+            .foregroundStyle(theme.muted)
+            .buttonStyle(.borderless)
+            .frame(minHeight: 32)
+            .contentShape(Rectangle())
     }
 }
