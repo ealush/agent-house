@@ -93,6 +93,14 @@ From the owner's phone recordings: the transcript jumped when the composer's chi
 - At the stack's top: `swift test` 213 tests pass; `xcodebuild test` on an iPhone 18 Pro simulator TEST SUCCEEDED (177 passed, the 2 UI tests, the tour skipped without a host); the Mac Catalyst build succeeds. `check-workspace.py` fails only on the Mac clone's untracked `DerivedData-device/`.
 - Not seen: a real device, a hardware keyboard's Option-Return, older pages loading while reading back (the demo's transcripts are one page).
 
+### Selecting a reply's words, 11 November 2026
+
+The demo host on an iPhone 18 Pro simulator (iOS 27.0), driven by `TourUITests` with two new steps: `pressdragin` (hold, then drag inside an element, as fractions of its frame) and `erase` (empty a focused field by the on-screen keyboard, for a draft the host kept from an earlier tour).
+
+- Seen: holding still on a word selects it and shows the edit menu (Copy, Quote in Reply, Message, then the system's); holding and dragging selects what the finger passes, from a paragraph into the list below it; a tap elsewhere in the transcript lets the selection go; Quote in Reply puts the selection in the composer as `> ` lines with the list's markers back as `- `; Message opens Copy Message, Copy Link, Share Link…; a long press on a widget still opens the message's context menu. The prose looks as it did in SwiftUI (faces, bold, code runs, bullets, spacing), light and dark.
+- At the layer's commit: `swift test` 216 tests pass; `./scripts/verify.sh` (Mac Catalyst build, `xcodebuild test` on the simulator) TEST SUCCEEDED, 180 unit tests and the UI tests (the tour skips without a host).
+- Not seen: a real finger's hold and drag on a device, VoiceOver's actions on a reply, iPad, Dynamic Type at accessibility sizes.
+
 ## Still to run (in order)
 
 1. On a Mac: `brew install xcodegen && ./scripts/verify.sh` — expect compile fixes in the UI layer, which has never been type-checked.
