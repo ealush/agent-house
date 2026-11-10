@@ -464,9 +464,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
                     <>
                       <span className="grow">{chosen?.name ?? 'Default'}</span>
 
-                      <span className="caret" aria-hidden>
-                        ▾
-                      </span>
+                      <Icon name="chevron-down" size={14} />
                     </>
                   }
                 >
@@ -502,9 +500,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
                   label={
                     <>
                       <span className="grow">{pick.effort ? cap(pick.effort) : `Default${preset.defaultEffort ? ` · ${preset.defaultEffort}` : ''}`}</span>
-                      <span className="caret" aria-hidden>
-                        ▾
-                      </span>
+                      <Icon name="chevron-down" size={14} />
                     </>
                   }
                 >

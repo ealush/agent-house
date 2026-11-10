@@ -5967,9 +5967,22 @@ ul.queue-items {
   white-space: nowrap;
 }
 
-.select-btn .caret {
-  color: var(--faint);
-  font-size: 11px;
+/* Its chevron is the selects' (the same stroke, the same grey). */
+.select-btn > svg {
+  flex: none;
+  color: var(--muted);
+}
+
+/* A launch row (New session, Fork): the model button and the native selects beside it
+   are one height and one text size, level with the modes' segmented control. */
+.launch-row .field :is(select, .select-btn) {
+  height: 40px;
+}
+
+@media (pointer: fine) {
+  .select-btn {
+    font-size: 13px;
+  }
 }
 
 .seg.modes {
