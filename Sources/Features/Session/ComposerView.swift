@@ -746,11 +746,14 @@ struct QueueTrayView: View {
                             HStack(spacing: 4) {
                                 Image(systemName: "bolt.fill")
                                 Text("Steer now")
-                                if hardwareKeyboard { Text("↵").foregroundStyle(.white.opacity(0.75)) }
+                                if hardwareKeyboard { Text("↵").foregroundStyle(theme.accent.opacity(0.7)) }
                             }
                             .font(.ah(.caption).weight(.semibold))
                         }
-                        .buttonStyle(.borderedProminent)
+                        // The accent's tint, not its fill: Queue below is the one filled pink
+                        // control, and two of them side by side asked for the same glance.
+                        .buttonStyle(.bordered)
+                        .tint(theme.accent)
                         .buttonBorderShape(.capsule)
                         .controlSize(.small)
                         .accessibilityHint("Stops the current turn and sends the first queued message now")
