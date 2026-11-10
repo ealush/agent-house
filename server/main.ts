@@ -301,8 +301,10 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive', 'x-accel-buffering': 'no' });
     // The whole state first, then patches (only the fields that changed; web/api.ts merges them).
     let sent = false;
-    const unsubscribe = core.subscribe((json, patch) => {
-      if (sent && patch) res.write(`event: patch\ndata: ${patch}\n\n`);
+    // ?delta=1: windows as per-window deltas (web/api.ts); an older page gets the whole list.
+    const deltas = url.searchParams.get('delta') === '1';
+    const unsubscribe = core.subscribe((json, patch, slim) => {
+      if (sent && patch) res.write(`event: patch\ndata: ${deltas && slim ? slim : patch}\n\n`);
       else res.write(`event: state\ndata: ${json}\n\n`);
       sent = true;
     });

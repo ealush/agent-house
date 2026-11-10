@@ -585,7 +585,7 @@ export function openStateEarly() {
   } catch {
     return;
   }
-  const es = new EventSource('/api/events');
+  const es = new EventSource('/api/events?delta=1');
   const events: MessageEvent[] = [];
   const keep = (e: Event) => events.push(e as MessageEvent);
   es.addEventListener('state', keep);
@@ -623,7 +623,8 @@ export function subscribe(onState: (s: State) => void, onError: (msg: string | n
     if (closed) return;
     const adopt = client.base === api.base && early && early.es.readyState !== EventSource.CLOSED ? early : null;
     if (adopt) early = null;
-    es = adopt?.es ?? new EventSource(`${client.base}/api/events`);
+    // ?delta=1: a patch carries the windows that changed, not all of them (an older host sends all).
+    es = adopt?.es ?? new EventSource(`${client.base}/api/events?delta=1`);
     // The whole state on connect, then patches of the fields that changed.
     let last: State | null = null;
     const onFull = (e: Event) => {
@@ -636,7 +637,14 @@ export function subscribe(onState: (s: State) => void, onError: (msg: string | n
     };
     const onPatch = (e: Event) => {
       if (!last) return;
-      last = normalize({ ...last, ...JSON.parse((e as MessageEvent).data) });
+      const data = JSON.parse((e as MessageEvent).data);
+      if (data.windowsDelta) {
+        const byUid = new Map(last.windows.map((w) => [w.uid, w] as const));
+        for (const w of data.windowsDelta.changed as Win[]) byUid.set(w.uid ?? w.id, w);
+        data.windows = (data.windowsDelta.order as string[]).map((uid) => byUid.get(uid)).filter(Boolean);
+        delete data.windowsDelta;
+      }
+      last = normalize({ ...last, ...data });
       emit(last);
     };
     es.addEventListener('state', onFull);
