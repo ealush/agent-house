@@ -81,6 +81,8 @@ final class SessionModel: Identifiable {
     var hasGUI: Bool { row.map { $0.dto.feed != nil } ?? !isShell }
     var working: Bool { row?.dto.status == .busy }
     var waiting: Bool { row?.dto.status == .waiting }
+    /// On the agent's folder-trust prompt: what's sent waits in the queue until it's answered.
+    var awaitingTrust: Bool { waiting && row?.dto.ask?.trust != nil }
     var turnLive: Bool { working || waiting }
     var launch: LaunchState { LaunchState(preset: row.flatMap(hub.preset), session: row?.dto) }
     var ask: AskDTO? { row?.dto.ask }
