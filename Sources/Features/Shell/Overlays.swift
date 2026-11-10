@@ -469,7 +469,10 @@ struct SwitcherView: View {
                                    detail: [h.dto.project, Elapsed.format(Date(timeIntervalSince1970: h.dto.at), now: .now)], tag: "Resume")
         case .hit(let hit):
             let date = hit.at > 0 ? Date(timeIntervalSince1970: hit.at / 1000).formatted(.dateTime.month(.abbreviated).day()) : ""
-            return SwitcherViewRow(agent: hit.harness, title: hit.title, host: hit.host,
+            // The session's name while it runs, as Search shows it: the transcript's own title is
+            // its first prompt, which isn't what the sidebar or the tabs call it.
+            let live = hit.uid.flatMap { uid in scene.hub?.rows.first { $0.uid == uid } }
+            return SwitcherViewRow(agent: hit.harness, title: live?.title ?? hit.title, host: hit.host,
                                    detail: [hit.kind == "chat" ? "side chat" : (hit.harness ?? ""), date, "\(hit.matches) match\(hit.matches == 1 ? "" : "es")"],
                                    snippet: hit.excerpts.first?.snippet)
         }
