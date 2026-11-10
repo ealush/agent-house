@@ -5189,6 +5189,29 @@ ul.queue-items {
   background: color-mix(in srgb, var(--text) 6%, transparent);
 }
 
+/* Open, + turns to ×, and its menu rises above the composer (the box it positions in, here),
+   not over the words in it. */
+.composer.mobile .composer-tools {
+  position: static;
+}
+
+.composer.mobile .composer-tools .popover-wrap:has(> .composer-add) > .popover.up {
+  bottom: calc(100% + 8px);
+  left: 0;
+}
+
+.composer.mobile .composer-add[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--text) 14%, transparent);
+}
+
+.composer.mobile .composer-add svg {
+  transition: transform var(--dur-1) var(--ease);
+}
+
+.composer.mobile .composer-add[aria-expanded='true'] svg {
+  transform: rotate(45deg);
+}
+
 .composer.mobile .composer-attach {
   display: none;
 }
