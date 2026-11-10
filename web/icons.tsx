@@ -1,3 +1,4 @@
+import { memo } from 'react';
 // A handful of 24px stroke icons, inline so the page stays self-contained.
 const PATHS: Record<string, string> = {
   search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zm9 16-4.35-4.35',
@@ -66,10 +67,11 @@ const PATHS: Record<string, string> = {
 
 export type IconName = keyof typeof PATHS;
 
-export function Icon({ name, size = 18 }: { name: keyof typeof PATHS | string; size?: number }) {
+/** Pure, so a list re-rendering on a state tick doesn't redraw every icon in it. */
+export const Icon = memo(function Icon({ name, size = 18 }: { name: keyof typeof PATHS | string; size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={name === 'more' || name === 'grip' ? 3 : 1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d={PATHS[name]} />
     </svg>
   );
-}
+});
