@@ -1302,9 +1302,10 @@ export function App({ onLock }: { onLock: () => void }) {
             }}
             refresh={() => refresh(current.host)}
             onStartSession={(prompt, preset) => setCreating({ cwd: current.projectPath, host: current.host, prompt, preset })}
-            onSplit={(dir) => splitFrom(current.key, dir)}
+            // A phone has no room for panes beside each other: no split actions on its menu.
+            onSplit={narrow ? undefined : (dir) => splitFrom(current.key, dir)}
             onOpenKey={open}
-            onSplitWith={(key) => splitFrom(current.key, 'right', key)}
+            onSplitWith={narrow ? undefined : (key) => splitFrom(current.key, 'right', key)}
           />
         ) : ended && state ? (
           <EndedSession
