@@ -527,6 +527,16 @@ struct KeyBar: View {
                 .buttonStyle(KeyCapStyle(on: false))
                 .padding(.trailing, 10)
                 .padding(.leading, 4)
+                .padding(.vertical, 6)
+                // On the bar's own ground, the keys fading in under it: bare, the keys scrolled
+                // on beside it and a half key showed at the edge.
+                .background(theme.surface)
+                .background(alignment: .leading) {
+                    LinearGradient(colors: [theme.surface.opacity(0), theme.surface], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: 24)
+                        .offset(x: -24)
+                        .allowsHitTesting(false)
+                }
             }
         }
         .background(theme.surface)
