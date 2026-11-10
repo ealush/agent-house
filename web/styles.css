@@ -2570,10 +2570,14 @@ a.btn {
 .search-hit-head .sub {
   font-size: 12px;
   color: var(--muted);
-  font-family: var(--mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The details line is words, in the text face; only the folder is a path. */
+.search-hit-head .sub.path {
+  font-family: var(--mono);
 }
 
 .search-excerpts {

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { plainSnippet } from './snippet.ts';
 import type { HistoryItem, SearchHit, SearchQuery, SearchResponse, Win } from './api.ts';
 import { Keycaps, MOD } from './shortcuts.tsx';
 import { look } from './agents.ts';
@@ -67,8 +68,9 @@ const has = (v: string | null | undefined, want?: string) => !want || (v ?? '').
 
 type Row = { kind: 'win'; w: Win; s: number } | { kind: 'hist'; h: HistoryItem; s: number };
 
-/** Renders a server snippet, turning its highlight markers into <mark>. */
+/** Renders a server snippet as plain prose, turning its highlight markers into <mark>. */
 export function Highlighted({ snippet }: { snippet: string }) {
+  snippet = plainSnippet(snippet);
   const out: React.ReactNode[] = [];
   let marked = false;
   let buf = '';

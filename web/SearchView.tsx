@@ -147,7 +147,7 @@ export function SearchView({
                     .filter(Boolean)
                     .join(' · ')}
                 </span>
-                {hit.cwd && <span className="sub">{hit.cwd}</span>}
+                {hit.cwd && <span className="sub path">{hit.cwd}</span>}
               </span>
             </button>
             <div className="search-excerpts">
