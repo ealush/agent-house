@@ -4995,7 +4995,8 @@ ul.queue-items {
   backdrop-filter: var(--glass-blur);
 }
 
-.mobile-composer-dock.floating textarea {
+/* With the on-screen keyboard up, what it leaves; outweighs .composer.mobile's own cap. */
+:root[data-keyboard] .mobile-composer-dock.floating .composer.mobile textarea {
   max-height: min(28dvh, 192px, max(48px, calc(var(--keyboard-vh, 100dvh) - var(--safe-top) - var(--mobile-header-height, 120px) - 180px)));
 }
 
