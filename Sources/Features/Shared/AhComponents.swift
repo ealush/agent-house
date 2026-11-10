@@ -19,6 +19,9 @@ struct AhLargeTitle: View {
                 .accessibilityLabel(title)
             if let tagline, !tagline.isEmpty {
                 Text(tagline).font(.custom(AhType.ui, size: 17, relativeTo: .headline)).foregroundStyle(theme.text2)
+                    // Counts change in place, as numbers do, not as two sentences ghosting
+                    // over each other.
+                    .contentTransition(.numericText())
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

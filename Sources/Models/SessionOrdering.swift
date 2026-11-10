@@ -159,6 +159,12 @@ struct InboxSections: Equatable, Sendable {
 
     /// The app icon's badge: sessions that need you.
     var badge: Int { waiting.count }
+
+    /// Which session is in which section, in order: what a move between sections changes
+    /// (the page animates it, rather than cutting).
+    var order: [String] {
+        waiting.map { "w \($0.key)" } + running.map { "r \($0.key)" } + rest.map { "i \($0.key)" }
+    }
 }
 
 /// The newest past sessions from a blank session's project, to pick back up (`recentFor`).

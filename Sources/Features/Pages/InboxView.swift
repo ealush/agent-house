@@ -6,6 +6,7 @@ struct InboxView: View {
     @Bindable var scene: SceneModel
     let hub: HubStore
     @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let inbox = hub.inbox(narrow: scene.narrow)
@@ -97,6 +98,9 @@ struct InboxView: View {
             }
         }
         .listStyle(.insetGrouped)
+        // A session that's answered, starts or finishes moves to its section with a spring,
+        // and the card that asked folds away, instead of the list cutting to its new order.
+        .animation(reduceMotion ? nil : .snappy(duration: 0.35), value: inbox.order)
         .refreshable { hub.resync() }
         .ahPage("Inbox")
         .toolbar {
