@@ -188,15 +188,18 @@ test('formatChord speaks Mac symbols and Linux words', () => {
   assert.equal(formatChord({ key: 'k', meta: true }, true), '⌘K');
   assert.equal(formatChord({ key: 'k', ctrl: true, shift: true }, false), 'Ctrl+Shift+K');
   assert.equal(formatChord({ key: 'ArrowUp', alt: true }, false), 'Alt+↑');
-  assert.equal(formatChord({ key: 'Enter', ctrl: true, alt: true }, true), '⌃⌥Enter');
+  assert.equal(formatChord({ key: 'Enter', ctrl: true, alt: true }, true), '⌃⌥↩');
 });
 
 test('a chord drawn for the palette is one glyph per key', () => {
   assert.deepEqual(chordParts({ key: 'k', ctrl: true, shift: true }, true), ['⌃', '⇧', 'K']);
   assert.deepEqual(chordParts({ key: 'p', meta: true, shift: true }, true), ['⇧', '⌘', 'P']);
   assert.deepEqual(chordParts({ key: 'ArrowUp', alt: true }, true), ['⌥', '↑']);
-  assert.deepEqual(chordParts({ key: 'Enter', ctrl: true, alt: true }, true), ['⌃', '⌥', '↵']);
-  assert.deepEqual(chordParts({ key: 'Backspace', ctrl: true, shift: true }, true), ['⌃', '⇧', 'Backspace']);
+  assert.deepEqual(chordParts({ key: 'Enter', ctrl: true, alt: true }, true), ['⌃', '⌥', '↩']);
+  assert.deepEqual(chordParts({ key: 'Backspace', ctrl: true, shift: true }, true), ['⌃', '⇧', '⌫']);
+  // Apple's order on a Mac (⌃ ⌥ ⇧ ⌘); VS Code's elsewhere.
+  assert.deepEqual(chordParts({ key: 'ArrowLeft', ctrl: true, shift: true, alt: true }, true), ['⌃', '⌥', '⇧', '←']);
+  assert.deepEqual(chordParts({ key: 'ArrowLeft', ctrl: true, shift: true, alt: true }, false), ['Ctrl', 'Shift', 'Alt', '←']);
   // Off a Mac, the caps say what the keys say, the way the tooltips and README do.
   assert.deepEqual(chordParts({ key: 'k', ctrl: true, shift: true }, false), ['Ctrl', 'Shift', 'K']);
   assert.deepEqual(chordParts({ key: 'Enter', ctrl: true, alt: true }, false), ['Ctrl', 'Alt', '↵']);
