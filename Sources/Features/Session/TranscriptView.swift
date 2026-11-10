@@ -16,6 +16,8 @@ struct TranscriptView: View {
     /// At the newest message (within a few points of the end): new content keeps it in view,
     /// and coming back opens there rather than where the top of the screen was.
     @State private var atBottom = true
+    /// The agent wrote more while you were scrolled back: the way down says so.
+    @State private var unseen = false
     /// The pending follow: one at a time, the newest change's, and until when it runs (the
     /// end leaving view meanwhile is the follow's own doing, not a scroll back).
     @State private var following: Task<Void, Never>?
@@ -46,6 +48,15 @@ struct TranscriptView: View {
         var items = 0
         if case .agent(_, _, _, let parts) = tail { items = parts.count }
         return "\(blocks.count)|\(tail?.id ?? "")|\(items)|\(tail?.text.count ?? 0)|\(session.working)|\(session.feed.results.count)"
+    }
+
+    /// What only the newest end changes: its last block, what that holds, a turn starting or
+    /// ending. Older pages loading above (a scroll back reads them in) leave it as it was.
+    static func endKey(_ blocks: [FeedBlock], session: SessionModel) -> String {
+        let tail = blocks.last
+        var items = 0
+        if case .agent(_, _, _, let parts) = tail { items = parts.count }
+        return "\(tail?.id ?? "")|\(items)|\(tail?.text.count ?? 0)|\(session.working)"
     }
 
     /// Onto the newest message once this layout is done, and again once a row's insertion
@@ -120,6 +131,7 @@ struct TranscriptView: View {
                                 .onScrollVisibilityChange(threshold: 0.01) { visible in
                                     if visible {
                                         atBottom = true
+                                        unseen = false
                                         scene.scrollAnchors[session.key] = SceneSnapshot.ScrollAnchor(seq: nil, offset: 0)
                                         return
                                     }
@@ -235,6 +247,10 @@ struct TranscriptView: View {
             .onChange(of: Self.followKey(blocks, session: session)) { _, _ in
                 if atBottom { follow(reader) }
             }
+            // Scrolled back, more at the end is news (the transcript first arriving isn't).
+            .onChange(of: Self.endKey(blocks, session: session)) { old, _ in
+                if !atBottom, !old.hasPrefix("|") { unseen = true }
+            }
             .onAppear {
                 if let seq = scene.scrollAnchors[session.key]?.seq, let block = blocks.first(where: { $0.seq == seq }) {
                     reader.scrollTo(block.id, anchor: .top)
@@ -297,17 +313,19 @@ struct TranscriptView: View {
                         Haptics.selection()
                         withAnimation(reduceMotion ? nil : .snappy) { reader.scrollTo("bottom", anchor: .bottom) }
                     } label: {
+                        // Pink while there's more you haven't seen, as the rest of what's new is.
                         Image(systemName: "arrow.down")
                             .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(theme.text2)
+                            .foregroundStyle(unseen ? .white : theme.text2)
                             .frame(width: 40, height: 40)
-                            .glassEffect(.regular.interactive(), in: Circle())
+                            .glassEffect(unseen ? .regular.tint(theme.accentStrong).interactive() : .regular.interactive(), in: Circle())
                             .touchTarget()
                     }
                     .buttonStyle(.plain)
                     .padding(.bottom, 10)
                     .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
-                    .accessibilityLabel("Jump to the newest message")
+                    .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: unseen)
+                    .accessibilityLabel(unseen ? "Jump to the newest message, new output" : "Jump to the newest message")
                 }
             }
             .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: atBottom)
