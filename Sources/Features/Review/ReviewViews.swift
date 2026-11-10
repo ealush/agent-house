@@ -718,10 +718,21 @@ struct LayerView: View {
 
     private func verify(_ layer: Layer, _ confidence: LayerConfidence) -> some View {
         section("Verify", "checkmark.shield") {
-            Label(confidence.reviewText, systemImage: confidence.review == .current || confidence.review == .rebasedSamePatch ? "checkmark.seal" : "seal")
-                .foregroundStyle(confidence.review == .changedSinceReview ? theme.brand : theme.text)
-            Label(confidence.checksText, systemImage: confidence.checks == .passing ? "checkmark.circle" : confidence.checks == .none ? "questionmark.circle" : confidence.checks == .pending ? "clock" : "xmark.circle")
-                .foregroundStyle(confidence.checks == .passing ? theme.done : confidence.checks == .failing ? theme.danger : theme.limited)
+            // Like the gates under them: the glyph says the state in its color, the words stay
+            // the text's (the review read grey once done, the checks all green).
+            let reviewed = confidence.review == .current || confidence.review == .rebasedSamePatch
+            Label {
+                Text(confidence.reviewText).foregroundStyle(theme.text)
+            } icon: {
+                Image(systemName: reviewed ? "checkmark.seal.fill" : "seal")
+                    .foregroundStyle(reviewed ? theme.done : confidence.review == .changedSinceReview ? theme.brand : theme.muted)
+            }
+            Label {
+                Text(confidence.checksText).foregroundStyle(theme.text)
+            } icon: {
+                Image(systemName: confidence.checks == .passing ? "checkmark.circle" : confidence.checks == .none ? "questionmark.circle" : confidence.checks == .pending ? "clock" : "xmark.circle")
+                    .foregroundStyle(confidence.checks == .passing ? theme.done : confidence.checks == .failing ? theme.danger : theme.limited)
+            }
             ForEach(layer.gates, id: \.key) { gate in
                 HStack(alignment: .firstTextBaseline) {
                     Image(systemName: gate.ok ? "checkmark" : "xmark").foregroundStyle(gate.ok ? theme.done : theme.danger)
@@ -795,7 +806,9 @@ struct LayerView: View {
             Button {
                 merging = true
             } label: {
+                // Ink on the green, as ah's light controls carry it: white on it barely read.
                 Label("Merge #\(layer.pr)…", systemImage: "arrow.triangle.merge")
+                    .foregroundStyle(confidence.readyToMerge ? theme.background : theme.faint)
             }
             .buttonStyle(.borderedProminent)
             .tint(theme.done)
