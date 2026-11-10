@@ -515,10 +515,30 @@ struct LaunchChips: View {
         if let preset = launch.preset {
             HStack(spacing: 8) {
                 if !onlyRisky, !(preset.models ?? []).isEmpty || preset.modelArgs != nil || preset.settingsCommands?.model != nil {
-                    chip("Model", "cpu", launch.modelLabel, fallback: "Default model", density) { scene.sheet = .modelPicker(session.key) }
+                    let models = preset.models ?? []
+                    if models.isEmpty {
+                        chip("Model", "cpu", launch.modelLabel, fallback: "Default model", density) { scene.sheet = .modelPicker(session.key) }
+                    } else {
+                        // A menu out of the chip, as Permissions has: a half sheet over the box
+                        // and the keyboard was a lot of screen for one tap.
+                        let selected = launch.model?.id
+                        choices("Model", "cpu", launch.modelLabel, fallback: "Default model", density, footer: launch.footer(.model)) {
+                            ForEach(models, id: \.id) { model in
+                                choice(model.name, detail: model.description, on: model.id == selected) { scene.applyPlan(session.plan(model: model.id)) }
+                            }
+                        }
+                    }
                 }
                 if !onlyRisky, !launch.levels.isEmpty || preset.settingsCommands?.effort != nil {
-                    chip("Effort", "gauge.with.dots.needle.50percent", launch.effort.map(\.capitalized), fallback: "Default effort", density) { scene.sheet = .effortPicker(session.key) }
+                    if launch.levels.isEmpty {
+                        chip("Effort", "gauge.with.dots.needle.50percent", launch.effort.map(\.capitalized), fallback: "Default effort", density) { scene.sheet = .effortPicker(session.key) }
+                    } else {
+                        choices("Effort", "gauge.with.dots.needle.50percent", launch.effort.map(\.capitalized), fallback: "Default effort", density, footer: launch.footer(.effort)) {
+                            ForEach(launch.levels, id: \.self) { level in
+                                choice(level.capitalized, detail: LaunchState.effortHints[level], on: level == launch.effort) { scene.applyPlan(session.plan(effort: level)) }
+                            }
+                        }
+                    }
                 }
                 if let modes = preset.modes, modes.count > 1, !onlyRisky || launch.mode?.dangerous == true {
                     let current = launch.mode ?? modes.first { $0.id == "default" }
@@ -549,6 +569,29 @@ struct LaunchChips: View {
         case "accept-edits": return "pencil.and.list.clipboard"
         case "auto": return "wand.and.stars"
         default: return "hand.raised"
+        }
+    }
+
+    /// A setting's chip that opens its choices as a menu, each with its hint, and how a change
+    /// applies under them.
+    private func choices<Options: View>(_ name: String, _ symbol: String, _ value: String?, fallback: String, _ density: Density, footer: String, @ViewBuilder options: () -> Options) -> some View {
+        let shown: String? = density == .symbols ? nil : value ?? (density == .full ? "Default" : name)
+        return Menu {
+            Section { options() }
+            Section { Text(footer) }
+        } label: {
+            chipLabel(name, symbol, shown, spoken: value ?? fallback, danger: false, labelled: density == .full, unset: value == nil)
+        }
+        .menuOrder(.fixed)
+        .tint(.primary)
+    }
+
+    /// A menu row: the choice, checked when it's the one in force, with its hint under it (a
+    /// toggle, since a picker's option shows only its first line).
+    private func choice(_ title: String, detail: String?, on: Bool, pick: @escaping () -> Void) -> some View {
+        Toggle(isOn: Binding(get: { on }, set: { _ in if !on { pick() } })) {
+            Text(title)
+            if let detail, !detail.isEmpty { Text(detail) }
         }
     }
 
