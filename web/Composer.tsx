@@ -388,7 +388,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
           autoCapitalize={isShell ? 'off' : 'sentences'}
           autoCorrect={isShell ? 'off' : 'on'}
           spellCheck={!isShell}
-          placeholder={isShell ? 'Type a command…' : compact ? queues ? 'Add a follow-up…' : 'Message…' : working && (w?.queued ?? 0) > 0 ? 'Add to the queue · Enter steers the next one · Esc stops' : working ? 'Add to this… (queued until it’s free · Esc stops)' : 'Send a follow-up · / commands · @ files'}
+          placeholder={isShell ? 'Type a command…' : compact ? queues ? 'Add a follow-up…' : 'Message…' : working && (w?.queued ?? 0) > 0 ? 'Add to the queue · Enter steers the next one' : working ? 'Add to this… (queued until it’s free)' : 'Send a follow-up · / commands · @ files'}
           onChange={(e) => {
             setText(e.target.value);
             cursor.current = -1;

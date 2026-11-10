@@ -983,6 +983,23 @@ button.pill {
   justify-content: flex-end;
 }
 
+/* An empty list draws nothing: its card's borders were a stray 2px rule under
+   an empty state (History with nothing ended). */
+.rows:empty {
+  display: none;
+}
+
+/* The table's Status · Project column: pills start under the heading, one
+   edge down the list, and the project takes the column's far end. Right-
+   aligned together, each pill sat wherever its project's name let it. */
+.app:not(.narrow) .rows .row .meta {
+  justify-content: flex-start;
+}
+
+.app:not(.narrow) .rows .row .meta .where {
+  margin-left: auto;
+}
+
 .row .meta .where {
   min-width: 0;
   overflow: hidden;
@@ -5606,13 +5623,18 @@ ul.queue-items {
   gap: 4px;
   padding: 9px 10px;
   border: 0;
+  /* The row's corners, so a focus ring follows them. */
+  border-radius: 10px;
   background: none;
   text-align: left;
   font-size: 14px;
 }
 
+/* The checkmark keeps one column at the row's end, as in an iOS list, instead
+   of trailing each name wherever it ends ("Opus 5.5 ✓"). */
 .picker-name .check {
-  margin-left: 6px;
+  margin-left: auto;
+  padding-left: 12px;
   color: var(--text);
 }
 
@@ -9269,6 +9291,19 @@ select:not([multiple]) {
 
 .press-lift > * {
   border-bottom: 0;
+}
+
+/* The lifted row is drawn in a portal, outside .app.narrow: give it the
+   phone's row layout, or its pill floats mid-card and its subtitle clips. */
+body:has(.app.narrow) .press-lift .row {
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+body:has(.app.narrow) .press-lift .row .chip {
+  width: 30px;
+  height: 30px;
 }
 
 .press-list {

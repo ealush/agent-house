@@ -339,17 +339,15 @@ button.pill {
   font-size: clamp(2.25rem, 4vw, 3.25rem);
 }
 
-/* Session rows get the design's hover: pink tint everywhere, and the 4px
-   nudge only where a hover exists (never on touch). */
+/* Session rows get the design's hover tint. They don't move under the pointer:
+   a 4px nudge shifted every label of the row as the pointer crossed it, which
+   no Mac list does. */
 :where(:root:not([data-touch])) .row:hover {
   background: var(--accent-bg);
 }
 @media (hover: hover) {
   .row {
-    transition: background-color var(--dur-2), transform var(--dur-2);
-  }
-  :where(:root:not([data-touch])) .row:hover {
-    transform: translateX(4px);
+    transition: background-color var(--dur-2);
   }
 }
 
