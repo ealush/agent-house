@@ -126,6 +126,9 @@ struct AhPage: ViewModifier {
     func body(content: Content) -> some View {
         content
             .scrollContentBackground(.hidden)
+            // Rows fade out under the bar's buttons and the status bar, as iOS 26 pages do:
+            // unasked, a page's list ran its text straight through them.
+            .scrollEdgeEffectStyle(.soft, for: .top)
             // A phone's page is the ground; an iPad's sits in the main panel.
             .background(sizeClass == .compact ? theme.background : theme.surface)
             .navigationTitle(title)
