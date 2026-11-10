@@ -4541,7 +4541,8 @@ a.btn {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding-top: 16px;
+  /* Level with a session header's controls (centre ~43px), where a narrow window spends its time. */
+  padding-top: 26px;
 }
 
 .queue-body,
