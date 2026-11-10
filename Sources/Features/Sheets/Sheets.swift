@@ -986,7 +986,7 @@ struct WorktreesView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) { if model.cleaningUp { cleanupBar } }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    if model.cleaningUp { Button(role: .cancel) { model.endCleanup() }.keyboardShortcut(.cancelAction) } else { Button(role: .close) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) }
+                    if model.cleaningUp { Button(role: .cancel) { model.endCleanup() }.keyboardShortcut(.cancelAction).tint(.primary) } else { Button(role: .close) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) }
                 }
                 ToolbarItemGroup(placement: .primaryAction) {
                     if !model.cleaningUp {

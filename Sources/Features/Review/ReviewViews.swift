@@ -998,7 +998,7 @@ private struct MergeLayerSheet: View {
             }
             .navigationTitle("Merge #\(layer.pr)")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(role: outcome == nil ? .cancel : .close) { dismiss() }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: outcome == nil ? .cancel : .close) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(merging ? "Merging…" : "Merge") {
                         merging = true
@@ -1062,7 +1062,7 @@ private struct StackMergeSheet: View {
             }
             .navigationTitle(plan.lands.isEmpty ? "Nothing can merge yet" : "Merge \(plan.lands.count) layer\(plan.lands.count == 1 ? "" : "s")")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(role: result == nil ? .cancel : .close) { dismiss() }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: result == nil ? .cancel : .close) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(merging ? "Merging…" : "Merge") {
                         merging = true
