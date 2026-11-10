@@ -4280,6 +4280,42 @@ a.btn {
   background: var(--accent-line);
 }
 
+/* A finger takes the line itself: no pan or scroll in its place. (Tiled ones are absolute.) */
+.divider {
+  position: relative;
+  touch-action: none;
+}
+
+/* On a touch screen the thin line keeps its look and gets a finger's width to grab (25px),
+   and a grabber in its middle, as iPadOS's Split View has. */
+:root[data-touch] .divider::before {
+  content: '';
+  position: absolute;
+  inset: 0 -10px;
+}
+
+:root[data-touch] .divider.h::before {
+  inset: -10px 0;
+}
+
+:root[data-touch] .divider::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 36px;
+  border-radius: 999px;
+  background: var(--muted);
+  opacity: 0.7;
+  transform: translate(-50%, -50%);
+}
+
+:root[data-touch] .divider.h::after {
+  width: 36px;
+  height: 4px;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .divider {
     transition: background var(--dur-1);
