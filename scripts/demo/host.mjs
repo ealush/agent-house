@@ -16,7 +16,7 @@
 // Prints one JSON line {port, localToken, dir} once the sessions are up, then runs until
 // stdin closes or SIGTERM. `node scripts/demo/code.mjs <dir>` prints a setup code.
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync, existsSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -26,7 +26,11 @@ const source = resolve(process.env.AH_SOURCE ?? new URL('../../../ah', import.me
 const { startAh, cleanup } = await import(pathToFileURL(join(source, 'test/helpers.ts')).href);
 const here = new URL('.', import.meta.url).pathname;
 const dirArg = process.argv.indexOf('--dir');
-const dir = dirArg > 0 ? resolve(process.argv[dirArg + 1]) : mkdtempSync(join(tmpdir(), 'ah-native-demo-'));
+// Its real path: on macOS /tmp is /private/tmp, which is the folder an agent starts in, and
+// its transcript names that cwd; a session opened at /tmp/… would never find it (no GUI).
+const given = dirArg > 0 ? resolve(process.argv[dirArg + 1]) : mkdtempSync(join(tmpdir(), 'ah-native-demo-'));
+mkdirSync(given, { recursive: true });
+const dir = realpathSync(given);
 const fresh = !existsSync(join(dir, 'files'));
 const files = join(dir, 'files');
 
@@ -229,6 +233,15 @@ const model = await startModel();
 }
 const open = (preset, cwd, label, session, extra = {}) => call('POST', '/api/windows', { preset, cwd: join(files, cwd), session, label, ...extra });
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+// A new session's window, once the host's state has it (its refresh can take a moment).
+const running = async (uid) => {
+  for (let i = 0; i < 40; i++) {
+    const win = (await call('GET', '/api/state')).windows.find((w) => w.uid === uid);
+    if (win) return win;
+    await wait(250);
+  }
+  return null;
+};
 
 if (fresh) {
   await open('claude', 'orbit-web', 'Welcome flow', 'orbit');
@@ -246,14 +259,13 @@ if (fresh) {
   ah.tmux('send-keys', '-t', 'tools', 'git log --oneline --graph --all && git status -sb', 'Enter');
   // A worktree whose session ended, with work left in it: Worktrees' cleanup has something to do.
   const spike = await open('shell', 'orbit-web', 'Dark mode spike', 'tools', { worktree: true });
-  await wait(600);
-  const state = await call('GET', '/api/state');
-  const spikeCwd = state.windows.find((w) => w.uid === spike.uid)?.cwd;
+  const spikeCwd = (await running(spike.uid))?.cwd;
   if (spikeCwd) put(spikeCwd, 'src/theme.ts', "export const dark = { background: '#0b0b10', text: '#e6e6f0' };\n");
   await call('POST', `/api/sessions/${spike.uid}/terminate`);
   // One that ends, so History has something.
   const ended = await open('shell', 'orbit-web', 'Release notes 1.42', 'tools');
   await wait(1200);
+  await running(ended.uid);
   await call('POST', `/api/sessions/${ended.uid}/terminate`);
   // The cache stack, under review.
   await call('POST', '/api/review/stacks', { root: join(files, 'orbit-api'), prs: [101, 102, 103] }).catch((err) => process.stderr.write(`review stack: ${err.message}\n`));
