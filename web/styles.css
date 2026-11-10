@@ -4134,7 +4134,7 @@ a.btn {
 
 :where(:root:not([data-touch])) .side-row:hover .row-kill,
 :where(:root:not([data-touch])) .side-row:hover .row-more,
-.side-row:focus-within .row-kill,
+:where(:root:not([data-touch])) .side-row:focus-within .row-kill,
 .side-row:focus-within .row-more {
   display: inline-flex;
 }
@@ -4148,7 +4148,8 @@ a.btn {
 
 /* Touch: a long press already drags a row (iPadOS), so grips would only be
    noise. ··· shows on the row you're on; any other row's actions are a tap
-   on it, then ···. */
+   on it, then ···. Terminate is only in that menu: a held or tapped row
+   takes focus, and a one-tap trash beside it is too easy to hit. */
 @media (pointer: coarse) {
   .side-row:has(> .side-session.on) .row-more,
   .side-row:focus-within .row-more {
