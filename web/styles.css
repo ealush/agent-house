@@ -1908,7 +1908,11 @@ a.btn {
   font-size: 14px;
 }
 
+/* The item with focus is the current one however focus got there: a chord with a modifier
+   (Ctrl+Alt+.) doesn't count as :focus-visible, and its menu showed no current item. Not
+   for a finger: a sheet opened by a tap focuses its first row, which isn't a choice. */
 :where(:root:not([data-touch])) .menu button:hover,
+:where(:root:not([data-touch])) .menu button:focus,
 .menu button:focus-visible {
   background: var(--line);
 }
