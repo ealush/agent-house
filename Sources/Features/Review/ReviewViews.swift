@@ -201,6 +201,7 @@ private struct StartReviewView: View {
         }
         .ahFormGround()
         .navigationTitle("Start a review")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) } }
         .task { if model.repos.isEmpty { await model.loadList() } }
     }
@@ -879,6 +880,7 @@ private struct NewFindingSheet: View {
                 Picker("Severity", selection: $severity) { ForEach(Finding.Severity.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
             }
             .navigationTitle("New finding")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .confirmationAction) {
@@ -941,7 +943,10 @@ private struct DispatchSheet: View {
                     }
                 }
             }
+            // A task sheet's title sits in its bar, as New Session's and Fork's do: large, a
+            // long one was cut off ("Ask the agent to mer…").
             .navigationTitle(kind == "restack" ? "Restack \(layer.name)" : kind == "merge" ? "Ask the agent to merge" : "Request fixes")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .confirmationAction) {
@@ -1010,6 +1015,7 @@ private struct MergeLayerSheet: View {
                 }
             }
             .navigationTitle("Merge #\(layer.pr)")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: outcome == nil ? .cancel : .close) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .confirmationAction) {
@@ -1074,6 +1080,7 @@ private struct StackMergeSheet: View {
                 }
             }
             .navigationTitle(plan.lands.isEmpty ? "Nothing can merge yet" : "Merge \(plan.lands.count) layer\(plan.lands.count == 1 ? "" : "s")")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: result == nil ? .cancel : .close) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .confirmationAction) {
