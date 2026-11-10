@@ -5683,8 +5683,14 @@ ul.queue-items {
 
 /* Settings → Agents (AgentsSettings.tsx): a row per agent, its mark, what its CLI
    said last, and whether New session offers it. */
-.agent-rows .sec-row.absent {
-  opacity: 0.6;
+/* Not installed: its mark and name step back; what it says stays readable (a whole-row
+   opacity took that line to 2.5:1). */
+.agent-rows .sec-row.absent .chip {
+  opacity: 0.5;
+}
+
+.agent-rows .sec-row.absent .name {
+  color: var(--muted);
 }
 
 .agent-rows .sub.changes {
@@ -6537,6 +6543,8 @@ ul.queue-items {
 
 .cmd-count {
   font-size: 11px;
+  /* 11px needs more than the faint grey it inherited (3.9:1). */
+  color: var(--muted);
   min-width: 18px;
   padding: 0 5px;
   border-radius: 999px;
