@@ -953,6 +953,13 @@ button.pill {
   color: var(--muted);
 }
 
+/* History is all past conversations, every row quiet: the titles still lead, and only the
+   line under them is muted, or the list reads as one grey. */
+.history-row.quiet .name {
+  font-weight: 500;
+  color: var(--text);
+}
+
 .history-row {
   grid-template-columns: 24px minmax(0, 1fr) auto auto;
 }
