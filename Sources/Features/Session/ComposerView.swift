@@ -370,18 +370,19 @@ struct LaunchChips: View {
     private func chip(_ name: String, _ symbol: String, _ value: String?, fallback: String, _ density: Density, action: @escaping () -> Void) -> some View {
         // At its default with no room for the label, a chip says what it sets ("Model").
         let shown: String? = density == .symbols ? nil : value ?? (density == .full ? "Default" : name)
-        return Button(action: action) { chipLabel(name, symbol, shown, spoken: value ?? fallback, danger: false, labelled: density == .full) }.buttonStyle(.plain).hoverEffect(.highlight)
+        // A setting at its default reads as unset (muted), not as a value like the mode beside it.
+        return Button(action: action) { chipLabel(name, symbol, shown, spoken: value ?? fallback, danger: false, labelled: density == .full, unset: value == nil) }.buttonStyle(.plain).hoverEffect(.highlight)
     }
 
     /// ah's setting chip: a quiet label and the value in force ("Model Opus 5.5"); the label
     /// drops first, then the value, leaving the symbol.
-    private func chipLabel(_ name: String, _ symbol: String, _ value: String?, spoken: String, danger: Bool, labelled: Bool = true) -> some View {
+    private func chipLabel(_ name: String, _ symbol: String, _ value: String?, spoken: String, danger: Bool, labelled: Bool = true, unset: Bool = false) -> some View {
         HStack(spacing: 4) {
             if value == nil { Image(systemName: symbol).imageScale(.small).foregroundStyle(theme.muted) }
             if labelled, value != nil { Text(name).foregroundStyle(theme.muted) }
             if let value {
                 if danger { Image(systemName: "exclamationmark.triangle.fill").imageScale(.small).foregroundStyle(theme.danger) }
-                Text(value).foregroundStyle(danger ? theme.danger : theme.text).lineLimit(1)
+                Text(value).foregroundStyle(danger ? theme.danger : unset ? theme.muted : theme.text).lineLimit(1)
             }
         }
         .font(.ah(.footnote).weight(.medium))
