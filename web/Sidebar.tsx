@@ -333,7 +333,8 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
       <button className={`nav-item ${page === 'inbox' && !selected ? 'on' : ''}`} title={shortcutTitle('Inbox', 'go-inbox')} onClick={() => onPage('inbox')}>
         <Icon name="inbox" />
         <span className="grow">Inbox</span>
-        {waiting > 0 ? <span className="badge">{waiting}</span> : <span className="count">{windows.length}</span>}
+        {/* No count at nothing, as a Mac sidebar's: an empty list says "0" by being empty. */}
+        {waiting > 0 ? <span className="badge">{waiting}</span> : windows.length > 0 && <span className="count">{windows.length}</span>}
       </button>
       <button className={`nav-item ${page === 'review' && !selected ? 'on' : ''}`} title={shortcutTitle('Review', 'go-review')} onClick={() => onPage('review')}>
         <Icon name="stack" />
@@ -343,7 +344,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
       <button className={`nav-item ${page === 'history' && !selected ? 'on' : ''}`} title={shortcutTitle('History', 'go-history')} onClick={() => onPage('history')}>
         <Icon name="history" />
         <span className="grow">History</span>
-        <span className="count">{state?.history.length ?? ''}</span>
+        {(state?.history.length ?? 0) > 0 && <span className="count">{state!.history.length}</span>}
       </button>
 
       <button className={`nav-item ${page === 'search' && !selected ? 'on' : ''}`} title={shortcutTitle('Search', 'go-search')} onClick={() => onPage('search')}>
