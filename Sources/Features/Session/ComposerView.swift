@@ -19,6 +19,10 @@ struct ComposerView: View {
     @State private var suggestionIndex = 0
     /// The settings chips are out, floating over the box (a swipe up, or the grabber).
     @State private var trayOpen = false
+    /// The round controls and the box's corner grow with the text, as the system's own do: at
+    /// the largest sizes a fixed + sat small beside a box twice its height.
+    @ScaledMetric(relativeTo: .body) private var control: CGFloat = 44
+    @ScaledMetric(relativeTo: .body) private var corner: CGFloat = 22
     /// How wide Send (or Queue, Run, Stop) is in the box's corner: the text wraps short of it.
     @State private var sendWidth: CGFloat = 0
     @Namespace private var glass
@@ -214,12 +218,12 @@ struct ComposerView: View {
             // beside it in a row, the box was measured at one width and laid out at another,
             // and a long message lost its first line.
             ComposerTextField(composer: composer, session: session, scene: scene, suggestionIndex: $suggestionIndex, trailingRoom: sendWidth > 0 ? sendWidth + 4 : 0)
-                .frame(minHeight: 32)
+                .frame(minHeight: control - 12)
         }
         .padding(.leading, 10)
         .padding(.trailing, 6)
         .padding(.vertical, 6)
-        .frame(minHeight: 44)
+        .frame(minHeight: control)
         .overlay(alignment: .bottomTrailing) {
             ZStack { sendButton }
                 .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { sendWidth = $0 }
@@ -228,7 +232,7 @@ struct ComposerView: View {
                 .animation(.snappy(duration: 0.22), value: composer.isEmpty)
                 .padding(6)
         }
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: corner, style: .continuous))
         .glassEffectID("field", in: glass)
         .overlay(alignment: .top) { grabber }
         .accessibilityAction(named: trayOpen ? "Hide session settings" : "Show session settings") {
@@ -259,7 +263,7 @@ struct ComposerView: View {
             Text(mark)
                 .font(.ahMono(.body).weight(.semibold))
                 .foregroundStyle(theme.text2)
-                .frame(width: 36, height: 36)
+                .frame(width: control * 0.82, height: control * 0.82)
                 .glassEffect(.regular.interactive(), in: Circle())
         }
         .buttonStyle(.plain)
@@ -300,9 +304,9 @@ struct ComposerView: View {
                 }
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 18, weight: .medium))
+                    .font(.system(size: control * 0.41, weight: .medium))
                     .foregroundStyle(theme.text2)
-                    .frame(width: 44, height: 44)
+                    .frame(width: control, height: control)
                     .glassEffect(.regular.interactive(), in: Circle())
                     .glassEffectID("attach", in: glass)
             }
@@ -320,9 +324,9 @@ struct ComposerView: View {
             } label: {
                 // ah's Stop: an ink circle.
                 Image(systemName: "stop.fill")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(size: control * 0.25, weight: .bold))
                     .foregroundStyle(theme.background)
-                    .frame(width: 32, height: 32)
+                    .frame(width: control - 12, height: control - 12)
                     .background(theme.text, in: Circle())
                     .touchTarget()
             }
@@ -341,7 +345,7 @@ struct ComposerView: View {
                     .font(.ah(.subheadline).weight(.semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 13)
-                    .frame(height: 32)
+                    .frame(height: control - 12)
                     .background(theme.accentStrong, in: Capsule())
                     .opacity(composer.canSend ? 1 : 0.45)
                     .touchTarget()
@@ -366,9 +370,9 @@ struct ComposerView: View {
             } label: {
                 // ah's Send: the accent-filled circle, the one pink control.
                 Image(systemName: "arrow.up")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: control * 0.34, weight: .bold))
                     .foregroundStyle(.white)
-                    .frame(width: 32, height: 32)
+                    .frame(width: control - 12, height: control - 12)
                     .background(theme.accentStrong, in: Circle())
                     .opacity(composer.canSend ? 1 : 0.45)
                     .animation(.snappy(duration: 0.2), value: composer.canSend)
@@ -469,6 +473,8 @@ struct LaunchChips: View {
     /// Only a dangerous permission mode, if that's what's in force: the one setting that stays
     /// out when the rest fold away.
     var onlyRisky = false
+    /// As tall as the / and @ beside them, at every text size.
+    @ScaledMetric(relativeTo: .body) private var height: CGFloat = 36
     @Environment(\.theme) private var theme
 
     /// How much each chip says: its value (or that it's the default), its value or just what
@@ -566,7 +572,7 @@ struct LaunchChips: View {
         }
         .font(.ah(.footnote).weight(.medium))
         .padding(.horizontal, value == nil ? 10 : 12)
-        .frame(minWidth: 36, minHeight: 36)
+        .frame(minWidth: height, minHeight: height)
         // Glass like the box they float over, so they read as part of it, out for a moment.
         .glassEffect(danger ? .regular.tint(theme.danger.opacity(0.22)).interactive() : .regular.interactive(), in: Capsule())
         .contentShape(Capsule())
