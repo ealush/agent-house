@@ -1732,6 +1732,9 @@ button.pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  /* As tall as the fields it sits beside (40px), and a finger's 44px on touch; .small is
+     the compact one. 37px buttons sat lower and shorter than the field next to them. */
+  min-height: 40px;
   padding: 7px 13px;
   border-radius: 10px;
   border: 1px solid var(--line-2);
@@ -1787,6 +1790,12 @@ button.pill {
   min-height: 32px;
   padding: 4px 10px;
   font-size: 13px;
+}
+
+@media (pointer: coarse) {
+  .btn:not(.small) {
+    min-height: 44px;
+  }
 }
 
 .btn.block {
