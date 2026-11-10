@@ -238,6 +238,7 @@ struct ComposerView: View {
         }
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: corner, style: .continuous))
         .glassEffectID("field", in: glass)
+        .overlay { ThinkingBorder(corner: corner, active: session.working && !session.isShell) }
         .overlay(alignment: .top) { grabber }
         .accessibilityAction(named: trayOpen ? "Hide session settings" : "Show session settings") {
             withAnimation(.snappy(duration: 0.25)) { trayOpen.toggle() }
