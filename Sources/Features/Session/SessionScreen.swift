@@ -39,8 +39,11 @@ struct SessionScreen: View {
                     EndedBanner(session: session, scene: scene, item: history)
                 }
                 // The question and the composer float over the transcript, which scrolls on
-                // beneath them (and fades under, at the bar's edge).
+                // beneath them (and fades under, at the bar's edge). Soft at both edges, said
+                // outright: left to the system, a phone drew the hard edge, an opaque band
+                // with a hairline in a tint the transcript doesn't have.
                 surface
+                    .scrollEdgeEffectStyle(.soft, for: .vertical)
                     .safeAreaBar(edge: .bottom, spacing: 0) {
                         if session.surface == .gui && session.hasGUI {
                             VStack(spacing: 0) {

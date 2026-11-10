@@ -32,6 +32,9 @@ struct Themed<Content: View>: View {
         content
             .environment(\.theme, resolved)
             .tint(resolved.accent)
+            // ah's face for every Text that doesn't name its own: unset, a row's title, a
+            // reply's prose and an answer's choices drew in SF Pro beside Rubik subtitles.
+            .font(.ah(.body))
     }
 }
 

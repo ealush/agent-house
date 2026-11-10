@@ -63,8 +63,9 @@ private struct BlockView: View {
     var body: some View {
         switch block {
         case .heading(let level, let inlines):
-            Text(InlineText.attributed(inlines, theme: theme))
-                .font(level == 1 ? .ah(.title2).bold() : level == 2 ? .ah(.title3).bold() : .ah(.headline))
+            let style: Font.TextStyle = level == 1 ? .title2 : level == 2 ? .title3 : .headline
+            Text(InlineText.attributed(inlines, theme: theme, style: style))
+                .font(level <= 2 ? .ah(style).bold() : .ah(style))
                 .foregroundStyle(theme.text)
                 .accessibilityAddTraits(.isHeader)
                 .padding(.top, 4)
@@ -125,36 +126,40 @@ private struct ParagraphView: View {
 }
 
 enum InlineText {
-    /// Inline runs as one attributed string: links tappable, code monospaced.
-    static func attributed(_ inlines: [MarkdownInline], theme: Theme) -> AttributedString {
+    /// Inline runs as one attributed string: links tappable, code monospaced. `style` is the
+    /// text style the run is drawn in, so code sits at the size of the words around it.
+    static func attributed(_ inlines: [MarkdownInline], theme: Theme, style: Font.TextStyle = .body) -> AttributedString {
         var out = AttributedString()
-        for inline in inlines { out += attributed(inline, theme: theme) }
+        for inline in inlines { out += attributed(inline, theme: theme, style: style) }
         return out
     }
 
-    static func attributed(_ inline: MarkdownInline, theme: Theme) -> AttributedString {
+    static func attributed(_ inline: MarkdownInline, theme: Theme, style: Font.TextStyle = .body) -> AttributedString {
         switch inline {
         case .text(let s):
             return AttributedString(s.replacingOccurrences(of: "\n", with: " "))
         case .code(let s):
+            // ah's mono a point under the text (it runs wider than Rubik), brighter than the
+            // prose around it: SF Mono at body size stood a size above the sentence.
             var a = AttributedString(s)
-            a.font = .system(.body, design: .monospaced)
+            a.font = .ahMono(style)
+            a.foregroundColor = theme.text
             a.backgroundColor = theme.raised
             return a
         case .emphasis(let children):
-            var a = attributed(children, theme: theme)
+            var a = attributed(children, theme: theme, style: style)
             a.inlinePresentationIntent = .emphasized
             return a
         case .strong(let children):
-            var a = attributed(children, theme: theme)
+            var a = attributed(children, theme: theme, style: style)
             a.inlinePresentationIntent = .stronglyEmphasized
             return a
         case .strike(let children):
-            var a = attributed(children, theme: theme)
+            var a = attributed(children, theme: theme, style: style)
             a.strikethroughStyle = .single
             return a
         case .link(let text, let url):
-            var a = attributed(text, theme: theme)
+            var a = attributed(text, theme: theme, style: style)
             if let target = URL(string: url) ?? URL(string: url.addingPercentEncoding(withAllowedCharacters: .urlFragmentAllowed) ?? "") {
                 a.link = target
                 a.foregroundColor = theme.accent
@@ -180,14 +185,14 @@ private struct TableBlock: View {
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
                 GridRow {
                     ForEach(header.indices, id: \.self) { i in
-                        Text(InlineText.attributed(header[i], theme: theme)).font(.ah(.callout).weight(.semibold)).gridColumnAlignment(alignment(i))
+                        Text(InlineText.attributed(header[i], theme: theme, style: .callout)).font(.ah(.callout).weight(.semibold)).gridColumnAlignment(alignment(i))
                     }
                 }
                 Divider()
                 ForEach(rows.indices, id: \.self) { r in
                     GridRow {
                         ForEach(rows[r].indices, id: \.self) { i in
-                            Text(InlineText.attributed(rows[r][i], theme: theme)).font(.ah(.callout)).foregroundStyle(theme.text2)
+                            Text(InlineText.attributed(rows[r][i], theme: theme, style: .callout)).font(.ah(.callout)).foregroundStyle(theme.text2)
                         }
                     }
                 }
@@ -218,12 +223,25 @@ struct CodeBlockView: View {
     enum Tone { case plain, command, error }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                if let language, !language.isEmpty {
-                    Text(language).font(.ahMono(.caption2)).foregroundStyle(theme.faint)
+        // The copy button sits beside the first line rather than on a row of its own, so a
+        // one-line command is evenly padded, not a blank strip over it. A language names
+        // the block above the code.
+        VStack(alignment: .leading, spacing: 2) {
+            if let language, !language.isEmpty {
+                Text(language).font(.ahMono(.caption2)).foregroundStyle(theme.faint)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+            }
+            HStack(alignment: .top, spacing: 0) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    Text(code)
+                        .font(theme.mono)
+                        .foregroundStyle(tone == .error ? theme.danger : theme.text)
+                        .textSelection(.enabled)
+                        .padding(.leading, 12)
+                        .padding(.trailing, 4)
+                        .padding(.vertical, 11)
                 }
-                Spacer()
                 Button {
                     UIPasteboard.general.string = code
                     copied = true
@@ -233,23 +251,15 @@ struct CodeBlockView: View {
                         copied = false
                     }
                 } label: {
-                    Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
-                        .labelStyle(.iconOnly)
-                        .font(.ah(.caption))
+                    Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                        .font(.ah(.footnote).weight(.medium))
+                        .contentTransition(.symbolEffect(.replace))
+                        .foregroundStyle(copied ? theme.done : theme.muted)
+                        .frame(width: 40, height: 40)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel(copied ? "Copied" : "Copy code")
-            }
-            .padding(.horizontal, 10)
-            .padding(.top, 6)
-            ScrollView(.horizontal, showsIndicators: false) {
-                Text(code)
-                    .font(theme.mono)
-                    .foregroundStyle(tone == .error ? theme.danger : theme.text)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, 10)
-                    .padding(.top, 2)
             }
         }
         .background(theme.sunken, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
