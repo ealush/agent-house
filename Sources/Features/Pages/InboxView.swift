@@ -465,11 +465,14 @@ struct SessionRowMenu: View {
         Button(row.dto.pinned ? "Unpin" : "Pin", systemImage: "pin") {
             Task { try? await hub.client(forKey: row.key).pin(row.uid, pinned: !row.dto.pinned); hub.refresh() }
         }
-        Menu("Send to workspace") {
-            ForEach(1...9, id: \.self) { n in
-                Button("Workspace \(n)") {
-                    scene.open(row.key)
-                    scene.perform(.toWorkspace(n))
+        // Workspaces are the iPad's (a phone shows one session at a time).
+        if !scene.narrow {
+            Menu("Send to Workspace", systemImage: "rectangle.stack") {
+                ForEach(1...9, id: \.self) { n in
+                    Button("Workspace \(n)") {
+                        scene.open(row.key)
+                        scene.perform(.toWorkspace(n))
+                    }
                 }
             }
         }
