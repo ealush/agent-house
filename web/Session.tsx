@@ -412,24 +412,38 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
   function claimKeyboard(ms = 1500): () => void {
     const until = performance.now() + ms;
     let raf = 0;
+    // Once you act (a key, a click, a tap) and focus goes somewhere outside the session, it's
+    // yours: the claim stands down, so a menu opened by a chord or the next row in the sidebar
+    // isn't pulled back. Typing in the session keeps it watching for a remounting composer.
+    let acted = false;
+    const act = () => (acted = true);
+    window.addEventListener('keydown', act, true);
+    window.addEventListener('pointerdown', act, true);
+    const release = () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('keydown', act, true);
+      window.removeEventListener('pointerdown', act, true);
+    };
     // Watched until the deadline, not just until it lands: a surface still loading can
     // replace the element that took focus (the composer remounts once the feed is in).
     const claim = () => {
       // A screen over the session (New session) owns the keyboard: stop, or keys
       // typed into it would land in this session's hidden terminal.
-      if (document.querySelector('[data-focus-owner]')) return;
+      if (document.querySelector('[data-focus-owner]')) return release();
       const a = document.activeElement as HTMLElement | null;
       const mine = body.current;
       const landed = !!mine && !!a && mine.contains(a) && a.getClientRects().length > 0;
       if (!landed) {
+        if (acted && a && a !== document.body && a.isConnected) return release();
         const elsewhere = a && a !== document.body && a.isConnected && (a.closest('dialog[open]') || (a.matches('input, textarea, select, [contenteditable="true"]') && !a.closest('.session-body, .pane')));
-        if (elsewhere) return;
+        if (elsewhere) return release();
         focusSurface();
       }
       if (performance.now() < until) raf = requestAnimationFrame(claim);
+      else release();
     };
     raf = requestAnimationFrame(claim);
-    return () => cancelAnimationFrame(raf);
+    return release;
   }
 
   /** The session's input, now: true when the keyboard is in it. */
