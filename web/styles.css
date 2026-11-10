@@ -1806,6 +1806,19 @@ a.btn {
   box-shadow: inset 0 0 0 1px var(--line-2);
 }
 
+/* A narrow phone: the choices share the row rather than run past the card's edge. */
+@media (max-width: 380px) {
+  .seg {
+    max-width: 100%;
+  }
+
+  .seg button {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding-inline: 10px;
+  }
+}
+
 .linkish {
   border: 0;
   background: none;
