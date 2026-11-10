@@ -1204,11 +1204,19 @@ private struct PreviewPanel: View {
                             .font(.ah(.body).monospacedDigit())
                             .padding(.horizontal, 12)
                             .padding(.vertical, 9)
-                            .background(theme.raised, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .background(theme.raised, in: Capsule())
                             .onSubmit(startTyped)
-                        Button("Preview", action: startTyped)
-                            .buttonStyle(.borderedProminent)
-                            .disabled(PreviewModel.port(typed) == nil || model.busy)
+                        // The field's height and shape, the accent's fill: unset, a disabled
+                        // prominent button was a black slab beside a rounded field.
+                        let ready = PreviewModel.port(typed) != nil && !model.busy
+                        Button(action: startTyped) {
+                            Text("Preview").fontWeight(.semibold).padding(.horizontal, 16).padding(.vertical, 9)
+                                .foregroundStyle(ready ? Color.white : theme.faint)
+                                .background(ready ? theme.accentStrong : theme.raised, in: Capsule())
+                        }
+                        .buttonStyle(.ahPress)
+                        .disabled(!ready)
+                        .animation(.snappy(duration: 0.2), value: ready)
                     }
                 }
                 if let error = model.error { Banner(text: error, tone: .error) }
