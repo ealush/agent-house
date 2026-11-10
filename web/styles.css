@@ -6871,6 +6871,34 @@ ul.queue-items {
     flex: none;
     padding: 8px 18px;
   }
+
+  /* With the room, the form reads as one thing: a page's heading, the fields, and Start
+     right under them, not pinned to a bottom edge a screen away (the form scrolls as a
+     whole when it's taller). A phone keeps its fixed bar in reach of the thumb. */
+  .ns-screen form {
+    overflow-y: auto;
+  }
+
+  .ns-screen .ns-body {
+    flex: none;
+    overflow: visible;
+  }
+
+  .ns-screen .ns-head {
+    padding-top: 28px;
+  }
+
+  .ns-screen .ns-head h2 {
+    font-size: 28px;
+    font-weight: 700;
+  }
+
+  .ns-screen .actions {
+    border-top: 0;
+    padding-top: 4px;
+    padding-bottom: 32px;
+    background: none;
+  }
 }
 
 /* A pane that asks what goes in it (split, Replace pane): a list in its own space. */
