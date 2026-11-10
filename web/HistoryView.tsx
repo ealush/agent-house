@@ -63,6 +63,7 @@ export function HistoryView({ state, onResume, onForget, onFork, touch = false, 
             value={filter}
             placeholder={`Filter ${state.history.length} conversation${state.history.length === 1 ? '' : 's'} by title, project or agent`}
             aria-label="Filter history"
+            enterKeyHint="go"
             autoCapitalize="off"
             autoCorrect="off"
             spellCheck={false}

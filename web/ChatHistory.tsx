@@ -110,7 +110,7 @@ export function ChatHistory({ client, jump }: { client: HostApi; jump?: { uid: s
         <span className="hint">Past chats — read-only</span>
       </div>
       <div className="past-search">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search past chats…" aria-label="Search past chats" maxLength={200} />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search past chats…" aria-label="Search past chats" maxLength={200} enterKeyHint="search" onKeyDown={(e) => e.key === 'Enter' && document.documentElement.dataset.keyboard !== undefined && e.currentTarget.blur()} autoCapitalize="off" autoCorrect="off" />
       </div>
       {error && <p className="panel-msg">{error}</p>}
       <div className="sidechat-log">

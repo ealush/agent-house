@@ -88,6 +88,9 @@ export function SearchView({
             onChange={(e) => setQ(e.target.value)}
             placeholder="Words to find"
             aria-label="Search conversations"
+            enterKeyHint="search"
+            // Results are live; the keyboard's Search key puts the on-screen keyboard away to show them.
+            onKeyDown={(e) => e.key === 'Enter' && document.documentElement.dataset.keyboard !== undefined && e.currentTarget.blur()}
             autoCapitalize="off"
             autoCorrect="off"
           />

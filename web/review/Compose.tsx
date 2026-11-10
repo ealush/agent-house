@@ -332,7 +332,7 @@ export function Compose({ stack, narrow, onBack, onDone }: { stack: Stack | null
         {!narrow && (
           <label className="pick-filter">
             <Icon name="search" size={15} />
-            <input ref={filterRef} value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter by title, branch or #" aria-label="Filter pull requests" />
+            <input ref={filterRef} value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter by title, branch or #" aria-label="Filter pull requests" enterKeyHint="search" autoCapitalize="off" autoCorrect="off" />
           </label>
         )}
       </header>
