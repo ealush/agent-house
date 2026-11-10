@@ -1,7 +1,7 @@
 // The session as a GUI: a separate component tree that never touches the terminal.
 // It renders the agent's typed event stream (server/feed) and talks back through
 // the same send/answer API the terminal path uses.
-import { forwardRef, startTransition, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, memo, startTransition, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { FeedPrompt, ToolResult } from '../../server/feed/schema.ts';
 import { AskPanel, type AskHandle } from '../AskPanel.tsx';
 import type { SurfaceHandle, SurfaceProps } from '../surface.ts';
@@ -66,7 +66,15 @@ function MsgCopy({ text, bare = false }: { text: string; bare?: boolean }) {
   return bare ? button : <div className="msg-actions">{button}</div>;
 }
 
-function BlockView({ block, results, agent, snap, onRestore, freshAfter }: { block: Block; results: Record<string, ToolResult>; agent: string | null; snap?: SnapshotInfo; onRestore?: (snap: SnapshotInfo) => void; freshAfter: number }) {
+type BlockProps = { block: Block; results: Record<string, ToolResult>; agent: string | null; snap?: SnapshotInfo; onRestore?: (snap: SnapshotInfo) => void; freshAfter: number };
+
+/** A block draws again only when it, its results or its snapshot changed: not on every state tick,
+ *  which re-rendered every visible message, tool row and copy button each 1.5s. The snapshot list is
+ *  polled into new objects, so it compares by value. */
+const BlockView = memo(BlockViewImpl, (a: BlockProps, b: BlockProps) =>
+  a.block === b.block && a.results === b.results && a.agent === b.agent && a.freshAfter === b.freshAfter && a.onRestore === b.onRestore && JSON.stringify(a.snap ?? null) === JSON.stringify(b.snap ?? null));
+
+function BlockViewImpl({ block, results, agent, snap, onRestore, freshAfter }: BlockProps) {
   // data-seq is the search jump target (issue #9): the block key starts with
   // the seq of its first entry.
   const seq = parseInt(block.key, 10);
@@ -182,7 +190,7 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
     };
   }, [client, w.uid]);
 
-  const restoreSnap = async (snap: SnapshotInfo) => {
+  const restoreSnapNow = async (snap: SnapshotInfo) => {
     const ok = await askConfirm({
       title: `Restore to before turn ${snap.turn}?`,
       body: 'Files return to how they were before this turn. A safety snapshot of the current state is taken first, so this can itself be undone.',
@@ -209,6 +217,10 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
       showError(e, "Couldn't restore");
     }
   };
+  // One function for the feed's life, always running the latest restore: memoized blocks keep it.
+  const restoreRef = useRef(restoreSnapNow);
+  restoreRef.current = restoreSnapNow;
+  const restoreSnap = useCallback((snap: SnapshotInfo) => restoreRef.current(snap), []);
   const blocks = useMemo(() => project(state.entries), [state.entries]);
   // What you sent from here, drawn as your bubble until the transcript has it (or a
   // while passes, for input the agent never records). Queued ones live in the tray.

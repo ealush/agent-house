@@ -536,16 +536,45 @@ export function normalize(s: State): State {
   };
 }
 
+/**
+ * The next state, keeping what didn't change: a session, history item or host equal to
+ * the one before is that same object, and a list with nothing changed is the same list.
+ * A patch every 1.5s otherwise made every session new, and every row, pane and open
+ * conversation drew again though one line had changed.
+ */
+export function shareState(prev: State | null, next: State): State {
+  if (!prev) return next;
+  const list = <T>(was: T[], now: T[], key: (x: T) => string): T[] => {
+    const old = new Map(was.map((x) => [key(x), x]));
+    let same = was.length === now.length;
+    const out = now.map((x, i) => {
+      const o = old.get(key(x));
+      const keep = o !== undefined && (o === x || JSON.stringify(o) === JSON.stringify(x)) ? o : x;
+      if (keep !== was[i]) same = false;
+      return keep;
+    });
+    return same ? was : out;
+  };
+  return {
+    ...next,
+    hosts: list(prev.hosts, next.hosts, (h) => h.name),
+    windows: list(prev.windows, next.windows, (w) => `${w.host ?? ''}:${w.uid}`),
+    history: list(prev.history, next.history, (h) => `${h.host ?? ''}:${h.ref}`),
+  };
+}
+
 /** Live state over SSE; falls back to polling if the stream can't be held open. */
 export function subscribe(onState: (s: State) => void, onError: (msg: string | null) => void, client: HostApi = api): () => void {
   let es: EventSource | null = null;
   let poll: number | undefined;
   let closed = false;
+  let shared: State | null = null;
+  const emit = (s: State) => onState((shared = shareState(shared, s)));
   const fetchOnce = () =>
     client
       .state()
       .then((s) => {
-        onState(normalize(s));
+        emit(normalize(s));
         onError(null);
       })
       .catch((e) => onError(reachText(e)));
@@ -558,13 +587,13 @@ export function subscribe(onState: (s: State) => void, onError: (msg: string | n
       clearInterval(poll);
       poll = undefined;
       last = normalize(JSON.parse((e as MessageEvent).data));
-      onState(last);
+      emit(last);
       onError(null);
     });
     es.addEventListener('patch', (e) => {
       if (!last) return;
       last = normalize({ ...last, ...JSON.parse((e as MessageEvent).data) });
-      onState(last);
+      emit(last);
     });
     es.onerror = () => {
       // EventSource reconnects by itself; poll meanwhile so the UI never goes stale.
