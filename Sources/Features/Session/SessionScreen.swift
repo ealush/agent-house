@@ -67,11 +67,13 @@ struct SessionScreen: View {
                                 ComposerView(session: session, composer: session.composer, scene: scene)
                             }
                             .animation(reduceMotion ? nil : .snappy(duration: 0.32), value: session.waiting && session.row?.dto.ask != nil)
-                            // A phone's toasts sit above the composer (and the keyboard under it).
+                            // Toasts sit above the composer (and the keyboard under it): a phone's,
+                            // or the focused pane's on a big screen.
                             .onGeometryChange(for: Double.self) { Double($0.frame(in: .global).minY) } action: { top in
-                                if narrow { scene.composerTop = top }
+                                if narrow || paneFocused { scene.composerTop = top }
                             }
-                            .onDisappear { if narrow { scene.composerTop = nil } }
+                            .onChange(of: paneFocused) { _, focused in if !focused && !narrow { scene.composerTop = nil } }
+                            .onDisappear { if narrow || paneFocused { scene.composerTop = nil } }
                             .frame(maxWidth: Self.readableWidth)
                             .frame(maxWidth: .infinity)
                         }
