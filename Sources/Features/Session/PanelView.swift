@@ -688,7 +688,7 @@ private struct PastChatsView: View {
                     .ahRow()
                 }
                 if chats.isEmpty && error == nil {
-                    EmptyState(symbol: "bubble.left.and.text.bubble.right", title: query.isEmpty ? "No side chats yet" : "Nothing matches", message: "Side chats you've had about this session's changes show here.")
+                    EmptyState(symbol: "bubble.left.and.text.bubble.right", title: query.isEmpty ? "No side chats yet" : "Nothing matches", message: "Side chats you’ve had about this session’s changes show here.")
                         .listRowBackground(Color.clear)
                 }
             }

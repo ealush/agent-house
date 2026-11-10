@@ -39,7 +39,7 @@ struct InboxView: View {
                             .symbolEffect(.bounce, value: inbox.rest.count)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("All caught up").font(.ah(.headline))
-                            Text("Nothing needs you, and nothing's running.").font(.ah(.callout)).foregroundStyle(theme.muted)
+                            Text("Nothing needs you, and nothing’s running.").font(.ah(.callout)).foregroundStyle(theme.muted)
                         }
                     }
                     .padding(.vertical, 6)

@@ -648,7 +648,7 @@ struct QuestionFormView: View {
     var body: some View {
         Group {
             if chatting {
-                Label("Back to the conversation: say what you'd like instead.", systemImage: "bubble.left.and.text.bubble.right").font(.ah(.callout)).foregroundStyle(theme.muted)
+                Label("Back to the conversation: say what you’d like instead.", systemImage: "bubble.left.and.text.bubble.right").font(.ah(.callout)).foregroundStyle(theme.muted)
             } else if model.phase == .sent {
                 Label("Answer sent.", systemImage: "checkmark").font(.ah(.callout)).foregroundStyle(theme.muted)
             } else {
@@ -826,7 +826,7 @@ private struct PreviewBox: View {
                 }
             } else {
                 // A dialog read off the screen only shows the highlighted option's preview.
-                Text("\(label)'s preview shows in the terminal when it's highlighted.")
+                Text("\(label)’s preview shows in the terminal when it’s highlighted.")
                     .font(.ah(.caption))
                     .foregroundStyle(theme.muted)
                     .padding(12)
