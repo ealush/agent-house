@@ -563,6 +563,47 @@ export function shareState(prev: State | null, next: State): State {
   };
 }
 
+/**
+ * This host's state stream, opened at startup beside the sign-in check (main.tsx) instead of
+ * after it, so the first state arrives a round trip sooner. subscribe() takes it over with what
+ * it already received; signed out, it fails (401) and is dropped; unclaimed, it closes.
+ */
+let early: { es: EventSource; events: MessageEvent[]; keep: (e: Event) => void } | null = null;
+/** This device's stream worked last time (it is signed in, or the host asks no sign-in). */
+const STREAM_OK = 'ah.streamOk';
+const streamOk = (ok: boolean) => {
+  try {
+    if (ok) localStorage.setItem(STREAM_OK, '1');
+    else localStorage.removeItem(STREAM_OK);
+  } catch {}
+};
+export function openStateEarly() {
+  if (early || typeof EventSource === 'undefined') return;
+  // Only where it worked before: a signed-out device would just log a refused stream.
+  try {
+    if (localStorage.getItem(STREAM_OK) !== '1') return;
+  } catch {
+    return;
+  }
+  const es = new EventSource('/api/events');
+  const events: MessageEvent[] = [];
+  const keep = (e: Event) => events.push(e as MessageEvent);
+  es.addEventListener('state', keep);
+  es.addEventListener('patch', keep);
+  es.onerror = () => {
+    if (es.readyState !== EventSource.CLOSED) return;
+    // Refused (signed out since): don't try early next time.
+    streamOk(false);
+    if (early?.es === es) early = null;
+  };
+  early = { es, events, keep };
+  setTimeout(() => {
+    if (early?.es !== es) return;
+    es.close();
+    early = null;
+  }, 15_000);
+}
+
 /** Live state over SSE; falls back to polling if the stream can't be held open. */
 export function subscribe(onState: (s: State) => void, onError: (msg: string | null) => void, client: HostApi = api): () => void {
   let es: EventSource | null = null;
@@ -580,21 +621,31 @@ export function subscribe(onState: (s: State) => void, onError: (msg: string | n
       .catch((e) => onError(reachText(e)));
   const open = () => {
     if (closed) return;
-    es = new EventSource(`${client.base}/api/events`);
+    const adopt = client.base === api.base && early && early.es.readyState !== EventSource.CLOSED ? early : null;
+    if (adopt) early = null;
+    es = adopt?.es ?? new EventSource(`${client.base}/api/events`);
     // The whole state on connect, then patches of the fields that changed.
     let last: State | null = null;
-    es.addEventListener('state', (e) => {
+    const onFull = (e: Event) => {
       clearInterval(poll);
       poll = undefined;
       last = normalize(JSON.parse((e as MessageEvent).data));
       emit(last);
       onError(null);
-    });
-    es.addEventListener('patch', (e) => {
+      if (client.base === api.base) streamOk(true);
+    };
+    const onPatch = (e: Event) => {
       if (!last) return;
       last = normalize({ ...last, ...JSON.parse((e as MessageEvent).data) });
       emit(last);
-    });
+    };
+    es.addEventListener('state', onFull);
+    es.addEventListener('patch', onPatch);
+    if (adopt) {
+      es.removeEventListener('state', adopt.keep);
+      es.removeEventListener('patch', adopt.keep);
+      for (const e of adopt.events) (e.type === 'state' ? onFull : onPatch)(e);
+    }
     es.onerror = () => {
       // EventSource reconnects by itself; poll meanwhile so the UI never goes stale.
       poll ??= window.setInterval(fetchOnce, 3000);
