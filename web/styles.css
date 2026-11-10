@@ -9402,9 +9402,10 @@ label:has(> input[type='checkbox'][switch]) {
   }
 }
 
-/* Desktop frame: a quiet color field behind a clearer floating workspace. */
-@media (min-width: 761px) and (pointer: fine) {
-  .app {
+/* Desktop frame: a quiet color field behind a clearer floating workspace. An iPad's
+   sidebar and workspace are the same frame, so it's by width, not by pointer. */
+@media (min-width: 761px) {
+  .app:not(.narrow) {
     background:
       radial-gradient(ellipse 58% 68% at 0% 0%, color-mix(in srgb, var(--accent) 11%, transparent), transparent 68%),
       radial-gradient(ellipse 50% 52% at 100% 100%, color-mix(in srgb, var(--run) 7%, transparent), transparent 72%);
@@ -9476,7 +9477,8 @@ label:has(> input[type='checkbox'][switch]) {
   }
 }
 
-/* The active workspace's title bar and controls complete the desktop frame. */
+/* The active workspace's title bar and controls complete the desktop frame. Not an iPad's:
+   there the session's header is the floating glass over its conversation (MobileOverlay). */
 @media (min-width: 761px) and (pointer: fine) {
   .app:not(.narrow) .main {
     box-shadow: 0 18px 54px -34px rgb(0 0 0 / 0.72), inset 0 1px 0 color-mix(in srgb, var(--text) 5%, transparent);
