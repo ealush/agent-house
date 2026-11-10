@@ -656,7 +656,7 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
     /// way to the other view.
     private func updateBar() {
         navigationItem.title = session.title
-        navigationItem.subtitle = subtitle
+        navigationItem.attributedSubtitle = attributedSubtitle
         let switches = session.isLive && session.hasGUI && !session.isShell
         surfaceItem.isHidden = !switches
         let other: SceneSnapshot.Surface = session.surface == .gui ? .terminal : .gui
@@ -671,9 +671,16 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
         }
     }
 
-    private var subtitle: String {
-        guard let row = session.row else { return session.isLive ? "" : "Ended" }
-        return [row.word.label, row.dto.project, row.dto.branch].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+    /// What it's doing, in its status color (working, needs you, done) as on its row, then
+    /// where: the word was the same grey as the folder after it.
+    private var attributedSubtitle: AttributedString {
+        guard let row = session.row else { return AttributedString(session.isLive ? "" : "Ended") }
+        var word = AttributedString(row.word.label)
+        if let color = theme.theme(scene.app.preferences.appearance).uiStatus(row.word) {
+            word.uiKit.foregroundColor = color
+        }
+        let place = [row.dto.project, row.dto.branch].compactMap { $0 }.filter { !$0.isEmpty }
+        return place.isEmpty ? word : word + AttributedString(" · " + place.joined(separator: " · "))
     }
 
     private func panelActions() -> [UIMenuElement] {

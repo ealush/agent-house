@@ -49,6 +49,16 @@ struct Theme: Equatable, Sendable {
     var uiAccent: UIColor { uiPair(\.accent) }
     /// The ground for UIKit's own views (the window behind everything).
     var uiBackground: UIColor { uiPair(\.background) }
+    /// A status word's color for UIKit text (a bar's subtitle); nil where it rests (idle).
+    func uiStatus(_ word: StatusWord) -> UIColor? {
+        switch word {
+        case .needsYou: return uiPair(\.brand)
+        case .working: return uiPair(\.run)
+        case .done, .newOutput: return uiPair(\.done)
+        case .limited: return uiPair(\.limited)
+        case .idle: return nil
+        }
+    }
 
     var background: Color { pair(\.background) }
     var surface: Color { pair(\.surface) }
