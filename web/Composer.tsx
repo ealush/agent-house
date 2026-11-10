@@ -482,7 +482,9 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
             // Pressing it leaves focus (and a phone's keyboard) in the box, as a messaging app does.
             <button type="submit" className="send-btn" disabled={!canSend} aria-label={actionLabel} title={queues ? 'Queue after the current response' : actionLabel}
               onMouseDown={(e) => e.preventDefault()}>
-              {compact && queues ? <><Icon name="queue" size={18} /><span>Queue</span></> : isShell ? 'Run' : <Icon name="up" size={compact ? 22 : 18} />}
+              {/* "Queue" only with something to queue: an empty box (just sent, the agent not yet working)
+                  keeps the round button, so the mic beside it doesn't move under the thumb. */}
+              {compact && queues && !empty ? <><Icon name="queue" size={18} /><span>Queue</span></> : isShell ? 'Run' : <Icon name="up" size={compact ? 22 : 18} />}
             </button>
           )}
         </div>
