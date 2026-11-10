@@ -804,6 +804,27 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
       />
     );
 
+  // What you look at (the session, or one of its panels); the glass capsule above picks how (GUI
+  // or terminal). Icons, the open one with its name, so every tab fits a phone (as on a desktop).
+  const mobileTabs = (
+    [
+      ['main', 'sessions', 'Session', true],
+      ['diff', 'diff', L('panel-diff'), diffTab],
+      ['files', 'files', L('panel-files'), true],
+      // A side chat's own mark: the chat bubble is the header's GUI view, right above.
+      ['chat', 'sparkle', L('panel-chat'), true],
+      // Nothing queued: the tab steps aside (the menu and palette still open it).
+      ['queue', 'queue', L('panel-queue'), turns && (w.queued > 0 || tab === 'queue')],
+      ['snapshots', 'history', L('panel-snapshots'), turns],
+      ['preview', 'globe', L('panel-preview'), true],
+      // Its branch in review, or open: otherwise the menu opens it.
+      ['stack', 'stack', L('panel-stack'), stackTab && (!!review?.layer || tab === 'stack')],
+    ] as const
+  ).filter(([, , , shown]) => shown);
+  // Picking a tab moves the others too: the open one shows its name.
+  // On a phone the strip is where panels open: the menu leaves out the ones it shows.
+  const onStrip = (id: Panel) => narrow && mobileTabs.some(([t]) => t === id);
+  useTabFlow(tabRow, `${mobileTabs.map(([id]) => id).join(' ')} ${tab}`);
   const menuBody = (
     <div
       ref={menuEl}
@@ -879,14 +900,14 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
       )}
       <button onClick={() => act(() => client.pin(w.uid, !w.pinned))}>{w.pinned ? 'Unpin' : L('pin')}</button>
       <hr />
-      {diffTab && <button onClick={() => { setMenu(false); togglePanel('diff'); }}><span className="grow">{L('panel-diff')}</span><ShortcutHint id="panel-diff" /></button>}
-      <button onClick={() => { setMenu(false); togglePanel('files'); }}><span className="grow">{L('panel-files')}</span><ShortcutHint id="panel-files" /></button>
-      <button onClick={() => { setMenu(false); togglePanel('chat'); }}><span className="grow">{L('panel-chat')}</span><ShortcutHint id="panel-chat" /></button>
-      {turns && <button onClick={() => { setMenu(false); togglePanel('queue'); }}><span className="grow">{L('panel-queue')}</span>{w.queued > 0 && <span className="menu-value">{w.queued}</span>}<ShortcutHint id="panel-queue" /></button>}
+      {diffTab && !onStrip('diff') && <button onClick={() => { setMenu(false); togglePanel('diff'); }}><span className="grow">{L('panel-diff')}</span><ShortcutHint id="panel-diff" /></button>}
+      {!onStrip('files') && <button onClick={() => { setMenu(false); togglePanel('files'); }}><span className="grow">{L('panel-files')}</span><ShortcutHint id="panel-files" /></button>}
+      {!onStrip('chat') && <button onClick={() => { setMenu(false); togglePanel('chat'); }}><span className="grow">{L('panel-chat')}</span><ShortcutHint id="panel-chat" /></button>}
+      {turns && !onStrip('queue') && <button onClick={() => { setMenu(false); togglePanel('queue'); }}><span className="grow">{L('panel-queue')}</span>{w.queued > 0 && <span className="menu-value">{w.queued}</span>}<ShortcutHint id="panel-queue" /></button>}
       {w.queued > 0 && <button onClick={() => { setMenu(false); runCommand('send-now'); }}><span className="grow">{L('send-now')}</span><ShortcutHint id="send-now" /></button>}
-      {turns && <button onClick={() => { setMenu(false); togglePanel('snapshots'); }}><span className="grow">{L('panel-snapshots')}</span><ShortcutHint id="panel-snapshots" /></button>}
-      <button onClick={() => { setMenu(false); togglePanel('preview'); }}><span className="grow">{L('panel-preview')}</span><ShortcutHint id="panel-preview" /></button>
-      {stackTab && <button onClick={() => { setMenu(false); togglePanel('stack'); }}><span className="grow">{L('panel-stack')}</span><ShortcutHint id="panel-stack" /></button>}
+      {turns && !onStrip('snapshots') && <button onClick={() => { setMenu(false); togglePanel('snapshots'); }}><span className="grow">{L('panel-snapshots')}</span><ShortcutHint id="panel-snapshots" /></button>}
+      {!onStrip('preview') && <button onClick={() => { setMenu(false); togglePanel('preview'); }}><span className="grow">{L('panel-preview')}</span><ShortcutHint id="panel-preview" /></button>}
+      {stackTab && !onStrip('stack') && <button onClick={() => { setMenu(false); togglePanel('stack'); }}><span className="grow">{L('panel-stack')}</span><ShortcutHint id="panel-stack" /></button>}
       {(onSplit || onReplace || onClosePane) && <hr />}
       {onSplit && (
         <>
@@ -1004,25 +1025,6 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
 
   const mobileGlass = narrow || touchScreen;
   const floatGlass = mobileGlass && view === 'gui' && tab === 'main';
-  // What you look at (the session, or one of its panels); the glass capsule above picks how (GUI
-  // or terminal). Icons, the open one with its name, so every tab fits a phone (as on a desktop).
-  const mobileTabs = (
-    [
-      ['main', 'sessions', 'Session', true],
-      ['diff', 'diff', L('panel-diff'), diffTab],
-      ['files', 'files', L('panel-files'), true],
-      // A side chat's own mark: the chat bubble is the header's GUI view, right above.
-      ['chat', 'sparkle', L('panel-chat'), true],
-      // Nothing queued: the tab steps aside (the menu and palette still open it).
-      ['queue', 'queue', L('panel-queue'), turns && (w.queued > 0 || tab === 'queue')],
-      ['snapshots', 'history', L('panel-snapshots'), turns],
-      ['preview', 'globe', L('panel-preview'), true],
-      // Its branch in review, or open: otherwise the menu opens it.
-      ['stack', 'stack', L('panel-stack'), stackTab && (!!review?.layer || tab === 'stack')],
-    ] as const
-  ).filter(([, , , shown]) => shown);
-  // Picking a tab moves the others too: the open one shows its name.
-  useTabFlow(tabRow, `${mobileTabs.map(([id]) => id).join(' ')} ${tab}`);
   return (
     <>
       <MobileOverlay enabled={mobileGlass} edge="top" floating={floatGlass}>
