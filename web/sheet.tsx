@@ -111,6 +111,9 @@ export function useSheet(ref: RefObject<HTMLElement | null>, onClose: () => void
       engaged = false;
       const speed = dy / Math.max(1, performance.now() - was.t);
       if (dy > height / 4 || (speed > 0.5 && dy > 40)) return out.current();
+      // Settling back: the drag let go of the keyboard (blur, above); the sheet takes focus
+      // back, not the page under it. Not the field it came from: that would raise the keyboard.
+      if (!document.activeElement || document.activeElement === document.body) el.focus({ preventScroll: true });
       if (calm()) return reset();
       el.style.transition = `transform 260ms ${EASE}`;
       el.style.transform = 'translate3d(0, 0, 0)';
@@ -198,7 +201,7 @@ export function ActionSheet({ onClose, scrim, children }: { onClose: () => void;
   return (
     <>
       <div ref={scrim} className="sheet-scrim" onClick={dismiss} />
-      <div ref={ref} className="action-sheet">
+      <div ref={ref} className="action-sheet" tabIndex={-1}>
         {children}
         <button type="button" className="sheet-cancel" onClick={dismiss}>
           Cancel
