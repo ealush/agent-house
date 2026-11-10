@@ -1,6 +1,8 @@
-// Linux process-tree snapshot from /proc, used to figure out what is actually
+// Process-tree snapshot (Linux /proc; elsewhere `ps`), used to figure out what is actually
 // running inside a pane (node-based CLIs all show up as "node" in tmux).
+import { execFile } from 'node:child_process';
 import { readdir, readFile, readlink } from 'node:fs/promises';
+import { promisify } from 'node:util';
 
 /** `fg`: the process's group holds its terminal's foreground (a shell at its prompt, or the command it runs). */
 export type Proc = { pid: number; ppid: number; argv: string[]; fg?: boolean };
@@ -11,7 +13,7 @@ export async function snapshot(): Promise<Map<number, Proc[]>> {
   try {
     entries = await readdir('/proc');
   } catch {
-    return children;
+    return psSnapshot();
   }
   await Promise.all(
     entries.map(async (e) => {
@@ -35,6 +37,29 @@ export async function snapshot(): Promise<Map<number, Proc[]>> {
       }
     }),
   );
+  return children;
+}
+
+/**
+ * Without /proc (macOS): `ps`, whose command column is the argv joined by spaces, so an
+ * argument with a space in it splits in two. Matching looks at the first two words only.
+ */
+async function psSnapshot(): Promise<Map<number, Proc[]>> {
+  const children = new Map<number, Proc[]>();
+  let out: string;
+  try {
+    ({ stdout: out } = await promisify(execFile)('ps', ['-axww', '-o', 'pid=,ppid=,pgid=,tpgid=,command='], { maxBuffer: 16 * 1024 * 1024 }));
+  } catch {
+    return children;
+  }
+  for (const row of out.split('\n')) {
+    const m = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(-?\d+)\s+(.*)$/.exec(row);
+    if (!m) continue;
+    const [pid, ppid, pgid, tpgid] = [m[1], m[2], m[3], m[4]].map(Number);
+    const list = children.get(ppid) ?? [];
+    list.push({ pid, ppid, argv: m[5].split(' ').filter(Boolean), fg: tpgid > 0 && pgid === tpgid });
+    children.set(ppid, list);
+  }
   return children;
 }
 
