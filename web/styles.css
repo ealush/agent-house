@@ -78,7 +78,8 @@ kbd {
   font-variant-numeric: tabular-nums;
 }
 
-/* Code reads as typed: no programming ligatures (=> ≠ ⇒). */
+/* Code reads as typed: no programming ligatures (=> ≠ ⇒). A `font:` shorthand
+   resets this, so every one that sets var(--mono) repeats it. */
 .mono,
 pre,
 code,
@@ -286,6 +287,7 @@ code,
   background: var(--text);
   color: var(--bg);
   font: 700 12px var(--mono);
+  font-variant-ligatures: none;
 }
 
 :root[data-theme='light'] .logo {
@@ -342,6 +344,7 @@ code,
 
 kbd {
   font: 11px var(--mono);
+  font-variant-ligatures: none;
   padding: 1px 6px;
   border-radius: 6px;
   background: var(--raised);
@@ -407,6 +410,7 @@ kbd {
 
 .count {
   font: 12px var(--mono);
+  font-variant-ligatures: none;
   color: var(--faint);
 }
 
@@ -704,6 +708,7 @@ button.pill {
   height: 24px;
   border-radius: 8px;
   font: 700 12px var(--mono);
+  font-variant-ligatures: none;
   color: var(--agent);
   background: color-mix(in srgb, var(--agent) 16%, transparent);
 }
@@ -870,6 +875,7 @@ button.pill {
 
 .ask-box.code {
   font: 13px/1.5 var(--mono);
+  font-variant-ligatures: none;
 }
 
 .card-foot {
@@ -966,6 +972,7 @@ button.pill {
 
 .row .detail {
   font: 13px var(--mono);
+  font-variant-ligatures: none;
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1520,6 +1527,7 @@ button.pill {
   align-self: center;
   color: var(--done);
   font: 14px var(--mono);
+  font-variant-ligatures: none;
 }
 
 .send-btn {
@@ -1729,6 +1737,7 @@ button.pill {
   border: 1px solid var(--line);
   background: var(--raised);
   font: 500 13px var(--mono);
+  font-variant-ligatures: none;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -2215,6 +2224,7 @@ a.btn {
 .sugg.project,
 .sugg.add {
   font: 12px var(--mono);
+  font-variant-ligatures: none;
 }
 
 /* A project's folder name stays on one line, its full path on hover. */
@@ -2270,6 +2280,7 @@ a.btn {
 .new-dir b {
   color: var(--text);
   font: 500 12px var(--mono);
+  font-variant-ligatures: none;
 }
 
 .new-dir .check {
@@ -2291,6 +2302,7 @@ a.btn {
 
 .check code {
   font: 12px var(--mono);
+  font-variant-ligatures: none;
   color: var(--muted);
 }
 
@@ -2342,6 +2354,7 @@ a.btn {
   padding: 12px 14px;
   overflow: auto;
   font: 12px/1.45 var(--mono);
+  font-variant-ligatures: none;
   white-space: pre-wrap;
   word-break: break-word;
   user-select: text;
@@ -2751,6 +2764,7 @@ a.btn {
 .diff-file {
   padding: 12px 14px 6px;
   font: 13px var(--mono);
+  font-variant-ligatures: none;
   color: var(--muted);
   border-top: 1px solid var(--line);
   position: sticky;
@@ -2784,6 +2798,7 @@ a.btn {
   display: grid;
   grid-template-columns: 44px 1fr;
   font: 13px/1.65 var(--mono);
+  font-variant-ligatures: none;
   cursor: pointer;
 }
 
@@ -2914,6 +2929,7 @@ a.btn {
   overflow-x: auto;
   white-space: nowrap;
   font: 12px var(--mono);
+  font-variant-ligatures: none;
   color: var(--muted);
   scrollbar-width: none;
 }
@@ -2960,6 +2976,7 @@ a.btn {
   background: none;
   text-align: left;
   font: 13px var(--mono);
+  font-variant-ligatures: none;
 }
 
 .fs-row.dir .fs-label {
@@ -3010,6 +3027,7 @@ a.btn {
   padding: 12px;
   overflow: auto;
   font: 12px/1.45 var(--mono);
+  font-variant-ligatures: none;
   user-select: text;
   -webkit-user-select: text;
 }
@@ -3140,6 +3158,7 @@ a.btn {
   border: 1px solid var(--line-2);
   background: var(--sunken);
   font: 500 20px var(--mono);
+  font-variant-ligatures: none;
   letter-spacing: 0.08em;
   text-align: center;
 }
@@ -3965,6 +3984,7 @@ a.btn {
 
 .sidechat-bubble .md code {
   font: 0.86em var(--mono);
+  font-variant-ligatures: none;
   padding: 0.12em 0.36em;
   border-radius: 4px;
   background: var(--raised);
@@ -3979,6 +3999,7 @@ a.btn {
   background: var(--sunken);
   border: 1px solid var(--line);
   font: 13px/1.55 var(--mono);
+  font-variant-ligatures: none;
   overflow-x: auto;
   white-space: pre;
   max-height: 420px;
@@ -4032,6 +4053,7 @@ a.btn {
 
 .big-code {
   font: 600 28px var(--mono);
+  font-variant-ligatures: none;
   letter-spacing: 0.1em;
   color: var(--accent);
 }
@@ -4085,6 +4107,7 @@ a.btn {
   border: 1px solid var(--line-2);
   background: var(--sunken);
   font: 12px var(--mono);
+  font-variant-ligatures: none;
 }
 
 /* ---------- launch choices (F42) */
@@ -4986,6 +5009,7 @@ ul.queue-items {
   padding-top: 5px;
   color: var(--done);
   font: 14px var(--mono);
+  font-variant-ligatures: none;
 }
 
 .composer-tools {
@@ -6314,6 +6338,7 @@ ul.queue-items {
   background: var(--sunken);
   border: 1px solid var(--line);
   font: 13px/1.55 var(--mono);
+  font-variant-ligatures: none;
   color: var(--text);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -7072,6 +7097,7 @@ ul.queue-items {
   background: none;
   color: var(--muted);
   font: 600 12px var(--mono);
+  font-variant-ligatures: none;
 }
 
 :where(:root:not([data-touch])) .ws-dots button:hover {

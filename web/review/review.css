@@ -23,6 +23,7 @@
   background: color-mix(in srgb, var(--text) 9%, transparent);
   color: var(--text);
   font: 600 12px var(--mono);
+  font-variant-ligatures: none;
 }
 
 /* ---- status: one dot per layer, in the shared vocabulary (needs you, working, done) */
@@ -620,6 +621,7 @@
   background: none;
   color: var(--text);
   font: 500 12px var(--mono);
+  font-variant-ligatures: none;
   transition:
     background var(--dur-1) var(--ease),
     color var(--dur-1) var(--ease);
@@ -1807,6 +1809,7 @@
   border-radius: 10px;
   background: var(--sunken);
   font: 12px/1.5 var(--mono);
+  font-variant-ligatures: none;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -3018,6 +3021,7 @@ button.findings-label {
 
 .gh-md code {
   font: 0.88em var(--mono);
+  font-variant-ligatures: none;
   padding: 0.12em 0.36em;
   border-radius: 4px;
   background: var(--raised);
@@ -3032,6 +3036,7 @@ button.findings-label {
   background: var(--sunken);
   border: 1px solid var(--line);
   font: 12px/1.55 var(--mono);
+  font-variant-ligatures: none;
   overflow-x: auto;
   white-space: pre;
 }
