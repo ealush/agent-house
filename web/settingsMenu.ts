@@ -54,7 +54,11 @@ const sheet = () => document.querySelector<HTMLElement>('dialog.settings-sheet')
 export function openSection(id: Section) {
   fromList = true;
   listTop = sheet()?.scrollTop ?? 0;
-  location.hash = `settings/${id}`;
+  // Pushed over the list's entry, with where Settings came from: closing the sheet from a
+  // section steps back past both (App's goBack), not to a list that is no longer open.
+  const s = history.state as Record<string, unknown> | null;
+  history.pushState({ ...s, section: id }, '', `#settings/${id}`);
+  window.dispatchEvent(new HashChangeEvent('hashchange'));
 }
 /** Where the phone's Settings sheet scrolls to as it shows a section (its top) or the list (where it was). */
 export function placeSettingsScroll(section: Section | null) {

@@ -305,7 +305,8 @@ export function App({ onLock }: { onLock: () => void }) {
       // popstate comes a beat later (longer on iOS), and the old view would be back in between.
       if (how.still) setRoute(target);
       popStill.current = !!how.still;
-      history.back();
+      // A Settings section opened from its list sits on the list's entry (settingsMenu.ts): past both.
+      history.go(history.state?.section ? -2 : -1);
     } else go(target, { ...how, history: 'replace' });
   }
   const popStill = useRef(false);
