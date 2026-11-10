@@ -114,10 +114,19 @@ function stored<T extends string>(key: string, fallback: T): [T, (v: T) => void]
   ];
 }
 
-/** Shows a popover element in the top layer: over an open sheet or dialog, which a z-index can't reach. */
+/** Shows a popover element in the top layer: over an open sheet or dialog, which a z-index can't reach.
+ * With a session's title bar in view the toast sits under it, not over the title you just arrived at. */
 const onTop = (el: HTMLElement | null) => {
+  if (!el) return;
+  if (!document.querySelector('dialog[open]')) {
+    const bars = [...document.querySelectorAll<HTMLElement>('.mobile-session-chrome, .session-head')]
+      .filter((h) => h.checkVisibility?.() !== false)
+      .map((h) => h.getBoundingClientRect())
+      .filter((r) => r.height > 0 && r.top < 60);
+    if (bars.length) el.style.top = `${Math.round(Math.max(...bars.map((r) => r.bottom)) + 8)}px`;
+  }
   try {
-    el?.showPopover?.();
+    el.showPopover?.();
   } catch {}
 };
 
