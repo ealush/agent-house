@@ -139,9 +139,15 @@ private struct PanelChrome: ViewModifier {
     let session: SessionModel
     let scene: SceneModel
     var sheet = false
+    @Environment(\.theme) private var theme
 
     func body(content: Content) -> some View {
         content
+            // The theme's surface, like the session beside it: unset, the panel's stack and
+            // its lists drew the system's black.
+            .scrollContentBackground(.hidden)
+            .background(theme.surface)
+            .containerBackground(theme.surface, for: .navigation)
             .navigationTitle(panel.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbarTitleMenu {

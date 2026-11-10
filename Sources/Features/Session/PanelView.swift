@@ -41,6 +41,7 @@ private struct DiffPanel: View {
     var body: some View {
         ScrollViewReader { proxy in
             List {
+                Group {
                 if let changes = model.changes {
                     Section {
                         HStack {
@@ -81,6 +82,9 @@ private struct DiffPanel: View {
                 } else {
                     ProgressView()
                 }
+                }
+                // The theme's raised rows on the panel's surface, not the system's grey.
+                .ahRow()
             }
             .listStyle(.insetGrouped)
             .focusable(commentable && commenting == nil)
@@ -212,6 +216,10 @@ private struct FilesPanel: View {
                 ForEach(listing.entries, id: \.name) { entry in
                     row(entry)
                         .tag(entry.name)
+                        // On the panel's surface, its hairlines the theme's (a plain list's
+                        // rows drew the system's black).
+                        .listRowBackground(Color.clear)
+                        .listRowSeparatorTint(theme.line)
                 }
             } else if model.error == nil {
                 ProgressView().frame(maxWidth: .infinity).listRowBackground(Color.clear)
@@ -219,6 +227,7 @@ private struct FilesPanel: View {
             if let error = model.error { Banner(text: error, tone: .error).listRowBackground(Color.clear) }
             ForEach(model.uploading, id: \.self) { name in
                 Label("Uploading \(name)…", systemImage: "arrow.up.circle").foregroundStyle(theme.muted)
+                    .listRowBackground(Color.clear)
             }
         }
         .listStyle(.plain)
@@ -717,6 +726,7 @@ private struct QueuePanel: View {
                     Text(Uploads.summary(item.text)).lineLimit(4)
                     Elapsed(seconds: item.at).font(.ah(.caption)).foregroundStyle(theme.faint)
                 }
+                .ahRow()
                 .swipeActions(edge: .leading) {
                     Button("Send now") { Task { await session.queue.steer(item) } }.tint(.orange)
                 }
@@ -734,6 +744,7 @@ private struct QueuePanel: View {
             }
             if !session.queue.items.isEmpty {
                 Button("Cancel all", role: .destructive) { Task { await session.queue.cancelAll() } }
+                    .ahRow()
             }
         }
         .environment(\.editMode, .constant(.active))
@@ -1307,6 +1318,7 @@ private struct StackPanel: View {
                     } label: {
                         Label("Review “\(review.title)”", systemImage: "checkmark.seal")
                     }
+                    .ahRow()
                 }
                 if stack.branches.isEmpty {
                     EmptyState(symbol: "square.stack.3d.up", title: "Not a stack", message: "\(session.row?.dto.branch ?? "This branch") isn’t part of a stack. When the agent stacks branches with gh stack, they show here bottom to top, with their pull requests and checks.")
@@ -1327,6 +1339,7 @@ private struct StackPanel: View {
                                 Text(LayerConfidence.checksLabel(pr.checks)).font(.ah(.caption2)).foregroundStyle(theme.faint)
                             }
                         }
+                        .ahRow()
                     }
                 }
                 }
