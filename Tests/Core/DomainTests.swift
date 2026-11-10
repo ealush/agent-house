@@ -467,3 +467,9 @@ import Testing
     let error = APIError(status: 413, body: Data(#"{"error":"body too large"}"#.utf8))
     #expect(error.message == "It’s larger than your host accepts.")
 }
+
+@Test func effortLevelsReadAsWordsAndExtraHighIsNotATypo() {
+    #expect(LaunchState.effortName("xhigh") == "Extra high")
+    #expect(LaunchState.effortName("high") == "High")
+    #expect(LaunchState.effortName("max") == "Max")
+}

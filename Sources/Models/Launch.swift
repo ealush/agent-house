@@ -149,6 +149,11 @@ struct LaunchState: Equatable, Sendable {
         "medium": "Balanced speed and depth", "high": "Deeper reasoning for harder problems", "xhigh": "Extended reasoning for long, agentic work",
         "max": "Maximum reasoning", "ultra": "Everything it has",
     ]
+
+    /// How a level reads: by its name, but "xhigh" capitalized read like a typo.
+    static func effortName(_ level: String) -> String {
+        level.lowercased() == "xhigh" ? "Extra high" : level.capitalized
+    }
 }
 
 /// Composer completion (`../ah/web/Suggest.tsx`): "/" at the start lists slash commands,

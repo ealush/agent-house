@@ -1373,7 +1373,7 @@ final class SceneModel {
             guard let s, let preset = s.launch.preset, !s.launch.levels.isEmpty, preset.switchEffort != nil || preset.effort != nil else { return [] }
             let launch = s.launch
             return [PaletteNode(key: "efforts", label: "Reasoning effort", icon: "gauge", detail: "Now \(launch.effort ?? "default")", children: launch.levels.map { level in
-                PaletteNode(key: level, label: level, icon: "gauge", detail: [level == launch.effort ? "current" : "", LaunchState.effortHints[level] ?? ""].filter { !$0.isEmpty }.joined(separator: " · "), action: .switchEffort(level))
+                PaletteNode(key: level, label: LaunchState.effortName(level), icon: "gauge", detail: [level == launch.effort ? "current" : "", LaunchState.effortHints[level] ?? ""].filter { !$0.isEmpty }.joined(separator: " · "), terms: [level], action: .switchEffort(level))
             })]
         case .modes:
             guard let s, let modes = s.launch.preset?.modes, modes.count > 1 else { return [] }

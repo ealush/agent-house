@@ -537,11 +537,11 @@ struct LaunchChips: View {
                 }
                 if !onlyRisky, !launch.levels.isEmpty || preset.settingsCommands?.effort != nil {
                     if launch.levels.isEmpty {
-                        chip("Effort", "gauge.with.dots.needle.50percent", launch.effort.map(\.capitalized), fallback: "Default effort", density) { scene.sheet = .effortPicker(session.key) }
+                        chip("Effort", "gauge.with.dots.needle.50percent", launch.effort.map(LaunchState.effortName), fallback: "Default effort", density) { scene.sheet = .effortPicker(session.key) }
                     } else {
-                        choices("Effort", "gauge.with.dots.needle.50percent", launch.effort.map(\.capitalized), fallback: "Default effort", density, footer: launch.footer(.effort)) {
+                        choices("Effort", "gauge.with.dots.needle.50percent", launch.effort.map(LaunchState.effortName), fallback: "Default effort", density, footer: launch.footer(.effort)) {
                             ForEach(launch.levels, id: \.self) { level in
-                                choice(level.capitalized, detail: LaunchState.effortHints[level], on: level == launch.effort) { scene.applyPlan(session.plan(effort: level)) }
+                                choice(LaunchState.effortName(level), detail: LaunchState.effortHints[level], on: level == launch.effort) { scene.applyPlan(session.plan(effort: level)) }
                             }
                         }
                     }

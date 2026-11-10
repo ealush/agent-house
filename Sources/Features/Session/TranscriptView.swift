@@ -936,7 +936,7 @@ private struct StartConversation: View {
     private var place: String {
         guard let row = session.row else { return "" }
         let launch = session.launch
-        return [row.dto.project, row.dto.branch, launch.modelLabel, launch.effort?.capitalized].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+        return [row.dto.project, row.dto.branch, launch.modelLabel, launch.effort.map(LaunchState.effortName)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     var body: some View {

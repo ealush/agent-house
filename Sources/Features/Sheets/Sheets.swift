@@ -1281,7 +1281,7 @@ struct LaunchPickerSheet: View {
         } label: {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(setting == .effort ? title.capitalized : title).foregroundStyle(Color(uiColor: .label))
+                    Text(setting == .effort ? LaunchState.effortName(title) : title).foregroundStyle(Color(uiColor: .label))
                     if let detail, !detail.isEmpty { Text(detail).font(.ah(.caption)).foregroundStyle(Color(uiColor: .secondaryLabel)) }
                 }
                 Spacer()
