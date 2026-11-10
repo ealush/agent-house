@@ -5011,8 +5011,10 @@ ul.queue-items {
 }
 
 /* A named transition capture becomes a backdrop boundary for all of its
-   descendants. Keep mobile conversation glass live over the actual feed. */
-.main:has(.mobile-session-chrome.floating) {
+   descendants. Keep mobile conversation glass live over the actual feed, except
+   while a transition runs (motion.ts data-vt-run): then the main area is named,
+   so opening and leaving a conversation push and pop like any other view. */
+:root:not([data-vt-run]) .main:has(.mobile-session-chrome.floating) {
   view-transition-name: none;
 }
 

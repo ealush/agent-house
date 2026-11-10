@@ -21,9 +21,12 @@ export function transition(fn: () => void, heading?: Heading | null) {
   running = true;
   const root = document.documentElement;
   if (heading) root.dataset.vt = heading;
+  // Names the main area for this transition even where it's otherwise unnamed (styles.css).
+  root.dataset.vtRun = '';
   const done = () => {
     running = false;
     delete root.dataset.vt;
+    delete root.dataset.vtRun;
   };
   try {
     d.startViewTransition(() => flushSync(fn)).finished.finally(done);
