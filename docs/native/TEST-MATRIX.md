@@ -70,7 +70,8 @@ macOS 27, Xcode 27, the demo host (`scripts/demo/host.mjs`) on an iPhone 18 Pro 
 
 - On macOS the demo host needed three things: the demo home's shell profiles put the scripted `claude` ahead of Homebrew's (macOS's `path_helper` reorders the PATH in login shells), its folders opened at their real path (`/private/tmp`), and `ah` itself needed a `ps` fallback where it reads `/proc` to tell what runs in a pane (local branch `native/7-mac-procs` in `ah`, not pushed). Without that last one every session looked like a plain shell, with no GUI.
 - `./scripts/integration.sh` against that `ah`: 35 of 36 pass. `aVideoAttachesFromDiskWellPastTheOldLimitAndLeavesNoFile` times out waiting for the upload on this Mac at the pre-campaign commit too (47c69e1). `aPlanUpForApprovalShowsThePlanAndTakesTheChoice` failed once with a host 500 and passed on the re-run; `guiFeedCarriesTypedTranscriptToolCallsAndWidgets` timed out once on the old commit.
-- Not covered by the walk: signed devices, APNs, Face ID, the terminal's on-screen key bar (the simulator reports a hardware keyboard, so the bar stays hidden).
+- `xcodebuild test` on an iPhone 18 Pro simulator: TEST SUCCEEDED (174 unit tests, the 2 UI tests; the tour skips without a host). The Mac app (Mac Catalyst) builds after every change and ran against the demo host: one window, the overlay inside it.
+- Not covered by the walk: signed devices, APNs, Face ID, the terminal's on-screen key bar (the simulator reports a hardware keyboard, so the bar stays hidden), and ⌘, (iPadOS keeps it; see RISKS).
 
 ## Still to run (in order)
 
