@@ -24,7 +24,7 @@ struct ComposerView: View {
     @ScaledMetric(relativeTo: .body) private var control: CGFloat = 44
     @ScaledMetric(relativeTo: .body) private var corner: CGFloat = 22
     /// How wide Send (or Queue, Run, Stop) is in the box's corner: the text wraps short of it.
-    @State private var sendWidth: CGFloat = 0
+    @State private var sendSize = CGSize.zero
     @Namespace private var glass
 
     /// The session has settings to show: a live agent's model, effort and permissions.
@@ -217,7 +217,7 @@ struct ComposerView: View {
             // The text wraps short of Send, which sits in the box's corner (as Messages has it):
             // beside it in a row, the box was measured at one width and laid out at another,
             // and a long message lost its first line.
-            ComposerTextField(composer: composer, session: session, scene: scene, suggestionIndex: $suggestionIndex, trailingRoom: sendWidth > 0 ? sendWidth + 4 : 0)
+            ComposerTextField(composer: composer, session: session, scene: scene, suggestionIndex: $suggestionIndex, trailingRoom: sendSize.width > 0 ? sendSize.width + 4 : 0, cornerHeight: sendSize.height)
                 .frame(minHeight: control - 12)
         }
         .padding(.leading, 10)
@@ -226,7 +226,7 @@ struct ComposerView: View {
         .frame(minHeight: control)
         .overlay(alignment: .bottomTrailing) {
             ZStack { sendButton }
-                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { sendWidth = $0 }
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { sendSize = $0 }
                 .animation(.snappy(duration: 0.22), value: composer.showsStop(working: session.working))
                 .animation(.snappy(duration: 0.22), value: session.isShell || (session.working && composer.canSend))
                 .animation(.snappy(duration: 0.22), value: composer.isEmpty)
@@ -700,6 +700,8 @@ struct ComposerTextField: UIViewRepresentable {
     @Binding var suggestionIndex: Int
     /// Room kept clear at the end of each line for the button in the box's corner.
     var trailingRoom: CGFloat = 0
+    /// How tall that button is: a long message's scroll bar stops above it.
+    var cornerHeight: CGFloat = 0
     @Environment(\.theme) private var theme
 
     func makeUIView(context: Context) -> ComposerTextView {
@@ -734,6 +736,8 @@ struct ComposerTextField: UIViewRepresentable {
             view.textContainerInset.right = 2 + trailingRoom
             view.setNeedsLayout()
         }
+        let indicator = UIEdgeInsets(top: 8, left: 0, bottom: cornerHeight > 0 ? cornerHeight + 4 : 8, right: 0)
+        if view.verticalScrollIndicatorInsets != indicator { view.verticalScrollIndicatorInsets = indicator }
         if (view.autocapitalizationType == .none) != composer.isShell {
             setTraits(view)
             if view.isFirstResponder { view.reloadInputViews() }
@@ -908,6 +912,7 @@ final class ComposerTextView: UITextView {
     /// The current Return came from a hardware key (handled in pressesBegan).
     fileprivate(set) var isHardwareReturn = false
     private let placeholderLabel = UILabel()
+    private let fade = CAGradientLayer()
 
     override init(frame: CGRect, textContainer: NSTextContainer?) {
         super.init(frame: frame, textContainer: textContainer)
@@ -929,11 +934,32 @@ final class ComposerTextView: UITextView {
         if contentSize.height <= bounds.height + 0.5, contentOffset.y != -adjustedContentInset.top {
             contentOffset.y = -adjustedContentInset.top
         }
+        fadeEdges()
         placeholderLabel.frame = CGRect(x: textContainerInset.left + 5, y: textContainerInset.top, width: bounds.width - textContainerInset.left - textContainerInset.right - 10, height: placeholderLabel.font.lineHeight)
         // Hints drop from the end, whole, rather than end mid-word in an ellipsis.
         let font = placeholderLabel.font ?? AhType.uiFont(.body)
         placeholderLabel.text = ComposerModel.fitting(placeholder, width: placeholderLabel.frame.width) { ($0 as NSString).size(withAttributes: [.font: font]).width }
         placeholderLabel.isHidden = !text.isEmpty
+    }
+
+    /// A message longer than the box fades out at whichever edge has more beyond it, rather
+    /// than cut a line in half there. (Laid out on every scroll, so it follows along.)
+    private func fadeEdges() {
+        guard contentSize.height > bounds.height + 1 else {
+            if layer.mask != nil { layer.mask = nil }
+            return
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if layer.mask == nil { layer.mask = fade }
+        fade.frame = bounds
+        let edge = min(14 / max(bounds.height, 1), 0.3)
+        let above = contentOffset.y > -adjustedContentInset.top + 0.5
+        let below = contentOffset.y + bounds.height < contentSize.height + adjustedContentInset.bottom - 0.5
+        let solid = UIColor.black.cgColor, clear = UIColor.clear.cgColor
+        fade.colors = [above ? clear : solid, solid, solid, below ? clear : solid]
+        fade.locations = [0, NSNumber(value: edge), NSNumber(value: 1 - edge), 1]
+        CATransaction.commit()
     }
 
     override var text: String! {
