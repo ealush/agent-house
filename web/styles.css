@@ -2080,6 +2080,26 @@ a.btn {
   font-family: var(--mono);
 }
 
+/* A focused field lights its own border and a soft halo, as macOS and iOS
+   fields do; the page-wide 2px outline drew a second ring 2px outside it. */
+.field :is(input, select, textarea):focus-visible {
+  outline: none;
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+/* A button beside a field (Rename) stands as tall as the field. */
+.field + .btn {
+  align-self: stretch;
+}
+
+/* Placeholders in ah's tertiary text, not the browser's grey (#757575, under
+   3:1 on the dark composer). */
+::placeholder {
+  color: var(--faint);
+  opacity: 1;
+}
+
 @media (pointer: fine) {
   .field input,
   .field select,
@@ -4681,8 +4701,10 @@ ul.queue-items {
   transition: border-color var(--dur-1);
 }
 
+/* The desktop composer is focused from the start: a hint of the accent, not
+   a grey outline that reads as a second, heavier border at rest. */
 .composer:focus-within {
-  border-color: var(--faint);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--line-2));
 }
 
 .composer.listening {

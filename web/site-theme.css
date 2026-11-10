@@ -320,9 +320,6 @@ button.pill {
   box-shadow: inset 2px 0 0 var(--brand);
 }
 
-.btn {
-  border-radius: var(--radius-sm);
-}
 .btn.primary {
   background: var(--accent-strong);
   border-color: var(--accent-strong);
