@@ -11,14 +11,32 @@ const W = 76;
 const FULL = 0.6;
 
 // One row open at a time, as in Mail: opening another, or touching anything else, closes it.
+// A tap on another row only closes the open one, as Mail's does; it doesn't also open that row.
 let openRow: (() => void) | null = null;
+let swallowUntil = 0;
 if (TOUCH && typeof window !== 'undefined') {
   window.addEventListener(
     'pointerdown',
     (e) => {
-      if (openRow && !(e.target as Element | null)?.closest('.swipe.open')) openRow();
+      swallowUntil = 0;
+      const target = e.target as Element | null;
+      if (!openRow || target?.closest('.swipe.open')) return;
+      openRow();
+      if (target?.closest('.swipe')) swallowUntil = e.timeStamp + 800;
     },
     { capture: true, passive: true },
+  );
+  window.addEventListener(
+    'click',
+    (e) => {
+      if (!swallowUntil) return;
+      const swallow = e.timeStamp < swallowUntil;
+      swallowUntil = 0;
+      if (!swallow) return;
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    { capture: true },
   );
 }
 
