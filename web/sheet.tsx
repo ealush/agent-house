@@ -1,4 +1,4 @@
-import { useEffect, useRef, type CSSProperties, type ReactNode, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { calm } from './motion.ts';
 import { Icon } from './icons.tsx';
 
@@ -7,6 +7,23 @@ export const PHONE = '(max-width: 760px), ((pointer: coarse) and (max-height: 50
 const phone = () => matchMedia(PHONE).matches;
 
 const EASE = 'cubic-bezier(0.32, 0.72, 0, 1)';
+
+/** What dims the page under a sheet: an action sheet's scrim (its sibling before it). A dialog's is its ::backdrop. */
+const scrimOf = (el: HTMLElement) => {
+  const s = el.previousElementSibling;
+  return s instanceof HTMLElement && s.classList.contains('sheet-scrim') ? s : null;
+};
+
+/** The dim goes with the sheet: faded out over the same time it slides away. */
+function fadeDim(el: HTMLElement, ms: number) {
+  const scrim = scrimOf(el);
+  scrim?.animate([{ opacity: getComputedStyle(scrim).opacity }, { opacity: 0 }], { duration: ms, easing: EASE, fill: 'forwards' });
+  if (el instanceof HTMLDialogElement) {
+    try {
+      el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ms, easing: EASE, fill: 'forwards', pseudoElement: '::backdrop' });
+    } catch {}
+  }
+}
 
 /**
  * A modal on a phone, the iPhone way: it covers the screen, rises from the
@@ -32,6 +49,7 @@ export function useSheet(ref: RefObject<HTMLElement | null>, onClose: () => void
     // All the way off: a sheet that floats above the bottom edge has further to go than its height.
     const away = Math.max(el.getBoundingClientRect().height, innerHeight - el.getBoundingClientRect().top);
     const a = el.animate([{ transform: from === 'none' ? 'translate3d(0, 0, 0)' : from }, { transform: `translate3d(0, ${away}px, 0)` }], { duration: 280, easing: EASE, fill: 'forwards' });
+    fadeDim(el, 280);
     el.style.setProperty('--drag', '1');
     a.finished.then(() => close.current(), () => close.current());
   };
@@ -67,6 +85,11 @@ export function useSheet(ref: RefObject<HTMLElement | null>, onClose: () => void
       el.style.transform = '';
       el.style.transition = '';
       el.style.removeProperty('--drag');
+      const scrim = scrimOf(el);
+      if (scrim) {
+        scrim.style.opacity = '';
+        scrim.style.transition = '';
+      }
     };
 
     const onStart = (e: TouchEvent) => {
@@ -101,6 +124,9 @@ export function useSheet(ref: RefObject<HTMLElement | null>, onClose: () => void
       dy = Math.max(0, y);
       el.style.transform = `translate3d(0, ${dy}px, 0)`;
       el.style.setProperty('--drag', String(Math.min(1, dy / height)));
+      // The dim follows the finger, uncovering what the sheet is over.
+      const scrim = scrimOf(el);
+      if (scrim) scrim.style.opacity = String(1 - Math.min(1, dy / height));
     };
 
     const onEnd = () => {
@@ -118,6 +144,11 @@ export function useSheet(ref: RefObject<HTMLElement | null>, onClose: () => void
       el.style.transition = `transform 260ms ${EASE}`;
       el.style.transform = 'translate3d(0, 0, 0)';
       el.style.setProperty('--drag', '0');
+      const scrim = scrimOf(el);
+      if (scrim) {
+        scrim.style.transition = `opacity 260ms ${EASE}`;
+        scrim.style.opacity = '1';
+      }
       setTimeout(reset, 280);
     };
 
@@ -198,6 +229,33 @@ export function Sheet({ label, className = '', onClose, title, onBack, backLabel
 export function ActionSheet({ onClose, scrim, children }: { onClose: () => void; scrim?: RefObject<HTMLDivElement | null>; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const { dismiss } = useSheet(ref, onClose);
+  // Closed by a choice (its action unmounts the sheet at once): it still goes down, as an
+  // iPhone's does. A copy of it and its dim leaves in its place; a sheet already slid away
+  // (Cancel, a drag, the scrim) has nothing left to show.
+  useLayoutEffect(
+    () => () => {
+      const el = ref.current;
+      if (!el?.isConnected || !phone() || calm() || el.getAnimations().length || el.style.transform) return;
+      const away = Math.max(el.getBoundingClientRect().height, innerHeight - el.getBoundingClientRect().top);
+      const leaving: Array<[HTMLElement | null, Keyframe[]]> = [
+        [el, [{ transform: 'translate3d(0, 0, 0)' }, { transform: `translate3d(0, ${away}px, 0)` }]],
+        [scrimOf(el), [{ opacity: 1 }, { opacity: 0 }]],
+      ];
+      for (const [node, frames] of leaving) {
+        if (!node) continue;
+        const ghost = node.cloneNode(true) as HTMLElement;
+        ghost.inert = true;
+        ghost.setAttribute('aria-hidden', 'true');
+        ghost.style.pointerEvents = 'none';
+        node.after(ghost);
+        ghost.animate(frames, { duration: 260, easing: EASE, fill: 'forwards' }).finished.then(
+          () => ghost.remove(),
+          () => ghost.remove(),
+        );
+      }
+    },
+    [],
+  );
   return (
     <>
       <div ref={scrim} className="sheet-scrim" onClick={dismiss} />
