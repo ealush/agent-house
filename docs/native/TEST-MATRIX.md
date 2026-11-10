@@ -68,11 +68,21 @@ The simulator reaches a host on the Mac's own loopback (debug builds allow loopb
 
 macOS 27, Xcode 27, the demo host (`scripts/demo/host.mjs`) on an iPhone 18 Pro and an iPad Pro 13 simulator (iOS 27), driven by `TourUITests`, screenshots read after every change. Light and dark, Dynamic Type at accessibility-large, the software keyboard and a hardware one. Each fix was built for the simulator and passed `swift test` before it was pushed.
 
-- On macOS the demo host needed three things: the demo home's shell profiles put the scripted `claude` ahead of Homebrew's (macOS's `path_helper` reorders the PATH in login shells), its folders opened at their real path (`/private/tmp`), and `ah` itself needed a `ps` fallback where it reads `/proc` to tell what runs in a pane (local branch `native/7-mac-procs` in `ah`, not pushed). Without that last one every session looked like a plain shell, with no GUI.
+- On macOS the demo host needed three things: the demo home's shell profiles put the scripted `claude` ahead of Homebrew's (macOS's `path_helper` reorders the PATH in login shells), its folders opened at their real path (`/private/tmp`), and `ah` itself needed a `ps` fallback where it reads `/proc` to tell what runs in a pane (now on `ah` main, 9f016f9). Without that last one every session looked like a plain shell, with no GUI.
 - `./scripts/integration.sh` against that `ah`: 35 of 36 pass. `aVideoAttachesFromDiskWellPastTheOldLimitAndLeavesNoFile` times out waiting for the upload, at the pre-campaign commit too (47c69e1): it sends 51 MB, and the host's `/api/upload` still caps a body at 50 MB (see RISKS). `aPlanUpForApprovalShowsThePlanAndTakesTheChoice` failed once with a host 500 and passed on the re-run; `guiFeedCarriesTypedTranscriptToolCallsAndWidgets` timed out once on the old commit.
 - At the walk's last commit: `swift test` 211 tests pass; `xcodebuild test` on an iPhone 18 Pro simulator TEST SUCCEEDED (175 unit tests, the 2 UI tests; the tour skips without a host); the Mac Catalyst build succeeds; `./scripts/integration.sh` 35 of 36 (the 51 MB video, below). `check-workspace.py` fails only on untracked `DerivedData-device/` and `DerivedData-mac/` folders in the working tree, not on anything committed. The Mac app (Mac Catalyst) builds after every change and ran against the demo host: one window, the overlay inside it.
 - The terminal's on-screen key bar was seen with Settings → Appearance → On-screen keys set to Always (the simulator reports a hardware keyboard, so by default it stays hidden): its keys scroll, fade under the hide key, and each is a 36-point cap.
 - Not covered by the walk: signed devices, APNs, Face ID, and ⌘, (iPadOS keeps it; see RISKS).
+
+### Composer walk, 10 November 2026
+
+Twenty passes on the session composer alone, same simulators and demo host, a screenshot (and, for motion, a screen recording read frame by frame) after every change. Tours now take `AH_TOUCH_ONLY=1` (debug builds see no hardware keyboard, as a phone in the hand) and a `flickat` step: `dragat` holds before it moves, which a text view reads as a press.
+
+- The box is one glass field beside a glass +; Send sits in its corner and folds while there's nothing to send; Queue, Run and Stop take its place. The model, effort and permission chips (and / and @ on touch) wait folded: a swipe up on the box, or its grabber, brings them out; a swipe down, a send, a scroll through the transcript or leaving the session folds them. A dangerous permission mode stays out, in red.
+- Seen: light and dark; Dynamic Type at accessibility-large (the round controls grow with the text); iPad landscape; eight lines then scrolling with faded edges, and back to one line when emptied; attachments; the queue; slash and file suggestions; the question panel; a ↓ back to the newest message, pink when the agent wrote meanwhile; a draft continued from the iPhone on the iPad.
+- Model and effort switched live from their menus on the demo host. Skip permissions could only be seen by forcing the condition in a throwaway build: the demo's scripted agent doesn't change modes.
+- At the walk's last commit: `swift test` 212 tests pass; `xcodebuild test` on an iPhone 18 Pro simulator TEST SUCCEEDED (178 passed, the tour skipped without a host); the Mac Catalyst build succeeds. The Mac app wasn't walked: there the tray opens from its grabber.
+- Not seen: a pointer's hover highlights (no pointer in the simulator), haptics, and a real device's flick.
 
 ## Still to run (in order)
 
