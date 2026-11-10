@@ -6520,6 +6520,31 @@ ul.queue-items {
   background: var(--accent-bg);
 }
 
+/* The switcher (⌘K) and the palette (⌘⇧P) are one kind of thing, so one shell: the
+   switcher's width, the dialog's corners, a large borderless field over a hairline, and the
+   same selection. (A phone's are sheets, styled with them below.) */
+@media (min-width: 761px) {
+  .commands.palette-tree {
+    width: min(580px, calc(100vw - 24px));
+    border-radius: 16px;
+  }
+
+  .commands.palette-tree > input {
+    width: calc(100% + 20px);
+    margin: 0 -10px 8px;
+    padding: 12px 18px 15px;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    background: none;
+    font-size: 16px;
+    outline: none;
+  }
+
+  .switch-item.on {
+    background: var(--accent-bg);
+  }
+}
+
 .cmd-text {
   flex: 1;
   min-width: 0;
