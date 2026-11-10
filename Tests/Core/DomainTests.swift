@@ -455,3 +455,10 @@ import Testing
     #expect(APIError.shown(URLError(.cancelled)) == nil)
     #expect(APIError.shown(URLError(.notConnectedToInternet)) != nil)
 }
+
+@Test func aScreenChoiceDropsTheTerminalsKeyForIt() {
+    #expect(AskParts.choiceLabel("No, and tell Claude what to do differently (esc)") == "No, and tell Claude what to do differently")
+    #expect(AskParts.choiceLabel("Yes, allow all edits (shift+tab)") == "Yes, allow all edits")
+    #expect(AskParts.choiceLabel("Yes, and don't ask again for ./keys commands") == "Yes, and don't ask again for ./keys commands")
+    #expect(AskParts.choiceLabel("Use Redis (fast)") == "Use Redis (fast)", "a choice's own words in parentheses stay")
+}

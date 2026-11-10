@@ -116,6 +116,19 @@ struct AskParts: Equatable, Sendable {
     }
 
     /// The agent's question dialog, answered as a form: the form says the question itself.
+    /// A screen choice as a button says it: without the terminal's key for it ("No, and tell
+    /// Claude what to do differently (esc)"), which means nothing to a tap.
+    static func choiceLabel(_ label: String) -> String {
+        let trimmed = label.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasSuffix(")"), let open = trimmed.lastIndex(of: "(") else { return trimmed }
+        let hint = trimmed[trimmed.index(after: open)..<trimmed.index(before: trimmed.endIndex)].lowercased()
+        let keys: Set<String> = ["esc", "escape", "tab", "enter", "return", "space"]
+        let isKey = keys.contains(hint) || hint.hasPrefix("shift+") || hint.hasPrefix("ctrl+") || hint.hasPrefix("alt+") || hint.hasPrefix("cmd+")
+        guard isKey else { return trimmed }
+        let rest = trimmed[..<open].trimmingCharacters(in: .whitespaces)
+        return rest.isEmpty ? trimmed : rest
+    }
+
     static func isForm(_ ask: AskDTO) -> Bool {
         ask.kind == .choice && (!(ask.questions ?? []).isEmpty || ask.dialog != nil) && (reviewed(ask.text).isEmpty || (ask.options ?? []).isEmpty)
     }

@@ -478,7 +478,7 @@ private struct ScreenChoicesView: View {
                             .frame(width: 22, height: 22)
                             .background(theme.surface, in: RoundedRectangle(cornerRadius: 6))
                         // Every choice reads in full, even with the keyboard up: the transcript gives way.
-                        Text(option.label).foregroundStyle(theme.text).multilineTextAlignment(.leading)
+                        Text(AskParts.choiceLabel(option.label)).foregroundStyle(theme.text).multilineTextAlignment(.leading)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer()
                         if cursor.sent == option.key { ProgressView().controlSize(.small) }
