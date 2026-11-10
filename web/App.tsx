@@ -113,6 +113,13 @@ function stored<T extends string>(key: string, fallback: T): [T, (v: T) => void]
   ];
 }
 
+/** Shows a popover element in the top layer: over an open sheet or dialog, which a z-index can't reach. */
+const onTop = (el: HTMLElement | null) => {
+  try {
+    el?.showPopover?.();
+  } catch {}
+};
+
 // URL hash: "#<uid>" (local session), "#<host>/<uid>" (peer session), "#history", "#sessions".
 // "#security" still lands on settings, where Security lives now. Old links
 // ("#@12", a tmux window id) still open: App upgrades them once windows are known.
@@ -1448,7 +1455,7 @@ export function App({ onLock }: { onLock: () => void }) {
       {dialog === 'worktrees' && <WorktreesDialog client={clientFor(current?.host)} onClose={() => setDialog(null)} onShell={shellIn} />}
 
       {toast && (
-        <div key={toast} className={`toast ${toastOut ? 'out' : ''}`} role="status">
+        <div key={toast} ref={onTop} popover="manual" className={`toast ${toastOut ? 'out' : ''}`} role="status">
           {toast}
         </div>
       )}

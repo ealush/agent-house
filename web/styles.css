@@ -2598,6 +2598,18 @@ a.btn {
   z-index: 50;
 }
 
+/* In the top layer (a popover, App.tsx) so a toast shows over an open sheet: none of the
+   browser's popover box, just the toast. */
+.toast[popover] {
+  right: auto;
+  bottom: auto;
+  width: auto;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  color: var(--text);
+}
+
 .toast {
   animation: toast-in var(--dur-2) var(--ease);
   transition:
