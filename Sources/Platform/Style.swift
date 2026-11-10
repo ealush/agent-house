@@ -47,6 +47,8 @@ struct Theme: Equatable, Sendable {
 
     /// The accent for UIKit's own controls (the tab bar, bar buttons), which don't read SwiftUI's tint.
     var uiAccent: UIColor { uiPair(\.accent) }
+    /// The ground for UIKit's own views (the window behind everything).
+    var uiBackground: UIColor { uiPair(\.background) }
 
     var background: Color { pair(\.background) }
     var surface: Color { pair(\.surface) }

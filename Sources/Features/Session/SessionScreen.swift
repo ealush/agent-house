@@ -77,7 +77,9 @@ struct SessionScreen: View {
                 .transition(.move(edge: .trailing))
             }
         }
-        .background(theme.surface)
+        // Under the keyboard and the bars too: the keyboard's rounded corners showed the
+        // window's black over a terminal that stops at the keyboard.
+        .background { theme.surface.ignoresSafeArea() }
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { screenHeight = $0 }
         // Images in the conversation (what you attached, what the agent drew) load from the
         // host, and a host path you tap opens in Quick Look.

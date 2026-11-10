@@ -119,6 +119,9 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
         view.window?.overrideUserInterfaceStyle = theme.theme(appearance).interfaceStyle
         // UIKit's own controls (the tab bar's selection) take the theme's accent, not the asset's pink.
         view.window?.tintColor = theme.theme(appearance).uiAccent
+        // What shows where nothing's drawn (around the keyboard's corners, under a terminal)
+        // is the theme's ground, not the system's black.
+        view.backgroundColor = theme.theme(appearance).uiBackground
         if case .main = next { scene.reconcileIfReady() }
         advertise(scene.handoff)
     }
