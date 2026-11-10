@@ -257,6 +257,8 @@ struct ComposerView: View {
     private func trigger(_ mark: String, label: String) -> some View {
         Button {
             Haptics.selection()
+            // Taken from the tray, which folds: picking a suggestion brought it back over the box.
+            withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { trayOpen = false }
             composer.insert(mark)
             scene.requestFocus(.composer(session.key))
         } label: {
