@@ -319,8 +319,11 @@ private struct GroupHeader: View {
                 Button("Move Up", systemImage: "arrow.up") { withAnimation(.snappy) { scene.moveGroup(section.id, by: -1) } }.disabled(first)
                 Button("Move Down", systemImage: "arrow.down") { withAnimation(.snappy) { scene.moveGroup(section.id, by: 1) } }.disabled(last)
             } label: {
+                // A finger's worth to hit (it was the 12-point glyph), its glyph where it was.
                 Image(systemName: "plus")
                     .font(.ah(.caption).weight(.semibold))
+                    .frame(width: 44, height: 32)
+                    .contentShape(Rectangle())
             } primaryAction: {
                 scene.sheet = .newSession(newHere)
             }
@@ -330,8 +333,8 @@ private struct GroupHeader: View {
             .tint(.secondary)
             .accessibilityLabel("New session in \(section.id)")
             .accessibilityHint("Hold for more")
+            .padding(.trailing, -16)
         }
-        .padding(.vertical, 2)
         .overlay(alignment: .top) {
             if targeted { Rectangle().fill(theme.accent).frame(height: 2).offset(y: -4) }
         }
