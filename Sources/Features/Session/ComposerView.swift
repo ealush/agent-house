@@ -142,7 +142,7 @@ struct ComposerView: View {
                             }
                             .padding(8)
                             .frame(width: 112, height: 64, alignment: .topLeading)
-                            .background(.fill.tertiary)
+                            .background(theme.tile)
                         }
                     }
                     .overlay { if file.path == nil { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity).background(.black.opacity(0.25)) } }

@@ -274,7 +274,7 @@ private struct SessionHeader: View {
                             .font(.ah(.caption).weight(.semibold))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
-                            .background(.fill.tertiary, in: Capsule())
+                            .background(theme.tile, in: Capsule())
                     }
                     .buttonStyle(.plain)
                     .fixedSize()

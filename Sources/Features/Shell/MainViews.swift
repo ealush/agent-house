@@ -662,7 +662,7 @@ private struct ChooserPane: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
-            .background(.fill.tertiary, in: Capsule())
+            .background(theme.tile, in: Capsule())
             VStack(spacing: 2) {
                 // What the web's pane picker leads with: a shell here, or a new session.
                 if query.isEmpty {
