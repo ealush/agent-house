@@ -24,12 +24,24 @@ import { ReviewContext, useReviewFor } from './reviewContext.ts';
 const SideChat = lazy(() => import('./SideChat.tsx').then((m) => ({ default: m.SideChat })));
 const ChatHistory = lazy(() => import('./ChatHistory.tsx').then((m) => ({ default: m.ChatHistory })));
 const StackPanel = lazy(() => import('./review/SessionStack.tsx'));
-import { FilesPanel } from './Files.tsx';
-import { QueuePanel } from './Queue.tsx';
-import { PreviewPanel } from './Preview.tsx';
-import { ForkDialog, ForksDialog } from './ForkDialog.tsx';
-import { SendToDialog } from './SendToDialog.tsx';
-import { SnapshotsPanel } from './Snapshots.tsx';
+// A session's panels and dialogs load when first opened, not with the first screen: they were
+// ~15% of the main chunk. They're fetched in the background a few seconds after start.
+const load = {
+  files: () => import('./Files.tsx'),
+  queue: () => import('./Queue.tsx'),
+  preview: () => import('./Preview.tsx'),
+  fork: () => import('./ForkDialog.tsx'),
+  sendTo: () => import('./SendToDialog.tsx'),
+  snapshots: () => import('./Snapshots.tsx'),
+};
+const FilesPanel = lazy(() => load.files().then((m) => ({ default: m.FilesPanel })));
+const QueuePanel = lazy(() => load.queue().then((m) => ({ default: m.QueuePanel })));
+const PreviewPanel = lazy(() => load.preview().then((m) => ({ default: m.PreviewPanel })));
+const ForkDialog = lazy(() => load.fork().then((m) => ({ default: m.ForkDialog })));
+const ForksDialog = lazy(() => load.fork().then((m) => ({ default: m.ForksDialog })));
+const SendToDialog = lazy(() => load.sendTo().then((m) => ({ default: m.SendToDialog })));
+const SnapshotsPanel = lazy(() => load.snapshots().then((m) => ({ default: m.SnapshotsPanel })));
+if (typeof window !== 'undefined') window.setTimeout(() => Object.values(load).forEach((f) => void f().catch(() => {})), 5000);
 import { ShortcutHint, shortcutTitle, useCommand, usePaletteProvider, useShortcutRevision } from './shortcuts.tsx';
 import { commandLabel as L } from './shortcuts.ts';
 import { runCommand } from './shortcuts.ts';
@@ -741,7 +753,8 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
     active && w.queued > 0,
   );
 
-  const panelView = (p: Panel) =>
+  const panelView = (p: Panel) => <Suspense fallback={<div className="panel-body" />}>{panelOf(p)}</Suspense>;
+  const panelOf = (p: Panel) =>
     p === 'queue' ? (
       <QueuePanel client={client} uid={w.uid} onChange={refresh} />
     ) : p === 'snapshots' ? (
@@ -1283,6 +1296,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
 
       {capture !== null && <CaptureDialog text={capture} onClose={() => setCapture(null)} />}
       {branching && w.branch && <BranchSheet client={client} uid={w.uid} branch={w.branch} onSwitched={refresh} onClose={() => setBranching(false)} />}
+      <Suspense fallback={null}>
       {forking && (
         <ForkDialog client={client} target={{ ref: w.uid, host: w.host, harness: w.agent, title: w.title }} onClose={() => setForking(false)} onForked={forked} />
       )}
@@ -1321,6 +1335,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
           }
         />
       )}
+      </Suspense>
     </>
   );
 }

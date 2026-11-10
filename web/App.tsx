@@ -46,7 +46,7 @@ import { HandoffOffer } from './Handoff.tsx';
 import { Workspace, focusPaneNow } from './Workspace.tsx';
 import { closeLeaf, isPick, pickKey, leaves, moveLeaf, nudgeDivider, neighborPane, nodeAt, normalizeSplit, paneLeaves, parseLayout, replaceLeaf, splitLeaf, toggleSplit, type LayoutNode, type PaneDir, type Path } from './layout.ts';
 import { lastCwd, NewDialog } from './NewDialog.tsx';
-import { ForkDialog, type ForkTarget } from './ForkDialog.tsx';
+import type { ForkTarget } from './ForkDialog.tsx';
 import { Switcher } from './Switcher.tsx';
 import { SearchView } from './SearchView.tsx';
 import { WorktreesDialog } from './Git.tsx';
@@ -73,6 +73,7 @@ import { ReviewContext } from './reviewContext.ts';
 // Pages and dialogs most visits never open load on first use.
 const Settings = lazy(() => import('./Settings.tsx').then((m) => ({ default: m.Settings })));
 const ReviewPage = lazy(() => import('./review/ReviewPage.tsx'));
+const ForkDialog = lazy(() => import('./ForkDialog.tsx').then((m) => ({ default: m.ForkDialog })));
 const ChatSearchDialog = lazy(() => import('./ChatHistory.tsx').then((m) => ({ default: m.ChatSearchDialog })));
 
 function scratchKey(): string | null {
@@ -1366,6 +1367,7 @@ export function App({ onLock }: { onLock: () => void }) {
         </Sheet>
       )}
 
+      <Suspense fallback={null}>
       {forking && state && (
         <ForkDialog
           client={clientFor(forking.host)}
@@ -1379,6 +1381,7 @@ export function App({ onLock }: { onLock: () => void }) {
           }}
         />
       )}
+      </Suspense>
 
       {keymap && <ShortcutsDialog onClose={() => setKeymap(false)} />}
       {submap && (
