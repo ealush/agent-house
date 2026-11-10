@@ -88,6 +88,9 @@ const readers: Record<string, (preset: Preset) => Promise<Catalog>> = {
 
   // Grok prints its list: "* grok-4.7 (default)" / "- grok-4.6".
   async grok() {
+    // Not under test (AH_HARNESS_CHECK=0, test/helpers.ts): the real CLI's shim installed
+    // it, ~250 MB, into every throwaway home and outlived the test that made it.
+    if (process.env.AH_HARNESS_CHECK === '0') return { models: [] };
     const { stdout } = await exec('grok', ['models'], { timeout: 5000 }).catch(() => ({ stdout: '' }));
     let defaultModel: string | undefined;
     const models: ModelChoice[] = [];
