@@ -361,7 +361,9 @@ final class ComposerModel {
         if waiting { return "Reply to answer" }
         if working && queued > 0 { return touchOnly ? "Add to the queue · sent when it’s free" : "Add to the queue · ↵ on empty steers the next · ⌘↵ sends now · esc stops" }
         if working { return touchOnly ? "Add to the queue · sent when it’s free" : "Add to the queue · sent when it’s free · ⌘↵ sends now · esc stops" }
-        return "Message \(agent ?? "the agent") · / commands · @ files"
+        // A finger finds / and @ among the settings a swipe up brings out; the box says only
+        // whom it messages.
+        return touchOnly ? "Message \(agent ?? "the agent")" : "Message \(agent ?? "the agent") · / commands · @ files"
     }
 
     /// The longest run of a placeholder's " · " hints, from the start, that fits the width.

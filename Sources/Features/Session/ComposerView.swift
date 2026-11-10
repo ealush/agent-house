@@ -44,8 +44,7 @@ struct ComposerView: View {
             GlassEffectContainer(spacing: 10) {
                 VStack(alignment: .leading, spacing: 8) {
                     if showsTray {
-                        LaunchChips(session: session, scene: scene)
-                            .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                        tray.transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                     }
                     HStack(alignment: .bottom, spacing: 8) {
                         attachMenu
@@ -232,22 +231,51 @@ struct ComposerView: View {
         }
     }
 
-    /// The tell that settings wait above: a sheet's grabber, which a tap opens too.
+    /// What waits folded above the box: the settings in force, and the two ways into
+    /// suggestions a finger otherwise has to know about (/ for a command, @ for a file).
+    private var tray: some View {
+        HStack(spacing: 8) {
+            LaunchChips(session: session, scene: scene)
+            Spacer(minLength: 0)
+            // A command is the whole message, so / starts an empty box only.
+            if composer.text.isEmpty { trigger("/", label: "Insert a command") }
+            trigger("@", label: "Mention a file")
+        }
+    }
+
+    private func trigger(_ mark: String, label: String) -> some View {
+        Button {
+            Haptics.selection()
+            composer.insert(mark)
+            scene.requestFocus(.composer(session.key))
+        } label: {
+            Text(mark)
+                .font(.ahMono(.body).weight(.semibold))
+                .foregroundStyle(theme.text2)
+                .frame(width: 36, height: 36)
+                .glassEffect(.regular.interactive(), in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
+    /// The tell that settings wait above: a sheet's grabber along the box's top edge, which a
+    /// tap opens too. Inside the box, not over it: past the bar's edge it drew but took no touch.
     @ViewBuilder
     private var grabber: some View {
         if hasTray && !showsTray && composer.suggestions.isEmpty {
             Button {
                 swiped(.up)
             } label: {
-                Capsule().fill(theme.faint.opacity(0.7)).frame(width: 32, height: 4)
-                    .frame(width: 64, height: 16)
+                Capsule().fill(theme.muted.opacity(0.5)).frame(width: 28, height: 4)
+                    .padding(.top, 5)
+                    .frame(width: 72, height: 12, alignment: .top)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .offset(y: -12)
             .transition(.opacity)
             .accessibilityLabel("Show session settings")
-            .accessibilityHint("Model, effort and permissions")
+            .accessibilityHint("Model, effort, permissions, commands and files")
         }
     }
 
