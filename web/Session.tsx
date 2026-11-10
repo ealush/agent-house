@@ -1,4 +1,5 @@
 import { lazy, Suspense, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useTabFlow } from './tabFlow.ts';
 import { useHardwareKeyboard } from './hardwareKeyboard.ts';
 import { createPortal } from 'react-dom';
 import { menuViewport, placeFloatingMenu } from './menuPlace.ts';
@@ -181,6 +182,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
   const touch = touchScreen && !hw;
   const surface = useRef<SurfaceHandle>(null);
   const body = useRef<HTMLDivElement>(null);
+  const tabRow = useRef<HTMLDivElement>(null);
   const review = useReviewFor(w.host, w.uid, w.branch);
   // 'main' is the session itself, drawn by whichever surface is chosen.
   const [tab, setTab] = useState<'main' | Panel>('main');
@@ -998,6 +1000,25 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
 
   const mobileGlass = narrow || touchScreen;
   const floatGlass = mobileGlass && view === 'gui' && tab === 'main';
+  // What you look at (the session, or one of its panels); the glass capsule above picks how (GUI
+  // or terminal). Icons, the open one with its name, so every tab fits a phone (as on a desktop).
+  const mobileTabs = (
+    [
+      ['main', 'sessions', 'Session', true],
+      ['diff', 'diff', L('panel-diff'), diffTab],
+      ['files', 'files', L('panel-files'), true],
+      // A side chat's own mark: the chat bubble is the header's GUI view, right above.
+      ['chat', 'sparkle', L('panel-chat'), true],
+      // Nothing queued: the tab steps aside (the menu and palette still open it).
+      ['queue', 'queue', L('panel-queue'), turns && (w.queued > 0 || tab === 'queue')],
+      ['snapshots', 'history', L('panel-snapshots'), turns],
+      ['preview', 'globe', L('panel-preview'), true],
+      // Its branch in review, or open: otherwise the menu opens it.
+      ['stack', 'stack', L('panel-stack'), stackTab && (!!review?.layer || tab === 'stack')],
+    ] as const
+  ).filter(([, , , shown]) => shown);
+  // Picking a tab moves the others too: the open one shows its name.
+  useTabFlow(tabRow, `${mobileTabs.map(([id]) => id).join(' ')} ${tab}`);
   return (
     <>
       <MobileOverlay enabled={mobileGlass} edge="top" floating={floatGlass}>
@@ -1172,33 +1193,15 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
       </header>
 
       {narrow && (
-        <div className="seg-tabs" role="tablist" data-rove>
+        <div className="seg-tabs" role="tablist" data-rove ref={tabRow}>
           <Glide match=".on" className="thumb" />
-          {/* What you look at (the session, or one of its panels); the glass capsule above picks how (GUI
-              or terminal). Icons, the open one with its name, so every tab fits a phone (as on a desktop). */}
-          {(
-            [
-              ['main', 'sessions', 'Session', true],
-              ['diff', 'diff', L('panel-diff'), diffTab],
-              ['files', 'files', L('panel-files'), true],
-              // A side chat's own mark: the chat bubble is the header's GUI view, right above.
-              ['chat', 'sparkle', L('panel-chat'), true],
-              // Nothing queued: the tab steps aside (the menu and palette still open it).
-              ['queue', 'queue', L('panel-queue'), turns && (w.queued > 0 || tab === 'queue')],
-              ['snapshots', 'history', L('panel-snapshots'), turns],
-              ['preview', 'globe', L('panel-preview'), true],
-              // Its branch in review, or open: otherwise the menu opens it.
-              ['stack', 'stack', L('panel-stack'), stackTab && (!!review?.layer || tab === 'stack')],
-            ] as const
-          ).map(([id, icon, label, shown]) =>
-            shown ? (
-              <button key={id} role="tab" aria-selected={tab === id} aria-label={label} className={`tab-icon ${tab === id ? 'on' : ''}`} onClick={() => setTab(id)}>
-                <Icon name={icon} size={18} />
-                <span className="tab-label">{label}</span>
-                {id === 'queue' && w.queued > 0 && <span className="badge">{w.queued}</span>}
-              </button>
-            ) : null,
-          )}
+          {mobileTabs.map(([id, icon, label]) => (
+            <button key={id} data-tab={id} role="tab" aria-selected={tab === id} aria-label={label} className={`tab-icon ${tab === id ? 'on' : ''}`} onClick={() => setTab(id)}>
+              <Icon name={icon} size={18} />
+              <span className="tab-label">{label}</span>
+              {id === 'queue' && w.queued > 0 && <span className="badge">{w.queued}</span>}
+            </button>
+          ))}
         </div>
       )}
 
