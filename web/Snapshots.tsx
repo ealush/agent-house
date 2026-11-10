@@ -105,13 +105,13 @@ export function SnapshotsPanel({ client, w, onChange }: { client: HostApi; w: Wi
 
   return (
     <div className="queue-panel snapshots-panel">
-      <p className="hint">
-        A snapshot of the files is taken before each turn starts. Restoring one returns the files to that state.
-      </p>
+      {data?.available !== false && (
+        <p className="hint">A snapshot of the files is taken before each turn starts. Restoring one returns the files to that state.</p>
+      )}
       {error && <p role="alert">{error}</p>}
       {data && !data.available && <p className="hint">Snapshots unavailable: this session's folder is not a git repository.</p>}
       {data?.partial && data.available && <p className="hint">Snapshots may be partial for turns typed straight into the terminal (no hooks).</p>}
-      {data && (
+      {data?.available && (
         <label className="snapshot-toggle">
           <input type="checkbox" switch="" checked={data.enabled} disabled={busy} onChange={(e) => toggle(e.target.checked)} /> Take snapshots for this
           session
