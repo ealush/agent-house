@@ -5105,7 +5105,9 @@ ul.queue-items {
   max-height: min(28dvh, 192px, max(48px, calc(var(--keyboard-vh, 100dvh) - var(--safe-top) - var(--mobile-header-height, 120px) - 180px)));
 }
 
-:root[data-keyboard] .mobile-session-chrome.floating .seg-tabs {
+/* Typing, the keyboard takes the room the tabs had: in the chat and in a terminal alike
+   (a sideways phone's shell was otherwise one row tall). */
+:root[data-keyboard] .mobile-session-chrome .seg-tabs {
   display: none;
 }
 
