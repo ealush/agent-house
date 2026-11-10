@@ -4170,6 +4170,12 @@ a.btn {
   .side-label .grip {
     display: none;
   }
+
+  /* A finger's row, as an iPadOS sidebar's: 44pt, not a pointer's 33px. */
+  .side-session,
+  .nav-item {
+    min-height: 44px;
+  }
 }
 
 .row-menu {
