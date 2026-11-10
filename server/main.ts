@@ -19,6 +19,7 @@ import type { AddressInfo } from 'node:net';
 import { WebSocketServer } from 'ws';
 import { loadConfig, expandHome, CONFIG_PATH, type Config } from './config.ts';
 import { shortPath } from './sessions.ts';
+import { compressible, encoded } from './compress.ts';
 import { Core, CoreError, resolveDir, defaultName } from './core.ts';
 import { buildLaunch, LaunchError } from './launch.ts';
 import { withCatalog } from './catalog.ts';
@@ -1321,7 +1322,7 @@ const cspFor = () => [
   "form-action 'self'",
 ].join('; ');
 
-async function serveStatic(res: ServerResponse, pathname: string) {
+async function serveStatic(req: IncomingMessage, res: ServerResponse, pathname: string) {
   const rel = pathname === '/' ? 'index.html' : safeDecode(pathname).replace(/^\/+/, '');
   let file = resolve(DIST, rel);
   if (!file.startsWith(DIST + '/')) file = join(DIST, 'index.html');
@@ -1334,12 +1335,17 @@ async function serveStatic(res: ServerResponse, pathname: string) {
     res.writeHead(503, { 'content-type': 'text/plain', 'content-security-policy': cspFor() });
     return res.end('UI not built. Run `pnpm build`, or use `pnpm dev`.');
   }
+  const type = MIME[extname(file)] ?? 'application/octet-stream';
+  const out = await encoded(file, body, type, req.headers['accept-encoding']);
   res.writeHead(200, {
-    'content-type': MIME[extname(file)] ?? 'application/octet-stream',
+    'content-type': type,
     'cache-control': rel.startsWith('assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
     'content-security-policy': cspFor(),
+    ...(compressible(type) ? { vary: 'accept-encoding' } : {}),
+    ...(out.encoding ? { 'content-encoding': out.encoding } : {}),
+    'content-length': out.body.length,
   });
-  res.end(body);
+  res.end(out.body);
 }
 
 // ---------- the gate
@@ -1387,7 +1393,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       return await api(req, res, url, path, caller);
     }
     if (method !== 'GET' && method !== 'HEAD') throw new HttpError(405, 'method not allowed');
-    await serveStatic(res, url.pathname);
+    await serveStatic(req, res, url.pathname);
   } catch (err) {
     const status = err instanceof HttpError || err instanceof CoreError || err instanceof AuthError || err instanceof FsError || err instanceof SideChatError ? err.status : err instanceof GitError ? 400 : 500;
     if (status === 500) console.error(err);
