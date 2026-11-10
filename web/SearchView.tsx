@@ -3,6 +3,7 @@ import type { HostApi, SearchHit, SearchResponse } from './api.ts';
 import { AgentLogo } from './logos.tsx';
 import { Highlighted } from './Switcher.tsx';
 import { errorText } from './errors.ts';
+import { dayYear } from './dates.ts';
 
 // Full-page content search (issue #9): the thorough path behind Cmd-K's
 // "See all results". One call to the hub's /api/search/all fans out to every
@@ -141,7 +142,7 @@ export function SearchView({
               <span className="stack">
                 <span className="name">{hit.title}</span>
                 <span className="sub">
-                  {[hit.host, hit.kind === 'chat' ? 'side chat' : hit.harness, new Date(hit.at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }), `${hit.matches} match${hit.matches === 1 ? '' : 'es'}`]
+                  {[hit.host, hit.kind === 'chat' ? 'side chat' : hit.harness, dayYear(hit.at), `${hit.matches} match${hit.matches === 1 ? '' : 'es'}`]
                     .filter(Boolean)
                     .join(' · ')}
                 </span>

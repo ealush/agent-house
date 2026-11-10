@@ -5,17 +5,18 @@ import { Icon } from './icons.tsx';
 import { Markdown } from './Markdown.tsx';
 import { SheetBar, useSheet } from './sheet.tsx';
 import { errorText } from './errors.ts';
+import { clock, day } from './dates.ts';
 
 function fmtDate(at: number): string {
   const d = new Date(at * 1000);
   const today = new Date();
   const sameDay = d.toDateString() === today.toDateString();
-  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const time = clock(d);
   if (sameDay) return time;
   const yesterday = new Date(today);
   yesterday.setDate(today.getDate() - 1);
   if (d.toDateString() === yesterday.toDateString()) return `Yesterday ${time}`;
-  return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${time}`;
+  return `${day(d)} ${time}`;
 }
 
 // Past side-chat conversations, live sessions and ended ones alike. Read-only:

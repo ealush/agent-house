@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import type { HostApi, SnapshotInfo, SnapshotList, Win } from './api.ts';
 import { askConfirm } from './ask.tsx';
 import { errorText } from './errors.ts';
+import { stamp } from './dates.ts';
 
-const time = (at: number) => (at ? new Date(at * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
+const time = (at: number) => (at ? stamp(at * 1000) : '');
 
 /**
  * Per-turn snapshots for this session (F39): one row per turn, taken before

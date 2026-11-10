@@ -10,6 +10,7 @@ import { askConfirm, showError, showNotice } from '../ask.tsx';
 import { age, look } from '../agents.ts';
 import { AgentLogo } from '../logos.tsx';
 import { Icon } from '../icons.tsx';
+import { clock } from '../dates.ts';
 import { copyText } from '../selection.ts';
 import { removeOutgoing, sameText, useOutbox } from '../outbox.ts';
 import { blockText } from './reducer.ts';
@@ -35,7 +36,7 @@ const UNAVAILABLE: Record<string, string> = {
 const FIRST_BLOCKS = 16;
 const MORE_BLOCKS = 40;
 
-const time = (at: number) => (at ? new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
+const time = (at: number) => (at ? clock(at) : '');
 
 /** Hover-only copy action below a message. The row is always laid out (see
  *  gui.css: visibility, not display), so appearing never shifts the feed. */

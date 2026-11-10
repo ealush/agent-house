@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { HistoryItem, SearchHit, SearchQuery, SearchResponse, Win } from './api.ts';
 import { Keycaps, MOD } from './shortcuts.tsx';
 import { look } from './agents.ts';
+import { day } from './dates.ts';
 import { age as ago } from './agents.ts';
 import { AgentLogo } from './logos.tsx';
 import { historyLine, sessionLine } from './sessionLine.tsx';
@@ -90,7 +91,7 @@ export function Highlighted({ snippet }: { snippet: string }) {
   return <>{out}</>;
 }
 
-const hitDate = (at: number) => (at ? new Date(at).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '');
+const hitDate = (at: number) => (at ? day(at) : '');
 
 export function Switcher({ windows, history, hosts, onSearchContent, onPick, onResume, onContent, onShowAll, onSplit, onClose, tile = false }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
