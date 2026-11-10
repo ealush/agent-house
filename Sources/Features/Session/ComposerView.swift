@@ -17,9 +17,19 @@ struct ComposerView: View {
     @State private var takingPhoto = false
     @State private var importingFiles = false
     @State private var suggestionIndex = 0
+    /// The settings chips are out, floating over the box (a swipe up, or the grabber).
+    @State private var trayOpen = false
+    /// How wide Send (or Queue, Run, Stop) is in the box's corner: the text wraps short of it.
+    @State private var sendWidth: CGFloat = 0
+    @Namespace private var glass
+
+    /// The session has settings to show: a live agent's model, effort and permissions.
+    private var hasTray: Bool { !session.isShell && session.isLive && session.launch.preset != nil }
+    /// Out only while nothing else floats there: suggestions take the spot while you type one.
+    private var showsTray: Bool { trayOpen && hasTray && composer.suggestions.isEmpty }
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 8) {
             QueueTrayView(queue: session.queue, composer: composer, working: session.working, hardwareKeyboard: scene.hardwareKeyboard)
             if !composer.suggestions.isEmpty {
                 SuggestionList(items: composer.suggestions, index: suggestionIndex) { composer.accept($0) }
@@ -29,21 +39,21 @@ struct ComposerView: View {
                     .font(.ah(.caption2)).foregroundStyle(theme.muted)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            // ah's Composer: one raised card floating over the transcript, what you attach inside
-            // it above the text, and the row of controls along its foot.
-            VStack(alignment: .leading, spacing: 6) {
-                if !composer.attachments.isEmpty { attachments }
-                ComposerTextField(composer: composer, session: session, scene: scene, suggestionIndex: $suggestionIndex)
-                    .frame(minHeight: 36)
-                    .padding(.horizontal, 4)
-                tools
+            // One slim glass field and the attach button beside it, as Messages has them; the
+            // settings chips wait folded away until a swipe up brings them out above the box.
+            GlassEffectContainer(spacing: 10) {
+                VStack(alignment: .leading, spacing: 8) {
+                    if showsTray {
+                        LaunchChips(session: session, scene: scene)
+                            .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                    }
+                    HStack(alignment: .bottom, spacing: 8) {
+                        attachMenu
+                        field
+                    }
+                }
             }
-            .padding(.horizontal, 8)
-            .padding(.top, 8)
-            .padding(.bottom, 8)
-            .background(theme.raised, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(theme.lineStrong, lineWidth: 1))
-            .shadow(color: theme.shadow, radius: 16, y: 8)
+            .gesture(ComposerSwipe { swiped($0) })
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
@@ -109,6 +119,8 @@ struct ComposerView: View {
             switch event {
             case .sent(let result):
                 Haptics.tap()
+                // Said and done: the settings fold back out of the way.
+                if trayOpen { withAnimation(.snappy(duration: 0.25)) { trayOpen = false } }
                 if result.outcome == .queued && result.starting == true { scene.toast("Your message goes in once the agent is ready") }
                 if result.resumed { scene.toast("Resumed the session") }
                 session.stateChanged()
@@ -173,12 +185,74 @@ struct ComposerView: View {
         .animation(.snappy(duration: 0.25), value: composer.attachments.map(\.id))
     }
 
-    private var tools: some View {
-        HStack(spacing: 6) {
-            // The value in force for each setting, before Send.
-            if !session.isShell && session.isLive { LaunchChips(session: session, scene: scene) }
-            Spacer(minLength: 0)
-            Menu {
+    /// A swipe up brings the settings out; a swipe down folds them, or puts the keyboard away.
+    private func swiped(_ direction: ComposerSwipe.Direction) {
+        switch direction {
+        case .up:
+            guard hasTray, !trayOpen else { return }
+            Haptics.selection()
+            withAnimation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.78)) { trayOpen = true }
+        case .down:
+            if trayOpen {
+                Haptics.selection()
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { trayOpen = false }
+            } else if !scene.hardwareKeyboard {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            }
+        }
+    }
+
+    /// The box: what you attach above the text, and Send inside it at the last line's end.
+    private var field: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if !composer.attachments.isEmpty { attachments.padding(.top, 2) }
+            // The text wraps short of Send, which sits in the box's corner (as Messages has it):
+            // beside it in a row, the box was measured at one width and laid out at another,
+            // and a long message lost its first line.
+            ComposerTextField(composer: composer, session: session, scene: scene, suggestionIndex: $suggestionIndex, trailingRoom: sendWidth > 0 ? sendWidth + 4 : 0)
+                .frame(minHeight: 32)
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, 6)
+        .padding(.vertical, 6)
+        .frame(minHeight: 44)
+        .overlay(alignment: .bottomTrailing) {
+            ZStack { sendButton }
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { sendWidth = $0 }
+                .animation(.snappy(duration: 0.22), value: composer.showsStop(working: session.working))
+                .animation(.snappy(duration: 0.22), value: session.isShell || (session.working && composer.canSend))
+                .animation(.snappy(duration: 0.22), value: composer.isEmpty)
+                .padding(6)
+        }
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .glassEffectID("field", in: glass)
+        .overlay(alignment: .top) { grabber }
+        .accessibilityAction(named: trayOpen ? "Hide session settings" : "Show session settings") {
+            withAnimation(.snappy(duration: 0.25)) { trayOpen.toggle() }
+        }
+    }
+
+    /// The tell that settings wait above: a sheet's grabber, which a tap opens too.
+    @ViewBuilder
+    private var grabber: some View {
+        if hasTray && !showsTray && composer.suggestions.isEmpty {
+            Button {
+                swiped(.up)
+            } label: {
+                Capsule().fill(theme.faint.opacity(0.7)).frame(width: 32, height: 4)
+                    .frame(width: 64, height: 16)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .offset(y: -12)
+            .transition(.opacity)
+            .accessibilityLabel("Show session settings")
+            .accessibilityHint("Model, effort and permissions")
+        }
+    }
+
+    private var attachMenu: some View {
+        Menu {
                 Section {
                     Button("Photo Library", systemImage: "photo.on.rectangle") { choosingPhotos = true }
                     if CameraPicker.isAvailable { Button("Take Photo", systemImage: "camera") { takingPhoto = true } }
@@ -190,21 +264,17 @@ struct ComposerView: View {
                     Button("Previous Message", systemImage: "clock.arrow.circlepath") { composer.recall(1) }
                 }
             } label: {
-                Image(systemName: "paperclip")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(theme.muted)
-                    .frame(width: 34, height: 34)
-                    .touchTarget()
+                Image(systemName: "plus")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(theme.text2)
+                    .frame(width: 44, height: 44)
+                    .glassEffect(.regular.interactive(), in: Circle())
+                    .glassEffectID("attach", in: glass)
             }
             // In the order written, wherever the menu opens: the library first.
             .menuOrder(.fixed)
             .tint(.primary)
             .accessibilityLabel("Attach")
-            // Send, Queue and Stop trade places with a spring rather than a cut.
-            sendButton
-                .animation(.snappy(duration: 0.22), value: composer.showsStop(working: session.working))
-                .animation(.snappy(duration: 0.22), value: session.isShell || (session.working && composer.canSend))
-        }
     }
 
     @ViewBuilder
@@ -224,20 +294,24 @@ struct ComposerView: View {
             .buttonStyle(.ahPress)
             .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
             .accessibilityLabel("Stop the turn")
-        } else if session.isShell || (session.working && composer.canSend) {
+        } else if (session.isShell && !composer.isEmpty) || (session.working && composer.canSend) {
             // While it works a message waits its turn: the button says so, and holding it (or
             // ⌘Return) sends now instead.
             let queues = !session.isShell
             Button {
                 composer.submit(working: session.working)
             } label: {
-                if queues { Label("Queue", systemImage: "text.line.last.and.arrowtriangle.forward") } else { Text("Run") }
+                // Send's pink, its height and its place, with the word for what it does.
+                Text(queues ? "Queue" : "Run")
+                    .font(.ah(.subheadline).weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 13)
+                    .frame(height: 32)
+                    .background(theme.accentStrong, in: Capsule())
+                    .opacity(composer.canSend ? 1 : 0.45)
+                    .touchTarget()
             }
-            .font(.ah(.subheadline).weight(.semibold))
-            .buttonStyle(.borderedProminent)
-            .buttonBorderShape(.capsule)
-            .controlSize(.small)
-            .tint(theme.accentStrong)
+            .buttonStyle(.ahPress)
             .disabled(!composer.canSend)
             .contextMenu {
                 if queues {
@@ -249,7 +323,9 @@ struct ComposerView: View {
             }
             .accessibilityLabel(queues ? "Queue" : "Run")
             .accessibilityHint(queues ? "Sends when this turn ends. Hold to send now." : "")
-        } else {
+            .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
+        } else if !composer.isEmpty {
+            // Folded away while there's nothing to send: it comes up with the first letter.
             Button {
                 composer.submit(working: session.working)
             } label: {
@@ -273,6 +349,50 @@ struct ComposerView: View {
     private func pasteImage() {
         guard let image = UIPasteboard.general.image, let data = image.pngData() else { return }
         Task { await composer.attach(name: "paste.png", data: data, image: true, thumbnail: data) }
+    }
+}
+
+/// A vertical flick anywhere on the composer, the text box included. UIKit's, so it runs beside
+/// the text view's own gestures (a tap still places the caret), and steps aside when the text is
+/// long enough to scroll, so the drag scrolls it.
+struct ComposerSwipe: UIGestureRecognizerRepresentable {
+    enum Direction { case up, down }
+    let swiped: (Direction) -> Void
+
+    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
+        let pan = UIPanGestureRecognizer()
+        pan.delegate = context.coordinator
+        pan.cancelsTouchesInView = false
+        return pan
+    }
+
+    func handleUIGestureRecognizerAction(_ pan: UIPanGestureRecognizer, context: Context) {
+        guard pan.state == .ended else { return }
+        let moved = pan.translation(in: pan.view)
+        let speed = pan.velocity(in: pan.view)
+        guard abs(moved.y) > abs(moved.x) else { return }
+        if moved.y < -16 || speed.y < -500 {
+            swiped(.up)
+        } else if moved.y > 16 || speed.y > 500 {
+            swiped(.down)
+        }
+    }
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator { Coordinator() }
+
+    @MainActor
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        func gestureRecognizer(_ gesture: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+
+        func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
+            guard let pan = gesture as? UIPanGestureRecognizer, let view = pan.view else { return true }
+            let speed = pan.velocity(in: view)
+            guard abs(speed.y) > abs(speed.x) else { return false }
+            var hit = view.hitTest(pan.location(in: view), with: nil)
+            while let current = hit, !(current is ComposerTextView) { hit = current.superview }
+            if let text = hit as? ComposerTextView, text.contentSize.height > text.bounds.height + 1 { return false }
+            return true
+        }
     }
 }
 
@@ -331,7 +451,7 @@ struct LaunchChips: View {
     private func chips(_ density: Density) -> some View {
         let launch = session.launch
         if let preset = launch.preset {
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 if !(preset.models ?? []).isEmpty || preset.modelArgs != nil || preset.settingsCommands?.model != nil {
                     chip("Model", "cpu", launch.modelLabel, fallback: "Default model", density) { scene.sheet = .modelPicker(session.key) }
                 }
@@ -389,9 +509,10 @@ struct LaunchChips: View {
             }
         }
         .font(.ah(.footnote).weight(.medium))
-        .padding(.horizontal, value == nil ? 8 : 10)
-        .frame(minWidth: 32, minHeight: 30)
-        .overlay(Capsule().strokeBorder(theme.lineStrong, lineWidth: 1))
+        .padding(.horizontal, value == nil ? 10 : 12)
+        .frame(minWidth: 36, minHeight: 36)
+        // Glass like the box they float over, so they read as part of it, out for a moment.
+        .glassEffect(danger ? .regular.tint(theme.danger.opacity(0.22)).interactive() : .regular.interactive(), in: Capsule())
         .contentShape(Capsule())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(name), \(spoken)")
@@ -464,6 +585,8 @@ struct ComposerTextField: UIViewRepresentable {
     let session: SessionModel
     let scene: SceneModel
     @Binding var suggestionIndex: Int
+    /// Room kept clear at the end of each line for the button in the box's corner.
+    var trailingRoom: CGFloat = 0
     @Environment(\.theme) private var theme
 
     func makeUIView(context: Context) -> ComposerTextView {
@@ -494,12 +617,17 @@ struct ComposerTextField: UIViewRepresentable {
 
     func updateUIView(_ view: ComposerTextView, context: Context) {
         context.coordinator.parent = self
+        if view.textContainerInset.right != 2 + trailingRoom {
+            view.textContainerInset.right = 2 + trailingRoom
+            view.setNeedsLayout()
+        }
         if (view.autocapitalizationType == .none) != composer.isShell {
             setTraits(view)
             if view.isFirstResponder { view.reloadInputViews() }
         }
         if view.text != composer.text {
             view.text = composer.text
+            view.invalidateIntrinsicContentSize()
             let end = view.endOfDocument
             view.selectedTextRange = view.textRange(from: end, to: end)
         }
@@ -514,10 +642,18 @@ struct ComposerTextField: UIViewRepresentable {
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: ComposerTextView, context: Context) -> CGSize? {
-        let width = proposal.width ?? 320
-        let fitting = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        let width = proposal.width ?? (uiView.bounds.width > 0 ? uiView.bounds.width : 320)
         let line = uiView.font?.lineHeight ?? 20
-        return CGSize(width: width, height: min(max(fitting.height, 36), line * 8 + 12))
+        // Measured from the text itself: the view's own answer came from its last layout, so a
+        // box emptied after a long message stayed that tall around a word.
+        let inset = uiView.textContainerInset
+        let lines = width - inset.left - inset.right - uiView.textContainer.lineFragmentPadding * 2
+        let text = uiView.attributedText ?? NSAttributedString()
+        var height = text.boundingRect(with: CGSize(width: max(lines, 1), height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil).height
+        // A new line just begun counts before anything is typed on it.
+        if text.string.hasSuffix("\n") { height += line }
+        height = ceil(max(height, line)) + inset.top + inset.bottom
+        return CGSize(width: width, height: min(max(height, 32), line * 8 + 12))
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
@@ -530,6 +666,8 @@ struct ComposerTextField: UIViewRepresentable {
         init(parent: ComposerTextField) { self.parent = parent }
 
         func textViewDidChange(_ textView: UITextView) {
+            // SwiftUI measures the box again only when told: a line more or less is a new size.
+            textView.invalidateIntrinsicContentSize()
             parent.scene.fieldState = fieldState(textView)
             parent.composer.text = textView.text
             parent.composer.caret = textView.offset(from: textView.beginningOfDocument, to: textView.selectedTextRange?.start ?? textView.endOfDocument)
@@ -673,7 +811,12 @@ final class ComposerTextView: UITextView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        placeholderLabel.frame = CGRect(x: textContainerInset.left + 5, y: textContainerInset.top, width: bounds.width - 20, height: placeholderLabel.font.lineHeight)
+        // The box grows a line after the text does, and the caret's scroll from the line before
+        // stayed, cutting off the first line; once it all fits, it sits at the top.
+        if contentSize.height <= bounds.height + 0.5, contentOffset.y != -adjustedContentInset.top {
+            contentOffset.y = -adjustedContentInset.top
+        }
+        placeholderLabel.frame = CGRect(x: textContainerInset.left + 5, y: textContainerInset.top, width: bounds.width - textContainerInset.left - textContainerInset.right - 10, height: placeholderLabel.font.lineHeight)
         // Hints drop from the end, whole, rather than end mid-word in an ellipsis.
         let font = placeholderLabel.font ?? AhType.uiFont(.body)
         placeholderLabel.text = ComposerModel.fitting(placeholder, width: placeholderLabel.frame.width) { ($0 as NSString).size(withAttributes: [.font: font]).width }
