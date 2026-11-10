@@ -8332,6 +8332,25 @@ select:not([multiple]) {
     cursor: pointer;
   }
 
+  /* So do a conversation's steps and the Handoff card. */
+  .gui .tool-head:active,
+  .handoff-open:active {
+    background: var(--line);
+  }
+
+  /* Plain controls dim while pressed, as iOS's do: chips, copy buttons, the session's
+     title (it renames), small icon buttons, the sidebar's search, links. */
+  .composer-model:active,
+  .gui .code-copy:active,
+  .gui .msg-copy:active,
+  .session-head .session-title .name:active,
+  .label-add:active,
+  .row-more:active,
+  .sidebar .search:active,
+  a:active {
+    opacity: 0.55;
+  }
+
   /* Small icon buttons get a 44px target without taking 44px of room. */
   .icon-btn.small,
   .row-more,
