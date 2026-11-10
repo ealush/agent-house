@@ -1172,6 +1172,26 @@ export function App({ onLock }: { onLock: () => void }) {
   const sideScrimRef = useRef<HTMLDivElement>(null);
   // A drag in from the edge shows the sidebar before it is open: it follows the finger.
   const sidePeek = useSideSwipe(tight, sideOver, setSideOver, sideOverRef, sideScrimRef);
+  // Slid over the page, the sidebar has the keyboard, as a dialog does: focus on the row you're
+  // on, the page underneath out of reach (inert, so typing can't land in its composer), and
+  // focus back where it was when it goes.
+  useEffect(() => {
+    if (!sideOver) return;
+    const before = document.activeElement as HTMLElement | null;
+    const main = mainRef.current;
+    if (main) main.inert = true;
+    const raf = requestAnimationFrame(() => {
+      const panel = sideOverRef.current;
+      const row = panel?.querySelector<HTMLElement>('.side-session.on, .nav-item.on') ?? panel?.querySelector<HTMLElement>('button, [href], input');
+      row?.focus({ preventScroll: true });
+    });
+    return () => {
+      cancelAnimationFrame(raf);
+      if (main) main.inert = false;
+      const now = document.activeElement;
+      if ((!now || now === document.body || !now.isConnected) && before?.isConnected) before.focus({ preventScroll: true });
+    };
+  }, [sideOver]);
 
   return (
     <PresetsContext.Provider value={presetFor}>

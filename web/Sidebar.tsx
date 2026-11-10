@@ -280,8 +280,9 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
       className="sidebar"
       data-rove="button.nav-item, button.side-session"
       onKeyDown={(e) => {
-        // Escape hands the keyboard back to the open session.
-        if (e.key === 'Escape' && (e.target as HTMLElement).closest('.side-session, .nav-item')) {
+        // Escape hands the keyboard back to the open session. Slid over the page, it puts the
+        // sidebar away instead (useSideSwipe), and focus goes back with it (App).
+        if (e.key === 'Escape' && (e.target as HTMLElement).closest('.side-session, .nav-item') && !(e.target as HTMLElement).closest('.side-over')) {
           e.preventDefault();
           runCommand('focus-main');
         }
