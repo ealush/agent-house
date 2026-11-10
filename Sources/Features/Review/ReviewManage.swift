@@ -93,7 +93,7 @@ struct StackManageSheet: View {
             .environment(\.editMode, .constant(.active))
             .navigationTitle("Manage stack")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button(role: .close) { dismiss() }.tint(.primary) } }
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(role: .close) { dismiss() }.tint(.primary) } }
             .task { owners = await model.owners() }
             .confirmationDialog("Delete this review?", isPresented: $confirmDelete, titleVisibility: .visible) {
                 Button("Delete", role: .destructive) { Task { await model.remove(); dismiss() } }

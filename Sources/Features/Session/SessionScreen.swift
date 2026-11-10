@@ -163,7 +163,9 @@ private struct PanelChrome: ViewModifier {
                 }
             }
             .toolbar {
-                ToolbarItem(placement: sheet ? .confirmationAction : .cancellationAction) {
+                // Leading, as every sheet's close in the app: the confirmation slot drew it
+                // prominent (a filled disc), and trailing it sat inside the panel's own menu.
+                ToolbarItem(placement: .cancellationAction) {
                     Group {
                         if sheet {
                             Button(role: .close) { session.panel = nil }.keyboardShortcut(.cancelAction)
