@@ -726,6 +726,7 @@ struct QuestionFormView: View {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Image(systemName: multi ? (on ? "checkmark.square.fill" : "square") : (on ? "largecircle.fill.circle" : "circle"))
                     .foregroundStyle(on ? theme.accent : theme.faint)
+                    .frame(width: AskSecondaryAction.glyphWidth)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(oi + 1). \(option.label)").foregroundStyle(theme.text)
                     if let d = option.description { Text(d).font(.ah(.caption)).foregroundStyle(theme.muted) }
@@ -790,7 +791,7 @@ struct QuestionFormView: View {
             // One more choice, drawn as the others are: its own glyph where their circles are.
             Button { model.openOther(qi) } label: {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Image(systemName: "square.and.pencil").foregroundStyle(theme.faint)
+                    Image(systemName: "square.and.pencil").foregroundStyle(theme.faint).frame(width: AskSecondaryAction.glyphWidth)
                     Text("\(model.form.questions[qi].options.count + 1). Something else…").foregroundStyle(theme.text2)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -844,13 +845,27 @@ private struct PreviewBox: View {
 /// style, so neither reads as disabled or as the answer itself.
 private struct AskSecondaryAction: ViewModifier {
     @Environment(\.theme) private var theme
+    /// The column every glyph in a question sits in (choices' circles, Something else's pencil,
+    /// these actions' icons), so their words start on one line.
+    static let glyphWidth: CGFloat = 20
 
     func body(content: Content) -> some View {
         content
+            .labelStyle(AskActionLabel())
+            .padding(.horizontal, 6)
             .font(.ah(.footnote).weight(.medium))
             .foregroundStyle(theme.muted)
             .buttonStyle(.borderless)
             .frame(minHeight: 32)
             .contentShape(Rectangle())
+    }
+}
+
+private struct AskActionLabel: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 10) {
+            configuration.icon.frame(width: AskSecondaryAction.glyphWidth)
+            configuration.title
+        }
     }
 }
