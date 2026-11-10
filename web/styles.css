@@ -5283,6 +5283,20 @@ ul.queue-items {
   max-height: var(--keyboard-vh);
 }
 
+/* Not a phone (an iPad, a touch laptop): a popover over the chip it came from, as iPadOS
+   opens a control's options, not a phone's sheet docked to the screen's bottom edge. */
+@media (min-width: 761px) and (min-height: 501px), (min-width: 1001px) {
+  :root .dialog.composer-options[open] {
+    inset: auto auto var(--anchor-bottom, 16px) var(--anchor-left, 16px);
+    width: 360px;
+    max-height: min(560px, calc(100dvh - var(--anchor-bottom, 16px) - 16px));
+    margin: 0;
+    padding-bottom: 8px;
+    border-radius: 16px;
+    transform-origin: bottom left;
+  }
+}
+
 .composer.mobile .suggest-hint {
   display: none;
 }

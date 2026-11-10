@@ -10,6 +10,8 @@ import type { Launch } from './useLaunch.ts';
 export function ComposerOptions({ launch, compact, active }: { launch: Launch; compact: boolean; active: boolean }) {
   const { preset, models, model, modelLabel, effort, mode, levels, choose, chooseMode, openSettings } = launch;
   const [section, setSection] = useState<'settings' | 'model' | 'effort' | 'permissions' | null>(null);
+  // Where the chip is, so an iPad's or a desktop's settings open as a popover over it (styles.css).
+  const [anchor, setAnchor] = useState<React.CSSProperties | undefined>(undefined);
   const hasModel = !!preset && !!(models.length || preset.modelArgs || preset.settingsCommands?.model);
   const hasEffort = !!preset && !!(levels.length || preset.settingsCommands?.effort);
   const hasModes = (preset?.modes?.length ?? 0) > 1;
@@ -64,13 +66,17 @@ export function ComposerOptions({ launch, compact, active }: { launch: Launch; c
     <>
       <button type="button" className={`composer-model ${mode?.dangerous ? 'danger' : ''}`}
         aria-label={`Session settings: ${modelLabel ?? preset.name}, ${effortLabel.toLowerCase()} effort, ${modeLabel.toLowerCase()} permissions`}
-        aria-haspopup="dialog" aria-expanded={section !== null} onClick={() => setSection('settings')}>
+        aria-haspopup="dialog" aria-expanded={section !== null} onClick={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          setAnchor({ '--anchor-left': `${Math.round(Math.max(12, Math.min(r.left, innerWidth - 372)))}px`, '--anchor-bottom': `${Math.round(innerHeight - r.top + 8)}px` } as React.CSSProperties);
+          setSection('settings');
+        }}>
         {mode?.dangerous && <Icon name="shield" size={16} />}
         <span>{hasModel ? modelLabel ?? preset.name : 'Settings'}</span>
         <Icon name="chevron-down" size={14} />
       </button>
       {section && createPortal(
-        <Sheet label="Session settings" title={title} className="composer-options" onClose={close}
+        <Sheet label="Session settings" title={title} className="composer-options" style={anchor} onClose={close}
           onBack={section !== 'settings' ? () => setSection('settings') : undefined} backLabel="Session settings">
           <div className="composer-options-head">
             {section !== 'settings' && <button type="button" className="icon-btn" aria-label="Back to Session settings" onClick={() => setSection('settings')}><Icon name="back" /></button>}

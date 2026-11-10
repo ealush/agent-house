@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode, type RefObject } from 'react';
+import { useEffect, useRef, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { calm } from './motion.ts';
 import { Icon } from './icons.tsx';
 
@@ -159,7 +159,7 @@ export function SheetBar({ onClose, title, onBack, backLabel }: { onClose: () =>
  * A whole view presented as a phone sheet (Settings): a modal dialog of its
  * own that scrolls inside, with the sheet's bar on top.
  */
-export function Sheet({ label, className = '', onClose, title, onBack, backLabel, children }: { label: string; className?: string; onClose: () => void; title?: string; onBack?: () => void; backLabel?: string; children: ReactNode }) {
+export function Sheet({ label, className = '', onClose, title, onBack, backLabel, style, children }: { label: string; className?: string; onClose: () => void; title?: string; onBack?: () => void; backLabel?: string; style?: CSSProperties; children: ReactNode }) {
   const ref = useRef<HTMLDialogElement>(null);
   const { dismiss } = useSheet(ref, onClose);
   useEffect(() => {
@@ -175,6 +175,7 @@ export function Sheet({ label, className = '', onClose, title, onBack, backLabel
       className={`dialog sheet-view ${className}`}
       aria-label={label}
       tabIndex={-1}
+      style={style}
       onCancel={(e) => {
         e.preventDefault();
         dismiss();
