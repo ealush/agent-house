@@ -668,6 +668,17 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
   useCommand('fork', () => setForking(true), active && turns);
   useCommand('send-to', () => setSending(true), active && !!w.feed);
   useCommand('pin', () => void act(() => client.pin(w.uid, !w.pinned)), active);
+  // Its close (or collapse) button goes with it: the keyboard goes back to the session, not to the page
+  // (no finger here, where the composer would raise the on-screen keyboard).
+  const closePanel = (collapse = false) => {
+    if (collapse) setPanelCollapsed(true);
+    else setPanel('');
+    if (touch) return;
+    requestAnimationFrame(() => {
+      const a = document.activeElement;
+      if (!a || a === document.body) focusSurface();
+    });
+  };
   const togglePanel = (p: Panel) => {
     if (narrow) setTab(tab === p ? 'main' : p);
     else openPanel(p);
@@ -1303,10 +1314,10 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
                       <Icon name="history" size={14} />
                     </button>
                   )}
-                  <button className="icon-btn small" onClick={() => setPanelCollapsed(true)} aria-label="Collapse panel" title="Collapse panel">
+                  <button className="icon-btn small" onClick={() => closePanel(true)} aria-label="Collapse panel" title="Collapse panel">
                     <Icon name="panel-hide" size={14} />
                   </button>
-                  <button className="icon-btn small" onClick={() => setPanel('')} aria-label="Close panel">
+                  <button className="icon-btn small" onClick={() => closePanel()} aria-label="Close panel" title="Close panel">
                     <Icon name="close" size={14} />
                   </button>
                 </div>
