@@ -473,9 +473,15 @@ struct SwitcherView: View {
             // its first prompt, which isn't what the sidebar or the tabs call it.
             let live = hit.uid.flatMap { uid in scene.hub?.rows.first { $0.uid == uid } }
             return SwitcherViewRow(agent: hit.harness, title: live?.title ?? hit.title, host: hit.host,
-                                   detail: [hit.kind == "chat" ? "side chat" : (hit.harness ?? ""), date, "\(hit.matches) match\(hit.matches == 1 ? "" : "es")"],
+                                   detail: [hit.kind == "chat" ? "side chat" : agentName(hit), date, "\(hit.matches) match\(hit.matches == 1 ? "" : "es")"],
                                    snippet: hit.excerpts.first?.snippet)
         }
+    }
+
+    /// The agent by its name ("Claude Code"), from the host's presets, not its id ("claude").
+    private func agentName(_ hit: SearchHit) -> String {
+        guard let id = hit.harness else { return "" }
+        return scene.hub?.presets(host: hit.host).first { $0.id == id }?.name ?? id
     }
 
     private func heading(_ row: Row, index: Int, found: (live: [SessionRow], past: [HistoryRow], hits: [SearchHit])) -> String? {
