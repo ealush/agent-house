@@ -41,6 +41,12 @@ a {
   outline-offset: 1px;
 }
 
+/* A dialog takes focus itself when it opens, so its first control isn't chosen for
+   you; the ring would outline the whole sheet. Its controls still show theirs. */
+dialog:focus-visible {
+  outline: none;
+}
+
 .mono {
   font-family: var(--mono);
 }
