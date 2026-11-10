@@ -429,6 +429,9 @@ kbd {
   min-height: 0;
   margin: 6px -4px 0;
   padding: 0 4px;
+  /* Over the footer: a row's menu opens here and runs down past the list's end (the list is
+     its own stacking context, Glide's isolation, so the menu's z-index alone can't). */
+  z-index: 1;
 }
 
 .side-label {
