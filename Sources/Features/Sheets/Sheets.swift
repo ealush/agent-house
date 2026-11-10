@@ -1134,15 +1134,22 @@ struct ConfirmTerminateSheet: View {
                     scene.sheet = nil
                     Task { await scene.terminate(session.key) }
                 } label: {
-                    Text("Terminate").frame(maxWidth: .infinity)
+                    Text("Terminate").fontWeight(.semibold).frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
+                // The danger color as the words on its own tint: filled, white type on the
+                // theme's light red barely read.
+                .buttonStyle(.bordered)
+                .controlSize(.large)
                 .tint(theme.danger)
                 .keyboardShortcut(.return, modifiers: .command)
                 Button("Cancel") { scene.sheet = nil }.frame(maxWidth: .infinity)
                     .keyboardShortcut(.cancelAction)
             }
             .padding(20)
+            // The theme's surface: on the short sheet's pale glass the words washed out.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(theme.surface)
+            .containerBackground(theme.surface, for: .navigation)
         }
         .presentationDetents([.height(280)])
     }
@@ -1180,6 +1187,10 @@ struct ConfirmPlanSheet: View {
                 Button("Cancel") { scene.sheet = nil }.frame(maxWidth: .infinity).keyboardShortcut(.cancelAction)
             }
             .padding(20)
+            // The theme's surface: on the short sheet's pale glass the words washed out.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(theme.surface)
+            .containerBackground(theme.surface, for: .navigation)
         }
         .presentationDetents([.medium])
     }
@@ -1194,10 +1205,15 @@ struct ScrollbackSheet: View {
         NavigationStack {
             ScrollViewReader { proxy in
                 ScrollView([.vertical, .horizontal]) {
-                    Text(text).font(theme.mono).textSelection(.enabled).padding().id("text")
-                    Color.clear.frame(height: 1).id("end")
+                    // Leading, and opened at the bottom-left: the end mark sat centered under
+                    // the widest line, so opening at it scrolled every line's start off screen.
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(text).font(theme.mono).textSelection(.enabled).padding().id("text")
+                        Color.clear.frame(width: 1, height: 1).id("end")
+                    }
                 }
-                .onAppear { proxy.scrollTo("end", anchor: .bottom) }
+                .background(theme.surface)
+                .onAppear { proxy.scrollTo("end", anchor: .bottomLeading) }
             }
             .navigationTitle("Scrollback")
             .navigationBarTitleDisplayMode(.inline)
