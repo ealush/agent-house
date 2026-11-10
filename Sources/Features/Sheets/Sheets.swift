@@ -217,7 +217,7 @@ struct NewSessionSheet: View {
             .navigationTitle(context.project ? "New project" : "New session")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(busy ? "Starting…" : "Start") { Task { await start() } }
                         .disabled(busy || preset == nil || cwd.trimmingCharacters(in: .whitespaces).isEmpty || dirProblem != nil || (tmuxSession == nil && newTmux.trimmingCharacters(in: .whitespaces).isEmpty))
@@ -398,7 +398,7 @@ struct FolderPicker: View {
             .navigationTitle(model.listing.map { ($0.path as NSString).lastPathComponent } ?? "Folders")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Choose") {
                         if let path = model.listing?.path { pick(path) }
@@ -561,7 +561,7 @@ struct ForkSheet: View {
             .navigationTitle("Fork “\(session.title)”")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(busy ? "Forking…" : "Fork") {
                         busy = true
@@ -712,7 +712,7 @@ struct SendToSheet: View {
             .navigationTitle("Send to…")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(busy ? "Sending…" : "Send") { Task { await send() } }.keyboardShortcut(.return, modifiers: .command)
                         .disabled(busy || loading || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -774,7 +774,7 @@ struct ContinueInSheet: View {
             .navigationTitle("Continue in \(name)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Start") {
                         guard let row = session.row else { return }
@@ -889,7 +889,7 @@ struct BranchSheet: View {
             }
             .navigationTitle("Switch branch")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction) } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) } }
             .task { await model.loadBranches() }
             .alert("“\(held?.name ?? "")” is checked out elsewhere", isPresented: Binding(get: { held != nil }, set: { if !$0 { held = nil } })) {
                 Button("OK", role: .cancel) { held = nil }
@@ -1213,7 +1213,7 @@ struct LaunchPickerSheet: View {
             }
             .navigationTitle(setting == .model ? "Model" : "Reasoning effort")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction) } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) } }
         }
         .presentationDetents([.medium, .large])
     }

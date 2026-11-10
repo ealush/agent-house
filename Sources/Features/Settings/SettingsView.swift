@@ -745,7 +745,7 @@ private struct AgentsSection: View {
                 }
                 .navigationTitle("Add an agent")
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { adding = false }.keyboardShortcut(.cancelAction) }
+                    ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { adding = false }.keyboardShortcut(.cancelAction).tint(.primary) }
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Add") {
                             Task { await model.add(name: name, command: command, resume: resume.isEmpty ? nil : resume); adding = false }
@@ -868,7 +868,7 @@ private struct SubscriptionEditor: View {
             }
             .navigationTitle(draft.id == nil ? "Add a provider" : draft.name)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel, action: close).keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel, action: close).keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         var out = draft
@@ -971,7 +971,7 @@ private struct EnvEditor: View {
             }
             .navigationTitle(draft.original ?? "New variable")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel, action: close).keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel, action: close).keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         let value: String? = draft.secret && draft.original != nil && draft.value.isEmpty ? nil : draft.value

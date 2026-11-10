@@ -150,7 +150,7 @@ struct ResolveThreadSheet: View {
             .navigationTitle("Reply and resolve")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Resolve") { Task { await model.resolveThread(finding, reply: reply); dismiss() } }.keyboardShortcut(.return, modifiers: .command)
                         .buttonStyle(.glassProminent)

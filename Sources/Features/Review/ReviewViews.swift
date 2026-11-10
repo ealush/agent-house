@@ -159,7 +159,7 @@ private struct StartReviewView: View {
             }
         }
         .navigationTitle("Start a review")
-        .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction) } }
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) } }
         .task { if model.repos.isEmpty { await model.loadList() } }
     }
 
@@ -227,7 +227,9 @@ struct StackCockpitView: View {
                 ProgressView()
             }
         }
-        .navigationTitle(model.stack?.title ?? "Stack")
+        // On a phone the page opens on the stack's card, its title in full: the bar names
+        // the place (a truncated second copy of the title read as a mistake).
+        .navigationTitle(scene.narrow ? "Stack" : (model.stack?.title ?? "Stack"))
         .navigationBarTitleDisplayMode(scene.narrow ? .inline : .automatic)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
@@ -299,7 +301,7 @@ struct StackCockpitView: View {
             .ahRow(scene.narrow)
             Section("Layers, bottom to top") {
                 ForEach(stack.layers) { layer in
-                    LayerRow(layer: layer)
+                    LayerRow(layer: layer, pushes: scene.narrow)
                         .tag(layer.pr)
                         .background {
                             if scene.narrow {
@@ -349,11 +351,26 @@ struct LayerPage: View {
 
 private struct LayerRow: View {
     let layer: Layer
+    /// On a phone the row pushes the layer's page: it says so with the list's chevron (the
+    /// link under it is hidden, and its own went with it).
+    var pushes = false
     @Environment(\.theme) private var theme
 
     var body: some View {
+        HStack(spacing: 10) {
+            details
+            if pushes {
+                Image(systemName: "chevron.right")
+                    .font(.ah(.footnote).weight(.semibold))
+                    .foregroundStyle(theme.faint)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+
+    private var details: some View {
         let confidence = LayerConfidence(layer: layer)
-        VStack(alignment: .leading, spacing: 4) {
+        return VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(layer.name).font(.ah(.subheadline).weight(.semibold))
                 Text(layer.title).font(.ah(.subheadline)).lineLimit(1)
@@ -425,7 +442,8 @@ struct LayerView: View {
                 }
                 .padding()
             }
-            .navigationTitle("\(layer.name) \(layer.title)")
+            // The page's heading has the title; the bar keeps the layer's number.
+            .navigationTitle(layer.name)
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $addingFinding) {
                 NewFindingSheet(model: model, path: selectedLines?.path, lines: selectedLines?.lines ?? [])
@@ -592,15 +610,32 @@ struct LayerView: View {
                     }
                 }
             }
-            HStack {
-                TextField("Ask the reviewer about this layer", text: $question, axis: .vertical).textFieldStyle(.roundedBorder)
+            // The composer's shape: a rounded field, and Send as its accent circle.
+            HStack(alignment: .bottom, spacing: 8) {
+                TextField("Ask the reviewer about this layer", text: $question, axis: .vertical)
+                    .lineLimit(1...6)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(theme.tile, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                let empty = question.trimmingCharacters(in: .whitespaces).isEmpty
                 Button {
                     let text = question
                     question = ""
                     Task { await model.ask(text) }
-                } label: { Image(systemName: "arrow.up.circle.fill").font(.ah(.title2)) }
-                .disabled(question.trimmingCharacters(in: .whitespaces).isEmpty)
+                } label: {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 32, height: 32)
+                        .background(theme.accentStrong, in: Circle())
+                        .opacity(empty ? 0.45 : 1)
+                        .touchTarget()
+                }
+                .buttonStyle(.ahPress)
+                .padding(.bottom, 4)
+                .disabled(empty)
                 .keyboardShortcut(.return, modifiers: .command)
+                .accessibilityLabel("Ask")
             }
             Divider()
             let findings = model.findings(for: layer.pr)
@@ -774,7 +809,7 @@ private struct NewFindingSheet: View {
             }
             .navigationTitle("New finding")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") {
                         let numbers = lines.compactMap(\.number)
@@ -837,7 +872,7 @@ private struct DispatchSheet: View {
             }
             .navigationTitle(kind == "restack" ? "Restack \(layer.name)" : kind == "merge" ? "Ask the agent to merge" : "Request fixes")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(sending ? "Sending…" : "Send") {
                         sending = true
