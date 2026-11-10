@@ -429,6 +429,18 @@ struct SessionListView: View {
         }
         .listStyle(.sidebar)
         .refreshable { hub.resync() }
+        .toolbar {
+            // A phone's Sessions page offers New like the Inbox and Review do (each project's
+            // own plus starts one there).
+            if scene.narrow && !showsPages {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { scene.perform("new-session") } label: { Image(systemName: "plus").foregroundStyle(theme.background) }
+                        .buttonStyle(.glassProminent)
+                        .tint(theme.text)
+                        .accessibilityLabel("New session")
+                }
+            }
+        }
         .focused($listFocused)
         .onChange(of: scene.focusRequest) { _, request in if request?.target == .sidebar { listFocused = true } }
     }
