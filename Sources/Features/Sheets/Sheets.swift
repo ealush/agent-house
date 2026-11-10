@@ -560,7 +560,8 @@ struct ForkSheet: View {
                             TextField("Name", text: $name)
                             TextField("First message for the fork (optional)", text: $prompt, axis: .vertical).lineLimit(2...6)
                         } footer: {
-                            Text("A new \(info.harness) session with this conversation, in its own worktree off \(info.branch ?? "the current branch")\(info.head.map { " at \($0.prefix(7))" } ?? "").")
+                            // The agent's name ("Claude Code"), not its id ("claude").
+                            Text("A new \(preset?.name ?? info.harness) session with this conversation, in its own worktree off \(info.branch ?? "the current branch")\(info.head.map { " at \($0.prefix(7))" } ?? "").")
                         }
                         if let preset, !preset.isShell, LaunchOptionRows.offersChoices(preset) {
                             Section {
