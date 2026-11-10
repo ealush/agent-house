@@ -122,7 +122,8 @@ function HooksCard() {
       ))}
       <ScreenRules audit={status?.audit} onReset={() => void api.resetScreenAudit().then(() => api.hooks().then(setStatus), (e) => showError(e, "Couldn't reset the check"))} />
       <div className="system-actions">
-        <button className="btn primary" disabled={busy} onClick={() => void change('install')}>
+        {/* The accent marks what's left to do: installed, reinstalling is upkeep, not the next step. */}
+        <button className={on ? 'btn' : 'btn primary'} disabled={busy} onClick={() => void change('install')}>
           {on ? 'Reinstall hooks' : 'Install hooks'}
         </button>
         {(status?.claude.wired || status?.codex.wired) && (
@@ -215,7 +216,7 @@ function DesktopCard() {
         </p>
       ))}
       <div className="system-actions">
-        <button className="btn primary" disabled={busy} onClick={() => void change('install')}>
+        <button className={status.installed ? 'btn' : 'btn primary'} disabled={busy} onClick={() => void change('install')}>
           {status.installed ? 'Update launcher' : 'Add to app launcher'}
         </button>
         {status.installed && (
