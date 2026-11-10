@@ -67,6 +67,11 @@ struct SessionScreen: View {
                                 ComposerView(session: session, composer: session.composer, scene: scene)
                             }
                             .animation(reduceMotion ? nil : .snappy(duration: 0.32), value: session.waiting && session.row?.dto.ask != nil)
+                            // A phone's toasts sit above the composer (and the keyboard under it).
+                            .onGeometryChange(for: Double.self) { Double($0.frame(in: .global).minY) } action: { top in
+                                if narrow { scene.composerTop = top }
+                            }
+                            .onDisappear { if narrow { scene.composerTop = nil } }
                             .frame(maxWidth: Self.readableWidth)
                             .frame(maxWidth: .infinity)
                         }

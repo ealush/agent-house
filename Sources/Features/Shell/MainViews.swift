@@ -817,7 +817,15 @@ struct OverlayLayer: View {
             if let mode = scene.workspace.submap {
                 SubmapHUD(mode: mode).frame(maxHeight: .infinity, alignment: .top).allowsHitTesting(false)
             }
-            ToastStack(scene: scene, targets: targets).frame(maxHeight: .infinity, alignment: .bottom)
+            // Above the tab bar or the composer, not over them (the overlay is a window of its
+            // own and doesn't know what's under it; the scene says where they start).
+            GeometryReader { geometry in
+                let lift = scene.toastFloor.map { max(0, geometry.frame(in: .global).maxY - $0 - 12) } ?? 0
+                ToastStack(scene: scene, targets: targets)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, lift)
+                    .animation(.snappy(duration: 0.25), value: lift)
+            }
             NudgeStack(scene: scene, targets: targets).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: scene.narrow ? .top : .topTrailing)
         }
     }

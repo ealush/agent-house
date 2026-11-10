@@ -39,6 +39,12 @@ final class SceneModel {
     var showingShortcuts = false
     private(set) var focusRequest: FocusRequest?
     private(set) var toasts: [Toast] = []
+    /// Where a phone's composer starts on screen (window points), while one shows: toasts
+    /// sit above it, not over it.
+    var composerTop: Double?
+    /// Toasts sit above this (window points): the tab bar or the composer, whichever is
+    /// higher; none while a sheet is up (its own bottom is the screen's).
+    var toastFloor: Double?
     /// The newest which-key overlay, while modifiers are held.
     var whichKey: [CommandMatcher.WhichKeyRow] = []
     /// The first key of a two-key chord, waiting for the second.

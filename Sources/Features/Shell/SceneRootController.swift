@@ -118,6 +118,18 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
         syncOverlayWindow()
     }
 
+    /// What a toast must clear at the bottom: the phone's tab bar while it shows, the
+    /// composer while one does; a sheet's own bottom is the screen's.
+    private func placeToasts() {
+        guard presentedViewController == nil, let window = view.window else {
+            scene.toastFloor = nil
+            return
+        }
+        let tabBarTop = children.lazy.compactMap { ($0 as? MainSplitController)?.visibleTabBarTop(in: window) }.first
+        let floor = [tabBarTop, scene.composerTop].compactMap { $0 }.min()
+        scene.toastFloor = floor
+    }
+
     private func syncOverlayWindow() {
         guard let overlayWindow else { return }
         let appearance = scene.app.preferences.appearance
@@ -145,6 +157,7 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
         // is the theme's ground, not the system's black.
         view.backgroundColor = theme.theme(appearance).uiBackground
         syncOverlayWindow()
+        if !scene.toasts.isEmpty { placeToasts() }
         if case .main = next { scene.reconcileIfReady() }
         advertise(scene.handoff)
     }
@@ -548,6 +561,16 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
     override func viewWillLayoutSubviews() {
         super.viewWillLayoutSubviews()
         syncDetailBar()
+    }
+
+    /// The phone's tab bar's top in the window, while it's on screen (a pushed session hides it).
+    func visibleTabBarTop(in window: UIWindow) -> Double? {
+        guard isCollapsed || traitCollection.horizontalSizeClass == .compact else { return nil }
+        let bar = tabBar.tabBar
+        guard bar.window != nil, !bar.isHidden, bar.alpha > 0.01 else { return nil }
+        let frame = bar.convert(bar.bounds, to: window)
+        guard frame.minY < window.bounds.maxY - 1, frame.height > 0 else { return nil }
+        return Double(frame.minY)
     }
 
     func splitViewController(_ svc: UISplitViewController, willHide column: UISplitViewController.Column) {
