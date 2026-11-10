@@ -149,6 +149,8 @@ export const COMMANDS: Command[] = [
     detail: 'The previous session in sidebar order. From the inbox, this opens the last one. Also works while a text field is focused.',
     chords: [{ key: 'ArrowUp', alt: true }],
     scopes: ['app', 'terminal', 'field'],
+    // In a draft, ⌥↑ moves the caret by a paragraph on a Mac: switch only from its start.
+    field: 'start',
   },
   {
     id: 'cycle-next',
@@ -157,6 +159,8 @@ export const COMMANDS: Command[] = [
     detail: 'The next session in sidebar order. From the inbox, this opens the first one. Also works while a text field is focused.',
     chords: [{ key: 'ArrowDown', alt: true }],
     scopes: ['app', 'terminal', 'field'],
+    // In a draft, ⌥↓ moves the caret by a paragraph on a Mac: switch only from its end.
+    field: 'end',
   },
   {
     id: 'new-session',

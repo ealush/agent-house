@@ -47,7 +47,10 @@ test('digits and punctuation keep their unshifted name when Shift is held', () =
 });
 
 test('scope: typing keeps letters, dialogs keep only the switcher, ask dialogs keep everything', () => {
-  assert.equal(press('ArrowDown', { altKey: true, code: 'ArrowDown' }, 'field'), 'cycle-next');
+  // In a draft, Alt/⌥+↓ moves the caret first (a Mac's paragraph move): it switches only from the end.
+  assert.equal(press('ArrowDown', { altKey: true, code: 'ArrowDown' }, 'field'), null);
+  assert.equal(matchShortcut({ key: 'ArrowDown', code: 'ArrowDown', ...none, altKey: true }, 'field', {}, { end: true }), 'cycle-next');
+  assert.equal(matchShortcut({ key: 'ArrowUp', code: 'ArrowUp', ...none, altKey: true }, 'field', {}, { start: true }), 'cycle-prev');
   assert.equal(press('g', { ctrlKey: true, shiftKey: true, code: 'KeyG' }, 'field'), 'toggle-view');
   assert.equal(press('g', { code: 'KeyG' }, 'field'), null);
   assert.equal(press('k', { metaKey: true, code: 'KeyK' }, 'field'), 'switcher');
@@ -141,7 +144,7 @@ test('the command palette lists registered actions and ranks a typed query', () 
 
 test('the shortcut table describes when a chord is allowed to fire', () => {
   assert.equal(whenLabel('switcher'), 'Anywhere except a confirm');
-  assert.equal(whenLabel('cycle-next'), 'Not in a dialog');
+  assert.equal(whenLabel('cycle-next'), 'Not in a dialog; while typing, only from the end of the text');
   assert.equal(whenLabel('show-shortcuts'), 'Not in a dialog');
   assert.equal(whenLabel('new-session'), 'Not in a dialog');
   assert.equal(whenLabel('focus-pane-left'), 'Not in a dialog; while typing, only from the start of the text');
