@@ -289,6 +289,28 @@ struct TranscriptView: View {
                 if let index = browsing { withAnimation(.snappy) { reader.scrollTo(blocks[index].id, anchor: .center) } }
                 return .handled
             }
+            // Read back up the conversation, the way to its newest message floats over the
+            // composer: a glass ↓, there only while you're away from the end.
+            .overlay(alignment: .bottom) {
+                if !atBottom && !blocks.isEmpty {
+                    Button {
+                        Haptics.selection()
+                        withAnimation(reduceMotion ? nil : .snappy) { reader.scrollTo("bottom", anchor: .bottom) }
+                    } label: {
+                        Image(systemName: "arrow.down")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(theme.text2)
+                            .frame(width: 40, height: 40)
+                            .glassEffect(.regular.interactive(), in: Circle())
+                            .touchTarget()
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.bottom, 10)
+                    .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
+                    .accessibilityLabel("Jump to the newest message")
+                }
+            }
+            .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: atBottom)
             .overlay(alignment: .leading) {
                 let items = session.railItems
                 if items.count > 2 {
