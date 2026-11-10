@@ -46,6 +46,8 @@ final class TourUITests: XCTestCase {
         let app = XCUIApplication()
         // Every tour starts from a fresh window, not wherever the last one left off.
         app.launchArguments += ["-AHFreshWindow"]
+        // As a phone in the hand: no hardware keyboard, whatever the simulator has.
+        if environment["AH_TOUCH_ONLY"] == "1" { app.launchArguments += ["-AHTouchOnly"] }
         app.launch()
         try enrollIfNeeded(app)
         var target = app

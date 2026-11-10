@@ -85,14 +85,22 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
             self.scene.narrow = self.traitCollection.horizontalSizeClass == .compact
         }
         // Navigation moves the keyboard focus only while a hardware keyboard is attached.
-        scene.hardwareKeyboard = GCKeyboard.coalesced != nil
+        scene.hardwareKeyboard = Self.hasHardwareKeyboard
         for name in [Notification.Name.GCKeyboardDidConnect, .GCKeyboardDidDisconnect] {
             NotificationCenter.default.addObserver(self, selector: #selector(keyboardsChanged), name: name, object: nil)
         }
     }
 
     @objc private func keyboardsChanged() {
-        scene.hardwareKeyboard = GCKeyboard.coalesced != nil
+        scene.hardwareKeyboard = Self.hasHardwareKeyboard
+    }
+
+    private static var hasHardwareKeyboard: Bool {
+        #if DEBUG
+        // UI tours on a simulator, which always has its Mac's keyboard: a phone in the hand has none.
+        if ProcessInfo.processInfo.arguments.contains("-AHTouchOnly") { return false }
+        #endif
+        return GCKeyboard.coalesced != nil
     }
 
     override func viewDidAppear(_ animated: Bool) {
