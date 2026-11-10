@@ -17,6 +17,7 @@ struct SessionScreen: View {
     var inNavigationBar = false
     @Environment(\.theme) private var theme
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var panelWidth: CGFloat = 380
     @State private var previewURL: URL?
     /// The screen's height and the question's: a long question scrolls inside a panel of at
@@ -59,9 +60,13 @@ struct SessionScreen: View {
                                     .frame(height: min(askHeight, screenHeight * 0.55))
                                     .padding(.horizontal, 12)
                                     .padding(.bottom, 6)
+                                    // Rises out of the composer when the agent asks, and folds back
+                                    // into it once answered, rather than cutting in and out.
+                                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                                 }
                                 ComposerView(session: session, composer: session.composer, scene: scene)
                             }
+                            .animation(reduceMotion ? nil : .snappy(duration: 0.32), value: session.waiting && session.row?.dto.ask != nil)
                             .frame(maxWidth: Self.readableWidth)
                             .frame(maxWidth: .infinity)
                         }
