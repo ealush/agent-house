@@ -8202,6 +8202,9 @@ select:not([multiple]) {
   gap: 8px;
   /* Clear of the status bar: iOS blurs whatever runs under it. */
   max-height: calc(var(--vh) - 10px - var(--safe-pad) - max(24px, var(--safe-top) + 12px));
+  /* An iPhone's action sheet keeps a column's width on its side; centred, not edge to edge. */
+  max-width: 420px;
+  margin-inline: auto;
   animation: sheet-up 320ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
@@ -8215,6 +8218,8 @@ select:not([multiple]) {
   flex: 0 1 auto;
   padding: 6px;
   border-radius: 16px;
+  /* The thicker sheet material: its choices stay legible over whatever is under them. */
+  background: var(--glass-sheet-fill);
   box-shadow: var(--elev-2);
   animation: none;
 }
@@ -8225,7 +8230,7 @@ select:not([multiple]) {
   min-height: 56px;
   border: 1px solid transparent;
   border-radius: 16px;
-  background: var(--glass-fill);
+  background: var(--glass-sheet-fill);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
   box-shadow: var(--glass-depth), var(--elev-2);
