@@ -2027,6 +2027,12 @@ a.btn {
   font-family: var(--ui);
   font-size: 16px; /* prevents iOS zoom-on-focus */
 }
+/* A date field is as tall as the fields beside it: Chromium pads its inner fields 1px
+   top and bottom, which set Search's From and To 2px off the row. */
+.field input[type='date']::-webkit-datetime-edit-fields-wrapper {
+  padding: 0;
+}
+
 /* Paths, commands, arguments, model ids, variable names and keys read as code;
    names and messages read as words. */
 .field input.mono,
