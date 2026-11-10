@@ -7,40 +7,9 @@ import { Popover } from './ModelPicker.tsx';
 import { SheetBar, useSheet } from './sheet.tsx';
 import { errorText } from './errors.ts';
 
-// ---------- unified diff → files / lines with real line numbers
-
-type Line = { kind: 'add' | 'del' | 'ctx' | 'hunk'; text: string; n: number | null };
-type FileDiff = { path: string; add: number; del: number; lines: Line[] };
-
-export function parsePatch(patch: string): FileDiff[] {
-  const files: FileDiff[] = [];
-  let f: FileDiff | null = null;
-  let oldN = 0;
-  let newN = 0;
-  for (const raw of patch.split('\n')) {
-    if (raw.startsWith('diff --git ')) {
-      f = { path: raw.split(' b/').slice(1).join(' b/') || raw, add: 0, del: 0, lines: [] };
-      files.push(f);
-    } else if (!f || raw.startsWith('index ') || raw.startsWith('--- ') || raw.startsWith('+++ ') || raw.startsWith('new file') || raw.startsWith('deleted file') || raw.startsWith('similarity') || raw.startsWith('rename ')) {
-      continue;
-    } else if (raw.startsWith('@@')) {
-      const m = raw.match(/@@ -(\d+)(?:,\d+)? \+(\d+)/);
-      oldN = Number(m?.[1] ?? 0);
-      newN = Number(m?.[2] ?? 0);
-      f.lines.push({ kind: 'hunk', text: raw.replace(/^@@[^@]*@@\s?/, '… ') || '…', n: null });
-    } else if (raw.startsWith('+')) {
-      f.add++;
-      f.lines.push({ kind: 'add', text: raw.slice(1), n: newN++ });
-    } else if (raw.startsWith('-')) {
-      f.del++;
-      f.lines.push({ kind: 'del', text: raw.slice(1), n: oldN++ });
-    } else if (raw.startsWith(' ')) {
-      f.lines.push({ kind: 'ctx', text: raw.slice(1), n: newN++ });
-      oldN++;
-    }
-  }
-  return files;
-}
+// The diff parser is its own module (web/patch.ts): plain TypeScript, so tests can load it.
+export { parsePatch } from './patch.ts';
+import { parsePatch, type Line } from './patch.ts';
 
 /**
  * Working changes beside the session (F34), and click-a-line to comment (F35):
