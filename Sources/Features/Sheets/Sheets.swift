@@ -840,6 +840,7 @@ struct BranchSheet: View {
     var body: some View {
         NavigationStack {
             List {
+                Group {
                 if let error = model.error { Banner(text: error, tone: .error) }
                 if let branches = model.branches {
                     let rows = rows(branches)
@@ -891,7 +892,10 @@ struct BranchSheet: View {
                 } else {
                     ProgressView()
                 }
+                }
+                .ahRow()
             }
+            .ahFormGround()
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Find or create a branch")
             .searchFocused($searching)
             .onAppear { searching = true }
@@ -933,6 +937,7 @@ struct WorktreesView: View {
     var body: some View {
         NavigationStack {
             List {
+                Group {
                 if let error = model.error { Banner(text: error, tone: .error) }
                 if !model.results.isEmpty {
                     Section("Just now") {
@@ -959,7 +964,11 @@ struct WorktreesView: View {
                         Text("Removing a worktree deletes its checkout; its branch is kept.")
                     }
                 }
+                }
+                // The theme's ground and cards, like the rest of the app's sheets.
+                .ahRow()
             }
+            .ahFormGround()
             .navigationTitle("Worktrees")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom, spacing: 0) { if model.cleaningUp { cleanupBar } }
