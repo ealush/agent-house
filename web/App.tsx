@@ -1016,6 +1016,50 @@ export function App({ onLock }: { onLock: () => void }) {
   if (page !== 'settings') sheetBase.current = page;
   const shown = narrow && page === 'settings' ? sheetBase.current : page;
 
+  // Each page keeps its place, as an iOS tab does: back from a session, or back on its tab,
+  // the list is where you left it, and so is the copy a swipe back shows under the session.
+  const pageScroll = useRef(new Map<Page, number>());
+  const shownRef = useRef({ shown, selected });
+  shownRef.current = { shown, selected };
+  useEffect(() => {
+    const save = (e: Event) => {
+      const el = e.target;
+      // Only the page in view: one leaving (a session opening over it) scrolls as it shrinks.
+      if (shownRef.current.selected || !(el instanceof HTMLElement) || !el.classList.contains('page') || !mainRef.current?.contains(el)) return;
+      pageScroll.current.set(shownRef.current.shown, el.scrollTop);
+    };
+    document.addEventListener('scroll', save, { capture: true, passive: true });
+    return () => document.removeEventListener('scroll', save, { capture: true });
+  }, []);
+  useLayoutEffect(() => {
+    const top = pageScroll.current.get(shown);
+    if (!top) return;
+    const stops: Array<() => void> = [];
+    for (const root of [selected ? null : mainRef.current, peek ? underRef.current : null]) {
+      const el = root?.querySelector<HTMLElement>(':scope > .page, :scope > * > .page');
+      if (!el) continue;
+      el.scrollTop = top;
+      if (el.scrollTop >= top - 1) continue;
+      // Still filling in (a card that loads after the list): follow it to the place, until a finger or wheel takes over.
+      const grow = new ResizeObserver(() => {
+        el.scrollTop = top;
+        if (el.scrollTop >= top - 1) stop();
+      });
+      for (const child of Array.from(el.children)) grow.observe(child);
+      const timer = window.setTimeout(() => stop(), 1500);
+      const stop = () => {
+        grow.disconnect();
+        window.clearTimeout(timer);
+        el.removeEventListener('touchstart', stop);
+        el.removeEventListener('wheel', stop);
+      };
+      el.addEventListener('touchstart', stop, { passive: true });
+      el.addEventListener('wheel', stop, { passive: true });
+      stops.push(stop);
+    }
+    return () => stops.forEach((f) => f());
+  }, [shown, !!selected, peek, !!state]);
+
   // The top-level page (and, on a phone, its tab bar). On a phone it also lies under a
   // session while a swipe from the edge pulls the session away (useSwipeBack).
   const pages = state && (
