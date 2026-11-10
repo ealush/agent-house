@@ -120,11 +120,26 @@ final class SessionModel: Identifiable {
 
     func open() async {
         if hasGUI { startFeed() }
-        await composer.open()
         queue.watch(queued: row?.dto.queued ?? 0)
-        await queue.load()
-        if isLive { try? await api.focus(key: key) }
-        prompts = (try? await api.feedPrompts(ref)) ?? []
+        // None of these waits on another: asked together, the rail's prompts and this
+        // device's focus no longer queue behind the draft, the history and the queue (five
+        // round trips one after another). Closing the session cancels what's left.
+        let api = api, key = key, ref = ref, live = isLive
+        let composing = Task { await composer.open() }
+        let queueing = Task { await queue.load() }
+        let focusing = Task { if live { try? await api.focus(key: key) } }
+        let asking = Task { (try? await api.feedPrompts(ref)) ?? [] }
+        await withTaskCancellationHandler {
+            prompts = await asking.value
+            await composing.value
+            await queueing.value
+            await focusing.value
+        } onCancel: {
+            composing.cancel()
+            queueing.cancel()
+            focusing.cancel()
+            asking.cancel()
+        }
     }
 
     func close() {
@@ -137,9 +152,20 @@ final class SessionModel: Identifiable {
     }
 
     func foreground() async {
-        if let stream = feedStream { await stream.resync() }
-        await composer.foreground()
-        await queue.load()
+        // Back in the app, everything catches up together rather than in turn.
+        let stream = feedStream
+        let resyncing = Task { await stream?.resync() }
+        let composing = Task { await composer.foreground() }
+        let queueing = Task { await queue.load() }
+        await withTaskCancellationHandler {
+            await resyncing.value
+            await composing.value
+            await queueing.value
+        } onCancel: {
+            resyncing.cancel()
+            composing.cancel()
+            queueing.cancel()
+        }
     }
 
     /// Leaving the app: stop reading the transcript. ah counts an open stream as this device

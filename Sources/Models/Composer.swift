@@ -379,8 +379,12 @@ final class ComposerModel {
     // MARK: Open, foreground, background
 
     func open() async {
-        if let pulled = await drafts.pull(current: text) { text = pulled }
-        if let prompts = try? await api.prompts() { recent = prompts.map(\.text) }
+        // Both at once: the history ↑ walks needn't wait for the draft's round trip.
+        let current = text
+        let api = api
+        let history = Task { try? await api.prompts() }
+        if let pulled = await drafts.pull(current: current) { text = pulled }
+        if let prompts = await history.value { recent = prompts.map(\.text) }
     }
 
     func foreground() async {

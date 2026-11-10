@@ -58,6 +58,7 @@ struct SetupView: View {
                         .submitLabel(.next)
                         .onSubmit { field = .code }
                         .accessibilityIdentifier("hostAddress")
+                        .ahRow()
                 } header: {
                     Text("Host address")
                 } footer: {
@@ -73,6 +74,7 @@ struct SetupView: View {
                         .submitLabel(.next)
                         .onSubmit { field = .label }
                         .accessibilityIdentifier("setupCode")
+                        .ahRow()
                 } header: {
                     Text("Setup code")
                 } footer: {
@@ -84,12 +86,14 @@ struct SetupView: View {
                         .submitLabel(.go)
                         .onSubmit { Task { await enroll() } }
                         .accessibilityIdentifier("deviceLabel")
+                        .ahRow()
                 }
                 if let error {
                     Section {
                         Label(error, systemImage: "exclamationmark.triangle.fill")
                             .foregroundStyle(theme.danger)
                             .accessibilityIdentifier("setupError")
+                            .ahRow()
                     }
                 }
                 Section {
@@ -114,7 +118,9 @@ struct SetupView: View {
             // A comfortable column on a big screen, not a form across the whole iPad.
             .frame(maxWidth: 600)
             .frame(maxWidth: .infinity)
-            .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+            // ah's ground and cards from the first screen on, not the system's black and grey.
+            .scrollContentBackground(.hidden)
+            .background(theme.background.ignoresSafeArea())
             .navigationTitle(app.accounts.isEmpty ? "" : "Add a host")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
