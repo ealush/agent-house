@@ -110,6 +110,14 @@ final class TourUITests: XCTestCase {
                     let at = { (p: [Double]) in target.coordinate(withNormalizedOffset: CGVector(dx: p[0], dy: p[1])) }
                     at(ends[0]).press(forDuration: 0.05, thenDragTo: at(ends[1]))
                 }
+            case "flickat":
+                // A finger's flick: no hold before it moves, and fast (a held drag reads as a
+                // press, which a text view answers with its caret and edit menu).
+                let ends = argument.split(separator: ">").map { $0.split(separator: ",").compactMap { Double($0) } }
+                if ends.count == 2, ends.allSatisfy({ $0.count == 2 }) {
+                    let at = { (p: [Double]) in target.coordinate(withNormalizedOffset: CGVector(dx: p[0], dy: p[1])) }
+                    at(ends[0]).press(forDuration: 0, thenDragTo: at(ends[1]), withVelocity: .fast, thenHoldForDuration: 0)
+                }
             case "rotate":
                 XCUIDevice.shared.orientation = argument == "portrait" ? .portrait : .landscapeLeft
             case "wait":
