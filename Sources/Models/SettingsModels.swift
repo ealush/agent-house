@@ -298,8 +298,12 @@ final class SystemSettings {
     init(api: APIClient) { self.api = api }
 
     func load() async {
-        do { hooks = try await settled { [api] in try await api.hooks() } } catch { self.error = APIError.shown(error) }
-        do { desktop = try await settled { [api] in try await api.desktop() } } catch { self.error = APIError.shown(error) }
+        // Both at once: the desktop's state needn't wait for the hooks'.
+        let api = api
+        async let hooking = settled { try await api.hooks() }
+        async let launching = settled { try await api.desktop() }
+        do { hooks = try await hooking } catch { self.error = APIError.shown(error) }
+        do { desktop = try await launching } catch { self.error = APIError.shown(error) }
     }
 
     func setDesktop(install: Bool) async {
