@@ -191,10 +191,23 @@ function escape(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * The names a process goes by, for telling which agent it is: its executable and
+ * the program it runs. An interpreter's flags come before its script
+ * ("node --max-old-space-size=14440 …/bundle/gemini.js", Gemini CLI 0.64), and a
+ * script it runs answers to its name without the extension.
+ */
+export function processNames(argv: string[]): string[] {
+  const exe = basename(argv[0] ?? '');
+  if (!/^(node|bun|deno)$/.test(exe)) return [exe, ...(argv[1] ? [basename(argv[1])] : [])];
+  const script = argv.slice(1).find((a) => !a.startsWith('-'));
+  return [exe, ...(script ? [basename(script).replace(/\.[cm]?js$/, '')] : [])];
+}
+
 function detectAgent(w: RawWindow, procs: Awaited<ReturnType<typeof snapshot>>, matchers: Array<[string, RegExp]>) {
   // Shell wrappers often exec the agent, replacing the pane's root process.
   for (const proc of descendants(procs, w.panePid, true)) {
-    const names = proc.argv.slice(0, 2).map((a) => basename(a));
+    const names = processNames(proc.argv);
     for (const [id, re] of matchers) {
       if (names.some((n) => re.test(n))) return { id, pid: proc.pid };
     }
