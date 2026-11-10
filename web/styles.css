@@ -6762,6 +6762,11 @@ ul.queue-items {
   background: var(--bg);
 }
 
+/* Focused itself only to hold the keyboard (no agent to start on): no ring round the screen. */
+.ns-screen:focus {
+  outline: none;
+}
+
 .ns-screen form {
   flex: 1;
   min-height: 0;

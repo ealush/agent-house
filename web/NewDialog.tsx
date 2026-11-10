@@ -144,9 +144,18 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
 
   // A screen is no dialog, so nothing moves the keyboard into it: start on the agent
   // chosen, where the arrows pick another (and never on the page underneath). Once.
+  // No agent to choose (none installed): the Project field, or with a finger, where a
+  // field would raise the on-screen keyboard, the screen itself, so Tab starts inside it.
   useEffect(() => {
     if (!screen) return;
-    const raf = requestAnimationFrame(() => screenRef.current?.querySelector<HTMLElement>('[data-autofocus]')?.focus({ preventScroll: true }));
+    const raf = requestAnimationFrame(() => {
+      const box = screenRef.current;
+      const finger = document.documentElement.hasAttribute('data-touch');
+      const to = box?.querySelector<HTMLElement>('[data-autofocus]') ?? (finger ? null : cwdInput.current) ?? box;
+      to?.focus({ preventScroll: true });
+      // Its folder is a suggestion, selected as a Mac dialog's field is: typing replaces it.
+      if (to === cwdInput.current) cwdInput.current?.select();
+    });
     return () => cancelAnimationFrame(raf);
   }, []);
   useEffect(() => {
@@ -613,7 +622,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
 
   if (screen)
     return (
-      <section ref={screenRef} className="ns-screen new-session" aria-label="New session" data-confirm data-focus-owner>
+      <section ref={screenRef} className="ns-screen new-session" aria-label="New session" tabIndex={-1} data-confirm data-focus-owner>
         <SheetBar onClose={dismiss} />
         {form}
       </section>
