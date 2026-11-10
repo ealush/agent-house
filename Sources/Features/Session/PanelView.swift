@@ -486,6 +486,7 @@ private struct FileTextSheet: View {
     let insert: () -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
+    @State private var copied = false
 
     var body: some View {
         NavigationStack {
@@ -501,12 +502,26 @@ private struct FileTextSheet: View {
                 .padding()
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .background(theme.surface)
             .navigationTitle((file.path as NSString).lastPathComponent)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItemGroup(placement: .primaryAction) {
-                    Button { UIPasteboard.general.string = file.text } label: { Image(systemName: "doc.on.doc") }.accessibilityLabel("Copy").tint(.primary)
+                    // Says it worked: a check for a moment, and a tap under the finger.
+                    Button {
+                        UIPasteboard.general.string = file.text
+                        Haptics.success()
+                        copied = true
+                        Task {
+                            try? await Task.sleep(for: .seconds(1.5))
+                            copied = false
+                        }
+                    } label: {
+                        Image(systemName: copied ? "checkmark" : "doc.on.doc").contentTransition(.symbolEffect(.replace))
+                    }
+                    .accessibilityLabel(copied ? "Copied" : "Copy")
+                    .tint(.primary)
                     Button {
                         insert()
                         dismiss()
