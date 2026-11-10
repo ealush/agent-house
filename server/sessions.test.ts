@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
-import { computeStatus, footerMode, screenAsks, adoptTranscripts, hasToolWork, atShellPrompt, processNames, resetTime, screenLimit, shellDetail, trackContent, repoInfo, type StatusInput, type WindowView } from './sessions.ts';
+import { computeStatus, footerMode, screenAsks, adoptTranscripts, hasToolWork, atShellPrompt, processNames, resetTime, screenLimit, shellDetail, trackContent, repoInfo, commandBusy, type StatusInput, type WindowView } from './sessions.ts';
 import { loadConfig } from './config.ts';
 
 const base: StatusInput = { now: 1000, activity: 900, seen: 900, viewers: 0, idleAfter: 4, hook: null, screenWaiting: false };
@@ -293,4 +293,12 @@ test('a folder that becomes a repository (git init) is seen as one within second
     mock.timers.reset();
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("a shell's running command stays working between its lines; at the prompt it goes idle as usual", () => {
+  // idleAfter 4: a command printing every 6s is still working at 6s quiet, not at 13s.
+  assert.equal(commandBusy(false, 106, 100, 4), true);
+  assert.equal(commandBusy(false, 113, 100, 4), false);
+  assert.equal(commandBusy(true, 106, 100, 4), false, 'at its prompt: no hold');
+  assert.equal(status({ activity: 900, toolRunning: commandBusy(false, 1000, 990, 4) }), 'busy');
 });

@@ -317,6 +317,16 @@ export function atShellPrompt(command: string, procs: Awaited<ReturnType<typeof 
 }
 
 /**
+ * A shell's command that is still running stays working between the lines it prints, for
+ * three quiet periods: one printing every few seconds otherwise flipped between working
+ * and new output each tick, its row hopping between Inbox sections. Back at its prompt,
+ * a shell is idle on the usual quiet period.
+ */
+export function commandBusy(atPrompt: boolean, now: number, activity: number, idleAfter: number): boolean {
+  return !atPrompt && now - activity < idleAfter * 3;
+}
+
+/**
  * A shell's one-liner: its latest output while a command runs, or, at the
  * prompt, the command it last ran ("$ git status") — never the prompt itself.
  * The previous prompt line carries what was typed at it; a prompt that changed
@@ -493,7 +503,7 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
         // a permission prompt every second, which would otherwise read as working):
         // the question dialog, its review step, or a prompt rule over a numbered picker.
         dialog: !!trustAccept || (!hooked && !!agent && rules.length > 0 && (isQuestionDialog(tail) || isQuestionReview(tail) || (screenAsks(tail, rules) && !!parsePicker(tail)))),
-        toolRunning: detected ? hasToolWork(procs, detected.pid) : false,
+        toolRunning: detected ? hasToolWork(procs, detected.pid) : commandBusy(atShellPrompt(w.command, procs, w.panePid, quiet), now, w.activity, config.idleAfter),
       });
 
       // Register every window, shells included (F3).
