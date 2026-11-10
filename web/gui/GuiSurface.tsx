@@ -515,11 +515,9 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
           />
         )}
         {away && (
-          <button
-            className="btn small gui-latest"
-            onClick={jumpLatest}
-          >
-            ↓ Latest
+          <button className="gui-latest" onClick={jumpLatest}>
+            <Icon name="arrow-down" size={16} />
+            Latest
           </button>
         )}
         {state.status === 'connecting' && blocks.length > 0 && <div className="gui-conn">Reconnecting…</div>}
