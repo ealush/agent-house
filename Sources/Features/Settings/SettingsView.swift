@@ -323,10 +323,22 @@ private struct SecuritySection: View {
 private struct AppearanceSection: View {
     @Bindable var app: AppModel
 
+    static func symbol(_ appearance: DevicePreferences.Appearance) -> String {
+        switch appearance {
+        case .system: return "circle.lefthalf.filled"
+        case .dark: return "moon"
+        case .light: return "sun.max"
+        case .omarchy: return "paintpalette"
+        }
+    }
+
     var body: some View {
         AhForm {
-            Picker("Appearance", selection: $app.preferences.appearance) {
-                ForEach(DevicePreferences.Appearance.allCases, id: \.self) { Text($0.label).tag($0) }
+            // "Theme": the page is Appearance already, and its first header said so again.
+            Picker("Theme", selection: $app.preferences.appearance) {
+                ForEach(DevicePreferences.Appearance.allCases, id: \.self) { appearance in
+                    Label(appearance.label, systemImage: Self.symbol(appearance)).tag(appearance)
+                }
             }
             .pickerStyle(.inline)
             Section("Reading") {
