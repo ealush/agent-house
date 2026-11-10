@@ -17,8 +17,12 @@ struct ComposerView: View {
     @State private var takingPhoto = false
     @State private var importingFiles = false
     @State private var suggestionIndex = 0
-    /// The settings chips are out, floating over the box (a swipe up, or the grabber).
-    @State private var trayOpen = false
+    /// The settings chips are out, floating over the box (a swipe up, or the grabber); the
+    /// composer's, so going back to reading the transcript can fold them.
+    private var trayOpen: Bool {
+        get { composer.trayOpen }
+        nonmutating set { composer.trayOpen = newValue }
+    }
     /// The round controls and the box's corner grow with the text, as the system's own do: at
     /// the largest sizes a fixed + sat small beside a box twice its height.
     @ScaledMetric(relativeTo: .body) private var control: CGFloat = 44
@@ -112,6 +116,8 @@ struct ComposerView: View {
             }
         }
         .onChange(of: composer.events.count) { _, count in if count > 0 { deliverEvents() } }
+        // Come back to the session and the box is as it rests, settings folded.
+        .onDisappear { composer.trayOpen = false }
     }
 
     /// A picked item's file extension if it's a video (a Live Photo is a photo).

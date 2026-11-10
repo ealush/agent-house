@@ -194,6 +194,11 @@ struct TranscriptView: View {
             // tapping it puts it away, as in chat apps. A hardware keyboard keeps the composer's
             // focus: there's nothing on screen to put away.
             .scrollDismissesKeyboard(scene.hardwareKeyboard ? .never : .immediately)
+            // Back to reading: the composer's settings fold out of the way, as the keyboard does.
+            .onScrollPhaseChange { _, phase in
+                guard phase == .interacting, session.composer.trayOpen else { return }
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { session.composer.trayOpen = false }
+            }
             .simultaneousGesture(TapGesture().onEnded {
                 guard !scene.hardwareKeyboard, scene.composerFocused != nil else { return }
                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)

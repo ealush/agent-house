@@ -328,6 +328,9 @@ final class ComposerModel {
     private var chain: Task<Void, Never>?
     private var nextAttachment = 0
     var caret = 0
+    /// The settings over the box are out (a swipe up on it); folded on a send, or a scroll
+    /// back through the transcript.
+    var trayOpen = false
     private(set) var suggestions: [CompletionTrigger.Item] = []
     private var dismissedTrigger: String?
     private var commands: [SlashCommand]?
