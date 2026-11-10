@@ -820,7 +820,8 @@ private struct SubscriptionsSection: View {
                         briefing = id
                         Task { _ = try? await ReviewAPI(api: model.api).setSummaryModel(id) }
                     })) {
-                        Text("The default subscription").tag(String?.none)
+                        // "Default", not "The default subscription": the long one pushed the value onto a line of its own.
+                        Text("Default").tag(String?.none)
                         ForEach(model.list) { s in Text(s.name).tag(Optional(s.id)) }
                     }
                 } footer: {
