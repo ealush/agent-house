@@ -406,7 +406,8 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
       if (stick.current) el.scrollTop = el.scrollHeight;
     });
     follow.observe(el);
-    for (const child of Array.from(el.children)) follow.observe(child);
+    // Border boxes: a phone's growing draft only pads the feed (--mobile-composer-height).
+    for (const child of Array.from(el.children)) follow.observe(child, { box: 'border-box' });
     return () => follow.disconnect();
   }, [empty]);
   // What a waiting agent asks about is the newest call still without a result in this turn: the
