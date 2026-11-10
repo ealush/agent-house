@@ -42,9 +42,15 @@ final class SceneModel {
     /// Where a phone's composer starts on screen (window points), while one shows: toasts
     /// sit above it, not over it.
     var composerTop: Double?
-    /// Toasts sit above this (window points): the tab bar or the composer, whichever is
-    /// higher; none while a sheet is up (its own bottom is the screen's).
-    var toastFloor: Double?
+    /// The phone's tab bar's top (window points) while it shows; none while a sheet is up.
+    var tabBarTop: Double?
+    /// Whether a sheet covers the window (its own bottom is the screen's then).
+    var sheetUp = false
+    /// Toasts sit above this: the tab bar or the composer, whichever is higher. Read where
+    /// toasts draw, so a composer that moves (the keyboard, a new screen) moves them at once.
+    var toastFloor: Double? {
+        sheetUp ? nil : [tabBarTop, composerTop].compactMap { $0 }.min()
+    }
     /// The newest which-key overlay, while modifiers are held.
     var whichKey: [CommandMatcher.WhichKeyRow] = []
     /// The first key of a two-key chord, waiting for the second.

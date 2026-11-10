@@ -121,13 +121,11 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
     /// What a toast must clear at the bottom: the phone's tab bar while it shows, the
     /// composer while one does; a sheet's own bottom is the screen's.
     private func placeToasts() {
-        guard presentedViewController == nil, let window = view.window else {
-            scene.toastFloor = nil
-            return
-        }
-        let tabBarTop = children.lazy.compactMap { ($0 as? MainSplitController)?.visibleTabBarTop(in: window) }.first
-        let floor = [tabBarTop, scene.composerTop].compactMap { $0 }.min()
-        scene.toastFloor = floor
+        let sheetUp = presentedViewController != nil
+        if scene.sheetUp != sheetUp { scene.sheetUp = sheetUp }
+        guard let window = view.window else { return }
+        let top = children.lazy.compactMap { ($0 as? MainSplitController)?.visibleTabBarTop(in: window) }.first
+        if scene.tabBarTop != top { scene.tabBarTop = top }
     }
 
     private func syncOverlayWindow() {
