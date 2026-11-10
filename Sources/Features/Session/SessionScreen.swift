@@ -288,7 +288,7 @@ private struct SessionHeader: View {
                         Button {
                             scene.setSurface(other, for: session.key)
                         } label: {
-                            Image(systemName: other == .terminal ? "terminal" : "text.bubble")
+                            Image(systemName: other == .terminal ? "terminal" : "text.bubble").headerGlyph()
                         }
                         .buttonStyle(.borderless)
                         .accessibilityLabel(other == .terminal ? "Terminal" : "GUI")
@@ -306,7 +306,7 @@ private struct SessionHeader: View {
                     Menu {
                         PaneMenuItems(scene: scene, path: pane)
                     } label: {
-                        Image(systemName: pane == nil ? "rectangle.split.2x1" : "rectangle.split.2x2")
+                        Image(systemName: pane == nil ? "rectangle.split.2x1" : "rectangle.split.2x2").headerGlyph()
                     }
                     .accessibilityLabel(pane == nil ? "Split" : "Pane")
                 }
@@ -388,7 +388,7 @@ private struct PanelsMenu: View {
                 }
             }
         } label: {
-            Image(systemName: "sidebar.right")
+            Image(systemName: "sidebar.right").headerGlyph()
         }
         .accessibilityLabel("Panels")
     }
@@ -409,7 +409,7 @@ struct SessionMenu: View {
                 }
             }
         } label: {
-            Image(systemName: "ellipsis.circle")
+            Image(systemName: "ellipsis.circle").headerGlyph()
         }
         .accessibilityLabel("Session menu")
     }
@@ -579,5 +579,13 @@ private struct RenameAlertFields: View {
             Task { await session.commitRename(typed) }
         }
         .keyboardShortcut(.defaultAction)
+    }
+}
+
+private extension View {
+    /// A pane header's glyph button, big enough for a finger on an iPad: the bare glyph was
+    /// a 22 by 17 point target.
+    func headerGlyph() -> some View {
+        frame(minWidth: 30, minHeight: 30).contentShape(Rectangle())
     }
 }
