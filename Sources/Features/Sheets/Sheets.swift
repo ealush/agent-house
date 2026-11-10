@@ -337,14 +337,24 @@ private struct PathLabel: View {
         let trimmed = path.hasSuffix("/") && path.count > 1 ? String(path.dropLast()) : path
         let name = (trimmed as NSString).lastPathComponent
         let parent = (trimmed as NSString).deletingLastPathComponent
-        HStack(spacing: 0) {
-            if !parent.isEmpty {
-                Text(parent == "/" ? "/" : parent + "/").foregroundStyle(theme.muted).lineLimit(1).truncationMode(.head)
-            }
-            Text(name).fontWeight(.semibold).foregroundStyle(theme.text).lineLimit(1).layoutPriority(1)
-            Spacer(minLength: 0)
+        // The parents give way a whole folder at a time ("…/files/"), never mid-word
+        // ("…ate/tmp/"): the longest that fits beside the name.
+        let folders = parent.split(separator: "/").map(String.init)
+        let tails = folders.indices.map { start in "…/" + folders[start...].joined(separator: "/") + "/" }.dropFirst()
+        ViewThatFits(in: .horizontal) {
+            row(parent.isEmpty ? nil : parent == "/" ? "/" : parent + "/", name)
+            ForEach(Array(tails), id: \.self) { tail in row(tail, name) }
+            row(parent.isEmpty ? nil : "…/", name)
         }
         .contentShape(Rectangle())
+    }
+
+    private func row(_ parent: String?, _ name: String) -> some View {
+        HStack(spacing: 0) {
+            if let parent { Text(parent).foregroundStyle(theme.muted).lineLimit(1).fixedSize() }
+            Text(name).fontWeight(.semibold).foregroundStyle(theme.text).lineLimit(1)
+            Spacer(minLength: 0)
+        }
     }
 }
 
