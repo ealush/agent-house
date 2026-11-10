@@ -405,7 +405,15 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
 
         <label className="field">
           <span>Project</span>
-          <input className="mono" ref={cwdInput} value={cwd} onChange={(e) => setCwd(e.target.value)} list="ah-projects" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="~/code/project" />
+          <span className="path-field">
+            <input className="mono" ref={cwdInput} value={cwd} onChange={(e) => setCwd(e.target.value)} list="ah-projects" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="~/code/project" />
+            {/* At rest, a path too long for the field shows its end, the folder it names ("…/code/acme"). */}
+            {cwd && (
+              <span className="path-tail mono" aria-hidden>
+                <bdi>{cwd}</bdi>
+              </span>
+            )}
+          </span>
           <datalist id="ah-projects">
             {projects.map((p) => (
               <option key={p} value={p} />

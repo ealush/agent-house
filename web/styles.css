@@ -1962,7 +1962,7 @@ a.btn {
 }
 
 .presets legend,
-.field > span {
+.field > span:not(.path-field) {
   font-size: 12px;
   color: var(--muted);
   margin-bottom: 6px;
@@ -2023,9 +2023,44 @@ a.btn {
 @media (pointer: fine) {
   .field input,
   .field select,
-  .field textarea {
+  .field textarea,
+  .path-tail {
     font-size: 13px;
   }
+}
+
+/* A path field (New session's Project) shows its end while you aren't editing
+   it: a copy over the field, right to left so it's cut at the start, the path
+   itself kept left to right. A browser scrolls an idle field back to the start. */
+.path-field {
+  display: grid;
+}
+
+.path-field > * {
+  grid-area: 1 / 1;
+}
+
+.path-tail {
+  align-self: center;
+  min-width: 0;
+  padding: 0 11px;
+  overflow: hidden;
+  direction: rtl;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 16px;
+  font-variant-ligatures: none;
+  pointer-events: none;
+}
+
+.path-field:focus-within .path-tail {
+  visibility: hidden;
+}
+
+.path-field:not(:focus-within):has(.path-tail) input {
+  color: transparent;
 }
 
 .fields {
