@@ -1178,7 +1178,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
             </button>
           )}
           <div className="menu-wrap">
-            <button ref={menuBtn} className="icon-btn" onClick={() => setMenu(!menu)} aria-label="More" aria-expanded={menu}>
+            <button ref={menuBtn} className="icon-btn" onClick={() => setMenu(!menu)} aria-label="More" title="More" aria-expanded={menu}>
               <Icon name="more" />
             </button>
             {menu &&
