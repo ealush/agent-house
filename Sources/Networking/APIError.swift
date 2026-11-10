@@ -67,6 +67,8 @@ enum APIError: Error, Equatable, Sendable, LocalizedError {
         case .unauthorized(let m): return m.isEmpty ? "Signed out. Sign in again to continue." : m
         case .forbidden(let m): return m == "forbidden" ? "The host refused this request." : m
         case .notFound(let m), .conflict(let m), .tooManyAttempts(let m): return m
+        // The host's own words for an upload it won't take ("body too large") aren't a sentence.
+        case .server(413, _): return "It’s larger than your host accepts."
         case .server(_, let m): return m
         case .transport(let m): return "Can’t reach your host. \(m)"
         case .device(let m): return m

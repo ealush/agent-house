@@ -462,3 +462,8 @@ import Testing
     #expect(AskParts.choiceLabel("Yes, and don't ask again for ./keys commands") == "Yes, and don't ask again for ./keys commands")
     #expect(AskParts.choiceLabel("Use Redis (fast)") == "Use Redis (fast)", "a choice's own words in parentheses stay")
 }
+
+@Test func anUploadTheHostWontTakeSaysSoPlainly() {
+    let error = APIError(status: 413, body: Data(#"{"error":"body too large"}"#.utf8))
+    #expect(error.message == "It’s larger than your host accepts.")
+}
