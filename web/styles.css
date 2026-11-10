@@ -2281,6 +2281,10 @@ a.btn {
   outline: none;
 }
 
+.switcher input::placeholder {
+  text-overflow: ellipsis;
+}
+
 .switcher ul {
   list-style: none;
   margin: 0;

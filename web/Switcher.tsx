@@ -183,7 +183,7 @@ export function Switcher({ windows, history, hosts, onSearchContent, onPick, onR
         autoFocus
         value={q}
         // The filter syntax is a keyboard hint; a phone's narrow field shows just the purpose.
-        placeholder={tile ? 'Open as a new pane…' : matchMedia('(hover: none)').matches ? 'Jump, resume or search…' : 'Jump, resume, or search conversations…  h:claude p:vest in:chats role:user'}
+        placeholder={tile ? 'Open as a new pane…' : matchMedia('(hover: none)').matches ? 'Jump, resume or search…' : 'Jump, resume, or search conversations  ·  h:claude p:project in:chats'}
         enterKeyHint="go"
         autoCapitalize="off"
         autoCorrect="off"
