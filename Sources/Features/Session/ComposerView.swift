@@ -45,6 +45,8 @@ struct ComposerView: View {
             if let from = composer.drafts.from {
                 Label("Continued from \(from)", systemImage: "arrow.turn.down.right")
                     .font(.ah(.caption2)).foregroundStyle(theme.muted)
+                    // Over the text it's about, not over the + beside it.
+                    .padding(.leading, control + 8 + 14)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             // One slim glass field and the attach button beside it, as Messages has them; the
