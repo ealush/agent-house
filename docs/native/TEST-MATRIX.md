@@ -84,6 +84,15 @@ Twenty passes on the session composer alone, same simulators and demo host, a sc
 - At the walk's last commit: `swift test` 212 tests pass; `xcodebuild test` on an iPhone 18 Pro simulator TEST SUCCEEDED (178 passed, the tour skipped without a host); the Mac Catalyst build succeeds. The Mac app wasn't walked: there the tray opens from its grabber.
 - Not seen: a pointer's hover highlights (no pointer in the simulator), haptics, and a real device's flick.
 
+### Transcript steadiness and the composer's line breaks, 11 November 2026
+
+From the owner's phone recordings: the transcript jumped when the composer's chips opened or closed, when a message arrived, when text was selected, and after a message was queued it shook ±49 points for seconds; the chips took room instead of floating; Return couldn't start a new line. Same simulators and demo host, `AH_TOUCH_ONLY=1`, each recording measured frame by frame (the transcript's vertical shift between frames, matched on row brightness, and how often it changes direction).
+
+- The owner's queue recording measures 85 changes of direction; the same steps on the iPhone 18 Pro simulator after the fix (send, queue while it works, the queue tray coming and going, the chips out and folded, a message's menu): 10, each a single move to follow new output, none back and forth. Opening and folding the chips, / and @ suggestions, a long press on the agent's text and its menu, a long message growing the box: the transcript doesn't move.
+- The chips and suggestions float over the transcript above the box; a dangerous mode's red chip stays in the bar. Return on the on-screen keyboard starts a new line; three lines sent arrive as three lines in your bubble. (The demo's scripted agent takes each line as a turn of its own, so its transcript shows them apart; a real agent gets one message.)
+- At the stack's top: `swift test` 213 tests pass; `xcodebuild test` on an iPhone 18 Pro simulator TEST SUCCEEDED (177 passed, the 2 UI tests, the tour skipped without a host); the Mac Catalyst build succeeds. `check-workspace.py` fails only on the Mac clone's untracked `DerivedData-device/`.
+- Not seen: a real device, a hardware keyboard's Option-Return, older pages loading while reading back (the demo's transcripts are one page).
+
 ## Still to run (in order)
 
 1. On a Mac: `brew install xcodegen && ./scripts/verify.sh` — expect compile fixes in the UI layer, which has never been type-checked.
