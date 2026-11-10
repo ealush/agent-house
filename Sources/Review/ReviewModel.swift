@@ -161,7 +161,12 @@ final class ReviewModel {
     private(set) var thread: [ThreadMessage] = []
     private(set) var threadSubscription: String?
     private(set) var followups: [Followup] = []
-    private(set) var diff: DiffOut?
+    private(set) var diff: DiffOut? {
+        didSet { if diff != oldValue { diffFiles = diff.map { FileDiff.files(in: $0.text) } ?? [] } }
+    }
+    /// The diff split into files, once per diff: parsing it in the view redid the work on
+    /// every keystroke in the reviewer's field.
+    private(set) var diffFiles: [FileDiff] = []
     private(set) var diffScope: DiffScope = .this
     private(set) var description: PRDescription?
     private(set) var plan: PlanText?
@@ -366,6 +371,13 @@ final class ReviewModel {
     }
 
     func findings(for pr: Int) -> [Finding] { findings.filter { $0.ownerPr == pr } }
+
+    /// The layer `offset` places from the selected one, bottom to top (+1 is the one above).
+    func neighbor(_ offset: Int) -> Layer? {
+        guard let layers = stack?.layers, let pr = selectedPR, let at = layers.firstIndex(where: { $0.pr == pr }) else { return nil }
+        let to = at + offset
+        return layers.indices.contains(to) ? layers[to] : nil
+    }
 
     // MARK: Request fixes
 

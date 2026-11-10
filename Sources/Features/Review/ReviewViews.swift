@@ -38,7 +38,14 @@ struct ReviewHomeView: View {
                             }
                         }
                         SpineBar(spine: stack.spine)
-                        Text(stack.statusLine).font(.ah(.caption)).foregroundStyle(theme.muted)
+                        HStack {
+                            Text(stack.statusLine).font(.ah(.caption)).foregroundStyle(theme.muted)
+                            Spacer(minLength: 8)
+                            Image(systemName: "chevron.right")
+                                .font(.ah(.footnote).weight(.semibold))
+                                .foregroundStyle(theme.faint)
+                                .accessibilityHidden(true)
+                        }
                     }
                     .padding(.vertical, 6)
                     .contentShape(Rectangle())
@@ -332,7 +339,17 @@ struct StackCockpitView: View {
                     }
                     Text("\(stack.repo) → \(stack.trunk)").font(.ah(.caption)).foregroundStyle(theme.muted)
                     if let next = stack.next, let layer = stack.layers.first(where: { $0.pr == next }) {
-                        Label("Up next: \(layer.name) — \(layer.title)", systemImage: "arrow.right.circle").font(.ah(.subheadline).weight(.semibold))
+                        // Where to start, as the way in to it.
+                        Button {
+                            if scene.narrow { scene.reviewPath.append(ReviewRoute(stack: stack.id, pr: layer.pr)) } else { Task { await model.select(layer.pr) } }
+                        } label: {
+                            Label("Up next: \(layer.name) — \(layer.title)", systemImage: "arrow.right.circle.fill")
+                                .font(.ah(.subheadline).weight(.semibold))
+                                .multilineTextAlignment(.leading)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(theme.accentStrong)
+                        .padding(.top, 4)
                     }
                     if let origin = stack.origin {
                         Button { scene.open(origin.key) } label: { Label("Made in “\(origin.title)”", systemImage: "terminal") }.font(.ah(.caption))
@@ -349,7 +366,10 @@ struct StackCockpitView: View {
                     Text(decision.text).font(.ah(.callout))
                         .swipeActions { Button("Unpin", role: .destructive) { Task { await model.removeDecision(decision.id) } } }
                 }
-                TextField("Pin a decision the whole stack follows", text: $decision)
+                HStack(spacing: 10) {
+                    Image(systemName: "pin").foregroundStyle(theme.faint).accessibilityHidden(true)
+                    TextField("Pin a decision the whole stack follows", text: $decision)
+                }
                     .font(.ah(.callout))
                     .onSubmit {
                         let text = decision.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -430,11 +450,12 @@ private struct LayerRow: View {
     private var details: some View {
         let confidence = LayerConfidence(layer: layer)
         return VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(layer.name).font(.ah(.subheadline).weight(.semibold))
-                Text(layer.title).font(.ah(.subheadline)).lineLimit(1)
-                Spacer()
-                Text(layer.status.word).font(.ah(.caption).weight(.semibold)).foregroundStyle(tone(layer.status))
+            // The title gets two lines: one cut most of them off mid-word on a phone.
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(layer.name).font(.ah(.subheadline).weight(.semibold)).monospacedDigit()
+                Text(layer.title).font(.ah(.subheadline)).lineLimit(2)
+                Spacer(minLength: 6)
+                StatusTag(text: layer.status.word, color: tone(layer.status))
             }
             HStack(spacing: 8) {
                 Label(confidence.checksText, systemImage: checksSymbol(confidence.checks)).foregroundStyle(checksColor(confidence.checks))
@@ -476,35 +497,50 @@ private struct LayerRow: View {
 }
 
 /// One layer as a decision: understand it, inspect the evidence, challenge it, verify it,
-/// decide, and merge exactly what you reviewed.
+/// decide, and merge exactly what you reviewed. The decision floats at the bottom, where the
+/// thumb is, whatever's been scrolled to; a tapped line turns it into that line's actions.
 struct LayerView: View {
     @Bindable var scene: SceneModel
     @Bindable var model: ReviewModel
     @Environment(\.theme) private var theme
+    @Environment(\.openURL) private var openURL
     @State private var question = ""
-    @State private var selectedLines: (path: String, lines: [DiffLine])?
+    @State private var selectedLines: (path: String, index: Int, lines: [DiffLine])?
     @State private var addingFinding = false
     @State private var dispatching: String?? = nil
     @State private var merging = false
     @State private var resolving: Finding?
+    /// Files folded shut in the diff, by path.
+    @State private var folded: Set<String> = []
+    @FocusState private var asking: Bool
 
     var body: some View {
         if let layer = model.layer, let confidence = model.confidence, let stack = model.stack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    header(layer, confidence)
-                    understand(layer)
-                    inspect(layer)
-                    challenge(layer, stack)
-                    verify(layer, confidence)
-                    decide(layer, confidence)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 28) {
+                        header(layer)
+                        understand(layer)
+                        inspect(layer)
+                        challenge(layer, stack).id("challenge")
+                        verify(layer, confidence)
+                    }
+                    .padding()
                 }
-                .padding()
+                // Another layer opens at its top, not wherever the last one was read to.
+                .id(layer.pr)
+                .transition(.opacity)
+                .safeAreaBar(edge: .bottom, spacing: 0) { bar(layer, confidence, proxy) }
+            }
+            .animation(.smooth(duration: 0.25), value: layer.pr)
+            .onChange(of: layer.pr) {
+                selectedLines = nil
+                folded = []
             }
             // The page's heading has the title; the bar keeps the layer's number.
             .navigationTitle(layer.name)
             .navigationBarTitleDisplayMode(.inline)
-            .sheet(isPresented: $addingFinding) {
+            .sheet(isPresented: $addingFinding, onDismiss: { selectedLines = nil }) {
                 NewFindingSheet(model: model, path: selectedLines?.path, lines: selectedLines?.lines ?? [])
             }
             .sheet(item: Binding(get: { dispatching.map { DispatchKind(kind: $0) } }, set: { (item: DispatchKind?) in dispatching = item.map { $0.kind } })) { item in
@@ -519,28 +555,32 @@ struct LayerView: View {
         }
     }
 
-    private func header(_ layer: Layer, _ confidence: LayerConfidence) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("#\(layer.pr)").font(.ah(.title3).monospacedDigit()).foregroundStyle(theme.muted)
-                Text(layer.title).font(.ah(.title3).weight(.semibold))
-                if layer.draft { Text("Draft").font(.ah(.caption)).padding(4).background(theme.raised, in: Capsule()) }
+    private func header(_ layer: Layer) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text(layer.role.isEmpty ? "#\(layer.pr)" : "#\(layer.pr) · \(layer.role)")
+                    .font(.ahMono(.caption).weight(.semibold))
+                    .foregroundStyle(theme.muted)
+                StatusTag(text: layer.status.word, color: LayerColor.color(layer.status, theme))
+                if layer.draft { StatusTag(text: "Draft", color: theme.muted) }
             }
-            Text("\(layer.headRef) → \(layer.baseRef) · head \(layer.headSha.prefix(7)) · by \(layer.author)").font(.ahMono(.caption)).foregroundStyle(theme.muted)
-            if !confidence.missing.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Before this can merge").font(.ah(.caption).weight(.semibold)).foregroundStyle(theme.muted)
-                    ForEach(confidence.missing, id: \.self) { item in Label(item, systemImage: "circle").font(.ah(.callout)) }
-                }
-                .padding(10)
-                .background(theme.raised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-            if let url = URL(string: layer.url) { Link("Open on GitHub", destination: url).font(.ah(.caption)) }
+            Text(layer.title)
+                .font(.ah(.title2).weight(.semibold))
+                .fixedSize(horizontal: false, vertical: true)
+            Text("\(layer.headRef) → \(layer.baseRef)")
+                .font(.ahMono(.caption))
+                .foregroundStyle(theme.muted)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Text("by \(layer.author) · head \(layer.headSha.prefix(7))")
+                .font(.ah(.caption))
+                .foregroundStyle(theme.faint)
         }
+        .accessibilityElement(children: .combine)
     }
 
     private func section<Content: View>(_ title: String, _ symbol: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             Label(title, systemImage: symbol).font(.ah(.headline)).accessibilityAddTraits(.isHeader)
             content()
         }
@@ -565,8 +605,9 @@ struct LayerView: View {
                     }
                     MarkdownView(summary, compact: true)
                 }
-                .padding(10)
-                .background(theme.raised.opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .padding(12)
+                .background(theme.tile, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .transition(.opacity)
             } else if model.summarizing {
                 HStack(spacing: 10) {
                     ProgressView()
@@ -575,9 +616,10 @@ struct LayerView: View {
                         Text("The model reads this layer’s diff and its stack. It shows here when it’s done.").font(.ah(.caption)).foregroundStyle(theme.muted)
                     }
                 }
-                .padding(10)
+                .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(theme.raised.opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(theme.tile, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .transition(.opacity)
             } else if let blocked = model.briefingBlocked {
                 VStack(alignment: .leading, spacing: 8) {
                     Label(blocked, systemImage: "text.bubble").font(.ah(.callout)).foregroundStyle(theme.muted)
@@ -598,6 +640,7 @@ struct LayerView: View {
                 }
             }
         }
+        .animation(.smooth, value: model.summarizing)
     }
 
     private func inspect(_ layer: Layer) -> some View {
@@ -607,37 +650,103 @@ struct LayerView: View {
             }
             .pickerStyle(.segmented)
             if let diff = model.diff {
-                Text("\(diff.from.prefix(7))…\(diff.to.prefix(7))\(diff.kind == "range" ? " · range-diff (rebased)" : "")").font(.ahMono(.caption)).foregroundStyle(theme.faint)
+                let files = model.diffFiles
+                HStack(spacing: 8) {
+                    Text(files.count == 1 ? "1 file" : "\(files.count) files").foregroundStyle(theme.text2)
+                    let added = files.reduce(0) { $0 + $1.additions }, removed = files.reduce(0) { $0 + $1.deletions }
+                    if added > 0 { Text("+\(added)").foregroundStyle(theme.done) }
+                    if removed > 0 { Text("−\(removed)").foregroundStyle(theme.danger) }
+                    Spacer(minLength: 8)
+                    Text("\(diff.from.prefix(7))…\(diff.to.prefix(7))\(diff.kind == "range" ? " · range-diff" : "")")
+                        .font(.ahMono(.caption2))
+                        .foregroundStyle(theme.faint)
+                        .lineLimit(1)
+                }
+                .font(.ah(.caption).weight(.semibold).monospacedDigit())
                 if diff.truncated { Label("This diff is long; only its start is shown here.", systemImage: "scissors").font(.ah(.caption)).foregroundStyle(theme.limited) }
                 if diff.text.isEmpty {
                     Text(model.diffScope == .since ? "Nothing changed since your review." : "No changes.").foregroundStyle(theme.muted)
                 } else {
-                    ForEach(FileDiff.files(in: diff.text)) { file in
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Text(file.path).font(.ahMono(.caption).weight(.semibold))
-                                Spacer()
-                                Menu {
-                                    Button("Ask the reviewer about this file") { model.attach(.file(pr: layer.pr, path: file.path)) }
-                                } label: { Image(systemName: "ellipsis") }
+                    ForEach(files) { file in
+                        VStack(alignment: .leading, spacing: 6) {
+                            fileHeader(file, layer)
+                            if !folded.contains(file.path) {
+                                DiffLinesView(
+                                    lines: file.lines,
+                                    maxLines: 300,
+                                    onLineAt: { index, line in pick(file.path, index, line) },
+                                    selected: selectedLines?.path == file.path ? [selectedLines!.index] : []
+                                )
+                                .transition(.opacity.combined(with: .scale(0.98, anchor: .top)))
                             }
-                            DiffLinesView(lines: file.lines, maxLines: 300, onLine: { line in
-                                guard let number = line.number else { return }
-                                selectedLines = (file.path, [line])
-                                model.attach(.lines(pr: layer.pr, path: file.path, start: number, end: number, text: line.text))
-                            })
                         }
                     }
                 }
             } else if model.loading.contains("diff") {
-                ProgressView()
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(theme.sunken)
+                    .frame(height: 140)
+                    .overlay { ProgressView() }
             }
-            if let selected = selectedLines {
-                HStack {
-                    Text("\(selected.path):\(selected.lines.first?.number ?? 0)").font(.ahMono(.caption))
-                    Spacer()
-                    Button("Add a finding here") { addingFinding = true }.buttonStyle(.bordered).controlSize(.small)
+        }
+    }
+
+    /// A file's name over its folder, what it adds and removes, and a tap to fold it.
+    private func fileHeader(_ file: FileDiff, _ layer: Layer) -> some View {
+        let shut = folded.contains(file.path)
+        let name = (file.path as NSString).lastPathComponent
+        let folder = (file.path as NSString).deletingLastPathComponent
+        return HStack(spacing: 8) {
+            Button {
+                withAnimation(.snappy(duration: 0.25)) {
+                    if shut { folded.remove(file.path) } else { folded.insert(file.path) }
                 }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "chevron.right")
+                        .font(.ah(.caption2).weight(.bold))
+                        .foregroundStyle(theme.faint)
+                        .rotationEffect(.degrees(shut ? 0 : 90))
+                    HStack(spacing: 0) {
+                        if !folder.isEmpty { Text(folder + "/").foregroundStyle(theme.muted) }
+                        Text(name).fontWeight(.semibold).foregroundStyle(theme.text)
+                    }
+                    .font(.ahMono(.caption))
+                    .lineLimit(1)
+                    .truncationMode(.head)
+                    Spacer(minLength: 6)
+                    HStack(spacing: 4) {
+                        if file.additions > 0 { Text("+\(file.additions)").foregroundStyle(theme.done) }
+                        if file.deletions > 0 { Text("−\(file.deletions)").foregroundStyle(theme.danger) }
+                    }
+                    .font(.ah(.caption2).weight(.semibold).monospacedDigit())
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(file.path), \(file.additions) added, \(file.deletions) removed")
+            .accessibilityHint(shut ? "Shows its changes" : "Folds its changes away")
+            Menu {
+                Button("Ask the Reviewer About This File", systemImage: "bubble.left") { model.attach(.file(pr: layer.pr, path: file.path)) }
+                Button(shut ? "Unfold" : "Fold", systemImage: shut ? "chevron.down" : "chevron.up") {
+                    withAnimation(.snappy(duration: 0.25)) { if shut { folded.remove(file.path) } else { folded.insert(file.path) } }
+                }
+            } label: {
+                Image(systemName: "ellipsis").foregroundStyle(theme.muted).frame(width: 28, height: 22).contentShape(Rectangle())
+            }
+            .accessibilityLabel("More for \(name)")
+        }
+    }
+
+    /// A tapped line is picked (tap it again to let go); the bar below turns into its actions.
+    private func pick(_ path: String, _ index: Int, _ line: DiffLine) {
+        guard line.number != nil else { return }
+        Haptics.selection()
+        withAnimation(.snappy(duration: 0.2)) {
+            if selectedLines?.path == path && selectedLines?.index == index {
+                selectedLines = nil
+            } else {
+                selectedLines = (path, index, [line])
             }
         }
     }
@@ -654,25 +763,34 @@ struct LayerView: View {
                     }
                 }
             }
-            if model.loading.contains("ask") { ProgressView() }
+            if model.loading.contains("ask") {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("The reviewer is reading…").font(.ah(.caption)).foregroundStyle(theme.muted)
+                }
+                .transition(.opacity)
+            }
             if !model.attachments.isEmpty {
-                ScrollView(.horizontal) {
+                ScrollView(.horizontal, showsIndicators: false) {
                     HStack {
                         ForEach(model.attachments, id: \.key) { context in
                             Button {
-                                model.attachments.removeAll { $0.key == context.key }
+                                withAnimation(.snappy) { model.attachments.removeAll { $0.key == context.key } }
                             } label: {
                                 Label(label(context), systemImage: "xmark").font(.ah(.caption))
                             }
                             .buttonStyle(.bordered)
+                            .accessibilityLabel("Remove \(label(context))")
                         }
                     }
                 }
+                .transition(.opacity)
             }
             // The composer's shape: a rounded field, and Send as its accent circle.
             HStack(alignment: .bottom, spacing: 8) {
                 TextField("Ask the reviewer about this layer", text: $question, axis: .vertical)
                     .lineLimit(1...6)
+                    .focused($asking)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .background(theme.tile, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -696,17 +814,27 @@ struct LayerView: View {
                 .keyboardShortcut(.return, modifiers: .command)
                 .accessibilityLabel("Ask")
             }
-            Divider()
             let findings = model.findings(for: layer.pr)
             HStack {
                 Text("Findings").font(.ah(.subheadline).weight(.semibold))
+                if !findings.isEmpty { Text("\(findings.count)").font(.ah(.caption).monospacedDigit()).foregroundStyle(theme.muted) }
                 Spacer()
-                Button("Import GitHub threads") { Task { let n = await model.importThreads(); scene.toast(n == 0 ? "No new threads" : "Imported \(n)") } }.font(.ah(.caption))
-                Button("Add") { selectedLines = nil; addingFinding = true }.font(.ah(.caption))
+                Menu {
+                    Button("Add a Finding", systemImage: "flag") { selectedLines = nil; addingFinding = true }
+                    Button("Import GitHub Threads", systemImage: "square.and.arrow.down") { Task { let n = await model.importThreads(); scene.toast(n == 0 ? "No new threads" : "Imported \(n)") } }
+                } label: {
+                    Label("Add", systemImage: "plus").font(.ah(.caption).weight(.semibold))
+                } primaryAction: {
+                    selectedLines = nil
+                    addingFinding = true
+                }
             }
-            if findings.isEmpty { Text("No findings on this layer.").font(.ah(.callout)).foregroundStyle(theme.muted) }
+            .padding(.top, 6)
+            if findings.isEmpty { Text("No findings on this layer. Tap a line in the diff to raise one there.").font(.ah(.callout)).foregroundStyle(theme.muted) }
             ForEach(findings) { finding in FindingRow(finding: finding, model: model) { resolving = finding } }
         }
+        .animation(.smooth, value: model.loading.contains("ask"))
+        .animation(.smooth, value: model.attachments.count)
     }
 
     private func label(_ context: AskContext) -> String {
@@ -719,28 +847,26 @@ struct LayerView: View {
 
     private func verify(_ layer: Layer, _ confidence: LayerConfidence) -> some View {
         section("Verify", "checkmark.shield") {
-            // Like the gates under them: the glyph says the state in its color, the words stay
-            // the text's (the review read grey once done, the checks all green).
-            let reviewed = confidence.review == .current || confidence.review == .rebasedSamePatch
-            Label {
-                Text(confidence.reviewText).foregroundStyle(theme.text)
-            } icon: {
-                Image(systemName: reviewed ? "checkmark.seal.fill" : "seal")
-                    .foregroundStyle(reviewed ? theme.done : confidence.review == .changedSinceReview ? theme.brand : theme.muted)
-            }
-            Label {
-                Text(confidence.checksText).foregroundStyle(theme.text)
-            } icon: {
-                Image(systemName: confidence.checks == .passing ? "checkmark.circle" : confidence.checks == .none ? "questionmark.circle" : confidence.checks == .pending ? "clock" : "xmark.circle")
-                    .foregroundStyle(confidence.checks == .passing ? theme.done : confidence.checks == .failing ? theme.danger : theme.limited)
-            }
-            ForEach(layer.gates, id: \.key) { gate in
-                HStack(alignment: .firstTextBaseline) {
-                    Image(systemName: gate.ok ? "checkmark" : "xmark").foregroundStyle(gate.ok ? theme.done : theme.danger)
-                    Text(gate.label)
-                    if let detail = gate.detail { Text(detail).foregroundStyle(theme.muted) }
+            // One checklist: your review and the checks first, then the host's gates, less the
+            // two that would only say those again.
+            let gates = layer.gates.filter { $0.key != "reviewed" && $0.key != "checks" }
+            VStack(alignment: .leading, spacing: 0) {
+                CheckRow(state: reviewState(confidence), text: confidence.reviewText)
+                Divider().padding(.leading, 40)
+                CheckRow(state: checksState(confidence.checks), text: confidence.checksText)
+                ForEach(gates, id: \.key) { gate in
+                    Divider().padding(.leading, 40)
+                    CheckRow(state: gate.ok ? .ok : .no, text: gate.label, detail: gate.ok ? nil : gate.detail)
                 }
-                .font(.ah(.callout))
+            }
+            .background(theme.tile, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            switch layer.needs {
+            case "conflict":
+                Label("Conflicts with its base: needs a restack", systemImage: "exclamationmark.triangle").foregroundStyle(theme.limited).font(.ah(.callout))
+            case "merging", "queued":
+                Label(layer.needs == "queued" ? "In GitHub’s merge queue" : "GitHub is merging it", systemImage: "clock").foregroundStyle(theme.run).font(.ah(.callout))
+            default:
+                EmptyView()
             }
             if let verdict = confidence.verdict {
                 VStack(alignment: .leading, spacing: 6) {
@@ -757,8 +883,8 @@ struct LayerView: View {
                     }
                     Button("Accept these fixes") { Task { await model.acceptFixes() } }.buttonStyle(.bordered)
                 }
-                .padding(10)
-                .background(theme.raised.opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .padding(12)
+                .background(theme.tile, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             if confidence.agentWorking, let dispatch = layer.dispatch {
                 Label("\(dispatch.targetTitle ?? "The agent") is fixing \(dispatch.findings.count) finding\(dispatch.findings.count == 1 ? "" : "s")", systemImage: "wrench.and.screwdriver")
@@ -767,56 +893,266 @@ struct LayerView: View {
         }
     }
 
-    private func decide(_ layer: Layer, _ confidence: LayerConfidence) -> some View {
-        section("Decide", "hand.raised") {
-            HStack {
-                if layer.approved && confidence.review != .changedSinceReview {
-                    Button("Withdraw my review") { Task { await model.markReviewed(false) } }.buttonStyle(.bordered)
-                } else {
-                    Button {
-                        Task { await model.markReviewed(true) }
-                        Haptics.success()
-                    } label: {
-                        Label("I reviewed \(layer.headSha.prefix(7))", systemImage: "checkmark.seal")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(theme.accentStrong)
-                }
-                Button("Request fixes…") { dispatching = .some(nil) }.buttonStyle(.bordered).disabled(model.findings(for: layer.pr).filter(\.isOpen).isEmpty)
+    private func reviewState(_ confidence: LayerConfidence) -> CheckRow.State {
+        switch confidence.review {
+        case .current, .rebasedSamePatch: return .ok
+        case .changedSinceReview: return .attention
+        case .notReviewed: return .todo
+        }
+    }
+
+    private func checksState(_ outcome: Checks.Outcome) -> CheckRow.State {
+        switch outcome {
+        case .passing: return .ok
+        case .failing: return .no
+        case .pending: return .waiting
+        case .none: return .unknown
+        }
+    }
+
+    // MARK: The decision bar
+
+    @ViewBuilder
+    private func bar(_ layer: Layer, _ confidence: LayerConfidence, _ proxy: ScrollViewProxy) -> some View {
+        GlassEffectContainer(spacing: 10) {
+            if let selected = selectedLines, let line = selected.lines.first, let number = line.number {
+                lineBar(layer, selected.path, number, line, proxy)
+                    .transition(.blurReplace)
+            } else {
+                decisionBar(layer, confidence)
+                    .transition(.blurReplace)
             }
-            HStack {
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 6)
+        .padding(.bottom, 8)
+        .animation(.snappy(duration: 0.25), value: selectedLines?.index)
+        .animation(.snappy(duration: 0.3), value: confidence)
+    }
+
+    private func lineBar(_ layer: Layer, _ path: String, _ number: Int, _ line: DiffLine, _ proxy: ScrollViewProxy) -> some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Line \(number)").font(.ah(.subheadline).weight(.semibold))
+                Text((path as NSString).lastPathComponent).font(.ahMono(.caption2)).foregroundStyle(theme.muted).lineLimit(1).truncationMode(.middle)
+            }
+            .padding(.leading, 6)
+            Spacer(minLength: 4)
+            Button {
+                model.attach(.lines(pr: layer.pr, path: path, start: number, end: number, text: line.text))
+                selectedLines = nil
+                withAnimation(.smooth) { proxy.scrollTo("challenge", anchor: .top) }
+                asking = true
+            } label: {
+                Label("Ask", systemImage: "bubble.left").font(.ah(.subheadline).weight(.semibold))
+            }
+            .buttonStyle(.glass)
+            Button { addingFinding = true } label: {
+                Label("Finding", systemImage: "flag").font(.ah(.subheadline).weight(.semibold))
+            }
+            .buttonStyle(.glass)
+            Button {
+                selectedLines = nil
+            } label: {
+                Image(systemName: "xmark").font(.ah(.subheadline).weight(.semibold)).frame(width: 20, height: 20)
+            }
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
+            .accessibilityLabel("Let go of the line")
+        }
+        .padding(6)
+        .glassEffect(.regular, in: Capsule())
+    }
+
+    private func decisionBar(_ layer: Layer, _ confidence: LayerConfidence) -> some View {
+        HStack(spacing: 10) {
+            primary(layer, confidence)
+                .frame(maxWidth: .infinity)
+            if let next = model.neighbor(1) {
+                Button { go(to: next) } label: {
+                    HStack(spacing: 4) {
+                        Text(next.role.isEmpty ? "#\(next.pr)" : next.role).lineLimit(1)
+                        Image(systemName: "chevron.up")
+                    }
+                    .font(.ah(.subheadline).weight(.semibold))
+                    .padding(.vertical, 6)
+                }
+                .buttonStyle(.glass)
+                .accessibilityLabel("Next layer, \(next.name)")
+                .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+            }
+            more(layer, confidence)
+        }
+    }
+
+    /// The one thing to do next: review this revision, merge it, or what it's waiting on.
+    @ViewBuilder
+    private func primary(_ layer: Layer, _ confidence: LayerConfidence) -> some View {
+        let reviewed = confidence.review == .current || confidence.review == .rebasedSamePatch
+        if layer.state == "merged" || layer.state == "closed" {
+            Label(layer.state == "merged" ? "Merged" : "Closed", systemImage: layer.state == "merged" ? "checkmark.circle.fill" : "xmark.circle")
+                .font(.ah(.subheadline).weight(.semibold))
+                .foregroundStyle(layer.state == "merged" ? theme.done : theme.muted)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .glassEffect(.regular, in: Capsule())
+        } else if !reviewed {
+            Button {
+                Task {
+                    await model.markReviewed(true)
+                    if model.layer?.approved == true { Haptics.success() }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    if model.loading.contains("approve") { ProgressView().tint(.white) } else { Image(systemName: "checkmark.seal") }
+                    Text(confidence.review == .changedSinceReview ? "Reviewed the changes" : "I reviewed \(layer.headSha.prefix(7))").lineLimit(1)
+                }
+                .font(.ah(.subheadline).weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+            }
+            .buttonStyle(.glassProminent)
+            .tint(theme.accentStrong)
+            .disabled(model.loading.contains("approve"))
+        } else if confidence.readyToMerge {
+            Button { merging = true } label: {
+                // Ink on the green, as ah's light controls carry it: white on it barely read.
+                Label("Merge #\(layer.pr)…", systemImage: "arrow.triangle.merge")
+                    .font(.ah(.subheadline).weight(.semibold))
+                    .foregroundStyle(theme.background)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+            }
+            .buttonStyle(.glassProminent)
+            .tint(theme.done)
+        } else {
+            VStack(spacing: 1) {
+                Label("Reviewed", systemImage: "checkmark.seal.fill")
+                    .font(.ah(.subheadline).weight(.semibold))
+                    .foregroundStyle(theme.done)
+                if let waiting = confidence.missing.first {
+                    Text("Waiting on: \(waiting)").font(.ah(.caption2)).foregroundStyle(theme.muted).lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .glassEffect(.regular, in: Capsule())
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    /// Everything else a layer can be asked for, in one place.
+    private func more(_ layer: Layer, _ confidence: LayerConfidence) -> some View {
+        Menu {
+            if let previous = model.neighbor(-1) {
+                Button("Previous Layer: \(previous.name)", systemImage: "chevron.down") { go(to: previous) }
+            }
+            Section {
+                Button("Request Fixes…", systemImage: "wrench.and.screwdriver") { dispatching = .some(nil) }
+                    .disabled(model.findings(for: layer.pr).filter(\.isOpen).isEmpty)
+                Button("Ask the Agent to Merge…", systemImage: "arrow.triangle.merge") { dispatching = .some("merge") }
+                    .disabled(!confidence.readyToMerge)
                 switch layer.needs {
-                case "restack":
-                    Button("Ask the agent to restack…") { dispatching = .some("restack") }.buttonStyle(.bordered)
+                case "restack", "conflict":
+                    Button("Ask the Agent to Restack…", systemImage: "square.stack.3d.up") { dispatching = .some("restack") }
                 case "retarget":
-                    Button("Retarget onto \(model.stack?.trunk ?? "trunk")") { Task { await model.retarget() } }.buttonStyle(.bordered)
-                case "conflict":
-                    Label("Conflicts with its base: needs a restack", systemImage: "exclamationmark.triangle").foregroundStyle(theme.limited)
-                    Button("Ask the agent to restack…") { dispatching = .some("restack") }.buttonStyle(.bordered)
-                case "merging", "queued":
-                    Label(layer.needs == "queued" ? "In GitHub’s merge queue" : "GitHub is merging it", systemImage: "clock").foregroundStyle(theme.run)
+                    Button("Retarget onto \(model.stack?.trunk ?? "trunk")", systemImage: "arrow.turn.down.right") { Task { await model.retarget() } }
                 default:
                     EmptyView()
                 }
                 if layer.draft {
-                    Button("Mark ready for review") { Task { await model.ready() } }.buttonStyle(.bordered)
+                    Button("Mark Ready for Review", systemImage: "eye") { Task { await model.ready() } }
                 }
-                Button("Ask the agent to merge…") { dispatching = .some("merge") }.buttonStyle(.bordered).disabled(!confidence.readyToMerge)
             }
-            .font(.ah(.callout))
-            Button {
-                merging = true
-            } label: {
-                // Ink on the green, as ah's light controls carry it: white on it barely read.
-                Label("Merge #\(layer.pr)…", systemImage: "arrow.triangle.merge")
-                    .foregroundStyle(confidence.readyToMerge ? theme.background : theme.faint)
+            if layer.approved && confidence.review != .changedSinceReview {
+                Button("Withdraw My Review", systemImage: "arrow.uturn.backward", role: .destructive) { Task { await model.markReviewed(false) } }
             }
-            .buttonStyle(.borderedProminent)
-            .tint(theme.done)
-            .disabled(!confidence.readyToMerge)
-            if !confidence.readyToMerge {
-                Text("Merging opens once you’ve reviewed this exact revision and nothing blocks it.").font(.ah(.caption)).foregroundStyle(theme.muted)
+            if let url = URL(string: layer.url) {
+                Section {
+                    Button("Open on GitHub", systemImage: "safari") { openURL(url) }
+                    ShareLink(item: url) { Label("Share the PR", systemImage: "square.and.arrow.up") }
+                }
             }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.ah(.subheadline).weight(.semibold))
+                .frame(width: 22, height: 22)
+                .padding(.vertical, 6)
+        }
+        .buttonStyle(.glass)
+        .buttonBorderShape(.circle)
+        .accessibilityLabel("More for \(layer.name)")
+    }
+
+    /// Another layer of the stack: in place beside the list, as its own page on a phone.
+    private func go(to layer: Layer) {
+        Haptics.selection()
+        if scene.narrow, let id = model.stack?.id, !scene.reviewPath.isEmpty {
+            scene.reviewPath[scene.reviewPath.count - 1] = ReviewRoute(stack: id, pr: layer.pr)
+        } else {
+            Task { await model.select(layer.pr) }
+        }
+    }
+}
+
+/// A short tinted word: a layer's status, Draft.
+struct StatusTag: View {
+    let text: String
+    let color: Color
+
+    var body: some View {
+        Text(text)
+            .font(.ah(.caption2).weight(.semibold))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(color.opacity(0.14), in: Capsule())
+            .foregroundStyle(color)
+    }
+}
+
+/// One line of a checklist: its state as a glyph in the state's color, the words in the text's.
+struct CheckRow: View {
+    enum State { case ok, no, waiting, todo, attention, unknown }
+    let state: State
+    let text: String
+    var detail: String? = nil
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Image(systemName: symbol)
+                .foregroundStyle(color)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(text).foregroundStyle(theme.text)
+                if let detail { Text(detail).font(.ah(.caption)).foregroundStyle(theme.muted) }
+            }
+            Spacer(minLength: 0)
+        }
+        .font(.ah(.callout))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var symbol: String {
+        switch state {
+        case .ok: return "checkmark.circle.fill"
+        case .no: return "xmark.circle.fill"
+        case .waiting: return "clock.fill"
+        case .todo: return "circle.dashed"
+        case .attention: return "exclamationmark.circle.fill"
+        case .unknown: return "questionmark.circle"
+        }
+    }
+
+    private var color: Color {
+        switch state {
+        case .ok: return theme.done
+        case .no: return theme.danger
+        case .waiting: return theme.run
+        case .todo: return theme.muted
+        case .attention: return theme.brand
+        case .unknown: return theme.limited
         }
     }
 }

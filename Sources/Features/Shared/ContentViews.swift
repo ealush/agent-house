@@ -275,6 +275,8 @@ struct DiffLinesView: View {
     var maxLines: Int? = nil
     /// Tap a line to act on it (comment, attach to the reviewer).
     var onLine: ((DiffLine) -> Void)? = nil
+    /// The same, with the line's place among `lines` (what `selected` counts in).
+    var onLineAt: ((Int, DiffLine) -> Void)? = nil
     var selected: Set<Int> = []
     /// The keyboard cursor's line, outlined.
     var cursor: Int? = nil
@@ -293,7 +295,10 @@ struct DiffLinesView: View {
                     DiffLineRow(line: line, selected: selected.contains(index))
                         .overlay { if cursor == index { Rectangle().strokeBorder(theme.accentStrong, lineWidth: 1.5) } }
                         .contentShape(Rectangle())
-                        .onTapGesture { onLine?(line) }
+                        .onTapGesture {
+                            onLine?(line)
+                            onLineAt?(index, line)
+                        }
                         .id(idPrefix.map { "\($0):\(index)" } ?? "\(index)")
                 }
             }
