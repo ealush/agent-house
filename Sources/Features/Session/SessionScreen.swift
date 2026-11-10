@@ -454,7 +454,9 @@ private struct EndedBanner: View {
             Image(systemName: "moon.zzz").foregroundStyle(theme.muted)
             VStack(alignment: .leading, spacing: 2) {
                 Text("This session has ended").font(.ah(.subheadline).weight(.semibold))
-                Text("Resume it to continue, or just send a message: that resumes it first.").font(.ah(.caption)).foregroundStyle(theme.muted)
+                // A message resumes it only where there's a composer to send one from.
+                Text(session.surface == .gui && session.hasGUI ? "Resume it to continue, or just send a message: that resumes it first." : "Resume starts it again in the same folder.")
+                    .font(.ah(.caption)).foregroundStyle(theme.muted)
             }
             Spacer()
             Button("Resume") {
@@ -486,10 +488,11 @@ private struct EndedScreen: View {
                         .padding()
                 }
             } else if loaded {
+                // The banner above says it ended and how to resume: this only says what's missing.
                 ContentUnavailableView {
-                    Label("This shell has ended", systemImage: "moon.zzz")
+                    Label("No last screen", systemImage: "rectangle.dashed")
                 } description: {
-                    Text("Its last screen wasn’t kept. Resume starts it again in the same folder.")
+                    Text("What this shell showed wasn’t kept when it ended.")
                 }
             } else {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
