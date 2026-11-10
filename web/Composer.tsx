@@ -365,7 +365,8 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
                 f.src && <img src={f.src} alt={f.name} />
               ) : (
                 <>
-                  <Icon name="files" size={16} />
+                  {/* A file, not the Files tab's folder. */}
+                  <Icon name="file" size={16} />
                   <span className="composer-file-name">{f.name}</span>
                 </>
               )}
