@@ -618,8 +618,63 @@ struct SearchView: View {
         return [project, when, host].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
+    /// The filters as chips: each says what it's set to, in the accent once it narrows.
+    private var filters: some View {
+        HStack(spacing: 8) {
+            Menu {
+                Picker("Who said it", selection: $model.query.role) {
+                    Text("Anyone").tag(String?.none)
+                    Text("You").tag(Optional("user"))
+                    Text("The agent").tag(Optional("assistant"))
+                }
+            } label: {
+                filterChip(model.query.role == "user" ? "You" : model.query.role == "assistant" ? "The agent" : "Anyone", symbol: "person.2", on: model.query.role != nil)
+            }
+            Menu {
+                Picker("When", selection: Binding(get: { SearchSince(from: model.query.from) }, set: { model.query.from = $0.from })) {
+                    ForEach(SearchSince.allCases, id: \.self) { Text($0.label).tag($0) }
+                }
+            } label: {
+                filterChip(SearchSince(from: model.query.from).label, symbol: "calendar", on: model.query.from != nil)
+            }
+            if let hub = scene.hub, hub.multiHost {
+                Menu {
+                    Picker("Host", selection: $model.query.host) {
+                        Text("Every host").tag(String?.none)
+                        ForEach(hub.hosts, id: \.name) { Text($0.name).tag(Optional($0.name)) }
+                    }
+                } label: {
+                    filterChip(model.query.host ?? "Every host", symbol: "server.rack", on: model.query.host != nil)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .menuOrder(.fixed)
+    }
+
+    private func filterChip(_ title: String, symbol: String, on: Bool) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: symbol).imageScale(.small)
+            Text(title).lineLimit(1)
+            Image(systemName: "chevron.down").font(.ah(.caption2).weight(.semibold))
+        }
+        .font(.ah(.footnote).weight(.medium))
+        .foregroundStyle(on ? theme.accent : theme.text2)
+        .padding(.horizontal, 12)
+        .frame(minHeight: 32)
+        .background(on ? theme.accentTint : theme.tile, in: Capsule())
+        .overlay(Capsule().strokeBorder(on ? theme.accentLine : theme.line, lineWidth: 1))
+        .contentShape(Capsule())
+    }
+
     var body: some View {
         List {
+            // Who said it, when, where: in the page, always in reach (in the bar they hid behind
+            // the search field, which has the keyboard from the moment Search opens).
+            filters
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                .listRowSeparator(.hidden)
             if let response = model.response {
                 if !response.enabled {
                     Banner(text: "Search is off on this host. Turn it on in Settings → Search.", tone: .warning)
@@ -687,30 +742,6 @@ struct SearchView: View {
             Text("All").tag("all")
             Text("Transcripts").tag("transcripts")
             Text("Side chats").tag("chats")
-        }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Picker("Who said it", selection: $model.query.role) {
-                        Text("Anyone").tag(String?.none)
-                        Text("You").tag(Optional("user"))
-                        Text("The agent").tag(Optional("assistant"))
-                    }
-                    Picker("When", selection: Binding(get: { SearchSince(from: model.query.from) }, set: { model.query.from = $0.from })) {
-                        ForEach(SearchSince.allCases, id: \.self) { Text($0.label).tag($0) }
-                    }
-                    if let hub = scene.hub, hub.multiHost {
-                        Picker("Host", selection: $model.query.host) {
-                            Text("Every host").tag(String?.none)
-                            ForEach(hub.hosts, id: \.name) { Text($0.name).tag(Optional($0.name)) }
-                        }
-                    }
-                } label: {
-                    Label("Filters", systemImage: "line.3.horizontal.decrease")
-                }
-                // Tinted while a filter is on, as Mail's is.
-                .tint(model.query.role != nil || model.query.from != nil || model.query.host != nil ? theme.accent : .primary)
-            }
         }
         .onChange(of: model.query) { _, query in
             scene.search = query
