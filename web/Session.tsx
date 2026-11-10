@@ -1154,7 +1154,8 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
               ['main', 'sessions', 'Session', true],
               ['diff', 'diff', L('panel-diff'), diffTab],
               ['files', 'files', L('panel-files'), true],
-              ['chat', 'chat', L('panel-chat'), true],
+              // A side chat's own mark: the chat bubble is the header's GUI view, right above.
+              ['chat', 'sparkle', L('panel-chat'), true],
               // Nothing queued: the tab steps aside (the menu and palette still open it).
               ['queue', 'queue', L('panel-queue'), turns && (w.queued > 0 || tab === 'queue')],
               ['snapshots', 'history', L('panel-snapshots'), turns],
@@ -1230,7 +1231,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
                       // Beside Diff: both are about the branch.
                       ['stack', 'stack', stackTab],
                       ['files', 'files', true],
-                      ['chat', 'chat', true],
+                      ['chat', 'sparkle', true],
                       ['queue', 'queue', turns],
                       ['snapshots', 'history', turns],
                       ['preview', 'globe', true],
