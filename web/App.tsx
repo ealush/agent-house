@@ -511,6 +511,9 @@ export function App({ onLock }: { onLock: () => void }) {
     const DIRS: Record<string, PaneDir> = { arrowleft: 'left', arrowright: 'right', arrowup: 'up', arrowdown: 'down', h: 'left', l: 'right', k: 'up', j: 'down' };
     const key = (e: KeyboardEvent) => {
       if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
+      // A chord (the switcher, the palette, New session) ends the mode and goes through, so
+      // the dialog it opens gets the keyboard instead of a mode still listening behind it.
+      if (e.ctrlKey || e.metaKey) return setSubmap(null);
       e.preventDefault();
       e.stopPropagation();
       if (e.key === 'Escape' || e.key === 'Enter') return setSubmap(null);
@@ -556,6 +559,8 @@ export function App({ onLock }: { onLock: () => void }) {
         case '`':
           return leave(() => void toggleScratch());
       }
+      // Any other key ends it, as resize mode does: a mode you forgot about never eats typing.
+      setSubmap(null);
     };
     window.addEventListener('keydown', key, true);
     return () => window.removeEventListener('keydown', key, true);
