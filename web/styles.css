@@ -5236,6 +5236,35 @@ ul.queue-items {
   min-height: 48px;
 }
 
+/* An iOS list's choice: its check at the trailing edge, in the accent. */
+.composer-options .picker-name {
+  align-items: center;
+}
+
+.composer-options .picker-name .check {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.picker-label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.picker-hint {
+  display: none;
+}
+
+.composer-options .picker-hint {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .composer-option-row {
   display: flex;
   align-items: center;

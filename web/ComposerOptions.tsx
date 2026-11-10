@@ -19,7 +19,8 @@ export function ComposerOptions({ launch, compact, active }: { launch: Launch; c
 
   const close = () => setSection(null);
   const effortLabel = effort ? effort.charAt(0).toUpperCase() + effort.slice(1) : 'Default';
-  const modeLabel = mode?.id !== 'default' ? mode?.name ?? 'Default' : 'Default';
+  // The mode's own name: Claude Code's default is "Ask before changes", not "Default".
+  const modeLabel = mode?.name ?? 'Default';
   const modelsView = (done: () => void) => (
     <ModelPicker preset={preset} value={{ model: model?.id, effort }}
       disabled={!preset.switchModel && !preset.modelArgs}
@@ -92,7 +93,7 @@ export function ComposerOptions({ launch, compact, active }: { launch: Launch; c
 }
 
 function Setting({ icon, label, value, onClick }: { icon: string; label: string; value: string; onClick: () => void }) {
-  return <button type="button" className="composer-option-row" onClick={onClick}><Icon name={icon} size={20} /><span><strong>{label}</strong><span>{value}</span></span><Icon name="chevron-down" size={16} /></button>;
+  return <button type="button" className="composer-option-row" onClick={onClick}><Icon name={icon} size={20} /><span><strong>{label}</strong><span>{value}</span></span><Icon name="chevron-right" size={16} /></button>;
 }
 
 function ChipLabel({ name, value }: { name: string; value: string }) {

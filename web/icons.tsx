@@ -31,6 +31,7 @@ const PATHS: Record<string, string> = {
   keyboard: 'M2 5h20v14H2zM5.5 8h3.2v2.6H5.5zM10.4 8h3.2v2.6h-3.2zM15.3 8h3.2v2.6h-3.2zM5.5 13h13v2.4h-13z',
   'panel-right': 'M4 5h16v14H4zM15 5v14',
   'chevron-up': 'M6 14l6-6 6 6',
+  'chevron-right': 'M10 6l6 6-6 6',
   'chevron-down': 'M6 10l6 6 6-6',
   'arrow-down': 'M12 5v14M6 13l6 6 6-6',
   reply: 'M9 14 4 9l5-5M4 9h8.5a6 6 0 0 1 6 6v4',

@@ -96,7 +96,12 @@ export function EffortPicker({ levels, value, onPick, disabled = false, footer }
         <button type="button" key={level ?? 'default'} className="picker-name" disabled={disabled}
           title={level ? EFFORT_HINT[level] : 'Use the agent’s default effort'}
           onClick={() => onPick(level)}>
-          {level ?? 'Default'}{level === value && <span className="check">✓</span>}
+          <span className="picker-label">
+            {level ? level.charAt(0).toUpperCase() + level.slice(1) : 'Default'}
+            {/* A phone shows no title tooltip: its sheet shows what each level means. */}
+            <span className="picker-hint">{level ? EFFORT_HINT[level] : 'The agent’s own default'}</span>
+          </span>
+          {level === value && <span className="check">✓</span>}
         </button>
       ))}
       {footer && <div className="picker-foot">{footer}</div>}
