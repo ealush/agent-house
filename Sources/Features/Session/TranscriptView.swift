@@ -13,15 +13,17 @@ struct TranscriptView: View {
     /// The message a link opened, marked for a moment.
     @State private var linked: String?
     @State private var loadingOlder = false
+    /// Older pages are going in above: the end holds still, so what you read does too.
+    @State private var prepending = false
     /// At the newest message (within a few points of the end): new content keeps it in view,
     /// and coming back opens there rather than where the top of the screen was.
     @State private var atBottom = true
     /// The agent wrote more while you were scrolled back: the way down says so.
     @State private var unseen = false
-    /// The pending follow: one at a time, the newest change's, and until when it runs (the
-    /// end leaving view meanwhile is the follow's own doing, not a scroll back).
-    @State private var following: Task<Void, Never>?
-    @State private var followingUntil = Date.distantPast
+    /// What the scroll is doing: only a finger (or a scroll it started) leaves the end.
+    @State private var phase: ScrollPhase = .idle
+    /// How far the end lies below what's in view, as of the last layout.
+    @State private var belowEnd: CGFloat = 0
     @FocusState private var browseFocused: Bool
 
     private var stepsHidden: Bool { scene.app.preferences.stepsHidden }
@@ -41,15 +43,6 @@ struct TranscriptView: View {
         return out
     }
 
-    /// What changes as the conversation grows at its end: a new block, more in the last one,
-    /// a tool's result, the turn starting or ending.
-    static func followKey(_ blocks: [FeedBlock], session: SessionModel) -> String {
-        let tail = blocks.last
-        var items = 0
-        if case .agent(_, _, _, let parts) = tail { items = parts.count }
-        return "\(blocks.count)|\(tail?.id ?? "")|\(items)|\(tail?.text.count ?? 0)|\(session.working)|\(session.feed.results.count)"
-    }
-
     /// What only the newest end changes: its last block, what that holds, a turn starting or
     /// ending. Older pages loading above (a scroll back reads them in) leave it as it was.
     static func endKey(_ blocks: [FeedBlock], session: SessionModel) -> String {
@@ -59,18 +52,52 @@ struct TranscriptView: View {
         return "\(tail?.id ?? "")|\(items)|\(tail?.text.count ?? 0)|\(session.working)"
     }
 
-    /// Onto the newest message once this layout is done, and again once a row's insertion
-    /// has finished animating (the first pass lands short of its final height).
-    private func follow(_ reader: ScrollViewProxy) {
-        guard session.pendingMessage == nil, linked == nil, browsing == nil else { return }
-        following?.cancel()
-        followingUntil = Date().addingTimeInterval(0.6)
-        following = Task { @MainActor in
-            await Task.yield()
+    /// Reads in the page before the oldest, holding the end still meanwhile (and a moment
+    /// after, while the page lays out) so what's in view stays put.
+    private func loadOlder() {
+        guard !loadingOlder else { return }
+        Task {
+            loadingOlder = true
+            prepending = true
+            await session.loadOlder()
+            loadingOlder = false
+            try? await Task.sleep(for: .milliseconds(400))
+            prepending = false
+        }
+    }
+
+    /// Off to somewhere earlier in the conversation, by a link, the rail or the keyboard: no
+    /// longer at the end, so what the agent writes meanwhile leaves you there.
+    private func leaveEnd() {
+        atBottom = false
+    }
+
+    /// Back to the newest message, and staying there.
+    private func toEnd(_ reader: ScrollViewProxy, animated: Bool = true) {
+        atBottom = true
+        unseen = false
+        // Smooth, not snappy: a scroll that overshot and settled back read as one more jolt.
+        withAnimation(animated && !reduceMotion ? .smooth(duration: 0.35) : nil) { reader.scrollTo("bottom", anchor: .bottom) }
+    }
+
+    /// Where the end is now, and what that means: in view is at the end; out of view leaves
+    /// it only by a scroll. Anything else that moved it (the bar or keyboard rising, a row
+    /// growing, a menu's lift) is put right in the same pass, before it's drawn.
+    private func endMoved(_ below: CGFloat, _ reader: ScrollViewProxy) {
+        belowEnd = below
+        if below <= TranscriptEnd.slack {
+            if !atBottom { atBottom = true }
+            if unseen { unseen = false }
+            if scene.scrollAnchors[session.key] != SceneSnapshot.ScrollAnchor(seq: nil, offset: 0) {
+                scene.scrollAnchors[session.key] = SceneSnapshot.ScrollAnchor(seq: nil, offset: 0)
+            }
+        }
+        if phase == .interacting || phase == .decelerating {
+            if below > TranscriptEnd.slack, atBottom { atBottom = false }
+            return
+        }
+        if atBottom, phase == .idle, below > 1, session.pendingMessage == nil, linked == nil, browsing == nil {
             reader.scrollTo("bottom", anchor: .bottom)
-            try? await Task.sleep(for: .milliseconds(350))
-            guard !Task.isCancelled, atBottom else { return }
-            withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) { reader.scrollTo("bottom", anchor: .bottom) }
         }
     }
 
@@ -81,25 +108,14 @@ struct TranscriptView: View {
                 LazyVStack(alignment: .leading, spacing: 18) {
                     if session.feed.hasOlder {
                         Button {
-                            Task {
-                                loadingOlder = true
-                                await session.loadOlder()
-                                loadingOlder = false
-                            }
+                            loadOlder()
                         } label: {
                             Label(loadingOlder ? "Loading…" : "Earlier messages", systemImage: "arrow.up")
                                 .font(.ah(.footnote))
                         }
                         .buttonStyle(.bordered)
                         .frame(maxWidth: .infinity)
-                        .onAppear {
-                            guard !loadingOlder else { return }
-                            Task {
-                                loadingOlder = true
-                                await session.loadOlder()
-                                loadingOlder = false
-                            }
-                        }
+                        .onAppear { loadOlder() }
                     }
                     let ends = Self.turnEnds(blocks, durations: FeedProjection.turnDurations(session.feed.entries), working: session.working)
                     ForEach(Array(blocks.enumerated()), id: \.element.id) { index, block in
@@ -122,31 +138,11 @@ struct TranscriptView: View {
                         WorkingRow(detail: session.row?.dto.detail, queued: session.queue.items.count, hardwareKeyboard: scene.hardwareKeyboard)
                             .id(blocks.last { if case .user = $0 { return true } else { return false } }?.id ?? "working")
                     }
-                    Color.clear.frame(height: 1).id("bottom")
-                        // At the end while the last few lines are in view (under the composer
-                        // counts): a measure of insets and offsets read the keyboard's frame as
-                        // distance and let go of the end.
-                        .background(alignment: .bottom) {
-                            Color.clear.frame(height: TranscriptEnd.slack)
-                                .onScrollVisibilityChange(threshold: 0.01) { visible in
-                                    if visible {
-                                        atBottom = true
-                                        unseen = false
-                                        scene.scrollAnchors[session.key] = SceneSnapshot.ScrollAnchor(seq: nil, offset: 0)
-                                        return
-                                    }
-                                    // Content grown under it, or the keyboard: a follow is on
-                                    // its way. Only a scroll back leaves the end.
-                                    Task { @MainActor in
-                                        await Task.yield()
-                                        guard Date() >= followingUntil else { return }
-                                        atBottom = false
-                                    }
-                                }
-                        }
+                    // The very end, margin and all: scrolled to, nothing is left below it.
+                    Color.clear.frame(height: 1).padding(.bottom, 11).id("bottom")
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.top, 12)
                 // A readable column on a wide screen, centered; the scroll view stays full width.
                 .frame(maxWidth: SessionScreen.readableWidth)
                 .frame(maxWidth: .infinity)
@@ -154,8 +150,21 @@ struct TranscriptView: View {
                 .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: session.working)
                 .scrollTargetLayout()
             }
-            .scrollPosition(id: $topID, anchor: .top)
-            .defaultScrollAnchor(.bottom)
+            // One rule for where the transcript sits, so nothing fights over it: it opens at the
+            // newest message, a short one sits down by the composer, and when anything changes
+            // size (a step arriving, a row opening, the composer or keyboard rising, a menu's
+            // lift) the end stays put while you're at it — and what you're reading stays put
+            // while you're not (older pages going in above hold the end too, so it doesn't
+            // move either). Bound to the top row as well, the scroll view held that row still
+            // as the end was being followed, and the two shook the transcript between them.
+            .defaultScrollAnchor(.bottom, for: .initialOffset)
+            .defaultScrollAnchor(.bottom, for: .alignment)
+            .defaultScrollAnchor(atBottom || prepending ? .bottom : .top, for: .sizeChanges)
+            // The row at the top, for coming back to it (read, never steered).
+            .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.01) { ids in
+                let top = ids.first { id in blocks.contains { $0.id == id } }
+                if top != topID { topID = top }
+            }
             // A fresh scroll view when the transcript arrives in an empty view (or the host
             // sends a new copy): the bottom anchor only holds for content there from the start,
             // and a long transcript poured into an empty lazy list was laid out but not drawn.
@@ -166,8 +175,8 @@ struct TranscriptView: View {
                 guard !blocks.isEmpty, scene.scrollAnchors[session.key]?.seq == nil else { return }
                 for delay in [150, 600] {
                     try? await Task.sleep(for: .milliseconds(delay))
-                    // A link to a message holds the transcript there instead.
-                    guard session.pendingMessage == nil, linked == nil else { return }
+                    // A link to a message holds the transcript there instead, as a scroll back does.
+                    guard atBottom, session.pendingMessage == nil, linked == nil else { return }
                     reader.scrollTo("bottom", anchor: .bottom)
                 }
             }
@@ -183,6 +192,7 @@ struct TranscriptView: View {
                 await Task.yield()
                 let all = session.blocks
                 guard let block = all.first(where: { $0.seq == seq }) ?? all.last(where: { $0.seq <= seq }) else { return }
+                leaveEnd()
                 withAnimation(reduceMotion ? nil : .snappy) { reader.scrollTo(block.id, anchor: .top) }
                 linked = block.id
                 try? await Task.sleep(for: .seconds(2))
@@ -195,8 +205,9 @@ struct TranscriptView: View {
             // focus: there's nothing on screen to put away.
             .scrollDismissesKeyboard(scene.hardwareKeyboard ? .never : .immediately)
             // Back to reading: the composer's settings fold out of the way, as the keyboard does.
-            .onScrollPhaseChange { _, phase in
-                guard phase == .interacting, session.composer.trayOpen else { return }
+            .onScrollPhaseChange { _, new in
+                phase = new
+                guard new == .interacting, session.composer.trayOpen else { return }
                 withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { session.composer.trayOpen = false }
             }
             .simultaneousGesture(TapGesture().onEnded {
@@ -233,24 +244,15 @@ struct TranscriptView: View {
             // Following the conversation: at the newest message, what the agent writes (and
             // what you send) stays in view, as in any chat; scrolled back to read, it leaves you
             // where you are.
-            .onScrollGeometryChange(for: TranscriptEnd.self) { geometry in
-                TranscriptEnd(height: geometry.contentSize.height, inset: geometry.contentInsets.bottom, viewport: geometry.containerSize.height)
-            } action: { old, new in
-                // At the end when the end moved (more content, or the keyboard or a taller
-                // composer raised the bottom): still at the end, brought back into view. Left
-                // alone, the keyboard covered the newest message.
-                guard atBottom, new.height > old.height + 0.5 || new.inset > old.inset + 0.5 || new.viewport < old.viewport - 0.5 else { return }
-                follow(reader)
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                TranscriptEnd.below(geometry)
+            } action: { _, below in
+                endMoved(below, reader)
             }
             // What you send is what you look at next.
             .onChange(of: session.outgoing.map(\.id)) { old, new in
                 guard new.count > old.count else { return }
-                withAnimation(reduceMotion ? nil : .snappy(duration: 0.3)) { reader.scrollTo("bottom", anchor: .bottom) }
-            }
-            // …and what the agent writes back, once it's laid out (a row the geometry only
-            // sees mid-animation, like the working row, was left under the composer).
-            .onChange(of: Self.followKey(blocks, session: session)) { _, _ in
-                if atBottom { follow(reader) }
+                toEnd(reader)
             }
             // Scrolled back, more at the end is news (the transcript first arriving isn't).
             .onChange(of: Self.endKey(blocks, session: session)) { old, _ in
@@ -258,6 +260,7 @@ struct TranscriptView: View {
             }
             .onAppear {
                 if let seq = scene.scrollAnchors[session.key]?.seq, let block = blocks.first(where: { $0.seq == seq }) {
+                    leaveEnd()
                     reader.scrollTo(block.id, anchor: .top)
                 }
             }
@@ -265,7 +268,7 @@ struct TranscriptView: View {
                 guard let request else { return }
                 switch request.target {
                 case .latest(let key) where key == session.key:
-                    withAnimation(.snappy) { reader.scrollTo("bottom", anchor: .bottom) }
+                    toEnd(reader)
                 case .messages(let key) where key == session.key:
                     browsing = blocks.indices.last
                     browseFocused = true
@@ -278,6 +281,7 @@ struct TranscriptView: View {
                         // Let the newly loaded pages lay out, then bring the turn to the top.
                         await Task.yield()
                         if let block = session.blocks.first(where: { $0.seq == seq }) {
+                            leaveEnd()
                             withAnimation(.snappy) { reader.scrollTo(block.id, anchor: .top) }
                         }
                     }
@@ -307,7 +311,10 @@ struct TranscriptView: View {
                 default:
                     return .ignored
                 }
-                if let index = browsing { withAnimation(.snappy) { reader.scrollTo(blocks[index].id, anchor: .center) } }
+                if let index = browsing {
+                    leaveEnd()
+                    withAnimation(.snappy) { reader.scrollTo(blocks[index].id, anchor: .center) }
+                }
                 return .handled
             }
             // Read back up the conversation, the way to its newest message floats over the
@@ -316,7 +323,7 @@ struct TranscriptView: View {
                 if !atBottom && !blocks.isEmpty {
                     Button {
                         Haptics.selection()
-                        withAnimation(reduceMotion ? nil : .snappy) { reader.scrollTo("bottom", anchor: .bottom) }
+                        toEnd(reader)
                     } label: {
                         // Pink while there's more you haven't seen, as the rest of what's new is.
                         Image(systemName: "arrow.down")
@@ -340,13 +347,14 @@ struct TranscriptView: View {
                     let top = scene.scrollAnchors[session.key]?.seq
                     MessageRail(items: items, active: FeedProjection.activeRail(items, topSeq: top, atLatest: top == nil) ?? items.count - 1) { item in
                         guard let seq = item.seq else {
-                            withAnimation(.snappy) { reader.scrollTo("bottom", anchor: .bottom) }
+                            toEnd(reader)
                             return
                         }
                         Task {
                             guard await session.reveal(seq: seq) else { return }
                             await Task.yield()
                             if let block = session.blocks.first(where: { $0.seq == seq }) {
+                                leaveEnd()
                                 withAnimation(.snappy) { reader.scrollTo(block.id, anchor: .top) }
                             }
                         }
@@ -1070,12 +1078,20 @@ private struct UnavailableFeed: View {
 
 /// The transcript's height and what's left to show it in: when either changes at the end,
 /// the end is brought back into view.
-private struct TranscriptEnd: Equatable {
-    var height: CGFloat
-    /// The bottom inset: the composer, and the keyboard when it's up.
-    var inset: CGFloat
-    /// What's left of the screen for it (the keyboard can shrink this instead).
-    var viewport: CGFloat
+enum TranscriptEnd {
     /// The last this many points in view is at the end (a line half under the bar is still there).
     static let slack: CGFloat = 48
+
+    /// How far the end of the conversation lies below the bottom of what's in view (above
+    /// the composer and the keyboard, which are the bottom inset); at or under zero, the end
+    /// is in view.
+    static func below(_ geometry: ScrollGeometry) -> CGFloat {
+        below(contentHeight: geometry.contentSize.height, offset: geometry.contentOffset.y, viewport: geometry.containerSize.height, insets: geometry.contentInsets)
+    }
+
+    static func below(contentHeight: CGFloat, offset: CGFloat, viewport: CGFloat, insets: EdgeInsets) -> CGFloat {
+        // Shorter than the room it has, it's all in view wherever it sits.
+        let maxOffset = max(contentHeight + insets.bottom - viewport, -insets.top)
+        return (maxOffset - offset).rounded()
+    }
 }
