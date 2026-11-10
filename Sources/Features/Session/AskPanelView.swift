@@ -188,9 +188,10 @@ struct AskPanelView: View {
             }
             // ah's AskCard: the tint and edge of what needs you; a stronger ring while the
             // keyboard answers it.
-            .background(compact ? .clear : theme.accentTint, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .background(compact ? .clear : theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(compact ? .clear : keys.focused ? theme.brand : theme.accentLine, lineWidth: keys.focused ? 1.5 : 1))
+            // The composer's corner: the question rises out of it, as its suggestions and queue do.
+            .background(compact ? .clear : theme.accentTint, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .background(compact ? .clear : theme.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(compact ? .clear : keys.focused ? theme.brand : theme.accentLine, lineWidth: keys.focused ? 1.5 : 1))
             .accessibilityElement(children: .contain)
             .accessibilityLabel("\(row.title) needs you")
             // The window asks for the answer controls: take the keyboard.
