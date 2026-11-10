@@ -803,9 +803,11 @@ struct WorkspaceStrip: View {
     }
 }
 
-/// What floats over a window without taking touches: which-key, the submap legend, toasts.
+/// What floats over a window without taking touches, but for its own: which-key, the
+/// submap legend, toasts, nudges.
 struct OverlayLayer: View {
     let scene: SceneModel
+    let targets: OverlayTargets
 
     var body: some View {
         ZStack {
@@ -815,8 +817,8 @@ struct OverlayLayer: View {
             if let mode = scene.workspace.submap {
                 SubmapHUD(mode: mode).frame(maxHeight: .infinity, alignment: .top).allowsHitTesting(false)
             }
-            ToastStack(scene: scene).frame(maxHeight: .infinity, alignment: .bottom)
-            NudgeStack(scene: scene).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: scene.narrow ? .top : .topTrailing)
+            ToastStack(scene: scene, targets: targets).frame(maxHeight: .infinity, alignment: .bottom)
+            NudgeStack(scene: scene, targets: targets).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: scene.narrow ? .top : .topTrailing)
         }
     }
 }

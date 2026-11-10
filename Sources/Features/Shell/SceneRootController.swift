@@ -72,10 +72,11 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-        let overlay = host(OverlayLayer(scene: scene))
+        let targets = OverlayTargets()
+        let overlay = host(OverlayLayer(scene: scene, targets: targets))
         overlay.view.backgroundColor = .clear
         addChild(overlay)
-        let passthrough = PassthroughView(hosted: overlay.view)
+        let passthrough = PassthroughView(hosted: overlay.view, targets: targets)
         passthrough.frame = view.bounds
         passthrough.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.addSubview(passthrough)
@@ -365,9 +366,15 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
     }
 }
 
-/// Lets touches through everywhere the hosted overlay draws nothing.
+/// Lets touches through everywhere the hosted overlay has nothing to touch. Most SwiftUI
+/// content (a plain button's glyph, a card's drag) has no view of its own: UIKit's hit test
+/// lands on the hosting view there as it does on empty overlay, so the overlay says where
+/// its touchable things are.
 private final class PassthroughView: UIView {
-    init(hosted: UIView) {
+    private let targets: OverlayTargets
+
+    init(hosted: UIView, targets: OverlayTargets) {
+        self.targets = targets
         super.init(frame: .zero)
         hosted.frame = bounds
         hosted.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -377,8 +384,9 @@ private final class PassthroughView: UIView {
     required init?(coder: NSCoder) { fatalError() }
 
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        let hit = super.hitTest(point, with: event)
-        return hit === self || hit === subviews.first ? nil : hit
+        guard let hit = super.hitTest(point, with: event), hit !== self else { return nil }
+        guard let hosted = subviews.first, hit === hosted else { return hit }
+        return targets.contains(convert(point, to: hosted)) ? hit : nil
     }
 }
 

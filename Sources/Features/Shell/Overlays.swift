@@ -668,10 +668,30 @@ struct SubmapHUD: View {
     }
 }
 
+/// Where the overlay draws something to touch, in the hosting view's coordinates (the
+/// overlay fills it, so that's SwiftUI's global space). The window lets every other touch
+/// through to what's beneath.
+@MainActor
+final class OverlayTargets {
+    private var frames: [String: CGRect] = [:]
+
+    func contains(_ point: CGPoint) -> Bool { frames.values.contains { $0.contains(point) } }
+    func set(_ id: String, _ frame: CGRect?) { frames[id] = frame }
+}
+
+extension View {
+    /// Takes the touches that land on this, in an overlay that otherwise lets them through.
+    func overlayTarget(_ id: String, in targets: OverlayTargets) -> some View {
+        onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { targets.set(id, $0) }
+            .onDisappear { targets.set(id, nil) }
+    }
+}
+
 /// Sessions you're not looking at that need you or just finished: a card each, with the
 /// way there. "Finished" leaves on its own; "needs you" stays until you go or it's answered.
 struct NudgeStack: View {
     let scene: SceneModel
+    let targets: OverlayTargets
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -727,6 +747,7 @@ struct NudgeStack: View {
         .gesture(DragGesture(minimumDistance: 12).onEnded { value in
             if value.translation.height < -20 || abs(value.translation.width) > 60 { scene.dismissNudge(nudge.id) }
         })
+        .overlayTarget("nudge-\(nudge.id)", in: targets)
         .accessibilityElement(children: .contain)
     }
 }
@@ -734,6 +755,7 @@ struct NudgeStack: View {
 /// Brief window-level messages, newest last.
 struct ToastStack: View {
     let scene: SceneModel
+    let targets: OverlayTargets
     @Environment(\.theme) private var theme
 
     var body: some View {
@@ -746,6 +768,7 @@ struct ToastStack: View {
                     .background(.regularMaterial, in: Capsule())
                     .foregroundStyle(toast.isError ? theme.danger : theme.text)
                     .onTapGesture { scene.dismissToast(toast.id) }
+                    .overlayTarget("toast-\(toast.id)", in: targets)
                     .task {
                         try? await Task.sleep(for: .seconds(toast.isError ? 6 : 3))
                         scene.dismissToast(toast.id)
