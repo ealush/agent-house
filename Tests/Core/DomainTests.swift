@@ -41,6 +41,7 @@ import Testing
     #expect(StatusWord.summary([.needsYou, .working, .working, .done, .idle]) == "1 session needs you. 2 working. 1 done. 1 idle.")
     #expect(StatusWord.summary([.needsYou, .needsYou]) == "2 sessions need you.")
     #expect(StatusWord.summary([]) == "All quiet.")
+    #expect(StatusWord.summary([.needsYou, .newOutput, .newOutput, .idle]) == "1 session needs you. 2 with new output. 1 idle.")
 }
 
 @Test func sessionKeysAreHostScopedUIDsAndLegacyWindowKeysAreRecognized() {

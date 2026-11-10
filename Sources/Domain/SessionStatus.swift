@@ -48,7 +48,7 @@ enum StatusWord: String, CaseIterable, Sendable {
         }
     }
 
-    /// "1 session needs you. 3 working. 1 done." or "All quiet."
+    /// "1 session needs you. 3 working. 2 with new output." or "All quiet."
     static func summary<S: Sequence>(_ words: S) -> String where S.Element == StatusWord {
         var counts: [StatusWord: Int] = [:]
         for word in words { counts[word, default: 0] += 1 }
@@ -57,7 +57,8 @@ enum StatusWord: String, CaseIterable, Sendable {
             parts.append("\(waiting) session\(waiting == 1 ? " needs" : "s need") you")
         }
         for word in [StatusWord.working, .limited, .done, .newOutput, .idle] {
-            if let n = counts[word], n > 0 { parts.append("\(n) \(word.rawValue)") }
+            // "2 with new output": the status word alone ("2 new output") isn't a phrase.
+            if let n = counts[word], n > 0 { parts.append("\(n) \(word == .newOutput ? "with new output" : word.rawValue)") }
         }
         return parts.isEmpty ? "All quiet." : parts.joined(separator: ". ") + "."
     }
