@@ -89,7 +89,7 @@ struct SessionScreen: View {
         .quickLookPreview($previewURL)
         // A phone renames as iOS does, in an alert with the name selected: a header of its own
         // under the bar repeated the bar's buttons around a bare field.
-        .alert("Rename Session", isPresented: Binding(get: { inNavigationBar && session.renaming != nil }, set: { if !$0 { session.renaming = nil } })) {
+        .alert("Rename session", isPresented: Binding(get: { inNavigationBar && session.renaming != nil }, set: { if !$0 { session.renaming = nil } })) {
             RenameAlertFields(session: session)
         }
         .overlay(alignment: .top) { NoticeStack(session: session) }

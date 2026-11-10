@@ -720,7 +720,8 @@ struct SendToSheet: View {
                     TextEditor(text: $text).frame(minHeight: 220).font(.ah(.callout))
                 }
             }
-            .navigationTitle("Send to…")
+            // An ellipsis is for the menu item that opens this, not the title of what it opened.
+            .navigationTitle("Send to a session")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) }
