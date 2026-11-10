@@ -45,6 +45,10 @@ struct ComposerView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     if showsTray {
                         tray.transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                    } else if hasTray, session.launch.mode?.dangerous == true, composer.suggestions.isEmpty {
+                        // Approvals off is never tucked away: its chip stays out, in red.
+                        LaunchChips(session: session, scene: scene, onlyRisky: true)
+                            .transition(.opacity)
                     }
                     HStack(alignment: .bottom, spacing: 8) {
                         attachMenu
@@ -236,7 +240,7 @@ struct ComposerView: View {
     private var tray: some View {
         HStack(spacing: 8) {
             LaunchChips(session: session, scene: scene)
-            Spacer(minLength: 0)
+            Spacer(minLength: 4)
             // A command is the whole message, so / starts an empty box only.
             if composer.text.isEmpty { trigger("/", label: "Insert a command") }
             trigger("@", label: "Mention a file")
@@ -459,6 +463,9 @@ struct CameraPicker: UIViewControllerRepresentable {
 struct LaunchChips: View {
     let session: SessionModel
     let scene: SceneModel
+    /// Only a dangerous permission mode, if that's what's in force: the one setting that stays
+    /// out when the rest fold away.
+    var onlyRisky = false
     @Environment(\.theme) private var theme
 
     /// How much each chip says: its value (or that it's the default), its value or just what
@@ -470,7 +477,25 @@ struct LaunchChips: View {
             ViewThatFits(in: .horizontal) {
                 chips(.full)
                 chips(.compact)
-                chips(.symbols)
+                // Past that the row scrolls: three bare symbols said nothing anyone could read.
+                ScrollView(.horizontal) {
+                    // Glass of its own: a chip cut off at the scroll's edge still has its whole
+                    // shape, and in the composer's glass it ran into the button beyond.
+                    GlassEffectContainer {
+                        chips(.compact)
+                            // Room inside the scroll for the glass's own shadow, which it clips.
+                            .padding(.vertical, 4)
+                            .padding(.trailing, 12)
+                    }
+                }
+                .scrollIndicators(.hidden)
+                .mask {
+                    HStack(spacing: 0) {
+                        Rectangle()
+                        LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: 18)
+                    }
+                }
+                .padding(.vertical, -4)
             }
         }
     }
@@ -480,13 +505,13 @@ struct LaunchChips: View {
         let launch = session.launch
         if let preset = launch.preset {
             HStack(spacing: 8) {
-                if !(preset.models ?? []).isEmpty || preset.modelArgs != nil || preset.settingsCommands?.model != nil {
+                if !onlyRisky, !(preset.models ?? []).isEmpty || preset.modelArgs != nil || preset.settingsCommands?.model != nil {
                     chip("Model", "cpu", launch.modelLabel, fallback: "Default model", density) { scene.sheet = .modelPicker(session.key) }
                 }
-                if !launch.levels.isEmpty || preset.settingsCommands?.effort != nil {
+                if !onlyRisky, !launch.levels.isEmpty || preset.settingsCommands?.effort != nil {
                     chip("Effort", "gauge.with.dots.needle.50percent", launch.effort.map(\.capitalized), fallback: "Default effort", density) { scene.sheet = .effortPicker(session.key) }
                 }
-                if let modes = preset.modes, modes.count > 1 {
+                if let modes = preset.modes, modes.count > 1, !onlyRisky || launch.mode?.dangerous == true {
                     let current = launch.mode ?? modes.first { $0.id == "default" }
                     Menu {
                         Picker("Permissions", selection: Binding(get: { current?.id ?? "default" }, set: { scene.applyPlan(session.planMode($0)) })) {
