@@ -648,7 +648,7 @@ private struct ChooserPane: View {
         VStack(spacing: 14) {
             Text("Open in This Pane").font(.ah(.headline))
             HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                Image(systemName: "magnifyingglass").foregroundStyle(theme.muted)
                 TextField("Search Sessions", text: $query)
                     .textFieldStyle(.plain)
                     .focused($focused)
@@ -678,7 +678,7 @@ private struct ChooserPane: View {
                         AgentMark(agent: row.dto.agent, size: 22)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(row.title).font(.ah(.callout)).lineLimit(1)
-                            Text(row.dto.project).font(.ah(.caption)).foregroundStyle(.secondary).lineLimit(1)
+                            Text(row.dto.project).font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(1)
                         }
                         Spacer()
                         StatusPill(word: row.word, compact: true)

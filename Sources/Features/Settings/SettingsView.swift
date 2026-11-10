@@ -54,6 +54,7 @@ private extension View {
 private struct SettingsRowLabel: View {
     let section: SettingsSection
     let title: String
+    @Environment(\.theme) private var theme
 
     var body: some View {
         HStack(spacing: 12) {
@@ -65,7 +66,7 @@ private struct SettingsRowLabel: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                Text(section.summary).font(.ah(.caption)).foregroundStyle(.secondary).lineLimit(1)
+                Text(section.summary).font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(1)
             }
         }
         .padding(.vertical, 2)

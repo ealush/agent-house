@@ -137,7 +137,7 @@ struct ComposerView: View {
                                 }
                         } else {
                             VStack(alignment: .leading, spacing: 4) {
-                                Image(systemName: "doc.fill").font(.ah(.title3)).foregroundStyle(.secondary)
+                                Image(systemName: "doc.fill").font(.ah(.title3)).foregroundStyle(theme.muted)
                                 Text(file.name).font(.ah(.caption2)).foregroundStyle(.primary).lineLimit(2)
                             }
                             .padding(8)

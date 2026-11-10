@@ -1141,7 +1141,7 @@ struct ConfirmTerminateSheet: View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Terminate “\(session.title)”?").font(.ah(.title3).weight(.semibold))
-                Text("Its process stops now. The conversation stays in History and can be resumed.").foregroundStyle(.secondary)
+                Text("Its process stops now. The conversation stays in History and can be resumed.").foregroundStyle(theme.muted)
                 if session.working { Label("It’s in the middle of a turn.", systemImage: "exclamationmark.triangle").foregroundStyle(theme.limited) }
                 Spacer()
                 Button(role: .destructive) {
@@ -1181,11 +1181,11 @@ struct ConfirmPlanSheet: View {
                 switch plan {
                 case .relaunch(_, let title, let body, let dangerous):
                     Text(title).font(.ah(.title3).weight(.semibold))
-                    Text(body).foregroundStyle(.secondary)
+                    Text(body).foregroundStyle(theme.muted)
                     if dangerous { Label("Permission checks are off in the new session.", systemImage: "exclamationmark.shield").foregroundStyle(theme.danger) }
                 case .switchMode(let id, _):
                     Text("Turn off permission checks?").font(.ah(.title3).weight(.semibold))
-                    Text("“\(session.launch.preset?.modes?.first { $0.id == id }?.name ?? id)” lets the agent run commands and edit files without asking.").foregroundStyle(.secondary)
+                    Text("“\(session.launch.preset?.modes?.first { $0.id == id }?.name ?? id)” lets the agent run commands and edit files without asking.").foregroundStyle(theme.muted)
                 default:
                     EmptyView()
                 }
