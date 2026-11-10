@@ -1857,7 +1857,8 @@ a.btn {
   padding: 4px;
   border-radius: 12px;
   border: 1px solid transparent;
-  background: var(--glass-fill);
+  /* The sheet's thicker material: a menu over a terminal or a busy feed stays legible. */
+  background: var(--glass-sheet-fill);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
   box-shadow: var(--glass-depth), var(--elev-1);
@@ -8928,7 +8929,7 @@ select:not([multiple]) {
   overscroll-behavior: contain;
   border: 1px solid transparent;
   border-radius: 12px;
-  background: var(--glass-fill);
+  background: var(--glass-sheet-fill);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
   box-shadow: var(--glass-depth), var(--elev-2);
