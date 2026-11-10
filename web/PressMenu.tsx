@@ -142,7 +142,16 @@ function PressMenu({ anchor, items, onClose }: { anchor: HTMLElement; items: Pre
       <div className="press-lift" ref={lift} />
       <div className="press-list" ref={list} role="menu">
         {items.map((it) => (
-          <button key={it.label} role="menuitem" className={it.danger ? 'danger' : ''} onClick={() => close(it.run)}>
+          <button
+            key={it.label}
+            role="menuitem"
+            className={it.danger ? 'danger' : ''}
+            onClick={(e) => {
+              // Only a press made in the menu (or a key, detail 0) chooses. The finger that opened it
+              // lifts where the menu may now be: the row moved up to fit, or the list re-sorted mid-hold.
+              if (armed.current || e.detail === 0) close(it.run);
+            }}
+          >
             <span className="grow">{it.label}</span>
             {it.icon && <Icon name={it.icon} size={18} />}
           </button>
