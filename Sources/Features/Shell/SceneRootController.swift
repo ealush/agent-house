@@ -72,15 +72,13 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
+        // The overlay (toasts, nudges, which-key) is a window of its own over this one, once
+        // there's a scene to put it in: inside this view, every sheet covered it, and a toast
+        // a sheet asked for never showed.
         let targets = OverlayTargets()
         let overlay = host(OverlayLayer(scene: scene, targets: targets))
         overlay.view.backgroundColor = .clear
-        addChild(overlay)
-        let passthrough = PassthroughView(hosted: overlay.view, targets: targets)
-        passthrough.frame = view.bounds
-        passthrough.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        view.addSubview(passthrough)
-        overlay.didMove(toParent: self)
+        overlayTargets = targets
         self.overlay = overlay
         scene.narrow = traitCollection.horizontalSizeClass == .compact
         registerForTraitChanges([UITraitHorizontalSizeClass.self]) { (self: Self, _: UITraitCollection) in
@@ -99,8 +97,32 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        installOverlayWindow()
         becomeFirstResponder()
         setNeedsUpdateProperties()
+    }
+
+    private var overlayTargets: OverlayTargets?
+    private var overlayWindow: OverlayWindow?
+
+    /// Over this scene's window, under the keyboard: it never takes the keyboard, and every
+    /// touch not on one of its cards goes through to the window beneath.
+    private func installOverlayWindow() {
+        guard overlayWindow == nil, let windowScene = view.window?.windowScene, let overlay, let overlayTargets else { return }
+        let window = OverlayWindow(windowScene: windowScene, targets: overlayTargets)
+        window.windowLevel = (view.window?.windowLevel ?? .normal) + 1
+        window.backgroundColor = .clear
+        window.rootViewController = overlay
+        window.isHidden = false
+        overlayWindow = window
+        syncOverlayWindow()
+    }
+
+    private func syncOverlayWindow() {
+        guard let overlayWindow else { return }
+        let appearance = scene.app.preferences.appearance
+        overlayWindow.overrideUserInterfaceStyle = theme.theme(appearance).interfaceStyle
+        overlayWindow.tintColor = theme.theme(appearance).uiAccent
     }
 
     // MARK: State → UIKit (iOS 26 observation tracking)
@@ -122,6 +144,7 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
         // What shows where nothing's drawn (around the keyboard's corners, under a terminal)
         // is the theme's ground, not the system's black.
         view.backgroundColor = theme.theme(appearance).uiBackground
+        syncOverlayWindow()
         if case .main = next { scene.reconcileIfReady() }
         advertise(scene.handoff)
     }
@@ -179,7 +202,7 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
         addChild(next)
         next.view.frame = view.bounds
         next.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        if let overlayView = overlay?.view.superview { view.insertSubview(next.view, belowSubview: overlayView) } else { view.addSubview(next.view) }
+        view.addSubview(next.view)
         next.didMove(toParent: self)
         content = next
         if let old {
@@ -369,26 +392,29 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
     }
 }
 
-/// Lets touches through everywhere the hosted overlay has nothing to touch. Most SwiftUI
-/// content (a plain button's glyph, a card's drag) has no view of its own: UIKit's hit test
-/// lands on the hosting view there as it does on empty overlay, so the overlay says where
-/// its touchable things are.
-private final class PassthroughView: UIView {
+/// The overlay's window: touches go through to the app's window everywhere the overlay has
+/// nothing to touch. Most SwiftUI content (a plain button's glyph, a card's drag) has no view
+/// of its own: UIKit's hit test lands on the hosting view there as it does on empty overlay,
+/// so the overlay says where its touchable things are.
+private final class OverlayWindow: UIWindow {
     private let targets: OverlayTargets
 
-    init(hosted: UIView, targets: OverlayTargets) {
+    init(windowScene: UIWindowScene, targets: OverlayTargets) {
         self.targets = targets
-        super.init(frame: .zero)
-        hosted.frame = bounds
-        hosted.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        addSubview(hosted)
+        super.init(windowScene: windowScene)
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
+    /// The keyboard stays with the app's window beneath.
+    override var canBecomeKey: Bool { false }
+
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        guard let hit = super.hitTest(point, with: event), hit !== self else { return nil }
-        guard let hosted = subviews.first, hit === hosted else { return hit }
+        guard let hit = super.hitTest(point, with: event), hit !== self,
+              let hosted = rootViewController?.view, hit.isDescendant(of: hosted) else { return nil }
+        // A view of the overlay's own (a control UIKit draws) takes it; the hosting view only
+        // where a card is.
+        guard hit === hosted else { return hit }
         return targets.contains(convert(point, to: hosted)) ? hit : nil
     }
 }
