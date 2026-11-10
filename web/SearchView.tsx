@@ -142,7 +142,8 @@ export function SearchView({
               <span className="stack">
                 <span className="name">{hit.title}</span>
                 <span className="sub">
-                  {[hit.host, hit.kind === 'chat' ? 'side chat' : hit.harness, dayYear(hit.at), `${hit.matches} match${hit.matches === 1 ? '' : 'es'}`]
+                  {/* The count first: a narrow screen cuts the end of this line. */}
+                  {[`${hit.matches} match${hit.matches === 1 ? '' : 'es'}`, hit.host, hit.kind === 'chat' ? 'side chat' : hit.harness, dayYear(hit.at)]
                     .filter(Boolean)
                     .join(' · ')}
                 </span>

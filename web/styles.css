@@ -2569,6 +2569,12 @@ a.btn {
   cursor: pointer;
 }
 
+/* The excerpt wraps inside its card, a long token too, instead of running out of it. */
+.search-excerpt > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .search-excerpt-role {
   flex: 0 0 auto;
   font-size: 11px;
