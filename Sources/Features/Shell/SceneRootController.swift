@@ -626,6 +626,28 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
         }
     }
 
+    /// The tab you're on, tapped again: back to its top, as every iOS tab does (UIKit pops a
+    /// pushed page itself; a page's own list didn't scroll, SwiftUI's isn't the one UIKit looks for).
+    func tabBarController(_ tabBarController: UITabBarController, shouldSelectTab tab: UITab) -> Bool {
+        guard tab === tabBarController.selectedTab, let page = Self.pages.first(where: { $0.id == Self.id(of: tab) }) else { return true }
+        let nav = nav(for: page.id, route: page.route)
+        if nav.viewControllers.count == 1, let root = nav.viewControllers.first?.view, let list = Self.firstScrollView(in: root) {
+            list.setContentOffset(CGPoint(x: list.contentOffset.x, y: -list.adjustedContentInset.top), animated: true)
+        }
+        return true
+    }
+
+    /// The first vertical scroller under a view, breadth first: a page's list.
+    private static func firstScrollView(in view: UIView) -> UIScrollView? {
+        var queue = [view]
+        while !queue.isEmpty {
+            let next = queue.removeFirst()
+            if let scroll = next as? UIScrollView, scroll.isScrollEnabled, scroll.contentSize.height > scroll.bounds.height { return scroll }
+            queue.append(contentsOf: next.subviews)
+        }
+        return nil
+    }
+
     func tabBarController(_ tabBarController: UITabBarController, didSelectTab selectedTab: UITab, previousTab: UITab?) {
         guard let page = Self.pages.first(where: { $0.id == Self.id(of: selectedTab) }) else { return }
         let nav = nav(for: page.id, route: page.route)
