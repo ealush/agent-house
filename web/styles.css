@@ -2691,6 +2691,15 @@ a.btn {
   padding-right: 10px;
 }
 
+/* A phone or a touch screen has neither the width for a long line nor a hover to read
+   the rest: a long line wraps, its indentation kept, under its own line number. */
+.narrow .dl .code,
+:root[data-touch] .dl .code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+}
+
 .dl.add {
   background: color-mix(in srgb, var(--done) 9%, transparent);
 }
