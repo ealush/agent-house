@@ -694,12 +694,15 @@ private struct ChooserPane: View {
             }
             Button("Cancel", role: .cancel) { scene.cancelChooser(path) }
                 .buttonStyle(.borderless)
-                .tint(.secondary)
+                .tint(theme.muted)
                 .font(.ah(.callout))
         }
         .frame(maxWidth: 420)
         .padding(20)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity)
+        // Scrolls when it can't fit (the on-screen keyboard up in a short pane), so its title
+        // isn't pushed up under the status bar; centered while it fits.
+        .wrappedInScrollWhenTall()
         .onAppear { if scene.focusRequest?.target == .chooser(path) || scene.workspace.focusPath == path { focused = true } }
         .onChange(of: scene.focusRequest) { _, request in if request?.target == .chooser(path) { focused = true } }
         .onChange(of: focused) { _, now in if now { scene.didFocus(.chooser(path)) } else { scene.didBlur(.chooser(path)) } }
@@ -828,5 +831,24 @@ struct OverlayLayer: View {
             }
             NudgeStack(scene: scene, targets: targets).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: scene.narrow ? .top : .topTrailing)
         }
+    }
+}
+
+private extension View {
+    /// Centered in the space while it fits; scrolling from the top once it doesn't. One view
+    /// either way: swapping between a fitting and a scrolling copy (ViewThatFits) tore down a
+    /// focused field mid keyboard animation, and UIKit crashed on it.
+    func wrappedInScrollWhenTall() -> some View { modifier(ScrollWhenTall()) }
+}
+
+private struct ScrollWhenTall: ViewModifier {
+    @State private var height: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        ScrollView {
+            content.frame(minHeight: height)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
     }
 }
