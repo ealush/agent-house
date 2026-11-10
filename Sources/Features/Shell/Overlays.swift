@@ -131,7 +131,8 @@ struct PaletteView: View {
             }
             TextField(trail.isEmpty ? "Search commands and sessions" : "Search \(trail.last!.label)", text: Binding(get: { query }, set: { scene.palette?.query = $0; selection = 0 }))
                 .textFieldStyle(.plain)
-                .font(.ah(.title3))
+                // The title's size on a big screen; on a phone it cut its own prompt short.
+                .font(scene.narrow ? .custom(AhType.ui, size: 17, relativeTo: .body) : .ah(.title3))
                 .focused($focused)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
