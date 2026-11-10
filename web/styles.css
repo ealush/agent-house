@@ -181,6 +181,13 @@ code,
   padding: 18px 16px 24px;
 }
 
+/* A wide screen keeps lists and settings to a readable measure in the middle: at 1920px
+   a session's status sat 1300px from its name. Padding, not a max-width, so the page
+   still scrolls from the window's edge. Review's diffs take the width they get. */
+.app:not(.narrow) .page:not(.review-stack) {
+  padding-inline: max(32px, calc((100% - 1240px) / 2));
+}
+
 .page-head {
   display: flex;
   align-items: flex-start;
