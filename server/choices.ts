@@ -31,8 +31,11 @@ export function hasPreviews(q: Pick<Question, 'options'>): boolean {
 /** A step: tmux key names, or literal text. */
 export type Step = { keys: string[] } | { text: string };
 
-const OPTION = /^\s*(?:[❯›>▶●]\s*)?(\d{1,2})[.)]\s+(.+?)\s*$/;
-const CURSOR = /^\s*[❯›>▶]/;
+// "1. Yes", "❯ 2) No", or a digit set off by two spaces ("⟩ 1  Trust and continue", Muse).
+const OPTION = /^\s*(?:[❯›>▶●⟩]\s*)?(\d{1,2})(?:[.)]\s+|\s{2,})(\S.*?)\s*$/;
+const CURSOR = /^\s*[❯›>▶⟩]/;
+/** A row inside a drawn box ("│ ● 1. Trust folder │", Gemini): its text, and that it was boxed. */
+const BOXED = /^\s*│\s?(.*?)\s*│?\s*$/;
 
 /**
  * The numbered options at the bottom of a waiting agent's screen ("❯ 1. Yes",
@@ -49,7 +52,34 @@ export function parseScreenOptions(lines: string[]): ScreenOption[] {
  * command to approve, a dialog's summary), stopping at a rule or the screen top.
  */
 export function parsePicker(lines: string[], max = 8): { options: ScreenOption[]; context: string; cursor?: number } | null {
-  return parseNumbered(lines, max) ?? parseCursorList(lines, max);
+  return parseNumbered(lines, max) ?? parseCursorList(lines, max) ?? parseHotkeyList(lines, max);
+}
+
+const HOTKEY_ROW = /^(\s*)(\S.*?\S)\s{4,}([a-z])$/;
+
+/**
+ * Rows that each end in their own one-letter hotkey, set well apart from the label
+ * and drawn without a cursor glyph ("Yes, proceed        y" / "No, quit        n",
+ * Grok's trust prompt). The last such run of two or more rows at one indent counts.
+ */
+function parseHotkeyList(lines: string[], max: number): { options: ScreenOption[]; context: string } | null {
+  for (let end = lines.length - 1; end > 0; end--) {
+    const last = lines[end].match(HOTKEY_ROW);
+    if (!last) continue;
+    let start = end;
+    while (start > 0) {
+      const m = lines[start - 1].match(HOTKEY_ROW);
+      if (!m || m[1].length !== last[1].length) break;
+      start--;
+    }
+    const rows = lines.slice(start, end + 1).map((l) => l.match(HOTKEY_ROW)!);
+    if (rows.length < 2 || new Set(rows.map((r) => r[3])).size !== rows.length) {
+      end = start;
+      continue;
+    }
+    return { options: rows.map((r) => ({ key: r[3], label: r[2] })), context: contextAbove(lines, start, max) };
+  }
+  return null;
 }
 
 /** Lines above row `start`: what the picker is about, up to a rule or `max` lines. */
@@ -57,7 +87,9 @@ function contextAbove(lines: string[], start: number, max: number): string {
   const above: string[] = [];
   for (let i = start - 1; i >= 0 && above.length < max; i--) {
     if (/^\s*[─━╭╰│]{3,}/.test(lines[i]) || /^\s*[╭╰]/.test(lines[i])) break;
-    if (lines[i].trim()) above.unshift(lines[i].replace(/^\s*│\s?|\s?│\s*$/g, ''));
+    // A boxed row loses its borders and the box's padding; an empty one is dropped.
+    const text = lines[i].replace(/^\s*│\s?|\s*│\s*$/g, '');
+    if (text.trim()) above.unshift(text);
   }
   return dedent(above).join('\n');
 }
@@ -103,11 +135,15 @@ function parseNumbered(lines: string[], max: number): { options: ScreenOption[];
   let run: typeof best = [];
   let start = -1;
   let wrapping = false;
-  for (const [i, line] of lines.entries()) {
+  for (const [i, drawn] of lines.entries()) {
+    // Inside a box, "●" marks the selected row (Gemini's radio list); outside one it
+    // starts the agent's reply, which may well open with a numbered list.
+    const boxed = drawn.match(BOXED);
+    const line = boxed ? boxed[1] : drawn;
     const m = line.match(OPTION);
     if (m) {
       const n = Number(m[1]);
-      const row = { n, label: m[2], cursor: CURSOR.test(line), col: line.indexOf(m[2]) };
+      const row = { n, label: m[2], cursor: CURSOR.test(line) || (!!boxed && /^\s*●/.test(line)), col: line.indexOf(m[2]) };
       if (n === run.length + 1) run.push(row);
       else if (n === 1) run = [row];
       else run = [];

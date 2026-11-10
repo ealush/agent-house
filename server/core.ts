@@ -60,7 +60,7 @@ export type State = {
 export type Focus = { key: string; device: string; client: string; at: number };
 
 /** `starting`: queued only because the agent just launched; it goes in once its UI is up. */
-export type SendResult = { outcome: 'delivered' | 'queued'; windowId: string; resumed: boolean; queued: number; queueId?: string; starting?: boolean };
+export type SendResult = { outcome: 'delivered' | 'queued'; windowId: string; resumed: boolean; queued: number; queueId?: string; starting?: boolean; trust?: boolean };
 
 export type ForkInfo = {
   canFork: boolean;
@@ -144,6 +144,8 @@ export class Core {
   private resuming = new Map<string, Promise<{ uid: string; windowId: string; resumed: boolean }>>();
   private inputs = new Map<string, Promise<unknown>>();
   private sentAt = new Map<string, number>();
+  /** Sessions whose trust prompt ah is answering right now. */
+  private trusting = new Set<string>();
   private snapshotStore: SnapshotStore;
   private snapLocks = new Map<string, Promise<unknown>>();
   /** Sessions inside a turn (busy or waiting on a prompt): one snapshot per turn, taken at its start. */
@@ -236,6 +238,7 @@ export class Core {
         this.lastPrune = now();
         void this.pruneSnapshots().catch((err) => console.error('snapshot prune failed:', err));
       }
+      this.acceptTrust(windows);
       await this.queues.deliverDue(windows);
       this.push.observe(windows, (id) => this.config.presets.find((p) => p.id === id)?.name ?? id);
       const history = (await buildHistory(this.registry, windows)).filter((h) => !this.hidden.has(h.ref));
@@ -668,7 +671,11 @@ export class Core {
       // (the window still looks like a shell), so the launch record says what it is.
       const settled = !!w?.agent && w.status !== 'busy';
       const fresh = !!w && starting(w) && !settled && (!!w.agent || (this.registry.get(w.uid)?.harness ?? 'shell') !== 'shell');
-      const answering = !!w?.agent && w.status === 'waiting';
+      // The startup trust prompt is not a question this text answers: it would drop
+      // the paste and take the Enter as its default row. The text waits in the queue
+      // and goes in once the folder is trusted and the agent is at its prompt.
+      const trusting = !!w?.agent && w.status === 'waiting' && !!w.ask?.trust;
+      const answering = !!w?.agent && w.status === 'waiting' && !trusting;
       const ready = !target.resumed && !!w && !fresh && (answering || queued.length === 0) && (answering || !w.agent || (!this.justSent(w.uid) && (w.status === 'idle' || w.status === 'attention')));
       if (ready) {
         if (w.agent) {
@@ -688,7 +695,7 @@ export class Core {
         ...(launchChange ? { launchChange } : {}),
       };
       const queuedCount = this.queues.enqueue(target.uid, item);
-      return { outcome: 'queued', windowId: target.windowId, resumed: target.resumed, queued: queuedCount, queueId: item.id, ...(fresh ? { starting: true } : {}) };
+      return { outcome: 'queued', windowId: target.windowId, resumed: target.resumed, queued: queuedCount, queueId: item.id, ...(fresh ? { starting: true } : {}), ...(trusting ? { trust: true } : {}) };
     });
   }
 
@@ -800,6 +807,33 @@ export class Core {
     });
     this.tick().catch(() => {});
     return option;
+  }
+
+  /**
+   * Sessions launched with `trust` ("skip startup confirmations") get the agent's
+   * folder-trust prompt accepted for them, once: the launch flag is cleared as the
+   * keys go in. Runs from the tick, so it never ticks itself.
+   */
+  private acceptTrust(windows: WindowView[]) {
+    for (const w of windows) {
+      if (w.status !== 'waiting' || !w.ask?.trust || this.trusting.has(w.uid)) continue;
+      if (this.registry.get(w.uid)?.meta['ah.launch.trust'] !== true) continue;
+      const accept = w.ask.trust.accept;
+      this.trusting.add(w.uid);
+      void this.withInput(w.uid, async () => {
+        const lines = (await t.capturePane(w.id, 0).catch(() => '')).split('\n').map((l) => l.trimEnd());
+        const picker = parsePicker(lines.filter((l) => l.trim()).slice(-40));
+        if (!picker?.options.some((o) => o.key === accept)) return;
+        this.registry.setMeta(w.uid, 'ah.launch.trust', undefined);
+        const keys = accept.startsWith('nav:') ? cursorKeys(picker.cursor ?? 0, Number(accept.slice(4))) : [accept];
+        await t.tmux('send-keys', '-t', w.id, ...keys);
+      })
+        .catch((err) => console.error(`trusting the folder for ${w.id} failed:`, err))
+        .finally(() => {
+          this.trusting.delete(w.uid);
+          this.tick().catch(() => {});
+        });
+    }
   }
 
   /**
@@ -1192,6 +1226,12 @@ export class Core {
       if (!live) {
         this.queues.requeue(uid, next);
         throw new CoreError(404, 'session is not running');
+      }
+      // A folder-trust prompt has no turn to stop: the interrupt key would cancel the
+      // prompt (Claude Code exits on Esc) and the text would land in it. It stays first.
+      if (live.agent && live.status === 'waiting' && live.ask?.trust) {
+        this.queues.requeue(uid, next);
+        throw new CoreError(409, 'answer the folder-trust prompt first; the message goes in right after');
       }
       const stopping = live.status === 'busy' || live.status === 'waiting' || this.justSent(uid);
       if (stopping && live.agent) {

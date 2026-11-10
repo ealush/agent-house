@@ -50,6 +50,15 @@ export type Preset = {
    * a false "needs you" is worse than a missed one.
    */
   waitingPatterns?: string[];
+  /**
+   * The agent's startup folder-trust prompt ("Do you trust this folder?"): `pattern`
+   * (multiline regex) tells it is on screen, `accept` matches the label of the
+   * picker row that trusts the folder. While it is up the session waits for you
+   * and a message sent to it is queued, never typed into the prompt (the paste
+   * is dropped and its Enter answers the default row). A session launched with
+   * `trust` has it accepted by ah.
+   */
+  trust?: { pattern: string; accept: string };
   /** tmux key names typed for one-tap Approve / Deny on a permission prompt. */
   approveKeys?: string[];
   denyKeys?: string[];
@@ -170,6 +179,7 @@ const DEFAULT_PRESETS: Preset[] = [
     // (AskUserQuestion), and the folder-trust prompt (a picker without numbers).
     waitingPatterns: ['Do you want to (proceed|make this edit|create|allow)', '^\\s*❯\\s*1\\.\\s*Yes', 'Enter to select · .*to navigate', 'trust this folder|Enter to confirm · Esc to cancel'],
     questions: 'claude',
+    trust: { pattern: 'Yes, I trust this folder', accept: '^Yes, I trust' },
     // The permission dialog highlights "Yes"; Esc declines.
     approveKeys: ['Enter'],
     denyKeys: ['Escape'],
@@ -241,6 +251,8 @@ const DEFAULT_PRESETS: Preset[] = [
     resume: 'gemini --resume latest',
     resumeId: 'gemini --resume {id}',
     match: '^gemini$',
+    // A boxed radio list: "● 1. Trust folder (name)", "2. Trust parent folder", "3. Don't trust".
+    trust: { pattern: 'Do you trust the files in this folder\\?', accept: '^Trust folder' },
     interruptKeys: ['Escape'],
   },
   {
@@ -266,6 +278,8 @@ const DEFAULT_PRESETS: Preset[] = [
     resumeId: 'grok --resume {id}',
     modelArgs: ['-m', '{model}'],
     match: '^grok$',
+    // Rows with hotkeys, no cursor glyph: "Yes, proceed   y" / "No, quit   n".
+    trust: { pattern: 'Do you trust the contents of this directory\\?', accept: '^Yes, proceed' },
     interruptKeys: ['Escape'],
   },
   {
@@ -290,6 +304,8 @@ const DEFAULT_PRESETS: Preset[] = [
     // hooks, so these screen rules are what surfaces "needs you" in the inbox
     // and GUI (answered in the terminal or with one-tap keys).
     waitingPatterns: ['Would you like to allow', "don['\u2019]t ask again this session"],
+    // "⟩ 1  Trust and continue" / "2  Quit": a digit picks a row.
+    trust: { pattern: 'Do you trust this workspace\\?', accept: '^Trust and continue' },
     // The picker hints "(y)" for yes-once and "(esc)" for no; Enter picks the
     // highlighted row, Escape declines.
     approveKeys: ['y'],
