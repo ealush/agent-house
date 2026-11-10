@@ -4,6 +4,7 @@ import { AskPanel, AskSummary } from './AskPanel.tsx';
 import { KIND_LABEL } from './askView.ts';
 import { ShortcutHint, shortcutTitle } from './shortcuts.tsx';
 import { Icon } from './icons.tsx';
+import { Reveal } from './Handoff.tsx';
 import { age, look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
 import { useSavedGroups } from './groupOrder.ts';
@@ -89,7 +90,7 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, cl
           </>
         )}
       </header>
-      {handoff}
+      <Reveal>{handoff}</Reveal>
 
       {state.windows.length === 0 && (
         <div className="empty-state">

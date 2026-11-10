@@ -7406,6 +7406,40 @@ ul.queue-items {
   font-size: 16px;
 }
 
+/* The offer's room opens and closes with it (Handoff.tsx Reveal). */
+.reveal {
+  display: grid;
+  grid-template-rows: 1fr;
+  animation: reveal-in 260ms var(--ease);
+  transition:
+    grid-template-rows 240ms var(--ease),
+    opacity 200ms var(--ease);
+}
+
+.reveal > .reveal-in {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.reveal.out {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+@keyframes reveal-in {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    animation: none;
+    transition: none;
+  }
+}
+
 @keyframes handoff-in {
   from {
     opacity: 0;

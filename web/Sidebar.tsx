@@ -3,6 +3,7 @@ import { contextMenu, useFitMenu } from './contextMenu.ts';
 import type { State, Win } from './api.ts';
 import { askConfirm } from './ask.tsx';
 import { Icon } from './icons.tsx';
+import { Reveal } from './Handoff.tsx';
 import { look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
 import { useSavedGroups, setGroupList } from './groupOrder.ts';
@@ -330,7 +331,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
         <ShortcutHint id="switcher" />
       </button>
 
-      {handoff}
+      <Reveal>{handoff}</Reveal>
 
       <div className="side-nav">
       <Glide match=".nav-item.on" className="side-glide" />
