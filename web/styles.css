@@ -7483,6 +7483,16 @@ ul.queue-items {
   animation: none;
 }
 
+/* The captured bar keeps its shape: its glass's blur would otherwise show as a square
+   frosted box around the capsule (and the circle) for the length of the fade. */
+::view-transition-group(ah-tabbar) {
+  clip-path: inset(0 round 999px);
+}
+
+::view-transition-group(ah-tabcmd) {
+  clip-path: inset(0 round 50%);
+}
+
 /* One view after the other, never both legible at once: the old one is gone (80ms)
    just as the new one arrives, so two sessions' titles and controls never double up. */
 ::view-transition-old(ah-main) {
