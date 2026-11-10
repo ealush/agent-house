@@ -5000,7 +5000,8 @@ ul.queue-items {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 30px;
+  /* The composer's icon buttons' height (34px), on their line; 30px sat 2px low, under the 32px floor. */
+  height: 34px;
   padding: 0 12px;
   border-radius: 999px;
   border: 1px solid var(--line-2);
