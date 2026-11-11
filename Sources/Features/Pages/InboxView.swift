@@ -628,10 +628,10 @@ struct HistoryRowView: View {
             scene.open(item.id)
         } label: {
             HStack(spacing: 10) {
-                AgentMark(agent: item.dto.harness == "shell" ? nil : item.dto.harness)
+                AgentMark(agent: item.dto.harness == "shell" ? nil : item.dto.harness, size: typeSize.isAccessibilitySize ? 22 : 28)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 4) {
-                        if item.dto.pinned { Image(systemName: "pin.fill").font(.ah(.caption2)) }
+                        if item.dto.pinned { Image(systemName: "pin.fill").font(.ah(.caption2)).foregroundStyle(theme.faint) }
                         Text(item.dto.title).lineLimit(1).foregroundStyle(theme.text)
                     }
                     Text([hub.multiHost ? item.host : nil, item.dto.project, item.dto.fork.map { "fork of \($0.parentTitle)" }].compactMap { $0 }.joined(separator: " · "))

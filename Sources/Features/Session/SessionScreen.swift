@@ -49,7 +49,10 @@ struct SessionScreen: View {
                 // beneath them (and fades under, at the bar's edge). Soft at both edges, said
                 // outright: left to the system, a phone drew the hard edge, an opaque band
                 // with a hairline in a tint the transcript doesn't have.
-                surface
+                // The conversation and the terminal change places through a short fade: the
+                // switch cut from one to the other.
+                ZStack { surface }
+                    .animation(.smooth(duration: 0.18), value: session.surface)
                     .scrollEdgeEffectStyle(.soft, for: .vertical)
                     .safeAreaBar(edge: .bottom, spacing: 0) {
                         if session.surface == .gui && session.hasGUI {
@@ -106,6 +109,9 @@ struct SessionScreen: View {
                 .transition(.move(edge: .trailing))
             }
         }
+        // A panel slides in as it slides out (opened from the menu, it cut in), the
+        // conversation making room beside it; Reduce Motion keeps it short.
+        .animation(narrow ? nil : (reduceMotion ? Animation.smooth(duration: 0.12) : Animation.snappy(duration: 0.25)), value: session.panel != nil)
         // Above the keyboard by where the keyboard is, not by the keyboard safe area: the bar
         // sits in the transcript's inset, which UIKit moves with the keyboard, while the safe
         // area settles only afterwards, so what floats over the bar sat still as the bar went
@@ -166,12 +172,12 @@ struct SessionScreen: View {
     @ViewBuilder
     private var surface: some View {
         if session.surface == .gui && session.hasGUI {
-            TranscriptView(session: session, scene: scene)
+            TranscriptView(session: session, scene: scene).transition(.opacity)
         } else if session.isLive {
-            TerminalScreen(session: session, scene: scene)
+            TerminalScreen(session: session, scene: scene).transition(.opacity)
         } else {
             // An ended session without a transcript: its last screen, read-only.
-            EndedScreen(session: session)
+            EndedScreen(session: session).transition(.opacity)
         }
     }
 }
@@ -564,12 +570,21 @@ private struct NoticeStack: View {
     var body: some View {
         VStack(spacing: 6) {
             ForEach(session.notices) { notice in
-                Text(notice.text)
-                    .font(.ah(.footnote))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(.regularMaterial, in: Capsule())
-                    .foregroundStyle(notice.tone == .error ? theme.danger : theme.text)
+                // As the window's toasts are: an error leads with its glyph, its words in ink.
+                HStack(spacing: 8) {
+                    if notice.tone == .error {
+                        Image(systemName: "exclamationmark.circle.fill").foregroundStyle(theme.danger).accessibilityHidden(true)
+                    }
+                    Text(notice.text).foregroundStyle(theme.text)
+                }
+                    .font(.ah(.footnote).weight(.medium))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(notice.tone == .error ? theme.danger.opacity(0.35) : theme.line, lineWidth: 0.75))
+                    .shadow(color: theme.shadow, radius: 12, y: 5)
+                    .padding(.horizontal, 16)
+                    .transition(.move(edge: .top).combined(with: .opacity))
                     .task {
                         try? await Task.sleep(for: .seconds(notice.tone == .error ? 6 : 3))
                         session.dismiss(notice.id)
