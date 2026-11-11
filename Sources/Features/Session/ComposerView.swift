@@ -48,19 +48,23 @@ struct ComposerView: View {
             // settings chips wait folded away until a swipe up brings them out, floating over
             // the transcript above the box (`ComposerFloat`): nothing here changes height for
             // them, so the transcript doesn't move.
-            GlassEffectContainer(spacing: 10) {
-                VStack(alignment: .leading, spacing: 8) {
-                    if hasTray, session.launch.mode?.dangerous == true {
-                        // Approvals off is never tucked away: its chip stays out, in red, open
-                        // tray or not.
-                        LaunchChips(session: session, scene: scene, onlyRisky: true)
-                            .transition(.opacity)
-                    }
+            VStack(alignment: .leading, spacing: 8) {
+                if hasTray, session.launch.mode?.dangerous == true {
+                    // Approvals off is never tucked away: its chip stays out, in red, open
+                    // tray or not.
+                    LaunchChips(session: session, scene: scene, onlyRisky: true)
+                        .transition(.opacity)
+                }
+                GlassEffectContainer(spacing: 10) {
                     HStack(alignment: .bottom, spacing: 8) {
                         attachMenu
                         field
                     }
                 }
+                // Over the glass, not under it: a container draws its glass above what's
+                // inside, so a mark laid on the box from within showed only as a smear
+                // refracted through it.
+                .overlay(alignment: .top) { grabber.padding(.leading, control + 8) }
             }
             .gesture(ComposerSwipe { swiped($0) })
         }
@@ -214,6 +218,15 @@ struct ComposerView: View {
         }
     }
 
+    /// How far up from the box's bottom edge Send (or Stop) sits: centred on a line of text,
+    /// so in a one-line box it's centred in the box, and in a longer one it's on the last line.
+    /// A fixed inset left it low, since a line of body text with its insets is taller than the
+    /// button plus twice the inset.
+    private var cornerInset: CGFloat {
+        let line = max(control, AhType.uiFont(.body).lineHeight + 24)
+        return max(6, ((line - sendSize.height) / 2).rounded())
+    }
+
     /// The box: what you attach above the text, and Send inside it at the last line's end.
     private var field: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -234,12 +247,12 @@ struct ComposerView: View {
                 .animation(.snappy(duration: 0.22), value: composer.showsStop(working: session.working))
                 .animation(.snappy(duration: 0.22), value: session.isShell || (session.working && composer.canSend))
                 .animation(.snappy(duration: 0.22), value: composer.isEmpty)
-                .padding(6)
+                .padding(.horizontal, 6)
+                .padding(.bottom, cornerInset)
         }
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: corner, style: .continuous))
         .glassEffectID("field", in: glass)
         .overlay { ThinkingBorder(corner: corner, active: session.working && !session.isShell) }
-        .overlay(alignment: .top) { grabber }
         .accessibilityAction(named: trayOpen ? "Hide session settings" : "Show session settings") {
             withAnimation(.snappy(duration: 0.25)) { trayOpen.toggle() }
         }
@@ -253,7 +266,8 @@ struct ComposerView: View {
             Button {
                 swiped(.up)
             } label: {
-                Capsule().fill(theme.muted.opacity(0.5)).frame(width: 28, height: 4)
+                // A fine, solid line: wide and faint, it read as a smear on the glass.
+                Capsule().fill(theme.muted).frame(width: 18, height: 2)
                     .padding(.top, 5)
                     .frame(width: 72, height: 12, alignment: .top)
                     .contentShape(Rectangle())
@@ -391,13 +405,17 @@ struct ComposerFloat: View {
                 SuggestionList(items: composer.suggestions, index: composer.suggestionIndex) { composer.accept($0) }
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
             } else if composer.trayOpen && Self.hasTray(session) {
+                // Out from behind the box and back under it: a slide alone, no fade.
                 tray
-                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                    .transition(reduceMotion ? .opacity : .move(edge: .bottom))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
+        // Cut off at the box's top edge, so what slides in comes out from behind the box
+        // rather than drop onto it from above; open past the other edges, for the glass.
+        .mask(alignment: .bottom) { Rectangle().frame(width: 4000, height: 4000) }
         .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: composer.suggestions.isEmpty)
     }
 
@@ -414,11 +432,16 @@ struct ComposerFloat: View {
             if composer.text.isEmpty { trigger("/", label: "Insert a command") }
             trigger("@", label: "Mention a file")
         }
+        // In line with the box, not the + beside it: starting at the bar's edge, the row read
+        // as loose over the transcript rather than as the box's own drawer.
+        .padding(.leading, control + 8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        // Over the conversation's text: a shadow sets the glass off from what's under it, and
-        // the text fades out beneath the chips (as it does under the bar) rather than read
-        // through them.
-        .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
+        // One piece in the slide: left to themselves the settings chips (a ViewThatFits)
+        // faded in where they land while / and @ beside them rose.
+        .geometryGroup()
+        // Over the conversation's text, which fades out beneath the chips (as it does under
+        // the bar) rather than read through them. No shadow of its own: a shadow drawn over
+        // glass flattens it into a dark slab.
         .background {
             LinearGradient(colors: [theme.surface.opacity(0), theme.surface.opacity(0.92)], startPoint: .top, endPoint: .bottom)
                 .padding(.top, -28)

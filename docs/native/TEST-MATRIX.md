@@ -101,6 +101,15 @@ The demo host on an iPhone 18 Pro simulator (iOS 27.0), driven by `TourUITests` 
 - At the layer's commit: `swift test` 216 tests pass; `./scripts/verify.sh` (Mac Catalyst build, `xcodebuild test` on the simulator) TEST SUCCEEDED, 180 unit tests and the UI tests (the tour skips without a host).
 - Not seen: a real finger's hold and drag on a device, VoiceOver's actions on a reply, iPad, Dynamic Type at accessibility sizes.
 
+### The composer's chips, light and corner button, 11 November 2026
+
+From the owner's phone recordings and screenshots: the settings chips came down onto the box from above under a black slab (the tray's shadow, drawn over Liquid Glass, flattened it into a dark shape); they stayed put while the on-screen keyboard went down with the box, then vanished; the row started at the bar's edge rather than the box's; the working light was a wide wash; Stop sat low in the box; the grabber read as a smear. Same iPhone 18 Pro simulator and demo host, `AH_TOUCH_ONLY=1`, recorded at 60 fps and read frame by frame.
+
+- Seen: the five chips (Model, Effort, Ask, / and @) rise together out from behind the box's top edge over seven frames, with no shadow or slab, in line with the box's leading edge, and slide back down behind it over six frames when the transcript is scrolled; the working light is a short comet with a close glow, running round the box's edge; Send and Stop measure the same distance from the box's top as from its bottom in a one-line box (19 px each at 3×); the grabber is an 18 × 2 point line drawn over the glass, where before it sat under the glass layer and showed only as its refraction.
+- Reasoned, not seen: the float now follows the keyboard by UIKit's keyboard frame (`KeyboardFrame`), animated with the keyboard, instead of by SwiftUI's keyboard safe area, which the owner's recording shows settling only after the bar has moved. The simulator keeps its hardware keyboard connected and raised no on-screen keyboard in the tour, so this is checked by the build and the owner's phone, not a recording.
+- At the layer's commit: `./scripts/verify.sh` in a clean clone on the Mac (Mac Catalyst build, `xcodebuild test` on the simulator) TEST SUCCEEDED, 186 unit tests and the 2 UI tests passed, the tour skipped without a host.
+- Not seen: a real device, light mode's light, Reduce Motion (the tray then fades in place), the red Approvals-off chip above the box with the grabber beside it, an iPad window narrower than its screen (the keyboard's frame is converted into the window's).
+
 ## Still to run (in order)
 
 1. On a Mac: `brew install xcodegen && ./scripts/verify.sh` — expect compile fixes in the UI layer, which has never been type-checked.

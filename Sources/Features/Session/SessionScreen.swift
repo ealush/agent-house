@@ -27,6 +27,9 @@ struct SessionScreen: View {
     /// How tall the bar under the transcript is: what opens out of the composer floats just
     /// above it.
     @State private var barHeight: CGFloat = 0
+    /// Where the keyboard is as it moves: what floats over the bar follows it by this, since
+    /// the keyboard safe area SwiftUI gives the float catches up only once the keyboard has.
+    @State private var keyboard = KeyboardFrame()
 
     private var narrow: Bool { sizeClass == .compact || scene.narrow }
     /// How wide the conversation and its composer grow on a big screen: past this, lines get
@@ -82,16 +85,20 @@ struct SessionScreen: View {
                             .frame(maxWidth: .infinity)
                         }
                     }
-                    // Over the transcript, above the bar and outside it (a view past the bar's
-                    // edge draws but takes no touch).
-                    .overlay(alignment: .bottom) {
-                        if session.surface == .gui && session.hasGUI {
-                            ComposerFloat(session: session, composer: session.composer, scene: scene)
-                                .frame(maxWidth: Self.readableWidth)
-                                .frame(maxWidth: .infinity)
-                                .padding(.bottom, barHeight)
-                        }
-                    }
+            }
+            // Over the transcript, above the bar and outside it (a view past the bar's edge
+            // draws but takes no touch). Placed from where the keyboard is, not by the keyboard
+            // safe area: the bar sits in the transcript's inset, which UIKit moves with the
+            // keyboard, while the safe area settles only afterwards, so the float sat still as
+            // the bar went down and then jumped after it.
+            .overlay(alignment: .bottom) {
+                if session.surface == .gui && session.hasGUI {
+                    ComposerFloat(session: session, composer: session.composer, scene: scene)
+                        .frame(maxWidth: Self.readableWidth)
+                        .frame(maxWidth: .infinity)
+                        .padding(.bottom, barHeight + keyboard.rise)
+                        .ignoresSafeArea(.keyboard)
+                }
             }
             if !narrow, let panel = session.panel {
                 Divider()
