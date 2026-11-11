@@ -424,48 +424,55 @@ struct StackCockpitView: View {
         let next = stack.next.flatMap { pr in unreviewed.first { $0.pr == pr } } ?? unreviewed.first
         if next != nil || !plan.lands.isEmpty {
             GlassEffectContainer(spacing: 10) {
-                HStack(spacing: 10) {
-                    if let next {
-                        Button {
-                            Haptics.selection()
-                            scene.reviewPath.append(ReviewRoute(stack: stack.id, pr: next.pr))
-                        } label: {
-                            Label("Review \(next.name)", systemImage: "arrow.right.circle")
-                                .font(.ah(.subheadline).weight(.semibold))
-                                .foregroundStyle(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 6)
-                        }
-                        .buttonStyle(.glassProminent)
-                        .tint(theme.accentStrong)
-                    }
-                    if !plan.lands.isEmpty {
-                        let words = plan.lands.count == open.count ? "Merge the stack…" : "Merge \(plan.lands.count) layer\(plan.lands.count == 1 ? "" : "s")…"
-                        if next == nil {
-                            Button { mergingStack = true } label: {
-                                Label(words, systemImage: "arrow.triangle.merge")
-                                    .font(.ah(.subheadline).weight(.semibold))
-                                    .foregroundStyle(theme.background)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 6)
-                            }
-                            .buttonStyle(.glassProminent)
-                            .tint(theme.done)
-                        } else {
-                            Button { mergingStack = true } label: {
-                                Label(words, systemImage: "arrow.triangle.merge")
-                                    .font(.ah(.subheadline).weight(.semibold))
-                                    .padding(.vertical, 6)
-                            }
-                            .buttonStyle(.glass)
-                        }
-                    }
+                // Side by side while they fit, one over the other at the largest type sizes.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) { stackActions(stack, next: next, plan: plan, open: open) }
+                    VStack(spacing: 8) { stackActions(stack, next: next, plan: plan, open: open) }
                 }
             }
             .padding(.horizontal, 14)
             .padding(.top, 6)
             .padding(.bottom, 8)
             .transition(.blurReplace)
+        }
+    }
+
+    @ViewBuilder
+    private func stackActions(_ stack: ReviewStack, next: Layer?, plan: StackMergePlan, open: [Layer]) -> some View {
+        if let next {
+            Button {
+                Haptics.selection()
+                scene.reviewPath.append(ReviewRoute(stack: stack.id, pr: next.pr))
+            } label: {
+                Label("Review \(next.name)", systemImage: "arrow.right.circle")
+                    .font(.ah(.subheadline).weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+            }
+            .buttonStyle(.glassProminent)
+            .tint(theme.accentStrong)
+        }
+        if !plan.lands.isEmpty {
+            let words = plan.lands.count == open.count ? "Merge the stack…" : "Merge \(plan.lands.count) layer\(plan.lands.count == 1 ? "" : "s")…"
+            if next == nil {
+                Button { mergingStack = true } label: {
+                    Label(words, systemImage: "arrow.triangle.merge")
+                        .font(.ah(.subheadline).weight(.semibold))
+                        .foregroundStyle(theme.background)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.glassProminent)
+                .tint(theme.done)
+            } else {
+                Button { mergingStack = true } label: {
+                    Label(words, systemImage: "arrow.triangle.merge")
+                        .font(.ah(.subheadline).weight(.semibold))
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.glass)
+            }
         }
     }
 }
@@ -1088,24 +1095,41 @@ struct LayerView: View {
     }
 
     private func decisionBar(_ layer: Layer, _ confidence: LayerConfidence) -> some View {
-        HStack(spacing: 10) {
-            primary(layer, confidence)
-                .frame(maxWidth: .infinity)
-            if let next = model.neighbor(1) {
-                Button { go(to: next) } label: {
-                    HStack(spacing: 4) {
-                        Text(next.role.isEmpty ? "#\(next.pr)" : next.role).lineLimit(1)
-                        Image(systemName: "chevron.up")
-                    }
-                    .font(.ah(.subheadline).weight(.semibold))
-                    .padding(.vertical, 6)
-                }
-                .buttonStyle(.glass)
-                .accessibilityLabel("Next layer, \(next.name)")
-                .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+        // One row while it fits; at the largest type sizes the decision takes a row of its own
+        // over the next layer and the menu, rather than being cut to "I reviewe…".
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                primary(layer, confidence)
+                    .frame(maxWidth: .infinity)
+                secondary(layer, confidence)
             }
-            more(layer, confidence)
+            VStack(spacing: 8) {
+                primary(layer, confidence)
+                    .frame(maxWidth: .infinity)
+                HStack(spacing: 10) {
+                    Spacer(minLength: 0)
+                    secondary(layer, confidence)
+                }
+            }
         }
+    }
+
+    @ViewBuilder
+    private func secondary(_ layer: Layer, _ confidence: LayerConfidence) -> some View {
+        if let next = model.neighbor(1) {
+            Button { go(to: next) } label: {
+                HStack(spacing: 4) {
+                    Text(next.role.isEmpty ? "#\(next.pr)" : next.role).lineLimit(1)
+                    Image(systemName: "chevron.up")
+                }
+                .font(.ah(.subheadline).weight(.semibold))
+                .padding(.vertical, 6)
+            }
+            .buttonStyle(.glass)
+            .accessibilityLabel("Next layer, \(next.name)")
+            .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+        }
+        more(layer, confidence)
     }
 
     /// The one thing to do next: review this revision, merge it, or what it's waiting on.
