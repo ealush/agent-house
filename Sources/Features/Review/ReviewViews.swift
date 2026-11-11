@@ -714,7 +714,10 @@ struct LayerView: View {
             if let diff = model.diff {
                 let files = model.diffFiles
                 HStack(spacing: 8) {
-                    Text(files.count == 1 ? "1 file" : "\(files.count) files").foregroundStyle(theme.text2)
+                    let seen = files.filter { model.viewed.contains($0.path) }.count
+                    Text(seen > 0 ? "\(seen) of \(files.count) viewed" : files.count == 1 ? "1 file" : "\(files.count) files")
+                        .foregroundStyle(seen == files.count ? theme.done : theme.text2)
+                        .contentTransition(.numericText())
                     let added = files.reduce(0) { $0 + $1.additions }, removed = files.reduce(0) { $0 + $1.deletions }
                     if added > 0 { Text("+\(added)").foregroundStyle(theme.done) }
                     if removed > 0 { Text("−\(removed)").foregroundStyle(theme.danger) }
@@ -732,7 +735,7 @@ struct LayerView: View {
                     ForEach(files) { file in
                         VStack(alignment: .leading, spacing: 6) {
                             fileHeader(file, layer)
-                            if !folded.contains(file.path) {
+                            if !isShut(file.path) {
                                 DiffLinesView(
                                     lines: file.lines,
                                     maxLines: 300,
@@ -753,16 +756,38 @@ struct LayerView: View {
         }
     }
 
-    /// A file's name over its folder, what it adds and removes, and a tap to fold it.
+    /// A viewed file stays folded until it's opened again; any other is open until folded.
+    private func isShut(_ path: String) -> Bool {
+        folded.contains(path) != model.viewed.contains(path)
+    }
+
+    private func toggleFold(_ path: String) {
+        withAnimation(.snappy(duration: 0.25)) {
+            if folded.contains(path) { folded.remove(path) } else { folded.insert(path) }
+        }
+    }
+
+    /// Viewed folds the file away and counts it; un-viewed opens it again.
+    private func toggleViewed(_ path: String) {
+        let on = !model.viewed.contains(path)
+        Haptics.selection()
+        withAnimation(.snappy(duration: 0.28)) {
+            model.setViewed(path, on)
+            folded.remove(path)
+            if selectedLines?.path == path { selectedLines = nil }
+        }
+    }
+
+    /// A file's name over its folder, what it adds and removes, a tap to fold it, and its
+    /// Viewed box.
     private func fileHeader(_ file: FileDiff, _ layer: Layer) -> some View {
-        let shut = folded.contains(file.path)
+        let shut = isShut(file.path)
+        let viewed = model.viewed.contains(file.path)
         let name = (file.path as NSString).lastPathComponent
         let folder = (file.path as NSString).deletingLastPathComponent
         return HStack(spacing: 8) {
             Button {
-                withAnimation(.snappy(duration: 0.25)) {
-                    if shut { folded.remove(file.path) } else { folded.insert(file.path) }
-                }
+                toggleFold(file.path)
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "chevron.right")
@@ -771,7 +796,7 @@ struct LayerView: View {
                         .rotationEffect(.degrees(shut ? 0 : 90))
                     HStack(spacing: 0) {
                         if !folder.isEmpty { Text(folder + "/").foregroundStyle(theme.muted) }
-                        Text(name).fontWeight(.semibold).foregroundStyle(theme.text)
+                        Text(name).fontWeight(.semibold).foregroundStyle(viewed ? theme.muted : theme.text)
                     }
                     .font(.ahMono(.caption))
                     .lineLimit(1)
@@ -788,11 +813,23 @@ struct LayerView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("\(file.path), \(file.additions) added, \(file.deletions) removed")
             .accessibilityHint(shut ? "Shows its changes" : "Folds its changes away")
+            Button { toggleViewed(file.path) } label: {
+                Image(systemName: viewed ? "checkmark.circle.fill" : "circle")
+                    .font(.ah(.callout))
+                    .foregroundStyle(viewed ? theme.done : theme.faint)
+                    .contentTransition(.symbolEffect(.replace))
+                    .frame(width: 28, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Viewed")
+            .accessibilityValue(viewed ? "Yes" : "No")
+            .accessibilityAddTraits(viewed ? .isSelected : [])
+            .help(viewed ? "Mark as not viewed" : "Mark as viewed")
             Menu {
                 Button("Ask the Reviewer About This File", systemImage: "bubble.left") { model.attach(.file(pr: layer.pr, path: file.path)) }
-                Button(shut ? "Unfold" : "Fold", systemImage: shut ? "chevron.down" : "chevron.up") {
-                    withAnimation(.snappy(duration: 0.25)) { if shut { folded.remove(file.path) } else { folded.insert(file.path) } }
-                }
+                Button(viewed ? "Mark as Not Viewed" : "Mark as Viewed", systemImage: viewed ? "circle" : "checkmark.circle") { toggleViewed(file.path) }
+                Button(shut ? "Unfold" : "Fold", systemImage: shut ? "chevron.down" : "chevron.up") { toggleFold(file.path) }
             } label: {
                 Image(systemName: "ellipsis").foregroundStyle(theme.muted).frame(width: 28, height: 22).contentShape(Rectangle())
             }

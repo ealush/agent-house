@@ -372,6 +372,22 @@ final class ReviewModel {
 
     func findings(for pr: Int) -> [Finding] { findings.filter { $0.ownerPr == pr } }
 
+    /// Files you've marked viewed, per layer at its head (a new revision starts over), as
+    /// GitHub's Viewed boxes. Kept while the app runs.
+    private var viewedFiles: [String: Set<String>] = [:]
+
+    private var viewedKey: String? {
+        guard let id = stack?.id, let layer else { return nil }
+        return "\(id)#\(layer.pr)@\(layer.headSha)"
+    }
+
+    var viewed: Set<String> { viewedKey.flatMap { viewedFiles[$0] } ?? [] }
+
+    func setViewed(_ path: String, _ on: Bool) {
+        guard let key = viewedKey else { return }
+        if on { viewedFiles[key, default: []].insert(path) } else { viewedFiles[key]?.remove(path) }
+    }
+
     /// The layer `offset` places from the selected one, bottom to top (+1 is the one above).
     func neighbor(_ offset: Int) -> Layer? {
         guard let layers = stack?.layers, let pr = selectedPR, let at = layers.firstIndex(where: { $0.pr == pr }) else { return nil }
