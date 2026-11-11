@@ -29,9 +29,10 @@ struct ThinkingBorder: View {
                         .opacity(0.35 + 0.35 * (0.5 + 0.5 * sin(t * 2 * .pi / Self.lap)))
                 } else {
                     let gradient = comet(at: .degrees((t / Self.lap).truncatingRemainder(dividingBy: 1) * 360))
-                    // A glow under the light, then the light itself.
-                    shape.strokeBorder(gradient, lineWidth: dark ? 5 : 4).blur(radius: dark ? 6 : 5).opacity(dark ? 1 : 0.85)
-                    shape.strokeBorder(gradient, lineWidth: 2)
+                    // A close glow under the light, then the light itself: a thin bright line,
+                    // not a wash spread out from the edge.
+                    shape.strokeBorder(gradient, lineWidth: dark ? 3 : 2.5).blur(radius: dark ? 2.5 : 2).opacity(dark ? 0.9 : 0.75)
+                    shape.strokeBorder(gradient, lineWidth: 1.5)
                 }
             }
             .blendMode(dark ? .plusLighter : .normal)
@@ -42,14 +43,15 @@ struct ThinkingBorder: View {
         .accessibilityHidden(true)
     }
 
-    /// A light with a fading tail, from the theme's accent into its brand.
+    /// A light with a short fading tail (a quarter of the way round), from the theme's accent
+    /// into its brand.
     private func comet(at angle: Angle) -> AngularGradient {
         AngularGradient(
             stops: [
                 .init(color: theme.accent.opacity(0), location: 0),
-                .init(color: theme.accent.opacity(0), location: 0.5),
-                .init(color: theme.accent.opacity(0.75), location: 0.82),
-                .init(color: theme.brand, location: 0.96),
+                .init(color: theme.accent.opacity(0), location: 0.72),
+                .init(color: theme.accent.opacity(0.8), location: 0.9),
+                .init(color: theme.brand, location: 0.97),
                 .init(color: theme.brand.opacity(0), location: 1),
             ],
             center: .center,

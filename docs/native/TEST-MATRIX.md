@@ -101,6 +101,24 @@ The demo host on an iPhone 18 Pro simulator (iOS 27.0), driven by `TourUITests` 
 - At the layer's commit: `swift test` 216 tests pass; `./scripts/verify.sh` (Mac Catalyst build, `xcodebuild test` on the simulator) TEST SUCCEEDED, 180 unit tests and the UI tests (the tour skips without a host).
 - Not seen: a real finger's hold and drag on a device, VoiceOver's actions on a reply, iPad, Dynamic Type at accessibility sizes.
 
+### The composer's chips, light and corner button, 11 November 2026
+
+From the owner's phone recordings and screenshots: the settings chips came down onto the box from above under a black slab (the tray's shadow, drawn over Liquid Glass, flattened it into a dark shape); they stayed put while the on-screen keyboard went down with the box, then vanished; the row started at the bar's edge rather than the box's; the working light was a wide wash; Stop sat low in the box; the grabber read as a smear. Same iPhone 18 Pro simulator and demo host, `AH_TOUCH_ONLY=1`, recorded at 60 fps and read frame by frame.
+
+- Seen: the five chips (Model, Effort, Ask, / and @) rise together out from behind the box's top edge over seven frames, with no shadow or slab, in line with the box's leading edge, and slide back down behind it over six frames when the transcript is scrolled; the working light is a short comet with a close glow, running round the box's edge; Send and Stop measure the same distance from the box's top as from its bottom in a one-line box (19 px each at 3×); the grabber is an 18 × 2 point line drawn over the glass, where before it sat under the glass layer and showed only as its refraction.
+- Reasoned, not seen: the float now follows the keyboard by UIKit's keyboard frame (`KeyboardFrame`), animated with the keyboard, instead of by SwiftUI's keyboard safe area, which the owner's recording shows settling only after the bar has moved. The simulator keeps its hardware keyboard connected and raised no on-screen keyboard in the tour, so this is checked by the build and the owner's phone, not a recording.
+- At the layer's commit: `./scripts/verify.sh` in a clean clone on the Mac (Mac Catalyst build, `xcodebuild test` on the simulator) TEST SUCCEEDED, 186 unit tests and the 2 UI tests passed, the tour skipped without a host.
+- Not seen: a real device, light mode's light, Reduce Motion (the tray then fades in place), the red Approvals-off chip above the box with the grabber beside it, an iPad window narrower than its screen (the keyboard's frame is converted into the window's).
+
+### Swiping a session's row, 11 November 2026
+
+From the owner's phone: a row swiped left offered Pin as a wide pill with the word beneath, in which the glyph looked stretched, and the owner wanted the other, more useful action within a drag too. Same iPhone 18 Pro simulator and demo host, `AH_TOUCH_ONLY=1`, the tour's `swipein:left@<row>` and `swipein:right@<row>` steps (a flick across the named row) and a drag across the whole row for a full swipe.
+
+- Seen: a swipe left shows one red circle with the stop glyph; its tap, and a full swipe without a tap, open the Terminate sheet that names the session, and Cancel leaves the row as it was; a swipe right shows one amber circle with the pin glyph, and its tap pins (the row takes its pin mark) or unpins; a glyph-only action draws as the circle, where one with a title drew as the pill.
+- Found on the way: a Terminate action with the destructive role, swiped all the way, abort-trapped the app (`UICollectionView ... Invalid_Number_Of_Items_In_Section`): the list takes a full destructive swipe for the row's deletion, and the row stays until the sheet says. The action is red by tint, not role.
+- At the layer's commit: `./scripts/verify.sh` in a clean clone on the Mac (Mac Catalyst build, `xcodebuild test` on the simulator) TEST SUCCEEDED, 186 unit tests and the 2 UI tests passed, the tour skipped without a host.
+- Not seen: a real device, light mode, VoiceOver's reading of the glyph-only actions (they carry Pin, Unpin and Terminate labels), the Sessions tab's rows, which take the same swipes.
+
 ## Still to run (in order)
 
 1. On a Mac: `brew install xcodegen && ./scripts/verify.sh` — expect compile fixes in the UI layer, which has never been type-checked.

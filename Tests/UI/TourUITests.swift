@@ -115,6 +115,12 @@ final class TourUITests: XCTestCase {
                 case "left": app.swipeLeft()
                 default: app.swipeRight()
                 }
+            case "swipein":
+                // `swipein:left@~Welcome`: a flick across that element (a row's swipe actions).
+                let parts = argument.split(separator: "@", maxSplits: 1).map(String.init)
+                if parts.count == 2, let inside = element(app, parts[1]) {
+                    if parts[0] == "left" { inside.swipeLeft() } else { inside.swipeRight() }
+                }
             case "drag":
                 let ends = argument.split(separator: ">").map(String.init)
                 if ends.count == 2, let from = element(app, ends[0]), let to = element(app, ends[1]) {
