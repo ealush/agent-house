@@ -160,6 +160,15 @@ From a read of how the chat and agent apps build their composers (ChatGPT's and 
 - Reasoned, not seen: the placeholder names the model and effort in force after whom it messages ("Message Claude Code · Fable 5.1 · High"), hints that drop from the end as the box narrows (the demo session sets neither, so its box says "Message Claude Code"); Send dimmed by an upload now takes the tap and says "Sent once the attachment has uploaded" (the demo host finishes an upload before a finger reaches Send); a file dragged onto the box attaches, with an accent ring while it's held over (no drag source on the simulator; an iPad with Files is where to try it).
 - At the layer's commit: `./scripts/verify.sh` in a clean clone on the Mac (Mac Catalyst build, `xcodebuild test` on the simulator) TEST SUCCEEDED, 186 unit tests and the 2 UI tests passed, the tour skipped without a host.
 
+### Effort per model in New session, 12 November 2026
+
+From the owner: New session should come back with the most recent choices, and the right ones for each model. It remembered one effort per agent, so another model kept a level picked for the last one. Seen on the iPhone simulator (BC24B07E, dark mode) against the demo host.
+
+- Seen: Claude Code with Opus 5.5 and Low effort, then Sonnet 5.5 with High, then Opus 5.5 again brings Low back.
+- Tested, not seen: what a start keeps (`remembering`: each model's effort beside it, Default included) and what comes back next time (`remembered`, `effort(for:)`), with a row saved before this keeping its one effort for the model it named (SwitcherTests `eachModelComesBackWithItsOwnEffort`).
+- Not seen: a second start on the device bringing a model's effort back (the demo host is shared, so the tour starts nothing); Codex, whose models each list their own levels.
+- At the layer's commit: `./scripts/verify.sh` in a clean clone on the Mac (Mac Catalyst build, `xcodebuild test` on the simulator) TEST SUCCEEDED, 187 unit tests and the 2 UI tests passed, the tour skipped without a host.
+
 ## Still to run (in order)
 
 1. On a Mac: `brew install xcodegen && ./scripts/verify.sh` — expect compile fixes in the UI layer, which has never been type-checked.

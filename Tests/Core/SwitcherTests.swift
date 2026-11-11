@@ -106,6 +106,28 @@ private func past(_ ref: String, title: String, harness: String = "claude", proj
     #expect(risky == ("default", "claude-opus-5-5", "medium"), "a dangerous mode and an unknown effort aren't restored; a typed model id is")
 }
 
+@Test func eachModelComesBackWithItsOwnEffort() throws {
+    let preset = try JSONDecoder().decode(PresetDTO.self, from: Data(#"""
+    {"id":"claude","name":"Claude Code","command":"claude","available":true,"defaultEffort":"medium",
+     "models":[{"id":"opus","name":"Opus 5.5","efforts":["low","medium","high","max"]},{"id":"haiku","name":"Haiku 5.5","efforts":["low","medium"]},{"id":"sonnet","name":"Sonnet 5.5"}],
+     "effort":{"levels":["low","medium","high"]}}
+    """#.utf8))
+    var memory = LaunchState.remembering(nil, mode: "default", model: "opus", effort: "max", trust: nil)
+    memory = LaunchState.remembering(memory, mode: "default", model: "sonnet", effort: nil, trust: nil)
+    #expect(memory.efforts == ["opus": "max", "sonnet": "default"])
+    #expect(LaunchState.remembered(memory, preset: preset) == ("default", "sonnet", nil), "the last start comes back, Default effort included")
+
+    let chosen = memory.effortsByModel
+    #expect(LaunchState.effort(for: "opus", preset: preset, chosen: chosen, current: nil) == "max", "a model brings back the effort it last started with")
+    #expect(LaunchState.effort(for: "haiku", preset: preset, chosen: chosen, current: "low") == "low", "a model with nothing remembered keeps a level it takes")
+    #expect(LaunchState.effort(for: "haiku", preset: preset, chosen: chosen, current: "high") == nil, "and drops one it doesn't")
+    #expect(LaunchState.effort(for: "opus", preset: preset, chosen: ["opus": "ultra"], current: "high") == "high", "a remembered level the model no longer takes gives way")
+
+    let legacy = DevicePreferences.LaunchMemory(mode: "default", model: "opus", effort: "high")
+    #expect(legacy.effortsByModel == ["opus": "high"], "rows from before per-model memory keep their one effort")
+    #expect(LaunchState.remembered(legacy, preset: preset) == ("default", "opus", "high"))
+}
+
 @Test func sidebarBlockOrderIsKeptPerGrouping() throws {
     var order = DevicePreferences.GroupOrder()
     order.set(["api", "web"], multiHost: false)

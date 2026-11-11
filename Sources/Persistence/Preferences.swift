@@ -109,8 +109,14 @@ struct DevicePreferences: Codable, Equatable, Sendable {
         var mode: String?
         var model: String?
         var effort: String?
+        /// The effort last started with each model, by model id ("default" for the agent's
+        /// own model, and as the value for Default effort).
+        var efforts: [String: String]? = nil
         /// "Skip startup confirmations" was on.
         var trust: Bool? = nil
+
+        /// The effort for each model; older rows kept only the last model's.
+        var effortsByModel: [String: String] { efforts ?? effort.map { [model ?? "default": $0] } ?? [:] }
     }
 
     init() {}

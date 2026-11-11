@@ -258,8 +258,26 @@ extension LaunchState {
         guard let memory else { return ("default", preset.defaultModel, preset.defaultEffort) }
         let mode = preset.modes?.first { $0.id == memory.mode && $0.dangerous != true }?.id ?? "default"
         let model = memory.model.flatMap { id in (preset.models ?? []).contains { $0.id == id } || (takesCustomModel(preset) && isValidModelID(id)) ? id : nil } ?? preset.defaultModel
-        let effort = memory.effort.flatMap { levels(preset, model: model).contains($0) ? $0 : nil } ?? preset.defaultEffort
-        return (mode, model, effort)
+        return (mode, model, effort(for: model, preset: preset, chosen: memory.effortsByModel, current: preset.defaultEffort))
+    }
+
+    /// The effort that goes with a model: the one last chosen with it, else the one already
+    /// picked when this model takes it, else Default.
+    static func effort(for model: String?, preset: PresetDTO, chosen: [String: String], current: String?) -> String? {
+        let levels = levels(preset, model: model)
+        if let last = chosen[model ?? "default"] {
+            if last == "default" { return nil }
+            if levels.contains(last) { return last }
+        }
+        return current.flatMap { levels.contains($0) ? $0 : nil }
+    }
+
+    /// What New session keeps after a start: the choices, and the effort beside the model it
+    /// went with, so each model comes back with its own.
+    static func remembering(_ memory: DevicePreferences.LaunchMemory?, mode: String, model: String?, effort: String?, trust: Bool?) -> DevicePreferences.LaunchMemory {
+        var efforts = memory?.effortsByModel ?? [:]
+        efforts[model ?? "default"] = effort ?? "default"
+        return .init(mode: mode, model: model, effort: effort, efforts: efforts, trust: trust)
     }
 
     /// A fork's request (`../ah/web/ForkDialog.tsx`): the name and first message when given,
