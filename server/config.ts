@@ -164,7 +164,7 @@ const DEFAULT_PRESETS: Preset[] = [
     ],
     // Aliases always point at the latest model of each family.
     models: [
-      { id: 'fable', name: 'Fable 5.1', args: ['--model', 'fable'], description: 'Most capable' },
+      { id: 'fable', name: 'Fable 5.2', args: ['--model', 'fable'], description: 'Most capable' },
       { id: 'opus', name: 'Opus 5.5', args: ['--model', 'opus'], description: 'Deep work and long tasks' },
       { id: 'sonnet', name: 'Sonnet 5.5', args: ['--model', 'sonnet'], description: 'Fast and capable' },
       { id: 'haiku', name: 'Haiku 4.5', args: ['--model', 'haiku'], description: 'Quick, lightweight tasks' },
