@@ -29,6 +29,8 @@ struct ComposerView: View {
     @ScaledMetric(relativeTo: .body) private var corner: CGFloat = 22
     /// How wide Send (or Queue, Run, Stop) is in the box's corner: the text wraps short of it.
     @State private var sendSize = CGSize.zero
+    /// How wide + is in the box's other corner: the text starts past it.
+    @State private var attachSize = CGSize.zero
     @Namespace private var glass
 
     private var hasTray: Bool { ComposerFloat.hasTray(session) }
@@ -40,14 +42,15 @@ struct ComposerView: View {
             if let from = composer.drafts.from {
                 Label("Continued from \(from)", systemImage: "arrow.turn.down.right")
                     .font(.ah(.caption2)).foregroundStyle(theme.muted)
-                    // Over the text it's about, not over the + beside it.
-                    .padding(.leading, control + 8 + 14)
+                    // Over the text it's about, which starts past the + in the box's corner.
+                    .padding(.leading, 12 + attachSize.width + 14)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            // One slim glass field and the attach button beside it, as Messages has them; the
-            // settings chips wait folded away until a swipe up brings them out, floating over
-            // the transcript above the box (`ComposerFloat`): nothing here changes height for
-            // them, so the transcript doesn't move.
+            // One slim glass field the width of the bar, + in its leading corner and Send in
+            // its trailing one (beside the box, + left it short, and what floated over it
+            // read as loose); the settings chips wait folded away until a swipe up brings
+            // them out, floating over the transcript above the box (`ComposerFloat`):
+            // nothing here changes height for them, so the transcript doesn't move.
             VStack(alignment: .leading, spacing: 8) {
                 if hasTray, session.launch.mode?.dangerous == true {
                     // Approvals off is never tucked away: its chip stays out, in red, open
@@ -55,16 +58,10 @@ struct ComposerView: View {
                     LaunchChips(session: session, scene: scene, onlyRisky: true)
                         .transition(.opacity)
                 }
-                GlassEffectContainer(spacing: 10) {
-                    HStack(alignment: .bottom, spacing: 8) {
-                        attachMenu
-                        field
-                    }
-                }
-                // Over the glass, not under it: a container draws its glass above what's
-                // inside, so a mark laid on the box from within showed only as a smear
-                // refracted through it.
-                .overlay(alignment: .top) { grabber.padding(.leading, control + 8) }
+                field
+                    // Over the glass, not under it: laid on the box from within, a mark
+                    // showed only as a smear refracted through it. Centred, as a sheet's is.
+                    .overlay(alignment: .top) { grabber }
             }
             .gesture(ComposerSwipe { swiped($0) })
         }
@@ -222,9 +219,13 @@ struct ComposerView: View {
     /// so in a one-line box it's centred in the box, and in a longer one it's on the last line.
     /// A fixed inset left it low, since a line of body text with its insets is taller than the
     /// button plus twice the inset.
-    private var cornerInset: CGFloat {
+    private var cornerInset: CGFloat { cornerInset(for: sendSize.height) }
+
+    /// The same for anything else in a corner (+), by its own height: measured against Send's,
+    /// + rode high while Send was folded away to nothing.
+    private func cornerInset(for height: CGFloat) -> CGFloat {
         let line = max(control, AhType.uiFont(.body).lineHeight + 24)
-        return max(6, ((line - sendSize.height) / 2).rounded())
+        return max(6, ((line - height) / 2).rounded())
     }
 
     /// The box: what you attach above the text, and Send inside it at the last line's end.
@@ -234,13 +235,18 @@ struct ComposerView: View {
             // The text wraps short of Send, which sits in the box's corner (as Messages has it):
             // beside it in a row, the box was measured at one width and laid out at another,
             // and a long message lost its first line.
-            ComposerTextField(composer: composer, session: session, scene: scene, trailingRoom: sendSize.width > 0 ? sendSize.width + 4 : 0, cornerHeight: sendSize.height)
+            ComposerTextField(composer: composer, session: session, scene: scene, leadingRoom: attachSize.width > 0 ? attachSize.width + 2 : 0, trailingRoom: sendSize.width > 0 ? sendSize.width + 4 : 0, cornerHeight: sendSize.height)
                 .frame(minHeight: control - 12)
         }
-        .padding(.leading, 10)
-        .padding(.trailing, 6)
+        .padding(.horizontal, 6)
         .padding(.vertical, 6)
         .frame(minHeight: control)
+        .overlay(alignment: .bottomLeading) {
+            attachMenu
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { attachSize = $0 }
+                .padding(.horizontal, 6)
+                .padding(.bottom, cornerInset(for: attachSize.height))
+        }
         .overlay(alignment: .bottomTrailing) {
             ZStack { sendButton }
                 .onGeometryChange(for: CGSize.self) { $0.size } action: { sendSize = $0 }
@@ -294,14 +300,15 @@ struct ComposerView: View {
                     Button("Previous Message", systemImage: "clock.arrow.circlepath") { composer.recall(1) }
                 }
             } label: {
+                // A glyph in the box's corner, as Send is in the other: no glass of its own.
                 Image(systemName: "plus")
                     .font(.system(size: control * 0.41, weight: .medium))
                     .foregroundStyle(theme.text2)
-                    .frame(width: control, height: control)
-                    .glassEffect(.regular.interactive(), in: Circle())
-                    .glassEffectID("attach", in: glass)
+                    .frame(width: control - 12, height: control - 12)
+                    .contentShape(Circle())
                     .contentShape(.hoverEffect, Circle())
                     .hoverEffect(.highlight)
+                    .touchTarget()
             }
             // In the order written, wherever the menu opens: the library first.
             .menuOrder(.fixed)
@@ -315,12 +322,12 @@ struct ComposerView: View {
             Button {
                 Task { await composer.stop() }
             } label: {
-                // ah's Stop: an ink circle.
+                // Stop where Send was, in its accent: the one filled control in the box.
                 Image(systemName: "stop.fill")
                     .font(.system(size: control * 0.25, weight: .bold))
-                    .foregroundStyle(theme.background)
+                    .foregroundStyle(.white)
                     .frame(width: control - 12, height: control - 12)
-                    .background(theme.text, in: Circle())
+                    .background(theme.accentStrong, in: Circle())
                     .touchTarget()
             }
             .buttonStyle(.ahPress)
@@ -441,9 +448,8 @@ struct ComposerFloat: View {
             if composer.text.isEmpty { trigger("/", label: "Insert a command") }
             trigger("@", label: "Mention a file")
         }
-        // In line with the box, not the + beside it: starting at the bar's edge, the row read
-        // as loose over the transcript rather than as the box's own drawer.
-        .padding(.leading, control + 8)
+        // In line with the box's text, past the + in its corner.
+        .padding(.leading, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         // One piece in the slide: left to themselves the settings chips (a ViewThatFits)
         // faded in where they land while / and @ beside them rose.
@@ -703,7 +709,8 @@ struct LaunchChips: View {
     /// drops first, then the value, leaving the symbol.
     private func chipLabel(_ name: String, _ symbol: String, _ value: String?, spoken: String, danger: Bool, labelled: Bool = true, unset: Bool = false) -> some View {
         HStack(spacing: 4) {
-            if value == nil { Image(systemName: symbol).imageScale(.small).foregroundStyle(theme.muted) }
+            // Its glyph first, so a value alone ("High") still says what it's the value of.
+            Image(systemName: symbol).imageScale(.small).foregroundStyle(value == nil || unset ? theme.muted : theme.text2)
             if labelled, value != nil { Text(name).foregroundStyle(theme.muted) }
             if let value {
                 if danger { Image(systemName: "exclamationmark.triangle.fill").imageScale(.small).foregroundStyle(theme.danger) }
@@ -711,7 +718,7 @@ struct LaunchChips: View {
             }
         }
         .font(.ah(.footnote).weight(.medium))
-        .padding(.horizontal, value == nil ? 10 : 12)
+        .padding(.horizontal, value == nil ? 10 : 11)
         .frame(minWidth: height, minHeight: height)
         // Glass like the box they float over, so they read as part of it, out for a moment.
         .glassEffect(danger ? .regular.tint(theme.danger.opacity(0.22)).interactive() : .regular.interactive(), in: Capsule())
@@ -789,6 +796,7 @@ struct ComposerTextField: UIViewRepresentable {
     let session: SessionModel
     let scene: SceneModel
     /// Room kept clear at the end of each line for the button in the box's corner.
+    var leadingRoom: CGFloat = 0
     var trailingRoom: CGFloat = 0
     /// How tall that button is: a long message's scroll bar stops above it.
     var cornerHeight: CGFloat = 0
@@ -826,6 +834,10 @@ struct ComposerTextField: UIViewRepresentable {
 
     func updateUIView(_ view: ComposerTextView, context: Context) {
         context.coordinator.parent = self
+        if view.textContainerInset.left != 2 + leadingRoom {
+            view.textContainerInset.left = 2 + leadingRoom
+            view.setNeedsLayout()
+        }
         if view.textContainerInset.right != 2 + trailingRoom {
             view.textContainerInset.right = 2 + trailingRoom
             view.setNeedsLayout()
