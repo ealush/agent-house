@@ -109,7 +109,20 @@ struct Finding: Codable, Equatable, Sendable, Hashable, Identifiable {
             }
         }
     }
-    enum State: String, Codable, Sendable, CaseIterable { case proposed, open, sent, addressed, wontfix, dismissed }
+    enum State: String, Codable, Sendable, CaseIterable {
+        case proposed, open, sent, addressed, wontfix, dismissed
+
+        var label: String {
+            switch self {
+            case .proposed: return "Proposed"
+            case .open: return "Open"
+            case .sent: return "Sent for fixing"
+            case .addressed: return "Addressed"
+            case .wontfix: return "Won’t fix"
+            case .dismissed: return "Dismissed"
+            }
+        }
+    }
     let id: Int
     let ownerPr: Int
     let foundOnPr: Int

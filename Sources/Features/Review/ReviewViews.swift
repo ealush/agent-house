@@ -590,7 +590,7 @@ struct LayerView: View {
                         header(layer)
                         understand(layer)
                         inspect(layer)
-                        challenge(layer, stack).id("challenge")
+                        challenge(layer, stack, proxy).id("challenge")
                         verify(layer, confidence)
                     }
                     .padding()
@@ -756,7 +756,8 @@ struct LayerView: View {
                                     lines: file.lines,
                                     maxLines: 300,
                                     onLineAt: { index, line in pick(file.path, index, line) },
-                                    selected: selectedLines?.path == file.path ? [selectedLines!.index] : []
+                                    selected: selectedLines?.path == file.path ? [selectedLines!.index] : [],
+                                    idPrefix: file.path
                                 )
                                 .transition(.opacity.combined(with: .scale(0.98, anchor: .top)))
                             }
@@ -853,6 +854,32 @@ struct LayerView: View {
         }
     }
 
+    /// Where a finding's line sits in the diff shown, if it's there.
+    private func place(of finding: Finding) -> (file: FileDiff, index: Int)? {
+        guard let path = finding.path, let file = model.diffFiles.first(where: { $0.path == path }) else { return nil }
+        guard let start = finding.lineStart else { return (file, 0) }
+        return file.lines.firstIndex { $0.number == start && $0.kind != .del }.map { (file, $0) }
+    }
+
+    private func canShow(_ finding: Finding) -> Bool { place(of: finding) != nil }
+
+    /// A finding's place, in the diff: its file opens, the page scrolls to the line, and the
+    /// line is picked, its actions in the bar.
+    private func show(_ finding: Finding, _ proxy: ScrollViewProxy) {
+        guard let (file, index) = place(of: finding) else { return }
+        Haptics.selection()
+        withAnimation(.snappy(duration: 0.25)) {
+            if isShut(file.path) { toggleFold(file.path) }
+            if file.lines.indices.contains(index), file.lines[index].number != nil {
+                selectedLines = (file.path, index, [file.lines[index]])
+            }
+        }
+        Task {
+            try? await Task.sleep(for: .milliseconds(120))
+            withAnimation(.smooth(duration: 0.4)) { proxy.scrollTo("\(file.path):\(index)", anchor: .center) }
+        }
+    }
+
     /// A tapped line is picked (tap it again to let go); the bar below turns into its actions.
     private func pick(_ path: String, _ index: Int, _ line: DiffLine) {
         guard line.number != nil else { return }
@@ -866,7 +893,7 @@ struct LayerView: View {
         }
     }
 
-    private func challenge(_ layer: Layer, _ stack: ReviewStack) -> some View {
+    private func challenge(_ layer: Layer, _ stack: ReviewStack, _ proxy: ScrollViewProxy) -> some View {
         section("Challenge", "bubble.left.and.exclamationmark.bubble.right") {
             ForEach(model.thread.filter { $0.pr == nil || $0.pr == layer.pr }) { message in
                 if message.role == "user" {
@@ -920,7 +947,9 @@ struct LayerView: View {
             }
             .padding(.top, 6)
             if findings.isEmpty { Text("No findings on this layer. Tap a line in the diff to raise one there.").font(.ah(.callout)).foregroundStyle(theme.muted) }
-            ForEach(findings) { finding in FindingRow(finding: finding, model: model) { resolving = finding } }
+            ForEach(findings) { finding in
+                FindingRow(finding: finding, model: model, resolve: { resolving = finding }, show: canShow(finding) ? { show(finding, proxy) } : nil)
+            }
         }
         .animation(.smooth, value: model.loading.contains("ask"))
         .animation(.smooth, value: model.attachments.count)
@@ -1301,35 +1330,76 @@ private struct FindingRow: View {
     let finding: Finding
     let model: ReviewModel
     let resolve: () -> Void
+    /// Scrolls the page to the finding's line, when the diff shown has it.
+    var show: (() -> Void)? = nil
     @Environment(\.theme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(finding.severity.rawValue).font(.ah(.caption2).weight(.bold)).textCase(.uppercase)
                     .foregroundStyle(finding.severity == .blocking ? theme.danger : finding.severity == .should ? theme.limited : theme.muted)
-                Text(finding.title).font(.ah(.callout).weight(.medium))
-                Spacer()
-                Text(finding.state.rawValue).font(.ah(.caption)).foregroundStyle(theme.faint)
+                Text(finding.title).font(.ah(.callout).weight(.medium)).fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 6)
+                Text(finding.state.label).font(.ah(.caption)).foregroundStyle(theme.faint)
+                menu
             }
             if !finding.body.isEmpty { MarkdownView(finding.body, compact: true) }
             HStack(spacing: 6) {
                 Text("from \(finding.source)").font(.ah(.caption2)).foregroundStyle(theme.faint)
-                if let path = finding.path { Text("\(path)\(finding.lineStart.map { ":\($0)" } ?? "")").font(.ahMono(.caption2)).foregroundStyle(theme.faint) }
+                if let path = finding.path {
+                    let where_ = "\((path as NSString).lastPathComponent)\(finding.lineStart.map { ":\($0)" } ?? "")"
+                    if let show {
+                        Button(action: show) {
+                            Label(where_, systemImage: "arrow.down.right.circle").font(.ahMono(.caption2))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(theme.accentStrong)
+                        .accessibilityLabel("Show \(where_) in the diff")
+                    } else {
+                        Text(where_).font(.ahMono(.caption2)).foregroundStyle(theme.faint)
+                    }
+                }
+            }
+            // The reviewer's proposal waits on you: keep it or let it go, in plain sight.
+            if finding.state == .proposed {
+                HStack(spacing: 8) {
+                    Button("Keep", systemImage: "checkmark") { Task { await model.setFinding(finding, state: .open) } }
+                        .buttonStyle(.bordered)
+                        .tint(theme.accentStrong)
+                    Button("Dismiss", systemImage: "xmark") { Task { await model.setFinding(finding, state: .dismissed) } }
+                        .buttonStyle(.bordered)
+                        .tint(theme.muted)
+                }
+                .font(.ah(.caption).weight(.semibold))
+                .controlSize(.small)
+                .padding(.top, 2)
             }
         }
-        .contextMenu {
-            if finding.state == .proposed { Button("Keep it", systemImage: "checkmark") { Task { await model.setFinding(finding, state: .open) } } }
-            Button("Ask the reviewer about it", systemImage: "bubble.left") { model.attach(.finding(id: finding.id)) }
-            if finding.ghThread { Button("Reply and resolve on GitHub…", systemImage: "checkmark.bubble") { resolve() } }
-            if let url = finding.ghUrl.flatMap(URL.init(string:)) { Link(destination: url) { Label("Open on GitHub", systemImage: "arrow.up.right.square") } }
-            Menu("Severity") { ForEach(Finding.Severity.allCases, id: \.self) { s in Button(s.label) { Task { await model.setFinding(finding, severity: s) } } } }
-            Button("Mark addressed", systemImage: "checkmark.circle") { Task { await model.setFinding(finding, state: .addressed) } }
-            Button("Won’t fix", systemImage: "xmark.circle") { Task { await model.setFinding(finding, state: .wontfix) } }
-            Button("Dismiss", systemImage: "trash", role: .destructive) { Task { await model.setFinding(finding, state: .dismissed) } }
-        }
+        .contextMenu { actions }
         .padding(10)
         .background(theme.raised.opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    /// What a long press offers, behind a visible ⋯ as well: no one finds a long press.
+    private var menu: some View {
+        Menu { actions } label: {
+            Image(systemName: "ellipsis").foregroundStyle(theme.muted).frame(width: 26, height: 20).contentShape(Rectangle())
+        }
+        .accessibilityLabel("More for \(finding.title)")
+    }
+
+    @ViewBuilder
+    private var actions: some View {
+        if finding.state == .proposed { Button("Keep It", systemImage: "checkmark") { Task { await model.setFinding(finding, state: .open) } } }
+        if let show { Button("Show in the Diff", systemImage: "arrow.down.right.circle", action: show) }
+        Button("Ask the Reviewer About It", systemImage: "bubble.left") { model.attach(.finding(id: finding.id)) }
+        if finding.ghThread { Button("Reply and Resolve on GitHub…", systemImage: "checkmark.bubble") { resolve() } }
+        if let url = finding.ghUrl.flatMap(URL.init(string:)) { Link(destination: url) { Label("Open on GitHub", systemImage: "arrow.up.right.square") } }
+        Menu("Severity") { ForEach(Finding.Severity.allCases, id: \.self) { s in Button(s.label) { Task { await model.setFinding(finding, severity: s) } } } }
+        Button("Mark Addressed", systemImage: "checkmark.circle") { Task { await model.setFinding(finding, state: .addressed) } }
+        Button("Won’t Fix", systemImage: "xmark.circle") { Task { await model.setFinding(finding, state: .wontfix) } }
+        Button("Dismiss", systemImage: "trash", role: .destructive) { Task { await model.setFinding(finding, state: .dismissed) } }
     }
 }
 
