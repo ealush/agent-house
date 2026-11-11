@@ -182,7 +182,8 @@ final class SessionModel: Identifiable {
     /// the newest transcript page, painted until the stream answers.
     struct FeedCache {
         struct Entry: Codable, Equatable, Sendable { let harness: String; let page: FeedPage }
-        let load: @MainActor () -> Entry?
+        /// Read off the main thread (it's a page of transcript to open and decode).
+        let load: @MainActor () async -> Entry?
         let store: @MainActor (Entry) -> Void
     }
     @ObservationIgnored var feedCache: FeedCache?
@@ -192,10 +193,11 @@ final class SessionModel: Identifiable {
         guard feedStream == nil else { return }
         let stream = FeedStream(api: api, ref: ref)
         feedStream = stream
-        let cached = feedCache?.load()
+        let load = feedCache?.load
         feedTask = Task { [weak self] in
             let updates = await stream.updates()
-            if let cached { await stream.seed(harness: cached.harness, entries: cached.page.entries, hasOlder: cached.page.hasOlder) }
+            if let cached = await load?() { await stream.seed(harness: cached.harness, entries: cached.page.entries, hasOlder: cached.page.hasOlder) }
+            guard !Task.isCancelled else { return }
             await stream.start()
             for await state in updates {
                 guard let self else { return }

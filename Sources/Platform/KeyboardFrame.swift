@@ -9,6 +9,11 @@ import UIKit
 /// place SwiftUI honours that) and pads by it instead.
 @Observable @MainActor
 final class KeyboardFrame {
+    /// The one every screen reads. A `@State` of its own made (and threw away) a new one,
+    /// with its observer, each time a screen's view was described again, which is on every
+    /// change above it; they all followed the same keyboard anyway.
+    static let shared = KeyboardFrame()
+
     private(set) var rise: CGFloat = 0
     @ObservationIgnored nonisolated(unsafe) private var observer: (any NSObjectProtocol)?
 

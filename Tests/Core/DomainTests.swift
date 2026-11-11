@@ -500,3 +500,16 @@ import Testing
     let full = LaunchState(preset: muse, session: try running("muse-wonder-full-1.0", agent: "muse"))
     #expect(full.model?.id == "muse-wonder-full-1.0" && full.modelLabel == "Muse Wonder Full 1.0", "Full is never taken for Wonder")
 }
+
+@Test func aRowsTimeIsAFewCharacters() {
+    let now = 1_800_000_000.0
+    #expect(ElapsedWords.short(since: now - 5, now: now) == "now")
+    #expect(ElapsedWords.short(since: now + 40, now: now) == "now", "a host's clock a little ahead")
+    #expect(ElapsedWords.short(since: now - 60, now: now) == "1m")
+    #expect(ElapsedWords.short(since: now - 59 * 60, now: now) == "59m")
+    #expect(ElapsedWords.short(since: now - 3600, now: now) == "1h")
+    #expect(ElapsedWords.short(since: now - 23 * 3600, now: now) == "23h")
+    #expect(ElapsedWords.short(since: now - 6 * 86_400, now: now) == "6d")
+    #expect(ElapsedWords.short(since: now - 20 * 86_400, now: now) == "2w")
+    #expect(ElapsedWords.short(since: now - 800 * 86_400, now: now) == "2y")
+}

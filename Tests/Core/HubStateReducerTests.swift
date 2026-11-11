@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import Testing
 #if SWIFT_PACKAGE
 @testable import AgentHubKit
@@ -199,4 +200,37 @@ func invalidBaselineOrPatchCannotRemainActionable(_ payload: String) throws {
     }
     #expect(try body(true).contains(#""trust":true"#))
     #expect(try !body(nil).contains("trust"))
+}
+
+@MainActor
+@Test func theSessionListIsMadeOncePerChangeAndStillFollowsEveryChange() throws {
+    let json = Data(#"{"api":28,"hostname":"desk","windows":[{"id":"%1","uid":"u1","name":"fix","statusSource":"hook","project":"ah","projectPath":"/p/ah","status":"idle"},{"id":"%2","uid":"u2","name":"docs","statusSource":"hook","project":"ah","projectPath":"/p/ah","status":"busy"}]}"#.utf8)
+    let state = try JSONDecoder().decode(HubStateDTO.self, from: json)
+    let hub = HubStore(api: APIClient(origin: URL(string: "https://desk.example.ts.net")!, transport: URLSessionTransport(), credentials: AccountCredentials(token: nil, onRejected: {}), device: DeviceDescriptor(name: "iPad", client: "c")))
+    #expect(hub.rows.isEmpty && hub.row("u1") == nil)
+    #expect(hub.awaitingState, "nothing known yet isn't an empty list")
+    // Whoever read the empty list hears of the first one (the kept answer still registers the read).
+    let told = Told()
+    withObservationTracking { _ = hub.rows } onChange: { told.count += 1 }
+    hub.useCache(HubStore.StateCache(load: { state }, store: { _ in }))
+    #expect(told.count == 1)
+    #expect(hub.rows.map(\.key) == ["u1", "u2"])
+    #expect(!hub.awaitingState)
+    #expect(hub.row("u2")?.dto.status == .busy)
+    #expect(hub.row("nope") == nil)
+    // Hidden rows leave the list and the lookup, and come back.
+    told.count = 0
+    withObservationTracking { _ = hub.row("u1") } onChange: { told.count += 1 }
+    hub.hide("u1", true)
+    #expect(told.count == 1)
+    #expect(hub.rows.map(\.key) == ["u2"])
+    #expect(hub.row("u1") == nil)
+    hub.hide("u1", false)
+    #expect(hub.rows.map(\.key) == ["u1", "u2"])
+    #expect(hub.row("u1")?.title == state.windows.first?.title)
+}
+
+/// Counts an observation's calls (they come on the thread that made the change: the test's).
+private final class Told: @unchecked Sendable {
+    var count = 0
 }
