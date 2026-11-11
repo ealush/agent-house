@@ -177,6 +177,20 @@ From the owner's phone: with the box folded, + and Stop sat low and the text hig
 - Not seen: Stop (the demo session was idle) and Send, which take the same inset as +; a message of two lines and more, which keeps its corners on the last line as before; an attachment strip above the text.
 - At the layer's commit: `./scripts/verify.sh` in a clean clone on the Mac (Mac Catalyst build, `xcodebuild test` on the simulator) TEST SUCCEEDED, 187 unit tests and the 2 UI tests passed, the tour skipped without a host.
 
+### The launch freeze, 12 November 2026
+
+A window that opened on a session with words in its composer could stop drawing. The field
+centred a short line by changing its own insets while it was being measured (the commit
+before this section), SwiftUI measures at several widths in one pass, the inset differed
+between them, and each change asked for another pass.
+
+- Measuring sets nothing now; the short line is centred where the text view is laid out,
+  from its laid-out height and font alone.
+- Not seen running: written on Linux, where the UI layer doesn't compile. The Mac build and
+  the simulator's unit tests ran in CI on the pull request; the freeze itself and the
+  centring are still to be looked at on a device (open a session with a draft, at the
+  default and at a small text size).
+
 ## Still to run (in order)
 
 1. On a Mac: `brew install xcodegen && ./scripts/verify.sh` — expect compile fixes in the UI layer, which has never been type-checked.

@@ -957,15 +957,12 @@ struct ComposerTextField: UIViewRepresentable {
         var height = text.boundingRect(with: CGSize(width: max(lines, 1), height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil).height
         // A new line just begun counts before anything is typed on it.
         if text.string.hasSuffix("\n") { height += line }
-        height = ceil(max(height, line)) + 12
-        // A line shorter than the field's least height sits in its middle: at the top, in a
-        // small text size it rode high in the box, and + and Send low beside it.
-        let pad = max(0, 32 - height) / 2
-        if inset.top != 6 + pad {
-            uiView.textContainerInset.top = 6 + pad
-            uiView.textContainerInset.bottom = 6 + pad
-        }
-        return CGSize(width: width, height: min(height + pad * 2, line * 8 + 12))
+        // Only measured here, nothing set: SwiftUI asks at several widths in one pass, and an
+        // inset changed from inside the measuring (to centre a short line) changed between
+        // them, each change asking for another pass. The window never drew again. The line
+        // is centred where the view is laid out (`ComposerTextView.centreShortLine`).
+        height = ceil(max(height, line)) + ComposerTextView.verticalInset * 2
+        return CGSize(width: width, height: min(max(height, ComposerTextView.leastHeight), line * 8 + 12))
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
@@ -1137,6 +1134,7 @@ final class ComposerTextView: UITextView {
         super.layoutSubviews()
         // The box grows a line after the text does, and the caret's scroll from the line before
         // stayed, cutting off the first line; once it all fits, it sits at the top.
+        centreShortLine()
         if contentSize.height <= bounds.height + 0.5, contentOffset.y != -adjustedContentInset.top {
             contentOffset.y = -adjustedContentInset.top
         }
@@ -1146,6 +1144,23 @@ final class ComposerTextView: UITextView {
         let font = placeholderLabel.font ?? AhType.uiFont(.body)
         placeholderLabel.text = ComposerModel.fitting(placeholder, width: placeholderLabel.frame.width) { ($0 as NSString).size(withAttributes: [.font: font]).width }
         placeholderLabel.isHidden = !text.isEmpty
+    }
+
+    /// The room above and below the text, and the least the field stands.
+    static let verticalInset: CGFloat = 6
+    static let leastHeight: CGFloat = 32
+
+    /// A line shorter than the field's least height sits in its middle: at the top, in a
+    /// small text size it rode high in the box, and + and Send low beside it. Worked out
+    /// from the laid-out height and the font alone, so it settles in one more pass and
+    /// never feeds back into how tall the field is asked to be.
+    private func centreShortLine() {
+        let line = ceil(font?.lineHeight ?? 20) + Self.verticalInset * 2
+        let spare = bounds.height <= Self.leastHeight + 0.5 ? max(0, bounds.height - line) / 2 : 0
+        let wanted = Self.verticalInset + (spare * 2).rounded() / 2
+        guard abs(textContainerInset.top - wanted) > 0.01 else { return }
+        textContainerInset.top = wanted
+        textContainerInset.bottom = wanted
     }
 
     /// A message longer than the box fades out at whichever edge has more beyond it, rather
