@@ -1323,7 +1323,7 @@ private struct FindingRow: View {
             Button("Ask the reviewer about it", systemImage: "bubble.left") { model.attach(.finding(id: finding.id)) }
             if finding.ghThread { Button("Reply and resolve on GitHub…", systemImage: "checkmark.bubble") { resolve() } }
             if let url = finding.ghUrl.flatMap(URL.init(string:)) { Link(destination: url) { Label("Open on GitHub", systemImage: "arrow.up.right.square") } }
-            Menu("Severity") { ForEach(Finding.Severity.allCases, id: \.self) { s in Button(s.rawValue) { Task { await model.setFinding(finding, severity: s) } } } }
+            Menu("Severity") { ForEach(Finding.Severity.allCases, id: \.self) { s in Button(s.label) { Task { await model.setFinding(finding, severity: s) } } } }
             Button("Mark addressed", systemImage: "checkmark.circle") { Task { await model.setFinding(finding, state: .addressed) } }
             Button("Won’t fix", systemImage: "xmark.circle") { Task { await model.setFinding(finding, state: .wontfix) } }
             Button("Dismiss", systemImage: "trash", role: .destructive) { Task { await model.setFinding(finding, state: .dismissed) } }
@@ -1341,15 +1341,41 @@ private struct NewFindingSheet: View {
     @State private var title = ""
     @State private var body_ = ""
     @State private var severity: Finding.Severity = .should
+    @FocusState private var naming: Bool
+    @FocusState private var detailing: Bool
+    @Environment(\.theme) private var theme
 
     var body: some View {
         NavigationStack {
             AhForm {
-                if let path { Section("Where") { Text("\(path)\(lines.first?.number.map { ":\($0)" } ?? "")").font(.ahMono(.caption)) } }
-                TextField("What’s wrong", text: $title)
-                TextField("Details (optional)", text: $body_, axis: .vertical)
-                Picker("Severity", selection: $severity) { ForEach(Finding.Severity.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
+                if let path {
+                    // The line itself under its place: what the finding is about, in sight.
+                    Section("Where") {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("\(path)\(lines.first?.number.map { ":\($0)" } ?? "")").font(.ahMono(.caption)).foregroundStyle(theme.muted)
+                            if let code = lines.first?.text.trimmingCharacters(in: .whitespaces), !code.isEmpty {
+                                Text(code).font(.ahMono(.footnote)).lineLimit(3)
+                            }
+                        }
+                    }
+                }
+                Section {
+                    TextField("What’s wrong", text: $title)
+                        .focused($naming)
+                        .submitLabel(.next)
+                        .onSubmit { detailing = true }
+                    TextField("Details (optional)", text: $body_, axis: .vertical)
+                        .lineLimit(2...6)
+                        .focused($detailing)
+                }
+                Section("Severity") {
+                    Picker("Severity", selection: $severity) { ForEach(Finding.Severity.allCases, id: \.self) { Text($0.label).tag($0) } }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                }
             }
+            // A new finding starts with its name: the keyboard's up for it.
+            .onAppear { naming = true }
             .navigationTitle("New finding")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
