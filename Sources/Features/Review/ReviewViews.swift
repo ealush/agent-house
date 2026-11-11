@@ -573,7 +573,6 @@ struct LayerView: View {
     @Bindable var model: ReviewModel
     @Environment(\.theme) private var theme
     @Environment(\.openURL) private var openURL
-    @State private var question = ""
     @State private var selectedLines: (path: String, index: Int, lines: [DiffLine])?
     @State private var addingFinding = false
     @State private var dispatching: String?? = nil
@@ -902,36 +901,8 @@ struct LayerView: View {
                 }
                 .transition(.opacity)
             }
-            // The composer's shape: a rounded field, and Send as its accent circle.
-            HStack(alignment: .bottom, spacing: 8) {
-                TextField("Ask the reviewer about this layer", text: $question, axis: .vertical)
-                    .lineLimit(1...6)
-                    .focused($asking)
-                    .accessibilityIdentifier("reviewer-question")
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(theme.tile, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                let empty = question.trimmingCharacters(in: .whitespaces).isEmpty
-                Button {
-                    let text = question
-                    question = ""
-                    Task { await model.ask(text) }
-                } label: {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 32, height: 32)
-                        .background(theme.accentStrong, in: Circle())
-                        .opacity(empty ? 0.45 : 1)
-                        .touchTarget()
-                }
-                .buttonStyle(.ahPress)
-                .padding(.bottom, 4)
-                .disabled(empty)
-                .keyboardShortcut(.return, modifiers: .command)
-                .accessibilityLabel("Ask")
-            }
-            .id("ask")
+            ReviewerQuestionField(model: model, focus: $asking)
+                .id("ask")
             let findings = model.findings(for: layer.pr)
             HStack {
                 Text("Findings").font(.ah(.subheadline).weight(.semibold))
@@ -1213,6 +1184,47 @@ struct LayerView: View {
             scene.reviewPath[scene.reviewPath.count - 1] = ReviewRoute(stack: id, pr: layer.pr)
         } else {
             Task { await model.select(layer.pr) }
+        }
+    }
+}
+
+/// The question for the reviewer, in the composer's shape: a rounded field, and Send as its
+/// accent circle. Its own view, holding its own text: as the layer page's state, every
+/// keystroke drew the whole page again (the briefing, the diff, the thread's Markdown).
+private struct ReviewerQuestionField: View {
+    let model: ReviewModel
+    var focus: FocusState<Bool>.Binding
+    @Environment(\.theme) private var theme
+    @State private var question = ""
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            TextField("Ask the reviewer about this layer", text: $question, axis: .vertical)
+                .lineLimit(1...6)
+                .focused(focus)
+                .accessibilityIdentifier("reviewer-question")
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(theme.tile, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            let empty = question.trimmingCharacters(in: .whitespaces).isEmpty
+            Button {
+                let text = question
+                question = ""
+                Task { await model.ask(text) }
+            } label: {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .background(theme.accentStrong, in: Circle())
+                    .opacity(empty ? 0.45 : 1)
+                    .touchTarget()
+            }
+            .buttonStyle(.ahPress)
+            .padding(.bottom, 4)
+            .disabled(empty)
+            .keyboardShortcut(.return, modifiers: .command)
+            .accessibilityLabel("Ask")
         }
     }
 }
