@@ -190,6 +190,28 @@ final class AccountSession: Identifiable {
         guard let cacheKey else { return nil }
         return services.cache.get(type, origin: origin, kind: kind, key: key, using: cacheKey)
     }
+
+    /// The same, read, opened and decoded off the main thread: a transcript's page is big
+    /// enough that opening its session waited on it.
+    func cachedOffMain<T: Decodable & Sendable>(_ type: T.Type, kind: SealedCache.Kind, key: String) async -> T? {
+        guard let cacheKey else { return nil }
+        // The key crosses as its bytes: swift-crypto's isn't Sendable where CryptoKit's is.
+        let cache = services.cache, origin = origin, secret = cacheKey.withUnsafeBytes { Data($0) }
+        return await Task.detached(priority: .userInitiated) {
+            cache.get(T.self, origin: origin, kind: kind, key: key, using: SymmetricKey(data: secret))
+        }.value
+    }
+
+    /// Seals off the main thread, in the order asked: a live transcript is sealed every few
+    /// seconds, and encoding and encrypting its page there stalled the scroll it was
+    /// streaming into.
+    func cacheSoon<T: Encodable & Sendable>(_ value: T, kind: SealedCache.Kind, key: String) {
+        guard let cacheKey else { return }
+        let cache = services.cache, origin = origin, secret = cacheKey.withUnsafeBytes { Data($0) }
+        Self.sealing.async { try? cache.put(value, origin: origin, kind: kind, key: key, using: SymmetricKey(data: secret)) }
+    }
+
+    private static let sealing = DispatchQueue(label: "dev.ealush.ah.native.sealed-cache", qos: .utility)
 }
 
 /// What the whole app shares across windows (UIKit scenes): storage, secrets, keys, transport.

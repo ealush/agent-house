@@ -149,8 +149,16 @@ struct FileDiff: Equatable, Sendable, Identifiable {
     var id: String { path }
     let path: String
     let lines: [DiffLine]
-    var additions: Int { lines.count { $0.kind == .add } }
-    var deletions: Int { lines.count { $0.kind == .del } }
+    /// Counted once, when the file is made: a header that shows them is drawn far more often.
+    let additions: Int
+    let deletions: Int
+
+    init(path: String, lines: [DiffLine]) {
+        self.path = path
+        self.lines = lines
+        additions = lines.count { $0.kind == .add }
+        deletions = lines.count { $0.kind == .del }
+    }
 
     /// Splits `git diff` output at each `diff --git` header.
     static func files(in patch: String) -> [FileDiff] {

@@ -827,7 +827,8 @@ private struct AgentsSection: View {
                             if !agent.installed { Text("Not installed on the host").font(.ah(.caption)).foregroundStyle(theme.limited) }
                             ForEach(agent.changes, id: \.self) { change in Text("• \(change)").font(.ah(.caption)).foregroundStyle(theme.muted) }
                         }
-                        .swipeActions { if agent.custom { Button("Remove", role: .destructive) { Task { await model.remove(agent) } } } }
+                        // Red by tint, not role: the row is there until the host has removed it.
+                        .swipeActions { if agent.custom { Button("Remove") { Task { await model.remove(agent) } }.tint(theme.danger) } }
                     }
                 } header: {
                     Text("Offered in New session")
@@ -899,7 +900,7 @@ private struct SubscriptionsSection: View {
                         }
                     }
                     .swipeActions {
-                        Button("Remove", role: .destructive) { Task { await model.remove(s) } }
+                        Button("Remove") { Task { await model.remove(s) } }.tint(theme.danger)
                         if !s.isDefault { Button("Default") { Task { await model.makeDefault(s) } } }
                     }
                 }
@@ -1026,7 +1027,7 @@ private struct EnvironmentSection: View {
                                 Text(v.secret ? (v.hint ?? "••••") : (v.value ?? "")).font(.ahMono(.caption)).foregroundStyle(theme.muted).lineLimit(1)
                             }
                         }
-                        .swipeActions { Button("Remove", role: .destructive) { Task { await model.remove(v) } } }
+                        .swipeActions { Button("Remove") { Task { await model.remove(v) } }.tint(theme.danger) }
                     }
                     Button("Add a variable", systemImage: "plus") { editing = EnvVarDraft(name: "", value: "", secret: false) }
                 } footer: {

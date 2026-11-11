@@ -16,7 +16,7 @@ struct InboxView: View {
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
             } header: {
-                AhLargeTitle(title: "Inbox", tagline: inbox.summary).textCase(nil)
+                AhLargeTitle(title: "Inbox", tagline: hub.awaitingState ? "Asking your host…" : inbox.summary).textCase(nil)
             }
             // Another device's place, not this one's from an earlier launch (window ids are
             // per launch, so the name tells this device apart too).
@@ -82,7 +82,13 @@ struct InboxView: View {
                     AhSectionHeader(title: "Idle and done", count: inbox.rest.count)
                 }
             }
-            if hub.rows.isEmpty {
+            if hub.awaitingState {
+                // The host hasn't answered yet (a cold launch, with no list kept from last
+                // time): rows on their way, not "No sessions running".
+                Section {
+                    ForEach(0..<3, id: \.self) { index in SessionRowPlaceholder(title: [0.62, 0.45, 0.7][index]).ahRow() }
+                }
+            } else if hub.rows.isEmpty {
                 Section {
                     EmptyState(symbol: "tray", title: "No sessions running", message: "Start one, or pick up where you left off.", action: ("New session", { scene.perform("new-session") }))
                         .listRowBackground(Color.clear)
@@ -103,6 +109,7 @@ struct InboxView: View {
         .animation(reduceMotion ? nil : .snappy(duration: 0.35), value: inbox.order)
         // …and the connection's banner comes and goes the same way.
         .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: hub.phase)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: hub.awaitingState)
         .refreshable { hub.resync() }
         .ahPage("Inbox")
         .toolbar {
@@ -247,33 +254,66 @@ struct SessionRowView: View {
         }
     }
 
+    @ViewBuilder
     private var content: some View {
         // At accessibility text sizes the status goes under the title, so the title keeps the
         // row's width instead of a few letters.
         let stacked = typeSize.isAccessibilitySize
         let onAccent = prominence == .increased
-        return HStack(spacing: 10) {
-            AgentMark(agent: row.dto.agent)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    if row.dto.pinned { Image(systemName: "pin.fill").font(.ah(.caption2)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint) }
-                    Text(row.title).foregroundStyle(onAccent ? .white : theme.text).lineLimit(1)
-                    if let fork = row.dto.fork {
-                        // A fork (or a session others were forked from): its lineage at a glance.
-                        HStack(spacing: 2) {
-                            Image(systemName: "arrow.branch")
-                            if fork.forks > 0 { Text("\(fork.forks)") }
+        if dense || stacked {
+            HStack(spacing: 10) {
+                AgentMark(agent: row.dto.agent)
+                VStack(alignment: .leading, spacing: 2) {
+                    titleLine(onAccent: onAccent)
+                    Text(detail).font(.ah(.caption)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.muted).lineLimit(stacked ? 2 : 1)
+                    if stacked { status(onAccent: onAccent, compact: false) }
+                }
+                Spacer(minLength: 4)
+                if !stacked { status(onAccent: onAccent, compact: dense && !row.word.asksForAttention) }
+            }
+        } else {
+            // A page's row, with room: a larger mark, the title with when it last moved
+            // beside it, and under them what it's doing with its status at the line's end.
+            // Idle says nothing, so a list at rest is names and places, and what's working
+            // or waiting stands out of it.
+            HStack(spacing: 12) {
+                AgentMark(agent: row.dto.agent, size: 32)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        titleLine(onAccent: onAccent)
+                        Spacer(minLength: 6)
+                        Elapsed(seconds: row.dto.activity, short: true)
+                            .font(.ah(.caption).monospacedDigit())
+                            .foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint)
+                    }
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(detail.isEmpty ? " " : detail).font(.ah(.footnote)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.muted).lineLimit(1)
+                        Spacer(minLength: 6)
+                        if row.dto.queued > 0 {
+                            Text("\(row.dto.queued) queued").font(.ah(.caption2)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint)
                         }
-                        .font(.ah(.caption2).weight(.semibold))
-                        .foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint)
-                        .accessibilityLabel(fork.parentTitle.isEmpty ? "\(fork.forks) forks" : "Fork of \(fork.parentTitle)")
+                        if row.word != .idle { StatusPill(word: row.word) }
                     }
                 }
-                Text(detail).font(.ah(.caption)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.muted).lineLimit(stacked ? 2 : 1)
-                if stacked { status(onAccent: onAccent, compact: false) }
             }
-            Spacer(minLength: 4)
-            if !stacked { status(onAccent: onAccent, compact: dense && !row.word.asksForAttention) }
+            .padding(.vertical, 3)
+        }
+    }
+
+    private func titleLine(onAccent: Bool) -> some View {
+        HStack(spacing: 6) {
+            if row.dto.pinned { Image(systemName: "pin.fill").font(.ah(.caption2)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint) }
+            Text(row.title).font(dense ? Font.ah(.body) : Font.ah(.body).weight(.medium)).foregroundStyle(onAccent ? .white : theme.text).lineLimit(1)
+            if let fork = row.dto.fork {
+                // A fork (or a session others were forked from): its lineage at a glance.
+                HStack(spacing: 2) {
+                    Image(systemName: "arrow.branch")
+                    if fork.forks > 0 { Text("\(fork.forks)") }
+                }
+                .font(.ah(.caption2).weight(.semibold))
+                .foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint)
+                .accessibilityLabel(fork.parentTitle.isEmpty ? "\(fork.forks) forks" : "Fork of \(fork.parentTitle)")
+            }
         }
     }
 
@@ -366,6 +406,7 @@ struct SessionListView: View {
     /// The iPad sidebar: the pages lead the list as rows of their own, as Mail's mailboxes do.
     var showsPages = false
     @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// "Focus the session list" (⌃⇧0) puts the keyboard here.
     @FocusState private var listFocused: Bool
 
@@ -393,7 +434,7 @@ struct SessionListView: View {
             ConnectionBanner(phase: hub.phase, lastUpdated: hub.lastUpdated, cached: hub.showingCached) { hub.resync() }
                 .listRowBackground(Color.clear)
             if scene.narrow && !showsPages {
-                Section { } header: { AhLargeTitle(title: "Sessions", tagline: hub.inbox(narrow: true).summary).textCase(nil) }
+                Section { } header: { AhLargeTitle(title: "Sessions", tagline: hub.awaitingState ? "Asking your host…" : hub.inbox(narrow: true).summary).textCase(nil) }
             }
             if showsPages {
                 Section {
@@ -422,12 +463,18 @@ struct SessionListView: View {
                     GroupHeader(scene: scene, hub: hub, section: section, first: section.id == sections.first?.id, last: section.id == sections.last?.id)
                 }
             }
-            if hub.rows.isEmpty {
+            if hub.awaitingState {
+                ForEach(0..<3, id: \.self) { index in SessionRowPlaceholder(title: [0.62, 0.45, 0.7][index]).ahRow(!showsPages) }
+            } else if hub.rows.isEmpty {
                 EmptyState(symbol: "terminal", title: "No sessions", message: "Start one with New session.", action: ("New session", { scene.perform("new-session") }))
                     .listRowBackground(Color.clear)
             }
         }
         .listStyle(.sidebar)
+        // A session that starts, ends or changes project goes to its place, as the Inbox's
+        // do, instead of the list cutting to its new order.
+        .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: sections.map { $0.rows.map(\.key) })
+        .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: hub.phase)
         .refreshable { hub.resync() }
         .toolbar {
             // A phone's Sessions page offers New like the Inbox and Review do (each project's
@@ -592,8 +639,9 @@ struct HistoryRowView: View {
                     if typeSize.isAccessibilitySize { Elapsed(seconds: item.dto.at).font(.ah(.caption)).foregroundStyle(theme.faint) }
                 }
                 Spacer()
-                if !typeSize.isAccessibilitySize { Elapsed(seconds: item.dto.at).font(.ah(.caption)).foregroundStyle(theme.faint) }
+                if !typeSize.isAccessibilitySize { Elapsed(seconds: item.dto.at, short: true).font(.ah(.caption).monospacedDigit()).foregroundStyle(theme.faint) }
             }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .hoverEffect(.highlight)
@@ -601,12 +649,15 @@ struct HistoryRowView: View {
             Button("Resume") { resume() }.tint(theme.done)
         }
         .swipeActions(edge: .trailing) {
-            Button("Hide", role: .destructive) {
+            // Red by tint, not role, as a session's Terminate is: the row stays until the
+            // host's list comes back without it.
+            Button("Hide") {
                 Task {
                     try? await hub.client(host: item.isLocal ? nil : item.host).forget(item.dto.ref)
                     hub.refresh(host: item.isLocal ? nil : item.host)
                 }
             }
+            .tint(theme.danger)
         }
         .contextMenu {
             Button("Resume", systemImage: "play") { resume() }

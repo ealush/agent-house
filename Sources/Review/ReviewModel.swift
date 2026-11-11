@@ -172,6 +172,10 @@ final class ReviewModel {
     private(set) var plan: PlanText?
     private(set) var loading: Set<String> = []
     private(set) var error: String?
+    /// Why the diff shown isn't the one asked for (the host or GitHub refused it): said where
+    /// the diff goes, with a way to ask again. `error` is anyone's, and the next thing to
+    /// load cleared it.
+    private(set) var diffError: String?
     var selectedPR: Int?
     /// The selected layer's briefing is being written: the host's job, watched until it's in.
     private(set) var summarizing = false
@@ -214,6 +218,24 @@ final class ReviewModel {
             await loadList()
             return
         }
+        // Another stack: nothing of the last one stays up while this one loads (its title,
+        // its layers and one layer's diff read as this stack's until the host answered).
+        if let shown = stack, shown.id != id {
+            stack = nil
+            findings = []
+            thread = []
+            followups = []
+            attachments = []
+            plan = nil
+            selectedPR = nil
+            diff = nil
+            description = nil
+            diffError = nil
+            loading.remove("diff")
+            briefingWatch?.cancel()
+            summarizing = false
+            briefingBlocked = nil
+        }
         // The stack and its findings together, then the layer and the reviewer's thread
         // together: four round trips one after another held the page on its spinner.
         await load("stack") {
@@ -237,6 +259,7 @@ final class ReviewModel {
     func select(_ pr: Int) async {
         selectedPR = pr
         diff = nil
+        diffError = nil
         description = nil
         briefingWatch?.cancel()
         summarizing = false
@@ -252,7 +275,12 @@ final class ReviewModel {
         let l = stack?.layers.first { $0.pr == pr }
         diffScope = (l.map(LayerConfidence.init)?.review == .changedSinceReview) ? .since : .this
         // The diff and the PR's description together.
-        let describing = Task { await load("description") { description = try await review.description(id, pr: pr) } }
+        let describing = Task {
+            // A description that fails is no error of the page's: the layer reads without it.
+            guard let fetched = try? await review.description(id, pr: pr) else { return }
+            // Another layer was picked while this one's was on its way: it isn't that layer's.
+            if stack?.id == id, selectedPR == pr { description = fetched }
+        }
         await withTaskCancellationHandler {
             await loadDiff(diffScope)
             await describing.value
@@ -264,7 +292,19 @@ final class ReviewModel {
     func loadDiff(_ scope: DiffScope) async {
         guard let id = stack?.id, let pr = selectedPR else { return }
         diffScope = scope
-        await load("diff") { diff = try await review.diff(id, pr: pr, scope: scope) }
+        diffError = nil
+        loading.insert("diff")
+        defer { if selectedPR == pr, diffScope == scope { loading.remove("diff") } }
+        do {
+            let fetched = try await review.diff(id, pr: pr, scope: scope)
+            // Another layer or scope was picked while this was on its way: a slow answer for
+            // the last one must not land on this one's page.
+            guard stack?.id == id, selectedPR == pr, diffScope == scope else { return }
+            diff = fetched
+        } catch {
+            guard stack?.id == id, selectedPR == pr, diffScope == scope, !Task.isCancelled else { return }
+            diffError = APIError.shown(error)
+        }
     }
 
     func loadThread() async {

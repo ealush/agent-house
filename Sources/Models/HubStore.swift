@@ -9,22 +9,38 @@ import Observation
 @Observable
 final class HubStore {
     let api: APIClient
-    private(set) var hub = StateUpdate(state: nil, phase: .connecting)
-    private(set) var peers: [String: StateUpdate] = [:]
+    private(set) var hub = StateUpdate(state: nil, phase: .connecting) { didSet { derived = Derived() } }
+    private(set) var peers: [String: StateUpdate] = [:] { didSet { derived = Derived() } }
     /// Optimistically hidden rows (just terminated): gone until the host stops listing them.
-    private(set) var hidden: Set<String> = []
+    private(set) var hidden: Set<String> = [] {
+        didSet {
+            derived.rows = nil
+            derived.index = nil
+        }
+    }
     /// The newest validated hub state seen this run, kept through a disconnect so the UI can
     /// say "as of …" instead of going blank.
     private(set) var lastUpdated: Date?
     /// The hub's session list as it was last time, sealed for this sign-in: shown until the
     /// host answers, so a cold launch isn't blank. Never used to decide what still exists.
-    private(set) var cachedState: HubStateDTO?
+    private(set) var cachedState: HubStateDTO? { didSet { derived = Derived() } }
     var onSignedOut: (@MainActor () -> Void)?
 
     struct StateCache {
         let load: @MainActor () -> HubStateDTO?
         let store: @MainActor (HubStateDTO) -> Void
     }
+
+    /// The lists every screen reads, made once per change to what they're made from: a
+    /// session's screen asks for its row dozens of times a pass, and each ask used to map
+    /// every window on every host again (and sort the whole history).
+    private struct Derived {
+        var all: [SessionRow]?
+        var rows: [SessionRow]?
+        var index: [String: SessionRow]?
+        var history: [HistoryRow]?
+    }
+    @ObservationIgnored private var derived = Derived()
 
     @ObservationIgnored private var stateCache: StateCache?
     @ObservationIgnored private var lastCached = Date.distantPast
@@ -154,6 +170,9 @@ final class HubStore {
     /// What the screens show: the live state, or last time's until it arrives.
     var shownState: HubStateDTO? { hub.state ?? cachedState }
     var showingCached: Bool { hub.state == nil && cachedState != nil }
+    /// Nothing known yet: the host hasn't answered and there's no list from last time. A page
+    /// says it's still asking, rather than that there are no sessions.
+    var awaitingState: Bool { shownState == nil && hub.phase == .connecting }
 
     // MARK: Reading
 
@@ -168,31 +187,49 @@ final class HubStore {
     /// Every live session across hosts, before optimistic hides (last time's on the hub
     /// itself until it answers).
     private var allRows: [SessionRow] {
-        guard let local = shownState else { return [] }
+        // Read even when the answer is kept: whoever asks is told when these change.
+        let local = shownState, peers = peers
+        if let kept = derived.all { return kept }
+        guard let local else { return [] }
         var rows = local.windows.map { SessionRow(key: $0.uid, host: local.hostname, isLocal: true, dto: $0) }
-        for host in hosts where !host.isSelf {
+        for host in local.hosts where !host.isSelf {
             guard let state = peers[host.name]?.state else { continue }
             rows += state.windows.map { SessionRow(key: "\(host.name)/\($0.uid)", host: host.name, isLocal: false, dto: $0) }
         }
+        derived.all = rows
         return rows
     }
 
     var rows: [SessionRow] {
-        let all = allRows
-        return hidden.isEmpty ? all : all.filter { !hidden.contains($0.key) }
+        let all = allRows, hidden = hidden
+        if let kept = derived.rows { return kept }
+        let rows = hidden.isEmpty ? all : all.filter { !hidden.contains($0.key) }
+        derived.rows = rows
+        return rows
     }
 
     var history: [HistoryRow] {
-        guard let local = shownState else { return [] }
+        let local = shownState, peers = peers
+        if let kept = derived.history { return kept }
+        guard let local else { return [] }
         var rows = local.history.map { HistoryRow(host: local.hostname, isLocal: true, dto: $0) }
-        for host in hosts where !host.isSelf {
+        for host in local.hosts where !host.isSelf {
             guard let state = peers[host.name]?.state else { continue }
             rows += state.history.map { HistoryRow(host: host.name, isLocal: false, dto: $0) }
         }
-        return rows.sorted { a, b in a.dto.pinned != b.dto.pinned ? a.dto.pinned : a.dto.at > b.dto.at }
+        rows.sort { a, b in a.dto.pinned != b.dto.pinned ? a.dto.pinned : a.dto.at > b.dto.at }
+        derived.history = rows
+        return rows
     }
 
-    func row(_ key: String) -> SessionRow? { rows.first { $0.key == key } }
+    func row(_ key: String) -> SessionRow? {
+        let rows = rows
+        if let index = derived.index { return index[key] }
+        // The first of a key, as a search down the list found it.
+        let index = Dictionary(rows.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
+        derived.index = index
+        return index[key]
+    }
 
     /// The host a key lives on (nil for an unknown peer).
     func host(of key: String) -> String? {

@@ -477,8 +477,8 @@ final class SceneModel {
         let model = SessionModel(key: key, hub: hub, outbox: app.outbox, surface: surface)
         let cacheKey = "\(key)"
         model.feedCache = SessionModel.FeedCache(
-            load: { [weak account] in account?.cached(SessionModel.FeedCache.Entry.self, kind: .feed, key: cacheKey) },
-            store: { [weak account] entry in account?.cache(entry, kind: .feed, key: cacheKey) })
+            load: { [weak account] in await account?.cachedOffMain(SessionModel.FeedCache.Entry.self, kind: .feed, key: cacheKey) },
+            store: { [weak account] entry in account?.cacheSoon(entry, kind: .feed, key: cacheKey) })
         sessions[key] = model
         Task { await model.open() }
         return model

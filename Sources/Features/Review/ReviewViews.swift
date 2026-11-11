@@ -5,7 +5,10 @@ struct ReviewHomeView: View {
     @Bindable var scene: SceneModel
     @State var model: ReviewModel
     @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var starting = false
+    /// The list has been asked for and answered once (with stacks, none, or an error).
+    @State private var loaded = false
 
     var body: some View {
         List {
@@ -14,7 +17,11 @@ struct ReviewHomeView: View {
                 AhLargeTitle(title: "Review", tagline: model.stacks.isEmpty ? nil : "\(model.stacks.count) stack\(model.stacks.count == 1 ? "" : "s") in review\(waiting > 0 ? ". \(waiting) need\(waiting == 1 ? "s" : "") you." : ".")").textCase(nil)
             }
             if let error = model.error { Banner(text: error, tone: .error).listRowBackground(Color.clear) }
-            if model.stacks.isEmpty && !model.loading.contains("stacks") {
+            if model.stacks.isEmpty && !loaded {
+                // Until the host has answered once: the shape of what's coming, not an empty
+                // page that then says there's nothing (before it knows).
+                ForEach(0..<2, id: \.self) { _ in StackPlaceholder().ahRow() }
+            } else if model.stacks.isEmpty && !model.loading.contains("stacks") {
                 EmptyState(symbol: "square.stack.3d.up", title: "No stacks in review", message: "Start from a PR chain, a GitHub stack, or PRs you pick.", action: ("Start a review", { starting = true }))
                     .listRowBackground(Color.clear)
             }
@@ -40,6 +47,7 @@ struct ReviewHomeView: View {
                         SpineBar(spine: stack.spine)
                         HStack {
                             Text(stack.statusLine).font(.ah(.caption)).foregroundStyle(theme.muted)
+                                .contentTransition(.numericText())
                             Spacer(minLength: 8)
                             Image(systemName: "chevron.right")
                                 .font(.ah(.footnote).weight(.semibold))
@@ -63,7 +71,13 @@ struct ReviewHomeView: View {
                     .tint(theme.text)
             }
         }
-        .task { await model.loadList() }
+        // Stacks arriving, leaving or changing places move there, rather than cut.
+        .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: model.stacks.map(\.id))
+        .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: loaded)
+        .task {
+            await model.loadList()
+            loaded = true
+        }
         .refreshable { await model.loadList() }
         .sheet(isPresented: $starting) {
             NavigationStack { StartReviewView(model: model) { id in starting = false; scene.openReview(ReviewRoute(stack: id)) } }
@@ -75,6 +89,8 @@ struct ReviewHomeView: View {
 /// its PR number under it while they fit.
 struct SpineBar: View {
     let spine: [StackSummary.Spine]
+    /// Each segment's PR number under it (while they fit).
+    var numbered = true
     @Environment(\.theme) private var theme
 
     var body: some View {
@@ -84,7 +100,7 @@ struct SpineBar: View {
                     Capsule()
                         .fill(LayerColor.color(layer.status, theme))
                         .frame(height: 6)
-                    if spine.count <= 8 {
+                    if numbered, spine.count <= 8 {
                         Text("#\(layer.pr)").font(.ah(.caption2).monospacedDigit()).foregroundStyle(theme.faint)
                     }
                 }
@@ -93,6 +109,51 @@ struct SpineBar: View {
                 .accessibilityLabel("#\(layer.pr) \(layer.status.word)")
             }
         }
+    }
+}
+
+/// A stack's layers as its spine, with the count that matters under it: how many are
+/// reviewed or landed, of how many.
+struct StackProgress: View {
+    let layers: [Layer]
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        let done = layers.filter { $0.status == .approved || $0.status == .merged }.count
+        let live = layers.filter { $0.status != .closed && $0.status != .skipped }.count
+        VStack(alignment: .leading, spacing: 6) {
+            SpineBar(spine: layers.map { StackSummary.Spine(pr: $0.pr, role: $0.role, status: $0.status) }, numbered: false)
+            Text(live == 0 ? "No open layers" : done == live ? "All \(live) reviewed" : "\(done) of \(live) reviewed")
+                .font(.ah(.caption).weight(.medium).monospacedDigit())
+                .foregroundStyle(done == live && live > 0 ? theme.done : theme.text2)
+                .contentTransition(.numericText())
+        }
+        .animation(.snappy(duration: 0.3), value: layers.map(\.status))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(live == 0 ? "No open layers" : "\(done) of \(live) layers reviewed")
+    }
+}
+
+/// A stack's row before the list has loaded: its shape, breathing.
+private struct StackPlaceholder: View {
+    @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var dim = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Capsule().fill(theme.text.opacity(0.1)).frame(width: 180, height: 12)
+            Capsule().fill(theme.text.opacity(0.07)).frame(width: 120, height: 8)
+            Capsule().fill(theme.text.opacity(0.07)).frame(height: 6)
+        }
+        .padding(.vertical, 8)
+        .opacity(dim ? 0.5 : 1)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { dim = true }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Loading reviews")
     }
 }
 
@@ -333,6 +394,9 @@ struct StackCockpitView: View {
                         Text(stack.title).font(.ah(.title3).weight(.semibold)).fixedSize(horizontal: false, vertical: true)
                     }
                     Text("\(stack.repo) → \(stack.trunk)").font(.ah(.caption)).foregroundStyle(theme.muted)
+                    // Where the whole stack stands, before any one layer: a segment a layer,
+                    // and how many are done.
+                    StackProgress(layers: stack.layers).padding(.vertical, 4)
                     if let next = stack.next, let layer = stack.layers.first(where: { $0.pr == next }) {
                         // Where to start, as the way in to it.
                         Button {
@@ -356,10 +420,23 @@ struct StackCockpitView: View {
                 }
             }
             .ahRow(scene.narrow)
-            Section("Pinned decisions") {
+            Section("Layers, bottom to top") {
+                ForEach(stack.layers) { layer in
+                    LayerRow(layer: layer, pushes: scene.narrow)
+                        .tag(layer.pr)
+                        .background {
+                            if scene.narrow {
+                                NavigationLink("", value: ReviewRoute(stack: stack.id, pr: layer.pr)).opacity(0)
+                            }
+                        }
+                }
+            }
+            .ahRow(scene.narrow)
+            Section(stack.decisions.isEmpty ? "Decisions" : "Pinned decisions") {
                 ForEach(stack.decisions) { decision in
                     Text(decision.text).font(.ah(.callout))
-                        .swipeActions { Button("Unpin", role: .destructive) { Task { await model.removeDecision(decision.id) } } }
+                        // Red by tint, not role: the row stays until the host's stack comes back.
+                        .swipeActions { Button("Unpin") { Task { await model.removeDecision(decision.id) } }.tint(theme.danger) }
                 }
                 HStack(spacing: 10) {
                     Image(systemName: "pin").foregroundStyle(theme.faint).accessibilityHidden(true)
@@ -371,18 +448,6 @@ struct StackCockpitView: View {
                         decision = ""
                         if !text.isEmpty { Task { await model.addDecision(text) } }
                     }
-            }
-            .ahRow(scene.narrow)
-            Section("Layers, bottom to top") {
-                ForEach(stack.layers) { layer in
-                    LayerRow(layer: layer, pushes: scene.narrow)
-                        .tag(layer.pr)
-                        .background {
-                            if scene.narrow {
-                                NavigationLink("", value: ReviewRoute(stack: stack.id, pr: layer.pr)).opacity(0)
-                            }
-                        }
-                }
             }
             .ahRow(scene.narrow)
             if stack.planPath != nil {
@@ -601,12 +666,17 @@ struct LayerView: View {
         if let layer = model.layer, let confidence = model.confidence, let stack = model.stack {
             ScrollViewReader { proxy in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 28) {
-                        header(layer)
-                        understand(layer)
-                        inspect(layer)
-                        challenge(layer, stack, proxy).id("challenge")
-                        verify(layer, confidence)
+                    // Lazy, a file to a section: only the files in sight are built (a long
+                    // layer built every line of every file before it drew anything, and again
+                    // on each tap), and the file being read keeps its name, its counts and
+                    // its Viewed box pinned at the top.
+                    LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                        header(layer).padding(.bottom, 28)
+                        understand(layer).padding(.bottom, 28)
+                        inspectHead(layer, proxy).padding(.bottom, 12)
+                        diffFiles(layer, proxy)
+                        challenge(layer, stack, proxy).id("challenge").padding(.top, 28)
+                        verify(layer, confidence).padding(.top, 28)
                     }
                     .padding()
                 }
@@ -737,54 +807,114 @@ struct LayerView: View {
         .animation(.smooth, value: model.summarizing)
     }
 
-    private func inspect(_ layer: Layer) -> some View {
+    /// The diff's head: which diff, how much of it is read, and the way to any file in it.
+    private func inspectHead(_ layer: Layer, _ proxy: ScrollViewProxy) -> some View {
         section("Inspect the code", "doc.text.magnifyingglass") {
             Picker("Diff", selection: Binding(get: { model.diffScope }, set: { scope in Task { await model.loadDiff(scope) } })) {
                 ForEach(DiffScope.allCases, id: \.self) { Text($0.label).tag($0) }
             }
             .pickerStyle(.segmented)
+            if let failed = model.diffError {
+                // Said where the diff goes, with the way to ask again, whether or not an
+                // earlier scope's diff is still up under it.
+                Banner(text: failed, tone: .error, action: ("Try Again", { Task { await model.loadDiff(model.diffScope) } }))
+            }
             if let diff = model.diff {
                 let files = model.diffFiles
                 HStack(spacing: 8) {
                     let seen = files.filter { model.viewed.contains($0.path) }.count
                     Text(seen > 0 ? "\(seen) of \(files.count) viewed" : files.count == 1 ? "1 file" : "\(files.count) files")
-                        .foregroundStyle(seen == files.count ? theme.done : theme.text2)
+                        .foregroundStyle(seen == files.count && seen > 0 ? theme.done : theme.text2)
                         .contentTransition(.numericText())
                     let added = files.reduce(0) { $0 + $1.additions }, removed = files.reduce(0) { $0 + $1.deletions }
                     if added > 0 { Text("+\(added)").foregroundStyle(theme.done) }
                     if removed > 0 { Text("−\(removed)").foregroundStyle(theme.danger) }
                     Spacer(minLength: 8)
-                    Text("\(diff.from.prefix(7))…\(diff.to.prefix(7))\(diff.kind == "range" ? " · range-diff" : "")")
-                        .font(.ahMono(.caption2))
-                        .foregroundStyle(theme.faint)
-                        .lineLimit(1)
+                    if files.count > 1 { filesMenu(files, proxy) }
                 }
                 .font(.ah(.caption).weight(.semibold).monospacedDigit())
+                // How far through the files you are, as a bar that fills.
+                if files.count > 1 {
+                    let seen = files.filter { model.viewed.contains($0.path) }.count
+                    ProgressView(value: Double(seen), total: Double(files.count))
+                        .tint(seen == files.count ? theme.done : theme.accentStrong)
+                        .animation(.snappy(duration: 0.3), value: seen)
+                        .accessibilityHidden(true)
+                }
+                Text("\(diff.from.prefix(7))…\(diff.to.prefix(7))\(diff.kind == "range" ? " · range-diff" : "")")
+                    .font(.ahMono(.caption2))
+                    .foregroundStyle(theme.faint)
+                    .lineLimit(1)
                 if diff.truncated { Label("This diff is long; only its start is shown here.", systemImage: "scissors").font(.ah(.caption)).foregroundStyle(theme.limited) }
                 if diff.text.isEmpty {
                     Text(model.diffScope == .since ? "Nothing changed since your review." : "No changes.").foregroundStyle(theme.muted)
-                } else {
-                    ForEach(files) { file in
-                        VStack(alignment: .leading, spacing: 6) {
-                            fileHeader(file, layer)
-                            if !isShut(file.path) {
-                                DiffLinesView(
-                                    lines: file.lines,
-                                    maxLines: 300,
-                                    onLineAt: { index, line in pick(file.path, index, line) },
-                                    selected: selectedLines?.path == file.path ? [selectedLines!.index] : [],
-                                    idPrefix: file.path
-                                )
-                                .transition(.opacity.combined(with: .scale(0.98, anchor: .top)))
-                            }
-                        }
+                }
+            } else if model.diffError == nil, model.loading.contains("diff") {
+                DiffPlaceholder()
+            }
+        }
+        // A diff on its way in over the one shown (another scope): the old one steps back.
+        .opacity(model.diff != nil && model.loading.contains("diff") ? 0.5 : 1)
+        .animation(.smooth(duration: 0.2), value: model.loading.contains("diff"))
+    }
+
+    /// Every file in the diff, to go straight to: its name, what it changes, whether it's viewed.
+    private func filesMenu(_ files: [FileDiff], _ proxy: ScrollViewProxy) -> some View {
+        Menu {
+            ForEach(files) { file in
+                Button {
+                    Haptics.selection()
+                    withAnimation(.smooth(duration: 0.35)) { proxy.scrollTo(Self.fileID(file.path), anchor: .top) }
+                } label: {
+                    Label {
+                        Text((file.path as NSString).lastPathComponent)
+                        Text("+\(file.additions) −\(file.deletions) · \((file.path as NSString).deletingLastPathComponent)")
+                    } icon: {
+                        Image(systemName: model.viewed.contains(file.path) ? "checkmark.circle.fill" : "circle")
                     }
                 }
-            } else if model.loading.contains("diff") {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(theme.sunken)
-                    .frame(height: 140)
-                    .overlay { ProgressView() }
+            }
+        } label: {
+            Label("Files", systemImage: "list.bullet.indent")
+                .font(.ah(.caption).weight(.semibold))
+                .padding(.horizontal, 10)
+                .frame(minHeight: 28)
+                .background(theme.tile, in: Capsule())
+                .contentShape(Capsule())
+        }
+        .menuOrder(.fixed)
+        .accessibilityLabel("Jump to a file")
+    }
+
+    /// A file's section is found by the list's own id for it (its path), which the scroll
+    /// view knows for sections it hasn't built yet; an id on the pinned header isn't.
+    static func fileID(_ path: String) -> String { path }
+
+    /// The files, each a section whose header pins while its lines scroll under it.
+    @ViewBuilder
+    private func diffFiles(_ layer: Layer, _ proxy: ScrollViewProxy) -> some View {
+        if model.diff != nil {
+            ForEach(model.diffFiles, id: \.path) { file in
+                Section {
+                    if !isShut(file.path) {
+                        DiffFileBody(file: file, selected: selectedLines?.path == file.path ? selectedLines?.index : nil) { index, line in
+                            pick(file.path, index, line)
+                        }
+                        .equatable()
+                        // Stepping back while another scope's diff is on its way (the lines
+                        // only: dimmed, the pinned header let them show through it).
+                        .opacity(model.loading.contains("diff") ? 0.5 : 1)
+                        .padding(.bottom, 14)
+                        .transition(.opacity)
+                    } else {
+                        Color.clear.frame(height: 6)
+                    }
+                } header: {
+                    fileHeader(file, layer, proxy)
+                        .padding(.vertical, 8)
+                        // The page's ground behind it, edge to edge: lines pass under it.
+                        .background { theme.background.padding(.horizontal, -16) }
+                }
             }
         }
     }
@@ -794,33 +924,47 @@ struct LayerView: View {
         folded.contains(path) != model.viewed.contains(path)
     }
 
-    private func toggleFold(_ path: String) {
+    /// Folding a file from deep inside it leaves its header where it was, the next file
+    /// coming up under it: left to the scroll view, the page stayed as far down as it had
+    /// been and landed somewhere in the files after.
+    private func toggleFold(_ path: String, _ proxy: ScrollViewProxy? = nil) {
+        let shutting = !isShut(path)
         withAnimation(.snappy(duration: 0.25)) {
             if folded.contains(path) { folded.remove(path) } else { folded.insert(path) }
+        }
+        if shutting { settle(on: path, proxy) }
+    }
+
+    /// Once the fold has been laid out (the next turn), the page goes to the file's start.
+    private func settle(on path: String, _ proxy: ScrollViewProxy?) {
+        guard let proxy else { return }
+        Task {
+            withAnimation(.snappy(duration: 0.25)) { proxy.scrollTo(Self.fileID(path), anchor: .top) }
         }
     }
 
     /// Viewed folds the file away and counts it; un-viewed opens it again.
-    private func toggleViewed(_ path: String) {
+    private func toggleViewed(_ path: String, _ proxy: ScrollViewProxy? = nil) {
         let on = !model.viewed.contains(path)
-        Haptics.selection()
+        if on { Haptics.tap() } else { Haptics.selection() }
         withAnimation(.snappy(duration: 0.28)) {
             model.setViewed(path, on)
             folded.remove(path)
             if selectedLines?.path == path { selectedLines = nil }
         }
+        if on { settle(on: path, proxy) }
     }
 
     /// A file's name over its folder, what it adds and removes, a tap to fold it, and its
     /// Viewed box.
-    private func fileHeader(_ file: FileDiff, _ layer: Layer) -> some View {
+    private func fileHeader(_ file: FileDiff, _ layer: Layer, _ proxy: ScrollViewProxy) -> some View {
         let shut = isShut(file.path)
         let viewed = model.viewed.contains(file.path)
         let name = (file.path as NSString).lastPathComponent
         let folder = (file.path as NSString).deletingLastPathComponent
         return HStack(spacing: 8) {
             Button {
-                toggleFold(file.path)
+                toggleFold(file.path, proxy)
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "chevron.right")
@@ -846,12 +990,12 @@ struct LayerView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("\(file.path), \(file.additions) added, \(file.deletions) removed")
             .accessibilityHint(shut ? "Shows its changes" : "Folds its changes away")
-            Button { toggleViewed(file.path) } label: {
+            Button { toggleViewed(file.path, proxy) } label: {
                 Image(systemName: viewed ? "checkmark.circle.fill" : "circle")
-                    .font(.ah(.callout))
+                    .font(.ah(.title3))
                     .foregroundStyle(viewed ? theme.done : theme.faint)
                     .contentTransition(.symbolEffect(.replace))
-                    .frame(width: 28, height: 22)
+                    .frame(width: 36, height: 30)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -861,10 +1005,10 @@ struct LayerView: View {
             .help(viewed ? "Mark as not viewed" : "Mark as viewed")
             Menu {
                 Button("Ask the Reviewer About This File", systemImage: "bubble.left") { model.attach(.file(pr: layer.pr, path: file.path)) }
-                Button(viewed ? "Mark as Not Viewed" : "Mark as Viewed", systemImage: viewed ? "circle" : "checkmark.circle") { toggleViewed(file.path) }
-                Button(shut ? "Unfold" : "Fold", systemImage: shut ? "chevron.down" : "chevron.up") { toggleFold(file.path) }
+                Button(viewed ? "Mark as Not Viewed" : "Mark as Viewed", systemImage: viewed ? "circle" : "checkmark.circle") { toggleViewed(file.path, proxy) }
+                Button(shut ? "Unfold" : "Fold", systemImage: shut ? "chevron.down" : "chevron.up") { toggleFold(file.path, proxy) }
             } label: {
-                Image(systemName: "ellipsis").foregroundStyle(theme.muted).frame(width: 28, height: 22).contentShape(Rectangle())
+                Image(systemName: "ellipsis").foregroundStyle(theme.muted).frame(width: 32, height: 30).contentShape(Rectangle())
             }
             .accessibilityLabel("More for \(name)")
         }
@@ -889,9 +1033,11 @@ struct LayerView: View {
             if file.lines.indices.contains(index), file.lines[index].number != nil {
                 selectedLines = (file.path, index, [file.lines[index]])
             }
+            // The file first: its lines are only there to scroll to once it's been built.
+            proxy.scrollTo(Self.fileID(file.path), anchor: .top)
         }
         Task {
-            try? await Task.sleep(for: .milliseconds(120))
+            try? await Task.sleep(for: .milliseconds(280))
             withAnimation(.smooth(duration: 0.4)) { proxy.scrollTo("\(file.path):\(index)", anchor: .center) }
         }
     }
@@ -1081,7 +1227,11 @@ struct LayerView: View {
                 model.attach(.lines(pr: layer.pr, path: path, start: number, end: number, text: line.text))
                 selectedLines = nil
                 withAnimation(.smooth) { proxy.scrollTo("challenge", anchor: .top) }
-                asking = true
+                // The field is only there to take the keyboard once the scroll has built it.
+                Task {
+                    try? await Task.sleep(for: .milliseconds(350))
+                    asking = true
+                }
             } label: {
                 Label("Ask", systemImage: "bubble.left").font(.ah(.subheadline).weight(.semibold))
             }
@@ -1298,6 +1448,52 @@ private struct ReviewerQuestionField: View {
             .keyboardShortcut(.return, modifiers: .command)
             .accessibilityLabel("Ask")
         }
+    }
+}
+
+/// One file's lines. Its own view, the same until its lines or its picked line change: a
+/// tap on one file, or a fold of another, leaves the rest of the diff as it was drawn.
+private struct DiffFileBody: View, Equatable {
+    let file: FileDiff
+    let selected: Int?
+    let pick: (Int, DiffLine) -> Void
+
+    nonisolated static func == (a: DiffFileBody, b: DiffFileBody) -> Bool {
+        a.selected == b.selected && a.file == b.file
+    }
+
+    var body: some View {
+        DiffLinesView(lines: file.lines, maxLines: 300, onLineAt: pick, selected: selected.map { [$0] } ?? [], idPrefix: file.path)
+    }
+}
+
+/// Where a diff is about to be: a few lines' worth of its shape, breathing, rather than a
+/// spinner in an empty box.
+private struct DiffPlaceholder: View {
+    @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var dim = false
+    private static let widths: [CGFloat] = [0.55, 0.82, 0.4, 0.7, 0.62, 0.3]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(Self.widths.indices, id: \.self) { index in
+                Capsule()
+                    .fill(theme.text.opacity(0.08))
+                    .frame(height: 8)
+                    .frame(width: 240 * Self.widths[index])
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.sunken, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .opacity(dim ? 0.55 : 1)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { dim = true }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Loading the diff")
     }
 }
 

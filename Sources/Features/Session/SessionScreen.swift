@@ -29,7 +29,7 @@ struct SessionScreen: View {
     @State private var barHeight: CGFloat = 0
     /// Where the keyboard is as it moves: the screen stands above it by this, since the
     /// keyboard safe area SwiftUI gives catches up only once the keyboard has.
-    @State private var keyboard = KeyboardFrame()
+    private let keyboard = KeyboardFrame.shared
 
     private var narrow: Bool { sizeClass == .compact || scene.narrow }
     /// How wide the conversation and its composer grow on a big screen: past this, lines get
