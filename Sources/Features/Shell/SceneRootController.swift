@@ -285,7 +285,7 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
             case .setup:
                 controller.modalPresentationStyle = .formSheet
                 controller.isModalInPresentation = scene.app.accounts.isEmpty
-            case .newSession, .sendTo, .continueIn, .scrollback:
+            case .newSession, .sendTo, .continueIn, .scrollback, .draft:
                 controller.modalPresentationStyle = .formSheet
                 controller.sheetPresentationController?.detents = [.large()]
             }
@@ -686,14 +686,11 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
     private let session: SessionModel
     private unowned let scene: SceneModel
     private let theme: ThemeModel
-    private lazy var surfaceItem = UIBarButtonItem(primaryAction: UIAction { [unowned self] _ in
-        scene.setSurface(session.surface == .gui ? .terminal : .gui, for: session.key)
-    })
-    private lazy var panelsItem = UIBarButtonItem(image: UIImage(systemName: "sidebar.right"), menu: UIMenu(children: [
-        UIDeferredMenuElement.uncached { [weak self] done in done(self?.panelActions() ?? []) },
-    ]))
+    /// The one button in the bar: the terminal, the panels and search are the first row of
+    /// its menu, three glyphs with their words, where as buttons of their own they took the
+    /// title's room (which read "Composer chi…" with three of them beside it).
     private lazy var menuItem = UIBarButtonItem(image: UIImage(systemName: "ellipsis"), menu: UIMenu(children: [
-        UIDeferredMenuElement.uncached { [weak self] done in done(self?.sessionActions() ?? []) },
+        UIDeferredMenuElement.uncached { [weak self] done in done((self?.quickActions() ?? []) + (self?.sessionActions() ?? [])) },
     ]))
 
     init(key: String, root: SceneRootController, session: SessionModel) {
@@ -704,9 +701,8 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
         super.init(rootView: Themed(app: root.scene.app, theme: root.theme) { SessionPage(session: session, scene: root.scene) })
         navigationItem.largeTitleDisplayMode = .never
         navigationItem.backButtonDisplayMode = .minimal
-        panelsItem.accessibilityLabel = "Panels"
         menuItem.accessibilityLabel = "Session menu"
-        navigationItem.rightBarButtonItems = [menuItem, panelsItem, surfaceItem]
+        navigationItem.rightBarButtonItems = [menuItem]
         // A session gets the whole screen: the composer and terminal sit where the tabs were.
         hidesBottomBarWhenPushed = true
         updateBar()
@@ -734,11 +730,6 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
     private func updateBar() {
         navigationItem.title = session.title
         navigationItem.attributedSubtitle = attributedSubtitle
-        let switches = session.isLive && session.hasGUI && !session.isShell
-        surfaceItem.isHidden = !switches
-        let other: SceneSnapshot.Surface = session.surface == .gui ? .terminal : .gui
-        surfaceItem.image = UIImage(systemName: other == .terminal ? "terminal" : "text.bubble")
-        surfaceItem.accessibilityLabel = other == .terminal ? "Terminal" : "GUI"
         // The live terminal fills the screen under a see-through bar: over a dark one its title
         // and buttons go light.
         let palette = theme.theme(scene.app.preferences.appearance).palette
@@ -758,6 +749,27 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
         }
         let place = [row.dto.project, row.dto.branch].compactMap { $0 }.filter { !$0.isEmpty }
         return place.isEmpty ? word : word + AttributedString(" · " + place.joined(separator: " · "))
+    }
+
+    /// The menu's first row, in the medium size (a glyph over its word, three abreast): the
+    /// other view of the session, its panels, and search.
+    private func quickActions() -> [UIMenuElement] {
+        var row: [UIMenuElement] = []
+        if session.isLive && session.hasGUI && !session.isShell {
+            let other: SceneSnapshot.Surface = session.surface == .gui ? .terminal : .gui
+            row.append(UIAction(title: other == .terminal ? "Terminal" : "GUI", image: UIImage(systemName: other == .terminal ? "terminal" : "text.bubble")) { [weak self] _ in
+                guard let self else { return }
+                scene.setSurface(other, for: session.key)
+            })
+        }
+        let panels = panelActions()
+        if !panels.isEmpty {
+            row.append(UIMenu(title: "Panels", image: UIImage(systemName: "sidebar.right"), children: panels))
+        }
+        row.append(UIAction(title: "Search", image: UIImage(systemName: "magnifyingglass")) { [weak self] _ in self?.scene.perform("go-search") })
+        let menu = UIMenu(options: .displayInline, children: row)
+        menu.preferredElementSize = .medium
+        return [menu]
     }
 
     private func panelActions() -> [UIMenuElement] {

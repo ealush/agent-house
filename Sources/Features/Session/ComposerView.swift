@@ -29,6 +29,10 @@ struct ComposerView: View {
     @ScaledMetric(relativeTo: .body) private var corner: CGFloat = 22
     /// How wide Send (or Queue, Run, Stop) is in the box's corner: the text wraps short of it.
     @State private var sendSize = CGSize.zero
+    /// How wide + is in the box's other corner: the text starts past it.
+    @State private var attachSize = CGSize.zero
+    /// A file is being dragged over the box.
+    @State private var dropTargeted = false
     @Namespace private var glass
 
     private var hasTray: Bool { ComposerFloat.hasTray(session) }
@@ -40,14 +44,15 @@ struct ComposerView: View {
             if let from = composer.drafts.from {
                 Label("Continued from \(from)", systemImage: "arrow.turn.down.right")
                     .font(.ah(.caption2)).foregroundStyle(theme.muted)
-                    // Over the text it's about, not over the + beside it.
-                    .padding(.leading, control + 8 + 14)
+                    // Over the text it's about, which starts past the + in the box's corner.
+                    .padding(.leading, 12 + attachSize.width + 14)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            // One slim glass field and the attach button beside it, as Messages has them; the
-            // settings chips wait folded away until a swipe up brings them out, floating over
-            // the transcript above the box (`ComposerFloat`): nothing here changes height for
-            // them, so the transcript doesn't move.
+            // One slim glass field the width of the bar, + in its leading corner and Send in
+            // its trailing one (beside the box, + left it short, and what floated over it
+            // read as loose); the settings chips wait folded away until a swipe up brings
+            // them out, floating over the transcript above the box (`ComposerFloat`):
+            // nothing here changes height for them, so the transcript doesn't move.
             VStack(alignment: .leading, spacing: 8) {
                 if hasTray, session.launch.mode?.dangerous == true {
                     // Approvals off is never tucked away: its chip stays out, in red, open
@@ -55,16 +60,10 @@ struct ComposerView: View {
                     LaunchChips(session: session, scene: scene, onlyRisky: true)
                         .transition(.opacity)
                 }
-                GlassEffectContainer(spacing: 10) {
-                    HStack(alignment: .bottom, spacing: 8) {
-                        attachMenu
-                        field
-                    }
-                }
-                // Over the glass, not under it: a container draws its glass above what's
-                // inside, so a mark laid on the box from within showed only as a smear
-                // refracted through it.
-                .overlay(alignment: .top) { grabber.padding(.leading, control + 8) }
+                field
+                    // Over the glass, not under it: laid on the box from within, a mark
+                    // showed only as a smear refracted through it. Centred, as a sheet's is.
+                    .overlay(alignment: .top) { grabber }
             }
             .gesture(ComposerSwipe { swiped($0) })
         }
@@ -222,9 +221,13 @@ struct ComposerView: View {
     /// so in a one-line box it's centred in the box, and in a longer one it's on the last line.
     /// A fixed inset left it low, since a line of body text with its insets is taller than the
     /// button plus twice the inset.
-    private var cornerInset: CGFloat {
+    private var cornerInset: CGFloat { cornerInset(for: sendSize.height) }
+
+    /// The same for anything else in a corner (+), by its own height: measured against Send's,
+    /// + rode high while Send was folded away to nothing.
+    private func cornerInset(for height: CGFloat) -> CGFloat {
         let line = max(control, AhType.uiFont(.body).lineHeight + 24)
-        return max(6, ((line - sendSize.height) / 2).rounded())
+        return max(6, ((line - height) / 2).rounded())
     }
 
     /// The box: what you attach above the text, and Send inside it at the last line's end.
@@ -234,13 +237,19 @@ struct ComposerView: View {
             // The text wraps short of Send, which sits in the box's corner (as Messages has it):
             // beside it in a row, the box was measured at one width and laid out at another,
             // and a long message lost its first line.
-            ComposerTextField(composer: composer, session: session, scene: scene, trailingRoom: sendSize.width > 0 ? sendSize.width + 4 : 0, cornerHeight: sendSize.height)
+            ComposerTextField(composer: composer, session: session, scene: scene, leadingRoom: attachSize.width > 0 ? attachSize.width + 2 : 0, trailingRoom: sendSize.width > 0 ? sendSize.width + 4 : 0, cornerHeight: sendSize.height)
                 .frame(minHeight: control - 12)
         }
-        .padding(.leading, 10)
-        .padding(.trailing, 6)
+        .padding(.horizontal, 6)
         .padding(.vertical, 6)
         .frame(minHeight: control)
+        .overlay(alignment: .bottomLeading) {
+            attachMenu
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { attachSize = $0 }
+                .padding(.horizontal, 6)
+                .padding(.bottom, cornerInset(for: attachSize.height))
+        }
+        .overlay(alignment: .topTrailing) { expandButton.padding(.top, 4).padding(.trailing, 6) }
         .overlay(alignment: .bottomTrailing) {
             ZStack { sendButton }
                 .onGeometryChange(for: CGSize.self) { $0.size } action: { sendSize = $0 }
@@ -253,6 +262,16 @@ struct ComposerView: View {
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: corner, style: .continuous))
         .glassEffectID("field", in: glass)
         .overlay { ThinkingBorder(corner: corner, active: session.working && !session.isShell) }
+        // A file held over the box: the box says it will take it.
+        .overlay {
+            if dropTargeted {
+                RoundedRectangle(cornerRadius: corner, style: .continuous).strokeBorder(theme.accent, lineWidth: 2)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.snappy(duration: 0.15), value: dropTargeted)
+        .animation(.snappy(duration: 0.2), value: outgrown)
+        .onDrop(of: [.image, .fileURL, .item], isTargeted: $dropTargeted) { attach(dropped: $0) }
         .accessibilityAction(named: trayOpen ? "Hide session settings" : "Show session settings") {
             withAnimation(.snappy(duration: 0.25)) { trayOpen.toggle() }
         }
@@ -294,14 +313,15 @@ struct ComposerView: View {
                     Button("Previous Message", systemImage: "clock.arrow.circlepath") { composer.recall(1) }
                 }
             } label: {
+                // A glyph in the box's corner, as Send is in the other: no glass of its own.
                 Image(systemName: "plus")
                     .font(.system(size: control * 0.41, weight: .medium))
                     .foregroundStyle(theme.text2)
-                    .frame(width: control, height: control)
-                    .glassEffect(.regular.interactive(), in: Circle())
-                    .glassEffectID("attach", in: glass)
+                    .frame(width: control - 12, height: control - 12)
+                    .contentShape(Circle())
                     .contentShape(.hoverEffect, Circle())
                     .hoverEffect(.highlight)
+                    .touchTarget()
             }
             // In the order written, wherever the menu opens: the library first.
             .menuOrder(.fixed)
@@ -315,12 +335,12 @@ struct ComposerView: View {
             Button {
                 Task { await composer.stop() }
             } label: {
-                // ah's Stop: an ink circle.
+                // Stop where Send was, in its accent: the one filled control in the box.
                 Image(systemName: "stop.fill")
                     .font(.system(size: control * 0.25, weight: .bold))
-                    .foregroundStyle(theme.background)
+                    .foregroundStyle(.white)
                     .frame(width: control - 12, height: control - 12)
-                    .background(theme.text, in: Circle())
+                    .background(theme.accentStrong, in: Circle())
                     .touchTarget()
             }
             .buttonStyle(.ahPress)
@@ -331,7 +351,7 @@ struct ComposerView: View {
             // ⌘Return) sends now instead.
             let queues = !session.isShell
             Button {
-                composer.submit(working: session.working)
+                if composer.isUploading { explainUpload() } else { composer.submit(working: session.working) }
             } label: {
                 // Send's pink, its height and its place, with the word for what it does.
                 Text(queues ? "Queue" : "Run")
@@ -344,7 +364,6 @@ struct ComposerView: View {
                     .touchTarget()
             }
             .buttonStyle(.ahPress)
-            .disabled(!composer.canSend)
             .contextMenu {
                 if queues {
                     Button("Send Now (Stops the Turn)", systemImage: "bolt.fill") {
@@ -359,7 +378,7 @@ struct ComposerView: View {
         } else if !composer.isEmpty {
             // Folded away while there's nothing to send: it comes up with the first letter.
             Button {
-                composer.submit(working: session.working)
+                if composer.isUploading { explainUpload() } else { composer.submit(working: session.working) }
             } label: {
                 // ah's Send: the accent-filled circle, the one pink control.
                 Image(systemName: "arrow.up")
@@ -373,9 +392,62 @@ struct ComposerView: View {
             }
             .buttonStyle(.ahPress)
             .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
-            .disabled(!composer.canSend)
             .accessibilityLabel("Send")
+            .accessibilityHint(composer.isUploading ? "Waits for the attachment to finish uploading" : "")
         }
+    }
+
+    /// Send dims while an attachment uploads, and a tap on it says why: a button that does
+    /// nothing, with no word, leaves the message looking stuck.
+    private func explainUpload() {
+        Haptics.selection()
+        scene.toast("Sent once the attachment has uploaded")
+    }
+
+    /// A message past the box's eight lines (it scrolls there) opens in a larger editor.
+    private var outgrown: Bool {
+        composer.text.count > 600 || composer.text.filter { $0 == "\n" }.count >= 7
+    }
+
+    @ViewBuilder
+    private var expandButton: some View {
+        if outgrown {
+            Button {
+                scene.sheet = .draft(session.key)
+            } label: {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.ah(.caption2).weight(.semibold))
+                    .foregroundStyle(theme.muted)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Circle())
+                    .hoverEffect(.highlight)
+                    .touchTarget()
+            }
+            .buttonStyle(.plain)
+            .transition(.opacity)
+            .accessibilityLabel("Open the message in a larger editor")
+        }
+    }
+
+    /// A file dragged onto the box (from Files, a photo, another app on an iPad) attaches,
+    /// as a pasted image does.
+    private func attach(dropped providers: [NSItemProvider]) -> Bool {
+        guard !providers.isEmpty else { return false }
+        for provider in providers {
+            let type = provider.registeredContentTypes.first { !$0.conforms(to: .url) || $0.conforms(to: .fileURL) } ?? provider.registeredContentTypes.first ?? .data
+            let image = type.conforms(to: .image)
+            let name: String = {
+                let given = provider.suggestedName ?? (image ? "image" : "file")
+                if given.contains("."), !given.hasSuffix(".") { return given }
+                return type.preferredFilenameExtension.map { "\(given).\($0)" } ?? given
+            }()
+            provider.loadDataRepresentation(for: type) { data, _ in
+                guard let data else { return }
+                Task { @MainActor in await composer.attach(name: name, data: data, image: image, thumbnail: image ? data : nil) }
+            }
+        }
+        Haptics.selection()
+        return true
     }
 
     private func pasteImage() {
@@ -441,9 +513,8 @@ struct ComposerFloat: View {
             if composer.text.isEmpty { trigger("/", label: "Insert a command") }
             trigger("@", label: "Mention a file")
         }
-        // In line with the box, not the + beside it: starting at the bar's edge, the row read
-        // as loose over the transcript rather than as the box's own drawer.
-        .padding(.leading, control + 8)
+        // In line with the box's text, past the + in its corner.
+        .padding(.leading, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         // One piece in the slide: left to themselves the settings chips (a ViewThatFits)
         // faded in where they land while / and @ beside them rose.
@@ -703,7 +774,8 @@ struct LaunchChips: View {
     /// drops first, then the value, leaving the symbol.
     private func chipLabel(_ name: String, _ symbol: String, _ value: String?, spoken: String, danger: Bool, labelled: Bool = true, unset: Bool = false) -> some View {
         HStack(spacing: 4) {
-            if value == nil { Image(systemName: symbol).imageScale(.small).foregroundStyle(theme.muted) }
+            // Its glyph first, so a value alone ("High") still says what it's the value of.
+            Image(systemName: symbol).imageScale(.small).foregroundStyle(value == nil || unset ? theme.muted : theme.text2)
             if labelled, value != nil { Text(name).foregroundStyle(theme.muted) }
             if let value {
                 if danger { Image(systemName: "exclamationmark.triangle.fill").imageScale(.small).foregroundStyle(theme.danger) }
@@ -711,7 +783,7 @@ struct LaunchChips: View {
             }
         }
         .font(.ah(.footnote).weight(.medium))
-        .padding(.horizontal, value == nil ? 10 : 12)
+        .padding(.horizontal, value == nil ? 10 : 11)
         .frame(minWidth: height, minHeight: height)
         // Glass like the box they float over, so they read as part of it, out for a moment.
         .glassEffect(danger ? .regular.tint(theme.danger.opacity(0.22)).interactive() : .regular.interactive(), in: Capsule())
@@ -789,6 +861,7 @@ struct ComposerTextField: UIViewRepresentable {
     let session: SessionModel
     let scene: SceneModel
     /// Room kept clear at the end of each line for the button in the box's corner.
+    var leadingRoom: CGFloat = 0
     var trailingRoom: CGFloat = 0
     /// How tall that button is: a long message's scroll bar stops above it.
     var cornerHeight: CGFloat = 0
@@ -826,6 +899,10 @@ struct ComposerTextField: UIViewRepresentable {
 
     func updateUIView(_ view: ComposerTextView, context: Context) {
         context.coordinator.parent = self
+        if view.textContainerInset.left != 2 + leadingRoom {
+            view.textContainerInset.left = 2 + leadingRoom
+            view.setNeedsLayout()
+        }
         if view.textContainerInset.right != 2 + trailingRoom {
             view.textContainerInset.right = 2 + trailingRoom
             view.setNeedsLayout()
@@ -846,7 +923,8 @@ struct ComposerTextField: UIViewRepresentable {
             let end = view.endOfDocument
             view.selectedTextRange = view.textRange(from: end, to: end)
         }
-        view.placeholder = composer.placeholder(working: session.working, queued: session.row?.dto.queued ?? 0, touchOnly: !scene.hardwareKeyboard, agent: session.launch.preset?.name, waiting: session.waiting, trusting: session.awaitingTrust, ended: !session.isLive)
+        let settings = ComposerFloat.hasTray(session) ? [session.launch.modelLabel, session.launch.effort.map(LaunchState.effortName)].compactMap { $0 } : []
+        view.placeholder = composer.placeholder(working: session.working, queued: session.row?.dto.queued ?? 0, touchOnly: !scene.hardwareKeyboard, agent: session.launch.preset?.name, waiting: session.waiting, trusting: session.awaitingTrust, ended: !session.isLive, settings: settings)
         view.textColor = UIColor(theme.text)
         if let request = scene.focusRequest, request.nonce != context.coordinator.handledFocus {
             context.coordinator.handledFocus = request.nonce

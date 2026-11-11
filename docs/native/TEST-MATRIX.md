@@ -128,6 +128,38 @@ From the owner's phone, after the layer above merged: with the keyboard up, the 
 - At the layer's commit: `./scripts/verify.sh` in a clean clone on the Mac (Mac Catalyst build, `xcodebuild test` on the simulator) TEST SUCCEEDED, 186 unit tests and the 2 UI tests passed, the tour skipped without a host.
 - Not seen: the owner's phone (dark mode); an iPad, where a floating keyboard reports a frame off the window's bottom (rise 0) and a hardware keyboard's shortcut bar a small one; Reduce Motion (the tray then fades in place).
 
+### The phone's session bar, 11 November 2026
+
+From the owner: a menu whose first row is three glyphs with their words (Find, Smartlog, Terminal) as a way to give the title its room. The phone's bar had three buttons beside the title (the other view, the panels, the menu), and the title read "Composer chi…". Seen on the headless iPhone simulator (light mode).
+
+- Seen: the bar holds the one menu button; its menu opens on a first row in UIKit's medium size, Terminal, Panels and Search as glyphs over their words, with Rename, Unpin, Switch Branch…, Fork…, Send To…, Hide Steps, Copy Last Reply and the rest below as they were.
+- Not seen: Panels as a submenu opened from that row and a panel checked in it; the terminal view's bar (its GUI item in the row); a real phone.
+- At the layer's commit: `./scripts/verify.sh` in a clean clone on the Mac (Mac Catalyst build, `xcodebuild test` on the simulator) TEST SUCCEEDED, 186 unit tests and the 2 UI tests passed, the tour skipped without a host.
+
+### The composer as one box, 11 November 2026
+
+From the owner, a composer they liked: one box the width of the bar, its controls as glyphs inside, a filled Stop. Ours had + in a glass circle beside the box. Seen on the headless iPhone simulator (light mode, the soft keyboard up), the tour tapping the box by coordinates (an element tap aims at the text view's activation point at its leading edge, where + now sits, and opened the attach menu).
+
+- Seen: at rest, + in the box's leading corner, the grabber centred on the box's top edge, the placeholder past the +; typed, Send in the trailing corner; the tray out, the chips (each with its glyph) in line with the box's text; a message wrapped to three lines, + and Send each at its corner on the last line; while the agent works, Stop in the accent where Send was, with the working light round the box.
+- Not seen: an attachment strip above the text; the tap target of + beside the text's first character on a real finger; dark mode; the iPad's wide box.
+- At the layer's commit: `./scripts/verify.sh` in a clean clone on the Mac (Mac Catalyst build, `xcodebuild test` on the simulator) TEST SUCCEEDED, 186 unit tests and the 2 UI tests passed, the tour skipped without a host.
+
+### Palettes in Appearance, 11 November 2026
+
+From the owner, an Appearance page with a grid of palette swatches. Ours offered four words. Seen on the headless iPhone simulator.
+
+- Seen: a four-across grid of swatches, each a box on its ground with a line of its text and a dot of its accent: ah, ah Dark, ah Light, Omarchy, then Tokyo Night, Catppuccin Mocha, Catppuccin Latte, Nord, Dracula, Gruvbox Dark, Gruvbox Light, Solarized Dark, Solarized Light, One Dark, Monokai, GitHub Dark, Rosé Pine, Everforest and Kanagawa, the one in force ringed in the accent; a tap on Tokyo Night re-themes the page at once (dark ground, blue accent, blue ring), and a tap on ah brings ah's look back.
+- Not seen: each palette's transcript and terminal; the Omarchy tile with a host theme loaded (it draws ah's colors with a palette glyph until one is in force); a stored "palette:<id>" read back after relaunch (reasoned from the decoder, which falls back to ah for a palette it doesn't carry).
+- At the layer's commit: `./scripts/verify.sh` in a clean clone on the Mac (Mac Catalyst build, `xcodebuild test` on the simulator) TEST SUCCEEDED, 186 unit tests and the 2 UI tests passed, the tour skipped without a host.
+
+### The composer against the field, 11 November 2026
+
+From a read of how the chat and agent apps build their composers (ChatGPT's and Claude's, the design guides on AI chat composers, Apple's Entering data) against ours, which already held most of it: an eight-line box that scrolls past that with faded edges, Send folded away until there's something to send, the queue while the agent works, recall, attachment previews, a pasted image, outcome copy on effort, starter prompts on an empty session. Four gaps closed, seen on the headless iPhone simulator.
+
+- Seen: a message past the box's eight lines shows an expand control in the box's top trailing corner; its tap opens the draft in a larger editor with Close and Send; Close returns to the box with the draft as it was.
+- Reasoned, not seen: the placeholder names the model and effort in force after whom it messages ("Message Claude Code · Fable 5.1 · High"), hints that drop from the end as the box narrows (the demo session sets neither, so its box says "Message Claude Code"); Send dimmed by an upload now takes the tap and says "Sent once the attachment has uploaded" (the demo host finishes an upload before a finger reaches Send); a file dragged onto the box attaches, with an accent ring while it's held over (no drag source on the simulator; an iPad with Files is where to try it).
+- At the layer's commit: `./scripts/verify.sh` in a clean clone on the Mac (Mac Catalyst build, `xcodebuild test` on the simulator) TEST SUCCEEDED, 186 unit tests and the 2 UI tests passed, the tour skipped without a host.
+
 ## Still to run (in order)
 
 1. On a Mac: `brew install xcodegen && ./scripts/verify.sh` — expect compile fixes in the UI layer, which has never been type-checked.
