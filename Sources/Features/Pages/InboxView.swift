@@ -63,7 +63,7 @@ struct InboxView: View {
                     ForEach(inbox.running) { row in
                         SessionRowView(row: row, multiHost: hub.multiHost) { scene.open(row.key) }
                             .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
-                            .swipeActions(edge: .trailing) { PinSwipe(row: row, hub: hub) }
+                            .sessionSwipes(row: row, scene: scene, hub: hub)
                             .ahRow()
                     }
                 } header: {
@@ -75,7 +75,7 @@ struct InboxView: View {
                     ForEach(inbox.rest) { row in
                         SessionRowView(row: row, multiHost: hub.multiHost) { scene.open(row.key) }
                             .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
-                            .swipeActions(edge: .trailing) { PinSwipe(row: row, hub: hub) }
+                            .sessionSwipes(row: row, scene: scene, hub: hub)
                             .ahRow()
                     }
                 } header: {
@@ -414,7 +414,7 @@ struct SessionListView: View {
                             .tag(row.key)
                             .draggable(SessionDrag(key: row.key))
                             .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
-                            .swipeActions(edge: .trailing) { PinSwipe(row: row, hub: hub) }
+                            .sessionSwipes(row: row, scene: scene, hub: hub)
                             .ahRow(!showsPages)
                     }
                     .onMove { from, to in move(section: section, from: from, to: to) }
@@ -495,18 +495,39 @@ struct SessionRowMenu: View {
     }
 }
 
-/// Swipe a session to pin it (or unpin), wherever its row is.
-struct PinSwipe: View {
+/// A session's row swiped, wherever it is: right pins it (or unpins), left terminates it,
+/// through the same confirmation the menu's Terminate… asks for.
+struct SessionSwipes: ViewModifier {
     let row: SessionRow
+    let scene: SceneModel
     let hub: HubStore
     @Environment(\.theme) private var theme
 
-    var body: some View {
-        Button(row.dto.pinned ? "Unpin" : "Pin", systemImage: row.dto.pinned ? "pin.slash" : "pin") {
-            Task { try? await hub.client(forKey: row.key).pin(row.uid, pinned: !row.dto.pinned); hub.refresh() }
-        }
-        .tint(theme.limited)
+    func body(content: Content) -> some View {
+        content
+            .swipeActions(edge: .leading) {
+                Button {
+                    Task { try? await hub.client(forKey: row.key).pin(row.uid, pinned: !row.dto.pinned); hub.refresh() }
+                } label: {
+                    Image(systemName: row.dto.pinned ? "pin.slash" : "pin")
+                }
+                .accessibilityLabel(row.dto.pinned ? "Unpin" : "Pin")
+                .tint(theme.limited)
+            }
+            .swipeActions(edge: .trailing) {
+                // A glyph alone: given a title too, the system draws the action as a wide pill
+                // with the word beneath, and the glyph looked stretched in it. Red by tint, not
+                // role: a destructive action swiped all the way is taken for the row's deletion,
+                // and the list aborts when the row is still there (it is, until the sheet says).
+                Button { scene.sheet = .confirmTerminate(row.key) } label: { Image(systemName: "xmark.octagon") }
+                    .accessibilityLabel("Terminate")
+                    .tint(theme.danger)
+            }
     }
+}
+
+extension View {
+    func sessionSwipes(row: SessionRow, scene: SceneModel, hub: HubStore) -> some View { modifier(SessionSwipes(row: row, scene: scene, hub: hub)) }
 }
 
 /// History: ended and discovered conversations; resume, fork, hide.

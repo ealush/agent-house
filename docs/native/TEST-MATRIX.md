@@ -110,6 +110,15 @@ From the owner's phone recordings and screenshots: the settings chips came down 
 - At the layer's commit: `./scripts/verify.sh` in a clean clone on the Mac (Mac Catalyst build, `xcodebuild test` on the simulator) TEST SUCCEEDED, 186 unit tests and the 2 UI tests passed, the tour skipped without a host.
 - Not seen: a real device, light mode's light, Reduce Motion (the tray then fades in place), the red Approvals-off chip above the box with the grabber beside it, an iPad window narrower than its screen (the keyboard's frame is converted into the window's).
 
+### Swiping a session's row, 11 November 2026
+
+From the owner's phone: a row swiped left offered Pin as a wide pill with the word beneath, in which the glyph looked stretched, and the owner wanted the other, more useful action within a drag too. Same iPhone 18 Pro simulator and demo host, `AH_TOUCH_ONLY=1`, the tour's `swipein:left@<row>` and `swipein:right@<row>` steps (a flick across the named row) and a drag across the whole row for a full swipe.
+
+- Seen: a swipe left shows one red circle with the stop glyph; its tap, and a full swipe without a tap, open the Terminate sheet that names the session, and Cancel leaves the row as it was; a swipe right shows one amber circle with the pin glyph, and its tap pins (the row takes its pin mark) or unpins; a glyph-only action draws as the circle, where one with a title drew as the pill.
+- Found on the way: a Terminate action with the destructive role, swiped all the way, abort-trapped the app (`UICollectionView ... Invalid_Number_Of_Items_In_Section`): the list takes a full destructive swipe for the row's deletion, and the row stays until the sheet says. The action is red by tint, not role.
+- At the layer's commit: `./scripts/verify.sh` in a clean clone on the Mac (Mac Catalyst build, `xcodebuild test` on the simulator) TEST SUCCEEDED, 186 unit tests and the 2 UI tests passed, the tour skipped without a host.
+- Not seen: a real device, light mode, VoiceOver's reading of the glyph-only actions (they carry Pin, Unpin and Terminate labels), the Sessions tab's rows, which take the same swipes.
+
 ## Still to run (in order)
 
 1. On a Mac: `brew install xcodegen && ./scripts/verify.sh` — expect compile fixes in the UI layer, which has never been type-checked.
