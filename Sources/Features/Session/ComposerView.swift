@@ -31,6 +31,10 @@ struct ComposerView: View {
     @State private var sendSize = CGSize.zero
     /// How wide + is in the box's other corner: the text starts past it.
     @State private var attachSize = CGSize.zero
+    /// How tall the box and the text in it are, as laid out: a box of one line centres what
+    /// sits in its corners.
+    @State private var boxHeight: CGFloat = 0
+    @State private var textHeight: CGFloat = 0
     /// A file is being dragged over the box.
     @State private var dropTargeted = false
     @Namespace private var glass
@@ -225,8 +229,14 @@ struct ComposerView: View {
 
     /// The same for anything else in a corner (+), by its own height: measured against Send's,
     /// + rode high while Send was folded away to nothing.
+    /// A box of one line, nothing attached above it, centres them in itself as it's really
+    /// laid out: a line worked out from the font left them a point or two low.
     private func cornerInset(for height: CGFloat) -> CGFloat {
-        let line = max(control, AhType.uiFont(.body).lineHeight + 24)
+        let lineHeight = AhType.uiFont(.body).lineHeight
+        if boxHeight > 0, composer.attachments.isEmpty, textHeight < lineHeight * 2 + 12 {
+            return max(6, (boxHeight - height) / 2)
+        }
+        let line = max(control, lineHeight + 24)
         return max(6, ((line - height) / 2).rounded())
     }
 
@@ -239,10 +249,12 @@ struct ComposerView: View {
             // and a long message lost its first line.
             ComposerTextField(composer: composer, session: session, scene: scene, leadingRoom: attachSize.width > 0 ? attachSize.width + 2 : 0, trailingRoom: sendSize.width > 0 ? sendSize.width + 4 : 0, cornerHeight: sendSize.height)
                 .frame(minHeight: control - 12)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { textHeight = $0 }
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 6)
         .frame(minHeight: control)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { boxHeight = $0 }
         .overlay(alignment: .bottomLeading) {
             attachMenu
                 .onGeometryChange(for: CGSize.self) { $0.size } action: { attachSize = $0 }
@@ -945,8 +957,15 @@ struct ComposerTextField: UIViewRepresentable {
         var height = text.boundingRect(with: CGSize(width: max(lines, 1), height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil).height
         // A new line just begun counts before anything is typed on it.
         if text.string.hasSuffix("\n") { height += line }
-        height = ceil(max(height, line)) + inset.top + inset.bottom
-        return CGSize(width: width, height: min(max(height, 32), line * 8 + 12))
+        height = ceil(max(height, line)) + 12
+        // A line shorter than the field's least height sits in its middle: at the top, in a
+        // small text size it rode high in the box, and + and Send low beside it.
+        let pad = max(0, 32 - height) / 2
+        if inset.top != 6 + pad {
+            uiView.textContainerInset.top = 6 + pad
+            uiView.textContainerInset.bottom = 6 + pad
+        }
+        return CGSize(width: width, height: min(height + pad * 2, line * 8 + 12))
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }

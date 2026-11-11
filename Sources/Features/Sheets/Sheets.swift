@@ -57,6 +57,8 @@ struct NewSessionSheet: View {
     @State private var mode = "default"
     @State private var model: String?
     @State private var effort: String?
+    /// The effort picked with each model while this sheet is open, by "preset|model".
+    @State private var picked: [String: String] = [:]
     /// "Skip startup confirmations": the host answers the agent's folder-trust prompt.
     @State private var trust = false
     @State private var label = ""
@@ -240,6 +242,15 @@ struct NewSessionSheet: View {
                         .buttonStyle(.glassProminent)
                 }
             }
+            // Each model brings its own effort: the one picked with it here, else the one it
+            // last started with.
+            .onChange(of: model) { _, next in
+                guard let preset else { return }
+                var chosen = scene.app.preferences.launchMemory[preset.id]?.effortsByModel ?? [:]
+                if let here = picked["\(preset.id)|\(next ?? "default")"] { chosen[next ?? "default"] = here }
+                effort = LaunchState.effort(for: next, preset: preset, chosen: chosen, current: effort)
+            }
+            .onChange(of: effort) { _, next in picked["\(presetID)|\(model ?? "default")"] = next ?? "default" }
             .task(id: "\(host ?? "")|\(cwd)") {
                 // Say what the folder is while it's typed (after a pause), not only on Start.
                 try? await Task.sleep(for: .milliseconds(cwd.isEmpty ? 0 : 300))
@@ -336,7 +347,8 @@ struct NewSessionSheet: View {
             trust: preset.trust != nil && trust ? true : nil)
         if await scene.start(request, host: host, prompt: prompt, intoPane: context.intoPane) != nil {
             if !preset.isShell {
-                scene.app.preferences.launchMemory[preset.id] = .init(mode: mode, model: chosenModel ?? model, effort: effort, trust: preset.trust != nil ? trust : nil)
+                scene.app.preferences.launchMemory[preset.id] = LaunchState.remembering(
+                    scene.app.preferences.launchMemory[preset.id], mode: mode, model: chosenModel ?? model, effort: effort, trust: preset.trust != nil ? trust : nil)
             }
             scene.sheet = nil
         }
