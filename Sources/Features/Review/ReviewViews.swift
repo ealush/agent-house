@@ -270,6 +270,8 @@ struct StackCockpitView: View {
     @State private var mergingStack = false
     @State private var managing = false
     @State private var decision = ""
+    /// The layers' list has the keyboard, for j/k (and the arrows) to walk them.
+    @FocusState private var spineFocused: Bool
 
     var body: some View {
         Group {
@@ -318,16 +320,6 @@ struct StackCockpitView: View {
         }
         .sheet(isPresented: $managing) {
             if let stack = model.stack { StackManageSheet(model: model, stack: stack) }
-        }
-        .onKeyPress(phases: .down) { press in
-            // j/k walk the layers when not typing, as on the web.
-            guard let stack = model.stack, let current = model.selectedPR, let index = stack.layers.firstIndex(where: { $0.pr == current }) else { return .ignored }
-            switch press.characters {
-            case "j": if index + 1 < stack.layers.count { Task { await model.select(stack.layers[index + 1].pr) } }
-            case "k": if index > 0 { Task { await model.select(stack.layers[index - 1].pr) } }
-            default: return .ignored
-            }
-            return .handled
         }
     }
 
@@ -401,6 +393,21 @@ struct StackCockpitView: View {
             }
         }
         .listStyle(.sidebar)
+        // j/k walk the layers when not typing, as on the web. They only reach a view that
+        // has the keyboard: on the page around the list they never arrived.
+        .focusable(!scene.narrow)
+        .focused($spineFocused)
+        .focusEffectDisabled()
+        .onKeyPress(phases: .down) { press in
+            guard !scene.narrow, let current = model.selectedPR, let index = stack.layers.firstIndex(where: { $0.pr == current }) else { return .ignored }
+            switch press.characters {
+            case "j": if index + 1 < stack.layers.count { Task { await model.select(stack.layers[index + 1].pr) } }
+            case "k": if index > 0 { Task { await model.select(stack.layers[index - 1].pr) } }
+            default: return .ignored
+            }
+            return .handled
+        }
+        .onAppear { if scene.hardwareKeyboard && !scene.narrow { spineFocused = true } }
         .safeAreaBar(edge: .bottom, spacing: 0) {
             if scene.narrow { stackBar(stack) }
         }
