@@ -30,6 +30,9 @@ struct Theme: Equatable, Sendable {
         case .dark: return Theme(palette: .dark, followsSystem: false)
         case .light: return Theme(palette: .light, followsSystem: false)
         case .omarchy: return Theme(palette: omarchy.flatMap(ThemePalette.omarchy) ?? .dark, followsSystem: omarchy == nil)
+        // A palette the app carries has its own light or dark look; one that's gone (a row
+        // from a build that had it) falls back to ah's.
+        case .palette(let id): return BuiltinPalette.named(id).map { Theme(palette: $0.palette, followsSystem: false) } ?? .system
         }
     }
 

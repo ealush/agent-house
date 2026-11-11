@@ -331,6 +331,8 @@ private struct SecuritySection: View {
 
 private struct AppearanceSection: View {
     @Bindable var app: AppModel
+    @Environment(\.theme) private var theme
+    @Environment(\.colorScheme) private var colorScheme
 
     static func symbol(_ appearance: DevicePreferences.Appearance) -> String {
         switch appearance {
@@ -338,18 +340,46 @@ private struct AppearanceSection: View {
         case .dark: return "moon"
         case .light: return "sun.max"
         case .omarchy: return "paintpalette"
+        case .palette: return "swatchpalette"
         }
+    }
+
+    /// Every look, as a swatch: ah's three and the host's, then the palettes the app carries.
+    private var choices: [(DevicePreferences.Appearance, String, ThemePalette)] {
+        let own: ThemePalette = colorScheme == .dark ? .dark : .light
+        return [
+            (.system, "ah", own), (.dark, "ah Dark", .dark), (.light, "ah Light", .light),
+            (.omarchy, "Omarchy", app.preferences.appearance == .omarchy ? theme.palette : own),
+        ] + BuiltinPalette.all.map { (.palette($0.id), $0.name, $0.palette) }
     }
 
     var body: some View {
         AhForm {
-            // "Theme": the page is Appearance already, and its first header said so again.
-            Picker("Theme", selection: $app.preferences.appearance) {
-                ForEach(DevicePreferences.Appearance.allCases, id: \.self) { appearance in
-                    Label(appearance.label, systemImage: Self.symbol(appearance)).tag(appearance)
+            // A grid of swatches, each a box on its ground with a line of its text and a dot of
+            // its accent: a palette is picked for its look, which a name in a list didn't give.
+            Section {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: 4), spacing: 16) {
+                    ForEach(choices, id: \.0) { appearance, name, palette in
+                        Button {
+                            withAnimation(.snappy(duration: 0.2)) { app.preferences.appearance = appearance }
+                        } label: {
+                            VStack(spacing: 6) {
+                                PaletteSwatch(palette: palette, symbol: appearance == .omarchy ? "paintpalette" : nil, selected: app.preferences.appearance == appearance, ring: theme.accent)
+                                Text(name).font(.ah(.caption)).foregroundStyle(theme.text).multilineTextAlignment(.center).lineLimit(2)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(name)
+                        .accessibilityAddTraits(app.preferences.appearance == appearance ? .isSelected : [])
+                    }
                 }
+                .padding(.vertical, 6)
+                .listRowInsets(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
+            } header: {
+                Text("Palette")
+            } footer: {
+                Text("ah follows the device’s look. Omarchy takes the host’s theme and font. Every other palette has its own light or dark look.")
             }
-            .pickerStyle(.inline)
             Section("Reading") {
                 Toggle("Hide tool steps in transcripts", isOn: $app.preferences.stepsHidden)
                 Picker("Group the Inbox by", selection: $app.preferences.inboxGrouping) {
@@ -374,6 +404,42 @@ private struct AppearanceSection: View {
                 Text("What other devices see when this one has a session open.")
             }
         }
+    }
+}
+
+/// A palette as a tile: its ground, a box of its surface, a line of its text and a dot of its
+/// accent (the composer, in miniature). The one in force wears a ring of the accent in force.
+private struct PaletteSwatch: View {
+    let palette: ThemePalette
+    var symbol: String?
+    let selected: Bool
+    let ring: Color
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(uiColor: UIColor(hex: palette.background)))
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color(uiColor: UIColor(hex: palette.card)))
+                .frame(height: 30)
+                .padding(.horizontal, 10)
+                .overlay {
+                    HStack(spacing: 6) {
+                        Capsule().fill(Color(uiColor: UIColor(hex: palette.text))).frame(width: 22, height: 4)
+                        Circle().fill(Color(uiColor: UIColor(hex: palette.accent))).frame(width: 10, height: 10)
+                    }
+                }
+            if let symbol {
+                Image(systemName: symbol).font(.ah(.caption2)).foregroundStyle(Color(uiColor: UIColor(hex: palette.muted)))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(6)
+            }
+        }
+        .aspectRatio(1.15, contentMode: .fit)
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(selected ? ring : Color.primary.opacity(0.12), lineWidth: selected ? 2 : 1)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .hoverEffect(.lift)
     }
 }
 

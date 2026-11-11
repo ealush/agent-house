@@ -4,10 +4,15 @@ import GRDB
 /// Per-device choices (never host-wide state, never secrets): appearance, reading
 /// preferences, the key bar, notification opt-ins, this device's name and shortcuts.
 struct DevicePreferences: Codable, Equatable, Sendable {
-    enum Appearance: String, Codable, Sendable, CaseIterable {
+    enum Appearance: Codable, Equatable, Hashable, Sendable {
         case system, dark, light
         /// Follow the host's Omarchy theme colors.
         case omarchy
+        /// One of the palettes the app carries (`BuiltinPalette`), by id.
+        case palette(String)
+
+        /// ah's own looks and the host's, in the order the settings show them.
+        static let looks: [Appearance] = [.system, .dark, .light, .omarchy]
 
         var label: String {
             switch self {
@@ -15,7 +20,44 @@ struct DevicePreferences: Codable, Equatable, Sendable {
             case .dark: return "Dark"
             case .light: return "Light"
             case .omarchy: return "Omarchy"
+            case .palette(let id): return BuiltinPalette.named(id)?.name ?? id
             }
+        }
+
+        /// Stored as one word, as before ("dark"), or "palette:<id>".
+        var key: String {
+            switch self {
+            case .system: return "system"
+            case .dark: return "dark"
+            case .light: return "light"
+            case .omarchy: return "omarchy"
+            case .palette(let id): return "palette:" + id
+            }
+        }
+
+        init?(key: String) {
+            switch key {
+            case "system": self = .system
+            case "dark": self = .dark
+            case "light": self = .light
+            case "omarchy": self = .omarchy
+            default:
+                guard key.hasPrefix("palette:"), BuiltinPalette.named(String(key.dropFirst(8))) != nil else { return nil }
+                self = .palette(String(key.dropFirst(8)))
+            }
+        }
+
+        init(from decoder: any Decoder) throws {
+            let key = try decoder.singleValueContainer().decode(String.self)
+            guard let value = Appearance(key: key) else {
+                throw DecodingError.dataCorrupted(DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "No appearance named \(key)"))
+            }
+            self = value
+        }
+
+        func encode(to encoder: any Encoder) throws {
+            var c = encoder.singleValueContainer()
+            try c.encode(key)
         }
     }
 

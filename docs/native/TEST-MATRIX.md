@@ -144,6 +144,14 @@ From the owner, a composer they liked: one box the width of the bar, its control
 - Not seen: an attachment strip above the text; the tap target of + beside the text's first character on a real finger; dark mode; the iPad's wide box.
 - At the layer's commit: `./scripts/verify.sh` in a clean clone on the Mac (Mac Catalyst build, `xcodebuild test` on the simulator) TEST SUCCEEDED, 186 unit tests and the 2 UI tests passed, the tour skipped without a host.
 
+### Palettes in Appearance, 11 November 2026
+
+From the owner, an Appearance page with a grid of palette swatches. Ours offered four words. Seen on the headless iPhone simulator.
+
+- Seen: a four-across grid of swatches, each a box on its ground with a line of its text and a dot of its accent: ah, ah Dark, ah Light, Omarchy, then Tokyo Night, Catppuccin Mocha, Catppuccin Latte, Nord, Dracula, Gruvbox Dark, Gruvbox Light, Solarized Dark, Solarized Light, One Dark, Monokai, GitHub Dark, Rosé Pine, Everforest and Kanagawa, the one in force ringed in the accent; a tap on Tokyo Night re-themes the page at once (dark ground, blue accent, blue ring), and a tap on ah brings ah's look back.
+- Not seen: each palette's transcript and terminal; the Omarchy tile with a host theme loaded (it draws ah's colors with a palette glyph until one is in force); a stored "palette:<id>" read back after relaunch (reasoned from the decoder, which falls back to ah for a palette it doesn't carry).
+- At the layer's commit: `./scripts/verify.sh` in a clean clone on the Mac (Mac Catalyst build, `xcodebuild test` on the simulator) TEST SUCCEEDED, 186 unit tests and the 2 UI tests passed, the tour skipped without a host.
+
 ## Still to run (in order)
 
 1. On a Mac: `brew install xcodegen && ./scripts/verify.sh` — expect compile fixes in the UI layer, which has never been type-checked.
