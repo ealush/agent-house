@@ -617,7 +617,7 @@ struct LayerView: View {
                     withAnimation(.smooth(duration: 0.35)) { proxy.scrollTo("ask", anchor: .bottom) }
                 }
             }
-            .animation(.smooth(duration: 0.25), value: layer.pr)
+            .animation(.smooth(duration: 0.2), value: layer.pr)
             .onChange(of: layer.pr) {
                 selectedLines = nil
                 folded = []
@@ -1120,7 +1120,7 @@ struct LayerView: View {
             Button { go(to: next) } label: {
                 HStack(spacing: 4) {
                     Text(next.role.isEmpty ? "#\(next.pr)" : next.role).lineLimit(1)
-                    Image(systemName: "chevron.up")
+                    Image(systemName: "chevron.down")
                 }
                 .font(.ah(.subheadline).weight(.semibold))
                 .padding(.vertical, 6)
@@ -1191,7 +1191,8 @@ struct LayerView: View {
     private func more(_ layer: Layer, _ confidence: LayerConfidence) -> some View {
         Menu {
             if let previous = model.neighbor(-1) {
-                Button("Previous Layer: \(previous.name)", systemImage: "chevron.down") { go(to: previous) }
+                Button("Previous Layer: \(previous.name)", systemImage: "chevron.up") { go(to: previous) }
+                    .keyboardShortcut(.upArrow, modifiers: [.command, .option])
             }
             Section {
                 Button("Request Fixes…", systemImage: "wrench.and.screwdriver") { dispatching = .some(nil) }
