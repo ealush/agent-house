@@ -128,6 +128,14 @@ From the owner's phone, after the layer above merged: with the keyboard up, the 
 - At the layer's commit: `./scripts/verify.sh` in a clean clone on the Mac (Mac Catalyst build, `xcodebuild test` on the simulator) TEST SUCCEEDED, 186 unit tests and the 2 UI tests passed, the tour skipped without a host.
 - Not seen: the owner's phone (dark mode); an iPad, where a floating keyboard reports a frame off the window's bottom (rise 0) and a hardware keyboard's shortcut bar a small one; Reduce Motion (the tray then fades in place).
 
+### The phone's session bar, 11 November 2026
+
+From the owner: a menu whose first row is three glyphs with their words (Find, Smartlog, Terminal) as a way to give the title its room. The phone's bar had three buttons beside the title (the other view, the panels, the menu), and the title read "Composer chi…". Seen on the headless iPhone simulator (light mode).
+
+- Seen: the bar holds the one menu button; its menu opens on a first row in UIKit's medium size, Terminal, Panels and Search as glyphs over their words, with Rename, Unpin, Switch Branch…, Fork…, Send To…, Hide Steps, Copy Last Reply and the rest below as they were.
+- Not seen: Panels as a submenu opened from that row and a panel checked in it; the terminal view's bar (its GUI item in the row); a real phone.
+- At the layer's commit: `./scripts/verify.sh` in a clean clone on the Mac (Mac Catalyst build, `xcodebuild test` on the simulator) TEST SUCCEEDED, 186 unit tests and the 2 UI tests passed, the tour skipped without a host.
+
 ## Still to run (in order)
 
 1. On a Mac: `brew install xcodegen && ./scripts/verify.sh` — expect compile fixes in the UI layer, which has never been type-checked.
