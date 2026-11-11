@@ -5,7 +5,8 @@ import UIKit
 /// settles only once the keyboard has: a view placed by it sat still while the composer (in
 /// the transcript's inset, which UIKit animates with the keyboard) went down, then jumped
 /// after it. `rise` is how far the keyboard pushes the bar up from where it rests, animated
-/// as the keyboard is, for a view that ignores the keyboard safe area and pads by it instead.
+/// as the keyboard is, for a screen that ignores the keyboard safe area at its root (the one
+/// place SwiftUI honours that) and pads by it instead.
 @Observable @MainActor
 final class KeyboardFrame {
     private(set) var rise: CGFloat = 0
@@ -31,8 +32,12 @@ final class KeyboardFrame {
         let inWindow = window.convert(end, from: window.screen.coordinateSpace)
         let overlap = max(0, window.bounds.maxY - inWindow.minY)
         let rise = max(0, overlap - window.safeAreaInsets.bottom)
-        // The keyboard's own curve isn't one SwiftUI names; this spring is the usual match.
-        withAnimation(duration > 0 ? .interpolatingSpring(mass: 3, stiffness: 1000, damping: 500, initialVelocity: 0) : nil) {
+        // The keyboard's own curve isn't one SwiftUI names. Fitted to it as recorded on the
+        // simulator (its top edge, frame by frame, 60 fps): a critically damped spring of
+        // response 0.26 s lands within a point of it throughout, where the oft-quoted
+        // mass 3 / stiffness 1000 / damping 500 trailed the keyboard by a third of its travel
+        // and settled over a further half second.
+        withAnimation(duration > 0 ? .spring(response: 0.26, dampingFraction: 1) : nil) {
             self.rise = rise
         }
     }

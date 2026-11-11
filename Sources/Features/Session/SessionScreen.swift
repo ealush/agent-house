@@ -27,8 +27,8 @@ struct SessionScreen: View {
     /// How tall the bar under the transcript is: what opens out of the composer floats just
     /// above it.
     @State private var barHeight: CGFloat = 0
-    /// Where the keyboard is as it moves: what floats over the bar follows it by this, since
-    /// the keyboard safe area SwiftUI gives the float catches up only once the keyboard has.
+    /// Where the keyboard is as it moves: the screen stands above it by this, since the
+    /// keyboard safe area SwiftUI gives catches up only once the keyboard has.
     @State private var keyboard = KeyboardFrame()
 
     private var narrow: Bool { sizeClass == .compact || scene.narrow }
@@ -87,17 +87,13 @@ struct SessionScreen: View {
                     }
             }
             // Over the transcript, above the bar and outside it (a view past the bar's edge
-            // draws but takes no touch). Placed from where the keyboard is, not by the keyboard
-            // safe area: the bar sits in the transcript's inset, which UIKit moves with the
-            // keyboard, while the safe area settles only afterwards, so the float sat still as
-            // the bar went down and then jumped after it.
+            // draws but takes no touch).
             .overlay(alignment: .bottom) {
                 if session.surface == .gui && session.hasGUI {
                     ComposerFloat(session: session, composer: session.composer, scene: scene)
                         .frame(maxWidth: Self.readableWidth)
                         .frame(maxWidth: .infinity)
-                        .padding(.bottom, barHeight + keyboard.rise)
-                        .ignoresSafeArea(.keyboard)
+                        .padding(.bottom, barHeight)
                 }
             }
             if !narrow, let panel = session.panel {
@@ -110,6 +106,14 @@ struct SessionScreen: View {
                 .transition(.move(edge: .trailing))
             }
         }
+        // Above the keyboard by where the keyboard is, not by the keyboard safe area: the bar
+        // sits in the transcript's inset, which UIKit moves with the keyboard, while the safe
+        // area settles only afterwards, so what floats over the bar sat still as the bar went
+        // down and then jumped after it. Ignored here at the screen's root, which is where
+        // SwiftUI honours that: asked of the float alone, it was still placed by the safe
+        // area, and rose twice as far.
+        .padding(.bottom, keyboard.rise)
+        .ignoresSafeArea(.keyboard)
         // Under the keyboard and the bars too: the keyboard's rounded corners showed the
         // window's black over a terminal that stops at the keyboard.
         .background { theme.surface.ignoresSafeArea() }
