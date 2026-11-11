@@ -600,6 +600,16 @@ struct LayerView: View {
                 .id(layer.pr)
                 .transition(.opacity)
                 .safeAreaBar(edge: .bottom, spacing: 0) { bar(layer, confidence, proxy) }
+                // Asking keeps the exchange in sight: the field while the reviewer reads, then
+                // its answer above the field when it lands.
+                .onChange(of: model.thread.count) { old, new in
+                    guard new > old else { return }
+                    withAnimation(.smooth(duration: 0.35)) { proxy.scrollTo("ask", anchor: .bottom) }
+                }
+                .onChange(of: model.loading.contains("ask")) { _, asking in
+                    guard asking else { return }
+                    withAnimation(.smooth(duration: 0.35)) { proxy.scrollTo("ask", anchor: .bottom) }
+                }
             }
             .animation(.smooth(duration: 0.25), value: layer.pr)
             .onChange(of: layer.pr) {
@@ -897,6 +907,7 @@ struct LayerView: View {
                 TextField("Ask the reviewer about this layer", text: $question, axis: .vertical)
                     .lineLimit(1...6)
                     .focused($asking)
+                    .accessibilityIdentifier("reviewer-question")
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .background(theme.tile, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -920,6 +931,7 @@ struct LayerView: View {
                 .keyboardShortcut(.return, modifiers: .command)
                 .accessibilityLabel("Ask")
             }
+            .id("ask")
             let findings = model.findings(for: layer.pr)
             HStack {
                 Text("Findings").font(.ah(.subheadline).weight(.semibold))
@@ -1021,7 +1033,11 @@ struct LayerView: View {
     @ViewBuilder
     private func bar(_ layer: Layer, _ confidence: LayerConfidence, _ proxy: ScrollViewProxy) -> some View {
         GlassEffectContainer(spacing: 10) {
-            if let selected = selectedLines, let line = selected.lines.first, let number = line.number {
+            // Writing to the reviewer, the keyboard is up and the bar would ride on it over
+            // the thread: it steps aside until the field lets go.
+            if asking {
+                EmptyView()
+            } else if let selected = selectedLines, let line = selected.lines.first, let number = line.number {
                 lineBar(layer, selected.path, number, line, proxy)
                     .transition(.blurReplace)
             } else {
@@ -1030,10 +1046,11 @@ struct LayerView: View {
             }
         }
         .padding(.horizontal, 14)
-        .padding(.top, 6)
-        .padding(.bottom, 8)
+        .padding(.top, asking ? 0 : 6)
+        .padding(.bottom, asking ? 0 : 8)
         .animation(.snappy(duration: 0.25), value: selectedLines?.index)
         .animation(.snappy(duration: 0.3), value: confidence)
+        .animation(.snappy(duration: 0.25), value: asking)
     }
 
     private func lineBar(_ layer: Layer, _ path: String, _ number: Int, _ line: DiffLine, _ proxy: ScrollViewProxy) -> some View {
