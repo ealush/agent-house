@@ -241,6 +241,21 @@ Less work on the main thread:
   screen; one relative-date formatter. A diff file's added/removed counts are counted once.
   *UI and model; the UI half unseen.*
 
+### More motion in a session, 12 November 2026
+
+UI only, written on Linux: **not compiled and not seen running** (as the section above).
+
+- The conversation and the terminal change places through a short fade.
+- On an iPad a side panel slides in as it slides out (opened from the menu it cut in), the
+  conversation making room; Reduce Motion keeps it to a short fade of the layout.
+- A session's notices look as the window's toasts do (an error leads with its glyph, words
+  in ink, hairline and shadow) and drop in from the top.
+- The palette and the switcher settle into place as the dim fades in.
+- History's rows carry a larger mark; a pinned one's pin is faint, as a session's is.
+
+To look at first when this runs: that the transcript still opens at its end and holds it
+with the keyboard (it now sits in a container of its own for the fade).
+
 ## Still to run (in order)
 
 1. On a Mac: `brew install xcodegen && ./scripts/verify.sh` — expect compile fixes in the UI layer, which has never been type-checked.

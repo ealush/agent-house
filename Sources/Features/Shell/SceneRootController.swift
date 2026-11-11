@@ -442,11 +442,21 @@ private final class OverlayWindow: UIWindow {
 struct FloatingPanel<Content: View>: View {
     let close: () -> Void
     @ViewBuilder let content: Content
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown = false
 
     var body: some View {
         ZStack(alignment: .top) {
             Color.black.opacity(0.25).ignoresSafeArea().onTapGesture(perform: close).accessibilityHidden(true)
-            content.padding(.top, 70)
+            // The panel settles into place as the dim fades in, as Spotlight's does, rather
+            // than only dissolving with it.
+            content
+                .padding(.top, 70)
+                .scaleEffect(shown || reduceMotion ? 1 : 0.96, anchor: .top)
+                .offset(y: shown || reduceMotion ? 0 : -8)
+        }
+        .onAppear {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) { shown = true }
         }
     }
 }
