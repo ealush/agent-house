@@ -67,6 +67,8 @@ struct DevicePreferences: Codable, Equatable, Sendable {
         var mode: String?
         var model: String?
         var effort: String?
+        /// "Skip startup confirmations" was on.
+        var trust: Bool? = nil
     }
 
     init() {}

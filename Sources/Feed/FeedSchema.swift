@@ -116,6 +116,14 @@ enum FeedPart: Codable, Equatable, Sendable {
 
     enum NoticeKind: String, Codable, Sendable { case compacted, interrupted, info }
 
+    /// Words the agent wrote (its reply and its thinking): text you can select.
+    var isWords: Bool {
+        switch self {
+        case .text, .reasoning: true
+        default: false
+        }
+    }
+
     private enum CodingKeys: String, CodingKey { case type, text, kind, src, alt, call, result, widget }
 
     init(from decoder: any Decoder) throws {

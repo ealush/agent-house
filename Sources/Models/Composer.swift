@@ -356,15 +356,17 @@ final class ComposerModel {
     /// Stop replaces Send only for a working agent and an empty box, and not right after a send.
     func showsStop(working: Bool) -> Bool { !isShell && working && isEmpty && !justSent }
 
-    func placeholder(working: Bool, queued: Int, touchOnly: Bool, agent: String? = nil, waiting: Bool = false, ended: Bool = false) -> String {
-        Self.placeholder(isShell: isShell, working: working, queued: queued, touchOnly: touchOnly, agent: agent, waiting: waiting, ended: ended)
+    func placeholder(working: Bool, queued: Int, touchOnly: Bool, agent: String? = nil, waiting: Bool = false, trusting: Bool = false, ended: Bool = false) -> String {
+        Self.placeholder(isShell: isShell, working: working, queued: queued, touchOnly: touchOnly, agent: agent, waiting: waiting, trusting: trusting, ended: ended)
     }
 
     /// What Send will do now (ah's Composer): message the agent, add to its queue, answer it, or
     /// resume it. Keys are named only when there's a keyboard.
-    nonisolated static func placeholder(isShell: Bool, working: Bool, queued: Int, touchOnly: Bool, agent: String? = nil, waiting: Bool = false, ended: Bool = false) -> String {
+    nonisolated static func placeholder(isShell: Bool, working: Bool, queued: Int, touchOnly: Bool, agent: String? = nil, waiting: Bool = false, trusting: Bool = false, ended: Bool = false) -> String {
         if isShell { return "Type or paste a command" }
         if ended { return "Message to resume" }
+        // A folder-trust prompt isn't answered in words: the message waits for it.
+        if trusting { return "Message \(agent ?? "the agent") · sent once you answer" }
         if waiting { return "Reply to answer" }
         if working && queued > 0 { return touchOnly ? "Add to the queue · sent when it’s free" : "Add to the queue · ↵ on empty steers the next · ⌘↵ sends now · esc stops" }
         if working { return touchOnly ? "Add to the queue · sent when it’s free" : "Add to the queue · sent when it’s free · ⌘↵ sends now · esc stops" }

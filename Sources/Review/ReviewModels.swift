@@ -97,8 +97,32 @@ struct DispatchView: Codable, Equatable, Sendable, Hashable {
 }
 
 struct Finding: Codable, Equatable, Sendable, Hashable, Identifiable {
-    enum Severity: String, Codable, Sendable, CaseIterable { case blocking, should, nit }
-    enum State: String, Codable, Sendable, CaseIterable { case proposed, open, sent, addressed, wontfix, dismissed }
+    enum Severity: String, Codable, Sendable, CaseIterable {
+        case blocking, should, nit
+
+        /// Said for a person: the wire's "should" reads as half a sentence.
+        var label: String {
+            switch self {
+            case .blocking: return "Blocking"
+            case .should: return "Should fix"
+            case .nit: return "Nit"
+            }
+        }
+    }
+    enum State: String, Codable, Sendable, CaseIterable {
+        case proposed, open, sent, addressed, wontfix, dismissed
+
+        var label: String {
+            switch self {
+            case .proposed: return "Proposed"
+            case .open: return "Open"
+            case .sent: return "Sent for fixing"
+            case .addressed: return "Addressed"
+            case .wontfix: return "Won’t fix"
+            case .dismissed: return "Dismissed"
+            }
+        }
+    }
     let id: Int
     let ownerPr: Int
     let foundOnPr: Int

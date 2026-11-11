@@ -36,7 +36,7 @@ struct ComposerView: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            QueueTrayView(queue: session.queue, composer: composer, working: session.working, hardwareKeyboard: scene.hardwareKeyboard)
+            QueueTrayView(queue: session.queue, composer: composer, working: session.working, held: session.awaitingTrust, hardwareKeyboard: scene.hardwareKeyboard)
             if let from = composer.drafts.from {
                 Label("Continued from \(from)", systemImage: "arrow.turn.down.right")
                     .font(.ah(.caption2)).foregroundStyle(theme.muted)
@@ -238,6 +238,7 @@ struct ComposerView: View {
         }
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: corner, style: .continuous))
         .glassEffectID("field", in: glass)
+        .overlay { ThinkingBorder(corner: corner, active: session.working && !session.isShell) }
         .overlay(alignment: .top) { grabber }
         .accessibilityAction(named: trayOpen ? "Hide session settings" : "Show session settings") {
             withAnimation(.snappy(duration: 0.25)) { trayOpen.toggle() }
@@ -770,12 +771,16 @@ struct ComposerTextField: UIViewRepresentable {
         view.backgroundColor = .clear
         view.textContainerInset = UIEdgeInsets(top: 6, left: 2, bottom: 6, right: 2)
         view.isScrollEnabled = true
-        view.returnKeyType = .send
+        view.returnKeyType = Self.returnKey(hardwareKeyboard: scene.hardwareKeyboard)
         view.accessibilityIdentifier = "composer"
         view.text = composer.text
         setTraits(view)
         return view
     }
+
+    /// A touch keyboard's Return starts a new line, as in Messages (Send is the button); with a
+    /// hardware keyboard, Return sends and Shift- or Option-Return starts the new line.
+    private static func returnKey(hardwareKeyboard: Bool) -> UIReturnKeyType { hardwareKeyboard ? .send : .default }
 
     /// Commands aren't sentences: no capitals, corrections or curly quotes in a shell.
     private func setTraits(_ view: ComposerTextView) {
@@ -799,13 +804,17 @@ struct ComposerTextField: UIViewRepresentable {
             setTraits(view)
             if view.isFirstResponder { view.reloadInputViews() }
         }
+        if view.returnKeyType != Self.returnKey(hardwareKeyboard: scene.hardwareKeyboard) {
+            view.returnKeyType = Self.returnKey(hardwareKeyboard: scene.hardwareKeyboard)
+            if view.isFirstResponder { view.reloadInputViews() }
+        }
         if view.text != composer.text {
             view.text = composer.text
             view.invalidateIntrinsicContentSize()
             let end = view.endOfDocument
             view.selectedTextRange = view.textRange(from: end, to: end)
         }
-        view.placeholder = composer.placeholder(working: session.working, queued: session.row?.dto.queued ?? 0, touchOnly: !scene.hardwareKeyboard, agent: session.launch.preset?.name, waiting: session.waiting, ended: !session.isLive)
+        view.placeholder = composer.placeholder(working: session.working, queued: session.row?.dto.queued ?? 0, touchOnly: !scene.hardwareKeyboard, agent: session.launch.preset?.name, waiting: session.waiting, trusting: session.awaitingTrust, ended: !session.isLive)
         view.textColor = UIColor(theme.text)
         if let request = scene.focusRequest, request.nonce != context.coordinator.handledFocus {
             context.coordinator.handledFocus = request.nonce
@@ -870,9 +879,16 @@ struct ComposerTextField: UIViewRepresentable {
             parent.scene.didBlur(.composer(parent.session.key))
         }
 
-        /// The software keyboard's Send key.
+        /// The software keyboard's Return: a new line, unless it's taking a suggestion (or, with
+        /// a hardware keyboard about, it's the Send key it says it is).
         func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
             guard text == "\n", (textView as? ComposerTextView)?.isHardwareReturn != true else { return true }
+            let composer = parent.composer
+            if !composer.suggestions.isEmpty {
+                composer.accept(composer.suggestions[min(composer.suggestionIndex, composer.suggestions.count - 1)])
+                return false
+            }
+            guard parent.scene.hardwareKeyboard else { return true }
             send()
             return false
         }
@@ -909,6 +925,10 @@ struct ComposerTextField: UIViewRepresentable {
                 return true
             case "Enter" where mods == [.shift]:
                 return false
+            case "Enter" where mods == [.option]:
+                // A new line, as Shift-Return gives (and as a Mac's text fields have it).
+                textView.insertText("\n")
+                return true
             case "Enter" where mods == [.command] && parent.session.working && !composer.isEmpty && !composer.isShell:
                 // ⌘Return while it works: don't queue, send now (the turn stops).
                 Haptics.threshold()
@@ -1064,6 +1084,8 @@ struct QueueTrayView: View {
     @Bindable var queue: QueueModel
     let composer: ComposerModel
     var working = false
+    /// Held behind the agent's folder-trust prompt: nothing goes in, or can be steered in, until it's answered.
+    var held = false
     var hardwareKeyboard = false
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1075,10 +1097,10 @@ struct QueueTrayView: View {
                     Image(systemName: "text.line.first.and.arrowtriangle.forward").foregroundStyle(theme.accent)
                     VStack(alignment: .leading, spacing: 0) {
                         Text("Up next · \(queue.items.count + queue.pendingRows.count)").font(.ah(.footnote).weight(.semibold))
-                        Text(working ? "Sent one by one when this turn ends" : "Sending…").font(.ah(.caption2)).foregroundStyle(theme.muted)
+                        Text(held ? "Sent once you answer above" : working ? "Sent one by one when this turn ends" : "Sending…").font(.ah(.caption2)).foregroundStyle(theme.muted)
                     }
                     Spacer()
-                    if let first = queue.items.first, !queue.sending.contains(first.id) {
+                    if !held, let first = queue.items.first, !queue.sending.contains(first.id) {
                         Button {
                             Haptics.threshold()
                             Task { await queue.steer(first) }
@@ -1146,9 +1168,11 @@ struct QueueTrayView: View {
             } else {
                 // Glyph-sized to look at, finger-sized to hit: they sat 14 points apart on 16.
                 HStack(spacing: 2) {
-                    Button { Haptics.threshold(); Task { await queue.steer(item) } } label: { queueGlyph("bolt") }
-                        .accessibilityLabel("Send now")
-                        .accessibilityHint("Stops the current turn and sends this now")
+                    if !held {
+                        Button { Haptics.threshold(); Task { await queue.steer(item) } } label: { queueGlyph("bolt") }
+                            .accessibilityLabel("Send now")
+                            .accessibilityHint("Stops the current turn and sends this now")
+                    }
                     Button { Task { if let text = await queue.edit(item) { composer.compose(text) } } } label: { queueGlyph("pencil") }
                         .accessibilityLabel("Edit")
                     Button(role: .destructive) { Task { await queue.cancel(item) } } label: { queueGlyph("xmark") }
@@ -1166,7 +1190,7 @@ struct QueueTrayView: View {
         .padding(.vertical, 3)
         .contentShape(Rectangle())
         .contextMenu {
-            Button("Send Now", systemImage: "bolt") { Task { await queue.steer(item) } }
+            if !held { Button("Send Now", systemImage: "bolt") { Task { await queue.steer(item) } } }
             Button("Edit", systemImage: "pencil") { Task { if let text = await queue.edit(item) { composer.compose(text) } } }
             if index > 0 { Button("Move Up", systemImage: "arrow.up") { Task { await queue.move(item.id, to: index - 1) } } }
             if index < queue.items.count - 1 { Button("Move Down", systemImage: "arrow.down") { Task { await queue.move(item.id, to: index + 1) } } }

@@ -215,6 +215,8 @@ struct TranscriptView: View {
                 if session.composer.trayOpen {
                     withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { session.composer.trayOpen = false }
                 }
+                // Words selected in a reply let go, as a page's do when you tap away from them.
+                UIApplication.shared.sendAction(#selector(ProseTextView.dropSelection), to: nil, from: nil, for: nil)
                 guard !scene.hardwareKeyboard, scene.composerFocused != nil else { return }
                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
             })
@@ -488,20 +490,20 @@ private struct BlockRow: View {
                 ForEach(items) { item in
                     switch item {
                     case .part(_, let part):
-                        PartView(part: part, session: session, stepsHidden: stepsHidden, answered: !isLast)
+                        if part.isWords {
+                            // The reply's words select under a finger (press, hold, drag); the
+                            // message's actions join their edit menu instead of a context menu,
+                            // which would take the press first. VoiceOver keeps them as actions.
+                            PartView(part: part, session: session, stepsHidden: stepsHidden, answered: !isLast)
+                                .environment(\.textMenu, wordsMenu)
+                                .accessibilityActions { agentMenu }
+                        } else {
+                            PartView(part: part, session: session, stepsHidden: stepsHidden, answered: !isLast)
+                                .contextMenu { agentMenu }
+                        }
                     case .tools(_, let calls):
                         ToolGroupView(calls: calls, session: session, stepsHidden: stepsHidden)
-                    }
-                }
-            }
-            .contextMenu {
-                Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = block.text }
-                LinkButtons(place: messagePlace, scene: scene)
-                if session.isLive && !block.text.isEmpty {
-                    Button("Quote in Reply", systemImage: "text.quote") {
-                        let quoted = block.text.split(separator: "\n", omittingEmptySubsequences: false).prefix(12).map { "> \($0)" }.joined(separator: "\n")
-                        session.composer.compose(quoted + "\n\n")
-                        Haptics.tap()
+                            .contextMenu { agentMenu }
                     }
                 }
             }
@@ -520,6 +522,39 @@ private struct BlockRow: View {
 extension BlockRow {
     /// This message, as a link names it: the session's GUI at the block's first entry.
     fileprivate var messagePlace: Place { Place(.session(session.key), message: block.seq) }
+
+    /// The agent's message, on a long press of its steps, pictures and widgets.
+    @ViewBuilder fileprivate var agentMenu: some View {
+        Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = block.text }
+        LinkButtons(place: messagePlace, scene: scene)
+        if session.isLive && !block.text.isEmpty {
+            Button("Quote in Reply", systemImage: "text.quote") {
+                session.composer.compose(Markdown.quote(block.text, limit: 12))
+                Haptics.tap()
+            }
+        }
+    }
+
+    /// After Copy in the edit menu of words selected in the agent's message: quoting just
+    /// those words, and the message's own actions folded under one item.
+    fileprivate var wordsMenu: TextMenu {
+        let (session, scene, text, place) = (session, scene, block.text, messagePlace)
+        return TextMenu { selected in
+            var items: [UIMenuElement] = []
+            if session.isLive {
+                items.append(UIAction(title: "Quote in Reply", image: UIImage(systemName: "text.quote")) { _ in
+                    session.composer.compose(Markdown.quote(Markdown.source(ofSelected: selected)))
+                    Haptics.tap()
+                })
+            }
+            items.append(UIMenu(title: "Message", image: UIImage(systemName: "text.bubble"), children: [
+                UIAction(title: "Copy Message", image: UIImage(systemName: "doc.on.doc")) { _ in UIPasteboard.general.string = text },
+                UIAction(title: "Copy Link", image: UIImage(systemName: "link")) { _ in scene.copyLink(to: place) },
+                UIAction(title: "Share Link…", image: UIImage(systemName: "square.and.arrow.up")) { _ in scene.shareLink(to: place) },
+            ]))
+            return items
+        }
+    }
 }
 
 /// Copy Link and Share Link for a place, in a context menu.
@@ -556,7 +591,8 @@ struct UserBubble: View {
                 }
             }
             if !split.rest.isEmpty {
-                MarkdownView(split.rest, compact: true)
+                // Your line breaks as you typed them: a new line in the box is one here too.
+                MarkdownView(split.rest, compact: true, keepingLineBreaks: true)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     // ah's Message: your words on a raised card with a hairline.
@@ -1003,54 +1039,14 @@ private struct StartConversation: View {
                 VStack(spacing: 12) {
                     AgentMark(agent: session.row?.dto.agent, size: 58)
                         .scaleEffect(appeared || reduceMotion ? 1 : 0.85)
-                    Text("\(session.launch.preset?.name ?? "The agent") is ready")
+                    Text(session.awaitingTrust ? "Trust this folder?" : "\(session.launch.preset?.name ?? "The agent") is ready")
                         .font(.ah(.title2).weight(.semibold))
                     Text(place).font(.ah(.callout)).foregroundStyle(theme.muted).multilineTextAlignment(.center)
                 }
-                VStack(spacing: 8) {
-                    ForEach(Self.starters, id: \.text) { starter in
-                        Button {
-                            session.composer.compose(starter.text)
-                            scene.requestFocus(.composer(session.key))
-                            Haptics.tap()
-                        } label: {
-                            HStack(spacing: 10) {
-                                Image(systemName: starter.symbol).foregroundStyle(theme.accent).frame(width: 22)
-                                Text(starter.text).foregroundStyle(theme.text)
-                                Spacer()
-                                Image(systemName: "arrow.up.left").font(.ah(.caption)).foregroundStyle(theme.faint)
-                            }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 11)
-                            .background(theme.raised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        }
-                        .buttonStyle(.plain)
-                        .hoverEffect(.highlight)
-                    }
-                }
-                if !recent.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Or pick up where you left off").font(.ah(.footnote).weight(.semibold)).foregroundStyle(theme.muted)
-                        ForEach(recent, id: \.id) { item in
-                            Button {
-                                Task { await scene.resume(item) }
-                            } label: {
-                                HStack(spacing: 10) {
-                                    Image(systemName: "clock.arrow.circlepath").foregroundStyle(theme.faint).frame(width: 22)
-                                    VStack(alignment: .leading, spacing: 1) {
-                                        Text(item.dto.title).foregroundStyle(theme.text).lineLimit(1)
-                                        Text(Date(timeIntervalSince1970: item.dto.at / (item.dto.at > 1e11 ? 1000 : 1)).formatted(.relative(presentation: .named))).font(.ah(.caption)).foregroundStyle(theme.faint)
-                                    }
-                                    Spacer()
-                                    Text("Resume").font(.ah(.caption).weight(.semibold)).foregroundStyle(theme.accent)
-                                }
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 9)
-                            }
-                            .buttonStyle(.plain)
-                            .hoverEffect(.highlight)
-                        }
-                    }
+                if session.awaitingTrust {
+                    TrustQuestion(agent: session.launch.preset?.name ?? "The agent")
+                } else {
+                    startingPoints
                 }
             }
             .frame(maxWidth: 460)
@@ -1063,6 +1059,70 @@ private struct StartConversation: View {
         .onAppear {
             if reduceMotion { appeared = true } else { withAnimation(.spring(duration: 0.5, bounce: 0.3)) { appeared = true } }
         }
+    }
+
+    /// What to start with, and earlier conversations here to pick up.
+    @ViewBuilder private var startingPoints: some View {
+        VStack(spacing: 8) {
+            ForEach(Self.starters, id: \.text) { starter in
+                Button {
+                    session.composer.compose(starter.text)
+                    scene.requestFocus(.composer(session.key))
+                    Haptics.tap()
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: starter.symbol).foregroundStyle(theme.accent).frame(width: 22)
+                        Text(starter.text).foregroundStyle(theme.text)
+                        Spacer()
+                        Image(systemName: "arrow.up.left").font(.ah(.caption)).foregroundStyle(theme.faint)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 11)
+                    .background(theme.raised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .hoverEffect(.highlight)
+            }
+        }
+        if !recent.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Or pick up where you left off").font(.ah(.footnote).weight(.semibold)).foregroundStyle(theme.muted)
+                ForEach(recent, id: \.id) { item in
+                    Button {
+                        Task { await scene.resume(item) }
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "clock.arrow.circlepath").foregroundStyle(theme.faint).frame(width: 22)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(item.dto.title).foregroundStyle(theme.text).lineLimit(1)
+                                Text(Date(timeIntervalSince1970: item.dto.at / (item.dto.at > 1e11 ? 1000 : 1)).formatted(.relative(presentation: .named))).font(.ah(.caption)).foregroundStyle(theme.faint)
+                            }
+                            Spacer()
+                            Text("Resume").font(.ah(.caption).weight(.semibold)).foregroundStyle(theme.accent)
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                    }
+                    .buttonStyle(.plain)
+                    .hoverEffect(.highlight)
+                }
+            }
+        }
+    }
+}
+
+/// The agent's folder-trust prompt on the first screen: its question and choices sit above
+/// the composer, and a message sent meanwhile waits in Up next.
+private struct TrustQuestion: View {
+    let agent: String
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        Text("\(agent) asks before it works in a folder it hasn’t opened before. Anything you send waits until you answer below.")
+            .font(.ah(.callout))
+            .foregroundStyle(theme.muted)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

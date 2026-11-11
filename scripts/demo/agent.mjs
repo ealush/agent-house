@@ -8,8 +8,9 @@
 //   node agent.mjs [--scenario=onboarding|api|review|approve|none]   (default: by folder)
 //
 // Typing /ask (or /design, with previews) opens Claude Code's question dialog; /plan or /trust, its plan approval or
-// folder-trust picker, for the app's answer-from-anywhere views.
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+// folder-trust picker, for the app's answer-from-anywhere views. A folder holding `.demo-untrusted` opens on the
+// folder-trust picker, as Claude Code does in a folder it hasn't been trusted in; trusting it removes the mark.
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
@@ -453,6 +454,7 @@ function closePicker(outcome) {
       process.stdout.write(`${dim('  ⎿  Still planning. Tell me what to change.')}\n`);
     }
   } else {
+    if (outcome === 1) rmSync(join(cwd, '.demo-untrusted'), { force: true });
     process.stdout.write(outcome === 1 ? `${accent('⏺')} Trusted ${cwd}.\n` : `${dim('  ⎿  Not trusted; nothing here will run.')}\n`);
   }
   box();
@@ -575,3 +577,6 @@ process.stdin.on('data', (chunk) => {
     else turn(prompt);
   }
 });
+
+// Last, once the picker's state exists: a folder not yet trusted asks before anything else.
+if (!resumed && existsSync(join(cwd, '.demo-untrusted'))) openPicker('trust');

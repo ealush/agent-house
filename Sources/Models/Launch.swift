@@ -19,7 +19,11 @@ struct LaunchState: Equatable, Sendable {
         let live = Self.runningModel(models, session?.model)
         let chosen: PresetDTO.Model? = preset.flatMap { p in live ?? (session?.model != nil ? nil : Self.effectiveModel(p, session?.launchModel)) }
         model = chosen
-        modelLabel = chosen?.name ?? Self.shortModel(session?.model)
+        // A choice reached through an alias ("fable" for "claude-fable-5-1") is named for the
+        // model really running: an alias's label names its newest model, which an older CLI
+        // may not have.
+        let viaAlias = live != nil && live?.id.lowercased() != session?.model?.lowercased()
+        modelLabel = (viaAlias ? Self.shortModel(session?.model) : nil) ?? chosen?.name ?? Self.shortModel(session?.model)
         effort = session?.launchEffort ?? (session?.launchModel != nil ? nil : preset?.defaultEffort)
         mode = preset?.modes?.first { $0.id == (session?.launchMode ?? "default") }
         levels = preset.map { Self.levels($0, model: chosen?.id) } ?? []
@@ -46,7 +50,7 @@ struct LaunchState: Equatable, Sendable {
 
     private static let vendors: Set<String> = ["claude", "codex", "openai", "gpt", "gemini", "google", "grok", "xai", "muse", "meta", "hermes", "opencode", "anthropic"]
 
-    /// "claude-haiku-4-5-20251001" → "Haiku 4.5", "gpt-6.1-sol" → "6.1 Sol".
+    /// "claude-haiku-4-5-20251001" → "Haiku 4.5", "gpt-6.1-sol" → "6.1 Sol", "muse-wonder-full-1.0" → "Wonder Full 1.0".
     static func shortModel(_ model: String?) -> String? {
         guard var raw = model?.trimmingCharacters(in: .whitespaces) else { return nil }
         if raw.lowercased().hasSuffix("[1m]") { raw = String(raw.dropLast(4)) }
@@ -63,9 +67,12 @@ struct LaunchState: Equatable, Sendable {
         let rest = parts.dropFirst()
         let nums = rest.filter { $0.first!.isNumber }
         let word = rest.first { !$0.first!.isNumber && $0.lowercased() != family.lowercased() }
+        // A qualifier said before the version stays there: "Wonder Full 1.0", but "Spark 1.3 Contributor".
+        let before = word.map { w in rest.firstIndex(of: w)! < (rest.firstIndex { $0.first!.isNumber } ?? rest.endIndex) } ?? false
         var out = [title(family)]
+        if let word, before { out.append(title(word)) }
         if !nums.isEmpty { out.append(nums.joined(separator: ".")) }
-        if let word { out.append(title(word)) }
+        if let word, !before { out.append(title(word)) }
         let label = out.joined(separator: " ")
         return label.count > 20 ? String(label.prefix(19)) + "…" : label
     }

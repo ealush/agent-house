@@ -14,11 +14,14 @@ import XCTest
 ///   press:<label or id>   long press
 ///   pressat:<x>,<y>       long press at a point, as fractions of the window
 ///   type:<text>           into whatever has focus (`\n` presses Return)
+///   erase:<label or id>   delete everything in a focused text field, by the on-screen keyboard
 ///   key:<key>[+cmd+shift+alt+ctrl]  a hardware key (keys: return, escape, tab, up, down,
 ///                         left, right, delete, space, or one character)
 ///   swipe:<up|down|left|right>
 ///   drag:<label>><label>  press, hold and drag one element onto another
 ///   dragat:<x>,<y>><x>,<y>  drag from one point to another, as fractions of the window
+///   pressdragat:<x>,<y>><x>,<y>  press and hold, then drag on to another point (selecting text)
+///   pressdragin:<label>@<x>,<y>><x>,<y>  the same inside an element, as fractions of its frame
 ///   rotate:<landscape|portrait>
 ///   wait:<seconds>
 ///   relaunch              terminate and launch again
@@ -80,6 +83,18 @@ final class TourUITests: XCTestCase {
             case "type":
                 // `\n` is Return on the on-screen keyboard.
                 target.typeText(argument.replacingOccurrences(of: "\\n", with: "\n"))
+            case "erase":
+                // The on-screen keyboard's Delete, until the field holds nothing (a draft the
+                // host kept from an earlier tour).
+                // By identifier, hittable or not: a grown composer under the keyboard isn't.
+                let field = app.descendants(matching: .any).matching(identifier: argument).firstMatch
+                if field.exists {
+                    for _ in 0..<8 {
+                        let left = (field.value as? String) ?? ""
+                        if left.isEmpty || left == field.placeholderValue { break }
+                        target.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: min(left.count + 4, 400)))
+                    }
+                }
             case "key":
                 let parts = argument.split(separator: "+").map(String.init)
                 var flags: XCUIElement.KeyModifierFlags = []
@@ -111,6 +126,20 @@ final class TourUITests: XCTestCase {
                 if ends.count == 2, ends.allSatisfy({ $0.count == 2 }) {
                     let at = { (p: [Double]) in target.coordinate(withNormalizedOffset: CGVector(dx: p[0], dy: p[1])) }
                     at(ends[0]).press(forDuration: 0.05, thenDragTo: at(ends[1]))
+                }
+            case "pressdragat":
+                // A finger held still long enough to pick a word, then dragged slowly on.
+                let ends = argument.split(separator: ">").map { $0.split(separator: ",").compactMap { Double($0) } }
+                if ends.count == 2, ends.allSatisfy({ $0.count == 2 }) {
+                    let at = { (p: [Double]) in target.coordinate(withNormalizedOffset: CGVector(dx: p[0], dy: p[1])) }
+                    at(ends[0]).press(forDuration: 0.8, thenDragTo: at(ends[1]), withVelocity: .slow, thenHoldForDuration: 0.3)
+                }
+            case "pressdragin":
+                let parts = argument.split(separator: "@", maxSplits: 1).map(String.init)
+                let ends = (parts.last ?? "").split(separator: ">").map { $0.split(separator: ",").compactMap { Double($0) } }
+                if parts.count == 2, ends.count == 2, ends.allSatisfy({ $0.count == 2 }), let inside = element(app, parts[0]) {
+                    let at = { (p: [Double]) in inside.coordinate(withNormalizedOffset: CGVector(dx: p[0], dy: p[1])) }
+                    at(ends[0]).press(forDuration: 0.8, thenDragTo: at(ends[1]), withVelocity: .slow, thenHoldForDuration: 0.3)
                 }
             case "flickat":
                 // A finger's flick: no hold before it moves, and fast (a held drag reads as a

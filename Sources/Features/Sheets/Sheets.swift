@@ -56,6 +56,8 @@ struct NewSessionSheet: View {
     @State private var mode = "default"
     @State private var model: String?
     @State private var effort: String?
+    /// "Skip startup confirmations": the host answers the agent's folder-trust prompt.
+    @State private var trust = false
     @State private var label = ""
     /// "Other model version", for agents that take any model id.
     @State private var customModel = ""
@@ -191,9 +193,21 @@ struct NewSessionSheet: View {
                 } header: {
                     Text("Where")
                 }
-                if let preset, !preset.isShell, LaunchOptionRows.offersChoices(preset) {
+                if let preset, !preset.isShell, LaunchOptionRows.offersChoices(preset) || preset.trust != nil {
                     Section("How") {
-                        LaunchOptionRows(preset: preset, mode: $mode, model: $model, customModel: $customModel, effort: $effort)
+                        if LaunchOptionRows.offersChoices(preset) {
+                            LaunchOptionRows(preset: preset, mode: $mode, model: $model, customModel: $customModel, effort: $effort)
+                        }
+                        if preset.trust != nil {
+                            Toggle(isOn: $trust) {
+                                Label {
+                                    Text("Skip startup confirmations")
+                                    Text("When \(preset.name) asks whether to trust a new folder, Agent Hub says yes for you.")
+                                } icon: {
+                                    Image(systemName: "checkmark.shield")
+                                }
+                            }
+                        }
                     }
                 }
                 Section {
@@ -269,6 +283,7 @@ struct NewSessionSheet: View {
         model = listed ? last.model : p.defaultModel
         customModel = listed ? "" : (last.model ?? "")
         effort = last.effort
+        trust = p.trust != nil && scene.app.preferences.launchMemory[p.id]?.trust == true
         resume = false
     }
 
@@ -316,10 +331,11 @@ struct NewSessionSheet: View {
             preset: preset.id, cwd: cwd.trimmingCharacters(in: .whitespaces), session: tmuxSession ?? newTmux.trimmingCharacters(in: .whitespaces), label: label,
             resume: resume && preset.resume != nil, worktree: worktree && !create, create: create ? true : nil, git: create ? gitInit : nil,
             mode: mode == "default" ? nil : mode, model: chosenModel, effort: chosenEffort,
-            extraArgs: extraArgs.trimmingCharacters(in: .whitespaces).isEmpty ? nil : extraArgs.trimmingCharacters(in: .whitespaces))
+            extraArgs: extraArgs.trimmingCharacters(in: .whitespaces).isEmpty ? nil : extraArgs.trimmingCharacters(in: .whitespaces),
+            trust: preset.trust != nil && trust ? true : nil)
         if await scene.start(request, host: host, prompt: prompt, intoPane: context.intoPane) != nil {
             if !preset.isShell {
-                scene.app.preferences.launchMemory[preset.id] = .init(mode: mode, model: chosenModel ?? model, effort: effort)
+                scene.app.preferences.launchMemory[preset.id] = .init(mode: mode, model: chosenModel ?? model, effort: effort, trust: preset.trust != nil ? trust : nil)
             }
             scene.sheet = nil
         }

@@ -173,3 +173,30 @@ func invalidBaselineOrPatchCannotRemainActionable(_ payload: String) throws {
     hub.saveCache(state, force: true)
     #expect(stored.count == 2)
 }
+
+@Test func readsAnAgentsFolderTrustPromptAndTheLaunchFlagThatSkipsIt() throws {
+    // ah's Grok trust prompt: hotkey rows, `ask.trust` names the row that trusts the folder.
+    let window = sessionJSON.replacingOccurrences(
+        of: #""ask":{"kind":"command","text":"Run tests?","options":[{"key":"1","label":"Yes"}]}"#,
+        with: #""ask":{"kind":"screen","text":"Do you trust the contents of this directory?","options":[{"key":"y","label":"Yes, proceed"},{"key":"n","label":"No, quit"}],"trust":{"accept":"y"}}"#)
+    var reducer = HubStateReducer()
+    try reducer.apply(stateEvent(windows: "[\(window)]"))
+    let ask = try #require(reducer.state?.windows.first?.ask)
+    #expect(ask.trust?.accept == "y")
+    #expect(ask.options?.map(\.label) == ["Yes, proceed", "No, quit"])
+    // An ordinary prompt carries none.
+    var plain = HubStateReducer()
+    try plain.apply(stateEvent())
+    #expect(plain.state?.windows.first?.ask?.trust == nil)
+
+    let preset = try JSONDecoder().decode(PresetDTO.self, from: Data(#"{"id":"grok","name":"Grok","command":"grok","available":true,"trust":{"pattern":"Do you trust","accept":"^Yes, proceed"}}"#.utf8))
+    #expect(preset.trust?.accept == "^Yes, proceed")
+    let shell = try JSONDecoder().decode(PresetDTO.self, from: Data(#"{"id":"shell","name":"Shell","command":"","available":true}"#.utf8))
+    #expect(shell.trust == nil)
+
+    let body = { (trust: Bool?) in
+        String(decoding: try JSONEncoder().encode(NewSessionRequest(preset: "grok", cwd: "~/p", session: "main", label: "", trust: trust)), as: UTF8.self)
+    }
+    #expect(try body(true).contains(#""trust":true"#))
+    #expect(try !body(nil).contains("trust"))
+}

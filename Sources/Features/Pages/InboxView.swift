@@ -630,8 +630,15 @@ struct SearchView: View {
         return [project, when, host].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
-    /// The filters as chips: each says what it's set to, in the accent once it narrows.
+    /// The filters as chips: each says what it's set to, in the accent once it narrows. They
+    /// keep their words whole and scroll sideways when they run out of room (large type cut
+    /// them to "Anyo…" and "Any ti…").
     private var filters: some View {
+        ScrollView(.horizontal, showsIndicators: false) { filterChips }
+            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+    }
+
+    private var filterChips: some View {
         HStack(spacing: 8) {
             Menu {
                 Picker("Who said it", selection: $model.query.role) {
@@ -659,7 +666,6 @@ struct SearchView: View {
                     filterChip(model.query.host ?? "Every host", symbol: "server.rack", on: model.query.host != nil)
                 }
             }
-            Spacer(minLength: 0)
         }
         .menuOrder(.fixed)
     }
@@ -677,6 +683,7 @@ struct SearchView: View {
         .background(on ? theme.accentTint : theme.tile, in: Capsule())
         .overlay(Capsule().strokeBorder(on ? theme.accentLine : theme.line, lineWidth: 1))
         .contentShape(Capsule())
+        .fixedSize()
     }
 
     var body: some View {

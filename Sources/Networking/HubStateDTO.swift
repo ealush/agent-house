@@ -216,6 +216,11 @@ struct AskDTO: Codable, Equatable, Sendable {
     let questions: [Question]?
     let options: [ScreenOption]?
     let dialog: Dialog?
+    /// The agent's startup folder-trust prompt; `accept` is the option that trusts the folder.
+    /// A message sent meanwhile waits in the queue until the prompt is answered.
+    var trust: Trust? = nil
+
+    struct Trust: Codable, Equatable, Sendable { let accept: String }
 
     enum Kind: String, Codable, Sendable {
         case command, tool, question, screen, choice
@@ -333,6 +338,10 @@ struct PresetDTO: Codable, Equatable, Sendable {
     let feed: String?
     let available: Bool
     let hidden: Bool?
+    /// The agent opens on a folder-trust prompt in a new folder, which the host can accept for you.
+    var trust: Trust? = nil
+
+    struct Trust: Codable, Equatable, Sendable { let pattern: String; let accept: String }
 
     struct Choice: Codable, Equatable, Sendable {
         let id: String

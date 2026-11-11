@@ -48,6 +48,8 @@ struct NewSessionRequest: Encodable, Equatable, Sendable {
     var model: String? = nil
     var effort: String? = nil
     var extraArgs: String? = nil
+    /// "Skip startup confirmations": the host accepts the agent's folder-trust prompt.
+    var trust: Bool? = nil
 }
 
 struct ForkInfo: Codable, Equatable, Sendable {
