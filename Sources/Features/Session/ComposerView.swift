@@ -395,19 +395,28 @@ struct ComposerFloat: View {
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .body) private var control: CGFloat = 44
+    @State private var trayHeight: CGFloat = 60
 
     /// The session has settings to show: a live agent's model, effort and permissions.
     static func hasTray(_ session: SessionModel) -> Bool { !session.isShell && session.isLive && session.launch.preset != nil }
 
     var body: some View {
+        let open = composer.trayOpen
         VStack(alignment: .leading, spacing: 0) {
             if !composer.suggestions.isEmpty {
                 SuggestionList(items: composer.suggestions, index: composer.suggestionIndex) { composer.accept($0) }
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
-            } else if composer.trayOpen && Self.hasTray(session) {
-                // Out from behind the box and back under it: a slide alone, no fade.
+            } else if Self.hasTray(session) {
+                // Out from behind the box and back under it: a slide alone, no fade. Slid, not
+                // removed: a view on its way out is laid out no more, so chips folding while the
+                // keyboard went down stood still in the air and were cut off, rather than follow
+                // the box down. Folded, it waits below the mask's edge, out of reach.
                 tray
-                    .transition(reduceMotion ? .opacity : .move(edge: .bottom))
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { trayHeight = $0 }
+                    .offset(y: open || reduceMotion ? 0 : trayHeight + 40)
+                    .opacity(reduceMotion && !open ? 0 : 1)
+                    .allowsHitTesting(open)
+                    .accessibilityHidden(!open)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
