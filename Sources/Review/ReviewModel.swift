@@ -390,7 +390,12 @@ final class ReviewModel {
 
     /// The layer `offset` places from the selected one, bottom to top (+1 is the one above).
     func neighbor(_ offset: Int) -> Layer? {
-        guard let layers = stack?.layers, let pr = selectedPR, let at = layers.firstIndex(where: { $0.pr == pr }) else { return nil }
+        guard let layers = stack?.layers, let pr = selectedPR else { return nil }
+        return Self.neighbor(of: pr, offset, in: layers)
+    }
+
+    nonisolated static func neighbor(of pr: Int, _ offset: Int, in layers: [Layer]) -> Layer? {
+        guard let at = layers.firstIndex(where: { $0.pr == pr }) else { return nil }
         let to = at + offset
         return layers.indices.contains(to) ? layers[to] : nil
     }
