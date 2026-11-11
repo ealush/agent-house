@@ -24,6 +24,7 @@ struct SceneSheet: View {
         case .modelPicker(let key): sessionSheet(key) { LaunchPickerSheet(scene: scene, session: $0, setting: .model) }
         case .effortPicker(let key): sessionSheet(key) { LaunchPickerSheet(scene: scene, session: $0, setting: .effort) }
         case .sessionMenu(let key): sessionSheet(key) { SessionMenuSheet(scene: scene, session: $0) }
+        case .draft(let key): sessionSheet(key) { DraftSheet(scene: scene, session: $0) }
         }
     }
 
@@ -1223,6 +1224,40 @@ struct ConfirmPlanSheet: View {
             .containerBackground(theme.surface, for: .navigation)
         }
         .presentationDetents([.medium])
+    }
+}
+
+/// The composer's draft in a larger editor, for a message that has outgrown the box (the
+/// box holds eight lines and scrolls past that, where a long message is hard to read over).
+/// The same draft: what's typed here is in the box on the way back, and Send is the box's.
+struct DraftSheet: View {
+    let scene: SceneModel
+    let session: SessionModel
+    @Environment(\.theme) private var theme
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        NavigationStack {
+            TextEditor(text: Binding(get: { session.composer.text }, set: { session.composer.text = $0 }))
+                .font(.ah(.body))
+                .scrollContentBackground(.hidden)
+                .padding(.horizontal, 12)
+                .background(theme.surface)
+                .focused($focused)
+                .onAppear { focused = true }
+                .navigationTitle("Message")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button(role: .close) { scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) }
+                    ToolbarItem(placement: .primaryAction) {
+                        Button("Send", systemImage: "arrow.up") {
+                            if session.composer.submit(working: session.working) { scene.sheet = nil }
+                        }
+                        .disabled(!session.composer.canSend)
+                        .keyboardShortcut(.return, modifiers: .command)
+                    }
+                }
+        }
     }
 }
 

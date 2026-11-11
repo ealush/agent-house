@@ -31,6 +31,8 @@ struct ComposerView: View {
     @State private var sendSize = CGSize.zero
     /// How wide + is in the box's other corner: the text starts past it.
     @State private var attachSize = CGSize.zero
+    /// A file is being dragged over the box.
+    @State private var dropTargeted = false
     @Namespace private var glass
 
     private var hasTray: Bool { ComposerFloat.hasTray(session) }
@@ -247,6 +249,7 @@ struct ComposerView: View {
                 .padding(.horizontal, 6)
                 .padding(.bottom, cornerInset(for: attachSize.height))
         }
+        .overlay(alignment: .topTrailing) { expandButton.padding(.top, 4).padding(.trailing, 6) }
         .overlay(alignment: .bottomTrailing) {
             ZStack { sendButton }
                 .onGeometryChange(for: CGSize.self) { $0.size } action: { sendSize = $0 }
@@ -259,6 +262,16 @@ struct ComposerView: View {
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: corner, style: .continuous))
         .glassEffectID("field", in: glass)
         .overlay { ThinkingBorder(corner: corner, active: session.working && !session.isShell) }
+        // A file held over the box: the box says it will take it.
+        .overlay {
+            if dropTargeted {
+                RoundedRectangle(cornerRadius: corner, style: .continuous).strokeBorder(theme.accent, lineWidth: 2)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.snappy(duration: 0.15), value: dropTargeted)
+        .animation(.snappy(duration: 0.2), value: outgrown)
+        .onDrop(of: [.image, .fileURL, .item], isTargeted: $dropTargeted) { attach(dropped: $0) }
         .accessibilityAction(named: trayOpen ? "Hide session settings" : "Show session settings") {
             withAnimation(.snappy(duration: 0.25)) { trayOpen.toggle() }
         }
@@ -338,7 +351,7 @@ struct ComposerView: View {
             // ⌘Return) sends now instead.
             let queues = !session.isShell
             Button {
-                composer.submit(working: session.working)
+                if composer.isUploading { explainUpload() } else { composer.submit(working: session.working) }
             } label: {
                 // Send's pink, its height and its place, with the word for what it does.
                 Text(queues ? "Queue" : "Run")
@@ -351,7 +364,6 @@ struct ComposerView: View {
                     .touchTarget()
             }
             .buttonStyle(.ahPress)
-            .disabled(!composer.canSend)
             .contextMenu {
                 if queues {
                     Button("Send Now (Stops the Turn)", systemImage: "bolt.fill") {
@@ -366,7 +378,7 @@ struct ComposerView: View {
         } else if !composer.isEmpty {
             // Folded away while there's nothing to send: it comes up with the first letter.
             Button {
-                composer.submit(working: session.working)
+                if composer.isUploading { explainUpload() } else { composer.submit(working: session.working) }
             } label: {
                 // ah's Send: the accent-filled circle, the one pink control.
                 Image(systemName: "arrow.up")
@@ -380,9 +392,62 @@ struct ComposerView: View {
             }
             .buttonStyle(.ahPress)
             .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
-            .disabled(!composer.canSend)
             .accessibilityLabel("Send")
+            .accessibilityHint(composer.isUploading ? "Waits for the attachment to finish uploading" : "")
         }
+    }
+
+    /// Send dims while an attachment uploads, and a tap on it says why: a button that does
+    /// nothing, with no word, leaves the message looking stuck.
+    private func explainUpload() {
+        Haptics.selection()
+        scene.toast("Sent once the attachment has uploaded")
+    }
+
+    /// A message past the box's eight lines (it scrolls there) opens in a larger editor.
+    private var outgrown: Bool {
+        composer.text.count > 600 || composer.text.filter { $0 == "\n" }.count >= 7
+    }
+
+    @ViewBuilder
+    private var expandButton: some View {
+        if outgrown {
+            Button {
+                scene.sheet = .draft(session.key)
+            } label: {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.ah(.caption2).weight(.semibold))
+                    .foregroundStyle(theme.muted)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Circle())
+                    .hoverEffect(.highlight)
+                    .touchTarget()
+            }
+            .buttonStyle(.plain)
+            .transition(.opacity)
+            .accessibilityLabel("Open the message in a larger editor")
+        }
+    }
+
+    /// A file dragged onto the box (from Files, a photo, another app on an iPad) attaches,
+    /// as a pasted image does.
+    private func attach(dropped providers: [NSItemProvider]) -> Bool {
+        guard !providers.isEmpty else { return false }
+        for provider in providers {
+            let type = provider.registeredContentTypes.first { !$0.conforms(to: .url) || $0.conforms(to: .fileURL) } ?? provider.registeredContentTypes.first ?? .data
+            let image = type.conforms(to: .image)
+            let name: String = {
+                let given = provider.suggestedName ?? (image ? "image" : "file")
+                if given.contains("."), !given.hasSuffix(".") { return given }
+                return type.preferredFilenameExtension.map { "\(given).\($0)" } ?? given
+            }()
+            provider.loadDataRepresentation(for: type) { data, _ in
+                guard let data else { return }
+                Task { @MainActor in await composer.attach(name: name, data: data, image: image, thumbnail: image ? data : nil) }
+            }
+        }
+        Haptics.selection()
+        return true
     }
 
     private func pasteImage() {
@@ -858,7 +923,8 @@ struct ComposerTextField: UIViewRepresentable {
             let end = view.endOfDocument
             view.selectedTextRange = view.textRange(from: end, to: end)
         }
-        view.placeholder = composer.placeholder(working: session.working, queued: session.row?.dto.queued ?? 0, touchOnly: !scene.hardwareKeyboard, agent: session.launch.preset?.name, waiting: session.waiting, trusting: session.awaitingTrust, ended: !session.isLive)
+        let settings = ComposerFloat.hasTray(session) ? [session.launch.modelLabel, session.launch.effort.map(LaunchState.effortName)].compactMap { $0 } : []
+        view.placeholder = composer.placeholder(working: session.working, queued: session.row?.dto.queued ?? 0, touchOnly: !scene.hardwareKeyboard, agent: session.launch.preset?.name, waiting: session.waiting, trusting: session.awaitingTrust, ended: !session.isLive, settings: settings)
         view.textColor = UIColor(theme.text)
         if let request = scene.focusRequest, request.nonce != context.coordinator.handledFocus {
             context.coordinator.handledFocus = request.nonce

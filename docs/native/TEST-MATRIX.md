@@ -152,6 +152,14 @@ From the owner, an Appearance page with a grid of palette swatches. Ours offered
 - Not seen: each palette's transcript and terminal; the Omarchy tile with a host theme loaded (it draws ah's colors with a palette glyph until one is in force); a stored "palette:<id>" read back after relaunch (reasoned from the decoder, which falls back to ah for a palette it doesn't carry).
 - At the layer's commit: `./scripts/verify.sh` in a clean clone on the Mac (Mac Catalyst build, `xcodebuild test` on the simulator) TEST SUCCEEDED, 186 unit tests and the 2 UI tests passed, the tour skipped without a host.
 
+### The composer against the field, 11 November 2026
+
+From a read of how the chat and agent apps build their composers (ChatGPT's and Claude's, the design guides on AI chat composers, Apple's Entering data) against ours, which already held most of it: an eight-line box that scrolls past that with faded edges, Send folded away until there's something to send, the queue while the agent works, recall, attachment previews, a pasted image, outcome copy on effort, starter prompts on an empty session. Four gaps closed, seen on the headless iPhone simulator.
+
+- Seen: a message past the box's eight lines shows an expand control in the box's top trailing corner; its tap opens the draft in a larger editor with Close and Send; Close returns to the box with the draft as it was.
+- Reasoned, not seen: the placeholder names the model and effort in force after whom it messages ("Message Claude Code · Fable 5.1 · High"), hints that drop from the end as the box narrows (the demo session sets neither, so its box says "Message Claude Code"); Send dimmed by an upload now takes the tap and says "Sent once the attachment has uploaded" (the demo host finishes an upload before a finger reaches Send); a file dragged onto the box attaches, with an accent ring while it's held over (no drag source on the simulator; an iPad with Files is where to try it).
+- At the layer's commit: `./scripts/verify.sh` in a clean clone on the Mac (Mac Catalyst build, `xcodebuild test` on the simulator) TEST SUCCEEDED, 186 unit tests and the 2 UI tests passed, the tour skipped without a host.
+
 ## Still to run (in order)
 
 1. On a Mac: `brew install xcodegen && ./scripts/verify.sh` — expect compile fixes in the UI layer, which has never been type-checked.

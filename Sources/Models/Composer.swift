@@ -356,13 +356,16 @@ final class ComposerModel {
     /// Stop replaces Send only for a working agent and an empty box, and not right after a send.
     func showsStop(working: Bool) -> Bool { !isShell && working && isEmpty && !justSent }
 
-    func placeholder(working: Bool, queued: Int, touchOnly: Bool, agent: String? = nil, waiting: Bool = false, trusting: Bool = false, ended: Bool = false) -> String {
-        Self.placeholder(isShell: isShell, working: working, queued: queued, touchOnly: touchOnly, agent: agent, waiting: waiting, trusting: trusting, ended: ended)
+    func placeholder(working: Bool, queued: Int, touchOnly: Bool, agent: String? = nil, waiting: Bool = false, trusting: Bool = false, ended: Bool = false, settings: [String] = []) -> String {
+        Self.placeholder(isShell: isShell, working: working, queued: queued, touchOnly: touchOnly, agent: agent, waiting: waiting, trusting: trusting, ended: ended, settings: settings)
     }
 
     /// What Send will do now (ah's Composer): message the agent, add to its queue, answer it, or
     /// resume it. Keys are named only when there's a keyboard.
-    nonisolated static func placeholder(isShell: Bool, working: Bool, queued: Int, touchOnly: Bool, agent: String? = nil, waiting: Bool = false, trusting: Bool = false, ended: Bool = false) -> String {
+    /// `settings`: what's in force (the model, the effort), said after whom it messages. What
+    /// a message goes out with is visible before it's sent, with nothing added to the box;
+    /// the hints drop from the end as the box narrows.
+    nonisolated static func placeholder(isShell: Bool, working: Bool, queued: Int, touchOnly: Bool, agent: String? = nil, waiting: Bool = false, trusting: Bool = false, ended: Bool = false, settings: [String] = []) -> String {
         if isShell { return "Type or paste a command" }
         if ended { return "Message to resume" }
         // A folder-trust prompt isn't answered in words: the message waits for it.
@@ -372,7 +375,8 @@ final class ComposerModel {
         if working { return touchOnly ? "Add to the queue · sent when it’s free" : "Add to the queue · sent when it’s free · ⌘↵ sends now · esc stops" }
         // A finger finds / and @ among the settings a swipe up brings out; the box says only
         // whom it messages.
-        return touchOnly ? "Message \(agent ?? "the agent")" : "Message \(agent ?? "the agent") · / commands · @ files"
+        let inForce = settings.filter { !$0.isEmpty }.map { " · " + $0 }.joined()
+        return touchOnly ? "Message \(agent ?? "the agent")" + inForce : "Message \(agent ?? "the agent")" + inForce + " · / commands · @ files"
     }
 
     /// The longest run of a placeholder's " · " hints, from the start, that fits the width.

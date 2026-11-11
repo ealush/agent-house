@@ -285,7 +285,7 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
             case .setup:
                 controller.modalPresentationStyle = .formSheet
                 controller.isModalInPresentation = scene.app.accounts.isEmpty
-            case .newSession, .sendTo, .continueIn, .scrollback:
+            case .newSession, .sendTo, .continueIn, .scrollback, .draft:
                 controller.modalPresentationStyle = .formSheet
                 controller.sheetPresentationController?.detents = [.large()]
             }

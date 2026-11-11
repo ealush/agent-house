@@ -136,6 +136,8 @@ final class SceneModel {
         case effortPicker(String)
         case sessionMenu(String)
         case continueIn(key: String, preset: String)
+        /// The composer's draft in a larger editor (a long message).
+        case draft(String)
 
         var id: String {
             switch self {
@@ -154,6 +156,7 @@ final class SceneModel {
             case .effortPicker(let k): return "effort:\(k)"
             case .sessionMenu(let k): return "menu:\(k)"
             case .continueIn(let k, let p): return "continue:\(k):\(p)"
+            case .draft(let k): return "draft:\(k)"
             }
         }
     }
