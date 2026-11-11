@@ -300,9 +300,12 @@ struct StackCockpitView: View {
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button { Task { await model.refresh() } } label: { Image(systemName: "arrow.clockwise") }.accessibilityLabel("Sync with GitHub").tint(.primary)
-                Button { mergingStack = true } label: { Label("Merge the stack", systemImage: "arrow.triangle.merge") }
-                    .disabled(model.stack == nil)
-                    .tint(.primary)
+                // A phone has it in the bar at the bottom, beside what to review next.
+                if !scene.narrow {
+                    Button { mergingStack = true } label: { Label("Merge the stack", systemImage: "arrow.triangle.merge") }
+                        .disabled(model.stack == nil)
+                        .tint(.primary)
+                }
                 Button { managing = true } label: { Label("Manage", systemImage: "slider.horizontal.3") }
                     .disabled(model.stack == nil)
                     .tint(.primary)
@@ -398,6 +401,65 @@ struct StackCockpitView: View {
             }
         }
         .listStyle(.sidebar)
+        .safeAreaBar(edge: .bottom, spacing: 0) {
+            if scene.narrow { stackBar(stack) }
+        }
+    }
+
+    /// On a phone, the stack's next step under the thumb: the layer to review next, and the
+    /// merge once anything can land.
+    @ViewBuilder
+    private func stackBar(_ stack: ReviewStack) -> some View {
+        let plan = StackMergePlan(stack: stack, method: stack.mergeMethod)
+        let open = stack.layers.filter { $0.state == "open" }
+        // The host's next if it still wants your review, else the lowest layer that does.
+        let unreviewed = open.filter { !$0.approved || !$0.samePatch }
+        let next = stack.next.flatMap { pr in unreviewed.first { $0.pr == pr } } ?? unreviewed.first
+        if next != nil || !plan.lands.isEmpty {
+            GlassEffectContainer(spacing: 10) {
+                HStack(spacing: 10) {
+                    if let next {
+                        Button {
+                            Haptics.selection()
+                            scene.reviewPath.append(ReviewRoute(stack: stack.id, pr: next.pr))
+                        } label: {
+                            Label("Review \(next.name)", systemImage: "arrow.right.circle")
+                                .font(.ah(.subheadline).weight(.semibold))
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 6)
+                        }
+                        .buttonStyle(.glassProminent)
+                        .tint(theme.accentStrong)
+                    }
+                    if !plan.lands.isEmpty {
+                        let words = plan.lands.count == open.count ? "Merge the stack…" : "Merge \(plan.lands.count) layer\(plan.lands.count == 1 ? "" : "s")…"
+                        if next == nil {
+                            Button { mergingStack = true } label: {
+                                Label(words, systemImage: "arrow.triangle.merge")
+                                    .font(.ah(.subheadline).weight(.semibold))
+                                    .foregroundStyle(theme.background)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 6)
+                            }
+                            .buttonStyle(.glassProminent)
+                            .tint(theme.done)
+                        } else {
+                            Button { mergingStack = true } label: {
+                                Label(words, systemImage: "arrow.triangle.merge")
+                                    .font(.ah(.subheadline).weight(.semibold))
+                                    .padding(.vertical, 6)
+                            }
+                            .buttonStyle(.glass)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 6)
+            .padding(.bottom, 8)
+            .transition(.blurReplace)
+        }
     }
 }
 
