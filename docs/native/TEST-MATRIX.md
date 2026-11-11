@@ -169,6 +169,14 @@ From the owner: New session should come back with the most recent choices, and t
 - Not seen: a second start on the device bringing a model's effort back (the demo host is shared, so the tour starts nothing); Codex, whose models each list their own levels.
 - At the layer's commit: `./scripts/verify.sh` in a clean clone on the Mac (Mac Catalyst build, `xcodebuild test` on the simulator) TEST SUCCEEDED, 187 unit tests and the 2 UI tests passed, the tour skipped without a host.
 
+### The composer's corners centred, 12 November 2026
+
+From the owner's phone: with the box folded, + and Stop sat low and the text high. In a small text size the field's least height (32) held one line at its top, and the corners were placed off a line worked out from the font. Seen on the headless iPhone simulator, dark mode, extra-small text, before and after.
+
+- Seen: on main, + 2 points below the box's middle and the placeholder above it; on this layer, both on the box's middle line. At the default text size the two looked the same (it was already centred there).
+- Not seen: Stop (the demo session was idle) and Send, which take the same inset as +; a message of two lines and more, which keeps its corners on the last line as before; an attachment strip above the text.
+- At the layer's commit: `./scripts/verify.sh` in a clean clone on the Mac (Mac Catalyst build, `xcodebuild test` on the simulator) TEST SUCCEEDED, 187 unit tests and the 2 UI tests passed, the tour skipped without a host.
+
 ## Still to run (in order)
 
 1. On a Mac: `brew install xcodegen && ./scripts/verify.sh` — expect compile fixes in the UI layer, which has never been type-checked.
