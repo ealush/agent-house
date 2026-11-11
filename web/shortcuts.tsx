@@ -27,6 +27,7 @@ import {
   type Chord,
   type CommandId,
   type Overrides,
+  returnKey,
 } from './shortcuts.ts';
 import { PHONE, SheetBar, useSheet } from './sheet.tsx';
 import { AgentLogo } from './logos.tsx';
@@ -254,6 +255,7 @@ export function ShortcutsPanel({ focusSearch = false }: { focusSearch?: boolean 
             autoFocus={focusSearch}
             value={query}
             placeholder="Search commands and keybindings"
+            enterKeyHint="search"
             autoCapitalize="off"
             autoCorrect="off"
             spellCheck={false}
@@ -315,7 +317,7 @@ export function ShortcutsPanel({ focusSearch = false }: { focusSearch?: boolean 
                         <div className="keymap-record">
                           {pending ? <Keycaps chord={pending} /> : <span className="hint">Press a shortcut, then Enter</span>}
                           <span className="hint keymap-how">
-                            <Keycaps keys={['↵']} /> saves
+                            <Keycaps keys={[returnKey()]} /> saves
                             <Keycaps keys={['Esc']} /> cancels
                             <Keycaps keys={['Backspace']} /> clears
                           </span>
@@ -538,6 +540,7 @@ export function CommandPalette({ onClose, onRun }: { onClose: () => void; onRun:
         ref={input}
         value={query}
         placeholder={here && stack.length > 1 ? `Search ${here.label}…` : 'Search commands and categories…'}
+        enterKeyHint="go"
         aria-label="Search"
         aria-controls="palette-list"
         autoCapitalize="off"
@@ -591,7 +594,7 @@ export function CommandPalette({ onClose, onRun }: { onClose: () => void; onRun:
         <span><Keycaps keys={['↑', '↓']} /> move</span>
         <span><Keycaps keys={['→']} /> open</span>
         <span><Keycaps keys={['←']} /> back</span>
-        <span><Keycaps keys={['↵']} /> run</span>
+        <span><Keycaps keys={[returnKey()]} /> run</span>
         <span><Keycaps keys={['Esc']} /> {query ? 'clear' : 'close'}</span>
       </footer>
     </dialog>
@@ -626,7 +629,7 @@ export function ConfirmKeys() {
   return (
     <span className="keycaps confirm-keys" aria-hidden>
       <kbd>{MOD()}</kbd>
-      <kbd>↵</kbd>
+      <kbd>{returnKey()}</kbd>
     </span>
   );
 }

@@ -61,8 +61,9 @@ export function HistoryView({ state, onResume, onForget, onFork, touch = false, 
             ref={filterRef}
             type="search"
             value={filter}
-            placeholder={`Filter ${state.history.length} conversation${state.history.length === 1 ? '' : 's'} by title, project or agent`}
+            placeholder={`Filter ${state.history.length} conversation${state.history.length === 1 ? '' : 's'}`}
             aria-label="Filter history"
+            enterKeyHint="go"
             autoCapitalize="off"
             autoCorrect="off"
             spellCheck={false}

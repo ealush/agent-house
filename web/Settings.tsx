@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect } from 'react';
 import { NotifySettings } from './NotifyDialog.tsx';
 import { Security } from './Security.tsx';
 import { SubscriptionsPanel } from './Subscriptions.tsx';
@@ -14,7 +14,7 @@ import { AgentsPanel } from './AgentsSettings.tsx';
 import { ShortcutsPanel } from './shortcuts.tsx';
 import { Glide } from './Glide.tsx';
 import { Icon } from './icons.tsx';
-import { openSection, SECTIONS, sectionHash, useSectionPart, type Section } from './settingsMenu.ts';
+import { openSection, placeSettingsScroll, SECTIONS, sectionHash, useSectionPart, type Section } from './settingsMenu.ts';
 import { getMode } from './theme.ts';
 
 /**
@@ -34,6 +34,9 @@ export function Settings({ onLocked, onNotifyChange, phone = false }: { onLocked
   const go = (id: Section) => {
     location.hash = sectionHash(id);
   };
+  useLayoutEffect(() => {
+    if (phone) placeSettingsScroll(part);
+  }, [phone, part]);
 
   if (phone && !part) return <SettingsList />;
 
@@ -83,17 +86,19 @@ const GROUPS: { name: string; ids: Section[] }[] = [
   { name: 'This device', ids: ['appearance', 'shortcuts', 'notifications'] },
   { name: 'This host', ids: ['security', 'agents', 'subscriptions', 'environment', 'search', 'system'] },
 ];
-/** Each section's tile, as iOS Settings colors its icons. */
+/** Each section's tile, as iOS Settings colors its icons: one saturated color in both themes
+ *  (the theme's pastel status colors left a white glyph at 1.7:1 in the dark), each at least
+ *  3:1 under white. */
 const TILE: Record<Section, string> = {
-  appearance: 'var(--brand)',
-  shortcuts: 'var(--muted)',
-  notifications: 'var(--danger)',
-  security: 'var(--run)',
-  agents: 'var(--limited)',
-  subscriptions: 'var(--done)',
-  environment: 'var(--muted)',
-  search: 'var(--muted)',
-  system: 'var(--muted)',
+  appearance: '#d6336c',
+  shortcuts: '#636b7a',
+  notifications: '#d93a3a',
+  security: '#1a73e8',
+  agents: '#c26a0a',
+  subscriptions: '#1e8e4e',
+  environment: '#636b7a',
+  search: '#636b7a',
+  system: '#636b7a',
 };
 
 function SettingsList() {

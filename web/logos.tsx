@@ -1,3 +1,4 @@
+import { memo } from 'react';
 // True brand artwork for each agent preset, vendored under web/public/logos so
 // the page stays self-contained (no external image fetches at runtime).
 //
@@ -70,7 +71,8 @@ function logoKey(id: string): string {
   return id;
 }
 
-export function AgentLogo({ id, size = 15 }: { id: string | null; size?: number }) {
+/** Pure, as Icon: unchanged rows don't redraw their logos. */
+export const AgentLogo = memo(function AgentLogo({ id, size = 15 }: { id: string | null; size?: number }) {
   const key = logoKey((id ?? 'shell').toLowerCase());
   const file = FILE[key];
   if (file) {
@@ -91,7 +93,7 @@ export function AgentLogo({ id, size = 15 }: { id: string | null; size?: number 
       <path d="M7.5 11.5h6" />
     </svg>
   );
-}
+});
 
 /** Which logo to show for a launch model choice. Defaults to its parent preset. */
 export function logoForModel(presetId: string, modelId: string): string {

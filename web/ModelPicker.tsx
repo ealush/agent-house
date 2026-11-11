@@ -96,7 +96,12 @@ export function EffortPicker({ levels, value, onPick, disabled = false, footer }
         <button type="button" key={level ?? 'default'} className="picker-name" disabled={disabled}
           title={level ? EFFORT_HINT[level] : 'Use the agent’s default effort'}
           onClick={() => onPick(level)}>
-          {level ?? 'Default'}{level === value && <span className="check">✓</span>}
+          <span className="picker-label">
+            {level ? level.charAt(0).toUpperCase() + level.slice(1) : 'Default'}
+            {/* A phone shows no title tooltip: its sheet shows what each level means. */}
+            <span className="picker-hint">{level ? EFFORT_HINT[level] : 'The agent’s own default'}</span>
+          </span>
+          {level === value && <span className="check">✓</span>}
         </button>
       ))}
       {footer && <div className="picker-foot">{footer}</div>}
@@ -105,7 +110,7 @@ export function EffortPicker({ levels, value, onPick, disabled = false, footer }
 }
 
 /** A button that opens a popover; closes on outside click or Escape. */
-export function Popover({ label, className, children, up = true, align = 'left', title, command, active = false, tabIndex }: { label: React.ReactNode; className?: string; children: (close: () => void) => React.ReactNode; up?: boolean; align?: 'left' | 'right'; title?: string; command?: CommandId; active?: boolean; tabIndex?: number }) {
+export function Popover({ label, className, children, up = true, align = 'left', title, command, active = false, tabIndex, keepFocus = false }: { label: React.ReactNode; className?: string; children: (close: () => void) => React.ReactNode; up?: boolean; align?: 'left' | 'right'; title?: string; command?: CommandId; active?: boolean; tabIndex?: number; /** Pressing it leaves focus (and a phone's keyboard) where it was. */ keepFocus?: boolean }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
@@ -115,8 +120,12 @@ export function Popover({ label, className, children, up = true, align = 'left',
     if (!open) return;
     // Opens on the current choice, as a native menu does; arrows move from there.
     const before = document.activeElement as HTMLElement | null;
+    // keepFocus under a finger: the menu opens without taking focus from the box (and its keyboard).
+    const stay = keepFocus && matchMedia('(hover: none)').matches;
     const current = body.current?.querySelector<HTMLElement>('.check')?.closest<HTMLElement>('button');
-    if (current) current.focus();
+    if (stay) {
+      // nothing: a tap chooses
+    } else if (current) current.focus();
     else focusFirst(body.current);
     const away = (e: Event) => !ref.current?.contains(e.target as Node) && setOpen(false);
     const esc = (e: KeyboardEvent) => {
@@ -140,7 +149,7 @@ export function Popover({ label, className, children, up = true, align = 'left',
   }, [open]);
   return (
     <div className="popover-wrap" ref={ref}>
-      <button ref={button} type="button" className={className} tabIndex={tabIndex} aria-expanded={open} title={command ? shortcutTitle(title ?? '', command) : title} onClick={() => setOpen(!open)}>
+      <button ref={button} type="button" className={className} tabIndex={tabIndex} aria-expanded={open} title={command ? shortcutTitle(title ?? '', command) : title} onMouseDown={keepFocus ? (e) => e.preventDefault() : undefined} onClick={() => setOpen(!open)}>
         {label}
       </button>
       {open && (

@@ -15,21 +15,30 @@ type Props = {
   onKeyboard: () => void;
 };
 
-const KEYS: Array<[label: string, seq: string, title?: string]> = [
+// What a terminal needs most comes first, in reach without scrolling the bar: esc, ctrl,
+// tab and the arrows (the way through a shell's history and an agent's menus), and ^C.
+const FIRST: Key[] = [
   ['esc', '\x1b'],
+  'ctrl',
   ['tab', '\t'],
-  ['⇧tab', '\x1b[Z', 'Shift+Tab'],
   ['↑', '\x1b[A'],
   ['↓', '\x1b[B'],
   ['←', '\x1b[D'],
   ['→', '\x1b[C'],
   ['^C', '\x03', 'Ctrl+C'],
+];
+const THEN: Key[] = [
+  'paste',
+  'alt',
+  'shift',
+  ['⇧tab', '\x1b[Z', 'Shift+Tab'],
   ['⏎', '\r', 'Enter'],
   ['/', '/'],
   ['|', '|'],
   ['~', '~'],
   ['-', '-'],
 ];
+type Key = 'ctrl' | 'alt' | 'shift' | 'paste' | [label: string, seq: string, title?: string];
 
 export function KeyBar({ ctrl, alt, shift, pasting, setCtrl, setAlt, setShift, send, onPaste, onKeyboard }: Props) {
   const press = (seq: string) => {
@@ -38,28 +47,34 @@ export function KeyBar({ ctrl, alt, shift, pasting, setCtrl, setAlt, setShift, s
     setAlt(false);
     setShift(false);
   };
+  const mods = { ctrl: [ctrl, setCtrl], alt: [alt, setAlt], shift: [shift, setShift] } as const;
   // preventDefault on mousedown keeps focus (and the soft keyboard) on the terminal.
   const keep = (e: React.MouseEvent | React.PointerEvent) => e.preventDefault();
 
   return (
     <div className="keybar" onMouseDown={keep}>
-      <button className={`key mod ${ctrl ? 'on' : ''}`} aria-pressed={ctrl} title="Ctrl for the next key" onPointerDown={keep} onClick={() => setCtrl(!ctrl)}>
-        ctrl
-      </button>
-      <button className={`key mod ${alt ? 'on' : ''}`} aria-pressed={alt} title="Alt for the next key" onPointerDown={keep} onClick={() => setAlt(!alt)}>
-        alt
-      </button>
-      <button className={`key mod ${shift ? 'on' : ''}`} aria-pressed={shift} title="Shift for the next key" onPointerDown={keep} onClick={() => setShift(!shift)}>
-        shift
-      </button>
-      <button className="key" title="Paste from clipboard" disabled={pasting} onPointerDown={keep} onClick={onPaste}>
-        {pasting ? 'pasting…' : 'paste'}
-      </button>
-      {KEYS.map(([label, seq, title]) => (
-        <button key={label} className="key" title={title} onPointerDown={keep} onClick={() => press(seq)}>
-          {label}
-        </button>
-      ))}
+      {[...FIRST, ...THEN].map((k) => {
+        if (k === 'paste')
+          return (
+            <button key={k} className="key" title="Paste from clipboard" disabled={pasting} onPointerDown={keep} onClick={onPaste}>
+              {pasting ? 'pasting…' : 'paste'}
+            </button>
+          );
+        if (typeof k === 'string') {
+          const [on, set] = mods[k];
+          return (
+            <button key={k} className={`key mod ${on ? 'on' : ''}`} aria-pressed={on} title={`${k[0].toUpperCase()}${k.slice(1)} for the next key`} onPointerDown={keep} onClick={() => set(!on)}>
+              {k}
+            </button>
+          );
+        }
+        const [label, seq, title] = k;
+        return (
+          <button key={label} className="key" title={title} onPointerDown={keep} onClick={() => press(seq)}>
+            {label}
+          </button>
+        );
+      })}
       <button className="key" title="Show keyboard" onClick={onKeyboard}>
         ⌨
       </button>

@@ -678,7 +678,7 @@ export function LayerView({
 
   // Above the diff on a desktop: the layer's findings, folded to a line when you want the room, and sending the ones you picked.
   const sendFoot = chosen.length > 0 && (
-    <footer className="side-foot">
+    <footer className="send-foot">
       <span className="side-why">
         <span className="grow hint">
           {chosen.length} selected{above.length ? ` · ${above.map((l) => l.role || `#${l.pr}`).join(', ')} restack${above.length === 1 ? 's' : ''} after the fix` : ''}

@@ -109,6 +109,15 @@ export function trackViewport(win: Window, doc: Document): () => void {
       root.style.setProperty('--keyboard-top', `${Math.max(0, Math.round(viewport.offsetTop ?? 0))}px`);
       // The home indicator is behind the keyboard: its inset would be a gap.
       root.dataset.keyboard = '1';
+      // The field being typed in stays in sight: a form's field low on the page (New session's
+      // prompt) ended up under the keyboard with nothing to bring it back, typed into blind.
+      const shown = { top: viewport.offsetTop ?? 0, bottom: (viewport.offsetTop ?? 0) + height };
+      win.requestAnimationFrame?.(() => {
+        const a = doc.activeElement as HTMLElement | null;
+        if (!a?.matches?.('input, textarea, [contenteditable="true"]') || typeof a.getBoundingClientRect !== 'function') return;
+        const r = a.getBoundingClientRect();
+        if (r.bottom > shown.bottom - 8 || r.top < shown.top) a.scrollIntoView({ block: 'nearest' });
+      });
       if (guard === undefined) {
         guard = hasTimers ? win.setInterval(update, 500) : setInterval(update, 500);
         // Never hold a test runner (or a background tab) open for debug timing.

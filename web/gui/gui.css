@@ -226,7 +226,7 @@
   .gui .msg-actions,
   .gui .msg-meta .msg-copy,
   .gui .msg-snap,
-  .gui .code-copy {
+  .gui .code-snippet .code-copy {
     visibility: visible;
   }
 }
@@ -305,6 +305,10 @@
   text-decoration: none;
 }
 
+.gui .file-link {
+  overflow-wrap: anywhere;
+}
+
 :where(:root:not([data-touch])) .gui .md a:hover,
 :where(:root:not([data-touch])) .gui .file-link:hover {
   text-decoration: underline;
@@ -373,6 +377,16 @@
 :where(:root:not([data-touch])) .gui .code-snippet:hover .code-copy,
 .gui .code-snippet:focus-within .code-copy {
   visibility: visible;
+}
+
+/* On a touch screen Copy is always there, so the code scrolls under it: it sits on the
+   block's own ground with a short fade before it, and the text goes under it rather than
+   showing on both sides of it. */
+@media (hover: none) {
+  .gui .code-snippet .code-copy {
+    background: var(--sunken);
+    box-shadow: -14px 0 10px -4px var(--sunken), 5px 0 0 var(--sunken);
+  }
 }
 
 :where(:root:not([data-touch])) .gui .code-copy:hover {
@@ -937,12 +951,52 @@
   opacity: 0.7;
 }
 
+/* Back to the newest message: a glass capsule over the feed, like the bars' controls. */
 .gui .gui-latest {
   position: absolute;
   bottom: 12px;
   left: 50%;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 16px 0 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  /* The sheet's thicker glass: a label over moving text has to stay legible. */
+  background: var(--glass-sheet-fill);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-depth), var(--elev-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
   transform: translateX(-50%);
-  box-shadow: var(--elev-1);
+  cursor: pointer;
+}
+
+:where(:root:not([data-touch])) .gui .gui-latest:hover {
+  background: linear-gradient(var(--glass-press), var(--glass-press)), var(--glass-sheet-fill);
+}
+
+.gui .gui-latest:active {
+  transform: translateX(-50%) scale(0.96);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .gui .gui-latest {
+    animation: latest-in var(--dur-2) var(--ease);
+    transition: transform var(--dur-1) var(--ease);
+  }
+}
+
+@keyframes latest-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px) scale(0.94);
+  }
 }
 
 /* Your messages as ticks on the left edge (MessageRail): the lit one is the turn in view. */
@@ -1059,6 +1113,15 @@
 
 .narrow .gui .gui-feed {
   padding: 10px 12px 16px;
+  /* A phone reads a conversation at its body size, near the 17px you type it at: 14px
+     shrank your own message once it was sent. Tool rows, code and times keep theirs. */
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+/* Steps stay the quieter line under the prose. */
+.narrow .gui .gui-feed .tool-head {
+  font-size: 14px;
 }
 
 /* The conversation paints behind the mobile glass. Insets reserve a readable
@@ -1075,10 +1138,6 @@
 
 .session-main.mobile-chat > .gui .gui-latest {
   bottom: calc(var(--mobile-composer-height, 112px) + 12px);
-  background: var(--glass-sheet-fill);
-  -webkit-backdrop-filter: var(--glass-blur);
-  backdrop-filter: var(--glass-blur);
-  z-index: 3;
 }
 
 .narrow .gui .msg.agent .chip {

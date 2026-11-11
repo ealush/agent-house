@@ -41,6 +41,13 @@ a {
   outline-offset: 1px;
 }
 
+/* A dialog takes focus itself when it opens, so its first control isn't chosen for
+   you; the ring would outline the whole sheet. Its controls still show theirs. */
+dialog:focus-visible,
+.action-sheet:focus-visible {
+  outline: none;
+}
+
 .mono {
   font-family: var(--mono);
 }
@@ -173,6 +180,13 @@ code,
 
 .narrow .page {
   padding: 18px 16px 24px;
+}
+
+/* A wide screen keeps lists and settings to a readable measure in the middle: at 1920px
+   a session's status sat 1300px from its name. Padding, not a max-width, so the page
+   still scrolls from the window's edge. Review's diffs take the width they get. */
+.app:not(.narrow) .page:not(.review-stack) {
+  padding-inline: max(32px, calc((100% - 1240px) / 2));
 }
 
 .page-head {
@@ -415,6 +429,9 @@ kbd {
   min-height: 0;
   margin: 6px -4px 0;
   padding: 0 4px;
+  /* Over the footer: a row's menu opens here and runs down past the list's end (the list is
+     its own stacking context, Glide's isolation, so the menu's z-index alone can't). */
+  z-index: 1;
 }
 
 .side-label {
@@ -524,7 +541,7 @@ kbd {
 
 .side-session .name {
   flex: 1;
-  min-width: 0;
+  min-width: min(4.5em, 100%);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -726,8 +743,10 @@ button.pill {
   border-radius: 4px;
 }
 
+/* The name keeps its room first: the folder beside it gives way, down to nothing. */
 .side-model {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 92px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -895,6 +914,12 @@ button.pill {
   overflow: hidden;
 }
 
+/* A list with nothing in it (History before anything ended, a filter that matched
+   nothing) is no card, not a bare hairline under the empty state. */
+.narrow .rows:empty {
+  display: none;
+}
+
 .row {
   display: grid;
   grid-template-columns: 24px minmax(160px, 1.1fr) minmax(0, 1.4fr) 13rem 72px;
@@ -926,6 +951,13 @@ button.pill {
 .row.quiet .name {
   font-weight: 400;
   color: var(--muted);
+}
+
+/* History is all past conversations, every row quiet: the titles still lead, and only the
+   line under them is muted, or the list reads as one grey. */
+.history-row.quiet .name {
+  font-weight: 500;
+  color: var(--text);
 }
 
 .history-row {
@@ -1700,6 +1732,9 @@ button.pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  /* As tall as the fields it sits beside (40px), and a finger's 44px on touch; .small is
+     the compact one. 37px buttons sat lower and shorter than the field next to them. */
+  min-height: 40px;
   padding: 7px 13px;
   border-radius: 10px;
   border: 1px solid var(--line-2);
@@ -1757,6 +1792,12 @@ button.pill {
   font-size: 13px;
 }
 
+@media (pointer: coarse) {
+  .btn:not(.small) {
+    min-height: 44px;
+  }
+}
+
 .btn.block {
   width: 100%;
   justify-content: center;
@@ -1792,6 +1833,26 @@ a.btn {
   background: var(--raised);
   color: var(--text);
   box-shadow: inset 0 0 0 1px var(--line-2);
+}
+
+/* Light: the iOS thumb, white and lifted by a soft shadow. --raised sits a shade off the
+   track there, so the choice read as barely marked. */
+:root[data-theme='light'] .seg button.on {
+  background: var(--surface);
+  box-shadow: 0 0 0 0.5px rgb(35 42 54 / 0.08), 0 1px 2px rgb(35 42 54 / 0.1), 0 3px 8px rgb(35 42 54 / 0.08);
+}
+
+/* A narrow phone: the choices share the row rather than run past the card's edge. */
+@media (max-width: 380px) {
+  .seg {
+    max-width: 100%;
+  }
+
+  .seg button {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding-inline: 10px;
+  }
 }
 
 .linkish {
@@ -1832,7 +1893,8 @@ a.btn {
   padding: 4px;
   border-radius: 12px;
   border: 1px solid transparent;
-  background: var(--glass-fill);
+  /* The sheet's thicker material: a menu over a terminal or a busy feed stays legible. */
+  background: var(--glass-sheet-fill);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
   box-shadow: var(--glass-depth), var(--elev-1);
@@ -1853,7 +1915,11 @@ a.btn {
   font-size: 14px;
 }
 
+/* The item with focus is the current one however focus got there: a chord with a modifier
+   (Ctrl+Alt+.) doesn't count as :focus-visible, and its menu showed no current item. Not
+   for a finger: a sheet opened by a tap focuses its first row, which isn't a choice. */
 :where(:root:not([data-touch])) .menu button:hover,
+:where(:root:not([data-touch])) .menu button:focus,
 .menu button:focus-visible {
   background: var(--line);
 }
@@ -1950,7 +2016,7 @@ a.btn {
 }
 
 .presets legend,
-.field > span {
+.field > span:not(.path-field) {
   font-size: 12px;
   color: var(--muted);
   margin-bottom: 6px;
@@ -2001,6 +2067,12 @@ a.btn {
   font-family: var(--ui);
   font-size: 16px; /* prevents iOS zoom-on-focus */
 }
+/* A date field is as tall as the fields beside it: Chromium pads its inner fields 1px
+   top and bottom, which set Search's From and To 2px off the row. */
+.field input[type='date']::-webkit-datetime-edit-fields-wrapper {
+  padding: 0;
+}
+
 /* Paths, commands, arguments, model ids, variable names and keys read as code;
    names and messages read as words. */
 .field input.mono,
@@ -2011,9 +2083,44 @@ a.btn {
 @media (pointer: fine) {
   .field input,
   .field select,
-  .field textarea {
+  .field textarea,
+  .path-tail {
     font-size: 13px;
   }
+}
+
+/* A path field (New session's Project) shows its end while you aren't editing
+   it: a copy over the field, right to left so it's cut at the start, the path
+   itself kept left to right. A browser scrolls an idle field back to the start. */
+.path-field {
+  display: grid;
+}
+
+.path-field > * {
+  grid-area: 1 / 1;
+}
+
+.path-tail {
+  align-self: center;
+  min-width: 0;
+  padding: 0 11px;
+  overflow: hidden;
+  direction: rtl;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 16px;
+  font-variant-ligatures: none;
+  pointer-events: none;
+}
+
+.path-field:focus-within .path-tail {
+  visibility: hidden;
+}
+
+.path-field:not(:focus-within):has(.path-tail) input {
+  color: transparent;
 }
 
 .fields {
@@ -2218,6 +2325,10 @@ a.btn {
   background: none;
   font-size: 16px;
   outline: none;
+}
+
+.switcher input::placeholder {
+  text-overflow: ellipsis;
 }
 
 .switcher ul {
@@ -2459,10 +2570,14 @@ a.btn {
 .search-hit-head .sub {
   font-size: 12px;
   color: var(--muted);
-  font-family: var(--mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The details line is words, in the text face; only the folder is a path. */
+.search-hit-head .sub.path {
+  font-family: var(--mono);
 }
 
 .search-excerpts {
@@ -2483,6 +2598,12 @@ a.btn {
   text-align: left;
   font-size: 13px;
   cursor: pointer;
+}
+
+/* The excerpt wraps inside its card, a long token too, instead of running out of it. */
+.search-excerpt > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .search-excerpt-role {
@@ -2536,6 +2657,18 @@ a.btn {
   box-shadow: var(--glass-depth), var(--elev-1);
   font-size: 13px;
   z-index: 50;
+}
+
+/* In the top layer (a popover, App.tsx) so a toast shows over an open sheet: none of the
+   browser's popover box, just the toast. */
+.toast[popover] {
+  right: auto;
+  bottom: auto;
+  width: auto;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  color: var(--text);
 }
 
 .toast {
@@ -2631,6 +2764,15 @@ a.btn {
   padding-right: 10px;
 }
 
+/* A phone or a touch screen has neither the width for a long line nor a hover to read
+   the rest: a long line wraps, its indentation kept, under its own line number. */
+.narrow .dl .code,
+:root[data-touch] .dl .code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+}
+
 .dl.add {
   background: color-mix(in srgb, var(--done) 9%, transparent);
 }
@@ -2706,8 +2848,27 @@ a.btn {
 }
 
 .fs-foot {
+  flex-wrap: wrap;
+  row-gap: 6px;
   border-top: 1px solid var(--line);
   border-bottom: 0;
+}
+
+/* Wrapped onto its own line (a narrow phone), Upload keeps to the trailing edge. */
+.fs-foot > .btn:last-child {
+  margin-left: auto;
+}
+
+/* A phone: the path gets the room (the folder picker gives up its width), and a
+   file is a finger's row. */
+.narrow .roots {
+  max-width: 92px;
+}
+
+@media (pointer: coarse) {
+  .fs-name {
+    min-height: 44px;
+  }
 }
 
 .crumbs {
@@ -2979,6 +3140,12 @@ a.btn {
   border-radius: 12px;
   border: 1px solid var(--line);
   background: var(--raised);
+}
+
+/* A phone's section is a page of its own, on the sheet's ground: its cards are the list's
+   white (surface), as iOS Settings' groups are, not --raised, which all but vanished on it. */
+.settings-page .sec-card {
+  background: var(--surface);
 }
 
 /* A card lines its contents up at the start without stretching them; none may grow past it. */
@@ -3258,7 +3425,15 @@ a.btn {
   container: settings / inline-size;
 }
 
-@container settings (max-width: 720px) {
+/* An iPad in portrait keeps the list beside the section (as iPadOS Settings does), a
+   little narrower; only below 600px does it become a strip. */
+@container settings (max-width: 820px) {
+  .settings-nav {
+    width: 172px;
+  }
+}
+
+@container settings (max-width: 600px) {
   .settings-body {
     flex-direction: column;
     align-items: stretch;
@@ -4053,7 +4228,7 @@ a.btn {
 
 :where(:root:not([data-touch])) .side-row:hover .row-kill,
 :where(:root:not([data-touch])) .side-row:hover .row-more,
-.side-row:focus-within .row-kill,
+:where(:root:not([data-touch])) .side-row:focus-within .row-kill,
 .side-row:focus-within .row-more {
   display: inline-flex;
 }
@@ -4067,7 +4242,8 @@ a.btn {
 
 /* Touch: a long press already drags a row (iPadOS), so grips would only be
    noise. ··· shows on the row you're on; any other row's actions are a tap
-   on it, then ···. */
+   on it, then ···. Terminate is only in that menu: a held or tapped row
+   takes focus, and a one-tap trash beside it is too easy to hit. */
 @media (pointer: coarse) {
   .side-row:has(> .side-session.on) .row-more,
   .side-row:focus-within .row-more {
@@ -4086,6 +4262,12 @@ a.btn {
   .side-row .grip,
   .side-label .grip {
     display: none;
+  }
+
+  /* A finger's row, as an iPadOS sidebar's: 44pt, not a pointer's 33px. */
+  .side-session,
+  .nav-item {
+    min-height: 44px;
   }
 }
 
@@ -4196,6 +4378,42 @@ a.btn {
 
 :where(:root:not([data-touch])) .divider:hover {
   background: var(--accent-line);
+}
+
+/* A finger takes the line itself: no pan or scroll in its place. (Tiled ones are absolute.) */
+.divider {
+  position: relative;
+  touch-action: none;
+}
+
+/* On a touch screen the thin line keeps its look and gets a finger's width to grab (25px),
+   and a grabber in its middle, as iPadOS's Split View has. */
+:root[data-touch] .divider::before {
+  content: '';
+  position: absolute;
+  inset: 0 -10px;
+}
+
+:root[data-touch] .divider.h::before {
+  inset: -10px 0;
+}
+
+:root[data-touch] .divider::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 36px;
+  border-radius: 999px;
+  background: var(--muted);
+  opacity: 0.7;
+  transform: translate(-50%, -50%);
+}
+
+:root[data-touch] .divider.h::after {
+  width: 36px;
+  height: 4px;
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -4338,7 +4556,8 @@ a.btn {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding-top: 16px;
+  /* Level with a session header's controls (centre ~43px), where a narrow window spends its time. */
+  padding-top: 26px;
 }
 
 .queue-body,
@@ -4797,7 +5016,8 @@ ul.queue-items {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 30px;
+  /* The composer's icon buttons' height (34px), on their line; 30px sat 2px low, under the 32px floor. */
+  height: 34px;
   padding: 0 12px;
   border-radius: 999px;
   border: 1px solid var(--line-2);
@@ -4830,8 +5050,10 @@ ul.queue-items {
 }
 
 /* A named transition capture becomes a backdrop boundary for all of its
-   descendants. Keep mobile conversation glass live over the actual feed. */
-.main:has(.mobile-session-chrome.floating) {
+   descendants. Keep mobile conversation glass live over the actual feed, except
+   while a transition runs (motion.ts data-vt-run): then the main area is named,
+   so opening and leaving a conversation push and pop like any other view. */
+:root:not([data-vt-run]) .main:has(.mobile-session-chrome.floating) {
   view-transition-name: none;
 }
 
@@ -4948,11 +5170,14 @@ ul.queue-items {
   backdrop-filter: var(--glass-blur);
 }
 
-.mobile-composer-dock.floating textarea {
+/* With the on-screen keyboard up, what it leaves; outweighs .composer.mobile's own cap. */
+:root[data-keyboard] .mobile-composer-dock.floating .composer.mobile textarea {
   max-height: min(28dvh, 192px, max(48px, calc(var(--keyboard-vh, 100dvh) - var(--safe-top) - var(--mobile-header-height, 120px) - 180px)));
 }
 
-:root[data-keyboard] .mobile-session-chrome.floating .seg-tabs {
+/* Typing, the keyboard takes the room the tabs had: in the chat and in a terminal alike
+   (a sideways phone's shell was otherwise one row tall). */
+:root[data-keyboard] .mobile-session-chrome .seg-tabs {
   display: none;
 }
 
@@ -5013,6 +5238,29 @@ ul.queue-items {
 
 .composer.mobile .composer-add {
   background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+/* Open, + turns to ×, and its menu rises above the composer (the box it positions in, here),
+   not over the words in it. */
+.composer.mobile .composer-tools {
+  position: static;
+}
+
+.composer.mobile .composer-tools .popover-wrap:has(> .composer-add) > .popover.up {
+  bottom: calc(100% + 8px);
+  left: 0;
+}
+
+.composer.mobile .composer-add[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--text) 14%, transparent);
+}
+
+.composer.mobile .composer-add svg {
+  transition: transform var(--dur-1) var(--ease);
+}
+
+.composer.mobile .composer-add[aria-expanded='true'] svg {
+  transform: rotate(45deg);
 }
 
 .composer.mobile .composer-attach {
@@ -5128,6 +5376,20 @@ ul.queue-items {
   max-height: var(--keyboard-vh);
 }
 
+/* Not a phone (an iPad, a touch laptop): a popover over the chip it came from, as iPadOS
+   opens a control's options, not a phone's sheet docked to the screen's bottom edge. */
+@media (min-width: 761px) and (min-height: 501px), (min-width: 1001px) {
+  :root .dialog.composer-options[open] {
+    inset: auto auto var(--anchor-bottom, 16px) var(--anchor-left, 16px);
+    width: 360px;
+    max-height: min(560px, calc(100dvh - var(--anchor-bottom, 16px) - 16px));
+    margin: 0;
+    padding-bottom: 8px;
+    border-radius: 16px;
+    transform-origin: bottom left;
+  }
+}
+
 .composer.mobile .suggest-hint {
   display: none;
 }
@@ -5164,6 +5426,35 @@ ul.queue-items {
 .composer-options .picker-name,
 .composer-options .picker-native {
   min-height: 48px;
+}
+
+/* An iOS list's choice: its check at the trailing edge, in the accent. */
+.composer-options .picker-name {
+  align-items: center;
+}
+
+.composer-options .picker-name .check {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.picker-label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.picker-hint {
+  display: none;
+}
+
+.composer-options .picker-hint {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .composer-option-row {
@@ -5418,8 +5709,14 @@ ul.queue-items {
 
 /* Settings → Agents (AgentsSettings.tsx): a row per agent, its mark, what its CLI
    said last, and whether New session offers it. */
-.agent-rows .sec-row.absent {
-  opacity: 0.6;
+/* Not installed: its mark and name step back; what it says stays readable (a whole-row
+   opacity took that line to 2.5:1). */
+.agent-rows .sec-row.absent .chip {
+  opacity: 0.5;
+}
+
+.agent-rows .sec-row.absent .name {
+  color: var(--muted);
 }
 
 .agent-rows .sub.changes {
@@ -5696,9 +5993,22 @@ ul.queue-items {
   white-space: nowrap;
 }
 
-.select-btn .caret {
-  color: var(--faint);
-  font-size: 11px;
+/* Its chevron is the selects' (the same stroke, the same grey). */
+.select-btn > svg {
+  flex: none;
+  color: var(--muted);
+}
+
+/* A launch row (New session, Fork): the model button and the native selects beside it
+   are one height and one text size, level with the modes' segmented control. */
+.launch-row .field :is(select, .select-btn) {
+  height: 40px;
+}
+
+@media (pointer: fine) {
+  .select-btn {
+    font-size: 13px;
+  }
 }
 
 .seg.modes {
@@ -6236,6 +6546,31 @@ ul.queue-items {
   background: var(--accent-bg);
 }
 
+/* The switcher (⌘K) and the palette (⌘⇧P) are one kind of thing, so one shell: the
+   switcher's width, the dialog's corners, a large borderless field over a hairline, and the
+   same selection. (A phone's are sheets, styled with them below.) */
+@media (min-width: 761px) {
+  .commands.palette-tree {
+    width: min(580px, calc(100vw - 24px));
+    border-radius: 16px;
+  }
+
+  .commands.palette-tree > input {
+    width: calc(100% + 20px);
+    margin: 0 -10px 8px;
+    padding: 12px 18px 15px;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    background: none;
+    font-size: 16px;
+    outline: none;
+  }
+
+  .switch-item.on {
+    background: var(--accent-bg);
+  }
+}
+
 .cmd-text {
   flex: 1;
   min-width: 0;
@@ -6272,6 +6607,8 @@ ul.queue-items {
 
 .cmd-count {
   font-size: 11px;
+  /* 11px needs more than the faint grey it inherited (3.9:1). */
+  color: var(--muted);
   min-width: 18px;
   padding: 0 5px;
   border-radius: 999px;
@@ -6423,6 +6760,11 @@ ul.queue-items {
   display: flex;
   flex-direction: column;
   background: var(--bg);
+}
+
+/* Focused itself only to hold the keyboard (no agent to start on): no ring round the screen. */
+.ns-screen:focus {
+  outline: none;
 }
 
 .ns-screen form {
@@ -6707,6 +7049,34 @@ ul.queue-items {
   .ns-screen .actions .btn {
     flex: none;
     padding: 8px 18px;
+  }
+
+  /* With the room, the form reads as one thing: a page's heading, the fields, and Start
+     right under them, not pinned to a bottom edge a screen away (the form scrolls as a
+     whole when it's taller). A phone keeps its fixed bar in reach of the thumb. */
+  .ns-screen form {
+    overflow-y: auto;
+  }
+
+  .ns-screen .ns-body {
+    flex: none;
+    overflow: visible;
+  }
+
+  .ns-screen .ns-head {
+    padding-top: 28px;
+  }
+
+  .ns-screen .ns-head h2 {
+    font-size: 28px;
+    font-weight: 700;
+  }
+
+  .ns-screen .actions {
+    border-top: 0;
+    padding-top: 4px;
+    padding-bottom: 32px;
+    background: none;
   }
 }
 
@@ -7105,6 +7475,40 @@ ul.queue-items {
   font-size: 16px;
 }
 
+/* The offer's room opens and closes with it (Handoff.tsx Reveal). */
+.reveal {
+  display: grid;
+  grid-template-rows: 1fr;
+  animation: reveal-in 260ms var(--ease);
+  transition:
+    grid-template-rows 240ms var(--ease),
+    opacity 200ms var(--ease);
+}
+
+.reveal > .reveal-in {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.reveal.out {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+@keyframes reveal-in {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    animation: none;
+    transition: none;
+  }
+}
+
 @keyframes handoff-in {
   from {
     opacity: 0;
@@ -7203,12 +7607,24 @@ ul.queue-items {
   animation: none;
 }
 
+/* The captured bar keeps its shape: its glass's blur would otherwise show as a square
+   frosted box around the capsule (and the circle) for the length of the fade. */
+::view-transition-group(ah-tabbar) {
+  clip-path: inset(0 round 999px);
+}
+
+::view-transition-group(ah-tabcmd) {
+  clip-path: inset(0 round 50%);
+}
+
+/* One view after the other, never both legible at once: the old one is gone (80ms)
+   just as the new one arrives, so two sessions' titles and controls never double up. */
 ::view-transition-old(ah-main) {
-  animation: 90ms ease-in both vt-out;
+  animation: 80ms ease-in both vt-out;
 }
 
 ::view-transition-new(ah-main) {
-  animation: 160ms cubic-bezier(0.2, 0.8, 0.2, 1) both vt-in;
+  animation: 160ms cubic-bezier(0.2, 0.8, 0.2, 1) 50ms both vt-in;
 }
 
 @keyframes vt-out {
@@ -7226,19 +7642,19 @@ ul.queue-items {
 
 /* Down or up the sidebar: the next view comes from that side (motion.ts Heading). */
 :root[data-vt='down']::view-transition-old(ah-main) {
-  animation: 120ms ease-in both vt-out-up;
+  animation: 80ms ease-in both vt-out-up;
 }
 
 :root[data-vt='down']::view-transition-new(ah-main) {
-  animation: var(--dur-2) var(--ease) both vt-in-below;
+  animation: var(--dur-2) var(--ease) 50ms both vt-in-below;
 }
 
 :root[data-vt='up']::view-transition-old(ah-main) {
-  animation: 120ms ease-in both vt-out-down;
+  animation: 80ms ease-in both vt-out-down;
 }
 
 :root[data-vt='up']::view-transition-new(ah-main) {
-  animation: var(--dur-2) var(--ease) both vt-in-above;
+  animation: var(--dur-2) var(--ease) 50ms both vt-in-above;
 }
 
 @keyframes vt-out-up {
@@ -7278,6 +7694,8 @@ ul.queue-items {
   animation-duration: 260ms;
   animation-timing-function: var(--ease);
   animation-fill-mode: both;
+  /* Both halves together: a slide is one motion, not the fade's one-after-the-other. */
+  animation-delay: 0ms;
 }
 
 :root[data-vt='next']::view-transition-old(ah-main) {
@@ -7333,6 +7751,8 @@ ul.queue-items {
   animation-duration: 320ms;
   animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
   animation-fill-mode: both;
+  /* Both halves together: a slide is one motion, not the fade's one-after-the-other. */
+  animation-delay: 0ms;
 }
 
 :root[data-vt='push']::view-transition-old(ah-main) {
@@ -8015,6 +8435,25 @@ select:not([multiple]) {
     cursor: pointer;
   }
 
+  /* So do a conversation's steps and the Handoff card. */
+  .gui .tool-head:active,
+  .handoff-open:active {
+    background: var(--line);
+  }
+
+  /* Plain controls dim while pressed, as iOS's do: chips, copy buttons, the session's
+     title (it renames), small icon buttons, the sidebar's search, links. */
+  .composer-model:active,
+  .gui .code-copy:active,
+  .gui .msg-copy:active,
+  .session-head .session-title .name:active,
+  .label-add:active,
+  .row-more:active,
+  .sidebar .search:active,
+  a:active {
+    opacity: 0.55;
+  }
+
   /* Small icon buttons get a 44px target without taking 44px of room. */
   .icon-btn.small,
   .row-more,
@@ -8091,6 +8530,9 @@ select:not([multiple]) {
   gap: 8px;
   /* Clear of the status bar: iOS blurs whatever runs under it. */
   max-height: calc(var(--vh) - 10px - var(--safe-pad) - max(24px, var(--safe-top) + 12px));
+  /* An iPhone's action sheet keeps a column's width on its side; centred, not edge to edge. */
+  max-width: 420px;
+  margin-inline: auto;
   animation: sheet-up 320ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
@@ -8104,6 +8546,8 @@ select:not([multiple]) {
   flex: 0 1 auto;
   padding: 6px;
   border-radius: 16px;
+  /* The thicker sheet material: its choices stay legible over whatever is under them. */
+  background: var(--glass-sheet-fill);
   box-shadow: var(--elev-2);
   animation: none;
 }
@@ -8114,7 +8558,7 @@ select:not([multiple]) {
   min-height: 56px;
   border: 1px solid transparent;
   border-radius: 16px;
-  background: var(--glass-fill);
+  background: var(--glass-sheet-fill);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
   box-shadow: var(--glass-depth), var(--elev-2);
@@ -8384,8 +8828,8 @@ select:not([multiple]) {
     color: var(--muted);
   }
 
-  .sheet-bar .sheet-x:hover,
-  .sheet-bar .sheet-back:hover {
+  :where(:root:not([data-touch])) .sheet-bar .sheet-x:hover,
+  :where(:root:not([data-touch])) .sheet-bar .sheet-back:hover {
     background: color-mix(in srgb, var(--text) 7%, transparent);
     color: var(--text);
   }
@@ -8775,7 +9219,7 @@ select:not([multiple]) {
   overscroll-behavior: contain;
   border: 1px solid transparent;
   border-radius: 12px;
-  background: var(--glass-fill);
+  background: var(--glass-sheet-fill);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
   box-shadow: var(--glass-depth), var(--elev-2);
@@ -9009,7 +9453,9 @@ select:not([multiple]) {
   color: var(--muted);
 }
 
+/* A block, centred on the row like the label: inline it sat on the text's baseline, 2.7px high. */
 .ios-chevron {
+  display: flex;
   color: var(--faint);
 }
 
@@ -9101,9 +9547,10 @@ label:has(> input[type='checkbox'][switch]) {
   }
 }
 
-/* Desktop frame: a quiet color field behind a clearer floating workspace. */
-@media (min-width: 761px) and (pointer: fine) {
-  .app {
+/* Desktop frame: a quiet color field behind a clearer floating workspace. An iPad's
+   sidebar and workspace are the same frame, so it's by width, not by pointer. */
+@media (min-width: 761px) {
+  .app:not(.narrow) {
     background:
       radial-gradient(ellipse 58% 68% at 0% 0%, color-mix(in srgb, var(--accent) 11%, transparent), transparent 68%),
       radial-gradient(ellipse 50% 52% at 100% 100%, color-mix(in srgb, var(--run) 7%, transparent), transparent 72%);
@@ -9175,7 +9622,8 @@ label:has(> input[type='checkbox'][switch]) {
   }
 }
 
-/* The active workspace's title bar and controls complete the desktop frame. */
+/* The active workspace's title bar and controls complete the desktop frame. Not an iPad's:
+   there the session's header is the floating glass over its conversation (MobileOverlay). */
 @media (min-width: 761px) and (pointer: fine) {
   .app:not(.narrow) .main {
     box-shadow: 0 18px 54px -34px rgb(0 0 0 / 0.72), inset 0 1px 0 color-mix(in srgb, var(--text) 5%, transparent);
@@ -9193,7 +9641,7 @@ label:has(> input[type='checkbox'][switch]) {
     width: 34px;
     height: 34px;
     border: 1px solid color-mix(in srgb, var(--agent) 28%, transparent);
-    border-radius: 11px;
+    border-radius: 10px;
     background: linear-gradient(145deg, color-mix(in srgb, var(--agent) 22%, var(--surface)), color-mix(in srgb, var(--agent) 9%, var(--surface)));
     box-shadow: inset 0 1px 0 color-mix(in srgb, white 14%, transparent), 0 2px 6px rgb(0 0 0 / 0.12);
   }

@@ -536,36 +536,124 @@ export function normalize(s: State): State {
   };
 }
 
+/**
+ * The next state, keeping what didn't change: a session, history item or host equal to
+ * the one before is that same object, and a list with nothing changed is the same list.
+ * A patch every 1.5s otherwise made every session new, and every row, pane and open
+ * conversation drew again though one line had changed.
+ */
+export function shareState(prev: State | null, next: State): State {
+  if (!prev) return next;
+  const list = <T>(was: T[], now: T[], key: (x: T) => string): T[] => {
+    const old = new Map(was.map((x) => [key(x), x]));
+    let same = was.length === now.length;
+    const out = now.map((x, i) => {
+      const o = old.get(key(x));
+      const keep = o !== undefined && (o === x || JSON.stringify(o) === JSON.stringify(x)) ? o : x;
+      if (keep !== was[i]) same = false;
+      return keep;
+    });
+    return same ? was : out;
+  };
+  return {
+    ...next,
+    hosts: list(prev.hosts, next.hosts, (h) => h.name),
+    windows: list(prev.windows, next.windows, (w) => `${w.host ?? ''}:${w.uid}`),
+    history: list(prev.history, next.history, (h) => `${h.host ?? ''}:${h.ref}`),
+  };
+}
+
+/**
+ * This host's state stream, opened at startup beside the sign-in check (main.tsx) instead of
+ * after it, so the first state arrives a round trip sooner. subscribe() takes it over with what
+ * it already received; signed out, it fails (401) and is dropped; unclaimed, it closes.
+ */
+let early: { es: EventSource; events: MessageEvent[]; keep: (e: Event) => void } | null = null;
+/** This device's stream worked last time (it is signed in, or the host asks no sign-in). */
+const STREAM_OK = 'ah.streamOk';
+const streamOk = (ok: boolean) => {
+  try {
+    if (ok) localStorage.setItem(STREAM_OK, '1');
+    else localStorage.removeItem(STREAM_OK);
+  } catch {}
+};
+export function openStateEarly() {
+  if (early || typeof EventSource === 'undefined') return;
+  // Only where it worked before: a signed-out device would just log a refused stream.
+  try {
+    if (localStorage.getItem(STREAM_OK) !== '1') return;
+  } catch {
+    return;
+  }
+  const es = new EventSource('/api/events?delta=1');
+  const events: MessageEvent[] = [];
+  const keep = (e: Event) => events.push(e as MessageEvent);
+  es.addEventListener('state', keep);
+  es.addEventListener('patch', keep);
+  es.onerror = () => {
+    if (es.readyState !== EventSource.CLOSED) return;
+    // Refused (signed out since): don't try early next time.
+    streamOk(false);
+    if (early?.es === es) early = null;
+  };
+  early = { es, events, keep };
+  setTimeout(() => {
+    if (early?.es !== es) return;
+    es.close();
+    early = null;
+  }, 15_000);
+}
+
 /** Live state over SSE; falls back to polling if the stream can't be held open. */
 export function subscribe(onState: (s: State) => void, onError: (msg: string | null) => void, client: HostApi = api): () => void {
   let es: EventSource | null = null;
   let poll: number | undefined;
   let closed = false;
+  let shared: State | null = null;
+  const emit = (s: State) => onState((shared = shareState(shared, s)));
   const fetchOnce = () =>
     client
       .state()
       .then((s) => {
-        onState(normalize(s));
+        emit(normalize(s));
         onError(null);
       })
       .catch((e) => onError(reachText(e)));
   const open = () => {
     if (closed) return;
-    es = new EventSource(`${client.base}/api/events`);
+    const adopt = client.base === api.base && early && early.es.readyState !== EventSource.CLOSED ? early : null;
+    if (adopt) early = null;
+    // ?delta=1: a patch carries the windows that changed, not all of them (an older host sends all).
+    es = adopt?.es ?? new EventSource(`${client.base}/api/events?delta=1`);
     // The whole state on connect, then patches of the fields that changed.
     let last: State | null = null;
-    es.addEventListener('state', (e) => {
+    const onFull = (e: Event) => {
       clearInterval(poll);
       poll = undefined;
       last = normalize(JSON.parse((e as MessageEvent).data));
-      onState(last);
+      emit(last);
       onError(null);
-    });
-    es.addEventListener('patch', (e) => {
+      if (client.base === api.base) streamOk(true);
+    };
+    const onPatch = (e: Event) => {
       if (!last) return;
-      last = normalize({ ...last, ...JSON.parse((e as MessageEvent).data) });
-      onState(last);
-    });
+      const data = JSON.parse((e as MessageEvent).data);
+      if (data.windowsDelta) {
+        const byUid = new Map(last.windows.map((w) => [w.uid, w] as const));
+        for (const w of data.windowsDelta.changed as Win[]) byUid.set(w.uid ?? w.id, w);
+        data.windows = (data.windowsDelta.order as string[]).map((uid) => byUid.get(uid)).filter(Boolean);
+        delete data.windowsDelta;
+      }
+      last = normalize({ ...last, ...data });
+      emit(last);
+    };
+    es.addEventListener('state', onFull);
+    es.addEventListener('patch', onPatch);
+    if (adopt) {
+      es.removeEventListener('state', adopt.keep);
+      es.removeEventListener('patch', adopt.keep);
+      for (const e of adopt.events) (e.type === 'state' ? onFull : onPatch)(e);
+    }
     es.onerror = () => {
       // EventSource reconnects by itself; poll meanwhile so the UI never goes stale.
       poll ??= window.setInterval(fetchOnce, 3000);

@@ -94,6 +94,7 @@ export function PanePicker({
         className="pane-picker-filter"
         value={q}
         placeholder="Filter sessions…"
+        enterKeyHint="go"
         aria-label="Filter sessions"
         aria-controls="pane-picker-list"
         autoCapitalize="off"

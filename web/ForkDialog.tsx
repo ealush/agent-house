@@ -133,9 +133,7 @@ export function ForkDialog({ client, target, onClose, onForked }: Props) {
                       label={
                         <>
                           <span className="grow">{chosen?.name ?? 'Default'}</span>
-                          <span className="caret" aria-hidden>
-                            ▾
-                          </span>
+                          <Icon name="chevron-down" size={14} />
                         </>
                       }
                     >

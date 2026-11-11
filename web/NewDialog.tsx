@@ -144,9 +144,18 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
 
   // A screen is no dialog, so nothing moves the keyboard into it: start on the agent
   // chosen, where the arrows pick another (and never on the page underneath). Once.
+  // No agent to choose (none installed): the Project field, or with a finger, where a
+  // field would raise the on-screen keyboard, the screen itself, so Tab starts inside it.
   useEffect(() => {
     if (!screen) return;
-    const raf = requestAnimationFrame(() => screenRef.current?.querySelector<HTMLElement>('[data-autofocus]')?.focus({ preventScroll: true }));
+    const raf = requestAnimationFrame(() => {
+      const box = screenRef.current;
+      const finger = document.documentElement.hasAttribute('data-touch');
+      const to = box?.querySelector<HTMLElement>('[data-autofocus]') ?? (finger ? null : cwdInput.current) ?? box;
+      to?.focus({ preventScroll: true });
+      // Its folder is a suggestion, selected as a Mac dialog's field is: typing replaces it.
+      if (to === cwdInput.current) cwdInput.current?.select();
+    });
     return () => cancelAnimationFrame(raf);
   }, []);
   useEffect(() => {
@@ -405,7 +414,15 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
 
         <label className="field">
           <span>Project</span>
-          <input className="mono" ref={cwdInput} value={cwd} onChange={(e) => setCwd(e.target.value)} list="ah-projects" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="~/code/project" />
+          <span className="path-field">
+            <input className="mono" ref={cwdInput} value={cwd} onChange={(e) => setCwd(e.target.value)} list="ah-projects" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="~/code/project" />
+            {/* At rest, a path too long for the field shows its end, the folder it names ("…/code/acme"). */}
+            {cwd && (
+              <span className="path-tail mono" aria-hidden>
+                <bdi>{cwd}</bdi>
+              </span>
+            )}
+          </span>
           <datalist id="ah-projects">
             {projects.map((p) => (
               <option key={p} value={p} />
@@ -456,9 +473,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
                     <>
                       <span className="grow">{chosen?.name ?? 'Default'}</span>
 
-                      <span className="caret" aria-hidden>
-                        ▾
-                      </span>
+                      <Icon name="chevron-down" size={14} />
                     </>
                   }
                 >
@@ -494,9 +509,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
                   label={
                     <>
                       <span className="grow">{pick.effort ? cap(pick.effort) : `Default${preset.defaultEffort ? ` · ${preset.defaultEffort}` : ''}`}</span>
-                      <span className="caret" aria-hidden>
-                        ▾
-                      </span>
+                      <Icon name="chevron-down" size={14} />
                     </>
                   }
                 >
@@ -609,7 +622,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
 
   if (screen)
     return (
-      <section ref={screenRef} className="ns-screen new-session" aria-label="New session" data-confirm data-focus-owner>
+      <section ref={screenRef} className="ns-screen new-session" aria-label="New session" tabIndex={-1} data-confirm data-focus-owner>
         <SheetBar onClose={dismiss} />
         {form}
       </section>

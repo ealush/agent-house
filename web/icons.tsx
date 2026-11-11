@@ -1,3 +1,4 @@
+import { memo } from 'react';
 // A handful of 24px stroke icons, inline so the page stays self-contained.
 const PATHS: Record<string, string> = {
   search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zm9 16-4.35-4.35',
@@ -31,7 +32,9 @@ const PATHS: Record<string, string> = {
   keyboard: 'M2 5h20v14H2zM5.5 8h3.2v2.6H5.5zM10.4 8h3.2v2.6h-3.2zM15.3 8h3.2v2.6h-3.2zM5.5 13h13v2.4h-13z',
   'panel-right': 'M4 5h16v14H4zM15 5v14',
   'chevron-up': 'M6 14l6-6 6 6',
+  'chevron-right': 'M10 6l6 6-6 6',
   'chevron-down': 'M6 10l6 6 6-6',
+  'arrow-down': 'M12 5v14M6 13l6 6 6-6',
   reply: 'M9 14 4 9l5-5M4 9h8.5a6 6 0 0 1 6 6v4',
   ban: 'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0M7 7l10 10',
   view: 'M4 4h16v16H4zM4 12h16M7.5 7.2l2.4 1.6-2.4 1.6M8 15.5h8',
@@ -64,10 +67,11 @@ const PATHS: Record<string, string> = {
 
 export type IconName = keyof typeof PATHS;
 
-export function Icon({ name, size = 18 }: { name: keyof typeof PATHS | string; size?: number }) {
+/** Pure, so a list re-rendering on a state tick doesn't redraw every icon in it. */
+export const Icon = memo(function Icon({ name, size = 18 }: { name: keyof typeof PATHS | string; size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={name === 'more' || name === 'grip' ? 3 : 1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d={PATHS[name]} />
     </svg>
   );
-}
+});

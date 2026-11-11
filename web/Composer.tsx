@@ -365,7 +365,8 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
                 f.src && <img src={f.src} alt={f.name} />
               ) : (
                 <>
-                  <Icon name="files" size={16} />
+                  {/* A file, not the Files tab's folder. */}
+                  <Icon name="file" size={16} />
                   <span className="composer-file-name">{f.name}</span>
                 </>
               )}
@@ -447,10 +448,10 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
 
       <div className="composer-tools">
         {compact && (
-          <Popover className="icon-btn composer-add" title="Add to message" label={<Icon name="plus" size={22} />}>
+          <Popover className="icon-btn composer-add" title="Add to message" label={<Icon name="plus" size={22} />} keepFocus>
             {(close) => <div className="picker composer-add-menu">
               <button type="button" onClick={() => { close(); fileInput.current?.click(); }}><Icon name="attach" size={20} /><span>Attach files</span></button>
-              <button type="button" onClick={() => { close(); recall(1); }}><Icon name="recall" size={20} /><span>Previous message</span></button>
+              <button type="button" onClick={() => { close(); recall(1); area.current?.focus({ preventScroll: true }); }}><Icon name="recall" size={20} /><span>Previous message</span></button>
               {cursor.current >= 0 && <button type="button" onClick={() => { close(); cursor.current = -1; setText(beforeRecall.current); area.current?.focus({ preventScroll: true }); }}><Icon name="edit" size={20} /><span>Restore draft</span></button>}
             </div>}
           </Popover>
@@ -461,14 +462,16 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
           {!compact && <button type="button" className="icon-btn" title="Previous messages (↑)" aria-label="Previous message" onClick={() => recall(1)}>
             <Icon name="recall" />
           </button>}
-          <label className={`icon-btn composer-attach ${compact ? 'hidden' : ''}`} title={isShell ? 'Attach a file (uploaded to the host, path inserted)' : 'Attach a file (uploaded to the host, sent with the message)'}>
+          {/* A button, so Tab reaches it (a label around a hidden input isn't focusable); the
+              input stays for it and for the phone's + menu. */}
+          <button type="button" className={`icon-btn composer-attach ${compact ? 'hidden' : ''}`} title={isShell ? 'Attach a file (uploaded to the host, path inserted)' : 'Attach a file (uploaded to the host, sent with the message)'} aria-label="Attach a file" onClick={() => fileInput.current?.click()}>
             <Icon name="attach" />
-            <input ref={fileInput} type="file" multiple hidden onChange={(e) => {
-              attach(e.target.files);
-              // Picking the same file again should attach it again.
-              e.target.value = '';
-            }} />
-          </label>
+          </button>
+          <input ref={fileInput} type="file" multiple hidden onChange={(e) => {
+            attach(e.target.files);
+            // Picking the same file again should attach it again.
+            e.target.value = '';
+          }} />
           {SpeechRecognition && !isShell && (
             <button type="button" className={`icon-btn ${listening ? 'live' : ''}`} title={listening ? 'Stop dictation' : 'Dictate'} aria-pressed={listening} onClick={toggleMic}>
               <Icon name="mic" />
@@ -482,7 +485,9 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
             // Pressing it leaves focus (and a phone's keyboard) in the box, as a messaging app does.
             <button type="submit" className="send-btn" disabled={!canSend} aria-label={actionLabel} title={queues ? 'Queue after the current response' : actionLabel}
               onMouseDown={(e) => e.preventDefault()}>
-              {compact && queues ? <><Icon name="queue" size={18} /><span>Queue</span></> : isShell ? 'Run' : <Icon name="up" size={compact ? 22 : 18} />}
+              {/* "Queue" only with something to queue: an empty box (just sent, the agent not yet working)
+                  keeps the round button, so the mic beside it doesn't move under the thumb. */}
+              {compact && queues && !empty ? <><Icon name="queue" size={18} /><span>Queue</span></> : isShell ? 'Run' : <Icon name="up" size={compact ? 22 : 18} />}
             </button>
           )}
         </div>

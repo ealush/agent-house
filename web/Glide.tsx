@@ -12,6 +12,7 @@ import { useLayoutEffect, useRef } from 'react';
 export function Glide({ match, className = '' }: { match: string; className?: string }) {
   const ref = useRef<HTMLSpanElement>(null);
   const mounted = useRef(false);
+  const on = useRef<HTMLElement | null>(null);
   const place = () => {
     const m = ref.current;
     const box = m?.parentElement;
@@ -21,6 +22,7 @@ export function Glide({ match, className = '' }: { match: string; className?: st
     mounted.current = true;
     // A finger sliding along the control (slide.ts) holds the thumb under it until it lifts.
     const el = box.querySelector<HTMLElement>(':scope > [data-held]') ?? box.querySelector<HTMLElement>(match);
+    on.current = el;
     if (!el || el.offsetParent === null) {
       m.classList.remove('shown');
       return;
@@ -44,20 +46,35 @@ export function Glide({ match, className = '' }: { match: string; className?: st
       m.classList.remove('placing', 'still');
     }
   };
-  // Every render of the list: the selection, order or contents may have moved.
-  useLayoutEffect(place);
+  const placeRef = useRef(place);
+  placeRef.current = place;
+  // When the selection moves (an item gains or loses `match`), the items change or reorder,
+  // or the list resizes; not on every render of a list that re-renders each tick, where
+  // measuring the layout each time cost a forced layout per render.
+  useLayoutEffect(() => {
+    placeRef.current();
+  }, [match]);
   useLayoutEffect(() => {
     const box = ref.current?.parentElement;
     if (!box) return;
     box.classList.add('glides');
-    const ro = new ResizeObserver(() => place());
+    const again = () => placeRef.current();
+    const ro = new ResizeObserver(again);
     ro.observe(box);
-    box.addEventListener('ah:held', place);
+    const mo = new MutationObserver((changes) => {
+      for (const c of changes) {
+        const t = c.target as HTMLElement;
+        if (c.type === 'childList' || t === on.current || t.matches?.(match)) return again();
+      }
+    });
+    mo.observe(box, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'aria-current', 'aria-selected', 'aria-checked', 'aria-pressed', 'data-held'] });
+    box.addEventListener('ah:held', again);
     return () => {
       ro.disconnect();
-      box.removeEventListener('ah:held', place);
+      mo.disconnect();
+      box.removeEventListener('ah:held', again);
       box.classList.remove('glides');
     };
-  }, []);
+  }, [match]);
   return <span ref={ref} className={`glide ${className}`} aria-hidden />;
 }

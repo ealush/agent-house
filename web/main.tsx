@@ -4,7 +4,7 @@ import { App } from './App.tsx';
 import { AskHost } from './ask.tsx';
 import { Lock } from './Lock.tsx';
 import { authApi, type AuthStatus } from './auth.ts';
-import { setUnauthorizedHandler } from './api.ts';
+import { openStateEarly, setUnauthorizedHandler } from './api.ts';
 import { initTheme } from './theme.ts';
 import { confirmKey } from './confirm.ts';
 import { installSlide } from './slide.ts';
@@ -80,6 +80,10 @@ function Gate() {
   if (status.enabled && !status.authenticated) return <Lock status={status} onUnlocked={check} />;
   return <App onLock={check} />;
 }
+
+// The state stream and the sign-in check set off together: the app mounts on the check, and
+// finds its first state already on the way (or here).
+openStateEarly();
 
 createRoot(document.getElementById('root')!).render(
   <Boundary>

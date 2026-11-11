@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ModelPicker, EffortPicker, Popover } from './ModelPicker.tsx';
 import { Icon } from './icons.tsx';
@@ -10,16 +10,33 @@ import type { Launch } from './useLaunch.ts';
 export function ComposerOptions({ launch, compact, active }: { launch: Launch; compact: boolean; active: boolean }) {
   const { preset, models, model, modelLabel, effort, mode, levels, choose, chooseMode, openSettings } = launch;
   const [section, setSection] = useState<'settings' | 'model' | 'effort' | 'permissions' | null>(null);
+  // Where the chip is, so an iPad's or a desktop's settings open as a popover over it (styles.css).
+  const [anchor, setAnchor] = useState<React.CSSProperties | undefined>(undefined);
   const hasModel = !!preset && !!(models.length || preset.modelArgs || preset.settingsCommands?.model);
   const hasEffort = !!preset && !!(levels.length || preset.settingsCommands?.effort);
   const hasModes = (preset?.modes?.length ?? 0) > 1;
   useCommand('pick-model', () => setSection('model'), compact && active && hasModel);
   useCommand('pick-effort', () => setSection('effort'), compact && active && hasEffort);
+  // Moving between its pages, the sheet keeps the height it has reached, as an iOS sheet does:
+  // a shorter page no longer drops its top edge, a taller one raises it once.
+  const tallest = useRef(0);
+  useLayoutEffect(() => {
+    const d = document.querySelector<HTMLElement>('dialog.composer-options');
+    if (!section || !d) {
+      tallest.current = 0;
+      return;
+    }
+    d.style.minHeight = '';
+    tallest.current = Math.max(tallest.current, d.getBoundingClientRect().height);
+    // Never past the sheet's own cap (76dvh, or what a keyboard leaves): min-height would win.
+    d.style.minHeight = `min(${tallest.current}px, 76dvh, var(--keyboard-vh, 100dvh))`;
+  }, [section]);
   if (!preset || !(hasModel || hasEffort || hasModes)) return null;
 
   const close = () => setSection(null);
   const effortLabel = effort ? effort.charAt(0).toUpperCase() + effort.slice(1) : 'Default';
-  const modeLabel = mode?.id !== 'default' ? mode?.name ?? 'Default' : 'Default';
+  // The mode's own name: Claude Code's default is "Ask before changes", not "Default".
+  const modeLabel = mode?.name ?? 'Default';
   const modelsView = (done: () => void) => (
     <ModelPicker preset={preset} value={{ model: model?.id, effort }}
       disabled={!preset.switchModel && !preset.modelArgs}
@@ -63,13 +80,17 @@ export function ComposerOptions({ launch, compact, active }: { launch: Launch; c
     <>
       <button type="button" className={`composer-model ${mode?.dangerous ? 'danger' : ''}`}
         aria-label={`Session settings: ${modelLabel ?? preset.name}, ${effortLabel.toLowerCase()} effort, ${modeLabel.toLowerCase()} permissions`}
-        aria-haspopup="dialog" aria-expanded={section !== null} onClick={() => setSection('settings')}>
+        aria-haspopup="dialog" aria-expanded={section !== null} onClick={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          setAnchor({ '--anchor-left': `${Math.round(Math.max(12, Math.min(r.left, innerWidth - 372)))}px`, '--anchor-bottom': `${Math.round(innerHeight - r.top + 8)}px` } as React.CSSProperties);
+          setSection('settings');
+        }}>
         {mode?.dangerous && <Icon name="shield" size={16} />}
         <span>{hasModel ? modelLabel ?? preset.name : 'Settings'}</span>
         <Icon name="chevron-down" size={14} />
       </button>
       {section && createPortal(
-        <Sheet label="Session settings" title={title} className="composer-options" onClose={close}
+        <Sheet label="Session settings" title={title} className="composer-options" style={anchor} onClose={close}
           onBack={section !== 'settings' ? () => setSection('settings') : undefined} backLabel="Session settings">
           <div className="composer-options-head">
             {section !== 'settings' && <button type="button" className="icon-btn" aria-label="Back to Session settings" onClick={() => setSection('settings')}><Icon name="back" /></button>}
@@ -92,7 +113,7 @@ export function ComposerOptions({ launch, compact, active }: { launch: Launch; c
 }
 
 function Setting({ icon, label, value, onClick }: { icon: string; label: string; value: string; onClick: () => void }) {
-  return <button type="button" className="composer-option-row" onClick={onClick}><Icon name={icon} size={20} /><span><strong>{label}</strong><span>{value}</span></span><Icon name="chevron-down" size={16} /></button>;
+  return <button type="button" className="composer-option-row" onClick={onClick}><Icon name={icon} size={20} /><span><strong>{label}</strong><span>{value}</span></span><Icon name="chevron-right" size={16} /></button>;
 }
 
 function ChipLabel({ name, value }: { name: string; value: string }) {

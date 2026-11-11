@@ -3,6 +3,7 @@ import type { HostApi, SearchHit, SearchResponse } from './api.ts';
 import { AgentLogo } from './logos.tsx';
 import { Highlighted } from './Switcher.tsx';
 import { errorText } from './errors.ts';
+import { dayYear } from './dates.ts';
 
 // Full-page content search (issue #9): the thorough path behind Cmd-K's
 // "See all results". One call to the hub's /api/search/all fans out to every
@@ -86,8 +87,11 @@ export function SearchView({
             autoFocus
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Words from a conversation or a side chat"
+            placeholder="Words to find"
             aria-label="Search conversations"
+            enterKeyHint="search"
+            // Results are live; the keyboard's Search key puts the on-screen keyboard away to show them.
+            onKeyDown={(e) => e.key === 'Enter' && document.documentElement.dataset.keyboard !== undefined && e.currentTarget.blur()}
             autoCapitalize="off"
             autoCorrect="off"
           />
@@ -95,7 +99,7 @@ export function SearchView({
         <label className="field">
           <span>In</span>
           <select value={scope} onChange={(e) => setScope(e.target.value as typeof scope)} aria-label="Scope">
-            <option value="all">Conversations and chats</option>
+            <option value="all">Everything</option>
             <option value="transcripts">Conversations only</option>
             <option value="chats">Side chats only</option>
           </select>
@@ -138,11 +142,12 @@ export function SearchView({
               <span className="stack">
                 <span className="name">{hit.title}</span>
                 <span className="sub">
-                  {[hit.host, hit.kind === 'chat' ? 'side chat' : hit.harness, new Date(hit.at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }), `${hit.matches} match${hit.matches === 1 ? '' : 'es'}`]
+                  {/* The count first: a narrow screen cuts the end of this line. */}
+                  {[`${hit.matches} match${hit.matches === 1 ? '' : 'es'}`, hit.host, hit.kind === 'chat' ? 'side chat' : hit.harness, dayYear(hit.at)]
                     .filter(Boolean)
                     .join(' · ')}
                 </span>
-                {hit.cwd && <span className="sub">{hit.cwd}</span>}
+                {hit.cwd && <span className="sub path">{hit.cwd}</span>}
               </span>
             </button>
             <div className="search-excerpts">

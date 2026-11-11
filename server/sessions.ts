@@ -116,10 +116,14 @@ const HOME = homedir();
 // ---------- git
 
 type Repo = { root: string; project: string; branch: string | null; worktree: boolean };
-const repoCache = new Map<string, { root: string; gitDir: string; main: string } | null>();
+const repoCache = new Map<string, { found: { root: string; gitDir: string; main: string } | null; at: number }>();
+/** A folder that wasn't a repository is asked again after this: `git init` makes it one. */
+const NO_REPO_TTL = 5_000;
 
 function findRepo(dir: string) {
-  if (repoCache.has(dir)) return repoCache.get(dir)!;
+  const hit = repoCache.get(dir);
+  // Kept: a repository while its .git is there, and "none" for a few seconds.
+  if (hit && (hit.found ? existsSync(join(hit.found.root, '.git')) : Date.now() - hit.at < NO_REPO_TTL)) return hit.found;
   let found: { root: string; gitDir: string; main: string } | null = null;
   for (let cur = dir; cur && cur !== '/'; cur = dirname(cur)) {
     const dotgit = join(cur, '.git');
@@ -137,7 +141,7 @@ function findRepo(dir: string) {
     found = { root: cur, gitDir, main };
     break;
   }
-  repoCache.set(dir, found);
+  repoCache.set(dir, { found, at: Date.now() });
   return found;
 }
 
@@ -310,6 +314,16 @@ export function atShellPrompt(command: string, procs: Awaited<ReturnType<typeof 
   const root = descendants(procs, panePid, true).find((p) => p.pid === panePid);
   if (!root || root.fg === undefined) return quiet;
   return root.fg && !root.argv.slice(1).some((a) => /^-\w*c\w*$/.test(a));
+}
+
+/**
+ * A shell's command that is still running stays working between the lines it prints, for
+ * three quiet periods: one printing every few seconds otherwise flipped between working
+ * and new output each tick, its row hopping between Inbox sections. Back at its prompt,
+ * a shell is idle on the usual quiet period.
+ */
+export function commandBusy(atPrompt: boolean, now: number, activity: number, idleAfter: number): boolean {
+  return !atPrompt && now - activity < idleAfter * 3;
 }
 
 /**
@@ -489,7 +503,7 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
         // a permission prompt every second, which would otherwise read as working):
         // the question dialog, its review step, or a prompt rule over a numbered picker.
         dialog: !!trustAccept || (!hooked && !!agent && rules.length > 0 && (isQuestionDialog(tail) || isQuestionReview(tail) || (screenAsks(tail, rules) && !!parsePicker(tail)))),
-        toolRunning: detected ? hasToolWork(procs, detected.pid) : false,
+        toolRunning: detected ? hasToolWork(procs, detected.pid) : commandBusy(atShellPrompt(w.command, procs, w.panePid, quiet), now, w.activity, config.idleAfter),
       });
 
       // Register every window, shells included (F3).

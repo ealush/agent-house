@@ -149,6 +149,8 @@ export const COMMANDS: Command[] = [
     detail: 'The previous session in sidebar order. From the inbox, this opens the last one. Also works while a text field is focused.',
     chords: [{ key: 'ArrowUp', alt: true }],
     scopes: ['app', 'terminal', 'field'],
+    // In a draft, ⌥↑ moves the caret by a paragraph on a Mac: switch only from its start.
+    field: 'start',
   },
   {
     id: 'cycle-next',
@@ -157,6 +159,8 @@ export const COMMANDS: Command[] = [
     detail: 'The next session in sidebar order. From the inbox, this opens the first one. Also works while a text field is focused.',
     chords: [{ key: 'ArrowDown', alt: true }],
     scopes: ['app', 'terminal', 'field'],
+    // In a draft, ⌥↓ moves the caret by a paragraph on a Mac: switch only from its end.
+    field: 'end',
   },
   {
     id: 'new-session',
@@ -882,8 +886,15 @@ const KEY_LABEL: Record<string, string> = {
   ' ': 'Space',
 };
 
+/** The keys a Mac draws as glyphs in its menus (Return ↩, Delete ⌫, Tab ⇥). */
+const MAC_KEY: Record<string, string> = { Enter: '↩', Backspace: '⌫', Tab: '⇥' };
+
+/** Return as this platform draws it: ↩ on a Mac, ↵ elsewhere. */
+export const returnKey = (mac = isMac()) => (mac ? '↩' : '↵');
+
 export function formatChord(c: Chord, mac: boolean): string {
-  const key = KEY_LABEL[c.key] ?? (c.key.length === 1 ? c.key.toUpperCase() : c.key);
+  const key = (mac && MAC_KEY[c.key]) || KEY_LABEL[c.key] || (c.key.length === 1 ? c.key.toUpperCase() : c.key);
+  // Apple's order: ⌃ ⌥ ⇧ ⌘.
   if (mac) return `${c.ctrl ? '⌃' : ''}${c.alt ? '⌥' : ''}${c.shift ? '⇧' : ''}${c.meta ? '⌘' : ''}${key}`;
   const parts: string[] = [];
   if (c.ctrl) parts.push('Ctrl');
@@ -894,7 +905,8 @@ export function formatChord(c: Chord, mac: boolean): string {
   return parts.join('+');
 }
 
-/** One label per key, in the order VS Code draws a chord: Ctrl, Shift, Alt, Super, then the key. */
+/** One label per key: off a Mac in the order VS Code draws a chord (Ctrl, Shift, Alt, Super), on a
+ *  Mac in Apple's (⌃ ⌥ ⇧ ⌘) with its glyphs for Return, Delete and Tab; then the key. */
 const PART_LABEL: Record<string, string> = {
   ...KEY_LABEL,
   Enter: '↵',
@@ -908,12 +920,9 @@ export function modLabel(mod: 'ctrl' | 'shift' | 'alt' | 'meta', mac = isMac()):
 }
 
 export function chordParts(c: Chord, mac = isMac()): string[] {
-  const parts: string[] = [];
-  if (c.ctrl) parts.push(modLabel('ctrl', mac));
-  if (c.shift) parts.push(modLabel('shift', mac));
-  if (c.alt) parts.push(modLabel('alt', mac));
-  if (c.meta) parts.push(modLabel('meta', mac));
-  parts.push(PART_LABEL[c.key] ?? (c.key.length === 1 ? c.key.toUpperCase() : c.key));
+  const order = mac ? (['ctrl', 'alt', 'shift', 'meta'] as const) : (['ctrl', 'shift', 'alt', 'meta'] as const);
+  const parts: string[] = order.filter((m) => c[m]).map((m) => modLabel(m, mac));
+  parts.push((mac && MAC_KEY[c.key]) || PART_LABEL[c.key] || (c.key.length === 1 ? c.key.toUpperCase() : c.key));
   return parts;
 }
 

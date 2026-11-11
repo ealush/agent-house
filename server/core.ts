@@ -131,7 +131,9 @@ export class Core {
   readonly viewers: Map<string, string[]>;
   private state: State | null = null;
   private json = '';
-  private listeners = new Set<(json: string, patch: string | null) => void>();
+  private listeners = new Set<(json: string, patch: string | null, slim: string | null) => void>();
+  /** Each window's last JSON, for the per-window deltas a delta stream gets (`slim`). */
+  private winParts = new Map<string, string>();
   /** Last JSON of each top-level state field, to send subscribers only what changed. */
   private parts = new Map<string, string>();
   private tmuxPath = process.env.PATH ?? '';
@@ -202,9 +204,14 @@ export class Core {
   }
 
   /** `fn(full, patch)`: the whole state once at subscribe (patch null), then each change as a patch of changed fields. */
-  subscribe(fn: (json: string, patch: string | null) => void): () => void {
+  /**
+   * `patch` has every top-level field that changed; `slim` is the same with `windows` as a
+   * delta (the windows that changed, and every window's uid in order), for streams that ask
+   * for it (?delta=1): one working session no longer resends them all every tick.
+   */
+  subscribe(fn: (json: string, patch: string | null, slim: string | null) => void): () => void {
     this.listeners.add(fn);
-    if (this.json) fn(this.json, null);
+    if (this.json) fn(this.json, null, null);
     return () => this.listeners.delete(fn);
   }
 
@@ -273,10 +280,18 @@ export class Core {
           patch[k] = v;
         }
       }
+      const parts = new Map<string, string>();
+      const changed = state.windows.filter((w) => {
+        const part = JSON.stringify(w);
+        parts.set(w.uid, part);
+        return this.winParts.get(w.uid) !== part;
+      });
+      this.winParts = parts;
       if (Object.keys(patch).length) {
         this.json = JSON.stringify(state);
         const delta = JSON.stringify(patch);
-        for (const fn of this.listeners) fn(this.json, delta);
+        const slim = 'windows' in patch ? JSON.stringify({ ...patch, windows: undefined, windowsDelta: { changed, order: state.windows.map((w) => w.uid) } }) : delta;
+        for (const fn of this.listeners) fn(this.json, delta, slim);
       }
       return state;
     })().finally(() => (this.ticking = null));

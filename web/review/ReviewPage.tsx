@@ -134,6 +134,8 @@ function StackList({ state, narrow, onOpen, onPick }: { state: State; narrow: bo
   const alerts = state.review?.alerts ?? [];
   const open = stacks?.filter((s) => s.state === 'open') ?? [];
   const done = stacks?.filter((s) => s.state !== 'open') ?? [];
+  // No stacks and no GitHub repository to start one from.
+  const nothing = repos?.length === 0 && open.length === 0 && done.length === 0;
   return (
     <div className="page review-list" data-title="Review" data-rove="button.stack-card, button.project-card">
       <header className="page-head">
@@ -159,10 +161,19 @@ function StackList({ state, narrow, onOpen, onPick }: { state: State; narrow: bo
             )}
           </p>
         </div>
-        <button className="btn light new-stack" onClick={onPick}>
-          <Icon name="plus" size={16} /> New stack
-        </button>
+        {/* A stack starts from a project's pull requests: with none to start from, no button that leads nowhere. */}
+        {!nothing && (
+          <button className="btn light new-stack" onClick={onPick}>
+            <Icon name="plus" size={16} /> New stack
+          </button>
+        )}
       </header>
+      {nothing && (
+        <div className="empty-state">
+          <p className="empty-title">Nothing to review yet.</p>
+          <p className="hint">No GitHub repository among your sessions' projects. Start a session in one, with gh signed in, and its pull requests show here.</p>
+        </div>
+      )}
       {open.length > 0 && (
         <section className="list-section">
           <h2 className="section-label first">In review</h2>
@@ -197,7 +208,7 @@ function StackList({ state, narrow, onOpen, onPick }: { state: State; narrow: bo
           </ul>
         </section>
       )}
-      <section className="list-section">
+      {!nothing && <section className="list-section">
         <div className="section-head">
           <h2 className={`section-label ${open.length ? '' : 'first'}`}>Start from a project</h2>
           <span className="hint">Open pull requests in your sessions' projects</span>
@@ -211,7 +222,7 @@ function StackList({ state, narrow, onOpen, onPick }: { state: State; narrow: bo
             ))}
           </div>
         )}
-      </section>
+      </section>}
       {done.length > 0 && (
         <section className="list-section">
           <h2 className="section-label">Done</h2>

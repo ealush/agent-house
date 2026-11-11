@@ -16,9 +16,10 @@ function items(box: HTMLElement): HTMLElement[] {
 
 export function roveKey(e: KeyboardEvent) {
   if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
-  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Home' && e.key !== 'End') return;
   const target = e.target as HTMLElement | null;
   if (!target || target.closest('input, textarea, select, [contenteditable="true"], .xterm')) return;
+  if (pickKey(e, target)) return;
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Home' && e.key !== 'End') return;
   // Nothing focused (a page just opened from the keyboard): the arrows go into the page's list.
   const box = target === document.body ? pageList() : target.closest<HTMLElement>('[data-rove]');
   if (!box) return;
@@ -28,6 +29,27 @@ export function roveKey(e: KeyboardEvent) {
   const next = e.key === 'Home' ? 0 : e.key === 'End' ? list.length - 1 : Math.max(0, Math.min(list.length - 1, at + (e.key === 'ArrowDown' ? 1 : -1)));
   e.preventDefault();
   list[at < 0 && e.key === 'ArrowUp' ? list.length - 1 : at < 0 && e.key === 'ArrowDown' ? 0 : next]?.focus();
+}
+
+/**
+ * A segmented control or a row of tabs, as on macOS and iOS: the arrows step to
+ * the next choice and pick it (←/→ across, ↑/↓ by rows, Home/End to the ends).
+ * Groups with keys of their own (the agent picker) handle them first.
+ */
+function pickKey(e: KeyboardEvent, target: HTMLElement): boolean {
+  const radio = target.closest<HTMLElement>('[role="radio"], [role="tab"]');
+  const box = radio?.parentElement?.closest<HTMLElement>(radio.getAttribute('role') === 'tab' ? '[role="tablist"]' : '[role="radiogroup"]');
+  if (!radio || !box) return false;
+  // A tab row also roves up and down as a list (data-rove); across is ours.
+  if (box.hasAttribute('data-rove') && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) return false;
+  if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) return false;
+  // A single row has nothing above or below: ↑/↓ step back and forward, as a radio group's do.
+  const next = radioGridMove(box, radio, e.key) ?? (e.key === 'ArrowDown' || e.key === 'ArrowUp' ? radioGridMove(box, radio, e.key === 'ArrowDown' ? 'ArrowRight' : 'ArrowLeft') : null);
+  e.preventDefault();
+  if (!next || next === radio) return true;
+  next.focus();
+  next.click();
+  return true;
 }
 
 /** The list of the page in view (Inbox, History, Sessions), if it has one: on top, not under New session. */

@@ -11,12 +11,26 @@ export type Underlay = { ref: RefObject<HTMLElement | null>; show: (on: boolean)
 const SHIFT = -28;
 const DIM = 0.7;
 const EASE = 'cubic-bezier(0.32, 0.72, 0, 1)';
+/** How far ahead a release's speed carries it (ms), deciding where it was going. */
+const PROJECT = 180;
+/** The finger's speed is read over its last moves, not since it touched down. */
+const RECENT = 80;
+
+/**
+ * Whether a release leaves (true) or settles back: where the view would be had the finger
+ * kept its last speed (px/ms) a moment longer, past half the screen. So a flick goes from
+ * anywhere, a drag past half goes unless flicked back, and a slow one short of half stays,
+ * as an iPhone's interactive back does.
+ */
+export function swipeLeaves(dx: number, width: number, speed: number): boolean {
+  return dx + speed * PROJECT > width / 2;
+}
 
 /**
  * Back by swiping from the left edge, the way an iPhone leaves a pushed view:
  * the view follows the finger, and the one it came from is underneath,
  * dimmed and a little to the left, coming forward as the top one leaves.
- * Past a third of the screen (or a flick) it slides away and the view under
+ * Headed past half the screen (where its speed would carry it) it slides away and the view under
  * it is the page; short of that it settles back.
  *
  * Starts only within the edge strip and only on a mostly sideways drag, so a
@@ -38,6 +52,8 @@ export function useSwipeBack(view: RefObject<HTMLElement | null>, enabled: boole
     let engaged = false;
     let settling = false;
     let dx = 0;
+    let slop = 0;
+    let trail: Array<{ x: number; t: number }> = [];
     let width = 1;
 
     const below = () => peek.current.ref.current;
@@ -63,6 +79,8 @@ export function useSwipeBack(view: RefObject<HTMLElement | null>, enabled: boole
       start = { x: t.clientX, y: t.clientY, t: performance.now() };
       engaged = false;
       dx = 0;
+      slop = 0;
+      trail = [];
     };
 
     const onMove = (e: TouchEvent) => {
@@ -77,6 +95,8 @@ export function useSwipeBack(view: RefObject<HTMLElement | null>, enabled: boole
         }
         if (x < 10 || x < Math.abs(y) * 1.3) return;
         engaged = true;
+        // From here the view moves with the finger, not by the 10px it took to tell a swipe.
+        slop = x;
         width = el.getBoundingClientRect().width || 1;
         // The page underneath renders now, before the first frame of the drag.
         flushSync(() => peek.current.show(true));
@@ -85,7 +105,10 @@ export function useSwipeBack(view: RefObject<HTMLElement | null>, enabled: boole
       }
       e.preventDefault();
       e.stopPropagation();
-      dx = Math.max(0, x);
+      dx = Math.max(0, x - slop);
+      const now = performance.now();
+      trail.push({ x: dx, t: now });
+      while (trail.length > 2 && now - trail[0].t > RECENT) trail.shift();
       place(dx / width);
     };
 
@@ -95,8 +118,10 @@ export function useSwipeBack(view: RefObject<HTMLElement | null>, enabled: boole
       start = null;
       if (!engaged) return;
       engaged = false;
-      const speed = dx / Math.max(1, performance.now() - was.t);
-      const leave = dx > width / 3 || (speed > 0.5 && dx > 40);
+      const first = trail[0];
+      const last = trail[trail.length - 1];
+      const speed = first && last && last.t > first.t ? (last.x - first.x) / (last.t - first.t) : dx / Math.max(1, performance.now() - was.t);
+      const leave = swipeLeaves(dx, width, speed);
       const quick = calm();
       const u = below();
       // The rest of the way at the speed the finger left, near enough: a long way left goes slower.

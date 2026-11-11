@@ -408,6 +408,27 @@ test('desktop: New session right after opening a session keeps the keyboard', { 
   await ctx.close();
 });
 
+test('desktop: the arrows step through a segmented control and pick, as on a Mac', { skip, timeout: 60_000 }, async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const { page, errors } = await open(ctx, '#settings/appearance');
+  const group = page.getByRole('radiogroup', { name: 'Appearance' });
+  await group.getByRole('radio').first().focus();
+  const picked = () => group.evaluate((g) => g.querySelector('[aria-checked="true"]')?.textContent?.trim());
+  const focused = () => page.evaluate(() => document.activeElement?.textContent?.trim());
+  await page.keyboard.press('ArrowRight');
+  assert.equal(await picked(), 'Dark');
+  assert.equal(await focused(), 'Dark');
+  await page.keyboard.press('End');
+  assert.equal(await focused(), await picked());
+  await page.keyboard.press('Home');
+  assert.equal(await picked(), 'System');
+  // A single row: ↓ steps forward, as a radio group's arrows do.
+  await page.keyboard.press('ArrowDown');
+  assert.equal(await picked(), 'Dark');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('phone: a swipe back lands on the inbox once, even when the browser is slow to go back', { skip, timeout: 60_000 }, async () => {
   const ctx = await browser.newContext({ ...devices['iPhone 15 Pro'] });
   const { page, errors } = await open(ctx);

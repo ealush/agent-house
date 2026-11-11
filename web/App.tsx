@@ -46,7 +46,7 @@ import { HandoffOffer } from './Handoff.tsx';
 import { Workspace, focusPaneNow } from './Workspace.tsx';
 import { closeLeaf, isPick, pickKey, leaves, moveLeaf, nudgeDivider, neighborPane, nodeAt, normalizeSplit, paneLeaves, parseLayout, replaceLeaf, splitLeaf, toggleSplit, type LayoutNode, type PaneDir, type Path } from './layout.ts';
 import { lastCwd, NewDialog } from './NewDialog.tsx';
-import { ForkDialog, type ForkTarget } from './ForkDialog.tsx';
+import type { ForkTarget } from './ForkDialog.tsx';
 import { Switcher } from './Switcher.tsx';
 import { SearchView } from './SearchView.tsx';
 import { WorktreesDialog } from './Git.tsx';
@@ -73,6 +73,7 @@ import { ReviewContext } from './reviewContext.ts';
 // Pages and dialogs most visits never open load on first use.
 const Settings = lazy(() => import('./Settings.tsx').then((m) => ({ default: m.Settings })));
 const ReviewPage = lazy(() => import('./review/ReviewPage.tsx'));
+const ForkDialog = lazy(() => import('./ForkDialog.tsx').then((m) => ({ default: m.ForkDialog })));
 const ChatSearchDialog = lazy(() => import('./ChatHistory.tsx').then((m) => ({ default: m.ChatSearchDialog })));
 
 function scratchKey(): string | null {
@@ -112,6 +113,22 @@ function stored<T extends string>(key: string, fallback: T): [T, (v: T) => void]
     },
   ];
 }
+
+/** Shows a popover element in the top layer: over an open sheet or dialog, which a z-index can't reach.
+ * With a session's title bar in view the toast sits under it, not over the title you just arrived at. */
+const onTop = (el: HTMLElement | null) => {
+  if (!el) return;
+  if (!document.querySelector('dialog[open]')) {
+    const bars = [...document.querySelectorAll<HTMLElement>('.mobile-session-chrome, .session-head')]
+      .filter((h) => h.checkVisibility?.() !== false)
+      .map((h) => h.getBoundingClientRect())
+      .filter((r) => r.height > 0 && r.top < 60);
+    if (bars.length) el.style.top = `${Math.round(Math.max(...bars.map((r) => r.bottom)) + 8)}px`;
+  }
+  try {
+    el.showPopover?.();
+  } catch {}
+};
 
 // URL hash: "#<uid>" (local session), "#<host>/<uid>" (peer session), "#history", "#sessions".
 // "#security" still lands on settings, where Security lives now. Old links
@@ -298,7 +315,8 @@ export function App({ onLock }: { onLock: () => void }) {
       // popstate comes a beat later (longer on iOS), and the old view would be back in between.
       if (how.still) setRoute(target);
       popStill.current = !!how.still;
-      history.back();
+      // A Settings section opened from its list sits on the list's entry (settingsMenu.ts): past both.
+      history.go(history.state?.section ? -2 : -1);
     } else go(target, { ...how, history: 'replace' });
   }
   const popStill = useRef(false);
@@ -502,6 +520,9 @@ export function App({ onLock }: { onLock: () => void }) {
     const DIRS: Record<string, PaneDir> = { arrowleft: 'left', arrowright: 'right', arrowup: 'up', arrowdown: 'down', h: 'left', l: 'right', k: 'up', j: 'down' };
     const key = (e: KeyboardEvent) => {
       if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
+      // A chord (the switcher, the palette, New session) ends the mode and goes through, so
+      // the dialog it opens gets the keyboard instead of a mode still listening behind it.
+      if (e.ctrlKey || e.metaKey) return setSubmap(null);
       e.preventDefault();
       e.stopPropagation();
       if (e.key === 'Escape' || e.key === 'Enter') return setSubmap(null);
@@ -547,6 +568,8 @@ export function App({ onLock }: { onLock: () => void }) {
         case '`':
           return leave(() => void toggleScratch());
       }
+      // Any other key ends it, as resize mode does: a mode you forgot about never eats typing.
+      setSubmap(null);
     };
     window.addEventListener('keydown', key, true);
     return () => window.removeEventListener('keydown', key, true);
@@ -1016,6 +1039,50 @@ export function App({ onLock }: { onLock: () => void }) {
   if (page !== 'settings') sheetBase.current = page;
   const shown = narrow && page === 'settings' ? sheetBase.current : page;
 
+  // Each page keeps its place, as an iOS tab does: back from a session, or back on its tab,
+  // the list is where you left it, and so is the copy a swipe back shows under the session.
+  const pageScroll = useRef(new Map<Page, number>());
+  const shownRef = useRef({ shown, selected });
+  shownRef.current = { shown, selected };
+  useEffect(() => {
+    const save = (e: Event) => {
+      const el = e.target;
+      // Only the page in view: one leaving (a session opening over it) scrolls as it shrinks.
+      if (shownRef.current.selected || !(el instanceof HTMLElement) || !el.classList.contains('page') || !mainRef.current?.contains(el)) return;
+      pageScroll.current.set(shownRef.current.shown, el.scrollTop);
+    };
+    document.addEventListener('scroll', save, { capture: true, passive: true });
+    return () => document.removeEventListener('scroll', save, { capture: true });
+  }, []);
+  useLayoutEffect(() => {
+    const top = pageScroll.current.get(shown);
+    if (!top) return;
+    const stops: Array<() => void> = [];
+    for (const root of [selected ? null : mainRef.current, peek ? underRef.current : null]) {
+      const el = root?.querySelector<HTMLElement>(':scope > .page, :scope > * > .page');
+      if (!el) continue;
+      el.scrollTop = top;
+      if (el.scrollTop >= top - 1) continue;
+      // Still filling in (a card that loads after the list): follow it to the place, until a finger or wheel takes over.
+      const grow = new ResizeObserver(() => {
+        el.scrollTop = top;
+        if (el.scrollTop >= top - 1) stop();
+      });
+      for (const child of Array.from(el.children)) grow.observe(child);
+      const timer = window.setTimeout(() => stop(), 1500);
+      const stop = () => {
+        grow.disconnect();
+        window.clearTimeout(timer);
+        el.removeEventListener('touchstart', stop);
+        el.removeEventListener('wheel', stop);
+      };
+      el.addEventListener('touchstart', stop, { passive: true });
+      el.addEventListener('wheel', stop, { passive: true });
+      stops.push(stop);
+    }
+    return () => stops.forEach((f) => f());
+  }, [shown, !!selected, peek, !!state]);
+
   // The top-level page (and, on a phone, its tab bar). On a phone it also lies under a
   // session while a swipe from the edge pulls the session away (useSwipeBack).
   const pages = state && (
@@ -1120,6 +1187,26 @@ export function App({ onLock }: { onLock: () => void }) {
   const sideScrimRef = useRef<HTMLDivElement>(null);
   // A drag in from the edge shows the sidebar before it is open: it follows the finger.
   const sidePeek = useSideSwipe(tight, sideOver, setSideOver, sideOverRef, sideScrimRef);
+  // Slid over the page, the sidebar has the keyboard, as a dialog does: focus on the row you're
+  // on, the page underneath out of reach (inert, so typing can't land in its composer), and
+  // focus back where it was when it goes.
+  useEffect(() => {
+    if (!sideOver) return;
+    const before = document.activeElement as HTMLElement | null;
+    const main = mainRef.current;
+    if (main) main.inert = true;
+    const raf = requestAnimationFrame(() => {
+      const panel = sideOverRef.current;
+      const row = panel?.querySelector<HTMLElement>('.side-session.on, .nav-item.on') ?? panel?.querySelector<HTMLElement>('button, [href], input');
+      row?.focus({ preventScroll: true });
+    });
+    return () => {
+      cancelAnimationFrame(raf);
+      if (main) main.inert = false;
+      const now = document.activeElement;
+      if ((!now || now === document.body || !now.isConnected) && before?.isConnected) before.focus({ preventScroll: true });
+    };
+  }, [sideOver]);
 
   return (
     <PresetsContext.Provider value={presetFor}>
@@ -1229,9 +1316,10 @@ export function App({ onLock }: { onLock: () => void }) {
             }}
             refresh={() => refresh(current.host)}
             onStartSession={(prompt, preset) => setCreating({ cwd: current.projectPath, host: current.host, prompt, preset })}
-            onSplit={(dir) => splitFrom(current.key, dir)}
+            // A phone has no room for panes beside each other: no split actions on its menu.
+            onSplit={narrow ? undefined : (dir) => splitFrom(current.key, dir)}
             onOpenKey={open}
-            onSplitWith={(key) => splitFrom(current.key, 'right', key)}
+            onSplitWith={narrow ? undefined : (key) => splitFrom(current.key, 'right', key)}
           />
         ) : ended && state ? (
           <EndedSession
@@ -1294,6 +1382,7 @@ export function App({ onLock }: { onLock: () => void }) {
         </Sheet>
       )}
 
+      <Suspense fallback={null}>
       {forking && state && (
         <ForkDialog
           client={clientFor(forking.host)}
@@ -1307,6 +1396,7 @@ export function App({ onLock }: { onLock: () => void }) {
           }}
         />
       )}
+      </Suspense>
 
       {keymap && <ShortcutsDialog onClose={() => setKeymap(false)} />}
       {submap && (
@@ -1404,7 +1494,7 @@ export function App({ onLock }: { onLock: () => void }) {
       {dialog === 'worktrees' && <WorktreesDialog client={clientFor(current?.host)} onClose={() => setDialog(null)} onShell={shellIn} />}
 
       {toast && (
-        <div key={toast} className={`toast ${toastOut ? 'out' : ''}`} role="status">
+        <div key={toast} ref={onTop} popover="manual" className={`toast ${toastOut ? 'out' : ''}`} role="status">
           {toast}
         </div>
       )}

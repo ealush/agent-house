@@ -47,7 +47,10 @@ test('digits and punctuation keep their unshifted name when Shift is held', () =
 });
 
 test('scope: typing keeps letters, dialogs keep only the switcher, ask dialogs keep everything', () => {
-  assert.equal(press('ArrowDown', { altKey: true, code: 'ArrowDown' }, 'field'), 'cycle-next');
+  // In a draft, Alt/⌥+↓ moves the caret first (a Mac's paragraph move): it switches only from the end.
+  assert.equal(press('ArrowDown', { altKey: true, code: 'ArrowDown' }, 'field'), null);
+  assert.equal(matchShortcut({ key: 'ArrowDown', code: 'ArrowDown', ...none, altKey: true }, 'field', {}, { end: true }), 'cycle-next');
+  assert.equal(matchShortcut({ key: 'ArrowUp', code: 'ArrowUp', ...none, altKey: true }, 'field', {}, { start: true }), 'cycle-prev');
   assert.equal(press('g', { ctrlKey: true, shiftKey: true, code: 'KeyG' }, 'field'), 'toggle-view');
   assert.equal(press('g', { code: 'KeyG' }, 'field'), null);
   assert.equal(press('k', { metaKey: true, code: 'KeyK' }, 'field'), 'switcher');
@@ -141,7 +144,7 @@ test('the command palette lists registered actions and ranks a typed query', () 
 
 test('the shortcut table describes when a chord is allowed to fire', () => {
   assert.equal(whenLabel('switcher'), 'Anywhere except a confirm');
-  assert.equal(whenLabel('cycle-next'), 'Not in a dialog');
+  assert.equal(whenLabel('cycle-next'), 'Not in a dialog; while typing, only from the end of the text');
   assert.equal(whenLabel('show-shortcuts'), 'Not in a dialog');
   assert.equal(whenLabel('new-session'), 'Not in a dialog');
   assert.equal(whenLabel('focus-pane-left'), 'Not in a dialog; while typing, only from the start of the text');
@@ -188,15 +191,18 @@ test('formatChord speaks Mac symbols and Linux words', () => {
   assert.equal(formatChord({ key: 'k', meta: true }, true), '⌘K');
   assert.equal(formatChord({ key: 'k', ctrl: true, shift: true }, false), 'Ctrl+Shift+K');
   assert.equal(formatChord({ key: 'ArrowUp', alt: true }, false), 'Alt+↑');
-  assert.equal(formatChord({ key: 'Enter', ctrl: true, alt: true }, true), '⌃⌥Enter');
+  assert.equal(formatChord({ key: 'Enter', ctrl: true, alt: true }, true), '⌃⌥↩');
 });
 
 test('a chord drawn for the palette is one glyph per key', () => {
   assert.deepEqual(chordParts({ key: 'k', ctrl: true, shift: true }, true), ['⌃', '⇧', 'K']);
   assert.deepEqual(chordParts({ key: 'p', meta: true, shift: true }, true), ['⇧', '⌘', 'P']);
   assert.deepEqual(chordParts({ key: 'ArrowUp', alt: true }, true), ['⌥', '↑']);
-  assert.deepEqual(chordParts({ key: 'Enter', ctrl: true, alt: true }, true), ['⌃', '⌥', '↵']);
-  assert.deepEqual(chordParts({ key: 'Backspace', ctrl: true, shift: true }, true), ['⌃', '⇧', 'Backspace']);
+  assert.deepEqual(chordParts({ key: 'Enter', ctrl: true, alt: true }, true), ['⌃', '⌥', '↩']);
+  assert.deepEqual(chordParts({ key: 'Backspace', ctrl: true, shift: true }, true), ['⌃', '⇧', '⌫']);
+  // Apple's order on a Mac (⌃ ⌥ ⇧ ⌘); VS Code's elsewhere.
+  assert.deepEqual(chordParts({ key: 'ArrowLeft', ctrl: true, shift: true, alt: true }, true), ['⌃', '⌥', '⇧', '←']);
+  assert.deepEqual(chordParts({ key: 'ArrowLeft', ctrl: true, shift: true, alt: true }, false), ['Ctrl', 'Shift', 'Alt', '←']);
   // Off a Mac, the caps say what the keys say, the way the tooltips and README do.
   assert.deepEqual(chordParts({ key: 'k', ctrl: true, shift: true }, false), ['Ctrl', 'Shift', 'K']);
   assert.deepEqual(chordParts({ key: 'Enter', ctrl: true, alt: true }, false), ['Ctrl', 'Alt', '↵']);

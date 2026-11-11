@@ -3,6 +3,7 @@ import { contextMenu, useFitMenu } from './contextMenu.ts';
 import type { State, Win } from './api.ts';
 import { askConfirm } from './ask.tsx';
 import { Icon } from './icons.tsx';
+import { Reveal } from './Handoff.tsx';
 import { look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
 import { useSavedGroups, setGroupList } from './groupOrder.ts';
@@ -65,6 +66,8 @@ export function confirmTerminate(w: Win) {
 
 /** Desktop navigation: inbox, hosts, and every live session grouped by host (or project). */
 /** A shell's folder inside its project ("web/gui"), or "" at the project root. */
+const lastFolder = (path: string) => (path.includes('/') ? `…/${path.replace(/\/+$/, '').split('/').pop()}` : path);
+
 function subdir(w: Win): string {
   if (w.cwd === w.projectPath) return '';
   return w.cwd.startsWith(`${w.projectPath}/`) ? w.cwd.slice(w.projectPath.length + 1) : w.cwd;
@@ -201,7 +204,8 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
           </span>
           {/* The model is in the title's tooltip and the session's header: the row keeps its room for the title. */}
           {/* The group already names the project; a shell elsewhere in it says where. */}
-          {!w.agent && subdir(w) && <span className="side-model mono">{subdir(w)}</span>}
+          {/* Its last folder ("…/components"): the end of a path is the part that tells them apart. */}
+          {!w.agent && subdir(w) && <span className="side-model mono" title={subdir(w)}>{lastFolder(subdir(w))}</span>}
           {w.fork && (
             <span className="count" title={w.fork.parentTitle ? `Fork of ${w.fork.parentTitle}` : `${w.fork.forks} fork${w.fork.forks === 1 ? '' : 's'}`}>
               ⑂{w.fork.forks > 0 ? w.fork.forks : ''}
@@ -280,8 +284,9 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
       className="sidebar"
       data-rove="button.nav-item, button.side-session"
       onKeyDown={(e) => {
-        // Escape hands the keyboard back to the open session.
-        if (e.key === 'Escape' && (e.target as HTMLElement).closest('.side-session, .nav-item')) {
+        // Escape hands the keyboard back to the open session. Slid over the page, it puts the
+        // sidebar away instead (useSideSwipe), and focus goes back with it (App).
+        if (e.key === 'Escape' && (e.target as HTMLElement).closest('.side-session, .nav-item') && !(e.target as HTMLElement).closest('.side-over')) {
           e.preventDefault();
           runCommand('focus-main');
         }
@@ -326,14 +331,15 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
         <ShortcutHint id="switcher" />
       </button>
 
-      {handoff}
+      <Reveal>{handoff}</Reveal>
 
       <div className="side-nav">
       <Glide match=".nav-item.on" className="side-glide" />
       <button className={`nav-item ${page === 'inbox' && !selected ? 'on' : ''}`} title={shortcutTitle('Inbox', 'go-inbox')} onClick={() => onPage('inbox')}>
         <Icon name="inbox" />
         <span className="grow">Inbox</span>
-        {waiting > 0 ? <span className="badge">{waiting}</span> : <span className="count">{windows.length}</span>}
+        {/* No count at nothing, as a Mac sidebar's: an empty list says "0" by being empty. */}
+        {waiting > 0 ? <span className="badge">{waiting}</span> : windows.length > 0 && <span className="count">{windows.length}</span>}
       </button>
       <button className={`nav-item ${page === 'review' && !selected ? 'on' : ''}`} title={shortcutTitle('Review', 'go-review')} onClick={() => onPage('review')}>
         <Icon name="stack" />
@@ -343,7 +349,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
       <button className={`nav-item ${page === 'history' && !selected ? 'on' : ''}`} title={shortcutTitle('History', 'go-history')} onClick={() => onPage('history')}>
         <Icon name="history" />
         <span className="grow">History</span>
-        <span className="count">{state?.history.length ?? ''}</span>
+        {(state?.history.length ?? 0) > 0 && <span className="count">{state!.history.length}</span>}
       </button>
 
       <button className={`nav-item ${page === 'search' && !selected ? 'on' : ''}`} title={shortcutTitle('Search', 'go-search')} onClick={() => onPage('search')}>

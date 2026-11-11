@@ -1,4 +1,5 @@
 import { lazy, Suspense, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useTabFlow } from './tabFlow.ts';
 import { useHardwareKeyboard } from './hardwareKeyboard.ts';
 import { createPortal } from 'react-dom';
 import { menuViewport, placeFloatingMenu } from './menuPlace.ts';
@@ -24,12 +25,24 @@ import { ReviewContext, useReviewFor } from './reviewContext.ts';
 const SideChat = lazy(() => import('./SideChat.tsx').then((m) => ({ default: m.SideChat })));
 const ChatHistory = lazy(() => import('./ChatHistory.tsx').then((m) => ({ default: m.ChatHistory })));
 const StackPanel = lazy(() => import('./review/SessionStack.tsx'));
-import { FilesPanel } from './Files.tsx';
-import { QueuePanel } from './Queue.tsx';
-import { PreviewPanel } from './Preview.tsx';
-import { ForkDialog, ForksDialog } from './ForkDialog.tsx';
-import { SendToDialog } from './SendToDialog.tsx';
-import { SnapshotsPanel } from './Snapshots.tsx';
+// A session's panels and dialogs load when first opened, not with the first screen: they were
+// ~15% of the main chunk. They're fetched in the background a few seconds after start.
+const load = {
+  files: () => import('./Files.tsx'),
+  queue: () => import('./Queue.tsx'),
+  preview: () => import('./Preview.tsx'),
+  fork: () => import('./ForkDialog.tsx'),
+  sendTo: () => import('./SendToDialog.tsx'),
+  snapshots: () => import('./Snapshots.tsx'),
+};
+const FilesPanel = lazy(() => load.files().then((m) => ({ default: m.FilesPanel })));
+const QueuePanel = lazy(() => load.queue().then((m) => ({ default: m.QueuePanel })));
+const PreviewPanel = lazy(() => load.preview().then((m) => ({ default: m.PreviewPanel })));
+const ForkDialog = lazy(() => load.fork().then((m) => ({ default: m.ForkDialog })));
+const ForksDialog = lazy(() => load.fork().then((m) => ({ default: m.ForksDialog })));
+const SendToDialog = lazy(() => load.sendTo().then((m) => ({ default: m.SendToDialog })));
+const SnapshotsPanel = lazy(() => load.snapshots().then((m) => ({ default: m.SnapshotsPanel })));
+if (typeof window !== 'undefined') window.setTimeout(() => Object.values(load).forEach((f) => void f().catch(() => {})), 5000);
 import { ShortcutHint, shortcutTitle, useCommand, usePaletteProvider, useShortcutRevision } from './shortcuts.tsx';
 import { commandLabel as L } from './shortcuts.ts';
 import { runCommand } from './shortcuts.ts';
@@ -169,6 +182,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
   const touch = touchScreen && !hw;
   const surface = useRef<SurfaceHandle>(null);
   const body = useRef<HTMLDivElement>(null);
+  const tabRow = useRef<HTMLDivElement>(null);
   const review = useReviewFor(w.host, w.uid, w.branch);
   // 'main' is the session itself, drawn by whichever surface is chosen.
   const [tab, setTab] = useState<'main' | Panel>('main');
@@ -400,24 +414,38 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
   function claimKeyboard(ms = 1500): () => void {
     const until = performance.now() + ms;
     let raf = 0;
+    // Once you act (a key, a click, a tap) and focus goes somewhere outside the session, it's
+    // yours: the claim stands down, so a menu opened by a chord or the next row in the sidebar
+    // isn't pulled back. Typing in the session keeps it watching for a remounting composer.
+    let acted = false;
+    const act = () => (acted = true);
+    window.addEventListener('keydown', act, true);
+    window.addEventListener('pointerdown', act, true);
+    const release = () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('keydown', act, true);
+      window.removeEventListener('pointerdown', act, true);
+    };
     // Watched until the deadline, not just until it lands: a surface still loading can
     // replace the element that took focus (the composer remounts once the feed is in).
     const claim = () => {
       // A screen over the session (New session) owns the keyboard: stop, or keys
       // typed into it would land in this session's hidden terminal.
-      if (document.querySelector('[data-focus-owner]')) return;
+      if (document.querySelector('[data-focus-owner]')) return release();
       const a = document.activeElement as HTMLElement | null;
       const mine = body.current;
       const landed = !!mine && !!a && mine.contains(a) && a.getClientRects().length > 0;
       if (!landed) {
+        if (acted && a && a !== document.body && a.isConnected) return release();
         const elsewhere = a && a !== document.body && a.isConnected && (a.closest('dialog[open]') || (a.matches('input, textarea, select, [contenteditable="true"]') && !a.closest('.session-body, .pane')));
-        if (elsewhere) return;
+        if (elsewhere) return release();
         focusSurface();
       }
       if (performance.now() < until) raf = requestAnimationFrame(claim);
+      else release();
     };
     raf = requestAnimationFrame(claim);
-    return () => cancelAnimationFrame(raf);
+    return release;
   }
 
   /** The session's input, now: true when the keyboard is in it. */
@@ -579,10 +607,14 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
   // lands: the surfaces are lazy (their ref is empty at first), and during the view
   // transition the session you left still holds focus. Never from a dialog or a field
   // somewhere else, which someone chose.
+  // Opening is what claims: the first key from a keyboard joined to a tablet turns `touch`
+  // off mid-session, and claiming then pulled that key's focus (a tab, a segment) into the composer.
+  const touchNow = useRef(touch);
+  touchNow.current = touch;
   useEffect(() => {
-    if (!active || touch) return;
+    if (!active || touchNow.current) return;
     return claimKeyboard();
-  }, [active, w.key, touch]);
+  }, [active, w.key]);
   useCommand('toggle-view', () => switchView(view === 'gui' ? 'terminal' : 'gui', true), active && views.length > 1);
   useCommand(
     'toggle-panel',
@@ -636,6 +668,17 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
   useCommand('fork', () => setForking(true), active && turns);
   useCommand('send-to', () => setSending(true), active && !!w.feed);
   useCommand('pin', () => void act(() => client.pin(w.uid, !w.pinned)), active);
+  // Its close (or collapse) button goes with it: the keyboard goes back to the session, not to the page
+  // (no finger here, where the composer would raise the on-screen keyboard).
+  const closePanel = (collapse = false) => {
+    if (collapse) setPanelCollapsed(true);
+    else setPanel('');
+    if (touch) return;
+    requestAnimationFrame(() => {
+      const a = document.activeElement;
+      if (!a || a === document.body) focusSurface();
+    });
+  };
   const togglePanel = (p: Panel) => {
     if (narrow) setTab(tab === p ? 'main' : p);
     else openPanel(p);
@@ -741,7 +784,8 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
     active && w.queued > 0,
   );
 
-  const panelView = (p: Panel) =>
+  const panelView = (p: Panel) => <Suspense fallback={<div className="panel-body" />}>{panelOf(p)}</Suspense>;
+  const panelOf = (p: Panel) =>
     p === 'queue' ? (
       <QueuePanel client={client} uid={w.uid} onChange={refresh} />
     ) : p === 'snapshots' ? (
@@ -771,6 +815,27 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
       />
     );
 
+  // What you look at (the session, or one of its panels); the glass capsule above picks how (GUI
+  // or terminal). Icons, the open one with its name, so every tab fits a phone (as on a desktop).
+  const mobileTabs = (
+    [
+      ['main', 'sessions', 'Session', true],
+      ['diff', 'diff', L('panel-diff'), diffTab],
+      ['files', 'files', L('panel-files'), true],
+      // A side chat's own mark: the chat bubble is the header's GUI view, right above.
+      ['chat', 'sparkle', L('panel-chat'), true],
+      // Nothing queued: the tab steps aside (the menu and palette still open it).
+      ['queue', 'queue', L('panel-queue'), turns && (w.queued > 0 || tab === 'queue')],
+      ['snapshots', 'history', L('panel-snapshots'), turns],
+      ['preview', 'globe', L('panel-preview'), true],
+      // Its branch in review, or open: otherwise the menu opens it.
+      ['stack', 'stack', L('panel-stack'), stackTab && (!!review?.layer || tab === 'stack')],
+    ] as const
+  ).filter(([, , , shown]) => shown);
+  // Picking a tab moves the others too: the open one shows its name.
+  // On a phone the strip is where panels open: the menu leaves out the ones it shows.
+  const onStrip = (id: Panel) => narrow && mobileTabs.some(([t]) => t === id);
+  useTabFlow(tabRow, `${mobileTabs.map(([id]) => id).join(' ')} ${tab}`);
   const menuBody = (
     <div
       ref={menuEl}
@@ -846,14 +911,14 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
       )}
       <button onClick={() => act(() => client.pin(w.uid, !w.pinned))}>{w.pinned ? 'Unpin' : L('pin')}</button>
       <hr />
-      {diffTab && <button onClick={() => { setMenu(false); togglePanel('diff'); }}><span className="grow">{L('panel-diff')}</span><ShortcutHint id="panel-diff" /></button>}
-      <button onClick={() => { setMenu(false); togglePanel('files'); }}><span className="grow">{L('panel-files')}</span><ShortcutHint id="panel-files" /></button>
-      <button onClick={() => { setMenu(false); togglePanel('chat'); }}><span className="grow">{L('panel-chat')}</span><ShortcutHint id="panel-chat" /></button>
-      {turns && <button onClick={() => { setMenu(false); togglePanel('queue'); }}><span className="grow">{L('panel-queue')}</span>{w.queued > 0 && <span className="menu-value">{w.queued}</span>}<ShortcutHint id="panel-queue" /></button>}
+      {diffTab && !onStrip('diff') && <button onClick={() => { setMenu(false); togglePanel('diff'); }}><span className="grow">{L('panel-diff')}</span><ShortcutHint id="panel-diff" /></button>}
+      {!onStrip('files') && <button onClick={() => { setMenu(false); togglePanel('files'); }}><span className="grow">{L('panel-files')}</span><ShortcutHint id="panel-files" /></button>}
+      {!onStrip('chat') && <button onClick={() => { setMenu(false); togglePanel('chat'); }}><span className="grow">{L('panel-chat')}</span><ShortcutHint id="panel-chat" /></button>}
+      {turns && !onStrip('queue') && <button onClick={() => { setMenu(false); togglePanel('queue'); }}><span className="grow">{L('panel-queue')}</span>{w.queued > 0 && <span className="menu-value">{w.queued}</span>}<ShortcutHint id="panel-queue" /></button>}
       {w.queued > 0 && <button onClick={() => { setMenu(false); runCommand('send-now'); }}><span className="grow">{L('send-now')}</span><ShortcutHint id="send-now" /></button>}
-      {turns && <button onClick={() => { setMenu(false); togglePanel('snapshots'); }}><span className="grow">{L('panel-snapshots')}</span><ShortcutHint id="panel-snapshots" /></button>}
-      <button onClick={() => { setMenu(false); togglePanel('preview'); }}><span className="grow">{L('panel-preview')}</span><ShortcutHint id="panel-preview" /></button>
-      {stackTab && <button onClick={() => { setMenu(false); togglePanel('stack'); }}><span className="grow">{L('panel-stack')}</span><ShortcutHint id="panel-stack" /></button>}
+      {turns && !onStrip('snapshots') && <button onClick={() => { setMenu(false); togglePanel('snapshots'); }}><span className="grow">{L('panel-snapshots')}</span><ShortcutHint id="panel-snapshots" /></button>}
+      {!onStrip('preview') && <button onClick={() => { setMenu(false); togglePanel('preview'); }}><span className="grow">{L('panel-preview')}</span><ShortcutHint id="panel-preview" /></button>}
+      {stackTab && !onStrip('stack') && <button onClick={() => { setMenu(false); togglePanel('stack'); }}><span className="grow">{L('panel-stack')}</span><ShortcutHint id="panel-stack" /></button>}
       {(onSplit || onReplace || onClosePane) && <hr />}
       {onSplit && (
         <>
@@ -1126,7 +1191,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
             </button>
           )}
           <div className="menu-wrap">
-            <button ref={menuBtn} className="icon-btn" onClick={() => setMenu(!menu)} aria-label="More" aria-expanded={menu}>
+            <button ref={menuBtn} className="icon-btn" onClick={() => setMenu(!menu)} aria-label="More" title="More" aria-expanded={menu}>
               <Icon name="more" />
             </button>
             {menu &&
@@ -1145,32 +1210,15 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
       </header>
 
       {narrow && (
-        <div className="seg-tabs" role="tablist" data-rove>
+        <div className="seg-tabs" role="tablist" data-rove ref={tabRow}>
           <Glide match=".on" className="thumb" />
-          {/* What you look at (the session, or one of its panels); the glass capsule above picks how (GUI
-              or terminal). Icons, the open one with its name, so every tab fits a phone (as on a desktop). */}
-          {(
-            [
-              ['main', 'sessions', 'Session', true],
-              ['diff', 'diff', L('panel-diff'), diffTab],
-              ['files', 'files', L('panel-files'), true],
-              ['chat', 'chat', L('panel-chat'), true],
-              // Nothing queued: the tab steps aside (the menu and palette still open it).
-              ['queue', 'queue', L('panel-queue'), turns && (w.queued > 0 || tab === 'queue')],
-              ['snapshots', 'history', L('panel-snapshots'), turns],
-              ['preview', 'globe', L('panel-preview'), true],
-              // Its branch in review, or open: otherwise the menu opens it.
-              ['stack', 'stack', L('panel-stack'), stackTab && (!!review?.layer || tab === 'stack')],
-            ] as const
-          ).map(([id, icon, label, shown]) =>
-            shown ? (
-              <button key={id} role="tab" aria-selected={tab === id} aria-label={label} className={`tab-icon ${tab === id ? 'on' : ''}`} onClick={() => setTab(id)}>
-                <Icon name={icon} size={18} />
-                <span className="tab-label">{label}</span>
-                {id === 'queue' && w.queued > 0 && <span className="badge">{w.queued}</span>}
-              </button>
-            ) : null,
-          )}
+          {mobileTabs.map(([id, icon, label]) => (
+            <button key={id} data-tab={id} role="tab" aria-selected={tab === id} aria-label={label} className={`tab-icon ${tab === id ? 'on' : ''}`} onClick={() => setTab(id)}>
+              <Icon name={icon} size={18} />
+              <span className="tab-label">{label}</span>
+              {id === 'queue' && w.queued > 0 && <span className="badge">{w.queued}</span>}
+            </button>
+          ))}
         </div>
       )}
 
@@ -1230,7 +1278,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
                       // Beside Diff: both are about the branch.
                       ['stack', 'stack', stackTab],
                       ['files', 'files', true],
-                      ['chat', 'chat', true],
+                      ['chat', 'sparkle', true],
                       ['queue', 'queue', turns],
                       ['snapshots', 'history', turns],
                       ['preview', 'globe', true],
@@ -1266,10 +1314,10 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
                       <Icon name="history" size={14} />
                     </button>
                   )}
-                  <button className="icon-btn small" onClick={() => setPanelCollapsed(true)} aria-label="Collapse panel" title="Collapse panel">
+                  <button className="icon-btn small" onClick={() => closePanel(true)} aria-label="Collapse panel" title="Collapse panel">
                     <Icon name="panel-hide" size={14} />
                   </button>
-                  <button className="icon-btn small" onClick={() => setPanel('')} aria-label="Close panel">
+                  <button className="icon-btn small" onClick={() => closePanel()} aria-label="Close panel" title="Close panel">
                     <Icon name="close" size={14} />
                   </button>
                 </div>
@@ -1282,6 +1330,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
 
       {capture !== null && <CaptureDialog text={capture} onClose={() => setCapture(null)} />}
       {branching && w.branch && <BranchSheet client={client} uid={w.uid} branch={w.branch} onSwitched={refresh} onClose={() => setBranching(false)} />}
+      <Suspense fallback={null}>
       {forking && (
         <ForkDialog client={client} target={{ ref: w.uid, host: w.host, harness: w.agent, title: w.title }} onClose={() => setForking(false)} onForked={forked} />
       )}
@@ -1320,6 +1369,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
           }
         />
       )}
+      </Suspense>
     </>
   );
 }

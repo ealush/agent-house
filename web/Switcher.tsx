@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { plainSnippet } from './snippet.ts';
 import type { HistoryItem, SearchHit, SearchQuery, SearchResponse, Win } from './api.ts';
 import { Keycaps, MOD } from './shortcuts.tsx';
 import { look } from './agents.ts';
+import { day } from './dates.ts';
 import { age as ago } from './agents.ts';
 import { AgentLogo } from './logos.tsx';
 import { historyLine, sessionLine } from './sessionLine.tsx';
@@ -66,8 +68,9 @@ const has = (v: string | null | undefined, want?: string) => !want || (v ?? '').
 
 type Row = { kind: 'win'; w: Win; s: number } | { kind: 'hist'; h: HistoryItem; s: number };
 
-/** Renders a server snippet, turning its highlight markers into <mark>. */
+/** Renders a server snippet as plain prose, turning its highlight markers into <mark>. */
 export function Highlighted({ snippet }: { snippet: string }) {
+  snippet = plainSnippet(snippet);
   const out: React.ReactNode[] = [];
   let marked = false;
   let buf = '';
@@ -90,7 +93,7 @@ export function Highlighted({ snippet }: { snippet: string }) {
   return <>{out}</>;
 }
 
-const hitDate = (at: number) => (at ? new Date(at).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '');
+const hitDate = (at: number) => (at ? day(at) : '');
 
 export function Switcher({ windows, history, hosts, onSearchContent, onPick, onResume, onContent, onShowAll, onSplit, onClose, tile = false }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -182,7 +185,8 @@ export function Switcher({ windows, history, hosts, onSearchContent, onPick, onR
         autoFocus
         value={q}
         // The filter syntax is a keyboard hint; a phone's narrow field shows just the purpose.
-        placeholder={tile ? 'Open as a new pane…' : matchMedia('(hover: none)').matches ? 'Jump, resume or search…' : 'Jump, resume, or search conversations…  h:claude p:vest in:chats role:user'}
+        placeholder={tile ? 'Open as a new pane…' : matchMedia('(hover: none)').matches ? 'Jump, resume or search…' : 'Jump, resume, or search conversations  ·  h:claude p:project in:chats'}
+        enterKeyHint="go"
         autoCapitalize="off"
         autoCorrect="off"
         onChange={(e) => {

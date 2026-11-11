@@ -1654,7 +1654,7 @@
   padding: 0 14px 12px;
 }
 
-.layer-findings .side-foot {
+.layer-findings .send-foot {
   border-top: 1px solid var(--line);
 }
 
@@ -1847,7 +1847,9 @@
   background: var(--done);
 }
 
-.side-foot {
+/* The findings column's footer (Layer.tsx): its own class, so this lazily loaded sheet never
+   restyles the main sidebar's .side-foot after a visit to Review. */
+.send-foot {
   flex: none;
   display: flex;
   flex-direction: column;
@@ -1868,7 +1870,7 @@
   font-size: 12px;
 }
 
-.side-foot .btn.send {
+.send-foot .btn.send {
   justify-content: center;
   min-height: 40px;
   border-radius: 12px;
