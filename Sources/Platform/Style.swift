@@ -12,7 +12,32 @@ extension UIColor {
 
     /// A color that follows the window's light/dark appearance between two palettes.
     static func dynamic(dark: String, light: String) -> UIColor {
-        UIColor { traits in UIColor(hex: traits.userInterfaceStyle == .dark ? dark : light) }
+        UIColor { traits in .cached(hex: traits.userInterfaceStyle == .dark ? dark : light) }
+    }
+
+    /// The color for a hex string, made once: a theme's colors are asked for by every row
+    /// on every pass, and each ask used to read the string's digits and make a color again
+    /// (and, following the system, once more each time the color was drawn).
+    static func cached(hex: String, fallback: UIColor = .label) -> UIColor {
+        HexColors.shared.color(hex) ?? fallback
+    }
+}
+
+/// Every hex string the app has painted with, and its color. Asked from any thread (a
+/// dynamic color resolves where it's drawn), so behind a lock.
+private final class HexColors: @unchecked Sendable {
+    static let shared = HexColors()
+    private let lock = NSLock()
+    private var colors: [String: UIColor] = [:]
+
+    func color(_ hex: String) -> UIColor? {
+        lock.lock()
+        defer { lock.unlock() }
+        if let kept = colors[hex] { return kept }
+        guard let c = hexComponents(hex) else { return nil }
+        let color = UIColor(red: c.r, green: c.g, blue: c.b, alpha: c.a)
+        colors[hex] = color
+        return color
     }
 }
 
@@ -45,7 +70,7 @@ struct Theme: Equatable, Sendable {
 
     private func uiPair(_ key: KeyPath<ThemePalette, String>) -> UIColor {
         if followsSystem { return .dynamic(dark: ThemePalette.dark[keyPath: key], light: ThemePalette.light[keyPath: key]) }
-        return UIColor(hex: palette[keyPath: key])
+        return .cached(hex: palette[keyPath: key])
     }
 
     /// The accent for UIKit's own controls (the tab bar, bar buttons), which don't read SwiftUI's tint.
@@ -239,11 +264,14 @@ struct StatusPill: View {
     /// Increased on a selected row filled with the accent (a focused list): status colors
     /// would vanish into it, so the pill turns white there.
     @Environment(\.backgroundProminence) private var prominence
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Group {
             if compact { StatusDot(word: word, onAccent: prominence == .increased) } else { pill }
         }
+        // Working to done, idle to needs you: the pill changes as it's watched, not between frames.
+        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: word)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(word.label)
     }
@@ -252,12 +280,18 @@ struct StatusPill: View {
     /// the loudest thing on screen. Idle is quiet.
     private var pill: some View {
         let filled = word == .needsYou
-        return Text(word.rawValue)
-            .font(.ah(.caption).weight(.semibold))
-            .foregroundStyle(filled ? Color.white : word == .idle ? theme.text2 : theme.status(word))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 2)
-            .background(filled ? theme.accentStrong : word == .idle ? theme.text.opacity(0.06) : theme.tint(word), in: Capsule())
+        return HStack(spacing: 5) {
+            // Working is alive: its dot beats in the pill, as it does on its own in the sidebar.
+            if word == .working {
+                Circle().fill(theme.status(word)).frame(width: 6, height: 6).overlay { PulseRing(color: theme.status(word)) }
+            }
+            Text(word.rawValue)
+        }
+        .font(.ah(.caption).weight(.semibold))
+        .foregroundStyle(filled ? Color.white : word == .idle ? theme.text2 : theme.status(word))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 2)
+        .background(filled ? theme.accentStrong : word == .idle ? theme.text.opacity(0.06) : theme.tint(word), in: Capsule())
     }
 }
 
@@ -391,18 +425,34 @@ struct AgentMark: View {
 /// "3m ago", "just now": relative time that keeps itself fresh.
 struct Elapsed: View {
     let seconds: Double
+    /// "3m", "2h", "5d": for a list's rows, where the time sits beside a title (as Mail and
+    /// Messages keep theirs), with the long form spoken.
+    var short = false
+
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
-            Text(Elapsed.format(Date(timeIntervalSince1970: seconds), now: context.date))
+            let date = Date(timeIntervalSince1970: seconds)
+            if short {
+                Text(ElapsedWords.short(since: seconds, now: context.date.timeIntervalSince1970))
+                    .accessibilityLabel(Elapsed.format(date, now: context.date))
+            } else {
+                Text(Elapsed.format(date, now: context.date))
+            }
         }
     }
+
+    /// One formatter for every row and every tick: making one a time was most of what a
+    /// long list's rows cost to draw.
+    private static let relative: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter
+    }()
 
     static func format(_ date: Date, now: Date) -> String {
         let delta = now.timeIntervalSince(date)
         if delta < 45 { return "just now" }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: now)
+        return relative.localizedString(for: date, relativeTo: now)
     }
 }
 

@@ -776,14 +776,25 @@ struct ToastStack: View {
     var body: some View {
         VStack(spacing: 6) {
             ForEach(scene.toasts) { toast in
-                Text(toast.text)
-                    .font(.ah(.footnote))
+                // An error leads with its glyph and keeps its words in ink: red text on
+                // glass over a transcript was the hardest thing on the screen to read.
+                HStack(spacing: 8) {
+                    if toast.isError {
+                        Image(systemName: "exclamationmark.circle.fill").foregroundStyle(theme.danger).accessibilityHidden(true)
+                    }
+                    Text(toast.text).foregroundStyle(theme.text).multilineTextAlignment(.leading)
+                }
+                    .font(.ah(.footnote).weight(.medium))
                     .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
-                    .background(.regularMaterial, in: Capsule())
-                    .foregroundStyle(toast.isError ? theme.danger : theme.text)
+                    .padding(.vertical, 10)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(toast.isError ? theme.danger.opacity(0.35) : theme.line, lineWidth: 0.75))
+                    .shadow(color: theme.shadow, radius: 12, y: 5)
                     .onTapGesture { scene.dismissToast(toast.id) }
                     .overlayTarget("toast-\(toast.id)", in: targets)
+                    // Clear of the screen's edges when its words fill the width (outside
+                    // what takes its touches).
+                    .padding(.horizontal, 16)
                     .task {
                         try? await Task.sleep(for: .seconds(toast.isError ? 6 : 3))
                         scene.dismissToast(toast.id)

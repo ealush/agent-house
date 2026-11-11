@@ -246,20 +246,34 @@ struct ReviewTab: View {
 struct DetailView: View {
     @Bindable var scene: SceneModel
     @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// What fills the detail: the panes, one session, or a page.
+    private var kind: Int {
+        if scene.workspace.layout != nil { return 0 }
+        if case .session = scene.route { return 1 }
+        return 2
+    }
 
     var body: some View {
         ZStack {
             if scene.workspace.layout != nil {
-                WorkspaceView(scene: scene)
+                WorkspaceView(scene: scene).transition(.opacity)
             } else if case .session(let key) = scene.route, let session = scene.session(key) {
-                SingleSessionView(scene: scene, session: session)
+                SingleSessionView(scene: scene, session: session).transition(.opacity)
             } else {
-                NavigationStack { PageView(scene: scene, route: scene.route) }.modifier(AhPanel())
+                NavigationStack { PageView(scene: scene, route: scene.route) }.modifier(AhPanel()).transition(.opacity)
             }
             if scene.workspace.scratchVisible, let key = scene.workspace.scratchKey, let session = scene.session(key) {
                 ScratchpadView(scene: scene, session: session)
             }
         }
+        // A page gives way to a session (or the panes) through a short fade, where it cut.
+        // Only the kind of thing changing does it: one session to the next stays in place.
+        .animation(.smooth(duration: 0.18), value: kind)
+        // The scratchpad drops in from the top and goes back up: its transition was written,
+        // and nothing ever ran it.
+        .animation(reduceMotion ? .smooth(duration: 0.15) : .snappy(duration: 0.28), value: scene.workspace.scratchVisible)
         .background(theme.background)
     }
 }

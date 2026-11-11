@@ -82,6 +82,35 @@ private struct TouchTarget: ViewModifier {
     }
 }
 
+/// A session's row before the host has said what sessions there are: its shape, breathing.
+/// A cold launch showed "No sessions running" for the second it took to ask.
+struct SessionRowPlaceholder: View {
+    /// How much of the title's line this one fills (rows differ, as real ones do).
+    var title: CGFloat = 0.6
+    @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var dim = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 9, style: .continuous).fill(theme.text.opacity(0.08)).frame(width: 32, height: 32)
+            VStack(alignment: .leading, spacing: 8) {
+                Capsule().fill(theme.text.opacity(0.1)).frame(width: 220 * title, height: 11)
+                Capsule().fill(theme.text.opacity(0.06)).frame(width: 140, height: 8)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 5)
+        .opacity(dim ? 0.5 : 1)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { dim = true }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Loading sessions")
+    }
+}
+
 /// A page's filter field, under its large title as iOS keeps one (the bar's own search sits
 /// above a title that lives in the page).
 struct AhSearchField: View {

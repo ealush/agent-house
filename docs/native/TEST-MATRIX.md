@@ -186,10 +186,60 @@ between them, and each change asked for another pass.
 
 - Measuring sets nothing now; the short line is centred where the text view is laid out,
   from its laid-out height and font alone.
-- Not seen running: written on Linux, where the UI layer doesn't compile. The Mac build and
-  the simulator's unit tests ran in CI on the pull request; the freeze itself and the
-  centring are still to be looked at on a device (open a session with a draft, at the
-  default and at a small text size).
+- Not seen running, and not compiled: written on Linux, where the UI layer doesn't build,
+  and the pull request's checks (#128) never started (both jobs ended in two seconds with no
+  log, as they had for #124 and #126). `swift test` passed there, 223 tests. The Mac build,
+  the freeze itself and the centring are still to be looked at on a Mac and a device (open
+  a session with a draft, at the default and at a small text size).
+
+### Review you can read, lists that move, and less on the main thread, 12 November 2026
+
+Written on Linux. The model half is compiled and tested there (`swift test`, 227 passed); the
+UI half is **not compiled and not seen running**: the pull request's checks didn't start (as
+for #128), so the first Mac build of this is the owner's. Each line below says which half
+it's in.
+
+Review:
+
+- A layer's diff is lazy, a file to a section, each file's header pinned while its lines
+  scroll under it (name, counts, fold, Viewed). Only the files in sight are built; a tap on
+  a line redraws that file, not the page. A Files menu goes to any file. Folding or viewing
+  a file from deep inside it leaves its header where it was. *UI, unseen.*
+- How far through the files you are is a bar under the count. A diff on its way in is a
+  placeholder with a diff's shape; one that fails says why where the diff goes, with Try
+  Again. *UI, unseen.*
+- A slow diff (or description) for the layer you left no longer lands on the layer you
+  opened, and opening another stack shows nothing of the last one while it loads. *Model:
+  UT aSlowDiffForTheLayerYouLeftNeverLandsOnTheLayerYouOpened,
+  aDiffThatFailsSaysSoWhereTheDiffGoesAndAnotherStackStartsClean.*
+- A stack's page leads with its spine and "2 of 5 reviewed", then its layers; pinned
+  decisions follow them. Review's list shows two placeholder rows until the host has
+  answered once, instead of an empty page. *UI, unseen.*
+
+Lists:
+
+- A page's session row: a larger mark, the title with a short time beside it ("3m", "2h":
+  UT aRowsTimeIsAFewCharacters), what it's doing under it and its status at the line's end;
+  idle rows carry no pill. The sidebar's dense row is as it was. The working pill's dot
+  beats; a pill changing word animates. Sessions' rows move to their places as the Inbox's
+  do. *UI, unseen.*
+- Swipe actions that were destructive by role (History's Hide, a queued message's Cancel,
+  Settings' Remove rows, a worktree's Remove, a decision's Unpin) are red by tint instead,
+  as a session's Terminate already was and for its reason: the row is still there until the
+  host answers. *UI, unseen.*
+- On an iPad, a page gives way to a session or the panes through a short fade, and the
+  scratchpad's drop from the top (written, never run) now runs. *UI, unseen.*
+
+Less work on the main thread:
+
+- The session list, its lookup by key and the history are made once per change, not on
+  every read. *Model: UT theSessionListIsMadeOncePerChangeAndStillFollowsEveryChange.*
+- A transcript's sealed page is read and sealed off the main thread (sealing ran every five
+  seconds of a live turn, there). *Model: compiled; the sealing itself is IT
+  ModelIntegrationTests, not run here (no host).*
+- A theme's colors are made once per hex string; one keyboard observer for every session
+  screen; one relative-date formatter. A diff file's added/removed counts are counted once.
+  *UI and model; the UI half unseen.*
 
 ## Still to run (in order)
 

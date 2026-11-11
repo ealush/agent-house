@@ -781,7 +781,9 @@ private struct QueuePanel: View {
                     Button("Send now") { Task { await session.queue.steer(item) } }.tint(theme.limited)
                 }
                 .swipeActions(edge: .trailing) {
-                    Button("Cancel", role: .destructive) { Task { await session.queue.cancel(item) } }
+                    // Red by tint, not role: the row is still there until the host says it's
+                    // cancelled, and a list aborts when a row swiped away as deleted is not gone.
+                    Button("Cancel") { Task { await session.queue.cancel(item) } }.tint(theme.danger)
                     Button("Edit") {
                         Task { if let text = await session.queue.edit(item) { session.composer.compose(text) } }
                     }
