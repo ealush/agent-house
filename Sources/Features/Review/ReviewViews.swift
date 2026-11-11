@@ -483,16 +483,22 @@ struct LayerPage: View {
     @Bindable var scene: SceneModel
     @Bindable var model: ReviewModel
     let route: ReviewRoute
+    @State private var shown = false
 
     var body: some View {
         Group {
-            if model.layer != nil, model.selectedPR == route.pr {
+            // Once shown, the page follows the model within its stack: a merge moves on to the
+            // next layer ahead of the path, which catches up when the merge sheet goes.
+            if model.layer != nil, model.stack?.id == route.stack, shown || model.selectedPR == route.pr {
                 LayerView(scene: scene, model: model)
             } else if let error = model.error {
                 Banner(text: error, tone: .error).padding()
             } else {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+        }
+        .onChange(of: model.selectedPR == route.pr && model.stack?.id == route.stack, initial: true) { _, here in
+            if here { shown = true }
         }
         .task(id: route) {
             if model.stack?.id != route.stack {
@@ -583,7 +589,9 @@ struct LayerView: View {
     @State private var selectedLines: (path: String, index: Int, lines: [DiffLine])?
     @State private var addingFinding = false
     @State private var dispatching: String?? = nil
-    @State private var merging = false
+    /// The layer the merge sheet was opened for: the page moves on to the next layer once it
+    /// merges, and the sheet stays with this one to say how it went.
+    @State private var mergeTarget: Layer?
     @State private var resolving: Finding?
     /// Files folded shut in the diff, by path.
     @State private var folded: Set<String> = []
@@ -634,8 +642,9 @@ struct LayerView: View {
             .sheet(item: $resolving) { finding in
                 ResolveThreadSheet(model: model, finding: finding)
             }
-            .sheet(isPresented: $merging) {
-                MergeLayerSheet(scene: scene, model: model, layer: layer, confidence: confidence)
+            // A merge moves on to the next layer; the path follows once the sheet has gone.
+            .sheet(item: $mergeTarget, onDismiss: followSelection) { target in
+                MergeLayerSheet(scene: scene, model: model, layer: target, confidence: LayerConfidence(layer: target))
             }
         }
     }
@@ -1162,7 +1171,7 @@ struct LayerView: View {
             .tint(theme.accentStrong)
             .disabled(model.loading.contains("approve"))
         } else if confidence.readyToMerge {
-            Button { merging = true } label: {
+            Button { mergeTarget = layer } label: {
                 // Ink on the green, as ah's light controls carry it: white on it barely read.
                 Label("Merge #\(layer.pr)…", systemImage: "arrow.triangle.merge")
                     .font(.ah(.subheadline).weight(.semibold))
@@ -1229,6 +1238,15 @@ struct LayerView: View {
         .buttonStyle(.glass)
         .buttonBorderShape(.circle)
         .accessibilityLabel("More for \(layer.name)")
+    }
+
+    /// On a phone, puts the path at the layer shown, without the stack's animation, so a link
+    /// or a restored window lands where you are.
+    private func followSelection() {
+        guard scene.narrow, let id = model.stack?.id, let pr = model.selectedPR, let last = scene.reviewPath.last, last.stack == id, last.pr != pr else { return }
+        var quiet = Transaction()
+        quiet.disablesAnimations = true
+        withTransaction(quiet) { scene.reviewPath[scene.reviewPath.count - 1] = ReviewRoute(stack: id, pr: pr) }
     }
 
     /// Another layer of the stack: in place beside the list, as its own page on a phone.
