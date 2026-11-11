@@ -372,9 +372,10 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
       session,
       name,
       command,
-      meta: { ...launchMeta!, ...(wt ? { 'ah.worktree': wt } : {}), 'ah.order': order },
+      // "Skip startup confirmations": ah accepts the agent's folder-trust prompt.
+      meta: { ...launchMeta!, ...(wt ? { 'ah.worktree': wt } : {}), ...(body.trust === true && preset.trust ? { 'ah.launch.trust': true } : {}), 'ah.order': order },
     });
-    audit(req, 'session.create', { window: out.windowId, uid: out.uid, preset: preset.id, cwd: wt?.path ?? cwd, branch: wt?.branch });
+    audit(req, 'session.create', { window: out.windowId, uid: out.uid, preset: preset.id, cwd: wt?.path ?? cwd, branch: wt?.branch, ...(body.trust === true && preset.trust ? { trust: true } : {}) });
     await core.refreshTmuxPath();
     return send(res, 201, { id: out.windowId, uid: out.uid });
   }

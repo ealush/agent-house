@@ -271,3 +271,74 @@ test('"Chat about this" is past the options, the free-text row and Submit', () =
   assert.deepEqual(chatSteps({ options: two, multiSelect: false, previews: true }), [{ keys: ['Down', 'Down'] }, { keys: ['Enter'] }]);
   assert.deepEqual(chatSteps({ options: two, multiSelect: false, previews: true }, 2), [{ keys: ['Down'] }, { keys: ['Enter'] }]);
 });
+
+// Startup folder-trust prompts, captured from Grok Build 1.0.77, Gemini CLI 0.64.0
+// and Muse Code 1.4.15 in a fresh folder (blank lines dropped, as screenTail does).
+const GROK_TRUST = `
+                       ⠐⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+        Do you trust the contents of this directory?
+/home/me/code/emoji-picker-react
+  Grok Build may run or modify contents in this directory,
+                   posing security risks.
+               Yes, proceed                 y
+               No, quit                     n
+                               Grok Build  1.0.77 [stable]`.split('\n').filter((l) => l.trim());
+
+const GEMINI_TRUST = `
+ ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │                                                                                                  │
+ │ Do you trust the files in this folder?                                                           │
+ │                                                                                                  │
+ │ Trusting a folder allows Gemini CLI to load its local configurations, including custom           │
+ │ commands, hooks, MCP servers, agent skills, and settings. These configurations could execute     │
+ │ code on your behalf or change the behavior of the CLI.                                           │
+ │                                                                                                  │
+ │ ● 1. Trust folder (emoji-picker-react)                                                           │
+ │   2. Trust parent folder (code)                                                                  │
+ │   3. Don't trust                                                                                 │
+ │                                                                                                  │
+ ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯`.split('\n');
+
+const MUSE_TRUST = `
+Do you trust this workspace?
+Workspace:
+/home/me/code/emoji-picker-react
+Trusting allows project-local skills, rules, hooks, and plugin config to load before the model runs.
+Only trust this workspace when you trust its contents.
+⟩ 1  Trust and continue
+  2  Quit
+Use Up/Down or 1/2, then Enter. Esc quits.`.split('\n');
+
+test("Grok's trust prompt is read by its hotkeys", () => {
+  const p = parsePicker(GROK_TRUST)!;
+  assert.deepEqual(p.options, [
+    { key: 'y', label: 'Yes, proceed' },
+    { key: 'n', label: 'No, quit' },
+  ]);
+  assert.match(p.context, /Do you trust the contents of this directory\?/);
+  // One row with a trailing letter, or two rows that share it, is not a picker.
+  assert.equal(parsePicker(['  just a line ending in a letter      a']), null);
+  assert.equal(parsePicker(['  first      a', '  second      a']), null);
+});
+
+test("Gemini's boxed trust list is read, its ● row as the cursor", () => {
+  const p = parsePicker(GEMINI_TRUST)!;
+  assert.deepEqual(p.options, [
+    { key: '1', label: 'Trust folder (emoji-picker-react)' },
+    { key: '2', label: 'Trust parent folder (code)' },
+    { key: '3', label: "Don't trust" },
+  ]);
+  assert.equal(p.context.split('\n')[0], 'Do you trust the files in this folder?', 'no box padding');
+  assert.ok(!p.context.split('\n').some((l) => !l.trim() || l !== l.trimEnd()), 'no blank or padded rows');
+  // Outside a box, ● opens the agent's reply: a numbered list there is prose.
+  assert.equal(parsePicker(['● 1. First, read the config', '  2. Then run the tests']), null);
+});
+
+test("Muse's trust list is read with its two-space digits", () => {
+  const p = parsePicker(MUSE_TRUST)!;
+  assert.deepEqual(p.options, [
+    { key: '1', label: 'Trust and continue' },
+    { key: '2', label: 'Quit' },
+  ]);
+  assert.match(p.context, /Do you trust this workspace\?/);
+});

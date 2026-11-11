@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeStatus, footerMode, screenAsks, adoptTranscripts, hasToolWork, atShellPrompt, resetTime, screenLimit, shellDetail, trackContent, type StatusInput, type WindowView } from './sessions.ts';
+import { computeStatus, footerMode, screenAsks, adoptTranscripts, hasToolWork, atShellPrompt, processNames, resetTime, screenLimit, shellDetail, trackContent, type StatusInput, type WindowView } from './sessions.ts';
 import { loadConfig } from './config.ts';
 
 const base: StatusInput = { now: 1000, activity: 900, seen: 900, viewers: 0, idleAfter: 4, hook: null, screenWaiting: false };
@@ -262,4 +262,14 @@ test('footerMode reads the mode from the footer, not from the conversation above
   const talk = ['● I turned plan mode on earlier.', ...Array(10).fill('  more prose')];
   assert.equal(footerMode([...talk, ...box, '  ⏵⏵ auto mode on (shift+tab to cycle)'], detect), 'auto');
   assert.equal(footerMode([...talk, ...box], detect), null, 'no footer: unknown, not the mode the prose names');
+});
+
+test('an agent is told by its executable or the script its interpreter runs', () => {
+  assert.deepEqual(processNames(['claude']), ['claude']);
+  assert.deepEqual(processNames(['python', '/p/hermes']), ['python', 'hermes']);
+  // Gemini CLI 0.64: flags before the bundled script, which carries an extension.
+  assert.deepEqual(processNames(['/m/node/26.8.1/bin/node', '--max-old-space-size=14440', '/m/gemini/latest/bundle/gemini.js']), ['node', 'gemini']);
+  assert.deepEqual(processNames(['node', '/usr/lib/node_modules/@anthropic-ai/claude-code/cli.mjs']), ['node', 'cli']);
+  // Only an interpreter's script loses its extension: an editor opening gemini.js is not Gemini.
+  assert.deepEqual(processNames(['vim', 'gemini.js']), ['vim', 'gemini.js']);
 });

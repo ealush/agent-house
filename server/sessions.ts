@@ -73,6 +73,8 @@ export type Ask = {
   questions?: Question[];
   /** A numbered picker on screen ("1. Yes / 2. Yes, don't ask again / 3. No"); each one is a key to type. */
   options?: ScreenOption[];
+  /** The agent's startup folder-trust prompt (Preset.trust); `accept` is the option that trusts the folder. */
+  trust?: { accept: string };
   /** `choice` without usable `questions`: the one question the dialog shows now, answered a step at a time. */
   dialog?: ScreenQuestion;
 };
@@ -191,10 +193,23 @@ function escape(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * The names a process goes by, for telling which agent it is: its executable and
+ * the program it runs. An interpreter's flags come before its script
+ * ("node --max-old-space-size=14440 …/bundle/gemini.js", Gemini CLI 0.64), and a
+ * script it runs answers to its name without the extension.
+ */
+export function processNames(argv: string[]): string[] {
+  const exe = basename(argv[0] ?? '');
+  if (!/^(node|bun|deno)$/.test(exe)) return [exe, ...(argv[1] ? [basename(argv[1])] : [])];
+  const script = argv.slice(1).find((a) => !a.startsWith('-'));
+  return [exe, ...(script ? [basename(script).replace(/\.[cm]?js$/, '')] : [])];
+}
+
 function detectAgent(w: RawWindow, procs: Awaited<ReturnType<typeof snapshot>>, matchers: Array<[string, RegExp]>) {
   // Shell wrappers often exec the agent, replacing the pane's root process.
   for (const proc of descendants(procs, w.panePid, true)) {
-    const names = proc.argv.slice(0, 2).map((a) => basename(a));
+    const names = processNames(proc.argv);
     for (const [id, re] of matchers) {
       if (names.some((n) => re.test(n))) return { id, pid: proc.pid };
     }
@@ -411,6 +426,7 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
   }
   const matchers = compileMatchers(config.presets);
   const waitingRules = new Map(config.presets.map((p) => [p.id, (p.waitingPatterns ?? []).map((s) => new RegExp(s, 'm'))]));
+  const trustRules = new Map(config.presets.filter((p) => p.trust).map((p) => [p.id, { shown: new RegExp(p.trust!.pattern, 'm'), accept: new RegExp(p.trust!.accept) }]));
   const now = Date.now() / 1000;
   const alive = new Set<string>();
   const waitingEpisodes = new Set<string>();
@@ -446,6 +462,11 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
       // don't keep the session on "needs you" for it.
       if (hooked && hookState === 'waiting' && (hookAsk?.kind === 'tool' || hookAsk?.kind === 'command') && quiet && !parsePicker(tail) && !isQuestionDialog(tail)) hookState = 'done';
       const rules = agent ? (waitingRules.get(agent) ?? []) : [];
+      // The startup trust prompt fills the screen, so the whole tail is read for it,
+      // hooks or not (an agent's hooks don't run before its folder is trusted).
+      const trustRule = agent ? trustRules.get(agent) : undefined;
+      const trustPicker = trustRule && trustRule.shown.test(tail.join('\n')) ? parsePicker(tail) : null;
+      const trustAccept = trustPicker?.options.find((o) => trustRule!.accept.test(o.label));
       const asks = !hooked && !!agent && quiet && rules.length > 0 && screenAsks(tail, rules);
       // A prompt the hook reports is a free test of the screen rules hookless sessions use
       // (server/audit.ts). Its first moments are skipped: the TUI may not have drawn it yet.
@@ -462,12 +483,12 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
         viewers,
         idleAfter: config.idleAfter,
         quiet,
-        hook: hooked ? { state: hookState, at: w.hookAt } : null,
+        hook: hooked && !trustAccept ? { state: hookState, at: w.hookAt } : null,
         screenWaiting: asks,
         // A drawn picker is unambiguous, so it needs no quiet period (Claude redraws
         // a permission prompt every second, which would otherwise read as working):
         // the question dialog, its review step, or a prompt rule over a numbered picker.
-        dialog: !hooked && !!agent && rules.length > 0 && (isQuestionDialog(tail) || isQuestionReview(tail) || (screenAsks(tail, rules) && !!parsePicker(tail))),
+        dialog: !!trustAccept || (!hooked && !!agent && rules.length > 0 && (isQuestionDialog(tail) || isQuestionReview(tail) || (screenAsks(tail, rules) && !!parsePicker(tail)))),
         toolRunning: detected ? hasToolWork(procs, detected.pid) : false,
       });
 
@@ -498,7 +519,9 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
       const rec = registry.get(uid)!;
       const hookDetail = hooked ? parseJson<Ask>(w.hookDetail) : null;
       let ask: Ask | null = null;
-      if (status === 'waiting') {
+      if (status === 'waiting' && trustPicker && trustAccept) {
+        ask = { kind: 'screen', text: trustPicker.context || 'Trust this folder?', options: trustPicker.options, trust: { accept: trustAccept.key } };
+      } else if (status === 'waiting') {
         ask = hooked ? (hookAsk ?? { kind: 'question', text: 'Waiting for your input' }) : { kind: 'screen', text: tail.slice(-4).join('\n') };
         if (agent && isQuestionDialog(tail)) {
           // Answered from the questions, never by its first row's digit. The hook's
