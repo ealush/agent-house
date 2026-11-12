@@ -142,3 +142,11 @@ import Testing
     #expect(Markdown.remembered("a\nb", keepingLineBreaks: true) == Markdown.parse("a\nb", keepingLineBreaks: true))
     #expect(Markdown.remembered("a\nb", keepingLineBreaks: true) != Markdown.remembered("a\nb", keepingLineBreaks: false), "the line-break rule is part of what's remembered")
 }
+
+@Test func aLongLineOfStrayMarkersReadsQuickly() {
+    // A pasted log: thousands of stars, underscores and angle brackets that close nothing.
+    let log = String(repeating: "x * y < z _ w ", count: 3000)
+    let took = ContinuousClock().measure { _ = Markdown.parse(log) }
+    #expect(took < .seconds(1), "took \(took)")
+    #expect(Markdown.parse("a *b* and <https://x.dev> and *c")[0] == .paragraph([.text("a "), .emphasis([.text("b")]), .text(" and "), .link(text: [.text("https://x.dev")], url: "https://x.dev"), .text(" and *c")]))
+}

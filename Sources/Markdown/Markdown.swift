@@ -428,10 +428,15 @@ private struct BlockParser {
 private struct InlineParser {
     let chars: [Character]
     var i = 0
+    /// For each delimiter, the earliest point a search for its closer found none (in text
+    /// with no code in it): nothing later can find one either. A line of unmatched `*`s (a
+    /// pasted log) searched to its end once per star.
+    private var noCloser: [String: Int] = [:]
 
     init(_ chars: [Character]) { self.chars = chars }
 
     private static let punctuation = Set("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")
+    private static let https = Array("https://"), http = Array("http://")
 
     mutating func parse(until closer: String?) -> [MarkdownInline] {
         var out: [MarkdownInline] = []
@@ -486,7 +491,10 @@ private struct InlineParser {
                     i += 1
                 }
             case "<":
-                if let end = chars[i...].firstIndex(of: ">"), end > i + 1 {
+                // An autolink has no spaces in it: no need to look past the first.
+                var end = i + 1
+                while end < chars.count, chars[end] != ">", !chars[end].isWhitespace { end += 1 }
+                if end < chars.count, chars[end] == ">", end > i + 1 {
                     let inner = String(chars[(i + 1)..<end])
                     if (inner.hasPrefix("http://") || inner.hasPrefix("https://") || inner.hasPrefix("mailto:")) && !inner.contains(" ") {
                         flush()
@@ -560,9 +568,15 @@ private struct InlineParser {
     func peek(_ n: Int) -> Character? { i + n < chars.count ? chars[i + n] : nil }
 
     func matches(_ s: String) -> Bool {
-        let a = Array(s)
-        guard i + a.count <= chars.count else { return false }
-        return Array(chars[i..<(i + a.count)]) == a
+        has(Array(s), at: i)
+    }
+
+    /// Whether `a` is written at `j`, compared in place (a copy at every character was most
+    /// of what reading a long reply cost).
+    func has(_ a: [Character], at j: Int) -> Bool {
+        guard j >= 0, j + a.count <= chars.count else { return false }
+        for k in a.indices where chars[j + k] != a[k] { return false }
+        return true
     }
 
     func count(of c: Character, from start: Int) -> Int {
@@ -575,7 +589,7 @@ private struct InlineParser {
         let a = Array(s)
         var j = start
         while j + a.count <= chars.count {
-            if Array(chars[j..<(j + a.count)]) == a && (j + a.count == chars.count || chars[j + a.count] != a[0] || a[0] != "`") {
+            if has(a, at: j) && (j + a.count == chars.count || chars[j + a.count] != a[0] || a[0] != "`") {
                 if a[0] == "`", j > start, chars[j - 1] == "`" { j += 1; continue }
                 return j
             }
@@ -585,20 +599,24 @@ private struct InlineParser {
     }
 
     /// A closing delimiter run not preceded by whitespace.
-    func closing(_ marker: String, from start: Int) -> Int? {
+    mutating func closing(_ marker: String, from start: Int) -> Int? {
+        if let none = noCloser[marker], start >= none { return nil }
         let a = Array(marker)
         var j = start
+        var code = false
         while j + a.count <= chars.count {
             if chars[j] == "`" {
+                code = true
                 let run = count(of: "`", from: j)
                 if let end = find(String(repeating: "`", count: run), from: j + run) { j = end + run; continue }
             }
-            if Array(chars[j..<(j + a.count)]) == a, j > start, !chars[j - 1].isWhitespace {
+            if has(a, at: j), j > start, !chars[j - 1].isWhitespace {
                 let after = j + a.count < chars.count ? chars[j + a.count] : " "
                 if after != a[0] && !(a[0] == "_" && (after.isLetter || after.isNumber)) { return j }
             }
             j += 1
         }
+        if !code { noCloser[marker] = min(noCloser[marker] ?? start, start) }
         return nil
     }
 
@@ -643,7 +661,7 @@ private struct InlineParser {
     }
 
     func autolinkStart() -> Bool {
-        (matches("https://") || matches("http://")) && (i == 0 || chars[i - 1].isWhitespace || "(*_~".contains(chars[i - 1]))
+        (has(Self.https, at: i) || has(Self.http, at: i)) && (i == 0 || chars[i - 1].isWhitespace || "(*_~".contains(chars[i - 1]))
     }
 }
 
