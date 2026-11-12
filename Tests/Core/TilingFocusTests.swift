@@ -235,6 +235,14 @@ private func windowWithoutHost() throws -> SceneModel {
     #expect(scene.focusRequest?.nonce == nonce, "on touch alone, the on-screen keyboard stays down")
 }
 
+@Test func aBoxMadeLaterTakesOnlyARecentFocusRequest() {
+    let asked = Date()
+    let request = SceneModel.FocusRequest(target: .composer("a"), nonce: 1, at: asked)
+    #expect(request.isFresh(forBoxMadeAt: asked.addingTimeInterval(-60), now: asked.addingTimeInterval(30)), "a box already there takes what's asked of it")
+    #expect(request.isFresh(forBoxMadeAt: asked.addingTimeInterval(0.3), now: asked.addingTimeInterval(0.4)), "the screen a request opened comes in and takes it")
+    #expect(!request.isFresh(forBoxMadeAt: asked.addingTimeInterval(20), now: asked.addingTimeInterval(20)), "opening the session again later leaves the keyboard down")
+}
+
 @MainActor
 @Test func hoverFocusesAPaneOnlyWhenNothingElseIsGoingOn() throws {
     let scene = try windowWithoutHost()

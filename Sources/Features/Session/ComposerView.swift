@@ -963,7 +963,7 @@ struct ComposerTextField: UIViewRepresentable {
         }
         if let request = scene.focusRequest, request.nonce != context.coordinator.handledFocus {
             context.coordinator.handledFocus = request.nonce
-            if request.target == .composer(session.key) {
+            if request.target == .composer(session.key), request.isFresh(forBoxMadeAt: context.coordinator.made) {
                 DispatchQueue.main.async { view.becomeFirstResponder() }
             }
         }
@@ -1001,6 +1001,8 @@ struct ComposerTextField: UIViewRepresentable {
     final class Coordinator: NSObject, UITextViewDelegate, UITextPasteDelegate {
         var parent: ComposerTextField
         var handledFocus = 0
+        /// When this box was made: a focus request from long before isn't for it.
+        let made = Date()
         /// The theme the text was last colored for.
         var theme: Theme?
         /// The box's height for a text at a width, as last measured.

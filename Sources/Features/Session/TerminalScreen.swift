@@ -457,7 +457,7 @@ struct TerminalViewRepresentable: UIViewRepresentable {
         view.sticky = sticky
         if let request = scene.focusRequest, request.nonce != context.coordinator.handled {
             context.coordinator.handled = request.nonce
-            if request.target == .terminal(sessionKey) {
+            if request.target == .terminal(sessionKey), request.isFresh(forBoxMadeAt: context.coordinator.made) {
                 DispatchQueue.main.async { _ = view.becomeFirstResponder() }
             }
         }
@@ -467,6 +467,8 @@ struct TerminalViewRepresentable: UIViewRepresentable {
 
     final class Coordinator {
         var handled = 0
+        /// When this terminal was made: a focus request from long before isn't for it.
+        let made = Date()
     }
 }
 

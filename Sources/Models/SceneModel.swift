@@ -214,6 +214,20 @@ final class SceneModel {
     struct FocusRequest: Equatable, Sendable {
         let target: FocusTarget
         let nonce: Int
+        /// When it was asked for.
+        var at = Date()
+
+        /// How long a request stays new to a box made after it: long enough for the screen it
+        /// opened to come in, not so long that opening the session later raises the keyboard.
+        static let freshness: TimeInterval = 2
+
+        /// Whether a box made at `made` acts on it. A screen is made again each time it's
+        /// opened (a phone pushes a session anew), and its box took the last request for
+        /// itself as new however old it was: one asked for once (the keyboard put back on
+        /// launch, a tap on / or @) raised the keyboard every time the session opened.
+        func isFresh(forBoxMadeAt made: Date, now: Date = Date()) -> Bool {
+            at >= made || now.timeIntervalSince(at) < Self.freshness
+        }
     }
 
     struct Toast: Equatable, Identifiable, Sendable {
