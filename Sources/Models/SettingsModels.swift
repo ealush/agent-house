@@ -150,7 +150,14 @@ final class SubscriptionsSettings {
         }
     }
 
+    /// An editor opening: no error or model list left from the last one.
+    func beginEditing() {
+        error = nil
+        models = []
+    }
+
     func save(_ draft: SubscriptionDraft) async -> Bool {
+        error = nil
         do {
             _ = try await api.saveSubscription(draft)
             await load()
@@ -267,15 +274,24 @@ final class SearchSettings {
     init(api: APIClient) { self.api = api }
 
     func load() async {
-        do { status = try await settled { [api] in try await api.searchStatus() } } catch { self.error = APIError.shown(error) }
+        do {
+            status = try await settled { [api] in try await api.searchStatus() }
+            error = nil
+        } catch { self.error = APIError.shown(error) }
     }
 
     func setEnabled(_ on: Bool) async {
-        do { status = try await api.searchSetEnabled(on) } catch { self.error = APIError.wrap(error).message }
+        do {
+            status = try await api.searchSetEnabled(on)
+            error = nil
+        } catch { self.error = APIError.wrap(error).message }
     }
 
     func rebuild() async {
-        do { status = try await api.searchRebuild() } catch { self.error = APIError.wrap(error).message }
+        do {
+            status = try await api.searchRebuild()
+            error = nil
+        } catch { self.error = APIError.wrap(error).message }
     }
 }
 

@@ -58,6 +58,23 @@ struct InboxView: View {
                     AhSectionHeader(title: "Needs you", count: inbox.waiting.count + inbox.reviews.count)
                 }
             }
+            // Grouped by project or host, as the setting asks (on a wide screen, as the web's
+            // Inbox does; a phone keeps to status). What needs you stays on top either way.
+            if !scene.narrow, scene.app.preferences.inboxGrouping != .status {
+                let groups = SessionOrdering.sections(hub.rows.filter { $0.dto.status != .waiting }, multiHost: scene.app.preferences.inboxGrouping == .host)
+                ForEach(groups, id: \.id) { group in
+                    Section {
+                        ForEach(group.rows) { row in
+                            SessionRowView(row: row, multiHost: hub.multiHost && scene.app.preferences.inboxGrouping != .host) { scene.open(row.key) }
+                                .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
+                                .sessionSwipes(row: row, scene: scene, hub: hub)
+                                .ahRow()
+                        }
+                    } header: {
+                        AhSectionHeader(title: group.id, count: group.rows.count)
+                    }
+                }
+            } else {
             if !inbox.running.isEmpty {
                 Section {
                     ForEach(inbox.running) { row in
@@ -81,6 +98,7 @@ struct InboxView: View {
                 } header: {
                     AhSectionHeader(title: "Idle and done", count: inbox.rest.count)
                 }
+            }
             }
             if hub.awaitingState {
                 // The host hasn't answered yet (a cold launch, with no list kept from last

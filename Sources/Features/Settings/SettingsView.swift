@@ -965,10 +965,14 @@ private struct SubscriptionEditor: View {
     @State var draft: SubscriptionDraft
     let close: () -> Void
     @State private var key = ""
+    @State private var saving = false
 
     var body: some View {
         NavigationStack {
             AhForm {
+                // Said here: the section's banner is behind this sheet, so a refused URL or key
+                // looked like a Save that did nothing.
+                if let error = model.error { Banner(text: error, tone: .error) }
                 TextField("Name", text: $draft.name)
                 TextField("Base URL", text: $draft.baseUrl).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
                 Section {
@@ -993,16 +997,22 @@ private struct SubscriptionEditor: View {
                     }
                 }
             }
-            .navigationTitle(draft.id == nil ? "Add a provider" : draft.name)
+            .navigationTitle(draft.id == nil ? "Add a Provider" : draft.name)
+            .onAppear { model.beginEditing() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: .cancel, action: close).keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
+                    Button(saving ? "Saving…" : "Save") {
                         var out = draft
                         out.apiKey = key.isEmpty ? nil : key
-                        Task { if await model.save(out) { close() } }
+                        // Once: a second tap on a new provider made a second one.
+                        saving = true
+                        Task {
+                            if await model.save(out) { close() }
+                            saving = false
+                        }
                     }.keyboardShortcut(.return, modifiers: .command)
-                    .disabled(draft.name.isEmpty || draft.baseUrl.isEmpty || draft.model.isEmpty)
+                    .disabled(saving || draft.name.isEmpty || draft.baseUrl.isEmpty || draft.model.isEmpty)
                         .buttonStyle(.glassProminent)
                 }
             }
@@ -1117,12 +1127,16 @@ private struct EnvEditor: View {
 
 private struct SearchSection: View {
     @State var model: SearchSettings
+    @State private var confirmOff = false
 
     var body: some View {
         AhForm {
             if let error = model.error { Banner(text: error, tone: .error).formBanner() }
             if let status = model.status {
-                Toggle("Full-text search", isOn: Binding(get: { status.enabled }, set: { on in Task { await model.setEnabled(on) } }))
+                // Off deletes the index, so it asks first (as the web does); on is at once.
+                Toggle("Full-text search", isOn: Binding(get: { status.enabled }, set: { on in
+                    if on { Task { await model.setEnabled(true) } } else { confirmOff = true }
+                }))
                 Section("Index") {
                     LabeledContent("Transcripts", value: "\(status.sourcesIndexed) of \(status.sourcesKnown)")
                     LabeledContent("Entries", value: "\(status.entries)")
@@ -1134,7 +1148,19 @@ private struct SearchSection: View {
                 ProgressView()
             }
         }
-        .task { await model.load() }
+        .confirmationDialog("Turn Off Search?", isPresented: $confirmOff, titleVisibility: .visible) {
+            Button("Turn Off and Delete the Index", role: .destructive) { Task { await model.setEnabled(false) } }
+        } message: {
+            Text("Searching stops on every device, and turning it on again rebuilds the index from the start.")
+        }
+        // Kept current while it's open, as the web's page is: a rebuild's counts and its
+        // "Building…" moved on without it.
+        .task {
+            while !Task.isCancelled {
+                await model.load()
+                try? await Task.sleep(for: .seconds(5))
+            }
+        }
     }
 }
 
