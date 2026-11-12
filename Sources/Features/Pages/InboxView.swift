@@ -585,11 +585,7 @@ struct HistoryView: View {
 
     var body: some View {
         let rows = hub.history.filter { HistoryFilter.matches($0, scene.historyFilter) }
-        let days = Dictionary(grouping: rows) { HistoryFilter.dayLabel($0.dto.at) }
-        let order = rows.reduce(into: [String]()) { labels, row in
-            let label = HistoryFilter.dayLabel(row.dto.at)
-            if labels.last != label && !labels.contains(label) { labels.append(label) }
-        }
+        let days = HistoryFilter.byDay(rows)
         List {
             Section {
                 AhSearchField(text: $scene.historyFilter, prompt: "Filter by title, project, agent")
@@ -602,11 +598,11 @@ struct HistoryView: View {
                 EmptyState(symbol: "clock", title: scene.historyFilter.isEmpty ? "No history yet" : "Nothing matches", message: "Ended and past conversations appear here.")
                     .listRowBackground(Color.clear)
             }
-            ForEach(order, id: \.self) { day in
+            ForEach(days, id: \.day) { day in
                 Section {
-                    ForEach(days[day] ?? []) { item in HistoryRowView(item: item, scene: scene, hub: hub).ahRow() }
+                    ForEach(day.rows) { item in HistoryRowView(item: item, scene: scene, hub: hub).ahRow() }
                 } header: {
-                    AhSectionHeader(title: day, count: days[day]?.count)
+                    AhSectionHeader(title: day.day, count: day.rows.count)
                 }
             }
         }

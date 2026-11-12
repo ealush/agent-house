@@ -176,7 +176,8 @@ final class AccountSession: Identifiable {
         cacheKey = SealedCache.key(device: device, server: server, origin: origin)
         hub.useCache(HubStore.StateCache(
             load: { [weak self] in self?.cached(HubStateDTO.self, kind: .state, key: "hub") },
-            store: { [weak self] state in self?.cache(state, kind: .state, key: "hub") }
+            // Sealed off the main thread: the whole state (sessions and all history) every few seconds.
+            store: { [weak self] state in self?.cacheSoon(state, kind: .state, key: "hub") }
         ))
     }
 

@@ -715,8 +715,11 @@ private struct ToolGroupView: View {
 
     @ViewBuilder
     private func rows(_ calls: [ToolCall]) -> some View {
+        // Looked up once for the lot, not once a row: finding the call a prompt waits on reads
+        // the whole feed.
+        let awaiting = session.awaitingCall, turnLive = session.turnLive, results = session.feed.results
         ForEach(calls) { call in
-            ToolRowView(view: ToolPresentation(call: call, result: session.feed.results[call.id], awaiting: session.awaitingCall == call.id, turnLive: session.turnLive))
+            ToolRowView(view: ToolPresentation(call: call, result: results[call.id], awaiting: awaiting == call.id, turnLive: turnLive))
         }
     }
 }

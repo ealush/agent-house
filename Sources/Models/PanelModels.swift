@@ -299,15 +299,35 @@ enum HistoryFilter {
         return [row.dto.title, row.dto.project, row.dto.harness, row.dto.cwd, row.host, row.dto.model ?? ""].contains { $0.lowercased().contains(q) }
     }
 
-    /// Grouped by day for the list ("Today", "Yesterday", a date).
-    static func dayLabel(_ seconds: Double, now: Date = Date(), calendar: Calendar = .current) -> String {
-        let date = Date(timeIntervalSince1970: seconds)
-        if calendar.isDate(date, inSameDayAs: now) { return "Today" }
-        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) { return "Yesterday" }
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.setLocalizedDateFormatFromTemplate(calendar.isDate(date, equalTo: now, toGranularity: .year) ? "EEEEdMMMM" : "dMMMMyyyy")
-        return formatter.string(from: date)
+    /// Grouped by day for the list ("Today", "Yesterday", a date), newest day first as the
+    /// rows come. One formatter for the lot: a new one per row made filtering History slow.
+    static func byDay(_ rows: [HistoryRow], now: Date = Date(), calendar: Calendar = .current) -> [(day: String, rows: [HistoryRow])] {
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: now)
+        var formatters: [String: DateFormatter] = [:]
+        func label(_ seconds: Double) -> String {
+            let date = Date(timeIntervalSince1970: seconds)
+            if calendar.isDate(date, inSameDayAs: now) { return "Today" }
+            if let yesterday, calendar.isDate(date, inSameDayAs: yesterday) { return "Yesterday" }
+            let template = calendar.isDate(date, equalTo: now, toGranularity: .year) ? "EEEEdMMMM" : "dMMMMyyyy"
+            let formatter = formatters[template] ?? {
+                let formatter = DateFormatter()
+                formatter.calendar = calendar
+                formatter.setLocalizedDateFormatFromTemplate(template)
+                formatters[template] = formatter
+                return formatter
+            }()
+            return formatter.string(from: date)
+        }
+        var days: [(day: String, rows: [HistoryRow])] = []
+        var index: [String: Int] = [:]
+        for row in rows {
+            let day = label(row.dto.at)
+            if let i = index[day] { days[i].rows.append(row) } else {
+                index[day] = days.count
+                days.append((day, [row]))
+            }
+        }
+        return days
     }
 }
 

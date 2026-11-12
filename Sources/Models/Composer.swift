@@ -1,5 +1,8 @@
 import Foundation
 import Observation
+#if canImport(ImageIO)
+import ImageIO
+#endif
 
 /// Messages sent from this device, shown before the server has them (`../ah/web/outbox.ts`).
 /// The composer adds one the moment you send; the transcript draws it as your bubble (or the
@@ -516,6 +519,7 @@ final class ComposerModel {
         }
         nextAttachment += 1
         let id = nextAttachment
+        let thumbnail: Data? = if let thumbnail { await Self.tile(thumbnail) } else { nil }
         attachments.append(Attachment(id: id, name: name, image: image, path: nil, thumbnail: thumbnail))
         do {
             let path = try await api.upload(name: name, data: data)
@@ -545,6 +549,25 @@ final class ComposerModel {
                 self?.failVideo(id, name: name, error)
             }
         }
+    }
+
+    /// A tile's picture: the photo made small once, off the main thread. The tiles are drawn
+    /// again on every keystroke, and each time a 12-megapixel original was decoded for a
+    /// 64-point square. Anything ImageIO can't read is kept as it came.
+    nonisolated static func tile(_ data: Data) async -> Data {
+        #if canImport(ImageIO)
+        await Task.detached(priority: .userInitiated) {
+            let options = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 256] as CFDictionary
+            guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+                  let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options) else { return data }
+            let out = NSMutableData()
+            guard let destination = CGImageDestinationCreateWithData(out, "public.jpeg" as CFString, 1, nil) else { return data }
+            CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.8] as CFDictionary)
+            return CGImageDestinationFinalize(destination) ? out as Data : data
+        }.value
+        #else
+        data
+        #endif
     }
 
     private func setThumbnail(_ thumbnail: Data?, _ id: Int) {
@@ -585,7 +608,9 @@ final class ComposerModel {
     func updateSuggestions() {
         suggestTask?.cancel()
         guard let trigger else {
-            suggestions = []
+            // Only when there were some: every keystroke came here, and each write told every
+            // view reading the suggestions (the transcript among them) to draw again.
+            if !suggestions.isEmpty { suggestions = [] }
             return
         }
         suggestTask = Task { [weak self, api, uid] in

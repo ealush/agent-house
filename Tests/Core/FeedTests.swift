@@ -269,3 +269,22 @@ private let result = ToolResult(callId: "c1", text: "ok", isError: false, data: 
     #expect(!FeedPart.notice(kind: .info, text: "x").isWords)
     #expect(!FeedPart.media(kind: "image", src: "/a.png", alt: nil).isWords)
 }
+
+#if canImport(ImageIO)
+import ImageIO
+
+@Test func attachmentTilesAreSmallAndUnreadableDataStaysAsItCame() async throws {
+    let context = try #require(CGContext(data: nil, width: 3000, height: 2000, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    context.setFillColor(red: 1, green: 0, blue: 0.5, alpha: 1)
+    context.fill(CGRect(x: 0, y: 0, width: 3000, height: 2000))
+    let photo = NSMutableData()
+    let destination = try #require(CGImageDestinationCreateWithData(photo, "public.png" as CFString, 1, nil))
+    CGImageDestinationAddImage(destination, try #require(context.makeImage()), nil)
+    #expect(CGImageDestinationFinalize(destination))
+    let tile = await ComposerModel.tile(photo as Data)
+    let image = try #require(CGImageSourceCreateWithData(tile as CFData, nil).flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) })
+    #expect(max(image.width, image.height) == 256)
+    #expect(tile.count < (photo as Data).count)
+    #expect(await ComposerModel.tile(Data("not an image".utf8)) == Data("not an image".utf8))
+}
+#endif

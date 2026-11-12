@@ -112,7 +112,13 @@ struct ToolPresentation: Equatable, Sendable {
     let summary: String
     let status: ToolStatus
     let truncated: Bool
-    let body: ToolBody
+    private let call: ToolCall
+    private let result: ToolResult?
+
+    /// What the card shows opened, worked out only when it's asked for: a diff of the edit, the
+    /// file written, the arguments laid out. Every card was built again on each update, open
+    /// or not, and an edit's line diff cost milliseconds.
+    var body: ToolBody { ToolPresentation.body(kind: kind, call: call, result: result) }
 
     /// `awaiting`: the call a permission prompt asks about; `turnLive`: the session still works or waits.
     init(call: ToolCall, result: ToolResult?, awaiting: Bool = false, turnLive: Bool = true) {
@@ -129,7 +135,8 @@ struct ToolPresentation: Equatable, Sendable {
             status = result!.isError ? .error : .done
         }
         truncated = result?.truncated ?? false
-        body = ToolPresentation.body(kind: kind, call: call, result: result)
+        self.call = call
+        self.result = result
     }
 
     /// `mcp__server__tool` → "tool (server)".

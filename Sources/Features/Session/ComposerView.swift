@@ -74,7 +74,7 @@ struct ComposerView: View {
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
         .onChange(of: composer.text) { _, _ in
-            composer.suggestionIndex = 0
+            if composer.suggestionIndex != 0 { composer.suggestionIndex = 0 }
             composer.updateSuggestions()
         }
         .onChange(of: pickingPhotos) { _, items in

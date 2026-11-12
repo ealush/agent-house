@@ -133,3 +133,12 @@ import Testing
     let drawn = "Shipped it.\n•\t`a.ts`: the flow\n12.\tstep\u{2028}more\n\u{FFFC}\ttask\nkept\ttab"
     #expect(Markdown.source(ofSelected: drawn) == "Shipped it.\n- `a.ts`: the flow\n12. step\nmore\n- task\nkept\ttab")
 }
+
+@MainActor
+@Test func rememberedParsesReadTheSameAsAFreshParse() {
+    let reply = "# Done\n\nFixed **two** things:\n- one\n- two\n\n```swift\nlet a = 1\n```"
+    #expect(Markdown.remembered(reply, keepingLineBreaks: false) == Markdown.parse(reply, keepingLineBreaks: false))
+    #expect(Markdown.remembered(reply, keepingLineBreaks: false) == Markdown.parse(reply, keepingLineBreaks: false), "a second read comes back the same")
+    #expect(Markdown.remembered("a\nb", keepingLineBreaks: true) == Markdown.parse("a\nb", keepingLineBreaks: true))
+    #expect(Markdown.remembered("a\nb", keepingLineBreaks: true) != Markdown.remembered("a\nb", keepingLineBreaks: false), "the line-break rule is part of what's remembered")
+}

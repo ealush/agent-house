@@ -31,7 +31,7 @@ struct MarkdownView: View {
 
     /// `keepingLineBreaks`: each new line in the text is one (your own words), not a space.
     init(_ text: String, compact: Bool = false, keepingLineBreaks: Bool = false) {
-        blocks = Markdown.parse(text, keepingLineBreaks: keepingLineBreaks)
+        blocks = Markdown.remembered(text, keepingLineBreaks: keepingLineBreaks)
         self.compact = compact
     }
 

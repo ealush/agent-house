@@ -85,6 +85,19 @@ private func stack(_ layers: [Layer]) -> ReviewStack {
     #expect(FilesModel.mention("/code/web/a.ts", shell: false) == "@/code/web/a.ts ")
 }
 
+@Test func historyGroupsByDayInTheOrderTheRowsCome() {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(identifier: "UTC")!
+    let now = Date(timeIntervalSince1970: 1_763_000_000) // 13 Nov 2025, 02:13 UTC
+    func row(_ ref: String, hoursAgo: Double) -> HistoryRow {
+        HistoryRow(host: "box", isLocal: true, dto: HistoryItemDTO(ref: ref, kind: .ended, harness: "codex", harnessId: nil, title: ref, cwd: "/w", project: "w", model: nil, at: now.timeIntervalSince1970 - hoursAgo * 3600, pinned: false, worktree: nil, fork: nil))
+    }
+    let days = HistoryFilter.byDay([row("a", hoursAgo: 1), row("b", hoursAgo: 5), row("c", hoursAgo: 8), row("d", hoursAgo: 100), row("e", hoursAgo: 24 * 400)], now: now, calendar: calendar)
+    #expect(days.map(\.day).prefix(2) == ["Today", "Yesterday"])
+    #expect(days.map { $0.rows.map(\.dto.ref) } == [["a"], ["b", "c"], ["d"], ["e"]])
+    #expect(days[3].day.contains("2024"), "a past year says which")
+}
+
 @Test func filePathsGoInRelativeToTheSessionAndDrawByKind() {
     #expect(FilesModel.mention("/code/web/src/a.ts", shell: false, cwd: "/code/web") == "@src/a.ts ")
     #expect(FilesModel.mention("/code/web/a b.ts", shell: true, cwd: "/code/web/") == "'a b.ts' ")

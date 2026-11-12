@@ -83,6 +83,26 @@ enum Markdown {
         return keepingLineBreaks ? blocks.map(hardBreaks) : blocks
     }
 
+    /// As `parse`, remembered: a transcript row is built again each time it scrolls back into
+    /// view and each time an update reaches it, and a long reply took milliseconds to read
+    /// again every time. Forgotten wholesale once it holds a few hundred texts.
+    @MainActor
+    static func remembered(_ source: String, keepingLineBreaks: Bool) -> [MarkdownBlock] {
+        let key = Remembered(source: source, keepingLineBreaks: keepingLineBreaks)
+        if let blocks = remembered[key] { return blocks }
+        if remembered.count >= 400 { remembered.removeAll(keepingCapacity: true) }
+        let blocks = parse(source, keepingLineBreaks: keepingLineBreaks)
+        remembered[key] = blocks
+        return blocks
+    }
+
+    private struct Remembered: Hashable {
+        let source: String
+        let keepingLineBreaks: Bool
+    }
+
+    @MainActor private static var remembered: [Remembered: [MarkdownBlock]] = [:]
+
     private static func hardBreaks(_ block: MarkdownBlock) -> MarkdownBlock {
         switch block {
         case .heading(let level, let i): return .heading(level: level, hardBreaks(i))
