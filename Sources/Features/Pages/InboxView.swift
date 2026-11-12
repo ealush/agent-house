@@ -869,6 +869,9 @@ struct SearchView: View {
             }
             if let error = model.error { Banner(text: error, tone: .error).listRowBackground(Color.clear) }
         }
+        // The chips sit under the field and its scopes as one set of controls, not a
+        // grouped list's first section away.
+        .contentMargins(.top, 6, for: .scrollContent)
         .searchable(text: $model.query.q, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search every conversation")
         .searchFocused($fieldFocused)
         .searchScopes($model.query.scopeOrAll) {
