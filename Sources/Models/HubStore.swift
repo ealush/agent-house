@@ -9,13 +9,14 @@ import Observation
 @Observable
 final class HubStore {
     let api: APIClient
-    private(set) var hub = StateUpdate(state: nil, phase: .connecting) { didSet { derived = Derived() } }
-    private(set) var peers: [String: StateUpdate] = [:] { didSet { derived = Derived() } }
+    private(set) var hub = StateUpdate(state: nil, phase: .connecting) { didSet { derived = Derived(); refreshSlots() } }
+    private(set) var peers: [String: StateUpdate] = [:] { didSet { derived = Derived(); refreshSlots() } }
     /// Optimistically hidden rows (just terminated): gone until the host stops listing them.
     private(set) var hidden: Set<String> = [] {
         didSet {
             derived.rows = nil
             derived.index = nil
+            refreshSlots()
         }
     }
     /// The newest validated hub state seen this run, kept through a disconnect so the UI can
@@ -24,7 +25,7 @@ final class HubStore {
     @ObservationIgnored private(set) var lastUpdated: Date?
     /// The hub's session list as it was last time, sealed for this sign-in: shown until the
     /// host answers, so a cold launch isn't blank. Never used to decide what still exists.
-    private(set) var cachedState: HubStateDTO? { didSet { derived = Derived() } }
+    private(set) var cachedState: HubStateDTO? { didSet { derived = Derived(); refreshSlots() } }
     var onSignedOut: (@MainActor () -> Void)?
 
     struct StateCache {
@@ -42,6 +43,35 @@ final class HubStore {
         var history: [HistoryRow]?
     }
     @ObservationIgnored private var derived = Derived()
+
+    /// One session's row and its agent, observed on their own. Read through the store, a
+    /// session's screen drew again whenever anything changed on any host (every tick of the
+    /// state, while any agent anywhere works); through its slot, only when its own row does.
+    @MainActor
+    @Observable
+    final class Slot {
+        fileprivate(set) var row: SessionRow?
+        fileprivate(set) var preset: PresetDTO?
+    }
+    @ObservationIgnored private var slots: [String: Slot] = [:]
+
+    func slot(_ key: String) -> Slot {
+        if let kept = slots[key] { return kept }
+        let slot = Slot()
+        slot.row = row(key)
+        slot.preset = slot.row.flatMap(preset)
+        slots[key] = slot
+        return slot
+    }
+
+    private func refreshSlots() {
+        for (key, slot) in slots {
+            let row = row(key)
+            if slot.row != row { slot.row = row }
+            let preset = row.flatMap(preset)
+            if slot.preset != preset { slot.preset = preset }
+        }
+    }
 
     @ObservationIgnored private var stateCache: StateCache?
     @ObservationIgnored private var lastCached = Date.distantPast

@@ -12,6 +12,8 @@ final class SessionModel: Identifiable {
     nonisolated var id: String { key }
     let api: APIClient
     let hub: HubStore
+    /// This session's row, observed on its own (see `HubStore.Slot`).
+    private let slot: HubStore.Slot
     let outbox: Outbox
     let composer: ComposerModel
     let queue: QueueModel
@@ -59,6 +61,7 @@ final class SessionModel: Identifiable {
         self.outbox = outbox
         let parsed = SessionKey(key)
         api = hub.client(forKey: key)
+        slot = hub.slot(key)
         ref = parsed?.uid ?? key.split(separator: "/").last.map(String.init) ?? key
         let row = hub.row(key)
         let isShell = row.map { $0.dto.agent == nil } ?? false
@@ -72,7 +75,7 @@ final class SessionModel: Identifiable {
 
     // MARK: What it is now
 
-    var row: SessionRow? { hub.row(key) }
+    var row: SessionRow? { slot.row }
     var history: HistoryRow? { hub.history.first { $0.id == key || $0.dto.ref == ref } }
     var isLive: Bool { row != nil }
     var title: String { row?.title ?? history?.dto.title ?? "Session" }
@@ -85,7 +88,7 @@ final class SessionModel: Identifiable {
     /// On the agent's folder-trust prompt: what's sent waits in the queue until it's answered.
     var awaitingTrust: Bool { waiting && row?.dto.ask?.trust != nil }
     var turnLive: Bool { working || waiting }
-    var launch: LaunchState { LaunchState(preset: row.flatMap(hub.preset), session: row?.dto) }
+    var launch: LaunchState { LaunchState(preset: slot.preset, session: row?.dto) }
     var ask: AskDTO? { row?.dto.ask }
     var otherDevices: [String] { row?.dto.devices.filter { $0 != api.device.name } ?? [] }
 

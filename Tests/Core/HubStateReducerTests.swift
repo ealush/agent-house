@@ -230,6 +230,27 @@ func invalidBaselineOrPatchCannotRemainActionable(_ payload: String) throws {
 }
 
 /// Counts an observation's calls (they come on the thread that made the change: the test's).
+@MainActor
+@Test func aSessionsSlotHearsOnlyOfItsOwnRow() throws {
+    func state(_ docs: String) throws -> HubStateDTO {
+        try JSONDecoder().decode(HubStateDTO.self, from: Data(#"{"api":28,"hostname":"desk","windows":[{"id":"%1","uid":"u1","name":"fix","statusSource":"hook","project":"ah","projectPath":"/p/ah","status":"idle"},{"id":"%2","uid":"u2","name":"docs","statusSource":"hook","project":"ah","projectPath":"/p/ah","status":"\#(docs)"}]}"#.utf8))
+    }
+    let hub = HubStore(api: APIClient(origin: URL(string: "https://desk.example.ts.net")!, transport: URLSessionTransport(), credentials: AccountCredentials(token: nil, onRejected: {}), device: DeviceDescriptor(name: "iPad", client: "c")))
+    let fix = hub.slot("u1"), docs = hub.slot("u2")
+    #expect(fix.row == nil, "nothing known yet")
+    hub.useCache(HubStore.StateCache(load: { try? state("idle") }, store: { _ in }))
+    #expect(fix.row?.title == hub.row("u1")?.title && docs.row?.dto.status == .idle)
+    let told = Told()
+    withObservationTracking { _ = fix.row } onChange: { told.count += 1 }
+    // Another session changing leaves this one's screen alone.
+    hub.useCache(HubStore.StateCache(load: { try? state("busy") }, store: { _ in }))
+    #expect(docs.row?.dto.status == .busy)
+    #expect(told.count == 0)
+    hub.hide("u1", true)
+    #expect(told.count == 1 && fix.row == nil)
+    #expect(hub.slot("u1") === fix, "one slot a session")
+}
+
 private final class Told: @unchecked Sendable {
     var count = 0
 }
