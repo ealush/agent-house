@@ -38,6 +38,9 @@ final class SessionModel: Identifiable {
     /// A rename in progress (⌃⌥N): Return saves, Escape cancels.
     var renaming: String?
     private(set) var busy: Set<String> = []
+    /// The agent as the screen shows it (`AgentHold`), kept from this session's row.
+    private(set) var hold = AgentHold()
+    @ObservationIgnored private var holdCheck: Task<Void, Never>?
 
     @ObservationIgnored private var feedStream: FeedStream?
     @ObservationIgnored private var feedTask: Task<Void, Never>?
@@ -71,6 +74,30 @@ final class SessionModel: Identifiable {
         // terminal when the host hasn't attached a transcript reader yet: a session opened
         // right after it started would have stayed there.
         chosenSurface = surface
+        watchRow()
+    }
+
+    /// Every change of this session's row goes through the hold.
+    private func watchRow() {
+        let row = withObservationTracking { slot.row } onChange: { [weak self] in
+            Task { @MainActor in self?.watchRow() }
+        }
+        takeRow(row)
+    }
+
+    private func takeRow(_ row: SessionRow?) {
+        guard let row else { return }
+        var next = hold
+        let until = next.take(agent: row.dto.agent, feed: row.dto.feed)
+        if next != hold { hold = next }
+        holdCheck?.cancel()
+        // Still missing when the hold ends: the agent is gone, and the terminal shows.
+        guard let until else { return }
+        holdCheck = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(max(0, until.timeIntervalSinceNow) + 0.05))
+            guard !Task.isCancelled, let self else { return }
+            self.takeRow(self.slot.row)
+        }
     }
 
     // MARK: What it is now
@@ -79,16 +106,22 @@ final class SessionModel: Identifiable {
     var history: HistoryRow? { hub.history.first { $0.id == key || $0.dto.ref == ref } }
     var isLive: Bool { row != nil }
     var title: String { row?.title ?? history?.dto.title ?? "Session" }
-    var isShell: Bool { row.map { $0.dto.agent == nil } ?? (history?.dto.harness == "shell") }
-    /// Live: whether the host reads a transcript for it. Ended: any agent's conversation has
-    /// one; a shell never did (it shows its last screen instead).
-    var hasGUI: Bool { row.map { $0.dto.feed != nil } ?? !isShell }
+    var isShell: Bool { row != nil ? hold.agent == nil : history?.dto.harness == "shell" }
+    /// Live: whether the host reads a transcript for it (held through a scan that missed the
+    /// agent). Ended: any agent's conversation has one; a shell never did (it shows its last
+    /// screen instead).
+    var hasGUI: Bool { row != nil ? hold.feed != nil : !isShell }
     var working: Bool { row?.dto.status == .busy }
     var waiting: Bool { row?.dto.status == .waiting }
     /// On the agent's folder-trust prompt: what's sent waits in the queue until it's answered.
     var awaitingTrust: Bool { waiting && row?.dto.ask?.trust != nil }
     var turnLive: Bool { working || waiting }
-    var launch: LaunchState { LaunchState(preset: slot.preset, session: row?.dto) }
+    var launch: LaunchState { LaunchState(preset: slot.preset ?? heldPreset, session: row?.dto) }
+    /// The held agent's preset while a scan misses it, so its model and effort stay put.
+    private var heldPreset: PresetDTO? {
+        guard let agent = hold.agent, let row else { return nil }
+        return hub.presets(host: row.isLocal ? nil : row.host).first { $0.id == agent }
+    }
     var ask: AskDTO? { row?.dto.ask }
     var otherDevices: [String] { row?.dto.devices.filter { $0 != api.device.name } ?? [] }
 
@@ -508,4 +541,39 @@ final class SessionModel: Identifiable {
 
     /// "ah attach <id>", to open this session from a terminal.
     var attachCommand: String { "ah attach \(ref)" }
+}
+
+/// The agent a live session runs, as its screen shows it: the host's report, held through
+/// reports that miss it. The host finds the agent in the window's processes on every scan,
+/// and a scan can miss it (the window's shell before the agent starts, a process between
+/// two of its own); followed at once, the screen went from the conversation to the
+/// terminal and back, several times as an agent started. Gone for a few seconds, it's gone:
+/// the agent exited to its shell.
+struct AgentHold: Equatable, Sendable {
+    private(set) var agent: String?
+    private(set) var feed: String?
+    /// Until when a missing agent is still taken as there; nil while the host reports it.
+    private(set) var until: Date?
+
+    static let grace: TimeInterval = 5
+
+    /// Take the host's report at `now`; returns when to look again while it's holding.
+    mutating func take(agent reported: String?, feed reportedFeed: String?, now: Date = Date()) -> Date? {
+        if let reported {
+            agent = reported
+            feed = reportedFeed
+            until = nil
+            return nil
+        }
+        guard agent != nil else { return nil }
+        let end = until ?? now.addingTimeInterval(Self.grace)
+        guard now < end else {
+            agent = nil
+            feed = nil
+            until = nil
+            return nil
+        }
+        until = end
+        return end
+    }
 }

@@ -516,3 +516,24 @@ import Testing
     #expect(ElapsedWords.short(since: now - 20 * 86_400, now: now) == "2w")
     #expect(ElapsedWords.short(since: now - 800 * 86_400, now: now) == "2y")
 }
+
+// A session's agent as its screen shows it (`AgentHold`).
+
+@Test func aScanThatMissesTheAgentKeepsItsConversationOnScreen() {
+    var hold = AgentHold()
+    let start = Date()
+    #expect(hold.take(agent: nil, feed: nil, now: start) == nil, "the window's shell before the agent: nothing to hold")
+    #expect(hold.agent == nil)
+    #expect(hold.take(agent: "claude", feed: "claude", now: start.addingTimeInterval(1)) == nil)
+    #expect(hold.feed == "claude")
+    // A scan misses it: still the agent, and the screen is told when to look again.
+    let again = hold.take(agent: nil, feed: nil, now: start.addingTimeInterval(2))
+    #expect(again == start.addingTimeInterval(2 + AgentHold.grace))
+    #expect(hold.agent == "claude" && hold.feed == "claude", "the conversation stays")
+    #expect(hold.take(agent: nil, feed: nil, now: start.addingTimeInterval(3)) == again, "the hold runs from the first miss")
+    #expect(hold.take(agent: "claude", feed: "claude", now: start.addingTimeInterval(4)) == nil, "back: no hold")
+    // Missing past the hold: the agent exited, and the terminal shows.
+    _ = hold.take(agent: nil, feed: nil, now: start.addingTimeInterval(10))
+    #expect(hold.take(agent: nil, feed: nil, now: start.addingTimeInterval(10 + AgentHold.grace)) == nil)
+    #expect(hold.agent == nil && hold.feed == nil)
+}

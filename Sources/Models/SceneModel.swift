@@ -869,7 +869,8 @@ final class SceneModel {
         let s = focusedSession
         let row = s?.row
         let live = row != nil
-        let agent = row?.dto.agent != nil
+        // As the screen shows it: held through a scan that missed the agent.
+        let agent = s.map { $0.isLive && !$0.isShell } ?? false
         let gui = s?.surface == .gui && (s?.hasGUI ?? false)
         if id.rawValue.hasPrefix("panel-"), let panel = SceneSnapshot.Panel(rawValue: String(id.rawValue.dropFirst(6))) {
             return s.map { panel.applies(to: $0) } ?? false
@@ -908,7 +909,7 @@ final class SceneModel {
         case "switch-branch": return row?.dto.branch != nil
         case "rename", "pin", "terminate", "scrollback": return live
         case "fork": return agent || (s?.history != nil && s?.isShell == false)
-        case "send-to": return row?.dto.feed != nil
+        case "send-to": return s.map { $0.isLive && $0.hasGUI } ?? false
         case "toggle-keys": return s?.surface == .terminal
         case "terminal-text-bigger", "terminal-text-smaller", "terminal-text-reset": return s?.surface == .terminal || workspace.scratchVisible
         default: return false
@@ -1426,7 +1427,7 @@ final class SceneModel {
                 })
             }
         case .agents:
-            guard let s, s.row?.dto.feed != nil else { return [] }
+            guard let s, s.isLive, s.hasGUI else { return [] }
             return hub.presets(host: nil).filter { $0.offered && !$0.isShell && $0.id != s.row?.dto.agent }.map { p in
                 PaletteNode(key: "continue:\(p.id)", label: p.name, agent: p.id, detail: "Start \(p.name) with this conversation’s summary and last reply", action: .continueIn(preset: p.id))
             }
@@ -1674,7 +1675,7 @@ extension SceneSnapshot.Panel {
     func applies(to session: SessionModel) -> Bool {
         switch self {
         case .diff, .stack: return session.row?.dto.branch != nil
-        case .queue, .snapshots: return session.row?.dto.agent != nil
+        case .queue, .snapshots: return session.isLive && !session.isShell
         case .files, .chat, .preview: return true
         }
     }
