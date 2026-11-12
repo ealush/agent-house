@@ -248,15 +248,20 @@ final class SearchModel {
     private(set) var searching = false
     private(set) var error: String?
     @ObservationIgnored private var task: Task<Void, Never>?
+    /// Bumped by each new search: a page asked for under an older one is dropped.
+    @ObservationIgnored private var generation = 0
+    @ObservationIgnored private var loadingMore = false
 
     init(api: APIClient) { self.api = api }
 
     /// Runs after typing pauses; a newer query cancels an older one.
     func search(debounce: Duration = .milliseconds(250)) {
         task?.cancel()
+        generation += 1
         let q = query
         guard !q.q.trimmingCharacters(in: .whitespaces).isEmpty else {
             response = nil
+            error = nil
             return
         }
         task = Task { [weak self, api, allHosts] in
@@ -278,13 +283,23 @@ final class SearchModel {
         }
     }
 
+    /// The next page, once at a time, and only onto the results it follows: a query changed
+    /// meanwhile got the old one's results back, and two taps added the same page twice.
     func more() async {
-        guard let current = response, current.results.count < current.total else { return }
+        guard !loadingMore, let current = response, current.results.count < current.total else { return }
+        loadingMore = true
+        defer { loadingMore = false }
+        let asked = generation
         var request = query
         request.offset = current.results.count
         request.limit = 20
-        if let page = try? await api.search(request, allHosts: allHosts) {
+        do {
+            let page = try await api.search(request, allHosts: allHosts)
+            guard asked == generation, response == current else { return }
             response = SearchResponse(enabled: page.enabled, building: page.building, results: current.results + page.results, total: page.total, tookMs: page.tookMs, notes: page.notes)
+        } catch {
+            guard asked == generation else { return }
+            self.error = APIError.wrap(error).message
         }
     }
 

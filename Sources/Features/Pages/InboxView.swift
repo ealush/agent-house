@@ -594,7 +594,10 @@ struct HistoryView: View {
             } header: {
                 AhLargeTitle(title: "History", tagline: rows.isEmpty ? nil : "\(rows.count) conversation\(rows.count == 1 ? "" : "s") to pick up.").textCase(nil)
             }
-            if rows.isEmpty {
+            if rows.isEmpty && hub.awaitingState {
+                // Still asking the host: not "No history yet" for the second that takes.
+                ProgressView().frame(maxWidth: .infinity).listRowBackground(Color.clear)
+            } else if rows.isEmpty {
                 EmptyState(symbol: "clock", title: scene.historyFilter.isEmpty ? "No history yet" : "Nothing matches", message: "Ended and past conversations appear here.")
                     .listRowBackground(Color.clear)
             }
@@ -840,6 +843,11 @@ struct SearchView: View {
         .onAppear {
             if let saved = scene.search, model.query.q.isEmpty { model.query = saved }
             if model.query.q.isEmpty { fieldFocused = true }
+        }
+        // "See all results for …" from the switcher, with the page already open on another
+        // query: it shows the new one (this page's own changes come back the same, and stop).
+        .onChange(of: scene.search) { _, asked in
+            if let asked, asked != model.query { model.query = asked }
         }
         .navigationTitle("Search")
     }

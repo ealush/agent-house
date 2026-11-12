@@ -23,6 +23,9 @@ struct TerminalScreen: View {
             ZStack(alignment: .top) {
                 if let controller {
                     TerminalViewRepresentable(controller: controller, scene: scene, sessionKey: session.key, sticky: StickyModifiers(ctrl: $ctrl, alt: $alt, shift: $shift))
+                        // A view of its own per controller: kept, the last session's frozen
+                        // screen stayed up, taking the keys, while the new one wasn't drawn.
+                        .id(ObjectIdentifier(controller))
                         // A little breathing room inside the terminal's own background.
                         .padding(.horizontal, 10)
                         .padding(.top, 6)
@@ -60,6 +63,9 @@ struct TerminalScreen: View {
         .background(Color(uiColor: UIColor(hex: theme.palette.terminal.background)))
         .task(id: "\(session.key)#\(attachment)") {
             let made = TerminalController(session: session, fontSize: scene.app.preferences.terminalFontSize, palette: theme.palette.terminal)
+            // The one before (another session's, in the same pane) detaches: left running, its
+            // socket stayed open and counted this device as watching that session.
+            controller?.stop()
             controller = made
             made.start()
         }
@@ -96,6 +102,8 @@ final class TerminalController: NSObject, TerminalViewDelegate {
     var hasKeyboard = false
     private var events: Task<Void, Never>?
     private var lastSize: (cols: Int, rows: Int) = (0, 0)
+    /// Attached before: the next attach starts the screen afresh.
+    private var attached = false
 
     enum Status: Equatable {
         case connecting
@@ -146,6 +154,10 @@ final class TerminalController: NSObject, TerminalViewDelegate {
                 guard let self else { return }
                 switch event {
                 case .connected:
+                    // A clean slate for the new attach's repaint, as the web's terminal does: a
+                    // stream cut mid-sequence (or old modes) garbled its first screen.
+                    if self.attached { self.view.feed(byteArray: [0x1b, 0x63][...]) }
+                    self.attached = true
                     self.status = .live
                     // A fresh viewer redraws at its own size.
                     if self.lastSize.cols > 0 { await stream.resize(columns: self.lastSize.cols, rows: self.lastSize.rows) }
@@ -177,7 +189,13 @@ final class TerminalController: NSObject, TerminalViewDelegate {
         let connection = connection
         Task { [weak self] in
             let delivered = await connection.send(.input(text))
-            if !delivered { await MainActor.run { self?.status = .reconnecting("Not connected: that key wasn’t sent") } }
+            if !delivered {
+                await MainActor.run {
+                    // Ended stays ended: nothing reconnects it, so "Reconnecting…" never resolved.
+                    if case .ended? = self?.status { return }
+                    self?.status = .reconnecting("Not connected: that key wasn’t sent")
+                }
+            }
         }
     }
 

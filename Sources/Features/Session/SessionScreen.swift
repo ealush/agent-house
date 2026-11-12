@@ -176,7 +176,8 @@ struct SessionScreen: View {
         if session.surface == .gui && session.hasGUI {
             TranscriptView(session: session, scene: scene).transition(.opacity)
         } else if session.isLive {
-            TerminalScreen(session: session, scene: scene).transition(.opacity)
+            // One per session: a pane switched to another kept the last one's terminal.
+            TerminalScreen(session: session, scene: scene).id(session.key).transition(.opacity)
         } else {
             // An ended session without a transcript: its last screen, read-only.
             EndedScreen(session: session).transition(.opacity)

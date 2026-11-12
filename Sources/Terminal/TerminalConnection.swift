@@ -106,7 +106,13 @@ actor TerminalConnection {
                 emit(.ended(.sessionGone))
                 return
             }
-            let socket = await api.terminalSocket(windowId: windowId, columns: columns, rows: rows)
+            let opened = (columns: columns, rows: rows)
+            let socket = await api.terminalSocket(windowId: windowId, columns: opened.columns, rows: opened.rows)
+            // Stopped while it was being made: closed, not left open on the host as a viewer.
+            guard !Task.isCancelled else {
+                socket.close(code: 1000)
+                return
+            }
             self.socket = socket
             socket.open()
             var announced = false
@@ -119,6 +125,9 @@ actor TerminalConnection {
                         isConnected = true
                         backoff = .milliseconds(500)
                         emit(.connected(windowId: windowId))
+                        // Resized while it attached (the first layout, the keyboard, a turn):
+                        // that size couldn't be sent yet, and the host kept the one it opened at.
+                        if (columns, rows) != opened { await send(.resize(columns: columns, rows: rows)) }
                     }
                     switch message {
                     case .binary(let data): emit(.output(data))
@@ -128,8 +137,11 @@ actor TerminalConnection {
             } catch {
                 closeReason = APIError.wrap(error).message
             }
-            isConnected = false
-            self.socket = nil
+            // Only this attach's own: a reconnect may already have put a new socket in.
+            if self.socket === socket {
+                isConnected = false
+                self.socket = nil
+            }
             if Task.isCancelled { return }
             if !announced, let status = socket.upgradeStatus, status == 401 || status == 403 {
                 emit(.ended(.signedOut))

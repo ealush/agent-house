@@ -567,6 +567,8 @@ struct ForkSheet: View {
     let scene: SceneModel
     let session: SessionModel
     @State private var info: ForkInfo?
+    /// Why the fork couldn't be prepared, when it couldn't.
+    @State private var unready: String?
     @State private var name = ""
     @State private var prompt = ""
     @State private var busy = false
@@ -605,6 +607,8 @@ struct ForkSheet: View {
                         if info.busy { Label("It’s mid-turn: the fork gets the conversation up to now.", systemImage: "clock").foregroundStyle(theme.muted) }
                         if info.dangerous { Label("It runs with permission checks off, like this one.", systemImage: "exclamationmark.shield").foregroundStyle(theme.danger) }
                     }
+                } else if let unready {
+                    Banner(text: unready, tone: .error)
                 } else {
                     ProgressView()
                 }
@@ -624,6 +628,9 @@ struct ForkSheet: View {
                                 scene.sheet = nil
                                 scene.open(host.map { "\($0)/\(result.uid)" } ?? result.uid)
                                 scene.toast("Forked onto \(result.branch)")
+                            } else if let failure = session.notices.last, failure.tone == .error {
+                                // Said here: the session's own notices show only on its screen.
+                                scene.toast(failure.text, error: true)
                             }
                             busy = false
                         }
@@ -634,6 +641,8 @@ struct ForkSheet: View {
             }
             .task {
                 info = await session.forkInfo()
+                // Couldn't ask (offline, an old record): said, not a spinner that never stops.
+                if info == nil { unready = session.notices.last?.text ?? "Couldn’t prepare the fork." }
                 name = info?.suggestedName ?? ""
                 mode = info?.mode ?? "default"
                 model = info?.model
