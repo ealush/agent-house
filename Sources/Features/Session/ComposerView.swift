@@ -939,8 +939,8 @@ struct ComposerTextField: UIViewRepresentable {
         view.placeholder = composer.placeholder(working: session.working, queued: session.row?.dto.queued ?? 0, touchOnly: !scene.hardwareKeyboard, agent: session.launch.preset?.name, waiting: session.waiting, trusting: session.awaitingTrust, ended: !session.isLive, settings: settings)
         // Only when the theme changes: setting it restyles all the text, every keystroke, under
         // autocorrect and the keyboard's predictions.
-        if context.coordinator.textColor != theme.text {
-            context.coordinator.textColor = theme.text
+        if context.coordinator.theme != theme {
+            context.coordinator.theme = theme
             view.textColor = UIColor(theme.text)
         }
         if let request = scene.focusRequest, request.nonce != context.coordinator.handledFocus {
@@ -976,7 +976,8 @@ struct ComposerTextField: UIViewRepresentable {
     final class Coordinator: NSObject, UITextViewDelegate {
         var parent: ComposerTextField
         var handledFocus = 0
-        var textColor: Color?
+        /// The theme the text was last colored for.
+        var theme: Theme?
 
         init(parent: ComposerTextField) { self.parent = parent }
 

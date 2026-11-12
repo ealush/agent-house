@@ -10,9 +10,11 @@ extension UIColor {
         self.init(red: c.r, green: c.g, blue: c.b, alpha: c.a)
     }
 
-    /// A color that follows the window's light/dark appearance between two palettes.
+    /// A color that follows the window's light/dark appearance between two palettes, made once
+    /// per pair. A new one each time was never equal to the last: every pass gave each window
+    /// a "new" tint, and UIKit told every view in it, as often as the host's state ticked.
     static func dynamic(dark: String, light: String) -> UIColor {
-        UIColor { traits in .cached(hex: traits.userInterfaceStyle == .dark ? dark : light) }
+        HexColors.shared.dynamic(dark: dark, light: light)
     }
 
     /// The color for a hex string, made once: a theme's colors are asked for by every row
@@ -29,6 +31,17 @@ private final class HexColors: @unchecked Sendable {
     static let shared = HexColors()
     private let lock = NSLock()
     private var colors: [String: UIColor] = [:]
+    private var pairs: [String: UIColor] = [:]
+
+    func dynamic(dark: String, light: String) -> UIColor {
+        let key = dark + "|" + light
+        lock.lock()
+        defer { lock.unlock() }
+        if let kept = pairs[key] { return kept }
+        let color = UIColor { traits in .cached(hex: traits.userInterfaceStyle == .dark ? dark : light) }
+        pairs[key] = color
+        return color
+    }
 
     func color(_ hex: String) -> UIColor? {
         lock.lock()

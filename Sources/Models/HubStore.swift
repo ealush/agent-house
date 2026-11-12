@@ -19,8 +19,9 @@ final class HubStore {
         }
     }
     /// The newest validated hub state seen this run, kept through a disconnect so the UI can
-    /// say "as of …" instead of going blank.
-    private(set) var lastUpdated: Date?
+    /// say "as of …" instead of going blank. Not observed: it changes on every tick, and is
+    /// only shown once the connection's phase (which is) says it's offline.
+    @ObservationIgnored private(set) var lastUpdated: Date?
     /// The hub's session list as it was last time, sealed for this sign-in: shown until the
     /// host answers, so a cold launch isn't blank. Never used to decide what still exists.
     private(set) var cachedState: HubStateDTO? { didSet { derived = Derived() } }
@@ -104,12 +105,12 @@ final class HubStore {
     }
 
     private func apply(hub update: StateUpdate) {
+        if let state = update.state { lastUpdated = Date(); saveCache(state) }
+        // The same state again changes nothing on screen: every view reading a row would
+        // have drawn again.
+        guard update != hub else { return }
         hub = update
-        if let state = update.state {
-            lastUpdated = Date()
-            cachedState = nil
-            saveCache(state)
-        }
+        if update.state != nil, cachedState != nil { cachedState = nil }
         if update.phase == .signedOut {
             onSignedOut?()
             return
@@ -118,7 +119,8 @@ final class HubStore {
         // Forget a hidden key once the host stops listing it, so a resume under the same uid shows.
         if !hidden.isEmpty {
             let live = Set(allRows.map(\.key))
-            hidden = hidden.filter { live.contains($0) }
+            let kept = hidden.filter { live.contains($0) }
+            if kept != hidden { hidden = kept }
         }
     }
 
@@ -140,7 +142,7 @@ final class HubStore {
                 for await update in updates {
                     guard let self else { return }
                     // A peer's sign-in is the hub's own token: only the hub's 401 signs out.
-                    self.peers[name] = update
+                    if self.peers[name] != update { self.peers[name] = update }
                 }
             }
             peerStreams[name] = (stream, task)

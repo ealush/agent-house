@@ -288,3 +288,13 @@ import ImageIO
     #expect(await ComposerModel.tile(Data("not an image".utf8)) == Data("not an image".utf8))
 }
 #endif
+
+@Test func aBlockKnowsItHasWordsWithoutJoiningThem() {
+    let thinking = FeedBlock.agent(key: "a", seq: 1, at: 0, items: [.part(key: "a.0", part: .reasoning("hmm"))])
+    let replied = FeedBlock.agent(key: "b", seq: 2, at: 0, items: [.part(key: "b.0", part: .reasoning("hmm")), .part(key: "b.1", part: .text("Done."))])
+    let picture = FeedBlock.user(key: "c", seq: 3, at: 0, parts: [.media(kind: "image", src: "x.png", alt: nil)])
+    #expect(!thinking.hasText && thinking.text.isEmpty)
+    #expect(replied.hasText && !replied.text.isEmpty)
+    #expect(!picture.hasText && picture.text.isEmpty)
+    #expect(FeedBlock.notice(key: "d", seq: 4, at: 0, kind: .compacted, text: "Compacted").hasText)
+}

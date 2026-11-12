@@ -254,7 +254,10 @@ private struct AskKeyCatcher: UIViewRepresentable {
 
         override func becomeFirstResponder() -> Bool {
             let became = super.becomeFirstResponder()
-            if became { keys?.didChange(true) }
+            if became {
+                heldAt = Date()
+                keys?.didChange(true)
+            }
             return became
         }
 
@@ -277,9 +280,12 @@ private struct AskKeyCatcher: UIViewRepresentable {
 
         /// What had the keyboard when the claim began (the composer it takes over from).
         private weak var displaced: UIResponder?
+        /// When the panel took the keyboard in this claim (nil until it has).
+        private var heldAt: Date?
 
         func claim() {
             claimUntil = Date().addingTimeInterval(1.5)
+            heldAt = nil
             displaced = UIResponder.current
             keyboardLog.debug("ask panel claims the keyboard from \(String(describing: self.displaced.map { type(of: $0) }), privacy: .public)")
             attempt()
@@ -287,8 +293,12 @@ private struct AskKeyCatcher: UIViewRepresentable {
 
         private func attempt() {
             guard !isFirstResponder, Date() < claimUntil else { return }
-            // A text box or terminal chosen since the claim began wins.
-            if let holder = UIResponder.current, holder !== self, holder !== displaced, holder is UITextInput {
+            // A text box or terminal chosen since the claim began wins; so does the composer it
+            // took over from, tapped again once the panel had the keyboard (straight away, that's
+            // the view settling). Taken back each time, the keyboard went up and down until the
+            // claim ran out.
+            if let holder = UIResponder.current, holder !== self, holder is UITextInput,
+               holder !== displaced || heldAt.map({ Date().timeIntervalSince($0) > 0.3 }) == true {
                 keyboardLog.debug("ask panel gives way to \(String(describing: type(of: holder)), privacy: .public)")
                 return
             }

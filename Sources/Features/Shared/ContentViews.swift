@@ -1,3 +1,4 @@
+import ImageIO
 import SwiftUI
 import UIKit
 
@@ -413,16 +414,40 @@ struct HostImage: View {
         .task(id: source) { await load() }
     }
 
+    /// Pictures already shown: a row scrolled back into view had fetched and decoded its
+    /// picture again each time.
+    private static let shown: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.countLimit = 60
+        return cache
+    }()
+
     private func load() async {
-        switch WidgetModel.imageSource(source) {
-        case .inline(let data):
-            image = UIImage(data: data)
-        case .hostFile(let path):
-            if let data = await hostFiles?.load(path) { image = UIImage(data: data) }
-        case .unavailable:
-            break
+        if let seen = Self.shown.object(forKey: source as NSString) {
+            image = seen
+            return
+        }
+        let data: Data? = switch WidgetModel.imageSource(source) {
+        case .inline(let data): data
+        case .hostFile(let path): await hostFiles?.load(path)
+        case .unavailable: nil
+        }
+        if let data, let decoded = await Self.decode(data) {
+            Self.shown.setObject(decoded, forKey: source as NSString)
+            image = decoded
         }
         failed = image == nil
+    }
+
+    /// Decoded off the main thread, at no more pixels than it's ever drawn at (a screenshot
+    /// came in at full size, to be shown 360 points tall).
+    private nonisolated static func decode(_ data: Data) async -> UIImage? {
+        await Task.detached(priority: .userInitiated) {
+            let options = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceShouldCacheImmediately: true, kCGImageSourceThumbnailMaxPixelSize: 2048] as CFDictionary
+            guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+                  let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options) else { return UIImage(data: data) }
+            return UIImage(cgImage: image)
+        }.value
     }
 }
 

@@ -75,18 +75,16 @@ actor FeedStream {
         var backoff = Duration.milliseconds(500)
         var unreadable = 0
         while !Task.isCancelled {
+            var opened: ContinuousClock.Instant?
             do {
                 let bytes = try await api.feedStream(ref)
+                opened = ContinuousClock.now
                 var parser = ServerSentEventParser(maximumLineBytes: Self.largestEvent, maximumEventBytes: Self.largestEvent)
                 for try await chunk in bytes {
                     try Task.checkCancellation()
                     for event in try parser.append(chunk) {
                         if let message = try FeedMessage.decode(event) {
-                            // Only something read resets the wait: a stream that opens and then
-                            // fails the same way mustn't come back every half second (each try
-                            // re-renders the session, and the bar's buttons twitch with it).
                             unreadable = 0
-                            backoff = .milliseconds(500)
                             apply(.message(message))
                         }
                     }
@@ -108,6 +106,10 @@ actor FeedStream {
                     }
                 }
             }
+            // Only a stream that stayed up a while resets the wait: one that opens and then
+            // fails (or sends its snapshot and closes) the same way mustn't come back every half
+            // second. Each try re-renders the session, megabytes of snapshot and all.
+            if let opened, ContinuousClock.now - opened >= .seconds(5) { backoff = .milliseconds(500) }
             apply(.disconnected)
             try? await Task.sleep(for: backoff)
             backoff = min(backoff * 2, .seconds(15))

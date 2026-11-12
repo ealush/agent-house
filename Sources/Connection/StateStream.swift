@@ -90,9 +90,17 @@ actor StateStream {
         while !Task.isCancelled {
             let failure: APIError
             do {
+                let opened = ContinuousClock.now
                 try await streamOnce()
-                // The server closed the stream (restart, revocation): reconnect at once.
-                backoff = .seconds(1)
+                // The server closed the stream (restart, revocation): reconnect at once. Unless
+                // it closed as soon as it opened (a proxy ending every response): that went round
+                // as fast as the network, the whole state drawn again each time.
+                if ContinuousClock.now - opened < .seconds(5) {
+                    try? await Task.sleep(for: backoff)
+                    backoff = min(backoff * 2, maxBackoff)
+                } else {
+                    backoff = .seconds(1)
+                }
                 continue
             } catch {
                 failure = APIError.wrap(error)

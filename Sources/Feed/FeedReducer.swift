@@ -140,6 +140,15 @@ enum FeedBlock: Equatable, Sendable, Identifiable {
             }.joined(separator: "\n\n")
         }
     }
+
+    /// Whether there are any words in `text`, without joining them all up to see.
+    var hasText: Bool {
+        switch self {
+        case .notice(_, _, _, _, let text): return !text.isEmpty
+        case .user(_, _, _, let parts): return parts.contains { if case .text(let t) = $0 { !t.isEmpty } else { false } }
+        case .agent(_, _, _, let items): return items.contains { if case .part(_, .text(let t)) = $0 { !t.isEmpty } else { false } }
+        }
+    }
 }
 
 enum FeedProjection {

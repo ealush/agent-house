@@ -245,8 +245,10 @@ struct TranscriptView: View {
             .onChange(of: topID) { _, id in
                 // The restoration anchor: the block at the top of the screen, or none at the
                 // newest message, so coming back there shows what came since.
+                // Written only when it moves: every write told every transcript on screen to draw.
                 let seq = atBottom ? nil : id.flatMap { key in blocks.first { $0.id == key }?.seq }
-                scene.scrollAnchors[session.key] = SceneSnapshot.ScrollAnchor(seq: seq, offset: 0)
+                let anchor = SceneSnapshot.ScrollAnchor(seq: seq, offset: 0)
+                if scene.scrollAnchors[session.key] != anchor { scene.scrollAnchors[session.key] = anchor }
             }
             // Following the conversation: at the newest message, what the agent writes (and
             // what you send) stays in view, as in any chat; scrolled back to read, it leaves you
@@ -528,7 +530,7 @@ extension BlockRow {
     @ViewBuilder fileprivate var agentMenu: some View {
         Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = block.text }
         LinkButtons(place: messagePlace, scene: scene)
-        if session.isLive && !block.text.isEmpty {
+        if session.isLive && block.hasText {
             Button("Quote in Reply", systemImage: "text.quote") {
                 session.composer.compose(Markdown.quote(block.text, limit: 12))
                 Haptics.tap()
@@ -539,7 +541,8 @@ extension BlockRow {
     /// After Copy in the edit menu of words selected in the agent's message: quoting just
     /// those words, and the message's own actions folded under one item.
     fileprivate var wordsMenu: TextMenu {
-        let (session, scene, text, place) = (session, scene, block.text, messagePlace)
+        // The message's text is joined up when an item is picked, not each time the row draws.
+        let (session, scene, block, place) = (session, scene, block, messagePlace)
         return TextMenu { selected in
             var items: [UIMenuElement] = []
             if session.isLive {
@@ -549,7 +552,7 @@ extension BlockRow {
                 })
             }
             items.append(UIMenu(title: "Message", image: UIImage(systemName: "text.bubble"), children: [
-                UIAction(title: "Copy Message", image: UIImage(systemName: "doc.on.doc")) { _ in UIPasteboard.general.string = text },
+                UIAction(title: "Copy Message", image: UIImage(systemName: "doc.on.doc")) { _ in UIPasteboard.general.string = block.text },
                 UIAction(title: "Copy Link", image: UIImage(systemName: "link")) { _ in scene.copyLink(to: place) },
                 UIAction(title: "Share Link…", image: UIImage(systemName: "square.and.arrow.up")) { _ in scene.shareLink(to: place) },
             ]))

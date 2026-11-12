@@ -9,15 +9,26 @@ import UIKit
 final class ThemeModel {
     private(set) var omarchy: OmarchyTheme?
     @ObservationIgnored private var stamp: OmarchyStampDTO?
+    @ObservationIgnored private var fetching: Task<Void, Never>?
+    @ObservationIgnored private var failedAt: Date?
 
     func theme(_ appearance: DevicePreferences.Appearance) -> Theme { Theme.resolve(appearance, omarchy: omarchy) }
 
     func follow(_ hub: HubStore?, appearance: DevicePreferences.Appearance) {
         guard appearance == .omarchy, let hub else { return }
         let current = hub.hub.state?.omarchy
-        guard current != stamp || omarchy == nil else { return }
+        // Once per change of the host's theme, and one at a time: asked on every pass while
+        // the first answer was on its way (or after one failed), each pass sent another.
+        guard current != stamp || (omarchy == nil && fetching == nil && failedAt.map { Date().timeIntervalSince($0) > 30 } ?? true) else { return }
         stamp = current
-        Task { omarchy = try? await hub.api.omarchyTheme() }
+        fetching?.cancel()
+        fetching = Task { [weak self] in
+            let fetched = try? await hub.api.omarchyTheme()
+            guard let self, !Task.isCancelled else { return }
+            fetching = nil
+            // A failed fetch keeps the colors there were.
+            if let fetched { omarchy = fetched; failedAt = nil } else { failedAt = Date() }
+        }
     }
 }
 
@@ -57,6 +68,9 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
     private weak var modalController: UIViewController?
     private var whichKeyTask: Task<Void, Never>?
     private var advertised: Handoff?
+    /// The theme last put on the window, and the window it went on.
+    private var appliedTheme: Theme?
+    private weak var themedWindow: UIWindow?
 
     init(scene: SceneModel) {
         self.scene = scene
@@ -156,13 +170,20 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
         if case .main = next { syncModal(allowed: true) } else { syncModal(allowed: false) }
         let appearance = scene.app.preferences.appearance
         theme.follow(scene.hub, appearance: appearance)
-        view.window?.overrideUserInterfaceStyle = theme.theme(appearance).interfaceStyle
-        // UIKit's own controls (the tab bar's selection) take the theme's accent, not the asset's pink.
-        view.window?.tintColor = theme.theme(appearance).uiAccent
-        // What shows where nothing's drawn (around the keyboard's corners, under a terminal)
-        // is the theme's ground, not the system's black.
-        view.backgroundColor = theme.theme(appearance).uiBackground
-        syncOverlayWindow()
+        // Only when the theme changed: this pass runs on every tick of the host's state, and a
+        // window's tint set again is passed down to every view in it.
+        let current = theme.theme(appearance)
+        if current != appliedTheme || view.window !== themedWindow {
+            appliedTheme = current
+            themedWindow = view.window
+            view.window?.overrideUserInterfaceStyle = current.interfaceStyle
+            // UIKit's own controls (the tab bar's selection) take the theme's accent, not the asset's pink.
+            view.window?.tintColor = current.uiAccent
+            // What shows where nothing's drawn (around the keyboard's corners, under a terminal)
+            // is the theme's ground, not the system's black.
+            view.backgroundColor = current.uiBackground
+            syncOverlayWindow()
+        }
         if !scene.toasts.isEmpty { placeToasts() }
         if case .main = next { scene.reconcileIfReady() }
         advertise(scene.handoff)
@@ -738,8 +759,10 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
     /// What the bar says follows the session: its name, what it's doing and where, and the
     /// way to the other view.
     private func updateBar() {
-        navigationItem.title = session.title
-        navigationItem.attributedSubtitle = attributedSubtitle
+        // Set only when they change: the bar lays itself out again for each one.
+        if navigationItem.title != session.title { navigationItem.title = session.title }
+        let subtitle = attributedSubtitle
+        if navigationItem.attributedSubtitle != subtitle { navigationItem.attributedSubtitle = subtitle }
         // The live terminal fills the screen under a see-through bar: over a dark one its title
         // and buttons go light.
         let palette = theme.theme(scene.app.preferences.appearance).palette
