@@ -34,6 +34,7 @@ targets:
     sources:
       - path: App
       - path: Sources
+      - path: Shared
     configFiles:
       Debug: Config/Debug.xcconfig
       Release: Config/Release.xcconfig
@@ -53,6 +54,31 @@ targets:
         product: GRDB
       - package: SwiftTerm
         product: SwiftTerm
+      # A message going with its attachments, on the Lock Screen and in the Dynamic Island
+      # (an iPhone's and iPad's; the Mac app has none).
+      - target: AgentHubNativeWidgets
+        embed: true
+        platformFilter: iOS
+  AgentHubNativeWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Widgets
+      - path: Shared
+    configFiles:
+      Debug: Config/Debug.xcconfig
+      Release: Config/Release.xcconfig
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(AH_BUNDLE_IDENTIFIER).widgets
+        INFOPLIST_FILE: Widgets/Info.plist
+        PRODUCT_NAME: AgentHubNativeWidgets
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
+        GENERATE_INFOPLIST_FILE: NO
+        SUPPORTS_MACCATALYST: NO
+        SKIP_INSTALL: YES
+        LD_RUNPATH_SEARCH_PATHS: $(inherited) @executable_path/Frameworks @executable_path/../../Frameworks
   AgentHubNativeTests:
     type: bundle.unit-test
     platform: iOS

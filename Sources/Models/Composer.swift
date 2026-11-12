@@ -44,9 +44,10 @@ final class Outbox {
     private(set) var uploads: [Int: Double] = [:]
     private var nextUpload = 0
 
-    /// Asked for while something here is under way, so it can finish with the app put away:
-    /// returns what to call once it's done. (The app's layer sets it; none in tests.)
-    var keepAlive: (@MainActor (String) -> (@MainActor () -> Void))?
+    /// Asked for while a message here is under way (by its id), so it can finish with the app
+    /// put away and say how it's going outside it: returns what to call once it's done. (The
+    /// app's layer sets it; none in tests.)
+    var keepAlive: (@MainActor (Int) -> (@MainActor () -> Void))?
 
     func add(key: String, text: String, state: Item.State, waitingOn: [Int] = []) -> Int {
         nextID += 1
@@ -520,7 +521,7 @@ final class ComposerModel {
         let previous = chain
         chain = Task { [weak self, api, uid, outbox, key] in
             // Finished with the app put away, too.
-            let release = outbox.keepAlive?(tasks.isEmpty ? "Sending your message" : "Uploading and sending your message")
+            let release = outbox.keepAlive?(id)
             defer { release?() }
             await previous?.value
             do {
