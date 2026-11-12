@@ -681,7 +681,7 @@ struct NewSessionMore: View {
                     .disabled(!draft.canStart)
                 }
             }
-            .navigationTitle("New Session")
+            .navigationTitle("New session")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
