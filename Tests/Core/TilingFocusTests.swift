@@ -203,6 +203,39 @@ private func windowWithoutHost() throws -> SceneModel {
 }
 
 @MainActor
+@Test func aBoxThatLosesTheKeyboardToARebuiltColumnGetsItBack() throws {
+    let scene = try windowWithoutHost()
+    let took = Date()
+    scene.didFocus(.composer(SceneModel.newSessionKey), now: took)
+    // The split rebuilt its column: UIKit gave the root the keyboard, then the box said so.
+    let asked = scene.focusRequest?.nonce
+    scene.rootTookKeyboard(now: took.addingTimeInterval(0.7))
+    #expect(scene.focusRequest?.nonce == asked, "the box still has it, as far as anyone has said")
+    scene.didBlur(.composer(SceneModel.newSessionKey))
+    #expect(scene.focusRequest?.target == .composer(SceneModel.newSessionKey), "New session's box takes it back, so Return starts the session")
+    let nonce = scene.focusRequest?.nonce
+    scene.rootTookKeyboard(now: took.addingTimeInterval(0.8))
+    #expect(scene.focusRequest?.nonce == nonce, "once")
+
+    scene.didFocus(.composer("a"), now: took)
+    scene.didBlur(.composer("a"))
+    scene.rootTookKeyboard(now: took.addingTimeInterval(SceneModel.rebuildWindow + 1))
+    #expect(scene.focusRequest?.nonce == nonce, "long after, the root having it is someone's doing")
+
+    scene.didFocus(.composer("a"), now: took)
+    scene.didBlur(.composer("a"))
+    scene.didFocus(.terminal("b"), now: took)
+    scene.rootTookKeyboard(now: took.addingTimeInterval(0.5))
+    #expect(scene.focusRequest?.nonce == nonce, "nor when something else has it")
+
+    scene.hardwareKeyboard = false
+    scene.didFocus(.composer("a"), now: took)
+    scene.didBlur(.composer("a"))
+    scene.rootTookKeyboard(now: took.addingTimeInterval(0.5))
+    #expect(scene.focusRequest?.nonce == nonce, "on touch alone, the on-screen keyboard stays down")
+}
+
+@MainActor
 @Test func hoverFocusesAPaneOnlyWhenNothingElseIsGoingOn() throws {
     let scene = try windowWithoutHost()
     scene.open("a")

@@ -266,7 +266,17 @@ struct NewSessionScreen: View {
         // The ground a session's screen has.
         .background(theme.surface)
         .task { await draft.load() }
-        .onAppear { if draft.phase == .ready { focused = true } }
+        // The box takes the keyboard as the screen comes in, and whenever the scene sends it
+        // here (⌘N with a keyboard attached asks for this screen's composer). Asked only on
+        // appearing, it didn't get it after ⌘N: the sidebar's list kept the keyboard, and
+        // Return opened its first session.
+        .onAppear { if draft.phase == .ready { takeKeyboard() } }
+        .onChange(of: scene.focusRequest) { _, request in
+            if request?.target == .composer(SceneModel.newSessionKey), draft.phase == .ready { takeKeyboard() }
+        }
+        .onChange(of: focused) { _, now in
+            if now { scene.didFocus(.composer(SceneModel.newSessionKey)) } else { scene.didBlur(.composer(SceneModel.newSessionKey)) }
+        }
         .sheet(isPresented: $showingMore) { NewSessionMore(draft: draft) }
         .sheet(isPresented: $choosingFolder) {
             if let hub = scene.hub {
@@ -617,6 +627,12 @@ struct NewSessionScreen: View {
         // Starting: the light a working session's box has, from the first moment.
         .overlay { ThinkingBorder(corner: corner, active: draft.phase == .starting) }
         .animation(.snappy(duration: 0.22), value: empty)
+    }
+
+    /// Now, and again once the screen is in its window: a field not yet in one can't take it.
+    private func takeKeyboard() {
+        focused = true
+        DispatchQueue.main.async { if draft.phase == .ready { focused = true } }
     }
 
     private func send() {

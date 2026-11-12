@@ -356,6 +356,15 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
     // MARK: Keyboard
 
     override var canBecomeFirstResponder: Bool { true }
+    /// UIKit hands the root the keyboard when the view that had it leaves the window, which
+    /// a split view does to its whole column when a page's navigation stack goes (a page
+    /// giving way to New session or a session): the box that had just taken the keyboard lost
+    /// it a moment later. The scene asks for it back.
+    override func becomeFirstResponder() -> Bool {
+        let became = super.becomeFirstResponder()
+        if became { scene.rootTookKeyboard() }
+        return became
+    }
 
     /// Every menu-bar and ⌘-hold command lands here through the responder chain.
     @objc func runKeyCommand(_ sender: UICommand) {

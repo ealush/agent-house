@@ -76,6 +76,10 @@ final class SceneModel {
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var toastID = 0
     @ObservationIgnored private var focusNonce = 0
+    /// What last took the keyboard, and when (`rootTookKeyboard`).
+    @ObservationIgnored private var lastTook: (target: FocusTarget, at: Date)?
+    /// When the window's root last took it.
+    @ObservationIgnored private var rootTook: Date?
     @ObservationIgnored private var restored = false
     @ObservationIgnored private var pendingRestore: SceneSnapshot?
     /// A link's place that arrived before the window's own state was back.
@@ -288,6 +292,8 @@ final class SceneModel {
     /// A composer or terminal took the keyboard. Its session remembers that spot, and its
     /// pane becomes the focused one, so the pane that looks focused is the one getting keys.
     func didFocus(_ target: FocusTarget, now: Date = Date()) {
+        lastTook = (target, now)
+        rootTook = nil
         // UIKit gives the keyboard back to whatever had it when a modal went up; if focus was
         // asked for elsewhere meanwhile (a split from the palette), ask again so that wins.
         if let delivering, now < delivering.until {
@@ -318,7 +324,32 @@ final class SceneModel {
 
     func didBlur(_ target: FocusTarget) {
         if currentFocus == target { currentFocus = nil }
+        recoverFromRebuild()
     }
+
+    /// The window's root took the keyboard. When a box had taken it only a moment before and
+    /// nothing has it now, the box's view was rebuilt under it (a split view rebuilds its
+    /// column as a page's navigation stack goes), and the keyboard goes back to it, once.
+    /// UIKit tells the root before the box says it lost the keyboard, so whichever of the two
+    /// comes second does it.
+    func rootTookKeyboard(now: Date = Date()) {
+        rootTook = now
+        recoverFromRebuild()
+    }
+
+    private func recoverFromRebuild() {
+        // Only with a keyboard attached, as every move of the keyboard is: on touch alone, a
+        // box going quiet is the on-screen keyboard put away, and stays so.
+        guard hardwareKeyboard, !modalShown, currentFocus == nil, let last = lastTook, let root = rootTook,
+              root >= last.at, root.timeIntervalSince(last.at) < Self.rebuildWindow else { return }
+        lastTook = nil
+        rootTook = nil
+        requestFocus(last.target)
+    }
+
+    /// How soon after a box takes the keyboard losing it to the root counts as a rebuild: the
+    /// column goes once the page's fade has run, about half a second on.
+    nonisolated static let rebuildWindow: TimeInterval = 1.5
 
     /// Where the keyboard belongs in what the window shows: a chooser's search, the
     /// focused session's remembered spot (its composer in the GUI, else its terminal), or the page.
