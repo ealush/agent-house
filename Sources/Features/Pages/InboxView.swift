@@ -518,9 +518,11 @@ struct SessionListView: View {
                 }
             }
             ForEach(sections) { section in
+                // The latest-active list is one block with no header: nothing to fold or move.
+                let recent = section.id == SessionOrdering.recentSection
                 Section {
                     // A folded block keeps its header alone, so the blocks below it come up.
-                    if !scene.isGroupCollapsed(section.id) {
+                    if recent || !scene.isGroupCollapsed(section.id) {
                         ForEach(section.rows) { row in
                             SessionRowView(row: row, multiHost: false, dense: !scene.narrow, selectable: !scene.narrow) { scene.open(row.key) }
                                 .tag(row.key)
@@ -529,10 +531,13 @@ struct SessionListView: View {
                                 .sessionSwipes(row: row, scene: scene, hub: hub)
                                 .ahRow(!showsPages)
                         }
-                        .onMove { from, to in move(section: section, from: from, to: to) }
+                        // Latest active first is its own order: no dragging a row elsewhere.
+                        .onMove(perform: recent ? nil : { (from: IndexSet, to: Int) in move(section: section, from: from, to: to) })
                     }
                 } header: {
-                    GroupHeader(scene: scene, hub: hub, section: section, first: section.id == sections.first?.id, last: section.id == sections.last?.id)
+                    if !recent {
+                        GroupHeader(scene: scene, hub: hub, section: section, first: section.id == sections.first?.id, last: section.id == sections.last?.id)
+                    }
                 }
             }
             if hub.awaitingState {

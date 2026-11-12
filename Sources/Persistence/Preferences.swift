@@ -65,6 +65,12 @@ struct DevicePreferences: Codable, Equatable, Sendable {
         case status, project, host
     }
 
+    /// How the sidebar (and a phone's Sessions) lists sessions: in blocks per project, each
+    /// in the order they were opened, or as one list with the latest active first, as chats.
+    enum SessionSort: String, Codable, Sendable, CaseIterable {
+        case project, recent
+    }
+
     struct Notifications: Codable, Equatable, Sendable {
         var enabled = false
         var needsYou = true
@@ -81,6 +87,7 @@ struct DevicePreferences: Codable, Equatable, Sendable {
     var keyBar: KeyBarMode = .auto
     var terminalFontSize: Double = TerminalTextSize.standard
     var inboxGrouping: InboxGrouping = .status
+    var sessionSort: SessionSort = .project
     var notifications = Notifications()
     /// Agents chosen recently in New session, newest first.
     var recentAgents: [String] = []
@@ -132,7 +139,7 @@ struct DevicePreferences: Codable, Equatable, Sendable {
 
     init() {}
 
-    private enum CodingKeys: String, CodingKey { case appearance, deviceName, stepsHidden, keyBar, terminalFontSize, inboxGrouping, notifications, recentAgents, focusFollowsPointer, recentPalette, launchMemory, lastPlace, groupOrder, collapsedGroups }
+    private enum CodingKeys: String, CodingKey { case appearance, deviceName, stepsHidden, keyBar, terminalFontSize, inboxGrouping, notifications, recentAgents, focusFollowsPointer, recentPalette, launchMemory, lastPlace, groupOrder, collapsedGroups, sessionSort }
 
     private enum LegacyKeys: String, CodingKey { case keyBarVisible }
 
@@ -155,6 +162,7 @@ struct DevicePreferences: Codable, Equatable, Sendable {
         lastPlace = try? c.decodeIfPresent(Place.self, forKey: .lastPlace)
         groupOrder = (try? c.decode(GroupOrder.self, forKey: .groupOrder)) ?? GroupOrder()
         collapsedGroups = (try? c.decode([String].self, forKey: .collapsedGroups)) ?? []
+        sessionSort = (try? c.decode(SessionSort.self, forKey: .sessionSort)) ?? .project
     }
 
     enum KeyBarMode: String, Codable, Sendable, CaseIterable {

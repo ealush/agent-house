@@ -230,3 +230,27 @@ private func shortcut(_ uid: String, _ title: String, status: String = "idle", p
     #expect(runs.map(\.text).joined() == "Going with Postgres for sessions")
     #expect(runs.first { $0.marked }?.text == "Postgres")
 }
+
+@Test func sessionsSortByProjectOrLatestActivity() throws {
+    func row(_ uid: String, project: String, activity: Double, created: Double, pinned: Bool = false) throws -> SessionRow {
+        var object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(try session(uid, title: uid, project: project).dto)) as! [String: Any]
+        object["activity"] = activity
+        object["createdAt"] = created
+        object["pinned"] = pinned
+        return SessionRow(key: uid, host: "desk", isLocal: true, dto: try JSONDecoder().decode(SessionDTO.self, from: JSONSerialization.data(withJSONObject: object)))
+    }
+    let rows = [
+        try row("a", project: "web", activity: 50, created: 1),
+        try row("b", project: "api", activity: 90, created: 2),
+        try row("c", project: "web", activity: 0, created: 70),
+        try row("d", project: "api", activity: 10, created: 3, pinned: true),
+    ]
+    let byProject = SessionOrdering.sections(rows, multiHost: false, sort: .project)
+    #expect(byProject.map(\.id) == ["web", "api"], "blocks per project, as before")
+    let recent = SessionOrdering.sections(rows, multiHost: false, sort: .recent)
+    #expect(recent.map(\.id) == [SessionOrdering.recentSection], "one list, no blocks")
+    #expect(recent.first?.rows.map(\.key) == ["d", "b", "c", "a"], "pins on top, then the latest active; one that never printed goes by its opening")
+    #expect(SessionOrdering.sections([], multiHost: false, sort: .recent).isEmpty)
+    let older = try JSONDecoder().decode(DevicePreferences.self, from: Data(#"{"inboxGrouping":"project"}"#.utf8))
+    #expect(older.sessionSort == .project, "a device that never chose keeps the project blocks")
+}

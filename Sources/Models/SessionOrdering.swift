@@ -113,6 +113,27 @@ enum SessionOrdering {
         return applyGroupOrder(byOpening, saved: saved).map { Section(id: $0, rows: sorted(groups[$0]!)) }
     }
 
+    /// The one block of the latest-active list: it has no header.
+    static let recentSection = ""
+
+    /// Latest active first, as chats: pins on top, then by when each last printed something
+    /// (opening time for one that hasn't).
+    static func byRecency(_ rows: [SessionRow]) -> [SessionRow] {
+        func latest(_ row: SessionRow) -> Double { max(row.dto.activity, row.dto.createdAt) }
+        func ordered(_ rows: [SessionRow]) -> [SessionRow] {
+            rows.sorted { latest($0) != latest($1) ? latest($0) > latest($1) : $0.key < $1.key }
+        }
+        return ordered(rows.filter { $0.dto.pinned }) + ordered(rows.filter { !$0.dto.pinned })
+    }
+
+    /// The sidebar's blocks for `sort`: per project (or host), or one latest-active list.
+    static func sections(_ rows: [SessionRow], multiHost: Bool, saved: [String] = [], sort: DevicePreferences.SessionSort) -> [Section] {
+        switch sort {
+        case .project: return sections(rows, multiHost: multiHost, saved: saved)
+        case .recent: return rows.isEmpty ? [] : [Section(id: recentSection, rows: byRecency(rows))]
+        }
+    }
+
     /// Sessions in sidebar paint order, top to bottom (what Previous/Next session walks).
     static func sidebarOrder(_ rows: [SessionRow], multiHost: Bool, saved: [String] = []) -> [SessionRow] {
         sections(rows, multiHost: multiHost, saved: saved).flatMap(\.rows)

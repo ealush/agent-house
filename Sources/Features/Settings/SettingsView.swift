@@ -396,6 +396,10 @@ private struct AppearanceSection: View {
             }
             Section("Reading") {
                 Toggle("Hide tool steps in transcripts", isOn: $app.preferences.stepsHidden)
+                Picker("Sort sessions", selection: $app.preferences.sessionSort) {
+                    Text("By project").tag(DevicePreferences.SessionSort.project)
+                    Text("Recent activity").tag(DevicePreferences.SessionSort.recent)
+                }
                 Picker("Group the Inbox by", selection: $app.preferences.inboxGrouping) {
                     Text("Status").tag(DevicePreferences.InboxGrouping.status)
                     Text("Project").tag(DevicePreferences.InboxGrouping.project)

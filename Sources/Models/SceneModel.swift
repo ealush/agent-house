@@ -577,13 +577,13 @@ final class SceneModel {
 
     var sidebarOrder: [SessionRow] {
         guard let hub else { return [] }
-        return SessionOrdering.sidebarOrder(hub.rows, multiHost: hub.multiHost, saved: app.preferences.groupOrder.saved(multiHost: hub.multiHost))
+        return sidebarSections.flatMap(\.rows)
     }
 
     /// The sidebar's blocks, in the order this device keeps.
     var sidebarSections: [SessionOrdering.Section] {
         guard let hub else { return [] }
-        return SessionOrdering.sections(hub.rows, multiHost: hub.multiHost, saved: app.preferences.groupOrder.saved(multiHost: hub.multiHost))
+        return SessionOrdering.sections(hub.rows, multiHost: hub.multiHost, saved: app.preferences.groupOrder.saved(multiHost: hub.multiHost), sort: app.preferences.sessionSort)
     }
 
     /// A block dragged onto another (or moved up or down a step): saved on this device.
