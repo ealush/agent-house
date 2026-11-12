@@ -516,7 +516,7 @@ struct StackCockpitView: View {
             } label: {
                 Label("Review \(next.name)", systemImage: "arrow.right.circle")
                     .font(.ah(.subheadline).weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(theme.accentInk)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 6)
             }
@@ -995,8 +995,8 @@ struct LayerView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .touchTarget()
             .accessibilityLabel("Viewed")
-            .accessibilityValue(viewed ? "Yes" : "No")
             .accessibilityAddTraits(viewed ? .isSelected : [])
             .help(viewed ? "Mark as not viewed" : "Mark as viewed")
             Menu {
@@ -1305,11 +1305,11 @@ struct LayerView: View {
                 }
             } label: {
                 HStack(spacing: 6) {
-                    if model.loading.contains("approve") { ProgressView().tint(.white) } else { Image(systemName: "checkmark.seal") }
+                    if model.loading.contains("approve") { ProgressView().tint(theme.accentInk) } else { Image(systemName: "checkmark.seal") }
                     Text(confidence.review == .changedSinceReview ? "Reviewed the changes" : "I reviewed \(layer.headSha.prefix(7))").lineLimit(1)
                 }
                 .font(.ah(.subheadline).weight(.semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(theme.accentInk)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)
             }
@@ -1432,7 +1432,7 @@ private struct ReviewerQuestionField: View {
             } label: {
                 Image(systemName: "arrow.up")
                     .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(theme.accentInk)
                     .frame(width: 32, height: 32)
                     .background(theme.accentStrong, in: Circle())
                     .opacity(empty ? 0.45 : 1)

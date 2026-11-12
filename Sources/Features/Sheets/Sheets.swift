@@ -231,7 +231,7 @@ struct NewSessionSheet: View {
                     TextField("Extra arguments", text: $extraArgs).font(.ahMono(.body)).textInputAutocapitalization(.never).autocorrectionDisabled()
                 }
             }
-            .navigationTitle(context.project ? "New project" : "New session")
+            .navigationTitle(context.project ? "New Project" : "New Session")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) }
@@ -1222,7 +1222,7 @@ struct ConfirmPlanSheet: View {
                 } label: {
                     Text("Continue").frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.borderedProminent).tint(theme.accentStrong)
                 .keyboardShortcut(.return, modifiers: .command)
                 Button("Cancel") { scene.sheet = nil }.frame(maxWidth: .infinity).keyboardShortcut(.cancelAction)
             }

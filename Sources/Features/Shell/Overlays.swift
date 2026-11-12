@@ -109,7 +109,7 @@ struct PaletteView: View {
         .background(theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(theme.faint.opacity(0.35), lineWidth: 0.5))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.28), radius: 30, y: 16)
+        .shadow(color: theme.shadow, radius: 30, y: 16)
         .frame(maxWidth: 640)
         .padding(.horizontal, 16)
         .onAppear { focused = true }
@@ -446,7 +446,7 @@ struct SwitcherView: View {
         .background(theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(theme.faint.opacity(0.35), lineWidth: 0.5))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.28), radius: 30, y: 16)
+        .shadow(color: theme.shadow, radius: 30, y: 16)
         .frame(maxWidth: 600)
         .padding(.horizontal, 16)
         .onAppear {
@@ -605,7 +605,7 @@ struct ShortcutsView: View {
             }
             .ahFormGround()
             .searchable(text: $query, prompt: "Name or keys, like “ctrl shift p”")
-            .navigationTitle("Keyboard shortcuts")
+            .navigationTitle("Keyboard Shortcuts")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: .close) { scene.showingShortcuts = false }.keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .primaryAction) { Button("Edit…") { scene.showingShortcuts = false; scene.sheet = .settings(SettingsSection.shortcuts.rawValue) } }
@@ -644,7 +644,7 @@ struct WhichKeyHUD: View {
         .padding(16)
         .background(theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(theme.faint.opacity(0.35), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.2), radius: 20, y: 8)
+        .shadow(color: theme.shadow, radius: 20, y: 8)
         .frame(maxWidth: 760)
         .padding(16)
         .accessibilityElement(children: .contain)
@@ -674,7 +674,7 @@ struct SubmapHUD: View {
         }
         .background(theme.surface, in: Capsule())
         .overlay(Capsule().strokeBorder(theme.faint.opacity(0.35), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.18), radius: 16, y: 6)
+        .shadow(color: theme.shadow, radius: 16, y: 6)
         .frame(maxWidth: 900)
         .fixedSize(horizontal: false, vertical: true)
         .padding(12)
@@ -739,7 +739,7 @@ struct NudgeStack: View {
             }
             Spacer(minLength: 12)
             Button("Open") { scene.openNudge(nudge) }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.borderedProminent).tint(theme.accentStrong)
                 .buttonBorderShape(.capsule)
                 .controlSize(.small)
             Button { scene.dismissNudge(nudge.id) } label: { Image(systemName: "xmark").font(.ah(.caption).weight(.semibold)) }
@@ -753,7 +753,7 @@ struct NudgeStack: View {
         .frame(maxWidth: 380)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder((nudge.kind == .needsYou ? theme.accent : theme.done).opacity(0.35), lineWidth: 0.75))
-        .shadow(color: .black.opacity(0.15), radius: 16, y: 6)
+        .shadow(color: theme.shadow, radius: 16, y: 6)
         .task {
             guard nudge.kind == .finished else { return }
             try? await Task.sleep(for: .seconds(6))

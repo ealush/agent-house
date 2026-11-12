@@ -43,7 +43,7 @@ struct AhSectionHeader: View {
         }
         .padding(.bottom, 6)
         .overlay(alignment: .bottomLeading) { Capsule().fill(theme.brand).frame(height: 2).frame(maxWidth: .infinity) }
-        .fixedSize()
+        .fixedSize(horizontal: false, vertical: true)
         .textCase(nil)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)

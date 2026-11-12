@@ -251,10 +251,11 @@ private struct ReplyButton: View {
     let prominent: Bool
     let disabled: Bool
     let action: () -> Void
+    @Environment(\.theme) private var theme
 
     var body: some View {
         if prominent {
-            Button(label, action: action).buttonStyle(.borderedProminent).disabled(disabled)
+            Button(label, action: action).buttonStyle(.borderedProminent).tint(theme.accentStrong).disabled(disabled)
         } else {
             Button(label, action: action).buttonStyle(.bordered).disabled(disabled)
         }

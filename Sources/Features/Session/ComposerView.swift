@@ -350,7 +350,7 @@ struct ComposerView: View {
                 // Stop where Send was, in its accent: the one filled control in the box.
                 Image(systemName: "stop.fill")
                     .font(.system(size: control * 0.25, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(theme.accentInk)
                     .frame(width: control - 12, height: control - 12)
                     .background(theme.accentStrong, in: Circle())
                     .touchTarget()
@@ -368,7 +368,7 @@ struct ComposerView: View {
                 // Send's pink, its height and its place, with the word for what it does.
                 Text(queues ? "Queue" : "Run")
                     .font(.ah(.subheadline).weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(theme.accentInk)
                     .padding(.horizontal, 13)
                     .frame(height: control - 12)
                     .background(theme.accentStrong, in: Capsule())
@@ -395,7 +395,7 @@ struct ComposerView: View {
                 // ah's Send: the accent-filled circle, the one pink control.
                 Image(systemName: "arrow.up")
                     .font(.system(size: control * 0.34, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(theme.accentInk)
                     .frame(width: control - 12, height: control - 12)
                     .background(theme.accentStrong, in: Circle())
                     .opacity(composer.canSend ? 1 : 0.45)
@@ -813,8 +813,9 @@ private struct SuggestionList: View {
     let index: Int
     let pick: (CompletionTrigger.Item) -> Void
     @Environment(\.theme) private var theme
-    // A finger's worth on a phone (34 was a pointer's), still seven rows before it scrolls.
-    private static let rowHeight: CGFloat = 40
+    // A finger's worth on a phone (34 was a pointer's), still seven rows before it scrolls;
+    // taller with the text in it.
+    @ScaledMetric(relativeTo: .callout) private var rowHeight: CGFloat = 40
 
     var body: some View {
         let shown = Array(items.prefix(12))
@@ -836,7 +837,7 @@ private struct SuggestionList: View {
                                 if i == index { Image(systemName: "return").font(.ah(.caption2)).foregroundStyle(theme.faint) }
                             }
                             .padding(.horizontal, 10)
-                            .frame(height: Self.rowHeight)
+                            .frame(height: rowHeight)
                             // Concentric with the list's corners: its radius less the inset.
                             .background(i == index ? theme.accent.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                             .contentShape(Rectangle())
@@ -849,7 +850,7 @@ private struct SuggestionList: View {
                 .padding(6)
             }
             .scrollBounceBehavior(.basedOnSize)
-            .frame(height: min(CGFloat(shown.count) * (Self.rowHeight + 1) + 12, 7 * (Self.rowHeight + 1) + 12))
+            .frame(height: min(CGFloat(shown.count) * (rowHeight + 1) + 12, 7 * (rowHeight + 1) + 12))
             .onChange(of: index) { _, i in proxy.scrollTo(i) }
         }
         // The composer's glass and its corners, so the list reads as the box opening upward.
@@ -932,8 +933,12 @@ struct ComposerTextField: UIViewRepresentable {
         if view.text != composer.text {
             view.text = composer.text
             view.invalidateIntrinsicContentSize()
-            let end = view.endOfDocument
-            view.selectedTextRange = view.textRange(from: end, to: end)
+            // Where the change left the caret (after a picked file, a snippet put in mid-text),
+            // not always the end.
+            let offset = composer.placeCaret.map { min(max(0, $0), view.text.utf16.count) }
+            composer.placeCaret = nil
+            let caret = offset.flatMap { view.position(from: view.beginningOfDocument, offset: $0) } ?? view.endOfDocument
+            view.selectedTextRange = view.textRange(from: caret, to: caret)
         }
         let settings = ComposerFloat.hasTray(session) ? [session.launch.modelLabel, session.launch.effort.map(LaunchState.effortName)].compactMap { $0 } : []
         view.placeholder = composer.placeholder(working: session.working, queued: session.row?.dto.queued ?? 0, touchOnly: !scene.hardwareKeyboard, agent: session.launch.preset?.name, waiting: session.waiting, trusting: session.awaitingTrust, ended: !session.isLive, settings: settings)
@@ -1002,10 +1007,15 @@ struct ComposerTextField: UIViewRepresentable {
             parent.scene.fieldState = fieldState(textView)
             parent.composer.text = textView.text
             parent.composer.caret = textView.offset(from: textView.beginningOfDocument, to: textView.selectedTextRange?.start ?? textView.endOfDocument)
+            parent.composer.edited()
         }
 
         func textViewDidChangeSelection(_ textView: UITextView) {
             parent.scene.fieldState = fieldState(textView)
+            // Mid-keystroke the caret moves before the text arrives: suggestions worked out from
+            // the old text emptied the list (and a quick Return sent the half-typed @mention).
+            // The text's own change brings them up to date.
+            guard textView.text == parent.composer.text else { return }
             let caret = textView.offset(from: textView.beginningOfDocument, to: textView.selectedTextRange?.start ?? textView.endOfDocument)
             if caret != parent.composer.caret {
                 parent.composer.caret = caret
@@ -1225,6 +1235,12 @@ final class ComposerTextView: UITextView {
     @objc private func textChanged() { placeholderLabel.isHidden = !text.isEmpty }
 
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        // Composing with an input method (Japanese, Pinyin): Return picks the candidate, the
+        // arrows move through them. All of it is the input method's, not a send or a recall.
+        if markedTextRange != nil {
+            super.pressesBegan(presses, with: event)
+            return
+        }
         var unhandled = Set<UIPress>()
         for press in presses {
             guard let key = press.key else {
@@ -1349,7 +1365,7 @@ struct QueueTrayView: View {
                 HStack(spacing: 2) {
                     if !held {
                         Button { Haptics.threshold(); Task { await queue.steer(item) } } label: { queueGlyph("bolt") }
-                            .accessibilityLabel("Send now")
+                            .accessibilityLabel("Send Now")
                             .accessibilityHint("Stops the current turn and sends this now")
                     }
                     Button { Task { if let text = await queue.edit(item) { composer.compose(text) } } } label: { queueGlyph("pencil") }

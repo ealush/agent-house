@@ -90,7 +90,7 @@ struct InboxView: View {
                 }
             } else if hub.rows.isEmpty {
                 Section {
-                    EmptyState(symbol: "tray", title: "No sessions running", message: "Start one, or pick up where you left off.", action: ("New session", { scene.perform("new-session") }))
+                    EmptyState(symbol: "tray", title: "No sessions running", message: "Start one, or pick up where you left off.", action: ("New Session", { scene.perform("new-session") }))
                         .listRowBackground(Color.clear)
                 }
                 let recent = Array(hub.history.prefix(3))
@@ -130,7 +130,7 @@ struct InboxView: View {
                 Button { scene.perform("new-session") } label: { Image(systemName: "plus").foregroundStyle(theme.background) }
                     .buttonStyle(.glassProminent)
                     .tint(theme.text)
-                    .accessibilityLabel("New session")
+                    .accessibilityLabel("New Session")
             }
             if scene.narrow {
                 ToolbarItem(placement: .topBarLeading) {
@@ -466,7 +466,7 @@ struct SessionListView: View {
             if hub.awaitingState {
                 ForEach(0..<3, id: \.self) { index in SessionRowPlaceholder(title: [0.62, 0.45, 0.7][index]).ahRow(!showsPages) }
             } else if hub.rows.isEmpty {
-                EmptyState(symbol: "terminal", title: "No sessions", message: "Start one with New session.", action: ("New session", { scene.perform("new-session") }))
+                EmptyState(symbol: "terminal", title: "No sessions", message: "Start one with New Session.", action: ("New Session", { scene.perform("new-session") }))
                     .listRowBackground(Color.clear)
             }
         }
@@ -484,7 +484,7 @@ struct SessionListView: View {
                     Button { scene.perform("new-session") } label: { Image(systemName: "plus").foregroundStyle(theme.background) }
                         .buttonStyle(.glassProminent)
                         .tint(theme.text)
-                        .accessibilityLabel("New session")
+                        .accessibilityLabel("New Session")
                 }
             }
         }
@@ -518,12 +518,12 @@ struct SessionRowMenu: View {
     var body: some View {
         Button("Open", systemImage: "arrow.up.right") { scene.open(row.key) }
         if !scene.narrow {
-            Button("Open as a new pane", systemImage: "rectangle.split.2x1") { scene.run(.openAsPane(row.key)) }
+            Button("Open as New Pane", systemImage: "rectangle.split.2x1") { scene.run(.openAsPane(row.key)) }
         }
         if scene.openWindow != nil {
             Button("Open in New Window", systemImage: "macwindow.badge.plus") { scene.openInNewWindow(row.key) }
         }
-        Button(row.dto.pinned ? "Unpin" : "Pin", systemImage: "pin") {
+        Button(row.dto.pinned ? "Unpin" : "Pin", systemImage: row.dto.pinned ? "pin.slash" : "pin") {
             Task { try? await hub.client(forKey: row.key).pin(row.uid, pinned: !row.dto.pinned); hub.refresh() }
         }
         // Workspaces are the iPad's (a phone shows one session at a time).
@@ -686,6 +686,8 @@ struct SearchView: View {
     @Bindable var scene: SceneModel
     @State var model: SearchModel
     @Environment(\.theme) private var theme
+    /// "You" / "Agent" beside an excerpt, as wide as the text size makes them.
+    @ScaledMetric(relativeTo: .caption2) private var speakerWidth: CGFloat = 38
     /// Coming to Search means typing: the field takes the keyboard when it's empty.
     @FocusState private var fieldFocused: Bool
 
@@ -790,7 +792,7 @@ struct SearchView: View {
                                 }
                                 ForEach(Array(hit.excerpts.prefix(2).enumerated()), id: \.offset) { _, excerpt in
                                     HStack(alignment: .firstTextBaseline, spacing: 6) {
-                                        Text(excerpt.role == "user" ? "You" : "Agent").font(.ah(.caption2).weight(.semibold)).foregroundStyle(theme.faint).frame(width: 38, alignment: .leading)
+                                        Text(excerpt.role == "user" ? "You" : "Agent").font(.ah(.caption2).weight(.semibold)).foregroundStyle(theme.faint).frame(width: speakerWidth, alignment: .leading)
                                         HighlightedSnippet(snippet: excerpt.snippet, lines: 3)
                                     }
                                 }

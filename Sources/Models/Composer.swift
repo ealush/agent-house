@@ -119,8 +119,11 @@ final class DraftSync {
     /// Applies a fetched draft (testable without the network).
     func adopt(_ draft: Draft?, current here: String) -> String? {
         guard pending == nil, here == synced else { return nil }
-        // No draft there: sent or cleared elsewhere, and an untouched box follows.
-        let there: String? = draft == nil ? "" : (draft!.client == api.device.client ? nil : draft!.text)
+        // No draft there: sent or cleared elsewhere, and an untouched box follows. One this
+        // device saved is its own echo, except into a box opened afresh (the session left
+        // and come back to): there it's what you'd typed, and an empty box lost it.
+        let fresh = synced.isEmpty && here.isEmpty
+        let there: String? = draft == nil ? "" : (draft!.client == api.device.client && !fresh ? nil : draft!.text)
         guard let there, there != here else { return nil }
         synced = there
         from = draft.flatMap { $0.device != api.device.name ? $0.device : nil }
@@ -326,11 +329,16 @@ final class ComposerModel {
     private var videoUploads: [Int: Task<Void, Never>] = [:]
     private(set) var recent: [String] = []
     private var cursor = -1
+    /// What was in the box when ↑ began walking back.
+    private var beforeRecall = ""
     private(set) var justSent = false
     private(set) var events: [Event] = []
     private var chain: Task<Void, Never>?
     private var nextAttachment = 0
     var caret = 0
+    /// Where the box puts its caret after a change made here mid-text (a picked suggestion, a
+    /// snippet put in); any other change leaves it at the end. Taken once.
+    @ObservationIgnored var placeCaret: Int?
     /// The settings over the box are out (a swipe up on it); folded on a send, or a scroll
     /// back through the transcript.
     var trayOpen = false
@@ -435,17 +443,26 @@ final class ComposerModel {
             try? await Task.sleep(for: .milliseconds(700))
             self?.justSent = false
         }
+        // The host's draft is cleared now, not after the sends before this one: what's typed
+        // meanwhile (a resume can take seconds) was saved and then wiped by that late clear.
+        Task { [drafts] in await drafts.saveNow("") }
         let previous = chain
         chain = Task { [weak self, api, uid] in
             await previous?.value
-            await self?.drafts.saveNow("")
             do {
                 let result = try await api.send(uid, text: message)
                 if steer, result.outcome == .queued, let queued = result.queueId {
-                    // Queued behind the turn: send it now instead.
-                    let now = try await api.sendNow(uid, item: queued)
-                    self?.outbox.update(id, state: .sent, confirmedAt: Date().timeIntervalSince1970)
-                    self?.events.append(.sent(now))
+                    // Queued behind the turn: send it now instead. If that fails it's still
+                    // queued (the host keeps it), so it stays in the queue rather than coming
+                    // back to the box, where sending it again sent it twice.
+                    do {
+                        let now = try await api.sendNow(uid, item: queued)
+                        self?.outbox.update(id, state: .sent, confirmedAt: Date().timeIntervalSince1970)
+                        self?.events.append(.sent(now))
+                    } catch {
+                        self?.outbox.update(id, state: .queued, confirmedAt: Date().timeIntervalSince1970)
+                        self?.events.append(.failed("Queued; couldn’t send it now: \(APIError.wrap(error).message)"))
+                    }
                     return
                 }
                 self?.outbox.update(id, state: result.outcome == .queued ? .queued : .sent, confirmedAt: Date().timeIntervalSince1970)
@@ -477,8 +494,16 @@ final class ComposerModel {
     /// ↑ in an empty box (or while recalling) walks back through recent prompts.
     func recall(_ step: Int) {
         guard !recent.isEmpty else { return }
+        if cursor < 0 { beforeRecall = text }
         cursor = max(-1, min(recent.count - 1, cursor + step))
-        text = cursor < 0 ? "" : recent[cursor]
+        // Back past the newest: what was in the box before, not an empty one.
+        text = cursor < 0 ? beforeRecall : recent[cursor]
+    }
+
+    /// Typed into: a recalled message edited is a draft of its own, and ↑ moves the caret
+    /// again rather than swapping it for an older one.
+    func edited() {
+        if cursor >= 0 && text != recent[cursor] { cursor = -1 }
     }
 
     var isRecalling: Bool { cursor >= 0 }
@@ -502,6 +527,7 @@ final class ComposerModel {
         let spacer = head.isEmpty || head.hasSuffix(" ") || head.hasSuffix("\n") ? "" : " "
         text = head + spacer + snippet + tail
         caret = at + spacer.utf16.count + snippet.utf16.count
+        placeCaret = caret
     }
 
     // MARK: Attachments
@@ -617,7 +643,9 @@ final class ComposerModel {
             guard let self else { return }
             switch trigger.kind {
             case .slash:
-                if self.commands == nil { self.commands = (try? await api.commands(uid)) ?? [] }
+                // Kept only once fetched: a fetch cut short by the next keystroke (or failed)
+                // was kept as no commands at all, for the rest of the session.
+                if self.commands == nil, let fetched = try? await api.commands(uid) { self.commands = fetched }
                 guard !Task.isCancelled else { return }
                 self.suggestions = CompletionTrigger.rank(self.commands ?? [], query: trigger.query)
             case .file:
@@ -635,6 +663,7 @@ final class ComposerModel {
         let applied = trigger.applying(item, to: text)
         text = applied.text
         caret = applied.caret
+        placeCaret = caret
         suggestions = []
     }
 }

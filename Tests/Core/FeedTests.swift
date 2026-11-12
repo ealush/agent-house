@@ -302,3 +302,17 @@ import ImageIO
     #expect(!picture.hasText && picture.text.isEmpty)
     #expect(FeedBlock.notice(key: "d", seq: 4, at: 0, kind: .compacted, text: "Compacted").hasText)
 }
+
+@MainActor
+@Test func aDraftThisDeviceSavedComesBackIntoABoxOpenedAfresh() {
+    let api = APIClient(origin: URL(string: "https://desk.example.ts.net")!, transport: URLSessionTransport(), credentials: AccountCredentials(token: nil, onRejected: {}), device: DeviceDescriptor(name: "iPhone", client: "this-launch"))
+    let mine = Draft(text: "fix the tests", at: 0, device: "iPhone", client: "this-launch")
+    // The session left and opened again: a new box, and the host has what was typed in it.
+    #expect(DraftSync(api: api, uid: "u1").adopt(mine, current: "") == "fix the tests")
+    // In a box that's been in use, this device's own draft is only its echo.
+    let used = DraftSync(api: api, uid: "u1", debounce: .seconds(3600))
+    used.edited("fix the tests")
+    #expect(used.adopt(mine, current: "fix the tests") == nil)
+    // Another device's draft still follows into an untouched box.
+    #expect(DraftSync(api: api, uid: "u1").adopt(Draft(text: "from the iPad", at: 0, device: "iPad", client: "other"), current: "") == "from the iPad")
+}

@@ -21,7 +21,7 @@ struct SidebarView: View {
                     }
                     .font(.ah(.subheadline))
                     .padding(.horizontal, 12)
-                    .frame(height: 38)
+                    .frame(minHeight: 38)
                     .background(theme.sunken, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(theme.line, lineWidth: 1))
                     .contentShape(Rectangle())
@@ -37,13 +37,13 @@ struct SidebarView: View {
                     Button { scene.perform("new-session") } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "plus")
-                            Text("New session").font(.ah(.callout).weight(.medium))
+                            Text("New Session").font(.ah(.callout).weight(.medium))
                             Spacer(minLength: 4)
                             if scene.hardwareKeyboard, let chord = scene.app.keyBindings.hint("new-session") { Keycaps(chord) }
                         }
                         .foregroundStyle(theme.text)
                         .padding(.horizontal, 12)
-                        .frame(height: 40)
+                        .frame(minHeight: 40)
                         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(theme.lineStrong, lineWidth: 1))
                         .contentShape(Rectangle())
                     }
@@ -112,7 +112,7 @@ struct AhWordmark: View {
             // the 26-point tile as "…").
             Text(">_")
                 .font(.custom(AhType.mono, fixedSize: 12).weight(.bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(theme.accentInk)
                 .frame(width: 26, height: 26)
                 .background(theme.accentStrong, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             (Text("ah").foregroundStyle(theme.text) + Text(".").foregroundStyle(theme.brand))
@@ -607,7 +607,7 @@ struct PaneMenuItems: View {
             item("split-above")
         }
         Section {
-            item("maximize-pane", title: scene.workspace.zoom ? "Restore layout" : nil)
+            item("maximize-pane", title: scene.workspace.zoom ? "Restore Layout" : nil)
             item("balance-panes")
             item("toggle-split")
             item("replace-pane")
@@ -629,7 +629,7 @@ struct PaneMenuItems: View {
         }
         Menu {
             ForEach(1...9, id: \.self) { n in item(.toWorkspace(n)) }
-        } label: { Label("Send to workspace", systemImage: "square.grid.3x3") }
+        } label: { Label("Send to Workspace", systemImage: "rectangle.stack") }
         Section {
             item("close-pane", role: .destructive)
         }
@@ -715,7 +715,9 @@ private struct ChooserPane: View {
                     .contentShape(Rectangle())
                     .onTapGesture { scene.fillPane(path, with: row.key) }
                     .onHover { if $0 { selection = index } }
-                    .accessibilityAddTraits(.isButton)
+                    // One stop a row, which says when it's the one picked.
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(index == selection ? [.isButton, .isSelected] : .isButton)
                 }
             }
             Button("Cancel", role: .cancel) { scene.cancelChooser(path) }
@@ -805,7 +807,7 @@ struct WorkspaceStrip: View {
                     // The current one filled with the tint, one in use marked with a dot.
                     Text("\(n)")
                         .font(.ah(.footnote).monospacedDigit().weight(n == current ? .semibold : .regular))
-                        .foregroundStyle(n == current ? Color.white : occupied.contains(n) ? Color.primary : Color(uiColor: .tertiaryLabel))
+                        .foregroundStyle(n == current ? theme.accentInk : occupied.contains(n) ? theme.text : theme.faint)
                         .frame(width: 26, height: 26)
                         .background { if n == current { Circle().fill(theme.accentStrong) } }
                         .overlay(alignment: .bottom) {

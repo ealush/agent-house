@@ -331,7 +331,7 @@ private struct FilesPanel: View {
                 }
             }
         }
-        .alert("New folder", isPresented: Binding(get: { newFolder != nil }, set: { if !$0 { newFolder = nil } })) {
+        .alert("New Folder", isPresented: Binding(get: { newFolder != nil }, set: { if !$0 { newFolder = nil } })) {
             TextField("Name", text: Binding(get: { newFolder ?? "" }, set: { newFolder = $0 }))
             Button("Create") { let name = newFolder ?? ""; newFolder = nil; Task { await model.makeFolder(name) } }
             Button("Cancel", role: .cancel) { newFolder = nil }
@@ -666,7 +666,7 @@ private struct ChatPanel: View {
                             .font(.ah(.callout).weight(.bold))
                             .frame(width: 30, height: 30)
                             .background(empty || model.sending ? theme.faint.opacity(0.3) : theme.accentStrong, in: Circle())
-                            .foregroundStyle(.white)
+                            .foregroundStyle(theme.accentInk)
                     }
                     .disabled(empty || model.sending)
                     .accessibilityLabel("Ask")
@@ -778,7 +778,7 @@ private struct QueuePanel: View {
                 }
                 .ahRow()
                 .swipeActions(edge: .leading) {
-                    Button("Send now") { Task { await session.queue.steer(item) } }.tint(theme.limited)
+                    Button("Send Now") { Task { await session.queue.steer(item) } }.tint(theme.limited)
                 }
                 .swipeActions(edge: .trailing) {
                     // Red by tint, not role: the row is still there until the host says it's
@@ -788,6 +788,15 @@ private struct QueuePanel: View {
                         Task { if let text = await session.queue.edit(item) { session.composer.compose(text) } }
                     }
                 }
+                // Always reorderable, so always in edit mode, where a list offers no swipes:
+                // the same actions on a press, as the composer's queue rows have them.
+                .contextMenu {
+                    Button("Send Now", systemImage: "bolt") { Task { await session.queue.steer(item) } }
+                    Button("Edit", systemImage: "pencil") {
+                        Task { if let text = await session.queue.edit(item) { session.composer.compose(text) } }
+                    }
+                    Button("Cancel", systemImage: "xmark", role: .destructive) { Task { await session.queue.cancel(item) } }
+                }
             }
             .onMove { from, to in
                 guard let index = from.first else { return }
@@ -795,7 +804,7 @@ private struct QueuePanel: View {
                 Task { await session.queue.move(item.id, to: to > index ? to - 1 : to) }
             }
             if !session.queue.items.isEmpty {
-                Button("Cancel all", role: .destructive) { Task { await session.queue.cancelAll() } }
+                Button("Cancel All", role: .destructive) { Task { await session.queue.cancelAll() } }
                     .ahRow()
             }
         }
@@ -1263,7 +1272,7 @@ private struct PreviewPanel: View {
                         let ready = PreviewModel.port(typed) != nil && !model.busy
                         Button(action: startTyped) {
                             Text("Preview").fontWeight(.semibold).padding(.horizontal, 16).padding(.vertical, 9)
-                                .foregroundStyle(ready ? Color.white : theme.faint)
+                                .foregroundStyle(ready ? theme.accentInk : theme.faint)
                                 .background(ready ? theme.accentStrong : theme.raised, in: Capsule())
                         }
                         .buttonStyle(.ahPress)

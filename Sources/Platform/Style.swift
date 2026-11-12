@@ -112,6 +112,9 @@ struct Theme: Equatable, Sendable {
     var brand: Color { pair(\.brand) }
     var accent: Color { pair(\.accent) }
     var accentStrong: Color { pair(\.accentStrong) }
+    /// What's written on an accent fill: white on ah's pink, the ground on an Omarchy theme's
+    /// light accent (white on it couldn't be read).
+    var accentInk: Color { pair(\.accentInk) }
     var run: Color { pair(\.run) }
     var done: Color { pair(\.done) }
     var limited: Color { pair(\.limited) }
@@ -301,7 +304,7 @@ struct StatusPill: View {
             Text(word.rawValue)
         }
         .font(.ah(.caption).weight(.semibold))
-        .foregroundStyle(filled ? Color.white : word == .idle ? theme.text2 : theme.status(word))
+        .foregroundStyle(filled ? theme.accentInk : word == .idle ? theme.text2 : theme.status(word))
         .padding(.horizontal, 8)
         .padding(.vertical, 2)
         .background(filled ? theme.accentStrong : word == .idle ? theme.text.opacity(0.06) : theme.tint(word), in: Capsule())

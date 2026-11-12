@@ -335,11 +335,13 @@ struct DiffLineRow: View {
     let line: DiffLine
     var selected = false
     @Environment(\.theme) private var theme
+    /// Room for a four-digit line number at any text size.
+    @ScaledMetric(relativeTo: .footnote) private var numberWidth: CGFloat = 38
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
             Text(line.number.map(String.init) ?? "")
-                .frame(width: 38, alignment: .trailing)
+                .frame(width: numberWidth, alignment: .trailing)
                 .foregroundStyle(theme.faint)
                 .padding(.trailing, 6)
             Text(sign)

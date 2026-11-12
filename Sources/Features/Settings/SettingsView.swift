@@ -308,9 +308,9 @@ private struct SecuritySection: View {
             Text("Every sign-in from this device ends and its key is deleted. You’ll need a new setup code to add it back.")
         }
         .confirmationDialog("Sign out every other device?", isPresented: $confirmOthers, titleVisibility: .visible) {
-            Button("Sign out others", role: .destructive) { Task { await model.signOutOthers() } }
+            Button("Sign Out Others", role: .destructive) { Task { await model.signOutOthers() } }
         }
-        .alert("New API token", isPresented: $naming) {
+        .alert("New API Token", isPresented: $naming) {
             TextField("Name, like “backup script”", text: $tokenName)
             Button("Cancel", role: .cancel) { tokenName = "" }
             Button("Make Token") {
@@ -564,7 +564,7 @@ private struct ShortcutsSection: View {
         .searchable(text: $query, prompt: "Name, group or keys, like “ctrl shift p”")
         .onChange(of: app.keyBindings) { _, _ in UIMenuSystem.main.setNeedsRebuild() }
         .confirmationDialog("Reset every shortcut to its default?", isPresented: $confirmReset, titleVisibility: .visible) {
-            Button("Reset all", role: .destructive) { app.keyBindings.resetAll() }
+            Button("Reset All", role: .destructive) { app.keyBindings.resetAll() }
         }
     }
 

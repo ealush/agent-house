@@ -101,12 +101,12 @@ struct SetupView: View {
                         Task { await enroll() }
                     } label: {
                         Group {
-                            if busy { ProgressView().tint(.white) } else { Text("Connect").fontWeight(.semibold) }
+                            if busy { ProgressView().tint(theme.accentInk) } else { Text("Connect").fontWeight(.semibold) }
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 4)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.borderedProminent).tint(theme.accentStrong)
                     .buttonBorderShape(.capsule)
                     .controlSize(.large)
                     .disabled(busy || address.trimmingCharacters(in: .whitespaces).isEmpty || code.trimmingCharacters(in: .whitespaces).isEmpty)

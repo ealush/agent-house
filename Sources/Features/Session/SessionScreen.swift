@@ -134,7 +134,7 @@ struct SessionScreen: View {
         .quickLookPreview($previewURL)
         // A phone renames as iOS does, in an alert with the name selected: a header of its own
         // under the bar repeated the bar's buttons around a bare field.
-        .alert("Rename session", isPresented: Binding(get: { inNavigationBar && session.renaming != nil }, set: { if !$0 { session.renaming = nil } })) {
+        .alert("Rename Session", isPresented: Binding(get: { inNavigationBar && session.renaming != nil }, set: { if !$0 { session.renaming = nil } })) {
             RenameAlertFields(session: session)
         }
         .overlay(alignment: .top) { NoticeStack(session: session) }
@@ -267,7 +267,7 @@ private struct SessionHeader: View {
                     Button {
                         scene.perform("toggle-sidebar")
                     } label: {
-                        Image(systemName: "sidebar.left")
+                        Image(systemName: "sidebar.left").headerGlyph()
                     }
                     .buttonStyle(.borderless)
                     .accessibilityLabel("Show Sidebar")
@@ -464,7 +464,7 @@ struct SessionAction: Identifiable {
             return [[
                 SessionAction(title: "Resume", symbol: "play") { Task { if let key = await session.resume() { scene.open(key) } } },
                 SessionAction(title: "Fork…", symbol: "arrow.branch") { scene.sheet = .fork(session.key) },
-                SessionAction(title: session.history?.dto.pinned == true ? "Unpin" : "Pin", symbol: "pin") { Task { await session.togglePin() } },
+                SessionAction(title: session.history?.dto.pinned == true ? "Unpin" : "Pin", symbol: session.history?.dto.pinned == true ? "pin.slash" : "pin") { Task { await session.togglePin() } },
                 SessionAction(title: "Copy Link", symbol: "link") { scene.copyLink(to: Place(.session(session.key))) },
             ]]
         }
@@ -491,7 +491,7 @@ struct SessionAction: Identifiable {
         view.append(SessionAction(title: "All Commands…", symbol: "command") { scene.perform("command-palette") })
         return [
             [
-                SessionAction(title: "Rename", symbol: "pencil") { scene.perform("rename") },
+                SessionAction(title: "Rename…", symbol: "pencil") { scene.perform("rename") },
                 SessionAction(title: pinned ? "Unpin" : "Pin", symbol: pinned ? "pin.slash" : "pin") { Task { await session.togglePin() } },
             ],
             work,
