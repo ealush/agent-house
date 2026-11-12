@@ -367,7 +367,7 @@ struct SwitcherView: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").foregroundStyle(theme.faint)
-                TextField(tile ? "Open as a new pane…" : scene.hardwareKeyboard ? "Jump, resume, or search conversations…  h:claude p:\(scene.hub?.rows.first?.dto.project ?? "api") in:chats" : "Jump, resume or search…",
+                TextField(tile ? "Open as a new pane…" : "Jump, resume or search…",
                           text: Binding(get: { query }, set: { scene.switcher?.query = $0; selection = 0; content?.update($0) }))
                     .textFieldStyle(.plain)
                     .font(.ah(.title3))
@@ -409,7 +409,7 @@ struct SwitcherView: View {
                             Text(note).font(.ah(.caption)).foregroundStyle(theme.muted).padding(.horizontal, 18).padding(.vertical, 8)
                         }
                         if all.isEmpty {
-                            Text("Nothing matches. Try h:claude or p:ah.").foregroundStyle(theme.muted).frame(maxWidth: .infinity).padding(24)
+                            Text("Nothing matches. Try h:claude, p:\(scene.hub?.rows.first?.dto.project ?? "api") or in:chats.").foregroundStyle(theme.muted).frame(maxWidth: .infinity).padding(24)
                         }
                         if text.count >= 2, !tile {
                             Button {

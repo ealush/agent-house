@@ -680,7 +680,9 @@ struct HistoryRowView: View {
         }
         .contextMenu {
             Button("Resume", systemImage: "play") { resume() }
-            Button("Fork…", systemImage: "arrow.triangle.branch") { scene.sheet = .fork(item.id) }
+            if item.dto.harness != "shell" {
+                Button("Fork…", systemImage: "arrow.branch") { scene.sheet = .fork(item.id) }
+            }
             Button("Hide from History", systemImage: "eye.slash", role: .destructive) {
                 Task {
                     try? await hub.client(host: item.isLocal ? nil : item.host).forget(item.dto.ref)

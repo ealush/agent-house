@@ -523,7 +523,7 @@ struct ForksSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss(); scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .primaryAction) {
-                    if session.isLive { Button("Fork…", systemImage: "plus") { scene.sheet = .fork(session.key) } }
+                    if session.isLive { Button("Fork…", systemImage: "arrow.branch") { scene.sheet = .fork(session.key) } }
                 }
             }
             .task { await loadChanges() }

@@ -462,42 +462,43 @@ struct SessionAction: Identifiable {
     @MainActor
     static func sections(_ session: SessionModel, _ scene: SceneModel) -> [[SessionAction]] {
         guard session.isLive else {
+            // A shell has no conversation to fork, so it isn't offered.
             return [[
                 SessionAction(title: "Resume", symbol: "play") { Task { if let key = await session.resume() { scene.open(key) } } },
-                SessionAction(title: "Fork…", symbol: "arrow.branch") { scene.sheet = .fork(session.key) },
+                session.isShell ? nil : SessionAction(title: "Fork…", symbol: CommandCatalog.icon("fork")) { scene.sheet = .fork(session.key) },
                 SessionAction(title: session.history?.dto.pinned == true ? "Unpin" : "Pin", symbol: session.history?.dto.pinned == true ? "pin.slash" : "pin") { Task { await session.togglePin() } },
                 SessionAction(title: "Copy Link", symbol: "link") { scene.copyLink(to: Place(.session(session.key))) },
-            ]]
+            ].compactMap { $0 }]
         }
         let pinned = session.row?.dto.pinned == true
         var work: [SessionAction] = []
-        if session.row?.dto.branch != nil { work.append(SessionAction(title: "Switch Branch…", symbol: "arrow.triangle.branch") { scene.sheet = .branch(session.key) }) }
-        if !session.isShell { work.append(SessionAction(title: "Fork…", symbol: "arrow.branch") { scene.sheet = .fork(session.key) }) }
+        if session.row?.dto.branch != nil { work.append(SessionAction(title: "Switch Branch…", symbol: CommandCatalog.icon("switch-branch")) { scene.sheet = .branch(session.key) }) }
+        if !session.isShell { work.append(SessionAction(title: "Fork…", symbol: CommandCatalog.icon("fork")) { scene.sheet = .fork(session.key) }) }
         if session.row?.dto.fork != nil { work.append(SessionAction(title: "Forks…", symbol: "arrow.triangle.branch") { scene.sheet = .forks(session.key) }) }
-        if session.row?.dto.feed != nil { work.append(SessionAction(title: "Send To…", symbol: "paperplane") { scene.sheet = .sendTo(session.key) }) }
+        if session.row?.dto.feed != nil { work.append(SessionAction(title: "Send To…", symbol: CommandCatalog.icon("send-to")) { scene.sheet = .sendTo(session.key) }) }
         if let queued = session.row?.dto.queued, queued > 0 {
-            work.append(SessionAction(title: "Send Queued Now (\(queued))", symbol: "arrow.up.to.line") { scene.perform("send-now") })
+            work.append(SessionAction(title: "Send Queued Now (\(queued))", symbol: CommandCatalog.icon("send-now")) { scene.perform("send-now") })
         }
         var view: [SessionAction] = []
         if session.surface == .gui {
             let hidden = scene.app.preferences.stepsHidden
             view.append(SessionAction(title: hidden ? "Show Steps" : "Hide Steps", symbol: hidden ? "list.bullet.indent" : "list.bullet") { scene.perform("toggle-steps") })
-            view.append(SessionAction(title: "Copy Last Reply", symbol: "doc.on.doc") { scene.perform("copy-last") })
+            view.append(SessionAction(title: "Copy Last Reply", symbol: CommandCatalog.icon("copy-last")) { scene.perform("copy-last") })
         }
-        view.append(SessionAction(title: "Scrollback as Text", symbol: "text.alignleft") { scene.perform("scrollback") })
-        view.append(SessionAction(title: "Copy Attach Command", symbol: "terminal") { scene.perform("copy-attach") })
+        view.append(SessionAction(title: "Scrollback as Text", symbol: CommandCatalog.icon("scrollback")) { scene.perform("scrollback") })
+        view.append(SessionAction(title: "Copy Attach Command", symbol: CommandCatalog.icon("copy-attach")) { scene.perform("copy-attach") })
         let here = Place(.session(session.key), surface: session.surface == .terminal ? .terminal : nil, panel: session.panel)
         view.append(SessionAction(title: "Copy Link", symbol: "link") { scene.copyLink(to: here) })
         view.append(SessionAction(title: "Share Link…", symbol: "square.and.arrow.up") { scene.shareLink(to: here) })
-        view.append(SessionAction(title: "All Commands…", symbol: "command") { scene.perform("command-palette") })
+        view.append(SessionAction(title: "All Commands…", symbol: CommandCatalog.icon("command-palette")) { scene.perform("command-palette") })
         return [
             [
-                SessionAction(title: "Rename…", symbol: "pencil") { scene.perform("rename") },
+                SessionAction(title: "Rename…", symbol: CommandCatalog.icon("rename")) { scene.perform("rename") },
                 SessionAction(title: pinned ? "Unpin" : "Pin", symbol: pinned ? "pin.slash" : "pin") { Task { await session.togglePin() } },
             ],
             work,
             view,
-            [SessionAction(title: "Terminate…", symbol: "xmark.octagon", destructive: true) { scene.sheet = .confirmTerminate(session.key) }],
+            [SessionAction(title: "Terminate…", symbol: CommandCatalog.icon("terminate"), destructive: true) { scene.sheet = .confirmTerminate(session.key) }],
         ].filter { !$0.isEmpty }
     }
 }

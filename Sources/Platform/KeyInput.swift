@@ -55,26 +55,94 @@ enum MenuCommands {
     static let action = #selector(SceneRootController.runKeyCommand(_:))
     static let chordAction = #selector(SceneRootController.startChord(_:))
 
+    /// How each menu reads: sections of related commands, the families of four directions
+    /// folded into submenus. A command the layout doesn't name lands in a last section, so a
+    /// new one is never missing from the menu bar.
+    enum Part {
+        case section([CommandID])
+        case submenu(String, String, [CommandID])
+    }
+
+    static let layout: [(CommandGroup, String, [Part])] = [
+        (.navigate, "Go", [
+            .section(["switcher", "go-to-session", "cycle-prev", "cycle-next"]),
+            .section(["go-inbox", "go-history", "go-review", "go-search", "worktrees"]),
+            .section(["new-session", "new-project"]),
+            .section(["toggle-sidebar", "focus-sidebar", "focus-main"]),
+            .section(["copy-link", "share-link", "open-link", "reload-page"]),
+            .section(["show-shortcuts"]),
+        ]),
+        (.session, "Session", [
+            .section(["reply", "approve", "deny", "interrupt"]),
+            .section(["send-now", "clear-queue", "pick-model", "pick-effort"]),
+            .section(["rename", "pin", "switch-branch", "fork", "send-to"]),
+            .section(["toggle-view", "toggle-steps", "jump-latest", "browse-messages", "copy-last"]),
+            .submenu("Side Panel", "sidebar.right", ["toggle-panel", "panel-diff", "panel-files", "panel-chat", "panel-queue", "panel-snapshots", "panel-preview", "panel-stack"]),
+            .submenu("Terminal", "terminal", ["toggle-keys", "terminal-text-bigger", "terminal-text-smaller", "terminal-text-reset", "scrollback", "copy-attach"]),
+            .section(["session-menu", "terminate"]),
+        ]),
+        (.workspace, "Workspace", [
+            .section(["split-right", "split-below", "split-left", "split-above", "toggle-split", "exit-split"]),
+            .section(["open-in-pane", "replace-pane", "maximize-pane", "close-pane", "scratchpad"]),
+            .submenu("Focus Pane", "arrow.up.and.down.and.arrow.left.and.right", ["focus-pane-left", "focus-pane-right", "focus-pane-up", "focus-pane-down", "focus-pane-next", "focus-pane-prev"]),
+            .submenu("Move Pane", "arrow.left.circle", ["move-pane-left", "move-pane-right", "move-pane-up", "move-pane-down"]),
+            .submenu("Swap Pane", "arrow.left.arrow.right", ["swap-pane-left", "swap-pane-right", "swap-pane-up", "swap-pane-down"]),
+            .submenu("Resize", "arrow.left.and.right", ["resize-left", "resize-right", "resize-up", "resize-down", "balance-panes", "resize-mode"]),
+            .section(["pane-mode"]),
+            .section(["new-window", "open-in-new-window", "workspace-prev", "workspace-next"]),
+            .section(["focus-follows-pointer"]),
+        ]),
+    ]
+
+    /// Every command the layout names, per menu, in order.
+    static var placed: [(CommandGroup, [CommandID])] {
+        layout.map { group, _, parts in
+            (group, parts.flatMap { part -> [CommandID] in
+                switch part {
+                case .section(let ids), .submenu(_, _, let ids): return ids
+                }
+            })
+        }
+    }
+
     static func menus(bindings: KeyBindings) -> [UIMenu] {
-        let groups: [(CommandGroup, String)] = [(.navigate, "Go"), (.session, "Session"), (.workspace, "Workspace")]
-        return groups.map { group, title in
+        layout.map { group, title, parts in
             // The palette and Settings have their own items in the app menu.
             let commands = CommandCatalog.all.filter { $0.group == group && $0.id != "command-palette" && $0.id != "go-settings" }
-            let children: [UIMenuElement] = commands.map { command in
-                // A two-key chord can't be a menu key equivalent; the menu shows it in the title's
-                // discoverability text and `chordStarts` catches its first key.
-                let singles = bindings.chords(command.id).filter { !$0.isSequence }
-                // The ⌘ chord where there is one, as the menu bar and the ⌘-hold overlay expect.
-                let chord = singles.first { $0.meta } ?? singles.first
-                if let chord, command.field == nil {
-                    let element = UIKeyCommand(title: command.label, image: nil, action: action, input: chord.keyCommandInput, modifierFlags: chord.modifierFlags, propertyList: command.id.rawValue, alternates: [], discoverabilityTitle: command.detail, attributes: [], state: .off)
-                    element.wantsPriorityOverSystemBehavior = command.scopes.contains(.field)
-                    return element
-                }
-                return UICommand(title: command.label, image: nil, action: action, propertyList: command.id.rawValue, alternates: [], discoverabilityTitle: command.detail, attributes: [], state: .off)
+            let byID = Dictionary(uniqueKeysWithValues: commands.map { ($0.id, $0) })
+            var placed: Set<CommandID> = []
+            func items(_ ids: [CommandID]) -> [UIMenuElement] {
+                ids.compactMap { id in byID[id].map { placed.insert(id); return element(for: $0, bindings: bindings) } }
             }
+            var children: [UIMenuElement] = parts.compactMap { part in
+                switch part {
+                case .section(let ids):
+                    let elements = items(ids)
+                    return elements.isEmpty ? nil : UIMenu(title: "", options: .displayInline, children: elements)
+                case .submenu(let name, let symbol, let ids):
+                    let elements = items(ids)
+                    return elements.isEmpty ? nil : UIMenu(title: name, image: UIImage(systemName: symbol), children: elements)
+                }
+            }
+            let rest = commands.filter { !placed.contains($0.id) }.map { element(for: $0, bindings: bindings) }
+            if !rest.isEmpty { children.append(UIMenu(title: "", options: .displayInline, children: rest)) }
             return UIMenu(title: title, identifier: UIMenu.Identifier("dev.ealush.ah.native.\(title.lowercased())"), options: [], children: children)
         }
+    }
+
+    private static func element(for command: Command, bindings: KeyBindings) -> UIMenuElement {
+        let image = UIImage(systemName: CommandCatalog.icon(command.id))
+        // A two-key chord can't be a menu key equivalent; the menu shows it in the title's
+        // discoverability text and `chordStarts` catches its first key.
+        let singles = bindings.chords(command.id).filter { !$0.isSequence }
+        // The ⌘ chord where there is one, as the menu bar and the ⌘-hold overlay expect.
+        let chord = singles.first { $0.meta } ?? singles.first
+        if let chord, command.field == nil {
+            let element = UIKeyCommand(title: command.label, image: image, action: action, input: chord.keyCommandInput, modifierFlags: chord.modifierFlags, propertyList: command.id.rawValue, alternates: [], discoverabilityTitle: command.detail, attributes: [], state: .off)
+            element.wantsPriorityOverSystemBehavior = command.scopes.contains(.field)
+            return element
+        }
+        return UICommand(title: command.label, image: image, action: action, propertyList: command.id.rawValue, alternates: [], discoverabilityTitle: command.detail, attributes: [], state: .off)
     }
 
     /// Hidden key commands for the first key of every two-key chord, so a chord starts

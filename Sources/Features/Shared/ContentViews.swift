@@ -465,7 +465,7 @@ struct EmptyState: View {
         ContentUnavailableView {
             Label(title, systemImage: symbol)
         } description: {
-            Text(message)
+            if !message.isEmpty { Text(message) }
         } actions: {
             if let action {
                 Button(action.title, action: action.run).buttonStyle(.borderedProminent).tint(theme.accentStrong)

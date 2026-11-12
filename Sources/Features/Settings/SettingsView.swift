@@ -495,7 +495,10 @@ private struct ShortcutsSection: View {
         List {
             Group {
             Section {
-                Toggle("Focus follows the pointer", isOn: $app.preferences.focusFollowsPointer)
+                // Panes and a pointer are an iPad's and a Mac's: a phone has neither.
+                if UIDevice.current.userInterfaceIdiom != .phone {
+                    Toggle("Focus follows the pointer", isOn: $app.preferences.focusFollowsPointer)
+                }
                 Picker("Show", selection: $filter) {
                     Text("All").tag(KeymapSearch.Filter.all)
                     Text("Changed").tag(KeymapSearch.Filter.modified)
@@ -521,7 +524,7 @@ private struct ShortcutsSection: View {
                     }
                 }
             } footer: {
-                Text("With a trackpad or mouse, the pane under the pointer takes the keyboard. A shortcut needs ⌃, ⌥ or ⌘; a two-key shortcut’s second key may be bare.")
+                Text(UIDevice.current.userInterfaceIdiom == .phone ? "A shortcut needs ⌃, ⌥ or ⌘; a two-key shortcut’s second key may be bare." : "With a trackpad or mouse, the pane under the pointer takes the keyboard. A shortcut needs ⌃, ⌥ or ⌘; a two-key shortcut’s second key may be bare.")
             }
             if let problem {
                 Section {

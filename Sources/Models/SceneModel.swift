@@ -856,7 +856,7 @@ final class SceneModel {
         case "pick-model", "pick-effort": return live && agent
         case "switch-branch": return row?.dto.branch != nil
         case "rename", "pin", "terminate", "scrollback": return live
-        case "fork": return agent || s?.history != nil
+        case "fork": return agent || (s?.history != nil && s?.isShell == false)
         case "send-to": return row?.dto.feed != nil
         case "toggle-keys": return s?.surface == .terminal
         case "terminal-text-bigger", "terminal-text-smaller", "terminal-text-reset": return s?.surface == .terminal || workspace.scratchVisible

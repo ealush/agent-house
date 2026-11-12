@@ -199,3 +199,12 @@ private let ctrlK = Chord("k", ctrl: true)
     #expect(next.services.device.name == "Work iPad" && next.services.device.client == "launch")
     #expect(next.systemName == "iPad")
 }
+
+#if canImport(UIKit) && !SWIFT_PACKAGE
+@Test func theMenuBarNamesRealCommandsOnce() {
+    for (group, ids) in MenuCommands.placed {
+        #expect(Set(ids).count == ids.count, "a command twice in \(group)")
+        for id in ids { #expect(CommandCatalog.command(id)?.group == group, "\(id) isn't a \(group) command") }
+    }
+}
+#endif
