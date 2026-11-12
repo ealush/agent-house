@@ -399,10 +399,9 @@ struct StackCockpitView: View {
         List(selection: Binding(get: { scene.narrow ? nil : model.selectedPR }, set: { pr in if let pr { Task { await model.select(pr) } } })) {
             Section {
                 VStack(alignment: .leading, spacing: 6) {
-                    if scene.narrow {
-                        // The bar's title is one short line on a phone; the stack's name is read here.
-                        Text(stack.title).font(.ah(.title3).weight(.semibold)).fixedSize(horizontal: false, vertical: true)
-                    }
+                    // The stack's name is read here: a phone's bar says "Stack", and beside a
+                    // layer the bar above the two columns carries the layer's number.
+                    Text(stack.title).font(.ah(.title3).weight(.semibold)).fixedSize(horizontal: false, vertical: true)
                     Text("\(stack.repo) → \(stack.trunk)").font(.ah(.caption)).foregroundStyle(theme.muted)
                     // Where the whole stack stands, before any one layer: a segment a layer,
                     // and how many are done.
@@ -670,6 +669,9 @@ struct LayerView: View {
     /// Files folded shut in the diff, by path.
     @State private var folded: Set<String> = []
     @FocusState private var asking: Bool
+    /// Asked something on this page: the thread's answers are followed to the field. The
+    /// thread arriving on its own (the page opening) leaves the layer at its top.
+    @State private var followingAsk = false
 
     var body: some View {
         if let layer = model.layer, let confidence = model.confidence, let stack = model.stack {
@@ -708,11 +710,12 @@ struct LayerView: View {
                 // Asking keeps the exchange in sight: the field while the reviewer reads, then
                 // its answer above the field when it lands.
                 .onChange(of: model.thread.count) { old, new in
-                    guard new > old else { return }
+                    guard new > old, followingAsk else { return }
                     withAnimation(.smooth(duration: 0.35)) { proxy.scrollTo("ask", anchor: .bottom) }
                 }
                 .onChange(of: model.loading.contains("ask")) { _, asking in
                     guard asking else { return }
+                    followingAsk = true
                     withAnimation(.smooth(duration: 0.35)) { proxy.scrollTo("ask", anchor: .bottom) }
                 }
             }
@@ -720,6 +723,7 @@ struct LayerView: View {
             .onChange(of: layer.pr) {
                 selectedLines = nil
                 folded = []
+                followingAsk = false
             }
             // The page's heading has the title; the bar keeps the layer's number.
             .navigationTitle(layer.name)
