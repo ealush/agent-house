@@ -1337,7 +1337,7 @@ struct QueueTrayView: View {
                         Spacer()
                         // Queued before its attachments were up: how far they've got.
                         if let fraction = composer.outbox.progress(pending) {
-                            Text("Uploading \(Int((fraction * 100).rounded()))%").font(.ah(.caption2)).monospacedDigit().foregroundStyle(theme.faint)
+                            Text(fraction >= 0.995 ? "Finishing the upload" : "Uploading \(Int((fraction * 100).rounded()))%").font(.ah(.caption2)).monospacedDigit().foregroundStyle(theme.faint)
                                 .contentTransition(.numericText())
                         }
                     }

@@ -575,7 +575,8 @@ struct UploadBar: View {
             ProgressView(value: fraction)
                 .tint(theme.accentStrong)
                 .frame(width: 160)
-            Text("Uploading \(count == 1 ? "the attachment" : "\(count) attachments") · \(Int((fraction * 100).rounded()))%")
+            // Every byte out, the host's answer still to come: it isn't stuck at 100%.
+            Text(fraction >= 0.995 ? "Finishing the upload" : "Uploading \(count == 1 ? "the attachment" : "\(count) attachments") · \(Int((fraction * 100).rounded()))%")
                 .font(.ah(.caption2))
                 .monospacedDigit()
                 .foregroundStyle(theme.faint)
