@@ -15,6 +15,8 @@ export type Overview = {
   idleHours: number;
   maxDays: number;
   audit: Array<{ at: string; event: string; [k: string]: unknown }>;
+  /** Where another device opens ah: the https name Tailscale Serve publishes it at, null when it doesn't. */
+  address?: string | null;
 };
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
