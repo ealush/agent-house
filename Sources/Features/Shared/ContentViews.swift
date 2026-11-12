@@ -274,7 +274,10 @@ struct CodeBlockView: View {
                         .font(.ah(.footnote).weight(.medium))
                         .contentTransition(.symbolEffect(.replace))
                         .foregroundStyle(copied ? theme.done : theme.muted)
-                        .frame(width: 40, height: 40)
+                        // Grows with the glyph: at the largest text sizes a fixed 40 points
+                        // let it spill over the code beside it.
+                        .padding(.horizontal, 8)
+                        .frame(minWidth: 40, minHeight: 40)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
