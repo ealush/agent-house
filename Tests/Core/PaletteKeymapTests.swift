@@ -179,3 +179,23 @@ private let ctrlK = Chord("k", ctrl: true)
     scene.modalDidDismiss()
     #expect(scene.allowsMenuCommand("show-shortcuts", chord: Chord("/", meta: true)))
 }
+
+@MainActor
+@Test func theNameChosenForThisDeviceIsTheOneTheHostIsTold() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    func services() throws -> AppServices {
+        AppServices(
+            database: try AppDatabase(directory: directory),
+            vault: CredentialVault(store: MemorySecretStore()), keys: MemoryDeviceKeyStore(),
+            transport: URLSessionTransport(), device: DeviceDescriptor(name: "iPad", client: "launch"), allowLoopback: true
+        )
+    }
+    let first = AppModel(services: try services())
+    #expect(first.services.device.name == "iPad" && first.deviceName == "iPad")
+    first.preferences.deviceName = "Work iPad"
+    #expect(first.deviceName == "Work iPad")
+    // Opened again: what it sends carries the chosen name, the system's kept beside it.
+    let next = AppModel(services: try services())
+    #expect(next.services.device.name == "Work iPad" && next.services.device.client == "launch")
+    #expect(next.systemName == "iPad")
+}

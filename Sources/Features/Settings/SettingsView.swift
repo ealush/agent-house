@@ -411,11 +411,11 @@ private struct AppearanceSection: View {
                 }
             }
             Section {
-                TextField("Device name", text: Binding(get: { app.preferences.deviceName ?? "" }, set: { app.preferences.deviceName = $0.isEmpty ? nil : $0 }), prompt: Text(app.services.device.name))
+                TextField("Device name", text: Binding(get: { app.preferences.deviceName ?? "" }, set: { app.preferences.deviceName = $0.isEmpty ? nil : $0 }), prompt: Text(app.systemName))
             } header: {
                 Text("This device’s name")
             } footer: {
-                Text("What other devices see when this one has a session open.")
+                Text("What other devices see when this one has a session open, from the next time Agent Hub opens.")
             }
         }
     }

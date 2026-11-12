@@ -250,9 +250,20 @@ final class AppModel {
     /// Notification Center: you've seen them).
     @ObservationIgnored var didShowSessions: ((Set<String>) -> Void)?
 
+    /// What this device is called without a name of its own: the system's.
+    let systemName: String
+
     init(services: AppServices) {
+        let preferences = services.preferences.device()
+        systemName = services.device.name
+        // The name chosen in Settings is what the host is told (drafts, where you are, who's
+        // watching); it was only ever shown here, and other devices saw the system's.
+        var services = services
+        if let chosen = preferences.deviceName {
+            services.device = DeviceDescriptor(name: DeviceDescriptor.sanitizedName(chosen), client: services.device.client)
+        }
         self.services = services
-        preferences = services.preferences.device()
+        self.preferences = preferences
         keyBindings = services.preferences.keyBindings()
         let saved = (try? services.accounts.all()) ?? []
         accounts = saved.map { AccountSession(account: $0, credential: try? services.vault.credential(origin: $0.origin), services: services) }
@@ -265,7 +276,7 @@ final class AppModel {
 
     /// The name other devices see for this one.
     var deviceName: String {
-        DeviceDescriptor.sanitizedName(preferences.deviceName ?? services.device.name)
+        DeviceDescriptor.sanitizedName(preferences.deviceName ?? systemName)
     }
 
     func activateAll() { accounts.forEach { $0.activate() } }
