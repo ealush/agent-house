@@ -176,7 +176,7 @@ struct ComposerView: View {
                             .background(theme.tile)
                         }
                     }
-                    .overlay { if file.path == nil { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity).background(.black.opacity(0.25)) } }
+                    .overlay { if file.path == nil { UploadRing(outbox: composer.outbox, upload: file.upload) } }
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay(alignment: .topTrailing) {
                         Button {
@@ -364,7 +364,7 @@ struct ComposerView: View {
             // ⌘Return) sends now instead.
             let queues = !session.isShell
             Button {
-                if composer.isUploading { explainUpload() } else { composer.submit(working: session.working) }
+                composer.submit(working: session.working)
             } label: {
                 // Send's pink, its height and its place, with the word for what it does.
                 Text(queues ? "Queue" : "Run")
@@ -391,7 +391,7 @@ struct ComposerView: View {
         } else if !composer.isEmpty {
             // Folded away while there's nothing to send: it comes up with the first letter.
             Button {
-                if composer.isUploading { explainUpload() } else { composer.submit(working: session.working) }
+                composer.submit(working: session.working)
             } label: {
                 // ah's Send: the accent-filled circle, the one pink control.
                 Image(systemName: "arrow.up")
@@ -406,17 +406,12 @@ struct ComposerView: View {
             .buttonStyle(.ahPress)
             .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
             .accessibilityLabel("Send")
-            .accessibilityHint(composer.isUploading ? "Waits for the attachment to finish uploading" : "")
+            .accessibilityHint(composer.isUploading ? "Goes once the attachment is up" : "")
         }
     }
 
     /// Send dims while an attachment uploads, and a tap on it says why: a button that does
     /// nothing, with no word, leaves the message looking stuck.
-    private func explainUpload() {
-        Haptics.selection()
-        scene.toast("Sent once the attachment has uploaded")
-    }
-
     /// A message past the box's eight lines (it scrolls there) opens in a larger editor.
     private var outgrown: Bool {
         composer.text.count > 600 || composer.text.filter { $0 == "\n" }.count >= 7
@@ -1340,6 +1335,11 @@ struct QueueTrayView: View {
                         ProgressView().controlSize(.mini).frame(width: 20)
                         Text(Uploads.summary(pending.text)).font(.ah(.callout)).foregroundStyle(theme.muted).lineLimit(1)
                         Spacer()
+                        // Queued before its attachments were up: how far they've got.
+                        if let fraction = composer.outbox.progress(pending) {
+                            Text("Uploading \(Int((fraction * 100).rounded()))%").font(.ah(.caption2)).monospacedDigit().foregroundStyle(theme.faint)
+                                .contentTransition(.numericText())
+                        }
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 7)
@@ -1434,5 +1434,33 @@ private struct LibraryVideo: Transferable {
         generator.maximumSize = CGSize(width: 256, height: 256)
         guard let frame = try? await generator.image(at: .zero).image else { return nil }
         return UIImage(cgImage: frame).jpegData(compressionQuality: 0.7)
+    }
+}
+
+/// An attachment's upload as it goes, over its dimmed tile: a ring filling as the bytes go
+/// up (a spinner while there's nothing to count yet, as a photo comes from iCloud). Its own
+/// view, so only it draws again as the share moves.
+struct UploadRing: View {
+    let outbox: Outbox
+    let upload: Int?
+    var size: CGFloat = 26
+
+    var body: some View {
+        let fraction = upload.flatMap { outbox.uploads[$0] } ?? 0
+        ZStack {
+            Color.black.opacity(0.3)
+            if fraction < 0.01 {
+                ProgressView().tint(.white)
+            } else {
+                Circle().stroke(.white.opacity(0.3), lineWidth: 3).frame(width: size, height: size)
+                Circle()
+                    .trim(from: 0, to: fraction)
+                    .stroke(.white, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .frame(width: size, height: size)
+                    .animation(.spring(duration: 0.35, bounce: 0), value: fraction)
+            }
+        }
+        .accessibilityHidden(true)
     }
 }

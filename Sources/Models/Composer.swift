@@ -22,22 +22,78 @@ final class Outbox {
         }
         let id: Int
         let key: String
-        let text: String
+        /// The message as it goes (its attachments' paths and your words): while it waits on
+        /// an upload, the paths so far.
+        var text: String
         /// Seconds since the epoch.
         let at: Double
         var state: State
         /// When the server answered; a queue fetch that started later has the real row.
         var confirmedAt: Double?
+        /// The uploads it waits on before it goes (see `uploads`); none once they're up.
+        var waitingOn: [Int] = []
     }
 
     private(set) var items: [Item] = []
     private var nextID = 0
     var now: () -> Double = { Date().timeIntervalSince1970 }
 
-    func add(key: String, text: String, state: Item.State) -> Int {
+    /// Every attachment's upload under way, by id, and how much of it has gone up (0 to 1).
+    /// Here, not in a composer: a message sent before its photo is up still goes once it is,
+    /// whichever session or screen you've gone to meanwhile.
+    private(set) var uploads: [Int: Double] = [:]
+    private var nextUpload = 0
+
+    /// Asked for while something here is under way, so it can finish with the app put away:
+    /// returns what to call once it's done. (The app's layer sets it; none in tests.)
+    var keepAlive: (@MainActor (String) -> (@MainActor () -> Void))?
+
+    func add(key: String, text: String, state: Item.State, waitingOn: [Int] = []) -> Int {
         nextID += 1
-        items.append(Item(id: nextID, key: key, text: text, at: now(), state: state))
+        items.append(Item(id: nextID, key: key, text: text, at: now(), state: state, waitingOn: waitingOn))
         return nextID
+    }
+
+    /// Its uploads are up: the message as it goes now.
+    func ready(_ id: Int, text: String) {
+        guard let i = items.firstIndex(where: { $0.id == id }) else { return }
+        items[i].text = text
+        items[i].waitingOn = []
+    }
+
+    func beginUpload() -> Int {
+        nextUpload += 1
+        uploads[nextUpload] = 0
+        return nextUpload
+    }
+
+    /// In steps of a percent at least: every packet would have drawn its bar again.
+    func progressed(_ upload: Int, _ fraction: Double) {
+        guard let was = uploads[upload], fraction >= 1 || fraction - was >= 0.01 else { return }
+        uploads[upload] = min(1, fraction)
+    }
+
+    func endUpload(_ upload: Int) { uploads[upload] = nil }
+
+    /// A message that couldn't go after its box was gone: back into the session's next box.
+    private var returned: [String: (text: String, reason: String)] = [:]
+
+    func returnToBox(key: String, text: String, reason: String) {
+        let typed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !typed.isEmpty else { return }
+        returned[key] = (text, reason)
+    }
+
+    func takeReturned(_ key: String) -> (text: String, reason: String)? {
+        defer { returned[key] = nil }
+        return returned[key]
+    }
+
+    /// How far a message's uploads have got together, or nil when it waits on none.
+    func progress(_ item: Item) -> Double? {
+        guard !item.waitingOn.isEmpty else { return nil }
+        let each = item.waitingOn.map { uploads[$0] ?? 1 }
+        return each.reduce(0, +) / Double(each.count)
     }
 
     func update(_ id: Int, state: Item.State, confirmedAt: Double?) {
@@ -301,6 +357,8 @@ final class ComposerModel {
         /// Set once the upload finished.
         var path: String?
         var thumbnail: Data?
+        /// Its upload in the outbox (how far it's got), while one's under way.
+        var upload: Int?
     }
 
     enum Event: Equatable, Sendable {
@@ -311,7 +369,7 @@ final class ComposerModel {
     }
 
     private let api: APIClient
-    private let outbox: Outbox
+    let outbox: Outbox
     let key: String
     let uid: String
     /// A shell takes commands, an agent messages. Follows the session: a just-started agent
@@ -326,7 +384,9 @@ final class ComposerModel {
         }
     }
     private(set) var attachments: [Attachment] = []
-    private var videoUploads: [Int: Task<Void, Never>] = [:]
+    /// Each attachment's upload while it runs, by attachment: what a message sent before it's
+    /// up waits on. Not cancelled by sending (the message needs it) or by leaving.
+    private var uploads: [Int: Task<String, any Error>] = [:]
     private(set) var recent: [String] = []
     private var cursor = -1
     /// What was in the box when ↑ began walking back.
@@ -358,11 +418,16 @@ final class ComposerModel {
         self.uid = uid
         self.isShell = isShell
         drafts = DraftSync(api: api, uid: uid, debounce: draftDebounce)
+        if let back = outbox.takeReturned(key) {
+            text = back.text
+            events.append(.failed(back.reason))
+        }
     }
 
     var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty }
     var isUploading: Bool { attachments.contains { $0.path == nil } }
-    var canSend: Bool { !isEmpty && !isUploading }
+    /// Whenever there's something to send: what's still uploading goes with it once it's up.
+    var canSend: Bool { !isEmpty }
 
     /// Stop replaces Send only for a working agent and an empty box, and not right after a send.
     func showsStop(working: Bool) -> Bool { !isShell && working && isEmpty && !justSent }
@@ -429,11 +494,17 @@ final class ComposerModel {
     func submit(working: Bool, steer: Bool = false) -> Bool {
         let typed = text
         let sentFiles = attachments
-        guard !isEmpty, !isUploading else { return false }
-        let message = (sentFiles.compactMap(\.path).map(Uploads.shellQuote) + [typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : typed]).filter { !$0.isEmpty }.joined(separator: " ")
+        guard !isEmpty else { return false }
+        let words = typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : typed
+        func compose(_ paths: [String]) -> String { (paths.map(Uploads.shellQuote) + [words]).filter { !$0.isEmpty }.joined(separator: " ") }
+        // Sent now, whatever's still uploading: it waits for that (in the outbox, which
+        // outlives this box), then goes. Each attachment in its place, as it was attached.
+        let waits = sentFiles.filter { $0.path == nil }.compactMap { file in uploads[file.id].map { (file.id, $0) } }
+        let tasks = Dictionary(waits, uniquingKeysWith: { first, _ in first })
+        let message = compose(sentFiles.compactMap(\.path))
         // The server decides; this only picks where it shows until the server says.
         let state: Outbox.Item.State = (working || outbox.isLanding(key: key)) && !isShell && !steer ? .queued : .sending
-        let id = outbox.add(key: key, text: message, state: state)
+        let id = outbox.add(key: key, text: message, state: state, waitingOn: sentFiles.filter { tasks[$0.id] != nil }.compactMap(\.upload))
         recent = [message] + recent.filter { $0 != message }
         cursor = -1
         text = ""
@@ -447,9 +518,21 @@ final class ComposerModel {
         // meanwhile (a resume can take seconds) was saved and then wiped by that late clear.
         Task { [drafts] in await drafts.saveNow("") }
         let previous = chain
-        chain = Task { [weak self, api, uid] in
+        chain = Task { [weak self, api, uid, outbox, key] in
+            // Finished with the app put away, too.
+            let release = outbox.keepAlive?(tasks.isEmpty ? "Sending your message" : "Uploading and sending your message")
+            defer { release?() }
             await previous?.value
             do {
+                var message = message
+                if !tasks.isEmpty {
+                    var paths: [String] = []
+                    for file in sentFiles {
+                        if let path = file.path { paths.append(path) } else if let task = tasks[file.id] { paths.append(try await task.value) }
+                    }
+                    message = compose(paths)
+                    outbox.ready(id, text: message)
+                }
                 let result = try await api.send(uid, text: message)
                 if steer, result.outcome == .queued, let queued = result.queueId {
                     // Queued behind the turn: send it now instead. If that fails it's still
@@ -468,12 +551,19 @@ final class ComposerModel {
                 self?.outbox.update(id, state: result.outcome == .queued ? .queued : .sent, confirmedAt: Date().timeIntervalSince1970)
                 self?.events.append(.sent(result))
             } catch {
-                guard let self else { return }
-                self.outbox.remove([id])
-                // Back into the box, unless something new was typed or attached meanwhile.
+                outbox.remove([id])
+                let reason = "Couldn’t send: \(APIError.wrap(error).message)"
+                // The box it came from is gone (you'd left the session): back into the next
+                // one, when you come back to it, rather than lost.
+                guard let self else {
+                    outbox.returnToBox(key: key, text: typed, reason: reason)
+                    return
+                }
+                // Back into the box, unless something new was typed or attached meanwhile
+                // (what never got up isn't: it would wait there for an upload that's over).
                 if self.text.isEmpty { self.text = typed }
-                if self.attachments.isEmpty { self.attachments = sentFiles }
-                self.events.append(.failed("Couldn’t send: \(APIError.wrap(error).message)"))
+                if self.attachments.isEmpty { self.attachments = sentFiles.compactMap { file in file.path != nil ? file : nil } }
+                self.events.append(.failed(reason))
             }
         }
         return true
@@ -561,24 +651,53 @@ final class ComposerModel {
         nextAttachment += 1
         let id = nextAttachment
         attachments.append(Attachment(id: id, name: name, image: image, path: nil))
-        do {
+        begin(id, name: name) { [weak self, api] progress in
             let data = try await load()
-            await upload(id, name: name, data: data, thumbnail: image ? data : nil)
-        } catch {
-            attachments.removeAll { $0.id == id }
-            events.append(.failed("Couldn’t attach \(name): \(APIError.wrap(error).message)"))
+            if image { await self?.setThumbnail(Self.tile(data), id) }
+            return try await api.upload(name: name, data: data, progress: progress)
         }
+        _ = try? await uploads[id]?.value
     }
 
     private func upload(_ id: Int, name: String, data: Data, thumbnail: Data?) async {
         guard attachments.contains(where: { $0.id == id }) else { return }
-        if let thumbnail { setThumbnail(await Self.tile(thumbnail), id) }
-        do {
-            let path = try await api.upload(name: name, data: data)
-            if let i = attachments.firstIndex(where: { $0.id == id }) { attachments[i].path = path }
-        } catch {
-            attachments.removeAll { $0.id == id }
-            events.append(.failed("Couldn’t attach \(name): \(APIError.wrap(error).message)"))
+        begin(id, name: name) { [weak self, api] progress in
+            if let thumbnail { await self?.setThumbnail(Self.tile(thumbnail), id) }
+            return try await api.upload(name: name, data: data, progress: progress)
+        }
+        _ = try? await uploads[id]?.value
+    }
+
+    /// Starts an attachment's upload (`send` gets it to the host, telling `progress` how far):
+    /// its progress kept in the outbox, its path put on the tile when it's up. Kept running
+    /// when the message goes before it's done, and when the box is left.
+    private func begin(_ id: Int, name: String, _ send: @escaping @Sendable (@escaping @Sendable (Double) -> Void) async throws -> String) {
+        let upload = outbox.beginUpload()
+        if let i = attachments.firstIndex(where: { $0.id == id }) { attachments[i].upload = upload }
+        let outbox = outbox
+        uploads[id] = Task { [weak self] in
+            defer {
+                outbox.endUpload(upload)
+                self?.uploads[id] = nil
+            }
+            do {
+                let path = try await send { fraction in Task { @MainActor in outbox.progressed(upload, fraction) } }
+                if let self, let i = self.attachments.firstIndex(where: { $0.id == id }) {
+                    if self.isShell {
+                        self.attachments.remove(at: i)
+                        self.text += (self.text.isEmpty || self.text.hasSuffix(" ") ? "" : " ") + Uploads.shellQuote(path) + " "
+                    } else {
+                        self.attachments[i].path = path
+                    }
+                }
+                return path
+            } catch {
+                if !Task.isCancelled, let self, self.attachments.contains(where: { $0.id == id }) {
+                    self.attachments.removeAll { $0.id == id }
+                    self.events.append(.failed("Couldn’t attach \(name): \(APIError.wrap(error).message)"))
+                }
+                throw error
+            }
         }
     }
 
@@ -587,19 +706,13 @@ final class ComposerModel {
     func attachVideo(name: String, load: @escaping @Sendable () async throws -> (file: URL, thumbnail: Data?)) {
         nextAttachment += 1
         let id = nextAttachment
-        if !isShell { attachments.append(Attachment(id: id, name: name, image: false, path: nil)) }
-        videoUploads[id] = Task { [weak self, api] in
-            defer { self?.videoUploads[id] = nil }
-            do {
-                let loaded = try await load()
-                defer { try? FileManager.default.removeItem(at: loaded.file) }
-                self?.setThumbnail(loaded.thumbnail, id)
-                let path = try await api.upload(name: name, file: loaded.file)
-                self?.finishVideo(id, path: path)
-            } catch {
-                guard !Task.isCancelled else { return }
-                self?.failVideo(id, name: name, error)
-            }
+        // A shell's tile too while it comes (it's typed in as a path once it's up).
+        attachments.append(Attachment(id: id, name: name, image: false, path: nil))
+        begin(id, name: name) { [weak self, api] progress in
+            let loaded = try await load()
+            defer { try? FileManager.default.removeItem(at: loaded.file) }
+            await self?.setThumbnail(loaded.thumbnail, id)
+            return try await api.upload(name: name, file: loaded.file, progress: progress)
         }
     }
 
@@ -626,21 +739,9 @@ final class ComposerModel {
         if let i = attachments.firstIndex(where: { $0.id == id }) { attachments[i].thumbnail = thumbnail }
     }
 
-    private func finishVideo(_ id: Int, path: String) {
-        if isShell {
-            text += (text.isEmpty || text.hasSuffix(" ") ? "" : " ") + Uploads.shellQuote(path) + " "
-        } else if let i = attachments.firstIndex(where: { $0.id == id }) {
-            attachments[i].path = path
-        }
-    }
-
-    private func failVideo(_ id: Int, name: String, _ error: any Error) {
-        attachments.removeAll { $0.id == id }
-        events.append(.failed("Couldn’t attach \(name): \(APIError.wrap(error).message)"))
-    }
-
+    /// Taken off before it's sent: its upload stops.
     func removeAttachment(_ id: Int) {
-        videoUploads[id]?.cancel()
+        uploads[id]?.cancel()
         attachments.removeAll { $0.id == id }
     }
 

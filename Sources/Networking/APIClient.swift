@@ -64,11 +64,13 @@ struct APIClient: Sendable {
         return String(header.dropFirst("Bearer ".count))
     }
 
-    func send(_ request: URLRequest, fromFile file: URL? = nil) async throws -> Data {
+    func send(_ request: URLRequest, fromFile file: URL? = nil, progress: (@Sendable (Double) -> Void)? = nil) async throws -> Data {
         do {
             try Task.checkCancellation()
             let (data, response): (Data, HTTPURLResponse)
-            if let file {
+            if let progress {
+                (data, response) = try await transport.upload(for: request, body: file.map(UploadBody.file) ?? .data(request.httpBody ?? Data()), progress: progress)
+            } else if let file {
                 (data, response) = try await transport.upload(for: request, fromFile: file)
             } else {
                 (data, response) = try await transport.data(for: request)
@@ -311,18 +313,22 @@ struct APIClient: Sendable {
         return try JSONDecoder().decode(UploadedPath.self, from: try await send(req)).path
     }
     /// An attachment for a prompt: lands in ah's upload folder; its path goes into the message.
-    func upload(name: String, data: Data) async throws -> String {
-        let req = await request("POST", "/api/upload", query: [URLQueryItem(name: "name", value: name)], body: data, contentType: "application/octet-stream")
-        return try JSONDecoder().decode(UploadedPath.self, from: try await send(req)).path
+    /// `progress`: the share sent so far, as it goes.
+    func upload(name: String, data: Data, progress: (@Sendable (Double) -> Void)? = nil) async throws -> String {
+        var req = await request("POST", "/api/upload", query: [URLQueryItem(name: "name", value: name)], body: data, contentType: "application/octet-stream")
+        // Between bytes: the host only answers once the last one lands (a photo on a slow
+        // connection took longer than the default).
+        req.timeoutInterval = 120
+        return try JSONDecoder().decode(UploadedPath.self, from: try await send(req, progress: progress)).path
     }
 
     /// The same from a file on disk, for what's too big to hold in memory (a video).
-    func upload(name: String, file: URL) async throws -> String {
+    func upload(name: String, file: URL, progress: (@Sendable (Double) -> Void)? = nil) async throws -> String {
         var req = await request("POST", "/api/upload", query: [URLQueryItem(name: "name", value: name)], contentType: "application/octet-stream")
         req.httpBody = nil
         // Between bytes: the host only answers once the last one lands.
         req.timeoutInterval = 120
-        return try JSONDecoder().decode(UploadedPath.self, from: try await send(req, fromFile: file)).path
+        return try JSONDecoder().decode(UploadedPath.self, from: try await send(req, fromFile: file, progress: progress)).path
     }
 
     // MARK: Account management (Settings → Security)

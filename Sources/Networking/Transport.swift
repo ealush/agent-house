@@ -13,6 +13,15 @@ protocol HTTPTransport: Sendable {
     /// network error, and cancels the request when the consumer stops iterating.
     func stream(for request: URLRequest) async throws -> (HTTPURLResponse, AsyncThrowingStream<Data, any Error>)
     func webSocket(for request: URLRequest) -> any WebSocketConnection
+    /// Sends `body` (in memory or from a file), telling `progress` the share of it sent so
+    /// far, from 0 to 1, as it goes.
+    func upload(for request: URLRequest, body: UploadBody, progress: @escaping @Sendable (Double) -> Void) async throws -> (Data, HTTPURLResponse)
+}
+
+/// What an upload sends: bytes held in memory, or a file read from disk as it goes.
+enum UploadBody: Sendable {
+    case data(Data)
+    case file(URL)
 }
 
 extension HTTPTransport {
@@ -20,6 +29,21 @@ extension HTTPTransport {
         var request = request
         request.httpBody = try Data(contentsOf: file)
         return try await data(for: request)
+    }
+
+    /// Where nothing reports bytes as they go: all of it at once, when it's done.
+    func upload(for request: URLRequest, body: UploadBody, progress: @escaping @Sendable (Double) -> Void) async throws -> (Data, HTTPURLResponse) {
+        let answer: (Data, HTTPURLResponse)
+        switch body {
+        case .data(let data):
+            var request = request
+            request.httpBody = data
+            answer = try await self.data(for: request)
+        case .file(let file):
+            answer = try await upload(for: request, fromFile: file)
+        }
+        progress(1)
+        return answer
     }
 }
 
@@ -77,6 +101,20 @@ final class URLSessionTransport: NSObject, HTTPTransport, @unchecked Sendable {
         guard let http = response as? HTTPURLResponse else { throw APIError.transport("no HTTP response") }
         return (data, http)
     }
+
+    func upload(for request: URLRequest, body: UploadBody, progress: @escaping @Sendable (Double) -> Void) async throws -> (Data, HTTPURLResponse) {
+        var request = request
+        request.httpBody = nil
+        let meter = UploadMeter(report: progress)
+        let (data, response): (Data, URLResponse)
+        switch body {
+        case .data(let bytes): (data, response) = try await session.upload(for: request, from: bytes, delegate: meter)
+        case .file(let file): (data, response) = try await session.upload(for: request, fromFile: file, delegate: meter)
+        }
+        guard let http = response as? HTTPURLResponse else { throw APIError.transport("no HTTP response") }
+        progress(1)
+        return (data, http)
+    }
     #endif
 
     func stream(for request: URLRequest) async throws -> (HTTPURLResponse, AsyncThrowingStream<Data, any Error>) {
@@ -107,11 +145,26 @@ final class URLSessionTransport: NSObject, HTTPTransport, @unchecked Sendable {
 }
 
 /// Never follow a redirect: it could carry the bearer to another origin.
-private final class RedirectRefusal: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+private class RedirectRefusal: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
         completionHandler(nil)
     }
 }
+
+#if !canImport(FoundationNetworking)
+/// One upload's own delegate: the bytes sent so far, as a share of the body (and, as the
+/// session's does, no redirects).
+private final class UploadMeter: RedirectRefusal, @unchecked Sendable {
+    private let report: @Sendable (Double) -> Void
+
+    init(report: @escaping @Sendable (Double) -> Void) { self.report = report }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
+        guard totalBytesExpectedToSend > 0 else { return }
+        report(min(1, Double(totalBytesSent) / Double(totalBytesExpectedToSend)))
+    }
+}
+#endif
 
 /// Bridges a streaming data task to an AsyncThrowingStream, plus a one-shot for its response head.
 private final class StreamDelegate: NSObject, URLSessionDataDelegate, @unchecked Sendable {

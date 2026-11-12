@@ -37,6 +37,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         Task { await push.registerIfAuthorized() }
         observeBadge()
         LocalAlerts.watch(app)
+        Sending.install(app)
         app.didShowSessions = { [weak app] keys in
             guard let app else { return }
             Task { await AlertJanitor.sweep(app, seen: keys) }

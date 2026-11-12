@@ -114,7 +114,11 @@ struct TranscriptView: View {
                         }
                     }
                     ForEach(session.outgoing) { item in
-                        UserBubble(text: item.text, pending: item.state == .sending ? "Sending…" : "Sent")
+                        VStack(alignment: .trailing, spacing: 6) {
+                            UserBubble(text: item.text, pending: !item.waitingOn.isEmpty ? nil : item.state == .sending ? "Sending…" : "Sent")
+                            // Sent before its attachments were up: it goes once they are.
+                            if !item.waitingOn.isEmpty { UploadBar(outbox: session.outbox, item: item) }
+                        }
                             .id("out-\(item.id)")
                             // Springs up out of the box it was typed in.
                             .transition(reduceMotion ? .opacity : .asymmetric(insertion: .scale(scale: 0.85, anchor: .bottomTrailing).combined(with: .opacity).combined(with: .offset(y: 24)), removal: .opacity))
@@ -554,6 +558,32 @@ struct LinkButtons: View {
     var body: some View {
         Button("Copy Link", systemImage: "link") { scene.copyLink(to: place) }
         Button("Share Link…", systemImage: "square.and.arrow.up") { scene.shareLink(to: place) }
+    }
+}
+
+/// A message sent before its attachments were up, under its bubble: how far they've got. It
+/// goes once they're all there; meanwhile you can go anywhere, even put the app away.
+struct UploadBar: View {
+    let outbox: Outbox
+    let item: Outbox.Item
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        let fraction = outbox.progress(item) ?? 1
+        let count = item.waitingOn.count
+        VStack(alignment: .trailing, spacing: 4) {
+            ProgressView(value: fraction)
+                .tint(theme.accentStrong)
+                .frame(width: 160)
+            Text("Uploading \(count == 1 ? "the attachment" : "\(count) attachments") · \(Int((fraction * 100).rounded()))%")
+                .font(.ah(.caption2))
+                .monospacedDigit()
+                .foregroundStyle(theme.faint)
+                .contentTransition(.numericText())
+        }
+        .animation(.spring(duration: 0.35, bounce: 0), value: fraction)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Uploading, \(Int((fraction * 100).rounded())) percent")
     }
 }
 
