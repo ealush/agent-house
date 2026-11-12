@@ -89,9 +89,7 @@ struct DispatchView: Codable, Equatable, Sendable, Hashable {
     let state: String
     let targetUid: String
     let targetTitle: String?
-    let targetAgent: String?
     let sentAt: Double
-    let doneAt: Double?
     let findings: [Int]
     let text: String
 }
@@ -137,12 +135,7 @@ struct Finding: Codable, Equatable, Sendable, Hashable, Identifiable {
     let ghUrl: String?
     let ghThread: Bool
     let note: String?
-    let messageId: Int?
-    let dispatchId: Int?
     let createdAt: Double
-    let stateBy: String?
-    let stateAt: Double
-    let stateHead: String?
 
     /// Still asks something of the author.
     var isOpen: Bool { state == .open || state == .proposed || state == .sent }
@@ -255,8 +248,6 @@ struct Candidate: Codable, Equatable, Sendable, Hashable, Identifiable {
     var id: Int { number }
     let number: Int
     let title: String
-    let headRefName: String
-    let baseRefName: String
     let draft: Bool
     let author: String
     let additions: Int
@@ -450,7 +441,6 @@ struct StackMergeResult: Codable, Equatable, Sendable {
 
 struct LayerMergeResult: Codable, Equatable, Sendable {
     let next: Int?
-    let retargeted: [Int]
     let restack: [Int]
     let merged: [Int]
     let waiting: String?

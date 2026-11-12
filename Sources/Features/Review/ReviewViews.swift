@@ -137,8 +137,6 @@ struct StackProgress: View {
 /// A stack's row before the list has loaded: its shape, breathing.
 private struct StackPlaceholder: View {
     @Environment(\.theme) private var theme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var dim = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -147,11 +145,7 @@ private struct StackPlaceholder: View {
             Capsule().fill(theme.text.opacity(0.07)).frame(height: 6)
         }
         .padding(.vertical, 8)
-        .opacity(dim ? 0.5 : 1)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { dim = true }
-        }
+        .breathing()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Loading reviews")
     }
@@ -1473,8 +1467,6 @@ private struct DiffFileBody: View, Equatable {
 /// spinner in an empty box.
 private struct DiffPlaceholder: View {
     @Environment(\.theme) private var theme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var dim = false
     private static let widths: [CGFloat] = [0.55, 0.82, 0.4, 0.7, 0.62, 0.3]
 
     var body: some View {
@@ -1489,11 +1481,7 @@ private struct DiffPlaceholder: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.sunken, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .opacity(dim ? 0.55 : 1)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { dim = true }
-        }
+        .breathing(low: 0.55)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Loading the diff")
     }

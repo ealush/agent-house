@@ -344,7 +344,6 @@ struct PresetDTO: Codable, Equatable, Sendable {
         let name: String
         let dangerous: Bool?
         let description: String?
-        let appliesTo: String?
     }
 
     struct Model: Codable, Equatable, Sendable {

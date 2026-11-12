@@ -192,6 +192,14 @@ final class ReviewModel {
     var layer: Layer? { stack?.layers.first { $0.pr == selectedPR } }
     var confidence: LayerConfidence? { layer.map(LayerConfidence.init) }
 
+    /// The stack and its findings, both at once: one round trip after the other held the page.
+    private func reload(_ id: String) async throws {
+        async let fetched = review.stack(id)
+        async let found = review.findings(id)
+        stack = try await fetched
+        findings = try await found
+    }
+
     private func load(_ what: String, _ body: () async throws -> Void) async {
         loading.insert(what)
         defer { loading.remove(what) }
@@ -239,10 +247,7 @@ final class ReviewModel {
         // The stack and its findings together, then the layer and the reviewer's thread
         // together: four round trips one after another held the page on its spinner.
         await load("stack") {
-            async let fetched = review.stack(id)
-            async let found = review.findings(id)
-            stack = try await fetched
-            findings = try await found
+            try await reload(id)
         }
         let threading = Task { await loadThread() }
         await withTaskCancellationHandler {
@@ -372,11 +377,7 @@ final class ReviewModel {
         guard let id = stack?.id, let pr = selectedPR else { return }
         await load("finding") {
             _ = try await review.addFinding(id, NewFinding(ownerPr: pr, foundOnPr: pr, title: title, body: body, severity: severity.rawValue, path: path, lineStart: lines?.lowerBound, lineEnd: lines?.upperBound))
-            // Both at once, not one round trip after the other.
-            async let found = review.findings(id)
-            async let fetched = review.stack(id)
-            findings = try await found
-            stack = try await fetched
+            try await reload(id)
         }
     }
 
@@ -384,11 +385,7 @@ final class ReviewModel {
         guard let id = stack?.id else { return }
         await load("finding") {
             _ = try await review.updateFinding(id, finding: finding.id, FindingPatch(state: state?.rawValue, severity: severity?.rawValue, ownerPr: owner, note: note))
-            // Both at once, not one round trip after the other.
-            async let found = review.findings(id)
-            async let fetched = review.stack(id)
-            findings = try await found
-            stack = try await fetched
+            try await reload(id)
         }
     }
 
@@ -457,10 +454,7 @@ final class ReviewModel {
         var result: DispatchResult?
         await load("dispatch") {
             result = try await review.dispatch(id, pr: pr, findings: ids, text: text, targetUid: target, newSessionPreset: newSessionPreset, kind: kind)
-            async let fetched = review.stack(id)
-            async let found = review.findings(id)
-            stack = try await fetched
-            findings = try await found
+            try await reload(id)
         }
         return result
     }

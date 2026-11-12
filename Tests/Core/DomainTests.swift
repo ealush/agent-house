@@ -504,6 +504,7 @@ import Testing
     let now = 1_800_000_000.0
     #expect(ElapsedWords.short(since: now - 5, now: now) == "now")
     #expect(ElapsedWords.short(since: now + 40, now: now) == "now", "a host's clock a little ahead")
+    #expect(ElapsedWords.date(epoch: 1_763_000_000) == ElapsedWords.date(epoch: 1_763_000_000_000), "seconds and milliseconds read as the same time")
     #expect(ElapsedWords.short(since: now - 60, now: now) == "1m")
     #expect(ElapsedWords.short(since: now - 59 * 60, now: now) == "59m")
     #expect(ElapsedWords.short(since: now - 3600, now: now) == "1h")

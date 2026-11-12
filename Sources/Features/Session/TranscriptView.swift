@@ -1087,7 +1087,7 @@ private struct StartConversation: View {
                             Image(systemName: "clock.arrow.circlepath").foregroundStyle(theme.faint).frame(width: 22)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(item.dto.title).foregroundStyle(theme.text).lineLimit(1)
-                                Text(Date(timeIntervalSince1970: item.dto.at / (item.dto.at > 1e11 ? 1000 : 1)).formatted(.relative(presentation: .named))).font(.ah(.caption)).foregroundStyle(theme.faint)
+                                Text(ElapsedWords.date(epoch: item.dto.at).formatted(.relative(presentation: .named))).font(.ah(.caption)).foregroundStyle(theme.faint)
                             }
                             Spacer()
                             Text("Resume").font(.ah(.caption).weight(.semibold)).foregroundStyle(theme.accent)

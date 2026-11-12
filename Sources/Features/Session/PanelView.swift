@@ -445,7 +445,7 @@ private struct FilesPanel: View {
     }
 
     private func detail(_ entry: FsEntry) -> String {
-        let when = Date(timeIntervalSince1970: entry.mtime / (entry.mtime > 1e11 ? 1000 : 1))
+        let when = ElapsedWords.date(epoch: entry.mtime)
         let age = when.formatted(.relative(presentation: .named, unitsStyle: .abbreviated))
         guard entry.type == .file else { return age }
         return "\(ByteCountFormatter.string(fromByteCount: Int64(entry.size), countStyle: .file)) · \(age)"

@@ -82,14 +82,32 @@ private struct TouchTarget: ViewModifier {
     }
 }
 
+/// Something still loading, by its shape: it fades in and out (and holds still with Reduce Motion).
+struct Breathing: ViewModifier {
+    var low: Double = 0.5
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var dim = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(dim ? low : 1)
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { dim = true }
+            }
+    }
+}
+
+extension View {
+    func breathing(low: Double = 0.5) -> some View { modifier(Breathing(low: low)) }
+}
+
 /// A session's row before the host has said what sessions there are: its shape, breathing.
 /// A cold launch showed "No sessions running" for the second it took to ask.
 struct SessionRowPlaceholder: View {
     /// How much of the title's line this one fills (rows differ, as real ones do).
     var title: CGFloat = 0.6
     @Environment(\.theme) private var theme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var dim = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -101,11 +119,7 @@ struct SessionRowPlaceholder: View {
             Spacer(minLength: 0)
         }
         .padding(.vertical, 5)
-        .opacity(dim ? 0.5 : 1)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { dim = true }
-        }
+        .breathing()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Loading sessions")
     }

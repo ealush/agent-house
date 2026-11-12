@@ -178,7 +178,6 @@ struct PreviewDTO: Codable, Equatable, Sendable {
     let uid: String
     let target: Int
     let port: Int
-    let published: Bool
 }
 
 struct PreviewInfo: Codable, Equatable, Sendable {
@@ -264,7 +263,6 @@ struct ChatSummary: Codable, Equatable, Sendable, Identifiable {
     let uid: String
     let title: String
     let count: Int
-    let firstAt: Double
     let lastAt: Double
     let preview: String
 }
@@ -336,7 +334,6 @@ struct SearchStatus: Codable, Equatable, Sendable {
     let sourcesIndexed: Int
     let sourcesKnown: Int
     let entries: Int
-    let transcriptEntries: Int
     let chatEntries: Int
     let lastBuiltAt: Double
 }
@@ -352,10 +349,8 @@ struct WorktreeInfo: Codable, Equatable, Sendable, Identifiable {
     let dirty: Int
     let ahead: Int
     let sizeBytes: Double?
-    let logicalBytes: Double?
     let sizePartial: Bool
     let sizeTooLarge: Bool
-    let sizeMeasuredAt: Double?
     let lastActivityAt: Double
     let live: [Live]
     let sessions: [Owner]
@@ -367,7 +362,6 @@ struct BulkRemoveResult: Codable, Equatable, Sendable {
     let ok: Bool
     let error: String?
     let gone: Bool?
-    let reclaimedBytes: Double
 }
 
 struct FsEntry: Codable, Equatable, Sendable, Hashable {
@@ -400,7 +394,6 @@ struct HarnessInfo: Codable, Equatable, Sendable, Identifiable {
     let installed: Bool
     let hidden: Bool
     let version: String?
-    let checkedAt: Double?
     let changes: [String]
 }
 
@@ -456,7 +449,6 @@ struct AuthOverview: Codable, Equatable, Sendable {
     struct Passkey: Codable, Equatable, Sendable, Identifiable {
         let id: String
         let label: String
-        let rpID: String
         let createdAt: Double
         let lastUsedAt: Double
     }
@@ -511,7 +503,6 @@ struct APNsStatus: Codable, Equatable, Sendable {
         let at: Double
     }
     let configured: Bool
-    let topic: String?
     let registration: Registration?
 }
 

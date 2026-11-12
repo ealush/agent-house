@@ -1067,9 +1067,9 @@ struct WorktreesView: View {
                 Text(tree.branch).font(.ahMono(.callout)).lineLimit(1).truncationMode(.middle)
                 Text("\((tree.repo as NSString).lastPathComponent) · \(size(tree)) · \(age(tree))").font(.ah(.caption)).foregroundStyle(theme.muted)
                 HStack(spacing: 6) {
-                    if tree.dirty > 0 { badge("\(tree.dirty) uncommitted", theme.limited) }
-                    if tree.ahead > 0 { badge("\(tree.ahead) unpushed", theme.limited) }
-                    if tree.orphan { badge("orphaned", theme.faint) }
+                    if tree.dirty > 0 { StatusTag(text: "\(tree.dirty) uncommitted", color: theme.limited) }
+                    if tree.ahead > 0 { StatusTag(text: "\(tree.ahead) unpushed", color: theme.limited) }
+                    if tree.orphan { StatusTag(text: "orphaned", color: theme.faint) }
                     ForEach(tree.live, id: \.id) { live in
                         Button { open(live.id) } label: {
                             Label(live.name, systemImage: "arrow.up.right.square").font(.ah(.caption).weight(.semibold)).foregroundStyle(theme.run)
@@ -1122,19 +1122,13 @@ struct WorktreesView: View {
         .overlay(alignment: .top) { Divider() }
     }
 
-    private func badge(_ text: String, _ color: Color) -> some View {
-        Text(text).font(.ah(.caption2).weight(.semibold)).foregroundStyle(color)
-            .padding(.horizontal, 6).padding(.vertical, 2)
-            .background(color.opacity(0.12), in: Capsule())
-    }
-
     private func size(_ tree: WorktreeInfo) -> String {
         if tree.sizeTooLarge { return "too large to measure" }
         return WorktreesModel.size(tree.sizeBytes) + (tree.sizePartial ? "+" : "")
     }
 
     private func age(_ tree: WorktreeInfo) -> String {
-        let at = Date(timeIntervalSince1970: tree.lastActivityAt / (tree.lastActivityAt > 1e11 ? 1000 : 1))
+        let at = ElapsedWords.date(epoch: tree.lastActivityAt)
         return at.formatted(.relative(presentation: .named, unitsStyle: .abbreviated))
     }
 
