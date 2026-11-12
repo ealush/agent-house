@@ -288,8 +288,10 @@ struct SessionRowView: View {
                     Text(detail).font(.ah(.caption)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.muted).lineLimit(stacked ? 2 : 1)
                     if stacked { status(onAccent: onAccent, compact: false) }
                 }
+                // The title takes the room first; the status keeps its own size beside it.
+                .layoutPriority(1)
                 Spacer(minLength: 4)
-                if !stacked { status(onAccent: onAccent, compact: dense && !row.word.asksForAttention) }
+                if !stacked { status(onAccent: onAccent, compact: dense && !row.word.asksForAttention).fixedSize() }
             }
         } else {
             // A page's row, with room: a larger mark, the title with when it last moved
@@ -388,7 +390,9 @@ private struct GroupHeader: View {
                 // A finger's worth to hit (it was the 12-point glyph), its glyph where it was.
                 Image(systemName: "plus")
                     .font(.ah(.caption).weight(.semibold))
-                    .frame(width: 44, height: 32)
+                    // The glyph at the trailing edge, in line with the rows' statuses; the
+                    // target reaches inward.
+                    .frame(width: 44, height: 32, alignment: .trailing)
                     .contentShape(Rectangle())
             } primaryAction: {
                 scene.beginNewSession(newHere)
