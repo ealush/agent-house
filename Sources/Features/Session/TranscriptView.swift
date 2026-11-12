@@ -194,12 +194,12 @@ struct TranscriptView: View {
             .onScrollPhaseChange { _, new in
                 phase = new
                 guard new == .interacting, session.composer.trayOpen else { return }
-                withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { session.composer.trayOpen = false }
+                withAnimation(ComposerFloat.motion(opening: false, reduceMotion: reduceMotion)) { session.composer.trayOpen = false }
             }
             .simultaneousGesture(TapGesture().onEnded {
                 // A tap on the conversation folds what floats over it, as it puts the keyboard away.
                 if session.composer.trayOpen {
-                    withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { session.composer.trayOpen = false }
+                    withAnimation(ComposerFloat.motion(opening: false, reduceMotion: reduceMotion)) { session.composer.trayOpen = false }
                 }
                 // Words selected in a reply let go, as a page's do when you tap away from them.
                 UIApplication.shared.sendAction(#selector(ProseTextView.dropSelection), to: nil, from: nil, for: nil)

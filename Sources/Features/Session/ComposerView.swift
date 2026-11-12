@@ -139,7 +139,7 @@ struct ComposerView: View {
             case .sent(let result):
                 Haptics.tap()
                 // Said and done: the settings fold back out of the way.
-                if trayOpen { withAnimation(.snappy(duration: 0.25)) { trayOpen = false } }
+                if trayOpen { withAnimation(ComposerFloat.motion(opening: false, reduceMotion: reduceMotion)) { trayOpen = false } }
                 if result.outcome == .queued && result.starting == true { scene.toast("Your message goes in once the agent is ready") }
                 if result.resumed { scene.toast("Resumed the session") }
                 session.stateChanged()
@@ -211,11 +211,11 @@ struct ComposerView: View {
         case .up:
             guard hasTray, !trayOpen else { return }
             Haptics.selection()
-            withAnimation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.78)) { trayOpen = true }
+            withAnimation(ComposerFloat.motion(opening: true, reduceMotion: reduceMotion)) { trayOpen = true }
         case .down:
             if trayOpen {
                 Haptics.selection()
-                withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { trayOpen = false }
+                withAnimation(ComposerFloat.motion(opening: false, reduceMotion: reduceMotion)) { trayOpen = false }
             } else if !scene.hardwareKeyboard {
                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
             }
@@ -286,7 +286,7 @@ struct ComposerView: View {
         .animation(.snappy(duration: 0.2), value: outgrown)
         .onDrop(of: [.image, .fileURL, .item], isTargeted: $dropTargeted) { attach(dropped: $0) }
         .accessibilityAction(named: trayOpen ? "Hide session settings" : "Show session settings") {
-            withAnimation(.snappy(duration: 0.25)) { trayOpen.toggle() }
+            withAnimation(ComposerFloat.motion(opening: !trayOpen, reduceMotion: reduceMotion)) { trayOpen.toggle() }
         }
     }
 
@@ -510,7 +510,16 @@ struct ComposerFloat: View {
         // Cut off at the box's top edge, so what slides in comes out from behind the box
         // rather than drop onto it from above; open past the other edges, for the glass.
         .mask(alignment: .bottom) { Rectangle().frame(width: 4000, height: 4000) }
-        .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: composer.suggestions.isEmpty)
+        .animation(Self.motion(opening: !composer.suggestions.isEmpty, reduceMotion: reduceMotion), value: composer.suggestions.isEmpty)
+    }
+
+    /// How what floats over the box moves, the settings chips and the / and @ suggestions
+    /// alike, by whichever way they're brought out or put away: a spring. Coming out from
+    /// behind the box they rise a touch past their place and settle; folding they sink
+    /// straight back, as a bounce there would peek them up over the box's edge again.
+    static func motion(opening: Bool, reduceMotion: Bool) -> Animation? {
+        guard !reduceMotion else { return nil }
+        return opening ? .spring(duration: 0.42, bounce: 0.22) : .spring(duration: 0.3, bounce: 0)
     }
 
     /// What waits folded above the box: the settings in force, and the two ways into
@@ -545,7 +554,7 @@ struct ComposerFloat: View {
         .gesture(ComposerSwipe { direction in
             guard direction == .down else { return }
             Haptics.selection()
-            withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { composer.trayOpen = false }
+            withAnimation(Self.motion(opening: false, reduceMotion: reduceMotion)) { composer.trayOpen = false }
         })
     }
 
@@ -553,7 +562,7 @@ struct ComposerFloat: View {
         Button {
             Haptics.selection()
             // Taken from the tray, which folds: picking a suggestion brought it back over the box.
-            withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { composer.trayOpen = false }
+            withAnimation(Self.motion(opening: false, reduceMotion: reduceMotion)) { composer.trayOpen = false }
             composer.insert(mark)
             scene.requestFocus(.composer(session.key))
         } label: {
