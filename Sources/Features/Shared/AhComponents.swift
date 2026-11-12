@@ -30,7 +30,7 @@ struct AhLargeTitle: View {
     }
 }
 
-/// A list section's overline: small tracked capitals, a count, and the brand's underline.
+/// A list section's overline: small tracked capitals and a count.
 struct AhSectionHeader: View {
     let title: String
     var count: Int? = nil
@@ -41,8 +41,6 @@ struct AhSectionHeader: View {
             Text(title.uppercased()).font(.ah(.caption).weight(.semibold)).tracking(1.1).foregroundStyle(theme.text)
             if let count { Text("\(count)").font(.ah(.caption)).foregroundStyle(theme.faint) }
         }
-        .padding(.bottom, 6)
-        .overlay(alignment: .bottomLeading) { Capsule().fill(theme.brand).frame(height: 2).frame(maxWidth: .infinity) }
         .fixedSize(horizontal: false, vertical: true)
         .textCase(nil)
         .accessibilityElement(children: .combine)

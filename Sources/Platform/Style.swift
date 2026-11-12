@@ -172,6 +172,9 @@ enum AhType {
     static let ui = "Rubik"
     static let mono = "JetBrains Mono"
 
+    /// iOS's own sizes for each style at the default text size (body 17, callout 16, ...),
+    /// so the app reads as the system does, and grows and shrinks with it from there. Body,
+    /// callout and subheadline were a point smaller.
     static func size(_ style: Font.TextStyle) -> CGFloat {
         switch style {
         case .largeTitle: 34
@@ -179,13 +182,13 @@ enum AhType {
         case .title2: 22
         case .title3: 20
         case .headline: 17
-        case .body: 16
-        case .callout: 15
-        case .subheadline: 14
+        case .body: 17
+        case .callout: 16
+        case .subheadline: 15
         case .footnote: 13
         case .caption: 12
         case .caption2: 11
-        default: 16
+        default: 17
         }
     }
 
