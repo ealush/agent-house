@@ -200,6 +200,21 @@ enum FeedProjection {
         return blocks
     }
 
+    /// Where each finished turn ends (the block before your next message, or the last one
+    /// once the agent is done), with how long it took.
+    static func turnEnds(_ blocks: [FeedBlock], durations: [String: Double], working: Bool) -> [String: Double] {
+        var out: [String: Double] = [:]
+        var start: String?
+        for (index, block) in blocks.enumerated() {
+            if block.isUser { start = nil; continue }
+            if block.isAgent && start == nil { start = block.id }
+            let next = index + 1 < blocks.count ? blocks[index + 1] : nil
+            let ends = next.map(\.isUser) ?? !working
+            if ends, let start, let seconds = durations[start] { out[block.id] = seconds }
+        }
+        return out
+    }
+
     /// How long each answered turn took: from your message to the agent's last entry before
     /// your next one, keyed by the agent block that starts the answer (its first entry's seq).
     /// Turns without both ends (history cut mid-turn, timestamps missing) are left out.

@@ -958,6 +958,10 @@ struct ComposerTextField: UIViewRepresentable {
         // box emptied after a long message stayed that tall around a word.
         let inset = uiView.textContainerInset
         let lines = width - inset.left - inset.right - uiView.textContainer.lineFragmentPadding * 2
+        // SwiftUI asks several times a pass, at the same few widths: each answer is kept until
+        // the text, the width or the type size changes.
+        let key = Coordinator.Measure(text: uiView.text ?? "", lines: lines, line: line)
+        if let kept = context.coordinator.measured[key] { return CGSize(width: width, height: kept) }
         let text = uiView.attributedText ?? NSAttributedString()
         var height = text.boundingRect(with: CGSize(width: max(lines, 1), height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil).height
         // A new line just begun counts before anything is typed on it.
@@ -967,7 +971,10 @@ struct ComposerTextField: UIViewRepresentable {
         // them, each change asking for another pass. The window never drew again. The line
         // is centred where the view is laid out (`ComposerTextView.centreShortLine`).
         height = ceil(max(height, line)) + ComposerTextView.verticalInset * 2
-        return CGSize(width: width, height: min(max(height, ComposerTextView.leastHeight), line * 8 + 12))
+        let fitted = min(max(height, ComposerTextView.leastHeight), line * 8 + 12)
+        if context.coordinator.measured.count > 8 { context.coordinator.measured.removeAll(keepingCapacity: true) }
+        context.coordinator.measured[key] = fitted
+        return CGSize(width: width, height: fitted)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
@@ -978,6 +985,14 @@ struct ComposerTextField: UIViewRepresentable {
         var handledFocus = 0
         /// The theme the text was last colored for.
         var theme: Theme?
+        /// The box's height for a text at a width, as last measured.
+        var measured: [Measure: CGFloat] = [:]
+
+        struct Measure: Hashable {
+            let text: String
+            let lines: CGFloat
+            let line: CGFloat
+        }
 
         init(parent: ComposerTextField) { self.parent = parent }
 
@@ -1123,6 +1138,12 @@ final class ComposerTextView: UITextView {
     fileprivate(set) var isHardwareReturn = false
     private let placeholderLabel = UILabel()
     private let fade = CAGradientLayer()
+    private struct PlaceholderFit: Equatable {
+        let placeholder: String
+        let width: CGFloat
+        let size: CGFloat
+    }
+    private var placeholderFit: PlaceholderFit?
 
     override init(frame: CGRect, textContainer: NSTextContainer?) {
         super.init(frame: frame, textContainer: textContainer)
@@ -1149,10 +1170,15 @@ final class ComposerTextView: UITextView {
         }
         fadeEdges()
         placeholderLabel.frame = CGRect(x: textContainerInset.left + 5, y: textContainerInset.top, width: bounds.width - textContainerInset.left - textContainerInset.right - 10, height: placeholderLabel.font.lineHeight)
-        // Hints drop from the end, whole, rather than end mid-word in an ellipsis.
+        // Hints drop from the end, whole, rather than end mid-word in an ellipsis. Fitted again
+        // only when the hint, its room or its type size changes: this runs on every scroll.
         let font = placeholderLabel.font ?? AhType.uiFont(.body)
-        placeholderLabel.text = ComposerModel.fitting(placeholder, width: placeholderLabel.frame.width) { ($0 as NSString).size(withAttributes: [.font: font]).width }
-        placeholderLabel.isHidden = !text.isEmpty
+        let fit = PlaceholderFit(placeholder: placeholder, width: placeholderLabel.frame.width, size: font.pointSize)
+        if fit != placeholderFit {
+            placeholderFit = fit
+            placeholderLabel.text = ComposerModel.fitting(placeholder, width: fit.width) { ($0 as NSString).size(withAttributes: [.font: font]).width }
+        }
+        placeholderLabel.isHidden = hasText
     }
 
     /// The room above and below the text, and the least the field stands.

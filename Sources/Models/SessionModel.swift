@@ -40,6 +40,7 @@ final class SessionModel: Identifiable {
     @ObservationIgnored private var feedStream: FeedStream?
     @ObservationIgnored private var feedTask: Task<Void, Never>?
     @ObservationIgnored private var blocksCache: (count: Int, epoch: Int, last: Int, blocks: [FeedBlock])?
+    @ObservationIgnored private var endsCache: (count: Int, epoch: Int, last: Int, working: Bool, ends: [String: Double])?
 
     struct Notice: Equatable, Identifiable, Sendable {
         enum Tone: Sendable { case info, error }
@@ -95,6 +96,16 @@ final class SessionModel: Identifiable {
         let projected = FeedProjection.project(feed.entries)
         blocksCache = (feed.entries.count, feed.epoch, last, projected)
         return projected
+    }
+
+    /// Where each finished turn ends, and how long it took: worked out once per change, not
+    /// each time the transcript draws (it reads every entry and block).
+    var turnEnds: [String: Double] {
+        let last = feed.entries.last?.seq ?? -1, working = working
+        if let cache = endsCache, cache.count == feed.entries.count, cache.epoch == feed.epoch, cache.last == last, cache.working == working { return cache.ends }
+        let ends = FeedProjection.turnEnds(blocks, durations: FeedProjection.turnDurations(feed.entries), working: working)
+        endsCache = (feed.entries.count, feed.epoch, last, working, ends)
+        return ends
     }
 
     /// Optimistic bubbles still waiting for the transcript (queued ones live in the tray).

@@ -29,21 +29,6 @@ struct TranscriptView: View {
 
     private var stepsHidden: Bool { scene.app.preferences.stepsHidden }
 
-    /// Where each finished turn ends (the block before your next message, or the last one
-    /// once the agent is done), with how long it took.
-    static func turnEnds(_ blocks: [FeedBlock], durations: [String: Double], working: Bool) -> [String: Double] {
-        var out: [String: Double] = [:]
-        var start: String?
-        for (index, block) in blocks.enumerated() {
-            if block.isUser { start = nil; continue }
-            if block.isAgent && start == nil { start = block.id }
-            let next = index + 1 < blocks.count ? blocks[index + 1] : nil
-            let ends = next.map(\.isUser) ?? !working
-            if ends, let start, let seconds = durations[start] { out[block.id] = seconds }
-        }
-        return out
-    }
-
     /// What only the newest end changes: its last block, what that holds, a turn starting or
     /// ending. Older pages loading above (a scroll back reads them in) leave it as it was.
     static func endKey(_ blocks: [FeedBlock], session: SessionModel) -> String {
@@ -118,7 +103,7 @@ struct TranscriptView: View {
                         .frame(maxWidth: .infinity)
                         .onAppear { loadOlder() }
                     }
-                    let ends = Self.turnEnds(blocks, durations: FeedProjection.turnDurations(session.feed.entries), working: session.working)
+                    let ends = session.turnEnds
                     ForEach(Array(blocks.enumerated()), id: \.element.id) { index, block in
                         BlockRow(block: block, session: session, scene: scene, stepsHidden: stepsHidden, isLast: index == blocks.count - 1)
                             .id(block.id)

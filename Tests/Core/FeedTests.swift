@@ -227,6 +227,10 @@ private let result = ToolResult(callId: "c1", text: "ok", isError: false, data: 
     #expect(durations["21"] == 1)
     #expect(durations["1"] == nil, "a turn whose question isn't in view")
     #expect(FeedProjection.project(entries).contains { $0.id == "5" }, "keyed by the agent block that answers")
+    let blocks = FeedProjection.project(entries)
+    let ends = FeedProjection.turnEnds(blocks, durations: durations, working: false)
+    #expect(ends.values.sorted() == [1, 12], "each answered turn's footer, once")
+    #expect(FeedProjection.turnEnds(blocks, durations: durations, working: true).values.sorted() == [12], "the turn under way has no footer yet")
 }
 
 @Test func aLongSessionsSnapshotReadsInOneLine() throws {
