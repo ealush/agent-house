@@ -499,6 +499,8 @@ struct AuthOverview: Codable, Equatable, Sendable {
     let idleHours: Double
     let maxDays: Double
     let audit: [JSONValue]?
+    /// Where Tailscale Serve publishes the host; null when it doesn't, absent from older hosts.
+    var address: String? = nil
 }
 
 struct SetupCode: Codable, Equatable, Sendable {

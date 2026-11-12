@@ -199,11 +199,25 @@ private struct SecuritySection: View {
                     }
                     Text("Valid for \(code.ttlMinutes) minutes, once.").font(.ah(.caption)).foregroundStyle(theme.muted)
                 }
+                if let address = account.endpoint.address(reported: model.overview?.address) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Address").font(.ah(.caption)).foregroundStyle(theme.muted)
+                            Text(address.host ?? address.absoluteString).textSelection(.enabled)
+                        }
+                        Spacer()
+                        Button("Copy") {
+                            UIPasteboard.general.string = address.absoluteString
+                            Haptics.tap()
+                            scene.toast("Copied the address")
+                        }
+                    }
+                }
                 Button(model.code == nil ? "Issue a setup code" : "Issue a new code", systemImage: "number") { Task { await model.newCode() } }
             } header: {
                 Text("Add another device")
             } footer: {
-                Text("Enter the code in the new device’s app (or on its sign-in page). Codes come only from a device that’s already signed in.")
+                Text("On the new device, open the app (or a browser) at this address and enter the code. Codes come only from a device that’s already signed in.")
             }
             if let overview = model.overview {
                 Section("Signed in") {

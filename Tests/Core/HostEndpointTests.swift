@@ -22,6 +22,18 @@ func rejectsUnsafeOrNoncanonicalHostAddress(_ address: String) {
     #expect(throws: HostEndpoint.ValidationError.self) { try HostEndpoint(address) }
 }
 
+@Test func addressForAnotherDevice() throws {
+    let served = try HostEndpoint("https://box.tail1234.ts.net")
+    let local = try HostEndpoint("http://127.0.0.1:7681", allowLoopback: true)
+    // What the host says Serve publishes wins, normalized.
+    #expect(local.address(reported: "https://Box.tail1234.ts.net/")?.absoluteString == "https://box.tail1234.ts.net")
+    // A host too old to say, or not served: the address this app reaches it by, unless that's loopback.
+    #expect(served.address(reported: nil)?.absoluteString == "https://box.tail1234.ts.net")
+    #expect(local.address(reported: nil) == nil)
+    // Nothing the app couldn't open itself (another https port, a LAN or tailnet IP).
+    #expect(served.address(reported: "https://box.tail1234.ts.net:8443")?.absoluteString == "https://box.tail1234.ts.net")
+    #expect(local.address(reported: "http://100.101.102.103:7681") == nil)
+}
 
 #if canImport(FoundationNetworking)
 import FoundationNetworking
