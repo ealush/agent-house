@@ -142,7 +142,7 @@ struct NewSessionIntent: AppIntent {
 
     @MainActor func perform() async throws -> some IntentResult {
         guard let scene = await IntentHost.scene() else { return .result() }
-        scene.sheet = .newSession(SceneModel.NewSessionContext(prompt: prompt?.trimmingCharacters(in: .whitespacesAndNewlines)))
+        scene.beginNewSession(SceneModel.NewSessionContext(prompt: prompt?.trimmingCharacters(in: .whitespacesAndNewlines)))
         return .result()
     }
 }

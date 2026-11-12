@@ -251,7 +251,7 @@ struct DetailView: View {
     /// What fills the detail: the panes, one session, or a page.
     private var kind: Int {
         if scene.workspace.layout != nil { return 0 }
-        if case .session = scene.route { return 1 }
+        if case .session(let key) = scene.route { return key == SceneModel.newSessionKey ? 3 : 1 }
         return 2
     }
 
@@ -259,6 +259,9 @@ struct DetailView: View {
         ZStack {
             if scene.workspace.layout != nil {
                 WorkspaceView(scene: scene).transition(.opacity)
+            } else if case .session(let key) = scene.route, key == SceneModel.newSessionKey {
+                // New session, where the session it starts will be.
+                NewSessionPane(scene: scene).id(scene.newSessionCount).modifier(AhPanel()).transition(.opacity)
             } else if case .session(let key) = scene.route, let session = scene.session(key) {
                 SingleSessionView(scene: scene, session: session).transition(.opacity)
             } else {

@@ -380,7 +380,7 @@ private struct GroupHeader: View {
             // Tap: a new session here. Hold: move the block (a sidebar header takes no
             // context menu of its own).
             Menu {
-                Button("New Session Here", systemImage: "plus") { scene.sheet = .newSession(newHere) }
+                Button("New Session Here", systemImage: "plus") { scene.beginNewSession(newHere) }
                 Divider()
                 Button("Move Up", systemImage: "arrow.up") { withAnimation(.snappy) { scene.moveGroup(section.id, by: -1) } }.disabled(first)
                 Button("Move Down", systemImage: "arrow.down") { withAnimation(.snappy) { scene.moveGroup(section.id, by: 1) } }.disabled(last)
@@ -391,7 +391,7 @@ private struct GroupHeader: View {
                     .frame(width: 44, height: 32)
                     .contentShape(Rectangle())
             } primaryAction: {
-                scene.sheet = .newSession(newHere)
+                scene.beginNewSession(newHere)
             }
             .menuStyle(.button)
             .buttonStyle(.borderless)

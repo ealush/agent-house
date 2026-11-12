@@ -32,6 +32,9 @@ final class Outbox {
         var confirmedAt: Double?
         /// The uploads it waits on before it goes (see `uploads`); none once they're up.
         var waitingOn: [Int] = []
+        /// Held by the host (its queue item's id) only until a just-started agent is up: it's
+        /// sent as far as you're concerned, and goes in on its own.
+        var heldAs: String?
     }
 
     private(set) var items: [Item] = []
@@ -97,10 +100,11 @@ final class Outbox {
         return each.reduce(0, +) / Double(each.count)
     }
 
-    func update(_ id: Int, state: Item.State, confirmedAt: Double?) {
+    func update(_ id: Int, state: Item.State, confirmedAt: Double?, heldAs: String? = nil) {
         guard let i = items.firstIndex(where: { $0.id == id }) else { return }
         items[i].state = state
         items[i].confirmedAt = confirmedAt
+        items[i].heldAs = heldAs
     }
 
     func remove(_ ids: [Int]) {
@@ -232,7 +236,14 @@ final class QueueModel {
     private let outbox: Outbox
     let uid: String
     let key: String
-    private(set) var items: [QueueItem] = []
+    /// The queue as the host lists it.
+    private(set) var listed: [QueueItem] = []
+    /// The queue as shown: less a message waiting only for a just-started agent to be up,
+    /// which shows as your message in the conversation (it goes in on its own).
+    var items: [QueueItem] {
+        let held = Set(outbox.items(for: key).compactMap(\.heldAs))
+        return held.isEmpty ? listed : listed.filter { !held.contains($0.id) }
+    }
     /// Being sent now (a steer can take seconds): a second press goes to the next row.
     private(set) var sending: Set<String> = []
     var isDragging = false
@@ -257,7 +268,7 @@ final class QueueModel {
         let started = Date().timeIntervalSince1970
         do {
             let list = try await api.queue(uid)
-            if !isDragging { items = list }
+            if !isDragging { listed = list }
             outbox.retireQueued(key: key, fetchStarted: started)
             error = nil
         } catch {
@@ -265,9 +276,11 @@ final class QueueModel {
         }
     }
 
-    /// Keep polling while the session reports a queue, ours is landing, or rows show.
+    /// Keep polling while the session reports a queue, ours is landing, or the host lists rows
+    /// (shown or not: a row held for a starting agent, hidden, was left listed after it went in,
+    /// and came back as stale once its message was in the conversation).
     func watch(queued: Int) {
-        let active = queued > 0 || outbox.items(for: key).contains { $0.state == .queued } || !items.isEmpty
+        let active = queued > 0 || outbox.items(for: key).contains { $0.state == .queued } || !listed.isEmpty
         if !active {
             poll?.cancel()
             poll = nil
@@ -325,10 +338,12 @@ final class QueueModel {
 
     /// Shown at once, then the server's order.
     func move(_ id: String, to: Int) async {
-        guard let from = items.firstIndex(where: { $0.id == id }), from != to, items.indices.contains(to) else { return }
-        let item = items.remove(at: from)
-        items.insert(item, at: to)
-        await act("reorder the queue") { items = try await api.moveQueued(uid, item: id, to: to) }
+        let shown = items
+        guard let at = shown.firstIndex(where: { $0.id == id }), at != to, shown.indices.contains(to),
+              let from = listed.firstIndex(where: { $0.id == id }), let onto = listed.firstIndex(where: { $0.id == shown[to].id }) else { return }
+        let item = listed.remove(at: from)
+        listed.insert(item, at: onto)
+        await act("reorder the queue") { listed = try await api.moveQueued(uid, item: id, to: to) }
     }
 
     /// Edit: take it out of the queue; its text goes back into the composer.
@@ -549,7 +564,10 @@ final class ComposerModel {
                     }
                     return
                 }
-                self?.outbox.update(id, state: result.outcome == .queued ? .queued : .sent, confirmedAt: Date().timeIntervalSince1970)
+                // Held only for a just-started agent: sent, as your message in the conversation,
+                // not a row in the queue (it goes in as soon as the agent is up).
+                let held = result.outcome == .queued && result.starting == true
+                self?.outbox.update(id, state: result.outcome == .queued && !held ? .queued : .sent, confirmedAt: Date().timeIntervalSince1970, heldAs: held ? result.queueId : nil)
                 self?.events.append(.sent(result))
             } catch {
                 outbox.remove([id])

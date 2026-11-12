@@ -805,7 +805,8 @@ struct SendToSheet: View {
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let hub = scene.hub else { return }
         guard let target, let row = hub.row(target) else {
-            scene.sheet = .newSession(SceneModel.NewSessionContext(cwd: session.row?.dto.projectPath, host: session.row.flatMap { $0.isLocal ? nil : $0.host }, prompt: body))
+            scene.sheet = nil
+            scene.beginNewSession(SceneModel.NewSessionContext(cwd: session.row?.dto.projectPath, host: session.row.flatMap { $0.isLocal ? nil : $0.host }, prompt: body))
             return
         }
         busy = true

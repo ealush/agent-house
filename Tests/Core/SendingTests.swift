@@ -99,3 +99,28 @@ private func until(_ done: () -> Bool) async {
     #expect(composer.takeEvents() == [.failed("Couldn’t send: offline")])
     #expect(outbox.takeReturned("u1") == nil, "taken once")
 }
+
+@MainActor
+@Test func aMessageHeldForAStartingAgentShowsAsSentNotQueued() async throws {
+    // The host holds a new session's first message until the agent is up (`starting`).
+    struct Starting: HTTPTransport {
+        func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+            let ok = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            if request.url!.path.hasSuffix("/send") {
+                return (Data(#"{"outcome":"queued","windowId":"@1","resumed":false,"queued":1,"queueId":"q1","starting":true}"#.utf8), ok)
+            }
+            return (Data(#"{"draft":null}"#.utf8), ok)
+        }
+        func stream(for request: URLRequest) async throws -> (HTTPURLResponse, AsyncThrowingStream<Data, any Error>) { fatalError("not used") }
+        func webSocket(for request: URLRequest) -> any WebSocketConnection { fatalError("not used") }
+    }
+    let api = APIClient(origin: URL(string: "https://desk.example.ts.net")!, transport: Starting(), credentials: AccountCredentials(token: "t", onRejected: {}), device: DeviceDescriptor(name: "iPhone", client: "c"))
+    let outbox = Outbox()
+    let composer = ComposerModel(api: api, outbox: outbox, key: "u1", uid: "u1", isShell: false, draftDebounce: .seconds(3600))
+    composer.text = "Add a health check"
+    #expect(composer.submit(working: false))
+    await composer.settle()
+    let item = try #require(outbox.items.first)
+    #expect(item.state == .sent, "your message in the conversation, not a row in the queue")
+    #expect(item.heldAs == "q1")
+}

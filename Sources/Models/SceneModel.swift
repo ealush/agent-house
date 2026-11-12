@@ -471,6 +471,8 @@ final class SceneModel {
     /// The model for a session shown in this window, created (and connected) on first use.
     func session(_ key: String) -> SessionModel? {
         if let existing = sessions[key] { return existing }
+        // New session's place, before there's a session in it.
+        guard key != Self.newSessionKey else { return nil }
         guard let hub, let account else { return nil }
         let surface = app.services.preferences.surface(origin: account.origin, sessionKey: key) ?? .gui
         let model = SessionModel(key: key, hub: hub, outbox: app.outbox, surface: surface)
@@ -799,7 +801,7 @@ final class SceneModel {
     private func present(_ what: WorkspaceModel.Presentation) {
         switch what {
         case .openTileSwitcher: switcher = SwitcherState(asTile: true)
-        case .newSession: sheet = .newSession(NewSessionContext())
+        case .newSession: beginNewSession(NewSessionContext())
         case .scratchpad: Task { await toggleScratchpad() }
         }
     }
@@ -940,7 +942,7 @@ final class SceneModel {
             app.preferences.focusFollowsPointer.toggle()
             toast(app.preferences.focusFollowsPointer ? "Focus follows the pointer" : "Focus stays until you click")
         case "switcher": switcher = switcher == nil ? SwitcherState() : nil
-        case "new-session": sheet = .newSession(NewSessionContext(cwd: s?.row?.dto.projectPath, host: s?.row.map { $0.isLocal ? nil : $0.host } ?? nil))
+        case "new-session": beginNewSession(NewSessionContext(cwd: s?.row?.dto.projectPath, host: s?.row.map { $0.isLocal ? nil : $0.host } ?? nil))
         case "new-project": sheet = .newSession(NewSessionContext(project: true))
         case "toggle-sidebar": workspace.sidebarVisible.toggle()
         case "cycle-prev": cycle(-1)
@@ -1151,7 +1153,7 @@ final class SceneModel {
     var handoff: Handoff? {
         guard let account, account.status == .signedIn, let hub else { return nil }
         if let key = workspace.focusedKey ?? { if case .session(let k) = route { return k } else { return nil } }() {
-            let title = hub.slot(key).row?.title ?? hub.history.first { $0.id == key }?.dto.title ?? "Session"
+            let title = key == Self.newSessionKey ? "New session" : hub.slot(key).row?.title ?? hub.history.first { $0.id == key }?.dto.title ?? "Session"
             return Handoff(origin: account.origin, route: .session(key), title: title)
         }
         let titles: [String: String] = ["sessions": "Sessions", "history": "History", "search": "Search", "settings": "Settings"]
@@ -1487,6 +1489,51 @@ final class SceneModel {
         if let replacement = await s.apply(plan) {
             let host = SessionKey(s.key)?.host
             open(host.map { "\($0)/\(replacement)" } ?? replacement)
+        }
+    }
+
+    // MARK: New session
+
+    /// The route of a session not started yet: New session, in the place a session has, so
+    /// it becomes the session where it is once the first message starts it.
+    nonisolated static let newSessionKey = "new"
+
+    /// What the new session on screen was opened with (nil: as last time).
+    private(set) var newSession: NewSessionContext?
+    /// Bumped each time one opens, so each starts afresh.
+    private(set) var newSessionCount = 0
+
+    /// New session, in a session's place: what it starts with above the box it's started from.
+    /// The pane chooser's (it fills that pane) and a new project's (which is mostly the folder)
+    /// stay the sheet, as does one asked for with the workspace split.
+    func beginNewSession(_ context: NewSessionContext) {
+        if context.intoPane != nil || context.project || workspace.layout != nil {
+            sheet = .newSession(context)
+            return
+        }
+        newSession = context
+        newSessionCount += 1
+        route = .session(Self.newSessionKey)
+        scheduleSave()
+    }
+
+    /// The new session started as `key`: it's on screen now, where New session was.
+    func newSessionStarted(_ key: String) {
+        newSession = nil
+        open(key)
+    }
+
+    /// Asks the host for a session; its key, or nil having said why not.
+    func create(_ request: NewSessionRequest, host: String? = nil) async -> String? {
+        guard let hub else { return nil }
+        do {
+            let created = try await hub.client(host: host).create(request)
+            hub.refresh(host: host)
+            app.preferences.noteAgent(request.preset)
+            return host.flatMap { $0 == hub.hostname ? nil : $0 }.map { "\($0)/\(created.uid)" } ?? created.uid
+        } catch {
+            toast("Couldn’t start it: \(APIError.wrap(error).message)", error: true)
+            return nil
         }
     }
 

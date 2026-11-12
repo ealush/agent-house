@@ -650,10 +650,25 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
             return
         }
         if case .session(let key) = scene.route {
+            if key == SceneModel.newSessionKey {
+                // New session, pushed as a session is.
+                if let top = nav.topViewController as? NewSessionHostController, top.count == scene.newSessionCount { return }
+                let controller = NewSessionHostController(root: root, count: scene.newSessionCount)
+                if nav.viewControllers.count > 1 {
+                    nav.setViewControllers([nav.viewControllers[0], controller], animated: true)
+                } else {
+                    nav.pushViewController(controller, animated: true)
+                }
+                return
+            }
             if let top = nav.topViewController as? SessionHostController, top.key == key { return }
             guard let session = scene.session(key) else { return }
             let controller = SessionHostController(key: key, root: root, session: session)
-            if nav.viewControllers.count > 1 {
+            if nav.topViewController is NewSessionHostController {
+                // The new session started: it takes New session's place, where it is, with
+                // no push (the first message is already there as the conversation's).
+                nav.setViewControllers([nav.viewControllers[0], controller], animated: false)
+            } else if nav.viewControllers.count > 1 {
                 nav.setViewControllers([nav.viewControllers[0], controller], animated: true)
             } else {
                 nav.pushViewController(controller, animated: true)

@@ -90,6 +90,14 @@ struct DevicePreferences: Codable, Equatable, Sendable {
     var recentPalette: [String] = []
     /// New session's last choices for each agent, by preset id.
     var launchMemory: [String: LaunchMemory] = [:]
+    /// Where the last new session started (its host, nil for the hub, and folder): the next
+    /// one starts there too.
+    var lastPlace: Place?
+
+    struct Place: Codable, Equatable, Sendable {
+        var host: String?
+        var cwd: String
+    }
     /// The sidebar's blocks as dragged on this device (`../ah/web/groupOrder.ts`); empty
     /// until a block is moved. Session order lives on the host.
     var groupOrder = GroupOrder()
@@ -121,7 +129,7 @@ struct DevicePreferences: Codable, Equatable, Sendable {
 
     init() {}
 
-    private enum CodingKeys: String, CodingKey { case appearance, deviceName, stepsHidden, keyBar, terminalFontSize, inboxGrouping, notifications, recentAgents, focusFollowsPointer, recentPalette, launchMemory, groupOrder }
+    private enum CodingKeys: String, CodingKey { case appearance, deviceName, stepsHidden, keyBar, terminalFontSize, inboxGrouping, notifications, recentAgents, focusFollowsPointer, recentPalette, launchMemory, lastPlace, groupOrder }
 
     private enum LegacyKeys: String, CodingKey { case keyBarVisible }
 
@@ -141,6 +149,7 @@ struct DevicePreferences: Codable, Equatable, Sendable {
         focusFollowsPointer = (try? c.decode(Bool.self, forKey: .focusFollowsPointer)) ?? true
         recentPalette = (try? c.decode([String].self, forKey: .recentPalette)) ?? []
         launchMemory = (try? c.decode([String: LaunchMemory].self, forKey: .launchMemory)) ?? [:]
+        lastPlace = try? c.decodeIfPresent(Place.self, forKey: .lastPlace)
         groupOrder = (try? c.decode(GroupOrder.self, forKey: .groupOrder)) ?? GroupOrder()
     }
 
