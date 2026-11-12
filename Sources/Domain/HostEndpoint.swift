@@ -50,6 +50,14 @@ struct HostEndpoint: Hashable, Codable, Sendable {
 
     var isLoopback: Bool { url.scheme == "http" }
 
+    /// The address another device opens this host at (Settings → Security → Add another device):
+    /// the one the host `reported` Tailscale Serve publishes it at, else the one this app reaches
+    /// it by. Never loopback, which works only on the machine itself.
+    func address(reported: String?) -> URL? {
+        if let reported, let served = try? HostEndpoint(reported) { return served.url }
+        return isLoopback ? nil : url
+    }
+
     /// The machine's name as the address shows it ("box" for box.tail1234.ts.net).
     var shortName: String {
         let host = url.host ?? url.absoluteString
