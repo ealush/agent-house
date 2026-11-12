@@ -475,6 +475,7 @@ private struct ScreenChoicesView: View {
     let keys: AskKeyInput
     let leave: () -> Void
     @Environment(\.theme) private var theme
+    @ScaledMetric(relativeTo: .caption) private var keycap: CGFloat = 22
     @State private var cursor = RowCursor()
 
     var body: some View {
@@ -486,8 +487,9 @@ private struct ScreenChoicesView: View {
                     HStack(spacing: 10) {
                         Text(option.key.hasPrefix("nav:") ? "\(index + 1)" : option.key.uppercased())
                             .font(.ahMono(.caption).weight(.bold))
-                            .frame(width: 22, height: 22)
-                            .background(theme.surface, in: RoundedRectangle(cornerRadius: 6))
+                            // Square at any text size: a fixed 22 points cut the digit at the largest.
+                            .frame(minWidth: keycap, minHeight: keycap)
+                            .background(theme.surface, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                         // Every choice reads in full, even with the keyboard up: the transcript gives way.
                         Text(AskParts.choiceLabel(option.label)).foregroundStyle(theme.text).multilineTextAlignment(.leading)
                             .fixedSize(horizontal: false, vertical: true)

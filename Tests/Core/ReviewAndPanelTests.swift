@@ -42,6 +42,11 @@ private func stack(_ layers: [Layer]) -> ReviewStack {
     #expect(changed.missing.first == "A re-review of what changed")
     #expect(LayerConfidence(layer: layer(1)).readyToMerge)
     #expect(!LayerConfidence(layer: layer(1, blocking: 2, open: 3)).readyToMerge)
+    // Reviewed and clear, but a layer under it merges first: the host would refuse it.
+    let gates = [MergeGate(key: "reviewed", ok: true, label: "Reviewed revision is current", detail: nil), MergeGate(key: "order", ok: false, label: "Next in merge order", detail: "#1 merges first")]
+    let later = LayerConfidence(layer: layer(2, gates: gates))
+    #expect(!later.readyToMerge && later.blockers.isEmpty)
+    #expect(later.missing == ["#1 merges first"])
 }
 
 @Test func aStackMergeStopsAtTheFirstLayerYouHaventReviewed() {

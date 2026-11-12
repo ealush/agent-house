@@ -1490,22 +1490,29 @@ final class SceneModel {
     func start(_ request: NewSessionRequest, host: String? = nil, prompt: String? = nil, intoPane: LayoutNode.Path? = nil) async -> String? {
         guard let hub else { return nil }
         let api = hub.client(host: host)
+        let created: CreatedWindow
         do {
-            let created = try await api.create(request)
-            let key = host.flatMap { $0 == hub.hostname ? nil : $0 }.map { "\($0)/\(created.uid)" } ?? created.uid
-            hub.refresh(host: host)
-            if let prompt, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                let result = try await api.send(created.uid, text: prompt)
-                toast(result.outcome == .queued ? "Your prompt goes in once it’s ready" : "Sent your prompt")
-            }
-            app.preferences.noteAgent(request.preset)
-            if let intoPane { workspace.fill(intoPane, with: key) } else { open(key) }
-            scheduleSave()
-            return key
+            created = try await api.create(request)
         } catch {
             toast("Couldn’t start it: \(APIError.wrap(error).message)", error: true)
             return nil
         }
+        let key = host.flatMap { $0 == hub.hostname ? nil : $0 }.map { "\($0)/\(created.uid)" } ?? created.uid
+        hub.refresh(host: host)
+        // Started either way: a prompt that didn't go says so, and the session still opens.
+        // Reported as not started, the sheet stayed and a second Start made a second session.
+        if let prompt, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            do {
+                let result = try await api.send(created.uid, text: prompt)
+                toast(result.outcome == .queued ? "Your prompt goes in once it’s ready" : "Sent your prompt")
+            } catch {
+                toast("Started, but your prompt didn’t go: \(APIError.wrap(error).message)", error: true)
+            }
+        }
+        app.preferences.noteAgent(request.preset)
+        if let intoPane { workspace.fill(intoPane, with: key) } else { open(key) }
+        scheduleSave()
+        return key
     }
 
     /// A new shell in an empty pane (the chooser's New Shell): in the project, tmux session and
@@ -1524,10 +1531,14 @@ final class SceneModel {
             if workspace.layout != nil, let path = workspace.layout?.leaves().first(where: { $0.sessionKey == key })?.path {
                 workspace.focus(path)
                 workspace.closePane()
-            } else {
+            } else if route == .session(key) {
+                // Only the session on screen closes: one ended from the sidebar left you where you were.
                 closeSession()
             }
             toast("Terminated “\(s.title)”. It stays in History.")
+        } else if let failure = s.notices.last, failure.tone == .error {
+            // Said here: its notice was the session's, and a row's session isn't on screen.
+            toast(failure.text, error: true)
         }
         pruneSessions()
         scheduleSave()

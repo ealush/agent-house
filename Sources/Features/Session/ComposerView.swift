@@ -830,7 +830,9 @@ private struct SuggestionList: View {
                                     .font(.ah(.footnote))
                                     .foregroundStyle(i == index ? theme.accent : theme.faint)
                                     .frame(width: 18)
-                                Text(item.label).font(.ahMono(.callout)).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
+                                // The name gives way last: the description shortens first (a long
+                                // path still shortens in its middle).
+                                Text(item.label).font(.ahMono(.callout)).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle).layoutPriority(1)
                                 if let detail = item.detail {
                                     Text(detail).font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(1)
                                 }

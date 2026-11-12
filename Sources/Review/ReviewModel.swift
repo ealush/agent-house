@@ -23,6 +23,8 @@ struct LayerConfidence: Equatable, Sendable {
     let followups: Int
     /// The server's gates that still say no (bar merge order, which merging handles).
     let blockers: [MergeGate]
+    /// Merge order, when this layer isn't next: a layer under it merges first.
+    let order: MergeGate?
     /// A model re-review's verdict on requested fixes, when one ran.
     let verdict: Verdict?
     let agentWorking: Bool
@@ -43,6 +45,7 @@ struct LayerConfidence: Equatable, Sendable {
         blockingFindings = layer.blocking
         followups = layer.followups
         blockers = layer.gates.filter { !$0.ok && $0.key != "order" }
+        order = layer.gates.first { !$0.ok && $0.key == "order" }
         verdict = layer.current?.verdict
         agentWorking = layer.status == .fixing
     }
@@ -76,11 +79,15 @@ struct LayerConfidence: Equatable, Sendable {
         for gate in blockers where !["reviewed", "findings", "checks"].contains(gate.key) {
             out.append(gate.detail ?? gate.label)
         }
+        // Last: the one thing that's another layer's to do, not this one's.
+        if let order { out.append(order.detail ?? order.label) }
         return out
     }
 
     /// Reviewed at this head, nothing blocking, checks not failing or running.
-    var readyToMerge: Bool { (review == .current || review == .rebasedSamePatch) && blockers.isEmpty }
+    /// Ready to merge now: reviewed, nothing holding it, and next in merge order (the host
+    /// refuses a merge out of order, so offering one only led to its refusal).
+    var readyToMerge: Bool { (review == .current || review == .rebasedSamePatch) && blockers.isEmpty && order == nil }
 }
 
 /// What merging the stack bottom-up would do (`../ah/web/review/stackMerge.ts`), worked out
@@ -211,6 +218,8 @@ final class ReviewModel {
         }
     }
 
+    func clearError() { error = nil }
+
     func loadList() async {
         await load("stacks") {
             async let s = review.stacks()
@@ -221,6 +230,7 @@ final class ReviewModel {
     }
 
     func open(_ route: ReviewRoute, selecting: Bool = true) async {
+        removed = false
         guard let id = route.stack else {
             stack = nil
             await loadList()
@@ -318,7 +328,8 @@ final class ReviewModel {
             let t = try await review.thread(id)
             thread = t.messages
             threadSubscription = t.subscriptionId
-            findings = t.findings.isEmpty ? findings : t.findings
+            // Not the layer's findings: the thread's are only those the reviewer proposed in it
+            // (yours and GitHub's were hidden until the next refresh). `findings` has them all.
         }
     }
 
@@ -342,9 +353,12 @@ final class ReviewModel {
         if !attachments.contains(where: { $0.key == context.key }) { attachments.append(context) }
     }
 
-    func ask(_ text: String, wholeStack: Bool = false) async {
-        guard let id = stack?.id, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+    /// False when it didn't go (the field gives the question back).
+    @discardableResult
+    func ask(_ text: String, wholeStack: Bool = false) async -> Bool {
+        guard let id = stack?.id, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         let context = attachments
+        var asked = false
         await load("ask") {
             let reply = try await review.ask(id, pr: wholeStack ? nil : selectedPR, text: text, subscriptionId: threadSubscription, context: context)
             thread.append(reply.asked)
@@ -352,7 +366,9 @@ final class ReviewModel {
             followups = reply.followups
             if !reply.findings.isEmpty { findings = try await review.findings(id) }
             attachments = []
+            asked = true
         }
+        return asked
     }
 
     func pickSubscription(_ id: String) async {
@@ -393,7 +409,8 @@ final class ReviewModel {
         guard let id = stack?.id else { return }
         await load("resolve") {
             _ = try await review.resolveThread(id, finding: finding.id, body: reply)
-            findings = try await review.findings(id)
+            // The stack too: a layer's counts, gates and status are worked out from its findings.
+            try await reload(id)
         }
     }
 
@@ -402,7 +419,7 @@ final class ReviewModel {
         var added = 0
         await load("threads") {
             added = try await review.importThreads(id, pr: pr).added
-            findings = try await review.findings(id)
+            try await reload(id)
         }
         return added
     }
@@ -483,6 +500,8 @@ final class ReviewModel {
         briefingBlocked = nil
         await load("summary") {
             let start = try await review.summarize(id, pr: pr, force: force)
+            // Moved to another layer (or stack) meanwhile: this answer is the old one's.
+            guard stack?.id == id, selectedPR == pr else { return }
             if start.started {
                 watchBriefing(id: id, pr: pr)
             } else {
@@ -501,8 +520,11 @@ final class ReviewModel {
                 let busy = try? await self.review.busy(id, pr: pr)
                 if busy?.summarizing == true { continue }
                 if let fresh = try? await self.review.stack(id), self.stack?.id == id { self.stack = fresh }
+                guard !Task.isCancelled else { return }
+                // Still the watch under way (selecting another layer cancels it), so its
+                // spinner is this one's to stop, whichever layer is showing.
+                self.summarizing = false
                 if self.selectedPR == pr {
-                    self.summarizing = false
                     if (self.layer?.current?.summary ?? "").isEmpty, busy != nil {
                         self.briefingBlocked = "The model didn’t write a briefing this time. Try again, or pick another model in Settings."
                     }
@@ -611,8 +633,9 @@ final class ReviewModel {
         guard let id = stack?.id else { return }
         await load("layers") {
             stack = try await review.removeLayer(id, pr: pr)
-            if selectedPR == pr { selectedPR = stack?.next ?? stack?.layers.first?.pr }
         }
+        // Through select, so the removed layer's diff and briefing go with it.
+        if selectedPR == pr, let next = stack?.next ?? stack?.layers.first?.pr { await select(next) }
     }
 
     /// Sessions that could own fixes, the one that made the stack first.
@@ -643,6 +666,11 @@ final class ReviewModel {
         await load("remove") {
             try await review.remove(id)
             stack = nil
+            removed = true
         }
+        await loadList()
     }
+
+    /// The open stack was just deleted (its page goes back to the list).
+    private(set) var removed = false
 }

@@ -357,10 +357,15 @@ struct StackCockpitView: View {
                 }
             } else if let error = model.error {
                 Banner(text: error, tone: .error).padding()
+            } else if model.removed {
+                EmptyState(symbol: "trash", title: "Review deleted", message: "It’s gone from the list too.")
             } else {
                 ProgressView()
             }
         }
+        // Deleted from its Manage sheet: back to the list, not a page spinning for a stack
+        // that isn't there.
+        .onChange(of: model.removed) { _, gone in if gone { scene.reviewPath = [] } }
         // On a phone the page opens on the stack's card, its title in full: the bar names
         // the place (a truncated second copy of the title read as a mistake).
         .navigationTitle(scene.narrow ? "Stack" : (model.stack?.title ?? "Stack"))
@@ -679,7 +684,19 @@ struct LayerView: View {
                 // Another layer opens at its top, not wherever the last one was read to.
                 .id(layer.pr)
                 .transition(.opacity)
-                .safeAreaBar(edge: .bottom, spacing: 0) { bar(layer, confidence, proxy) }
+                .safeAreaBar(edge: .bottom, spacing: 0) {
+                    VStack(spacing: 8) {
+                        // What an action here couldn't do (approve, ask, dispatch, merge): it
+                        // was only shown with no stack loaded, so a failure here said nothing.
+                        if let error = model.error {
+                            Banner(text: error, tone: .error, action: ("Dismiss", { model.clearError() }))
+                                .padding(.horizontal)
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                        }
+                        bar(layer, confidence, proxy)
+                    }
+                    .animation(.snappy, value: model.error)
+                }
                 // Asking keeps the exchange in sight: the field while the reviewer reads, then
                 // its answer above the field when it lands.
                 .onChange(of: model.thread.count) { old, new in
@@ -1428,7 +1445,8 @@ private struct ReviewerQuestionField: View {
             Button {
                 let text = question
                 question = ""
-                Task { await model.ask(text) }
+                // Not lost when it doesn't go: back in the field (unless a new one's begun).
+                Task { if !(await model.ask(text)), question.isEmpty { question = text } }
             } label: {
                 Image(systemName: "arrow.up")
                     .font(.system(size: 15, weight: .bold))
@@ -1562,6 +1580,9 @@ private struct FindingRow: View {
     /// Scrolls the page to the finding's line, when the diff shown has it.
     var show: (() -> Void)? = nil
     @Environment(\.theme) private var theme
+    /// Waiving a blocking finding: the host wants a reason, and refused it without one.
+    @State private var waiving = false
+    @State private var reason = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -1608,6 +1629,17 @@ private struct FindingRow: View {
         .contextMenu { actions }
         .padding(10)
         .background(theme.raised.opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .alert("Why Won’t It Be Fixed?", isPresented: $waiving) {
+            TextField("Reason", text: $reason)
+            Button("Won’t Fix") {
+                let note = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+                Task { await model.setFinding(finding, state: .wontfix, note: .some(note)) }
+            }
+            .disabled(reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("A blocking finding is waived with a reason, kept with it.")
+        }
     }
 
     /// What a long press offers, behind a visible ⋯ as well: no one finds a long press.
@@ -1627,7 +1659,14 @@ private struct FindingRow: View {
         if let url = finding.ghUrl.flatMap(URL.init(string:)) { Link(destination: url) { Label("Open on GitHub", systemImage: "arrow.up.right.square") } }
         Menu("Severity") { ForEach(Finding.Severity.allCases, id: \.self) { s in Button(s.label) { Task { await model.setFinding(finding, severity: s) } } } }
         Button("Mark Addressed", systemImage: "checkmark.circle") { Task { await model.setFinding(finding, state: .addressed) } }
-        Button("Won’t Fix", systemImage: "xmark.circle") { Task { await model.setFinding(finding, state: .wontfix) } }
+        Button(finding.severity == .blocking ? "Won’t Fix…" : "Won’t Fix", systemImage: "xmark.circle") {
+            if finding.severity == .blocking {
+                reason = ""
+                waiving = true
+            } else {
+                Task { await model.setFinding(finding, state: .wontfix) }
+            }
+        }
         Button("Dismiss", systemImage: "trash", role: .destructive) { Task { await model.setFinding(finding, state: .dismissed) } }
     }
 }
