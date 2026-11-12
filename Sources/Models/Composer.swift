@@ -545,8 +545,34 @@ final class ComposerModel {
         }
         nextAttachment += 1
         let id = nextAttachment
-        let thumbnail: Data? = if let thumbnail { await Self.tile(thumbnail) } else { nil }
-        attachments.append(Attachment(id: id, name: name, image: image, path: nil, thumbnail: thumbnail))
+        // The tile shows (and holds Send) at once; its picture follows.
+        attachments.append(Attachment(id: id, name: name, image: image, path: nil))
+        await upload(id, name: name, data: data, thumbnail: thumbnail)
+    }
+
+    /// A photo still coming from the library (from iCloud, that takes a while): its tile shows
+    /// at once, so Send waits for it, rather than the message going without it and the photo
+    /// turning up after in an empty box.
+    func attach(name: String, image: Bool, load: @escaping @Sendable () async throws -> Data) async {
+        guard !isShell else {
+            if let data = try? await load() { await attach(name: name, data: data, image: image) }
+            return
+        }
+        nextAttachment += 1
+        let id = nextAttachment
+        attachments.append(Attachment(id: id, name: name, image: image, path: nil))
+        do {
+            let data = try await load()
+            await upload(id, name: name, data: data, thumbnail: image ? data : nil)
+        } catch {
+            attachments.removeAll { $0.id == id }
+            events.append(.failed("Couldn’t attach \(name): \(APIError.wrap(error).message)"))
+        }
+    }
+
+    private func upload(_ id: Int, name: String, data: Data, thumbnail: Data?) async {
+        guard attachments.contains(where: { $0.id == id }) else { return }
+        if let thumbnail { setThumbnail(await Self.tile(thumbnail), id) }
         do {
             let path = try await api.upload(name: name, data: data)
             if let i = attachments.firstIndex(where: { $0.id == id }) { attachments[i].path = path }

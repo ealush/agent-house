@@ -88,11 +88,12 @@ struct ComposerView: View {
                     }
                     continue
                 }
+                // Named for what it is (a HEIC stays a HEIC), so the agent reads it right.
+                let ext = item.supportedContentTypes.first?.preferredFilenameExtension ?? "jpg"
                 Task {
-                    if let data = try? await item.loadTransferable(type: Data.self) {
-                        // Named for what it is (a HEIC stays a HEIC), so the agent reads it right.
-                        let ext = item.supportedContentTypes.first?.preferredFilenameExtension ?? "jpg"
-                        await composer.attach(name: "photo.\(ext)", data: data, image: true, thumbnail: data)
+                    await composer.attach(name: "photo.\(ext)", image: true) {
+                        guard let data = try await item.loadTransferable(type: Data.self) else { throw CocoaError(.fileNoSuchFile) }
+                        return data
                     }
                 }
             }
