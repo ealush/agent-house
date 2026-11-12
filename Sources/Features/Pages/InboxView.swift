@@ -366,8 +366,9 @@ struct SessionRowView: View {
     }
 }
 
-/// A block's header in the sidebar: its project (or host), a button to start a session
-/// there, and a menu to move the block. Dragging a header onto another moves it there.
+/// A block's header in the sidebar: its project (or host), which folds the block when
+/// tapped, a button to start a session there, and a menu to move the block. Dragging a
+/// header onto another moves it there.
 private struct GroupHeader: View {
     let scene: SceneModel
     let hub: HubStore
@@ -375,7 +376,11 @@ private struct GroupHeader: View {
     let first: Bool
     let last: Bool
     @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var targeted = false
+
+    private var collapsed: Bool { scene.isGroupCollapsed(section.id) }
+    private var waiting: Int { section.rows.filter { $0.dto.status == .waiting }.count }
 
     private var newHere: SceneModel.NewSessionContext {
         if hub.multiHost {
@@ -387,12 +392,37 @@ private struct GroupHeader: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            // ah's SectionHeader overline: the project in small tracked capitals.
-            Text(section.id.uppercased())
-                .font(.ah(.caption).weight(.semibold))
-                .tracking(1)
-                .foregroundStyle(theme.muted)
-                .lineLimit(1)
+            // The name folds the block, as Finder's sidebar groups fold on theirs: a chevron
+            // turns down when open, along when closed, and a closed block says how many it holds.
+            Button {
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { scene.toggleGroup(section.id) }
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "chevron.down")
+                        .font(.ah(.caption2).weight(.bold))
+                        .foregroundStyle(theme.faint)
+                        .rotationEffect(.degrees(collapsed ? -90 : 0))
+                    // ah's SectionHeader overline: the project in small tracked capitals.
+                    Text(section.id.uppercased())
+                        .font(.ah(.caption).weight(.semibold))
+                        .tracking(1)
+                        .foregroundStyle(theme.muted)
+                        .lineLimit(1)
+                    if collapsed {
+                        Text("\(section.rows.count)")
+                            .font(.ah(.caption2).weight(.semibold))
+                            .foregroundStyle(waiting > 0 ? theme.accent : theme.faint)
+                            .monospacedDigit()
+                    }
+                }
+                .frame(minHeight: 32)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(section.id)
+            .accessibilityValue(collapsed ? "Collapsed, \(section.rows.count) sessions\(waiting > 0 ? ", \(waiting) need you" : "")" : "Expanded")
+            .accessibilityHint(collapsed ? "Shows its sessions" : "Hides its sessions")
+            .accessibilityIdentifier("group:\(section.id)")
             Spacer(minLength: 4)
             // Tap: a new session here. Hold: move the block (a sidebar header takes no
             // context menu of its own).
@@ -489,15 +519,18 @@ struct SessionListView: View {
             }
             ForEach(sections) { section in
                 Section {
-                    ForEach(section.rows) { row in
-                        SessionRowView(row: row, multiHost: false, dense: !scene.narrow, selectable: !scene.narrow) { scene.open(row.key) }
-                            .tag(row.key)
-                            .draggable(SessionDrag(key: row.key))
-                            .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
-                            .sessionSwipes(row: row, scene: scene, hub: hub)
-                            .ahRow(!showsPages)
+                    // A folded block keeps its header alone, so the blocks below it come up.
+                    if !scene.isGroupCollapsed(section.id) {
+                        ForEach(section.rows) { row in
+                            SessionRowView(row: row, multiHost: false, dense: !scene.narrow, selectable: !scene.narrow) { scene.open(row.key) }
+                                .tag(row.key)
+                                .draggable(SessionDrag(key: row.key))
+                                .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
+                                .sessionSwipes(row: row, scene: scene, hub: hub)
+                                .ahRow(!showsPages)
+                        }
+                        .onMove { from, to in move(section: section, from: from, to: to) }
                     }
-                    .onMove { from, to in move(section: section, from: from, to: to) }
                 } header: {
                     GroupHeader(scene: scene, hub: hub, section: section, first: section.id == sections.first?.id, last: section.id == sections.last?.id)
                 }

@@ -583,6 +583,16 @@ final class SceneModel {
         app.preferences.groupOrder = order
     }
 
+    /// A block folded in the sidebar: its header stays, its rows don't.
+    func isGroupCollapsed(_ id: String) -> Bool { app.preferences.collapsedGroups.contains(id) }
+
+    /// Fold or unfold a block (its header tapped): saved on this device.
+    func toggleGroup(_ id: String) {
+        var folded = app.preferences.collapsedGroups
+        if let at = folded.firstIndex(of: id) { folded.remove(at: at) } else { folded.append(id) }
+        app.preferences.collapsedGroups = folded
+    }
+
     func moveGroup(_ id: String, by step: Int) {
         let ids = sidebarSections.map(\.id)
         guard let at = ids.firstIndex(of: id) else { return }

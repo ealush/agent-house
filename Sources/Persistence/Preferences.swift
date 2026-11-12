@@ -101,6 +101,9 @@ struct DevicePreferences: Codable, Equatable, Sendable {
     /// The sidebar's blocks as dragged on this device (`../ah/web/groupOrder.ts`); empty
     /// until a block is moved. Session order lives on the host.
     var groupOrder = GroupOrder()
+    /// The sidebar's blocks folded on this device (by project, or host), so the ones below
+    /// come into view; empty until one is folded.
+    var collapsedGroups: [String] = []
 
     struct GroupOrder: Codable, Equatable, Sendable {
         var project: [String] = []
@@ -129,7 +132,7 @@ struct DevicePreferences: Codable, Equatable, Sendable {
 
     init() {}
 
-    private enum CodingKeys: String, CodingKey { case appearance, deviceName, stepsHidden, keyBar, terminalFontSize, inboxGrouping, notifications, recentAgents, focusFollowsPointer, recentPalette, launchMemory, lastPlace, groupOrder }
+    private enum CodingKeys: String, CodingKey { case appearance, deviceName, stepsHidden, keyBar, terminalFontSize, inboxGrouping, notifications, recentAgents, focusFollowsPointer, recentPalette, launchMemory, lastPlace, groupOrder, collapsedGroups }
 
     private enum LegacyKeys: String, CodingKey { case keyBarVisible }
 
@@ -151,6 +154,7 @@ struct DevicePreferences: Codable, Equatable, Sendable {
         launchMemory = (try? c.decode([String: LaunchMemory].self, forKey: .launchMemory)) ?? [:]
         lastPlace = try? c.decodeIfPresent(Place.self, forKey: .lastPlace)
         groupOrder = (try? c.decode(GroupOrder.self, forKey: .groupOrder)) ?? GroupOrder()
+        collapsedGroups = (try? c.decode([String].self, forKey: .collapsedGroups)) ?? []
     }
 
     enum KeyBarMode: String, Codable, Sendable, CaseIterable {

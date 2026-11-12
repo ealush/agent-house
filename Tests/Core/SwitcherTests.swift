@@ -163,6 +163,15 @@ private actor Counter {
     #expect(decoded.groupOrder.project == ["b", "a"])
 }
 
+@Test func foldedSidebarBlocksAreKeptOnTheDevice() throws {
+    let older = try JSONDecoder().decode(DevicePreferences.self, from: Data(#"{"groupOrder":{"project":[],"host":[]}}"#.utf8))
+    #expect(older.collapsedGroups.isEmpty, "rows from before folding open every block")
+    var preferences = DevicePreferences()
+    preferences.collapsedGroups = ["orbit-api", "desk"]
+    let again = try JSONDecoder().decode(DevicePreferences.self, from: JSONEncoder().encode(preferences))
+    #expect(again.collapsedGroups == ["orbit-api", "desk"])
+}
+
 // Siri, Shortcuts and quick actions (`ShortcutCatalog`, `QuickAction`).
 
 private func shortcut(_ uid: String, _ title: String, status: String = "idle", project: String = "orbit-web", activity: Double = 0, host: String = "desk", showHost: Bool = false) throws -> ShortcutSession {
