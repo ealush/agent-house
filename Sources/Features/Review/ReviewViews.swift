@@ -430,7 +430,9 @@ struct StackCockpitView: View {
                 }
             }
             .ahRow(scene.narrow)
-            Section("Layers, bottom to top") {
+            // The lists' overline, as every page's sections have it (the system's grey header
+            // made this one page read as Settings).
+            Section {
                 ForEach(stack.layers) { layer in
                     LayerRow(layer: layer, pushes: scene.narrow)
                         .tag(layer.pr)
@@ -440,9 +442,11 @@ struct StackCockpitView: View {
                             }
                         }
                 }
+            } header: {
+                AhSectionHeader(title: "Layers, bottom to top", count: stack.layers.count)
             }
             .ahRow(scene.narrow)
-            Section(stack.decisions.isEmpty ? "Decisions" : "Pinned decisions") {
+            Section {
                 ForEach(stack.decisions) { decision in
                     Text(decision.text).font(.ah(.callout))
                         // Red by tint, not role: the row stays until the host's stack comes back.
@@ -458,11 +462,15 @@ struct StackCockpitView: View {
                         decision = ""
                         if !text.isEmpty { Task { await model.addDecision(text) } }
                     }
+            } header: {
+                AhSectionHeader(title: stack.decisions.isEmpty ? "Decisions" : "Pinned decisions", count: stack.decisions.isEmpty ? nil : stack.decisions.count)
             }
             .ahRow(scene.narrow)
             if stack.planPath != nil {
-                Section("Plan") {
+                Section {
                     if let plan = model.plan?.text { MarkdownView(plan, compact: true) } else { Button("Show the plan") { Task { await model.loadPlan() } } }
+                } header: {
+                    AhSectionHeader(title: "Plan")
                 }
                 .ahRow(scene.narrow)
             }

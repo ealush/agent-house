@@ -509,6 +509,11 @@ struct KeyBar: View {
     let paste: () -> Void
     @Environment(\.theme) private var theme
 
+    /// The terminal's own ground and ink: the bar is part of it, not a light strip under a
+    /// dark terminal.
+    private var ground: SwiftUI.Color { SwiftUI.Color(uiColor: UIColor(hex: theme.palette.terminal.background)) }
+    private var ink: SwiftUI.Color { SwiftUI.Color(uiColor: UIColor(hex: theme.palette.terminal.foreground)) }
+
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
@@ -521,18 +526,18 @@ struct KeyBar: View {
                         shift = false
                     }
                     .accessibilityLabel(key.name)
-                    .buttonStyle(KeyCapStyle(on: false))
+                    .buttonStyle(KeyCapStyle(on: false, ink: ink))
                 }
-                Toggle("ctrl", isOn: $ctrl).toggleStyle(KeyToggleStyle()).accessibilityLabel("Control for the next key")
-                Toggle("alt", isOn: $alt).toggleStyle(KeyToggleStyle()).accessibilityLabel("Option for the next key")
-                Toggle("shift", isOn: $shift).toggleStyle(KeyToggleStyle()).accessibilityLabel("Shift for the next key")
+                Toggle("ctrl", isOn: $ctrl).toggleStyle(KeyToggleStyle(ink: ink)).accessibilityLabel("Control for the next key")
+                Toggle("alt", isOn: $alt).toggleStyle(KeyToggleStyle(ink: ink)).accessibilityLabel("Option for the next key")
+                Toggle("shift", isOn: $shift).toggleStyle(KeyToggleStyle(ink: ink)).accessibilityLabel("Shift for the next key")
                 Button {
                     paste()
                 } label: {
                     Image(systemName: "doc.on.clipboard")
                 }
                 .accessibilityLabel("Paste")
-                .buttonStyle(KeyCapStyle(on: false))
+                .buttonStyle(KeyCapStyle(on: false, ink: ink))
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
@@ -544,35 +549,37 @@ struct KeyBar: View {
                     Image(systemName: "keyboard.chevron.compact.down")
                 }
                 .accessibilityLabel("Hide keyboard")
-                .buttonStyle(KeyCapStyle(on: false))
+                .buttonStyle(KeyCapStyle(on: false, ink: ink))
                 .padding(.trailing, 10)
                 .padding(.leading, 4)
                 .padding(.vertical, 6)
                 // On the bar's own ground, the keys fading in under it: bare, the keys scrolled
                 // on beside it and a half key showed at the edge.
-                .background(theme.surface)
+                .background(ground)
                 .background(alignment: .leading) {
-                    LinearGradient(colors: [theme.surface.opacity(0), theme.surface], startPoint: .leading, endPoint: .trailing)
+                    LinearGradient(colors: [ground.opacity(0), ground], startPoint: .leading, endPoint: .trailing)
                         .frame(width: 24)
                         .offset(x: -24)
                         .allowsHitTesting(false)
                 }
             }
         }
-        .background(theme.surface)
+        .background(ground)
     }
 }
 
 private struct KeyCapStyle: ButtonStyle {
     let on: Bool
+    /// The terminal's ink: the caps are a tint of it on its ground.
+    let ink: SwiftUI.Color
     @Environment(\.theme) private var theme
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.ahMono(.callout))
             .padding(.horizontal, 12)
             .frame(minWidth: 44, minHeight: 36)
-            .background(on || configuration.isPressed ? theme.accent.opacity(0.3) : theme.raised, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .foregroundStyle(theme.text)
+            .background(on || configuration.isPressed ? theme.accent.opacity(0.35) : ink.opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .foregroundStyle(ink)
             // The cap stays 36 high (the bar's 6-point gutters make it a 48-point strip); the
             // touch takes the gutter too, so a key is a finger's 44.
             .contentShape(Rectangle().inset(by: -4))
@@ -582,7 +589,7 @@ private struct KeyCapStyle: ButtonStyle {
 }
 
 private struct KeyToggleStyle: ToggleStyle {
-    @Environment(\.theme) private var theme
+    let ink: SwiftUI.Color
     func makeBody(configuration: Configuration) -> some View {
         Button {
             configuration.isOn.toggle()
@@ -590,7 +597,7 @@ private struct KeyToggleStyle: ToggleStyle {
         } label: {
             configuration.label
         }
-        .buttonStyle(KeyCapStyle(on: configuration.isOn))
+        .buttonStyle(KeyCapStyle(on: configuration.isOn, ink: ink))
         .accessibilityAddTraits(configuration.isOn ? .isSelected : [])
     }
 }
