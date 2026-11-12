@@ -397,7 +397,7 @@ private struct GroupHeader: View {
             .buttonStyle(.borderless)
             // Secondary, like a section header's own controls; the tint is for New in the bar.
             .tint(.secondary)
-            .accessibilityLabel("New session in \(section.id)")
+            .accessibilityLabel("New Session in \(section.id)")
             .accessibilityHint("Hold for more")
             .padding(.trailing, -16)
         }

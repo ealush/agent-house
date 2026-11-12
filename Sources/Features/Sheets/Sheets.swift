@@ -103,6 +103,12 @@ struct NewSessionSheet: View {
                         let tmux = LaunchState.tmuxChoices(sessions: hub.state(host: next)?.sessions ?? [], defaultSession: hub.state(host: next)?.defaultSession ?? "")
                         tmuxSession = tmux.initial
                         newTmux = tmux.initial == nil ? (hub.state(host: next)?.defaultSession ?? "") : ""
+                        // And its own projects: the last host's chips filled in its paths.
+                        projects = []
+                        Task {
+                            let listed = (try? await hub.client(host: next).projects()) ?? []
+                            if host == next { projects = listed }
+                        }
                     }
                 }
                 Section("Agent") {
@@ -222,7 +228,7 @@ struct NewSessionSheet: View {
                     TextField("Name (optional)", text: $label)
                     Picker("tmux session", selection: $tmuxSession) {
                         ForEach(hub?.state(host: host)?.sessions ?? [], id: \.self) { Text($0).tag(Optional($0)) }
-                        Text("New session…").tag(String?.none)
+                        Text("New…").tag(String?.none)
                     }
                     if tmuxSession == nil {
                         TextField("New tmux session name", text: $newTmux).textInputAutocapitalization(.never).autocorrectionDisabled()

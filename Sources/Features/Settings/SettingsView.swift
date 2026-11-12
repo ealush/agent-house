@@ -822,6 +822,7 @@ private struct AgentsSection: View {
     @State private var name = ""
     @State private var command = ""
     @State private var resume = ""
+    @State private var saving = false
     @Environment(\.theme) private var theme
 
     var body: some View {
@@ -845,11 +846,11 @@ private struct AgentsSection: View {
                         .swipeActions { if agent.custom { Button("Remove") { Task { await model.remove(agent) } }.tint(theme.danger) } }
                     }
                 } header: {
-                    Text("Offered in New session")
+                    Text("Offered in New Session")
                 }
                 Section {
-                    Button(model.checking ? "Checking…" : "Check versions", systemImage: "arrow.clockwise") { Task { await model.check() } }.disabled(model.checking)
-                    Button("Add an agent…", systemImage: "plus") { adding = true }
+                    Button(model.checking ? "Checking…" : "Check Versions", systemImage: "arrow.clockwise") { Task { await model.check() } }.disabled(model.checking)
+                    Button("Add an Agent…", systemImage: "plus") { adding = true }
                 }
                 if !harnesses.suggestions.isEmpty {
                     Section("Found on the host") {
@@ -866,18 +867,28 @@ private struct AgentsSection: View {
         .sheet(isPresented: $adding) {
             NavigationStack {
                 AhForm {
+                    // Said here: the page's banner is behind this sheet.
+                    if let error = model.error { Banner(text: error, tone: .error) }
                     TextField("Name", text: $name)
                     TextField("Command", text: $command).font(.ahMono(.body)).textInputAutocapitalization(.never).autocorrectionDisabled()
                     TextField("Resume command (optional)", text: $resume).font(.ahMono(.body)).textInputAutocapitalization(.never).autocorrectionDisabled()
                 }
-                .navigationTitle("Add an agent")
+                .navigationTitle("Add an Agent")
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { adding = false }.keyboardShortcut(.cancelAction).tint(.primary) }
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("Add") {
-                            Task { await model.add(name: name, command: command, resume: resume.isEmpty ? nil : resume); adding = false }
+                        Button(saving ? "Adding…" : "Add") {
+                            saving = true
+                            Task {
+                                // Closed only once it's added, and emptied for the next one.
+                                if await model.add(name: name, command: command, resume: resume.isEmpty ? nil : resume) {
+                                    adding = false
+                                    name = ""; command = ""; resume = ""
+                                }
+                                saving = false
+                            }
                         }.keyboardShortcut(.return, modifiers: .command)
-                        .disabled(name.isEmpty || command.isEmpty)
+                        .disabled(saving || name.isEmpty || command.isEmpty)
                             .buttonStyle(.glassProminent)
                     }
                 }
