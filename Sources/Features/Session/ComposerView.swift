@@ -892,6 +892,11 @@ struct ComposerTextField: UIViewRepresentable {
         let view = ComposerTextView()
         view.delegate = context.coordinator
         view.coordinator = context.coordinator
+        view.pasteDelegate = context.coordinator
+        // Pictures too, as the menu's Paste takes them: a keyboard's ⌘V can go through the
+        // text system's paste, which drops whatever the box doesn't say it takes, and which
+        // asks `pasteDelegate` what each pasted thing becomes.
+        view.pasteConfiguration = UIPasteConfiguration(acceptableTypeIdentifiers: [UTType.plainText.identifier, UTType.utf8PlainText.identifier, UTType.text.identifier, UTType.url.identifier, UTType.image.identifier])
         view.font = AhType.uiFont(.body)
         view.adjustsFontForContentSizeCategory = true
         view.backgroundColor = .clear
@@ -993,7 +998,7 @@ struct ComposerTextField: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
     @MainActor
-    final class Coordinator: NSObject, UITextViewDelegate {
+    final class Coordinator: NSObject, UITextViewDelegate, UITextPasteDelegate {
         var parent: ComposerTextField
         var handledFocus = 0
         /// The theme the text was last colored for.
@@ -1138,6 +1143,28 @@ struct ComposerTextField: UIViewRepresentable {
             }
         }
 
+        /// A pasted picture with no text beside it (a screenshot, by ⌘V or the menu): attached,
+        /// rather than typed as nothing. Text pastes as text.
+        func textPasteConfigurationSupporting(_ textPasteConfigurationSupporting: any UITextPasteConfigurationSupporting, transform item: any UITextPasteItem) {
+            guard ComposerTextView.isPicture(item.itemProvider) else {
+                item.setDefaultResult()
+                return
+            }
+            pastePictures([item.itemProvider])
+            item.setNoResult()
+        }
+
+        /// Pictures from the pasteboard or a paste, loaded as they come: a screenshot handed
+        /// over from a Mac (Universal Clipboard) arrives a moment later, and a photo may be HEIC.
+        func pastePictures(_ providers: [NSItemProvider]) {
+            for provider in providers {
+                provider.loadObject(ofClass: UIImage.self) { [weak self] object, _ in
+                    guard let image = object as? UIImage else { return }
+                    DispatchQueue.main.async { self?.pasteImages([image]) }
+                }
+            }
+        }
+
         func pasteImages(_ images: [UIImage]) {
             for image in images {
                 guard let data = image.pngData() else { continue }
@@ -1264,17 +1291,33 @@ final class ComposerTextView: UITextView {
         isHardwareReturn = false
     }
 
-    override func paste(_ sender: Any?) {
+    /// A picture with no text beside it: what a screenshot copied on the iPad, or on a Mac
+    /// nearby, is. Told by its types, so any kind of image counts: the pasteboard's own image
+    /// list left some out (a photo's HEIC), and those pasted as nothing.
+    static func isPicture(_ provider: NSItemProvider) -> Bool { isPicture(types: provider.registeredTypeIdentifiers) }
+
+    static func isPicture(types identifiers: [String]) -> Bool {
+        let types = identifiers.compactMap(UTType.init)
+        return types.contains { $0.conforms(to: .image) } && !types.contains { $0.conforms(to: .text) }
+    }
+
+    /// By the pasteboard's types alone: asked whenever a menu is checked, and reading what's
+    /// on the pasteboard would ask the person to allow the paste each time.
+    private static var pastesPicture: Bool {
         let board = UIPasteboard.general
-        if board.hasImages, !board.hasStrings, let images = board.images {
-            coordinator?.pasteImages(images)
+        return board.numberOfItems > 0 && isPicture(types: board.types)
+    }
+
+    override func paste(_ sender: Any?) {
+        if Self.pastesPicture {
+            coordinator?.pastePictures(UIPasteboard.general.itemProviders)
             return
         }
         super.paste(sender)
     }
 
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
-        if action == #selector(paste(_:)) && UIPasteboard.general.hasImages { return true }
+        if action == #selector(paste(_:)) && Self.pastesPicture { return true }
         return super.canPerformAction(action, withSender: sender)
     }
 }
