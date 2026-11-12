@@ -577,6 +577,14 @@ struct NewSessionScreen: View {
                 .font(.ah(.body))
                 .lineLimit(1...8)
                 .focused($focused)
+                // A hardware Return starts the session, as a session's composer sends on it;
+                // Shift- or Option-Return starts a new line. Left to the field, the press went
+                // on to the sidebar's list, which opened its first session instead.
+                .onKeyPress(.return, phases: .down) { press in
+                    guard press.modifiers.isDisjoint(with: [.shift, .option, .command, .control]) else { return .ignored }
+                    if draft.canStart { send() }
+                    return .handled
+                }
                 .textInputAutocapitalization(draft.preset?.isShell == true ? .never : .sentences)
                 .autocorrectionDisabled(draft.preset?.isShell == true)
                 .padding(.leading, 14)
