@@ -140,7 +140,8 @@ struct ComposerView: View {
                 Haptics.tap()
                 // Said and done: the settings fold back out of the way.
                 if trayOpen { withAnimation(ComposerFloat.motion(opening: false, reduceMotion: reduceMotion)) { trayOpen = false } }
-                if result.outcome == .queued && result.starting == true { scene.toast("Your message goes in once the agent is ready") }
+                // Held for a just-started agent: it's your message in the conversation already,
+                // with the box's working light; a toast saying so was one thing too many.
                 if result.resumed { scene.toast("Resumed the session") }
                 session.stateChanged()
             case .failed(let message):

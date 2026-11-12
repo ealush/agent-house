@@ -215,6 +215,11 @@ final class NewSessionDraft {
         scene.app.preferences.lastPlace = DevicePreferences.Place(host: host, cwd: cwd.trimmingCharacters(in: .whitespaces))
         // Once the host lists it: a session screen with no row yet reads as one that ended.
         for _ in 0..<60 where hub?.row(key) == nil { try? await Task.sleep(for: .milliseconds(100)) }
+        // An agent's, once its conversation is being read too: before that its screen is the
+        // terminal, which showed for a moment between this and the conversation.
+        if !preset.isShell, let session = scene.session(key) {
+            for _ in 0..<80 where !session.hasGUI { try? await Task.sleep(for: .milliseconds(100)) }
+        }
         if let message, let session = scene.session(key) {
             // Through the session's own box: your message in its conversation, as any is.
             session.composer.text = message
