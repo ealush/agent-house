@@ -128,16 +128,6 @@ struct SceneRepository: Sendable {
         return data.flatMap { try? JSONDecoder().decode(SceneSnapshot.self, from: $0) }.flatMap { $0.upgraded() }
     }
 
-    /// Scenes UIKit discarded while the app wasn't running leave rows; keep only live ones.
-    func prune(keeping sceneIDs: Set<String>) throws {
-        try database.pool.write { db in
-            let all = try String.fetchAll(db, sql: "SELECT sceneID FROM sceneSnapshot")
-            for id in all where !sceneIDs.contains(id) {
-                try db.execute(sql: "DELETE FROM sceneSnapshot WHERE sceneID = ?", arguments: [id])
-            }
-        }
-    }
-
     private struct VersionOnly: Decodable { let version: Int }
 }
 

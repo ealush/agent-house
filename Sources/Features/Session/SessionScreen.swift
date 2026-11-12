@@ -42,7 +42,9 @@ struct SessionScreen: View {
                 if !inNavigationBar {
                     SessionHeader(session: session, scene: scene, compact: compactHeader, pane: pane, paneFocused: paneFocused)
                 }
-                if let history = session.history, !session.isLive {
+                // Live first: History is read off the whole hub, and asking it of a live session
+                // drew the screen again on every tick of every host.
+                if !session.isLive, let history = session.history {
                     EndedBanner(session: session, scene: scene, item: history)
                 }
                 // The question and the composer float over the transcript, which scrolls on
@@ -270,7 +272,7 @@ private struct SessionHeader: View {
                     .buttonStyle(.borderless)
                     .accessibilityLabel("Show Sidebar")
                 }
-                AgentMark(agent: session.row?.dto.agent ?? (session.isShell ? nil : session.history?.dto.harness), size: 24)
+                AgentMark(agent: session.row.map { $0.dto.agent } ?? (session.isShell ? nil : session.history?.dto.harness), size: 24)
                     .modifier(PaneDragHandle(pane: pane))
                 if session.renaming != nil {
                     TextField("Name", text: Binding(get: { session.renaming ?? "" }, set: { session.renaming = $0 }))

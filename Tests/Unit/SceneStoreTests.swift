@@ -35,8 +35,6 @@ private func temporaryDatabase() throws -> (AppDatabase, URL) {
     #expect(try reopened.load(sceneID: "window-a") == nil)
     #expect(try reopened.load(sceneID: "window-b") == second)
     #expect(try reopened.mostRecent()?.sceneID == "window-b")
-    try reopened.prune(keeping: [])
-    #expect(try reopened.load(sceneID: "window-b") == nil)
 }
 
 @Test func rejectsFutureSnapshotVersionsWithoutErasingThemAndUpgradesV1() throws {
