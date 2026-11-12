@@ -459,6 +459,9 @@ import Testing
     #expect(AskParts.choiceLabel("No, and tell Claude what to do differently (esc)") == "No, and tell Claude what to do differently")
     #expect(AskParts.choiceLabel("Yes, allow all edits (shift+tab)") == "Yes, allow all edits")
     #expect(AskParts.choiceLabel("Yes, and don't ask again for ./keys commands") == "Yes, and don't ask again for ./keys commands")
+    #expect(AskParts.keepingPaths("again for ./keys commands") == "again for ./\u{2060}keys commands")
+    #expect(AskParts.keepingPaths("either / or") == "either / or")
+    #expect(AskParts.keepingPaths("no paths") == "no paths")
     #expect(AskParts.choiceLabel("Use Redis (fast)") == "Use Redis (fast)", "a choice's own words in parentheses stay")
 }
 

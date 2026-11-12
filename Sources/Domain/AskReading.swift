@@ -129,6 +129,21 @@ struct AskParts: Equatable, Sendable {
         return rest.isEmpty ? trimmed : rest
     }
 
+    /// For display: a path in a choice ("./keys", "src/app") stays on one line when the
+    /// choice wraps, instead of breaking after its slash. A word joiner (U+2060) after each
+    /// slash that a word follows; it draws nothing and VoiceOver passes over it.
+    static func keepingPaths(_ text: String) -> String {
+        guard text.contains("/") else { return text }
+        var out = ""
+        var previousSlash = false
+        for character in text {
+            if previousSlash, !character.isWhitespace { out.append("\u{2060}") }
+            out.append(character)
+            previousSlash = character == "/"
+        }
+        return out
+    }
+
     static func isForm(_ ask: AskDTO) -> Bool {
         ask.kind == .choice && (!(ask.questions ?? []).isEmpty || ask.dialog != nil) && (reviewed(ask.text).isEmpty || (ask.options ?? []).isEmpty)
     }
