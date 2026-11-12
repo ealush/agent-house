@@ -15,6 +15,9 @@ struct FeedState: Equatable, Sendable {
     var hasOlder = false
     /// Bumped when the projection is rebuilt (new transcript, truncated file).
     var epoch = 0
+    /// Counts every snapshot, a reconnect's too: the transcript in view was replaced, and
+    /// where the view sits is to be settled again.
+    var snapshots = 0
 
     static let initial = FeedState()
 }
@@ -38,6 +41,7 @@ enum FeedReducer {
             s.entries = merge([], entries)
             s.results = withResults([:], entries)
             s.hasOlder = hasOlder
+            s.snapshots += 1
             // A reconnect re-sends the same transcript from the top: not a rebuild.
             if reason != .initial { s.epoch += 1 }
         case .message(.append(let entries, _)):

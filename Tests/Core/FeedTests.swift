@@ -39,6 +39,11 @@ private let result = ToolResult(callId: "c1", text: "ok", isError: false, data: 
     #expect(cached.status == .connecting, "a cache is not live data")
     let live = FeedReducer.reduce(cached, .message(.snapshot(reason: .initial, harness: "codex", entries: [entry(9, .user, [.text("live")])], floor: 0, head: 9, hasOlder: false)))
     #expect(FeedReducer.reduce(live, .cached(harness: "codex", entries: [entry(1, .user, [.text("stale")])], hasOlder: true)) == live)
+    // The host's copy replacing what this device kept, and a reconnect's: each a snapshot to
+    // settle the view on again, neither a rebuild.
+    #expect(live.snapshots == 1 && live.epoch == 0)
+    let again = FeedReducer.reduce(live, .message(.snapshot(reason: .initial, harness: "codex", entries: [entry(9, .user, [.text("live")]), entry(10, .assistant, [.text("more")])], floor: 0, head: 10, hasOlder: false)))
+    #expect(again.snapshots == 2 && again.epoch == 0)
     #expect(FeedReducer.reduce(live, .disconnected).status == .connecting)
     let gone = FeedReducer.reduce(live, .message(.unavailable(reason: "no-adapter")))
     #expect(gone.status == .unavailable && gone.entries.isEmpty && gone.reason == "no-adapter")

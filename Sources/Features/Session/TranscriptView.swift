@@ -109,6 +109,12 @@ struct TranscriptView: View {
         if atBottom, phase == .idle, below > 1, session.pendingMessage == nil, linked == nil, browsing == nil {
             following.correct { reader.scrollTo("bottom", anchor: .bottom) }
         }
+        // Past the end: the conversation got shorter under the view (a reconnect's copy without
+        // the older pages read in, rows measured again smaller), and what's in view is the
+        // empty space below it. Back to the end, or the screen stayed blank until a drag.
+        if phase == .idle, below < -1, session.pendingMessage == nil, linked == nil {
+            following.correct { reader.scrollTo("bottom", anchor: .bottom) }
+        }
     }
 
     var body: some View {
@@ -185,8 +191,13 @@ struct TranscriptView: View {
             .id(blocks.isEmpty ? -1 : session.feed.epoch)
             // …and once it has settled, onto the newest message again: with a long transcript
             // the first layout's guesses move it, and what's drawn can sit apart from it.
-            .task(id: blocks.isEmpty ? -1 : session.feed.epoch) {
-                guard !blocks.isEmpty, scene.scrollAnchors[session.key]?.seq == nil else { return }
+            // Every snapshot, a reconnect's too: the transcript is replaced under the same scroll
+            // view (from the page this device kept to the host's longer copy, on coming back),
+            // and a long one poured in above was laid out but not drawn, with nothing after it.
+            .task(id: blocks.isEmpty ? "-" : "\(session.feed.epoch)/\(session.feed.snapshots)") {
+                // A place to come back to holds the transcript there, if it's in this transcript.
+                let anchored = scene.scrollAnchors[session.key]?.seq.map { seq in blocks.contains { $0.seq == seq } } ?? false
+                guard !blocks.isEmpty, !anchored else { return }
                 for delay in [150, 600] {
                     try? await Task.sleep(for: .milliseconds(delay))
                     // A link to a message holds the transcript there instead, as a scroll back does.

@@ -174,7 +174,9 @@ struct SessionScreen: View {
     @ViewBuilder
     private var surface: some View {
         if session.surface == .gui && session.hasGUI {
-            TranscriptView(session: session, scene: scene).transition(.opacity)
+            // One per session, as the terminal is: a pane switched to another kept the last one's
+            // place in its conversation (scrolled back there, this one opened scrolled back too).
+            TranscriptView(session: session, scene: scene).id(session.key).transition(.opacity)
         } else if session.isLive {
             // One per session: a pane switched to another kept the last one's terminal.
             TerminalScreen(session: session, scene: scene).id(session.key).transition(.opacity)
