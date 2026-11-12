@@ -19,8 +19,10 @@ struct InboxView: View {
                 AhLargeTitle(title: "Inbox", tagline: hub.awaitingState ? "Asking your host…" : inbox.summary).textCase(nil)
             }
             // Another device's place, not this one's from an earlier launch (window ids are
-            // per launch, so the name tells this device apart too).
-            if let focus = hub.focus, focus.client != scene.device.client, focus.device != scene.device.name, let row = hub.row(focus.key), Date().timeIntervalSince1970 * 1000 - focus.at < 15 * 60_000 {
+            // per launch, so the name tells this device apart too). Told apart by what the
+            // host was sent as well (this launch's client and the system's name): with a name
+            // of its own set here, this device's own session was offered back to it.
+            if let focus = hub.focus, focus.client != scene.device.client, focus.client != scene.app.services.device.client, focus.device != scene.device.name, focus.device != scene.app.services.device.name, let row = hub.row(focus.key), Date().timeIntervalSince1970 * 1000 - focus.at < 15 * 60_000 {
                 Section {
                     Button {
                         scene.open(row.key)
