@@ -701,13 +701,18 @@ final class SceneModel {
         }
     }
 
+    /// This window is in the background (another of the app's may not be).
+    private(set) var inBackground = false
+
     func didEnterBackground() {
+        inBackground = true
         scheduleSave(now: true)
         hub?.saveCache(force: true)
         for model in sessions.values { Task { await model.background() } }
     }
 
     func willEnterForeground() {
+        inBackground = false
         for model in sessions.values { Task { await model.foreground() } }
     }
 

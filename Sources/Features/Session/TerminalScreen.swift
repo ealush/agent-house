@@ -70,14 +70,16 @@ struct TerminalScreen: View {
             made.start()
         }
         .onDisappear { controller?.stop() }
-        // An attached terminal counts as this device looking (ah's viewers): leaving the app
-        // detaches it, so what happens meanwhile isn't taken as seen; coming back reattaches.
-        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
-            controller?.stop()
-            controller = nil
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
-            if controller == nil { attachment += 1 }
+        // An attached terminal counts as this device looking (ah's viewers): its window going
+        // to the background detaches it, so what happens meanwhile isn't taken as seen; coming
+        // back reattaches. This window's, not the app's: on an iPad another window can stay up.
+        .onChange(of: scene.inBackground) { _, away in
+            if away {
+                controller?.stop()
+                controller = nil
+            } else if controller == nil {
+                attachment += 1
+            }
         }
         .onChange(of: theme.palette.terminal) { _, palette in controller?.apply(palette) }
         .onChange(of: scene.app.preferences.terminalFontSize) { _, size in controller?.setFontSize(size) }
