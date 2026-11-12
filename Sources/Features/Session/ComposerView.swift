@@ -1337,6 +1337,16 @@ struct QueueTrayView: View {
     var hardwareKeyboard = false
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Every queued message in view, not only what's next.
+    @State private var expanded = false
+    /// How tall the whole list may grow before it scrolls inside the tray: about four rows.
+    @ScaledMetric(relativeTo: .callout) private var listCap: CGFloat = 200
+    /// The whole list's height, as laid out, so the scroll view is no taller than it.
+    @State private var listHeight: CGFloat = 0
+
+    /// What's next stays in view; the rest fold into a row that says how many. Five long
+    /// messages took half the screen over the conversation they were waiting on.
+    private static let shownFolded = 2
 
     var body: some View {
         if !queue.isEmpty {
@@ -1372,9 +1382,36 @@ struct QueueTrayView: View {
                 .padding(.horizontal, 12)
                 .padding(.top, 10)
                 .padding(.bottom, 6)
-                ForEach(Array(queue.items.enumerated()), id: \.element.id) { index, item in
-                    row(index: index, item: item)
-                        .transition(reduceMotion ? .opacity : .asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), removal: .scale(scale: 0.9).combined(with: .opacity)))
+                let folds = queue.items.count > Self.shownFolded + 1
+                if folds && expanded {
+                    ScrollView {
+                        VStack(spacing: 0) { rows(Array(queue.items.enumerated())) }
+                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listHeight = $0 }
+                    }
+                    .scrollBounceBehavior(.basedOnSize)
+                    .frame(height: listHeight > 0 ? min(listHeight, listCap) : listCap)
+                } else {
+                    rows(Array(queue.items.enumerated().prefix(folds ? Self.shownFolded : queue.items.count)))
+                }
+                if folds {
+                    Button {
+                        withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { expanded.toggle() }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "chevron.down")
+                                .font(.ah(.caption2).weight(.bold))
+                                .rotationEffect(.degrees(expanded ? 180 : 0))
+                            Text(expanded ? "Show less" : "\(queue.items.count - Self.shownFolded) more")
+                                .font(.ah(.caption).weight(.semibold))
+                            Spacer()
+                        }
+                        .foregroundStyle(theme.muted)
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 32)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(expanded ? "Show fewer queued messages" : "Show \(queue.items.count - Self.shownFolded) more queued messages")
                 }
                 ForEach(queue.pendingRows) { pending in
                     HStack(spacing: 10) {
@@ -1401,6 +1438,13 @@ struct QueueTrayView: View {
             .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: queue.sending)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Queued messages")
+        }
+    }
+
+    private func rows(_ items: [(offset: Int, element: QueueItem)]) -> some View {
+        ForEach(items, id: \.element.id) { index, item in
+            row(index: index, item: item)
+                .transition(reduceMotion ? .opacity : .asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), removal: .scale(scale: 0.9).combined(with: .opacity)))
         }
     }
 
