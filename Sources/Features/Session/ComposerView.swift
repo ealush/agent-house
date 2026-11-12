@@ -1305,7 +1305,7 @@ struct QueueTrayView: View {
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "bolt.fill")
-                                Text("Steer now")
+                                Text("Steer Now")
                                 if hardwareKeyboard { Text("↵").foregroundStyle(theme.accent.opacity(0.7)) }
                             }
                             .font(.ah(.caption).weight(.semibold))
