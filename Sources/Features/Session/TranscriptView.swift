@@ -24,6 +24,11 @@ struct TranscriptView: View {
     @State private var phase: ScrollPhase = .idle
     /// How far the end lies below what's in view, as of the last layout.
     @State private var belowEnd: CGFloat = 0
+    /// The room the conversation had at the last layout (the keyboard and bar take from it).
+    @State private var room: CGFloat = 0
+    /// How far a drag has taken the conversation back from the end.
+    @State private var awayBy: CGFloat = 0
+    @State private var resizedInDrag = false
     @State private var following = TranscriptEnd.Follow()
     @FocusState private var browseFocused: Bool
 
@@ -69,7 +74,18 @@ struct TranscriptView: View {
     /// Where the end is now, and what that means: in view is at the end; out of view leaves
     /// it only by a scroll. Anything else that moved it (the bar or keyboard rising, a row
     /// growing, a menu's lift) is put right in the same pass, before it's drawn.
-    private func endMoved(_ below: CGFloat, _ reader: ScrollViewProxy) {
+    private func endMoved(_ reading: TranscriptEnd.Reading, _ reader: ScrollViewProxy) {
+        let below = reading.below
+        // The room for the conversation changed (the keyboard going away as a drag began, the
+        // bar growing): that moved the end, but nobody scrolled.
+        let resized = abs(reading.room - room) > 0.5
+        room = reading.room
+        // How far the finger has taken the conversation back from the end in this drag: what
+        // the end's distance grew by, over layouts where the room stayed the same. A resize
+        // moves it, and so does the scroll view holding the end to the bottom after one (the
+        // offset shifting a keyboard's height); neither is anyone scrolling, and holding the
+        // end leaves its distance as it was.
+        if !resized { awayBy += below - belowEnd }
         belowEnd = below
         if below <= TranscriptEnd.slack {
             if !atBottom { atBottom = true }
@@ -79,7 +95,15 @@ struct TranscriptView: View {
             }
         }
         if phase == .interacting || phase == .decelerating {
-            if below > TranscriptEnd.slack, atBottom { atBottom = false }
+            // Only a scroll leaves the end. Counted as one, a drag that put the keyboard away
+            // (the room growing a keyboard's height under the finger) left it, and the
+            // conversation, held by its top from then on, was thrown far back from the end.
+            // A drag that put the keyboard away (the room growing under the finger) is taken for
+            // that unless it goes on well past it: a short one to put the keyboard away isn't
+            // reading back, a long one is.
+            if resized { resizedInDrag = true }
+            let away = resizedInDrag ? TranscriptEnd.slack * 3 : TranscriptEnd.slack
+            if atBottom, awayBy > away, below > TranscriptEnd.slack { atBottom = false }
             return
         }
         if atBottom, phase == .idle, below > 1, session.pendingMessage == nil, linked == nil, browsing == nil {
@@ -195,8 +219,17 @@ struct TranscriptView: View {
             // focus: there's nothing on screen to put away.
             .scrollDismissesKeyboard(scene.hardwareKeyboard ? .never : .immediately)
             // Back to reading: the composer's settings fold out of the way, as the keyboard does.
-            .onScrollPhaseChange { _, new in
+            .onScrollPhaseChange { old, new in
                 phase = new
+                if new == .interacting, old == .idle {
+                    awayBy = 0
+                    resizedInDrag = false
+                }
+                // Let go at the end with the end moved meanwhile (the keyboard going away under
+                // the finger): back to it, as nothing scrolled it away.
+                if new == .idle, atBottom, belowEnd > 1, session.pendingMessage == nil, linked == nil, browsing == nil {
+                    following.correct { reader.scrollTo("bottom", anchor: .bottom) }
+                }
                 guard new == .interacting, session.composer.trayOpen else { return }
                 withAnimation(ComposerFloat.motion(opening: false, reduceMotion: reduceMotion)) { session.composer.trayOpen = false }
             }
@@ -242,10 +275,10 @@ struct TranscriptView: View {
             // Following the conversation: at the newest message, what the agent writes (and
             // what you send) stays in view, as in any chat; scrolled back to read, it leaves you
             // where you are.
-            .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                TranscriptEnd.below(geometry)
-            } action: { _, below in
-                endMoved(below, reader)
+            .onScrollGeometryChange(for: TranscriptEnd.Reading.self) { geometry in
+                TranscriptEnd.Reading(geometry)
+            } action: { _, reading in
+                endMoved(reading, reader)
             }
             // What you send is what you look at next.
             .onChange(of: session.outgoing.map(\.id)) { old, new in
@@ -1190,6 +1223,25 @@ enum TranscriptEnd {
                 self?.waiting = false
                 scroll()
             }
+        }
+    }
+
+    /// Where the end is and how much room there is to show it, at a layout.
+    struct Reading: Equatable {
+        var below: CGFloat
+        var room: CGFloat
+        var offset: CGFloat
+
+        init(below: CGFloat, room: CGFloat, offset: CGFloat = 0) {
+            self.below = below
+            self.room = room
+            self.offset = offset
+        }
+
+        init(_ geometry: ScrollGeometry) {
+            below = TranscriptEnd.below(geometry)
+            room = (geometry.containerSize.height - geometry.contentInsets.top - geometry.contentInsets.bottom).rounded()
+            offset = geometry.contentOffset.y.rounded()
         }
     }
 
