@@ -84,6 +84,29 @@ private func past(_ ref: String, title: String, harness: String = "claude", proj
     #expect(building.note == "Indexing conversations…")
 }
 
+@MainActor
+@Test func aSearchThatFailsKeepsTheLastMatchesAndSaysSo() async {
+    struct Dropped: Error {}
+    let hit = SearchHit(kind: "transcript", host: "desk", ref: nil, uid: "a", harness: "claude", harnessId: nil, title: "Retry flow", cwd: "", at: 0, matches: 1, excerpts: [])
+    let calls = Counter()
+    let content = SwitcherContent { _ in
+        guard await calls.next() == 1 else { throw Dropped() }
+        return SearchResponse(enabled: true, building: false, results: [hit], total: 1, tookMs: 1, notes: [])
+    }
+    content.update("retry", debounce: .zero)
+    await content.settle()
+    #expect(content.hits == [hit] && content.note == nil)
+    content.update("retry f", debounce: .zero)
+    await content.settle()
+    #expect(content.hits == [hit], "a dropped search leaves what was found up")
+    #expect(content.note == "Couldn’t search just now; these are from before.")
+}
+
+private actor Counter {
+    private var n = 0
+    func next() -> Int { n += 1; return n }
+}
+
 @Test func newSessionsStartInTheNewestProjectAndRememberSafeChoices() throws {
     var a = try JSONSerialization.jsonObject(with: JSONEncoder().encode(try session("a", title: "A", project: "web").dto)) as! [String: Any]
     a["activity"] = 10

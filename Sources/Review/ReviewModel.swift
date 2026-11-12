@@ -262,8 +262,9 @@ final class ReviewModel {
         let threading = Task { await loadThread() }
         await withTaskCancellationHandler {
             if selecting {
+                let shown = selectedPR
                 selectedPR = route.pr ?? stack?.next ?? stack?.layers.first { $0.state == "open" }?.pr
-                if let pr = selectedPR { await select(pr) }
+                if let pr = selectedPR { await select(pr, again: pr == shown) }
             }
             await threading.value
         } onCancel: {
@@ -271,7 +272,22 @@ final class ReviewModel {
         }
     }
 
-    func select(_ pr: Int) async {
+    func select(_ pr: Int, again: Bool = false) async {
+        // The layer on screen, opened again (the page came back into view): what it shows
+        // stays up while it refreshes, instead of blanking to a spinner on a slow link.
+        if again, selectedPR == pr, diff != nil, let id = stack?.id {
+            let describing = Task {
+                guard let fetched = try? await review.description(id, pr: pr) else { return }
+                if stack?.id == id, selectedPR == pr { description = fetched }
+            }
+            await withTaskCancellationHandler {
+                await loadDiff(diffScope)
+                await describing.value
+            } onCancel: {
+                describing.cancel()
+            }
+            return
+        }
         selectedPR = pr
         diff = nil
         diffError = nil

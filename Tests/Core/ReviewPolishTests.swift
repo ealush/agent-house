@@ -147,3 +147,17 @@ private func reviewModel(_ host: ScriptedReviewHost) -> ReviewModel {
     await opening.value
     #expect(model.stack?.id == "s2" && model.stack?.title == "Stack s2")
 }
+
+@MainActor
+@Test func theLayerOnScreenStaysUpWhileThePageReloadsIt() async throws {
+    let model = reviewModel(ScriptedReviewHost(slow: [1]))
+    await model.open(ReviewRoute(stack: "s1", pr: 1))
+    #expect(model.diffFiles.map(\.path) == ["f1.txt"] && model.description?.body == "About 1")
+    // The page comes back into view and opens the same layer again, over a slow link.
+    let again = Task { await model.open(ReviewRoute(stack: "s1", pr: 1)) }
+    try await Task.sleep(for: .milliseconds(80))
+    #expect(model.diffFiles.map(\.path) == ["f1.txt"], "the diff stays while it refreshes")
+    #expect(model.description?.body == "About 1")
+    await again.value
+    #expect(model.diffFiles.map(\.path) == ["f1.txt"] && !model.loading.contains("diff"))
+}

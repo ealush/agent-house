@@ -162,9 +162,10 @@ final class SwitcherContent {
             guard !Task.isCancelled else { return }
             let response = try? await search(query)
             guard !Task.isCancelled, let self else { return }
+            // A search that didn't answer (a slow or dropped link) leaves the last results
+            // up and says so, instead of emptying the list as if nothing matched.
             guard let response else {
-                self.hits = []
-                self.note = nil
+                self.note = self.hits.isEmpty ? "Couldn’t search conversations just now." : "Couldn’t search just now; these are from before."
                 return
             }
             self.hits = Array(response.results.prefix(8))
