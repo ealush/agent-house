@@ -422,6 +422,7 @@ private struct FilesPanel: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { Task { await open(entry) } }
+        .accessibilityAddTraits(.isButton)
         .draggable(FilesModel.mention(path, shell: session.isShell, cwd: cwd).trimmingCharacters(in: .whitespaces))
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button { insert(path) } label: { Label("Mention", systemImage: "at") }.tint(theme.accent)

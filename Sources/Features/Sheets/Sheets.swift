@@ -416,7 +416,7 @@ struct FolderPicker: View {
                         Button { Task { await model.open(model.child(entry)) } } label: {
                             HStack {
                                 Label {
-                                    Text(entry.name).foregroundStyle(Color(uiColor: .label))
+                                    Text(entry.name).foregroundStyle(theme.text)
                                 } icon: {
                                     Image(systemName: "folder.fill").foregroundStyle(theme.accent)
                                 }
@@ -1088,7 +1088,7 @@ struct WorktreesView: View {
                 // Red by tint, not role: a destructive action swiped all the way is taken for
                 // the row's deletion, and the list aborts when the row is still there (it is,
                 // until the confirmation says).
-                Button("Remove", systemImage: "trash") { removing = tree }.tint(.red)
+                Button("Remove", systemImage: "trash") { removing = tree }.tint(theme.danger)
             }
         }
         .contextMenu {
@@ -1304,6 +1304,7 @@ struct LaunchPickerSheet: View {
     let scene: SceneModel
     let session: SessionModel
     let setting: LaunchState.Setting
+    @Environment(\.theme) private var theme
 
     var body: some View {
         let launch = session.launch
@@ -1341,8 +1342,8 @@ struct LaunchPickerSheet: View {
         } label: {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(setting == .effort ? LaunchState.effortName(title) : title).foregroundStyle(Color(uiColor: .label))
-                    if let detail, !detail.isEmpty { Text(detail).font(.ah(.caption)).foregroundStyle(Color(uiColor: .secondaryLabel)) }
+                    Text(setting == .effort ? LaunchState.effortName(title) : title).foregroundStyle(theme.text)
+                    if let detail, !detail.isEmpty { Text(detail).font(.ah(.caption)).foregroundStyle(theme.muted) }
                 }
                 Spacer()
                 if current { Image(systemName: "checkmark").fontWeight(.semibold).foregroundStyle(.tint) }

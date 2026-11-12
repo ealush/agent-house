@@ -430,7 +430,7 @@ private struct PaneView: View {
         // The focused pane wears a tint ring; the rest a hairline.
         .overlay {
             RoundedRectangle(cornerRadius: Self.corner, style: .continuous)
-                .strokeBorder(focused ? theme.accentStrong.opacity(0.9) : Color(uiColor: .separator), lineWidth: focused ? 1.5 : 0.5)
+                .strokeBorder(focused ? theme.accentStrong.opacity(0.9) : theme.line, lineWidth: focused ? 1.5 : 0.5)
                 .allowsHitTesting(false)
         }
         .simultaneousGesture(TapGesture().onEnded { Task { await scene.tapPane(tile.path) } })
@@ -811,7 +811,7 @@ struct WorkspaceStrip: View {
                         .frame(width: 26, height: 26)
                         .background { if n == current { Circle().fill(theme.accentStrong) } }
                         .overlay(alignment: .bottom) {
-                            if occupied.contains(n) && n != current { Circle().fill(Color.secondary).frame(width: 3, height: 3).offset(y: 2) }
+                            if occupied.contains(n) && n != current { Circle().fill(theme.muted).frame(width: 3, height: 3).offset(y: 2) }
                         }
                         .frame(maxWidth: .infinity, minHeight: 30)
                         .contentShape(Rectangle())

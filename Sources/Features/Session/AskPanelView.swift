@@ -846,7 +846,7 @@ private struct PreviewBox: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.sunken, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(uiColor: .separator), lineWidth: 0.5))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(theme.line, lineWidth: 0.5))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(text.flatMap { $0.isEmpty ? nil : "Preview of \(label): \($0)" } ?? "No preview of \(label) here")
     }

@@ -324,10 +324,10 @@ private struct SessionHeader: View {
                             Image(systemName: other == .terminal ? "terminal" : "text.bubble").headerGlyph()
                         }
                         .buttonStyle(.borderless)
-                        .accessibilityLabel(other == .terminal ? "Terminal" : "GUI")
+                        .accessibilityLabel(other == .terminal ? "Terminal" : "Conversation")
                     } else {
                         Picker("View", selection: Binding(get: { session.surface }, set: { scene.setSurface($0, for: session.key) })) {
-                            Image(systemName: "text.bubble").accessibilityLabel("GUI").tag(SceneSnapshot.Surface.gui)
+                            Image(systemName: "text.bubble").accessibilityLabel("Conversation").tag(SceneSnapshot.Surface.gui)
                             Image(systemName: "terminal").accessibilityLabel("Terminal").tag(SceneSnapshot.Surface.terminal)
                         }
                         .pickerStyle(.segmented)
