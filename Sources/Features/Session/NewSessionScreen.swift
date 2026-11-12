@@ -242,6 +242,7 @@ struct NewSessionScreen: View {
     @ScaledMetric(relativeTo: .body) private var control: CGFloat = 44
     @ScaledMetric(relativeTo: .body) private var corner: CGFloat = 22
     @ScaledMetric(relativeTo: .body) private var chipHeight: CGFloat = 36
+    @ScaledMetric(relativeTo: .body) private var tile: CGFloat = 62
     @FocusState private var focused: Bool
     @State private var choosingFolder = false
     @State private var typingFolder = false
@@ -255,15 +256,10 @@ struct NewSessionScreen: View {
             if !inNavigationBar { header }
             conversation
                 .frame(maxHeight: .infinity)
-            VStack(alignment: .leading, spacing: 10) {
-                if draft.phase == .ready {
-                    choices
-                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 12)))
-                }
-                box
-            }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 8)
+            // The box alone at the bottom, as a session's is: what it starts with is the stage.
+            box
+                .padding(.horizontal, 12)
+                .padding(.bottom, 8)
         }
         .frame(maxWidth: SessionScreen.readableWidth)
         .frame(maxWidth: .infinity)
@@ -329,7 +325,7 @@ struct NewSessionScreen: View {
             }
             .padding(.horizontal, 18)
             .padding(.bottom, 12)
-            // In once the chips have gone from where it lands: together, it showed through them.
+            // In once the choices have gone: together, it showed through them.
             .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 8)).animation(.smooth(duration: 0.3).delay(0.28)), removal: .opacity))
         } else if draft.phase == .starting {
             VStack(spacing: 10) {
@@ -338,92 +334,122 @@ struct NewSessionScreen: View {
             }
             .transition(.opacity)
         } else {
-            VStack(spacing: 12) {
-                AgentMark(agent: draft.preset.map { $0.isShell ? nil : $0.id } ?? nil, size: 56)
-                Text("\(draft.preset?.name ?? "New session") in \(draft.folderName)")
-                    .font(.ah(.title2).weight(.semibold))
-                    .multilineTextAlignment(.center)
-                Group {
-                    if let problem = draft.dirProblem {
-                        Label(problem, systemImage: "exclamationmark.triangle.fill").foregroundStyle(theme.danger)
-                    } else if draft.dirState == .new {
-                        Label("Starting makes \(draft.folderName) in \((draft.cwd as NSString).deletingLastPathComponent)", systemImage: "folder.badge.plus")
-                            .foregroundStyle(theme.text2)
-                    } else {
-                        Text(draft.preset?.isShell == true ? "Your first command starts it." : "Your first message starts it.")
-                            .foregroundStyle(theme.muted)
-                    }
-                }
-                .font(.ah(.callout))
-                .multilineTextAlignment(.center)
-            }
-            .padding(.horizontal, 32)
-            .transition(.opacity)
+            stage
+                .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.97)))
         }
     }
 
     // MARK: What it starts with
 
-    private var choices: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let error = draft.error { Banner(text: error, tone: .error) }
-            HStack(spacing: 8) {
-                agentChip
-                folderChip
-            }
-            if let preset = draft.preset {
-                ScrollView(.horizontal) {
-                    GlassEffectContainer {
-                        HStack(spacing: 8) {
-                            if !preset.isShell { settingChips(preset) }
-                            moreChip
-                        }
-                        .padding(.vertical, 4)
-                        .padding(.trailing, 12)
+    /// The middle of the screen, where the conversation will be: the agents to start, the
+    /// folder it starts in as a line under the one picked, then its settings.
+    private var stage: some View {
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(spacing: 26) {
+                    if let error = draft.error { Banner(text: error, tone: .error).padding(.horizontal, 20) }
+                    agents
+                    VStack(spacing: 8) {
+                        Text(draft.preset?.name ?? "New session")
+                            .font(.ah(.title2).weight(.semibold))
+                            .contentTransition(.opacity)
+                        folderLine
+                        hint
                     }
+                    .padding(.horizontal, 24)
+                    if let preset = draft.preset { settings(preset) }
+                }
+                .padding(.vertical, 24)
+                // In the middle of the room there is, scrolling once there's less of it (the
+                // keyboard up on a small phone).
+                .frame(maxWidth: .infinity, minHeight: proxy.size.height)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .scrollDismissesKeyboard(.interactively)
+        }
+    }
+
+    /// Every agent there is to start, as tiles: one tap picks, the one picked is ringed.
+    private var agents: some View {
+        let tiles = HStack(spacing: 10) {
+            ForEach(draft.presets, id: \.id) { p in agentTile(p) }
+        }
+        return ViewThatFits(in: .horizontal) {
+            tiles.padding(.horizontal, 20)
+            ScrollViewReader { reader in
+                ScrollView(.horizontal) {
+                    tiles.padding(.horizontal, 20).padding(.vertical, 2)
                 }
                 .scrollIndicators(.hidden)
-                // Fading where it goes on past the edge, as the session's chips do.
-                .mask {
-                    HStack(spacing: 0) {
-                        Rectangle()
-                        LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: 18)
-                    }
-                }
-                .padding(.vertical, -4)
+                .onAppear { reader.scrollTo(draft.presetID, anchor: .center) }
+                .onChange(of: draft.presetID) { _, id in withAnimation(.smooth) { reader.scrollTo(id, anchor: .center) } }
             }
         }
-        // In line with the box's text.
-        .padding(.leading, 6)
     }
 
-    private var agentChip: some View {
-        Menu {
-            Picker("Agent", selection: Binding(get: { draft.presetID }, set: { id in if let p = draft.presets.first(where: { $0.id == id }) { draft.choose(preset: p) } })) {
-                ForEach(draft.presets, id: \.id) { p in
-                    Text(p.isShell ? "Shell" : p.name).tag(p.id)
-                }
-            }
+    private func agentTile(_ p: PresetDTO) -> some View {
+        let on = p.id == draft.presetID
+        return Button {
+            withAnimation(reduceMotion ? nil : .spring(duration: 0.3, bounce: 0.2)) { draft.choose(preset: p) }
         } label: {
-            HStack(spacing: 6) {
-                AgentMark(agent: draft.preset.map { $0.isShell ? nil : $0.id } ?? nil, size: 20)
-                Text(draft.preset?.name ?? "Agent").lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down").imageScale(.small).foregroundStyle(theme.muted)
+            VStack(spacing: 7) {
+                AgentMark(agent: p.isShell ? nil : p.id, size: 34)
+                    .frame(width: tile, height: tile)
+                    .background(on ? theme.accentTint : theme.raised, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(on ? theme.accent : theme.line, lineWidth: on ? 2 : 1))
+                    .scaleEffect(on ? 1.04 : 1)
+                Text(p.isShell ? "Shell" : p.name)
+                    .font(.ah(.caption).weight(on ? .semibold : .regular))
+                    .foregroundStyle(on ? theme.text : theme.muted)
+                    .lineLimit(1)
             }
-            .font(.ah(.callout).weight(.medium))
-            .foregroundStyle(theme.text)
-            .padding(.leading, 8)
-            .padding(.trailing, 12)
-            .frame(minHeight: chipHeight)
-            .glassEffect(.regular.interactive(), in: Capsule())
-            .contentShape(Capsule())
+            .frame(width: tile + 14)
+            .contentShape(Rectangle())
         }
-        .menuOrder(.fixed)
-        .tint(.primary)
-        .accessibilityLabel("Agent, \(draft.preset?.name ?? "none")")
+        .buttonStyle(.ahPress)
+        .id(p.id)
+        .accessibilityLabel(p.isShell ? "Shell" : p.name)
+        .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
     }
 
-    private var folderChip: some View {
+    /// Under the agent: what the first message does, or what the folder needs first.
+    @ViewBuilder
+    private var hint: some View {
+        Group {
+            if let problem = draft.dirProblem {
+                Label(problem, systemImage: "exclamationmark.triangle.fill").foregroundStyle(theme.danger)
+            } else if draft.dirState == .new {
+                Label("Starting makes \(draft.folderName) in \((draft.cwd as NSString).deletingLastPathComponent)", systemImage: "folder.badge.plus")
+                    .foregroundStyle(theme.text2)
+            } else {
+                Text(draft.preset?.isShell == true ? "Your first command starts it." : "Your first message starts it.")
+                    .foregroundStyle(theme.muted)
+            }
+        }
+        .font(.ah(.callout))
+        .multilineTextAlignment(.center)
+    }
+
+    /// Model, effort, permissions and More, centered under the rest (two rows when they
+    /// don't fit in one).
+    private func settings(_ preset: PresetDTO) -> some View {
+        GlassEffectContainer {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    if !preset.isShell { settingChips(preset) }
+                    moreChip
+                }
+                VStack(spacing: 8) {
+                    HStack(spacing: 8) { if !preset.isShell { settingChips(preset) } }
+                    moreChip
+                }
+            }
+        }
+        .padding(.horizontal, 20)
+    }
+
+    /// "in orbit-web", the folder's name a menu of the host's projects and the ways to another.
+    private var folderLine: some View {
         Menu {
             if !draft.projects.isEmpty {
                 Section("Projects") {
@@ -449,19 +475,18 @@ struct NewSessionScreen: View {
                 }
             }
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
+                Text("in").foregroundStyle(theme.muted)
                 Image(systemName: draft.dirState == .new ? "folder.badge.plus" : "folder")
                     .imageScale(.small)
                     .foregroundStyle(draft.dirProblem != nil ? theme.danger : theme.accent)
-                Text(draft.folderName).lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down").imageScale(.small).foregroundStyle(theme.muted)
+                Text(draft.folderName).foregroundStyle(draft.dirProblem != nil ? theme.danger : theme.accent).lineLimit(1)
+                Image(systemName: "chevron.down").imageScale(.small).foregroundStyle(theme.muted)
             }
-            .font(.ah(.callout).weight(.medium))
-            .foregroundStyle(theme.text)
+            .font(.ah(.title3).weight(.medium))
             .padding(.horizontal, 12)
-            .frame(minHeight: chipHeight)
-            .glassEffect(.regular.interactive(), in: Capsule())
-            .contentShape(Capsule())
+            .frame(minHeight: control)
+            .contentShape(Rectangle())
         }
         .menuOrder(.fixed)
         .tint(.primary)
