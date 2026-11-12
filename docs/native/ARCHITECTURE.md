@@ -15,7 +15,7 @@ iPhone and iPad, iOS/iPadOS 26+, Swift 6 with complete strict concurrency. The `
 | Feed | `Sources/Feed` | Linux + Apple | Transcript schema, reducer, projection to blocks/tools/widgets, diff parsing, hand-off text |
 | Terminal | `Sources/Terminal` | Linux + Apple | `TerminalConnection` (PTY WebSocket, re-resolves the tmux window per attach, never replays keys), input/resize/scroll frames |
 | Keyboard | `Sources/Keyboard` | Linux + Apple | The 89-command catalog, chords, bindings, matcher, which-key, palette tree |
-| Workspace | `Sources/Workspace` | Linux + Apple | Pane layout tree, tiles/seams geometry, neighbors, workspaces 1–9 |
+| Workspace | `Sources/Workspace` | Linux + Apple | Pane layout tree, tiles/seams geometry, neighbors, the journal's slot |
 | Persistence | `Sources/Persistence` | Linux + Apple | GRDB `AppDatabase` (migrations), scene journal, accounts, preferences, sealed cache, credential vault |
 | Models | `Sources/Models` | Linux + Apple | `AppModel`, `AccountSession`, `HubStore`, `SceneModel`, `SessionModel`, composer/outbox/drafts/queue, launch plans, panel and settings models |
 | Review | `Sources/Review` | Linux + Apple | `ReviewAPI`, review DTOs, `ReviewModel`, `LayerConfidence`, `StackMergePlan` |

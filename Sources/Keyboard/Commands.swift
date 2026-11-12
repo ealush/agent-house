@@ -1,8 +1,8 @@
 import Foundation
 
-// The keyboard command catalog (`../ah/web/shortcuts.ts`): 71 literal commands plus
-// workspace 1–9 and send-to-workspace 1–9 = 89, then the native workspace's own (split
-// left/above, balance, swap, pane and workspace cycling…). Defaults live here; a device may
+// The keyboard command catalog (`../ah/web/shortcuts.ts`): its 71 literal commands (not
+// the web's workspaces 1–9 and send-to-workspace 1–9, left out until they're wanted), then
+// the native workspace's own (split left/above, balance, swap, pane cycling…). Defaults live here; a device may
 // override them (Settings → Shortcuts). A chord needs Ctrl, Option or Command, so a plain
 // letter always reaches the agent. Letters match the character the layout produces
 // (Colemak included); digits and punctuation match the physical key, so Shift doesn't turn
@@ -173,19 +173,6 @@ struct CommandID: RawRepresentable, Hashable, Codable, Sendable, ExpressibleBySt
     init(rawValue: String) { self.rawValue = rawValue }
     init(stringLiteral value: String) { rawValue = value }
     var description: String { rawValue }
-
-    static func workspace(_ n: Int) -> CommandID { CommandID(rawValue: "workspace-\(n)") }
-    static func toWorkspace(_ n: Int) -> CommandID { CommandID(rawValue: "to-workspace-\(n)") }
-
-    /// 1…9 for `workspace-N`.
-    var workspaceNumber: Int? {
-        rawValue.hasPrefix("workspace-") ? Int(rawValue.dropFirst("workspace-".count)) : nil
-    }
-
-    /// 1…9 for `to-workspace-N`.
-    var sendToWorkspaceNumber: Int? {
-        rawValue.hasPrefix("to-workspace-") ? Int(rawValue.dropFirst("to-workspace-".count)) : nil
-    }
 }
 
 enum CommandCatalog {
@@ -263,20 +250,13 @@ enum CommandCatalog {
             Command("resize-up", .workspace, "Resize: divider up", "Move the divider above or below the focused pane up.", chords: [c("ArrowUp", ctrl: true, alt: true, shift: true)]),
             Command("resize-down", .workspace, "Resize: divider down", "Move the divider above or below the focused pane down.", chords: [c("ArrowDown", ctrl: true, alt: true, shift: true)]),
             Command("resize-mode", .workspace, "Resize mode", "Like a Hyprland submap: arrows move the nearest divider (Shift for big steps) until Escape or Return.", chords: [c("r", ctrl: true, shift: true)]),
-            Command("pane-mode", .workspace, "Pane mode", "A Hyprland-style submap: h j k l (or arrows) focus, Shift moves, v / s split, x closes, f maximizes, t flips, r resizes, 1–9 go to a workspace (Shift sends), o opens a session as a new pane, Esc leaves.", chords: [c(" ", ctrl: true, shift: true)]),
+            Command("pane-mode", .workspace, "Pane mode", "A Hyprland-style submap: h j k l (or arrows) focus, Shift moves, v / s split, x closes, f maximizes, t flips, r resizes, o opens a session as a new pane, Esc leaves.", chords: [c(" ", ctrl: true, shift: true)]),
             Command("replace-pane", .workspace, "Replace pane…", "Choose another session, a new shell, or a new session for the focused pane, inside the pane. Esc keeps what was there.", chords: [c("p", ctrl: true, alt: true)]),
             Command("open-in-pane", .workspace, "Open a session as a new pane…", "Pick a session; it opens beside the focused pane, split along its longer side.", chords: [c("o", ctrl: true, shift: true)]),
             Command("scratchpad", .workspace, "Scratchpad shell", "Show or hide a floating shell over anything, like Hyprland's special workspace. It keeps running while hidden.", chords: [c("`", ctrl: true, shift: true)]),
             Command("maximize-pane", .workspace, "Maximize pane", "Show the focused pane alone, like Hyprland fullscreen. Again to bring the split back.", chords: [c("f", ctrl: true, shift: true)]),
             Command("exit-split", .workspace, "Exit split", "Leave split view and close every pane. Sessions keep running."),
         ]
-        // Workspaces 1–9, Hyprland-style: Option+N goes there, Option+Shift+N sends the focused session.
-        for d in 1...9 {
-            list.append(Command(.workspace(d), .workspace, "Workspace \(d)", "Go to workspace \(d). What you leave is kept there: its split, or its session.", chords: [c(String(d), alt: true)]))
-        }
-        for d in 1...9 {
-            list.append(Command(.toWorkspace(d), .workspace, "Send to workspace \(d)", "Move the focused session to workspace \(d), as a new tile beside what is there.", chords: [c(String(d), alt: true, shift: true)]))
-        }
         return list
     }()
 
@@ -291,9 +271,7 @@ enum CommandCatalog {
         Command("swap-pane-down", .workspace, "Swap with pane below", "Trade places with the pane below; the focus moves with yours.", terms: ["exchange", "pane"]),
         Command("focus-pane-next", .workspace, "Next pane", "Move to the next pane in reading order, wrapping around.", chords: [c("Tab", ctrl: true)], terms: ["cycle"]),
         Command("focus-pane-prev", .workspace, "Previous pane", "Move to the previous pane in reading order, wrapping around.", chords: [c("Tab", ctrl: true, shift: true)], terms: ["cycle"]),
-        Command("workspace-next", .workspace, "Next workspace", "The next workspace with something in it, or the next number when no other has.", chords: [c("]", ctrl: true, alt: true)]),
-        Command("workspace-prev", .workspace, "Previous workspace", "The previous workspace with something in it, or the previous number.", chords: [c("[", ctrl: true, alt: true)]),
-        Command("go-to-session", .navigate, "Go to session…", "Search every session in the palette and jump to it, or open it as a pane or in another workspace.", terms: ["switch", "find", "session"]),
+        Command("go-to-session", .navigate, "Go to session…", "Search every session in the palette and jump to it, or open it as a pane.", terms: ["switch", "find", "session"]),
         Command("terminal-text-bigger", .session, "Bigger terminal text", "One point bigger, in every terminal on this device. Pinching does the same.", chords: [c("=", meta: true), c("+", meta: true, shift: true)], scopes: [.app, .terminal], terms: ["zoom", "font", "size"]),
         Command("terminal-text-smaller", .session, "Smaller terminal text", "One point smaller, in every terminal on this device.", chords: [c("-", meta: true)], scopes: [.app, .terminal], terms: ["zoom", "font", "size"]),
         Command("terminal-text-reset", .session, "Default terminal text size", "Back to the standard size.", chords: [c("0", meta: true)], scopes: [.app, .terminal], terms: ["zoom", "font", "size", "actual"]),
@@ -313,8 +291,6 @@ enum CommandCatalog {
 
     /// Each command's SF Symbol, for palette rows, menus and pane menus.
     static func icon(_ id: CommandID) -> String {
-        if let n = id.workspaceNumber { return "\(n).square" }
-        if let n = id.sendToWorkspaceNumber { return "\(n).square.fill" }
         return icons[id.rawValue] ?? "command"
     }
 
@@ -341,7 +317,7 @@ enum CommandCatalog {
         "scratchpad": "terminal.fill", "maximize-pane": "arrow.up.left.and.arrow.down.right", "exit-split": "rectangle",
         "balance-panes": "equal.square", "swap-pane-left": "arrow.left.arrow.right", "swap-pane-right": "arrow.left.arrow.right",
         "swap-pane-up": "arrow.up.arrow.down", "swap-pane-down": "arrow.up.arrow.down", "focus-pane-next": "arrow.forward.square",
-        "focus-pane-prev": "arrow.backward.square", "workspace-next": "chevron.right.square", "workspace-prev": "chevron.left.square",
+        "focus-pane-prev": "arrow.backward.square",
         "go-to-session": "rectangle.stack", "focus-follows-pointer": "cursorarrow.motionlines",
         "copy-link": "link", "share-link": "square.and.arrow.up", "open-link": "arrow.up.forward.square",
         "new-window": "macwindow.badge.plus", "open-in-new-window": "rectangle.portrait.on.rectangle.portrait.angled",

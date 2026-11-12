@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 
 /// The iPad sidebar, as ah's design system draws it: one floating glass panel over the ground
 /// holding its own head (the wordmark, the host, its menus), Search or jump, the pages, every
-/// session in the web's order and groups, the workspaces and New session.
+/// session in the web's order and groups, and New session.
 struct SidebarView: View {
     @Bindable var scene: SceneModel
     @Environment(\.theme) private var theme
@@ -33,7 +33,6 @@ struct SidebarView: View {
                 SessionListView(scene: scene, hub: hub, selection: scene.workspace.focusedKey, showsPages: true)
                     .scrollContentBackground(.hidden)
                 VStack(spacing: 8) {
-                    WorkspaceStrip(scene: scene)
                     Button { scene.perform("new-session") } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "plus")
@@ -630,9 +629,6 @@ struct PaneMenuItems: View {
                 item("move-pane-down")
             } label: { Label("Move", systemImage: "arrow.up.and.down.and.arrow.left.and.right") }
         }
-        Menu {
-            ForEach(1...9, id: \.self) { n in item(.toWorkspace(n)) }
-        } label: { Label("Send to Workspace", systemImage: "rectangle.stack") }
         Section {
             item("close-pane", role: .destructive)
         }
@@ -791,49 +787,6 @@ private struct SeamHandle: View {
             .accessibilityRepresentation {
                 Slider(value: Binding(get: { seam.ratio }, set: { scene.workspace.setRatio(at: seam.path, $0) }), in: 0.15...0.85) { Text("Pane divider") }
             }
-    }
-}
-
-/// Workspaces 1–9 at the foot of the sidebar: the current one, the ones in use, a tap to go.
-struct WorkspaceStrip: View {
-    let scene: SceneModel
-    @Environment(\.theme) private var theme
-
-    var body: some View {
-        let current = scene.workspace.currentWorkspace
-        let occupied = Set(scene.workspace.occupiedWorkspaces)
-        HStack(spacing: 3) {
-            ForEach(1...9, id: \.self) { n in
-                Button {
-                    scene.perform(.workspace(n))
-                } label: {
-                    // The current one filled with the tint, one in use marked with a dot.
-                    Text("\(n)")
-                        .font(.ah(.footnote).monospacedDigit().weight(n == current ? .semibold : .regular))
-                        .foregroundStyle(n == current ? theme.accentInk : occupied.contains(n) ? theme.text : theme.faint)
-                        .frame(width: 26, height: 26)
-                        .background { if n == current { Circle().fill(theme.accentStrong) } }
-                        .overlay(alignment: .bottom) {
-                            if occupied.contains(n) && n != current { Circle().fill(theme.muted).frame(width: 3, height: 3).offset(y: 2) }
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 30)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .hoverEffect(.highlight)
-                .contextMenu {
-                    Button("Send the focused session here", systemImage: "arrow.right.square") { scene.perform(.toWorkspace(n)) }
-                        .disabled(!scene.isAvailable(.toWorkspace(n)) || n == current)
-                }
-                .accessibilityLabel("Workspace \(n)\(n == current ? ", current" : occupied.contains(n) ? ", in use" : "")")
-            }
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
-        .glassEffect(.regular, in: Capsule())
-        .padding(.horizontal, 12)
-        .padding(.bottom, 10)
-        .animation(.snappy(duration: 0.25), value: current)
     }
 }
 

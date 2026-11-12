@@ -89,7 +89,7 @@ enum MenuCommands {
             .submenu("Swap Pane", "arrow.left.arrow.right", ["swap-pane-left", "swap-pane-right", "swap-pane-up", "swap-pane-down"]),
             .submenu("Resize", "arrow.left.and.right", ["resize-left", "resize-right", "resize-up", "resize-down", "balance-panes", "resize-mode"]),
             .section(["pane-mode"]),
-            .section(["new-window", "open-in-new-window", "workspace-prev", "workspace-next"]),
+            .section(["new-window", "open-in-new-window"]),
             .section(["focus-follows-pointer"]),
         ]),
     ]

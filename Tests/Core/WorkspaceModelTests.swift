@@ -65,49 +65,30 @@ import Testing
 }
 
 @MainActor
-@Test func workspacesKeepTheirArrangement() {
-    let ws = WorkspaceModel()
-    ws.open("a")
-    ws.openTile("b", wide: true)
-    #expect(ws.switchWorkspace(2))
-    #expect(ws.layout == nil && ws.selected == nil, "workspace 2 starts empty")
-    ws.open("c")
-    #expect(ws.switchWorkspace(1))
-    #expect(ws.layout?.keys == ["a", "b"])
-    ws.focus([.second])
-    #expect(ws.sendToWorkspace(2))
-    #expect(ws.layout == nil && ws.selected == "a", "b left; one pane is a single view")
-    #expect(ws.switchWorkspace(2))
-    #expect(ws.layout?.keys == ["c", "b"], "b tiled beside what was there")
-    #expect(!ws.switchWorkspace(2))
-}
-
-@MainActor
 @Test func paneModeKeysFocusMoveSplitAndLeave() {
     let ws = WorkspaceModel()
     ws.open("a")
     ws.openTile("b", wide: true)
     ws.submap = .pane
-    #expect(ws.submapKey("h", shift: false, digit: nil) == .handled)
+    #expect(ws.submapKey("h", shift: false) == .handled)
     #expect(ws.focusedKey == "a")
-    #expect(ws.submapKey("L", shift: true, digit: nil) == .handled)
+    #expect(ws.submapKey("L", shift: true) == .handled)
     #expect(ws.layout?.keys == ["b", "a"], "Shift moves")
-    #expect(ws.submapKey("v", shift: false, digit: nil) == .run("split-right"))
-    #expect(ws.submapKey("f", shift: false, digit: nil) == .handled)
+    #expect(ws.submapKey("v", shift: false) == .run("split-right"))
+    #expect(ws.submapKey("f", shift: false) == .handled)
     #expect(ws.zoom)
-    #expect(ws.submapKey("r", shift: false, digit: nil) == .handled)
+    #expect(ws.submapKey("r", shift: false) == .handled)
     #expect(ws.submap == .resize)
-    #expect(ws.submapKey("ArrowLeft", shift: true, digit: nil) == .handled)
-    #expect(ws.submapKey("q", shift: false, digit: nil) == .left)
+    #expect(ws.submapKey("ArrowLeft", shift: true) == .handled)
+    #expect(ws.submapKey("q", shift: false) == .left)
     #expect(ws.submap == nil, "any other key leaves resize mode")
     ws.submap = .pane
-    #expect(ws.submapKey("o", shift: false, digit: nil) == .present(.openTileSwitcher))
+    #expect(ws.submapKey("o", shift: false) == .present(.openTileSwitcher))
     #expect(ws.submap == nil)
     ws.submap = .pane
-    #expect(ws.submapKey("3", shift: false, digit: 3) == .handled)
-    #expect(ws.journalSpaces.current == 3)
-    ws.submap = .pane
-    #expect(ws.submapKey("Escape", shift: false, digit: nil) == .left)
+    #expect(ws.submapKey("3", shift: false) == .handled, "a digit is nothing now: no workspaces")
+    #expect(ws.submap == .pane && ws.journalSpaces.current == 1)
+    #expect(ws.submapKey("Escape", shift: false) == .left)
 }
 
 @MainActor
@@ -128,7 +109,7 @@ import Testing
 }
 
 @MainActor
-@Test func restoringAWindowKeepsItsWorkspacesAndFocus() {
+@Test func restoringAWindowKeepsTheWorkspaceItWasOnAndFocus() {
     var snapshot = SceneSnapshot(sceneID: "w", hostOrigin: nil)
     snapshot.workspaces = Workspaces(current: 4, slots: [4: .init(layout: .split(direction: .horizontal, ratio: 0.3, first: .session("a"), second: .session("b")), selected: nil)])
     snapshot.focusedPane = [.second]
@@ -139,7 +120,9 @@ import Testing
     #expect(ws.focusedKey == "b")
     #expect(ws.zoom)
     #expect(!ws.sidebarVisible)
-    #expect(ws.journalSpaces == snapshot.workspaces)
+    // A journal from when there were workspaces 1–9: the one it was on is what it shows,
+    // and what it writes back is that alone.
+    #expect(ws.journalSpaces == Workspaces(current: 1, slots: [1: snapshot.workspaces.slots[4]!]))
 }
 
 @MainActor

@@ -13,7 +13,8 @@ struct SceneSnapshot: Codable, Equatable, Sendable {
     var route: Route
     /// The open session (iPhone push, iPad single pane), with its view state.
     var session: SessionPlacement?
-    /// iPad tiling: workspaces 1–9 for this window, and which pane has focus.
+    /// iPad tiling: what this window shows (one slot; a journal from before kept nine), and
+    /// which pane has focus.
     var workspaces: Workspaces
     var focusedPane: LayoutNode.Path?
     var maximized: Bool

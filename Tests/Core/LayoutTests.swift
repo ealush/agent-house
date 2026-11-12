@@ -138,22 +138,3 @@ private func col(_ a: LayoutNode, _ b: LayoutNode, _ ratio: Double = 0.5) -> Lay
         .init(path: [.second], row: false, ratio: 0.5, box: .init(x: 0.25, y: 0, w: 0.75, h: 1)),
     ])
 }
-
-@Test func workspacesKeepWhatYouLeaveAndSendTilesAcross() {
-    var spaces = Workspaces()
-    let one = Workspaces.Slot(layout: nil, selected: "u1")
-    let (afterSwitch, shown) = spaces.switching(to: 2, keeping: one)
-    #expect(shown == .empty)
-    spaces = afterSwitch
-    let (back, restored) = spaces.switching(to: 1, keeping: Workspaces.Slot(layout: row(leaf("u2"), leaf("u3")), selected: nil))
-    #expect(restored == one)
-    #expect(back.slots[2]?.isOccupied == true)
-
-    let start = Workspaces(current: 1, slots: [2: Workspaces.Slot(layout: nil, selected: "u9")])
-    let (sent, left) = start.sending("u3", to: 2, keeping: Workspaces.Slot(layout: row(leaf("u2"), leaf("u3")), selected: nil), path: [.second])
-    #expect(left == Workspaces.Slot(layout: nil, selected: "u2"), "one pane left: that session alone")
-    #expect(sent.slots[2]?.layout?.keys == ["u9", "u3"])
-    let (alone, emptied) = start.sending("u1", to: 3, keeping: Workspaces.Slot(layout: nil, selected: "u1"), path: nil)
-    #expect(emptied == .empty)
-    #expect(alone.slots[3] == Workspaces.Slot(layout: nil, selected: "u1"))
-}

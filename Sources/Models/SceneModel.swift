@@ -401,12 +401,11 @@ final class SceneModel {
         let layout: LayoutNode?
         let path: LayoutNode.Path?
         let key: String?
-        let workspace: Int
         let zoom: Bool
     }
 
     private var focusSpot: FocusSpot {
-        FocusSpot(route: route, layout: workspace.layout, path: workspace.focusPath, key: workspace.focusedKey ?? workspace.selected, workspace: workspace.currentWorkspace, zoom: workspace.zoom)
+        FocusSpot(route: route, layout: workspace.layout, path: workspace.focusPath, key: workspace.focusedKey ?? workspace.selected, zoom: workspace.zoom)
     }
 
     /// Deliberate navigation carries the keyboard with it: run `change`; if the focused pane
@@ -419,7 +418,7 @@ final class SceneModel {
         change()
         let after = focusSpot
         guard after != before else { return }
-        if after.layout != before.layout || after.zoom != before.zoom || after.workspace != before.workspace || after.route != before.route { suppressHover() }
+        if after.layout != before.layout || after.zoom != before.zoom || after.route != before.route { suppressHover() }
         if focusNonce == nonce { focusContent() }
     }
 
@@ -789,9 +788,8 @@ final class SceneModel {
             return true
         }
         if workspace.submap != nil, scope != .ask {
-            let digit = KeyPress.digits[press.hidUsage].flatMap(Int.init)
             following {
-                switch workspace.submapKey(press.key ?? "", shift: press.modifiers.contains(.shift), alt: press.modifiers.contains(.option), digit: digit) {
+                switch workspace.submapKey(press.key ?? "", shift: press.modifiers.contains(.shift), alt: press.modifiers.contains(.option)) {
                 case .handled, .left: break
                 case .run(let id): perform(id)
                 case .present(let what): present(what)
@@ -873,13 +871,11 @@ final class SceneModel {
         let live = row != nil
         let agent = row?.dto.agent != nil
         let gui = s?.surface == .gui && (s?.hasGUI ?? false)
-        if let n = id.workspaceNumber { return (1...9).contains(n) }
         if id.rawValue.hasPrefix("panel-"), let panel = SceneSnapshot.Panel(rawValue: String(id.rawValue.dropFirst(6))) {
             return s.map { panel.applies(to: $0) } ?? false
         }
-        if id.sendToWorkspaceNumber != nil { return ws.focusedKey != nil }
         switch id.rawValue {
-        case "go-to-session", "workspace-next", "workspace-prev", "focus-follows-pointer": return true
+        case "go-to-session", "focus-follows-pointer": return true
         case "new-window": return openWindow != nil
         case "open-in-new-window": return openWindow != nil && live
         case "split-left", "split-above": return !narrow && (ws.focusedKey != nil || ws.chooserFocused)
@@ -946,20 +942,6 @@ final class SceneModel {
     }
 
     private func execute(_ id: CommandID) {
-        if let n = id.workspaceNumber {
-            if workspace.switchWorkspace(n) {
-                syncRouteToWorkspace()
-                if !workspace.sidebarVisible || narrow { toast("Workspace \(n)") }
-            }
-            return
-        }
-        if let n = id.sendToWorkspaceNumber {
-            if workspace.sendToWorkspace(n) {
-                syncRouteToWorkspace()
-                toast("Sent to workspace \(n)")
-            }
-            return
-        }
         let s = focusedSession
         let key = workspace.focusedKey
         switch id.rawValue {
@@ -988,11 +970,6 @@ final class SceneModel {
         case "swap-pane-down": workspace.swapPane(.down)
         case "focus-pane-next": workspace.cycleFocus(1)
         case "focus-pane-prev": workspace.cycleFocus(-1)
-        case "workspace-next", "workspace-prev":
-            if let n = workspace.stepWorkspace(id.rawValue == "workspace-next" ? 1 : -1) {
-                syncRouteToWorkspace()
-                if !workspace.sidebarVisible || narrow { toast("Workspace \(n)") }
-            }
         case "focus-follows-pointer":
             app.preferences.focusFollowsPointer.toggle()
             toast(app.preferences.focusFollowsPointer ? "Focus follows the pointer" : "Focus stays until you click")
@@ -1403,14 +1380,10 @@ final class SceneModel {
         switch provider {
         case .sessions:
             let visible = Set(workspace.visibleKeys)
-            let others = (1...9).filter { $0 != workspace.currentWorkspace }
             return sidebarOrder.map { row in
                 let here = visible.contains(row.key)
                 var choices = [PaletteNode(key: "go", label: here ? "Focus its pane" : "Switch to it", icon: "arrow.right.circle", action: .openSession(row.key))]
                 if !narrow && !here { choices.append(PaletteNode(key: "pane", label: "Open as a new pane", icon: "plus.rectangle.on.rectangle", detail: "Beside the focused pane", action: .openAsPane(row.key))) }
-                choices.append(PaletteNode(key: "workspace", label: "Move to workspace", icon: "square.grid.3x3", children: others.map { n in
-                    PaletteNode(key: "ws\(n)", label: "Workspace \(n)", icon: "\(n).square", detail: workspace.occupiedWorkspaces.contains(n) ? "Beside what’s there" : "Empty", action: .sendSession(row.key, workspace: n))
-                }))
                 let host = hub.multiHost ? row.host : nil
                 let detail = [row.word.rawValue, row.dto.project, row.dto.branch, host, here ? "on screen" : nil].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
                 return PaletteNode(key: "session:\(row.key)", label: row.title, agent: row.dto.agent, detail: detail, terms: [row.dto.branch, row.host].compactMap { $0 }, action: .openSession(row.key), children: choices)
@@ -1505,11 +1478,6 @@ final class SceneModel {
         switch action {
         case .command(let id): perform(id)
         case .openSession(let key): goTo(key)
-        case .sendSession(let key, let n):
-            if workspace.sendSession(key, to: n) {
-                syncRouteToWorkspace()
-                toast("Moved to workspace \(n)")
-            }
         case .openAsPane(let key):
             workspace.openTile(key, wide: true)
             syncRouteToWorkspace()

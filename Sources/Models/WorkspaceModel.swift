@@ -2,8 +2,9 @@ import Foundation
 import Observation
 
 /// One window's tiling workspace (`../ah/web/App.tsx`, `web/Workspace.tsx`): a single
-/// session or a split of independent viewers, nine workspaces, a focused pane, a maximized
-/// pane, Hyprland-style pane and resize submodes, and a floating scratchpad shell.
+/// session or a split of independent viewers, a focused pane, a maximized pane,
+/// Hyprland-style pane and resize submodes, and a floating scratchpad shell. (The web's
+/// workspaces 1–9 are left out until they're wanted.)
 @MainActor
 @Observable
 final class WorkspaceModel {
@@ -15,7 +16,6 @@ final class WorkspaceModel {
     private(set) var focusPath: LayoutNode.Path?
     var zoom = false
     var submap: Submap?
-    private(set) var spaces = Workspaces()
     var scratchVisible = false
     var scratchKey: String?
     var sidebarVisible = true
@@ -82,7 +82,8 @@ final class WorkspaceModel {
     }
 
     func restore(_ snapshot: SceneSnapshot) {
-        spaces = snapshot.workspaces
+        // What the window showed; a journal from when there were workspaces 1–9 keeps the one
+        // it was on.
         let slot = snapshot.workspaces.slots[snapshot.workspaces.current] ?? .empty
         layout = LayoutNode.normalized(slot.layout)
         selected = layout == nil ? (slot.selected ?? snapshot.session?.key) : nil
@@ -92,12 +93,8 @@ final class WorkspaceModel {
         scratchVisible = snapshot.scratchpadVisible
     }
 
-    /// The workspaces with the current one written back, for the journal.
-    var journalSpaces: Workspaces {
-        var out = spaces
-        out.slots[out.current] = slot
-        return out
-    }
+    /// What the window shows, for the journal: its one slot.
+    var journalSpaces: Workspaces { Workspaces(current: 1, slots: [1: slot]) }
 
     // MARK: Splitting
 
@@ -337,66 +334,6 @@ final class WorkspaceModel {
         focusPath = docked.path
     }
 
-    // MARK: Workspaces 1–9
-
-    @discardableResult
-    func switchWorkspace(_ n: Int) -> Bool {
-        guard n != spaces.current else { return false }
-        let (next, shown) = spaces.switching(to: n, keeping: slot)
-        spaces = next
-        show(shown)
-        return true
-    }
-
-    @discardableResult
-    func sendToWorkspace(_ n: Int) -> Bool {
-        guard let key = layout != nil ? focusedKey : selected, n != spaces.current else { return false }
-        let path = layout != nil ? (focusPath ?? layout?.leaves().first?.path) : nil
-        let (next, shown) = spaces.sending(key, to: n, keeping: slot, path: path)
-        spaces = next
-        show(shown)
-        return true
-    }
-
-    /// Workspaces with something in them (the current one counts what's on screen).
-    var occupiedWorkspaces: [Int] { spaces.occupied(now: slot) }
-    var currentWorkspace: Int { spaces.current }
-
-    /// The next or previous occupied workspace (or the neighboring number when no other is).
-    @discardableResult
-    func stepWorkspace(_ step: Int) -> Int? {
-        let n = spaces.stepping(step, now: slot)
-        return switchWorkspace(n) ? n : nil
-    }
-
-    /// Move any session to workspace `n`: off this screen if it's here, beside what's there.
-    @discardableResult
-    func sendSession(_ key: String, to n: Int) -> Bool {
-        guard n != spaces.current else { return false }
-        if let layout, let leaf = layout.leaves().first(where: { $0.sessionKey == key }) {
-            let keep = focusedKey == key ? nil : focusedKey
-            let (next, shown) = spaces.sending(key, to: n, keeping: slot, path: leaf.path)
-            spaces = next
-            show(shown)
-            // The pane you were in keeps the focus when it's still here.
-            if let keep, let path = self.layout?.leaves().first(where: { $0.sessionKey == keep })?.path { focusPath = path }
-        } else if layout == nil, selected == key {
-            let (next, shown) = spaces.sending(key, to: n, keeping: slot, path: nil)
-            spaces = next
-            show(shown)
-        } else {
-            spaces = spaces.adding(key, to: n, keeping: slot)
-        }
-        return true
-    }
-
-    private func show(_ slot: Workspaces.Slot) {
-        zoom = false
-        layout = LayoutNode.normalized(slot.layout)
-        selected = layout == nil ? slot.selected : nil
-        focusPath = layout?.leaves().first?.path
-    }
-
     // MARK: Submaps
 
     /// What a key does in pane or resize mode. Directions stay in the mode; actions that open
@@ -410,7 +347,7 @@ final class WorkspaceModel {
 
     enum Presentation: Equatable, Sendable { case openTileSwitcher, newSession, scratchpad }
 
-    func submapKey(_ key: String, shift: Bool, alt: Bool = false, digit: Int?) -> SubmapResult {
+    func submapKey(_ key: String, shift: Bool, alt: Bool = false) -> SubmapResult {
         guard let mode = submap else { return .left }
         let directions: [String: LayoutNode.Move] = ["arrowleft": .left, "arrowright": .right, "arrowup": .up, "arrowdown": .down, "h": .left, "l": .right, "k": .up, "j": .down]
         let lowered = key.lowercased()
@@ -431,11 +368,6 @@ final class WorkspaceModel {
             if alt { swapPane(dir) } else if shift { movePane(dir) } else { focusPane(dir) }
             return .handled
         }
-        if let digit, (1...9).contains(digit) {
-            submap = nil
-            if shift { sendToWorkspace(digit) } else { switchWorkspace(digit) }
-            return .handled
-        }
         switch lowered {
         case "v": return .run(shift ? "split-left" : "split-right")
         case "s": return .run(shift ? "split-above" : "split-below")
@@ -444,10 +376,6 @@ final class WorkspaceModel {
             return .handled
         case "tab":
             cycleFocus(shift ? -1 : 1)
-            return .handled
-        case "[", "]":
-            submap = nil
-            stepWorkspace(lowered == "]" ? 1 : -1)
             return .handled
         case "x": return .run("close-pane")
         case "p":
@@ -482,7 +410,7 @@ final class WorkspaceModel {
             (["H", "J", "K", "L"], "focus"), (["⇧", "HJKL"], "move"), (["⌥", "HJKL"], "swap"), (["Tab"], "next pane"),
             (["V"], "split right"), (["⇧", "V"], "split left"), (["S"], "split below"), (["⇧", "S"], "split above"), (["="], "balance"),
             (["P"], "replace"), (["X"], "close"), (["F"], "maximize"), (["T"], "flip"), (["R"], "resize"), (["O"], "open here"),
-            (["N"], "new session"), (["1–9"], "workspace"), (["[", "]"], "prev / next workspace"), (["Esc"], "done"),
+            (["N"], "new session"), (["Esc"], "done"),
         ],
     ]
 }

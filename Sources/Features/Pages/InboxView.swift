@@ -598,17 +598,6 @@ struct SessionRowMenu: View {
         Button(row.dto.pinned ? "Unpin" : "Pin", systemImage: row.dto.pinned ? "pin.slash" : "pin") {
             Task { try? await hub.client(forKey: row.key).pin(row.uid, pinned: !row.dto.pinned); hub.refresh() }
         }
-        // Workspaces are the iPad's (a phone shows one session at a time).
-        if !scene.narrow {
-            Menu("Send to Workspace", systemImage: "rectangle.stack") {
-                ForEach(1...9, id: \.self) { n in
-                    Button("Workspace \(n)") {
-                        scene.open(row.key)
-                        scene.perform(.toWorkspace(n))
-                    }
-                }
-            }
-        }
         Divider()
         Button("Terminate…", systemImage: "xmark.octagon", role: .destructive) { scene.sheet = .confirmTerminate(row.key) }
     }

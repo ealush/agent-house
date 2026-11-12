@@ -12,9 +12,10 @@ private func press(_ key: String, meta: Bool = false, ctrl: Bool = false, alt: B
     CommandMatcher.match(Chord(key, meta: meta, ctrl: ctrl, alt: alt, shift: shift), scope: scope, bindings: bindings, field: field)
 }
 
-@Test func theCatalogHasEightyNineCommandsAndNoSharedDefaults() {
-    #expect(CommandCatalog.web.count == 89)
-    #expect(Set(CommandCatalog.web.map(\.id)).count == 89)
+@Test func theCatalogHasTheWebsSeventyOneCommandsAndNoSharedDefaults() {
+    // The web's 89 less its workspaces 1–9 and send-to-workspace 1–9, left out until wanted.
+    #expect(CommandCatalog.web.count == 71)
+    #expect(Set(CommandCatalog.web.map(\.id)).count == 71)
     var seen: [String: CommandID] = [:]
     for command in CommandCatalog.web {
         for chord in command.chords {
@@ -25,7 +26,7 @@ private func press(_ key: String, meta: Bool = false, ctrl: Bool = false, alt: B
     }
     #expect(CommandCatalog.web.filter { $0.group == .navigate }.count == 17)
     #expect(CommandCatalog.web.filter { $0.group == .session }.count == 31)
-    #expect(CommandCatalog.web.filter { $0.group == .workspace }.count == 41)
+    #expect(CommandCatalog.web.filter { $0.group == .workspace }.count == 23)
 }
 
 @Test func switcherAndCyclingMatchTheirChords() {

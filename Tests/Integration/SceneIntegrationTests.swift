@@ -87,16 +87,10 @@ struct SceneIntegrationTests {
         scene.perform("swap-pane-right")
         #expect(scene.workspace.layout?.keys == [a.uid, b.uid])
         scene.workspace.focusPane(.left)
-        // ⌥2 goes to workspace 2, ⌥1 brings the split back.
-        #expect(scene.handle(key(0x1F, "™", [.option]), scope: .app))
-        #expect(scene.workspace.journalSpaces.current == 2)
-        #expect(scene.handle(key(0x1E, "¡", [.option]), scope: .app))
+        // No workspaces 1–9: ⌥2 and ⌃⌥] are no shortcut, and the split stays.
+        #expect(!scene.handle(key(0x1F, "™", [.option]), scope: .app))
+        #expect(!scene.handle(key(0x30, "]", [.control, .option]), scope: .app))
         #expect(scene.workspace.layout?.keys == [a.uid, b.uid])
-        // ⌃⌥] steps to the next workspace with something in it: there is none, so 2, then back.
-        #expect(scene.handle(key(0x30, "]", [.control, .option]), scope: .app))
-        #expect(scene.workspace.currentWorkspace == 2)
-        #expect(scene.handle(key(0x2F, "[", [.control, .option]), scope: .app))
-        #expect(scene.workspace.currentWorkspace == 1 && scene.workspace.layout?.keys == [a.uid, b.uid])
         // The palette hides what can't run here and puts the keyboard back when it closes.
         scene.didFocus(.terminal(a.uid))
         scene.perform("go-to-session")
@@ -126,12 +120,9 @@ struct SceneIntegrationTests {
         #expect(scene.workspace.layout?.keys == [a.uid, b.uid] && scene.workspace.focusedKey == b.uid)
         #expect(scene.focusRequest?.target == .terminal(b.uid))
         #expect(scene.recentPaletteRows().first?.action == .openSession(b.uid))
-        // A session row's choices move it to another workspace.
+        // A session row's choices: no workspace to move it to.
         let row = PaletteTree.search(scene.paletteTree(), "keys-b").first { $0.node.action == .openSession(b.uid) }?.node
-        #expect(row?.children?.contains { $0.key == "workspace" } == true)
-        scene.run(.sendSession(b.uid, workspace: 4))
-        #expect(scene.workspace.layout == nil && scene.workspace.selected == a.uid)
-        #expect(scene.workspace.occupiedWorkspaces.contains(4))
+        #expect(row?.children?.contains { $0.key == "workspace" } == false)
         account.deactivate()
     }
 
@@ -146,8 +137,7 @@ struct SceneIntegrationTests {
         scene.sheet = nil
         scene.open(keep.uid)
         scene.workspace.openTile(doomed.uid, wide: true)
-        _ = scene.workspace.switchWorkspace(3)
-        scene.open(keep.uid)
+        scene.workspace.focusPane(.left)
         scene.perform("panel-files")
         #expect(scene.focusedSession?.panel == .files)
         scene.setSurface(.terminal, for: keep.uid)
@@ -167,10 +157,9 @@ struct SceneIntegrationTests {
         window.restore()
         _ = try await waitFor("restored") { window.isRestored ? true : nil }
         #expect(window.route == .session(keep.uid))
-        #expect(window.workspace.journalSpaces.current == 3)
         #expect(window.focusedSession?.panel == .files)
         #expect(window.focusedSession?.surface == .terminal, "the device's GUI/terminal choice comes back")
-        // Workspace 1 had the doomed session beside the kept one: it now reopens as its record.
+        // The split had the doomed session beside the kept one: it now reopens as its record.
         let one = try #require(window.workspace.journalSpaces.slots[1]?.layout)
         #expect(one.keys.first == keep.uid)
         #expect(one.keys.count == 2)

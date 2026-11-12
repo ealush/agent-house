@@ -33,8 +33,6 @@ enum PaletteAction: Equatable, Sendable, Hashable {
     /// Go to a session: its pane when it's already on screen, else open it.
     case openSession(String)
     case openAsPane(String)
-    /// Move a session to workspace N, beside what's there.
-    case sendSession(String, workspace: Int)
     case sendQueuedNow(uid: String, item: String)
     case switchModel(String)
     case switchEffort(String)
@@ -53,7 +51,7 @@ enum PaletteAction: Equatable, Sendable, Hashable {
         case .openSession(let key): return "session:\(key)"
         case .settings(let section): return "settings:\(section)"
         case .runInProject(let path, let preset): return "run:\(preset):\(path)"
-        case .openAsPane, .sendSession, .sendQueuedNow, .switchModel, .switchEffort, .switchMode, .continueIn, .openLink: return nil
+        case .openAsPane, .sendQueuedNow, .switchModel, .switchEffort, .switchMode, .continueIn, .openLink: return nil
         }
     }
 }
@@ -112,8 +110,6 @@ enum PaletteTree {
             .category(key: "swap", label: "Swap panes", icon: "arrow.left.arrow.right", detail: "Trade places with a neighbor", terms: ["exchange"], children: [
                 .command("swap-pane-left"), .command("swap-pane-right"), .command("swap-pane-up"), .command("swap-pane-down"),
             ]),
-            .category(key: "workspaces", label: "Workspaces", icon: "square.grid.3x3", detail: "Hyprland-style 1–9: go to one, or send the focused session there", children:
-                [Spec.command("workspace-next"), .command("workspace-prev")] + (1...9).flatMap { [Spec.command(.workspace($0)), .command(.toWorkspace($0))] }),
             .category(key: "resize", label: "Resize", icon: "arrow.left.and.right", detail: "Dividers and the side panel, by key", children: [
                 .command("resize-mode"), .command("resize-left"), .command("resize-right"), .command("resize-up"), .command("resize-down"), .command("maximize-pane"),
             ]),

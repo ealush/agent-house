@@ -76,59 +76,26 @@ private func split(_ d: LayoutNode.Direction, _ r: Double, _ a: LayoutNode, _ b:
 }
 
 @MainActor
-@Test func workspaceSteppingVisitsOccupiedOnesOrTheNextNumber() {
-    let ws = WorkspaceModel()
-    ws.open("a")
-    #expect(ws.stepWorkspace(1) == 2, "nothing else occupied: the next number")
-    ws.open("b")
-    ws.switchWorkspace(5)
-    ws.open("c")
-    #expect(ws.occupiedWorkspaces == [1, 2, 5])
-    #expect(ws.stepWorkspace(1) == 1, "wraps among the occupied")
-    #expect(ws.stepWorkspace(-1) == 5)
-    #expect(ws.stepWorkspace(-1) == 2)
-}
-
-@MainActor
-@Test func sendingAnySessionToAWorkspace() {
-    let ws = WorkspaceModel()
-    ws.open("a")
-    ws.openTile("b", wide: true)
-    ws.focusPane(.left)
-    // Not on screen: it joins workspace 3 and this one stays as it is.
-    #expect(ws.sendSession("z", to: 3))
-    #expect(ws.layout?.keys == ["a", "b"] && ws.focusedKey == "a")
-    // On screen but not focused: it leaves, the focused pane keeps the focus.
-    #expect(ws.sendSession("b", to: 3))
-    #expect(ws.layout == nil && ws.selected == "a")
-    ws.switchWorkspace(3)
-    #expect(ws.layout?.keys == ["z", "b"])
-    #expect(!ws.sendSession("z", to: 3), "already there")
-}
-
-@MainActor
 @Test func paneModeSplitsBeforeSwapsBalancesAndCycles() {
     let ws = WorkspaceModel()
     ws.open("a")
     ws.openTile("b", wide: true)
     ws.submap = .pane
-    #expect(ws.submapKey("v", shift: true, digit: nil) == .run("split-left"))
-    #expect(ws.submapKey("s", shift: true, digit: nil) == .run("split-above"))
-    #expect(ws.submapKey("h", shift: false, alt: true, digit: nil) == .handled)
+    #expect(ws.submapKey("v", shift: true) == .run("split-left"))
+    #expect(ws.submapKey("s", shift: true) == .run("split-above"))
+    #expect(ws.submapKey("h", shift: false, alt: true) == .handled)
     #expect(ws.layout?.keys == ["b", "a"], "⌥h swaps left")
     #expect(ws.focusedKey == "b")
-    #expect(ws.submapKey("Tab", shift: false, digit: nil) == .handled)
+    #expect(ws.submapKey("Tab", shift: false) == .handled)
     #expect(ws.focusedKey == "a")
     ws.setRatio(at: [], 0.8)
-    #expect(ws.submapKey("=", shift: false, digit: nil) == .handled)
+    #expect(ws.submapKey("=", shift: false) == .handled)
     if case .split(_, let ratio, _, _)? = ws.layout { #expect(abs(ratio - 0.5) < 1e-9) }
-    #expect(ws.submapKey("]", shift: false, digit: nil) == .handled)
-    #expect(ws.submap == nil && ws.currentWorkspace == 2)
 }
 
 @Test func nativeCommandsKeepTheWebCatalogAndClashWithNothing() {
-    #expect(CommandCatalog.web.count == 89)
-    #expect(CommandCatalog.native.count == 21)
+    #expect(CommandCatalog.web.count == 71)
+    #expect(CommandCatalog.native.count == 19)
     #expect(Set(CommandCatalog.all.map(\.id)).count == CommandCatalog.all.count)
     var seen: [Chord: CommandID] = [:]
     for command in CommandCatalog.all {
@@ -139,7 +106,7 @@ private func split(_ d: LayoutNode.Direction, _ r: Double, _ a: LayoutNode, _ b:
     }
     #expect(CommandMatcher.match(Chord("=", ctrl: true, shift: true), scope: .app) == "balance-panes")
     #expect(CommandMatcher.match(Chord("Tab", ctrl: true), scope: .field) == "focus-pane-next")
-    #expect(CommandMatcher.match(Chord("]", ctrl: true, alt: true), scope: .terminal) == "workspace-next")
+    #expect(CommandMatcher.match(Chord("]", ctrl: true, alt: true), scope: .terminal) == nil, "no workspaces to step through")
     #expect(CommandMatcher.match(Chord("c", meta: true, alt: true), scope: .app) == "copy-link")
 }
 

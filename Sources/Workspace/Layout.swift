@@ -386,79 +386,17 @@ indirect enum LayoutNode: Hashable, Codable, Sendable {
     }
 }
 
-/// Workspaces 1–9, Hyprland-style (`../ah/web/workspaces.ts`): each holds an arrangement on
-/// this device and window. Switching keeps the one you leave; sending moves a session over.
+/// What a window shows, as the journal keeps it. Shaped as the web's workspaces 1–9
+/// (`../ah/web/workspaces.ts`), which the app had and left out until they're wanted: a window
+/// now writes one slot, and reads a journal from before as the workspace it was on.
 struct Workspaces: Equatable, Codable, Sendable {
     struct Slot: Equatable, Codable, Sendable {
         var layout: LayoutNode?
         var selected: String?
 
         static let empty = Slot(layout: nil, selected: nil)
-        var isOccupied: Bool { selected != nil || layout != nil }
     }
 
     var current = 1
     var slots: [Int: Slot] = [:]
-
-    /// Leave the current workspace (keeping `now` in it) for `n`; returns what to show.
-    func switching(to n: Int, keeping now: Slot) -> (Workspaces, Slot) {
-        var next = self
-        next.slots[current] = now
-        next.current = n
-        return (next, n == current ? now : (next.slots[n] ?? .empty))
-    }
-
-    /// Send `key` (at `path` in a split) to workspace `n`: it leaves here and joins there,
-    /// beside what's there or alone.
-    func sending(_ key: String, to n: Int, keeping now: Slot, path: LayoutNode.Path?) -> (Workspaces, Slot) {
-        guard n != current else { return (self, now) }
-        var left = Slot.empty
-        if let layout = now.layout, let path {
-            let closed = layout.closing(.path(path))
-            left = Slot(layout: LayoutNode.normalized(closed), selected: nil)
-            if left.layout == nil {
-                left.selected = (closed ?? layout).leaves().first { $0.sessionKey != key }?.sessionKey
-            }
-        }
-        var next = self
-        next.slots[current] = left
-        next.slots[n] = Workspaces.joining(key, slots[n] ?? .empty)
-        return (next, left)
-    }
-
-    /// Add a session that isn't on screen here to workspace `n`, leaving this one as it is.
-    func adding(_ key: String, to n: Int, keeping now: Slot) -> Workspaces {
-        guard n != current else { return self }
-        var next = self
-        next.slots[current] = now
-        next.slots[n] = Workspaces.joining(key, slots[n] ?? .empty)
-        return next
-    }
-
-    /// A session joining a workspace: a new tile beside what's there, or alone.
-    private static func joining(_ key: String, _ there: Slot) -> Slot {
-        if let layout = there.layout, !layout.keys.contains(key), let last = layout.leaves().last {
-            return Slot(layout: layout.splitting(.path(last.path), direction: .horizontal, next: key), selected: nil)
-        }
-        if let layout = there.layout { return Slot(layout: layout, selected: nil) }
-        if let selected = there.selected, selected != key {
-            return Slot(layout: LayoutNode.session(selected).splitting(.key(selected), direction: .horizontal, next: key), selected: nil)
-        }
-        return Slot(layout: nil, selected: key)
-    }
-
-    /// Workspaces with something in them, counting `now` for the current one.
-    func occupied(now: Slot) -> [Int] {
-        (1...9).filter { $0 == current ? now.isOccupied : (slots[$0]?.isOccupied ?? false) }
-    }
-
-    /// The next workspace in `step`'s direction: among the occupied ones when there are
-    /// others (Hyprland's `e+1`), otherwise the neighboring number, wrapping 1–9.
-    func stepping(_ step: Int, now: Slot) -> Int {
-        let candidates = Set(occupied(now: now)).union([current]).sorted()
-        if candidates.count > 1, let i = candidates.firstIndex(of: current) {
-            return candidates[(i + step + candidates.count) % candidates.count]
-        }
-        return (current - 1 + step + 9) % 9 + 1
-    }
 }
