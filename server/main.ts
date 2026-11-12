@@ -39,7 +39,7 @@ import { FsError, dirStatus, list, makeDir, receive, sendFile, setRoots, roots, 
 import { Peers, proxyHttp, proxyWs, peerUrlAllowed } from './peers.ts';
 import { SearchIndexer, combineResponses, type SearchParams } from './search.ts';
 import { Auth, AuthError, clearCookies, type Caller } from './auth.ts';
-import { Gate, LOOPBACK_BIND } from './gate.ts';
+import { Gate, LOOPBACK_BIND, servedAt } from './gate.ts';
 import { Apns, ApnsError } from './apns.ts';
 import { HttpError, send, readBody, readJson, str, safeDecode } from './http.ts';
 import { rebuildFailure, rebuildWeb } from './rebuild.ts';
@@ -1191,6 +1191,18 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
 
 // ---------- auth routes
 
+/**
+ * The https address Tailscale Serve publishes ah at, re-read at most once a minute:
+ * Serve can be set up, or turned off, while ah runs. The only address another device
+ * can use: ah listens on loopback, and the gate refuses any other name (its tailnet IP,
+ * a LAN address) before sign-in, which passkeys bind to this name anyway.
+ */
+let served: { at: number; url: Promise<string | null> } | null = null;
+function serveAddress(): Promise<string | null> {
+  if (!served || Date.now() - served.at > 60_000) served = { at: Date.now(), url: serveStatus((server.address() as AddressInfo).port) };
+  return served.url;
+}
+
 async function authApi(req: IncomingMessage, res: ServerResponse, path: string, method: string, caller: Caller | null) {
   const route = (verb: string, re: RegExp) => (method === verb ? path.match(re) : null);
   const label = (b: Record<string, unknown>) => String(b.label ?? '').replace(/[^\w .·()-]/g, '').slice(0, 60);
@@ -1249,7 +1261,8 @@ async function authApi(req: IncomingMessage, res: ServerResponse, path: string, 
     res.setHeader('cache-control', 'no-store');
     return send(res, 200, { key });
   }
-  if (route('GET', /^\/api\/auth\/overview$/)) return send(res, 200, { ...auth.overview(caller), audit: auth.recentAudit(50) });
+  // `address`: where another device opens ah (Security → Add a device), or null off the tailnet.
+  if (route('GET', /^\/api\/auth\/overview$/)) return send(res, 200, { ...auth.overview(caller), audit: auth.recentAudit(50), address: await serveAddress() });
   if (route('POST', /^\/api\/auth\/code$/)) {
     return send(res, 200, { code: auth.issueCode(caller.kind === 'session' ? `device ${caller.session.label}` : 'host CLI'), ttlMinutes: 10 });
   }
@@ -1456,12 +1469,7 @@ function upgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
 async function serveStatus(port: number): Promise<string | null> {
   try {
     const { stdout } = await promisify(execFile)('tailscale', ['serve', 'status', '--json'], { timeout: 5000 });
-    const cfg = JSON.parse(stdout || '{}');
-    for (const [hostPort, web] of Object.entries<any>(cfg.Web ?? {})) {
-      for (const h of Object.values<any>(web.Handlers ?? {})) {
-        if (typeof h.Proxy === 'string' && new RegExp(`(127\\.0\\.0\\.1|localhost):${port}/?$`).test(h.Proxy)) return `https://${hostPort.replace(/:443$/, '')}`;
-      }
-    }
+    return servedAt(JSON.parse(stdout || '{}'), port);
   } catch {}
   return null;
 }

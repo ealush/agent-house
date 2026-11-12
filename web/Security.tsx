@@ -3,6 +3,7 @@ import { askConfirm } from './ask.tsx';
 import { authApi, explain, passkeysAvailable, type Overview } from './auth.ts';
 import { age } from './agents.ts';
 import { api, deviceName, platformName, setDeviceName } from './api.ts';
+import { copyText } from './selection.ts';
 
 const sec = (ms: number) => Math.floor(ms / 1000);
 
@@ -88,6 +89,9 @@ export function Security({ onLocked }: { onLocked: () => void }) {
   // Sign-in turned off in the host's config: passkeys, devices and locking mean nothing.
   const signin = o?.enabled !== false;
   const [name, setName] = useState(deviceName);
+  // The only address another device can use: ah answers on loopback and its ts.net name, nothing else.
+  const address = o?.address ?? (location.hostname.endsWith('.ts.net') ? location.origin : null);
+  const [copied, setCopied] = useState<'yes' | 'no' | null>(null);
 
   return (
     <div className="security">
@@ -147,7 +151,7 @@ export function Security({ onLocked }: { onLocked: () => void }) {
         {code && code.until > Date.now() ? (
           <>
             <div className="big-code">{code.code}</div>
-            <p className="hint">On the new device, open ah and enter this code within 10 minutes. It works once.</p>
+            <p className="hint">On the new device, open ah{address ? ' at the address below' : ''} and enter this code within 10 minutes. It works once.</p>
           </>
         ) : (
           <>
@@ -159,6 +163,32 @@ export function Security({ onLocked }: { onLocked: () => void }) {
               Create setup code
             </button>
           </>
+        )}
+        {address ? (
+          <div className="address-row">
+            <span className="stack">
+              <span className="sub">Address</span>
+              <span className="address">{address.replace(/^https:\/\//, '')}</span>
+            </span>
+            <button
+              className="btn"
+              aria-label="Copy the address"
+              onClick={() =>
+                void copyText(address).then((ok) => {
+                  setCopied(ok ? 'yes' : 'no');
+                  setTimeout(() => setCopied(null), 2000);
+                })
+              }
+            >
+              {copied === 'yes' ? 'Copied' : copied === 'no' ? "Couldn't copy" : 'Copy'}
+            </button>
+          </div>
+        ) : (
+          o && (
+            <p className="hint">
+              Other devices can't reach ah yet. On the host, run <code>node bin/ah.js setup tailscale</code> once.
+            </p>
+          )
         )}
         {current?.via === 'password' && pk.ok && (
           <button className="btn" onClick={() => act(() => authApi.addPasskey(), 'Passkey added for this device.')}>

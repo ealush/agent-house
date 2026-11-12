@@ -119,3 +119,17 @@ export class Gate {
     return origin.https === serve && origin.port === addressed;
   }
 }
+
+/**
+ * The https origin a `tailscale serve status --json` config forwards to ah's loopback
+ * `port` at ("https://box.tail1234.ts.net"), or null when Serve doesn't publish it.
+ */
+export function servedAt(cfg: { Web?: Record<string, { Handlers?: Record<string, { Proxy?: unknown }> }> }, port: number): string | null {
+  const local = new RegExp(`^(https?://)?(127\\.0\\.0\\.1|localhost):${port}/?$`);
+  for (const [hostPort, web] of Object.entries(cfg.Web ?? {})) {
+    for (const h of Object.values(web?.Handlers ?? {})) {
+      if (typeof h?.Proxy === 'string' && local.test(h.Proxy)) return `https://${hostPort.replace(/:443$/, '')}`;
+    }
+  }
+  return null;
+}
