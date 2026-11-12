@@ -285,7 +285,7 @@ struct SessionRowView: View {
                 AgentMark(agent: row.dto.agent)
                 VStack(alignment: .leading, spacing: 2) {
                     titleLine(onAccent: onAccent)
-                    Text(detail).font(.ah(.caption)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.muted).lineLimit(stacked ? 2 : 1)
+                    Text(detail).font(.ah(.caption)).foregroundStyle(secondary(onAccent)).lineLimit(stacked ? 2 : 1)
                     if stacked { status(onAccent: onAccent, compact: false) }
                 }
                 // The title takes the room first; the status keeps its own size beside it.
@@ -324,8 +324,8 @@ struct SessionRowView: View {
 
     private func titleLine(onAccent: Bool) -> some View {
         HStack(spacing: 6) {
-            if row.dto.pinned { Image(systemName: "pin.fill").font(.ah(.caption2)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint) }
-            Text(row.title).font(dense ? Font.ah(.body) : Font.ah(.body).weight(.medium)).foregroundStyle(onAccent ? .white : theme.text).lineLimit(1)
+            if row.dto.pinned { Image(systemName: "pin.fill").font(.ah(.caption2)).foregroundStyle(tertiary(onAccent)) }
+            Text(row.title).font(dense ? Font.ah(.body) : Font.ah(.body).weight(.medium)).foregroundStyle(primary(onAccent)).lineLimit(1)
             if let fork = row.dto.fork {
                 // A fork (or a session others were forked from): its lineage at a glance.
                 HStack(spacing: 2) {
@@ -333,10 +333,25 @@ struct SessionRowView: View {
                     if fork.forks > 0 { Text("\(fork.forks)") }
                 }
                 .font(.ah(.caption2).weight(.semibold))
-                .foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint)
+                .foregroundStyle(tertiary(onAccent))
                 .accessibilityLabel(fork.parentTitle.isEmpty ? "\(fork.forks) forks" : "Fork of \(fork.parentTitle)")
             }
         }
+    }
+
+    // In the sidebar the list draws the selection, and its fill isn't always reported as
+    // increased prominence: the system's own styles there go white on it, as the pages'
+    // rows above do, where the theme's grey stayed grey on pink.
+    private func primary(_ onAccent: Bool) -> AnyShapeStyle {
+        onAccent ? AnyShapeStyle(.white) : selectable ? AnyShapeStyle(.primary) : AnyShapeStyle(theme.text)
+    }
+
+    private func secondary(_ onAccent: Bool) -> AnyShapeStyle {
+        onAccent ? AnyShapeStyle(.white.opacity(0.8)) : selectable ? AnyShapeStyle(.secondary) : AnyShapeStyle(theme.muted)
+    }
+
+    private func tertiary(_ onAccent: Bool) -> AnyShapeStyle {
+        onAccent ? AnyShapeStyle(.white.opacity(0.8)) : selectable ? AnyShapeStyle(.tertiary) : AnyShapeStyle(theme.faint)
     }
 
     private func status(onAccent: Bool, compact: Bool) -> some View {
