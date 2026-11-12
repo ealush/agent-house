@@ -329,7 +329,8 @@ struct NewSessionScreen: View {
             }
             .padding(.horizontal, 18)
             .padding(.bottom, 12)
-            .transition(.opacity)
+            // In once the chips have gone from where it lands: together, it showed through them.
+            .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 8)).animation(.smooth(duration: 0.3).delay(0.28)), removal: .opacity))
         } else if draft.phase == .starting {
             VStack(spacing: 10) {
                 ProgressView()
