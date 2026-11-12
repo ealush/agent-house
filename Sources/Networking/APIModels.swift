@@ -431,13 +431,7 @@ struct OmarchyTheme: Codable, Equatable, Sendable {
     let font: String?
 }
 
-struct MessagesResult: Codable, Equatable, Sendable {
-    let messages: [String]
-}
-
 struct UploadedPath: Codable, Equatable, Sendable { let path: String }
-
-struct OKResult: Codable, Equatable, Sendable { let ok: Bool? }
 
 struct ClearedUploads: Codable, Equatable, Sendable {
     let ok: Bool

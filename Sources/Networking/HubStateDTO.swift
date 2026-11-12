@@ -144,10 +144,6 @@ struct SessionDTO: Codable, Equatable, Sendable {
     let feed: String?
     let fork: ForkLineage?
 
-    func identity(on host: String) -> SessionIdentity {
-        SessionIdentity(host: host, uid: uid)
-    }
-
     // Unknown values fail decoding, rather than inventing an idle/safe state.
     enum Status: String, Codable, Sendable {
         case busy, idle, waiting, attention

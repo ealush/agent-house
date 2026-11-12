@@ -86,7 +86,6 @@ final class SessionModel: Identifiable {
     var turnLive: Bool { working || waiting }
     var launch: LaunchState { LaunchState(preset: row.flatMap(hub.preset), session: row?.dto) }
     var ask: AskDTO? { row?.dto.ask }
-    var askParts: AskParts? { ask.map { AskParts($0, detail: row?.dto.detail) } }
     var otherDevices: [String] { row?.dto.devices.filter { $0 != api.device.name } ?? [] }
 
     /// Blocks for the timeline, projected once per change.

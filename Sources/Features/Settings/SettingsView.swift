@@ -965,7 +965,6 @@ private struct SubscriptionEditor: View {
     @State var draft: SubscriptionDraft
     let close: () -> Void
     @State private var key = ""
-    @State private var exportVar = false
 
     var body: some View {
         NavigationStack {

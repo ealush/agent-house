@@ -169,6 +169,17 @@ enum LayerColor {
         case .todo: return theme.faint
         }
     }
+
+    /// The same for a status written out in a tag: merged and switched-off layers stay
+    /// readable, where a mark of theirs fades.
+    static func tag(_ status: LayerStatus, _ theme: Theme) -> Color {
+        switch status.tone {
+        case .needs: return theme.brand
+        case .busy: return theme.run
+        case .ready, .merged: return theme.done
+        case .off, .todo: return theme.muted
+        }
+    }
 }
 
 /// A new review: pick a repo, then GitHub's chain under a PR, a GitHub stack, or PRs by hand.
@@ -602,7 +613,7 @@ private struct LayerRow: View {
                 Text(layer.name).font(.ah(.subheadline).weight(.semibold)).monospacedDigit()
                 Text(layer.title).font(.ah(.subheadline)).lineLimit(2)
                 Spacer(minLength: 6)
-                StatusTag(text: layer.status.word, color: tone(layer.status))
+                StatusTag(text: layer.status.word, color: LayerColor.tag(layer.status, theme))
             }
             HStack(spacing: 8) {
                 Label(confidence.checksText, systemImage: checksSymbol(confidence.checks)).foregroundStyle(checksColor(confidence.checks))
@@ -613,15 +624,6 @@ private struct LayerRow: View {
             .font(.ah(.caption2))
         }
         .accessibilityElement(children: .combine)
-    }
-
-    private func tone(_ status: LayerStatus) -> Color {
-        switch status.tone {
-        case .needs: return theme.brand
-        case .busy: return theme.run
-        case .ready, .merged: return theme.done
-        default: return theme.muted
-        }
     }
 
     private func checksSymbol(_ outcome: Checks.Outcome) -> String {
@@ -725,7 +727,7 @@ struct LayerView: View {
                 Text(layer.role.isEmpty ? "#\(layer.pr)" : "#\(layer.pr) · \(layer.role)")
                     .font(.ahMono(.caption).weight(.semibold))
                     .foregroundStyle(theme.muted)
-                StatusTag(text: layer.status.word, color: LayerColor.color(layer.status, theme))
+                StatusTag(text: layer.status.word, color: LayerColor.tag(layer.status, theme))
                 if layer.draft { StatusTag(text: "Draft", color: theme.muted) }
             }
             Text(layer.title)

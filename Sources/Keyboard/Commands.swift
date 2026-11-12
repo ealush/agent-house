@@ -526,11 +526,6 @@ struct KeyBindings: Equatable, Sendable, Codable {
     var modified: Set<CommandID> { Set(overrides.keys) }
 }
 
-/// The handlers that can run right now (registered by what's on screen, newest wins).
-protocol CommandAvailability {
-    func isActive(_ id: CommandID) -> Bool
-}
-
 enum CommandMatcher {
     /// The command a chord runs in `scope`, or nil (`matchShortcut`).
     static func match(_ chord: Chord, scope: KeyScope, bindings: KeyBindings = KeyBindings(), field: FieldState = FieldState()) -> CommandID? {

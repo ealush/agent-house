@@ -96,7 +96,6 @@ import Testing
     #expect(palette.brand == "#7aa2f7")
     #expect(palette.surface == "#1a1b26", "no dark_background: the background")
     #expect(palette.run == "#7dcfff" && palette.done == "#9ece6a" && palette.danger == "#f7768e")
-    #expect(palette.color(for: .needsYou) == "#7aa2f7")
     #expect(palette.terminal.ansi.count == 16)
     #expect(palette.terminal.ansi[9] == "#f7768e", "bright red falls back to red")
     #expect(ThemePalette.omarchy(OmarchyTheme(name: "x", mode: "dark", colors: ["background": "#000000"], font: nil)) == nil)

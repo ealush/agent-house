@@ -266,11 +266,6 @@ struct QuestionForm: Equatable, Sendable {
         drafts[qi].text = text
     }
 
-    mutating func clearOther(_ qi: Int) {
-        drafts[qi].other = false
-        drafts[qi].text = ""
-    }
-
     mutating func setNotes(_ qi: Int, _ notes: String) {
         guard drafts.indices.contains(qi) else { return }
         drafts[qi].notes = notes

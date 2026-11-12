@@ -166,9 +166,3 @@ struct InboxSections: Equatable, Sendable {
         waiting.map { "w \($0.key)" } + running.map { "r \($0.key)" } + rest.map { "i \($0.key)" }
     }
 }
-
-/// The newest past sessions from a blank session's project, to pick back up (`recentFor`).
-func recentHistory(_ history: [HistoryRow], for row: SessionRow, count: Int = 4) -> [HistoryRow] {
-    Array(history.filter { $0.host == row.host && $0.dto.project == row.dto.project && $0.dto.ref != row.uid && $0.dto.harness != "shell" }
-        .sorted { $0.dto.at > $1.dto.at }.prefix(count))
-}

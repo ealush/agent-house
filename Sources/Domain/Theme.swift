@@ -115,16 +115,6 @@ struct ThemePalette: Equatable, Sendable {
         let digits = hex.hasPrefix("#") ? String(hex.dropFirst().prefix(6)) : String(hex.prefix(6))
         return "#" + digits + String(format: "%02x", Int((a * 255).rounded()))
     }
-
-    func color(for word: StatusWord) -> String {
-        switch word {
-        case .needsYou: return brand
-        case .working: return run
-        case .done, .newOutput: return done
-        case .limited: return limited
-        case .idle: return faint
-        }
-    }
 }
 
 /// The terminal's 16 colors plus ground, cursor and selection.

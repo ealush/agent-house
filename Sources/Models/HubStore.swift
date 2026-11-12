@@ -231,12 +231,6 @@ final class HubStore {
         return index[key]
     }
 
-    /// The host a key lives on (nil for an unknown peer).
-    func host(of key: String) -> String? {
-        guard let parsed = SessionKey(key) else { return nil }
-        return parsed.host ?? hostname
-    }
-
     /// The API for a host: the hub's for itself, `/h/<peer>` for a peer.
     func client(host: String?) -> APIClient {
         guard let host, host != hostname else { return api }

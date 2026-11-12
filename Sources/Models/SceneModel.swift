@@ -80,7 +80,6 @@ final class SceneModel {
     @ObservationIgnored private var pendingRestore: SceneSnapshot?
     /// A link's place that arrived before the window's own state was back.
     @ObservationIgnored private var pendingPlace: Place?
-    @ObservationIgnored private var panelDelta: Double = 0
     /// Where the keyboard is now (a composer or terminal), as the responders report it.
     @ObservationIgnored private(set) var currentFocus: FocusTarget?
     /// Per session, where the keyboard was last: its composer or its terminal.
@@ -1555,11 +1554,11 @@ enum SettingsSection: String, CaseIterable, Sendable {
 
     var summary: String {
         switch self {
-        case .security: return "This device, signed-in devices, setup codes, activity"
+        case .security: return "Devices, setup codes, sign-in activity"
         case .appearance: return "System, dark, light or Omarchy"
         case .shortcuts: return "Every keyboard command and its binding"
         case .notifications: return "Needs you and finished, on this device"
-        case .agents: return "Which agents New session offers, and their versions"
+        case .agents: return "The agents New session offers"
         case .subscriptions: return "Model providers for side chat and review"
         case .environment: return "Variables every session starts with"
         case .search: return "The full-text index"

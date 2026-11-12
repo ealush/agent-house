@@ -302,9 +302,6 @@ struct APIClient: Sendable {
         if hidden { query.append(URLQueryItem(name: "hidden", value: "1")) }
         return try await call("GET", "/api/fs/list", query: query)
     }
-    func fileURL(_ path: String, download: Bool = false) -> URL {
-        url("/api/fs/file", query: [URLQueryItem(name: "path", value: path)] + (download ? [URLQueryItem(name: "download", value: "1")] : []))
-    }
     /// A host file's bytes, authenticated (for Quick Look and images).
     func file(_ path: String) async throws -> Data { try await send(await request("GET", "/api/fs/file", query: [URLQueryItem(name: "path", value: path)])) }
     func mkdir(_ path: String) async throws -> String { (try await call("POST", "/api/fs/mkdir", json: ["path": path], as: UploadedPath.self)).path }

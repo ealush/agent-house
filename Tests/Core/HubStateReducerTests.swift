@@ -35,7 +35,7 @@ private func stateEvent(windows: String = "[\(sessionJSON)]", api: Int = 28) -> 
     let state = try #require(reducer.state)
     #expect(state.hosts.first?.isSelf == true)
     let session = try #require(state.windows.first)
-    #expect(session.identity(on: state.hostname) == SessionIdentity(host: "hub", uid: "stable-uid"))
+    #expect(session.uid == "stable-uid")
     #expect(session.activity == 1792700000.5)
     #expect(session.ask?.kind == .command)
     #expect(session.ask?.options?.first?.key == "1")
@@ -58,7 +58,7 @@ private func stateEvent(windows: String = "[\(sessionJSON)]", api: Int = 28) -> 
     #expect(reducer.state?.focus?.key == "other")
 }
 
-@Test func stableSessionIdentitySurvivesTmuxWindowReplacementAndIsHostScoped() throws {
+@Test func stableSessionIdentitySurvivesTmuxWindowReplacement() throws {
     var reducer = HubStateReducer()
     try reducer.apply(stateEvent())
     let before = try #require(reducer.state?.windows.first)
@@ -66,8 +66,7 @@ private func stateEvent(windows: String = "[\(sessionJSON)]", api: Int = 28) -> 
     try reducer.apply(ServerSentEvent(name: "patch", data: "{\"windows\":[\(replacement)]}"))
     let after = try #require(reducer.state?.windows.first)
     #expect(before.id != after.id)
-    #expect(before.identity(on: "hub") == after.identity(on: "hub"))
-    #expect(before.identity(on: "hub") != after.identity(on: "peer"))
+    #expect(before.uid == after.uid)
 }
 
 @Test func aNewConnectionRequiresAFullSnapshot() throws {
