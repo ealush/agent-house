@@ -911,13 +911,13 @@ struct ComposerTextField: UIViewRepresentable {
 
     func updateUIView(_ view: ComposerTextView, context: Context) {
         context.coordinator.parent = self
-        if view.textContainerInset.left != 2 + leadingRoom {
+        // Room for + and Send changes the width the text wraps in, so the box is measured again:
+        // a long draft's first line was cut off when Send came in beside it.
+        if view.textContainerInset.left != 2 + leadingRoom || view.textContainerInset.right != 2 + trailingRoom {
             view.textContainerInset.left = 2 + leadingRoom
-            view.setNeedsLayout()
-        }
-        if view.textContainerInset.right != 2 + trailingRoom {
             view.textContainerInset.right = 2 + trailingRoom
             view.setNeedsLayout()
+            view.invalidateIntrinsicContentSize()
         }
         let indicator = UIEdgeInsets(top: 8, left: 0, bottom: cornerHeight > 0 ? cornerHeight + 4 : 8, right: 0)
         if view.verticalScrollIndicatorInsets != indicator { view.verticalScrollIndicatorInsets = indicator }
@@ -937,7 +937,12 @@ struct ComposerTextField: UIViewRepresentable {
         }
         let settings = ComposerFloat.hasTray(session) ? [session.launch.modelLabel, session.launch.effort.map(LaunchState.effortName)].compactMap { $0 } : []
         view.placeholder = composer.placeholder(working: session.working, queued: session.row?.dto.queued ?? 0, touchOnly: !scene.hardwareKeyboard, agent: session.launch.preset?.name, waiting: session.waiting, trusting: session.awaitingTrust, ended: !session.isLive, settings: settings)
-        view.textColor = UIColor(theme.text)
+        // Only when the theme changes: setting it restyles all the text, every keystroke, under
+        // autocorrect and the keyboard's predictions.
+        if context.coordinator.textColor != theme.text {
+            context.coordinator.textColor = theme.text
+            view.textColor = UIColor(theme.text)
+        }
         if let request = scene.focusRequest, request.nonce != context.coordinator.handledFocus {
             context.coordinator.handledFocus = request.nonce
             if request.target == .composer(session.key) {
@@ -971,6 +976,7 @@ struct ComposerTextField: UIViewRepresentable {
     final class Coordinator: NSObject, UITextViewDelegate {
         var parent: ComposerTextField
         var handledFocus = 0
+        var textColor: Color?
 
         init(parent: ComposerTextField) { self.parent = parent }
 
@@ -1133,9 +1139,11 @@ final class ComposerTextView: UITextView {
     override func layoutSubviews() {
         super.layoutSubviews()
         // The box grows a line after the text does, and the caret's scroll from the line before
-        // stayed, cutting off the first line; once it all fits, it sits at the top.
+        // stayed, cutting off the first line; once it all fits, it sits at the top. Only when
+        // there's nothing to scroll: within a fraction of a point of fitting, UIKit scrolls the
+        // caret into view, this put it back, and the two could take turns without end.
         centreShortLine()
-        if contentSize.height <= bounds.height + 0.5, contentOffset.y != -adjustedContentInset.top {
+        if contentSize.height <= bounds.height, contentOffset.y != -adjustedContentInset.top {
             contentOffset.y = -adjustedContentInset.top
         }
         fadeEdges()

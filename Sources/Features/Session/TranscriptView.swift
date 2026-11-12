@@ -24,6 +24,7 @@ struct TranscriptView: View {
     @State private var phase: ScrollPhase = .idle
     /// How far the end lies below what's in view, as of the last layout.
     @State private var belowEnd: CGFloat = 0
+    @State private var following = TranscriptEnd.Follow()
     @FocusState private var browseFocused: Bool
 
     private var stepsHidden: Bool { scene.app.preferences.stepsHidden }
@@ -97,7 +98,7 @@ struct TranscriptView: View {
             return
         }
         if atBottom, phase == .idle, below > 1, session.pendingMessage == nil, linked == nil, browsing == nil {
-            reader.scrollTo("bottom", anchor: .bottom)
+            following.correct { reader.scrollTo("bottom", anchor: .bottom) }
         }
     }
 
@@ -136,7 +137,7 @@ struct TranscriptView: View {
                     if session.working {
                         // A new turn (the newest message you sent) starts the clock again.
                         WorkingRow(detail: session.row?.dto.detail, queued: session.queue.items.count, hardwareKeyboard: scene.hardwareKeyboard)
-                            .id(blocks.last { if case .user = $0 { return true } else { return false } }?.id ?? "working")
+                            .id("working-" + (blocks.last { if case .user = $0 { return true } else { return false } }?.id ?? ""))
                     }
                     // The very end, margin and all: scrolled to, nothing is left below it.
                     Color.clear.frame(height: 1).padding(.bottom, 11).id("bottom")
@@ -1146,6 +1147,29 @@ private struct UnavailableFeed: View {
 enum TranscriptEnd {
     /// The last this many points in view is at the end (a line half under the bar is still there).
     static let slack: CGFloat = 48
+
+    /// Putting the end back in view, in the same pass that moved it, so it's never drawn
+    /// out of place. A scroll can move it again (rows of a long transcript measured as they
+    /// come into view), and that one is put right too, but only a few times a turn of the
+    /// run loop: the rest wait for the next, so the main thread is never caught going round.
+    @MainActor
+    final class Follow {
+        static let perTurn = 3
+        private var spent = 0
+        private var waiting = false
+
+        func correct(_ scroll: @escaping @MainActor () -> Void) {
+            if spent == 0 { DispatchQueue.main.async { [weak self] in self?.spent = 0 } }
+            spent += 1
+            if spent <= Self.perTurn { return scroll() }
+            guard !waiting else { return }
+            waiting = true
+            DispatchQueue.main.async { [weak self] in
+                self?.waiting = false
+                scroll()
+            }
+        }
+    }
 
     /// How far the end of the conversation lies below the bottom of what's in view (above
     /// the composer and the keyboard, which are the bottom inset); at or under zero, the end
