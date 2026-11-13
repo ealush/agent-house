@@ -18,7 +18,7 @@ import { buildLaunch, customModel, resumeSelection, LaunchError } from './launch
 import { withCatalog } from './catalog.ts';
 import { Harnesses, adjust, suggestions } from './harnesses.ts';
 import * as t from './tmux.ts';
-import { descendants, snapshot as procSnapshot } from './procs.ts';
+import { descendants, procTree } from './procs.ts';
 import { createSnapshot, restoreSnapshot as restoreSnapshotFiles, snapshotDiff, deleteSnapshotRef, createWorktree, headInfo, listWorktrees, mainRepo, removeWorktree, removeWorktreesBulk, GitError, type Worktree } from './git.ts';
 import { invalidateSize } from './size.ts';
 import { SnapshotStore, type SnapshotInfo } from './snapshots.ts';
@@ -273,7 +273,9 @@ export class Core {
         ],
         home: homedir(),
         defaultSession: this.config.defaultSession,
-        sessions: await t.listSessions(),
+        // Every tmux session has a window, and list-windows -a goes session by session in
+        // list-sessions' order: no second tmux call per tick for the same names.
+        sessions: [...new Set(windows.map((w) => w.session))],
         windows,
         history,
         presets: await Promise.all(
@@ -791,7 +793,7 @@ export class Core {
     const w = (await this.current()).windows.find((x) => x.uid === uid);
     const raw = w && (await t.listWindows()).find((r) => r.windowId === w.id);
     if (!raw) return null;
-    return descendants(await procSnapshot(), raw.panePid, true).map((p) => p.pid);
+    return descendants(await procTree(), raw.panePid, true).map((p) => p.pid);
   }
 
   /** A copy of the session's queued items, oldest first (state lives in the QueueManager). */

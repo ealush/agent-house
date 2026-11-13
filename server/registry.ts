@@ -147,6 +147,8 @@ export class Registry {
   private records = new Map<string, SessionRecord>();
   private removed = new Set<string>();
   private dirty = false;
+  /** Each row as last written (or read), so a flush upserts only the records that changed. */
+  private saved = new Map<string, string>();
   private writing: Promise<void> = Promise.resolve();
   private loaded: Promise<void> | null = null;
   private db: PrismaClient;
@@ -166,7 +168,10 @@ export class Registry {
    */
   load(): Promise<void> {
     return (this.loaded ??= this.db.session.findMany().then((rows) => {
-      for (const row of rows) if (!this.records.has(row.uid)) this.records.set(row.uid, fromRow(row));
+      for (const row of rows) {
+        if (!this.records.has(row.uid)) this.records.set(row.uid, fromRow(row));
+        if (!this.saved.has(row.uid)) this.saved.set(row.uid, JSON.stringify(toRow(fromRow(row))));
+      }
     }));
   }
 
@@ -330,9 +335,19 @@ export class Registry {
   flush() {
     if (!this.dirty) return;
     this.dirty = false;
-    const records = [...this.records.values()].map(toRow);
+    // Only the rows that differ from what was last written: a queue change or a
+    // pin used to rewrite every live session and 30 days of ended ones.
+    const records: ReturnType<typeof toRow>[] = [];
+    for (const r of this.records.values()) {
+      const row = toRow(r);
+      const json = JSON.stringify(row);
+      if (this.saved.get(row.uid) === json) continue;
+      this.saved.set(row.uid, json);
+      records.push(row);
+    }
     const removed = [...this.removed];
     this.removed.clear();
+    for (const id of removed) this.saved.delete(id);
     // Capture the in-flight write first: reading this.writing inside the
     // callback below would observe the reassigned (self) promise and deadlock.
     const prev = this.writing;
@@ -340,7 +355,11 @@ export class Registry {
       .catch(() => {})
       .then(() => prev.catch(() => {}))
       .then(() => this.persist(records, removed))
-      .catch((err) => console.error('registry write failed:', err));
+      .catch((err) => {
+        // Not written: the next flush tries these rows again.
+        for (const r of records) this.saved.delete(r.uid);
+        console.error('registry write failed:', err);
+      });
   }
 
   private async persist(records: ReturnType<typeof toRow>[], removed: string[]) {

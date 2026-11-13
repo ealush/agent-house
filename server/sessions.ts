@@ -6,7 +6,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { capturePane, listWindows, setWindowOption, type RawWindow } from './tmux.ts';
 import { Registry, forkMetaOf, type SessionRecord } from './registry.ts';
-import { snapshot, descendants } from './procs.ts';
+import { procTree, withArgv, descendants } from './procs.ts';
 import { discover, type Transcript } from './discovery.ts';
 import type { Config, Preset } from './config.ts';
 import { screenAudit } from './audit.ts';
@@ -210,7 +210,7 @@ export function processNames(argv: string[]): string[] {
   return [exe, ...(script ? [basename(script).replace(/\.[cm]?js$/, '')] : [])];
 }
 
-function detectAgent(w: RawWindow, procs: Awaited<ReturnType<typeof snapshot>>, matchers: Array<[string, RegExp]>) {
+function detectAgent(w: RawWindow, procs: Awaited<ReturnType<typeof procTree>>, matchers: Array<[string, RegExp]>) {
   // Shell wrappers often exec the agent, replacing the pane's root process.
   for (const proc of descendants(procs, w.panePid, true)) {
     const names = processNames(proc.argv);
@@ -265,7 +265,7 @@ export function computeStatus(s: StatusInput): { status: Status; source: WindowV
 }
 
 /** Tool shells are evidence of work; persistent MCP servers alone are not. */
-export function hasToolWork(procs: Awaited<ReturnType<typeof snapshot>>, agentPid: number): boolean {
+export function hasToolWork(procs: Awaited<ReturnType<typeof procTree>>, agentPid: number): boolean {
   return descendants(procs, agentPid).some((p) =>
     /^(ba|da|z|fi|k)?sh$/.test(basename(p.argv[0] ?? '')) &&
     p.argv.slice(1).some((a) => /^-[^-]*c/.test(a)),
@@ -309,7 +309,7 @@ const SHELLS = /^-?(bash|zsh|fish|sh|dash|ksh|mksh|tcsh|nu|xonsh|elvish)$/;
  * terminal's foreground and runs no script (`bash -c …` is a program, not a
  * prompt). Without a process table (not Linux), a quiet shell counts as idle.
  */
-export function atShellPrompt(command: string, procs: Awaited<ReturnType<typeof snapshot>>, panePid: number, quiet: boolean): boolean {
+export function atShellPrompt(command: string, procs: Awaited<ReturnType<typeof procTree>>, panePid: number, quiet: boolean): boolean {
   if (!SHELLS.test(command)) return false;
   const root = descendants(procs, panePid, true).find((p) => p.pid === panePid);
   if (!root || root.fg === undefined) return quiet;
@@ -432,7 +432,8 @@ const clip = (s: string, n = 160) => (s.length > n ? s.slice(0, n - 1) + '…' :
 // ---------- windows
 
 export async function buildWindows(config: Config, viewerMap: Map<string, string[]>, registry: Registry): Promise<WindowView[]> {
-  const [raw, procs] = await Promise.all([listWindows(), snapshot()]);
+  const [raw, tree] = await Promise.all([listWindows(), procTree()]);
+  const procs = await withArgv(tree, raw.map((w) => w.panePid));
   const forkCounts = new Map<string, number>();
   for (const r of registry.all()) {
     const f = forkMetaOf(r);
@@ -628,6 +629,8 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
   const liveIds = new Set(raw.map((w) => w.windowId));
   for (const id of contentClock.keys()) if (!liveIds.has(id)) contentClock.delete(id);
   for (const id of limitSeen.keys()) if (!liveIds.has(id)) limitSeen.delete(id);
+  for (const id of screenCache.keys()) if (!liveIds.has(id)) screenCache.delete(id);
+  for (const id of scrollCache.keys()) if (!liveIds.has(id)) scrollCache.delete(id);
   return views;
 }
 
