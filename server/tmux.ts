@@ -255,6 +255,8 @@ export function pendingInput(screen: string): string | null {
 }
 
 const screen = (target: string) => tmux('capture-pane', '-p', '-t', target).then(pendingInput, () => null);
+/** What sits unsent in the window's input box now (see pendingInput). */
+export const inputBox = screen;
 
 /** Polls the input box until `done` says so, or `ms` pass; returns the last reading. */
 async function watchInput(target: string, done: (s: string | null) => boolean, ms: number): Promise<string | null> {

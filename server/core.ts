@@ -22,7 +22,8 @@ import { descendants, snapshot as procSnapshot } from './procs.ts';
 import { createSnapshot, restoreSnapshot as restoreSnapshotFiles, snapshotDiff, deleteSnapshotRef, createWorktree, headInfo, listWorktrees, mainRepo, removeWorktree, removeWorktreesBulk, GitError, type Worktree } from './git.ts';
 import { invalidateSize } from './size.ts';
 import { SnapshotStore, type SnapshotInfo } from './snapshots.ts';
-import { QueueManager, starting, type LaunchChange, type QueueItem } from './queue.ts';
+import { QueueManager, starting, transcriptHas, type LaunchChange, type QueueItem, type TranscriptMark } from './queue.ts';
+import { ADAPTERS } from './feed/feed.ts';
 import { Push } from './push.ts';
 import { omarchyStamp } from './omarchy.ts';
 import { chatSteps, claudeQuestionGroups, cursorKeys, dialogAt, dialogSteps, parsePicker, parseQuestionDialog, type Answer, type Step } from './choices.ts';
@@ -109,6 +110,10 @@ async function screenSettles(target: string, quietMs: number, ms: number): Promi
   return false;
 }
 
+/** A transcript written within this long is one the agent may be mid-turn in. */
+const WRITING_MS = 2000;
+
+
 export class CoreError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -177,6 +182,15 @@ export class Core {
       captureTurnStart: (uid, text) => this.captureTurnStart(uid, text),
       paste: (windowId, text, enter) => t.pasteText(windowId, text, enter),
       applyLaunchChange: (uid, change) => this.applyLaunchChange(uid, change),
+      transcriptMark: (w) => this.transcriptMark(w),
+      landed: (mark, text) => transcriptHas(mark, text),
+      writing: async (w) => {
+        const mark = await this.transcriptMark(w);
+        const s = mark && (await stat(mark.file).catch(() => null));
+        return !!s && Date.now() - s.mtimeMs < WRITING_MS;
+      },
+      inputBox: (windowId) => t.inputBox(windowId),
+      still: (windowId) => screenSettles(windowId, 1200, 3000),
     });
     try {
       if (existsSync(HIDDEN_FILE)) this.hidden = new Set(JSON.parse(readFileSync(HIDDEN_FILE, 'utf8')));
@@ -246,6 +260,7 @@ export class Core {
         void this.pruneSnapshots().catch((err) => console.error('snapshot prune failed:', err));
       }
       this.acceptTrust(windows);
+      await this.queues.confirmDeliveries(windows);
       await this.queues.deliverDue(windows);
       this.push.observe(windows, (id) => this.config.presets.find((p) => p.id === id)?.name ?? id);
       const history = (await buildHistory(this.registry, windows)).filter((h) => !this.hidden.has(h.ref));
@@ -717,6 +732,19 @@ export class Core {
   private applyLaunchChange(uid: string, change: LaunchChange) {
     if (change.model !== undefined) this.registry.setMeta(uid, 'ah.launch.model', change.model === 'default' ? undefined : change.model);
     if (change.effort !== undefined) this.registry.setMeta(uid, 'ah.launch.effort', change.effort === 'default' ? undefined : change.effort);
+  }
+
+  /**
+   * Where a live window's line transcript ends now: to look for a delivery after it.
+   * From the window itself, not feedSource (which reads the state a tick is building).
+   */
+  private async transcriptMark(w: WindowView): Promise<TranscriptMark | null> {
+    const harnessId = w.harnessId ?? this.registry.get(w.uid)?.harnessId;
+    const adapter = w.agent ? this.config.presets.find((p) => p.id === w.agent)?.feed : undefined;
+    if (!harnessId || !adapter || !ADAPTERS[adapter]) return null;
+    const file = (await discover(15_000).catch(() => [])).find((t) => t.harness === adapter && t.harnessId === harnessId)?.file;
+    const s = file ? await stat(file).catch(() => null) : null;
+    return file && s ? { file, size: s.size } : null;
   }
 
   private justSent(uid: string): boolean {
@@ -1224,7 +1252,7 @@ export class Core {
     return this.withInput<SendResult>(uid, async () => {
       const taken = this.queues.take(uid, itemId);
       if (!taken) throw new CoreError(404, 'queued message not found');
-      const { next, rest } = taken;
+      const { next } = taken;
       // The snapshot above can predate a delivery that ran while this call
       // waited for the lock. Decide the interrupt from a fresh read inside
       // the lock: pasting onto that stale input state appends this message
@@ -1269,6 +1297,9 @@ export class Core {
           }
           await sleep(500);
         }
+        // The stop threw away anything the agent held unsent, a follow-up ah typed
+        // into a turn it had started on its own among them: back first in line.
+        await this.queues.recover(uid);
       } else if (stopping) {
         await t.tmux('send-keys', '-t', live.id, ...this.interruptKeys(live));
       }
@@ -1278,8 +1309,10 @@ export class Core {
         this.turnPeriod.delete(uid);
         if (next.enter) await this.captureTurnStart(uid, next.text);
       }
+      const mark = live.agent ? await this.queues.markFor(live, next) : null;
       try {
         await t.pasteText(live.id, next.text, next.enter);
+        this.queues.delivered(uid, next, mark);
       } catch (err) {
         // Nothing reached the window: the follow-up is still owed, so it
         // goes back first in line. Once any text landed it stays delivered
@@ -1289,7 +1322,7 @@ export class Core {
       }
       if (next.launchChange) this.applyLaunchChange(uid, next.launchChange);
       this.tick().catch(() => {});
-      return { outcome: 'delivered', windowId: live.id, resumed: false, queued: rest.length };
+      return { outcome: 'delivered', windowId: live.id, resumed: false, queued: this.queues.items(uid).length };
     });
   }
 

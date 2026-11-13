@@ -5,6 +5,7 @@
 // waiting session, where typed text would answer the agent's prompt). It takes
 // its runtime as narrow callbacks: the registry on one side, Core's input path
 // on the other.
+import { open, stat } from 'node:fs/promises';
 import type { Registry } from './registry.ts';
 import type { WindowView } from './sessions.ts';
 
@@ -43,15 +44,80 @@ export type QueueRuntime = {
   paste(windowId: string, text: string, enter: boolean): Promise<void>;
   /** Apply a validated model/effort switch alongside the delivery. */
   applyLaunchChange(uid: string, change: LaunchChange): void;
+  /** Where the window's transcript ends now, or null when there's none to read. */
+  transcriptMark(w: WindowView): Promise<TranscriptMark | null>;
+  /** Whether `text` was written to the transcript after `mark`. */
+  landed(mark: TranscriptMark, text: string): Promise<boolean>;
+  /** The transcript was written a moment ago: the agent may be starting a turn of its own. */
+  writing(w: WindowView): Promise<boolean>;
+  /** What sits unsent in the window's input box ('' empty, null unreadable). */
+  inputBox(windowId: string): Promise<string | null>;
+  /** The window's screen holds still a moment (no spinner: the agent isn't working). */
+  still(windowId: string): Promise<boolean>;
 };
+
+/** An image file's path, which Claude Code swaps for "[Image #1]" as it takes the prompt. */
+const IMAGE_PATH = /(?:^|\s)(?:~|\.{0,2})\/\S+\.(?:png|jpe?g|gif|webp|heic|heif|bmp|tiff?)(?=\s|$)/gi;
+
+/**
+ * What to look for in the transcript to know `text` arrived: its longest line of words,
+ * image paths left out, as the transcript's JSON spells it. Null when nothing's left to
+ * tell it by (only paths, or a few characters).
+ */
+export function needleFor(text: string): string | null {
+  const lines = text.split(IMAGE_PATH).flatMap((piece) => piece.split('\n')).map((l) => l.trim());
+  const longest = lines.reduce((a, b) => (b.length > a.length ? b : a), '');
+  return longest.length >= 4 ? JSON.stringify(longest.slice(0, 60)).slice(1, -1) : null;
+}
+
+/** Whether `text` was written to the transcript after `mark`. */
+export async function transcriptHas(mark: TranscriptMark, text: string): Promise<boolean> {
+  const needle = needleFor(text);
+  if (!needle) return true;
+  const s = await stat(mark.file).catch(() => null);
+  if (!s || s.size < mark.size) return true; // rewritten: nobody can tell, so never type it twice
+  if (s.size === mark.size) return false;
+  // What came after the mark, in one read (a prompt lands near the start of it).
+  const length = Math.min(s.size - mark.size, LANDED_READ);
+  const fh = await open(mark.file, 'r');
+  try {
+    const buf = Buffer.alloc(length);
+    const { bytesRead } = await fh.read(buf, 0, length, mark.size);
+    return buf.subarray(0, bytesRead).toString('utf8').includes(needle) || s.size - mark.size > LANDED_READ;
+  } finally {
+    await fh.close();
+  }
+}
+const LANDED_READ = 64 << 20;
+
+/** An append-only transcript's file and its length at one moment. */
+export type TranscriptMark = { file: string; size: number };
+
+/** A delivery not yet seen in the transcript, and where to look for it. */
+type Unconfirmed = { item: QueueItem; mark: TranscriptMark; at: number };
+
+/**
+ * A typed follow-up is only safe once the agent has taken it. One typed into an
+ * agent that had just started a turn of its own sits in the agent's input queue,
+ * and an interrupt (Send Now's Escape) throws that away; ah, which removes an item
+ * before typing it, would never know. So a delivery is watched until its text shows
+ * in the transcript, and put back first in line if the agent settles without it.
+ */
+const CONFIRM_GRACE_MS = 10_000;
+
+/** Slash commands answer on screen and may never reach the transcript as typed. */
+export const confirmable = (item: QueueItem) => item.enter && !/^\/[\w-]+(\s|$)/.test(item.text.trimStart()) && needleFor(item.text) !== null;
 
 export class QueueManager {
   private registry: Registry;
   private rt: QueueRuntime;
+  private unconfirmed = new Map<string, Unconfirmed>();
+  private graceMs: number;
 
-  constructor(registry: Registry, rt: QueueRuntime) {
+  constructor(registry: Registry, rt: QueueRuntime, opts: { confirmGraceMs?: number } = {}) {
     this.registry = registry;
     this.rt = rt;
+    this.graceMs = opts.confirmGraceMs ?? CONFIRM_GRACE_MS;
   }
 
   /** A copy of the session's queued items, oldest first. */
@@ -115,6 +181,70 @@ export class QueueManager {
     return removed;
   }
 
+  /** Before typing `item`: where to look for it afterwards (only what can be confirmed). */
+  async markFor(w: WindowView, item: QueueItem): Promise<TranscriptMark | null> {
+    return confirmable(item) ? this.rt.transcriptMark(w).catch(() => null) : null;
+  }
+
+  /** `item` was typed in: watch for it in the transcript from `mark`. */
+  delivered(uid: string, item: QueueItem, mark: TranscriptMark | null): void {
+    if (mark) this.unconfirmed.set(uid, { item, mark, at: Date.now() });
+    else this.unconfirmed.delete(uid);
+  }
+
+  /**
+   * Settle the session's watched delivery: seen in the transcript, it's done;
+   * not seen, it goes back first in line (returned). Send Now calls this once its
+   * interrupt has landed, which is when held input is gone for good.
+   */
+  async recover(uid: string): Promise<QueueItem | null> {
+    const pending = this.unconfirmed.get(uid);
+    if (!pending) return null;
+    this.unconfirmed.delete(uid);
+    if (await this.rt.landed(pending.mark, pending.item.text).catch(() => true)) return null;
+    console.warn(`queue: ${uid}'s delivered follow-up never reached the conversation; it's queued again`);
+    this.requeue(uid, pending.item);
+    return pending.item;
+  }
+
+  /**
+   * Watched deliveries into sessions that have settled since: an agent idle a
+   * while after the delivery has taken whatever it was going to. One still in
+   * the input box (the Enter didn't take) is left there, in plain sight.
+   */
+  async confirmDeliveries(windows: WindowView[]): Promise<void> {
+    for (const w of windows) {
+      const pending = this.unconfirmed.get(w.uid);
+      if (!pending) continue;
+      // Read while it works, the transcript grows by megabytes: looked at once it stops.
+      if (w.status === 'busy' || w.status === 'waiting') continue;
+      await this.rt.withInput(w.uid, async () => {
+        if (this.unconfirmed.get(w.uid) !== pending) return;
+        if (await this.rt.landed(pending.mark, pending.item.text).catch(() => true)) {
+          this.unconfirmed.delete(w.uid);
+          return;
+        }
+        if (Date.now() - pending.at < this.graceMs || (await this.rt.writing(w).catch(() => true))) return;
+        const box = await this.rt.inputBox(w.id).catch(() => null);
+        if (box !== '') {
+          // Still typed in (or unreadable): not ah's to type again.
+          this.unconfirmed.delete(w.uid);
+          return;
+        }
+        // A turn whose status never said so (one the agent started itself) animates its
+        // spinner: what it holds still goes in when that turn ends. Typed twice, it'd be
+        // two turns.
+        if (!(await this.rt.still(w.id).catch(() => false))) return;
+        if (await this.recover(w.uid)) w.queued += 1;
+      });
+    }
+  }
+
+  /** Forget a session's watched delivery (it ended, or was replaced). */
+  forget(uid: string): void {
+    this.unconfirmed.delete(uid);
+  }
+
   /**
    * Type the oldest queued item into every session that went idle. Waiting
    * sessions are skipped on purpose: they are blocked on a prompt, and an
@@ -127,13 +257,23 @@ export class QueueManager {
       if (starting(w, t0)) continue;
       await this.rt.withInput(w.uid, async () => {
         if (this.rt.justSent(w.uid)) return;
-        const taken = this.take(w.uid);
+        // Idle by its status, but its transcript is being written: a turn of its own
+        // (a background task reporting back) is starting, and what's typed now would
+        // wait in its input queue. Next tick.
+        if (await this.rt.writing(w).catch(() => false)) return;
+        // The one before it isn't confirmed yet: settle that first, in order.
+        if (this.unconfirmed.has(w.uid)) return;
+        const first = this.items(w.uid)[0];
+        if (!first) return;
+        const mark = await this.markFor(w, first);
+        const taken = this.take(w.uid, first.id);
         if (!taken) return;
         const { next, rest } = taken;
         this.rt.markSent(w.uid);
         if (next.enter) await this.rt.captureTurnStart(w.uid, next.text);
         try {
           await this.rt.paste(w.id, next.text, next.enter);
+          this.delivered(w.uid, next, mark);
           if (next.launchChange) this.rt.applyLaunchChange(w.uid, next.launchChange);
         } catch (err) {
           console.error(`queue delivery to ${w.id} failed:`, err);

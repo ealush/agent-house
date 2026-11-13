@@ -4,10 +4,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Registry } from './registry.ts';
 import { ensureMigrated } from './db.ts';
-import { QueueManager, type QueueItem } from './queue.ts';
+import { writeFileSync, appendFileSync, statSync } from 'node:fs';
+import { QueueManager, needleFor, transcriptHas, type QueueItem, type QueueRuntime } from './queue.ts';
 import { PasteError } from './tmux.ts';
 
-async function setup(paste: () => Promise<void>) {
+async function setup(paste: (...args: unknown[]) => Promise<void>, rt: Partial<QueueRuntime> = {}) {
   const path = join(tmpdir(), `ah-queue-test-${process.pid}-${Math.random().toString(36).slice(2)}.db`);
   await ensureMigrated(path);
   const registry = new Registry(path);
@@ -19,7 +20,13 @@ async function setup(paste: () => Promise<void>) {
     captureTurnStart: async () => {},
     paste,
     applyLaunchChange: () => {},
-  });
+    transcriptMark: async () => null,
+    landed: async () => false,
+    writing: async () => false,
+    inputBox: async () => '',
+    still: async () => true,
+    ...rt,
+  }, { confirmGraceMs: 0 });
   const item = (id: string): QueueItem => ({ id, text: `say ${id}`, enter: true, at: 0 });
   q.enqueue('u1', item('a'));
   q.enqueue('u1', item('b'));
@@ -85,4 +92,118 @@ test('the next delivery takes whatever was moved to the front', async () => {
   await q.deliverDue([win()]);
   assert.deepEqual(typed, ['say b']);
   assert.deepEqual(q.items('u1').map((i) => i.id), ['a']);
+});
+
+// A follow-up typed into an agent that had started a turn of its own waits in the
+// agent's input queue, and an interrupt throws it away: ah watches for it in the
+// transcript, and puts it back when the agent settles without it.
+function watched(rt: Partial<QueueRuntime> = {}) {
+  const typed: string[] = [];
+  const state = { landed: false, box: '', still: true, writing: false };
+  const ready = setup(async (...args: unknown[]) => void typed.push(args[1] as string), {
+    transcriptMark: async () => ({ file: '/t.jsonl', size: 10 }),
+    landed: async () => state.landed,
+    inputBox: async () => state.box,
+    still: async () => state.still,
+    writing: async () => state.writing,
+    ...rt,
+  });
+  return { typed, state, ready };
+}
+
+test('a delivery the agent never took goes back first in line once it settles', async () => {
+  const { typed, ready } = watched();
+  const { q, win } = await ready;
+  await q.deliverDue([win()]);
+  assert.deepEqual(typed, ['say a']);
+  await q.confirmDeliveries([win()]);
+  assert.deepEqual(q.items('u1').map((i) => i.id), ['a', 'b']);
+  await q.deliverDue([win()]);
+  assert.deepEqual(typed, ['say a', 'say a'], 'typed again, in order');
+});
+
+test('a delivery seen in the transcript is done, and the next one follows', async () => {
+  const { typed, state, ready } = watched();
+  const { q, win } = await ready;
+  await q.deliverDue([win()]);
+  // Not confirmed yet: the next waits rather than overtaking it.
+  await q.deliverDue([win()]);
+  assert.deepEqual(typed, ['say a']);
+  state.landed = true;
+  await q.confirmDeliveries([win()]);
+  assert.deepEqual(q.items('u1').map((i) => i.id), ['b']);
+  await q.deliverDue([win()]);
+  assert.deepEqual(typed, ['say a', 'say b']);
+});
+
+test('never typed twice: text still in the box, or an agent still animating, is left alone', async () => {
+  const { state, ready } = watched();
+  const { q, win } = await ready;
+  await q.deliverDue([win()]);
+  state.still = false;
+  await q.confirmDeliveries([win()]);
+  assert.deepEqual(q.items('u1').map((i) => i.id), ['b'], 'a turn its status never showed holds it');
+  state.still = true;
+  state.box = 'say a';
+  await q.confirmDeliveries([win()]);
+  assert.deepEqual(q.items('u1').map((i) => i.id), ['b'], 'still in the input box: in plain sight');
+  // And no longer watched: settled for good.
+  state.box = '';
+  await q.confirmDeliveries([win()]);
+  assert.deepEqual(q.items('u1').map((i) => i.id), ['b']);
+});
+
+test('a busy session is not judged; one whose transcript is being written gets nothing typed', async () => {
+  const { typed, state, ready } = watched();
+  const { q, win } = await ready;
+  state.writing = true;
+  await q.deliverDue([win()]);
+  assert.deepEqual(typed, [], 'a turn of its own is starting');
+  state.writing = false;
+  await q.deliverDue([win()]);
+  await q.confirmDeliveries([{ ...win(), status: 'busy' }]);
+  assert.deepEqual(q.items('u1').map((i) => i.id), ['b']);
+});
+
+test("send now's recovery puts an unseen delivery back first; a seen one stays delivered", async () => {
+  const { state, ready } = watched();
+  const { q, win } = await ready;
+  await q.deliverDue([win()]);
+  const back = await q.recover('u1');
+  assert.equal(back?.id, 'a');
+  assert.deepEqual(q.items('u1').map((i) => i.id), ['a', 'b']);
+  await q.deliverDue([win()]);
+  state.landed = true;
+  assert.equal(await q.recover('u1'), null);
+  assert.deepEqual(q.items('u1').map((i) => i.id), ['b']);
+});
+
+test('slash commands are not watched (they answer on screen)', async () => {
+  const { ready } = watched();
+  const { q, win } = await ready;
+  q.clear('u1');
+  q.enqueue('u1', { id: 'm', text: '/model opus', enter: true, at: 0 });
+  q.enqueue('u1', { id: 'b', text: 'say b', enter: true, at: 0 });
+  await q.deliverDue([win()]);
+  assert.equal(await q.recover('u1'), null);
+  assert.deepEqual(q.items('u1').map((i) => i.id), ['b']);
+});
+
+test("a delivery is found by its first line, as the transcript's JSON spells it, after the mark only", async () => {
+  const file = join(tmpdir(), `ah-queue-transcript-${process.pid}.jsonl`);
+  const said = 'The workspaces 1-9 isn’t "very" useful\nsecond line';
+  writeFileSync(file, JSON.stringify({ type: 'user', message: { content: 'before' } }) + '\n');
+  const mark = { file, size: statSync(file).size };
+  assert.equal(await transcriptHas(mark, said), false, 'nothing after the mark');
+  appendFileSync(file, JSON.stringify({ type: 'user', message: { content: said } }) + '\n');
+  assert.equal(await transcriptHas(mark, said), true);
+  assert.equal(await transcriptHas(mark, 'before'), false, 'what came before the mark is not it');
+  assert.equal(await transcriptHas({ file, size: 1 << 30 }, said), true, 'a rewritten file: never typed twice');
+});
+
+test('a pasted screenshot path is no way to find a prompt: Claude Code swaps it for [Image #1]', () => {
+  const text = '/home/me/.cache/ah/uploads/a-paste.png /home/me/.cache/ah/uploads/b-paste.png We gotta be able to collapse the queue';
+  assert.equal(needleFor(text), 'We gotta be able to collapse the queue');
+  assert.equal(needleFor('first\nthe "longest" line of the prompt'), 'the \\"longest\\" line of the prompt');
+  assert.equal(needleFor('/home/me/shot.png'), null, 'only a path: nothing to tell it by');
 });
