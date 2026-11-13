@@ -168,9 +168,12 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             model.useAccount(account.origin)
         }
         // Through `go`: a notification that launched the app waits for the window's own state.
+        // The account's name for its host, which it keeps: the hub's is only known once its
+        // state has come, and a notification that launched the app came before it, so its own
+        // sessions read as "host/uid", a session on no host (ended, nothing to answer).
         switch link {
         case .session:
-            if let key = link.sessionKey(localHost: model.hub?.hostname) { model.go(Place(.session(key))) }
+            if let key = link.sessionKey(localHost: model.account?.hostname) { model.go(Place(.session(key))) }
         case .review(_, let route):
             model.go(Place(.review(route)))
         case .inbox:
