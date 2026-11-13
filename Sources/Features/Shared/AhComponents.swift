@@ -166,9 +166,20 @@ struct AhPage: ViewModifier {
     let title: String
     @Environment(\.theme) private var theme
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @State private var width: CGFloat = 0
+
+    /// A page wider than a reading column (an iPad with the sidebar hidden) keeps its rows in
+    /// one, as a session keeps its conversation: across the whole screen, a row's time sat a
+    /// foot from its title.
+    static func readableMargin(_ width: CGFloat) -> CGFloat? {
+        let column = SessionScreen.readableWidth
+        return width > column + 80 ? (width - column) / 2 : nil
+    }
 
     func body(content: Content) -> some View {
         content
+            .contentMargins(.horizontal, sizeClass == .compact ? nil : Self.readableMargin(width), for: .scrollContent)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             .scrollContentBackground(.hidden)
             // Rows fade out under the bar's buttons and the status bar, as iOS 26 pages do:
             // unasked, a page's list ran its text straight through them.
