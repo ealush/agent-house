@@ -857,11 +857,24 @@ export function App({ onLock }: { onLock: () => void }) {
 
   // Handoff: tell the host which session this device is on whenever it is in use…
   const onScreen = layout ? focusKey : selected;
+  const focusNow = useRef(state?.focus);
+  focusNow.current = state?.focus;
+  const reported = useRef<{ key: string; at: number } | null>(null);
   useEffect(() => {
     if (!state || !onScreen) return;
     const host = state.hostname;
     const report = () => {
-      if (document.visibilityState === 'visible') void clientFor(host).focus(onScreen).catch(() => {});
+      if (document.visibilityState !== 'visible') return;
+      // Coming back fires both focus and visibilitychange, and alt-tabbing fires focus each
+      // time: each report is a pass on the host and a patch to every device. Skip it while
+      // no other device has taken over since this one reported this session, under 30 s ago
+      // (and always within 2 s: the other's takeover may not have reached this page yet).
+      const f = focusNow.current;
+      const last = reported.current;
+      const since = last?.key === onScreen ? Date.now() - last.at : Infinity;
+      if (since < 2000 || ((!f || f.client === CLIENT_ID) && since < 30_000)) return;
+      reported.current = { key: onScreen, at: Date.now() };
+      void clientFor(host).focus(onScreen).catch(() => {});
     };
     const t = window.setTimeout(report, 800);
     window.addEventListener('focus', report);
