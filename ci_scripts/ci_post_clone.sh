@@ -10,3 +10,11 @@ defaults write com.apple.dt.Xcode IDESkipMacroFingerprintValidation -bool YES
 
 command -v xcodegen >/dev/null || brew install xcodegen
 xcodegen generate --spec project.yml
+
+# Xcode Cloud doesn't resolve packages itself: it builds the versions the project's resolved
+# file names, and a generated project has none. This is that file, as a Mac's resolve wrote it
+# (AgentHubNative.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved after
+# scripts/bootstrap.sh); copy it here again when a package in project.yml changes.
+resolved=AgentHubNative.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
+mkdir -p "$resolved"
+cp ci_scripts/Package.resolved "$resolved/Package.resolved"
