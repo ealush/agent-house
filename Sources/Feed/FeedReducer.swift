@@ -199,6 +199,27 @@ enum FeedBlock: Equatable, Sendable, Identifiable {
 }
 
 enum FeedProjection {
+    /// Focus mode: what's said, not how. The agent's thinking and its runs of tool steps go,
+    /// unless `keeps` a run (one asking you something), and so does a message of the agent's
+    /// with nothing left.
+    static func focused(_ blocks: [FeedBlock], keeps: ([ToolCall]) -> Bool) -> [FeedBlock] {
+        blocks.compactMap { block in
+            guard case .agent(let key, let seq, let at, let items) = block else { return block }
+            let shown = items.filter { item in
+                switch item {
+                case .part(_, let part):
+                    switch part {
+                    case .reasoning, .toolCall, .toolResult: return false
+                    default: return true
+                    }
+                case .tools(_, let calls):
+                    return keeps(calls)
+                }
+            }
+            return shown.isEmpty ? nil : .agent(key: key, seq: seq, at: at, items: shown)
+        }
+    }
+
     /// Consecutive assistant and tool entries form one agent turn; within a turn,
     /// consecutive tool calls form one group. Results fold into their call by id.
     static func project(_ entries: [FeedEntry]) -> [FeedBlock] {

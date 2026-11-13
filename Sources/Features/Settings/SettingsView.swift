@@ -394,8 +394,17 @@ private struct AppearanceSection: View {
             } footer: {
                 Text("ah follows the device’s look. Omarchy takes the host’s theme and font. Every other palette has its own light or dark look.")
             }
-            Section("Reading") {
-                Toggle("Hide tool steps in transcripts", isOn: $app.preferences.stepsHidden)
+            Section {
+                Toggle("Focus mode", isOn: $app.preferences.focusMode)
+                if !app.preferences.focusMode {
+                    Toggle("Fold tool steps in transcripts", isOn: $app.preferences.stepsHidden)
+                }
+            } header: {
+                Text("Reading")
+            } footer: {
+                Text("Focus mode shows the conversation: your messages and the agent’s replies. Its steps and thinking stay out of the way until you tap the working line above the box, or Show Steps in the session’s menu. Anything it asks you always shows.")
+            }
+            Section("Sessions") {
                 Picker("Sort sessions", selection: $app.preferences.sessionSort) {
                     Text("By project").tag(DevicePreferences.SessionSort.project)
                     Text("Recent activity").tag(DevicePreferences.SessionSort.recent)

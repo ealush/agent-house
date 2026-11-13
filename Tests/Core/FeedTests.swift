@@ -386,3 +386,21 @@ private struct UnsavedDrafts: HTTPTransport {
     #expect(await drafts.pull(current: "a long message typed offline") == nil)
     #expect(drafts.adopt(nil, current: "a long message typed offline") == nil)
 }
+
+@Test func focusModeKeepsWhatsSaidAndWhatAsksYou() {
+    let read = ToolCall(id: "c1", name: "Read", args: [:])
+    let ask = ToolCall(id: "c2", name: "AskUserQuestion", args: [:])
+    let blocks: [FeedBlock] = [
+        .user(key: "u", seq: 1, at: 0, parts: [.text("fix it")]),
+        // Only steps and thinking: nothing said, so nothing shows.
+        .agent(key: "a", seq: 2, at: 0, items: [.part(key: "a.0", part: .reasoning("hmm")), .tools(key: "a.1", calls: [read])]),
+        // The words stay; the steps between them go.
+        .agent(key: "b", seq: 3, at: 0, items: [.part(key: "b.0", part: .text("Looking.")), .tools(key: "b.1", calls: [read]), .part(key: "b.2", part: .text("Done."))]),
+        // A step asking you something always shows.
+        .agent(key: "c", seq: 4, at: 0, items: [.tools(key: "c.0", calls: [ask])]),
+    ]
+    let shown = FeedProjection.focused(blocks) { calls in calls.contains { $0.id == "c2" } }
+    #expect(shown.map(\.id) == ["u", "b", "c"])
+    guard case .agent(_, _, _, let items) = shown[1] else { Issue.record("not an agent block"); return }
+    #expect(items.map(\.id) == ["b.0", "b.2"])
+}

@@ -1071,7 +1071,9 @@ final class SceneModel {
             guard let s, let key else { return }
             setSurface(s.surface == .gui ? .terminal : .gui, for: key)
             requestFocus(s.surface == .gui ? .composer(key) : .terminal(key))
-        case "toggle-steps": app.preferences.stepsHidden.toggle()
+        // In focus mode, this session's steps shown or not; otherwise every transcript's folded.
+        case "toggle-steps":
+            if app.preferences.focusMode, let session = focusedSession { session.stepsShown.toggle() } else { app.preferences.stepsHidden.toggle() }
         case "toggle-panel":
             guard let s else { return }
             s.panel = s.panel == nil ? (lastPanel[s.key] ?? .diff) : nil

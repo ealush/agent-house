@@ -203,7 +203,7 @@ enum CommandCatalog {
             Command("reload-page", .navigate, "Reload", "Reconnect to your hosts and refresh everything shown. Sessions keep running."),
             Command("show-shortcuts", .navigate, "Keyboard shortcuts", "Open the shortcut table.", chords: [c("/", meta: true), c("/", ctrl: true, shift: true)]),
             Command("toggle-view", .session, "GUI or terminal", "Switch the focused session between the terminal and the transcript GUI.", chords: [c("g", ctrl: true, shift: true)]),
-            Command("toggle-steps", .session, "Hide / show steps", "In the GUI, fold tool calls and thinking to one line per run, so the conversation reads as prose. Applies to every session on this device.", chords: [c("h", ctrl: true, alt: true)], terms: ["tool calls", "collapse", "thinking"]),
+            Command("toggle-steps", .session, "Hide / show steps", "In the GUI, fold tool calls and thinking to one line per run, so the conversation reads as prose (every session on this device). In focus mode, show or hide this session's steps.", chords: [c("h", ctrl: true, alt: true)], terms: ["tool calls", "collapse", "thinking"]),
             Command("toggle-panel", .session, "Toggle side panel", "Show or hide the session side panel.", chords: [c("i", meta: true, alt: true), c("j", ctrl: true, shift: true)]),
             Command("reply", .session, "Reply", "Focus the composer, or the terminal when that is the current view.", chords: [c("r", ctrl: true, alt: true)]),
             Command("approve", .session, "Approve", "Approve the prompt on the focused session, when it is waiting for one.", chords: [c("Enter", ctrl: true, alt: true)]),

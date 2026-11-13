@@ -516,7 +516,7 @@ struct SessionAction: Identifiable {
         }
         var view: [SessionAction] = []
         if session.surface == .gui {
-            let hidden = scene.app.preferences.stepsHidden
+            let hidden = scene.app.preferences.focusMode ? !session.stepsShown : scene.app.preferences.stepsHidden
             view.append(SessionAction(title: hidden ? "Show Steps" : "Hide Steps", symbol: hidden ? "list.bullet.indent" : "list.bullet") { scene.perform("toggle-steps") })
             view.append(SessionAction(title: "Copy Last Reply", symbol: CommandCatalog.icon("copy-last")) { scene.perform("copy-last") })
         }

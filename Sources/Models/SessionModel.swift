@@ -47,6 +47,7 @@ final class SessionModel: Identifiable {
     @ObservationIgnored private var feedStream: FeedStream?
     @ObservationIgnored private var feedTask: Task<Void, Never>?
     @ObservationIgnored private var blocksCache: (count: Int, epoch: Int, last: Int, blocks: [FeedBlock])?
+    @ObservationIgnored private var focusedCache: (count: Int, epoch: Int, last: Int, awaiting: String?, live: Bool, blocks: [FeedBlock])?
     @ObservationIgnored private var endsCache: (count: Int, epoch: Int, last: Int, working: Bool, ends: [String: Double])?
 
     struct Notice: Equatable, Identifiable, Sendable {
@@ -137,6 +138,23 @@ final class SessionModel: Identifiable {
         let projected = FeedProjection.project(feed.entries)
         blocksCache = (feed.entries.count, feed.epoch, last, projected)
         return projected
+    }
+
+    /// Asked to see the agent's steps in focus mode (its working line, Show Steps): until asked
+    /// to hide them again.
+    var stepsShown = false
+
+    /// The blocks focus mode shows (see `FeedProjection.focused`), once per change.
+    var focusedBlocks: [FeedBlock] {
+        let all = blocks, awaiting = awaitingCall, live = turnLive
+        let last = feed.entries.last?.seq ?? -1
+        if let cache = focusedCache, cache.count == feed.entries.count, cache.epoch == feed.epoch, cache.last == last, cache.awaiting == awaiting, cache.live == live { return cache.blocks }
+        let results = feed.results
+        let shown = FeedProjection.focused(all) { calls in
+            ToolGroupSummary(calls: calls, results: results, awaitingCall: awaiting, turnLive: live).asking
+        }
+        focusedCache = (feed.entries.count, feed.epoch, last, awaiting, live, shown)
+        return shown
     }
 
     /// Where each finished turn ends, and how long it took: worked out once per change, not

@@ -41,6 +41,10 @@ struct TranscriptView: View {
     @FocusState private var browseFocused: Bool
 
     private var stepsHidden: Bool { scene.app.preferences.stepsHidden }
+    /// Focus mode, the steps not asked for: only what's said shows.
+    private var focused: Bool { scene.app.preferences.focusMode && !session.stepsShown }
+    /// What the transcript shows: every block, or in focus mode those with something said.
+    private var shownBlocks: [FeedBlock] { focused ? session.focusedBlocks : session.blocks }
 
     /// What only the newest end changes: its last block, what that holds, a turn starting or
     /// ending. Older pages loading above (a scroll back reads them in) leave it as it was.
@@ -134,7 +138,7 @@ struct TranscriptView: View {
     }
 
     var body: some View {
-        let blocks = session.blocks
+        let blocks = shownBlocks
         ScrollViewReader { reader in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 18) {
@@ -179,7 +183,10 @@ struct TranscriptView: View {
                     }
                     if session.working {
                         // A new turn (the newest message you sent) starts the clock again.
-                        WorkingRow(detail: session.row?.dto.detail, queued: session.queue.items.count, hardwareKeyboard: scene.hardwareKeyboard)
+                        WorkingRow(detail: session.row?.dto.detail, queued: session.queue.items.count, hardwareKeyboard: scene.hardwareKeyboard,
+                                   steps: scene.app.preferences.focusMode ? session.stepsShown : nil) {
+                            withAnimation(.snappy) { session.stepsShown.toggle() }
+                        }
                             .id("working-" + (blocks.last { if case .user = $0 { return true } else { return false } }?.id ?? ""))
                     }
                     // The very end, margin and all: scrolled to, nothing is left below it.
@@ -239,7 +246,7 @@ struct TranscriptView: View {
                     return
                 }
                 await Task.yield()
-                let all = session.blocks
+                let all = shownBlocks
                 guard let block = all.first(where: { $0.seq == seq }) ?? all.last(where: { $0.seq <= seq }) else { return }
                 leaveEnd()
                 withAnimation(reduceMotion ? nil : .snappy) { reader.scrollTo(block.id, anchor: .top) }
@@ -367,7 +374,7 @@ struct TranscriptView: View {
                         }
                         // Let the newly loaded pages lay out, then bring the turn to the top.
                         await Task.yield()
-                        if let block = session.blocks.first(where: { $0.seq == seq }) {
+                        if let block = shownBlocks.first(where: { $0.seq == seq }) {
                             leaveEnd()
                             withAnimation(.snappy) { reader.scrollTo(block.id, anchor: .top) }
                         }
@@ -448,7 +455,7 @@ struct TranscriptView: View {
                         Task {
                             guard await session.reveal(seq: seq) else { return }
                             await Task.yield()
-                            if let block = session.blocks.first(where: { $0.seq == seq }) {
+                            if let block = shownBlocks.first(where: { $0.seq == seq }) {
                                 leaveEnd()
                                 withAnimation(.snappy) { reader.scrollTo(block.id, anchor: .top) }
                             }
@@ -1076,11 +1083,26 @@ private struct WorkingRow: View {
     let detail: String?
     let queued: Int
     let hardwareKeyboard: Bool
+    /// In focus mode, whether the steps it's taking show (a tap shows or hides them); nil
+    /// otherwise, where it's only a line.
+    var steps: Bool? = nil
+    var toggleSteps: () -> Void = {}
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var since = Date()
 
     var body: some View {
+        if let steps {
+            Button(action: toggleSteps) { line.contentShape(Rectangle()) }
+                .buttonStyle(.plain)
+                .hoverEffect(.highlight)
+                .accessibilityHint(steps ? "Hides its steps" : "Shows its steps")
+        } else {
+            line
+        }
+    }
+
+    private var line: some View {
         HStack(spacing: 10) {
             Image(systemName: "sparkle")
                 .font(.ah(.footnote).weight(.semibold))
@@ -1097,6 +1119,12 @@ private struct WorkingRow: View {
                     .foregroundStyle(theme.faint)
             }
             Spacer(minLength: 8)
+            if let steps {
+                // What a tap does: the steps it's taking, out or away again.
+                Image(systemName: steps ? "eye.slash" : "eye")
+                    .font(.ah(.caption))
+                    .foregroundStyle(theme.faint)
+            }
             if hardwareKeyboard {
                 HStack(spacing: 4) {
                     Keycaps(parts: ["esc"])
