@@ -420,10 +420,12 @@ struct HostImage: View {
     }
 
     /// Pictures already shown: a row scrolled back into view had fetched and decoded its
-    /// picture again each time.
+    /// picture again each time. Held to a size, not only a count: a session of screenshots
+    /// held sixty of up to 20 MB each.
     private static let shown: NSCache<NSString, UIImage> = {
         let cache = NSCache<NSString, UIImage>()
         cache.countLimit = 60
+        cache.totalCostLimit = 120 << 20
         return cache
     }()
 
@@ -432,23 +434,27 @@ struct HostImage: View {
             image = seen
             return
         }
-        let data: Data? = switch WidgetModel.imageSource(source) {
+        // A picture the agent drew comes inline, megabytes of base64: read off the main thread.
+        let found = await Task.detached(priority: .userInitiated) { [source] in WidgetModel.imageSource(source) }.value
+        let data: Data? = switch found {
         case .inline(let data): data
         case .hostFile(let path): await hostFiles?.load(path)
         case .unavailable: nil
         }
         if let data, let decoded = await Self.decode(data) {
-            Self.shown.setObject(decoded, forKey: source as NSString)
+            let bytes = decoded.cgImage.map { $0.bytesPerRow * $0.height } ?? 0
+            Self.shown.setObject(decoded, forKey: source as NSString, cost: bytes)
             image = decoded
         }
         failed = image == nil
     }
 
     /// Decoded off the main thread, at no more pixels than it's ever drawn at (a screenshot
-    /// came in at full size, to be shown 360 points tall).
+    /// came in at full size, to be shown 360 points tall: a little over 1,000 pixels on a
+    /// phone, and a reading column's width on an iPad).
     private nonisolated static func decode(_ data: Data) async -> UIImage? {
         await Task.detached(priority: .userInitiated) {
-            let options = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceShouldCacheImmediately: true, kCGImageSourceThumbnailMaxPixelSize: 2048] as CFDictionary
+            let options = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceShouldCacheImmediately: true, kCGImageSourceThumbnailMaxPixelSize: 1440] as CFDictionary
             guard let source = CGImageSourceCreateWithData(data as CFData, nil),
                   let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options) else { return UIImage(data: data) }
             return UIImage(cgImage: image)
