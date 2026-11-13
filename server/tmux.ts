@@ -21,7 +21,9 @@ export function fields(line: string): string[] {
 export const VIEWER_PREFIX = 'ah-v-';
 
 export async function tmux(...args: string[]): Promise<string> {
-  const { stdout } = await run('tmux', args, { env: cleanEnv(), maxBuffer: 16 * 1024 * 1024 });
+  // Bounded: a wedged tmux server would otherwise hang the tick (and every caller
+  // waiting on it) forever instead of failing one pass.
+  const { stdout } = await run('tmux', args, { env: cleanEnv(), maxBuffer: 16 * 1024 * 1024, timeout: 15_000 });
   return stdout;
 }
 

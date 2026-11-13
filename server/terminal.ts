@@ -86,6 +86,9 @@ function clamp(n: number, min: number, max: number, fallback: number): number {
 
 export async function attach(ws: WebSocket, windowId: string, cols: number, rows: number, device: string, client: string | null = null): Promise<void> {
   const target = await windowExists(windowId);
+  // Closed while we looked (a quick tab switch): its 'close' already fired, before the
+  // handler below exists, so a tmux client and viewer started now would never be released.
+  if (ws.readyState !== ws.OPEN) return;
   if (!target) {
     ws.close(4404, 'window not found');
     return;
