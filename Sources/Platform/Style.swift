@@ -340,19 +340,32 @@ struct StatusDot: View {
 }
 
 /// The working dot's slow pulse; still under Reduce Motion.
+///
+/// Its own keyframes, not a repeating animation begun as it appears: that one was the
+/// transaction of everything else changing in the same update, so a navigation bar's height
+/// or the scroll view's inset, laid out as a dot came on screen, went on growing back from
+/// where it was every 1.4 s, and the transcript under it shook for as long as the screen
+/// was open.
 struct PulseRing: View {
     let color: Color
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var on = false
 
     var body: some View {
-        Circle()
-            .stroke(color.opacity(on ? 0 : 0.6), lineWidth: 2)
-            .scaleEffect(on ? 2.2 : 1)
-            .onAppear {
-                guard !reduceMotion else { return }
-                withAnimation(.easeOut(duration: 1.4).repeatForever(autoreverses: false)) { on = true }
+        if reduceMotion {
+            ring(0)
+        } else {
+            KeyframeAnimator(initialValue: 0.0, repeating: true) { phase in
+                ring(phase)
+            } keyframes: { _ in
+                LinearKeyframe(1, duration: 1.4, timingCurve: .easeOut)
             }
+        }
+    }
+
+    private func ring(_ phase: Double) -> some View {
+        Circle()
+            .stroke(color.opacity(0.6 * (1 - phase)), lineWidth: 2)
+            .scaleEffect(1 + 1.2 * phase)
     }
 }
 

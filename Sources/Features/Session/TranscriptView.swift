@@ -34,6 +34,11 @@ struct TranscriptView: View {
     @State private var belowEnd: CGFloat = 0
     /// The room the conversation had at the last layout (the keyboard and bar take from it).
     @State private var room: CGFloat = 0
+    /// All of the conversation fits in its room, and the scroll view itself sits it down by the
+    /// composer. A scroll to the end then took it past there, off the screen, and the scroll
+    /// view's anchor and the follow threw it back and forth between the two on every frame
+    /// after (your first message vanishing as the transcript came in), so it isn't scrolled.
+    @State private var fits = true
     /// How far a drag has taken the conversation back from the end.
     @State private var awayBy: CGFloat = 0
     @State private var resizedInDrag = false
@@ -87,6 +92,7 @@ struct TranscriptView: View {
     private func toEnd(_ reader: ScrollViewProxy, animated: Bool = true) {
         atBottom = true
         unseen = false
+        guard !fits else { return }
         // Smooth, not snappy: a scroll that overshot and settled back read as one more jolt.
         withAnimation(animated && !reduceMotion ? .smooth(duration: 0.35) : nil) { reader.scrollTo("bottom", anchor: .bottom) }
     }
@@ -100,6 +106,7 @@ struct TranscriptView: View {
         // bar growing): that moved the end, but nobody scrolled.
         let resized = abs(reading.room - room) > 0.5
         room = reading.room
+        if fits != reading.fits { fits = reading.fits }
         // How far the finger has taken the conversation back from the end in this drag: what
         // the end's distance grew by, over layouts where the room stayed the same. A resize
         // moves it, and so does the scroll view holding the end to the bottom after one (the
@@ -232,7 +239,7 @@ struct TranscriptView: View {
                 for delay in [150, 600] {
                     try? await Task.sleep(for: .milliseconds(delay))
                     // A link to a message holds the transcript there instead, as a scroll back does.
-                    guard atBottom, session.pendingMessage == nil, linked == nil else { return }
+                    guard atBottom, !fits, session.pendingMessage == nil, linked == nil else { return }
                     reader.scrollTo("bottom", anchor: .bottom)
                 }
             }
@@ -1149,26 +1156,29 @@ private struct WorkingRow: View {
     }
 }
 
-/// A light band that sweeps across text now and then: something is happening.
+/// A light band that sweeps across text now and then: something is happening. Its own
+/// keyframes (see `PulseRing`): begun as a repeating animation, it took the transcript's
+/// layout in the same update along with it, again and again.
 private struct Shimmer: ViewModifier {
     let active: Bool
-    @State private var phase: CGFloat = -1
 
     func body(content: Content) -> some View {
         if active {
             content
                 .overlay {
-                    GeometryReader { proxy in
-                        LinearGradient(colors: [.clear, .white.opacity(0.55), .clear], startPoint: .leading, endPoint: .trailing)
-                            .frame(width: proxy.size.width * 0.5)
-                            .offset(x: phase * proxy.size.width * 1.5)
-                            .blendMode(.plusLighter)
+                    KeyframeAnimator(initialValue: -1.0, repeating: true) { phase in
+                        GeometryReader { proxy in
+                            LinearGradient(colors: [.clear, .white.opacity(0.55), .clear], startPoint: .leading, endPoint: .trailing)
+                                .frame(width: proxy.size.width * 0.5)
+                                .offset(x: phase * proxy.size.width * 1.5)
+                                .blendMode(.plusLighter)
+                        }
+                    } keyframes: { _ in
+                        LinearKeyframe(-1, duration: 0.4)
+                        LinearKeyframe(1, duration: 1.6, timingCurve: .easeInOut)
                     }
                     .mask(content)
                     .allowsHitTesting(false)
-                }
-                .onAppear {
-                    withAnimation(.easeInOut(duration: 1.6).delay(0.4).repeatForever(autoreverses: false)) { phase = 1 }
                 }
         } else {
             content
@@ -1348,17 +1358,21 @@ enum TranscriptEnd {
         var below: CGFloat
         var room: CGFloat
         var offset: CGFloat
+        /// Shorter than its room: all of it is in view, wherever it sits.
+        var fits: Bool
 
-        init(below: CGFloat, room: CGFloat, offset: CGFloat = 0) {
+        init(below: CGFloat, room: CGFloat, offset: CGFloat = 0, fits: Bool = false) {
             self.below = below
             self.room = room
             self.offset = offset
+            self.fits = fits
         }
 
         init(_ geometry: ScrollGeometry) {
             below = TranscriptEnd.below(geometry)
-            room = (geometry.containerSize.height - geometry.contentInsets.top - geometry.contentInsets.bottom).rounded()
+            room = geometry.containerSize.height.rounded()
             offset = geometry.contentOffset.y.rounded()
+            fits = geometry.contentSize.height <= geometry.containerSize.height
         }
     }
 
@@ -1366,12 +1380,16 @@ enum TranscriptEnd {
     /// the composer and the keyboard, which are the bottom inset); at or under zero, the end
     /// is in view.
     static func below(_ geometry: ScrollGeometry) -> CGFloat {
-        below(contentHeight: geometry.contentSize.height, offset: geometry.contentOffset.y, viewport: geometry.containerSize.height, insets: geometry.contentInsets)
+        below(contentHeight: geometry.contentSize.height, offset: geometry.contentOffset.y, room: geometry.containerSize.height, insets: geometry.contentInsets)
     }
 
-    static func below(contentHeight: CGFloat, offset: CGFloat, viewport: CGFloat, insets: EdgeInsets) -> CGFloat {
+    /// `room` is the scroll view's container, which is what's left between the insets (the
+    /// bar above, the composer and keyboard below), not the whole frame. Taken for the frame,
+    /// the end read as the two bars' height away while it was in view, so the follow scrolled
+    /// to it on every layout and fought whatever else moved the view, a frame at a time.
+    static func below(contentHeight: CGFloat, offset: CGFloat, room: CGFloat, insets: EdgeInsets) -> CGFloat {
         // Shorter than the room it has, it's all in view wherever it sits.
-        let maxOffset = max(contentHeight + insets.bottom - viewport, -insets.top)
+        let maxOffset = max(contentHeight - room - insets.top, -insets.top)
         return (maxOffset - offset).rounded()
     }
 }

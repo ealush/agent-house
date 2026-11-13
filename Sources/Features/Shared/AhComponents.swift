@@ -81,18 +81,22 @@ private struct TouchTarget: ViewModifier {
 }
 
 /// Something still loading, by its shape: it fades in and out (and holds still with Reduce Motion).
+/// Its own keyframes (see `PulseRing`), so what else changes as it appears isn't repeated with it.
 struct Breathing: ViewModifier {
     var low: Double = 0.5
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var dim = false
 
     func body(content: Content) -> some View {
-        content
-            .opacity(dim ? low : 1)
-            .onAppear {
-                guard !reduceMotion else { return }
-                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { dim = true }
+        if reduceMotion {
+            content
+        } else {
+            content.keyframeAnimator(initialValue: 1.0, repeating: true) { view, opacity in
+                view.opacity(opacity)
+            } keyframes: { _ in
+                LinearKeyframe(low, duration: 0.9, timingCurve: .easeInOut)
+                LinearKeyframe(1, duration: 0.9, timingCurve: .easeInOut)
             }
+        }
     }
 }
 
