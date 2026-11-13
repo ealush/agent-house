@@ -196,6 +196,8 @@ final class SessionModel: Identifiable {
     }
 
     func close() {
+        // What it showed last is what coming back paints, and where the stream carries on from.
+        cacheFeed(feed, now: true)
         feedTask?.cancel()
         feedTask = nil
         if let stream = feedStream { Task { await stream.close() } }
@@ -226,6 +228,7 @@ final class SessionModel: Identifiable {
     /// looking, so a turn that finished after you left would read as seen, and neither the
     /// host's push nor the app's own alert would say so. `foreground()` picks it up again.
     func background() async {
+        cacheFeed(feed, now: true)
         await composer.background()
         if let feedStream { await feedStream.stop() }
     }
@@ -273,15 +276,18 @@ final class SessionModel: Identifiable {
         }
     }
 
-    /// The newest page, sealed, at most every few seconds while live.
-    private func cacheFeed(_ state: FeedState) {
-        guard state.status == .live, let feedCache, Date().timeIntervalSince(feedCachedAt) > 5, !state.entries.isEmpty else { return }
+    /// The newest page, sealed, every half minute while live and on leaving (`now`). A long
+    /// session's page runs to megabytes: sealed every few seconds while an agent worked, its
+    /// writes kept the database busy, and a write from the main thread waited its turn.
+    private func cacheFeed(_ state: FeedState, now: Bool = false) {
+        guard state.status == .live || now, let feedCache, now || Date().timeIntervalSince(feedCachedAt) > Self.cacheInterval, !state.entries.isEmpty else { return }
         feedCachedAt = Date()
         let newest = Array(state.entries.suffix(Self.cachedEntries))
         feedCache.store(FeedCache.Entry(harness: state.harness, page: FeedPage(entries: newest, hasOlder: state.hasOlder || state.entries.count > newest.count)))
     }
 
     static let cachedEntries = 120
+    static let cacheInterval: TimeInterval = 30
 
     /// Seed from this device's sealed cache before the stream answers.
     func seed(_ page: FeedPage, harness: String) async {

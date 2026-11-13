@@ -44,8 +44,12 @@ final class KeyboardFrame {
         // simulator (its top edge, frame by frame, 60 fps): a critically damped spring of
         // response 0.26 s lands within a point of it throughout, where the oft-quoted
         // mass 3 / stiffness 1000 / damping 500 trailed the keyboard by a third of its travel
-        // and settled over a further half second.
-        withAnimation(duration > 0 ? .spring(response: 0.26, dampingFraction: 1) : nil) {
+        // and settled over a further half second. Going down it's quicker, as recorded on an
+        // iPhone (a scroll putting it away: a third of the way in 33 ms, nine tenths in 133):
+        // at 0.26 the bar trailed it by forty points halfway, the conversation showing between
+        // bar and keys, and landed a fifth of a second after it. 0.2 follows it within a few.
+        let lowering = (rise > 0 ? inWindow.minY : nil).map { new in top.map { new > $0 } ?? false } ?? (top != nil)
+        withAnimation(duration > 0 ? .spring(response: lowering ? 0.2 : 0.26, dampingFraction: 1) : nil) {
             self.rise = rise
             self.top = rise > 0 ? inWindow.minY : nil
         }

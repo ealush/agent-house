@@ -754,15 +754,21 @@ final class SceneModel {
         let snapshot = snapshot()
         let journal = app.services.scenes
         if now {
-            try? journal.save(snapshot)
+            Self.journaling.sync { try? journal.save(snapshot) }
             return
         }
         saveTask = Task {
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
-            try? journal.save(snapshot)
+            // Off the main thread: the database takes one write at a time, and one of a
+            // transcript's sealed pages (megabytes) held a save here, and the scroll or
+            // keyboard it was saving for, until it was done.
+            Self.journaling.async { try? journal.save(snapshot) }
         }
     }
+
+    /// Every window's journal writes, in the order asked.
+    private static let journaling = DispatchQueue(label: "dev.ealush.ah.native.scene-journal", qos: .utility)
 
     /// This window is in the background (another of the app's may not be).
     private(set) var inBackground = false
