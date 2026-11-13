@@ -33,7 +33,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         if let origin = (session.stateRestorationActivity ?? options.userActivities.first)?.userInfo?["origin"] as? String {
             model.useAccount(origin)
         }
-        model.restore()
+        // Opened on a place ("Open in New Window"): that place, not a copy of the window it came
+        // from, whose journal is the newest one there is.
+        model.restore(copyingNewest: options.userActivities.first?.userInfo?["newWindow"] == nil)
         model.clipboard = { UIPasteboard.general.string = $0 }
         model.pasteboard = { UIPasteboard.general.string }
         model.share = { [weak window] url in Self.share(url, from: window) }
@@ -206,7 +208,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// Another window, opening at `link` (or wherever a new window starts) on `origin`'s host.
     static func newWindow(_ link: DeepLink?, origin: String?) {
         let activity = NSUserActivity(activityType: activityType)
-        var info: [String: Any] = [:]
+        var info: [String: Any] = ["newWindow": true]
         if let link { info["link"] = link.url.absoluteString }
         if let origin { info["origin"] = origin }
         activity.userInfo = info

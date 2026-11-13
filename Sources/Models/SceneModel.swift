@@ -697,9 +697,9 @@ final class SceneModel {
     /// The session whose composer has the keyboard, reported by the view.
     var composerFocused: String?
 
-    /// Load this window's journal (or the newest window's, for a brand-new one) and apply it
-    /// once the host's state arrives.
-    func restore() {
+    /// Load this window's journal (or the newest window's, for a brand-new one, when
+    /// `copyingNewest`) and apply it once the host's state arrives.
+    func restore(copyingNewest: Bool = true) {
         let journal = app.services.scenes
         #if DEBUG
         // UI tours start every window from scratch (TourUITests passes it).
@@ -708,7 +708,7 @@ final class SceneModel {
             return
         }
         #endif
-        let stored = (try? journal.load(sceneID: sceneID)) ?? (try? journal.mostRecent()).flatMap { latest -> SceneSnapshot? in
+        let stored = (try? journal.load(sceneID: sceneID)) ?? (copyingNewest ? (try? journal.mostRecent()) : nil).flatMap { latest -> SceneSnapshot? in
             var copy = latest
             copy.sceneID = sceneID
             return copy
