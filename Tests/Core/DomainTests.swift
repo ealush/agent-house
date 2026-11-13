@@ -571,6 +571,8 @@ import Testing
     #expect(KeyboardRise.rise(keyboard: CGRect(x: 0, y: 434, width: 1194, height: 400), window: window, safeBottom: 20) == 380)
     // The pill iPadOS leaves in a corner with a hardware keyboard: no lift, no gap.
     #expect(KeyboardRise.rise(keyboard: CGRect(x: 1120, y: 770, width: 60, height: 50), window: window, safeBottom: 20) == 0)
+    // The bar it floats along the bottom while you type, over the box: the box goes above it.
+    #expect(KeyboardRise.rise(keyboard: CGRect(x: 300, y: 760, width: 600, height: 54), window: window, safeBottom: 20) == 54)
     // The small floating keyboard, wherever it's dragged: no lift.
     #expect(KeyboardRise.rise(keyboard: CGRect(x: 400, y: 300, width: 320, height: 260), window: window, safeBottom: 20) == 0)
     // Gone below the screen, or no frame at all.
