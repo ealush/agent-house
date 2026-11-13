@@ -308,6 +308,12 @@ final class HubStore {
         if let item = history.first(where: { $0.dto.ref == parsed.uid && ($0.isLocal ? parsed.host == nil : $0.host == parsed.host) }) {
             return .ended(ref: item.id, title: item.dto.title)
         }
+        // On a host that's up and hasn't said what it runs yet (its stream starts with the
+        // hub's state, so on every launch a window restores first): kept, not taken for gone.
+        // Read as gone, every pane on another host became a chooser, with a notice, each launch.
+        if let host = parsed.host, hosts.contains(where: { $0.name == host && $0.online && !$0.isSelf }), peers[host]?.state == nil {
+            return .live
+        }
         return .gone
     }
 
