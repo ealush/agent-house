@@ -44,7 +44,13 @@ struct ComposerView: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            QueueTrayView(queue: session.queue, composer: composer, working: session.working, held: session.awaitingTrust, hardwareKeyboard: scene.hardwareKeyboard)
+            // Folded to its line while you ask for it, while the settings are out above the box
+            // (the two together, over a long queue, left a sliver of the conversation), and
+            // while the Queue panel shows the same list beside it.
+            QueueTrayView(queue: session.queue, composer: composer, working: session.working, held: session.awaitingTrust, hardwareKeyboard: scene.hardwareKeyboard,
+                          folded: scene.app.preferences.queueFolded || showsTray || session.panel == .queue,
+                          toggleFold: { withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { scene.app.preferences.queueFolded.toggle() } },
+                          showInPanel: SceneSnapshot.Panel.queue.applies(to: session) ? { session.panel = .queue } : nil)
             if let from = composer.drafts.from {
                 Label("Continued from \(from)", systemImage: "arrow.turn.down.right")
                     .font(.ah(.caption2)).foregroundStyle(theme.muted)
@@ -1341,6 +1347,11 @@ struct QueueTrayView: View {
     /// Held behind the agent's folder-trust prompt: nothing goes in, or can be steered in, until it's answered.
     var held = false
     var hardwareKeyboard = false
+    /// Only its line: how many, and what goes next.
+    var folded = false
+    var toggleFold: () -> Void = {}
+    /// The whole queue in the session's Queue panel, to read and arrange it there.
+    var showInPanel: (() -> Void)?
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Every queued message in view, not only what's next.
@@ -1358,12 +1369,41 @@ struct QueueTrayView: View {
         if !queue.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 8) {
-                    Image(systemName: "text.line.first.and.arrowtriangle.forward").foregroundStyle(theme.accent)
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text("Up next · \(queue.items.count + queue.pendingRows.count)").font(.ah(.footnote).weight(.semibold))
-                        Text(held ? "Sent once you answer above" : working ? "Sent one by one when this turn ends" : "Sending…").font(.ah(.caption2)).foregroundStyle(theme.muted)
+                    // The line folds the queue, and opens it again.
+                    Button(action: toggleFold) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "text.line.first.and.arrowtriangle.forward").foregroundStyle(theme.accent)
+                            VStack(alignment: .leading, spacing: 0) {
+                                HStack(spacing: 5) {
+                                    Text("Up next · \(queue.items.count + queue.pendingRows.count)").font(.ah(.footnote).weight(.semibold))
+                                    Image(systemName: "chevron.down")
+                                        .font(.ah(.caption2).weight(.bold))
+                                        .foregroundStyle(theme.faint)
+                                        .rotationEffect(.degrees(folded ? -90 : 0))
+                                }
+                                // Folded, it still says what goes next.
+                                Text(folded ? (queue.items.first.map { Uploads.summary($0.text) } ?? "Sending…") : held ? "Sent once you answer above" : working ? "Sent one by one when this turn ends" : "Sending…")
+                                    .font(.ah(.caption2)).foregroundStyle(theme.muted).lineLimit(1)
+                            }
+                        }
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Up next, \(queue.items.count + queue.pendingRows.count) queued")
+                    .accessibilityValue(folded ? "Folded" : "Open")
+                    .accessibilityHint(folded ? "Shows the queued messages" : "Folds the queue to one line")
                     Spacer()
+                    if let showInPanel {
+                        Button(action: showInPanel) {
+                            Image(systemName: "list.bullet.rectangle")
+                                .font(.ah(.callout))
+                                .foregroundStyle(theme.muted)
+                                .frame(width: 34, height: 30)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.ahPress)
+                        .accessibilityLabel("Show the queue in a panel")
+                    }
                     if !held, let first = queue.items.first, !queue.sending.contains(first.id) {
                         Button {
                             Haptics.threshold()
@@ -1389,7 +1429,9 @@ struct QueueTrayView: View {
                 .padding(.top, 10)
                 .padding(.bottom, 6)
                 let folds = queue.items.count > Self.shownFolded + 1
-                if folds && expanded {
+                if folded {
+                    EmptyView()
+                } else if folds && expanded {
                     ScrollView {
                         VStack(spacing: 0) { rows(Array(queue.items.enumerated())) }
                             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listHeight = $0 }
@@ -1399,7 +1441,7 @@ struct QueueTrayView: View {
                 } else {
                     rows(Array(queue.items.enumerated().prefix(folds ? Self.shownFolded : queue.items.count)))
                 }
-                if folds {
+                if folds && !folded {
                     Button {
                         withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { expanded.toggle() }
                     } label: {

@@ -253,4 +253,5 @@ private func shortcut(_ uid: String, _ title: String, status: String = "idle", p
     #expect(SessionOrdering.sections([], multiHost: false, sort: .recent).isEmpty)
     let older = try JSONDecoder().decode(DevicePreferences.self, from: Data(#"{"inboxGrouping":"project"}"#.utf8))
     #expect(older.sessionSort == .project, "a device that never chose keeps the project blocks")
+    #expect(!older.queueFolded, "the queue above the box starts open")
 }

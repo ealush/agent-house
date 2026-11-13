@@ -88,6 +88,8 @@ struct DevicePreferences: Codable, Equatable, Sendable {
     var terminalFontSize: Double = TerminalTextSize.standard
     var inboxGrouping: InboxGrouping = .status
     var sessionSort: SessionSort = .project
+    /// The queue above the box folded to its one line (what's next), on this device.
+    var queueFolded = false
     var notifications = Notifications()
     /// Agents chosen recently in New session, newest first.
     var recentAgents: [String] = []
@@ -139,7 +141,7 @@ struct DevicePreferences: Codable, Equatable, Sendable {
 
     init() {}
 
-    private enum CodingKeys: String, CodingKey { case appearance, deviceName, stepsHidden, keyBar, terminalFontSize, inboxGrouping, notifications, recentAgents, focusFollowsPointer, recentPalette, launchMemory, lastPlace, groupOrder, collapsedGroups, sessionSort }
+    private enum CodingKeys: String, CodingKey { case appearance, deviceName, stepsHidden, keyBar, terminalFontSize, inboxGrouping, notifications, recentAgents, focusFollowsPointer, recentPalette, launchMemory, lastPlace, groupOrder, collapsedGroups, sessionSort, queueFolded }
 
     private enum LegacyKeys: String, CodingKey { case keyBarVisible }
 
@@ -163,6 +165,7 @@ struct DevicePreferences: Codable, Equatable, Sendable {
         groupOrder = (try? c.decode(GroupOrder.self, forKey: .groupOrder)) ?? GroupOrder()
         collapsedGroups = (try? c.decode([String].self, forKey: .collapsedGroups)) ?? []
         sessionSort = (try? c.decode(SessionSort.self, forKey: .sessionSort)) ?? .project
+        queueFolded = (try? c.decode(Bool.self, forKey: .queueFolded)) ?? false
     }
 
     enum KeyBarMode: String, Codable, Sendable, CaseIterable {
