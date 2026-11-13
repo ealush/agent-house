@@ -15,6 +15,10 @@ final class KeyboardFrame {
     static let shared = KeyboardFrame()
 
     private(set) var rise: CGFloat = 0
+    /// The docked keyboard's top edge in the key window, or nil while none is up: a view
+    /// stands above it by as much as it covers that view (`KeyboardRoom`), which for a pane
+    /// that doesn't reach the window's bottom is less than `rise`, or nothing.
+    private(set) var top: CGFloat?
     @ObservationIgnored nonisolated(unsafe) private var observer: (any NSObjectProtocol)?
 
     init() {
@@ -43,6 +47,22 @@ final class KeyboardFrame {
         // and settled over a further half second.
         withAnimation(duration > 0 ? .spring(response: 0.26, dampingFraction: 1) : nil) {
             self.rise = rise
+            self.top = rise > 0 ? inWindow.minY : nil
         }
+    }
+}
+
+/// Stands a view above the on-screen keyboard by as much as the keyboard covers it, as the
+/// keyboard moves: a whole window's session, one pane of a split (a pane above another isn't
+/// covered at all), or a pane's chooser, whose list went under the keyboard.
+struct KeyboardRoom: ViewModifier {
+    private let keyboard = KeyboardFrame.shared
+    /// Where this view's bottom edge is in the window.
+    @State private var bottom: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.bottom, keyboard.top.map { max(0, bottom - $0) } ?? 0)
+            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxY } action: { bottom = $0 }
     }
 }

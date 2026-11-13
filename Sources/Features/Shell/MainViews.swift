@@ -735,6 +735,9 @@ private struct ChooserPane: View {
         // Scrolls when it can't fit (the on-screen keyboard up in a short pane), so its title
         // isn't pushed up under the status bar; centered while it fits.
         .wrappedInScrollWhenTall()
+        // Its own room above the keyboard: the panes let go of the column's (the sessions
+        // in them stand above it by themselves), and the list went under the keyboard.
+        .modifier(KeyboardRoom())
         .onAppear { if scene.focusRequest?.target == .chooser(path) || scene.workspace.focusPath == path { focused = true } }
         .onChange(of: scene.focusRequest) { _, request in if request?.target == .chooser(path) { focused = true } }
         .onChange(of: focused) { _, now in if now { scene.didFocus(.chooser(path)) } else { scene.didBlur(.chooser(path)) } }

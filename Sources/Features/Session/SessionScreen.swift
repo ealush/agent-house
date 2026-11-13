@@ -27,9 +27,6 @@ struct SessionScreen: View {
     /// How tall the bar under the transcript is: what opens out of the composer floats just
     /// above it.
     @State private var barHeight: CGFloat = 0
-    /// Where the keyboard is as it moves: the screen stands above it by this, since the
-    /// keyboard safe area SwiftUI gives catches up only once the keyboard has.
-    private let keyboard = KeyboardFrame.shared
 
     private var narrow: Bool { sizeClass == .compact || scene.narrow }
     /// How wide the conversation and its composer grow on a big screen: past this, lines get
@@ -120,7 +117,8 @@ struct SessionScreen: View {
         // down and then jumped after it. Ignored here at the screen's root, which is where
         // SwiftUI honours that: asked of the float alone, it was still placed by the safe
         // area, and rose twice as far.
-        .padding(.bottom, keyboard.rise)
+        // As far as the keyboard covers this screen, which in a split is this pane's share.
+        .modifier(KeyboardRoom())
         .ignoresSafeArea(.keyboard)
         // Under the keyboard and the bars too: the keyboard's rounded corners showed the
         // window's black over a terminal that stops at the keyboard.
