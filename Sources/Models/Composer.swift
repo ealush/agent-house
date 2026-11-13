@@ -559,6 +559,7 @@ final class ComposerModel {
             let release = outbox.keepAlive?(id)
             defer { release?() }
             await previous?.value
+            var asked = false
             do {
                 var message = message
                 if !tasks.isEmpty {
@@ -569,6 +570,7 @@ final class ComposerModel {
                     message = compose(paths)
                     outbox.ready(id, text: message)
                 }
+                asked = true
                 let result = try await api.send(uid, text: message)
                 if steer, result.outcome == .queued, let queued = result.queueId {
                     // Queued behind the turn: send it now instead. If that fails it's still
@@ -590,6 +592,14 @@ final class ComposerModel {
                 self?.outbox.update(id, state: result.outcome == .queued && !held ? .queued : .sent, confirmedAt: Date().timeIntervalSince1970, heldAs: held ? result.queueId : nil)
                 self?.events.append(.sent(result))
             } catch {
+                // No answer isn't no: the connection can drop after the host has typed it in (a
+                // handover from Wi-Fi to cellular), and the text back in the box was sent twice
+                // when you sent it again. Sent if the host has it, queued or in the transcript.
+                if asked, case .transport = APIError.wrap(error), let item = outbox.items.first(where: { $0.id == id }),
+                   await Self.landed(item.text, since: item.at, api: api, uid: uid) {
+                    outbox.update(id, state: .sent, confirmedAt: Date().timeIntervalSince1970)
+                    return
+                }
                 outbox.remove([id])
                 let reason = "Couldn’t send: \(APIError.wrap(error).message)"
                 // The box it came from is gone (you'd left the session): back into the next
@@ -606,6 +616,20 @@ final class ComposerModel {
             }
         }
         return true
+    }
+
+    /// Whether the host has `text`, sent at `since`: in its queue, or a turn of yours in its
+    /// transcript. Asked a few times, as a turn takes a moment to be written.
+    static func landed(_ text: String, since: Double, api: APIClient, uid: String, tries: Int = 3, apart: Duration = .seconds(2)) async -> Bool {
+        for attempt in 0..<tries {
+            if attempt > 0 { try? await Task.sleep(for: apart) }
+            if let queued = try? await api.queue(uid), queued.contains(where: { $0.at >= since - 10 && Outbox.sameText($0.text, text) }) { return true }
+            if let page = try? await api.feedPage(uid, before: nil, limit: 20) {
+                let turns = FeedProjection.project(page.entries).filter { if case .user = $0 { return true } else { return false } }
+                if turns.contains(where: { ($0.at == 0 || $0.at / 1000 >= since - 10) && Outbox.sameText($0.text, text) }) { return true }
+            }
+        }
+        return false
     }
 
     /// Waits for every send so far (tests, and before leaving a session).

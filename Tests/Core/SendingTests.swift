@@ -124,3 +124,34 @@ private func until(_ done: () -> Bool) async {
     #expect(item.state == .sent, "your message in the conversation, not a row in the queue")
     #expect(item.heldAs == "q1")
 }
+
+/// A host that takes a message in and whose answer never arrives (the connection dropped
+/// after it), with the message then in its queue.
+private struct LostAnswer: HTTPTransport {
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let path = request.url!.path
+        let ok = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        if path.hasSuffix("/send") { throw URLError(.networkConnectionLost) }
+        if path.hasSuffix("/queue") {
+            let at = Date().timeIntervalSince1970
+            return (Data(#"[{"id":"q1","text":"run the migration","enter":true,"at":\#(at)}]"#.utf8), ok)
+        }
+        if path.hasSuffix("/feed") { return (Data(#"{"entries":[],"hasOlder":false}"#.utf8), ok) }
+        return (Data(#"{"draft":null}"#.utf8), ok)
+    }
+    func stream(for request: URLRequest) async throws -> (HTTPURLResponse, AsyncThrowingStream<Data, any Error>) { fatalError("not used") }
+    func webSocket(for request: URLRequest) -> any WebSocketConnection { fatalError("not used") }
+}
+
+@MainActor
+@Test func aSendWhoseAnswerIsLostIsSentIfTheHostHasIt() async {
+    let api = APIClient(origin: URL(string: "https://desk.example.ts.net")!, transport: LostAnswer(), credentials: AccountCredentials(token: "t", onRejected: {}), device: DeviceDescriptor(name: "iPhone", client: "c"))
+    let outbox = Outbox()
+    let composer = ComposerModel(api: api, outbox: outbox, key: "u1", uid: "u1", isShell: false, draftDebounce: .seconds(3600))
+    composer.text = "run the migration"
+    composer.submit(working: false)
+    await composer.settle()
+    // Not back in the box to be sent twice: it's there, as sent.
+    #expect(composer.text.isEmpty)
+    #expect(outbox.items.first?.state == .sent)
+}
