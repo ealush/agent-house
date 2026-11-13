@@ -148,9 +148,11 @@ export async function proxyHttp(peer: Peer, path: string, req: IncomingMessage, 
     redirect: 'manual',
   });
   const out: Record<string, string> = {};
+  // fetch hands the body over decoded, so a compressed answer's length no longer fits it.
+  const decoded = !!upstream.headers.get('content-encoding');
   for (const h of FORWARD_RES) {
     const v = upstream.headers.get(h);
-    if (v) out[h] = v;
+    if (v && !(decoded && h === 'content-length')) out[h] = v;
   }
   res.writeHead(upstream.status, out);
   if (!upstream.body) return res.end();
