@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { chmod, mkdir, mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createWorktree, listWorktrees, removeWorktree, removeWorktreesBulk, changes, listBranches, switchBranch, pullRequest, slugify, mainRepo, createSnapshot, restoreSnapshot, snapshotDiff, snapshotRef } from './git.ts';
@@ -42,8 +42,12 @@ test('pullRequest: parses gh output for the current branch, null when gh fails o
   try {
     assert.deepEqual(await pullRequest(dir), { number: 42, url: 'https://github.com/ealush/ah/pull/42' });
     assert.match(readFileSync(argsFile, 'utf8'), /pr list --head main/);
+    // Asked again within the minute (another session open): no second GitHub round trip.
+    rmSync(argsFile);
+    assert.deepEqual(await pullRequest(dir), { number: 42, url: 'https://github.com/ealush/ah/pull/42' });
+    assert.equal(existsSync(argsFile), false, 'answered from the cache');
     process.env.AH_GH_FAIL = '1';
-    assert.equal(await pullRequest(dir), null);
+    assert.equal(await pullRequest(await repo()), null);
   } finally {
     process.env.PATH = savedPath;
     if (savedFail === undefined) delete process.env.AH_GH_FAIL;
