@@ -44,6 +44,10 @@ function withResults(results: Record<string, ToolResult>, entries: Entry[]): Rec
 export function reduce(s: FeedState, a: Action): FeedState {
   switch (a.type) {
     case 'snapshot':
+      // What came after the copy this view already holds (useFeed asks with ?after=): it carries on.
+      if (a.reason === 'resume' && s.entries.length) {
+        return { ...s, status: 'live', reason: null, harness: a.harness, entries: merge(s.entries, a.entries), results: withResults(s.results, a.entries) };
+      }
       return {
         status: 'live',
         reason: null,

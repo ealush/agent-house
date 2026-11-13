@@ -46,6 +46,20 @@ test('a cached copy fills an empty, waiting view and never overrides the stream'
   assert.equal(reduce(reduce(initialFeed, { type: 'unavailable', reason: 'not-found' }), cached).entries.length, 0);
 });
 
+test('a resumed stream carries on from the copy the view holds instead of replacing it', () => {
+  let s = reduce(initialFeed, { type: 'cached', harness: 'claude', entries: [user(1, 'hi'), call(2, 't1')], hasOlder: true });
+  s = reduce(s, { type: 'snapshot', reason: 'resume', harness: 'claude', entries: [result(3, 't1'), say(4, 'done')], floor: 0, head: 4, hasOlder: true });
+  assert.equal(s.status, 'live');
+  assert.deepEqual(s.entries.map((e) => e.seq), [1, 2, 3, 4], 'the held entries stay, the new ones follow');
+  assert.equal(s.results.t1.text, 'ok');
+  assert.equal(s.hasOlder, true);
+  const epoch = s.epoch;
+  // A disconnect and a resume with nothing new: same entries, not a rebuild.
+  s = reduce(reduce(s, { type: 'disconnected' }), { type: 'snapshot', reason: 'resume', harness: 'claude', entries: [], floor: 0, head: 4, hasOlder: true });
+  assert.deepEqual(s.entries.map((e) => e.seq), [1, 2, 3, 4]);
+  assert.equal(s.epoch, epoch);
+});
+
 test('projection: agent turns group text and consecutive tool calls; results never show alone', () => {
   const blocks = project([user(1, 'go'), say(2, 'on it'), call(3, 'a'), result(4, 'a'), call(5, 'b'), say(6, 'done'), user(7, 'thanks')]);
   assert.deepEqual(
