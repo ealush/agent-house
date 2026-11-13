@@ -35,8 +35,7 @@ final class KeyboardFrame {
         // The keyboard's frame is the screen's; the bar lives in a window, which on an iPad
         // may be a part of the screen, and rests above the home indicator.
         let inWindow = window.convert(end, from: window.screen.coordinateSpace)
-        let overlap = max(0, window.bounds.maxY - inWindow.minY)
-        let rise = max(0, overlap - window.safeAreaInsets.bottom)
+        let rise = KeyboardRise.rise(keyboard: inWindow, window: window.bounds, safeBottom: window.safeAreaInsets.bottom)
         // The keyboard's own curve isn't one SwiftUI names. Fitted to it as recorded on the
         // simulator (its top edge, frame by frame, 60 fps): a critically damped spring of
         // response 0.26 s lands within a point of it throughout, where the oft-quoted

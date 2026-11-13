@@ -537,3 +537,20 @@ import Testing
     #expect(hold.take(agent: nil, feed: nil, now: start.addingTimeInterval(10 + AgentHold.grace)) == nil)
     #expect(hold.agent == nil && hold.feed == nil)
 }
+
+// How far the keyboard lifts the bar (`KeyboardRise`).
+
+@Test func onlyADockedKeyboardLiftsTheBar() {
+    let window = CGRect(x: 0, y: 0, width: 1194, height: 834)
+    // Docked, across the bottom: the bar goes up by what it covers past the home indicator.
+    #expect(KeyboardRise.rise(keyboard: CGRect(x: 0, y: 434, width: 1194, height: 400), window: window, safeBottom: 20) == 380)
+    // The pill iPadOS leaves in a corner with a hardware keyboard: no lift, no gap.
+    #expect(KeyboardRise.rise(keyboard: CGRect(x: 1120, y: 770, width: 60, height: 50), window: window, safeBottom: 20) == 0)
+    // The small floating keyboard, wherever it's dragged: no lift.
+    #expect(KeyboardRise.rise(keyboard: CGRect(x: 400, y: 300, width: 320, height: 260), window: window, safeBottom: 20) == 0)
+    // Gone below the screen, or no frame at all.
+    #expect(KeyboardRise.rise(keyboard: CGRect(x: 0, y: 834, width: 1194, height: 400), window: window, safeBottom: 20) == 0)
+    #expect(KeyboardRise.rise(keyboard: .zero, window: window, safeBottom: 20) == 0)
+    // A Stage Manager window narrower than the screen's keyboard: docked across it all the same.
+    #expect(KeyboardRise.rise(keyboard: CGRect(x: -200, y: 500, width: 1400, height: 334), window: CGRect(x: 0, y: 0, width: 800, height: 834), safeBottom: 0) == 334)
+}
