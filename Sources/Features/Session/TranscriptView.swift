@@ -13,6 +13,8 @@ struct TranscriptView: View {
     /// The message a link opened, marked for a moment.
     @State private var linked: String?
     @State private var loadingOlder = false
+    /// The "Earlier messages" button at the top is on screen.
+    @State private var olderInView = false
     /// Older pages are going in above: the end holds still, so what you read does too.
     @State private var prepending = false
     /// At the newest message (within a few points of the end): new content keeps it in view,
@@ -131,9 +133,22 @@ struct TranscriptView: View {
                         }
                         .buttonStyle(.bordered)
                         .frame(maxWidth: .infinity)
-                        .onAppear { loadOlder() }
-                        // Not read while the stream caught up: once it has, if it's still in view.
-                        .onChange(of: session.feed.status == .live) { _, live in if live { loadOlder() } }
+                        // In view, not merely made: a lazy list makes rows a screen or so
+                        // ahead, and a short first page made this one at the top on opening,
+                        // which read in a page of two hundred nobody scrolled back for.
+                        .onScrollVisibilityChange(threshold: 0.5) { visible in
+                            olderInView = visible
+                            if visible { loadOlder() }
+                        }
+                        // Not read while the stream caught up: once it has, if it's still in view
+                        // after the copy it sent is laid out (it often pushes this far up).
+                        .onChange(of: session.feed.status == .live) { _, live in
+                            guard live else { return }
+                            Task {
+                                try? await Task.sleep(for: .milliseconds(300))
+                                if olderInView { loadOlder() }
+                            }
+                        }
                     }
                     let ends = session.turnEnds
                     ForEach(Array(blocks.enumerated()), id: \.element.id) { index, block in
