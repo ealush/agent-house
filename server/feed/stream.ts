@@ -1,7 +1,7 @@
 // One GUI viewer's stream: a snapshot, then appends. The session's transcript is
 // re-resolved every few seconds, so a fresh session whose transcript appears later,
 // or a /clear that starts a new one, turns into a new snapshot rather than a stall.
-import type { FeedMessage, FeedPage, FeedPrompt } from './schema.ts';
+import type { Entry, FeedMessage, FeedPage, FeedPrompt } from './schema.ts';
 import { feedFor, type AnyFeed } from './feed.ts';
 
 export type Source = { adapter: string; harness: string; file: string | null } | 'no-adapter' | null;
@@ -21,8 +21,24 @@ async function openFeed(resolve: Resolve, fresh: boolean): Promise<Open> {
   return feed ? { feed, harness: src.harness } : { reason: 'no-transcript' };
 }
 
+/**
+ * Where a viewer that already holds the transcript up to some entry asks to carry on
+ * from (`?after=<seq>&id=<its id>&harness=<id>`): a device coming back to a session
+ * it showed a moment or a day ago, instead of the newest page again, megabytes of it.
+ */
+export type Resume = { after: number; id: string; harness: string };
+
+/** Only what came after `resume`, when that entry is still this transcript's and not too much came since. */
+export function resumeFrom(feed: AnyFeed, harness: string, resume: Resume | null): Entry[] | null {
+  if (!resume || resume.harness !== harness) return null;
+  const at = feed.entries.find((e) => e.seq === resume.after);
+  if (!at || at.id !== resume.id) return null;
+  const since = feed.after(resume.after);
+  return since.length <= SNAPSHOT ? since : null;
+}
+
 /** Runs until `signal` aborts. `send` writes one message to the client. */
-export async function streamFeed(resolve: Resolve, send: (msg: FeedMessage) => void, signal: AbortSignal) {
+export async function streamFeed(resolve: Resolve, send: (msg: FeedMessage) => void, signal: AbortSignal, resume: Resume | null = null) {
   let feed: AnyFeed | null = null;
   let harness = '';
   let generation = -1;
@@ -50,7 +66,14 @@ export async function streamFeed(resolve: Resolve, send: (msg: FeedMessage) => v
       }
       if (feed) {
         await feed.update();
-        if (feed.generation !== generation) {
+        const since = !shown ? resumeFrom(feed, harness, resume) : null;
+        if (since) {
+          // The viewer's copy carries on: the entries after it, not the newest page.
+          send({ type: 'snapshot', reason: 'resume', harness, entries: since, floor: feed.floor, head: feed.head, hasOlder: true });
+          generation = feed.generation;
+          head = feed.head;
+          shown = true;
+        } else if (feed.generation !== generation) {
           const page = feed.page(Infinity, SNAPSHOT);
           const reason = !shown ? 'initial' : generation === -1 ? 'rotated' : 'truncated';
           send({ type: 'snapshot', reason, harness, entries: page.entries, floor: feed.floor, head: feed.head, hasOlder: page.hasOlder });

@@ -11,6 +11,8 @@ import { parseGeminiLine, parseGeminiDocument } from './feed/adapters/gemini.ts'
 import { opencodeEntries, loadOpencode } from './feed/adapters/opencode.ts';
 import { textParts, clip } from './feed/parts.ts';
 import { TranscriptFeed, DocumentFeed, ADAPTERS, DOC_ADAPTERS } from './feed/feed.ts';
+import { streamFeed, SNAPSHOT, type Resume } from './feed/stream.ts';
+import type { FeedMessage } from './feed/schema.ts';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
@@ -351,4 +353,45 @@ test('DocumentFeed retains its generation when a capped document grows and reset
   await feed.update();
   assert.equal(feed.generation, 1);
   assert.equal(feed.floor, 0);
+});
+
+test('feed stream: a viewer holding the transcript carries on from its own copy, or gets the newest page', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ah-feed-'));
+  const file = join(dir, 's.jsonl');
+  const user = (text: string) => JSON.stringify({ type: 'user', uuid: text, timestamp: at, message: { content: text } });
+  const first = async (resume: Resume | null, more?: () => Promise<void>) => {
+    const sent: FeedMessage[] = [];
+    const done = new AbortController();
+    const run = streamFeed(async () => ({ adapter: 'claude', harness: 'h1', file }), (m) => {
+      sent.push(m);
+      if (!more || sent.length > 1) done.abort();
+      else void more();
+    }, done.signal, resume);
+    await run;
+    return sent;
+  };
+  try {
+    await writeFile(file, ['a', 'b', 'c', 'd'].map(user).join('\n') + '\n');
+    // Its copy ends at b: c and d follow it, as a resume.
+    const [resumed] = await first({ after: 2, id: 'b', harness: 'h1' });
+    assert.equal(resumed.type, 'snapshot');
+    assert.equal(resumed.type === 'snapshot' && resumed.reason, 'resume');
+    assert.deepEqual(resumed.type === 'snapshot' && resumed.entries.map((e) => e.id), ['c', 'd']);
+    // A copy that isn't this transcript's (another entry there, another harness): the newest page.
+    for (const resume of [{ after: 2, id: 'x', harness: 'h1' }, { after: 2, id: 'b', harness: 'h2' }, { after: 9, id: 'b', harness: 'h1' }]) {
+      const [full] = await first(resume);
+      assert.equal(full.type === 'snapshot' && full.reason, 'initial');
+      assert.deepEqual(full.type === 'snapshot' && full.entries.map((e) => e.id), ['a', 'b', 'c', 'd']);
+    }
+    // Nothing since: an empty resume, then what's written next as an append.
+    const live = await first({ after: 4, id: 'd', harness: 'h1' }, () => appendFile(file, `${user('e')}\n`));
+    assert.deepEqual(live.map((m) => m.type === 'snapshot' ? [m.reason, m.entries.length] : [m.type, m.type === 'append' ? m.entries.map((e) => e.id).join() : '']), [['resume', 0], ['append', 'e']]);
+    // More since than a snapshot holds: the newest page instead.
+    await appendFile(file, Array.from({ length: SNAPSHOT + 1 }, (_, i) => user(`n${i}`)).join('\n') + '\n');
+    const [many] = await first({ after: 2, id: 'b', harness: 'h1' });
+    assert.equal(many.type === 'snapshot' && many.reason, 'initial');
+    assert.equal(many.type === 'snapshot' && many.entries.length, SNAPSHOT);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

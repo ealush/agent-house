@@ -544,7 +544,10 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
       untrack();
       leave?.();
     });
-    streamFeed((fresh) => core.feedSource(ref, fresh ? 3000 : 15_000), (msg) => res.write(`event: ${msg.type}\ndata: ${JSON.stringify(msg)}\n\n`), done.signal);
+    // A viewer holding the transcript up to an entry carries on from it (feed/stream.ts Resume).
+    const after = Number(url.searchParams.get('after'));
+    const resume = Number.isInteger(after) && after > 0 ? { after, id: url.searchParams.get('id') ?? '', harness: url.searchParams.get('harness') ?? '' } : null;
+    streamFeed((fresh) => core.feedSource(ref, fresh ? 3000 : 15_000), (msg) => res.write(`event: ${msg.type}\ndata: ${JSON.stringify(msg)}\n\n`), done.signal, resume);
     return;
   }
 
