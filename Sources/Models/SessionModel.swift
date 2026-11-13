@@ -271,6 +271,8 @@ final class SessionModel: Identifiable {
                 guard let self else { return }
                 self.feed = state
                 self.cacheFeed(state)
+                // Only with a bubble waiting for it: each update joined every turn you'd sent.
+                guard self.outbox.items.contains(where: { $0.key == self.key && ($0.state == .sent || $0.state == .sending) }) else { continue }
                 self.outbox.retireSent(key: self.key, userTurns: self.blocks.compactMap { block in
                     guard case .user = block else { return nil }
                     return (block.at / 1000, block.text)
