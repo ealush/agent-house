@@ -23,6 +23,11 @@ struct SessionScreen: View {
     /// The screen's height and the question's: a long question scrolls inside a panel of at
     /// most a little over half the screen, so the conversation and its bar stay in view.
     @State private var screenHeight: CGFloat = 800
+    @State private var screenWidth: CGFloat = 1000
+    /// This screen put the sidebar away to make room for a panel, and brings it back after.
+    @State private var hidSidebarForPanel = false
+    /// The conversation's least width beside a panel; past it, the sidebar makes way.
+    static let roomBesidePanel: CGFloat = 460
     @State private var askHeight: CGFloat = 0
     /// How tall the bar under the transcript is: what opens out of the composer floats just
     /// above it.
@@ -124,6 +129,19 @@ struct SessionScreen: View {
         // window's black over a terminal that stops at the keyboard.
         .background { theme.surface.ignoresSafeArea() }
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { screenHeight = $0 }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { screenWidth = $0 }
+        // A panel beside the conversation in an iPad's portrait left it a column a few words
+        // wide, with the sidebar beside it: the sidebar makes way while the panel is out.
+        .onChange(of: session.panel != nil) { _, open in
+            guard !narrow, pane == nil else { return }
+            if open, scene.workspace.sidebarVisible, screenWidth - max(280, min(640, panelWidth - CGFloat(scene.panelWidthDelta))) < Self.roomBesidePanel {
+                scene.workspace.sidebarVisible = false
+                hidSidebarForPanel = true
+            } else if !open, hidSidebarForPanel {
+                hidSidebarForPanel = false
+                scene.workspace.sidebarVisible = true
+            }
+        }
         // Images in the conversation (what you attached, what the agent drew) load from the
         // host, and a host path you tap opens in Quick Look.
         .environment(\.hostFiles, HostFiles(
