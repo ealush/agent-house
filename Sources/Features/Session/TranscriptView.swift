@@ -13,8 +13,11 @@ struct TranscriptView: View {
     /// The message a link opened, marked for a moment.
     @State private var linked: String?
     @State private var loadingOlder = false
-    /// The "Earlier messages" button at the top is on screen.
-    @State private var olderInView = false
+    /// Within half a screen of the top: the page before is read in on the way there. Read from
+    /// where the view is scrolled to, which a page held in place moves too; the button's own
+    /// visibility followed only your scrolling, so after a page went in it still read as on
+    /// screen, and scrolling back up to it read in nothing more.
+    @State private var nearTop = false
     /// The row at the top as an older page was asked for: it stays there as the page goes in
     /// above it. Held by the end, the view went to the new page's top, your place lost.
     @State private var holdAt: String?
@@ -50,17 +53,23 @@ struct TranscriptView: View {
 
     /// Reads in the page before the oldest, holding the end still meanwhile (and a moment
     /// after, while the page lays out) so what's in view stays put.
-    private func loadOlder() {
-        guard !loadingOlder else { return }
+    ///
+    /// Still near the top once it's in, the next: a long turn's steps fold into a line, so a
+    /// page of them may not take you away from it. A few (`run`), so a page that didn't lay
+    /// out as it should can't read in the whole transcript.
+    private func loadOlder(run: Int = 0) {
+        // Not while the last is going in: it shows the new page's top until it's held in place.
+        guard !loadingOlder, !prepending else { return }
         holdAt = topID
+        loadingOlder = true
+        prepending = true
         Task {
-            loadingOlder = true
-            prepending = true
-            await session.loadOlder()
+            let more = await session.loadOlder()
             loadingOlder = false
             try? await Task.sleep(for: .milliseconds(400))
             prepending = false
             holdAt = nil
+            if more, nearTop, run < 3 { loadOlder(run: run + 1) }
         }
     }
 
@@ -138,20 +147,13 @@ struct TranscriptView: View {
                         }
                         .buttonStyle(.bordered)
                         .frame(maxWidth: .infinity)
-                        // In view, not merely made: a lazy list makes rows a screen or so
-                        // ahead, and a short first page made this one at the top on opening,
-                        // which read in a page of two hundred nobody scrolled back for.
-                        .onScrollVisibilityChange(threshold: 0.5) { visible in
-                            olderInView = visible
-                            if visible { loadOlder() }
-                        }
-                        // Not read while the stream caught up: once it has, if it's still in view
-                        // after the copy it sent is laid out (it often pushes this far up).
+                        // Not read while the stream caught up: once it has, if the top is still
+                        // near after the copy it sent is laid out (it often pushes this far up).
                         .onChange(of: session.feed.status == .live) { _, live in
                             guard live else { return }
                             Task {
                                 try? await Task.sleep(for: .milliseconds(300))
-                                if olderInView { loadOlder() }
+                                if nearTop { loadOlder() }
                             }
                         }
                     }
@@ -257,6 +259,9 @@ struct TranscriptView: View {
                 if new == .interacting, old == .idle {
                     awayBy = 0
                     resizedInDrag = false
+                    // Pulling at the top for more: a few pages of a long turn's steps fold into
+                    // a line, and the top never stopped being near for the next to be read.
+                    if nearTop, session.feed.hasOlder { loadOlder() }
                 }
                 // Let go at the end with the end moved meanwhile (the keyboard going away under
                 // the finger): back to it, as nothing scrolled it away.
@@ -304,6 +309,15 @@ struct TranscriptView: View {
                 let seq = atBottom ? nil : id.flatMap { key in blocks.first { $0.id == key }?.seq }
                 let anchor = SceneSnapshot.ScrollAnchor(seq: seq, offset: 0)
                 if scene.scrollAnchors[session.key] != anchor { scene.scrollAnchors[session.key] = anchor }
+            }
+            // Nearing the top, not merely made: a lazy list makes rows a screen or so ahead, and a
+            // short first page made the button at the top on opening, which read in a page
+            // nobody scrolled back for.
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y + geometry.contentInsets.top < geometry.containerSize.height / 2
+            } action: { _, near in
+                nearTop = near
+                if near, session.feed.hasOlder { loadOlder() }
             }
             // Following the conversation: at the newest message, what the agent writes (and
             // what you send) stays in view, as in any chat; scrolled back to read, it leaves you

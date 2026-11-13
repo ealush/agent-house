@@ -98,6 +98,9 @@ actor FeedStream {
 
     /// The newest page, small, alongside the stream: it's in long before a big snapshot.
     static let tailSize = 20
+    /// A page reading back: two hundred of a long session's entries ran to 7 MB, seconds on a
+    /// phone's connection before anything above showed. The next comes as you reach it.
+    static let olderSize = 60
     private var tailTask: Task<Void, Never>?
 
     private func readTail() {
@@ -130,7 +133,7 @@ actor FeedStream {
         guard state.hasOlder, state.status == .live, !loadingOlder, let oldest = state.entries.first?.seq else { return false }
         loadingOlder = true
         defer { loadingOlder = false }
-        let page = try await api.feedPage(ref, before: oldest)
+        let page = try await api.feedPage(ref, before: oldest, limit: Self.olderSize)
         apply(.older(page))
         return !page.entries.isEmpty
     }
