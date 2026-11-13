@@ -245,7 +245,10 @@ struct ComposerView: View {
     /// The box: what you attach above the text, and Send inside it at the last line's end.
     private var field: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if !composer.attachments.isEmpty { attachments.padding(.top, 2) }
+            // As tall as its tiles, always: a sideways scroll view takes whatever height it's
+            // given, and with the bar short of room (a long queue, the keyboard up) the tiles
+            // were squeezed to a sliver over + while the text spilled out under the box.
+            if !composer.attachments.isEmpty { attachments.fixedSize(horizontal: false, vertical: true).padding(.top, 2) }
             // The text wraps short of Send, which sits in the box's corner (as Messages has it):
             // beside it in a row, the box was measured at one width and laid out at another,
             // and a long message lost its first line.
@@ -256,6 +259,9 @@ struct ComposerView: View {
         .padding(.horizontal, 6)
         .padding(.vertical, 6)
         .frame(minHeight: control)
+        // The box is as tall as what's in it: short of room, the bar grows up over the
+        // conversation rather than the box shrinking under its own text and tiles.
+        .fixedSize(horizontal: false, vertical: true)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { boxHeight = $0 }
         .overlay(alignment: .bottomLeading) {
             attachMenu
