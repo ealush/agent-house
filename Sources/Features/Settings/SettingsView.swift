@@ -568,7 +568,9 @@ private struct ShortcutsSection: View {
             .ahRow()
         }
         .ahFormGround()
-        .searchable(text: $query, prompt: "Name, group or keys, like “ctrl shift p”")
+        // Short enough for the bar's field on an iPad, where the longer prompt (with its
+        // example) was cut to "Name, group or ke…"; Find by pressing keys is right below.
+        .searchable(text: $query, prompt: "Name or keys")
         .onChange(of: app.keyBindings) { _, _ in UIMenuSystem.main.setNeedsRebuild() }
         .confirmationDialog("Reset every shortcut to its default?", isPresented: $confirmReset, titleVisibility: .visible) {
             Button("Reset All", role: .destructive) { app.keyBindings.resetAll() }
