@@ -101,8 +101,8 @@ actor StateStream {
         var backoff = Duration.seconds(1)
         while !Task.isCancelled {
             let failure: APIError
+            let opened = ContinuousClock.now
             do {
-                let opened = ContinuousClock.now
                 try await streamOnce()
                 // The server closed the stream (restart, revocation): reconnect at once. Unless
                 // it closed as soon as it opened (a proxy ending every response): that went round
@@ -117,6 +117,10 @@ actor StateStream {
             } catch {
                 failure = APIError.wrap(error)
             }
+            // Up a while before it dropped (a phone's connection mostly ends in an error, not a
+            // close): a fresh blip, so a short wait. Only a clean close reset it, so after a few
+            // drops every later one meant half a minute of polling the whole state.
+            if ContinuousClock.now - opened >= .seconds(5) { backoff = .seconds(1) }
             switch failure {
             case .cancelled:
                 return
