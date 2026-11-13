@@ -625,6 +625,7 @@ final class SceneModel {
 
     /// Open a session: in a split it replaces the focused pane, on a phone it pushes.
     func open(_ key: String) {
+        overtakeRestore()
         // Made now, not when its screen first draws: the transcript, draft and queue are on
         // their way while the screen comes in. A new one says it's in focus as it opens.
         let opened = sessions[key] != nil
@@ -647,6 +648,7 @@ final class SceneModel {
 
     /// A page (Inbox, History, Review…): leaves the split.
     func show(_ page: SceneSnapshot.Route) {
+        overtakeRestore()
         workspace.leaveSplit()
         route = page
         pruneSessions()
@@ -752,6 +754,15 @@ final class SceneModel {
     }
 
     var isRestored: Bool { restored }
+
+    /// You went somewhere before the restore could apply (the host out of reach at launch,
+    /// the cached list in front of you): where you went wins. Applied later, it took the
+    /// window back to where it had been, and nothing was saved until then.
+    private func overtakeRestore() {
+        guard !restored, pendingRestore != nil else { return }
+        pendingRestore = nil
+        restored = true
+    }
 
     /// Write the journal soon (coalesces a burst of changes); `now` on backgrounding.
     func scheduleSave(now: Bool = false) {
