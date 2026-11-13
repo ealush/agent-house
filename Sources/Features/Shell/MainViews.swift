@@ -78,6 +78,10 @@ struct SidebarView: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(theme.text.opacity(0.06), in: Capsule())
+                // As the name does: grown with the text only as far as the bar has room for,
+                // or at the largest sizes the host pushed the menu and the sidebar button
+                // against the panel's edge.
+                .dynamicTypeSize(...DynamicTypeSize.xLarge)
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("Host \(host)\(hub.phase == .live ? "" : ", reconnecting")")
             }
