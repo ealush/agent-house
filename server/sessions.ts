@@ -431,7 +431,12 @@ const clip = (s: string, n = 160) => (s.length > n ? s.slice(0, n - 1) + '…' :
 
 // ---------- windows
 
-export async function buildWindows(config: Config, viewerMap: Map<string, string[]>, registry: Registry): Promise<WindowView[]> {
+/**
+ * `launching`: windows ah is still setting up (core.launch). One listed before its
+ * @ah-uid landed is left out of this pass, never stamped with a uid of its own:
+ * that would replace the one launch chose, and the session would vanish under it.
+ */
+export async function buildWindows(config: Config, viewerMap: Map<string, string[]>, registry: Registry, launching: ReadonlySet<string> = new Set()): Promise<WindowView[]> {
   const [raw, tree] = await Promise.all([listWindows(), procTree()]);
   const procs = await withArgv(tree, raw.map((w) => w.panePid));
   const forkCounts = new Map<string, number>();
@@ -447,7 +452,7 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
   const waitingEpisodes = new Set<string>();
 
   const views = await Promise.all(
-    raw.map(async (w): Promise<WindowView> => {
+    raw.map(async (w): Promise<WindowView | null> => {
       const devices = viewerMap.get(w.windowId) ?? [];
       const viewers = devices.length;
       // Anything printed while someone is looking counts as read.
@@ -509,6 +514,7 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
 
       // Register every window, shells included (F3).
       let uid = w.uid;
+      if (!uid && launching.has(w.windowId)) return null;
       if (!uid) {
         uid = Registry.newId();
         await setWindowOption(w.windowId, '@ah-uid', uid).catch(() => {});
@@ -631,7 +637,7 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
   for (const id of limitSeen.keys()) if (!liveIds.has(id)) limitSeen.delete(id);
   for (const id of screenCache.keys()) if (!liveIds.has(id)) screenCache.delete(id);
   for (const id of scrollCache.keys()) if (!liveIds.has(id)) scrollCache.delete(id);
-  return views;
+  return views.filter((v): v is WindowView => v !== null);
 }
 
 // ---------- transcript adoption (F10): live agent windows without hooks learn their conversation id

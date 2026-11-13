@@ -187,6 +187,12 @@ export async function setWindowOption(windowId: string, key: string, value: stri
   await tmux('set-option', '-w', '-q', '-t', windowId, key, value);
 }
 
+/** Several window options in one tmux call. */
+export async function setWindowOptions(windowId: string, options: Record<string, string>): Promise<void> {
+  const args = Object.entries(options).flatMap(([k, v], i) => [...(i ? [';'] : []), 'set-option', '-w', '-q', '-t', windowId, k, v]);
+  if (args.length) await tmux(...args);
+}
+
 export async function renameWindow(windowId: string, name: string): Promise<void> {
   await tmux('rename-window', '-t', windowId, name);
 }
