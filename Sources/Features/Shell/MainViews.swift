@@ -14,7 +14,9 @@ struct SidebarView: View {
                 head(hub)
                 Button { scene.perform("switcher") } label: {
                     HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass").foregroundStyle(theme.faint)
+                        // Part of the button's name, not a control of its own: read out alone,
+                        // it said "Search" as if it opened the Search page.
+                        Image(systemName: "magnifyingglass").foregroundStyle(theme.faint).accessibilityHidden(true)
                         Text("Search or jump to").foregroundStyle(theme.muted)
                         Spacer(minLength: 4)
                         if scene.hardwareKeyboard, let chord = scene.app.keyBindings.hint("switcher") { Keycaps(chord) }
