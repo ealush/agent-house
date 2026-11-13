@@ -165,6 +165,7 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
         if next != phase {
             phase = next
             install(controller(for: next))
+            if case .main = next {} else { scene.closeAllSessions() }
         }
         // Sheets belong to the app; setup and sign-in are whole screens of their own.
         if case .main = next { syncModal(allowed: true) } else { syncModal(allowed: false) }

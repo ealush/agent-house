@@ -564,7 +564,11 @@ final class SceneModel {
         }
     }
 
-    private func closeAllSessions() {
+    /// Also on leaving signed-in (signed out, locked, removed): what was open read through a
+    /// sign-in that's gone, and a transcript's stream ends for good on the host's refusal.
+    /// Kept, signing back in showed every pane "Connecting…" until the app went away and came
+    /// back; made again, each opens.
+    func closeAllSessions() {
         for model in sessions.values { model.close() }
         sessions = [:]
     }
