@@ -8,6 +8,8 @@ actor FeedStream {
     let ref: String
     private var state = FeedState.initial
     private var loop: Task<Void, Never>?
+    /// When the current connection was asked for.
+    private var startedAt: ContinuousClock.Instant?
     private var observers: [UUID: AsyncStream<FeedState>.Continuation] = [:]
     private var loadingOlder = false
 
@@ -29,8 +31,12 @@ actor FeedStream {
 
     var current: FeedState { state }
 
+    /// Closed for good (its session left the screen): nothing starts it again.
+    private var closed = false
+
     func start() {
-        guard loop == nil else { return }
+        guard loop == nil, !closed else { return }
+        startedAt = .now
         loop = Task { await run() }
         readTail()
     }
@@ -41,12 +47,27 @@ actor FeedStream {
         tailTask?.cancel()
     }
 
+    /// Stopped, and never to start again: a start still on its way finds it closed.
+    func close() {
+        closed = true
+        stop()
+    }
+
     func resync() {
+        guard !closed else { return }
         loop?.cancel()
         // Not live until the new stream says so: what came while away can show ahead of it.
         apply(.disconnected)
+        startedAt = .now
         loop = Task { await run() }
         readTail()
+    }
+
+    /// Back in the foreground: a stream opened a moment ago (the app launching into this
+    /// session) is current already; another would send its snapshot, megabytes of it, again.
+    func wake() {
+        if loop != nil, let startedAt, ContinuousClock.now - startedAt < .seconds(3) { return }
+        resync()
     }
 
     /// The newest page, small, alongside the stream: it's in long before a big snapshot.

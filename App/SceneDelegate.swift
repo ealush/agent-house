@@ -94,7 +94,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         model?.willEnterForeground()
         LocalAlerts.endBackground()
         if let app = model?.app {
-            app.resyncAll()
+            app.wakeAll()
             Task { await PushRegistrar.shared.registerIfAuthorized() }
         }
     }

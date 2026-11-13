@@ -37,6 +37,8 @@ actor StateStream {
     private var latest: HubStateDTO?
     private var phase: ConnectionPhase = .connecting
     private var loop: Task<Void, Never>?
+    /// When the current connection was asked for.
+    private var startedAt: ContinuousClock.Instant?
     private var observers: [UUID: AsyncStream<StateUpdate>.Continuation] = [:]
 
     init(api: APIClient, pollInterval: Duration = .seconds(3), maxBackoff: Duration = .seconds(30)) {
@@ -65,6 +67,7 @@ actor StateStream {
 
     func start() {
         guard loop == nil else { return }
+        startedAt = .now
         loop = Task { await run() }
     }
 
@@ -76,7 +79,16 @@ actor StateStream {
     /// Foreground, network change, or a user's pull to refresh: reconnect now.
     func resync() {
         loop?.cancel()
+        startedAt = .now
         loop = Task { await run() }
+    }
+
+    /// Back in the foreground: a stream asked for a moment ago (the app launching, which
+    /// comes to the foreground too) is current already; dropping it for another sent the
+    /// whole state twice. One older than that may have died while away: reconnect.
+    func wake() {
+        if loop != nil, let startedAt, ContinuousClock.now - startedAt < .seconds(3) { return }
+        resync()
     }
 
     private func publish(_ next: ConnectionPhase) {

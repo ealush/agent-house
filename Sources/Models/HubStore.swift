@@ -124,6 +124,15 @@ final class HubStore {
         }
     }
 
+    /// Back in the foreground: every stream not just opened reconnects.
+    func wake() {
+        if let stream = hubStream { Task { await stream.wake() } }
+        for (_, peer) in peerStreams {
+            let stream = peer.stream
+            Task { await stream.wake() }
+        }
+    }
+
     /// After our own action: the stream's next snapshot reflects it at once.
     func refresh(host: String? = nil) {
         if let host, host != hostname, let peer = peerStreams[host] {

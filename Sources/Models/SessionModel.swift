@@ -198,16 +198,17 @@ final class SessionModel: Identifiable {
     func close() {
         feedTask?.cancel()
         feedTask = nil
-        if let stream = feedStream { Task { await stream.stop() } }
+        if let stream = feedStream { Task { await stream.close() } }
         feedStream = nil
         queue.stop()
         Task { await composer.background() }
     }
 
-    func foreground() async {
+    /// Back in the app (`reconnect`: asked to, so even a stream opened a moment ago).
+    func foreground(reconnect: Bool = false) async {
         // Back in the app, everything catches up together rather than in turn.
         let stream = feedStream
-        let resyncing = Task { await stream?.resync() }
+        let resyncing = Task { if reconnect { await stream?.resync() } else { await stream?.wake() } }
         let composing = Task { await composer.foreground() }
         let queueing = Task { await queue.load() }
         await withTaskCancellationHandler {
@@ -245,11 +246,17 @@ final class SessionModel: Identifiable {
         let stream = FeedStream(api: api, ref: ref)
         feedStream = stream
         let load = feedCache?.load
+        // Off the main actor: asked for at once, not once the screen opening it has been built.
+        Task.detached { await stream.start() }
         feedTask = Task { [weak self] in
             let updates = await stream.updates()
-            if let cached = await load?() { await stream.seed(harness: cached.harness, entries: cached.page.entries, hasOlder: cached.page.hasOlder) }
-            guard !Task.isCancelled else { return }
-            await stream.start()
+            // The transcript is asked for first: read meanwhile, what this device kept paints
+            // only if nothing from the host has (a cache to open and decode held up the request
+            // behind it).
+            let seeding = Task {
+                if let cached = await load?() { await stream.seed(harness: cached.harness, entries: cached.page.entries, hasOlder: cached.page.hasOlder) }
+            }
+            defer { seeding.cancel() }
             for await state in updates {
                 guard let self else { return }
                 self.feed = state

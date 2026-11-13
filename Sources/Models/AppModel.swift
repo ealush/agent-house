@@ -281,6 +281,7 @@ final class AppModel {
 
     func activateAll() { accounts.forEach { $0.activate() } }
     func resyncAll() { accounts.forEach { $0.hub.resync() } }
+    func wakeAll() { accounts.forEach { $0.hub.wake() } }
 
     /// Sessions that need you, on every signed-in host.
     var badgeCount: Int {

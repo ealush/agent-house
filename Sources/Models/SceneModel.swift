@@ -619,11 +619,15 @@ final class SceneModel {
 
     /// Open a session: in a split it replaces the focused pane, on a phone it pushes.
     func open(_ key: String) {
+        // Made now, not when its screen first draws: the transcript, draft and queue are on
+        // their way while the screen comes in. A new one says it's in focus as it opens.
+        let opened = sessions[key] != nil
+        _ = session(key)
         following {
             workspace.open(key)
             if workspace.layout == nil { route = .session(key) }
         }
-        if let hub, hub.row(key) != nil { Task { try? await hub.client(forKey: key).focus(key: key) } }
+        if opened, let hub, hub.row(key) != nil { Task { try? await hub.client(forKey: key).focus(key: key) } }
         app.didShowSessions?([key])
         pruneSessions()
         scheduleSave()
@@ -992,7 +996,7 @@ final class SceneModel {
         case "show-shortcuts": showingShortcuts = true
         case "reload-page":
             app.resyncAll()
-            for model in sessions.values { Task { await model.foreground() } }
+            for model in sessions.values { Task { await model.foreground(reconnect: true) } }
             toast("Reconnecting…")
         case "focus-sidebar":
             if narrow { show(.sessions) } else { workspace.sidebarVisible = true }
