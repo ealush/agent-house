@@ -57,8 +57,10 @@ export type Widget = { type: string; [key: string]: unknown };
 
 /** Server → client stream messages (SSE event name = `type`). */
 export type FeedMessage =
-  /** Sent first, and again whenever the projection must be rebuilt from scratch. */
-  | { type: 'snapshot'; reason: 'initial' | 'rotated' | 'truncated'; harness: string; entries: Entry[]; floor: number; head: number; hasOlder: boolean }
+  /** Sent first, and again whenever the projection must be rebuilt from scratch. A `resume`
+   *  (asked for with `?after=`) is the entries after the viewer's own copy instead: it
+   *  appends to what the viewer holds rather than replacing it. */
+  | { type: 'snapshot'; reason: 'initial' | 'rotated' | 'truncated' | 'resume'; harness: string; entries: Entry[]; floor: number; head: number; hasOlder: boolean }
   | { type: 'append'; entries: Entry[]; head: number }
   /** No transcript to read (yet): a fresh session, or a harness without an adapter. */
   | { type: 'unavailable'; reason: 'no-adapter' | 'no-transcript' | 'not-found' };
