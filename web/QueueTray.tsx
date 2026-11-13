@@ -5,6 +5,7 @@ import { Icon } from './icons.tsx';
 import { removeOutgoing, useOutbox } from './outbox.ts';
 import { shortcutTitle } from './shortcuts.tsx';
 import { uploadSummary } from './uploads.ts';
+import { every } from './poll.ts';
 
 /**
  * Follow-ups waiting for a working agent, stacked on top of the composer (the way
@@ -57,8 +58,7 @@ export const QueueTray = forwardRef<QueueTrayHandle, Props>(function QueueTray({
   useEffect(() => {
     if (!queued && !waiting && !showing) return;
     void load();
-    const timer = setInterval(load, 3000);
-    return () => clearInterval(timer);
+    return every(3000, load);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client, uid, queued, waiting, showing, mine.some((o) => o.confirmedAt)]);
 

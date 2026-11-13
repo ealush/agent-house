@@ -3,6 +3,7 @@ import type { HostApi, SnapshotInfo, SnapshotList, Win } from './api.ts';
 import { askConfirm } from './ask.tsx';
 import { errorText } from './errors.ts';
 import { stamp } from './dates.ts';
+import { every } from './poll.ts';
 
 const time = (at: number) => (at ? stamp(at * 1000) : '');
 
@@ -34,10 +35,10 @@ export function SnapshotsPanel({ client, w, onChange }: { client: HostApi; w: Wi
       }
     };
     load();
-    const timer = window.setInterval(load, 3000);
+    const stop = every(3000, load);
     return () => {
       stopped = true;
-      clearInterval(timer);
+      stop();
     };
   }, [client, uid]);
 

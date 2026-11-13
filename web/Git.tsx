@@ -10,6 +10,7 @@ import { errorText } from './errors.ts';
 // The diff parser is its own module (web/patch.ts): plain TypeScript, so tests can load it.
 export { parsePatch } from './patch.ts';
 import { parsePatch, type Line } from './patch.ts';
+import { every } from './poll.ts';
 
 /**
  * Working changes beside the session (F34), and click-a-line to comment (F35):
@@ -23,12 +24,12 @@ export function ChangesPanel({ client, uid, onComment }: { client: HostApi; uid:
 
   const load = () => {
     setError(null);
-    client.changes(uid).then(setData).catch((e) => setError(e.message));
+    // An unchanged answer keeps the old object: no re-parse, no diff re-render every 10 s.
+    client.changes(uid).then((next) => setData((prev) => (prev && JSON.stringify(prev) === JSON.stringify(next) ? prev : next))).catch((e) => setError(e.message));
   };
   useEffect(() => {
     load();
-    const t = window.setInterval(load, 10_000);
-    return () => clearInterval(t);
+    return every(10_000, load);
   }, [uid, client]);
 
   const files = useMemo(() => (data ? parsePatch(data.patch) : []), [data]);
@@ -159,10 +160,10 @@ export function BranchPicker({ client, uid, current, onSwitched }: { client: Hos
       }).catch(() => {});
     };
     load();
-    const t = window.setInterval(load, 10_000);
+    const stop = every(10_000, load);
     return () => {
       dead = true;
-      window.clearInterval(t);
+      stop();
     };
   }, [client, uid, current]);
   const title = dirty > 0 ? `Switch branch · ${dirty} uncommitted change${dirty === 1 ? '' : 's'}` : 'Switch branch';
@@ -382,8 +383,7 @@ export function WorktreesDialog({ client, onClose, onShell }: { client: HostApi;
   useEffect(() => {
     ref.current?.showModal();
     load();
-    const timer = setInterval(load, 2000);
-    return () => clearInterval(timer);
+    return every(2000, load);
   }, [client]);
 
   const orphans = useMemo(() => (list ?? []).filter((wt) => wt.orphan), [list]);

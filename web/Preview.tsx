@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { HostApi, PreviewInfo } from './api.ts';
 import { showError } from './ask.tsx';
 import { Icon } from './icons.tsx';
+import { every } from './poll.ts';
 
 /**
  * The session's dev server in a browser pane (server/preview.ts). It runs on the
@@ -23,8 +24,7 @@ export function PreviewPanel({ client, uid }: { client: HostApi; uid: string }) 
   useEffect(() => {
     void load();
     // A dev server takes a moment to start listening; keep the suggestions fresh.
-    const timer = setInterval(load, 4000);
-    return () => clearInterval(timer);
+    return every(4000, load);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client, uid]);
 
