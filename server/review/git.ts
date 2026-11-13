@@ -15,7 +15,7 @@ export const REVIEW_REFS = 'refs/ah-review';
 export const PATCH_CAP = 400 * 1024;
 
 async function git(root: string, args: string[], timeout = GIT_TIMEOUT_MS): Promise<string> {
-  const { stdout } = await exec('git', ['-C', root, ...args], { maxBuffer: 64 * 1024 * 1024, timeout, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } });
+  const { stdout } = await exec('git', ['-C', root, ...args], { maxBuffer: 64 * 1024 * 1024, timeout, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' } });
   return stdout;
 }
 

@@ -135,7 +135,8 @@ export function slashCommands(preset: Preset, cwd: string, home = homedir()): Pr
 
 function git(cwd: string, args: string[]): Promise<string> {
   return new Promise((resolve) => {
-    execFile('git', args, { cwd, maxBuffer: 32 * 1024 * 1024, timeout: 5000 }, (err, out) => resolve(err ? '' : out));
+    // No optional locks: a completion lookup must never hold index.lock in an agent's checkout.
+    execFile('git', args, { cwd, maxBuffer: 32 * 1024 * 1024, timeout: 5000, env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' } }, (err, out) => resolve(err ? '' : out));
   });
 }
 

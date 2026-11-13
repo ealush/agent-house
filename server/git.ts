@@ -10,8 +10,17 @@ import { cachedSize, invalidateSize, requestSize } from './size.ts';
 
 const exec = promisify(execFile);
 
+/**
+ * ah reads the agents' working trees all the time (status, diffs, branches, polled
+ * every few seconds): without optional locks a `git status` there never takes
+ * index.lock to refresh the index, so it can't make an agent's own `git add` or
+ * `commit` fail with "index.lock: File exists", and writes nothing. Writes still
+ * take the locks they need.
+ */
+const gitEnvironment = () => ({ ...process.env, GIT_OPTIONAL_LOCKS: '0' });
+
 async function git(cwd: string, ...args: string[]): Promise<string> {
-  const { stdout } = await exec('git', ['-C', cwd, ...args], { maxBuffer: 32 * 1024 * 1024, timeout: 15_000 });
+  const { stdout } = await exec('git', ['-C', cwd, ...args], { maxBuffer: 32 * 1024 * 1024, timeout: 15_000, env: gitEnvironment() });
   return stdout;
 }
 
@@ -20,7 +29,7 @@ async function gitEnv(cwd: string, env: Record<string, string>, args: string[]):
   const { stdout } = await exec('git', ['-C', cwd, ...args], {
     maxBuffer: 32 * 1024 * 1024,
     timeout: 60_000,
-    env: { ...process.env, ...env },
+    env: { ...gitEnvironment(), ...env },
   });
   return stdout;
 }
@@ -31,7 +40,7 @@ async function gitEnv(cwd: string, env: Record<string, string>, args: string[]):
  */
 function gitStdin(cwd: string, env: Record<string, string>, args: string[], input: string): Promise<void> {
   return new Promise((resolvePromise, reject) => {
-    const p = spawn('git', ['-C', cwd, ...args], { env: { ...process.env, ...env } });
+    const p = spawn('git', ['-C', cwd, ...args], { env: { ...gitEnvironment(), ...env } });
     let err = '';
     const timer = setTimeout(() => p.kill('SIGTERM'), 60_000);
     p.stderr.on('data', (d) => (err += d));

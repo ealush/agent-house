@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { chmod, mkdir, mkdtemp, writeFile, readFile, rm, utimes } from 'node:fs/promises';
+import { existsSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createWorktree, listWorktrees, removeWorktree, removeWorktreesBulk, changes, listBranches, switchBranch, pullRequest, slugify, mainRepo, createSnapshot, restoreSnapshot, snapshotDiff, snapshotRef } from './git.ts';
@@ -358,4 +358,17 @@ test('snapshots restore file/directory transitions and retain tracked files matc
   const safety = await snapshot(3, directory.commit);
   await restoreSnapshot(dir, { target: directory.commit, current: safety.commit, indexFile });
   assert.equal(await readFile(join(dir, 'a.txt', 'child'), 'utf8'), 'child\n');
+});
+
+test("reading a checkout's status never rewrites its index (no index.lock under an agent's git)", async () => {
+  const dir = await repo();
+  // A tracked file touched without changing it: a plain `git status` refreshes and rewrites the index.
+  const index = join(dir, '.git', 'index');
+  const later = new Date(Date.now() + 5000);
+  await utimes(join(dir, 'a.txt'), later, later);
+  const before = statSync(index).mtimeMs;
+  await new Promise((r) => setTimeout(r, 20));
+  const list = await listBranches(dir);
+  assert.equal(list.dirty, 0);
+  assert.equal(statSync(index).mtimeMs, before, 'the index was left as it was');
 });
