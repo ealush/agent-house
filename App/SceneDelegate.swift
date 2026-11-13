@@ -109,8 +109,28 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneDidEnterBackground(_ scene: UIScene) {
-        model?.didEnterBackground()
+        if let leaving = model?.didEnterBackground() {
+            // The time to finish: a draft typed just before leaving is saved to the host, not
+            // cut off when the app is suspended mid-request.
+            let held = Held()
+            held.task = UIApplication.shared.beginBackgroundTask(withName: "Saving drafts") { held.end() }
+            Task { @MainActor in
+                await leaving.value
+                held.end()
+            }
+        }
         if let app = model?.app { LocalAlerts.keepWatching(app) }
+    }
+
+    /// One stretch of background time, given back once.
+    private final class Held: @unchecked Sendable {
+        var task = UIBackgroundTaskIdentifier.invalid
+
+        @MainActor func end() {
+            guard task != .invalid else { return }
+            UIApplication.shared.endBackgroundTask(task)
+            task = .invalid
+        }
     }
 
     /// The system keeps this with the scene session; GRDB holds the window's real state.

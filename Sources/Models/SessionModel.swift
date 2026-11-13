@@ -227,10 +227,13 @@ final class SessionModel: Identifiable {
     /// Leaving the app: stop reading the transcript. ah counts an open stream as this device
     /// looking, so a turn that finished after you left would read as seen, and neither the
     /// host's push nor the app's own alert would say so. `foreground()` picks it up again.
+    ///
+    /// The stream stops first: after the draft's save, a slow host kept this device looking
+    /// for as long as the save took, and a return meanwhile had its new stream stopped by it.
     func background() async {
         cacheFeed(feed, now: true)
-        await composer.background()
         if let feedStream { await feedStream.stop() }
+        await composer.background()
     }
 
     /// This device's sealed cache for the account (set by the window that made this model):
