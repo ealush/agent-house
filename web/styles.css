@@ -9319,19 +9319,6 @@ select:not([multiple]) {
   border-bottom: 0;
 }
 
-/* The lifted row is drawn in a portal, outside .app.narrow: give it the
-   phone's row layout, or its pill floats mid-card and its subtitle clips. */
-body:has(.app.narrow) .press-lift .row {
-  grid-template-columns: 30px minmax(0, 1fr) auto;
-  gap: 12px;
-  padding: 12px 14px;
-}
-
-body:has(.app.narrow) .press-lift .row .chip {
-  width: 30px;
-  height: 30px;
-}
-
 .press-list {
   position: fixed;
   overflow-y: auto;
