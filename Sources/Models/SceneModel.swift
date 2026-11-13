@@ -42,6 +42,9 @@ final class SceneModel {
     /// Where a phone's composer starts on screen (window points), while one shows: toasts
     /// sit above it, not over it.
     var composerTop: Double?
+    /// The middle of that composer across (window points): toasts centre over it, on an iPad
+    /// beside the sidebar rather than in the middle of the whole window.
+    var composerMidX: Double?
     /// The phone's tab bar's top (window points) while it shows; none while a sheet is up.
     var tabBarTop: Double?
     /// Whether a sheet covers the window (its own bottom is the screen's then).

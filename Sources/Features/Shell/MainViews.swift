@@ -822,9 +822,12 @@ struct OverlayLayer: View {
             // own and doesn't know what's under it; the scene says where they start).
             GeometryReader { geometry in
                 let lift = scene.toastFloor.map { max(0, geometry.frame(in: .global).maxY - $0 - 12) } ?? 0
+                // Over the composer they sit above, across as well as up.
+                let shift = scene.sheetUp ? 0 : scene.composerMidX.map { $0 - geometry.frame(in: .global).midX } ?? 0
                 ToastStack(scene: scene, targets: targets)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                     .padding(.bottom, lift)
+                    .offset(x: shift)
                     .animation(.snappy(duration: 0.25), value: lift)
             }
             NudgeStack(scene: scene, targets: targets).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: scene.narrow ? .top : .topTrailing)
