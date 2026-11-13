@@ -15,6 +15,9 @@ struct TranscriptView: View {
     @State private var loadingOlder = false
     /// The "Earlier messages" button at the top is on screen.
     @State private var olderInView = false
+    /// The row at the top as an older page was asked for: it stays there as the page goes in
+    /// above it. Held by the end, the view went to the new page's top, your place lost.
+    @State private var holdAt: String?
     /// Older pages are going in above: the end holds still, so what you read does too.
     @State private var prepending = false
     /// At the newest message (within a few points of the end): new content keeps it in view,
@@ -49,6 +52,7 @@ struct TranscriptView: View {
     /// after, while the page lays out) so what's in view stays put.
     private func loadOlder() {
         guard !loadingOlder else { return }
+        holdAt = topID
         Task {
             loadingOlder = true
             prepending = true
@@ -56,6 +60,7 @@ struct TranscriptView: View {
             loadingOlder = false
             try? await Task.sleep(for: .milliseconds(400))
             prepending = false
+            holdAt = nil
         }
     }
 
@@ -307,6 +312,15 @@ struct TranscriptView: View {
                 TranscriptEnd.Reading(geometry)
             } action: { _, reading in
                 endMoved(reading, reader)
+            }
+            // An older page went in above: what was at the top stays there, in the same pass.
+            .onChange(of: blocks.first?.id) { _, _ in
+                guard let id = holdAt else { return }
+                holdAt = nil
+                reader.scrollTo(id, anchor: .top)
+                // …and again once the lazy list has laid the page out: the first went before
+                // it had, and its layout left the view at the new page's top.
+                DispatchQueue.main.async { reader.scrollTo(id, anchor: .top) }
             }
             // What you send is what you look at next.
             .onChange(of: session.outgoing.map(\.id)) { old, new in
