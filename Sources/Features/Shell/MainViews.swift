@@ -273,6 +273,11 @@ struct DetailView: View {
         // A page gives way to a session (or the panes) through a short fade, where it cut.
         // Only the kind of thing changing does it: one session to the next stays in place.
         .animation(.smooth(duration: 0.18), value: kind)
+        // A session's screen stands above the keyboard by itself (`KeyboardFrame`), and SwiftUI
+        // lets the keyboard go only at the root of what's hosted, which in the split is here:
+        // left to the column as well, its bar rose twice, a keyboard's height of nothing
+        // under the box. Pages (and New session) keep the column's own room for it.
+        .ignoresSafeArea(.keyboard, edges: kind == 0 || kind == 1 ? .all : [])
         // The scratchpad drops in from the top and goes back up: its transition was written,
         // and nothing ever ran it.
         .animation(reduceMotion ? .smooth(duration: 0.15) : .snappy(duration: 0.28), value: scene.workspace.scratchVisible)
