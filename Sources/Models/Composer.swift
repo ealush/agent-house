@@ -158,8 +158,12 @@ final class DraftSync {
     private let debounce: Duration
     /// The text last saved to or loaded from the host.
     private var synced = ""
+    /// Typed and not on the host yet, a save that failed included.
     private var pending: String?
     private var timer: Task<Void, Never>?
+    /// The save going out: each waits for the one before, so a late PUT of a message can't
+    /// land after the clear that sent it (the box then filled with it again on the next open).
+    private var saving: Task<Bool, Never>?
     /// The device a pulled draft came from ("Continued from iPhone"), when it's another one.
     private(set) var from: String?
 
@@ -171,6 +175,8 @@ final class DraftSync {
 
     /// On open and on returning to the foreground. Returns the text to show, or nil to keep the box as is.
     func pull(current here: String) async -> String? {
+        // What didn't save goes first: the host's copy is older than what's in the box.
+        if pending != nil { await flush() }
         // A failed read changes nothing; no draft at all (sent or cleared elsewhere) is adopted as "".
         let result: Result<Draft?, any Error> = await { do { return .success(try await api.draft(uid)) } catch { return .failure(error) } }()
         guard case .success(let draft) = result else { return nil }
@@ -222,8 +228,19 @@ final class DraftSync {
     private func save() async {
         guard let text = pending else { return }
         pending = nil
-        synced = text
-        _ = try? await api.saveDraft(uid, text: text)
+        let previous = saving
+        let put = Task { [api, uid] in
+            _ = await previous?.value
+            return (try? await api.saveDraft(uid, text: text)) != nil
+        }
+        saving = put
+        if await put.value {
+            synced = text
+        } else if pending == nil {
+            // Not on the host: still typed here, so the host's older copy (or none) isn't taken
+            // for its echo and put over it, and the next save tries again.
+            pending = text
+        }
     }
 }
 

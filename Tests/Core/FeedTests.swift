@@ -365,3 +365,24 @@ import ImageIO
     // Another device's draft still follows into an untouched box.
     #expect(DraftSync(api: api, uid: "u1").adopt(Draft(text: "from the iPad", at: 0, device: "iPad", client: "other"), current: "") == "from the iPad")
 }
+
+/// A host that's out of reach for draft saves and has no draft to read.
+private struct UnsavedDrafts: HTTPTransport {
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        if request.httpMethod == "PUT" { throw URLError(.notConnectedToInternet) }
+        return (Data(#"{"draft":null}"#.utf8), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+    }
+    func stream(for request: URLRequest) async throws -> (HTTPURLResponse, AsyncThrowingStream<Data, any Error>) { fatalError("not used") }
+    func webSocket(for request: URLRequest) -> any WebSocketConnection { fatalError("not used") }
+}
+
+@MainActor
+@Test func whatDidntSaveStaysInTheBoxWhenTheHostComesBack() async {
+    let api = APIClient(origin: URL(string: "https://desk.example.ts.net")!, transport: UnsavedDrafts(), credentials: AccountCredentials(token: nil, onRejected: {}), device: DeviceDescriptor(name: "iPhone", client: "this-launch"))
+    let drafts = DraftSync(api: api, uid: "u1", debounce: .seconds(3600))
+    drafts.edited("a long message typed offline")
+    await drafts.flush()
+    // The host has nothing: not "cleared elsewhere", only never saved. The box keeps it.
+    #expect(await drafts.pull(current: "a long message typed offline") == nil)
+    #expect(drafts.adopt(nil, current: "a long message typed offline") == nil)
+}
