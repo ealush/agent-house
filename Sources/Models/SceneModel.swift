@@ -501,7 +501,9 @@ final class SceneModel {
 
     // MARK: Accounts
 
-    var account: AccountSession? { app.account(origin: accountOrigin) }
+    /// This window's host, or, once that's removed from this device, the first one left: a
+    /// window on a removed host went to Setup, with hosts still paired.
+    var account: AccountSession? { app.account(origin: accountOrigin) ?? app.accounts.first }
     var hub: HubStore? { account?.status == .signedIn ? account?.hub : nil }
 
     func useAccount(_ origin: String) {

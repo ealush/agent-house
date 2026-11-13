@@ -165,7 +165,12 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
         if next != phase {
             phase = next
             install(controller(for: next))
-            if case .main = next {} else { scene.closeAllSessions() }
+            if case .main(let origin) = next {
+                // Its host removed: over to the one left, its sessions closed with the old one.
+                if let was = scene.accountOrigin, was != origin { scene.useAccount(origin) }
+            } else {
+                scene.closeAllSessions()
+            }
         }
         // Sheets belong to the app; setup and sign-in are whole screens of their own.
         if case .main = next { syncModal(allowed: true) } else { syncModal(allowed: false) }
