@@ -273,7 +273,12 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
         let present = { [weak self] in
             guard let self else { return }
             guard let wanted, self.shownModal == wanted else {
-                if self.shownModal == nil { self.scene.modalDidDismiss() }
+                if self.shownModal == nil {
+                    self.scene.modalDidDismiss()
+                    // Read again once it's gone: a toast a palette command raised came while it
+                    // was still going, took the sheet to be up, and sat on the composer.
+                    self.placeToasts()
+                }
                 return
             }
             let controller = self.makeModal(wanted)
@@ -351,6 +356,7 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
         }
         shownModal = nil
         scene.modalDidDismiss()
+        placeToasts()
     }
 
     // MARK: Keyboard
