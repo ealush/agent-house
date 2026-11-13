@@ -27,6 +27,10 @@ enum FeedAction: Equatable, Sendable {
     case older(FeedPage)
     /// What this device kept of the conversation, shown until the stream catches up.
     case cached(harness: String, entries: [FeedEntry], hasOlder: Bool)
+    /// The newest few entries, read ahead of the stream's snapshot: a long session's
+    /// snapshot (screenshots, long outputs) runs to megabytes, and on a slow link nothing
+    /// that happened since this device last looked showed until all of it was in.
+    case tail(FeedPage)
     case disconnected
 }
 
@@ -42,8 +46,11 @@ enum FeedReducer {
             s.results = withResults([:], entries)
             s.hasOlder = hasOlder
             s.snapshots += 1
-            // A reconnect re-sends the same transcript from the top: not a rebuild.
-            if reason != .initial { s.epoch += 1 }
+            // A reconnect re-sends the same transcript from the top: not a rebuild. Nor is the
+            // host's copy of what this device kept, carried on. One that doesn't reach back to
+            // what's shown (much came while away) replaces it outright, and in the same scroll
+            // view the new transcript was laid out but never drawn: blank until a drag.
+            if reason != .initial || !joins(state.entries, entries) { s.epoch += 1 }
         case .message(.append(let entries, _)):
             s.status = .live
             s.entries = merge(s.entries, entries)
@@ -61,10 +68,32 @@ enum FeedReducer {
             s.entries = merge([], entries)
             s.results = withResults([:], entries)
             s.hasOlder = hasOlder
+        case .tail(let page):
+            // Only while the stream hasn't answered, and only what's newer than what's shown.
+            guard s.status == .connecting, let newest = page.entries.last?.seq, newest > (s.entries.last?.seq ?? -1) else { return s }
+            if joins(s.entries, page.entries) {
+                // It carries on from what this device kept.
+                s.entries = merge(s.entries, page.entries)
+                s.results = withResults(s.results, page.entries)
+            } else {
+                // Too much happened meanwhile to join up: what's kept would read as if nothing
+                // came between it and the tail. A new transcript, in a new scroll view.
+                s.hasOlder = page.hasOlder || !s.entries.isEmpty
+                s.entries = merge([], page.entries)
+                s.results = withResults([:], page.entries)
+                s.epoch += 1
+            }
+            s.snapshots += 1
         case .disconnected:
             if s.status == .live { s.status = .connecting }
         }
         return s
+    }
+
+    /// Whether `next` reaches back to what's shown: nothing shown, or they overlap.
+    static func joins(_ shown: [FeedEntry], _ next: [FeedEntry]) -> Bool {
+        guard let last = shown.last?.seq, let first = next.first?.seq else { return true }
+        return first <= last
     }
 
     static func merge(_ a: [FeedEntry], _ b: [FeedEntry]) -> [FeedEntry] {

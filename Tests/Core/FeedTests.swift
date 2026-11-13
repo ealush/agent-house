@@ -37,16 +37,38 @@ private let result = ToolResult(callId: "c1", text: "ok", isError: false, data: 
     let cached = FeedReducer.reduce(.initial, .cached(harness: "codex", entries: [entry(1, .user, [.text("cached")])], hasOlder: true))
     #expect(cached.entries.count == 1)
     #expect(cached.status == .connecting, "a cache is not live data")
-    let live = FeedReducer.reduce(cached, .message(.snapshot(reason: .initial, harness: "codex", entries: [entry(9, .user, [.text("live")])], floor: 0, head: 9, hasOlder: false)))
+    let live = FeedReducer.reduce(cached, .message(.snapshot(reason: .initial, harness: "codex", entries: [entry(1, .user, [.text("cached")]), entry(9, .user, [.text("live")])], floor: 0, head: 9, hasOlder: false)))
     #expect(FeedReducer.reduce(live, .cached(harness: "codex", entries: [entry(1, .user, [.text("stale")])], hasOlder: true)) == live)
-    // The host's copy replacing what this device kept, and a reconnect's: each a snapshot to
-    // settle the view on again, neither a rebuild.
+    // The host's copy carrying on from what this device kept, and a reconnect's: each a
+    // snapshot to settle the view on again, neither a rebuild.
     #expect(live.snapshots == 1 && live.epoch == 0)
+    // One that doesn't reach back to what was kept replaces it: a rebuild, in a new view.
+    let apart = FeedReducer.reduce(cached, .message(.snapshot(reason: .initial, harness: "codex", entries: [entry(9, .user, [.text("live")])], floor: 0, head: 9, hasOlder: true)))
+    #expect(apart.entries.map(\.seq) == [9] && apart.epoch == 1)
     let again = FeedReducer.reduce(live, .message(.snapshot(reason: .initial, harness: "codex", entries: [entry(9, .user, [.text("live")]), entry(10, .assistant, [.text("more")])], floor: 0, head: 10, hasOlder: false)))
     #expect(again.snapshots == 2 && again.epoch == 0)
     #expect(FeedReducer.reduce(live, .disconnected).status == .connecting)
     let gone = FeedReducer.reduce(live, .message(.unavailable(reason: "no-adapter")))
     #expect(gone.status == .unavailable && gone.entries.isEmpty && gone.reason == "no-adapter")
+}
+
+@Test func aTailReadAheadOfTheSnapshotShowsWhatCameSinceButNeverOverTheStream() {
+    let kept = FeedReducer.reduce(.initial, .cached(harness: "claude", entries: [entry(1, .user, [.text("kept")]), entry(2, .assistant, [.text("old")])], hasOlder: false))
+    // Carrying on from what this device kept: joined to it.
+    let joined = FeedReducer.reduce(kept, .tail(FeedPage(entries: [entry(2, .assistant, [.text("old")]), entry(3, .assistant, [.text("new")])], hasOlder: true)))
+    #expect(joined.entries.map(\.seq) == [1, 2, 3])
+    #expect(!joined.hasOlder && joined.status == .connecting && joined.snapshots == 1)
+    // Too much since to join up: the tail alone, with more above it.
+    let apart = FeedReducer.reduce(kept, .tail(FeedPage(entries: [entry(40, .assistant, [.text("much later")])], hasOlder: false)))
+    #expect(apart.entries.map(\.seq) == [40])
+    #expect(apart.hasOlder && apart.epoch == 1)
+    #expect(joined.epoch == 0)
+    // Nothing newer than what's shown, or the stream already answered: no change.
+    #expect(FeedReducer.reduce(kept, .tail(FeedPage(entries: [entry(2, .assistant, [.text("old")])], hasOlder: true))) == kept)
+    let live = FeedReducer.reduce(kept, .message(.snapshot(reason: .initial, harness: "claude", entries: [entry(9, .user, [.text("live")])], floor: 0, head: 9, hasOlder: false)))
+    #expect(FeedReducer.reduce(live, .tail(FeedPage(entries: [entry(12, .assistant, [.text("tail")])], hasOlder: true))) == live)
+    // Into an empty view as well.
+    #expect(FeedReducer.reduce(.initial, .tail(FeedPage(entries: [entry(5, .user, [.text("hi")])], hasOlder: true))).entries.map(\.seq) == [5])
 }
 
 @Test func projectionGroupsTurnsAndConsecutiveToolCalls() {

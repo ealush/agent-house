@@ -32,16 +32,33 @@ actor FeedStream {
     func start() {
         guard loop == nil else { return }
         loop = Task { await run() }
+        readTail()
     }
 
     func stop() {
         loop?.cancel()
         loop = nil
+        tailTask?.cancel()
     }
 
     func resync() {
         loop?.cancel()
+        // Not live until the new stream says so: what came while away can show ahead of it.
+        apply(.disconnected)
         loop = Task { await run() }
+        readTail()
+    }
+
+    /// The newest page, small, alongside the stream: it's in long before a big snapshot.
+    static let tailSize = 20
+    private var tailTask: Task<Void, Never>?
+
+    private func readTail() {
+        tailTask?.cancel()
+        tailTask = Task {
+            guard let page = try? await api.feedPage(ref, before: nil, limit: Self.tailSize), !Task.isCancelled else { return }
+            apply(.tail(page))
+        }
     }
 
     /// What this device cached, painted until the stream catches up (never over live data).
@@ -59,7 +76,9 @@ actor FeedStream {
     /// One more page above the oldest loaded entry. False when there's nothing older.
     @discardableResult
     func loadOlder() async throws -> Bool {
-        guard state.hasOlder, !loadingOlder, let oldest = state.entries.first?.seq else { return false }
+        // Not while the stream catches up: a page of two hundred would hold up the snapshot on
+        // the same slow link, and the snapshot replaces what's shown anyway.
+        guard state.hasOlder, state.status == .live, !loadingOlder, let oldest = state.entries.first?.seq else { return false }
         loadingOlder = true
         defer { loadingOlder = false }
         let page = try await api.feedPage(ref, before: oldest)

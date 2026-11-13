@@ -132,6 +132,8 @@ struct TranscriptView: View {
                         .buttonStyle(.bordered)
                         .frame(maxWidth: .infinity)
                         .onAppear { loadOlder() }
+                        // Not read while the stream caught up: once it has, if it's still in view.
+                        .onChange(of: session.feed.status == .live) { _, live in if live { loadOlder() } }
                     }
                     let ends = session.turnEnds
                     ForEach(Array(blocks.enumerated()), id: \.element.id) { index, block in
@@ -384,6 +386,13 @@ struct TranscriptView: View {
                 }
             }
             .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: atBottom)
+            // What's shown is this device's copy (or the newest few entries) while the host's
+            // catches up: say so, or it read as all there was.
+            .overlay(alignment: .top) {
+                if session.feed.status == .connecting, !blocks.isEmpty {
+                    CatchingUp().padding(.top, 8)
+                }
+            }
             .overlay(alignment: .leading) {
                 let items = session.railItems
                 if items.count > 2 {
@@ -406,6 +415,32 @@ struct TranscriptView: View {
             }
         }
         .background(theme.surface)
+    }
+}
+
+/// A glass pill at the top of the transcript while the host's copy is on its way, there once
+/// the wait is long enough to notice (a quick link never shows it).
+private struct CatchingUp: View {
+    @State private var shown = false
+    @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ProgressView().controlSize(.small)
+            Text("Catching up").font(.ah(.footnote)).foregroundStyle(theme.text2)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .glassEffect(.regular, in: Capsule())
+        .opacity(shown ? 1 : 0)
+        .scaleEffect(shown || reduceMotion ? 1 : 0.9)
+        .accessibilityElement(children: .combine)
+        .accessibilityHidden(!shown)
+        .task {
+            try? await Task.sleep(for: .milliseconds(800))
+            withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { shown = true }
+        }
     }
 }
 
