@@ -77,7 +77,7 @@ struct APIClient: Sendable {
             }
             guard (200..<300).contains(response.statusCode) else {
                 let error = APIError(status: response.statusCode, body: data)
-                if case .unauthorized = error { await credentials.rejected(bearer: Self.bearer(of: request)) }
+                if case .unauthorized = error { await refused(request) }
                 throw error
             }
             return data
@@ -114,13 +114,23 @@ struct APIClient: Sendable {
                     if body.count > 4096 { break }
                 }
                 let error = APIError(status: response.statusCode, body: body)
-                if case .unauthorized = error { await credentials.rejected(bearer: Self.bearer(of: request)) }
+                if case .unauthorized = error { await refused(request) }
                 throw error
             }
             return stream
         } catch {
             throw APIError.wrap(error)
         }
+    }
+
+    /// A 401 from the hub itself is this device's sign-in refused. One through it from a peer
+    /// (`/h/<peer>/…`, which the hub passes on as it came) is only that host not trusting the
+    /// hub: signing out over it wiped the device's sign-in, and the peer's stream, started again
+    /// on signing back in, did it again. Without its own sign-in the hub refuses `/h/` too, and
+    /// its own stream says so.
+    private func refused(_ request: URLRequest) async {
+        guard scope == nil else { return }
+        await credentials.rejected(bearer: Self.bearer(of: request))
     }
 
     static let enc: @Sendable (String) -> String = { $0.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#"))) ?? $0 }
