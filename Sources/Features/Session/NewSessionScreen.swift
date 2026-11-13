@@ -266,11 +266,12 @@ struct NewSessionScreen: View {
         // The ground a session's screen has.
         .background(theme.surface)
         .task { await draft.load() }
-        // The box takes the keyboard as the screen comes in, and whenever the scene sends it
-        // here (⌘N with a keyboard attached asks for this screen's composer). Asked only on
-        // appearing, it didn't get it after ⌘N: the sidebar's list kept the keyboard, and
-        // Return opened its first session.
-        .onAppear { if draft.phase == .ready { takeKeyboard() } }
+        // With a keyboard attached the box takes it as the screen comes in, and whenever the
+        // scene sends it here (⌘N asks for this screen's composer). Asked only on appearing, it
+        // didn't get it after ⌘N: the sidebar's list kept the keyboard, and Return opened its
+        // first session. Without one it waits for a tap: the on-screen keyboard rising as the
+        // screen pushed in slid in sideways with it, then up, under the agents and the box.
+        .onAppear { if draft.phase == .ready, scene.hardwareKeyboard { takeKeyboard() } }
         .onChange(of: scene.focusRequest) { _, request in
             if request?.target == .composer(SceneModel.newSessionKey), draft.phase == .ready { takeKeyboard() }
         }
