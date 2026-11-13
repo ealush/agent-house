@@ -133,13 +133,13 @@ final class HubStore {
         }
     }
 
-    /// After our own action: the stream's next snapshot reflects it at once.
+    /// After our own action: shown as soon as the host says so.
     func refresh(host: String? = nil) {
         if let host, host != hostname, let peer = peerStreams[host] {
             let stream = peer.stream
-            Task { await stream.resync() }
+            Task { await stream.refresh() }
         } else if let stream = hubStream {
-            Task { await stream.resync() }
+            Task { await stream.refresh() }
         }
     }
 

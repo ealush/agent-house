@@ -83,6 +83,14 @@ actor StateStream {
         loop = Task { await run() }
     }
 
+    /// After an action of ours: an open stream has it already (the host sends its state the
+    /// moment an action lands), and a new one only drew the whole state again, often from
+    /// before the action. Down, it's tried at once rather than at the end of its wait.
+    func refresh() {
+        if case .live = phase { return }
+        resync()
+    }
+
     /// Back in the foreground: a stream asked for a moment ago (the app launching, which
     /// comes to the foreground too) is current already; dropping it for another sent the
     /// whole state twice. One older than that may have died while away: reconnect.
