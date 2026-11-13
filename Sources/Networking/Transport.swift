@@ -69,12 +69,34 @@ protocol WebSocketConnection: AnyObject, Sendable {
 final class URLSessionTransport: NSObject, HTTPTransport, @unchecked Sendable {
     private let session: URLSession
     private let configuration: URLSessionConfiguration
+    #if !canImport(FoundationNetworking)
+    /// Every stream's, each with a delegate of its own: over HTTP/2 (a tailnet's HTTPS) they
+    /// share one connection, so a transcript's stream opens without a TCP and TLS handshake
+    /// of its own first. Apart from the requests' session, with room for a stream per pane
+    /// over HTTP/1.1, where each holds a connection: in the requests' six, a few open
+    /// streams left the requests queued behind them.
+    private let streams: URLSession
+    #endif
 
     override init() {
         configuration = URLSessionTransport.makeConfiguration()
         let redirects = RedirectRefusal()
         session = URLSession(configuration: configuration, delegate: redirects, delegateQueue: nil)
+        #if !canImport(FoundationNetworking)
+        streams = URLSession(configuration: URLSessionTransport.makeStreamConfiguration(), delegate: RedirectRefusal(), delegateQueue: nil)
+        #endif
         super.init()
+    }
+
+    /// A stream stays open for hours; only the idle timeout between bytes applies. Pings come
+    /// every 25 s: 40 lets one arrive late, and a host gone quiet (asleep, unreachable without
+    /// a reset) reads as reconnecting sooner than at 60.
+    static func makeStreamConfiguration() -> URLSessionConfiguration {
+        let configuration = makeConfiguration()
+        configuration.timeoutIntervalForRequest = 40
+        configuration.timeoutIntervalForResource = 7 * 24 * 3600
+        configuration.httpMaximumConnectionsPerHost = 16
+        return configuration
     }
 
     static func makeConfiguration() -> URLSessionConfiguration {
@@ -118,24 +140,22 @@ final class URLSessionTransport: NSObject, HTTPTransport, @unchecked Sendable {
     #endif
 
     func stream(for request: URLRequest) async throws -> (HTTPURLResponse, AsyncThrowingStream<Data, any Error>) {
-        let streamConfiguration = URLSessionTransport.makeConfiguration()
-        // A stream stays open for hours; only the idle timeout between bytes applies. Pings come
-        // every 25 s: 40 lets one arrive late, and a host gone quiet (asleep, unreachable without
-        // a reset) reads as reconnecting sooner than at 60.
-        streamConfiguration.timeoutIntervalForRequest = 40
-        streamConfiguration.timeoutIntervalForResource = 7 * 24 * 3600
-        let delegate = StreamDelegate()
-        let session = URLSession(configuration: streamConfiguration, delegate: delegate, delegateQueue: nil)
+        #if canImport(FoundationNetworking)
+        let delegate = StreamDelegate(ownsSession: true)
+        let session = URLSession(configuration: URLSessionTransport.makeStreamConfiguration(), delegate: delegate, delegateQueue: nil)
         let task = session.dataTask(with: request)
+        #else
+        let delegate = StreamDelegate(ownsSession: false)
+        let task = streams.dataTask(with: request)
+        task.delegate = delegate
+        #endif
         let stream = AsyncThrowingStream<Data, any Error>(bufferingPolicy: .unbounded) { continuation in
             delegate.attach(continuation)
-            continuation.onTermination = { _ in
-                task.cancel()
-                session.invalidateAndCancel()
-            }
+            continuation.onTermination = { _ in task.cancel() }
         }
         task.resume()
-        let response = try await delegate.response()
+        // Cancelled while waiting for the head (the session left): the request goes with it.
+        let response = try await withTaskCancellationHandler { try await delegate.response() } onCancel: { task.cancel() }
         return (response, stream)
     }
 
@@ -168,11 +188,23 @@ private final class UploadMeter: RedirectRefusal, @unchecked Sendable {
 
 /// Bridges a streaming data task to an AsyncThrowingStream, plus a one-shot for its response head.
 private final class StreamDelegate: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    /// A session made for this one stream (where tasks can't have delegates of their own),
+    /// let go when it ends; the shared one isn't.
+    private let ownsSession: Bool
     private let lock = NSLock()
     private var continuation: AsyncThrowingStream<Data, any Error>.Continuation?
     private var head: Result<HTTPURLResponse, any Error>?
     private var waiters: [CheckedContinuation<HTTPURLResponse, any Error>] = []
     private var pending: [Data] = []
+
+    init(ownsSession: Bool) {
+        self.ownsSession = ownsSession
+    }
+
+    /// The shared session's own refusal doesn't hear of a task with a delegate of its own.
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
+        completionHandler(nil)
+    }
 
     func attach(_ continuation: AsyncThrowingStream<Data, any Error>.Continuation) {
         lock.lock()
@@ -236,7 +268,7 @@ private final class StreamDelegate: NSObject, URLSessionDataDelegate, @unchecked
         let continuation = self.continuation
         lock.unlock()
         if let error { continuation?.finish(throwing: error) } else { continuation?.finish() }
-        session.finishTasksAndInvalidate()
+        if ownsSession { session.finishTasksAndInvalidate() }
     }
 }
 
