@@ -47,7 +47,8 @@ struct HubStateReducer: Sendable {
 
 /// Omitted and explicit null are different on this wire. Arrays replace in full;
 /// this is neither JSON Patch nor a recursive merge (`server/core.ts` tick sends the
-/// top-level fields that changed).
+/// top-level fields that changed). Asked for with `?delta=1`, the sessions come as a
+/// `windowsDelta` instead: the ones that changed, and every uid in order.
 private struct HubStatePatchDTO: Decodable {
     let api: PatchField<Int>
     let hostname: PatchField<String>
@@ -61,9 +62,22 @@ private struct HubStatePatchDTO: Decodable {
     let omarchy: PatchField<OmarchyStampDTO>
     let focus: PatchField<FocusDTO>
     let review: PatchField<ReviewStateDTO>
+    let windowsDelta: PatchField<WindowsDelta>
+
+    struct WindowsDelta: Decodable {
+        let changed: [SessionDTO]
+        let order: [String]
+
+        /// The list it describes: the sessions it carries, the rest as they were.
+        func applying(to previous: [SessionDTO]) -> [SessionDTO] {
+            var byUID = Dictionary(previous.map { ($0.uid, $0) }, uniquingKeysWith: { $1 })
+            for session in changed { byUID[session.uid] = session }
+            return order.compactMap { byUID[$0] }
+        }
+    }
 
     private enum CodingKeys: String, CodingKey {
-        case api, hostname, hosts, home, defaultSession, sessions, windows, history, presets, omarchy, focus, review
+        case api, hostname, hosts, home, defaultSession, sessions, windows, history, presets, omarchy, focus, review, windowsDelta
     }
 
     init(from decoder: any Decoder) throws {
@@ -80,6 +94,7 @@ private struct HubStatePatchDTO: Decodable {
         omarchy = try container.patch(.omarchy)
         focus = try container.patch(.focus)
         review = try container.patch(.review)
+        windowsDelta = try container.patch(.windowsDelta)
     }
 
     func applying(to previous: HubStateDTO) throws -> HubStateDTO {
@@ -91,6 +106,7 @@ private struct HubStatePatchDTO: Decodable {
         next.defaultSession = try defaultSession.replacing(previous.defaultSession)
         next.sessions = try sessions.replacing(previous.sessions)
         next.windows = try windows.replacing(previous.windows)
+        if case .value(let delta) = windowsDelta { next.windows = delta.applying(to: previous.windows) }
         next.history = try history.replacing(previous.history)
         next.presets = try presets.replacing(previous.presets)
         next.omarchy = omarchy.optional(previous.omarchy)

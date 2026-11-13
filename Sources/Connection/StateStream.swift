@@ -132,7 +132,9 @@ actor StateStream {
     /// complete, valid state or patch arrives on it.
     private func streamOnce() async throws {
         var reducer = HubStateReducer()
-        let bytes = try await api.eventStream("/api/events")
+        // Patches name only the sessions that changed (an older host sends them all): one
+        // working session no longer sends every row again each tick.
+        let bytes = try await api.eventStream("/api/events", query: [URLQueryItem(name: "delta", value: "1")])
         // A host with many sessions and a long History sends a large first state.
         var parser = ServerSentEventParser(maximumLineBytes: 32 << 20, maximumEventBytes: 32 << 20)
         for try await chunk in bytes {

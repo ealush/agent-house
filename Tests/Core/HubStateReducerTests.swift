@@ -69,6 +69,22 @@ private func stateEvent(windows: String = "[\(sessionJSON)]", api: Int = 28) -> 
     #expect(before.uid == after.uid)
 }
 
+@Test func aDeltaPatchCarriesOnlyTheSessionsThatChanged() throws {
+    let second = sessionJSON.replacingOccurrences(of: "@1", with: "@2").replacingOccurrences(of: "stable-uid", with: "second-uid")
+    var reducer = HubStateReducer()
+    try reducer.apply(stateEvent(windows: "[\(sessionJSON),\(second)]"))
+    let first = try #require(reducer.state?.windows.first)
+    let working = second.replacingOccurrences(of: #""status":"waiting""#, with: #""status":"busy""#)
+    // The second one changed and moved to the top; the first, unchanged, isn't sent again.
+    try reducer.apply(ServerSentEvent(name: "patch", data: #"{"windowsDelta":{"changed":["# + working + #"],"order":["second-uid","stable-uid"]}}"#))
+    #expect(reducer.state?.windows.map(\.uid) == ["second-uid", "stable-uid"])
+    #expect(reducer.state?.windows.first?.status == .busy)
+    #expect(reducer.state?.windows.last == first)
+    // One gone from the order is gone from the list.
+    try reducer.apply(ServerSentEvent(name: "patch", data: #"{"windowsDelta":{"changed":[],"order":["stable-uid"]}}"#))
+    #expect(reducer.state?.windows == [first])
+}
+
 @Test func aNewConnectionRequiresAFullSnapshot() throws {
     var reducer = HubStateReducer()
     let patch = ServerSentEvent(name: "patch", data: #"{"windows":[]}"#)
