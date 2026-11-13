@@ -73,6 +73,10 @@
     </array>
     <key>NSSupportsLiveActivities</key>
     <true/>
+    <!-- Only exempt encryption (HTTPS/TLS to the host, CryptoKit for signing in), so TestFlight
+         doesn't hold each build on the export compliance question. -->
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
     <key>UIApplicationSceneManifest</key>
     <dict>
         <key>UIApplicationSupportsMultipleScenes</key>
