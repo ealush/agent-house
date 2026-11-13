@@ -602,6 +602,10 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
         if let nav = viewController(for: .secondary)?.navigationController, nav.isNavigationBarHidden != showsSessions {
             nav.setNavigationBarHidden(showsSessions, animated: false)
         }
+        // A session's header has its own sidebar button; the split's went into the first bar
+        // it found below it, a side panel's, beside the panel's close. Pages keep it.
+        let button: UISplitViewController.DisplayModeButtonVisibility = showsSessions ? .never : .automatic
+        if displayModeButtonVisibility != button { displayModeButtonVisibility = button }
     }
 
     override func viewWillLayoutSubviews() {
