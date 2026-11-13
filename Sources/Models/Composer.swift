@@ -51,6 +51,9 @@ final class Outbox {
     /// put away and say how it's going outside it: returns what to call once it's done. (The
     /// app's layer sets it; none in tests.)
     var keepAlive: (@MainActor (Int) -> (@MainActor () -> Void))?
+    /// The same for an attachment uploading before anything's sent (named for iOS): one
+    /// switched away from mid-upload was suspended, failed, and its tile went.
+    var keepUploading: (@MainActor (String) -> (@MainActor () -> Void))?
 
     func add(key: String, text: String, state: Item.State, waitingOn: [Int] = []) -> Int {
         nextID += 1
@@ -711,10 +714,12 @@ final class ComposerModel {
         let upload = outbox.beginUpload()
         if let i = attachments.firstIndex(where: { $0.id == id }) { attachments[i].upload = upload }
         let outbox = outbox
+        let release = outbox.keepUploading?("Attaching \(name)")
         uploads[id] = Task { [weak self] in
             defer {
                 outbox.endUpload(upload)
                 self?.uploads[id] = nil
+                release?()
             }
             do {
                 let path = try await send { fraction in Task { @MainActor in outbox.progressed(upload, fraction) } }

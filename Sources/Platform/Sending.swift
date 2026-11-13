@@ -15,6 +15,7 @@ extension Activity: @retroactive @unchecked Sendable {}
 enum Sending {
     static func install(_ app: AppModel) {
         let outbox = app.outbox
+        outbox.keepUploading = { name in keepUploading(name) }
         outbox.keepAlive = { [weak app] id in
             let held = Held()
             // Out of time: the upload stops where it is (and the message comes back to its box).
@@ -25,6 +26,13 @@ enum Sending {
                 held.end()
             }
         }
+    }
+
+    /// Background time for an attachment's upload, given back when it's done.
+    static func keepUploading(_ name: String) -> @MainActor () -> Void {
+        let held = Held()
+        held.task = UIApplication.shared.beginBackgroundTask(withName: name) { held.end() }
+        return { held.end() }
     }
 
     private static func title(of id: Int, outbox: Outbox, in app: AppModel) -> String? {
