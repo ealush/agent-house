@@ -13,9 +13,14 @@ actor FeedStream {
     private var observers: [UUID: AsyncStream<FeedState>.Continuation] = [:]
     private var loadingOlder = false
 
-    init(api: APIClient, ref: String) {
+    /// The agent whose transcript this is (`claude`), as the host names it in a snapshot:
+    /// what the stream can carry on from the newest page with, before any snapshot named it.
+    private let agent: String?
+
+    init(api: APIClient, ref: String, agent: String? = nil) {
         self.api = api
         self.ref = ref
+        self.agent = agent
     }
 
     func updates() -> AsyncStream<FeedState> {
@@ -34,11 +39,32 @@ actor FeedStream {
     /// Closed for good (its session left the screen): nothing starts it again.
     private var closed = false
 
-    func start() {
+    /// Opens the stream, and reads the newest page ahead of it at once. `seeded`: this
+    /// device's copy going in (`seed`). The stream waits for whichever of the two is shown
+    /// first and carries on from it: the host sends what came after it, not its newest two
+    /// hundred entries (megabytes on a long session); scrolling back reads older pages in.
+    func start(seeded: Task<Void, Never>? = nil) {
         guard loop == nil, !closed else { return }
         startedAt = .now
-        loop = Task { await run() }
         readTail()
+        seedRead = seeded == nil
+        if let seeded { Task { await seeded.value; seedRead = true } }
+        loop = Task {
+            await waitForACopy()
+            await run()
+        }
+    }
+
+    private var seedRead = true
+    private var tailRead = true
+
+    /// Until something is shown to carry on from, or both reads came back without it (a
+    /// first look at a fresh session; a host without the page), for two seconds at most.
+    private func waitForACopy() async {
+        let deadline = ContinuousClock.now + .seconds(2)
+        while !Task.isCancelled, state.entries.isEmpty, !(seedRead && tailRead), ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
     }
 
     func stop() {
@@ -76,7 +102,9 @@ actor FeedStream {
 
     private func readTail() {
         tailTask?.cancel()
+        tailRead = false
         tailTask = Task {
+            defer { tailRead = true }
             guard let page = try? await api.feedPage(ref, before: nil, limit: Self.tailSize), !Task.isCancelled else { return }
             apply(.tail(page))
         }
@@ -107,6 +135,13 @@ actor FeedStream {
         return !page.entries.isEmpty
     }
 
+    /// Where the host can carry on from: the newest entry shown, of a transcript known by name.
+    private var resumePoint: APIClient.FeedResume? {
+        let harness = state.harness.isEmpty ? agent ?? "" : state.harness
+        guard let last = state.entries.last, !harness.isEmpty, state.status != .unavailable else { return nil }
+        return APIClient.FeedResume(after: last.seq, id: last.id, harness: harness)
+    }
+
     /// ah sends a snapshot as one line of JSON; a long session's (screenshots, long outputs)
     /// runs to megabytes. Room for that, with a ceiling against a runaway stream.
     static let largestEvent = 64 << 20
@@ -117,7 +152,8 @@ actor FeedStream {
         while !Task.isCancelled {
             var opened: ContinuousClock.Instant?
             do {
-                let bytes = try await api.feedStream(ref)
+                // From the newest entry held (this device's copy, or the last connection's).
+                let bytes = try await api.feedStream(ref, resume: resumePoint)
                 opened = ContinuousClock.now
                 var parser = ServerSentEventParser(maximumLineBytes: Self.largestEvent, maximumEventBytes: Self.largestEvent)
                 for try await chunk in bytes {

@@ -68,7 +68,29 @@ private let result = ToolResult(callId: "c1", text: "ok", isError: false, data: 
     let live = FeedReducer.reduce(kept, .message(.snapshot(reason: .initial, harness: "claude", entries: [entry(9, .user, [.text("live")])], floor: 0, head: 9, hasOlder: false)))
     #expect(FeedReducer.reduce(live, .tail(FeedPage(entries: [entry(12, .assistant, [.text("tail")])], hasOlder: true))) == live)
     // Into an empty view as well.
-    #expect(FeedReducer.reduce(.initial, .tail(FeedPage(entries: [entry(5, .user, [.text("hi")])], hasOlder: true))).entries.map(\.seq) == [5])
+    let alone = FeedReducer.reduce(.initial, .tail(FeedPage(entries: [entry(5, .user, [.text("hi")])], hasOlder: true)))
+    #expect(alone.entries.map(\.seq) == [5] && alone.hasOlder, "more above it, to scroll back to")
+    // The stream carrying on from it keeps that.
+    #expect(FeedReducer.reduce(alone, .message(.snapshot(reason: .resume, harness: "claude", entries: [], floor: 0, head: 5, hasOlder: false))).hasOlder)
+}
+
+@Test func aResumeCarriesOnFromWhatThisDeviceHolds() {
+    let kept = FeedReducer.reduce(.initial, .cached(harness: "claude", entries: [entry(1, .user, [.text("kept")]), entry(2, .assistant, [.text("old")])], hasOlder: true))
+    // What came after it goes on the end: nothing shown is replaced or rebuilt.
+    let resumed = FeedReducer.reduce(kept, .message(.snapshot(reason: .resume, harness: "claude", entries: [entry(3, .assistant, [.text("since")])], floor: 0, head: 3, hasOlder: true)))
+    #expect(resumed.entries.map(\.seq) == [1, 2, 3])
+    #expect(resumed.status == .live && resumed.epoch == kept.epoch && resumed.hasOlder)
+    #expect(resumed.snapshots == kept.snapshots + 1)
+    // Nothing since: live, and the same transcript where it was.
+    let quiet = FeedReducer.reduce(kept, .message(.snapshot(reason: .resume, harness: "claude", entries: [], floor: 0, head: 2, hasOlder: true)))
+    #expect(quiet.entries == kept.entries && quiet.status == .live && quiet.snapshots == kept.snapshots)
+    // A reconnect carries on the same way, from what the last connection showed.
+    let dropped = FeedReducer.reduce(resumed, .disconnected)
+    let back = FeedReducer.reduce(dropped, .message(.snapshot(reason: .resume, harness: "claude", entries: [entry(4, .user, [.text("more")])], floor: 0, head: 4, hasOlder: true)))
+    #expect(back.entries.map(\.seq) == [1, 2, 3, 4] && back.epoch == resumed.epoch)
+    // The reason reads off the wire; one this build doesn't know is a plain snapshot.
+    let wire = ServerSentEvent(name: "snapshot", data: #"{"type":"snapshot","reason":"resume","harness":"claude","entries":[],"floor":0,"head":2,"hasOlder":true}"#)
+    if case .snapshot(let reason, _, _, _, _, _) = try? FeedMessage.decode(wire) { #expect(reason == .resume) } else { Issue.record("expected a snapshot") }
 }
 
 @Test func projectionGroupsTurnsAndConsecutiveToolCalls() {

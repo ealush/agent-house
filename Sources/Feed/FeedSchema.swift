@@ -192,7 +192,9 @@ enum FeedMessage: Equatable, Sendable {
     case append(entries: [FeedEntry], head: Int)
     case unavailable(reason: String)
 
-    enum SnapshotReason: String, Codable, Sendable { case initial, rotated, truncated }
+    /// `resume`: the host carried on from this device's own copy (`?after=`), sending what
+    /// came after it rather than the newest page.
+    enum SnapshotReason: String, Codable, Sendable { case initial, rotated, truncated, resume }
 
     private struct Wire: Decodable {
         let type: String

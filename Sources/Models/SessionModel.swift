@@ -234,8 +234,9 @@ final class SessionModel: Identifiable {
     /// the newest transcript page, painted until the stream answers.
     struct FeedCache {
         struct Entry: Codable, Equatable, Sendable { let harness: String; let page: FeedPage }
-        /// Read off the main thread (it's a page of transcript to open and decode).
-        let load: @MainActor () async -> Entry?
+        /// A read of it, made on the main thread and run off it (it's a page of transcript to
+        /// open and decode); nil while there's no key to open it with.
+        let load: @MainActor () -> (@Sendable () async -> Entry?)?
         let store: @MainActor (Entry) -> Void
     }
     @ObservationIgnored var feedCache: FeedCache?
@@ -243,19 +244,22 @@ final class SessionModel: Identifiable {
 
     private func startFeed() {
         guard feedStream == nil else { return }
-        let stream = FeedStream(api: api, ref: ref)
+        let stream = FeedStream(api: api, ref: ref, agent: row?.dto.agent ?? history?.dto.harness)
         feedStream = stream
-        let load = feedCache?.load
-        // Off the main actor: asked for at once, not once the screen opening it has been built.
-        Task.detached { await stream.start() }
+        let read = feedCache?.load()
+        // What this device kept, read and opened off the main thread: it paints only if nothing
+        // from the host has, and the stream carries on from it (the host sends what came since,
+        // not the newest page again).
+        // Detached: the screen opening the session has the main thread meanwhile, and the
+        // stream waits on this.
+        let seeding = Task.detached {
+            if let cached = await read?() { await stream.seed(harness: cached.harness, entries: cached.page.entries, hasOlder: cached.page.hasOlder) }
+        }
+        // Off the main actor: the newest page is asked for at once, not once the screen
+        // opening it has been built.
+        Task.detached { await stream.start(seeded: seeding) }
         feedTask = Task { [weak self] in
             let updates = await stream.updates()
-            // The transcript is asked for first: read meanwhile, what this device kept paints
-            // only if nothing from the host has (a cache to open and decode held up the request
-            // behind it).
-            let seeding = Task {
-                if let cached = await load?() { await stream.seed(harness: cached.harness, entries: cached.page.entries, hasOlder: cached.page.hasOlder) }
-            }
             defer { seeding.cancel() }
             for await state in updates {
                 guard let self else { return }

@@ -186,8 +186,19 @@ struct APIClient: Sendable {
 
     // MARK: GUI feed
 
-    func feedStream(_ ref: String) async throws -> AsyncThrowingStream<Data, any Error> {
-        try await eventStream("\(s(ref))/feed/stream", query: [URLQueryItem(name: "device", value: device.name), URLQueryItem(name: "client", value: device.client)])
+    /// The newest entry this device holds of a transcript: the host carries on after it.
+    struct FeedResume: Equatable, Sendable {
+        let after: Int
+        let id: String
+        let harness: String
+    }
+
+    func feedStream(_ ref: String, resume: FeedResume? = nil) async throws -> AsyncThrowingStream<Data, any Error> {
+        var query = [URLQueryItem(name: "device", value: device.name), URLQueryItem(name: "client", value: device.client)]
+        if let resume {
+            query += [URLQueryItem(name: "after", value: String(resume.after)), URLQueryItem(name: "id", value: resume.id), URLQueryItem(name: "harness", value: resume.harness)]
+        }
+        return try await eventStream("\(s(ref))/feed/stream", query: query)
     }
     func feedPage(_ ref: String, before: Int?, limit: Int = 200) async throws -> FeedPage {
         try await call("GET", "\(s(ref))/feed", query: [URLQueryItem(name: "before", value: before.map(String.init) ?? "Infinity"), URLQueryItem(name: "limit", value: String(limit))])

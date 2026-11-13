@@ -38,6 +38,17 @@ enum FeedReducer {
     static func reduce(_ state: FeedState, _ action: FeedAction) -> FeedState {
         var s = state
         switch action {
+        case .message(.snapshot(.resume, let harness, let entries, _, _, let hasOlder)):
+            // The host carried on from what this device holds: what came after it goes on the
+            // end, as an append would, and what's shown stays (a reconnect, or coming back to a
+            // session, no longer sends the newest page again, megabytes of it).
+            s.status = .live
+            s.reason = nil
+            s.harness = harness
+            s.entries = merge(s.entries, entries)
+            s.results = withResults(s.results, entries)
+            if state.entries.isEmpty { s.hasOlder = hasOlder }
+            if !entries.isEmpty { s.snapshots += 1 }
         case .message(.snapshot(let reason, let harness, let entries, _, _, let hasOlder)):
             s.status = .live
             s.reason = nil
@@ -72,7 +83,10 @@ enum FeedReducer {
             // Only while the stream hasn't answered, and only what's newer than what's shown.
             guard s.status == .connecting, let newest = page.entries.last?.seq, newest > (s.entries.last?.seq ?? -1) else { return s }
             if joins(s.entries, page.entries) {
-                // It carries on from what this device kept.
+                // It carries on from what this device kept (or is all there is, in an empty view:
+                // then whether there's more above is the page's to say; the stream carries on
+                // from it without a snapshot to say so).
+                if state.entries.isEmpty { s.hasOlder = page.hasOlder }
                 s.entries = merge(s.entries, page.entries)
                 s.results = withResults(s.results, page.entries)
             } else {

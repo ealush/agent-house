@@ -192,15 +192,18 @@ final class AccountSession: Identifiable {
         return services.cache.get(type, origin: origin, kind: kind, key: key, using: cacheKey)
     }
 
-    /// The same, read, opened and decoded off the main thread: a transcript's page is big
-    /// enough that opening its session waited on it.
-    func cachedOffMain<T: Decodable & Sendable>(_ type: T.Type, kind: SealedCache.Kind, key: String) async -> T? {
+    /// The same, as a read to run anywhere: read, opened and decoded off the main thread (a
+    /// transcript's page is big enough that opening its session waited on it), and made now
+    /// so it needn't wait for the main thread to start either.
+    func cachedReader<T: Decodable & Sendable>(_ type: T.Type, kind: SealedCache.Kind, key: String) -> (@Sendable () async -> T?)? {
         guard let cacheKey else { return nil }
         // The key crosses as its bytes: swift-crypto's isn't Sendable where CryptoKit's is.
         let cache = services.cache, origin = origin, secret = cacheKey.withUnsafeBytes { Data($0) }
-        return await Task.detached(priority: .userInitiated) {
-            cache.get(T.self, origin: origin, kind: kind, key: key, using: SymmetricKey(data: secret))
-        }.value
+        return {
+            await Task.detached(priority: .userInitiated) {
+                cache.get(T.self, origin: origin, kind: kind, key: key, using: SymmetricKey(data: secret))
+            }.value
+        }
     }
 
     /// Seals off the main thread, in the order asked: a live transcript is sealed every few
