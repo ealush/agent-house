@@ -10,8 +10,17 @@ import { cachedSize, invalidateSize, requestSize } from './size.ts';
 
 const exec = promisify(execFile);
 
+/**
+ * ah reads the agents' working trees all the time (status, diffs, branches, polled
+ * every few seconds): without optional locks a `git status` there never takes
+ * index.lock to refresh the index, so it can't make an agent's own `git add` or
+ * `commit` fail with "index.lock: File exists", and writes nothing. Writes still
+ * take the locks they need.
+ */
+const gitEnvironment = () => ({ ...process.env, GIT_OPTIONAL_LOCKS: '0' });
+
 async function git(cwd: string, ...args: string[]): Promise<string> {
-  const { stdout } = await exec('git', ['-C', cwd, ...args], { maxBuffer: 32 * 1024 * 1024, timeout: 15_000 });
+  const { stdout } = await exec('git', ['-C', cwd, ...args], { maxBuffer: 32 * 1024 * 1024, timeout: 15_000, env: gitEnvironment() });
   return stdout;
 }
 
@@ -20,7 +29,7 @@ async function gitEnv(cwd: string, env: Record<string, string>, args: string[]):
   const { stdout } = await exec('git', ['-C', cwd, ...args], {
     maxBuffer: 32 * 1024 * 1024,
     timeout: 60_000,
-    env: { ...process.env, ...env },
+    env: { ...gitEnvironment(), ...env },
   });
   return stdout;
 }
@@ -31,7 +40,7 @@ async function gitEnv(cwd: string, env: Record<string, string>, args: string[]):
  */
 function gitStdin(cwd: string, env: Record<string, string>, args: string[], input: string): Promise<void> {
   return new Promise((resolvePromise, reject) => {
-    const p = spawn('git', ['-C', cwd, ...args], { env: { ...process.env, ...env } });
+    const p = spawn('git', ['-C', cwd, ...args], { env: { ...gitEnvironment(), ...env } });
     let err = '';
     const timer = setTimeout(() => p.kill('SIGTERM'), 60_000);
     p.stderr.on('data', (d) => (err += d));
@@ -378,6 +387,24 @@ export async function pullRequest(dir: string): Promise<PullRequest> {
   const root = await toplevel(dir);
   const current = await git(root, 'branch', '--show-current').then((s) => s.trim()).catch(() => '');
   if (!current) return null;
+  // Asked on every session open (the header's PR pill) and each lookup is a GitHub round
+  // trip (~0.5 s here): kept a minute, or 15 s while there's none (an agent may open one).
+  const key = `${root}\0${current}`;
+  const hit = prCache.get(key);
+  if (hit && Date.now() - hit.at < (hit.pr ? 60_000 : 15_000)) return hit.value;
+  const value = lookupPr(root, current);
+  prCache.set(key, { at: Date.now(), pr: true, value });
+  void value.then(
+    (pr) => prCache.get(key)?.value === value && prCache.set(key, { at: Date.now(), pr: !!pr, value }),
+    () => prCache.delete(key),
+  );
+  if (prCache.size > 200) prCache.delete(prCache.keys().next().value!);
+  return value;
+}
+
+const prCache = new Map<string, { at: number; pr: boolean; value: Promise<PullRequest> }>();
+
+async function lookupPr(root: string, current: string): Promise<PullRequest> {
   let out: string;
   try {
     const res = await exec('gh', ['pr', 'list', '--head', current, '--json', 'number,url', '--limit', '1'], {

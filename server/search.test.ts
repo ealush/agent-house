@@ -135,6 +135,32 @@ test('incremental: appended lines become searchable; a replaced file drops stale
   assert.equal((await ix.status()).transcriptEntries, 1);
 });
 
+test('incremental: a half-written last line waits for its newline, then indexes at the right seq', async () => {
+  const { db } = await freshDb();
+  const dir = await mkdtemp(join(tmpdir(), 'ah-search-src-'));
+  const file = await writeTranscript(dir, 'c.jsonl', [userLine('opening line', '2026-10-01T10:00:00.000Z'), '', agentLine('second line', '2026-10-01T10:01:00.000Z')]);
+  const sources: TranscriptSource[] = [
+    { file, harness: 'claude', adapter: 'claude', harnessId: 'c1', ref: 'sessC', uid: 'sessC', title: 'C', cwd: '/x/cproj' },
+  ];
+  const ix = new SearchIndexer(db, async () => sources);
+  await ix.refresh();
+  // An agent mid-write: the line has no newline yet, so it isn't read.
+  const line = agentLine('a heron lands', '2026-10-01T10:02:00.000Z');
+  await appendFile(file, line.slice(0, 20));
+  await ix.refresh();
+  assert.equal((await ix.search({ q: 'heron' })).total, 0);
+  // Finished: the next pass reads on from where the last stopped.
+  await appendFile(file, line.slice(20) + '\n');
+  await ix.refresh();
+  const hit = await ix.search({ q: 'heron' });
+  assert.equal(hit.total, 1);
+  assert.equal(hit.results[0].excerpts[0].seq, 4);
+  await appendFile(file, userLine('and a crane', '2026-10-01T10:03:00.000Z') + '\n');
+  await ix.refresh();
+  assert.equal((await ix.search({ q: 'crane' })).results[0].excerpts[0].seq, 5);
+  assert.equal((await ix.status()).transcriptEntries, 4);
+});
+
 test('disable drops the indexed content itself', async () => {
   const { db } = await freshDb();
   const dir = await mkdtemp(join(tmpdir(), 'ah-search-src-'));

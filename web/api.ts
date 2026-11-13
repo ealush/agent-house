@@ -608,26 +608,41 @@ export function openStateEarly() {
 export function subscribe(onState: (s: State) => void, onError: (msg: string | null) => void, client: HostApi = api): () => void {
   let es: EventSource | null = null;
   let poll: number | undefined;
+  let retry: number | undefined;
   let closed = false;
   let shared: State | null = null;
+  /** The stream's latest state, which patches apply to. */
+  let last: State | null = null;
+  /** Counts stream events: a fetch that answers after one is older than what it shows. */
+  let events = 0;
   const emit = (s: State) => onState((shared = shareState(shared, s)));
-  const fetchOnce = () =>
-    client
+  const fetchOnce = () => {
+    const at = events;
+    return client
       .state()
       .then((s) => {
-        emit(normalize(s));
+        if (closed || events !== at) return;
+        last = normalize(s);
+        emit(last);
         onError(null);
       })
-      .catch((e) => onError(reachText(e)));
+      .catch((e) => !closed && onError(reachText(e)));
+  };
   const open = () => {
     if (closed) return;
+    // One stream at a time: a retry and a wake-up can both ask for one.
+    clearTimeout(retry);
+    retry = undefined;
+    if (es && es.readyState !== EventSource.CLOSED) return;
+    es?.close();
     const adopt = client.base === api.base && early && early.es.readyState !== EventSource.CLOSED ? early : null;
     if (adopt) early = null;
     // ?delta=1: a patch carries the windows that changed, not all of them (an older host sends all).
     es = adopt?.es ?? new EventSource(`${client.base}/api/events?delta=1`);
     // The whole state on connect, then patches of the fields that changed.
-    let last: State | null = null;
+    last = null;
     const onFull = (e: Event) => {
+      events++;
       clearInterval(poll);
       poll = undefined;
       last = normalize(JSON.parse((e as MessageEvent).data));
@@ -637,9 +652,10 @@ export function subscribe(onState: (s: State) => void, onError: (msg: string | n
     };
     const onPatch = (e: Event) => {
       if (!last) return;
+      events++;
       const data = JSON.parse((e as MessageEvent).data);
       if (data.windowsDelta) {
-        const byUid = new Map(last.windows.map((w) => [w.uid, w] as const));
+        const byUid = new Map(last!.windows.map((w) => [w.uid, w] as const));
         for (const w of data.windowsDelta.changed as Win[]) byUid.set(w.uid ?? w.id, w);
         data.windows = (data.windowsDelta.order as string[]).map((uid) => byUid.get(uid)).filter(Boolean);
         delete data.windowsDelta;
@@ -657,7 +673,7 @@ export function subscribe(onState: (s: State) => void, onError: (msg: string | n
     es.onerror = () => {
       // EventSource reconnects by itself; poll meanwhile so the UI never goes stale.
       poll ??= window.setInterval(fetchOnce, 3000);
-      if (es?.readyState === EventSource.CLOSED) setTimeout(open, 3000);
+      if (es?.readyState === EventSource.CLOSED) retry ??= window.setTimeout(open, 3000);
     };
   };
   open();
@@ -672,6 +688,7 @@ export function subscribe(onState: (s: State) => void, onError: (msg: string | n
     closed = true;
     es?.close();
     clearInterval(poll);
+    clearTimeout(retry);
     document.removeEventListener('visibilitychange', wake);
   };
 }

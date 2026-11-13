@@ -5,11 +5,18 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { ClipboardAddon } from '@xterm/addon-clipboard';
-import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import { autoCopySelection, copyText } from './selection.ts';
 import { terminalArrow } from './keyboard.ts';
 import { subscribeTheme, terminalFont, terminalTheme } from './theme.ts';
+
+// WebGL is fastest on desktop, but mobile Safari drops GL contexts when backgrounded
+// and headless browsers paint it unreliably; the DOM renderer is the safe default there.
+// Only a device that uses it downloads it (a third of this chunk): fetched as this
+// module loads, so it is normally in before the first terminal opens.
+const WEBGL = typeof matchMedia === 'function' && matchMedia('(pointer: fine)').matches && !navigator.webdriver ? import('@xterm/addon-webgl') : null;
+let Webgl: typeof import('@xterm/addon-webgl').WebglAddon | null = null;
+void WEBGL?.then((m) => (Webgl = m.WebglAddon)).catch(() => {});
 
 export type TerminalHandle = {
   send: (data: string) => void;
@@ -113,17 +120,17 @@ function create(windowId: string, host: HTMLElement, on: Handlers): Live {
   t.loadAddon(new Unicode11Addon());
   t.unicode.activeVersion = '11';
   t.open(el);
-  // WebGL is fastest on desktop, but mobile Safari drops GL contexts when backgrounded
-  // and headless browsers paint it unreliably; the DOM renderer is the safe default there.
-  if (matchMedia('(pointer: fine)').matches && !navigator.webdriver) {
+  const webgl = (Addon: NonNullable<typeof Webgl>) => {
     try {
-      const gl = new WebglAddon();
+      const gl = new Addon();
       gl.onContextLoss(() => gl.dispose());
       t.loadAddon(gl);
     } catch {
       // DOM renderer fallback
     }
-  }
+  };
+  if (Webgl) webgl(Webgl);
+  else void WEBGL?.then((m) => !disposed && webgl(m.WebglAddon)).catch(() => {});
 
   let ws: WebSocket | null = null;
   const live: Live = {

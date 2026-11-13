@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ensureMigrated, getDb } from './db.ts';
+import { ensureMigrated, getDb, upToDate } from './db.ts';
 import { importLegacyJson } from './migrate.ts';
 import { Registry } from './registry.ts';
 import { PromptStore } from './prompts.ts';
@@ -87,4 +87,23 @@ test('prompts: save/load round-trips newest-first', async () => {
   assert.deepEqual(await new PromptStore(path).load(), [{ text: 'b', at: 2 }, { text: 'a', at: 1 }]);
   await store.clear();
   assert.deepEqual(await new PromptStore(path).load(), []);
+});
+
+test('a restart skips the Prisma CLI only while every committed migration is applied unchanged', async () => {
+  const migrations = join(import.meta.dirname, '..', 'prisma', 'migrations');
+  const path = join(tmpdir(), `ah-migrate-test-${process.pid}-${Math.random().toString(36).slice(2)}.db`);
+  await writeFile(path, '');
+  assert.equal(await upToDate(path, migrations), false, 'a new database has no migrations table');
+  await ensureMigrated(path);
+  assert.equal(await upToDate(path, migrations), true);
+  // A new migration in the checkout, or an edited one, sends it back to Prisma.
+  const copy = await mkdtemp(join(tmpdir(), 'ah-migrations-'));
+  await cp(migrations, copy, { recursive: true });
+  await mkdir(join(copy, '29990101000000_next'));
+  await writeFile(join(copy, '29990101000000_next', 'migration.sql'), 'CREATE TABLE "Next" ("id" INTEGER);');
+  assert.equal(await upToDate(path, copy), false);
+  const edited = await mkdtemp(join(tmpdir(), 'ah-migrations-'));
+  await cp(migrations, edited, { recursive: true });
+  await writeFile(join(edited, '20261005215647_init', 'migration.sql'), '-- changed');
+  assert.equal(await upToDate(path, edited), false);
 });

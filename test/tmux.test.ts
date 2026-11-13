@@ -132,3 +132,21 @@ test('typing after a touch scroll back reaches the prompt whole; copy mode you e
   ah.tmux('send-keys', '-t', id, '-X', 'cancel');
   v.ws.close();
 });
+
+test('a viewer that closes while attaching leaves no tmux client or presence behind', async () => {
+  const created = await http(ah, 'POST', '/api/windows', { cookie, body: { preset: 'shell', cwd: `${ah.dir}/files`, label: 'blink' } });
+  assert.equal(created.status, 201, created.body);
+  const { id } = created.json();
+  const before = viewerSessions().length;
+  // A quick tab switch: the socket closes the moment it opens, mid-attach.
+  for (let i = 0; i < 10; i++) {
+    const ws = new WebSocket(`ws://127.0.0.1:${ah.port}/ws/${encodeURIComponent(id)}?cols=80&rows=24&device=Blink`, { headers: { cookie, host: `localhost:${ah.port}` }, origin: `http://localhost:${ah.port}` });
+    ws.on('error', () => {});
+    ws.once('open', () => ws.close());
+    await new Promise((r) => ws.once('close', r));
+  }
+  await sleep(1500);
+  assert.equal(viewerSessions().length, before, 'no viewer session outlives its socket');
+  const win = (await http(ah, 'GET', '/api/state', { cookie })).json().windows.find((w: any) => w.id === id);
+  assert.equal(win.devices.length, 0, 'nobody is shown as watching');
+});

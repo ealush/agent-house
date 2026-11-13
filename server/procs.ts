@@ -7,7 +7,12 @@ import { promisify } from 'node:util';
 /** `fg`: the process's group holds its terminal's foreground (a shell at its prompt, or the command it runs). */
 export type Proc = { pid: number; ppid: number; argv: string[]; fg?: boolean };
 
-export async function snapshot(): Promise<Map<number, Proc[]>> {
+/**
+ * The process tree (parent → children) from each process's stat, without argv: a
+ * host runs hundreds of processes and ah only ever reads the argv of those inside
+ * its panes, so `withArgv` fills those in. ps fills argv for all of them at once.
+ */
+export async function procTree(): Promise<Map<number, Proc[]>> {
   const children = new Map<number, Proc[]>();
   let entries: string[];
   try {
@@ -20,17 +25,13 @@ export async function snapshot(): Promise<Map<number, Proc[]>> {
       const pid = Number(e);
       if (!Number.isInteger(pid)) return;
       try {
-        const [stat, cmdline] = await Promise.all([
-          readFile(`/proc/${pid}/stat`, 'utf8'),
-          readFile(`/proc/${pid}/cmdline`, 'utf8'),
-        ]);
+        const stat = await readFile(`/proc/${pid}/stat`, 'utf8');
         // comm may contain spaces/parens, so parse from the last ')'.
         // After comm: state ppid pgrp session tty_nr tpgid.
         const f = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
         const ppid = Number(f[1]);
-        const argv = cmdline.split('\0').filter(Boolean);
         const list = children.get(ppid) ?? [];
-        list.push({ pid, ppid, argv, fg: Number(f[5]) > 0 && f[2] === f[5] });
+        list.push({ pid, ppid, argv: [], fg: Number(f[5]) > 0 && f[2] === f[5] });
         children.set(ppid, list);
       } catch {
         // process exited mid-scan
@@ -38,6 +39,31 @@ export async function snapshot(): Promise<Map<number, Proc[]>> {
     }),
   );
   return children;
+}
+
+/** Reads the argv of every process under `roots` (and of the roots), in place. */
+export async function withArgv(children: Map<number, Proc[]>, roots: Iterable<number>): Promise<Map<number, Proc[]>> {
+  const want: Proc[] = [];
+  const rootSet = new Set(roots);
+  for (const list of children.values()) for (const p of list) if (rootSet.has(p.pid)) want.push(p);
+  for (const root of rootSet) want.push(...descendants(children, root));
+  await Promise.all(
+    want.map(async (p) => {
+      if (p.argv.length) return;
+      try {
+        p.argv = (await readFile(`/proc/${p.pid}/cmdline`, 'utf8')).split('\0').filter(Boolean);
+      } catch {
+        // exited since the tree was read
+      }
+    }),
+  );
+  return children;
+}
+
+/** The whole tree with every argv (callers that don't know their roots up front). */
+export async function snapshot(): Promise<Map<number, Proc[]>> {
+  const tree = await procTree();
+  return withArgv(tree, [0]); // pid 0 is the parent of init and kthreadd: everything
 }
 
 /**

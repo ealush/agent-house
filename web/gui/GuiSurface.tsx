@@ -21,6 +21,7 @@ import { ItemView, PartView, UserText } from './router.tsx';
 import { AwaitingTool, TurnLive } from './tools.tsx';
 import { MessageRail, type RailItem } from './MessageRail.tsx';
 import './gui.css';
+import { every } from '../poll.ts';
 
 const UNAVAILABLE: Record<string, string> = {
   'no-transcript': 'The conversation will appear here once the agent starts writing it.',
@@ -174,21 +175,24 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
   if (freshAfter.current === null && state.entries.length) freshAfter.current = state.entries.reduce((m, e) => Math.max(m, e.seq), 0);
   const [snaps, setSnaps] = useState<SnapshotInfo[]>([]);
   useEffect(() => {
+    // A pane out of view (a parked split, another workspace) doesn't poll; it loads when shown.
+    if (hidden) return;
     let stopped = false;
     const load = () =>
       client
         .snapshots(w.uid)
         .then((r) => {
-          if (!stopped) setSnaps(r.snapshots);
+          // The same list keeps the old array, so an unchanged poll doesn't re-render the transcript.
+          if (!stopped) setSnaps((prev) => (JSON.stringify(prev) === JSON.stringify(r.snapshots) ? prev : r.snapshots));
         })
         .catch(() => {});
     load();
-    const timer = setInterval(load, 5000);
+    const stop = every(5000, load);
     return () => {
       stopped = true;
-      clearInterval(timer);
+      stop();
     };
-  }, [client, w.uid]);
+  }, [client, w.uid, hidden]);
 
   const restoreSnapNow = async (snap: SnapshotInfo) => {
     const ok = await askConfirm({

@@ -8,6 +8,7 @@ import { ReviewContext } from '../reviewContext.ts';
 import { showError } from '../ask.tsx';
 import { Dot } from './Spine.tsx';
 import './review.css';
+import { every } from '../poll.ts';
 
 const api = reviewApi();
 const SHORT: Record<string, string> = { unreviewed: 'To review', changes: 'To send', fixing: 'Agent fixing', rereview: 'Came back', approved: 'Reviewed', merged: 'Merged', closed: 'Closed', skipped: 'Skipped' };
@@ -50,10 +51,10 @@ export default function SessionStackPanel({ uid }: { uid: string }) {
       );
     load();
     // PRs appear as the agent opens them.
-    const t = window.setInterval(load, 10_000);
+    const stop = every(10_000, load);
     return () => {
       live = false;
-      clearInterval(t);
+      stop();
     };
   }, [uid]);
 

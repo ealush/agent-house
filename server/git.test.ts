@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
-import { existsSync, readFileSync } from 'node:fs';
+import { chmod, mkdir, mkdtemp, writeFile, readFile, rm, utimes } from 'node:fs/promises';
+import { existsSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createWorktree, listWorktrees, removeWorktree, removeWorktreesBulk, changes, listBranches, switchBranch, pullRequest, slugify, mainRepo, createSnapshot, restoreSnapshot, snapshotDiff, snapshotRef } from './git.ts';
@@ -42,8 +42,12 @@ test('pullRequest: parses gh output for the current branch, null when gh fails o
   try {
     assert.deepEqual(await pullRequest(dir), { number: 42, url: 'https://github.com/ealush/ah/pull/42' });
     assert.match(readFileSync(argsFile, 'utf8'), /pr list --head main/);
+    // Asked again within the minute (another session open): no second GitHub round trip.
+    rmSync(argsFile);
+    assert.deepEqual(await pullRequest(dir), { number: 42, url: 'https://github.com/ealush/ah/pull/42' });
+    assert.equal(existsSync(argsFile), false, 'answered from the cache');
     process.env.AH_GH_FAIL = '1';
-    assert.equal(await pullRequest(dir), null);
+    assert.equal(await pullRequest(await repo()), null);
   } finally {
     process.env.PATH = savedPath;
     if (savedFail === undefined) delete process.env.AH_GH_FAIL;
@@ -354,4 +358,17 @@ test('snapshots restore file/directory transitions and retain tracked files matc
   const safety = await snapshot(3, directory.commit);
   await restoreSnapshot(dir, { target: directory.commit, current: safety.commit, indexFile });
   assert.equal(await readFile(join(dir, 'a.txt', 'child'), 'utf8'), 'child\n');
+});
+
+test("reading a checkout's status never rewrites its index (no index.lock under an agent's git)", async () => {
+  const dir = await repo();
+  // A tracked file touched without changing it: a plain `git status` refreshes and rewrites the index.
+  const index = join(dir, '.git', 'index');
+  const later = new Date(Date.now() + 5000);
+  await utimes(join(dir, 'a.txt'), later, later);
+  const before = statSync(index).mtimeMs;
+  await new Promise((r) => setTimeout(r, 20));
+  const list = await listBranches(dir);
+  assert.equal(list.dirty, 0);
+  assert.equal(statSync(index).mtimeMs, before, 'the index was left as it was');
 });

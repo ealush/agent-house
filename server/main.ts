@@ -16,7 +16,7 @@ import { join, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Duplex } from 'node:stream';
 import type { AddressInfo } from 'node:net';
-import { WebSocketServer } from 'ws';
+import { WebSocketServer, type WebSocket } from 'ws';
 import { loadConfig, expandHome, CONFIG_PATH, type Config } from './config.ts';
 import { shortPath } from './sessions.ts';
 import { compressible, encoded } from './compress.ts';
@@ -304,11 +304,11 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     // ?delta=1: windows as per-window deltas (web/api.ts); an older page gets the whole list.
     const deltas = url.searchParams.get('delta') === '1';
     const unsubscribe = core.subscribe((json, patch, slim) => {
-      if (sent && patch) res.write(`event: patch\ndata: ${deltas && slim ? slim : patch}\n\n`);
-      else res.write(`event: state\ndata: ${json}\n\n`);
+      if (sent && patch) sse(res, `event: patch\ndata: ${deltas && slim ? slim : patch}\n\n`);
+      else sse(res, `event: state\ndata: ${json}\n\n`);
       sent = true;
     });
-    const ping = setInterval(() => res.write(': ping\n\n'), 25_000);
+    const ping = setInterval(() => sse(res, ': ping\n\n'), 25_000);
     const untrack = auth.track(caller, { close: () => res.end() });
     req.on('close', () => {
       clearInterval(ping);
@@ -529,7 +529,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     const ref = m[1];
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive', 'x-accel-buffering': 'no' });
     const done = new AbortController();
-    const ping = setInterval(() => res.write(': ping\n\n'), 25_000);
+    const ping = setInterval(() => sse(res, ': ping\n\n'), 25_000);
     const untrack = auth.track(caller, { close: () => res.end() });
     // Reading the GUI is looking at the session, the same as its terminal.
     const device = (url.searchParams.get('device') ?? '').slice(0, 60) || 'browser';
@@ -547,7 +547,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     // A viewer holding the transcript up to an entry carries on from it (feed/stream.ts Resume).
     const after = Number(url.searchParams.get('after'));
     const resume = Number.isInteger(after) && after > 0 ? { after, id: url.searchParams.get('id') ?? '', harness: url.searchParams.get('harness') ?? '' } : null;
-    streamFeed((fresh) => core.feedSource(ref, fresh ? 3000 : 15_000), (msg) => res.write(`event: ${msg.type}\ndata: ${JSON.stringify(msg)}\n\n`), done.signal, resume);
+    streamFeed((fresh) => core.feedSource(ref, fresh ? 3000 : 15_000), (msg) => sse(res, `event: ${msg.type}\ndata: ${JSON.stringify(msg)}\n\n`), done.signal, resume);
     return;
   }
 
@@ -1422,7 +1422,37 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   }
 }
 
+/**
+ * One server-sent event. A client that stopped reading (a phone asleep behind
+ * tailscale serve, a stalled proxy) would otherwise buffer every patch and feed
+ * append in memory without limit: past 8 MB unread, drop it; it reconnects and
+ * gets a fresh snapshot.
+ */
+function sse(res: ServerResponse, chunk: string) {
+  if (res.destroyed) return;
+  if (res.writableLength > 8 * 1024 * 1024) return void res.destroy();
+  res.write(chunk);
+}
+
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
+
+// Heartbeat: a device that went away without closing (slept, lost its network)
+// leaves a half-open socket, and its terminal (a tmux client and a viewer that
+// marks the window as watched) would live until the window dies. Ping every 30 s;
+// a socket that misses two pings in a row is gone. Browsers and the ws client
+// (peers) answer pings on their own.
+const missed = new WeakMap<WebSocket, number>();
+setInterval(() => {
+  for (const ws of wss.clients) {
+    const n = (missed.get(ws) ?? 0) + 1;
+    if (n > 2) {
+      ws.terminate();
+      continue;
+    }
+    missed.set(ws, n);
+    ws.ping();
+  }
+}, 30_000).unref();
 
 function upgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
   const reject = (status: string) => {
@@ -1450,6 +1480,7 @@ function upgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
   if (host && host !== hostname() && !peer) return reject('502 Bad Gateway');
 
   wss.handleUpgrade(req, socket, head, (ws) => {
+    ws.on('pong', () => missed.delete(ws));
     // Protocol errors (e.g. a frame over maxPayload) must close this socket, not crash ah:
     // ws closes with 1009/1002 itself; an unhandled 'error' event would kill the process.
     ws.on('error', (err) => console.warn(`websocket closed on error: ${err.message}`));

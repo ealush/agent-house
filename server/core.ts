@@ -18,7 +18,7 @@ import { buildLaunch, customModel, resumeSelection, LaunchError } from './launch
 import { withCatalog } from './catalog.ts';
 import { Harnesses, adjust, suggestions } from './harnesses.ts';
 import * as t from './tmux.ts';
-import { descendants, snapshot as procSnapshot } from './procs.ts';
+import { descendants, procTree } from './procs.ts';
 import { createSnapshot, restoreSnapshot as restoreSnapshotFiles, snapshotDiff, deleteSnapshotRef, createWorktree, headInfo, listWorktrees, mainRepo, removeWorktree, removeWorktreesBulk, GitError, type Worktree } from './git.ts';
 import { invalidateSize } from './size.ts';
 import { SnapshotStore, type SnapshotInfo } from './snapshots.ts';
@@ -143,6 +143,10 @@ export class Core {
   private parts = new Map<string, string>();
   private tmuxPath = process.env.PATH ?? '';
   private ticking: Promise<State> | null = null;
+  /** The pass queued behind the one in flight, for callers that changed something during it. */
+  private again: Promise<State> | null = null;
+  /** Windows launch() is still setting up: see buildWindows. */
+  private launching = new Set<string>();
   private stopped = false;
   private hidden = new Set<string>();
   private prompts: Array<{ text: string; at: number }> = [];
@@ -202,7 +206,8 @@ export class Core {
     this.stopped = false;
     const loop = () => {
       if (this.stopped) return;
-      this.tick().catch((err) => console.error('tick failed:', err)).finally(() => setTimeout(loop, TICK_MS));
+      // The schedule joins a pass in flight rather than queueing another behind it.
+      (this.ticking ?? this.tick()).catch((err) => console.error('tick failed:', err)).finally(() => setTimeout(loop, TICK_MS));
     };
     loop();
   }
@@ -229,10 +234,23 @@ export class Core {
     return () => this.listeners.delete(fn);
   }
 
-  /** One pass: tmux → windows → registry → history → queue delivery → push to subscribers. */
+  /**
+   * One pass: tmux → windows → registry → history → queue delivery → push to subscribers.
+   * Asked mid-pass (a window was just created, a key just sent), the pass in flight read
+   * tmux before the change: the caller gets the next one, queued right after it and shared
+   * by everyone who asks meanwhile, instead of a state up to a whole tick stale.
+   */
   tick(): Promise<State> {
-    this.ticking ??= (async () => {
-      const windows = await buildWindows(this.config, this.viewers, this.registry);
+    if (this.ticking) {
+      return (this.again ??= this.ticking
+        .catch(() => {})
+        .then(() => {
+          this.again = null;
+          return this.tick();
+        }));
+    }
+    this.ticking = (async () => {
+      const windows = await buildWindows(this.config, this.viewers, this.registry, this.launching);
       // A just-started agent's transcript appears within seconds; look for it sooner
       // than the usual rescan so its title and GUI view don't lag behind.
       const fresh = windows.some((w) => w.agent && !w.harnessId && Date.now() / 1000 - w.createdAt < 120);
@@ -273,7 +291,9 @@ export class Core {
         ],
         home: homedir(),
         defaultSession: this.config.defaultSession,
-        sessions: await t.listSessions(),
+        // Every tmux session has a window, and list-windows -a goes session by session in
+        // list-sessions' order: no second tmux call per tick for the same names.
+        sessions: [...new Set(windows.map((w) => w.session))],
         windows,
         history,
         presets: await Promise.all(
@@ -424,16 +444,18 @@ export class Core {
     });
     meta = { ...meta, 'ah.env': fingerprint(env) };
     const windowId = await t.createWindow({ session: o.session, cwd: o.cwd, name: o.name, env });
+    // Until the fresh pass below: every pass that could have listed it before its
+    // options landed has finished by then (passes run one at a time, in order).
+    this.launching.add(windowId);
     try {
       const ts = String(now());
-      await t.setWindowOption(windowId, '@ah-uid', uid);
-      await t.setWindowOption(windowId, '@ah-agent', o.preset.id);
-      await t.setWindowOption(windowId, '@ah-created', ts);
-      await t.setWindowOption(windowId, '@ah-seen', ts);
-      if (o.harnessId) {
-        await t.setWindowOption(windowId, '@ah-harness', o.preset.id);
-        await t.setWindowOption(windowId, '@ah-harness-id', o.harnessId);
-      }
+      await t.setWindowOptions(windowId, {
+        '@ah-uid': uid,
+        '@ah-agent': o.preset.id,
+        '@ah-created': ts,
+        '@ah-seen': ts,
+        ...(o.harnessId ? { '@ah-harness': o.preset.id, '@ah-harness-id': o.harnessId } : {}),
+      });
       this.registry.starting(uid, {
         harness: o.preset.id,
         harnessId: o.harnessId,
@@ -445,12 +467,16 @@ export class Core {
       });
       await o.beforeCommand?.();
       if (o.command) await t.sendLine(windowId, o.command);
-      this.tick().catch(() => {});
+      // Answer with the window already in the state, so the page that asked shows it at once
+      // instead of polling for the next scheduled pass.
+      await this.tick().catch(() => {});
       return { uid, windowId };
     } catch (err) {
       await t.killWindow(windowId).catch(() => {});
       this.registry.remove(uid);
       throw err;
+    } finally {
+      this.launching.delete(windowId);
     }
   }
 
@@ -791,7 +817,7 @@ export class Core {
     const w = (await this.current()).windows.find((x) => x.uid === uid);
     const raw = w && (await t.listWindows()).find((r) => r.windowId === w.id);
     if (!raw) return null;
-    return descendants(await procSnapshot(), raw.panePid, true).map((p) => p.pid);
+    return descendants(await procTree(), raw.panePid, true).map((p) => p.pid);
   }
 
   /** A copy of the session's queued items, oldest first (state lives in the QueueManager). */
@@ -1261,7 +1287,7 @@ export class Core {
       // back first in line (at-most-once, never lost, never twice).
       let live;
       try {
-        live = (await buildWindows(this.config, this.viewers, this.registry)).find((x) => x.uid === uid);
+        live = (await buildWindows(this.config, this.viewers, this.registry, this.launching)).find((x) => x.uid === uid);
       } catch (err) {
         this.queues.requeue(uid, next);
         throw err;
@@ -1285,7 +1311,7 @@ export class Core {
         await this.sendInterrupt(live);
         this.sentAt.delete(uid);
         for (let i = 0; i < 12; i++) {
-          const cur = (await buildWindows(this.config, this.viewers, this.registry)).find((x) => x.uid === uid);
+          const cur = (await buildWindows(this.config, this.viewers, this.registry, this.launching)).find((x) => x.uid === uid);
           if (!cur) {
             this.queues.requeue(uid, next);
             throw new CoreError(404, 'session is not running');
@@ -1451,14 +1477,14 @@ export class Core {
       w = (await this.tick()).windows.find((x) => x.uid === uid);
     }
     const out = await this.withInput(uid, async () => {
-      w = (await buildWindows(this.config, this.viewers, this.registry)).find((x) => x.uid === uid);
+      w = (await buildWindows(this.config, this.viewers, this.registry, this.launching)).find((x) => x.uid === uid);
       if (w && (w.status === 'busy' || w.status === 'waiting' || this.justSent(uid))) {
         if (!opts.interrupt) throw new CoreError(409, 'the agent is working; stop it first or confirm the interrupt');
         await this.sendInterrupt(w);
         this.sentAt.delete(uid);
         for (let i = 0; i < 12; i++) {
           await sleep(500);
-          w = (await buildWindows(this.config, this.viewers, this.registry)).find((x) => x.uid === uid);
+          w = (await buildWindows(this.config, this.viewers, this.registry, this.launching)).find((x) => x.uid === uid);
           if (!w || (w.status !== 'busy' && w.status !== 'waiting')) break;
         }
         if (w && (w.status === 'busy' || w.status === 'waiting')) throw new CoreError(409, 'the agent is working; it did not stop after the interrupt');

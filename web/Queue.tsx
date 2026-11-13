@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { HostApi, QueueItem } from './api.ts';
 import { shortcutTitle } from './shortcuts.tsx';
 import { errorText } from './errors.ts';
+import { every } from './poll.ts';
 
 /** This conversation's queue, as a side panel: review, send now, or cancel follow-ups. */
 export function QueuePanel({ client, uid, onChange }: {
@@ -24,8 +25,8 @@ export function QueuePanel({ client, uid, onChange }: {
       }
     };
     load();
-    const timer = window.setInterval(load, 1500);
-    return () => { stopped = true; clearInterval(timer); };
+    const stop = every(1500, load);
+    return () => { stopped = true; stop(); };
   }, [client, uid]);
 
   async function refresh() {

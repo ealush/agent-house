@@ -39,6 +39,8 @@ type Feed = {
   linger: ReturnType<typeof setTimeout> | null;
   /** Its stream was closed after nobody showed it: only these are evicted. */
   closed: boolean;
+  /** Settles once this browser's copy is in (or known absent). */
+  cached: Promise<unknown>;
 };
 
 // Insertion order is recency: a feed is moved to the end whenever it is shown.
@@ -65,7 +67,11 @@ function open(f: Feed) {
   if (f.retry) clearTimeout(f.retry);
   f.retry = null;
   f.es?.close();
-  const es = (f.es = new EventSource(f.url));
+  // Holding the conversation already (kept from a moment ago, or this browser's
+  // copy): ask only for what came after it, not the newest page again.
+  const last = f.state.entries.at(-1);
+  const url = last && f.state.harness ? `${f.url}&after=${last.seq}&id=${encodeURIComponent(last.id)}&harness=${encodeURIComponent(f.state.harness)}` : f.url;
+  const es = (f.es = new EventSource(url));
   for (const type of ['snapshot', 'append', 'unavailable'] as const) {
     es.addEventListener(type, (e) => dispatch(f, JSON.parse((e as MessageEvent).data) as FeedMessage));
   }
@@ -93,9 +99,11 @@ function close(f: Feed) {
 function create(client: HostApi, ref: string): Feed {
   const view = { state: initialFeed, loadingOlder: false };
   const url = client.feedUrl(ref);
-  const f: Feed = { url, cacheKey: url.split('?')[0], client, ref, state: initialFeed, loadingOlder: false, view, listeners: new Set(), users: 0, es: null, retry: null, linger: null, closed: false };
+  const f: Feed = { url, cacheKey: url.split('?')[0], client, ref, state: initialFeed, loadingOlder: false, view, listeners: new Set(), users: 0, es: null, retry: null, linger: null, closed: false, cached: Promise.resolve() };
   feeds.set(f.url, f);
-  void loadCached(f.cacheKey).then((cached) => cached && dispatch(f, { type: 'cached', ...cached }));
+  f.cached = loadCached(f.cacheKey)
+    .then((cached) => cached && dispatch(f, { type: 'cached', ...cached }))
+    .catch(() => {});
   return f;
 }
 
@@ -108,7 +116,12 @@ function acquire(f: Feed, client: HostApi) {
   if (f.linger) clearTimeout(f.linger);
   f.linger = null;
   f.users++;
-  if (!f.es) open(f);
+  if (f.es) return;
+  // After a reload, the stream can resume from this browser's copy instead of sending the
+  // newest page again (hundreds of KB): give the copy a moment to load, not longer.
+  void Promise.race([f.cached, new Promise((r) => setTimeout(r, 300))]).then(() => {
+    if (f.users > 0 && !f.es) open(f);
+  });
 }
 
 function release(f: Feed) {

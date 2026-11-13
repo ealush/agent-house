@@ -2,7 +2,7 @@
 // theme lives in ~/.local/state/omarchy/current/ (theme.name, theme/colors.toml,
 // a flat file of `key = "#rrggbb"` plus `mode = "dark" | "light"`). Read-only;
 // absent on machines without Omarchy.
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -11,17 +11,25 @@ const dir = () => process.env.OMARCHY_STATE_DIR ?? join(homedir(), '.local', 'st
 
 export type OmarchyTheme = { name: string; mode: 'dark' | 'light'; colors: Record<string, string>; font: string | null };
 
-let fontCache: { at: number; font: string | null } | null = null;
+let fontCache: { at: number; font: string | null } = { at: 0, font: null };
+let fontReading = false;
 
-/** The desktop's monospace font, as `omarchy font current` reads it (fontconfig). Cached 30s. */
+function readFont() {
+  if (fontReading) return;
+  fontReading = true;
+  execFile('fc-match', ['monospace', '-f', '%{family}'], { encoding: 'utf8', timeout: 1500 }, (err, out) => {
+    fontReading = false;
+    fontCache = { at: Date.now(), font: (!err && out.split(',')[0].trim()) || null };
+  });
+}
+/**
+ * The desktop's monospace font, as `omarchy font current` reads it (fontconfig).
+ * Cached 30s and refreshed in the background: this runs on every tick, and a
+ * synchronous fc-match (up to 1.5 s cold) would stall every terminal meanwhile.
+ */
 export function omarchyFont(): string | null {
-  if (fontCache && Date.now() - fontCache.at < 30_000) return fontCache.font;
-  let font: string | null = null;
-  try {
-    font = execFileSync('fc-match', ['monospace', '-f', '%{family}'], { encoding: 'utf8', timeout: 1500 }).split(',')[0].trim() || null;
-  } catch {}
-  fontCache = { at: Date.now(), font };
-  return font;
+  if (Date.now() - fontCache.at > 30_000) readFont();
+  return fontCache.font;
 }
 
 /** `key = "value"` lines; comments, tables and anything else are ignored. */

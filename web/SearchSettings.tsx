@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, type SearchStatus } from './api.ts';
 import { askConfirm, showError } from './ask.tsx';
+import { every } from './poll.ts';
 
 // Content search controls (issue #9): what is indexed, and the off switch
 // that deletes the index. The index lives on this host only; the text in it
@@ -13,8 +14,7 @@ export function SearchSettingsPanel() {
   const load = () => api.searchStatus().then(setStatus).catch((e) => setError(e.message));
   useEffect(() => {
     load();
-    const t = setInterval(load, 5000);
-    return () => clearInterval(t);
+    return every(5000, load);
   }, []);
 
   async function toggle(on: boolean) {

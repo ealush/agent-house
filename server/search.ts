@@ -7,8 +7,7 @@
 // so a refresh only re-reads what changed. Disabling search drops the FTS
 // tables outright; the indexed text does not linger.
 import { createReadStream } from 'node:fs';
-import { open, stat } from 'node:fs/promises';
-import { createInterface } from 'node:readline';
+import { stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { hostname } from 'node:os';
 import { Prisma, type PrismaClient } from '@prisma/client';
@@ -200,6 +199,8 @@ export class SearchIndexer {
   private listTranscripts: () => Promise<TranscriptSource[]>;
   private timer: ReturnType<typeof setInterval> | null = null;
   private running: Promise<void> | null = null;
+  /** Sources whose last pass finished here, so no uncommitted rows of theirs can be left behind. */
+  private clean = new Set<string>();
   building = false;
   private lastBuiltAt = 0;
   private sourcesKnown = 0;
@@ -334,25 +335,31 @@ export class SearchIndexer {
     const s = await stat(src.file).catch(() => null);
     if (!s) return;
     const meta = createHash('sha256').update(JSON.stringify([TEXT_VERSION, src.ref, src.uid, src.title, src.cwd, src.model])).digest('hex');
+    // ino:size:mtime:meta, then the byte offset the last pass read up to.
     const sig = `${s.ino}:${s.size}:${Math.floor(s.mtimeMs)}:${meta}`;
     const key = `t:${src.file}`;
     const prev = await this.sourceRow(key);
-    if (!force && prev?.sig === sig) return;
+    const [ino, size, mtime, prevMeta, at] = prev?.sig.split(':') ?? [];
+    if (!force && prev && `${ino}:${size}:${mtime}:${prevMeta}` === sig) return;
 
-    // Appends continue where the last pass stopped; a shrunk or replaced file
+    // Appends continue where the last pass stopped, reading only the new bytes (a
+    // working agent's transcript runs to hundreds of MB); a shrunk or replaced file
     // (a /clear, a rotation) starts over and its stale rows are deleted first.
     let fromSeq = 0;
     let kept = 0;
-    if (!force && prev) {
-      const [ino, size] = prev.sig.split(':').map(Number);
-      if (ino === s.ino && s.size > size && prev.ref === src.ref && prev.sig.split(':')[3] === meta) {
-        fromSeq = prev.last_key;
-        kept = prev.entries;
-      }
+    let fromByte = 0;
+    if (!force && prev && Number(ino) === s.ino && s.size > Number(size) && prev.ref === src.ref && prevMeta === meta) {
+      fromSeq = prev.last_key;
+      kept = prev.entries;
+      // Rows from before offsets were kept don't say where they stopped: those re-read from the top once.
+      const off = Number(at);
+      if (at && Number.isSafeInteger(off) && off <= s.size) fromByte = off;
     }
     if (prev && prev.ref !== src.ref) await this.db.$executeRaw`DELETE FROM transcript_fts WHERE ref = ${prev.ref}`;
-    // Clean any uncommitted tail left by a failed indexing pass before retrying.
-    await this.db.$executeRaw`DELETE FROM transcript_fts WHERE ref = ${src.ref} AND seq > ${fromSeq}`;
+    // Clean stale rows (a start-over) or an uncommitted tail left by a failed or interrupted
+    // pass. It scans the whole index, so an append after a pass that finished here skips it.
+    if (!fromSeq || !this.clean.has(key)) await this.db.$executeRaw`DELETE FROM transcript_fts WHERE ref = ${src.ref} AND seq > ${fromSeq}`;
+    this.clean.delete(key);
 
     let lastSeq = fromSeq;
     let inserted = 0;
@@ -364,19 +371,11 @@ export class SearchIndexer {
       batch = [];
     };
     if (!s.size) {
-      await this.saveSource({ source: key, kind: 'transcript', ref: src.ref, sig, last_key: 0, entries: 0 });
+      await this.saveSource({ source: key, kind: 'transcript', ref: src.ref, sig: `${sig}:0`, last_key: 0, entries: 0 });
+      this.clean.add(key);
       return;
     }
-    const fh = await open(src.file, 'r');
-    let complete = false;
-    try {
-      const tail = Buffer.alloc(1);
-      await fh.read(tail, 0, 1, s.size - 1);
-      complete = tail[0] === 10;
-    } finally { await fh.close(); }
-    const stream = createReadStream(src.file, { encoding: 'utf8', end: s.size - 1 });
-    const rl = createInterface({ input: stream, crlfDelay: Infinity });
-    let lineNo = 0;
+    let lineNo = fromByte ? fromSeq : 0;
     const consume = async (line: string) => {
       lineNo++;
       if (lineNo <= fromSeq) return;
@@ -391,19 +390,28 @@ export class SearchIndexer {
       batch.push(Prisma.sql`(${text}, ${src.title}, ${src.uid ?? ''}, ${src.ref}, ${src.harness}, ${src.harnessId}, ${src.cwd}, ${src.model ?? ''}, ${entry.seq}, ${entry.role}, ${entry.at})`);
       if (batch.length >= BATCH) await flush();
     };
-    let pending: string | undefined;
+    // Only whole lines count: a line still being written (no newline yet) is read next pass.
+    let offset = fromByte;
+    let rest: Buffer = Buffer.alloc(0);
+    const stream = createReadStream(src.file, { start: fromByte, end: s.size - 1 });
     try {
-      for await (const line of rl) {
-        if (pending !== undefined) await consume(pending);
-        pending = line;
+      for await (const chunk of stream as AsyncIterable<Buffer>) {
+        const buf = rest.length ? Buffer.concat([rest, chunk]) : chunk;
+        let start = 0;
+        for (let nl = buf.indexOf(10); nl !== -1; nl = buf.indexOf(10, start)) {
+          const end = nl > start && buf[nl - 1] === 13 ? nl - 1 : nl;
+          await consume(buf.toString('utf8', start, end));
+          offset += nl + 1 - start;
+          start = nl + 1;
+        }
+        rest = buf.subarray(start);
       }
-      if (complete && pending !== undefined) await consume(pending);
     } finally {
-      rl.close();
       stream.destroy();
     }
     await flush();
-    await this.saveSource({ source: key, kind: 'transcript', ref: src.ref, sig, last_key: lastSeq, entries: kept + inserted });
+    await this.saveSource({ source: key, kind: 'transcript', ref: src.ref, sig: `${sig}:${offset}`, last_key: lastSeq, entries: kept + inserted });
+    this.clean.add(key);
   }
 
   private async indexDocument(src: TranscriptSource, load: (file: string) => Promise<Entry[] | null>, force: boolean): Promise<void> {

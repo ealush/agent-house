@@ -1,5 +1,7 @@
 // Small request/response helpers shared by the routes.
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { brotliCompress, gzip, constants } from 'node:zlib';
+import { pickEncoding } from './compress.ts';
 
 export class HttpError extends Error {
   status: number;
@@ -9,9 +11,27 @@ export class HttpError extends Error {
   }
 }
 
+/**
+ * JSON over 1 KB goes compressed to a client that takes it: the state alone is
+ * ~40 KB (9 KB in gzip), and phones fetch it over Tailscale on every return to
+ * the page. Brotli at a low quality: fast, and still smaller than gzip.
+ */
 export function send(res: ServerResponse, status: number, body: unknown) {
-  res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
-  res.end(JSON.stringify(body));
+  const json = JSON.stringify(body);
+  const encoding = json && json.length >= 1024 ? pickEncoding(res.req?.headers['accept-encoding']) : null;
+  const plain = () => {
+    res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+    res.end(json);
+  };
+  if (!encoding) return plain();
+  const done = (err: Error | null, out: Buffer) => {
+    if (res.headersSent || res.destroyed) return;
+    if (err) return plain();
+    res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store', 'content-encoding': encoding, vary: 'accept-encoding' });
+    res.end(out);
+  };
+  if (encoding === 'br') brotliCompress(json, { params: { [constants.BROTLI_PARAM_QUALITY]: 4, [constants.BROTLI_PARAM_SIZE_HINT]: json.length } }, done);
+  else gzip(json, done);
 }
 
 export async function readBody(req: IncomingMessage, limit: number): Promise<Buffer> {

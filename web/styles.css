@@ -589,15 +589,28 @@ kbd {
   animation: dot-in var(--dur-2) var(--ease);
 }
 
+/* The ring is a disk behind the dot that grows and fades: transform and opacity
+   only, so the compositor runs it. A box-shadow ring repainted every frame, for
+   as long as a session waited (hours, on a phone's battery). */
 .dot.waiting {
+  position: relative;
+  isolation: isolate;
   background: var(--brand);
-  animation: ring 1.8s ease-out infinite;
 }
 
-.dot.waiting.pop {
-  animation:
-    dot-in var(--dur-2) var(--ease),
-    ring 1.8s ease-out var(--dur-2) infinite;
+.dot.waiting::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 60%, transparent);
+  animation: ring 1.8s ease-out infinite;
+  pointer-events: none;
+}
+
+.dot.waiting.pop::before {
+  animation-delay: var(--dur-2);
 }
 
 @keyframes dot-in {
@@ -634,16 +647,20 @@ kbd {
 
 @keyframes ring {
   0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent);
+    transform: scale(1);
+    opacity: 1;
   }
   100% {
-    box-shadow: 0 0 0 7px transparent;
+    /* 8px out to 22px across, where the shadow's 7px spread ended */
+    transform: scale(2.75);
+    opacity: 0;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dot.waiting {
+  .dot.waiting::before {
     animation: none;
+    opacity: 0;
   }
 }
 
