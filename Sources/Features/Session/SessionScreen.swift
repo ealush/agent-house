@@ -24,6 +24,7 @@ struct SessionScreen: View {
     /// most a little over half the screen, so the conversation and its bar stay in view.
     @State private var screenHeight: CGFloat = 800
     @State private var screenWidth: CGFloat = 1000
+    @State private var room: CGFloat = 800
     /// This screen put the sidebar away to make room for a panel, and brings it back after.
     @State private var hidSidebarForPanel = false
     /// The conversation's least width beside a panel; past it, the sidebar makes way.
@@ -58,6 +59,9 @@ struct SessionScreen: View {
                 ZStack { surface }
                     .animation(.smooth(duration: 0.18), value: session.surface)
                     .scrollEdgeEffectStyle(.soft, for: .vertical)
+                    // The room under the header and above the keyboard, which the bar over the
+                    // conversation must fit in.
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { room = $0 }
                     .safeAreaBar(edge: .bottom, spacing: 0) {
                         if session.surface == .gui && session.hasGUI {
                             VStack(spacing: 0) {
@@ -77,7 +81,7 @@ struct SessionScreen: View {
                                     // into it once answered, rather than cutting in and out.
                                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                                 }
-                                ComposerView(session: session, composer: session.composer, scene: scene)
+                                ComposerView(session: session, composer: session.composer, scene: scene, room: room)
                             }
                             .animation(reduceMotion ? nil : .snappy(duration: 0.32), value: session.waiting && session.row?.dto.ask != nil)
                             // Toasts sit above the composer (and the keyboard under it): a phone's,

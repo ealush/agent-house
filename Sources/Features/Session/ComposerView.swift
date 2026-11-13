@@ -11,6 +11,10 @@ struct ComposerView: View {
     @Bindable var session: SessionModel
     @Bindable var composer: ComposerModel
     @Bindable var scene: SceneModel
+    /// How tall the conversation's area is (under the header, above the keyboard): what's
+    /// over the box has to fit in it, or the bar overflowed both ways, the queue under the
+    /// header and the box afloat above the keyboard.
+    var room: CGFloat = .infinity
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pickingPhotos: [PhotosPickerItem] = []
@@ -40,6 +44,8 @@ struct ComposerView: View {
     @Namespace private var glass
 
     private var hasTray: Bool { ComposerFloat.hasTray(session) }
+    /// Less room than this (a phone on its side with the keyboard up) and the queue keeps to its line.
+    static let roomForQueue: CGFloat = 300
     private var showsTray: Bool { trayOpen && hasTray && composer.suggestions.isEmpty }
 
     var body: some View {
@@ -48,8 +54,17 @@ struct ComposerView: View {
             // (the two together, over a long queue, left a sliver of the conversation), and
             // while the Queue panel shows the same list beside it.
             QueueTrayView(queue: session.queue, composer: composer, working: session.working, held: session.awaitingTrust, hardwareKeyboard: scene.hardwareKeyboard,
-                          folded: scene.app.preferences.queueFolded || showsTray || session.panel == .queue,
-                          toggleFold: { withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { scene.app.preferences.queueFolded.toggle() } },
+                          folded: scene.app.preferences.queueFolded || showsTray || session.panel == .queue || room < Self.roomForQueue,
+                          listCap: max(80, room * 0.35),
+                          // Too little room to open it here: the line opens the Queue panel (a
+                          // sheet on a phone), where the whole list fits.
+                          toggleFold: {
+                              if room < Self.roomForQueue, SceneSnapshot.Panel.queue.applies(to: session) {
+                                  session.panel = .queue
+                              } else {
+                                  withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { scene.app.preferences.queueFolded.toggle() }
+                              }
+                          },
                           showInPanel: SceneSnapshot.Panel.queue.applies(to: session) ? { session.panel = .queue } : nil)
             if let from = composer.drafts.from {
                 Label("Continued from \(from)", systemImage: "arrow.turn.down.right")
@@ -1349,6 +1364,8 @@ struct QueueTrayView: View {
     var hardwareKeyboard = false
     /// Only its line: how many, and what goes next.
     var folded = false
+    /// The most the open list may take of the screen; past it, it scrolls inside the tray.
+    var listCap: CGFloat = .infinity
     var toggleFold: () -> Void = {}
     /// The whole queue in the session's Queue panel, to read and arrange it there.
     var showInPanel: (() -> Void)?
@@ -1357,7 +1374,7 @@ struct QueueTrayView: View {
     /// Every queued message in view, not only what's next.
     @State private var expanded = false
     /// How tall the whole list may grow before it scrolls inside the tray: about four rows.
-    @ScaledMetric(relativeTo: .callout) private var listCap: CGFloat = 200
+    @ScaledMetric(relativeTo: .callout) private var fourRows: CGFloat = 200
     /// The whole list's height, as laid out, so the scroll view is no taller than it.
     @State private var listHeight: CGFloat = 0
 
@@ -1437,7 +1454,7 @@ struct QueueTrayView: View {
                             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listHeight = $0 }
                     }
                     .scrollBounceBehavior(.basedOnSize)
-                    .frame(height: listHeight > 0 ? min(listHeight, listCap) : listCap)
+                    .frame(height: listHeight > 0 ? min(listHeight, fourRows, listCap) : min(fourRows, listCap))
                 } else {
                     rows(Array(queue.items.enumerated().prefix(folds ? Self.shownFolded : queue.items.count)))
                 }
