@@ -115,6 +115,19 @@ actor TerminalConnection {
             }
             self.socket = socket
             socket.open()
+            // Neither end pings otherwise: on a path gone dead (Wi-Fi to cellular without a
+            // reset) receive waited forever and sends went into the socket's buffer, the keys
+            // lost with the terminal still reading as connected. Unanswered: closed, and back.
+            let pings = Task {
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(20))
+                    guard !Task.isCancelled else { return }
+                    do { try await socket.ping(timeout: 10) } catch {
+                        if !Task.isCancelled { socket.close(code: 1001) }
+                        return
+                    }
+                }
+            }
             var announced = false
             var closeReason = "Connection lost"
             do {
@@ -137,6 +150,7 @@ actor TerminalConnection {
             } catch {
                 closeReason = APIError.wrap(error).message
             }
+            pings.cancel()
             // Only this attach's own: a reconnect may already have put a new socket in.
             if self.socket === socket {
                 isConnected = false

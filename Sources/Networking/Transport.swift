@@ -61,6 +61,12 @@ protocol WebSocketConnection: AnyObject, Sendable {
     var closeCode: Int? { get }
     /// The HTTP status of a refused upgrade (401, 403), when there was one.
     var upgradeStatus: Int? { get }
+    /// Answered by the other end within `timeout`, or throws.
+    func ping(timeout: TimeInterval) async throws
+}
+
+extension WebSocketConnection {
+    func ping(timeout: TimeInterval) async throws {}
 }
 
 /// An ephemeral URLSession that never stores or sends cookies, never caches, and follows
@@ -309,5 +315,34 @@ final class URLSessionWebSocket: WebSocketConnection, @unchecked Sendable {
     var upgradeStatus: Int? {
         guard let status = (task.response as? HTTPURLResponse)?.statusCode, status != 101 else { return nil }
         return status
+    }
+
+    /// A pong, or a throw at `timeout`: on a path gone dead the pong never comes, and neither
+    /// does the handler.
+    func ping(timeout: TimeInterval) async throws {
+        let answer = Answer()
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+            answer.waiting(continuation)
+            task.sendPing { error in answer.give(error) }
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { answer.give(URLError(.timedOut)) }
+        }
+    }
+
+    /// Resumes its continuation once, whichever comes first.
+    private final class Answer: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<Void, any Error>?
+
+        func waiting(_ continuation: CheckedContinuation<Void, any Error>) {
+            lock.withLock { self.continuation = continuation }
+        }
+
+        func give(_ error: (any Error)?) {
+            let waiting = lock.withLock { () -> CheckedContinuation<Void, any Error>? in
+                defer { continuation = nil }
+                return continuation
+            }
+            if let error { waiting?.resume(throwing: error) } else { waiting?.resume() }
+        }
     }
 }
