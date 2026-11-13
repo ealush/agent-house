@@ -503,6 +503,31 @@ import Testing
     #expect(full.model?.id == "muse-wonder-full-1.0" && full.modelLabel == "Muse Wonder Full 1.0", "Full is never taken for Wonder")
 }
 
+@Test func aModelSwitchedMidTurnShowsAtOnce() throws {
+    let claude = try JSONDecoder().decode(PresetDTO.self, from: Data(#"{"id":"claude","name":"Claude","command":"claude","models":[{"id":"fable","name":"Fable 5.1"},{"id":"opus","name":"Opus 5.5"}],"available":true}"#.utf8))
+    func row(model: String?, launchModel: String?) throws -> SessionDTO {
+        var object: [String: Any] = ["id": "%1", "uid": "1", "name": "s", "title": "s", "statusSource": "hook", "project": "ah", "projectPath": "/p/ah", "status": "busy", "command": "node", "agent": "claude"]
+        if let model { object["model"] = model }
+        if let launchModel { object["launchModel"] = launchModel }
+        return try JSONDecoder().decode(SessionDTO.self, from: JSONSerialization.data(withJSONObject: object))
+    }
+    var report = ModelReport()
+    report.take(chosen: "fable", reported: "claude-fable-5-1")
+    #expect(!report.pickIsNewer, "opened as it is: the agent's word")
+    // Switched through ah mid-turn: the agent hasn't written since.
+    report.take(chosen: "opus", reported: "claude-fable-5-1")
+    #expect(report.pickIsNewer)
+    let switched = try row(model: "claude-fable-5-1", launchModel: "opus")
+    #expect(LaunchState(preset: claude, session: switched, preferChosen: report.pickIsNewer).modelLabel == "Opus 5.5", "the chip names the pick")
+    #expect(LaunchState(preset: claude, session: switched).modelLabel == "Fable 5.1", "without the report, the agent's last word")
+    // The agent writes with the new model: its word again.
+    report.take(chosen: "opus", reported: "claude-opus-5-5")
+    #expect(!report.pickIsNewer)
+    // Switched in its own terminal: only what it reports changes, and that's what shows.
+    report.take(chosen: "opus", reported: "claude-fable-5-1")
+    #expect(!report.pickIsNewer)
+}
+
 @Test func aRowsTimeIsAFewCharacters() {
     let now = 1_800_000_000.0
     #expect(ElapsedWords.short(since: now - 5, now: now) == "now")

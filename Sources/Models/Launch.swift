@@ -12,12 +12,15 @@ struct LaunchState: Equatable, Sendable {
     let mode: PresetDTO.Choice?
     let levels: [String]
 
-    init(preset: PresetDTO?, session: SessionDTO?) {
+    /// `preferChosen`: the model was switched through ah since the agent last said what it
+    /// runs (`ModelReport`), so the pick is the newer word.
+    init(preset: PresetDTO?, session: SessionDTO?, preferChosen: Bool = false) {
         self.preset = preset
         let models = preset?.models ?? []
-        // What the agent reports it runs beats what it was launched with.
-        let live = Self.runningModel(models, session?.model)
-        let chosen: PresetDTO.Model? = preset.flatMap { p in live ?? (session?.model != nil ? nil : Self.effectiveModel(p, session?.launchModel)) }
+        // What the agent reports it runs beats what it was launched with (a switch in its own
+        // terminal changes only that), unless the model was switched through ah since.
+        let live = preferChosen && session?.launchModel != nil ? nil : Self.runningModel(models, session?.model)
+        let chosen: PresetDTO.Model? = preset.flatMap { p in live ?? (session?.model != nil && !preferChosen ? nil : Self.effectiveModel(p, session?.launchModel)) }
         model = chosen
         // A choice reached through an alias ("fable" for "claude-fable-5-1") is named for the
         // model really running: an alias's label names its newest model, which an older CLI
@@ -305,5 +308,30 @@ extension LaunchState {
     /// exists, else the first; nil when there are none (a new one must be named).
     static func tmuxChoices(sessions: [String], defaultSession: String) -> (choices: [String], initial: String?) {
         (sessions, sessions.contains(defaultSession) ? defaultSession : sessions.first)
+    }
+}
+
+/// Which says the model last: the pick made through ah (the session's `launchModel`) or what
+/// the agent last reported it runs (`model`). The agent reports only with what it writes, so
+/// after a switch mid-turn the chips went on naming the model before it until the next reply.
+struct ModelReport: Equatable, Sendable {
+    private var chosen: String?
+    private var reported: String?
+    private var seen = false
+    private(set) var pickIsNewer = false
+
+    mutating func take(chosen: String?, reported: String?) {
+        defer {
+            self.chosen = chosen
+            self.reported = reported
+            seen = true
+        }
+        // What a session already says when it's opened: no telling which came first.
+        guard seen else { return }
+        if reported != self.reported {
+            pickIsNewer = false
+        } else if chosen != self.chosen, chosen != nil {
+            pickIsNewer = true
+        }
     }
 }

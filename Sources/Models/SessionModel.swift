@@ -40,6 +40,8 @@ final class SessionModel: Identifiable {
     private(set) var busy: Set<String> = []
     /// The agent as the screen shows it (`AgentHold`), kept from this session's row.
     private(set) var hold = AgentHold()
+    /// Whether a model switched through ah is newer than what the agent last reported.
+    private(set) var modelReport = ModelReport()
     @ObservationIgnored private var holdCheck: Task<Void, Never>?
 
     @ObservationIgnored private var feedStream: FeedStream?
@@ -87,6 +89,9 @@ final class SessionModel: Identifiable {
 
     private func takeRow(_ row: SessionRow?) {
         guard let row else { return }
+        var report = modelReport
+        report.take(chosen: row.dto.launchModel, reported: row.dto.model)
+        if report != modelReport { modelReport = report }
         var next = hold
         let until = next.take(agent: row.dto.agent, feed: row.dto.feed)
         if next != hold { hold = next }
@@ -116,7 +121,7 @@ final class SessionModel: Identifiable {
     /// On the agent's folder-trust prompt: what's sent waits in the queue until it's answered.
     var awaitingTrust: Bool { waiting && row?.dto.ask?.trust != nil }
     var turnLive: Bool { working || waiting }
-    var launch: LaunchState { LaunchState(preset: slot.preset ?? heldPreset, session: row?.dto) }
+    var launch: LaunchState { LaunchState(preset: slot.preset ?? heldPreset, session: row?.dto, preferChosen: modelReport.pickIsNewer) }
     /// The held agent's preset while a scan misses it, so its model and effort stay put.
     private var heldPreset: PresetDTO? {
         guard let agent = hold.agent, let row else { return nil }
