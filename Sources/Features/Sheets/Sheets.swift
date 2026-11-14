@@ -14,7 +14,8 @@ struct SceneSheet: View {
         case .fork(let key): sessionSheet(key) { ForkSheet(scene: scene, session: $0) }
         case .forks(let key): sessionSheet(key) { ForksSheet(scene: scene, session: $0) }
         case .sendTo(let key): sessionSheet(key) { SendToSheet(scene: scene, session: $0) }
-        case .continueIn(let key, let preset): sessionSheet(key) { ContinueInSheet(scene: scene, session: $0, preset: preset) }
+        case .continueIn(let key, let preset): sessionSheet(key) { ContinueSheet(scene: scene, session: $0, preset: preset) }
+        case .lineage(let key): sessionSheet(key) { LineageSheet(scene: scene, session: $0) }
         case .branch(let key): sessionSheet(key) { BranchSheet(scene: scene, session: $0) }
         case .worktrees: if let hub = scene.hub { WorktreesView(model: WorktreesModel(api: hub.api), scene: scene) }
         case .settings(let section): SettingsView(scene: scene, section: section.flatMap(SettingsSection.init(rawValue:)))
@@ -821,48 +822,6 @@ struct SendToSheet: View {
     }
 }
 
-struct ContinueInSheet: View {
-    let scene: SceneModel
-    let session: SessionModel
-    let preset: String
-    @State private var text = ""
-    @State private var loading = true
-
-    var body: some View {
-        let name = scene.hub?.presets(host: nil).first { $0.id == preset }?.name ?? preset
-        NavigationStack {
-            AhForm {
-                Section {
-                    if loading { ProgressView("Reading the conversation…") }
-                    TextEditor(text: $text).frame(minHeight: 260).font(.ahMono(.callout))
-                } footer: {
-                    Text("\(name) starts in the same folder with this as its first message. Nothing is summarized by a model.")
-                }
-            }
-            .navigationTitle("Continue in \(name)")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Start") {
-                        guard let row = session.row else { return }
-                        let request = NewSessionRequest(preset: preset, cwd: row.dto.cwd, session: scene.hub?.state(host: row.isLocal ? nil : row.host)?.defaultSession ?? "", label: "")
-                        let prompt = text
-                        scene.sheet = nil
-                        Task { await scene.start(request, host: row.isLocal ? nil : row.host, prompt: prompt) }
-                    }.keyboardShortcut(.return, modifiers: .command)
-                    .disabled(loading || text.isEmpty)
-                        .buttonStyle(.glassProminent)
-                }
-            }
-            .task {
-                text = await session.continuePrompt() ?? ""
-                loading = false
-            }
-        }
-    }
-}
-
 // MARK: Branch
 
 struct BranchSheet: View {
@@ -1403,7 +1362,7 @@ struct SessionMenuSheet: View {
     }
 
     private var items: [Command] {
-        let ids: [CommandID] = ["rename", "pin", "toggle-view", "pick-model", "pick-effort", "switch-branch", "fork", "send-to", "scrollback", "copy-attach", "copy-last", "panel-diff", "panel-files", "panel-chat", "panel-queue", "panel-snapshots", "panel-preview", "panel-stack", "terminate"]
+        let ids: [CommandID] = ["rename", "pin", "toggle-view", "pick-model", "pick-effort", "switch-branch", "fork", "continue-in", "conversation-lineage", "send-to", "scrollback", "copy-attach", "copy-last", "panel-diff", "panel-files", "panel-chat", "panel-queue", "panel-snapshots", "panel-preview", "panel-stack", "terminate"]
         return ids.compactMap { id in scene.isAvailable(id) ? CommandCatalog.byID[id] : nil }
     }
 }

@@ -308,7 +308,7 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
             case .confirmTerminate, .confirmPlan:
                 controller.modalPresentationStyle = .formSheet
                 controller.sheetPresentationController?.detents = [.custom { _ in 300 }]
-            case .modelPicker, .effortPicker, .sessionMenu, .fork, .forks, .branch:
+            case .modelPicker, .effortPicker, .sessionMenu, .fork, .forks, .branch, .lineage:
                 controller.modalPresentationStyle = .formSheet
                 controller.sheetPresentationController?.detents = [.medium(), .large()]
                 controller.sheetPresentationController?.prefersGrabberVisible = true
@@ -820,7 +820,9 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
         if let color = theme.theme(scene.app.preferences.appearance).uiStatus(row.word) {
             word.uiKit.foregroundColor = color
         }
-        let place = [row.dto.project, row.dto.branch].compactMap { $0 }.filter { !$0.isEmpty }
+        // Where its conversation came from, when another agent handed it over: "↪ Claude Code".
+        let origin = row.dto.continued.map { c in "↪\u{FE0E} " + (scene.hub?.presets(host: row.isLocal ? nil : row.host).first { $0.id == c.fromHarness }?.name ?? c.fromHarness) }
+        let place = [row.dto.project, row.dto.branch, origin].compactMap { $0 }.filter { !$0.isEmpty }
         return place.isEmpty ? word : word + AttributedString(" · " + place.joined(separator: " · "))
     }
 

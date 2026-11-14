@@ -396,6 +396,18 @@ private struct SessionHeader: View {
                         .foregroundStyle(theme.faint)
                         .accessibilityHint("Show the fork family")
                     }
+                    if let continued = row.dto.continued {
+                        // Where its conversation came from (another agent, or a fork): its
+                        // whole family, and the way back to the original.
+                        Button {
+                            scene.sheet = .lineage(session.key)
+                        } label: {
+                            Label(ContinueWords.origin(continued) { id in scene.hub?.presets(host: row.isLocal ? nil : row.host).first { $0.id == id }?.name ?? id }, systemImage: "arrow.turn.down.right").lineLimit(1)
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(theme.faint)
+                        .accessibilityHint("Show where this conversation came from")
+                    }
                 }
                 .font(.ah(.caption))
             }
@@ -486,6 +498,8 @@ struct SessionAction: Identifiable {
             return [[
                 SessionAction(title: "Resume", symbol: "play") { Task { if let key = await session.resume() { scene.open(key) } } },
                 session.isShell ? nil : SessionAction(title: "Fork…", symbol: CommandCatalog.icon("fork")) { scene.sheet = .fork(session.key) },
+                session.isShell ? nil : SessionAction(title: "Continue in Another Agent…", symbol: CommandCatalog.icon("continue-in")) { scene.sheet = .continueIn(key: session.key, preset: nil) },
+                session.isShell || !scene.portable(session) ? nil : SessionAction(title: "Conversation Lineage", symbol: CommandCatalog.icon("conversation-lineage")) { scene.sheet = .lineage(session.key) },
                 SessionAction(title: session.history?.dto.pinned == true ? "Unpin" : "Pin", symbol: session.history?.dto.pinned == true ? "pin.slash" : "pin") { Task { await session.togglePin() } },
                 SessionAction(title: "Copy Link", symbol: "link") { scene.copyLink(to: Place(.session(session.key))) },
             ].compactMap { $0 }]
@@ -495,6 +509,8 @@ struct SessionAction: Identifiable {
         if session.row?.dto.branch != nil { work.append(SessionAction(title: "Switch Branch…", symbol: CommandCatalog.icon("switch-branch")) { scene.sheet = .branch(session.key) }) }
         if !session.isShell { work.append(SessionAction(title: "Fork…", symbol: CommandCatalog.icon("fork")) { scene.sheet = .fork(session.key) }) }
         if session.row?.dto.fork != nil { work.append(SessionAction(title: "Forks…", symbol: "arrow.triangle.branch") { scene.sheet = .forks(session.key) }) }
+        if !session.isShell && session.hasGUI { work.append(SessionAction(title: "Continue in Another Agent…", symbol: CommandCatalog.icon("continue-in")) { scene.sheet = .continueIn(key: session.key, preset: nil) }) }
+        if !session.isShell && scene.portable(session) { work.append(SessionAction(title: "Conversation Lineage", symbol: CommandCatalog.icon("conversation-lineage")) { scene.sheet = .lineage(session.key) }) }
         if session.isLive && session.hasGUI { work.append(SessionAction(title: "Send To…", symbol: CommandCatalog.icon("send-to")) { scene.sheet = .sendTo(session.key) }) }
         if let queued = session.row?.dto.queued, queued > 0 {
             work.append(SessionAction(title: "Send Queued Now (\(queued))", symbol: CommandCatalog.icon("send-now")) { scene.perform("send-now") })

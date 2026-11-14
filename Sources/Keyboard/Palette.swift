@@ -90,7 +90,7 @@ enum PaletteTree {
                 .command("toggle-view"), .command("toggle-steps"), .command("browse-messages"), .command("copy-last"), .command("jump-latest"), .command("scrollback"), .command("toggle-keys"), .command("terminal-text-bigger"), .command("terminal-text-smaller"), .command("terminal-text-reset"),
             ]),
             .category(key: "manage", label: "Manage", icon: "pencil", detail: "Rename, fork, hand off, pin, stop", children: [
-                .command("rename"), .command("switch-branch"), .command("fork"), .command("send-to"), .command("pin"), .command("copy-attach"), .command("session-menu"), .command("terminate"),
+                .command("rename"), .command("switch-branch"), .command("fork"), .command("continue-in"), .command("conversation-lineage"), .command("send-to"), .command("pin"), .command("copy-attach"), .command("session-menu"), .command("terminate"),
             ]),
             .category(key: "continue", label: "Continue in…", icon: "paperplane", detail: "This conversation, in another agent", terms: ["handoff", "switch agent", "harness"], children: [.provider(.agents)]),
         ]),

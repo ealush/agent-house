@@ -141,7 +141,10 @@ final class SceneModel {
         case modelPicker(String)
         case effortPicker(String)
         case sessionMenu(String)
-        case continueIn(key: String, preset: String)
+        /// Continue in Another Agent; `preset` picks the agent to start with.
+        case continueIn(key: String, preset: String?)
+        /// A conversation's family across agents (`features.portable`).
+        case lineage(String)
         /// The composer's draft in a larger editor (a long message).
         case draft(String)
 
@@ -161,7 +164,8 @@ final class SceneModel {
             case .modelPicker(let k): return "model:\(k)"
             case .effortPicker(let k): return "effort:\(k)"
             case .sessionMenu(let k): return "menu:\(k)"
-            case .continueIn(let k, let p): return "continue:\(k):\(p)"
+            case .continueIn(let k, let p): return "continue:\(k):\(p ?? "")"
+            case .lineage(let k): return "lineage:\(k)"
             case .draft(let k): return "draft:\(k)"
             }
         }
@@ -943,6 +947,8 @@ final class SceneModel {
         case "rename", "pin", "terminate", "scrollback": return live
         case "fork": return agent || (s?.history != nil && s?.isShell == false)
         case "send-to": return s.map { $0.isLive && $0.hasGUI } ?? false
+        case "continue-in": return s.map { $0.hasGUI && !$0.isShell } ?? false
+        case "conversation-lineage": return s.map { !$0.isShell && portable($0) } ?? false
         case "toggle-keys": return s?.surface == .terminal
         case "terminal-text-bigger", "terminal-text-smaller", "terminal-text-reset": return s?.surface == .terminal || workspace.scratchVisible
         default: return false
@@ -1107,6 +1113,8 @@ final class SceneModel {
             requestFocus(.rename(key))
         case "fork": if let key { sheet = .fork(key) }
         case "send-to": if let key { sheet = .sendTo(key) }
+        case "continue-in": if let key { sheet = .continueIn(key: key, preset: nil) }
+        case "conversation-lineage": if let key { sheet = .lineage(key) }
         case "pin": Task { await s?.togglePin() }
         case "panel-diff": togglePanel(.diff)
         case "panel-files": togglePanel(.files)
@@ -1462,9 +1470,12 @@ final class SceneModel {
                 })
             }
         case .agents:
-            guard let s, s.isLive, s.hasGUI else { return [] }
-            return hub.presets(host: nil).filter { $0.offered && !$0.isShell && $0.id != s.row?.dto.agent }.map { p in
-                PaletteNode(key: "continue:\(p.id)", label: p.name, agent: p.id, detail: "Start \(p.name) with this conversation’s summary and last reply", action: .continueIn(preset: p.id))
+            guard let s, s.hasGUI, !s.isShell else { return [] }
+            // The agents on the session's own host, not the account's.
+            let host = SessionKey(s.key)?.host
+            let own = s.row?.dto.agent ?? s.history?.dto.harness
+            return hub.presets(host: host).filter { $0.offered && !$0.isShell }.map { p in
+                PaletteNode(key: "continue:\(p.id)", label: p.id == own ? "\(p.name) (fork or resume)" : p.name, agent: p.id, detail: portable(s) ? "See what carries over to \(p.name), then continue there" : "Start \(p.name) with this conversation’s text as its first message", action: .continueIn(preset: p.id))
             }
         case .settings:
             return [
@@ -1594,6 +1605,11 @@ final class SceneModel {
             toast("Couldn’t start it: \(APIError.wrap(error).message)", error: true)
             return nil
         }
+    }
+
+    /// The session's host carries conversations between agents itself (`features.portable`).
+    func portable(_ session: SessionModel) -> Bool {
+        hub?.state(host: SessionKey(session.key)?.host)?.supports("portable") ?? false
     }
 
     /// Start a session and open it once the host lists it.

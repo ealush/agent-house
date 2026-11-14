@@ -18,11 +18,17 @@ struct HubStateDTO: Codable, Equatable, Sendable {
     var omarchy: OmarchyStampDTO?
     var focus: FocusDTO?
     var review: ReviewStateDTO?
+    /// What this host can do beyond the base API, by name → contract version (`portable`,
+    /// `uploads`, …). Nil from a host that predates it: it has none of them.
+    var features: [String: Int]?
+
+    /// The host offers `name` at `version` or later.
+    func supports(_ name: String, version: Int = 1) -> Bool { (features?[name] ?? 0) >= version }
 
     init(
         api: Int = supportedAPIVersion, hostname: String, hosts: [HostDTO], home: String = "", defaultSession: String = "",
         sessions: [String] = [], windows: [SessionDTO], history: [HistoryItemDTO] = [], presets: [PresetDTO] = [],
-        omarchy: OmarchyStampDTO? = nil, focus: FocusDTO? = nil, review: ReviewStateDTO? = nil
+        omarchy: OmarchyStampDTO? = nil, focus: FocusDTO? = nil, review: ReviewStateDTO? = nil, features: [String: Int]? = nil
     ) {
         self.api = api
         self.hostname = hostname
@@ -36,10 +42,11 @@ struct HubStateDTO: Codable, Equatable, Sendable {
         self.omarchy = omarchy
         self.focus = focus
         self.review = review
+        self.features = features
     }
 
     private enum CodingKeys: String, CodingKey {
-        case api, hostname, hosts, home, defaultSession, sessions, windows, history, presets, omarchy, focus, review
+        case api, hostname, hosts, home, defaultSession, sessions, windows, history, presets, omarchy, focus, review, features
     }
 
     init(from decoder: any Decoder) throws {
@@ -56,6 +63,7 @@ struct HubStateDTO: Codable, Equatable, Sendable {
         omarchy = try c.decodeIfPresent(OmarchyStampDTO.self, forKey: .omarchy)
         focus = try c.decodeIfPresent(FocusDTO.self, forKey: .focus)
         review = try c.decodeIfPresent(ReviewStateDTO.self, forKey: .review)
+        features = try? c.decodeIfPresent([String: Int].self, forKey: .features)
     }
 
     func validate() throws {
@@ -150,6 +158,9 @@ struct SessionDTO: Codable, Equatable, Sendable {
     /// works on it (plain words, clipped). Nil from a host that predates it, or before its
     /// transcript has been read.
     let reply: Reply?
+    /// Where its conversation came from, when the host carried it over from another agent
+    /// or session (`server/portable`). Nil from a host that predates it.
+    let continued: ContinuedLineage?
 
     // Unknown values fail decoding, rather than inventing an idle/safe state.
     enum Status: String, Codable, Sendable {
@@ -178,7 +189,7 @@ struct SessionDTO: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case id, uid, session, index, name, title, agent, harnessId, model, statusSource, command, cwd, project, projectPath
         case branch, worktree, status, detail, limit, ask, answerable, askId, viewers, devices, activity, createdAt, panes, pinned
-        case queued, order, launch, launchModel, launchEffort, launchMode, feed, fork, reply
+        case queued, order, launch, launchModel, launchEffort, launchMode, feed, fork, reply, continued
     }
 
     init(from decoder: any Decoder) throws {
@@ -221,6 +232,7 @@ struct SessionDTO: Codable, Equatable, Sendable {
         fork = try c.decodeIfPresent(ForkLineage.self, forKey: .fork)
         // A reply this build can't read is left out, never the whole session.
         reply = try? c.decodeIfPresent(Reply.self, forKey: .reply)
+        continued = try? c.decodeIfPresent(ContinuedLineage.self, forKey: .continued)
     }
 }
 
@@ -291,11 +303,13 @@ struct HistoryItemDTO: Codable, Equatable, Sendable {
     let pinned: Bool
     let worktree: String?
     let fork: Lineage?
+    /// Where its conversation came from, when the host carried it over (`server/portable`).
+    var continued: ContinuedLineage? = nil
 
     enum Kind: String, Codable, Sendable { case ended, saved }
     struct Lineage: Codable, Equatable, Sendable { let parentTitle: String }
 
-    private enum CodingKeys: String, CodingKey { case ref, kind, harness, harnessId, title, cwd, project, model, at, pinned, worktree, fork }
+    private enum CodingKeys: String, CodingKey { case ref, kind, harness, harnessId, title, cwd, project, model, at, pinned, worktree, fork, continued }
 
     init(ref: String, kind: Kind, harness: String, harnessId: String?, title: String, cwd: String, project: String, model: String?, at: Double, pinned: Bool, worktree: String?, fork: Lineage?) {
         self.ref = ref
@@ -326,6 +340,7 @@ struct HistoryItemDTO: Codable, Equatable, Sendable {
         pinned = try c.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
         worktree = try c.decodeIfPresent(String.self, forKey: .worktree)
         fork = try c.decodeIfPresent(Lineage.self, forKey: .fork)
+        continued = try? c.decodeIfPresent(ContinuedLineage.self, forKey: .continued)
     }
 }
 

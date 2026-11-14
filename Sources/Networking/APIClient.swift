@@ -383,6 +383,22 @@ struct APIClient: Sendable {
         try await call("PUT", "/api/push/apns", json: APNsRegistration(token: token, environment: environment, events: .init(waiting: waiting, done: done), preview: privatePreview ? "private" : "full"))
     }
     func unregisterAPNs() async throws { try await perform("DELETE", "/api/push/apns") }
+
+    // MARK: Portable conversations (`features.portable`)
+
+    func portableCapabilities() async throws -> PortableCapabilities { try await call("GET", "/api/portable/capabilities") }
+    /// What continuing `ref` (a session uid, or `harness:harnessId`) in another agent would
+    /// carry over; starts nothing.
+    func continuePreview(_ ref: String, _ request: ContinueRequest) async throws -> ContinuePlan {
+        try await call("POST", "/api/portable/conversations/\(Self.enc(ref))/preview", json: request)
+    }
+    func continueConversation(_ ref: String, _ request: ContinueRequest) async throws -> ContinueStarted {
+        try await call("POST", "/api/portable/conversations/\(Self.enc(ref))/continue", json: request)
+    }
+    func continueOperation(_ id: String) async throws -> ContinueOperation { try await call("GET", "/api/portable/operations/\(Self.enc(id))") }
+    func retryContinue(_ id: String) async throws -> ContinueOperation { try await call("POST", "/api/portable/operations/\(Self.enc(id))/retry") }
+    func cancelContinue(_ id: String) async throws -> ContinueOperation { try await call("POST", "/api/portable/operations/\(Self.enc(id))/cancel") }
+    func lineage(_ ref: String) async throws -> PortableLineage { try await call("GET", "/api/portable/conversations/\(Self.enc(ref))/lineage") }
     /// A Live Activity this device started for session `uid`: the host moves it along by push.
     func registerActivity(_ uid: String, token: String, environment: String) async throws {
         try await perform("PUT", "/api/push/apns/activity", json: ActivityRegistration(uid: uid, token: token, environment: environment))

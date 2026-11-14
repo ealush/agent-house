@@ -605,6 +605,9 @@ struct SessionRowMenu: View {
         Button(row.dto.pinned ? "Unpin" : "Pin", systemImage: row.dto.pinned ? "pin.slash" : "pin") {
             Task { try? await hub.client(forKey: row.key).pin(row.uid, pinned: !row.dto.pinned); hub.refresh() }
         }
+        if row.dto.agent != nil && row.dto.feed != nil {
+            Button("Continue in Another Agent…", systemImage: CommandCatalog.icon("continue-in")) { scene.sheet = .continueIn(key: row.key, preset: nil) }
+        }
         Divider()
         Button("Terminate…", systemImage: "xmark.octagon", role: .destructive) { scene.sheet = .confirmTerminate(row.key) }
     }
@@ -701,7 +704,7 @@ struct HistoryRowView: View {
                         if item.dto.pinned { Image(systemName: "pin.fill").font(.ah(.caption2)).foregroundStyle(theme.faint) }
                         Text(item.dto.title).lineLimit(1).foregroundStyle(theme.text)
                     }
-                    Text([hub.multiHost ? item.host : nil, item.dto.project, item.dto.fork.map { "fork of \($0.parentTitle)" }].compactMap { $0 }.joined(separator: " · "))
+                    Text([hub.multiHost ? item.host : nil, item.dto.project, item.dto.fork.map { "fork of \($0.parentTitle)" }, item.dto.continued.map { c in "↪\u{FE0E} from \(hub.presets(host: item.isLocal ? nil : item.host).first { $0.id == c.fromHarness }?.name ?? c.fromHarness)" }].compactMap { $0 }.joined(separator: " · "))
                         .font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(1)
                     if typeSize.isAccessibilitySize { Elapsed(seconds: item.dto.at).font(.ah(.caption)).foregroundStyle(theme.faint) }
                 }
@@ -730,6 +733,7 @@ struct HistoryRowView: View {
             Button("Resume", systemImage: "play") { resume() }
             if item.dto.harness != "shell" {
                 Button("Fork…", systemImage: "arrow.branch") { scene.sheet = .fork(item.id) }
+                Button("Continue in Another Agent…", systemImage: CommandCatalog.icon("continue-in")) { scene.sheet = .continueIn(key: item.id, preset: nil) }
             }
             Button("Hide from History", systemImage: "eye.slash", role: .destructive) {
                 Task {

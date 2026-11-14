@@ -16,7 +16,7 @@
 // Prints one JSON line {port, localToken, dir} once the sessions are up, then runs until
 // stdin closes or SIGTERM. `node scripts/demo/code.mjs <dir>` prints a setup code.
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, writeFileSync, existsSync, realpathSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync, existsSync, readFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -42,6 +42,13 @@ mkdirSync(bin, { recursive: true });
 const agent = join(here, 'agent.mjs');
 writeFileSync(join(bin, 'claude'), `#!/bin/bash\n# Not Claude Code: the demo's scripted stand-in (scripts/demo/agent.mjs).\n"${process.execPath}" "${agent}" "$@"\n`, { mode: 0o755 });
 writeFileSync(join(bin, 'gh'), `#!/bin/sh\n# Not GitHub's gh: the demo's stand-in (scripts/demo/gh.mjs).\nexec "${process.execPath}" "${join(here, 'gh.mjs')}" "$@"\n`, { mode: 0o755 });
+// With an ah that ships its own test stand-in (test/fixtures/fake-harness.js), `codex` is on
+// the PATH too: it answers "Got: <first line>" and writes Codex's own transcript format, so a
+// conversation can be carried from one agent to another in the demo. Not Codex.
+const fakeHarness = join(source, 'test', 'fixtures', 'fake-harness.js');
+if (existsSync(fakeHarness)) {
+  writeFileSync(join(bin, 'codex'), readFileSync(fakeHarness), { mode: 0o755 });
+}
 const github = join(dir, 'github');
 process.env.AH_GH_STATE = join(github, 'state.json');
 

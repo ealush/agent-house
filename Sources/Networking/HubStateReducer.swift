@@ -62,6 +62,7 @@ private struct HubStatePatchDTO: Decodable {
     let omarchy: PatchField<OmarchyStampDTO>
     let focus: PatchField<FocusDTO>
     let review: PatchField<ReviewStateDTO>
+    let features: PatchField<[String: Int]>
     let windowsDelta: PatchField<WindowsDelta>
 
     struct WindowsDelta: Decodable {
@@ -77,7 +78,7 @@ private struct HubStatePatchDTO: Decodable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case api, hostname, hosts, home, defaultSession, sessions, windows, history, presets, omarchy, focus, review, windowsDelta
+        case api, hostname, hosts, home, defaultSession, sessions, windows, history, presets, omarchy, focus, review, features, windowsDelta
     }
 
     init(from decoder: any Decoder) throws {
@@ -94,6 +95,8 @@ private struct HubStatePatchDTO: Decodable {
         omarchy = try container.patch(.omarchy)
         focus = try container.patch(.focus)
         review = try container.patch(.review)
+        // A features map this build can't read is no change, never a broken stream.
+        features = (try? container.patch(.features)) ?? .unchanged
         windowsDelta = try container.patch(.windowsDelta)
     }
 
@@ -112,6 +115,7 @@ private struct HubStatePatchDTO: Decodable {
         next.omarchy = omarchy.optional(previous.omarchy)
         next.focus = focus.optional(previous.focus)
         next.review = review.optional(previous.review)
+        next.features = features.optional(previous.features)
         return next
     }
 }

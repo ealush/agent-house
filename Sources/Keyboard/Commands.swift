@@ -280,6 +280,8 @@ enum CommandCatalog {
         Command("copy-link", .navigate, "Copy link", "A link to what's on screen: the session with its view and panel, a page, a review. It opens here and in the web app.", chords: [c("c", meta: true, alt: true)], terms: ["share", "url", "deep link"]),
         Command("share-link", .navigate, "Share link…", "Send a link to what's on screen through the share sheet.", terms: ["url", "deep link", "airdrop"]),
         Command("open-link", .navigate, "Open link from clipboard", "Go to the place an ah link names: a session, a message, a page or a Settings section.", terms: ["url", "deep link", "paste"]),
+        Command("continue-in", .session, "Continue in another agent…", "Carry this conversation on in another agent (or fork it): see what carries over and what doesn't before it starts. The original stays as it is.", terms: ["handoff", "hand off", "switch agent", "harness", "portable", "codex", "claude"]),
+        Command("conversation-lineage", .session, "Conversation lineage", "Every conversation this one came from or went on to, across agents, and how each was carried.", terms: ["lineage", "history", "family", "parent", "origin"]),
         Command("focus-follows-pointer", .workspace, "Focus follows the pointer", "With a trackpad or mouse, hovering over a pane makes it the focused one. Again to turn it off.", terms: ["hover", "mouse", "trackpad", "focus"]),
     ]
 
@@ -303,6 +305,7 @@ enum CommandCatalog {
         "toggle-panel": "sidebar.right", "reply": "arrowshape.turn.up.left", "approve": "checkmark.circle", "deny": "xmark.circle",
         "interrupt": "stop.circle", "send-now": "paperplane", "clear-queue": "trash", "pick-model": "cpu", "pick-effort": "speedometer",
         "copy-last": "doc.on.doc", "jump-latest": "arrow.down.to.line", "browse-messages": "text.bubble", "switch-branch": "arrow.triangle.branch",
+        "continue-in": "arrow.triangle.branch", "conversation-lineage": "point.3.connected.trianglepath.dotted",
         "rename": "pencil", "fork": "arrow.branch", "send-to": "arrowshape.turn.up.right", "pin": "pin", "panel-diff": "plusminus",
         "panel-files": "folder", "panel-chat": "bubble.left.and.bubble.right", "panel-queue": "list.bullet.rectangle", "panel-snapshots": "clock.arrow.circlepath",
         "panel-preview": "safari", "panel-stack": "square.stack.3d.up", "session-menu": "ellipsis.circle", "scrollback": "scroll",
