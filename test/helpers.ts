@@ -122,8 +122,10 @@ export async function cleanup(ah: Ah) {
       execFileSync('tmux', ['-S', socket(ah.dir), 'kill-server'], { env: ah.env, stdio: 'ignore' });
     } catch {}
   }
-  // Each run leaves ~200 MB of caches behind otherwise, and /tmp is a tmpfs.
-  rmSync(ah.dir, { recursive: true, force: true });
+  // Each run leaves ~200 MB of caches behind otherwise, and /tmp is a tmpfs. An agent
+  // the dead server just hung up on can still be writing its last line: retried, as
+  // a race with it surfaces as ENOTEMPTY.
+  rmSync(ah.dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }
 
 export type Res = { status: number; headers: Record<string, string | string[] | undefined>; body: string; json: () => any };
