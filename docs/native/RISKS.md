@@ -20,3 +20,18 @@ Updated 14 November 2026.
 | P2 | ⌘, on iPadOS 26 | The system takes ⌘, for its own "app settings" command and opens the Settings app's page for Agent Hub, even with the app menu's Settings item replaced (seen on the iPad simulator, 10 November 2026). The menu bar's "Settings…" and ⌃⇧3 open the app's own Settings. |
 | P2 | A host that goes quiet | A host that stops answering without closing the connection (its Mac asleep, a network that drops packets) shows its last state as live until the stream's idle timeout (40 s; the host pings every 25 s) and a poll's timeout have run out: about a minute, then the Offline banner with Retry (seen on the simulator with the demo host stopped, 10 November 2026; it was a minute and a half at a 60 s idle timeout). |
 | P1 | Videos over 50 MB | The app streams a picked video from disk, but the host's `/api/upload` reads the whole body into memory with a 50 MB cap (`UPLOAD_LIMIT` in `ah` `server/main.ts`), so a longer video fails to attach ("Couldn’t attach…"); `aVideoAttachesFromDiskWellPastTheOldLimitAndLeavesNoFile` (51 MB) fails for that reason. Needs an `ah` change that streams uploads to disk under a higher cap, on its own branch. |
+
+## Product leap, 14 November 2026: what still needs someone outside this repo
+
+| Blocker | Who | What it unblocks |
+| --- | --- | --- |
+| Turn on **Push Notifications** for the App ID `dev.ealush.ah.native` (developer account or App Store Connect), then merge `native/119-push-entitlements` | Account owner | Real device tokens for every host, the quiet `resolved` push, Live Activity push tokens. Until then the app alerts on its own (`LocalAlerts`). |
+| An **APNs auth key** (`.p8`, key ID, team ID, topic `dev.ealush.ah.native`) in each host's config (`apns`) | Host owner | Hosts sending alerts and Live Activity updates through Apple. Today every push path is proven only against `AH_DEMO_APNS=1`'s stand-in gateway. |
+| A **signed device build** (Xcode with the account, or TestFlight) | Account owner | The share extension's Keychain group and App ID (`dev.ealush.ah.native.share`, registered by automatic signing), Face ID / Secure Enclave, background pushes waking the app (never seen on the simulator), Live Activities moved by push. |
+| **Landing the ah branches**: `live/1-activity-push` → `native/7-push-truth` → `native/8-last-reply`; `review/1-approve-head`; the conductor stack (`conductor/00…03`, the other server session's) | Owner | Prompt-guarded Approve/Deny, resolved pushes, last messages in lists, approval at the head shown, portable conversations. Merge note: conductor renamed `hostname()` to `hostName()` in `server/push.ts`; `native/7` adds two calls that must follow it. |
+| An **App Group** (both App IDs) | Account owner | Keeping a share for later while the host is unreachable (a background upload session). Not built; the extension says it couldn't send instead. |
+
+### Transcript implementations (audit, not re-measured)
+
+The SwiftUI transcript stays the default and the UIKit collection view (`TranscriptCollection`, Settings → New transcript) stays opt-in. The collection view's last measurements (commit e615a9f: ten older pages read back with no frame against the scroll beyond 20 pt, a reply with the keyboard up following the end, the first message staying through a replayed real transcript, iPad split and rotation) and its known open item (an unfolding step settles by one frame at the end) are from the session that built it; this pass changed neither implementation and didn't measure them again, so it makes no case for switching. The owner's own TestFlight build of the collection view is the evidence still missing.
+
