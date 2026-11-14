@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Http2Server, type ServerHttp2Stream } from 'node:http2';
 import { generateKeyPairSync, verify } from 'node:crypto';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
@@ -324,4 +324,49 @@ test('a session cut off by a crash ends its activity as interrupted, saying what
   apns.follow([], askLine);
   const ends = sent.filter((s) => s.aps.event === 'end').map((s) => s.aps['content-state']);
   assert.deepEqual(ends.map((c) => [c.phase, c.detail]), [['interrupted', 'The tmux server stopped. Restore it in ah.'], ['finished', null]]);
+});
+
+test('registrations land whole: a reader never sees half a file, whatever is mid-write', async () => {
+  const file = join(dir, 'whole.json');
+  const activities = file.replace(/\.json$/, '-activities.json');
+  const apns = new Apns(config, { file, transport: async () => ({ status: 200 }) });
+  let torn = 0;
+  let reads = 0;
+  let writing = true;
+  const reader = (async () => {
+    while (writing) {
+      for (const f of [file, activities]) {
+        if (!existsSync(f)) continue;
+        reads++;
+        try {
+          JSON.parse(readFileSync(f, 'utf8'));
+        } catch {
+          torn++;
+        }
+      }
+      await new Promise((r) => setImmediate(r));
+    }
+  })();
+  // Each registration rewrites its file (a long one: many devices, many activities).
+  for (let i = 0; i < 150; i++) {
+    const hex = i.toString(16).padStart(4, '0').repeat(16);
+    apns.register({ ...device(hex, { waiting: true, done: true }), sessionId: `s${i}` });
+    apns.registerActivity({ uid: `u${i}`, token: hex.split('').reverse().join(''), environment: 'sandbox', sessionId: `s${i}` });
+    await new Promise((r) => setImmediate(r));
+  }
+  // Until the last writes land (queued one after another; slower on a busy machine).
+  const count = (f: string) => {
+    try {
+      return JSON.parse(readFileSync(f, 'utf8')).length;
+    } catch {
+      return -1;
+    }
+  };
+  for (let t = Date.now(); Date.now() - t < 15_000 && (count(file) !== 150 || count(activities) !== 150); ) await new Promise((r) => setTimeout(r, 20));
+  writing = false;
+  await reader;
+  assert.ok(reads > 50, `read while writing (${reads})`);
+  assert.equal(torn, 0, 'never half a file');
+  assert.equal(count(file), 150);
+  assert.equal(count(activities), 150);
 });

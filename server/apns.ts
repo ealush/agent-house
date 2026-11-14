@@ -9,7 +9,7 @@
 import { connect, constants, type ClientHttp2Session } from 'node:http2';
 import { createPrivateKey, sign, type KeyObject } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { WindowView } from './sessions.ts';
@@ -423,7 +423,11 @@ export class Apns {
     }
   }
 
-  /** Writes run one after another, so the file always ends up with the latest registrations. */
+  /**
+   * Writes run one after another, so the file always ends up with the latest registrations,
+   * and each lands whole (a part file renamed over it): a crash or a reader mid-write never
+   * sees half a file, which on the next start would silently drop every registration.
+   */
   private writing: Promise<void> = Promise.resolve();
 
   private persist() {
@@ -438,7 +442,8 @@ export class Apns {
     const data = JSON.stringify(value, null, 2);
     this.writing = this.writing
       .then(() => mkdir(dirname(file), { recursive: true, mode: 0o700 }))
-      .then(() => writeFile(file, data, { mode: 0o600 }))
+      .then(() => writeFile(`${file}.part`, data, { mode: 0o600 }))
+      .then(() => rename(`${file}.part`, file))
       .catch((err) => console.error(`writing ${file} failed:`, err));
   }
 }

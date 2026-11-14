@@ -95,5 +95,8 @@ test('only a native sign-in registers a Live Activity; ending the sign-in forget
   await until(() => activities()?.some((x) => x.token === ACT) ?? null, 4000, 'apns-activities.json');
   assert.equal(statSync(file).mode & 0o777, 0o600);
   await http(ah, 'DELETE', `/api/auth/sessions/${a.sessionId}`, { token: ah.localToken() });
-  await until(() => (activities() === null ? null : !activities()!.some((x) => x.token === ACT)), 4000, 'revoked activity');
+  await until(() => {
+    const now = activities();
+    return now === null ? null : !now.some((x) => x.token === ACT);
+  }, 4000, 'revoked activity');
 });
