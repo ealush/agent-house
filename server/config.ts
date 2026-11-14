@@ -1,4 +1,5 @@
 import { readFileSync, existsSync, accessSync, constants } from 'node:fs';
+import { DEFAULT_UPLOAD_LIMITS, type UploadLimits } from './uploads.ts';
 import { homedir } from 'node:os';
 import { join, isAbsolute } from 'node:path';
 
@@ -128,6 +129,12 @@ export type Config = {
    * .p8 signing key Apple issued, and the app's bundle id. Absent: no native push.
    */
   apns?: { teamId: string; keyId: string; keyFile: string; topic: string };
+  /**
+   * Uploads (server/uploads.ts), streamed to disk: one file's size, the total ah's
+   * own upload folder may hold, the free space kept on the disk, and how long an
+   * upload may send nothing before it's dropped. Bytes and milliseconds.
+   */
+  uploads: UploadLimits;
   presets: Preset[];
 };
 
@@ -434,8 +441,19 @@ export function loadConfig(): Config {
     promptHistory: user.promptHistory ?? 60,
     snapshots: { maxFileBytes: 10 * 1024 * 1024, keepTurns: 50, retentionDays: 7, ...user.snapshots },
     preview: { ports: [47600, 47699], ...user.preview },
+    uploads: uploadLimits(user.uploads),
     presets: user.presets ?? DEFAULT_PRESETS,
   };
+}
+
+/** Configured upload limits over the defaults; a value that isn't a positive number keeps the default. */
+function uploadLimits(user: Partial<UploadLimits> | undefined): UploadLimits {
+  const out = { ...DEFAULT_UPLOAD_LIMITS };
+  for (const k of Object.keys(out) as Array<keyof UploadLimits>) {
+    const v = user?.[k];
+    if (typeof v === 'number' && Number.isFinite(v) && v >= 0) out[k] = v;
+  }
+  return out;
 }
 
 export function expandHome(p: string): string {

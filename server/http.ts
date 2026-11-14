@@ -5,11 +5,17 @@ import { pickEncoding } from './compress.ts';
 
 export class HttpError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  /** A stable machine-readable reason, sent beside the message as `code` (clients branch on it, not on wording). */
+  code?: string;
+  constructor(status: number, message: string, code?: string) {
     super(message);
     this.status = status;
+    if (code) this.code = code;
   }
 }
+
+/** How long a small (JSON) body may take to arrive. Uploads have their own idle limit (server/uploads.ts). */
+const BODY_MS = 30_000;
 
 /**
  * JSON over 1 KB goes compressed to a client that takes it: the state alone is
@@ -37,10 +43,20 @@ export function send(res: ServerResponse, status: number, body: unknown) {
 export async function readBody(req: IncomingMessage, limit: number): Promise<Buffer> {
   let size = 0;
   const chunks: Buffer[] = [];
-  for await (const chunk of req) {
-    size += chunk.length;
-    if (size > limit) throw new HttpError(413, 'body too large');
-    chunks.push(chunk);
+  // The server has no whole-request timeout (a long upload must not be cut), so a
+  // small body that stops arriving is dropped here.
+  const timer = setTimeout(() => req.destroy(new HttpError(408, 'request body timed out')), BODY_MS);
+  try {
+    for await (const chunk of req) {
+      size += chunk.length;
+      if (size > limit) throw new HttpError(413, 'body too large');
+      chunks.push(chunk);
+    }
+  } catch (err) {
+    if (err instanceof HttpError) throw err;
+    throw new HttpError(400, 'request body ended early');
+  } finally {
+    clearTimeout(timer);
   }
   return Buffer.concat(chunks);
 }

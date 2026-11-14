@@ -516,7 +516,7 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
       let uid = w.uid;
       if (!uid && launching.has(w.windowId)) return null;
       if (!uid) {
-        uid = Registry.newId();
+        uid = registry.freshId();
         await setWindowOption(w.windowId, '@ah-uid', uid).catch(() => {});
       }
       alive.add(uid);

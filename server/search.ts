@@ -9,7 +9,7 @@
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { hostname } from 'node:os';
+import { hostName } from './host.ts';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { ADAPTERS, DOC_ADAPTERS } from './feed/feed.ts';
 import type { Entry } from './feed/schema.ts';
@@ -508,7 +508,7 @@ export class SearchIndexer {
     if (!(await this.enabled())) return { ...empty, enabled: false };
     const match = buildFtsMatch(params.q ?? '');
     if (!match) return { ...empty, tookMs: Date.now() - t0 };
-    if (params.host && !hostname().toLowerCase().includes(params.host.toLowerCase())) return { ...empty, tookMs: Date.now() - t0 };
+    if (params.host && !hostName().toLowerCase().includes(params.host.toLowerCase())) return { ...empty, tookMs: Date.now() - t0 };
     const limit = Math.min(50, Math.max(1, params.limit ?? 20));
     const offset = Math.max(0, params.offset ?? 0);
     const role = params.role === 'agent' ? 'assistant' : params.role === 'user' ? 'user' : null;
@@ -526,7 +526,7 @@ export class SearchIndexer {
         if (!hit) {
           hit = {
             kind,
-            host: hostname(),
+            host: hostName(),
             ref,
             uid,
             harness: kind === 'transcript' ? String(row.harness) : null,

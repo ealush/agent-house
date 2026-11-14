@@ -2,7 +2,7 @@
 // registry and the harnesses' own stores, plus the few verbs that change things
 // (launch, resume, send). HTTP, SSE and the CLI are all thin views over this.
 import type { ReviewState } from './review/service.ts';
-import { hostname } from 'node:os';
+import { hostName } from './host.ts';
 import { readFileSync, existsSync } from 'node:fs';
 import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve, basename } from 'node:path';
@@ -29,6 +29,7 @@ import { omarchyStamp } from './omarchy.ts';
 import { chatSteps, claudeQuestionGroups, cursorKeys, dialogAt, dialogSteps, parsePicker, parseQuestionDialog, type Answer, type Step } from './choices.ts';
 import type { Peers } from './peers.ts';
 import { fingerprint } from './env.ts';
+import { features } from './features.ts';
 import type { TranscriptSource } from './search.ts';
 
 export type { LaunchChange, QueueItem } from './queue.ts';
@@ -55,6 +56,8 @@ export type State = {
   focus: Focus | null;
   /** Stack review (server/review): Inbox alerts, sessions fixing findings, and which branches are layers. */
   review: ReviewState | null;
+  /** What this host supports, one version per feature (server/features.ts). `api` stays put for shipped clients. */
+  features: Record<string, number>;
 };
 
 /** `key` is the client's session key (a uid, or "<host>/<uid>" for a peer's session). */
@@ -284,9 +287,9 @@ export class Core {
       const history = (await buildHistory(this.registry, windows)).filter((h) => !this.hidden.has(h.ref));
       const state: State = {
         api: API_VERSION,
-        hostname: hostname(),
+        hostname: hostName(),
         hosts: [
-          { name: hostname(), self: true, online: true },
+          { name: hostName(), self: true, online: true },
           ...(this.peers?.list() ?? []).map((p) => ({ name: p.name, self: false, online: p.online })),
         ],
         home: homedir(),
@@ -302,6 +305,7 @@ export class Core {
         omarchy: omarchyStamp(),
         focus: this.focus,
         review: this.reviewState(),
+        features: features(),
       };
       this.state = state;
       // Subscribers get only the top-level fields that changed: history and the
@@ -424,7 +428,7 @@ export class Core {
     /** Runs once the window exists and is registered, just before the command is typed. */
     beforeCommand?: () => Promise<void>;
   }) {
-    const uid = o.uid ?? Registry.newId();
+    const uid = o.uid ?? this.registry.freshId();
     let meta = o.meta;
     // A new agent conversation has no id yet: snapshot the transcript ids that
     // already exist so adoption binds by novelty (session identity), never by
@@ -1579,13 +1583,17 @@ export class Core {
 
   /** Next order key: max existing + 100, so new sessions land at the end. */
   nextOrder(): number {
-    let max = 0;
+    // Two sessions created at once both read the same maximum before either is
+    // registered: the key handed out last counts too, so each gets its own place.
+    let max = this.lastOrder;
     for (const r of this.registry.all()) {
       const o = r.meta['ah.order'];
       if (typeof o === 'number' && Number.isFinite(o) && o > max) max = o;
     }
-    return max + 100 || 100;
+    this.lastOrder = max + 100 || 100;
+    return this.lastOrder;
   }
+  private lastOrder = 0;
 
   async forget(ref: string) {
     const rec = this.registry.get(ref);

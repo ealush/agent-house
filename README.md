@@ -246,6 +246,7 @@ drive tmux directly, so treat ah's security as protecting *remote* access.
   "promptHistory": 60,
   "idleAfter": 4,
   "preview": { "ports": [47600, 47699] },
+  "uploads": { "maxBytes": 4294967296, "maxTotalBytes": 21474836480, "minFreeBytes": 1073741824 },
   "presets": [
     { "id": "shell", "name": "Shell", "command": "" },
     {
@@ -261,7 +262,9 @@ drive tmux directly, so treat ah's security as protecting *remote* access.
 
 `host` must be loopback (`127.0.0.1` or `::1`). `peers` is `[]` (default),
 `[{ "name", "url" }]` with https URLs, or `"auto"` (your own online tailnet machines
-running ah). `files.roots` limits the file browser; add `"~"` deliberately if you want your
+running ah). `uploads` caps one upload, the total kept in ah's upload folder, and the free
+space an upload must leave (bytes); uploads stream to disk, so large screen recordings
+fit. `files.roots` limits the file browser; add `"~"` deliberately if you want your
 whole home. `promptHistory: 0` keeps no prompt history. `preview.ports` is the range
 preview proxies listen on and publish with `tailscale serve` (ah needs Tailscale's
 operator permission, the same as for `tailscale serve` itself). Presets whose command isn't

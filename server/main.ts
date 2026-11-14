@@ -11,7 +11,8 @@ import { createServer, type IncomingMessage, type ServerResponse, type Server } 
 import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
-import { hostname, homedir } from 'node:os';
+import { homedir } from 'node:os';
+import { hostName } from './host.ts';
 import { join, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Duplex } from 'node:stream';
@@ -20,7 +21,8 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { loadConfig, expandHome, CONFIG_PATH, type Config } from './config.ts';
 import { shortPath } from './sessions.ts';
 import { compressible, encoded } from './compress.ts';
-import { Core, CoreError, resolveDir, defaultName } from './core.ts';
+import { Core, CoreError, resolveDir, defaultName, API_VERSION } from './core.ts';
+import { features } from './features.ts';
 import { buildLaunch, LaunchError } from './launch.ts';
 import { withCatalog } from './catalog.ts';
 import { addViewer, attach, clientId, viewers } from './terminal.ts';
@@ -41,7 +43,8 @@ import { SearchIndexer, combineResponses, type SearchParams } from './search.ts'
 import { Auth, AuthError, clearCookies, type Caller } from './auth.ts';
 import { Gate, LOOPBACK_BIND, servedAt } from './gate.ts';
 import { Apns, ApnsError } from './apns.ts';
-import { HttpError, send, readBody, readJson, str, safeDecode } from './http.ts';
+import { HttpError, send, readJson, str, safeDecode } from './http.ts';
+import { admit, declaredLength, streamToFile, sweepParts, UploadError } from './uploads.ts';
 import { rebuildFailure, rebuildWeb } from './rebuild.ts';
 import { slashCommands, projectFiles } from './complete.ts';
 import { omarchyTheme } from './omarchy.ts';
@@ -168,8 +171,6 @@ core.peers = peers;
 setRoots(config.files.roots.map(expandHome));
 
 const UPLOAD_DIR = join(process.env.XDG_CACHE_HOME ?? join(homedir(), '.cache'), 'ah', 'uploads');
-const UPLOAD_LIMIT = 50 * 1024 * 1024;
-const FS_UPLOAD_LIMIT = 2 * 1024 * 1024 * 1024;
 
 /** Routes reachable without signing in: only what's needed to sign in. Everything else is denied. */
 export const PUBLIC_ROUTES = new Set([
@@ -274,7 +275,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   const route = (verb: string, re: RegExp) => (method === verb ? path.match(re) : null);
   let m: RegExpMatchArray | null;
 
-  if (route('GET', /^\/api\/hello$/)) return send(res, 200, { ah: true, hostname: hostname(), auth: auth.enabled });
+  if (route('GET', /^\/api\/hello$/)) return send(res, 200, { ah: true, hostname: hostName(), auth: auth.enabled, features: features() });
   if (path.startsWith('/api/auth/')) return authApi(req, res, path, method, caller);
   if (!caller) throw new HttpError(401, 'sign in required'); // belt and braces; handle() already denied
 
@@ -295,6 +296,16 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   if (path.startsWith('/api/review/')) return reviewApi(req, res, url, path, review, audit);
 
   if (route('GET', /^\/api\/state$/)) return send(res, 200, await core.current());
+
+  // What this host supports, with each feature's limits (server/features.ts).
+  if (route('GET', /^\/api\/capabilities$/)) {
+    return send(res, 200, {
+      api: API_VERSION,
+      host: hostName(),
+      features: features(),
+      uploads: { maxBytes: config.uploads.maxBytes, maxTotalBytes: config.uploads.maxTotalBytes, idleMs: config.uploads.idleMs },
+    });
+  }
 
   if (route('GET', /^\/api\/events$/)) {
     // Server-sent state pushes: one stream per client instead of polling.
@@ -818,7 +829,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   if (route('GET', /^\/api\/fs\/file$/)) return sendFile(res, url.searchParams.get('path') ?? '', url.searchParams.get('download') === '1');
 
   if (route('POST', /^\/api\/fs\/upload$/)) {
-    const path = await receive(req, url.searchParams.get('dir') ?? '', url.searchParams.get('name') ?? '', FS_UPLOAD_LIMIT);
+    const path = await receive(req, url.searchParams.get('dir') ?? '', url.searchParams.get('name') ?? '', config.uploads);
     audit(req, 'file.upload', { path });
     return send(res, 201, { path });
   }
@@ -826,14 +837,16 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   if (route('POST', /^\/api\/fs\/mkdir$/)) return send(res, 201, { path: await makeDir(str((await readJson(req)).path, 'path', 1024)) });
 
   if (route('POST', /^\/api\/upload$/)) {
-    // Pasted/dropped files land in ah's own upload folder, readable only by you.
-    const name = (url.searchParams.get('name') ?? 'upload').replace(/[^\w.-]+/g, '_').slice(-80) || 'upload';
-    const body = await readBody(req, UPLOAD_LIMIT);
+    // Pasted/dropped files land in ah's own upload folder, readable only by you,
+    // streamed to disk (a screen recording runs to hundreds of megabytes).
+    const name = (url.searchParams.get('name') ?? 'upload').replace(/[^\w.-]+/g, '_').replace(/^\.+/, '').slice(-80) || 'upload';
     await mkdir(UPLOAD_DIR, { recursive: true, mode: 0o700 });
+    const declared = declaredLength(req);
+    await admit(UPLOAD_DIR, declared, config.uploads, UPLOAD_DIR);
     const file = join(UPLOAD_DIR, `${new Date().toISOString().replace(/[:.]/g, '-')}-${name}`);
-    await writeFile(file, body, { mode: 0o600, flag: 'wx' });
-    audit(req, 'file.upload', { path: file, bytes: body.length });
-    return send(res, 201, { path: file });
+    const out = await streamToFile(req, (n) => (n ? file.replace(/(\.[^./]*)?$/, `-${n}$1`) : file), config.uploads, { declared, quotaDir: UPLOAD_DIR });
+    audit(req, 'file.upload', { path: out.path, bytes: out.bytes });
+    return send(res, 201, { path: out.path, bytes: out.bytes });
   }
 
   // ---------- web push
@@ -1129,7 +1142,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
       return { ...body!, results };
     };
     const parts = await Promise.all([
-      ...(selected(hostname()) ? [prefix((p) => search.search(p)).then((body) => ({ host: hostname(), body }))] : []),
+      ...(selected(hostName()) ? [prefix((p) => search.search(p)).then((body) => ({ host: hostName(), body }))] : []),
       ...peers.list().filter((peer) => selected(peer.name)).map(async (peer) => {
         if (!peer.online || !peerUrlAllowed(peer.url)) return { host: peer.name, error: 'offline' };
         try {
@@ -1393,7 +1406,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     // /h/<host>/… addresses a host: ourselves (served here) or a peer (proxied).
     let path = safeDecode(url.pathname);
     const h = path.match(/^\/h\/([\w.-]{1,64})(\/.*)$/);
-    if (h && h[1] !== hostname()) {
+    if (h && h[1] !== hostName()) {
       if (!caller) throw new HttpError(401, 'sign in required');
       const peer = peers.get(h[1]);
       if (!peer) throw new HttpError(502, `host ${h[1]} is offline`);
@@ -1413,12 +1426,16 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     if (method !== 'GET' && method !== 'HEAD') throw new HttpError(405, 'method not allowed');
     await serveStatic(req, res, url.pathname);
   } catch (err) {
-    const status = err instanceof HttpError || err instanceof CoreError || err instanceof AuthError || err instanceof FsError || err instanceof SideChatError ? err.status : err instanceof GitError ? 400 : 500;
+    const status = err instanceof HttpError || err instanceof CoreError || err instanceof AuthError || err instanceof FsError || err instanceof SideChatError || err instanceof UploadError ? err.status : err instanceof GitError ? 400 : 500;
     if (status === 500) console.error(err);
     // A failure mid-stream (e.g. a download) can't be turned into a JSON error any more.
     if (res.headersSent) return res.destroy();
     const stderr = (err as { stderr?: string }).stderr;
-    send(res, status, { error: status === 500 ? 'internal error' : stderr?.trim() || (err as Error).message });
+    // `code`: ah's own stable reason, for clients to branch on. Never a system error's code.
+    const code = (err instanceof HttpError || err instanceof FsError || err instanceof UploadError || err instanceof CoreError) && typeof (err as { code?: unknown }).code === 'string' ? (err as { code: string }).code : undefined;
+    // A refused body the client is still sending isn't read: close instead of draining it.
+    if (status === 413 || status === 507) res.setHeader('connection', 'close');
+    send(res, status, { error: status === 500 ? 'internal error' : stderr?.trim() || (err as Error).message, ...(code ? { code } : {}) });
   }
 }
 
@@ -1476,8 +1493,8 @@ function upgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
   if (!m) return reject('404 Not Found');
   if (!caller) return reject('401 Unauthorized');
   const [, host, windowId] = m;
-  const peer = host && host !== hostname() ? peers.get(host) : null;
-  if (host && host !== hostname() && !peer) return reject('502 Bad Gateway');
+  const peer = host && host !== hostName() ? peers.get(host) : null;
+  if (host && host !== hostName() && !peer) return reject('502 Bad Gateway');
 
   wss.handleUpgrade(req, socket, head, (ws) => {
     ws.on('pong', () => missed.delete(ws));
@@ -1532,6 +1549,11 @@ search.start();
 peers.start();
 
 const server: Server = createServer(handle);
+// No whole-request deadline: a long upload over a phone's link must not be cut at
+// five minutes. Small bodies have their own timeout (readBody), uploads an idle one.
+server.requestTimeout = 0;
+await mkdir(UPLOAD_DIR, { recursive: true, mode: 0o700 }).catch(() => {});
+void sweepParts(UPLOAD_DIR).catch(() => {});
 server.on('upgrade', upgrade);
 server.listen(PORT, HOST, async () => {
   const { port } = server.address() as AddressInfo;

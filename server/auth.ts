@@ -15,7 +15,8 @@
 //   domains through its public CDN, which can't reach a private ts.net name.
 import { createHash, createHmac, createPublicKey, randomBytes, scrypt as scryptCb, timingSafeEqual, verify as verifySignature } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'node:fs';
-import { homedir, hostname } from 'node:os';
+import { homedir } from 'node:os';
+import { hostName } from './host.ts';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { IncomingMessage } from 'node:http';
@@ -364,8 +365,8 @@ export class Auth {
     const options = await generateRegistrationOptions({
       rpName: 'ah',
       rpID,
-      userName: `ah@${hostname()}`,
-      userDisplayName: `ah on ${hostname()}`,
+      userName: `ah@${hostName()}`,
+      userDisplayName: `ah on ${hostName()}`,
       userID: Buffer.from(this.store.userId),
       attestationType: 'none',
       excludeCredentials: this.store.passkeys.filter((p) => p.rpID === rpID).map((p) => ({ id: p.id, transports: p.transports as never })),

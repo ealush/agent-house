@@ -4,7 +4,7 @@
 //
 // Synchronous in-memory API (hot paths in tick/send read it constantly) with
 // SQLite as the durable backing: one ah.db per host, written fire-and-forget.
-import { hostname } from 'node:os';
+import { hostName } from './host.ts';
 import { randomUUID } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
 import { defaultDbPath, getDb } from './db.ts';
@@ -179,6 +179,14 @@ export class Registry {
     return randomUUID().slice(0, 8);
   }
 
+  /** A uid no record here holds yet: 32 random bits rarely collide, but a collision would merge two sessions. */
+  freshId(): string {
+    for (;;) {
+      const id = Registry.newId();
+      if (!this.records.has(id) && !this.removed.has(id)) return id;
+    }
+  }
+
   /** Resolves once stored rows have merged into memory. Tests only. */
   ready(): Promise<void> {
     return this.load();
@@ -202,7 +210,7 @@ export class Registry {
     const prev = this.records.get(id);
     const next: SessionRecord = {
       id,
-      host: hostname(),
+      host: hostName(),
       harness: f.harness,
       harnessId: f.harnessId || (prev?.harness === f.harness ? prev.harnessId : undefined),
       cwd: f.cwd,
@@ -228,7 +236,7 @@ export class Registry {
     const prev = this.records.get(id);
     this.records.set(id, {
       id,
-      host: hostname(),
+      host: hostName(),
       harness: f.harness,
       harnessId: f.harnessId ?? prev?.harnessId,
       cwd: f.cwd,
@@ -308,7 +316,7 @@ export class Registry {
     for (const r of this.records.values()) {
       const running = r.lifecycle === 'live' || r.lifecycle === 'starting';
       const grace = r.lifecycle === 'starting' && t - r.lastActivityAt < 10;
-      if (running && r.host === hostname() && !alive.has(r.id) && !grace) {
+      if (running && r.host === hostName() && !alive.has(r.id) && !grace) {
         r.lifecycle = 'ended';
         r.status = 'ended';
         r.endedAt = t;

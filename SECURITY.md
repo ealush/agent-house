@@ -63,6 +63,7 @@ repository, or email the maintainer. Don't file a public issue.
 | Native push: only a native sign-in registers an APNs token; signing out, revocation or removing the device drops it; tokens go only to Apple's origins | `test/security/apns.test.ts`, `server/apns.test.ts` |
 | Hub never forwards cookies, never follows redirects, never uses plain-http LAN peers | `peers.test.ts` |
 | Files: configured roots only, symlinks resolved, uploads 0600, downloads sandboxed | `files.test.ts`, `server/files.test.ts` |
+| Uploads stream to a hidden part file and take their name only when whole; size, upload-folder total and free disk space are capped (`uploads` in config); refused, cut or stalled uploads leave nothing behind; names can't leave the folder | `test/reliability.test.ts` |
 | Setup codes spent only after a passkey verifies; throttling per mechanism/source | `server/auth.test.ts` |
 | Unreadable auth state stops startup instead of starting empty | `server/auth.test.ts` |
 | ah crashing or being killed never kills sessions | `test/tmux.test.ts` |
@@ -82,7 +83,10 @@ All under `~/.local/state/ah/` (mode 0700 directory, 0600 files):
 | `apns.json` | the native app's APNs device tokens, each tied to the native sign-in that registered it (dropped when that sign-in ends). The APNs signing key itself is wherever `apns.keyFile` points |
 | `drafts.json` | unsent composer text per session (may contain anything you typed or pasted), so it follows you between devices; cleared when sent or emptied, dropped after 14 days untouched |
 
-Uploads go to `~/.cache/ah/uploads/` (0600).
+Uploads go to `~/.cache/ah/uploads/` (0600), streamed to disk: by default up to 4 GB a
+file, 20 GB for the folder, and never below 1 GB free on the disk (`uploads.maxBytes`,
+`maxTotalBytes`, `minFreeBytes`; an upload that sends nothing for `idleMs`, 2 minutes,
+is dropped). Part files a crash left behind are swept at the next start.
 
 Previews (a session's dev server, `server/preview.ts`) are proxied on ports of their
 own (47600–47699 by default), each published with `tailscale serve`. A preview requires the

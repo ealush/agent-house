@@ -5,7 +5,8 @@
 import webpush from 'web-push';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { homedir, hostname } from 'node:os';
+import { homedir } from 'node:os';
+import { hostName } from './host.ts';
 import { dirname, join } from 'node:path';
 import type { WindowView } from './sessions.ts';
 import type { Apns } from './apns.ts';
@@ -39,7 +40,7 @@ export class Push {
     try {
       if (existsSync(SUBS_FILE)) for (const d of JSON.parse(readFileSync(SUBS_FILE, 'utf8')) as Device[]) this.devices.set(d.subscription.endpoint, d);
     } catch {}
-    webpush.setVapidDetails(`mailto:ah@${hostname()}.local`, this.keys.publicKey, this.keys.privateKey);
+    webpush.setVapidDetails(`mailto:ah@${hostName()}.local`, this.keys.publicKey, this.keys.privateKey);
   }
 
   get publicKey() {
@@ -106,7 +107,7 @@ export class Push {
         body: payload.body,
         tag: payload.tag,
         route: payload.url.replace(/^\/#/, ''),
-        host: hostname(),
+        host: hostName(),
         badge: Number(payload.badge ?? this.lastWaiting()),
         answerable,
       });

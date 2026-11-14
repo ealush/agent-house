@@ -166,11 +166,33 @@ export async function hasSession(name: string): Promise<boolean> {
  * Creates a window (and its session if needed) running the user's default shell.
  * `env` is set for that window's shell only (tmux -e), not tmux's global environment.
  */
-export async function createWindow(opts: { session: string; cwd: string; name: string; env?: Record<string, string> }): Promise<string> {
+export function createWindow(opts: { session: string; cwd: string; name: string; env?: Record<string, string> }): Promise<string> {
+  // Two creates into a session that doesn't exist yet would both see it missing and
+  // both run new-session; the second fails ("duplicate session"). In this process
+  // they take turns per session name; another process racing us is caught below.
+  const prior = creating.get(opts.session) ?? Promise.resolve();
+  const task = prior.catch(() => {}).then(() => createWindowNow(opts));
+  creating.set(opts.session, task);
+  return task.finally(() => {
+    if (creating.get(opts.session) === task) creating.delete(opts.session);
+  });
+}
+
+const creating = new Map<string, Promise<string>>();
+
+async function createWindowNow(opts: { session: string; cwd: string; name: string; env?: Record<string, string> }): Promise<string> {
   const env = Object.entries(opts.env ?? {});
   const fmt = ['-P', '-F', '#{window_id}', ...env.flatMap(([k, v]) => ['-e', `${k}=${v}`])];
-  if (await hasSession(opts.session)) return (await tmux('new-window', '-d', '-t', `=${opts.session}:`, '-n', opts.name, '-c', opts.cwd, ...fmt)).trim();
-  const out = await tmux('new-session', '-d', '-s', opts.session, '-n', opts.name, '-c', opts.cwd, ...fmt);
+  const newWindow = async () => (await tmux('new-window', '-d', '-t', `=${opts.session}:`, '-n', opts.name, '-c', opts.cwd, ...fmt)).trim();
+  if (await hasSession(opts.session)) return newWindow();
+  let out: string;
+  try {
+    out = await tmux('new-session', '-d', '-s', opts.session, '-n', opts.name, '-c', opts.cwd, ...fmt);
+  } catch (err) {
+    // Someone else (the CLI, another ah) made the session between our check and now.
+    if (/duplicate session/i.test(String((err as { stderr?: string }).stderr ?? err))) return newWindow();
+    throw err;
+  }
   // new-session -e also sets the session's environment, which later windows
   // inherit: once the first shell has started with it, take it back off the
   // session so a variable removed in Settings doesn't linger there.

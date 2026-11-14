@@ -7,12 +7,16 @@ import { basename, dirname, extname, join, resolve, sep } from 'node:path';
 import type { ServerResponse } from 'node:http';
 import { pipeline } from 'node:stream/promises';
 import type { Readable } from 'node:stream';
+import { admit, declaredLength, streamToFile, UploadError, DEFAULT_UPLOAD_LIMITS, type UploadLimits } from './uploads.ts';
 
 export class FsError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  /** A stable machine-readable reason (`upload_too_large`, …) when there is one. */
+  code?: string;
+  constructor(status: number, message: string, code?: string) {
     super(message);
     this.status = status;
+    if (code) this.code = code;
   }
 }
 
@@ -118,32 +122,23 @@ export async function sendFile(res: ServerResponse, input: string, download: boo
   await pipeline(createReadStream(path), res);
 }
 
-/** Writes an upload into `dir` without overwriting: "a.png" becomes "a (1).png". */
-export async function receive(body: Readable, dirInput: string, rawName: string, limit: number): Promise<string> {
+/** Writes an upload into `dir` without overwriting: "a.png" becomes "a (1).png". Streamed (server/uploads.ts). */
+export async function receive(body: Readable, dirInput: string, rawName: string, limits: UploadLimits | number): Promise<string> {
   const dir = await safePath(dirInput);
   if (!(await stat(dir)).isDirectory()) throw new FsError(400, 'not a directory');
   const name = basename(rawName).replace(/[\x00-\x1f/\\]/g, '_').trim() || 'upload';
   const ext = extname(name);
   const stem = name.slice(0, name.length - ext.length);
-  let target = join(dir, name);
-  for (let i = 1; existsSync(target); i++) target = join(dir, `${stem} (${i})${ext}`);
-
-  // Owner-only: uploads (screenshots, logs) often hold things you wouldn't share.
-  const fh = await open(target, 'wx', 0o600);
-  let size = 0;
+  const lim = typeof limits === 'number' ? { ...DEFAULT_UPLOAD_LIMITS, maxBytes: limits, minFreeBytes: 0 } : limits;
+  const declared = declaredLength(body as never);
   try {
-    for await (const chunk of body) {
-      size += chunk.length;
-      if (size > limit) throw new FsError(413, 'file too large');
-      await fh.write(chunk);
-    }
+    await admit(dir, declared, lim, null);
+    const out = await streamToFile(body, (n) => join(dir, n ? `${stem} (${n})${ext}` : name), lim, { declared });
+    return out.path;
   } catch (err) {
-    await fh.close();
-    await rm(target, { force: true });
+    if (err instanceof UploadError) throw new FsError(err.status, err.message, err.code);
     throw err;
   }
-  await fh.close();
-  return target;
 }
 
 export async function makeDir(input: string): Promise<string> {

@@ -15,6 +15,7 @@ after(() => cleanup(ah));
 // Everything that must require a signed-in caller. Unknown paths too: default deny.
 const PROTECTED: Array<[string, string, unknown?]> = [
   ['GET', '/api/state'],
+  ['GET', '/api/capabilities'],
   ['GET', '/api/events'],
   ['GET', '/api/projects'],
   ['POST', '/api/windows', {}],
@@ -108,8 +109,11 @@ test('public routes are exactly the sign-in surface', async () => {
     // Reachable = not stopped by the gate (it may still reject the bogus code/password itself).
     assert.ok(!(res.status === 401 && /sign in required/.test(res.body)), `${method} ${path} should be reachable before sign-in`);
   }
-  // /api/hello says nothing sensitive.
-  assert.deepEqual(Object.keys((await http(ah, 'GET', '/api/hello')).json()).sort(), ['ah', 'auth', 'hostname']);
+  // /api/hello says nothing sensitive: who it is, whether sign-in is on, and which
+  // feature versions it speaks (numbers only, no limits or paths).
+  const hello = (await http(ah, 'GET', '/api/hello')).json();
+  assert.deepEqual(Object.keys(hello).sort(), ['ah', 'auth', 'features', 'hostname']);
+  assert.ok(Object.values(hello.features).every((v) => typeof v === 'number'), JSON.stringify(hello.features));
 });
 
 test('signed-in browsers and the host token get through; the password stays host-only', async () => {
