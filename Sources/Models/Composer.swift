@@ -267,6 +267,9 @@ final class QueueModel {
     /// Being sent now (a steer can take seconds): a second press goes to the next row.
     private(set) var sending: Set<String> = []
     var isDragging = false
+    /// Every queued message in the tray, not only the next two: kept here, with the session, so
+    /// going to another session and back (or changing the model) leaves the tray as it was.
+    var expanded = false
     private(set) var error: String?
     private var poll: Task<Void, Never>?
 

@@ -48,7 +48,7 @@ final class TourUITests: XCTestCase {
         continueAfterFailure = true
         let app = XCUIApplication()
         // Every tour starts from a fresh window, not wherever the last one left off.
-        app.launchArguments += ["-AHFreshWindow"]
+        app.launchArguments += ["-AHFreshWindow"] + (environment["AH_HUD"] == "1" ? ["-AHLayoutHUD"] : [])
         // As a phone in the hand: no hardware keyboard, whatever the simulator has.
         if environment["AH_TOUCH_ONLY"] == "1" { app.launchArguments += ["-AHTouchOnly"] }
         app.launch()

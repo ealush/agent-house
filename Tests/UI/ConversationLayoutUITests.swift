@@ -205,14 +205,18 @@ final class ConversationLayoutUITests: XCTestCase {
         open(Self.main)
         focusComposer()
         let rest = box.frame
+        let before = transcriptTexts().map(\.label)
         for word in ["streaming", "under", "the", "box", "while", "typing", "a", "few", "words"] {
             composer.typeText(word + " ")
             settle(0.6)
             XCTAssertEqual(box.frame.maxY, rest.maxY, accuracy: 1, "the box moved while the transcript streamed")
         }
         assertBarOnKeyboard("typed while streaming")
-        let newest = transcriptTexts().last { $0.label.hasPrefix("Step ") || $0.label.hasPrefix("After step") || $0.label.contains("passing") }
-        XCTAssertNotNil(newest, "the transcript isn't showing the steps streaming in")
+        // Following the turn: what's in view moved on, and the transcript is held at its end.
+        XCTAssertNotEqual(transcriptTexts().map(\.label), before, "the transcript didn't move on as the turn streamed")
+        if let anchor = (probe()?.json["transcript"] as? [String: Any])?["anchor"] as? String {
+            XCTAssertEqual(anchor, "end", "the transcript let go of the end while it streamed")
+        }
         assertTranscriptDrawn("while streaming")
     }
 
@@ -244,6 +248,8 @@ final class ConversationLayoutUITests: XCTestCase {
         let reading = try XCTUnwrap(middleText())
         let label = reading.label
         back()
+        // An iPad's sidebar stays: away is another session in its place.
+        if !isPhone { open(Self.other) }
         open(Self.main)
         settle(1.5)
         XCTAssertNotNil(transcriptTexts().first { $0.label == label }, "came back somewhere else than where it was left")
@@ -321,6 +327,8 @@ final class ConversationLayoutUITests: XCTestCase {
     private func open(_ title: String, keepDraft: Bool = false) {
         if isPhone, app.tabBars.buttons["Sessions"].exists { app.tabBars.buttons["Sessions"].tap() }
         let row = app.descendants(matching: .any).matching(identifier: "session:\(title)").firstMatch
+        // An iPad in portrait may have put its sidebar away behind the session.
+        if !isPhone, !row.waitForExistence(timeout: 3), app.buttons["Show Sidebar"].exists { app.buttons["Show Sidebar"].tap() }
         XCTAssertTrue(row.waitForExistence(timeout: 15), "no session row for \(title)")
         row.tap()
         XCTAssertTrue(composer.waitForExistence(timeout: 15), "no composer in \(title)")
@@ -331,15 +339,31 @@ final class ConversationLayoutUITests: XCTestCase {
 
     /// A draft left from an earlier test (they're kept per session, across launches) goes first.
     private func clearDraft() {
-        let left = (composer.value as? String) ?? ""
-        guard !left.isEmpty, left != composer.placeholderValue else { return }
-        composer.tap()
-        composer.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: left.count + 2))
-        dismissKeyboardByTap()
+        var cleared = false
+        for _ in 0..<3 {
+            let left = (composer.value as? String) ?? ""
+            guard !left.isEmpty, left != composer.placeholderValue else { break }
+            // All of it selected, then deleted: deleting from a tap's caret left the text after it, and
+            // a tap in the box's corner lands on Send (or Queue) instead.
+            composer.coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: 0.2)).tap()
+            composer.press(forDuration: 1.1)
+            let all = app.menuItems["Select All"].exists ? app.menuItems["Select All"] : app.buttons["Select All"]
+            if all.waitForExistence(timeout: 3) {
+                all.tap()
+                composer.typeText(XCUIKeyboardKey.delete.rawValue)
+            } else {
+                composer.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: left.count + 2))
+            }
+            cleared = true
+        }
+        if cleared { dismissKeyboardByTap() }
     }
 
+    /// Away from the session: a phone goes back to its list; an iPad keeps its sidebar beside the
+    /// session, where the next `open` picks another.
     private func back() {
         if keyboardUp { dismissKeyboardByTap() }
+        guard isPhone else { return }
         let back = app.navigationBars.buttons.firstMatch
         XCTAssertTrue(back.waitForExistence(timeout: 5))
         back.tap()

@@ -58,6 +58,29 @@ UIWindowScene
 7. A geometry value written into observable state is written by one owner, never read back by
    that owner in a tracked method, and never feeds the size of what it was measured from.
 
+## Sizing the dock
+
+The room is `ConversationRoom.available`: from the top of the conversation (under the bars) down to
+the keyboard guide. It's written by `ConversationController` from the guide and the safe area
+alone. Everything in the dock is sized from the room and its own content, in this order of
+priority:
+
+1. **The box** keeps at least one line, and grows to its eight lines only into room the
+   transcript can spare. Its cap is the room less the queue's line, the attachments and the
+   transcript's 120 pt (below 300 pt of room, the transcript's share goes first). Past the cap,
+   the text scrolls inside the box.
+2. **The queue** gets at most 45% of the room, and never so much that the transcript keeps less
+   than 120 pt beside the box. Its line stays put; the list (with uploads and any error) scrolls
+   inside what's left of that share, and the "more" row stays below it. With less than 110 pt for
+   it, the queue keeps to its line, which opens the Queue panel. With less than 170 pt of room in
+   all (a phone on its side, the keyboard up), even the line gives way to the box; the queue is
+   in its panel and the session menu's Send Queued Now. Whether it's opened all the way is kept
+   on the session's queue (`QueueModel.expanded`), so navigation and model changes leave it be.
+3. **The attachments** sit inside the box, above the text, at their own height: never over the
+   queue, which is above the box.
+4. **The dock** is as tall as all of that. If the room is still too small, the dock is squeezed
+   and clips at its top rather than draw over the bars.
+
 ## Diagnostics
 
 Debug builds launched with `-AHLayoutProbe` record the conversation's geometry after every layout

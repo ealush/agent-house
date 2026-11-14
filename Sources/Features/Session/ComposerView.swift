@@ -45,8 +45,27 @@ struct ComposerView: View {
     @Namespace private var glass
 
     private var hasTray: Bool { ComposerFloat.hasTray(session) }
-    /// Less room than this (a phone on its side with the keyboard up) and the queue keeps to its line.
-    static let roomForQueue: CGFloat = 300
+    /// The most the queue tray may take: under half the conversation's room, and never so much
+    /// that the transcript keeps less than `transcriptKeeps` beside the box. Worked out from the
+    /// room (the keyboard and the bars) and the box, never from the tray itself.
+    private var queueRoom: CGFloat {
+        guard roomHeight.isFinite else { return 320 }
+        return max(0, min(roomHeight * 0.45, roomHeight - boxHeight - 16 - Self.transcriptKeeps))
+    }
+    /// What the transcript keeps above the dock, however long the queue or the draft.
+    static let transcriptKeeps: CGFloat = 120
+    /// Less room than this and the queue's line gives way to the box.
+    static let roomForQueueLine: CGFloat = 170
+    /// The most the text may take: its eight lines (`ComposerTextField`), and no more than the room
+    /// leaves once the queue's line, the attachments and the transcript's share are counted, but
+    /// always a line. Short of room, the box comes first: the transcript's share goes before it.
+    private var textCap: CGFloat {
+        guard roomHeight.isFinite else { return .infinity }
+        let queueLine: CGFloat = session.queue.isEmpty || roomHeight < Self.roomForQueueLine ? 0 : 60
+        let tiles: CGFloat = composer.attachments.isEmpty ? 0 : 76
+        let keeps = roomHeight > 300 ? Self.transcriptKeeps : 0
+        return max(ComposerTextView.leastHeight, roomHeight - queueLine - tiles - 36 - keeps)
+    }
     private var showsTray: Bool { trayOpen && hasTray && composer.suggestions.isEmpty }
 
     var body: some View {
@@ -54,19 +73,23 @@ struct ComposerView: View {
             // Folded to its line while you ask for it, while the settings are out above the box
             // (the two together, over a long queue, left a sliver of the conversation), and
             // while the Queue panel shows the same list beside it.
-            QueueTrayView(queue: session.queue, composer: composer, working: session.working, held: session.awaitingTrust, hardwareKeyboard: scene.hardwareKeyboard,
-                          folded: scene.app.preferences.queueFolded || showsTray || session.panel == .queue || roomHeight < Self.roomForQueue,
-                          listCap: max(80, roomHeight * 0.35),
-                          // Too little room to open it here: the line opens the Queue panel (a
-                          // sheet on a phone), where the whole list fits.
-                          toggleFold: {
-                              if roomHeight < Self.roomForQueue, SceneSnapshot.Panel.queue.applies(to: session) {
-                                  session.panel = .queue
-                              } else {
-                                  withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { scene.app.preferences.queueFolded.toggle() }
-                              }
-                          },
-                          showInPanel: SceneSnapshot.Panel.queue.applies(to: session) ? { session.panel = .queue } : nil)
+            // With hardly any room (a phone on its side, the keyboard up), not even its line: the box
+            // comes first, and the queue is a tap away in its panel (and the menu's Send Queued Now).
+            if roomHeight >= Self.roomForQueueLine {
+                QueueTrayView(queue: session.queue, composer: composer, working: session.working, held: session.awaitingTrust, hardwareKeyboard: scene.hardwareKeyboard,
+                              folded: scene.app.preferences.queueFolded || showsTray || session.panel == .queue,
+                              maxHeight: queueRoom,
+                              // Too little room to open it here: the line opens the Queue panel (a
+                              // sheet on a phone), where the whole list fits.
+                              toggleFold: {
+                                  if queueRoom < QueueTrayView.leastOpen, SceneSnapshot.Panel.queue.applies(to: session) {
+                                      session.panel = .queue
+                                  } else {
+                                      withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { scene.app.preferences.queueFolded.toggle() }
+                                  }
+                              },
+                              showInPanel: SceneSnapshot.Panel.queue.applies(to: session) ? { session.panel = .queue } : nil)
+            }
             if let from = composer.drafts.from {
                 Label("Continued from \(from)", systemImage: "arrow.turn.down.right")
                     .font(.ah(.caption2)).foregroundStyle(theme.muted)
@@ -277,7 +300,7 @@ struct ComposerView: View {
             // The text wraps short of Send, which sits in the box's corner (as Messages has it):
             // beside it in a row, the box was measured at one width and laid out at another,
             // and a long message lost its first line.
-            ComposerTextField(composer: composer, session: session, scene: scene, leadingRoom: attachSize.width > 0 ? attachSize.width + 2 : 0, trailingRoom: sendSize.width > 0 ? sendSize.width + 4 : 0, cornerHeight: sendSize.height)
+            ComposerTextField(composer: composer, session: session, scene: scene, leadingRoom: attachSize.width > 0 ? attachSize.width + 2 : 0, trailingRoom: sendSize.width > 0 ? sendSize.width + 4 : 0, cornerHeight: sendSize.height, maxHeight: textCap)
                 .frame(minHeight: control - 12)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { textHeight = $0 }
         }
@@ -917,6 +940,8 @@ struct ComposerTextField: UIViewRepresentable {
     var trailingRoom: CGFloat = 0
     /// How tall that button is: a long message's scroll bar stops above it.
     var cornerHeight: CGFloat = 0
+    /// The most the box may be (the room the conversation has); past it, the text scrolls inside.
+    var maxHeight: CGFloat = .infinity
     @Environment(\.theme) private var theme
 
     func makeUIView(context: Context) -> ComposerTextView {
@@ -1010,7 +1035,8 @@ struct ComposerTextField: UIViewRepresentable {
         // SwiftUI asks several times a pass, at the same few widths: each answer is kept until
         // the text, the width or the type size changes.
         let key = Coordinator.Measure(text: uiView.text ?? "", lines: lines, line: line)
-        if let kept = context.coordinator.measured[key] { return CGSize(width: width, height: kept) }
+        let cap = max(ComposerTextView.leastHeight, maxHeight)
+        if let kept = context.coordinator.measured[key] { return CGSize(width: width, height: min(kept, cap)) }
         let text = uiView.attributedText ?? NSAttributedString()
         var height = text.boundingRect(with: CGSize(width: max(lines, 1), height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil).height
         // A new line just begun counts before anything is typed on it.
@@ -1023,7 +1049,7 @@ struct ComposerTextField: UIViewRepresentable {
         let fitted = min(max(height, ComposerTextView.leastHeight), line * 8 + 12)
         if context.coordinator.measured.count > 8 { context.coordinator.measured.removeAll(keepingCapacity: true) }
         context.coordinator.measured[key] = fitted
-        return CGSize(width: width, height: fitted)
+        return CGSize(width: width, height: min(fitted, cap))
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
@@ -1368,19 +1394,25 @@ struct QueueTrayView: View {
     var hardwareKeyboard = false
     /// Only its line: how many, and what goes next.
     var folded = false
-    /// The most the open list may take of the screen; past it, it scrolls inside the tray.
-    var listCap: CGFloat = .infinity
+    /// The most the whole tray may take, its line included: past it, the list scrolls inside the
+    /// tray. Less than `leastOpen` and only the line shows (a phone on its side, the keyboard up).
+    var maxHeight: CGFloat = .infinity
     var toggleFold: () -> Void = {}
     /// The whole queue in the session's Queue panel, to read and arrange it there.
     var showInPanel: (() -> Void)?
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// Every queued message in view, not only what's next.
-    @State private var expanded = false
-    /// How tall the whole list may grow before it scrolls inside the tray: about four rows.
-    @ScaledMetric(relativeTo: .callout) private var fourRows: CGFloat = 200
-    /// The whole list's height, as laid out, so the scroll view is no taller than it.
+    /// The list's own height, the line's and the "more" row's, as laid out: the list's scroll view
+    /// is no taller than its content or than what the tray's budget leaves it. None of them depends
+    /// on the budget, so measuring them can't feed back.
     @State private var listHeight: CGFloat = 0
+    @State private var lineHeight: CGFloat = 52
+    @State private var moreHeight: CGFloat = 0
+    /// A row, about: the least room worth opening the list for, and its height before it's measured.
+    @ScaledMetric(relativeTo: .callout) private var rowHeight: CGFloat = 48
+    /// Less budget than this and the tray keeps to its line.
+    static let leastOpen: CGFloat = 110
+    private var expanded: Bool { queue.expanded }
 
     /// What's next stays in view; the rest fold into a row that says how many. Five long
     /// messages took half the screen over the conversation they were waiting on.
@@ -1388,6 +1420,8 @@ struct QueueTrayView: View {
 
     var body: some View {
         if !queue.isEmpty {
+            // Folded, or no room to open: only the line, which says what goes next.
+            let shut = folded || maxHeight < Self.leastOpen
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 8) {
                     // The line folds the queue, and opens it again.
@@ -1400,10 +1434,10 @@ struct QueueTrayView: View {
                                     Image(systemName: "chevron.down")
                                         .font(.ah(.caption2).weight(.bold))
                                         .foregroundStyle(theme.faint)
-                                        .rotationEffect(.degrees(folded ? -90 : 0))
+                                        .rotationEffect(.degrees(shut ? -90 : 0))
                                 }
                                 // Folded, it still says what goes next.
-                                Text(folded ? (queue.items.first.map { Uploads.summary($0.text) } ?? "Sending…") : held ? "Sent once you answer above" : working ? "Sent one by one when this turn ends" : "Sending…")
+                                Text(shut ? (queue.items.first.map { Uploads.summary($0.text) } ?? "Sending…") : held ? "Sent once you answer above" : working ? "Sent one by one when this turn ends" : "Sending…")
                                     .font(.ah(.caption2)).foregroundStyle(theme.muted).lineLimit(1)
                             }
                         }
@@ -1411,8 +1445,8 @@ struct QueueTrayView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Up next, \(queue.items.count + queue.pendingRows.count) queued")
-                    .accessibilityValue(folded ? "Folded" : "Open")
-                    .accessibilityHint(folded ? "Shows the queued messages" : "Folds the queue to one line")
+                    .accessibilityValue(shut ? "Folded" : "Open")
+                    .accessibilityHint(shut ? "Shows the queued messages" : "Folds the queue to one line")
                     Spacer()
                     if let showInPanel {
                         Button(action: showInPanel) {
@@ -1449,55 +1483,60 @@ struct QueueTrayView: View {
                 .padding(.horizontal, 12)
                 .padding(.top, 10)
                 .padding(.bottom, 6)
-                let folds = queue.items.count > Self.shownFolded + 1
-                if folded {
-                    EmptyView()
-                } else if folds && expanded {
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { lineHeight = $0 }
+                if !shut {
+                    let folds = queue.items.count > Self.shownFolded + 1
+                    let shown = Array(queue.items.enumerated().prefix(folds && !expanded ? Self.shownFolded : queue.items.count))
+                    // The list, with what's still uploading and any error, scrolls inside the tray's
+                    // budget; the line above and the "more" row below stay put.
+                    let room = max(0, maxHeight - lineHeight - (folds ? moreHeight : 0) - 4)
                     ScrollView {
-                        VStack(spacing: 0) { rows(Array(queue.items.enumerated())) }
-                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listHeight = $0 }
+                        VStack(alignment: .leading, spacing: 0) {
+                            rows(shown)
+                            ForEach(queue.pendingRows) { pending in
+                                HStack(spacing: 10) {
+                                    ProgressView().controlSize(.mini).frame(width: 20)
+                                    Text(Uploads.summary(pending.text)).font(.ah(.callout)).foregroundStyle(theme.muted).lineLimit(1)
+                                    Spacer()
+                                    // Queued before its attachments were up: how far they've got.
+                                    if let fraction = composer.outbox.progress(pending) {
+                                        Text(fraction >= 0.995 ? "Finishing the upload" : "Uploading \(Int((fraction * 100).rounded()))%").font(.ah(.caption2)).monospacedDigit().foregroundStyle(theme.faint)
+                                            .contentTransition(.numericText())
+                                    }
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                            }
+                            if let error = queue.error {
+                                Label(error, systemImage: "exclamationmark.triangle.fill").font(.ah(.caption)).foregroundStyle(theme.danger).padding(.horizontal, 12).padding(.bottom, 8)
+                            }
+                        }
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listHeight = $0 }
                     }
                     .scrollBounceBehavior(.basedOnSize)
-                    .frame(height: listHeight > 0 ? min(listHeight, fourRows, listCap) : min(fourRows, listCap))
-                } else {
-                    rows(Array(queue.items.enumerated().prefix(folds ? Self.shownFolded : queue.items.count)))
-                }
-                if folds && !folded {
-                    Button {
-                        withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { expanded.toggle() }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "chevron.down")
-                                .font(.ah(.caption2).weight(.bold))
-                                .rotationEffect(.degrees(expanded ? 180 : 0))
-                            Text(expanded ? "Show less" : "\(queue.items.count - Self.shownFolded) more")
-                                .font(.ah(.caption).weight(.semibold))
-                            Spacer()
+                    .scrollIndicators(listHeight > room ? .automatic : .hidden)
+                    .frame(height: min(listHeight > 0 ? listHeight : rowHeight * CGFloat(shown.count + queue.pendingRows.count), room))
+                    if folds {
+                        Button {
+                            withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { queue.expanded.toggle() }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "chevron.down")
+                                    .font(.ah(.caption2).weight(.bold))
+                                    .rotationEffect(.degrees(expanded ? 180 : 0))
+                                Text(expanded ? "Show less" : "\(queue.items.count - Self.shownFolded) more")
+                                    .font(.ah(.caption).weight(.semibold))
+                                Spacer()
+                            }
+                            .foregroundStyle(theme.muted)
+                            .padding(.horizontal, 14)
+                            .frame(minHeight: 32)
+                            .contentShape(Rectangle())
                         }
-                        .foregroundStyle(theme.muted)
-                        .padding(.horizontal, 14)
-                        .frame(minHeight: 32)
-                        .contentShape(Rectangle())
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(expanded ? "Show fewer queued messages" : "Show \(queue.items.count - Self.shownFolded) more queued messages")
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { moreHeight = $0 }
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(expanded ? "Show fewer queued messages" : "Show \(queue.items.count - Self.shownFolded) more queued messages")
-                }
-                ForEach(queue.pendingRows) { pending in
-                    HStack(spacing: 10) {
-                        ProgressView().controlSize(.mini).frame(width: 20)
-                        Text(Uploads.summary(pending.text)).font(.ah(.callout)).foregroundStyle(theme.muted).lineLimit(1)
-                        Spacer()
-                        // Queued before its attachments were up: how far they've got.
-                        if let fraction = composer.outbox.progress(pending) {
-                            Text(fraction >= 0.995 ? "Finishing the upload" : "Uploading \(Int((fraction * 100).rounded()))%").font(.ah(.caption2)).monospacedDigit().foregroundStyle(theme.faint)
-                                .contentTransition(.numericText())
-                        }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                }
-                if let error = queue.error {
-                    Label(error, systemImage: "exclamationmark.triangle.fill").font(.ah(.caption)).foregroundStyle(theme.danger).padding(.horizontal, 12).padding(.bottom, 8)
                 }
             }
             .padding(.bottom, 4)

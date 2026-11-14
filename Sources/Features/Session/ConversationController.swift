@@ -158,6 +158,10 @@ final class ConversationController: UIViewController {
             transcript.additionalSafeAreaInsets = UIEdgeInsets(top: 0, left: 0, bottom: extra, right: 0)
         }
         scroll.controller?.setInsets(top: view.safeAreaInsets.top, bottom: bottom)
+        // Squeezed below its content's height (a room too small even for the box's least): what
+        // doesn't fit is cut off at the dock's top, never drawn up over the bars.
+        let squeezed = dock.view.bounds.height + 0.5 < dockHeight.constant
+        if dock.view.clipsToBounds != squeezed { dock.view.clipsToBounds = squeezed }
         // A drag down the transcript takes the keyboard with it once it reaches the dock.
         let padding = dock.view.frame.height
         if abs(view.keyboardLayoutGuide.keyboardDismissPadding - padding) > 0.5 { view.keyboardLayoutGuide.keyboardDismissPadding = padding }
