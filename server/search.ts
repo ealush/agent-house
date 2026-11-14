@@ -41,6 +41,8 @@ export type SearchParams = {
   from?: number;
   to?: number;
   order?: 'recent';
+  /** Only these conversations: session uids or `harness:harnessId` keys (a lineage, server/portable). */
+  refs?: string[];
 };
 
 export type SearchExcerpt = { seq: number | null; msgId: number | null; role: string; at: number; snippet: string };
@@ -566,6 +568,7 @@ export class SearchIndexer {
       if (params.from) filters.push(Prisma.sql`at >= ${params.from}`);
       if (params.to) filters.push(Prisma.sql`at <= ${params.to}`);
       if (params.model) filters.push(Prisma.sql`instr(lower(model), lower(${params.model})) > 0`);
+      if (params.refs) filters.push(params.refs.length ? Prisma.sql`(ref IN (${Prisma.join(params.refs)}) OR (harness || ':' || harness_id) IN (${Prisma.join(params.refs)}))` : Prisma.sql`0`);
       const rows = await this.db.$queryRaw<Array<Record<string, unknown>>>`
         WITH matched AS MATERIALIZED (
           SELECT uid, ref, harness, harness_id, cwd, title, seq, role, at,
@@ -586,6 +589,7 @@ export class SearchIndexer {
       if (params.project) filters.push(Prisma.sql`uid IN (SELECT uid FROM Session WHERE instr(lower(cwd), lower(${params.project})) > 0)`);
       if (params.from) filters.push(Prisma.sql`at >= ${params.from}`);
       if (params.to) filters.push(Prisma.sql`at <= ${params.to}`);
+      if (params.refs) filters.push(params.refs.length ? Prisma.sql`uid IN (${Prisma.join(params.refs)})` : Prisma.sql`0`);
       const rows = await this.db.$queryRaw<Array<Record<string, unknown>>>`
         WITH matched AS MATERIALIZED (
           SELECT uid, msg_id, title, role, at,

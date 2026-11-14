@@ -64,7 +64,31 @@ export type WindowView = {
   feed: string | null;
   /** Fork lineage (F36): this session is a fork, and how many forks it has. Null when neither. */
   fork: { parentUid: string; parentTitle: string; rootUid: string; forks: number } | null;
+  /** Portable lineage: this session continues another conversation (server/portable). Null when it doesn't. */
+  continued: Continued | null;
 };
+
+/**
+ * Where a session's conversation came from, when ah carried it over from another one
+ * (`ah.continued` meta). `kind` says what transferred: `portable` a reconstructed
+ * record, `fork` a native copy, `migration` the transcript from another host.
+ */
+export type Continued = { linkId: string; fromUid: string | null; fromHarness: string; fromTitle: string; fromHost?: string; kind: 'resume' | 'fork' | 'portable' | 'import' | 'migration'; strategy: string; at: number };
+
+export function continuedOf(r: SessionRecord): Continued | null {
+  const c = r.meta['ah.continued'] as Partial<Continued> | undefined;
+  if (!c || typeof c.linkId !== 'string' || typeof c.fromHarness !== 'string' || typeof c.kind !== 'string') return null;
+  return {
+    linkId: c.linkId,
+    fromUid: typeof c.fromUid === 'string' ? c.fromUid : null,
+    fromHarness: c.fromHarness,
+    fromTitle: typeof c.fromTitle === 'string' ? c.fromTitle : '',
+    ...(typeof c.fromHost === 'string' ? { fromHost: c.fromHost } : {}),
+    kind: c.kind,
+    strategy: typeof c.strategy === 'string' ? c.strategy : '',
+    at: typeof c.at === 'number' ? c.at : 0,
+  };
+}
 
 export type Ask = {
   kind: 'command' | 'tool' | 'question' | 'screen' | 'choice';
@@ -109,6 +133,8 @@ export type HistoryItem = {
   worktree: string | null;
   /** Fork lineage (F36): the title of the session this one was forked from. */
   fork: { parentTitle: string } | null;
+  /** Portable lineage: the conversation this one continues (see WindowView.continued). */
+  continued: Continued | null;
 };
 
 const HOME = homedir();
@@ -626,6 +652,7 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
             forks,
           };
         })(),
+        continued: continuedOf(rec),
       };
     }),
   );
@@ -742,6 +769,7 @@ export async function buildHistory(registry: Registry, windows: WindowView[]): P
       pinned: false,
       worktree: null,
       fork: null,
+      continued: null,
     });
   }
   return items.sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.at - a.at).slice(0, 150);
@@ -764,5 +792,6 @@ function fromRecord(r: SessionRecord, t?: Transcript): HistoryItem {
     pinned: !!r.meta['ah.pinned'],
     worktree: wt?.path ? shortPath(wt.path) : null,
     fork: fork ? { parentTitle: fork.rootTitle } : null,
+    continued: continuedOf(r),
   };
 }

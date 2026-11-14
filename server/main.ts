@@ -8,7 +8,7 @@
 //   4. Default deny: every route needs a signed-in device or machine token, except the
 //      short PUBLIC list below (sign-in itself).
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http';
-import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
+import { readFile, readdir, mkdir, writeFile, stat } from 'node:fs/promises';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { homedir } from 'node:os';
@@ -35,7 +35,7 @@ import { listeningPorts } from './procs.ts';
 import * as t from './tmux.ts';
 import { createWorktree, initRepo, changes, listBranches, switchBranch, pullRequest, GitError } from './git.ts';
 import { SideChatStore, SideChatError, changeContext } from './sidechat.ts';
-import { ensureMigrated, getDb } from './db.ts';
+import { ensureClient, ensureMigrated, getDb } from './db.ts';
 import { importLegacyJson } from './migrate.ts';
 import { FsError, dirStatus, list, makeDir, receive, sendFile, setRoots, roots, clearUploadDir, safePath } from './files.ts';
 import { Peers, proxyHttp, proxyWs, peerUrlAllowed } from './peers.ts';
@@ -55,6 +55,12 @@ import { hooksStatus, installClaude, installCodex, uninstallClaude, uninstallCod
 import { ReviewService, readTextFile, type SessionLite } from './review/service.ts';
 import { reviewApi } from './review/api.ts';
 import { conversationKey } from './registry.ts';
+import { PortableService, type Resolved } from './portable/service.ts';
+import { PortableStore } from './portable/store.ts';
+import { portableApi } from './portable/api.ts';
+import { fileContains } from './portable/extract.ts';
+import { discover } from './discovery.ts';
+import { copyTranscript, removeCopiedTranscript } from './fork.ts';
 
 let config: Config;
 try {
@@ -138,6 +144,84 @@ const review = new ReviewService(getDb(), sidechat, {
   },
 });
 core.reviewState = () => review.state();
+
+// Portable conversations (server/portable): continuing a conversation in another agent,
+// with its lineage. Sessions start only from configured agents, through core.launch.
+const findTranscript = async (harness: string, harnessId: string) => {
+  const adapter = core.presets().find((p) => p.id === harness)?.feed ?? harness;
+  const pick = (list: Awaited<ReturnType<typeof discover>>) => list.find((x) => x.harness === adapter && x.harnessId === harnessId) ?? null;
+  // The cached scan first; a conversation that started since it was taken needs a fresh one.
+  return pick(await discover()) ?? pick(await discover(0));
+};
+/** A session uid or `harness:harnessId`, as the portable layer needs it. */
+async function resolveConversation(ref: string): Promise<Resolved | null> {
+  const state = await core.current();
+  const live = state.windows.find((w) => w.uid === ref);
+  const rec = core.registry.get(ref);
+  let harness: string | null;
+  let harnessId: string | null;
+  let cwd: string;
+  let title: string;
+  let model: string | null;
+  if (live || rec) {
+    harness = live?.agent ?? rec?.harness ?? null;
+    harnessId = live?.harnessId ?? rec?.harnessId ?? null;
+    cwd = expandHome(rec?.cwd ?? live!.cwd);
+    title = live?.title || rec?.title || '';
+    model = live?.model ?? rec?.model ?? null;
+  } else {
+    const i = ref.indexOf(':');
+    if (i <= 0) return null;
+    const found = await findTranscript(ref.slice(0, i), ref.slice(i + 1));
+    if (!found) return null;
+    const known = core.registry.all().find((r) => r.harness === ref.slice(0, i) && r.harnessId === found.harnessId);
+    if (known) return resolveConversation(known.id);
+    [harness, harnessId, cwd, title, model] = [ref.slice(0, i), found.harnessId, found.cwd, found.title, found.model ?? null];
+  }
+  if (!harness) return null;
+  const file = harnessId ? (await findTranscript(harness, harnessId))?.file ?? null : null;
+  // Busy by the agent's own hooks only: output alone (a terminal attaching redraws the
+  // screen) is a guess, and a guess shouldn't refuse a continuation.
+  return { uid: live?.uid ?? rec?.id ?? null, harness, harnessId, cwd, title, file, model, live: !!live, busy: live?.status === 'busy' && live.statusSource === 'hook', session: rec?.tmux?.session ?? null };
+}
+
+const portable = new PortableService(new PortableStore(getDb()), {
+  host: hostName,
+  presets: () => core.presets(),
+  available: (id) => core.presetAvailable(id),
+  resolve: resolveConversation,
+  transcripts: () => discover(1000),
+  record: (uid) => core.registry.get(uid),
+  freshUid: () => core.registry.freshId(),
+  launch: async (o) => {
+    const preset = await withCatalog(core.preset(o.preset));
+    const plan = buildLaunch(preset, { ...o.sel, ...(o.resume ? { resume: o.resume } : {}) });
+    const session = o.session && (await t.hasSession(o.session)) ? o.session : config.defaultSession;
+    const out = await core.launch({ preset, cwd: o.cwd, session, name: o.name, command: plan.command, uid: o.uid, harnessId: o.resume, pendingResume: !!o.resume, meta: { ...plan.meta, ...o.meta, 'ah.order': core.nextOrder() } });
+    await core.refreshTmuxPath();
+    return out;
+  },
+  send: (uid, text, id) => core.send(uid, text, true, undefined, { id, remember: false }),
+  transcriptHas: async (uid, needle, from) => {
+    const rec = core.registry.get(uid);
+    const found = rec?.harnessId ? await findTranscript(rec.harness, rec.harnessId) : null;
+    return found ? fileContains(found.file, needle, from) : false;
+  },
+  copyTranscript: (harness, file, cwd, upto) => copyTranscript(harness, file, cwd, upto),
+  removeCopy: (file) => removeCopiedTranscript(file),
+  worktree: (cwd, name) => createWorktree(cwd, name),
+  checkLaunch: async (id, sel) => {
+    buildLaunch(await withCatalog(core.preset(id)), sel);
+  },
+  fork: async (ref, o) => {
+    const out = await core.fork(ref, { name: o.name, model: o.model, effort: o.effort, mode: o.mode });
+    return { uid: out.uid, harnessId: out.harnessId };
+  },
+  isDir: async (p) => !!(await stat(p).catch(() => null))?.isDirectory(),
+  uploadDirs: () => [UPLOAD_DIR],
+  changed: () => void core.tick().catch(() => {}),
+});
+core.afterTick.add(() => portable.reconcile());
 const gate = new Gate();
 
 // Browser previews (server/preview.ts): a session's dev server behind ah's own
@@ -294,6 +378,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     if (what === 'terminate') method = 'DELETE';
   }
   if (path.startsWith('/api/review/')) return reviewApi(req, res, url, path, review, audit);
+  if (path.startsWith('/api/portable/')) return portableApi(req, res, url, path, portable, audit);
 
   if (route('GET', /^\/api\/state$/)) return send(res, 200, await core.current());
 
@@ -1118,7 +1203,12 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
 
   if (route('GET', /^\/api\/search\/status$/)) return send(res, 200, await search.status());
 
-  if (route('GET', /^\/api\/search$/)) return send(res, 200, await search.search(searchParams(url)));
+  if (route('GET', /^\/api\/search$/)) {
+    // ?lineage=<ref>: across every conversation that ref's lineage holds (forks, continuations in other agents).
+    const lineage = url.searchParams.get('lineage');
+    if (lineage && !/^[\w:.-]{1,80}$/.test(lineage)) throw new HttpError(400, 'invalid lineage');
+    return send(res, 200, await search.search({ ...searchParams(url), ...(lineage ? { refs: await portable.lineageKeys(lineage) } : {}) }));
+  }
 
   if (route('GET', /^\/api\/search\/all$/)) {
     // Hub fan-out: our own results plus every peer's, merged. A peer that is
@@ -1529,6 +1619,12 @@ await Promise.all([gate.watch(), t.cleanupViewers(), t.ensureServer()]);
 // SQLite is the durable state now: deploy schema, import any pre-Prisma JSON
 // once (idempotent), then seed the in-memory mirrors before the first tick.
 await ensureMigrated();
+// An update that added tables needs the database client regenerated, which only a
+// fresh process loads: exit non-zero so the service manager starts ah again.
+if ((await ensureClient().catch((err) => (console.error((err as Error).message), 'current'))) === 'regenerated') {
+  console.error('ah updated its database client for the new schema; restarting to load it.');
+  process.exit(75);
+}
 await importLegacyJson(getDb()).then(
   (c) => console.log('imported legacy state:', JSON.stringify(c)),
   (err) => console.error('legacy import failed:', err),
@@ -1543,6 +1639,11 @@ try {
   process.exit(1);
 }
 await core.loadPrompts();
+// Continuations a restart interrupted: watched again, or marked failed if nothing launched.
+await portable.recover().then(
+  (r) => (r.resumed || r.failed) && console.log(`portable: ${r.resumed} continuation(s) resumed, ${r.failed} marked failed`),
+  (err) => console.error('portable recovery failed:', err),
+);
 core.start();
 review.start();
 search.start();

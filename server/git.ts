@@ -107,6 +107,24 @@ export async function createWorktree(dir: string, name: string, fromRef?: string
   return { path, branch, repo: main };
 }
 
+/**
+ * The checkout's `origin` URL with any credentials taken out (`https://user:token@…`
+ * keeps only the host and path): a record that names the repository must not carry a key.
+ */
+export async function remoteUrl(dir: string): Promise<string | null> {
+  const raw = (await git(dir, 'remote', 'get-url', 'origin').catch(() => '')).trim();
+  if (!raw) return null;
+  try {
+    const u = new URL(raw);
+    u.username = '';
+    u.password = '';
+    return u.toString().replace(/\/$/, '');
+  } catch {
+    // scp-like (git@github.com:owner/repo.git): no secret in that form.
+    return raw.replace(/^[^@/]+:[^@/]+@/, '');
+  }
+}
+
 export type HeadInfo = { branch: string | null; head: string; dirty: number };
 
 /** Where a checkout stands: current branch, HEAD commit, uncommitted file count. */

@@ -37,6 +37,10 @@ export const HELP = `usage: ah <command>
   wait <target> [--timeout SECS]              block until the agent stops working
   resume <target>                             bring an ended/saved conversation back
   fork <target> [--name N] [--prompt "TEXT"]  copy the conversation into a new worktree session
+  continue <target> --in AGENT [--fork] [--worktree] [--name N] [--preview] [--json]
+                                              carry the conversation into another agent (keeps lineage)
+  portable <target> [--out FILE]              the conversation as a portable document (JSON)
+  lineage <target> [--json]                   where the conversation came from and what came from it
   answer <target> <yes|no|N>                  answer what it's asking: approve, deny, or pick option N
   stop <target>                               stop the agent's current turn
   terminate <target>                          end the session (its conversation stays in history); also: kill
@@ -218,6 +222,58 @@ export async function run(cmd, args) {
       if (prompt !== undefined) body.prompt = prompt;
       const out = await call('POST', `/api/sessions/${encodeURIComponent(ref)}/fork`, body);
       console.log(`${out.uid} ${out.id}  ${out.branch}  ${out.worktree}`);
+      return;
+    }
+    case 'continue': {
+      const to = opt(args, '--in', undefined);
+      if (!to) fail('which agent? --in claude|codex|…');
+      const name = opt(args, '--name', undefined);
+      const preview = flag(args, '--preview');
+      const json = flag(args, '--json');
+      const body = { to, intent: flag(args, '--fork') ? 'fork' : 'continue', ...(flag(args, '--worktree') ? { worktree: true } : {}), ...(name ? { name } : {}) };
+      const found = await find(args[0], { history: true });
+      const ref = encodeURIComponent(found.live?.uid ?? found.past.ref);
+      if (preview) {
+        const plan = await call('POST', `/api/portable/conversations/${ref}/preview`, body);
+        if (json) return console.log(JSON.stringify(plan, null, 2));
+        if (plan.blocked) fail(plan.blocked.message);
+        console.log(`${plan.strategy}: ${plan.source.harness} → ${plan.destination.harness}${plan.destination.worktree ? ' (own worktree)' : ''}`);
+        for (const t of plan.transfers) console.log(`  + ${t}`);
+        for (const l of plan.limitations) console.log(`  - ${l.message}`);
+        return;
+      }
+      const out = await call('POST', `/api/portable/conversations/${ref}/continue`, { ...body, idempotencyKey: `cli:${randomBytes(8).toString('hex')}` });
+      if (json) return console.log(JSON.stringify(out, null, 2));
+      const op = out.operation;
+      console.log(`${op.childUid}  ${op.strategy}  ${op.fromName} → ${op.toName}  (${op.id}, ${op.state})`);
+      return;
+    }
+    case 'portable': {
+      const file = opt(args, '--out', undefined);
+      const found = await find(args[0], { history: true });
+      const out = await call('GET', `/api/portable/conversations/${encodeURIComponent(found.live?.uid ?? found.past.ref)}`);
+      const doc = JSON.stringify(out.conversation, null, 2);
+      if (file) {
+        writeFileSync(file, doc, { mode: 0o600 });
+        console.log(`${out.conversation.id}: ${out.conversation.messages.length} messages → ${file}`);
+      } else console.log(doc);
+      return;
+    }
+    case 'lineage': {
+      const json = flag(args, '--json');
+      const found = await find(args[0], { history: true });
+      const tree = await call('GET', `/api/portable/conversations/${encodeURIComponent(found.live?.uid ?? found.past.ref)}/lineage`);
+      if (json) return console.log(JSON.stringify(tree, null, 2));
+      if (!tree.nodes.length) return console.log('no lineage: this conversation was not carried anywhere, nor from anywhere');
+      const byId = new Map(tree.nodes.map((n) => [n.conversationId, n]));
+      const kids = new Map();
+      for (const e of tree.edges) if (e.childId) kids.set(e.parentId, [...(kids.get(e.parentId) ?? []), e]);
+      const line = (n, depth, via) => {
+        const tag = via ? `${via.kind}/${via.strategy}${via.state === 'linked' ? '' : ` [${via.state}]`} ` : '';
+        console.log(`${'  '.repeat(depth)}${depth ? '└ ' : ''}${tag}${n.harnessName ?? n.harness ?? '?'}: ${n.title || '(untitled)'}${n.uids.length ? `  ${n.uids.join(' ')}` : ''}${n.current ? '  ← this' : ''}`);
+        for (const e of kids.get(n.conversationId) ?? []) if (byId.has(e.childId)) line(byId.get(e.childId), depth + 1, e);
+      };
+      line(byId.get(tree.root), 0, null);
       return;
     }
     case 'send': {

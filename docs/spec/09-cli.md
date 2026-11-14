@@ -22,6 +22,9 @@ never guessed). `ah list` shows titles and the shared status words.
 | `wait <target> [--timeout]` | block until the agent stops working | — |
 | `resume <target>` | bring a conversation back | Resume |
 | `fork <target> [--name] [--prompt]` | fork into a new worktree | Fork session… |
+| `continue <target> --in AGENT [--fork] [--worktree] [--name] [--preview] [--json]` | carry the conversation into another agent, with lineage (CND-2) | Continue in… |
+| `portable <target> [--out FILE]` | the conversation as a portable document | — |
+| `lineage <target> [--json]` | where the conversation came from and what came from it | the ↪ pill |
 | `answer <target> <yes\|no\|N>` | approve, deny, or pick option N of what it is asking (re-checked on screen first) | the ask's options |
 | `stop <target>` | stop the agent's current turn | Stop |
 | `terminate <target>` (also `kill`) | end the session; the conversation stays in History | Terminate session |

@@ -67,6 +67,53 @@ export async function upToDate(path: string, migrations: string): Promise<boolea
   }
 }
 
+/**
+ * Every model and its fields, in order: what the generated client must know. Prisma
+ * copies the schema reformatted (aligned columns, rewritten comments), so the text
+ * itself can't be compared.
+ */
+export function modelShape(schema: string): string {
+  const out: string[] = [];
+  for (const m of schema.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/^model\s+(\w+)\s*\{([\s\S]*?)^\}/gm)) {
+    const fields = m[2]
+      .split('\n')
+      .map((l) => l.replace(/\/\/.*$/, '').trim())
+      .filter((l) => l && !l.startsWith('@@'))
+      .map((l) => l.split(/\s+/).slice(0, 2).join(' '));
+    out.push(`${m[1]}(${fields.join(',')})`);
+  }
+  return out.sort().join(';');
+}
+
+/** The schema the installed Prisma client was generated from (it keeps a copy beside itself). */
+function generatedSchema(): string | null {
+  try {
+    const pkg = dirname(require.resolve('@prisma/client/package.json'));
+    return readFileSync(join(pkg, '..', '..', '.prisma', 'client', 'schema.prisma'), 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * After an update that adds tables, the checkout's schema is newer than the Prisma
+ * client `pnpm install` generated: the new models simply aren't there. Regenerate
+ * it, and say whether the process must restart to load it (an ES module can't be
+ * reloaded in place; systemd's Restart=on-failure brings ah back).
+ */
+export async function ensureClient(): Promise<'current' | 'regenerated'> {
+  const schema = join(dirname(fileURLToPath(import.meta.url)), '..', 'prisma', 'schema.prisma');
+  const generated = generatedSchema();
+  if (generated === null || modelShape(generated) === modelShape(readFileSync(schema, 'utf8'))) return 'current';
+  const cli = join(dirname(require.resolve('prisma/package.json')), 'build', 'index.js');
+  await new Promise<void>((resolve, reject) => {
+    execFile(process.execPath, [cli, 'generate', '--schema', schema], { env: { ...process.env, CHECKPOINT_DISABLE: '1' }, timeout: 120_000 }, (err, stdout, stderr) =>
+      err ? reject(new Error(`prisma generate failed: ${stderr || stdout || err.message}`)) : resolve(),
+    );
+  });
+  return 'regenerated';
+}
+
 /** Apply committed migrations; refuses to start the server without a database. */
 export async function ensureMigrated(path = defaultDbPath()): Promise<void> {
   prepareFile(path);

@@ -281,6 +281,16 @@ the tree, merge order H0 → O13/O14/O15 → F1…O10, plan labels and Codex
 threads all came out right; the first fetch of ten layers takes ~25s, so a
 new stack opens at once and fills in.
 
+## Conductor (from 14 November 2026)
+
+The owner lifted the freeze for ah as an always-on conductor. Spec and protocol:
+[docs/spec/13-conductor.md](docs/spec/13-conductor.md).
+
+| # | Item | | Notes |
+|---|---|---|---|
+| C0 | Reliability | ✅ | Concurrent `POST /api/windows` never collide on a tmux session (ah-native RISKS P1); uploads stream to disk with explicit limits (`uploads`), no 50 MB cap, nothing left behind; `features` announce capabilities without moving `api`. |
+| C1 | Portable conversations | ✅ | `server/portable/`: a versioned document read from any harness's transcript, with provenance and honest limitations; Continue in through the host (preview, native copy back into an agent the lineage started in, else a bounded reconstructed hand-off); lineage edges that survive restarts; lineage search; `ah continue/portable/lineage`. Replaces P13's in-page hand-off where the host supports it. |
+
 ## Design rules
 
 - **Conversation identity is the attachment key.** Transcripts, side-chats, and

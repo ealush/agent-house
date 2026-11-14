@@ -45,6 +45,8 @@ export type Win = {
   feed: string | null;
   /** Fork lineage (F36): this session is a fork, and how many forks it has. */
   fork: { parentUid: string; parentTitle: string; rootUid: string; forks: number } | null;
+  /** Portable lineage: the conversation this one continues (another agent's, a fork, another host's). */
+  continued?: Continued | null;
 };
 
 export type ForkInfo = {
@@ -129,6 +131,7 @@ export type HistoryItem = {
   worktree: string | null;
   /** Fork lineage (F36): the title of the session this one was forked from. */
   fork: { parentTitle: string } | null;
+  continued?: Continued | null;
 };
 
 export type PresetChoice = { id: string; name: string; args?: string[]; dangerous?: boolean; description?: string; appliesTo?: string };
@@ -216,8 +219,31 @@ export type ChatSummary = { uid: string; title: string; count: number; firstAt: 
 export type Followup = { title: string; kind: 'session' | 'chat'; text: string };
 export type ChatReply = { message: ChatMsg; followups: Followup[] };
 
+/** Where a conversation came from when ah carried it over (server/sessions.ts `Continued`). */
+export type Continued = { linkId: string; fromUid: string | null; fromHarness: string; fromTitle: string; fromHost?: string; kind: 'resume' | 'fork' | 'portable' | 'import' | 'migration'; strategy: string; at: number };
+
+export type Limitation = { code: string; message: string; count?: number };
+
+/** POST /api/portable/conversations/:ref/preview: what continuing elsewhere would transfer. */
+export type ContinuePlan = {
+  strategy: 'native-resume' | 'native-fork' | 'ancestor-fork' | 'context-handoff';
+  kind: string;
+  source: { ref: string; uid: string | null; harness: string; title: string; cwd: string; live: boolean; busy: boolean };
+  destination: { harness: string; name: string; cwd: string; worktree: boolean; model?: string; effort?: string; mode?: string };
+  transfers: string[];
+  limitations: Limitation[];
+  blocked: { code: string; message: string } | null;
+  ancestor: { conversationId: string; harness: string; title: string; checkpointLine: number } | null;
+  handoff: { chars: number; messagesIncluded: number; messagesOmitted: number; preview: string } | null;
+};
+
+/** One continuation (a lineage edge) and how far it got. */
+export type ContinueOp = { id: string; kind: string; strategy: string; state: 'preparing' | 'launching' | 'delivering' | 'linked' | 'failed' | 'cancelled'; childUid: string | null; parentUid: string | null; fromHarness: string; toHarness: string; fromName: string; toName: string; error: string | null; limitations: Limitation[] };
+
 export type State = {
   api?: number;
+  /** What the host supports, a version per feature (server/features.ts); absent on older hosts. */
+  features?: Record<string, number>;
   hostname: string;
   hosts: Host[];
   home: string;
@@ -320,6 +346,17 @@ export function setUnauthorizedHandler(fn: () => void) {
   onUnauthorized = fn;
 }
 
+/** A refused request: the host's message, its HTTP status, and its stable `code` when it sent one. */
+export class ApiError extends Error {
+  status: number;
+  code: string | null;
+  constructor(message: string, status: number, code: string | null) {
+    super(message);
+    this.status = status;
+    this.code = code;
+  }
+}
+
 export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
     method,
@@ -330,10 +367,13 @@ export async function request<T>(method: string, path: string, body?: unknown): 
   if (res.status === 401) onUnauthorized();
   if (!res.ok) {
     let msg = text;
+    let code: string | null = null;
     try {
-      msg = JSON.parse(text).error ?? text;
+      const j = JSON.parse(text);
+      msg = j.error ?? text;
+      code = typeof j.code === 'string' ? j.code : null;
     } catch {}
-    throw new Error(msg || res.statusText);
+    throw new ApiError(msg || res.statusText, res.status, code);
   }
   const type = res.headers.get('content-type') ?? '';
   return (type.includes('json') ? JSON.parse(text) : text) as T;
@@ -370,6 +410,11 @@ export function hostApi(base: string) {
     resume: (ref: string) => r<{ id: string; uid: string; resumed: boolean }>('POST', `/api/sessions/${enc(ref)}/resume`),
     forkInfo: (ref: string) => r<ForkInfo>('GET', `/api/sessions/${enc(ref)}/fork-info`),
     fork: (ref: string, body: { name?: string; prompt?: string; model?: string; effort?: string; mode?: string }) => r<ForkResult>('POST', `/api/sessions/${enc(ref)}/fork`, body),
+    /** Continue in another agent (server/portable): what it would transfer, then doing it. */
+    continuePreview: (ref: string, body: { to: string; intent?: 'continue' | 'fork'; worktree?: boolean; name?: string; model?: string; effort?: string; mode?: string }) => r<ContinuePlan>('POST', `/api/portable/conversations/${enc(ref)}/preview`, body),
+    continueIn: (ref: string, body: { to: string; intent?: 'continue' | 'fork'; worktree?: boolean; name?: string; model?: string; effort?: string; mode?: string; idempotencyKey: string }) =>
+      r<{ operation: ContinueOp; existed: boolean }>('POST', `/api/portable/conversations/${enc(ref)}/continue`, body),
+    continueOp: (id: string) => r<ContinueOp>('GET', `/api/portable/operations/${enc(id)}`),
     send: (ref: string, text: string, enter: boolean) => r<SendResult>('POST', `/api/sessions/${enc(ref)}/send`, { text, enter }),
     answer: (uid: string, answer: 'approve' | 'deny') => r('POST', `/api/sessions/${enc(uid)}/answer`, { answer }),
     choose: (uid: string, key: string) => r('POST', `/api/sessions/${enc(uid)}/choose`, { key }),
@@ -531,8 +576,9 @@ export function normalize(s: State): State {
       launchMode: w.launchMode ?? null,
       feed: w.feed ?? null,
       fork: w.fork ?? null,
+      continued: w.continued ?? null,
     })),
-    history: (s.history ?? []).map((h) => ({ ...h, fork: h.fork ?? null })),
+    history: (s.history ?? []).map((h) => ({ ...h, fork: h.fork ?? null, continued: h.continued ?? null })),
   };
 }
 

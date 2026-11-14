@@ -70,5 +70,6 @@ export function historyLine(h: HistoryItem, where: Where = {}): ReactNode {
     h.kind === 'ended' ? 'ended' : null,
     h.worktree ? '⎇ worktree' : null,
     h.fork ? `⑂ fork of ${h.fork.parentTitle}` : null,
+    h.continued && h.continued.kind !== 'fork' ? `↪ from ${look(h.continued.fromHarness).name}` : null,
   ]);
 }

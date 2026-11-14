@@ -231,3 +231,68 @@ model ReviewDecision {
 
   @@index([stackId])
 }
+
+// Portable conversations (docs/spec/13-conductor.md): ah's identity for a
+// conversation across harnesses and hosts, and how conversations came from one
+// another. The harness's transcript stays authoritative and is never rewritten;
+// the portable document read from it is a JSON file under
+// ~/.local/state/ah/portable/<id>/ (it can run to megabytes). `id` is
+// `pc-` + a hash of `harness:harnessId`, the same on every host.
+model Conversation {
+  id          String @id
+  harness     String
+  harnessId   String
+  /// The host whose transcript is authoritative now (a migration moves it).
+  host        String @default("")
+  title       String @default("")
+  cwd         String @default("")
+  sourceFile  String @default("")
+  sourceBytes Int    @default(0)
+  sourceSha   String @default("")
+  /// The newest portable document written for it.
+  docPath     String?
+  docVersion  Int    @default(1)
+  messages    Int    @default(0)
+  createdAt   Int    @default(0)
+  updatedAt   Int    @default(0)
+
+  @@unique([harness, harnessId])
+}
+
+// One edge of a conversation's lineage, and the operation that made it: a fork, a
+// continuation into another harness, a migration, an import. `state` is the
+// operation's progress (preparing → launching → delivering → linked, or failed /
+// cancelled); a row is written before anything is launched, so a restart finds
+// work in flight. `idempotencyKey` makes a retried request return the same edge.
+model ConversationLink {
+  id              String  @id
+  /// resume | fork | portable | migration | import
+  kind            String
+  /// native-resume | native-fork | ancestor-fork | context-handoff | transfer
+  strategy        String
+  state           String  @default("preparing")
+  parentId        String
+  childId         String?
+  parentUid       String?
+  /// The destination session's uid, chosen before it launches.
+  childUid        String?
+  fromHarness     String
+  toHarness       String
+  fromHost        String  @default("")
+  toHost          String  @default("")
+  /// Where the parent was read up to: its last line, byte length and the sha256 of those bytes.
+  checkpointLine  Int?
+  checkpointBytes Int?
+  checkpointSha   String?
+  limitationsJson String  @default("[]")
+  /// Operation details (the portable documents used, the destination's launch, errors along the way).
+  detailJson      String  @default("{}")
+  error           String?
+  idempotencyKey  String? @unique
+  createdAt       Int     @default(0)
+  updatedAt       Int     @default(0)
+
+  @@index([parentId])
+  @@index([childId])
+  @@index([childUid])
+}

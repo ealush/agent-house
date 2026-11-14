@@ -9835,3 +9835,25 @@ label:has(> input[type='checkbox'][switch]) {
     --glass-sheen: linear-gradient(transparent, transparent);
   }
 }
+
+/* Continue in (ContinueDialog): what carries over, then what doesn't. */
+.continue-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  color: var(--text-2);
+}
+.continue-limits {
+  color: var(--muted);
+  font-size: 13px;
+}
+.continue-limits summary {
+  cursor: pointer;
+}
+.continue-limits ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}

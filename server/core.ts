@@ -174,6 +174,11 @@ export class Core {
   launchEnv: () => Promise<Record<string, string>> = async () => ({});
   /** Stack review's alerts and banners for the stream; main.ts wires the service. */
   reviewState: () => ReviewState | null = () => null;
+  /**
+   * Run after every pass with its state (portable links settling, the scheduler, recovery):
+   * each must be cheap or guard its own overlap; a failure in one never stops the pass.
+   */
+  readonly afterTick = new Set<(state: State) => void | Promise<void>>();
 
   constructor(config: Config, viewers: Map<string, string[]>, registry = new Registry(), prompts = new PromptStore(), snapshots = new SnapshotStore()) {
     this.registry = registry;
@@ -332,6 +337,13 @@ export class Core {
         const slim = 'windows' in patch ? JSON.stringify({ ...patch, windows: undefined, windowsDelta: { changed, order: state.windows.map((w) => w.uid) } }) : delta;
         for (const fn of this.listeners) fn(this.json, delta, slim);
       }
+      for (const fn of this.afterTick) {
+        try {
+          void Promise.resolve(fn(state)).catch((err) => console.error('after-tick hook failed:', err));
+        } catch (err) {
+          console.error('after-tick hook failed:', err);
+        }
+      }
       return state;
     })().finally(() => (this.ticking = null));
     return this.ticking;
@@ -382,6 +394,17 @@ export class Core {
       const out = await t.tmux('show-environment', '-g', 'PATH');
       this.tmuxPath = out.trim().replace(/^PATH=/, '') + ':' + (process.env.PATH ?? '');
     } catch {}
+  }
+
+  /** The agents this host knows, as each CLI's version describes them. */
+  presets(): Preset[] {
+    return this.config.presets;
+  }
+
+  /** Whether an agent's command is on tmux's PATH (where sessions run). */
+  presetAvailable(id: string): boolean {
+    const p = this.config.presets.find((x) => x.id === id);
+    return !!p && isExecutableOnPath(p.command, this.tmuxPath);
   }
 
   preset(id: string): Preset {
@@ -713,14 +736,19 @@ export class Core {
    * Delivers a prompt to a session wherever it is: typed in now if the agent is idle,
    * queued until its next idle moment if busy, and resumed first if it isn't running.
    */
-  async send(ref: string, text: string, enter = true, launchChange?: LaunchChange): Promise<SendResult> {
+  async send(ref: string, text: string, enter = true, launchChange?: LaunchChange, o: { id?: string; remember?: boolean } = {}): Promise<SendResult> {
     if (!text) throw new CoreError(400, 'empty message');
     const target = await this.resume(ref);
-    this.remember(text);
+    if (o.remember !== false) this.remember(text);
     const state = target.resumed ? await this.tick() : await this.current();
     return this.withInput<SendResult>(target.uid, async () => {
       const w = state.windows.find((w) => w.id === target.windowId);
       const queued = this.queues.items(target.uid);
+      // A caller that names its message (a continuation, a scheduled run) can ask again
+      // after a crash or a retry: already waiting in the queue, it isn't queued twice.
+      if (o.id && queued.some((q) => q.id === o.id)) {
+        return { outcome: 'queued', windowId: target.windowId, resumed: target.resumed, queued: queued.length, queueId: o.id };
+      }
       // A waiting agent is blocked on your input: what you send now is the
       // answer to its question or approval prompt, so it is typed immediately
       // instead of queued behind the turn that asked. (The ticker never flushes
@@ -748,7 +776,7 @@ export class Core {
         return { outcome: 'delivered', windowId: target.windowId, resumed: false, queued: 0 };
       }
       const item: QueueItem = {
-        id: randomUUID().slice(0, 8),
+        id: o.id ?? randomUUID().slice(0, 8),
         text,
         enter,
         at: now(),

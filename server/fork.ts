@@ -47,6 +47,17 @@ export function encodeClaudeProjectDir(cwd: string): string {
   return cwd.replace(/[^a-zA-Z0-9]/g, '-');
 }
 
+/**
+ * The source as text, cut at `uptoBytes` when given: the conversation as it was at a
+ * branch point (the line-based transcripts only ever grow, so a prefix is a valid one).
+ */
+async function readSource(file: string, uptoBytes?: number): Promise<string> {
+  if (uptoBytes === undefined) return readFile(file, 'utf8');
+  const buf = await readFile(file);
+  if (buf.length < uptoBytes) throw new ForkError(409, 'the conversation is shorter than the point it branched at; it was rewritten');
+  return buf.subarray(0, uptoBytes).toString('utf8');
+}
+
 /** Rewrites JSONL line by line; lines that don't parse are copied verbatim. */
 function rewriteJsonl(text: string, rewrite: (d: Record<string, any>) => void): string {
   return text
@@ -78,8 +89,8 @@ async function writeCopy(file: string, text: string): Promise<void> {
 }
 
 /** Claude Code: <projects>/<encoded-cwd>/<session-id>.jsonl */
-async function forkClaude(sourceFile: string, newId: string, targetCwd: string): Promise<{ file: string }> {
-  const text = await readFile(sourceFile, 'utf8');
+async function forkClaude(sourceFile: string, newId: string, targetCwd: string, uptoBytes?: number): Promise<{ file: string }> {
+  const text = await readSource(sourceFile, uptoBytes);
   const out = rewriteJsonl(text, (d) => {
     if ('sessionId' in d) d.sessionId = newId;
     if ('cwd' in d) d.cwd = targetCwd;
@@ -90,8 +101,8 @@ async function forkClaude(sourceFile: string, newId: string, targetCwd: string):
 }
 
 /** Codex: <sessions>/YYYY/MM/DD/rollout-<timestamp>-<id>.jsonl, meta in the first line. */
-async function forkCodex(sourceFile: string, newId: string, targetCwd: string): Promise<{ file: string }> {
-  const text = await readFile(sourceFile, 'utf8');
+async function forkCodex(sourceFile: string, newId: string, targetCwd: string, uptoBytes?: number): Promise<{ file: string }> {
+  const text = await readSource(sourceFile, uptoBytes);
   const out = rewriteJsonl(text, (d) => {
     const p = d?.payload;
     if (!p || typeof p !== 'object') return;
@@ -138,8 +149,8 @@ function reidMuse(d: Record<string, any>, newId: string, targetCwd: string): voi
 }
 
 /** Muse: sessions/YYYY/MM/DD/<session-id>/session.jsonl, homed at the new id under today. */
-async function forkMuse(sourceFile: string, newId: string, targetCwd: string): Promise<{ file: string }> {
-  const text = await readFile(sourceFile, 'utf8');
+async function forkMuse(sourceFile: string, newId: string, targetCwd: string, uptoBytes?: number): Promise<{ file: string }> {
+  const text = await readSource(sourceFile, uptoBytes);
   const out = rewriteJsonl(text, (d) => reidMuse(d, newId, targetCwd));
   const now = new Date();
   const day = [String(now.getFullYear()), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')];
@@ -148,7 +159,7 @@ async function forkMuse(sourceFile: string, newId: string, targetCwd: string): P
   return { file };
 }
 
-type Forker = (sourceFile: string, newId: string, targetCwd: string) => Promise<{ file: string }>;
+type Forker = (sourceFile: string, newId: string, targetCwd: string, uptoBytes?: number) => Promise<{ file: string }>;
 
 /** Harnesses whose transcripts ah knows how to duplicate. Everything else is honestly unavailable. */
 export const FORKERS: Record<string, Forker> = {
@@ -167,14 +178,14 @@ export function forkUnavailableReason(harness: string, harnessId: string | undef
 
 /**
  * Copies the transcript at `sourceFile` to a fresh conversation id homed at
- * `targetCwd`. Returns the new id and where the copy landed. A failed copy
- * leaves nothing behind.
+ * `targetCwd`, optionally only its first `uptoBytes`. Returns the new id and
+ * where the copy landed. A failed copy leaves nothing behind.
  */
-export async function copyTranscript(harness: string, sourceFile: string, targetCwd: string): Promise<{ harnessId: string; file: string }> {
+export async function copyTranscript(harness: string, sourceFile: string, targetCwd: string, uptoBytes?: number): Promise<{ harnessId: string; file: string }> {
   const forker = FORKERS[harness];
   if (!forker) throw new ForkError(422, forkUnavailableReason(harness, undefined) ?? 'cannot fork');
   const harnessId = randomUUID();
-  const { file } = await forker(sourceFile, harnessId, targetCwd);
+  const { file } = await forker(sourceFile, harnessId, targetCwd, uptoBytes);
   return { harnessId, file };
 }
 

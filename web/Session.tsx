@@ -32,6 +32,7 @@ const load = {
   queue: () => import('./Queue.tsx'),
   preview: () => import('./Preview.tsx'),
   fork: () => import('./ForkDialog.tsx'),
+  continueIn: () => import('./ContinueDialog.tsx'),
   sendTo: () => import('./SendToDialog.tsx'),
   snapshots: () => import('./Snapshots.tsx'),
 };
@@ -40,6 +41,7 @@ const QueuePanel = lazy(() => load.queue().then((m) => ({ default: m.QueuePanel 
 const PreviewPanel = lazy(() => load.preview().then((m) => ({ default: m.PreviewPanel })));
 const ForkDialog = lazy(() => load.fork().then((m) => ({ default: m.ForkDialog })));
 const ForksDialog = lazy(() => load.fork().then((m) => ({ default: m.ForksDialog })));
+const ContinueDialog = lazy(() => load.continueIn().then((m) => ({ default: m.ContinueDialog })));
 const SendToDialog = lazy(() => load.sendTo().then((m) => ({ default: m.SendToDialog })));
 const SnapshotsPanel = lazy(() => load.snapshots().then((m) => ({ default: m.SnapshotsPanel })));
 if (typeof window !== 'undefined') window.setTimeout(() => Object.values(load).forEach((f) => void f().catch(() => {})), 5000);
@@ -316,6 +318,8 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
     };
   }, [menu]);
   const [forking, setForking] = useState(false);
+  /** Continue in (server/portable): the agent chosen, while its dialog is open. */
+  const [continuing, setContinuing] = useState<string | null>(null);
   const [branching, setBranching] = useState(false);
   const [sending, setSending] = useState(false);
   const [forksOpen, setForksOpen] = useState(false);
@@ -728,7 +732,13 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
 
   // Continue in…: the same conversation, handed to another agent in a new session here.
   const otherAgents = useContext(HostPresetsContext)(w.host).filter((p) => p.available && !p.hidden && p.command && p.id !== 'shell' && p.id !== w.agent);
-  async function continueIn(preset: string) {
+  // The host carries it over itself (preview, lineage, a native copy where it can); a host
+  // without portable conversations gets the earlier way: a new session primed by this page.
+  function continueIn(preset: string) {
+    if (!onStartSession) return;
+    setContinuing(preset);
+  }
+  async function continueHere(preset: string) {
     if (!onStartSession) return;
     onToast('Reading the conversation…');
     try {
@@ -1123,6 +1133,16 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
                 {w.status === 'waiting' && <span className="dot waiting" />} {statusWord(w)}
               </span>
               {multiHost && <span className="pill">{w.host}</span>}
+              {w.continued && (
+                <button
+                  className="pill"
+                  disabled={!w.continued.fromUid || !onOpenKey}
+                  onClick={() => w.continued?.fromUid && onOpenKey?.(keyOnThisHost(w.continued.fromUid))}
+                  title={`Continued from “${w.continued.fromTitle}” in ${look(w.continued.fromHarness).name}${w.continued.kind === 'portable' ? ' (handed over as a record of the conversation)' : w.continued.kind === 'migration' ? ` (moved from ${w.continued.fromHost ?? 'another host'})` : ''}`}
+                >
+                  ↪ {look(w.continued.fromHarness).name}
+                </button>
+              )}
               {w.queued > 0 && (
                 <button className="pill waiting" onClick={() => openPanel('queue')} title="Review queued messages">
                   ⇥ {w.queued} queued
@@ -1333,6 +1353,24 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
       <Suspense fallback={null}>
       {forking && (
         <ForkDialog client={client} target={{ ref: w.uid, host: w.host, harness: w.agent, title: w.title }} onClose={() => setForking(false)} onForked={forked} />
+      )}
+      {continuing && (
+        <ContinueDialog
+          client={client}
+          target={{ ref: w.uid, host: w.host, harness: w.agent, title: w.title }}
+          to={continuing}
+          onClose={() => setContinuing(null)}
+          onUnsupported={() => {
+            const to = continuing;
+            setContinuing(null);
+            void continueHere(to);
+          }}
+          onContinued={(uid) => {
+            setContinuing(null);
+            refresh();
+            if (onOpenKey) onOpenKey(keyOnThisHost(uid));
+          }}
+        />
       )}
       {sending && (
         <SendToDialog

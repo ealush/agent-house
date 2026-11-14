@@ -17,6 +17,8 @@ export const FEATURES: Record<string, number> = {
   uploads: 2,
   /** POST /api/windows is safe under concurrent requests for the same tmux session. */
   concurrentCreate: 1,
+  /** /api/portable: portable documents, preview/continue in another agent, lineage, operations (server/portable). */
+  portable: 1,
 };
 
 export function features(): Record<string, number> {

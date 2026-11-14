@@ -37,6 +37,7 @@ on main on 17 October at the owner's call, outside the freeze. They are now in
 the spec ([12 Review](12-review.md), SET-6) and the audit's second pass
 (A-30 to A-37), and read the design system's tokens like everything else.
 A change that adds a capability needs the freeze lifted, and an entry here first.
+The owner lifted it on 14 November 2026 for the conductor work ([13](13-conductor.md)).
 
 ## Spec files
 
@@ -54,6 +55,7 @@ A change that adds a capability needs the freeze lifted, and an entry here first
 | 10 | [Platforms](10-platforms.md) | `PLT` | desktop, iPad, phone, desktop app, PWA, Omarchy |
 | 11 | [Design system](11-design-system.md) | `DS` | tokens, type, shape, material, motion, components, voice |
 | 12 | [Review](12-review.md) | `REV` | the Review page, making a stack, the stack, a layer, the reviewer, findings, GitHub's threads, sending, re-review, merging and GitHub's own stacks, the Stack tab |
+| 13 | [Conductor](13-conductor.md) | `CND` | feature versions and the client contract, streamed uploads, portable conversations and lineage (and, as they land: moving sessions between hosts, scheduled jobs, recovery, usage) |
 | — | [Security](../../SECURITY.md) | `SEC` | threat model and tested invariants (kept in SECURITY.md; summarised in 01) |
 | — | [Audit](audit.md) | `A` | parity matrix, vocabulary, findings, and their resolution |
 
@@ -79,7 +81,8 @@ One word per thing, everywhere: UI, CLI help, docs, notifications.
 | **Pane** | A place in the split workspace showing one session. | tile, split (a split is the act) |
 | **Workspace** | One of nine saved arrangements on this device. | desktop, space |
 | **Fork** | A copy of a conversation in its own worktree and branch. | branch (that is git's) |
-| **Continue in** | A new session in another agent, primed with this conversation. | handoff (that is device continuity) |
+| **Continue in** | A new session in another agent carrying this conversation: a native copy where the agent's own history can hold it, else a record reconstructed from the transcript. | handoff (that is device continuity) |
+| **Lineage** | Which conversations a conversation came from and led to, across agents and hosts. | history (that is the list of past sessions) |
 | **Handoff** | Continuing on this device the session you were using on another. | — |
 | **Worktree** | A separate checkout on an `ah/<name>` branch for one session. | — |
 | **Snapshot** | The files as they were before a turn started. | checkpoint |
