@@ -12,6 +12,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import type { WindowView } from './sessions.ts';
 
 export type ApnsConfig = { teamId: string; keyId: string; keyFile: string; topic: string };
 export type ApnsEnvironment = 'sandbox' | 'production';
@@ -39,12 +40,62 @@ export type ApnsDevice = {
 export type ApnsAlert = { title: string; body: string; tag: string; route: string; host: string; badge: number; answerable: boolean };
 
 const FILE = join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah', 'apns.json');
+const ACTIVITIES_FILE = join(dirname(FILE), 'apns-activities.json');
 const ORIGINS: Record<ApnsEnvironment, string> = { sandbox: 'https://api.sandbox.push.apple.com', production: 'https://api.push.apple.com' };
 /** Apple accepts a provider token for an hour; refresh well before that, but not more than every 20 minutes. */
 const JWT_MAX_AGE_MS = 40 * 60_000;
 const TOKEN_RE = /^[0-9a-f]{64,200}$/;
 /** Badge-only updates (a session stopped needing you) are coalesced to at most one per interval. */
 const BADGE_INTERVAL_MS = 20_000;
+
+/**
+ * A Live Activity the app started on a device for one session (you sent it a message from
+ * there), and the push token ActivityKit gave it. The host moves it along the Lock Screen
+ * and Dynamic Island as the session works, waits on you and finishes, then ends it.
+ */
+export type ApnsActivity = {
+  uid: string;
+  token: string;
+  environment: ApnsEnvironment;
+  /** The native sign-in that started it: signing out or being revoked forgets it. */
+  sessionId: string;
+  preview: ApnsPreview;
+  at: number;
+  /** The session was seen at work since it started: only then does a stopped session end it. */
+  started: boolean;
+  /** The last state sent, so only a change goes out. */
+  sent: ActivityState | null;
+  sentAt: number;
+};
+
+/** The app's `SessionAttributes.ContentState`: these keys and values decode on the device as-is. */
+export type ActivityState = {
+  phase: 'working' | 'waiting' | 'finished' | 'limited';
+  /** What it's doing, what it asks, or when its limit resets; null on a private preview. */
+  detail: string | null;
+  answerable: boolean;
+  /** When this phase began, seconds since 1970 (the Lock Screen counts up from it). */
+  since: number;
+};
+
+/** A Live Activity lasts eight hours at most; its token is no use after that. */
+const ACTIVITY_MAX_AGE_MS = 8 * 3600_000;
+/** What it's doing changes all the time: one such update per interval, at low priority. */
+const ACTIVITY_DETAIL_INTERVAL_MS = 15_000;
+/** A finished session stays on the Lock Screen this long, then leaves. */
+const ACTIVITY_LINGER_S = 15 * 60;
+
+/** What a session's Live Activity says now; `detail` is one short line. */
+export function activityState(w: Pick<WindowView, 'status' | 'detail' | 'limit' | 'ask' | 'answerable'>, askLine: (ask: WindowView['ask']) => string, since: number): ActivityState {
+  const line = (t: string | null | undefined) => {
+    const first = t?.split('\n').map((l) => l.trim()).find(Boolean) ?? null;
+    return first && first.length > 120 ? first.slice(0, 119) + '…' : first;
+  };
+  if (w.limit && w.status !== 'busy') return { phase: 'limited', detail: line(w.limit), answerable: false, since };
+  if (w.status === 'waiting') return { phase: 'waiting', detail: line(askLine(w.ask) || w.detail), answerable: w.answerable, since };
+  if (w.status === 'busy') return { phase: 'working', detail: line(w.detail), answerable: false, since };
+  return { phase: 'finished', detail: null, answerable: false, since };
+}
 
 export class ApnsError extends Error {
   status: number;
@@ -133,6 +184,9 @@ function http2Transport(): Transport {
 
 export class Apns {
   private devices = new Map<string, ApnsDevice>();
+  /** Live Activities by token. */
+  private activities = new Map<string, ApnsActivity>();
+  private activitiesFile: string;
   private key: KeyObject | null = null;
   private jwt: { value: string; at: number } | null = null;
   private lastBadge: number | null = null;
@@ -142,8 +196,9 @@ export class Apns {
   private file: string;
   private transport: Transport;
 
-  constructor(config: ApnsConfig | null | undefined, opts: { file?: string; transport?: Transport } = {}) {
+  constructor(config: ApnsConfig | null | undefined, opts: { file?: string; activitiesFile?: string; transport?: Transport } = {}) {
     this.file = opts.file ?? FILE;
+    this.activitiesFile = opts.activitiesFile ?? (opts.file ? opts.file.replace(/(\.json)?$/, '-activities.json') : ACTIVITIES_FILE);
     this.transport = opts.transport ?? http2Transport();
     this.config = config && config.teamId && config.keyId && config.keyFile && config.topic ? config : null;
     if (this.config) {
@@ -157,6 +212,11 @@ export class Apns {
     }
     try {
       if (existsSync(this.file)) for (const d of JSON.parse(readFileSync(this.file, 'utf8')) as ApnsDevice[]) if (TOKEN_RE.test(d.token)) this.devices.set(d.token, d);
+    } catch {}
+    try {
+      const fresh = Date.now() - ACTIVITY_MAX_AGE_MS;
+      if (existsSync(this.activitiesFile))
+        for (const a of JSON.parse(readFileSync(this.activitiesFile, 'utf8')) as ApnsActivity[]) if (TOKEN_RE.test(a.token) && a.at > fresh) this.activities.set(a.token, a);
     } catch {}
   }
 
@@ -193,6 +253,89 @@ export class Apns {
   /** A native sign-in ended (signed out, revoked, expired, device removed): stop alerting it. */
   forgetSession(sessionId: string) {
     this.unregister(sessionId);
+    let changed = false;
+    for (const [t, a] of this.activities) if (a.sessionId === sessionId && this.activities.delete(t)) changed = true;
+    if (changed) this.persistActivities();
+  }
+
+  /** A Live Activity the app started for session `uid`. Its preview follows the sign-in's alerts. */
+  registerActivity(a: Pick<ApnsActivity, 'uid' | 'token' | 'environment' | 'sessionId'>) {
+    if (!this.enabled) throw new ApnsError(409, 'APNs is not configured on this host (see "apns" in config.json)');
+    const token = a.token.toLowerCase();
+    if (!TOKEN_RE.test(token)) throw new ApnsError(400, 'invalid activity token');
+    if (a.environment !== 'sandbox' && a.environment !== 'production') throw new ApnsError(400, 'invalid environment');
+    if (!a.uid || a.uid.length > 200) throw new ApnsError(400, 'invalid session');
+    // One per session per sign-in: a new one (a new message) replaces the last.
+    for (const [t, x] of this.activities) if ((x.sessionId === a.sessionId && x.uid === a.uid) || t === token) this.activities.delete(t);
+    const preview = [...this.devices.values()].find((d) => d.sessionId === a.sessionId)?.preview ?? 'full';
+    this.activities.set(token, { uid: a.uid, token, environment: a.environment, sessionId: a.sessionId, preview, at: Date.now(), started: false, sent: null, sentAt: 0 });
+    this.persistActivities();
+  }
+
+  /** The app ended it (dismissed, or a new one took its place). */
+  unregisterActivity(sessionId: string, uid: string) {
+    let changed = false;
+    for (const [t, a] of this.activities) if (a.sessionId === sessionId && a.uid === uid && this.activities.delete(t)) changed = true;
+    if (changed) this.persistActivities();
+  }
+
+  activityCount(sessionId: string) {
+    return [...this.activities.values()].filter((a) => a.sessionId === sessionId).length;
+  }
+
+  /**
+   * Called every tick with every window: each Live Activity follows its session. A change of
+   * phase goes out at once (high priority when it needs you); a new line of what it's doing,
+   * at most every 15 s at low priority (Apple budgets these). A session that stops working
+   * ends its activity, which lingers a while showing how it finished.
+   */
+  follow(windows: WindowView[], askLine: (ask: WindowView['ask']) => string) {
+    if (!this.enabled || !this.activities.size) return;
+    const byUid = new Map(windows.map((w) => [w.uid, w]));
+    const t = Date.now();
+    let changed = false;
+    for (const a of [...this.activities.values()]) {
+      const w = byUid.get(a.uid);
+      if (t - a.at > ACTIVITY_MAX_AGE_MS || (!w && a.started)) {
+        // Too old for Apple, or the session is gone: end it if it was showing anything.
+        if (a.sent) void this.deliverActivity(a, { ...a.sent, phase: 'finished', detail: null, answerable: false }, 'end');
+        this.activities.delete(a.token);
+        changed = true;
+        continue;
+      }
+      if (!w) continue;
+      const working = w.status === 'busy' || w.status === 'waiting';
+      if (!a.started && !working) continue; // the message hasn't reached it yet
+      if (!a.started) (a.started = true), (changed = true);
+      const phaseChanged = !a.sent || activityState(w, askLine, 0).phase !== a.sent.phase;
+      const next = activityState(w, askLine, phaseChanged ? Math.floor(t / 1000) : a.sent!.since);
+      if (a.preview === 'private') next.detail = null;
+      if (a.sent && next.phase === a.sent.phase && next.detail === a.sent.detail && next.answerable === a.sent.answerable) continue;
+      const quiet = !phaseChanged && next.answerable === a.sent!.answerable;
+      if (quiet && t - a.sentAt < ACTIVITY_DETAIL_INTERVAL_MS) continue;
+      const end = next.phase === 'finished' || next.phase === 'limited';
+      a.sent = next;
+      a.sentAt = t;
+      void this.deliverActivity(a, next, end ? 'end' : 'update', quiet ? '5' : '10');
+      if (end) this.activities.delete(a.token);
+      changed = true;
+    }
+    if (changed) this.persistActivities();
+  }
+
+  private deliverActivity(a: ApnsActivity, state: ActivityState, event: 'update' | 'end', priority = '10') {
+    const now = Math.floor(Date.now() / 1000);
+    const payload = {
+      aps: {
+        timestamp: now,
+        event,
+        'content-state': state,
+        ...(event === 'end' ? { 'dismissal-date': now + ACTIVITY_LINGER_S } : {}),
+      },
+    };
+    return this.deliver(a, payload, { 'apns-push-type': 'liveactivity', 'apns-priority': priority, 'apns-topic': `${this.config!.topic}.push-type.liveactivity` }, () => {
+      if (this.activities.delete(a.token)) this.persistActivities();
+    });
   }
 
   private token(): string {
@@ -239,12 +382,12 @@ export class Apns {
     this.badgeTimer.unref?.();
   }
 
-  private async deliver(d: ApnsDevice, payload: object, headers: Record<string, string>) {
+  private async deliver(d: Pick<ApnsDevice, 'token' | 'environment'> & { label?: string }, payload: object, headers: Record<string, string>, gone = () => void (this.devices.delete(d.token) && this.persist())) {
     try {
       const res = await this.transport(apnsOrigin(d.environment), `/3/device/${d.token}`, { authorization: `bearer ${this.token()}`, 'apns-topic': this.config!.topic, ...headers }, JSON.stringify(payload));
       // Apple says the token is gone: forget it (the app registers a fresh one at its next launch).
       if (res.status === 410 || (res.status === 400 && (res.reason === 'BadDeviceToken' || res.reason === 'DeviceTokenNotForTopic'))) {
-        if (this.devices.delete(d.token)) this.persist();
+        gone();
       } else if (res.status === 403 && res.reason === 'ExpiredProviderToken') {
         this.jwt = null;
       } else if (res.status !== 200) {
@@ -259,10 +402,18 @@ export class Apns {
   private writing: Promise<void> = Promise.resolve();
 
   private persist() {
-    const data = JSON.stringify([...this.devices.values()], null, 2);
+    this.write(this.file, [...this.devices.values()]);
+  }
+
+  private persistActivities() {
+    this.write(this.activitiesFile, [...this.activities.values()]);
+  }
+
+  private write(file: string, value: unknown) {
+    const data = JSON.stringify(value, null, 2);
     this.writing = this.writing
-      .then(() => mkdir(dirname(this.file), { recursive: true, mode: 0o700 }))
-      .then(() => writeFile(this.file, data, { mode: 0o600 }))
-      .catch((err) => console.error(`writing ${this.file} failed:`, err));
+      .then(() => mkdir(dirname(file), { recursive: true, mode: 0o700 }))
+      .then(() => writeFile(file, data, { mode: 0o600 }))
+      .catch((err) => console.error(`writing ${file} failed:`, err));
   }
 }

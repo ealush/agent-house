@@ -92,6 +92,8 @@ export class Push {
     this.primed = true;
     // Native badges also follow changes that alert nobody (answered on another device).
     this.apns?.badge(Number(waiting));
+    // Live Activities follow every tick, not only alerting transitions: what it's doing changes too.
+    this.apns?.follow(windows, askLine);
   }
 
   /** A needs-you alert that isn't a session's status (stack review): goes where "needs you" goes. */

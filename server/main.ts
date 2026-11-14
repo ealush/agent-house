@@ -1173,6 +1173,22 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     audit(req, 'push.apns.register', { device: caller.session.keyId });
     return send(res, 200, apns.status(caller.session.id));
   }
+  // A Live Activity the app started for a session it sent to: the host keeps it current.
+  if (route('PUT', /^\/api\/push\/apns\/activity$/)) {
+    if (caller.kind !== 'session' || !auth.isNative(caller)) throw new HttpError(403, 'only the native app registers Live Activities');
+    const body = await readJson(req);
+    try {
+      apns.registerActivity({ uid: str(body.uid, 'uid', 200), token: str(body.token, 'token', 200), environment: str(body.environment, 'environment', 20) as never, sessionId: caller.session.id });
+    } catch (err) {
+      if (err instanceof ApnsError) throw new HttpError(err.status, err.message);
+      throw err;
+    }
+    return send(res, 200, { ok: true, activities: apns.activityCount(caller.session.id) });
+  }
+  if ((m = route('DELETE', /^\/api\/push\/apns\/activity\/([^/]+)$/))) {
+    if (caller.kind === 'session') apns.unregisterActivity(caller.session.id, decodeURIComponent(m[1]));
+    return send(res, 200, { ok: true });
+  }
   if (route('DELETE', /^\/api\/push\/apns$/)) {
     if (caller.kind === 'session') apns.unregister(caller.session.id);
     return send(res, 200, { ok: true });

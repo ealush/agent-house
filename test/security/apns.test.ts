@@ -72,3 +72,28 @@ test('signing out, revocation and device removal forget the device token', async
   await http(ah, 'DELETE', `/api/auth/devices/${c.deviceId}`, { token: ah.localToken() });
   await until(() => has('3'.repeat(64)) === false, 4000, 'removed device token dropped');
 });
+
+test('only a native sign-in registers a Live Activity; ending the sign-in forgets it', async () => {
+  const ACT = '2'.repeat(64);
+  const file = join(ah.dir, 'state', 'ah', 'apns-activities.json');
+  const activities = (): Array<{ token: string }> | null => {
+    try {
+      return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : [];
+    } catch {
+      return null;
+    }
+  };
+  const cookie = await signIn(ah, 'browser');
+  const body = { uid: 'u-live', token: ACT, environment: 'sandbox' };
+  assert.equal((await http(ah, 'PUT', '/api/push/apns/activity', { cookie, body })).status, 403);
+  assert.equal((await http(ah, 'PUT', '/api/push/apns/activity', { token: ah.localToken(), body })).status, 403);
+  const a = await nativeSignIn('live phone');
+  assert.equal((await http(ah, 'PUT', '/api/push/apns/activity', { token: a.token, origin: null, body: { ...body, token: 'nope' } })).status, 400);
+  const res = await http(ah, 'PUT', '/api/push/apns/activity', { token: a.token, origin: null, body });
+  assert.equal(res.status, 200, res.body);
+  assert.equal(res.json().activities, 1);
+  await until(() => activities()?.some((x) => x.token === ACT) ?? null, 4000, 'apns-activities.json');
+  assert.equal(statSync(file).mode & 0o777, 0o600);
+  await http(ah, 'DELETE', `/api/auth/sessions/${a.sessionId}`, { token: ah.localToken() });
+  await until(() => (activities() === null ? null : !activities()!.some((x) => x.token === ACT)), 4000, 'revoked activity');
+});

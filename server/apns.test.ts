@@ -8,8 +8,8 @@ import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 
 process.env.XDG_STATE_HOME = mkdtempSync(join(tmpdir(), 'ah-apns-'));
-const { Apns, apnsOrigin, apnsPayload, providerToken } = await import('./apns.ts');
-const { Push } = await import('./push.ts');
+const { Apns, activityState, apnsOrigin, apnsPayload, providerToken } = await import('./apns.ts');
+const { Push, askLine } = await import('./push.ts');
 
 const dir = mkdtempSync(join(tmpdir(), 'ah-apns-key-'));
 const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
@@ -121,7 +121,7 @@ test('delivers over HTTP/2 with the provider token, honors events, and forgets d
 test('Push alerts go to APNs on the same transitions as Web Push, with the badge and route', async () => {
   const push = new Push();
   const sent: Array<{ event: string; alert: any }> = [];
-  push.apns = { send: async (event: string, alert: any) => void sent.push({ event, alert }), badge: () => {} } as never;
+  push.apns = { send: async (event: string, alert: any) => void sent.push({ event, alert }), badge: () => {}, follow: () => {} } as never;
   const win = (uid: string, status: string, answerable = false) => ({ uid, id: '@1', name: uid, title: uid, project: 'p', agent: 'claude', command: 'claude', status, answerable }) as any;
   push.observe([win('a', 'busy'), win('b', 'busy')]);
   push.observe([win('a', 'waiting', true), win('b', 'attention')]);
@@ -151,4 +151,106 @@ test('badge-only updates follow the needs-you count, coalesced', async () => {
   apns.badge(3);
   await new Promise((r) => setTimeout(r, 50));
   assert.deepEqual(sent, [], 'an alert already carried this count');
+});
+
+const ACT = 'e'.repeat(64);
+const view = (uid: string, status: string, extra: Record<string, unknown> = {}) => ({ uid, status, detail: null, limit: null, ask: null, answerable: false, ...extra }) as any;
+
+test('a Live Activity says what the session is doing, asks or hit, in one short line', () => {
+  assert.deepEqual(activityState(view('u', 'busy', { detail: 'Editing server/apns.ts\nmore' }), askLine, 9), { phase: 'working', detail: 'Editing server/apns.ts', answerable: false, since: 9 });
+  const ask = { kind: 'command', text: 'Bash command\npnpm test' };
+  assert.deepEqual(activityState(view('u', 'waiting', { ask, answerable: true }), askLine, 9), { phase: 'waiting', detail: 'Wants to run pnpm test', answerable: true, since: 9 });
+  assert.equal(activityState(view('u', 'attention', { limit: 'Session limit · resets 12am' }), askLine, 9).phase, 'limited');
+  assert.equal(activityState(view('u', 'attention'), askLine, 9).phase, 'finished');
+  assert.equal(activityState(view('u', 'idle'), askLine, 9).phase, 'finished');
+  assert.equal(activityState(view('u', 'busy', { detail: 'x'.repeat(300) }), askLine, 9).detail!.length, 120);
+});
+
+test('activity registration needs configuration, a token and a session; one per session per sign-in', () => {
+  const off = new Apns(null, { file: join(dir, 'act-off.json') });
+  assert.throws(() => off.registerActivity({ uid: 'u1', token: ACT, environment: 'sandbox', sessionId: 's1' }), /not configured/);
+  const apns = new Apns(config, { file: join(dir, 'act-reg.json'), transport: async () => ({ status: 200 }) });
+  assert.throws(() => apns.registerActivity({ uid: 'u1', token: 'zz', environment: 'sandbox', sessionId: 's1' }), /invalid activity token/);
+  assert.throws(() => apns.registerActivity({ uid: 'u1', token: ACT, environment: 'development' as never, sessionId: 's1' }), /invalid environment/);
+  apns.registerActivity({ uid: 'u1', token: ACT, environment: 'sandbox', sessionId: 's1' });
+  apns.registerActivity({ uid: 'u1', token: 'f'.repeat(64), environment: 'sandbox', sessionId: 's1' }); // a newer message
+  apns.registerActivity({ uid: 'u2', token: '1'.repeat(64), environment: 'sandbox', sessionId: 's1' });
+  assert.equal(apns.activityCount('s1'), 2);
+  apns.unregisterActivity('s1', 'u2');
+  assert.equal(apns.activityCount('s1'), 1);
+  apns.forgetSession('s1');
+  assert.equal(apns.activityCount('s1'), 0, 'signing out forgets its activities');
+});
+
+test('a Live Activity follows its session: working, needs you, then ends lingering', async () => {
+  const apple = await fakeApple();
+  process.env.AH_APNS_ORIGIN = apple.origin;
+  try {
+    const file = join(dir, 'act-follow.json');
+    const apns = new Apns(config, { file });
+    apns.registerActivity({ uid: 'u1', token: ACT, environment: 'sandbox', sessionId: 's1' });
+    const tick = async (w: any) => (apns.follow([w, view('other', 'busy')], askLine), await new Promise((r) => setTimeout(r, 20)));
+    await tick(view('u1', 'attention'));
+    assert.equal(apple.seen.length, 0, 'the message has not reached it yet: nothing ends it');
+    await tick(view('u1', 'busy', { detail: 'Reading files' }));
+    assert.equal(apple.seen.length, 1);
+    const first = apple.seen[0];
+    assert.equal(first.path, `/3/device/${ACT}`);
+    assert.equal(first.headers['apns-push-type'], 'liveactivity');
+    assert.equal(first.headers['apns-topic'], `${config.topic}.push-type.liveactivity`);
+    assert.equal(first.body.aps.event, 'update');
+    assert.equal(first.body.aps['content-state'].phase, 'working');
+    assert.equal(first.body.aps['content-state'].detail, 'Reading files');
+    assert.equal(typeof first.body.aps.timestamp, 'number');
+    await tick(view('u1', 'busy', { detail: 'Reading files' }));
+    await tick(view('u1', 'busy', { detail: 'Editing a file' }));
+    assert.equal(apple.seen.length, 1, 'no change, then a new line within 15 s: nothing sent');
+    await tick(view('u1', 'waiting', { ask: { kind: 'command', text: 'rm -rf build' }, answerable: true }));
+    assert.equal(apple.seen.length, 2, 'needing you goes out at once');
+    assert.equal(apple.seen[1].headers['apns-priority'], '10');
+    assert.deepEqual(apple.seen[1].body.aps['content-state'], { phase: 'waiting', detail: 'Wants to run rm -rf build', answerable: true, since: apple.seen[1].body.aps['content-state'].since });
+    await tick(view('u1', 'attention'));
+    assert.equal(apple.seen.length, 3);
+    assert.equal(apple.seen[2].body.aps.event, 'end');
+    assert.equal(apple.seen[2].body.aps['content-state'].phase, 'finished');
+    assert.ok(apple.seen[2].body.aps['dismissal-date'] > apple.seen[2].body.aps.timestamp, 'it lingers showing it finished');
+    assert.equal(apns.activityCount('s1'), 0, 'an ended activity is forgotten');
+    await tick(view('u1', 'busy'));
+    assert.equal(apple.seen.length, 3);
+  } finally {
+    delete process.env.AH_APNS_ORIGIN;
+    apple.server.close();
+  }
+});
+
+test('private previews keep what it is doing off the Lock Screen; dead activity tokens are dropped', async () => {
+  const apple = await fakeApple(() => [410, 'Unregistered']);
+  process.env.AH_APNS_ORIGIN = apple.origin;
+  try {
+    const apns = new Apns(config, { file: join(dir, 'act-private.json') });
+    apns.register({ ...device(TOKEN, { waiting: true, done: true }, 'private'), sessionId: 's1' });
+    apns.registerActivity({ uid: 'u1', token: ACT, environment: 'sandbox', sessionId: 's1' });
+    apns.follow([view('u1', 'busy', { detail: 'Editing secrets.ts' })], askLine);
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(apple.seen[0].body.aps['content-state'].detail, null);
+    assert.equal(apns.activityCount('s1'), 0, 'Apple said the activity is gone');
+  } finally {
+    delete process.env.AH_APNS_ORIGIN;
+    apple.server.close();
+  }
+});
+
+test('activities survive a host restart, and a session that is gone ends its activity', async () => {
+  const sent: any[] = [];
+  const transport = async (_o: string, _p: string, h: Record<string, string>, body: string) => (sent.push({ h, body: JSON.parse(body) }), { status: 200 });
+  const file = join(dir, 'act-restart.json');
+  const before = new Apns(config, { file, transport });
+  before.registerActivity({ uid: 'u1', token: ACT, environment: 'sandbox', sessionId: 's1' });
+  before.follow([view('u1', 'busy')], askLine);
+  await new Promise((r) => setTimeout(r, 50)); // let the write land
+  const after = new Apns(config, { file, transport });
+  assert.equal(after.activityCount('s1'), 1);
+  after.follow([], askLine);
+  assert.equal(sent.at(-1).body.aps.event, 'end');
+  assert.equal(after.activityCount('s1'), 0);
 });
