@@ -38,6 +38,7 @@ TypeScript sources of truth are named beside each section.
 | `portable` | 1 | `/api/portable/*` |
 | `migration` | 1 | `/api/migrations/*` |
 | `jobs` | 1 | `/api/jobs/*`, state `jobs` |
+| `recovery` | 1 | windows' and history's `recovery`, `/api/recovery`, `/api/sessions/:uid/recovery` |
 
 ## CND-1 Uploads (`uploads` v2)
 
@@ -414,3 +415,83 @@ Decisions and failures notify your devices (Web Push and APNs, as "needs you").
 - **CLI:** `ah jobs`, `ah job add … [--at|--in|--daily|--cron|--after|--when-idle|--when-ended]`,
   `ah job show|pause|resume|cancel|run <id>`, `ah job decide <run> yes|no`,
   `ah job resolve <run> resend|leave`.
+
+## CND-5 Recovery from limits, provider errors and crashes (`recovery` v1)
+
+Sources: `server/recovery/{classify,engine}.ts`. Runs from ah's tick; nothing needs to
+be open.
+
+**Evidence only.** A recovery starts from something the agent or ah saw, recorded word
+for word (`evidence`):
+- the agent's own error lines in its transcript (Claude Code's API error lines, Codex's
+  error events), classified as `rate_limit` (with the reset time or retry-after it
+  gives), `provider_unavailable` (overloaded, 5xx), `network`, or `credentials` (an
+  invalid key, "please run /login", an expired token, billing); anything else is
+  `unknown` and ignored;
+- the usage-limit notice on the agent's screen, with the reset it prints (the
+  transcript's exact time wins over the screen's minute);
+- `process_exit`: an agent gone from its window while it was working (its shell left
+  behind), or a session found gone while working after a host restart, that you
+  didn't end (Terminate records that you did).
+
+Looked at fresh (a new session, or after ah restarts), a transcript that **ends** on an
+error written within six hours is current evidence; older or answered ones aren't.
+
+**State machine** (one durable row per conversation, `Recovery`; every step a
+`RecoveryEvent` saying why):
+
+```
+waiting_capacity   a limit; automatic recovery off: it waits for you (with the reset time)
+recoverable        another failure; automatic recovery off
+scheduled          automatic recovery on: the next attempt at the provider's time, else backoff
+resuming           an attempt was made; watching for the agent to work again
+needs_user         credentials (never retried), or a window ah won't type into
+failed             attempts spent (maxAttempts, 5)
+stopped            you paused it
+resolved           the agent is working again (by the attempt, by itself, or by you)
+```
+
+**An attempt**, when its time comes, checks first: the agent isn't already working, the
+conversation hasn't moved on since the failure (a newer turn in the transcript), the
+last attempt's message isn't still queued. Then it sends **one** continuation
+(`recovery.prompt`, "Continue where you left off.") through the normal send path,
+queued under an id naming the attempt, which resumes an ended session first: the same
+conversation, the same launch choices. If work is already queued, it only resumes and
+lets the queue go in. An agent that died in a live window is restarted there with its
+own resume command, only when the pane is at a shell prompt, and continued once it's up.
+**It never changes model, provider or permissions.** Attempts back off exponentially with
+jitter, capped (`maxBackoffSeconds`), and at most `maxActionsPerMinute` (3) go out across
+the host. A continuation that doesn't get the agent going within ten minutes counts as a
+failed attempt. A limit already recovered from isn't re-detected from its notice still
+on screen.
+
+**Off by default.** `recovery.auto` in config sets the host's default; each session has
+its own switch (session menu, `ah recovery <target> --auto on|off`, API). Jobs with
+`policy.autoRecover` switch it on for the sessions they start. Without it, ah still
+records and shows what happened and waits for you (Go on now).
+
+Config: `recovery: { auto, maxAttempts, backoffSeconds, maxBackoffSeconds, jitterSeconds,
+prompt, maxActionsPerMinute }`.
+
+### Shapes and routes
+
+```ts
+// windows[].recovery and history[].recovery (optional; absent on older hosts)
+recovery: { state, reason, evidence, attempts, maxAttempts, nextAttemptAt, resetsAt, auto, updatedAt } | null
+// windows[].limitResetsAt: when the on-screen limit notice says it resets (epoch seconds)
+```
+
+| Route | Body | Answer |
+|---|---|---|
+| `GET /api/recovery` | | `{ recoveries: [...], config: { auto, maxAttempts } }` |
+| `GET /api/sessions/:uid/recovery` | | `{ auto, recovery, events: [{ at, state, detail }] }` |
+| `POST /api/sessions/:uid/recovery` | `{ action: 'retry' \| 'pause' \| 'resume' \| 'cancel' }` or `{ auto: boolean }` | the same |
+
+### Surfaces
+
+- **Web:** a `↻` pill in the session header ("limited until 5:20 PM", "going on at…",
+  "sign in again", "kept failing"), its evidence and attempts on hover; the session
+  menu's Go on now, Pause/Resume recovery, Stop retrying, and *Keep going after limits
+  and crashes*.
+- **CLI:** `ah recovery` (what's being recovered), `ah recovery <target>` (its history),
+  `--retry`, `--pause`, `--resume`, `--cancel`, `--auto on|off`.

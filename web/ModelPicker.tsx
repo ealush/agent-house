@@ -9,6 +9,8 @@ export const PresetsContext = createContext<(host: string, id: string | null) =>
 export const usePreset = (host: string, id: string | null) => useContext(PresetsContext)(host, id);
 /** Every preset a host offers (to start or continue a conversation in another agent). */
 export const HostPresetsContext = createContext<(host: string) => Preset[]>(() => []);
+/** What each host supports (its state's `features`): a host without an entry doesn't have it. */
+export const HostFeaturesContext = createContext<(host: string) => Record<string, number> | undefined>(() => undefined);
 
 export type Pick = { model?: string; effort?: string };
 

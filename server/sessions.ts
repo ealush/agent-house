@@ -1,6 +1,7 @@
 // Turns raw tmux windows into the model the UI shows: which agent is running,
 // which project it belongs to, and whether it is working, waiting on you or done.
 // Every window is registered (F3), so it can be found and resumed from anywhere.
+import type { RecoveryView } from './recovery/engine.ts';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -40,6 +41,8 @@ export type WindowView = {
   detail: string | null;
   /** The agent hit its plan's usage limit: "Session limit · resets 12am", until that time passes. */
   limit: string | null;
+  /** When that limit resets (epoch seconds), when the notice says. */
+  limitResetsAt?: number | null;
   /** What a waiting session is blocked on, for the Inbox card. */
   ask: Ask | null;
   /** Whether one-tap Approve/Deny applies (a permission prompt with known keys). */
@@ -66,6 +69,8 @@ export type WindowView = {
   fork: { parentUid: string; parentTitle: string; rootUid: string; forks: number } | null;
   /** Portable lineage: this session continues another conversation (server/portable). Null when it doesn't. */
   continued: Continued | null;
+  /** Something went wrong and ah is (or could be) keeping it going (server/recovery). */
+  recovery?: RecoveryView | null;
 };
 
 /**
@@ -137,6 +142,8 @@ export type HistoryItem = {
   continued: Continued | null;
   /** Moved to another host (server/migrate): the conversation goes on there; this copy stays as it was. */
   moved?: { host: string; uid: string; at: number } | null;
+  /** A crash or failure ah is (or could be) recovering from (server/recovery). */
+  recovery?: RecoveryView | null;
 };
 
 const HOME = homedir();
@@ -593,12 +600,15 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
       // Agents' own TUIs make poor one-liners; for them only hook activity is shown.
       // A limit notice is what a stopped agent is waiting on; ah first saw it at `at`.
       let limit: string | null = null;
+      let limitResetsAt: number | null = null;
       if (agent) {
         const notice = tail.slice(-15).find((l) => /You['’]ve hit your/.test(l)) ?? '';
         const seenAt = notice ? (limitSeen.get(w.windowId)?.text === notice ? limitSeen.get(w.windowId)!.at : now) : 0;
         if (notice) limitSeen.set(w.windowId, { text: notice, at: seenAt });
         else limitSeen.delete(w.windowId);
         limit = notice ? screenLimit(tail, seenAt, now) : null;
+        const when = limit?.match(/resets (.+)$/)?.[1];
+        limitResetsAt = when ? resetTime(when, seenAt) : null;
       }
       const prompt = !agent && !hookDetail && atShellPrompt(w.command, procs, w.panePid, quiet);
       const detail = limit && status !== 'busy' && status !== 'waiting'
@@ -626,6 +636,7 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
         status,
         detail,
         limit: status === 'busy' || status === 'waiting' ? null : limit,
+        limitResetsAt: status === 'busy' || status === 'waiting' ? null : limitResetsAt,
         ask,
         answerable: status === 'waiting' && ask?.kind !== 'question' && ask?.kind !== 'choice' && !!preset?.approveKeys?.length,
         viewers,

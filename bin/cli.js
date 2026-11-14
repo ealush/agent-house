@@ -53,6 +53,8 @@ export const HELP = `usage: ah <command>
   job show|pause|resume|cancel|run <id>       one job and its runs; change what it does next
   job decide <run> yes|no [--note "…"]       answer a job waiting on your decision
   job resolve <run> resend|leave              a run that may or may not have arrived
+  recovery [target] [--retry|--pause|--resume|--cancel] [--auto on|off]
+                                              limits, provider errors and crashes, and what ah does about them
   answer <target> <yes|no|N>                  answer what it's asking: approve, deny, or pick option N
   stop <target>                               stop the agent's current turn
   terminate <target>                          end the session (its conversation stays in history); also: kill
@@ -315,6 +317,25 @@ export async function run(cmd, args) {
       if (json) return console.log(JSON.stringify(m, null, 2));
       if (m.state !== 'completed') fail(`${m.id} ${m.state}: ${m.error ?? ''} (ah migrations retry ${m.id})`);
       console.log(`moved: ${m.id} → ${m.peer} as ${m.destUid} in ${m.destCwd}; resume it there (ah resume on ${m.peer}, or from any device)`);
+      return;
+    }
+    case 'recovery': {
+      if (!args[0] || args[0].startsWith('--')) {
+        const { recoveries, config: cfg } = await call('GET', '/api/recovery');
+        if (!recoveries.length) return console.log(`nothing to recover (automatic recovery is ${cfg.auto ? 'on' : 'off'} by default)`);
+        table([['SESSION', 'STATE', 'WHY', 'ATTEMPTS', 'NEXT'], ...recoveries.map((r) => [r.uid, r.state, r.reason, `${r.attempts}/${r.maxAttempts}`, r.nextAttemptAt ? new Date(r.nextAttemptAt * 1000).toLocaleTimeString() : ''])]);
+        return;
+      }
+      const auto = opt(args, '--auto', undefined);
+      const action = ['--retry', '--pause', '--resume', '--cancel'].find((f) => flag(args, f))?.slice(2);
+      const found = await find(args[0], { history: true });
+      const uid = found.live?.uid ?? found.past.ref;
+      if (auto !== undefined) await call('POST', `/api/sessions/${encodeURIComponent(uid)}/recovery`, { auto: auto === 'on' });
+      if (action) await call('POST', `/api/sessions/${encodeURIComponent(uid)}/recovery`, { action });
+      const r = await call('GET', `/api/sessions/${encodeURIComponent(uid)}/recovery`);
+      console.log(`automatic recovery: ${r.auto ? 'on' : 'off'}`);
+      if (r.recovery) console.log(`${r.recovery.state}: ${r.recovery.reason}, ${r.recovery.attempts}/${r.recovery.maxAttempts} attempts${r.recovery.nextAttemptAt ? `, next at ${new Date(r.recovery.nextAttemptAt * 1000).toLocaleTimeString()}` : ''}`);
+      for (const e of r.events.slice(0, 8).reverse()) console.log(`  ${new Date(e.at * 1000).toLocaleTimeString()}  ${e.state}  ${e.detail}`);
       return;
     }
     case 'jobs': {

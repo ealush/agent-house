@@ -1,4 +1,5 @@
 import { readFileSync, existsSync, accessSync, constants } from 'node:fs';
+import { DEFAULT_RECOVERY, type RecoveryConfig } from './recovery/engine.ts';
 import { DEFAULT_UPLOAD_LIMITS, type UploadLimits } from './uploads.ts';
 import { homedir } from 'node:os';
 import { join, isAbsolute } from 'node:path';
@@ -142,6 +143,11 @@ export type Config = {
   migration: { pathMap: Array<{ from: string; to: string }> };
   /** The scheduler's limits (server/jobs): runs at once, sessions it may start an hour, retries a minute. */
   jobs: { maxConcurrent: number; maxLaunchesPerHour: number; maxRetriesPerMinute: number };
+  /**
+   * Keeping agents going through temporary failures (server/recovery). `auto` (off by
+   * default) is the host's default; each session can switch it on or off.
+   */
+  recovery: RecoveryConfig;
   presets: Preset[];
 };
 
@@ -450,9 +456,21 @@ export function loadConfig(): Config {
     preview: { ports: [47600, 47699], ...user.preview },
     uploads: uploadLimits(user.uploads),
     jobs: jobLimits(user.jobs),
+    recovery: recoveryConfig(user.recovery),
     migration: { pathMap: Array.isArray(user.migration?.pathMap) ? user.migration.pathMap.filter((r) => typeof r?.from === 'string' && typeof r?.to === 'string' && r.from.startsWith('/') && r.to.startsWith('/')) : [] },
     presets: user.presets ?? DEFAULT_PRESETS,
   };
+}
+
+function recoveryConfig(user: Partial<RecoveryConfig> | undefined): RecoveryConfig {
+  const out = { ...DEFAULT_RECOVERY };
+  if (typeof user?.auto === 'boolean') out.auto = user.auto;
+  if (typeof user?.prompt === 'string' && user.prompt.trim()) out.prompt = user.prompt.trim().slice(0, 2000);
+  for (const k of ['maxAttempts', 'backoffSeconds', 'maxBackoffSeconds', 'jitterSeconds', 'maxActionsPerMinute'] as const) {
+    const v = user?.[k];
+    if (typeof v === 'number' && Number.isFinite(v) && v >= 0) out[k] = v;
+  }
+  return out;
 }
 
 function jobLimits(user: Partial<Config['jobs']> | undefined): Config['jobs'] {

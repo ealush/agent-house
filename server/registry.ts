@@ -153,6 +153,8 @@ export class Registry {
   private loaded: Promise<void> | null = null;
   private db: PrismaClient;
   private dbPath: string;
+  /** Told when a running session is found gone, with its last status (recovery: did it die mid-turn?). */
+  onEnd: ((r: SessionRecord, lastStatus: string) => void) | null = null;
 
   constructor(dbPath = defaultDbPath()) {
     this.dbPath = dbPath;
@@ -226,8 +228,10 @@ export class Registry {
       meta: prev?.meta ?? {},
     };
     this.records.set(id, next);
-    // status/activity change constantly: persist them only alongside a real change, or once a minute.
-    if (!prev || prev.lifecycle !== 'live' || key(prev) !== key(next) || next.lastActivityAt - prev.lastActivityAt > 60) {
+    // status/activity change constantly: persist them only alongside a real change, or once a minute,
+    // or when a turn starts or ends (after a crash or a reboot, recovery reads whether it was working).
+    const working = (s: string) => s === 'busy' || s === 'waiting';
+    if (!prev || prev.lifecycle !== 'live' || key(prev) !== key(next) || next.lastActivityAt - prev.lastActivityAt > 60 || working(prev.status) !== working(next.status)) {
       this.dirty = true;
     }
   }
@@ -251,6 +255,8 @@ export class Registry {
       tmux: f.tmux,
       meta: { ...prev?.meta, ...f.meta },
     });
+    // Running again: an earlier "you ended it" no longer says anything about this run.
+    delete this.records.get(id)!.meta['ah.endedBy'];
     this.dirty = true;
     this.inheritQueue(id);
     this.flush();
@@ -330,11 +336,17 @@ export class Registry {
       const running = r.lifecycle === 'live' || r.lifecycle === 'starting';
       const grace = r.lifecycle === 'starting' && t - r.lastActivityAt < 10;
       if (running && r.host === hostName() && !alive.has(r.id) && !grace) {
+        const last = r.status;
         r.lifecycle = 'ended';
         r.status = 'ended';
         r.endedAt = t;
         r.pendingResume = false;
         this.dirty = true;
+        try {
+          this.onEnd?.(r, last);
+        } catch (err) {
+          console.error('session end hook failed:', err);
+        }
       }
       if (r.endedAt && t - r.endedAt > KEEP_ENDED_SECONDS && !r.meta['ah.pinned']) {
         this.records.delete(r.id);

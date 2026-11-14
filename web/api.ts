@@ -47,6 +47,8 @@ export type Win = {
   fork: { parentUid: string; parentTitle: string; rootUid: string; forks: number } | null;
   /** Portable lineage: the conversation this one continues (another agent's, a fork, another host's). */
   continued?: Continued | null;
+  /** Something went wrong and ah is (or could be) keeping it going (server/recovery). */
+  recovery?: Recovery | null;
 };
 
 export type ForkInfo = {
@@ -220,6 +222,9 @@ export type SearchQuery = { q: string; scope?: string; role?: string; project?: 
 export type ChatSummary = { uid: string; title: string; count: number; firstAt: number; lastAt: number; preview: string };
 export type Followup = { title: string; kind: 'session' | 'chat'; text: string };
 export type ChatReply = { message: ChatMsg; followups: Followup[] };
+
+/** A session's recovery from a limit, a provider error or a crash (server/recovery). */
+export type Recovery = { state: 'waiting_capacity' | 'recoverable' | 'scheduled' | 'resuming' | 'needs_user' | 'failed' | 'stopped'; reason: string; evidence: string; attempts: number; maxAttempts: number; nextAttemptAt: number | null; resetsAt: number | null; auto: boolean; updatedAt: number };
 
 /** Where a conversation came from when ah carried it over (server/sessions.ts `Continued`). */
 export type Continued = { linkId: string; fromUid: string | null; fromHarness: string; fromTitle: string; fromHost?: string; kind: 'resume' | 'fork' | 'portable' | 'import' | 'migration'; strategy: string; at: number };
@@ -434,6 +439,8 @@ export function hostApi(base: string) {
     continueIn: (ref: string, body: { to: string; intent?: 'continue' | 'fork'; worktree?: boolean; name?: string; model?: string; effort?: string; mode?: string; idempotencyKey: string }) =>
       r<{ operation: ContinueOp; existed: boolean }>('POST', `/api/portable/conversations/${enc(ref)}/continue`, body),
     continueOp: (id: string) => r<ContinueOp>('GET', `/api/portable/operations/${enc(id)}`),
+    recovery: (uid: string) => r<{ auto: boolean; recovery: (Recovery & { key: string }) | null; events: Array<{ at: number; state: string; detail: string }> }>('GET', `/api/sessions/${enc(uid)}/recovery`),
+    recoveryAction: (uid: string, body: { action: 'retry' | 'pause' | 'resume' | 'cancel' } | { auto: boolean }) => r<{ auto: boolean }>('POST', `/api/sessions/${enc(uid)}/recovery`, body),
     jobs: () => r<{ jobs: Job[]; state: JobsState }>('GET', '/api/jobs'),
     job: (id: string) => r<Job & { runs: JobRun[] }>('GET', `/api/jobs/${enc(id)}`),
     createJob: (body: { name: string; action: JobAction; trigger: JobTrigger; policy?: Record<string, unknown> }) => r<Job>('POST', '/api/jobs', body),

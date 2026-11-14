@@ -8,7 +8,8 @@
 //
 // What it says back is scripted: "Got: <first line>". A prompt starting with
 //   RATELIMIT <seconds>  prints the harness's usage-limit notice (resetting that far ahead)
-//   CRASH                exits mid-turn (an unexpected process exit)
+//   CRASH [ms]           exits mid-turn (an unexpected process exit), after ms of working
+//   AUTHFAIL             answers with the harness's "sign in again" error
 //   SLOW <ms>            works that long before answering
 // FAKE_HARNESS_LOG, when set, gets one line per prompt received (for duplicate checks).
 import { appendFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
@@ -81,13 +82,14 @@ function reply(text) {
 }
 
 function limitNotice(seconds) {
-  const t = new Date(Date.now() + seconds * 1000);
+  // The screen shows minutes, rounded up, as the real CLIs show a future time.
+  const t = new Date(Math.ceil((Date.now() + seconds * 1000) / 60000) * 60000);
   const h = t.getHours() % 12 || 12;
   const m = String(t.getMinutes()).padStart(2, '0');
   const ap = t.getHours() < 12 ? 'am' : 'pm';
   if (kind === 'claude') {
     process.stdout.write(`\r\nYou've hit your session limit · resets ${h}:${m}${ap}\r\n`);
-    claudeLine('assistant', [{ type: 'text', text: `Claude AI usage limit reached|${Math.floor(t.getTime() / 1000)}` }], { isApiErrorMessage: true });
+    claudeLine('assistant', [{ type: 'text', text: `Claude AI usage limit reached|${Math.floor(Date.now() / 1000) + seconds}` }], { isApiErrorMessage: true });
   } else {
     process.stdout.write(`\r\nYou've hit your usage limit. Upgrade or try again at ${h}:${m} ${ap.toUpperCase()}.\r\n`);
     codexLine('event_msg', { type: 'error', message: `You've hit your usage limit. Try again at ${h}:${m} ${ap.toUpperCase()}.` });
@@ -115,15 +117,20 @@ function submit(text) {
   const first = text.trim().split('\n')[0];
   const slow = first.match(/^SLOW (\d+)/);
   const limit = first.match(/^RATELIMIT (\d+)/);
+  const crash = first.match(/^CRASH(?: (\d+))?/);
   setTimeout(() => {
-    if (first.startsWith('CRASH')) process.exit(3);
+    if (crash) process.exit(3);
     if (limit) limitNotice(Number(limit[1]));
+    else if (first.startsWith('AUTHFAIL')) {
+      if (kind === 'claude') claudeLine('assistant', [{ type: 'text', text: 'Invalid API key · Please run /login' }], { isApiErrorMessage: true });
+      else codexLine('event_msg', { type: 'error', message: 'unexpected status 401 Unauthorized: Please run codex login' });
+    }
     else reply(`Got: ${first.slice(0, 80)}`);
     busy = false;
     state('idle');
     console.log(`DONE ${first.slice(0, 40)}`);
     if (queue.length) submit(queue.shift());
-  }, slow ? Number(slow[1]) : 150);
+  }, slow ? Number(slow[1]) : crash?.[1] ? Number(crash[1]) : 150);
 }
 
 process.stdin.on('data', (chunk) => {

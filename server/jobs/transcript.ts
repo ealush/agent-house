@@ -50,3 +50,21 @@ export async function readAfter(file: string, adapter: string, from: number): Pr
   }
   return { size: s.size, user, replies };
 }
+
+/**
+ * Complete lines written after byte `from` (at most the last 1 MB of them), and the
+ * file's length now. A first line cut by the window is dropped; so is an unfinished last one.
+ */
+export async function linesAfter(file: string, from: number): Promise<{ size: number; lines: string[] }> {
+  const s = await stat(file).catch(() => null);
+  if (!s || from >= s.size) return { size: s?.size ?? 0, lines: [] };
+  const start = Math.max(from, s.size - 1024 * 1024);
+  const text = await slice(file, start, s.size - start);
+  const lines = text.split('\n');
+  if (start > from) lines.shift();
+  const done = text.endsWith('\n');
+  if (!done) lines.pop();
+  // An unfinished last line is read again next time, from where it starts.
+  const size = done ? s.size : s.size - Buffer.byteLength(text.slice(text.lastIndexOf('\n') + 1));
+  return { size, lines: lines.filter((l) => l.trim()) };
+}

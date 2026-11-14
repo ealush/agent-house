@@ -389,3 +389,43 @@ model JobRun {
   @@index([state])
   @@index([jobId])
 }
+
+// Keeping an agent going through temporary failures (docs/spec/13-conductor.md, CND-5).
+// One row per conversation (`key` = harness:harnessId, or the uid) while something is
+// wrong or being retried, kept after it's resolved for its history. Every decision the
+// engine makes is a RecoveryEvent: why a retry was scheduled, what was done, what came of it.
+// state: waiting_capacity | recoverable | scheduled | resuming | needs_user | failed | resolved | stopped
+model Recovery {
+  key           String  @id
+  uid           String
+  state         String
+  /// rate_limit | provider_unavailable | network | process_exit | credentials | unknown
+  reason        String
+  /// What the agent said (or what ah saw), word for word, shortened.
+  evidence      String  @default("")
+  /// transcript | screen | lifecycle
+  source        String  @default("")
+  attempts      Int     @default(0)
+  maxAttempts   Int     @default(5)
+  nextAttemptAt Int?
+  /// When the provider said capacity comes back (epoch seconds), when it said.
+  resetsAt      Int?
+  /// Transcript length when the failure was seen, and when the last attempt was made.
+  markJson      String  @default("{}")
+  /// The last attempt's continuation, its queue id and when.
+  lastAttemptJson String @default("{}")
+  createdAt     Int     @default(0)
+  updatedAt     Int     @default(0)
+
+  @@index([state, nextAttemptAt])
+}
+
+model RecoveryEvent {
+  id     Int    @id @default(autoincrement())
+  key    String
+  at     Int
+  state  String
+  detail String
+
+  @@index([key, id])
+}

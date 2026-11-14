@@ -3,6 +3,7 @@
 // (launch, resume, send). HTTP, SSE and the CLI are all thin views over this.
 import type { ReviewState } from './review/service.ts';
 import type { JobsState } from './jobs/scheduler.ts';
+import type { RecoveryView } from './recovery/engine.ts';
 import { hostName } from './host.ts';
 import { readFileSync, existsSync } from 'node:fs';
 import { mkdir, stat, writeFile } from 'node:fs/promises';
@@ -179,6 +180,8 @@ export class Core {
   reviewState: () => ReviewState | null = () => null;
   /** The scheduler's summary for the stream; main.ts wires it. */
   jobsState: () => JobsState | null = () => null;
+  /** Each session's recovery, if any (server/recovery); main.ts wires the engine. */
+  recoveryOf: (s: { uid: string; agent?: string | null; harness?: string; harnessId: string | null }) => RecoveryView | null = () => null;
   /**
    * Run after every pass with its state (portable links settling, the scheduler, recovery):
    * each must be cheap or guard its own overlap; a failure in one never stops the pass.
@@ -294,7 +297,9 @@ export class Core {
       await this.queues.confirmDeliveries(windows);
       await this.queues.deliverDue(windows);
       this.push.observe(windows, (id) => this.config.presets.find((p) => p.id === id)?.name ?? id);
+      for (const w of windows) if (w.agent) w.recovery = this.recoveryOf(w);
       const history = (await buildHistory(this.registry, windows)).filter((h) => !this.hidden.has(h.ref));
+      for (const h of history) if (h.kind === 'ended') h.recovery = this.recoveryOf({ uid: h.ref, harness: h.harness, harnessId: h.harnessId });
       const state: State = {
         api: API_VERSION,
         hostname: hostName(),

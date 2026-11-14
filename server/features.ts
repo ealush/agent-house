@@ -23,6 +23,8 @@ export const FEATURES: Record<string, number> = {
   migration: 1,
   /** /api/jobs: scheduled, recurring, dependent and event-triggered agent work with decisions (server/jobs). */
   jobs: 1,
+  /** Recovery from rate limits, provider errors and crashes: windows' `recovery`, /api/sessions/:uid/recovery (server/recovery). */
+  recovery: 1,
 };
 
 export function features(): Record<string, number> {

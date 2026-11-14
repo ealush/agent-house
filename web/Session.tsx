@@ -13,7 +13,8 @@ import { look } from './agents.ts';
 import { statusClass, statusWord } from './status.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
 import { continuePrompt } from './handoff.ts';
-import { HostPresetsContext } from './ModelPicker.tsx';
+import type { Recovery } from './api.ts';
+import { HostFeaturesContext, HostPresetsContext } from './ModelPicker.tsx';
 import { recentFor, ResumeContext } from './recent.ts';
 import { defaultView, surfaceFor, VIEW_LABEL, viewsFor, type SurfaceHandle, type View } from './surface.ts';
 import { ComposerBar, type ComposerHandle } from './Composer.tsx';
@@ -320,6 +321,13 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
   const [forking, setForking] = useState(false);
   /** Continue in (server/portable): the agent chosen, while its dialog is open. */
   const [continuing, setContinuing] = useState<string | null>(null);
+  /** This session's automatic recovery switch (server/recovery), read when its menu opens. */
+  const [autoRecover, setAutoRecover] = useState(false);
+  const features = useContext(HostFeaturesContext)(w.host);
+  useEffect(() => {
+    if (!menu || !w.agent || !(features?.recovery ?? 0)) return;
+    client.recovery(w.uid).then((r) => setAutoRecover(r.auto), () => {});
+  }, [menu, w.uid, w.agent, client, features?.recovery]);
   const [branching, setBranching] = useState(false);
   const [sending, setSending] = useState(false);
   const [forksOpen, setForksOpen] = useState(false);
@@ -985,6 +993,35 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
           <ShortcutHint id="close-pane" />
         </button>
       )}
+      {w.agent && (features?.recovery ?? 0) > 0 && (
+        <>
+          <hr />
+          {w.recovery && w.recovery.state !== 'resuming' && w.recovery.state !== 'needs_user' && (
+            <button onClick={() => act(() => client.recoveryAction(w.uid, { action: 'retry' }))}>
+              <span className="grow">Go on now</span>
+            </button>
+          )}
+          {w.recovery && ['scheduled', 'waiting_capacity', 'recoverable'].includes(w.recovery.state) && (
+            <button onClick={() => act(() => client.recoveryAction(w.uid, { action: 'pause' }))}>
+              <span className="grow">Pause recovery</span>
+            </button>
+          )}
+          {w.recovery?.state === 'stopped' && (
+            <button onClick={() => act(() => client.recoveryAction(w.uid, { action: 'resume' }))}>
+              <span className="grow">Resume recovery</span>
+            </button>
+          )}
+          {w.recovery && (
+            <button onClick={() => act(() => client.recoveryAction(w.uid, { action: 'cancel' }))}>
+              <span className="grow">Stop retrying</span>
+            </button>
+          )}
+          <button role="menuitemcheckbox" aria-checked={!!w.recovery?.auto || autoRecover} onClick={() => act(async () => setAutoRecover((await client.recoveryAction(w.uid, { auto: !(w.recovery?.auto ?? autoRecover) })).auto))}>
+            <span className="grow">Keep going after limits and crashes</span>
+            {(w.recovery?.auto ?? autoRecover) && <span className="check">✓</span>}
+          </button>
+        </>
+      )}
       <hr />
       <button
         onClick={() =>
@@ -1133,6 +1170,11 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
                 {w.status === 'waiting' && <span className="dot waiting" />} {statusWord(w)}
               </span>
               {multiHost && <span className="pill">{w.host}</span>}
+              {w.recovery && (
+                <span className={`pill ${w.recovery.state === 'needs_user' || w.recovery.state === 'failed' ? 'waiting' : ''}`} title={recoveryTitle(w.recovery)}>
+                  ↻ {recoveryWord(w.recovery)}
+                </span>
+              )}
               {w.continued && (
                 <button
                   className="pill"
@@ -1444,4 +1486,30 @@ function CaptureDialog({ text, onClose }: { text: string; onClose: () => void })
       <pre ref={pre}>{text.trimEnd()}</pre>
     </dialog>
   );
+}
+
+/** A recovery as a few words for the header pill. */
+function recoveryWord(r: Recovery): string {
+  const at = r.nextAttemptAt ?? r.resetsAt;
+  const time = at ? new Date(at * 1000).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : null;
+  switch (r.state) {
+    case 'scheduled':
+      return time ? `going on at ${time}` : 'going on soon';
+    case 'waiting_capacity':
+      return time ? `limited until ${time}` : 'limited';
+    case 'resuming':
+      return 'picking up';
+    case 'needs_user':
+      return r.reason === 'credentials' ? 'sign in again' : 'needs you';
+    case 'failed':
+      return 'kept failing';
+    case 'stopped':
+      return 'recovery paused';
+    default:
+      return r.reason === 'process_exit' ? 'stopped unexpectedly' : 'stopped';
+  }
+}
+
+function recoveryTitle(r: Recovery): string {
+  return `${r.evidence}${r.attempts ? `\nAttempts: ${r.attempts} of ${r.maxAttempts}` : ''}${r.auto ? '' : '\nAutomatic recovery is off for this session (session menu).'}`;
 }

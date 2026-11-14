@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { HostPresetsContext, PresetsContext } from './ModelPicker.tsx';
+import { HostFeaturesContext, HostPresetsContext, PresetsContext } from './ModelPicker.tsx';
 import { ResumeContext } from './recent.ts';
 import { CLIENT_ID, deviceName, waitForWindow, type HistoryItem, type SearchHit, type SendResult, type State, type Win } from './api.ts';
 import { useHosts } from './useHosts.ts';
@@ -1234,6 +1234,7 @@ export function App({ onLock }: { onLock: () => void }) {
   return (
     <PresetsContext.Provider value={presetFor}>
     <HostPresetsContext.Provider value={(host) => hostState(host)?.presets ?? []}>
+    <HostFeaturesContext.Provider value={(host) => hostState(host)?.features}>
     <ResumeContext.Provider value={state ? { history: state.history, resume: (h) => resumeKey(h.host, h.ref), discard: terminate } : null}>
     <ReviewContext.Provider value={{ host: state?.hostname ?? '', state: state?.review ?? null, open: openReview }}>
     <SessionActionsContext.Provider value={sessionActions}>
@@ -1537,6 +1538,7 @@ export function App({ onLock }: { onLock: () => void }) {
     </SessionActionsContext.Provider>
     </ReviewContext.Provider>
     </ResumeContext.Provider>
+    </HostFeaturesContext.Provider>
     </HostPresetsContext.Provider>
     </PresetsContext.Provider>
   );

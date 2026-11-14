@@ -13,7 +13,7 @@ import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { homedir } from 'node:os';
 import { hostName } from './host.ts';
-import { join, extname, resolve } from 'node:path';
+import { basename, join, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Duplex } from 'node:stream';
 import type { AddressInfo } from 'node:net';
@@ -23,7 +23,7 @@ import { shortPath } from './sessions.ts';
 import { compressible, encoded } from './compress.ts';
 import { Core, CoreError, resolveDir, defaultName, API_VERSION } from './core.ts';
 import { features } from './features.ts';
-import { buildLaunch, LaunchError } from './launch.ts';
+import { buildLaunch, LaunchError, resumeSelection } from './launch.ts';
 import { withCatalog } from './catalog.ts';
 import { addViewer, attach, clientId, viewers } from './terminal.ts';
 import { desktopStatus, installDesktop, removeDesktop } from './desktop.ts';
@@ -62,7 +62,8 @@ import { MigrationService } from './migrate/service.ts';
 import { migrateApi } from './migrate/api.ts';
 import { Scheduler } from './jobs/scheduler.ts';
 import { jobsApi } from './jobs/api.ts';
-import { readAfter } from './jobs/transcript.ts';
+import { linesAfter, readAfter } from './jobs/transcript.ts';
+import { RecoveryEngine, RecoveryError } from './recovery/engine.ts';
 import { fileContains } from './portable/extract.ts';
 import { discover } from './discovery.ts';
 import { copyTranscript, removeCopiedTranscript } from './fork.ts';
@@ -280,6 +281,37 @@ const scheduler = new Scheduler(getDb(), {
   limits: () => config.jobs,
 });
 core.jobsState = () => scheduler.state();
+
+// Keeping agents going through temporary failures (server/recovery): evidence from
+// transcripts, screens and sessions that died mid-turn; actions only when it's on.
+const recovery = new RecoveryEngine(getDb(), {
+  config: () => config.recovery,
+  record: (uid) => core.registry.get(uid),
+  transcript: (uid) => transcriptOf(uid),
+  readLines: (file, from) => linesAfter(file, from),
+  fresh: async (file, seconds) => {
+    const s = await stat(file).catch(() => null);
+    return !!s && Date.now() - s.mtimeMs < seconds * 1000;
+  },
+  send: (uid, text, id) => core.send(uid, text, true, undefined, { id, remember: false }),
+  resume: async (uid) => void (await core.resume(uid)),
+  restartInPlace: async (uid) => {
+    const rec = core.registry.get(uid);
+    const w = (await core.tick()).windows.find((x) => x.uid === uid);
+    // Only into a shell at its prompt, and only the agent's own resume of this conversation.
+    if (!rec?.harnessId || !w || w.agent || !/^(ba|z|fi|da|k)?sh$/.test(basename(w.command))) return false;
+    const preset = await withCatalog(core.preset(rec.harness));
+    const plan = buildLaunch(preset, { ...resumeSelection(rec.meta as Record<string, unknown>), resume: rec.harnessId });
+    await t.sendLine(w.id, plan.command);
+    return true;
+  },
+  queueIds: (uid) => core.queue(uid).map((q) => q.id),
+  alert: (p) => core.push.alert(p),
+  changed: () => void core.tick().catch(() => {}),
+});
+core.recoveryOf = (s) => recovery.viewOf(s);
+core.registry.onEnd = (r, last) => recovery.sessionEnded(r, last);
+core.afterTick.add((state) => recovery.tick(state.windows));
 core.afterTick.add((state) => scheduler.tick(state.windows));
 
 // Moving stopped sessions between hosts (server/migrate): the source pushes to a peer with
@@ -377,6 +409,11 @@ function nativeWithoutOrigin(req: IncomingMessage, caller: Caller | null, path: 
   return auth.isNative(caller) || NATIVE_SIGN_IN.test(path);
 }
 
+function recoveryError(err: unknown): never {
+  if (err instanceof RecoveryError) throw new HttpError(err.status, err.message, err.code);
+  throw err;
+}
+
 function audit(req: IncomingMessage, event: string, detail: Record<string, unknown> = {}) {
   auth.audit(event, { ...detail, from: String(req.headers['tailscale-user-login'] ?? 'local') });
 }
@@ -469,6 +506,28 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   if (path.startsWith('/api/portable/')) return portableApi(req, res, url, path, portable, audit);
   if (path === '/api/migrations' || path.startsWith('/api/migrations/')) return migrateApi(req, res, path, caller, migrations, audit);
   if (path === '/api/jobs' || path.startsWith('/api/jobs/')) return jobsApi(req, res, path, caller, scheduler, audit);
+
+  // Recovery (server/recovery): what went wrong in a session, what ah will do, and your controls.
+  if (route('GET', /^\/api\/recovery$/)) return send(res, 200, { recoveries: await recovery.list(), config: { auto: config.recovery.auto, maxAttempts: config.recovery.maxAttempts } });
+  if ((m = route('GET', /^\/api\/sessions\/([\w-]{1,40})\/recovery$/))) return send(res, 200, await recovery.get(m[1]).catch(recoveryError));
+  if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/recovery$/))) {
+    const body = await readJson(req);
+    const uid = m[1];
+    if (!core.registry.get(uid)) throw new HttpError(404, 'session not found');
+    if (body.auto !== undefined) {
+      if (typeof body.auto !== 'boolean') throw new HttpError(400, 'auto must be true or false', 'invalid_auto');
+      core.registry.setMeta(uid, 'ah.recovery.auto', body.auto);
+      await recovery.autoChanged(uid);
+      audit(req, 'recovery.auto', { uid, auto: body.auto });
+      core.tick().catch(() => {});
+      return send(res, 200, await recovery.get(uid));
+    }
+    const action = body.action;
+    if (action !== 'retry' && action !== 'pause' && action !== 'resume' && action !== 'cancel') throw new HttpError(400, 'action must be retry, pause, resume or cancel', 'invalid_action');
+    const out = await recovery.control(uid, action, (await core.current()).windows).catch(recoveryError);
+    audit(req, `recovery.${action}`, { uid });
+    return send(res, 200, out);
+  }
 
   if (route('GET', /^\/api\/state$/)) return send(res, 200, await core.current());
 
@@ -1375,6 +1434,9 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
       return send(res, 200, { ok: true });
     }
     if (!m[2] && method === 'DELETE') {
+      // You ended it: recovery (server/recovery) must not take this for a crash.
+      const ending = (await core.current()).windows.find((w) => w.id === id);
+      if (ending) core.registry.setMeta(ending.uid, 'ah.endedBy', 'you');
       await t.killWindow(id);
       audit(req, 'session.kill', { window: id });
       core.tick().catch(() => {});
