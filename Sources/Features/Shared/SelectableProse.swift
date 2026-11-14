@@ -31,6 +31,7 @@ struct SelectableProse: UIViewRepresentable {
     @Environment(\.openURL) private var openURL
     @Environment(\.colorScheme) private var scheme
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.messageTapped) private var messageTapped
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -47,12 +48,18 @@ struct SelectableProse: UIViewRepresentable {
         view.linkTextAttributes = [:]
         view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         view.delegate = context.coordinator
+        // A brief tap on the words, off a link: the message's actions (`\.messageTapped`).
+        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapped(_:)))
+        tap.cancelsTouchesInView = false
+        tap.delegate = context.coordinator
+        view.addGestureRecognizer(tap)
         return view
     }
 
     func updateUIView(_ view: UITextView, context: Context) {
         context.coordinator.menu = menu
         context.coordinator.openURL = openURL
+        context.coordinator.messageTapped = messageTapped
         // Only new words or a new look replace the text: replacing it drops a selection.
         let look = Look(theme: theme, compact: compact, scheme: scheme, typeSize: typeSize)
         guard context.coordinator.shown?.blocks != blocks || context.coordinator.shown?.look != look else { return }
@@ -77,10 +84,26 @@ struct SelectableProse: UIViewRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject, UITextViewDelegate {
+    final class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate {
         var menu: TextMenu?
         var openURL: OpenURLAction?
+        var messageTapped: (@MainActor @Sendable () -> Void)?
         var shown: (blocks: [MarkdownBlock], look: Look)?
+
+        @objc func tapped(_ tap: UITapGestureRecognizer) {
+            guard let messageTapped, let view = tap.view as? ProseTextView, let text = view.attributedText else { return }
+            // A tap that lets go of a selection, or opens a link, does only that.
+            guard !view.selectedAtTouch else { return }
+            if let position = view.closestPosition(to: tap.location(in: view)) {
+                let index = view.offset(from: view.beginningOfDocument, to: position)
+                for i in [index, index - 1] where i >= 0 && i < text.length {
+                    if text.attribute(.link, at: i, effectiveRange: nil) != nil { return }
+                }
+            }
+            messageTapped()
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
 
         func textView(_ textView: UITextView, editMenuForTextIn range: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
             let selected = (textView.attributedText.string as NSString).substring(with: range)
@@ -109,8 +132,21 @@ struct SelectableProse: UIViewRepresentable {
 /// The prose's text view: what it has selected goes once it stops being the first responder,
 /// and a tap anywhere in the transcript lets the selection go (`dropSelection`).
 final class ProseTextView: UITextView {
+    /// Words were selected when this touch began: a tap then only lets them go.
+    private(set) var selectedAtTouch = false
+    /// Whether the last `dropSelection` let words go. A tap on the words makes their view the
+    /// first responder with nothing selected, so its answering says nothing by itself.
+    static var dropped = false
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        selectedAtTouch = selectedRange.length > 0
+        super.touchesBegan(touches, with: event)
+    }
+
     /// Sent up the responder chain (to nil): a selection in the transcript ends, if there's one.
     @objc func dropSelection() {
+        Self.dropped = selectedAtTouch || selectedRange.length > 0
+        selectedAtTouch = false
         _ = resignFirstResponder()
     }
 

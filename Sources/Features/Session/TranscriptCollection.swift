@@ -381,10 +381,12 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
             collectionView.dequeueConfiguredReusableCell(using: registration, for: indexPath, item: item)
         }
 
-        let tap = UITapGestureRecognizer(target: self, action: #selector(tapped))
+        let tap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
         tap.cancelsTouchesInView = false
         tap.delegate = self
         collectionView.addGestureRecognizer(tap)
+        editMenu = UIEditMenuInteraction(delegate: self)
+        collectionView.addInteraction(editMenu)
 
         if let seq = scene.scrollAnchors[session.key]?.seq {
             restoreSeq = seq
@@ -393,6 +395,17 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
 
     /// A place to come back to, held until its row is in the transcript.
     private var restoreSeq: Int?
+
+    /// A message's actions, shown where a brief tap on it was (`MessageActions`).
+    private var editMenu: UIEditMenuInteraction!
+    /// The message a tap just landed on, and the row whose menu is showing.
+    private var tappedMessage: TranscriptItem?
+    private var menuItem: TranscriptItem?
+    /// Where the last tap was, and when one last put something away (the keyboard, the
+    /// settings, selected words, a message's menu): a tap that does that does only that.
+    private var tapPoint: CGPoint?
+    private var dismissedAt: Date?
+    private var menuScheduled = false
 
     // MARK: Rows
 
@@ -414,12 +427,17 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
                 if let entry = blocksByID[id] {
                     let block = entry.block, index = entry.index
                     let marked = content.linked == block.id ? 0.14 : browsing == index ? 0.08 : 0
-                    VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 0) {
                         BlockRow(block: block, session: session, scene: scene, stepsHidden: content.stepsHidden, isLast: index == content.blocks.count - 1)
                             .padding(.horizontal, 2)
                             .background(marked > 0 ? theme.accent.opacity(marked) : .clear, in: RoundedRectangle(cornerRadius: 12))
                         if let seconds = content.ends[block.id] {
+                            // The line under a reply and the room over it: a tap there is on the reply.
                             TurnFooter(seconds: seconds)
+                                .padding(.top, 18)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                                .onTapGesture { [weak self] in self?.messageTapped(item) }
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -453,6 +471,7 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
         .environment(\.theme, theme)
         .environment(\.hostFiles, hostFiles)
         .environment(\.rowWillResize) { [weak self] in self?.willResize(item) }
+        .environment(\.messageTapped) { [weak self] in self?.messageTapped(item) }
         .tint(theme.accent)
         .font(.ah(.body))
         // As tall as it is, whatever the cell's height: what it measures is the row's height.
@@ -847,6 +866,7 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
         if session.composer.trayOpen {
             withAnimation(ComposerFloat.motion(opening: false, reduceMotion: reduceMotion)) { session.composer.trayOpen = false }
         }
+        editMenu.dismissMenu()
     }
 
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
@@ -868,18 +888,74 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
 
     // MARK: Taps
 
-    @objc private func tapped() {
+    @objc private func tapped(_ tap: UITapGestureRecognizer) {
+        let point = tap.location(in: collectionView)
+        var dismissed = false
         // A tap on the conversation folds what floats over it, as it puts the keyboard away.
         if session.composer.trayOpen {
             withAnimation(ComposerFloat.motion(opening: false, reduceMotion: reduceMotion)) { session.composer.trayOpen = false }
+            dismissed = true
         }
         // Words selected in a reply let go, as a page's do when you tap away from them.
+        ProseTextView.dropped = false
         UIApplication.shared.sendAction(#selector(ProseTextView.dropSelection), to: nil, from: nil, for: nil)
-        guard !scene.hardwareKeyboard, scene.composerFocused != nil else { return }
-        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        if ProseTextView.dropped { dismissed = true }
+        if !scene.hardwareKeyboard, scene.composerFocused != nil {
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            dismissed = true
+        }
+        if dismissed { dismissedAt = .now }
+        tapPoint = point
+        // Between messages, or under the last one: the message just above.
+        if collectionView.indexPathForItem(at: point) == nil, let above = message(above: point) { messageTapped(above) }
+    }
+
+    /// A brief tap on a message (its words, your bubble, the line under it, the room after it):
+    /// its actions, where the finger was. Shown once the tap's handlers have all run (the words',
+    /// the bubble's and the transcript's own come in no set order), and not for a tap that put
+    /// something away.
+    private func messageTapped(_ item: TranscriptItem) {
+        tappedMessage = item
+        guard !menuScheduled else { return }
+        menuScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            menuScheduled = false
+            defer { tappedMessage = nil }
+            guard let item = tappedMessage, let point = tapPoint, Date.now.timeIntervalSince(dismissedAt ?? .distantPast) > 0.4 else { return }
+            menuItem = item
+            editMenu.presentEditMenu(with: UIEditMenuConfiguration(identifier: nil, sourcePoint: point))
+        }
+    }
+
+    /// The message whose row ends just above a point between rows (or under the last).
+    private func message(above point: CGPoint) -> TranscriptItem? {
+        collectionView.indexPathsForVisibleItems
+            .compactMap { path -> (item: TranscriptItem, bottom: CGFloat)? in
+                guard let item = dataSource.itemIdentifier(for: path), case .block = item,
+                      let frame = collectionView.layoutAttributesForItem(at: path)?.frame,
+                      frame.maxY <= point.y, point.y - frame.maxY < 80 else { return nil }
+                return (item, frame.maxY)
+            }
+            .max { $0.bottom < $1.bottom }?.item
     }
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+}
+
+// UIKit asks on the main thread; the protocol just doesn't say so.
+extension TranscriptController: @preconcurrency UIEditMenuInteractionDelegate {
+    func editMenuInteraction(_ interaction: UIEditMenuInteraction, menuFor configuration: UIEditMenuConfiguration, suggestedActions: [UIMenuElement]) -> UIMenu? {
+        guard case .block(let id)? = menuItem, let block = blocksByID[id]?.block else { return nil }
+        let actions = MessageActions.menu(for: block, session: session, scene: scene)
+        return actions.isEmpty ? nil : UIMenu(children: actions)
+    }
+
+    /// A tap away from an open menu closes it, and that's all it does: the next tap shows one
+    /// (otherwise a tap on your bubble did nothing and a tap on the words moved the menu).
+    func editMenuInteraction(_ interaction: UIEditMenuInteraction, willDismissMenuFor configuration: UIEditMenuConfiguration, animator: any UIEditMenuInteractionAnimating) {
+        dismissedAt = .now
+    }
 }
 
 /// A row arriving: what you sent springs up out of the composer, the working row rises in.

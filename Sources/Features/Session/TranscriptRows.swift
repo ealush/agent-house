@@ -129,12 +129,15 @@ struct BlockRow: View {
     let stepsHidden: Bool
     let isLast: Bool
     @Environment(\.theme) private var theme
+    @Environment(\.messageTapped) private var messageTapped
 
     var body: some View {
         switch block {
         case .user(_, _, let at, let parts):
             let text = parts.compactMap { if case .text(let t) = $0 { return t } else { return nil } }.joined(separator: "\n")
             UserBubble(text: text, at: at, media: parts)
+                // A brief tap: the message's actions where the finger was (`MessageActions`).
+                .onTapGesture { messageTapped?() }
                 .contextMenu {
                     Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = text }
                     LinkButtons(place: messagePlace, scene: scene)
@@ -884,4 +887,41 @@ extension EnvironmentValues {
     /// the row's new height arrived at once and everything around it jumped while it was still
     /// folding.
     @Entry var rowWillResize: (@MainActor @Sendable () -> Void)? = nil
+    /// Set by the UIKit transcript for each row: a brief tap on the message (its words, your
+    /// bubble, the line under it) says so, and the transcript shows its actions there.
+    @Entry var messageTapped: (@MainActor @Sendable () -> Void)? = nil
+}
+
+/// What a brief tap on a message offers, in UIKit's edit menu where the finger was
+/// (`TranscriptController`): all of it copied, quoted in your reply, a link to it. The same
+/// actions as a long press, without the press.
+enum MessageActions {
+    @MainActor
+    static func menu(for block: FeedBlock, session: SessionModel, scene: SceneModel) -> [UIMenuElement] {
+        guard block.isUser || block.isAgent else { return [] }
+        let place = Place(.session(session.key), message: block.seq)
+        var items: [UIMenuElement] = []
+        if block.hasText {
+            items.append(UIAction(title: "Copy", image: UIImage(systemName: "doc.on.doc")) { _ in
+                UIPasteboard.general.string = block.text
+                scene.toast("Copied the message")
+            })
+        }
+        if session.isLive, block.hasText {
+            if block.isAgent {
+                items.append(UIAction(title: "Quote in Reply", image: UIImage(systemName: "text.quote")) { _ in
+                    session.composer.compose(Markdown.quote(block.text, limit: 12))
+                    Haptics.tap()
+                })
+            } else {
+                items.append(UIAction(title: "Edit & Send Again", image: UIImage(systemName: "pencil")) { _ in
+                    session.composer.compose(block.text)
+                    Haptics.tap()
+                })
+            }
+        }
+        items.append(UIAction(title: "Copy Link", image: UIImage(systemName: "link")) { _ in scene.copyLink(to: place) })
+        items.append(UIAction(title: "Share Link…", image: UIImage(systemName: "square.and.arrow.up")) { _ in scene.shareLink(to: place) })
+        return items
+    }
 }
