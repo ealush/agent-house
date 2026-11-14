@@ -83,6 +83,11 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
         UIHostingController(rootView: Themed(app: scene.app, theme: theme) { view })
     }
 
+    /// A modal's host, which says when it's gone (`ModalHost`).
+    private func modalHost<V: View>(_ view: V) -> ModalHost<Themed<V>> {
+        ModalHost(rootView: Themed(app: scene.app, theme: theme) { view })
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
@@ -289,6 +294,10 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
             }
             let controller = self.makeModal(wanted)
             controller.presentationController?.delegate = self
+            (controller as? any ModalReporting)?.dismissed = { [weak self, weak controller] in
+                guard let self, let controller else { return }
+                self.modalGone(controller)
+            }
             self.modalController = controller
             self.topPresenter().present(controller, animated: true)
         }
@@ -303,7 +312,7 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
     private func makeModal(_ modal: Modal) -> UIViewController {
         switch modal {
         case .sheet(let sheet):
-            let controller = host(SceneSheet(sheet: sheet, scene: scene))
+            let controller = modalHost(SceneSheet(sheet: sheet, scene: scene))
             switch sheet {
             case .confirmTerminate, .confirmPlan:
                 controller.modalPresentationStyle = .formSheet
@@ -327,7 +336,7 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
         case .switcher:
             return floating(SwitcherView(scene: scene)) { [scene] in scene.switcher = nil }
         case .shortcuts:
-            let controller = host(ShortcutsView(scene: scene))
+            let controller = modalHost(ShortcutsView(scene: scene))
             controller.modalPresentationStyle = .formSheet
             return controller
         }
@@ -336,7 +345,7 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
     /// The palette and switcher: over everything, dimmed, a tap outside closes.
     private func floating<V: View>(_ view: V, close: @escaping () -> Void) -> UIViewController {
         let panel = FloatingPanel(close: close) { view }
-        let controller = host(panel)
+        let controller = modalHost(panel)
         controller.view.backgroundColor = .clear
         controller.modalPresentationStyle = .overFullScreen
         controller.modalTransitionStyle = .crossDissolve
@@ -351,7 +360,16 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
 
     /// Swiped away: the state follows.
     func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
-        guard presentationController.presentedViewController === modalController else { return }
+        modalGone(presentationController.presentedViewController)
+    }
+
+    /// The modal on screen went, by a swipe or from inside (a sheet's Close is SwiftUI's
+    /// `dismiss`, which UIKit doesn't report as it does a swipe): the window's state follows.
+    /// Left as it was, the window still had the sheet up, and asking for it again was asking
+    /// for what it already had: Settings, once closed with its ✕, wouldn't open until the app
+    /// was quit. One the window put away itself isn't `modalController` any more.
+    private func modalGone(_ controller: UIViewController) {
+        guard controller === modalController else { return }
         modalController = nil
         switch shownModal {
         case .sheet: scene.sheet = nil
@@ -879,5 +897,22 @@ struct SessionPage: View {
 
     var body: some View {
         SessionScreen(session: session, scene: scene, compactHeader: true, inNavigationBar: true)
+    }
+}
+
+/// A modal that says when it's gone, however it went.
+@MainActor
+protocol ModalReporting: AnyObject {
+    var dismissed: (() -> Void)? { get set }
+}
+
+/// The host of a modal the window shows (a sheet, the palette, the switcher, shortcuts).
+final class ModalHost<Content: View>: UIHostingController<Content>, ModalReporting {
+    var dismissed: (() -> Void)?
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        // Gone, not just covered by something it presented in turn.
+        if isBeingDismissed || presentingViewController == nil { dismissed?() }
     }
 }
