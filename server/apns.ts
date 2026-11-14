@@ -68,14 +68,20 @@ export type ApnsActivity = {
   sentAt: number;
 };
 
-/** The app's `SessionAttributes.ContentState`: these keys and values decode on the device as-is. */
+/**
+ * The app's `SessionAttributes.ContentState`: these keys and values decode on the device as-is.
+ * `starting` (resuming, or picking up after a failure) and `failed` (recovery gave up) are newer
+ * phases, and `until` a newer optional key: a client that doesn't know them shows the phase name.
+ */
 export type ActivityState = {
-  phase: 'working' | 'waiting' | 'finished' | 'limited';
+  phase: 'working' | 'waiting' | 'finished' | 'limited' | 'starting' | 'failed';
   /** What it's doing, what it asks, or when its limit resets; null on a private preview. */
   detail: string | null;
   answerable: boolean;
   /** When this phase began, seconds since 1970 (the Lock Screen counts up from it). */
   since: number;
+  /** A limit's reset, or when ah will carry on (server/recovery), seconds since 1970. */
+  until?: number | null;
 };
 
 /** A Live Activity lasts eight hours at most; its token is no use after that. */
@@ -86,12 +92,18 @@ const ACTIVITY_DETAIL_INTERVAL_MS = 15_000;
 const ACTIVITY_LINGER_S = 15 * 60;
 
 /** What a session's Live Activity says now; `detail` is one short line. */
-export function activityState(w: Pick<WindowView, 'status' | 'detail' | 'limit' | 'ask' | 'answerable'>, askLine: (ask: WindowView['ask']) => string, since: number): ActivityState {
+export function activityState(w: Pick<WindowView, 'status' | 'detail' | 'limit' | 'ask' | 'answerable'> & Partial<Pick<WindowView, 'recovery' | 'limitResetsAt'>>, askLine: (ask: WindowView['ask']) => string, since: number): ActivityState {
   const line = (t: string | null | undefined) => {
     const first = t?.split('\n').map((l) => l.trim()).find(Boolean) ?? null;
     return first && first.length > 120 ? first.slice(0, 119) + '…' : first;
   };
-  if (w.limit && w.status !== 'busy') return { phase: 'limited', detail: line(w.limit), answerable: false, since };
+  // Recovery (server/recovery) says more than the screen: whether ah will carry on, and when.
+  const r = w.status === 'busy' ? null : w.recovery;
+  if (r?.state === 'failed') return { phase: 'failed', detail: line(r.evidence), answerable: false, since };
+  if (r?.state === 'resuming') return { phase: 'starting', detail: 'Picking up again', answerable: false, since };
+  if (r?.state === 'needs_user') return { phase: 'waiting', detail: line(r.reason === 'credentials' ? 'Sign the agent in again' : r.evidence), answerable: false, since };
+  if (r?.state === 'scheduled') return { phase: 'limited', detail: line(r.reason === 'rate_limit' ? `Going on after the reset (${r.evidence})` : `Trying again (${r.evidence})`), answerable: false, since, until: r.nextAttemptAt };
+  if (w.limit && w.status !== 'busy') return { phase: 'limited', detail: line(w.limit), answerable: false, since, until: w.limitResetsAt ?? r?.resetsAt ?? null };
   if (w.status === 'waiting') return { phase: 'waiting', detail: line(askLine(w.ask) || w.detail), answerable: w.answerable, since };
   if (w.status === 'busy') return { phase: 'working', detail: line(w.detail), answerable: false, since };
   return { phase: 'finished', detail: null, answerable: false, since };
@@ -258,17 +270,23 @@ export class Apns {
     if (changed) this.persistActivities();
   }
 
-  /** A Live Activity the app started for session `uid`. Its preview follows the sign-in's alerts. */
-  registerActivity(a: Pick<ApnsActivity, 'uid' | 'token' | 'environment' | 'sessionId'>) {
+  /**
+   * A Live Activity the app started for session `uid`. Its preview follows the sign-in's alerts.
+   * `rotated`: ActivityKit gave the same activity a new token; it carries on where it was.
+   */
+  registerActivity(a: Pick<ApnsActivity, 'uid' | 'token' | 'environment' | 'sessionId'> & { rotated?: boolean }) {
     if (!this.enabled) throw new ApnsError(409, 'APNs is not configured on this host (see "apns" in config.json)');
     const token = a.token.toLowerCase();
     if (!TOKEN_RE.test(token)) throw new ApnsError(400, 'invalid activity token');
     if (a.environment !== 'sandbox' && a.environment !== 'production') throw new ApnsError(400, 'invalid environment');
     if (!a.uid || a.uid.length > 200) throw new ApnsError(400, 'invalid session');
-    // One per session per sign-in: a new one (a new message) replaces the last.
+    // One per session per sign-in: a new one (a new message) replaces the last; a rotated token
+    // keeps the activity's age and what it last showed.
+    const prev = [...this.activities.values()].find((x) => x.sessionId === a.sessionId && x.uid === a.uid);
     for (const [t, x] of this.activities) if ((x.sessionId === a.sessionId && x.uid === a.uid) || t === token) this.activities.delete(t);
     const preview = [...this.devices.values()].find((d) => d.sessionId === a.sessionId)?.preview ?? 'full';
-    this.activities.set(token, { uid: a.uid, token, environment: a.environment, sessionId: a.sessionId, preview, at: Date.now(), started: false, sent: null, sentAt: 0 });
+    const kept = a.rotated && prev ? { at: prev.at, started: prev.started, sent: prev.sent, sentAt: prev.sentAt } : { at: Date.now(), started: false, sent: null, sentAt: 0 };
+    this.activities.set(token, { uid: a.uid, token, environment: a.environment, sessionId: a.sessionId, preview, ...kept });
     this.persistActivities();
   }
 
@@ -304,16 +322,18 @@ export class Apns {
         continue;
       }
       if (!w) continue;
-      const working = w.status === 'busy' || w.status === 'waiting';
+      // Working, or recovering (resuming, limited with a plan): the activity follows it.
+      const working = w.status === 'busy' || w.status === 'waiting' || w.recovery?.state === 'resuming' || w.recovery?.state === 'scheduled';
       if (!a.started && !working) continue; // the message hasn't reached it yet
       if (!a.started) (a.started = true), (changed = true);
       const phaseChanged = !a.sent || activityState(w, askLine, 0).phase !== a.sent.phase;
       const next = activityState(w, askLine, phaseChanged ? Math.floor(t / 1000) : a.sent!.since);
       if (a.preview === 'private') next.detail = null;
-      if (a.sent && next.phase === a.sent.phase && next.detail === a.sent.detail && next.answerable === a.sent.answerable) continue;
+      if (a.sent && next.phase === a.sent.phase && next.detail === a.sent.detail && next.answerable === a.sent.answerable && (next.until ?? null) === (a.sent.until ?? null)) continue;
       const quiet = !phaseChanged && next.answerable === a.sent!.answerable;
       if (quiet && t - a.sentAt < ACTIVITY_DETAIL_INTERVAL_MS) continue;
-      const end = next.phase === 'finished' || next.phase === 'limited';
+      // A limit ends it unless ah will carry on by itself (recovery scheduled): then it stays.
+      const end = next.phase === 'finished' || next.phase === 'failed' || (next.phase === 'limited' && w.recovery?.state !== 'scheduled');
       a.sent = next;
       a.sentAt = t;
       void this.deliverActivity(a, next, end ? 'end' : 'update', quiet ? '5' : '10');

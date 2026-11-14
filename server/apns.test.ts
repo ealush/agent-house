@@ -254,3 +254,61 @@ test('activities survive a host restart, and a session that is gone ends its act
   assert.equal(sent.at(-1).body.aps.event, 'end');
   assert.equal(after.activityCount('s1'), 0);
 });
+
+test('recovery shows on the Lock Screen: carrying on after a limit, picking up again, failing, signing in', () => {
+  const rec = (state: string, extra: Record<string, unknown> = {}) => ({ state, reason: 'rate_limit', evidence: 'Session limit · resets 5:20pm', attempts: 0, maxAttempts: 5, nextAttemptAt: 1800, resetsAt: 1790, auto: true, updatedAt: 1, ...extra });
+  assert.deepEqual(activityState(view('u', 'attention', { limit: 'Session limit · resets 5:20pm', recovery: rec('scheduled') }), askLine, 9), { phase: 'limited', detail: 'Going on after the reset (Session limit · resets 5:20pm)', answerable: false, since: 9, until: 1800 });
+  assert.deepEqual(activityState(view('u', 'attention', { limit: 'Session limit · resets 5:20pm', limitResetsAt: 1790 }), askLine, 9), { phase: 'limited', detail: 'Session limit · resets 5:20pm', answerable: false, since: 9, until: 1790 }, 'no plan: the reset, and it ends');
+  assert.equal(activityState(view('u', 'idle', { recovery: rec('resuming') }), askLine, 9).phase, 'starting');
+  assert.deepEqual(activityState(view('u', 'idle', { recovery: rec('failed', { reason: 'provider_error', evidence: 'API Error: 529 overloaded' }) }), askLine, 9), { phase: 'failed', detail: 'API Error: 529 overloaded', answerable: false, since: 9 });
+  assert.equal(activityState(view('u', 'idle', { recovery: rec('needs_user', { reason: 'credentials' }) }), askLine, 9).detail, 'Sign the agent in again');
+  assert.equal(activityState(view('u', 'busy', { detail: 'Reading', recovery: rec('resuming') }), askLine, 9).phase, 'working', 'working again: recovery is history');
+});
+
+test('a limit that ah will carry on from keeps the activity; it ends when the work does', async () => {
+  const sent: any[] = [];
+  const transport = async (_o: string, path: string, _h: Record<string, string>, body: string) => (sent.push({ path, body: JSON.parse(body) }), { status: 200 });
+  const apns = new Apns(config, { file: join(dir, 'act-recover.json'), transport });
+  apns.registerActivity({ uid: 'u1', token: ACT, environment: 'sandbox', sessionId: 's1' });
+  const rec = (state: string) => ({ state, reason: 'rate_limit', evidence: 'limit', attempts: 0, maxAttempts: 5, nextAttemptAt: 1800, resetsAt: 1790, auto: true, updatedAt: 1 });
+  const states = () => sent.map((s) => `${s.body.aps.event}:${s.body.aps['content-state'].phase}`);
+  apns.follow([view('u1', 'busy')], askLine);
+  apns.follow([view('u1', 'attention', { limit: 'limit', recovery: rec('scheduled') })], askLine);
+  assert.deepEqual(states(), ['update:working', 'update:limited'], 'scheduled to go on: not ended');
+  assert.equal(sent[1].body.aps['content-state'].until, 1800);
+  apns.follow([view('u1', 'idle', { recovery: rec('resuming') })], askLine);
+  apns.follow([view('u1', 'busy')], askLine);
+  apns.follow([view('u1', 'attention')], askLine);
+  assert.deepEqual(states(), ['update:working', 'update:limited', 'update:starting', 'update:working', 'end:finished']);
+  assert.equal(apns.activityCount('s1'), 0);
+
+  // Without a plan to go on, a limit ends it, as before.
+  sent.length = 0;
+  apns.registerActivity({ uid: 'u1', token: ACT, environment: 'sandbox', sessionId: 's1' });
+  apns.follow([view('u1', 'busy')], askLine);
+  apns.follow([view('u1', 'attention', { limit: 'limit', recovery: rec('waiting_capacity') })], askLine);
+  assert.deepEqual(states(), ['update:working', 'end:limited']);
+});
+
+test('a rotated activity token carries the activity on; a new activity starts over', async () => {
+  const sent: any[] = [];
+  const transport = async (_o: string, path: string, _h: Record<string, string>, body: string) => (sent.push({ path, body: JSON.parse(body) }), { status: 200 });
+  const apns = new Apns(config, { file: join(dir, 'act-rotate.json'), transport });
+  const NEXT = 'f'.repeat(64);
+  apns.registerActivity({ uid: 'u1', token: ACT, environment: 'sandbox', sessionId: 's1' });
+  apns.follow([view('u1', 'busy', { detail: 'Reading' })], askLine);
+  apns.registerActivity({ uid: 'u1', token: NEXT, environment: 'sandbox', sessionId: 's1', rotated: true });
+  assert.equal(apns.activityCount('s1'), 1, 'the old token is gone');
+  apns.follow([view('u1', 'busy', { detail: 'Reading' })], askLine);
+  assert.equal(sent.length, 1, 'nothing new to say: the device already shows it');
+  apns.follow([view('u1', 'attention')], askLine);
+  assert.equal(sent.length, 2);
+  assert.equal(sent[1].path, `/3/device/${NEXT}`, 'updates go to the new token');
+  assert.equal(sent[1].body.aps.event, 'end');
+
+  // A fresh registration (not rotated) waits for its message to reach the session.
+  sent.length = 0;
+  apns.registerActivity({ uid: 'u1', token: ACT, environment: 'sandbox', sessionId: 's1' });
+  apns.follow([view('u1', 'idle')], askLine);
+  assert.equal(sent.length, 0);
+});

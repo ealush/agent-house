@@ -1178,7 +1178,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     if (caller.kind !== 'session' || !auth.isNative(caller)) throw new HttpError(403, 'only the native app registers Live Activities');
     const body = await readJson(req);
     try {
-      apns.registerActivity({ uid: str(body.uid, 'uid', 200), token: str(body.token, 'token', 200), environment: str(body.environment, 'environment', 20) as never, sessionId: caller.session.id });
+      apns.registerActivity({ uid: str(body.uid, 'uid', 200), token: str(body.token, 'token', 200), environment: str(body.environment, 'environment', 20) as never, sessionId: caller.session.id, rotated: body.rotated === true });
     } catch (err) {
       if (err instanceof ApnsError) throw new HttpError(err.status, err.message);
       throw err;

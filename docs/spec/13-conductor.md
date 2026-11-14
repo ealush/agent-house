@@ -40,6 +40,7 @@ TypeScript sources of truth are named beside each section.
 | `jobs` | 1 | `/api/jobs/*`, state `jobs` |
 | `recovery` | 1 | windows' and history's `recovery`, `/api/recovery`, `/api/sessions/:uid/recovery` |
 | `usage` | 1 | `/api/usage`, `/api/usage/limits`, `/api/usage/export`, `/api/sessions/:uid/usage` |
+| `activityPush` | 1 | `PUT /api/push/apns/activity`, `DELETE /api/push/apns/activity/:uid` |
 
 ## CND-1 Uploads (`uploads` v2)
 
@@ -549,3 +550,54 @@ UsageRow = { key, provider, harness, model, uid,
   *estimate* with your billing), tokens per day (a chart with a readout, or a table), the
   limit windows with their source, by model, the busiest conversations, CSV/JSON export.
 - **CLI:** `ah usage [--days N] [--by …] [--json]`, `ah usage limits`, `ah usage export [--json]`.
+
+## CND-7 Live Activities (`activityPush` v1)
+
+Source: `server/apns.ts` (`ActivityState`, `activityState`, `Apns.follow`). For the
+native app: a session you sent to from the phone stays current on the Lock Screen and
+in the Dynamic Island, pushed over APNs (`liveactivity` push type), with nothing open.
+
+**Registering.** Only the native app's sign-in can (403 otherwise). The app starts the
+activity on the device, then registers its push token:
+
+| Route | Body | Answer |
+|---|---|---|
+| `PUT /api/push/apns/activity` | `{ uid, token, environment: 'sandbox' \| 'production', rotated?: true }` | `{ ok, activities }` |
+| `DELETE /api/push/apns/activity/:uid` | | `{ ok }` |
+
+One activity per session per sign-in: registering another (a new message) replaces the
+last. ActivityKit can give a running activity a **new token**; register it with
+`rotated: true` and the activity carries on (its age, whether it started, what it last
+showed) instead of starting over. Signing out forgets the sign-in's activities; they
+survive an ah restart.
+
+**What it shows** (`aps.content-state`, the app's `SessionAttributes.ContentState`):
+
+```ts
+{ phase: 'working' | 'waiting' | 'finished' | 'limited' | 'starting' | 'failed',
+  detail: string | null,   // one line, ≤ 120 chars; null under a private preview
+  answerable: boolean,     // an ask the Lock Screen can approve or deny
+  since: number,           // when this phase began (epoch seconds)
+  until?: number | null }  // limited: the reset, or when ah will carry on
+```
+
+`starting`, `failed` and `until` are newer than the first app build: a client that
+doesn't know a phase shows its name, and ignores `until`.
+
+| The session | Phase | Ends it |
+|---|---|---|
+| working (`busy`) | `working`, with what it's doing | |
+| asking (`waiting`) | `waiting`, with the ask; `answerable` when it can be answered there | |
+| at a limit, automatic recovery planned (`recovery.state` `scheduled`) | `limited`, "Going on after the reset", `until` = the attempt | no |
+| at a limit, no plan | `limited`, the notice, `until` = its reset | yes |
+| another failure with a retry planned | `limited`, "Trying again", `until` | no |
+| recovery picking it up (`resuming`) | `starting` | |
+| credentials (`needs_user`) | `waiting`, "Sign the agent in again" | |
+| recovery gave up (`failed`) | `failed`, the evidence | yes |
+| done (idle, attention), or gone | `finished` | yes |
+
+A change of phase goes out at once (priority 10); a new line of what it's doing at most
+every 15 s at priority 5 (Apple budgets these). An activity starts following only once
+the message reached the session (it was working), lingers a while after it ends, and is
+dropped when Apple says its token is gone or after Apple's eight hours.
+

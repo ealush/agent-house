@@ -27,6 +27,8 @@ export const FEATURES: Record<string, number> = {
   recovery: 1,
   /** /api/usage: tokens per session, model, provider and day, rate-limit windows, estimates, export (server/usage). */
   usage: 1,
+  /** PUT/DELETE /api/push/apns/activity: Live Activity updates over APNs; phases incl. starting/failed, `until`, `rotated` tokens. */
+  activityPush: 1,
 };
 
 export function features(): Record<string, number> {
