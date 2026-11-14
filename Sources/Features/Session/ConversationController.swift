@@ -73,6 +73,12 @@ final class ConversationController: UIViewController {
     private var dockHeight: NSLayoutConstraint!
     private var floatHeight: NSLayoutConstraint!
     private var availableWritten: CGFloat = -1
+    /// How tall the dock's content is, as SwiftUI last measured it. The dock's frame catches up
+    /// once SwiftUI has moved what's in it (`dockMeasured`); the transcript goes by this.
+    private var dockContent: CGFloat = 0
+    private var dockCatchUp: DispatchWorkItem?
+    /// The dock's content just changed height: the next layout moves the transcript's end in a spring.
+    private var insetsFollow = false
     #if DEBUG
     private var probe: LayoutProbe?
     #endif
@@ -152,18 +158,32 @@ final class ConversationController: UIViewController {
         super.viewDidLayoutSubviews()
         // The transcript runs under the dock: its last row ends at the dock's top. Set here, in the
         // pass that moved the dock, so it moves in the same animation (the keyboard's, the dock's).
-        let bottom = max(0, view.bounds.maxY - dock.view.frame.minY)
+        // The content's top, which the frame's may lag behind while SwiftUI moves it; never above
+        // the top of the room, as the frame isn't.
+        let contentTop = max(view.safeAreaLayoutGuide.layoutFrame.minY, dock.view.frame.maxY - dockContent)
+        let bottom = max(0, view.bounds.maxY - contentTop)
         let extra = max(0, bottom - view.safeAreaInsets.bottom)
-        if abs(transcript.additionalSafeAreaInsets.bottom - extra) > 0.5 {
-            transcript.additionalSafeAreaInsets = UIEdgeInsets(top: 0, left: 0, bottom: extra, right: 0)
+        let follow = { [self] in
+            if abs(transcript.additionalSafeAreaInsets.bottom - extra) > 0.5 {
+                transcript.additionalSafeAreaInsets = UIEdgeInsets(top: 0, left: 0, bottom: extra, right: 0)
+            }
+            scroll.controller?.setInsets(top: view.safeAreaInsets.top, bottom: bottom)
         }
-        scroll.controller?.setInsets(top: view.safeAreaInsets.top, bottom: bottom)
+        if insetsFollow {
+            insetsFollow = false
+            UIView.animate(springDuration: 0.25, bounce: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+                follow()
+                self.transcript.view.layoutIfNeeded()
+            }
+        } else {
+            follow()
+        }
         // Squeezed below its content's height (a room too small even for the box's least): what
         // doesn't fit is cut off at the dock's top, never drawn up over the bars.
         let squeezed = dock.view.bounds.height + 0.5 < dockHeight.constant
         if dock.view.clipsToBounds != squeezed { dock.view.clipsToBounds = squeezed }
         // A drag down the transcript takes the keyboard with it once it reaches the dock.
-        let padding = dock.view.frame.height
+        let padding = dock.view.frame.maxY - contentTop
         if abs(view.keyboardLayoutGuide.keyboardDismissPadding - padding) > 0.5 { view.keyboardLayoutGuide.keyboardDismissPadding = padding }
         // Compared with what was last written, not read back: UIKit tracks what an Observable is read
         // for in here, and reading this one would lay the view out again each time it's written.
@@ -208,11 +228,33 @@ final class ConversationController: UIViewController {
         if let float, float.view.isUserInteractionEnabled != floats { float.view.isUserInteractionEnabled = floats }
     }
 
-    /// The dock's content is this tall at the dock's width: the dock grows to it, and the transcript
-    /// above with it, together (a spring like the queue's own folding, unless motion is reduced).
+    /// The dock's content is this tall at the dock's width. The transcript's end follows at once,
+    /// in a spring like the queue's own folding (unless motion is reduced); the dock's frame
+    /// takes the height once SwiftUI has moved what's in it.
+    ///
+    /// SwiftUI animates the dock's content (the queue folding, a row coming) in the dock's own
+    /// coordinates, from its top edge. A frame that changed height meanwhile (in UIKit's spring
+    /// or at once) moved that edge under the animation: folding the queue, the box jumped up by
+    /// what the queue gave back and slid down again, and unfolding it, the rows showed under the
+    /// box. Kept as it is until then, the frame holds still and the content, standing on its
+    /// bottom edge, grows or folds in place.
     private func dockMeasured(_ height: CGFloat) {
-        guard abs(dockHeight.constant - height) > 0.5 else { return }
-        resize(dockHeight, to: height)
+        guard abs(dockContent - height) > 0.5 else { return }
+        let animated = view.window != nil && dockContent > 0 && !UIAccessibility.isReduceMotionEnabled
+        dockContent = height
+        dockCatchUp?.cancel()
+        guard animated else {
+            dockHeight.constant = height
+            return
+        }
+        insetsFollow = true
+        view.setNeedsLayout()
+        let catchUp = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            dockHeight.constant = dockContent
+        }
+        dockCatchUp = catchUp
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: catchUp)
     }
 
     private func floatMeasured(_ height: CGFloat) {
@@ -220,16 +262,6 @@ final class ConversationController: UIViewController {
         floatHeight.constant = height
     }
 
-    private func resize(_ constraint: NSLayoutConstraint, to height: CGFloat) {
-        let animate = view.window != nil && constraint.constant > 0 && !UIAccessibility.isReduceMotionEnabled
-        guard animate else {
-            constraint.constant = height
-            return
-        }
-        UIView.animate(springDuration: 0.25, bounce: 0, options: [.flushUpdates, .beginFromCurrentState, .allowUserInteraction]) {
-            constraint.constant = height
-        }
-    }
 }
 
 /// A hosted root with what SwiftUI would otherwise have inherited from the session screen.
@@ -279,7 +311,10 @@ struct ComposerDock: View {
                     scene.composerMidX = nil
                 }
             }
-            .frame(maxHeight: .infinity, alignment: .bottom)
+            // On the dock's bottom edge, as tall as the dock whatever it holds: content taller than
+            // the frame for a moment (the queue unfolding before the frame catches up) rises over its
+            // top rather than being centred, which put the box below its place.
+            .frame(minHeight: 0, maxHeight: .infinity, alignment: .bottom)
     }
 }
 

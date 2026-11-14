@@ -1383,6 +1383,10 @@ struct QueueTrayView: View {
             .padding(.bottom, 4)
             // The composer's glass, warmed with the accent: these are yours, waiting their turn.
             .glassEffect(.regular.tint(theme.accent.opacity(0.06)), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            // Folding and unfolding, the rows fade inside the tray as it closes onto the box or
+            // grows out of it: unclipped, they went with the line above as it moved, over the
+            // box and below it.
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
             .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: queue.items.map(\.id))
             .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: queue.sending)
             .accessibilityElement(children: .contain)

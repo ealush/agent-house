@@ -34,7 +34,7 @@ UIWindowScene
 | The screen's bounds and safe area | UIKit (navigation, split, tab controllers) | As UIKit lays them out; SwiftUI places the session screen in them. |
 | The keyboard | `ConversationController` (conversation), `AboveKeyboard` (terminal, panels, chooser) | `view.keyboardLayoutGuide`. Nothing else reads the keyboard. Every hosting controller in the session screen leaves `.keyboard` out of its `safeAreaRegions`, so SwiftUI never moves anything for it. |
 | Space between transcript and dock | `ConversationController` | The transcript fills the view. The dock stands on the keyboard guide. The transcript's bottom inset is the dock's top, set in the same layout pass. |
-| The dock's height | The dock's own content | `ComposerDock` reports its height at the dock's width (`fixedSize` + `onGeometryChange`). The controller sets it as a constraint, animated. It never depends on the dock's frame. |
+| The dock's height | The dock's own content | `ComposerDock` reports its height at the dock's width (`fixedSize` + `onGeometryChange`). The transcript's inset takes it at once, in a spring; the dock's frame takes it once SwiftUI has animated what's in it, so that animation never runs in a frame changing under it. It never depends on the dock's frame. |
 | The queue's height | `QueueTrayView`, from `ConversationRoom.available` | The room is computed from the keyboard guide and the safe area only, never from the dock, so it can't feed back. |
 | Transcript insets and position | `TranscriptController` | One anchor (the end, or a row being read and its distance from the top), applied on every layout before drawing. The controller hands it insets; it never measures SwiftUI geometry. |
 | Focus | `SceneModel` (see ARCHITECTURE.md) | Unchanged. |
@@ -54,7 +54,12 @@ UIWindowScene
 5. The queue never takes more than its share of the room, and scrolls inside that share. With too
    little room it folds to its one line, which opens the Queue panel.
 6. Nothing in the conversation is positioned by timing. No `asyncAfter`, `Task.sleep` or "again
-   after the next layout" moves the transcript or the dock.
+   after the next layout" moves the transcript or the dock. One exception, which moves nothing
+   drawn: the dock's frame catches up with its content 0.35 s after the content changed height
+   (`ConversationController.dockMeasured`). SwiftUI animates the dock's content (the queue
+   folding) in the dock's own coordinates, from its top edge; a frame changing height during that
+   animation, in UIKit's spring or at once, moved the edge under it, and the box jumped. The
+   content stands on the dock's bottom edge meanwhile, and the transcript goes by the content.
 7. A geometry value written into observable state is written by one owner, never read back by
    that owner in a tracked method, and never feeds the size of what it was measured from.
 
