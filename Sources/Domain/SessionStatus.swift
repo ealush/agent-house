@@ -160,11 +160,14 @@ enum Uploads {
     static func summary(_ text: String) -> String {
         let (uploads, rest) = split(text)
         guard !uploads.isEmpty else { return text }
-        let images = uploads.count { $0.image }
-        let files = uploads.count - images
+        return summary(images: uploads.count { $0.image }, files: uploads.count { !$0.image }, words: rest)
+    }
+
+    /// The same for attachments not up yet (no paths to read): "1 image, 1 file · the words".
+    static func summary(images: Int, files: Int, words: String) -> String {
         func count(_ n: Int, _ one: String) -> String? { n > 0 ? "\(n) \(one)\(n == 1 ? "" : "s")" : nil }
         let label = [count(images, "image"), count(files, "file")].compactMap { $0 }.joined(separator: ", ")
-        return rest.isEmpty ? label : "\(label) · \(rest)"
+        return [label, words].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     private static func isUploadPath(_ s: String) -> Bool {

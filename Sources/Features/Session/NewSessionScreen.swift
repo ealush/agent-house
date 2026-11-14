@@ -35,6 +35,11 @@ final class NewSessionDraft {
     private(set) var projects: [String] = []
     /// The first message, typed in the box.
     var text = ""
+    /// What's attached in the box. Each file uploads to the host as soon as it's picked, with
+    /// no session yet to send it to; the session's box takes the files over with the first
+    /// message (`ComposerModel.adopt`). A box of its own, holding only the files, made for the
+    /// host the session starts on.
+    private(set) var files: ComposerModel?
 
     enum Phase { case ready, starting }
     private(set) var phase: Phase = .ready
@@ -90,6 +95,7 @@ final class NewSessionDraft {
         cwd = context.cwd ?? (last.flatMap { $0.host == host ? $0.cwd : nil })
             ?? LaunchState.newestProject(hub?.rows.filter { $0.isLocal == (host == nil) } ?? []) ?? "~"
         resetTmux()
+        makeFiles()
         if let first = context.preset.flatMap({ id in presets.first { $0.id == id } }) ?? presets.first {
             presetID = first.id
             applyDefaults(first)
@@ -108,6 +114,7 @@ final class NewSessionDraft {
         guard next != host else { return }
         host = next
         resetTmux()
+        makeFiles()
         projects = []
         if !presets.contains(where: { $0.id == presetID }), let first = presets.first { choose(preset: first) }
         Task { await loadProjects() }
@@ -146,6 +153,19 @@ final class NewSessionDraft {
         trust = p.trust != nil && scene.app.preferences.launchMemory[p.id]?.trust == true
         resume = false
     }
+
+    /// A box for the host it starts on. Files attached for another host go with that host's
+    /// box: they were uploaded to that machine, where this session won't run.
+    private func makeFiles() {
+        guard let hub else { return }
+        let dropped = files?.attachments ?? []
+        for file in dropped { files?.removeAttachment(file.id) }
+        files = ComposerModel(api: hub.client(host: host), outbox: scene.app.outbox, key: SceneModel.newSessionKey, uid: "", isShell: false)
+        if !dropped.isEmpty { scene.toast("Attach the files again: they went to the other host") }
+    }
+
+    /// What's attached, unless it starts a shell (a first command takes no files).
+    var attached: ComposerModel? { preset?.isShell == true ? nil : files }
 
     private func resetTmux() {
         let state = hub?.state(host: host)
@@ -192,10 +212,13 @@ final class NewSessionDraft {
         if dirState == nil { await checkDir() }
         guard dirProblem == nil else { return }
         let message = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
+        let files = attached?.attachments.isEmpty == false ? attached : nil
         error = nil
         withAnimation(animated ? .smooth(duration: 0.4) : nil) {
             phase = .starting
-            sent = message
+            // The files said in words ("1 image · …"): their tiles come with the conversation.
+            let shown = Uploads.summary(images: files?.attachments.count { $0.image } ?? 0, files: files?.attachments.count { !$0.image } ?? 0, words: message ?? "")
+            sent = shown.isEmpty ? nil : shown
             text = ""
         }
         guard let key = await scene.create(request(preset), host: host) else {
@@ -220,9 +243,11 @@ final class NewSessionDraft {
         if !preset.isShell, let session = scene.session(key) {
             for _ in 0..<80 where !session.hasGUI { try? await Task.sleep(for: .milliseconds(100)) }
         }
-        if let message, let session = scene.session(key) {
-            // Through the session's own box: your message in its conversation, as any is.
-            session.composer.text = message
+        if message != nil || files != nil, let session = scene.session(key) {
+            // Through the session's own box: your message in its conversation, as any is, with
+            // the files (those still uploading go once they're up).
+            session.composer.text = message ?? ""
+            if let files { session.composer.adopt(attachmentsOf: files) }
             session.composer.submit(working: false)
         }
         scene.newSessionStarted(key)
@@ -248,6 +273,8 @@ struct NewSessionScreen: View {
     @State private var typingFolder = false
     @State private var typedFolder = ""
     @State private var showingMore = false
+    /// A file is being dragged over the box.
+    @State private var dropTargeted = false
 
     private var agentName: String { draft.preset?.name ?? "the agent" }
 
@@ -277,6 +304,11 @@ struct NewSessionScreen: View {
         }
         .onChange(of: focused) { _, now in
             if now { scene.didFocus(.composer(SceneModel.newSessionKey)) } else { scene.didBlur(.composer(SceneModel.newSessionKey)) }
+        }
+        // An upload that failed says so, as a session's box does.
+        .onChange(of: draft.files?.events.count ?? 0) { _, count in
+            guard count > 0, let files = draft.files else { return }
+            for case .failed(let message) in files.takeEvents() { scene.toast(message, error: true) }
         }
         .sheet(isPresented: $showingMore) { NewSessionMore(draft: draft) }
         .sheet(isPresented: $choosingFolder) {
@@ -582,52 +614,88 @@ struct NewSessionScreen: View {
     // MARK: The box
 
     private var box: some View {
-        let empty = draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return HStack(alignment: .bottom, spacing: 6) {
-            TextField(draft.preset?.isShell == true ? "First command" : "Message \(agentName)", text: $draft.text, axis: .vertical)
-                .font(.ah(.body))
-                .lineLimit(1...8)
-                .focused($focused)
-                // A hardware Return starts the session, as a session's composer sends on it;
-                // Shift- or Option-Return starts a new line. Left to the field, the press went
-                // on to the sidebar's list, which opened its first session instead.
-                .onKeyPress(.return, phases: .down) { press in
-                    guard press.modifiers.isDisjoint(with: [.shift, .option, .command, .control]) else { return .ignored }
-                    if draft.canStart { send() }
-                    return .handled
+        let files = draft.attached
+        let empty = draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && files?.attachments.isEmpty != false
+        return VStack(alignment: .leading, spacing: 0) {
+            // What's attached, above the text, as a session's box has it: uploading already.
+            // Gone from the box as it starts, with the words: they go with the first message.
+            if let files, draft.phase == .ready, !files.attachments.isEmpty {
+                AttachmentTiles(composer: files)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 8)
+                    .padding(.top, 6)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("attachments")
+            }
+            HStack(alignment: .bottom, spacing: 0) {
+                if let files {
+                    AttachMenu(composer: files).padding(6).disabled(draft.phase != .ready)
                 }
-                .textInputAutocapitalization(draft.preset?.isShell == true ? .never : .sentences)
-                .autocorrectionDisabled(draft.preset?.isShell == true)
-                .padding(.leading, 14)
-                .padding(.vertical, 11)
-                .disabled(draft.phase != .ready)
-                .accessibilityIdentifier("new-session-message")
-            if !empty || draft.phase == .starting {
-                Button {
-                    send()
-                } label: {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: control * 0.34, weight: .bold))
-                        .foregroundStyle(theme.accentInk)
-                        .frame(width: control - 12, height: control - 12)
-                        .background(theme.accentStrong, in: Circle())
-                        .opacity(draft.canStart ? 1 : 0.45)
-                        .touchTarget()
-                }
-                .buttonStyle(.ahPress)
-                .disabled(!draft.canStart)
-                .padding(6)
-                .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
-                .accessibilityLabel("Send")
-                .accessibilityHint("Starts \(agentName) with this as its first message")
-                .keyboardShortcut(.return, modifiers: .command)
+                field(files == nil)
+                if !empty || draft.phase == .starting { sendButton }
             }
         }
         .frame(minHeight: control)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: corner, style: .continuous))
         // Starting: the light a working session's box has, from the first moment.
         .overlay { ThinkingBorder(corner: corner, active: draft.phase == .starting) }
+        // A file held over the box: the box says it will take it.
+        .overlay {
+            if dropTargeted {
+                RoundedRectangle(cornerRadius: corner, style: .continuous).strokeBorder(theme.accent, lineWidth: 2)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.snappy(duration: 0.15), value: dropTargeted)
+        .onDrop(of: [.image, .fileURL, .item], isTargeted: $dropTargeted) { providers in
+            guard let files, draft.phase == .ready else { return false }
+            return AttachDrop.attach(providers, to: files)
+        }
         .animation(.snappy(duration: 0.22), value: empty)
+        .animation(.snappy(duration: 0.25), value: files?.attachments.isEmpty)
+    }
+
+    /// The first message: a hardware Return starts the session.
+    private func field(_ leadingInset: Bool) -> some View {
+        TextField(draft.preset?.isShell == true ? "First command" : "Message \(agentName)", text: $draft.text, axis: .vertical)
+            .font(.ah(.body))
+            .lineLimit(1...8)
+            .focused($focused)
+            // A hardware Return starts the session, as a session's composer sends on it;
+            // Shift- or Option-Return starts a new line. Left to the field, the press went
+            // on to the sidebar's list, which opened its first session instead.
+            .onKeyPress(.return, phases: .down) { press in
+                guard press.modifiers.isDisjoint(with: [.shift, .option, .command, .control]) else { return .ignored }
+                if draft.canStart { send() }
+                return .handled
+            }
+            .textInputAutocapitalization(draft.preset?.isShell == true ? .never : .sentences)
+            .autocorrectionDisabled(draft.preset?.isShell == true)
+            .padding(.leading, leadingInset ? 14 : 0)
+            .padding(.vertical, 11)
+            .disabled(draft.phase != .ready)
+            .accessibilityIdentifier("new-session-message")
+    }
+
+    private var sendButton: some View {
+        Button {
+            send()
+        } label: {
+            Image(systemName: "arrow.up")
+                .font(.system(size: control * 0.34, weight: .bold))
+                .foregroundStyle(theme.accentInk)
+                .frame(width: control - 12, height: control - 12)
+                .background(theme.accentStrong, in: Circle())
+                .opacity(draft.canStart ? 1 : 0.45)
+                .touchTarget()
+        }
+        .buttonStyle(.ahPress)
+        .disabled(!draft.canStart)
+        .padding(6)
+        .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
+        .accessibilityLabel("Send")
+        .accessibilityHint("Starts \(agentName) with this as its first message")
+        .keyboardShortcut(.return, modifiers: .command)
     }
 
     /// Now, and again once the screen is in its window: a field not yet in one can't take it.

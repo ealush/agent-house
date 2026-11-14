@@ -813,6 +813,34 @@ final class ComposerModel {
         attachments.removeAll { $0.id == id }
     }
 
+    /// What was attached in another box: New session's, before this session existed. Its
+    /// tiles move into this box, with the uploads still under way (not started again), so the
+    /// first message goes with them once they're up. The other box is left empty.
+    func adopt(attachmentsOf other: ComposerModel) {
+        for file in other.attachments {
+            nextAttachment += 1
+            let id = nextAttachment
+            attachments.append(Attachment(id: id, name: file.name, image: file.image, path: file.path, thumbnail: file.thumbnail, upload: file.upload))
+            guard file.path == nil, let running = other.uploads[file.id] else { continue }
+            uploads[id] = Task { [weak self] in
+                defer { self?.uploads[id] = nil }
+                do {
+                    let path = try await running.value
+                    if let self, let i = self.attachments.firstIndex(where: { $0.id == id }) { self.attachments[i].path = path }
+                    return path
+                } catch {
+                    if !Task.isCancelled, let self, self.attachments.contains(where: { $0.id == id }) {
+                        self.attachments.removeAll { $0.id == id }
+                        self.events.append(.failed("Couldn’t attach \(file.name): \(APIError.wrap(error).message)"))
+                    }
+                    throw error
+                }
+            }
+        }
+        other.attachments = []
+        other.uploads = [:]
+    }
+
     // MARK: Completion
 
     var trigger: CompletionTrigger? {

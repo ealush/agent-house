@@ -76,6 +76,35 @@ private func until(_ done: () -> Bool) async {
 }
 
 @MainActor
+@Test func aFileAttachedBeforeTheSessionExistsGoesWithItsFirstMessage() async throws {
+    let host = SlowHost()
+    let api = APIClient(origin: URL(string: "https://desk.example.ts.net")!, transport: SlowUploads(host: host), credentials: AccountCredentials(token: "t", onRejected: {}), device: DeviceDescriptor(name: "iPhone", client: "c"))
+    let outbox = Outbox()
+    // New session's box: no session yet, so it only holds what's attached.
+    let new = ComposerModel(api: api, outbox: outbox, key: "new", uid: "", isShell: false, draftDebounce: .seconds(3600))
+    Task { await new.attach(name: "notes.txt", data: Data("hello".utf8), image: false) }
+    await until { new.attachments.first?.upload.flatMap { outbox.uploads[$0] } == 0.5 }
+    // The session starts while it's still uploading: its box takes the tile and the upload.
+    let composer = ComposerModel(api: api, outbox: outbox, key: "u1", uid: "u1", isShell: false, draftDebounce: .seconds(3600))
+    composer.text = "look at this"
+    composer.adopt(attachmentsOf: new)
+    #expect(new.attachments.isEmpty)
+    #expect(composer.attachments.map(\.name) == ["notes.txt"] && composer.isUploading)
+    #expect(composer.submit(working: false))
+    let item = try #require(outbox.items.first)
+    #expect(item.waitingOn.count == 1 && outbox.progress(item) == 0.5, "the same upload, not a new one")
+    #expect(await host.sent.isEmpty)
+    await host.letGo()
+    await composer.settle()
+    #expect(await host.sent == ["/up/photo.png look at this"])
+    #expect(outbox.uploads.isEmpty)
+    // What the screen says while the session starts, before any path is known.
+    #expect(Uploads.summary(images: 1, files: 1, words: "look at this") == "1 image, 1 file · look at this")
+    #expect(Uploads.summary(images: 0, files: 2, words: "") == "2 files")
+    #expect(Uploads.summary(images: 0, files: 0, words: "hi") == "hi")
+}
+
+@MainActor
 @Test func uploadProgressMovesInPercentsAndAMessageAveragesItsUploads() {
     let outbox = Outbox()
     let a = outbox.beginUpload(), b = outbox.beginUpload()

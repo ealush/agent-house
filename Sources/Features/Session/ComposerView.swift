@@ -18,10 +18,6 @@ struct ComposerView: View {
     private var roomHeight: CGFloat { room.available > 0 ? room.available : .infinity }
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var pickingPhotos: [PhotosPickerItem] = []
-    @State private var choosingPhotos = false
-    @State private var takingPhoto = false
-    @State private var importingFiles = false
     /// The settings chips are out, floating over the box (a swipe up, or the grabber); the
     /// composer's, so going back to reading the transcript can fold them.
     private var trayOpen: Bool {
@@ -125,60 +121,9 @@ struct ComposerView: View {
             if composer.suggestionIndex != 0 { composer.suggestionIndex = 0 }
             composer.updateSuggestions()
         }
-        .onChange(of: pickingPhotos) { _, items in
-            guard !items.isEmpty else { return }
-            pickingPhotos = []
-            for item in items {
-                if let ext = Self.videoExtension(item) {
-                    composer.attachVideo(name: "video.\(ext)") {
-                        guard let video = try await item.loadTransferable(type: LibraryVideo.self) else { throw CocoaError(.fileNoSuchFile) }
-                        return (video.file, await video.thumbnail())
-                    }
-                    continue
-                }
-                // Named for what it is (a HEIC stays a HEIC), so the agent reads it right.
-                let ext = item.supportedContentTypes.first?.preferredFilenameExtension ?? "jpg"
-                Task {
-                    await composer.attach(name: "photo.\(ext)", image: true) {
-                        guard let data = try await item.loadTransferable(type: Data.self) else { throw CocoaError(.fileNoSuchFile) }
-                        return data
-                    }
-                }
-            }
-        }
-        // Presented from state, not from inside the menu: a PhotosPicker placed in a Menu never
-        // opened.
-        // `.current`: a video comes as it is, not transcoded first.
-        .photosPicker(isPresented: $choosingPhotos, selection: $pickingPhotos, matching: .any(of: [.images, .videos]), preferredItemEncoding: .current, photoLibrary: .shared())
-        .fullScreenCover(isPresented: $takingPhoto) {
-            CameraPicker { image in
-                guard let data = image.jpegData(compressionQuality: 0.85) else { return }
-                Task { await composer.attach(name: "photo.jpg", data: data, image: true, thumbnail: data) }
-            }
-            .ignoresSafeArea()
-        }
-        .fileImporter(isPresented: $importingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
-            guard case .success(let urls) = result else { return }
-            for url in urls {
-                Task {
-                    let scoped = url.startAccessingSecurityScopedResource()
-                    defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                    guard let data = try? Data(contentsOf: url) else { return }
-                    let image = UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) ?? false
-                    await composer.attach(name: url.lastPathComponent, data: data, image: image, thumbnail: image ? data : nil)
-                }
-            }
-        }
         .onChange(of: composer.events.count) { _, count in if count > 0 { deliverEvents() } }
         // Come back to the session and the box is as it rests, settings folded.
         .onDisappear { composer.trayOpen = false }
-    }
-
-    /// A picked item's file extension if it's a video (a Live Photo is a photo).
-    private static func videoExtension(_ item: PhotosPickerItem) -> String? {
-        let types = item.supportedContentTypes
-        guard !types.contains(where: { $0.conforms(to: .image) }), let movie = types.first(where: { $0.conforms(to: .movie) }) else { return nil }
-        return movie.preferredFilenameExtension ?? "mov"
     }
 
     private func deliverEvents() {
@@ -201,57 +146,6 @@ struct ComposerView: View {
                 scene.toast(text)
             }
         }
-    }
-
-    private var attachments: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(composer.attachments) { file in
-                    Group {
-                        if let data = file.thumbnail, let image = UIImage(data: data) {
-                            Image(uiImage: image).resizable().scaledToFill().frame(width: 64, height: 64)
-                                .overlay(alignment: .bottomLeading) {
-                                    if !file.image {
-                                        Image(systemName: "play.fill").font(.ah(.caption2)).foregroundStyle(.white).shadow(radius: 2).padding(6)
-                                    }
-                                }
-                        } else {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Image(systemName: "doc.fill").font(.ah(.title3)).foregroundStyle(theme.muted)
-                                Text(file.name).font(.ah(.caption2)).foregroundStyle(.primary).lineLimit(2)
-                            }
-                            .padding(8)
-                            .frame(width: 112, height: 64, alignment: .topLeading)
-                            .background(theme.tile)
-                        }
-                    }
-                    .overlay { if file.path == nil { UploadRing(outbox: composer.outbox, upload: file.upload) } }
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(alignment: .topTrailing) {
-                        Button {
-                            withAnimation(.snappy(duration: 0.2)) { composer.removeAttachment(file.id) }
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.ah(.body))
-                                .symbolRenderingMode(.palette)
-                                .foregroundStyle(.white, .black.opacity(0.55))
-                                .padding(3)
-                                // The glyph is small; the finger's target isn't.
-                                .touchTarget()
-                        }
-                        .buttonStyle(.ahPress)
-                        .accessibilityLabel("Remove \(file.name)")
-                    }
-                    .accessibilityElement(children: .contain)
-                    .accessibilityLabel(file.path == nil ? "Uploading \(file.name)" : file.name)
-                    .transition(.scale(scale: 0.8).combined(with: .opacity))
-                }
-            }
-            // Inset alike from the box's top and side, so a tile's corner sits concentric in
-            // the box's (its 22 less this 10).
-            .padding(.top, 2)
-        }
-        .animation(.snappy(duration: 0.25), value: composer.attachments.map(\.id))
     }
 
     /// A swipe up brings the settings out; a swipe down folds them, or puts the keyboard away.
@@ -296,7 +190,7 @@ struct ComposerView: View {
             // As tall as its tiles, always: a sideways scroll view takes whatever height it's
             // given, and with the bar short of room (a long queue, the keyboard up) the tiles
             // were squeezed to a sliver over + while the text spilled out under the box.
-            if !composer.attachments.isEmpty { attachments.fixedSize(horizontal: false, vertical: true).padding(.top, 2).accessibilityElement(children: .contain).accessibilityIdentifier("attachments") }
+            if !composer.attachments.isEmpty { AttachmentTiles(composer: composer).fixedSize(horizontal: false, vertical: true).padding(.top, 2).accessibilityElement(children: .contain).accessibilityIdentifier("attachments") }
             // The text wraps short of Send, which sits in the box's corner (as Messages has it):
             // beside it in a row, the box was measured at one width and laid out at another,
             // and a long message lost its first line.
@@ -339,7 +233,7 @@ struct ComposerView: View {
         }
         .animation(.snappy(duration: 0.15), value: dropTargeted)
         .animation(.snappy(duration: 0.2), value: outgrown)
-        .onDrop(of: [.image, .fileURL, .item], isTargeted: $dropTargeted) { attach(dropped: $0) }
+        .onDrop(of: [.image, .fileURL, .item], isTargeted: $dropTargeted) { AttachDrop.attach($0, to: composer) }
         .accessibilityAction(named: trayOpen ? "Hide session settings" : "Show session settings") {
             withAnimation(ComposerFloat.motion(opening: !trayOpen, reduceMotion: reduceMotion)) { trayOpen.toggle() }
         }
@@ -368,34 +262,7 @@ struct ComposerView: View {
         }
     }
 
-    private var attachMenu: some View {
-        Menu {
-                Section {
-                    Button("Photo Library", systemImage: "photo.on.rectangle") { choosingPhotos = true }
-                    if CameraPicker.isAvailable { Button("Take Photo", systemImage: "camera") { takingPhoto = true } }
-                    Button("Choose Files", systemImage: "folder") { importingFiles = true }
-                    if UIPasteboard.general.hasImages { Button("Paste Image", systemImage: "doc.on.clipboard") { pasteImage() } }
-                }
-                if !composer.recent.isEmpty {
-                    // ↑ in an empty box does this from a keyboard.
-                    Button("Previous Message", systemImage: "clock.arrow.circlepath") { composer.recall(1) }
-                }
-            } label: {
-                // A glyph in the box's corner, as Send is in the other: no glass of its own.
-                Image(systemName: "plus")
-                    .font(.system(size: control * 0.41, weight: .medium))
-                    .foregroundStyle(theme.text2)
-                    .frame(width: control - 12, height: control - 12)
-                    .contentShape(Circle())
-                    .contentShape(.hoverEffect, Circle())
-                    .hoverEffect(.highlight)
-                    .touchTarget()
-            }
-            // In the order written, wherever the menu opens: the library first.
-            .menuOrder(.fixed)
-            .tint(.primary)
-            .accessibilityLabel("Attach")
-    }
+    private var attachMenu: some View { AttachMenu(composer: composer, recall: true) }
 
     @ViewBuilder
     private var sendButton: some View {
@@ -490,32 +357,6 @@ struct ComposerView: View {
             .transition(.opacity)
             .accessibilityLabel("Open the message in a larger editor")
         }
-    }
-
-    /// A file dragged onto the box (from Files, a photo, another app on an iPad) attaches,
-    /// as a pasted image does.
-    private func attach(dropped providers: [NSItemProvider]) -> Bool {
-        guard !providers.isEmpty else { return false }
-        for provider in providers {
-            let type = provider.registeredContentTypes.first { !$0.conforms(to: .url) || $0.conforms(to: .fileURL) } ?? provider.registeredContentTypes.first ?? .data
-            let image = type.conforms(to: .image)
-            let name: String = {
-                let given = provider.suggestedName ?? (image ? "image" : "file")
-                if given.contains("."), !given.hasSuffix(".") { return given }
-                return type.preferredFilenameExtension.map { "\(given).\($0)" } ?? given
-            }()
-            provider.loadDataRepresentation(for: type) { data, _ in
-                guard let data else { return }
-                Task { @MainActor in await composer.attach(name: name, data: data, image: image, thumbnail: image ? data : nil) }
-            }
-        }
-        Haptics.selection()
-        return true
-    }
-
-    private func pasteImage() {
-        guard let image = UIPasteboard.general.image, let data = image.pngData() else { return }
-        Task { await composer.attach(name: "paste.png", data: data, image: true, thumbnail: data) }
     }
 }
 
@@ -1611,6 +1452,188 @@ struct QueueTrayView: View {
             Task { await queue.move(id, to: index) }
             return true
         }
+    }
+}
+
+/// + in a box's corner: attach from the photo library, the camera, Files or the clipboard
+/// (and, in a session's box, go back to the previous message). The upload starts as soon as
+/// something's picked. A session's composer and New session's box both have it.
+struct AttachMenu: View {
+    let composer: ComposerModel
+    /// A session's box offers ↑'s Previous Message here too.
+    var recall = false
+    @Environment(\.theme) private var theme
+    @ScaledMetric(relativeTo: .body) private var control: CGFloat = 44
+    @State private var pickingPhotos: [PhotosPickerItem] = []
+    @State private var choosingPhotos = false
+    @State private var takingPhoto = false
+    @State private var importingFiles = false
+
+    var body: some View {
+        Menu {
+            Section {
+                Button("Photo Library", systemImage: "photo.on.rectangle") { choosingPhotos = true }
+                if CameraPicker.isAvailable { Button("Take Photo", systemImage: "camera") { takingPhoto = true } }
+                Button("Choose Files", systemImage: "folder") { importingFiles = true }
+                if UIPasteboard.general.hasImages { Button("Paste Image", systemImage: "doc.on.clipboard") { pasteImage() } }
+            }
+            if recall, !composer.recent.isEmpty {
+                // ↑ in an empty box does this from a keyboard.
+                Button("Previous Message", systemImage: "clock.arrow.circlepath") { composer.recall(1) }
+            }
+        } label: {
+            // A glyph in the box's corner, as Send is in the other: no glass of its own.
+            Image(systemName: "plus")
+                .font(.system(size: control * 0.41, weight: .medium))
+                .foregroundStyle(theme.text2)
+                .frame(width: control - 12, height: control - 12)
+                .contentShape(Circle())
+                .contentShape(.hoverEffect, Circle())
+                .hoverEffect(.highlight)
+                .touchTarget()
+        }
+        // In the order written, wherever the menu opens: the library first.
+        .menuOrder(.fixed)
+        .tint(.primary)
+        .accessibilityLabel("Attach")
+        .onChange(of: pickingPhotos) { _, items in
+            guard !items.isEmpty else { return }
+            pickingPhotos = []
+            for item in items {
+                if let ext = Self.videoExtension(item) {
+                    composer.attachVideo(name: "video.\(ext)") {
+                        guard let video = try await item.loadTransferable(type: LibraryVideo.self) else { throw CocoaError(.fileNoSuchFile) }
+                        return (video.file, await video.thumbnail())
+                    }
+                    continue
+                }
+                // Named for what it is (a HEIC stays a HEIC), so the agent reads it right.
+                let ext = item.supportedContentTypes.first?.preferredFilenameExtension ?? "jpg"
+                Task {
+                    await composer.attach(name: "photo.\(ext)", image: true) {
+                        guard let data = try await item.loadTransferable(type: Data.self) else { throw CocoaError(.fileNoSuchFile) }
+                        return data
+                    }
+                }
+            }
+        }
+        // Presented from state, not from inside the menu: a PhotosPicker placed in a Menu never
+        // opened.
+        // `.current`: a video comes as it is, not transcoded first.
+        .photosPicker(isPresented: $choosingPhotos, selection: $pickingPhotos, matching: .any(of: [.images, .videos]), preferredItemEncoding: .current, photoLibrary: .shared())
+        .fullScreenCover(isPresented: $takingPhoto) {
+            CameraPicker { image in
+                guard let data = image.jpegData(compressionQuality: 0.85) else { return }
+                Task { await composer.attach(name: "photo.jpg", data: data, image: true, thumbnail: data) }
+            }
+            .ignoresSafeArea()
+        }
+        .fileImporter(isPresented: $importingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+            guard case .success(let urls) = result else { return }
+            for url in urls {
+                Task {
+                    let scoped = url.startAccessingSecurityScopedResource()
+                    defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                    guard let data = try? Data(contentsOf: url) else { return }
+                    let image = UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) ?? false
+                    await composer.attach(name: url.lastPathComponent, data: data, image: image, thumbnail: image ? data : nil)
+                }
+            }
+        }
+    }
+
+    /// A picked item's file extension if it's a video (a Live Photo is a photo).
+    private static func videoExtension(_ item: PhotosPickerItem) -> String? {
+        let types = item.supportedContentTypes
+        guard !types.contains(where: { $0.conforms(to: .image) }), let movie = types.first(where: { $0.conforms(to: .movie) }) else { return nil }
+        return movie.preferredFilenameExtension ?? "mov"
+    }
+
+    private func pasteImage() {
+        guard let image = UIPasteboard.general.image, let data = image.pngData() else { return }
+        Task { await composer.attach(name: "paste.png", data: data, image: true, thumbnail: data) }
+    }
+}
+
+/// What's attached, as tiles above a box's text: the picture or the file's name, the upload's
+/// ring while it goes up, and × to take it off.
+struct AttachmentTiles: View {
+    let composer: ComposerModel
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(composer.attachments) { file in
+                    Group {
+                        if let data = file.thumbnail, let image = UIImage(data: data) {
+                            Image(uiImage: image).resizable().scaledToFill().frame(width: 64, height: 64)
+                                .overlay(alignment: .bottomLeading) {
+                                    if !file.image {
+                                        Image(systemName: "play.fill").font(.ah(.caption2)).foregroundStyle(.white).shadow(radius: 2).padding(6)
+                                    }
+                                }
+                        } else {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Image(systemName: "doc.fill").font(.ah(.title3)).foregroundStyle(theme.muted)
+                                Text(file.name).font(.ah(.caption2)).foregroundStyle(.primary).lineLimit(2)
+                            }
+                            .padding(8)
+                            .frame(width: 112, height: 64, alignment: .topLeading)
+                            .background(theme.tile)
+                        }
+                    }
+                    .overlay { if file.path == nil { UploadRing(outbox: composer.outbox, upload: file.upload) } }
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(alignment: .topTrailing) {
+                        Button {
+                            withAnimation(.snappy(duration: 0.2)) { composer.removeAttachment(file.id) }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.ah(.body))
+                                .symbolRenderingMode(.palette)
+                                .foregroundStyle(.white, .black.opacity(0.55))
+                                .padding(3)
+                                // The glyph is small; the finger's target isn't.
+                                .touchTarget()
+                        }
+                        .buttonStyle(.ahPress)
+                        .accessibilityLabel("Remove \(file.name)")
+                    }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel(file.path == nil ? "Uploading \(file.name)" : file.name)
+                    .transition(.scale(scale: 0.8).combined(with: .opacity))
+                }
+            }
+            // Inset alike from the box's top and side, so a tile's corner sits concentric in
+            // the box's (its 22 less this 10).
+            .padding(.top, 2)
+        }
+        .animation(.snappy(duration: 0.25), value: composer.attachments.map(\.id))
+    }
+}
+
+/// A file dragged onto a box (from Files, a photo, another app on an iPad) attaches, as a
+/// pasted image does.
+enum AttachDrop {
+    @MainActor
+    static func attach(_ providers: [NSItemProvider], to composer: ComposerModel) -> Bool {
+        guard !providers.isEmpty else { return false }
+        for provider in providers {
+            let type = provider.registeredContentTypes.first { !$0.conforms(to: .url) || $0.conforms(to: .fileURL) } ?? provider.registeredContentTypes.first ?? .data
+            let image = type.conforms(to: .image)
+            let name: String = {
+                let given = provider.suggestedName ?? (image ? "image" : "file")
+                if given.contains("."), !given.hasSuffix(".") { return given }
+                return type.preferredFilenameExtension.map { "\(given).\($0)" } ?? given
+            }()
+            provider.loadDataRepresentation(for: type) { data, _ in
+                guard let data else { return }
+                Task { @MainActor in await composer.attach(name: name, data: data, image: image, thumbnail: image ? data : nil) }
+            }
+        }
+        Haptics.selection()
+        return true
     }
 }
 
