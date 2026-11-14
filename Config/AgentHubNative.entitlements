@@ -2,10 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- Empty while the app is signed by a free Personal Team, which can't sign Push
-         Notifications (aps-environment) or Time Sensitive Notifications
-         (com.apple.developer.usernotifications.time-sensitive); Xcode refuses the profile.
-         Until a paid team signs it, the host's APNs alerts can't reach the app; its own
-         in-app nudges still do. Restore both with a paid team. -->
+    <!-- The app's Keychain group, named first so it stays where new items go (the app's
+         application identifier, as before), and shared with the share extension, which
+         reads the sign-ins from it. Needs no App ID capability.
+         Push (aps-environment) and Time Sensitive Notifications wait for the App ID's Push
+         Notifications capability: their own layer. -->
+    <key>keychain-access-groups</key>
+    <array>
+        <string>$(AppIdentifierPrefix)$(AH_BUNDLE_IDENTIFIER)</string>
+    </array>
 </dict>
 </plist>

@@ -59,6 +59,43 @@ targets:
       - target: AgentHubNativeWidgets
         embed: true
         platformFilter: iOS
+      # Send what another app shares into a session (an iPhone's and iPad's).
+      - target: AgentHubNativeShare
+        embed: true
+        platformFilter: iOS
+  AgentHubNativeShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Share
+      # The app's own client and contracts (no persistence, no UI): what the extension
+      # needs to read its hosts and send, compiled as the app compiles them.
+      - path: Sources/Share
+      - path: Sources/Networking
+      - path: Sources/Auth/NativeAuth.swift
+      - path: Sources/Feed/FeedSchema.swift
+      - path: Sources/Domain
+        excludes:
+          - AppLink.swift
+          - DeepLink.swift
+          - Handoff.swift
+      - path: Shared/AgentLogos.xcassets
+    configFiles:
+      Debug: Config/Debug.xcconfig
+      Release: Config/Release.xcconfig
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(AH_BUNDLE_IDENTIFIER).share
+        INFOPLIST_FILE: Share/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Share/AgentHubNativeShare.entitlements
+        PRODUCT_NAME: AgentHubNativeShare
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
+        GENERATE_INFOPLIST_FILE: NO
+        SUPPORTS_MACCATALYST: NO
+        SKIP_INSTALL: YES
+        APPLICATION_EXTENSION_API_ONLY: YES
+        LD_RUNPATH_SEARCH_PATHS: $(inherited) @executable_path/Frameworks @executable_path/../../Frameworks
   AgentHubNativeWidgets:
     type: app-extension
     platform: iOS

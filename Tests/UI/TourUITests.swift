@@ -181,6 +181,9 @@ final class TourUITests: XCTestCase {
             case "open-app":
                 target = XCUIApplication(bundleIdentifier: argument)
                 target.activate()
+            case "close-app":
+                // Another app, quit: it opens fresh at the next open-app.
+                XCUIApplication(bundleIdentifier: argument).terminate()
             case "use-app":
                 target = app
                 app.activate()
