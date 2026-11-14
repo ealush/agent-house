@@ -309,7 +309,8 @@ struct SessionRowView: View {
                             .foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint)
                     }
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(detail.isEmpty ? " " : detail).font(.ah(.footnote)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.muted).lineLimit(1)
+                        // Two lines, as a chat list shows a conversation's last message.
+                        Text(detail.isEmpty ? " " : detail).font(.ah(.footnote)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.muted).lineLimit(2)
                         Spacer(minLength: 6)
                         if row.dto.queued > 0 {
                             Text("\(row.dto.queued) queued").font(.ah(.caption2)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint)
@@ -361,8 +362,9 @@ struct SessionRowView: View {
         }
     }
 
+    /// Where it is (host, project) and the last thing said in it (`SessionSnippet`).
     private var detail: String {
-        [multiHost ? row.host : nil, row.dto.project, row.dto.limit ?? row.dto.detail].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+        [multiHost ? row.host : nil, row.dto.project, SessionSnippet.line(row.dto)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 }
 

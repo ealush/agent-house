@@ -146,6 +146,10 @@ struct SessionDTO: Codable, Equatable, Sendable {
     let launchMode: String?
     let feed: String?
     let fork: ForkLineage?
+    /// The last thing said in its conversation: the agent's reply, or your message while it
+    /// works on it (plain words, clipped). Nil from a host that predates it, or before its
+    /// transcript has been read.
+    let reply: Reply?
 
     // Unknown values fail decoding, rather than inventing an idle/safe state.
     enum Status: String, Codable, Sendable {
@@ -154,6 +158,14 @@ struct SessionDTO: Codable, Equatable, Sendable {
 
     enum StatusSource: String, Codable, Sendable {
         case hook, screen, activity
+    }
+
+    struct Reply: Codable, Equatable, Sendable {
+        /// "assistant" or "user"; anything else reads as the agent's.
+        let role: String
+        let text: String
+        let at: Double
+        var isYours: Bool { role == "user" }
     }
 
     struct ForkLineage: Codable, Equatable, Sendable {
@@ -166,7 +178,7 @@ struct SessionDTO: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case id, uid, session, index, name, title, agent, harnessId, model, statusSource, command, cwd, project, projectPath
         case branch, worktree, status, detail, limit, ask, answerable, askId, viewers, devices, activity, createdAt, panes, pinned
-        case queued, order, launch, launchModel, launchEffort, launchMode, feed, fork
+        case queued, order, launch, launchModel, launchEffort, launchMode, feed, fork, reply
     }
 
     init(from decoder: any Decoder) throws {
@@ -207,6 +219,8 @@ struct SessionDTO: Codable, Equatable, Sendable {
         launchMode = try c.decodeIfPresent(String.self, forKey: .launchMode)
         feed = try c.decodeIfPresent(String.self, forKey: .feed)
         fork = try c.decodeIfPresent(ForkLineage.self, forKey: .fork)
+        // A reply this build can't read is left out, never the whole session.
+        reply = try? c.decodeIfPresent(Reply.self, forKey: .reply)
     }
 }
 
