@@ -2,7 +2,7 @@
 // its own config, and its own tmux server (TMUX_TMPDIR), so tests can never touch
 // the developer's real sessions, and every test sees exactly what a client would.
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { request } from 'node:http';
@@ -22,7 +22,16 @@ export type Ah = {
   tmux: (...args: string[]) => string;
   restart: () => Promise<Ah>;
   stop: (signal?: NodeJS.Signals) => Promise<void>;
+  /** The daemon restart() started in the same dir; cleanup stops it before removing the dir. */
+  next?: Ah;
 };
+
+/**
+ * The private tmux server's socket. Always pass it with -S: with TMUX_TMPDIR alone,
+ * a dir that's already gone makes tmux fall back to /tmp, the developer's real server
+ * (on 2026-11-14 a second cleanup of a restarted bed killed every live session).
+ */
+const socket = (dir: string) => join(dir, 'tmux', `tmux-${process.getuid!()}`, 'default');
 
 /** Starts ah with isolated state. `config` is written to its config.json. */
 export async function startAh(config: Record<string, unknown> = {}, dir = mkdtempSync(join(tmpdir(), 'ah-it-'))): Promise<Ah> {
@@ -87,10 +96,11 @@ export async function startAh(config: Record<string, unknown> = {}, dir = mkdtem
     proc,
     log: () => out,
     localToken: () => readFileSync(join(dir, 'state', 'ah', 'local-token'), 'utf8').trim(),
-    tmux: (...args) => execFileSync('tmux', args, { env, encoding: 'utf8' }),
+    tmux: (...args) => execFileSync('tmux', ['-S', socket(dir), ...args], { env, encoding: 'utf8' }),
     restart: async () => {
       await ah.stop();
-      return startAh(config, dir);
+      ah.next = await startAh(config, dir);
+      return ah.next;
     },
     stop: (signal = 'SIGTERM') =>
       new Promise((resolve) => {
@@ -104,10 +114,14 @@ export async function startAh(config: Record<string, unknown> = {}, dir = mkdtem
 
 /** Kills the test's private tmux server and the daemon, then removes its state. */
 export async function cleanup(ah: Ah) {
-  await ah.stop();
-  try {
-    execFileSync('tmux', ['kill-server'], { env: ah.env, stdio: 'ignore' });
-  } catch {}
+  // Every daemon on this dir first: one still running after its dir is removed sends
+  // its own tmux calls to the developer's server.
+  for (let x: Ah | undefined = ah; x; x = x.next) await x.stop();
+  if (existsSync(socket(ah.dir))) {
+    try {
+      execFileSync('tmux', ['-S', socket(ah.dir), 'kill-server'], { env: ah.env, stdio: 'ignore' });
+    } catch {}
+  }
   // Each run leaves ~200 MB of caches behind otherwise, and /tmp is a tmpfs.
   rmSync(ah.dir, { recursive: true, force: true });
 }
