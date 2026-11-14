@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 
 process.env.XDG_STATE_HOME = mkdtempSync(join(tmpdir(), 'ah-apns-'));
-const { Apns, activityState, apnsOrigin, apnsPayload, providerToken } = await import('./apns.ts');
+const { Apns, activityState, apnsOrigin, apnsPayload, providerToken, resolvedPayload } = await import('./apns.ts');
 const { Push, askLine } = await import('./push.ts');
 
 const dir = mkdtempSync(join(tmpdir(), 'ah-apns-key-'));
@@ -65,7 +65,9 @@ test('payloads: full or private previews; approve/deny only for answerable asks'
   assert.deepEqual(full.aps.alert, { title: alert.title, body: alert.body });
   assert.equal(full.aps.category, 'AH_APPROVAL');
   assert.equal(full.aps['interruption-level'], 'time-sensitive');
-  assert.deepEqual(full.ah, { v: 1, host: 'box', route: 'u1', event: 'waiting' });
+  assert.deepEqual(full.ah, { v: 1, host: 'box', route: 'u1', event: 'waiting', waiting: 2 });
+  assert.equal(apnsPayload({ ...alert, prompt: 'p1' }, 'waiting', 'private').ah.prompt, 'p1', 'the prompt it is about rides along, even on a private preview');
+  assert.equal(apnsPayload({ ...alert, prompt: 'p1' }, 'done', 'full').ah.prompt, undefined, 'a finished turn has no prompt');
   const quiet = apnsPayload(alert, 'waiting', 'private');
   assert.deepEqual(quiet.aps.alert, { title: 'A session needs you' }, 'nothing about the session on the lock screen');
   assert.equal(apnsPayload({ ...alert, answerable: false }, 'waiting', 'full').aps.category, undefined);
@@ -369,4 +371,35 @@ test('registrations land whole: a reader never sees half a file, whatever is mid
   assert.equal(torn, 0, 'never half a file');
   assert.equal(count(file), 150);
   assert.equal(count(activities), 150);
+});
+
+test('a session that stops waiting wakes the app quietly to take its alert down', async () => {
+  const seen: Array<{ token: string; headers: Record<string, string>; body: any }> = [];
+  const apns = new Apns(config, { file: join(dir, 'resolved.json'), transport: async (_o, path, headers, body) => (seen.push({ token: path.slice(-64), headers, body: JSON.parse(body) }), { status: 200 }) });
+  apns.register(device(TOKEN));
+  apns.register({ ...device('f'.repeat(64), { waiting: false, done: true }), sessionId: 's-f' });
+  await apns.resolved({ route: 'u1', host: 'box', tag: 'u1', waiting: 0 });
+  assert.equal(seen.length, 1, 'only devices that hear "needs you"');
+  assert.equal(seen[0].token, TOKEN);
+  assert.equal(seen[0].headers['apns-push-type'], 'background');
+  assert.equal(seen[0].headers['apns-priority'], '5');
+  assert.deepEqual(seen[0].body, resolvedPayload({ route: 'u1', host: 'box', tag: 'u1', waiting: 0 }));
+  assert.deepEqual(seen[0].body, { aps: { 'content-available': 1 }, ah: { v: 1, host: 'box', route: 'u1', event: 'resolved', waiting: 0 } }, 'no alert, sound or badge of its own');
+});
+
+test('Push resolves a "needs you" alert once its session moves on or goes, and only one it sent', async () => {
+  const push = new Push();
+  const resolved: string[] = [];
+  const alerts: Array<{ route: string; prompt?: string | null }> = [];
+  push.apns = { send: async (_e: string, a: any) => void alerts.push(a), resolved: async (r: any) => void resolved.push(`${r.route}:${r.waiting}`), badge: () => {}, follow: () => {} } as never;
+  const win = (uid: string, status: string, askId: string | null = null) => ({ uid, id: '@1', name: uid, title: uid, project: 'p', agent: 'claude', command: 'claude', status, answerable: true, askId }) as any;
+  push.observe([win('a', 'busy'), win('b', 'busy'), win('c', 'waiting', 'c1')]);
+  push.observe([win('a', 'waiting', 'a1'), win('b', 'waiting', 'b1'), win('c', 'waiting', 'c1')]);
+  assert.deepEqual(alerts.map((a) => [a.route, a.prompt]), [['a', 'a1'], ['b', 'b1']], 'alerts carry the prompt; c was waiting before ah looked');
+  push.observe([win('a', 'busy'), win('b', 'waiting', 'b1'), win('c', 'busy')]);
+  assert.deepEqual(resolved, ['a:1'], 'a moved on; c never alerted, so nothing to take down');
+  push.observe([win('a', 'busy')]);
+  assert.deepEqual(resolved, ['a:1', 'b:0'], 'b is gone');
+  push.observe([win('a', 'busy')]);
+  assert.equal(resolved.length, 2, 'each alert is resolved once');
 });

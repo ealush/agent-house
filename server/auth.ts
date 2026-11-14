@@ -268,7 +268,7 @@ export class Auth {
     const t = now();
     const session: Session = { id: shortId(), hash: sha256(secret), label: label.slice(0, 60) || 'device', via, createdAt: t, lastSeenAt: t, expiresAt: t + this.config.maxDays * 86400_000 };
     this.store.sessions.push(session);
-    this.store.sessions = this.store.sessions.filter((s) => s.expiresAt > t);
+    this.prune(t);
     this.save();
     this.audit('auth.signin', { via, device: session.label, session: session.id, from: who(req) });
     return { cookie: setCookie(req, secret, this.config.maxDays * 86400), session };
@@ -284,6 +284,21 @@ export class Auth {
     if (caller.kind === 'token') return null;
     const subject = caller.kind === 'session' ? `session:${caller.session.hash}` : 'open';
     return createHmac('sha256', this.store.cacheSecret!).update(subject).digest('base64url');
+  }
+
+  /**
+   * Ends every sign-in past its expiry or idle limit, through `endSession`, so what belongs to
+   * it (a native sign-in's push registration and Live Activities) goes too. A sign-in that's
+   * never used again would otherwise only be noticed if it came back.
+   */
+  prune(t = now()) {
+    const dead = this.store.sessions.filter((s) => t > s.expiresAt || t - s.lastSeenAt > this.config.idleHours * 3600_000);
+    for (const s of dead) this.endSession(s.id, 'expired');
+  }
+
+  /** The sign-ins that still hold. */
+  sessionIds(): Set<string> {
+    return new Set(this.store.sessions.map((s) => s.id));
   }
 
   endSession(id: string, reason: string) {
@@ -534,7 +549,7 @@ export class Auth {
     const t = now();
     const session: Session = { id: shortId(), hash: sha256(secret), label: device.label, via: 'native', createdAt: t, lastSeenAt: t, expiresAt: t + this.config.maxDays * 86400_000, bearer: true, keyId: device.id };
     this.store.sessions.push(session);
-    this.store.sessions = this.store.sessions.filter((s) => s.expiresAt > t);
+    this.prune(t);
     this.save();
     this.audit('auth.signin', { via: 'native', device: device.label, session: session.id, from: who(req) });
     return { token: secret, sessionId: session.id, expiresAt: session.expiresAt, idleHours: this.config.idleHours };

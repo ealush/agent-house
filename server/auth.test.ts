@@ -99,6 +99,19 @@ test('throttling is per mechanism: password guessing never locks out setup codes
   assert.ok(cookie);
 });
 
+test('a sign-in left unused past its idle limit ends on its own, with what belongs to it', async () => {
+  const auth = new Auth(cfg);
+  await auth.setPassword('correct horse battery');
+  const ended: string[] = [];
+  auth.onSessionEnd = (id) => ended.push(id);
+  const idle = await auth.passwordLogin(req(), 'correct horse battery', 'old phone');
+  const fresh = await auth.passwordLogin(req(), 'correct horse battery', 'laptop');
+  idle.session.lastSeenAt -= 25 * 3600_000;
+  auth.prune();
+  assert.deepEqual(ended, [idle.session.id], 'its registrations go with it (onSessionEnd), never noticed otherwise');
+  assert.deepEqual([...auth.sessionIds()].filter((id) => id === idle.session.id || id === fresh.session.id), [fresh.session.id]);
+});
+
 test('an unreadable auth store refuses to start rather than starting empty', async () => {
   const { writeFileSync } = await import('node:fs');
   writeFileSync(join(process.env.XDG_STATE_HOME!, 'ah', 'auth.json'), '{ not json');

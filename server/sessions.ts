@@ -1,6 +1,7 @@
 // Turns raw tmux windows into the model the UI shows: which agent is running,
 // which project it belongs to, and whether it is working, waiting on you or done.
 // Every window is registered (F3), so it can be found and resumed from anywhere.
+import { createHash } from 'node:crypto';
 import type { RecoveryView } from './recovery/engine.ts';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -48,6 +49,11 @@ export type WindowView = {
   ask: Ask | null;
   /** Whether one-tap Approve/Deny applies (a permission prompt with known keys). */
   answerable: boolean;
+  /**
+   * The prompt it's waiting on, as an opaque fingerprint of `ask` (null when not waiting).
+   * A notification's Approve/Deny carries the one it showed; a different one now refuses it.
+   */
+  askId: string | null;
   viewers: number;
   /** Labels of the devices currently viewing ("iPad", "Mac"). */
   devices: string[];
@@ -108,6 +114,16 @@ export type Ask = {
   /** `choice` without usable `questions`: the one question the dialog shows now, answered a step at a time. */
   dialog?: ScreenQuestion;
 };
+
+/**
+ * A short, stable fingerprint of what a waiting session asks: the same prompt on screen
+ * gives the same id, any change to its text or choices a new one. Opaque to clients.
+ */
+export function askFingerprint(ask: Ask | null): string | null {
+  if (!ask) return null;
+  const options = (ask.options ?? []).map((o) => `${o.key}=${o.label}`).join('\u0001');
+  return createHash('sha256').update(`${ask.kind}\u0000${ask.text}\u0000${options}`).digest('hex').slice(0, 16);
+}
 
 /**
  * Claude Code's question dialog: its footer, and the free-text row only that dialog has; or,
@@ -642,6 +658,7 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
         limitResetsAt: status === 'busy' || status === 'waiting' ? null : limitResetsAt,
         ask,
         answerable: status === 'waiting' && ask?.kind !== 'question' && ask?.kind !== 'choice' && !!preset?.approveKeys?.length,
+        askId: status === 'waiting' ? askFingerprint(ask) : null,
         viewers,
         devices,
         activity: w.activity,

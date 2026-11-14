@@ -26,6 +26,8 @@ export class Push {
   private devices = new Map<string, Device>();
   private last = new Map<string, string>(); // uid → last status seen
   private lastSent = new Map<string, number>();
+  /** Sessions whose "needs you" alert went out and is still standing: resolved when they move on. */
+  private alerted = new Set<string>();
   private primed = false;
   /** Native app delivery (server/apns.ts), beside Web Push; main.ts wires it. */
   apns: Apns | null = null;
@@ -69,16 +71,21 @@ export class Push {
     const now = Date.now() / 1000;
     // The app icon's badge (sw.js): how many sessions need you as of this alert.
     const waiting = String(windows.filter((w) => w.status === 'waiting').length);
+    const present = new Set<string>();
     for (const w of windows) {
+      present.add(w.uid);
       const prev = this.last.get(w.uid);
       this.last.set(w.uid, w.status);
       // The first pass only learns current state; restarting ah must not replay alerts.
       if (!this.primed || prev === w.status) continue;
+      // It alerted "needs you" and has moved on: devices take that alert down.
+      if (prev === 'waiting' && this.alerted.delete(w.uid)) void this.apns?.resolved({ route: w.uid, host: hostName(), tag: w.uid, waiting: Number(waiting) });
       const event = w.status === 'waiting' ? 'waiting' : w.status === 'attention' && prev === 'busy' ? 'done' : null;
       if (!event || now - (this.lastSent.get(w.uid) ?? 0) < COOLDOWN_S) continue;
       this.lastSent.set(w.uid, now);
       // The session's title, as every screen names it ("Fix Safari login flash"), not its tmux window ("claude").
       const title = w.title || w.name;
+      if (event === 'waiting') this.alerted.add(w.uid);
       this.send(event, {
         // A turn that ended on the plan's usage limit didn't finish: say so, and when it resets.
         title: event === 'waiting' ? `${title} needs you` : w.limit ? `${title} hit its usage limit` : `${title} finished`,
@@ -87,7 +94,14 @@ export class Push {
         tag: w.uid,
         url: `/#${w.uid}`,
         badge: waiting,
-      }, w.answerable);
+      }, w.answerable, w.askId);
+    }
+    // A session that alerted and is gone (ended, killed) is resolved too.
+    for (const uid of [...this.alerted]) {
+      if (present.has(uid)) continue;
+      this.alerted.delete(uid);
+      this.last.delete(uid);
+      void this.apns?.resolved({ route: uid, host: hostName(), tag: uid, waiting: Number(waiting) });
     }
     this.primed = true;
     // Native badges also follow changes that alert nobody (answered on another device).
@@ -102,7 +116,7 @@ export class Push {
   }
 
   /** `answerable`: one-tap Approve/Deny is safe for this alert (native notification actions). */
-  private send(event: keyof PushEvents, payload: Record<string, string>, answerable = false) {
+  private send(event: keyof PushEvents, payload: Record<string, string>, answerable = false, prompt: string | null = null) {
     if (this.apns) {
       void this.apns.send(event, {
         title: payload.title,
@@ -112,6 +126,7 @@ export class Push {
         host: hostName(),
         badge: Number(payload.badge ?? this.lastWaiting()),
         answerable,
+        prompt,
       });
     }
     for (const [endpoint, d] of this.devices) {

@@ -121,6 +121,39 @@ test('picks a row of a permission prompt by its digit', async () => {
   }
 });
 
+test('approve from a notification goes through only while the same prompt is showing', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ah-it-'));
+  const log = `${dir}/keys.log`;
+  const ah = await startAh({
+    auth: { mode: 'off' },
+    idleAfter: 1,
+    presets: [{ id: 'test-claude', name: 'Test', command: `exec ${process.execPath} ${fixture} permission ${log}`, match: '^node$', waitingPatterns: ['Do you want to proceed'], approveKeys: ['Enter'], denyKeys: ['Escape'] }],
+  }, dir);
+  try {
+    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'test-claude', cwd: `${ah.dir}/files` } });
+    assert.equal(created.status, 201, created.body);
+    const { uid } = created.json();
+    const window = async () => (await http(ah, 'GET', '/api/state')).json().windows.find((w: any) => w.uid === uid);
+    const w = await until(async () => {
+      const w = await window();
+      return w?.status === 'waiting' && w.answerable && w.askId ? w : null;
+    }, 15000, 'an answerable prompt with its id');
+    assert.match(w.askId, /^[0-9a-f]{16}$/);
+    // An alert about an older prompt: refused, nothing typed.
+    const stale = await http(ah, 'POST', `/api/sessions/${uid}/answer`, { body: { answer: 'approve', prompt: '0123456789abcdef' } });
+    assert.equal(stale.status, 409, stale.body);
+    assert.match(stale.json().error, /asking something else/);
+    assert.equal(keys(log), '');
+    assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/answer`, { body: { answer: 'approve', prompt: 7 } })).status, 400, 'a prompt id is a string');
+    // The one it shows: approved.
+    const ok = await http(ah, 'POST', `/api/sessions/${uid}/answer`, { body: { answer: 'approve', prompt: w.askId } });
+    assert.equal(ok.status, 200, ok.body);
+    await until(() => keys(log) === '\r', 5000, 'Enter typed');
+  } finally {
+    await cleanup(ah);
+  }
+});
+
 test('a hook stuck on "waiting" over a screen with no prompt does not hold "needs you"', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'ah-it-'));
   const ah = await startAh({

@@ -109,6 +109,10 @@ const core = new Core(config, viewers);
 const apns = new Apns(config.apns);
 core.push.apns = apns;
 auth.onSessionEnd = (id) => apns.forgetSession(id);
+// A sign-in left unused past its idle limit ends on its own (and its push registration with it).
+auth.prune();
+apns.retain(auth.sessionIds());
+setInterval(() => auth.prune(), 3600_000).unref();
 // Each agent CLI's current modes and efforts, and the host's hidden and added agents.
 core.harnesses = new Harnesses();
 core.applyHarnesses();
@@ -779,9 +783,12 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   }
 
   if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/answer$/))) {
-    const answer = (await readJson(req)).answer;
+    const body = await readJson(req);
+    const answer = body.answer;
     if (answer !== 'approve' && answer !== 'deny') throw new HttpError(400, 'answer must be approve or deny');
-    await core.answer(m[1], answer);
+    // The prompt the caller saw (`askId`), optional: older clients send none.
+    const prompt = body.prompt === undefined || body.prompt === null ? undefined : str(body.prompt, 'prompt', 64);
+    await core.answer(m[1], answer, prompt);
     audit(req, `session.${answer}`, { uid: m[1] });
     return send(res, 200, { ok: true });
   }

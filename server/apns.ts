@@ -37,7 +37,20 @@ export type ApnsDevice = {
  * `tag` groups and replaces alerts (a session uid, or a review layer); `route` is the
  * same fragment the web app opens ("<uid>", "review/<stack>/<pr>").
  */
-export type ApnsAlert = { title: string; body: string; tag: string; route: string; host: string; badge: number; answerable: boolean };
+export type ApnsAlert = {
+  title: string;
+  body: string;
+  tag: string;
+  route: string;
+  host: string;
+  badge: number;
+  answerable: boolean;
+  /** The prompt a "needs you" alert is about (`WindowView.askId`): Approve/Deny sends it back. */
+  prompt?: string | null;
+};
+
+/** A session that had alerted "needs you" stopped waiting (answered anywhere, moved on, ended). */
+export type ApnsResolved = { route: string; host: string; tag: string; waiting: number };
 
 const FILE = join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah', 'apns.json');
 const ACTIVITIES_FILE = join(dirname(FILE), 'apns-activities.json');
@@ -154,8 +167,18 @@ export function apnsPayload(alert: ApnsAlert, event: 'waiting' | 'done', preview
       // A finished session takes a reply from the notification (the app sends it like any message).
       ...(event === 'done' && !alert.route.startsWith('review') ? { category: 'AH_REPLY' } : {}),
     },
-    ah: { v: 1, host: alert.host, route: alert.route, event },
+    // `waiting`: this host's sessions needing you, for a device that adds up several hosts.
+    ah: { v: 1, host: alert.host, route: alert.route, event, waiting: alert.badge, ...(event === 'waiting' && alert.prompt ? { prompt: alert.prompt } : {}) },
   };
+}
+
+/**
+ * A quiet background push that wakes the app to take a "needs you" alert out of
+ * Notification Center once the session stops waiting, and to count its badge again. No
+ * alert, sound or badge of its own: iOS delivers these as its budget allows.
+ */
+export function resolvedPayload(r: ApnsResolved) {
+  return { aps: { 'content-available': 1 }, ah: { v: 1, host: r.host, route: r.route, event: 'resolved', waiting: r.waiting } };
 }
 
 type Delivery = { status: number; reason?: string };
@@ -261,6 +284,12 @@ export class Apns {
     let changed = false;
     for (const [t, d] of this.devices) if (d.sessionId === sessionId && this.devices.delete(t)) changed = true;
     if (changed) this.persist();
+  }
+
+  /** Forgets registrations and activities whose sign-in no longer exists (ended before this ran). */
+  retain(live: Set<string>) {
+    for (const d of [...this.devices.values()]) if (!live.has(d.sessionId)) this.unregister(d.sessionId);
+    for (const a of [...this.activities.values()]) if (!live.has(a.sessionId)) this.forgetSession(a.sessionId);
   }
 
   /** A native sign-in ended (signed out, revoked, expired, device removed): stop alerting it. */
@@ -382,6 +411,23 @@ export class Apns {
           'apns-expiration': String(Math.floor(Date.now() / 1000) + 600),
           // A newer alert for the same session replaces the older one on the device.
           'apns-collapse-id': alert.tag.slice(0, 64),
+        }),
+      ),
+    );
+  }
+
+  /** Tells devices that alerted "needs you" for a session that it no longer waits. */
+  async resolved(r: ApnsResolved): Promise<void> {
+    if (!this.enabled) return;
+    const targets = [...this.devices.values()].filter((d) => d.events.waiting);
+    await Promise.all(
+      targets.map((d) =>
+        this.deliver(d, resolvedPayload(r), {
+          'apns-push-type': 'background',
+          // Background pushes must go at priority 5.
+          'apns-priority': '5',
+          'apns-expiration': String(Math.floor(Date.now() / 1000) + 600),
+          'apns-collapse-id': `resolved-${r.tag}`.slice(0, 64),
         }),
       ),
     );

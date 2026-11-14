@@ -302,3 +302,14 @@ test("a shell's running command stays working between its lines; at the prompt i
   assert.equal(commandBusy(true, 106, 100, 4), false, 'at its prompt: no hold');
   assert.equal(status({ activity: 900, toolRunning: commandBusy(false, 1000, 990, 4) }), 'busy');
 });
+
+test('a waiting prompt has a stable fingerprint that changes with what it asks', async () => {
+  const { askFingerprint } = await import('./sessions.ts');
+  const ask = { kind: 'command' as const, text: 'Bash command\n  rm -rf build', options: [{ key: '1', label: 'Yes' }, { key: '3', label: 'No' }] };
+  assert.equal(askFingerprint(null), null);
+  assert.match(askFingerprint(ask)!, /^[0-9a-f]{16}$/);
+  assert.equal(askFingerprint({ ...ask }), askFingerprint(ask), 'same prompt, same id');
+  assert.notEqual(askFingerprint({ ...ask, text: 'Bash command\n  rm -rf /' }), askFingerprint(ask), 'another command');
+  assert.notEqual(askFingerprint({ ...ask, options: [{ key: '1', label: 'Yes' }] }), askFingerprint(ask), 'other choices');
+  assert.notEqual(askFingerprint({ ...ask, kind: 'tool' }), askFingerprint(ask));
+});

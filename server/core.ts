@@ -897,15 +897,27 @@ export class Core {
    * One-tap answer to a permission prompt. Re-checks against a fresh tick that the
    * session is *still* waiting, so a stale button never types into a live agent.
    */
-  async answer(uid: string, answer: 'approve' | 'deny') {
-    const state = await this.tick();
-    const w = state.windows.find((w) => w.uid === uid);
-    if (!w) throw new CoreError(404, 'session not found');
-    if (w.status !== 'waiting') throw new CoreError(409, 'it is no longer waiting');
-    if (!w.answerable || !w.agent) throw new CoreError(400, 'this prompt needs a reply, not approve/deny');
-    const keys = answer === 'approve' ? this.preset(w.agent).approveKeys : this.preset(w.agent).denyKeys;
+  /**
+   * One-tap Approve/Deny. `prompt` is the `askId` the caller saw (a notification's, a Live
+   * Activity's): when given, it must still be the prompt on screen, so an old alert never
+   * approves a newer command nobody read. Checked again inside the input lock.
+   */
+  async answer(uid: string, answer: 'approve' | 'deny', prompt?: string) {
+    const check = (w: WindowView | undefined): WindowView => {
+      if (!w) throw new CoreError(404, 'session not found');
+      if (w.status !== 'waiting') throw new CoreError(409, 'it is no longer waiting');
+      if (!w.answerable || !w.agent) throw new CoreError(400, 'this prompt needs a reply, not approve/deny');
+      if (prompt && w.askId !== prompt) throw new CoreError(409, 'it is asking something else now');
+      return w;
+    };
+    const w = check((await this.tick()).windows.find((w) => w.uid === uid));
+    const keys = answer === 'approve' ? this.preset(w.agent!).approveKeys : this.preset(w.agent!).denyKeys;
     if (!keys?.length) throw new CoreError(400, `no ${answer} keys configured for ${w.agent}`);
-    await t.tmux('send-keys', '-t', w.id, ...keys);
+    await this.withInput(uid, async () => {
+      // Nothing typed meanwhile (a send, another device's answer) changed what it asks.
+      if (prompt) check((await this.tick()).windows.find((x) => x.uid === uid));
+      await t.tmux('send-keys', '-t', w.id, ...keys);
+    });
     this.tick().catch(() => {});
   }
 
