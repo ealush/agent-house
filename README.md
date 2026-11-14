@@ -113,6 +113,10 @@ to terminal rules and output activity, and matches live agents to their transcri
   tailnet and proxies them, so one inbox covers all of them. A stopped session can
   **move** to another host (History → Move, `ah move`): its conversation goes with it and
   resumes there, in that machine's checkout of the project; the original stays.
+- **Jobs.** Agent work on a schedule ("every weekday at 9"), at a time, after another job,
+  or when a session finishes a turn, run by the host with nothing open. A job can wait
+  for your decision (Inbox → Go ahead) and then carry on: implement, review, decide,
+  send the findings back. `ah job add …`, Jobs (Ctrl+Shift+6).
 - **Continue in another agent.** Carry a conversation from Claude Code to Codex and back
   (or any other agent): the host says first what carries over and what doesn't, copies
   natively where the agent's own history can hold it, and keeps the lineage.
@@ -253,6 +257,7 @@ drive tmux directly, so treat ah's security as protecting *remote* access.
   "preview": { "ports": [47600, 47699] },
   "uploads": { "maxBytes": 4294967296, "maxTotalBytes": 21474836480, "minFreeBytes": 1073741824 },
   "migration": { "pathMap": [{ "from": "/home/me/", "to": "/Users/me/" }] },
+  "jobs": { "maxConcurrent": 3, "maxLaunchesPerHour": 20, "maxRetriesPerMinute": 10 },
   "presets": [
     { "id": "shell", "name": "Shell", "command": "" },
     {

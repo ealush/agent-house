@@ -329,3 +329,63 @@ model Migration {
 
   @@index([role, state])
 }
+
+// Scheduled and conditional agent work (docs/spec/13-conductor.md, CND-4). A Job is
+// what to do and when; a JobRun is one time it ran. Job identity is not session
+// identity: a run may start a session or speak to one. Everything needed to rebuild
+// pending work after a restart is here.
+// Job.state: scheduled | waiting (a run needs your decision) | paused | done | failed | cancelled
+model Job {
+  id          String  @id
+  name        String
+  state       String  @default("scheduled")
+  /// What a run does: launch an agent with a prompt, send to a session, or wait for a decision.
+  actionJson  String
+  /// When: at a time, on a cron schedule in a time zone, after another job, or on a session event.
+  triggerJson String
+  /// Limits and follow-up: retries, timeout, max runs, concurrency key, notify.
+  policyJson  String  @default("{}")
+  nextRunAt   Int?
+  runCount    Int     @default(0)
+  /// Session events: when the trigger was armed, and what's been seen of the session since.
+  armedAt     Int     @default(0)
+  sawBusyAt   Int?
+  lastFiredAt Int?
+  createdBy   String  @default("")
+  createdAt   Int     @default(0)
+  updatedAt   Int     @default(0)
+
+  @@index([state, nextRunAt])
+}
+
+// JobRun.state: eligible → running (dispatching → dispatched → observed) → succeeded,
+// or failed / uncertain (delivery couldn't be confirmed or ruled out) / cancelled /
+// skipped (a dependency didn't succeed) / waiting (a decision run, until you decide).
+model JobRun {
+  id             String  @id
+  jobId          String
+  seq            Int
+  state          String  @default("eligible")
+  /// Unique per cause (the schedule slot, the upstream run, the session event): a cause fires once.
+  idempotencyKey String  @unique
+  triggeredBy    String
+  scheduledFor   Int     @default(0)
+  attempt        Int     @default(1)
+  /// Which process holds it, until when (a crashed holder's runs are reconciled).
+  owner          String?
+  leaseUntil     Int?
+  /// The session the run started (chosen before it launches) or spoke to.
+  sessionUid     String?
+  /// Delivery facts: accepted, queued (queue item id = run id), typed, observed, finished; the transcript mark.
+  deliveryJson   String  @default("{}")
+  outcomeJson    String  @default("{}")
+  error          String?
+  startedAt      Int?
+  endedAt        Int?
+  createdAt      Int     @default(0)
+  updatedAt      Int     @default(0)
+
+  @@unique([jobId, seq])
+  @@index([state])
+  @@index([jobId])
+}

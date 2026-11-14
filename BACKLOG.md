@@ -71,7 +71,7 @@
 | F35 | Inline code comments | ✅ | Click a diff line to send the agent a file/line/code-anchored comment. |
 | F36 | Session forking | ✅ | `server/fork.ts` + `Core.fork`: transcript copied to a new conversation id homed in a fresh `ah/<slug>` worktree (Claude Code, Codex and Muse), lineage in `ah.fork` meta, fork dialog + family view, `ah fork`. Mid-transcript fork points are not supported (fork is at the current end). |
 | F37 | Agent-to-agent control | ✅ | `ah send X … && ah wait X && ah read X` |
-| F38 | Scheduled runs | ✗ | |
+| F38 | Scheduled runs | ✅ | `server/jobs/` (CND-4): one-time, cron in a time zone, after another job, on a session settling or ending; decisions; idempotent runs, evidence-based restart recovery, bounded concurrency and retries. Jobs page, Inbox decisions, `ah job`. |
 | F39 | Snapshots + rollback | ✅ | Per-turn git snapshots under private refs (`server/snapshots.ts`), captured at turn start, with rollback that takes a safety snapshot first so a restore is itself undoable; `Snapshots.tsx` panel with per-turn list and restore. |
 | F40 | Idle respawn / rate-limit resume | ✗ | |
 | F41 | Quota display | ✗ | |
@@ -290,6 +290,7 @@ The owner lifted the freeze for ah as an always-on conductor. Spec and protocol:
 |---|---|---|---|
 | C0 | Reliability | ✅ | Concurrent `POST /api/windows` never collide on a tmux session (ah-native RISKS P1); uploads stream to disk with explicit limits (`uploads`), no 50 MB cap, nothing left behind; `features` announce capabilities without moving `api`. |
 | C2 | Move between hosts | ✅ | F31: a stopped session moves to a trusted peer with its conversation, attachments and lineage, and resumes there; the original stays. Path mapping across Linux and macOS (path map, home, git remote). `ah move`, History → Move. |
+| C3 | Scheduled and conditional work | ✅ | F38. An implementation agent finishes, a review starts on its own, its answer comes to you as a decision, and Go ahead sends it back: no page polls. Runs never repeat on a guess: one per cause, claimed once, and an unprovable delivery is `uncertain` for you to settle. |
 | C1 | Portable conversations | ✅ | `server/portable/`: a versioned document read from any harness's transcript, with provenance and honest limitations; Continue in through the host (preview, native copy back into an agent the lineage started in, else a bounded reconstructed hand-off); lineage edges that survive restarts; lineage search; `ah continue/portable/lineage`. Replaces P13's in-page hand-off where the host supports it. |
 
 ## Design rules

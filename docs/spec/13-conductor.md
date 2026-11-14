@@ -37,6 +37,7 @@ TypeScript sources of truth are named beside each section.
 | `concurrentCreate` | 1 | `POST /api/windows` safe under concurrent requests |
 | `portable` | 1 | `/api/portable/*` |
 | `migration` | 1 | `/api/migrations/*` |
+| `jobs` | 1 | `/api/jobs/*`, state `jobs` |
 
 ## CND-1 Uploads (`uploads` v2)
 
@@ -304,3 +305,112 @@ History items gain `moved: { host, uid, at } | null` on the source.
   then *Resume on <host>*. A moved session's header shows `↪ <source host>`.
 - **CLI:** `ah move <target> --to HOST [--cwd DIR] [--preview] [--yes]`,
   `ah migrations [--json]`, `ah migrations retry|cancel <id>`.
+
+## CND-4 Scheduled and conditional work (`jobs` v1)
+
+Sources: `server/jobs/{cron,scheduler,transcript,api}.ts`. ah runs it from its own tick:
+no page or app needs to stay open.
+
+A **job** is what to do and when; it has its own identity (`jb-…`), separate from any
+session's. A **run** (`jr-…`) is one time it ran; a run may start a session or speak to
+one, and records which (`sessionUid`).
+
+**Actions**
+- `launch { preset, cwd, prompt, name?, model?, effort?, mode?, worktree? }`: a new agent
+  session (configured agents only, choices checked like New session) given `prompt`.
+- `send { target, text }`: a message to a session (typed, queued, or resumed then queued,
+  as Send does).
+- `decide { title, body?, then? }`: waits for your answer; *Go ahead* runs `then` (a
+  launch or send) as part of the same run, *Stop here* ends it.
+- Texts may name `{{trigger.reply}}`, `{{trigger.session}}` (the run that triggered this
+  one) and `{{job:<id>.reply}}`, `{{job:<id>.session}}` (that job's last successful run).
+  They are filled in as data, never read as instructions to the scheduler.
+
+**Triggers**
+- `at { at }` (epoch seconds), once.
+- `cron { expr, tz }`: five-field cron (and `@daily` …) in an IANA time zone. A wall time
+  a DST change skips is skipped that day; one it repeats runs once (hourly schedules
+  run in both real hours). A schedule missed while ah was down runs **once** for the
+  latest slot it missed, not once per slot.
+- `after { job, on: success | failure | any }`: once per run of that job; when the
+  outcome doesn't match, a `skipped` run records why.
+- `session { uid, on: idle | ended }`: once, when that session is seen at work and then
+  finishes its turn (screen output alone isn't work), or ends.
+- `manual`: only when you run it.
+
+**Policy** `{ maxRuns?, retries? (≤ 10), backoffSeconds? (60), timeoutSeconds? (6 h),
+until?: 'finished' | 'delivered', concurrencyKey?, notify?, allowDangerous?, autoRecover? }`.
+A permission mode the agent marks dangerous needs `allowDangerous` (400 `dangerous_mode`).
+
+### State machines
+
+```
+job:  scheduled ⇄ paused        (pause/resume; a schedule resumes at its next slot)
+      scheduled → waiting       (a decision run is waiting on you) → scheduled
+      scheduled → done          (one-time ran; maxRuns reached)
+      scheduled → failed        (a one-time run failed past its retries)
+      any       → cancelled     (pending runs cancelled; nothing in flight is undone)
+
+run:  eligible → running → succeeded | failed | uncertain | cancelled
+      eligible → cancelled       (job cancelled)
+      skipped                    (an `after` trigger whose outcome didn't match)
+      running  → waiting         (decide) → running (Go ahead with a follow-up) | succeeded | cancelled
+      failed   → (a new run, attempt + 1, after backoff with ±20% jitter) while retries remain
+```
+
+**Delivery** is recorded per run in `delivery`: `dispatchingAt` (about to act, with the
+transcript's length as `mark`) → `acceptedAt` (Send answered) → `queuedAt` / `typedAt` →
+`observedAt` (the message is in the session's own transcript) → `finishedAt` (its turn
+ended with a reply). A run succeeds when the message was observed and the session
+settled with a reply (`until: finished`, default), or when observed (`until: delivered`).
+A session that ends first fails the run (retryable); so does the timeout.
+
+### Never twice on a guess
+
+- **One run per cause.** Every run has a unique idempotency key: the schedule slot
+  (`slot:<job>:<at>`), the upstream run (`after:<run>:<job>`), the session event, the
+  retry of one run. A duplicate trigger, a second scheduler on the same database, or a
+  restart between two steps creates nothing.
+- **One executor.** A run is claimed by a conditional update (eligible → running).
+- **Evidence after a crash.** Runs the previous process held are decided by what's there:
+  a launch whose session never came to exist is launched again (same uid); a message in
+  the session's queue (its queue id is the run id) or in its transcript is on its way and
+  watched; a launched session whose prompt is nowhere gets it queued again under the
+  same id (a second copy can't be queued). A message that may have been typed without
+  its arrival being recorded becomes **`uncertain`**: never re-sent on its own; *Send
+  again* or *Leave it* is yours. Dependents a crash cut off are created at start.
+- **Bounded.** `jobs.maxConcurrent` (3) runs at once; `jobs.maxLaunchesPerHour` (20)
+  sessions started by jobs; `jobs.maxRetriesPerMinute` (10). Past a limit a run waits
+  its turn (still `eligible`); nothing is dropped. Decisions don't count.
+
+### Routes
+
+| Route | Body | Answer |
+|---|---|---|
+| `GET /api/jobs` | | `{ jobs: [Job], state: JobsState }` |
+| `POST /api/jobs` | `{ name, action, trigger, policy? }` | 201 `Job`; 400 `invalid_action` / `invalid_launch` / `invalid_trigger` / `invalid_policy` / `unknown_target` / `dangerous_mode` |
+| `GET /api/jobs/:id` | | `Job & { runs: [Run] }` (newest 100) |
+| `PATCH /api/jobs/:id` | `{ name?, action?, trigger?, policy? }` | `Job` (a new trigger re-arms it) |
+| `POST /api/jobs/:id/pause` · `resume` · `cancel` · `run` | | `Job` (`run`: the new `Run`) |
+| `GET /api/jobs/runs/:run` | | `Run` |
+| `POST /api/jobs/runs/:run/decide` | `{ approve: boolean, note? }` | `Run` |
+| `POST /api/jobs/runs/:run/resolve` | `{ resend: boolean }` | `Run` (only an `uncertain` one) |
+
+```ts
+Job = { id, name, state, action, trigger, policy, nextRunAt, runCount, createdAt, updatedAt, lastRun: Run | null }
+Run = { id, jobId, seq, state, triggeredBy, scheduledFor, attempt, sessionUid, delivery, outcome: { reply?, body?, decision?, note?, skippedBecause? }, error, startedAt, endedAt, createdAt }
+JobsState = { next: [{ id, name, at }], running: [{ id, name, runId, sessionUid }],
+              waiting: [{ id, name, runId, title, body }], uncertain: [{ id, name, runId }] }   // also the state's `jobs`
+```
+
+Decisions and failures notify your devices (Web Push and APNs, as "needs you").
+
+### Surfaces
+
+- **Web:** Jobs (Ctrl+Shift+6, the sidebar with a badge when something waits on you):
+  jobs, their triggers in words, runs with what each delivered, Run now / Pause / Resume /
+  Cancel, *New job* (an agent with a prompt, now, at a time, every day, or after a job).
+  Decisions also show in the Inbox's **Needs you** with *Go ahead* / *Stop here*.
+- **CLI:** `ah jobs`, `ah job add … [--at|--in|--daily|--cron|--after|--when-idle|--when-ended]`,
+  `ah job show|pause|resume|cancel|run <id>`, `ah job decide <run> yes|no`,
+  `ah job resolve <run> resend|leave`.

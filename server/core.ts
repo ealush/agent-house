@@ -2,6 +2,7 @@
 // registry and the harnesses' own stores, plus the few verbs that change things
 // (launch, resume, send). HTTP, SSE and the CLI are all thin views over this.
 import type { ReviewState } from './review/service.ts';
+import type { JobsState } from './jobs/scheduler.ts';
 import { hostName } from './host.ts';
 import { readFileSync, existsSync } from 'node:fs';
 import { mkdir, stat, writeFile } from 'node:fs/promises';
@@ -58,6 +59,8 @@ export type State = {
   review: ReviewState | null;
   /** What this host supports, one version per feature (server/features.ts). `api` stays put for shipped clients. */
   features: Record<string, number>;
+  /** Scheduled work (server/jobs): what's next, what's running, what needs your decision. */
+  jobs?: JobsState | null;
 };
 
 /** `key` is the client's session key (a uid, or "<host>/<uid>" for a peer's session). */
@@ -174,6 +177,8 @@ export class Core {
   launchEnv: () => Promise<Record<string, string>> = async () => ({});
   /** Stack review's alerts and banners for the stream; main.ts wires the service. */
   reviewState: () => ReviewState | null = () => null;
+  /** The scheduler's summary for the stream; main.ts wires it. */
+  jobsState: () => JobsState | null = () => null;
   /**
    * Run after every pass with its state (portable links settling, the scheduler, recovery):
    * each must be cheap or guard its own overlap; a failure in one never stops the pass.
@@ -311,6 +316,7 @@ export class Core {
         focus: this.focus,
         review: this.reviewState(),
         features: features(),
+        jobs: this.jobsState(),
       };
       this.state = state;
       // Subscribers get only the top-level fields that changed: history and the

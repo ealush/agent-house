@@ -60,6 +60,9 @@ import { PortableStore } from './portable/store.ts';
 import { portableApi } from './portable/api.ts';
 import { MigrationService } from './migrate/service.ts';
 import { migrateApi } from './migrate/api.ts';
+import { Scheduler } from './jobs/scheduler.ts';
+import { jobsApi } from './jobs/api.ts';
+import { readAfter } from './jobs/transcript.ts';
 import { fileContains } from './portable/extract.ts';
 import { discover } from './discovery.ts';
 import { copyTranscript, removeCopiedTranscript } from './fork.ts';
@@ -225,6 +228,59 @@ const portable = new PortableService(new PortableStore(getDb()), {
   changed: () => void core.tick().catch(() => {}),
 });
 core.afterTick.add(() => portable.reconcile());
+
+// Scheduled and conditional work (server/jobs): runs from the core tick, launches only
+// configured agents through core.launch, speaks through core.send (queue ids = run ids).
+const transcriptOf = async (uid: string) => {
+  const rec = core.registry.get(uid);
+  if (!rec?.harnessId) return null;
+  const adapter = core.presets().find((p) => p.id === rec.harness)?.feed;
+  const found = adapter ? await findTranscript(rec.harness, rec.harnessId) : null;
+  return found && adapter ? { file: found.file, adapter } : null;
+};
+const scheduler = new Scheduler(getDb(), {
+  launch: async (o) => {
+    const preset = await withCatalog(core.preset(o.preset));
+    const plan = buildLaunch(preset, { model: o.model, effort: o.effort, mode: o.mode });
+    const cwd = await resolveDir(o.cwd);
+    const wt = o.worktree ? await createWorktree(cwd, o.name) : null;
+    const session = config.defaultSession;
+    await core.launch({ preset, cwd: wt?.path ?? cwd, session, name: o.name, command: plan.command, uid: o.uid, meta: { ...plan.meta, ...o.meta, ...(wt ? { 'ah.worktree': wt } : {}), 'ah.order': core.nextOrder() } });
+    await core.refreshTmuxPath();
+    await core.send(o.uid, o.prompt, true, undefined, { id: o.id, remember: false });
+  },
+  send: async (target, text, id) => {
+    const out = await core.send(target, text, true, undefined, { id, remember: false });
+    return { outcome: out.outcome, uid: target };
+  },
+  resolveTarget: async (ref) => {
+    if (core.registry.get(ref)) return ref;
+    const i = ref.indexOf(':');
+    if (i <= 0) return null;
+    return core.registry.all().find((r) => r.harness === ref.slice(0, i) && r.harnessId === ref.slice(i + 1))?.id ?? null;
+  },
+  checkLaunch: async (id, sel) => {
+    const preset = await withCatalog(core.preset(id));
+    buildLaunch(preset, sel);
+    return { dangerous: !!preset.modes?.find((m) => m.id === sel.mode)?.dangerous };
+  },
+  record: (uid) => core.registry.get(uid),
+  freshUid: () => core.registry.freshId(),
+  queueIds: (uid) => core.queue(uid).map((q) => q.id),
+  readTranscript: async (uid, from) => {
+    const t = await transcriptOf(uid);
+    return t ? readAfter(t.file, t.adapter, from) : null;
+  },
+  inputBox: async (uid) => {
+    const w = (await core.current()).windows.find((x) => x.uid === uid);
+    return w ? t.inputBox(w.id) : null;
+  },
+  alert: (p) => core.push.alert(p),
+  changed: () => void core.tick().catch(() => {}),
+  limits: () => config.jobs,
+});
+core.jobsState = () => scheduler.state();
+core.afterTick.add((state) => scheduler.tick(state.windows));
 
 // Moving stopped sessions between hosts (server/migrate): the source pushes to a peer with
 // the token that peer issued it; the destination restores into its own stores.
@@ -412,6 +468,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   if (path.startsWith('/api/review/')) return reviewApi(req, res, url, path, review, audit);
   if (path.startsWith('/api/portable/')) return portableApi(req, res, url, path, portable, audit);
   if (path === '/api/migrations' || path.startsWith('/api/migrations/')) return migrateApi(req, res, path, caller, migrations, audit);
+  if (path === '/api/jobs' || path.startsWith('/api/jobs/')) return jobsApi(req, res, path, caller, scheduler, audit);
 
   if (route('GET', /^\/api\/state$/)) return send(res, 200, await core.current());
 

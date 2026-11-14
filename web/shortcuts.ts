@@ -32,6 +32,7 @@ export type CommandId =
   | 'go-inbox'
   | 'go-history'
   | 'go-review'
+  | 'go-jobs'
   | 'go-settings'
   | 'toggle-view'
   | 'toggle-steps'
@@ -209,6 +210,15 @@ export const COMMANDS: Command[] = [
     detail: 'Open Review: your pull request stacks, one layer at a time.',
     chords: [{ key: '4', ctrl: true, shift: true }],
     scopes: nav,
+  },
+  {
+    id: 'go-jobs',
+    group: 'Navigate',
+    label: 'Jobs',
+    detail: 'Scheduled agent work, and the decisions it waits on.',
+    chords: [{ key: '6', ctrl: true, shift: true }],
+    scopes: nav,
+    terms: ['schedule', 'cron', 'workflow'],
   },
   {
     id: 'go-search',

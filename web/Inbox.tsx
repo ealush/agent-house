@@ -1,4 +1,5 @@
 import { useContext } from 'react';
+import { DecisionCard } from './DecisionCard.tsx';
 import type { HistoryItem, HostApi, ReviewAlert, State, Win } from './api.ts';
 import { AskPanel, AskSummary } from './AskPanel.tsx';
 import { KIND_LABEL } from './askView.ts';
@@ -46,6 +47,8 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, cl
   const multiHost = state.hosts.length > 1;
   const waiting = state.windows.filter((w) => w.status === 'waiting');
   const reviews = onReview ? (state.review?.alerts ?? []) : [];
+  // Scheduled workflows waiting on you (server/jobs), on the host you opened.
+  const decisions = state.jobs?.waiting ?? [];
   const running = state.windows.filter((w) => w.status === 'busy');
   const rest = state.windows.filter((w) => w.status === 'attention' || w.status === 'idle').sort((a, b) => b.activity - a.activity);
   const flip = useFlip<HTMLDivElement>([groupBy, waiting, running, rest, reviews.map((r) => ({ key: `${r.stackId}:${r.pr}:${r.kind}` }))].map((l) => (typeof l === 'string' ? l : l.map((w) => w.key).join(','))).join('|'));
@@ -122,10 +125,10 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, cl
         <Grouped windows={state.windows} by={groupBy} multiHost={multiHost} onOpen={onOpen} />
       ) : (
         <>
-          {waiting.length + reviews.length > 0 && (
+          {waiting.length + reviews.length + decisions.length > 0 && (
             <>
               <h2 className="section-label waiting first" data-flip="h:waiting">
-                Needs you <span className="count">{waiting.length + reviews.length}</span>
+                Needs you <span className="count">{waiting.length + reviews.length + decisions.length}</span>
               </h2>
               <div className="cards">
                 {waiting.map((w) => (
@@ -134,12 +137,15 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, cl
                 {reviews.map((r) => (
                   <ReviewCard key={`${r.stackId}:${r.pr}:${r.kind}`} r={r} onOpen={() => onReview!(r.stackId, r.pr)} />
                 ))}
+                {decisions.map((d) => (
+                  <DecisionCard key={d.runId} d={d} client={clientFor(state.hostname)} />
+                ))}
               </div>
             </>
           )}
           {running.length > 0 && (
             <>
-              <h2 className={`section-label busy ${waiting.length + reviews.length ? '' : 'first'}`} data-flip="h:running">
+              <h2 className={`section-label busy ${waiting.length + reviews.length + decisions.length ? '' : 'first'}`} data-flip="h:running">
                 Working <span className="count">{running.length}</span>
               </h2>
               {!narrow && <ListHead flip="lh:running" />}

@@ -140,6 +140,8 @@ export type Config = {
    * is on this one, by prefix ({ "from": "/home/me/", "to": "/Users/me/" }).
    */
   migration: { pathMap: Array<{ from: string; to: string }> };
+  /** The scheduler's limits (server/jobs): runs at once, sessions it may start an hour, retries a minute. */
+  jobs: { maxConcurrent: number; maxLaunchesPerHour: number; maxRetriesPerMinute: number };
   presets: Preset[];
 };
 
@@ -447,9 +449,19 @@ export function loadConfig(): Config {
     snapshots: { maxFileBytes: 10 * 1024 * 1024, keepTurns: 50, retentionDays: 7, ...user.snapshots },
     preview: { ports: [47600, 47699], ...user.preview },
     uploads: uploadLimits(user.uploads),
+    jobs: jobLimits(user.jobs),
     migration: { pathMap: Array.isArray(user.migration?.pathMap) ? user.migration.pathMap.filter((r) => typeof r?.from === 'string' && typeof r?.to === 'string' && r.from.startsWith('/') && r.to.startsWith('/')) : [] },
     presets: user.presets ?? DEFAULT_PRESETS,
   };
+}
+
+function jobLimits(user: Partial<Config['jobs']> | undefined): Config['jobs'] {
+  const out = { maxConcurrent: 3, maxLaunchesPerHour: 20, maxRetriesPerMinute: 10 };
+  for (const k of Object.keys(out) as Array<keyof typeof out>) {
+    const v = user?.[k];
+    if (typeof v === 'number' && Number.isInteger(v) && v >= 0) out[k] = v;
+  }
+  return out;
 }
 
 /** Configured upload limits over the defaults; a value that isn't a positive number keeps the default. */

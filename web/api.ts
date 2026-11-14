@@ -244,6 +244,16 @@ export type MoveRequirement = { code: string; message: string; blocking: boolean
 export type MovePreview = { preflight: { ok: boolean; destCwd: string | null; resolvedBy: string | null; requirements: MoveRequirement[]; existing: string; host: string } };
 export type Migration = { id: string; role: 'outgoing' | 'incoming'; state: string; peer: string; sourceUid: string | null; destUid: string | null; harness: string; title: string; sourceCwd: string; destCwd: string | null; error: string | null; createdAt: number; updatedAt: number };
 
+/** Scheduled work (server/jobs): what a job does and when; one run of it. */
+export type JobAction =
+  | { kind: 'launch'; preset: string; cwd: string; prompt: string; name?: string; model?: string; effort?: string; mode?: string; worktree?: boolean }
+  | { kind: 'send'; target: string; text: string }
+  | { kind: 'decide'; title: string; body?: string; then?: { kind: 'launch' | 'send'; [k: string]: unknown } };
+export type JobTrigger = { kind: 'at'; at: number } | { kind: 'cron'; expr: string; tz: string } | { kind: 'after'; job: string; on: 'success' | 'failure' | 'any' } | { kind: 'session'; uid: string; on: 'idle' | 'ended' } | { kind: 'manual' };
+export type JobRun = { id: string; jobId: string; seq: number; state: string; triggeredBy: string; scheduledFor: number; attempt: number; sessionUid: string | null; delivery: Record<string, unknown>; outcome: { reply?: string; body?: string; decision?: string; skippedBecause?: string }; error: string | null; startedAt: number | null; endedAt: number | null; createdAt: number };
+export type Job = { id: string; name: string; state: string; action: JobAction; trigger: JobTrigger; policy: Record<string, unknown>; nextRunAt: number | null; runCount: number; createdAt: number; updatedAt: number; lastRun: JobRun | null };
+export type JobsState = { next: Array<{ id: string; name: string; at: number }>; running: Array<{ id: string; name: string; runId: string; sessionUid: string | null }>; waiting: Array<{ id: string; name: string; runId: string; title: string; body: string }>; uncertain: Array<{ id: string; name: string; runId: string }> };
+
 /** One continuation (a lineage edge) and how far it got. */
 export type ContinueOp = { id: string; kind: string; strategy: string; state: 'preparing' | 'launching' | 'delivering' | 'linked' | 'failed' | 'cancelled'; childUid: string | null; parentUid: string | null; fromHarness: string; toHarness: string; fromName: string; toName: string; error: string | null; limitations: Limitation[] };
 
@@ -251,6 +261,8 @@ export type State = {
   api?: number;
   /** What the host supports, a version per feature (server/features.ts); absent on older hosts. */
   features?: Record<string, number>;
+  /** Scheduled work on this host: next, running, waiting for your decision (server/jobs). */
+  jobs?: JobsState | null;
   hostname: string;
   hosts: Host[];
   home: string;
@@ -422,6 +434,12 @@ export function hostApi(base: string) {
     continueIn: (ref: string, body: { to: string; intent?: 'continue' | 'fork'; worktree?: boolean; name?: string; model?: string; effort?: string; mode?: string; idempotencyKey: string }) =>
       r<{ operation: ContinueOp; existed: boolean }>('POST', `/api/portable/conversations/${enc(ref)}/continue`, body),
     continueOp: (id: string) => r<ContinueOp>('GET', `/api/portable/operations/${enc(id)}`),
+    jobs: () => r<{ jobs: Job[]; state: JobsState }>('GET', '/api/jobs'),
+    job: (id: string) => r<Job & { runs: JobRun[] }>('GET', `/api/jobs/${enc(id)}`),
+    createJob: (body: { name: string; action: JobAction; trigger: JobTrigger; policy?: Record<string, unknown> }) => r<Job>('POST', '/api/jobs', body),
+    jobVerb: (id: string, verb: 'pause' | 'resume' | 'cancel' | 'run') => r<Job | JobRun>('POST', `/api/jobs/${enc(id)}/${verb}`),
+    decideRun: (runId: string, approve: boolean, note?: string) => r<JobRun>('POST', `/api/jobs/runs/${enc(runId)}/decide`, { approve, ...(note ? { note } : {}) }),
+    resolveRun: (runId: string, resend: boolean) => r<JobRun>('POST', `/api/jobs/runs/${enc(runId)}/resolve`, { resend }),
     movePreview: (ref: string, to: string, cwd?: string) => r<MovePreview>('POST', '/api/migrations/preview', { ref, to, ...(cwd ? { cwd } : {}) }),
     moveStart: (ref: string, to: string, o: { cwd?: string; acceptWarnings?: boolean; idempotencyKey: string }) => r<{ migration: Migration; existed: boolean }>('POST', '/api/migrations', { ref, to, ...o }),
     migration: (id: string) => r<Migration>('GET', `/api/migrations/${enc(id)}`),

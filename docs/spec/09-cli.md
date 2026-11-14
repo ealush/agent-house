@@ -27,6 +27,9 @@ never guessed). `ah list` shows titles and the shared status words.
 | `lineage <target> [--json]` | where the conversation came from and what came from it | the ↪ pill |
 | `move <target> --to HOST [--cwd DIR] [--preview] [--yes] [--json]` | move a stopped session to another host (CND-3) | History → Move |
 | `migrations [--json]`, `migrations retry\|cancel <id>` | moves between hosts and how far they got | the Move dialog |
+| `jobs [--json]` | scheduled work: next, running, waiting on you | Jobs |
+| `job add --name N (--launch AGENT --cwd DIR --prompt … \| --send TARGET --text …) [trigger] [--retries N] [--notify]` | schedule agent work (CND-4) | Jobs → New job |
+| `job show\|pause\|resume\|cancel\|run <id>`, `job decide <run> yes\|no`, `job resolve <run> resend\|leave` | one job and its runs; answers | Jobs, Inbox |
 | `answer <target> <yes\|no\|N>` | approve, deny, or pick option N of what it is asking (re-checked on screen first) | the ask's options |
 | `stop <target>` | stop the agent's current turn | Stop |
 | `terminate <target>` (also `kill`) | end the session; the conversation stays in History | Terminate session |

@@ -73,6 +73,7 @@ import { ReviewContext } from './reviewContext.ts';
 // Pages and dialogs most visits never open load on first use.
 const Settings = lazy(() => import('./Settings.tsx').then((m) => ({ default: m.Settings })));
 const ReviewPage = lazy(() => import('./review/ReviewPage.tsx'));
+const JobsView = lazy(() => import('./JobsView.tsx').then((m) => ({ default: m.JobsView })));
 const ForkDialog = lazy(() => import('./ForkDialog.tsx').then((m) => ({ default: m.ForkDialog })));
 const MoveDialog = lazy(() => import('./MoveDialog.tsx').then((m) => ({ default: m.MoveDialog })));
 const ChatSearchDialog = lazy(() => import('./ChatHistory.tsx').then((m) => ({ default: m.ChatSearchDialog })));
@@ -134,9 +135,9 @@ const onTop = (el: HTMLElement | null) => {
 // URL hash: "#<uid>" (local session), "#<host>/<uid>" (peer session), "#history", "#sessions".
 // "#security" still lands on settings, where Security lives now. Old links
 // ("#@12", a tmux window id) still open: App upgrades them once windows are known.
-const PAGES = ['history', 'sessions', 'settings', 'search', 'review'] as const;
+const PAGES = ['history', 'sessions', 'settings', 'search', 'review', 'jobs'] as const;
 /** The sidebar's pages, top to bottom (its sessions follow), so navigation knows which way it goes. */
-const NAV_PAGES = ['inbox', 'review', 'history', 'search', 'settings'] as const;
+const NAV_PAGES = ['inbox', 'review', 'jobs', 'history', 'search', 'settings'] as const;
 const sameRoute = (a: { page: Page; selected: string | null }, b: { page: Page; selected: string | null }) => a.page === b.page && a.selected === b.selected;
 
 function fromHash(): { page: Page; selected: string | null } {
@@ -424,6 +425,7 @@ export function App({ onLock }: { onLock: () => void }) {
   useCommand('go-inbox', () => showPage('inbox'));
   useCommand('go-history', () => showPage('history'));
   useCommand('go-review', () => showPage('review'));
+  useCommand('go-jobs', () => showPage('jobs'));
   useCommand('go-settings', () => showPage('settings'));
   useCommand('go-search', () => showPage('search'));
   useCommand('worktrees', () => setDialog('worktrees'));
@@ -1106,6 +1108,10 @@ export function App({ onLock }: { onLock: () => void }) {
       {shown === 'review' ? (
         <Suspense fallback={<div className="page" />}>
           <ReviewPage client={clientFor(state.hostname)} state={state} narrow={narrow} onOpenSession={(uid) => open(uid)} />
+        </Suspense>
+      ) : shown === 'jobs' ? (
+        <Suspense fallback={<div className="page" />}>
+          <JobsView client={clientFor(state.hostname)} state={state} onOpenSession={(uid) => open(uid)} />
         </Suspense>
       ) : shown === 'search' ? (
         <SearchView key={searchQuery} initialQuery={searchQuery} client={clientFor(state.hostname)} onOpenHit={openSearchHit} />

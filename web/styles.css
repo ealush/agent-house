@@ -9857,3 +9857,57 @@ label:has(> input[type='checkbox'][switch]) {
   display: grid;
   gap: 4px;
 }
+
+/* Jobs (JobsView, DecisionCard): scheduled work and the decisions it waits on. */
+.decision-body {
+  margin: 0;
+  white-space: pre-wrap;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.row.job-row {
+  display: flex;
+  gap: 12px;
+}
+.job-row .stack {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+}
+.job-row .stack .sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.job-row .row-actions {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+.job-runs {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0 12px;
+  display: grid;
+  gap: 6px;
+}
+.job-runs li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.job-form {
+  display: grid;
+  gap: 12px;
+  max-width: 640px;
+  margin: 0 0 24px;
+}

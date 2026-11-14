@@ -45,6 +45,14 @@ export const HELP = `usage: ah <command>
                                               move a stopped session to another host (it resumes there)
   migrations [--json] | migrations retry|cancel <id>
                                               moves between hosts and how far they got
+  jobs [--json]                               scheduled work: what's next, running, waiting on you
+  job add --name N (--launch AGENT --cwd DIR --prompt "…" | --send TARGET --text "…")
+          [--at "2026-11-15 09:00" | --in 30m | --daily 09:00 | --cron "0 9 * * 1-5" [--tz Zone]
+           | --after JOB[:success|failure|any] | --when-idle TARGET | --when-ended TARGET]
+          [--retries N] [--notify]            schedule agent work (no trigger: run it with \`job run\`)
+  job show|pause|resume|cancel|run <id>       one job and its runs; change what it does next
+  job decide <run> yes|no [--note "…"]       answer a job waiting on your decision
+  job resolve <run> resend|leave              a run that may or may not have arrived
   answer <target> <yes|no|N>                  answer what it's asking: approve, deny, or pick option N
   stop <target>                               stop the agent's current turn
   terminate <target>                          end the session (its conversation stays in history); also: kill
@@ -307,6 +315,90 @@ export async function run(cmd, args) {
       if (json) return console.log(JSON.stringify(m, null, 2));
       if (m.state !== 'completed') fail(`${m.id} ${m.state}: ${m.error ?? ''} (ah migrations retry ${m.id})`);
       console.log(`moved: ${m.id} → ${m.peer} as ${m.destUid} in ${m.destCwd}; resume it there (ah resume on ${m.peer}, or from any device)`);
+      return;
+    }
+    case 'jobs': {
+      const { jobs, state } = await call('GET', '/api/jobs');
+      if (flag(args, '--json')) return console.log(JSON.stringify({ jobs, state }, null, 2));
+      if (!jobs.length) return console.log('no jobs');
+      table([['ID', 'NAME', 'STATE', 'NEXT', 'LAST RUN'], ...jobs.map((j) => [j.id, j.name, j.state, j.nextRunAt ? new Date(j.nextRunAt * 1000).toLocaleString() : '', j.lastRun ? `${j.lastRun.state}${j.lastRun.error ? `: ${j.lastRun.error}` : ''}` : ''])]);
+      for (const w of state.waiting) console.log(`\n● ${w.name} needs your decision (run ${w.runId}): ${w.title}\n  ah job decide ${w.runId} yes|no`);
+      for (const u of state.uncertain) console.log(`\n? ${u.name}: may not have arrived (run ${u.runId}): ah job resolve ${u.runId} resend|leave`);
+      return;
+    }
+    case 'job': {
+      const sub = args.shift();
+      if (sub === 'add') {
+        const name = opt(args, '--name', undefined) ?? 'Job';
+        const launchAgent = opt(args, '--launch', undefined);
+        const sendTo = opt(args, '--send', undefined);
+        const cwd = opt(args, '--cwd', process.cwd());
+        const prompt = opt(args, '--prompt', undefined);
+        const text = opt(args, '--text', undefined);
+        const at = opt(args, '--at', undefined);
+        const inDelay = opt(args, '--in', undefined);
+        const daily = opt(args, '--daily', undefined);
+        const cron = opt(args, '--cron', undefined);
+        const tz = opt(args, '--tz', Intl.DateTimeFormat().resolvedOptions().timeZone);
+        const afterJob = opt(args, '--after', undefined);
+        const idle = opt(args, '--when-idle', undefined);
+        const ended = opt(args, '--when-ended', undefined);
+        const retries = opt(args, '--retries', undefined);
+        const notify = flag(args, '--notify');
+        let action;
+        if (launchAgent) {
+          if (!prompt) fail('--prompt is required with --launch');
+          action = { kind: 'launch', preset: launchAgent, cwd: resolve(cwd), prompt };
+        } else if (sendTo) {
+          if (!text) fail('--text is required with --send');
+          const found = await find(sendTo, { history: true });
+          action = { kind: 'send', target: found.live?.uid ?? found.past.ref, text };
+        } else fail('what should it do? --launch AGENT --prompt "…", or --send TARGET --text "…"');
+        let trigger = { kind: 'manual' };
+        if (at) trigger = { kind: 'at', at: Math.floor(new Date(at).getTime() / 1000) };
+        else if (inDelay) {
+          const m = inDelay.match(/^(\d+)(s|m|h|d)$/);
+          if (!m) fail('--in takes 30s, 10m, 2h or 1d');
+          trigger = { kind: 'at', at: Math.floor(Date.now() / 1000) + Number(m[1]) * { s: 1, m: 60, h: 3600, d: 86400 }[m[2]] };
+        } else if (daily) {
+          const [h, mm] = daily.split(':').map(Number);
+          trigger = { kind: 'cron', expr: `${mm} ${h} * * *`, tz };
+        } else if (cron) trigger = { kind: 'cron', expr: cron, tz };
+        else if (afterJob) {
+          const [job, on = 'success'] = afterJob.split(':');
+          trigger = { kind: 'after', job, on };
+        } else if (idle || ended) {
+          const found = await find(idle ?? ended);
+          trigger = { kind: 'session', uid: found.live.uid, on: idle ? 'idle' : 'ended' };
+        }
+        if (trigger.kind === 'at' && !Number.isFinite(trigger.at)) fail('could not read that time');
+        const policy = { ...(retries ? { retries: Number(retries) } : {}), ...(notify ? { notify: true } : {}) };
+        const job = await call('POST', '/api/jobs', { name, action, trigger, policy });
+        return console.log(`${job.id}  ${job.name}  ${job.state}${job.nextRunAt ? `  next ${new Date(job.nextRunAt * 1000).toLocaleString()}` : ''}`);
+      }
+      if (sub === 'show') {
+        const j = await call('GET', `/api/jobs/${encodeURIComponent(args[0] ?? '')}`);
+        if (flag(args, '--json')) return console.log(JSON.stringify(j, null, 2));
+        console.log(`${j.id}  ${j.name}  ${j.state}  trigger ${JSON.stringify(j.trigger)}`);
+        table([['RUN', 'STATE', 'TRY', 'STARTED', 'SESSION', 'RESULT'], ...j.runs.map((r) => [r.id, r.state, r.attempt, r.startedAt ? new Date(r.startedAt * 1000).toLocaleString() : '', r.sessionUid ?? '', (r.error ?? r.outcome.skippedBecause ?? r.outcome.reply ?? '').split('\n')[0].slice(0, 60)])]);
+        return;
+      }
+      if (['pause', 'resume', 'cancel', 'run'].includes(sub)) {
+        const out = await call('POST', `/api/jobs/${encodeURIComponent(args[0] ?? '')}/${sub}`);
+        return console.log(`${out.id} ${out.state}`);
+      }
+      if (sub === 'decide') {
+        const note = opt(args, '--note', undefined);
+        const yes = args[1] === 'yes' ? true : args[1] === 'no' ? false : fail('yes or no');
+        const out = await call('POST', `/api/jobs/runs/${encodeURIComponent(args[0] ?? '')}/decide`, { approve: yes, ...(note ? { note } : {}) });
+        return console.log(`${out.id} ${out.state}`);
+      }
+      if (sub === 'resolve') {
+        const resend = args[1] === 'resend' ? true : args[1] === 'leave' ? false : fail('resend or leave');
+        const out = await call('POST', `/api/jobs/runs/${encodeURIComponent(args[0] ?? '')}/resolve`, { resend });
+        return console.log(`${out.id} ${out.state}`);
+      }
+      fail('job add|show|pause|resume|cancel|run|decide|resolve');
       return;
     }
     case 'migrations': {

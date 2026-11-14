@@ -21,6 +21,8 @@ export const FEATURES: Record<string, number> = {
   portable: 1,
   /** /api/migrations: move a stopped session to another trusted host, with progress, retry and rollback (server/migrate). */
   migration: 1,
+  /** /api/jobs: scheduled, recurring, dependent and event-triggered agent work with decisions (server/jobs). */
+  jobs: 1,
 };
 
 export function features(): Record<string, number> {

@@ -14,7 +14,7 @@ import { Glide } from './Glide.tsx';
 import { useFlip } from './useFlip.ts';
 import { useDismiss } from './useDismiss.ts';
 
-export type Page = 'inbox' | 'history' | 'sessions' | 'settings' | 'search' | 'review';
+export type Page = 'inbox' | 'history' | 'sessions' | 'settings' | 'search' | 'review' | 'jobs';
 
 type Props = {
   /** Workspaces 1–9: where you are, and which hold something. */
@@ -346,6 +346,13 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
         <span className="grow">Review</span>
         {(state?.review?.alerts.length ?? 0) > 0 && <span className="badge">{state!.review!.alerts.length}</span>}
       </button>
+      {(state?.features?.jobs ?? 0) > 0 && (
+        <button className={`nav-item ${page === 'jobs' && !selected ? 'on' : ''}`} title={shortcutTitle('Jobs', 'go-jobs')} onClick={() => onPage('jobs')}>
+          <Icon name="queue" />
+          <span className="grow">Jobs</span>
+          {(state?.jobs?.waiting.length ?? 0) > 0 ? <span className="badge">{state!.jobs!.waiting.length}</span> : (state?.jobs?.running.length ?? 0) > 0 && <span className="count">{state!.jobs!.running.length}</span>}
+        </button>
+      )}
       <button className={`nav-item ${page === 'history' && !selected ? 'on' : ''}`} title={shortcutTitle('History', 'go-history')} onClick={() => onPage('history')}>
         <Icon name="history" />
         <span className="grow">History</span>
