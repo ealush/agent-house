@@ -121,6 +121,10 @@ to terminal rules and output activity, and matches live agents to their transcri
   noticed (the session says "limited until 5:20 PM"); with *Keep going after limits and
   crashes* on, ah waits out the reset and continues it once, or resumes a crashed agent
   in the same conversation. Never a different model or provider; off by default.
+- **Usage.** Tokens per model, provider, day and conversation, read from the agents' own
+  transcripts; the rate-limit windows they report; what it would cost at list price,
+  always marked as an estimate (your plan may bill differently). Usage (Ctrl+Shift+7),
+  `ah usage`, CSV/JSON export.
 - **Continue in another agent.** Carry a conversation from Claude Code to Codex and back
   (or any other agent): the host says first what carries over and what doesn't, copies
   natively where the agent's own history can hold it, and keeps the lineage.
@@ -263,6 +267,7 @@ drive tmux directly, so treat ah's security as protecting *remote* access.
   "migration": { "pathMap": [{ "from": "/home/me/", "to": "/Users/me/" }] },
   "jobs": { "maxConcurrent": 3, "maxLaunchesPerHour": 20, "maxRetriesPerMinute": 10 },
   "recovery": { "auto": false, "maxAttempts": 5, "prompt": "Continue where you left off." },
+  "usage": { "retentionDays": 400, "billing": { "anthropic": "subscription" }, "prices": {} },
   "presets": [
     { "id": "shell", "name": "Shell", "command": "" },
     {

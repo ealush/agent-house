@@ -53,6 +53,8 @@ export const HELP = `usage: ah <command>
   job show|pause|resume|cancel|run <id>       one job and its runs; change what it does next
   job decide <run> yes|no [--note "…"]       answer a job waiting on your decision
   job resolve <run> resend|leave              a run that may or may not have arrived
+  usage [--days N] [--by model|provider|harness|session|day] [--json] | usage limits | usage export [--json]
+                                              tokens, estimates and limit windows (local telemetry; estimates, not a bill)
   recovery [target] [--retry|--pause|--resume|--cancel] [--auto on|off]
                                               limits, provider errors and crashes, and what ah does about them
   answer <target> <yes|no|N>                  answer what it's asking: approve, deny, or pick option N
@@ -317,6 +319,28 @@ export async function run(cmd, args) {
       if (json) return console.log(JSON.stringify(m, null, 2));
       if (m.state !== 'completed') fail(`${m.id} ${m.state}: ${m.error ?? ''} (ah migrations retry ${m.id})`);
       console.log(`moved: ${m.id} → ${m.peer} as ${m.destUid} in ${m.destCwd}; resume it there (ah resume on ${m.peer}, or from any device)`);
+      return;
+    }
+    case 'usage': {
+      if (args[0] === 'limits') {
+        const l = await call('GET', '/api/usage/limits');
+        if (flag(args, '--json')) return console.log(JSON.stringify(l, null, 2));
+        if (!l.windows.length && !l.cooldowns.length) return console.log('no limits known right now');
+        for (const w of l.windows) console.log(`${w.harness} ${w.window}: ${w.usedPercent ?? '?'}% used${w.resetsAt ? `, resets ${new Date(w.resetsAt * 1000).toLocaleString()}` : ''} (${w.source})`);
+        for (const c of l.cooldowns) console.log(`${c.harness} ${c.uid}: ${c.text}${c.resetsAt ? ` until ${new Date(c.resetsAt * 1000).toLocaleString()}` : ''} (${c.source})`);
+        return;
+      }
+      if (args[0] === 'export') return process.stdout.write(await call('GET', `/api/usage/export?format=${flag(args, '--json') ? 'json' : 'csv'}`).then((x) => (typeof x === 'string' ? x : JSON.stringify(x))));
+      const days = Number(opt(args, '--days', '30'));
+      const by = opt(args, '--by', 'model');
+      const from = new Date(Date.now() - (days - 1) * 86_400_000).toISOString().slice(0, 10);
+      await call('POST', '/api/usage/refresh');
+      const rep = await call('GET', `/api/usage?by=${encodeURIComponent(by)}&from=${from}`);
+      if (flag(args, '--json')) return console.log(JSON.stringify(rep, null, 2));
+      if (!rep.rows.length) return console.log(`nothing recorded in the last ${days} days`);
+      const k = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(Math.round(n)));
+      table([[by.toUpperCase(), 'IN', 'OUT', 'CACHE READ', 'ESTIMATE*'], ...rep.rows.map((r) => [r.key, k(r.tokens.input + r.tokens.cacheWrite), k(r.tokens.output), k(r.tokens.cacheRead), r.cost.estimateUsd === null ? 'no price' : `$${r.cost.estimateUsd.toFixed(2)}`])]);
+      console.log(`\n* ${rep.notes.cost}`);
       return;
     }
     case 'recovery': {

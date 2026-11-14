@@ -109,6 +109,7 @@ const BASE_ICONS = {
   'go-settings': 'gear',
   'go-review': 'stack',
   'go-jobs': 'queue',
+  'go-usage': 'effort',
   'go-search': 'search',
   worktrees: 'branch',
   'switch-branch': 'branch',

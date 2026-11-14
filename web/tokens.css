@@ -36,6 +36,7 @@
   /* brand */
   --brand: #e91e63; /* marks: the full stop, status dots, focus rings */
   --accent: #f47199; /* pink text and icons */
+  --chart-1: #e65a8a; /* a chart's one series (Usage): the accent's hue, stepped into the band a fill reads at on this ground */
   --accent-strong: #d81b60; /* fills that carry white text */
   --accent-hover: #c2185b;
   --accent-ink: #ffffff;
@@ -141,6 +142,7 @@
   --faint: #686b7a;
 
   --accent: #c2185b;
+  --chart-1: #c2185b;
   --accent-strong: #d81b60;
   --accent-hover: #c2185b;
   --accent-ink: #ffffff;

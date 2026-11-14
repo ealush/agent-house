@@ -64,6 +64,7 @@ import { Scheduler } from './jobs/scheduler.ts';
 import { jobsApi } from './jobs/api.ts';
 import { linesAfter, readAfter } from './jobs/transcript.ts';
 import { RecoveryEngine, RecoveryError } from './recovery/engine.ts';
+import { UsageService } from './usage/service.ts';
 import { fileContains } from './portable/extract.ts';
 import { discover } from './discovery.ts';
 import { copyTranscript, removeCopiedTranscript } from './fork.ts';
@@ -214,7 +215,11 @@ const portable = new PortableService(new PortableStore(getDb()), {
     const found = rec?.harnessId ? await findTranscript(rec.harness, rec.harnessId) : null;
     return found ? fileContains(found.file, needle, from) : false;
   },
-  copyTranscript: (harness, file, cwd, upto) => copyTranscript(harness, file, cwd, upto),
+  copyTranscript: async (harness, file, cwd, upto) => {
+    const out = await copyTranscript(harness, file, cwd, upto);
+    await usage.copied(out.file).catch(() => {});
+    return out;
+  },
   removeCopy: (file) => removeCopiedTranscript(file),
   worktree: (cwd, name) => createWorktree(cwd, name),
   checkLaunch: async (id, sel) => {
@@ -279,6 +284,8 @@ const scheduler = new Scheduler(getDb(), {
   alert: (p) => core.push.alert(p),
   changed: () => void core.tick().catch(() => {}),
   limits: () => config.jobs,
+  capacity: (harness) => usage.knownLimit(harness),
+  harnessOf: (uid) => core.registry.get(uid)?.harness ?? null,
 });
 core.jobsState = () => scheduler.state();
 
@@ -310,6 +317,20 @@ const recovery = new RecoveryEngine(getDb(), {
   changed: () => void core.tick().catch(() => {}),
 });
 core.recoveryOf = (s) => recovery.viewOf(s);
+
+// Usage (server/usage): tokens from the agents' own transcripts, limits they reported.
+const usage = new UsageService(getDb(), {
+  host: hostName,
+  transcripts: async () => (await discover()).map((x) => ({ harness: x.harness, harnessId: x.harnessId, file: x.file, updatedAt: x.updatedAt })),
+  uidOf: (harness, harnessId) => core.registry.all().find((r) => r.harness === harness && r.harnessId === harnessId)?.id ?? null,
+  config: () => config.usage,
+  liveLimits: () => {
+    const out: Array<{ harness: string; uid: string; resetsAt: number | null; source: 'screen' | 'transcript'; text: string }> = [];
+    for (const r of recovery.listNow()) if (r.reason === 'rate_limit' && r.harness) out.push({ harness: r.harness, uid: r.uid, resetsAt: r.resetsAt, source: r.source === 'screen' ? 'screen' : 'transcript', text: r.evidence });
+    return out;
+  },
+});
+core.onCopy = (file) => void usage.copied(file).catch(() => {});
 core.registry.onEnd = (r, last) => recovery.sessionEnded(r, last);
 core.afterTick.add((state) => recovery.tick(state.windows));
 core.afterTick.add((state) => scheduler.tick(state.windows));
@@ -340,6 +361,7 @@ const migrations = new MigrationService(getDb(), {
   },
   isLive: (uid) => !!core.registry.get(uid) && (core.registry.get(uid)!.lifecycle === 'live' || core.registry.get(uid)!.lifecycle === 'starting'),
   rules: () => config.migration.pathMap,
+  copied: (file) => void usage.copied(file).catch(() => {}),
   roots: () => [...new Set([...config.projectRoots, ...config.files.roots].map(expandHome))],
   changed: () => void core.tick().catch(() => {}),
 });
@@ -506,6 +528,31 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   if (path.startsWith('/api/portable/')) return portableApi(req, res, url, path, portable, audit);
   if (path === '/api/migrations' || path.startsWith('/api/migrations/')) return migrateApi(req, res, path, caller, migrations, audit);
   if (path === '/api/jobs' || path.startsWith('/api/jobs/')) return jobsApi(req, res, path, caller, scheduler, audit);
+
+  // Usage (server/usage): tokens, limits and estimates, each with where it came from.
+  if (route('GET', /^\/api\/usage$/)) {
+    const by = url.searchParams.get('by') ?? 'model';
+    if (!['day', 'model', 'provider', 'harness', 'session'].includes(by)) throw new HttpError(400, 'by is day, model, provider, harness or session', 'invalid_group');
+    const day = (k: string) => {
+      const v = url.searchParams.get(k);
+      if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new HttpError(400, `${k} is a date (YYYY-MM-DD)`, 'invalid_date');
+      return v ?? undefined;
+    };
+    return send(res, 200, await usage.report({ from: day('from'), to: day('to'), by: by as 'model' }));
+  }
+  if (route('GET', /^\/api\/usage\/limits$/)) return send(res, 200, await usage.limits());
+  if (route('POST', /^\/api\/usage\/refresh$/)) return send(res, 200, await usage.ingest());
+  if (route('GET', /^\/api\/usage\/export$/)) {
+    const format = url.searchParams.get('format') === 'json' ? 'json' : 'csv';
+    const body = await usage.export(format);
+    res.writeHead(200, { 'content-type': format === 'json' ? 'application/json' : 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="ah-usage-${hostName()}.${format}"`, 'cache-control': 'no-store' });
+    return void res.end(body);
+  }
+  if ((m = route('GET', /^\/api\/sessions\/([\w-]{1,40})\/usage$/))) {
+    const rec = core.registry.get(m[1]);
+    if (!rec?.harnessId) throw new HttpError(404, 'no conversation for that session', 'not_found');
+    return send(res, 200, await usage.session(rec.harness, rec.harnessId));
+  }
 
   // Recovery (server/recovery): what went wrong in a session, what ah will do, and your controls.
   if (route('GET', /^\/api\/recovery$/)) return send(res, 200, { recoveries: await recovery.list(), config: { auto: config.recovery.auto, maxAttempts: config.recovery.maxAttempts } });
@@ -1802,6 +1849,7 @@ core.start();
 review.start();
 search.start();
 peers.start();
+if (process.env.AH_USAGE !== '0') usage.start();
 
 const server: Server = createServer(handle);
 // No whole-request deadline: a long upload over a phone's link must not be cut at

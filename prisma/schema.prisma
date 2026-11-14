@@ -429,3 +429,59 @@ model RecoveryEvent {
 
   @@index([key, id])
 }
+
+// What agents use (docs/spec/13-conductor.md, CND-6): tokens per conversation, model and
+// day, read from the harnesses' own transcripts (local telemetry, not a bill), and the
+// rate-limit windows they report. Bounded: rows older than `usage.retentionDays` go.
+// Token counts are Float (exact to 2^53; a busy day of cache reads passes 2^31).
+model UsageDaily {
+  /// day|convKey|model
+  id               String  @id
+  /// UTC date, YYYY-MM-DD
+  day              String
+  host             String  @default("")
+  convKey          String
+  uid              String?
+  harness          String
+  /// anthropic | openai | google | xai | unknown
+  provider         String
+  model            String
+  inputTokens      Float   @default(0)
+  outputTokens     Float   @default(0)
+  cacheReadTokens  Float   @default(0)
+  cacheWriteTokens Float   @default(0)
+  reasoningTokens  Float   @default(0)
+  messages         Int     @default(0)
+  updatedAt        Int     @default(0)
+
+  @@index([day])
+  @@index([convKey])
+}
+
+// How far each transcript has been read, so a pass reads only what's new.
+model UsageCursor {
+  file      String @id
+  offset    Float  @default(0)
+  ino       Float  @default(0)
+  /// Recent message ids already counted (Claude repeats one message's usage per content block), and the current model.
+  stateJson String @default("{}")
+  updatedAt Int    @default(0)
+}
+
+// A rate-limit window as the provider reported it (Codex's own telemetry) or ah read it
+// (a limit notice, an error line). Kept when it changes; 30 days.
+model RateLimitSample {
+  id            Int     @id @default(autoincrement())
+  harness       String
+  provider      String
+  /// primary | secondary | session | weekly | usage
+  window        String
+  usedPercent   Float?
+  windowMinutes Int?
+  resetsAt      Int?
+  /// provider_telemetry | screen | transcript
+  source        String
+  observedAt    Int
+
+  @@index([harness, window, observedAt])
+}

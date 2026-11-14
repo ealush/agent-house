@@ -85,6 +85,10 @@ export type SchedulerDeps = {
   alert: (p: { title: string; body: string; tag: string; url: string }) => void;
   changed: () => void;
   limits: () => Limits;
+  /** A limit the agent's provider stated, and until when (server/usage): new work waits for it. */
+  capacity?: (harness: string) => Promise<{ until: number; why: string } | null>;
+  /** Which agent a session runs (for a send's capacity check). */
+  harnessOf?: (uid: string) => string | null;
 };
 
 const now = () => Math.floor(Date.now() / 1000);
@@ -630,13 +634,21 @@ export class Scheduler {
       // Backpressure: past a limit a run simply waits its turn (still eligible).
       if (!isDecision && running >= limits.maxConcurrent) break;
       if (action.kind === 'launch' && launches >= limits.maxLaunchesPerHour) continue;
+      // The agent is at a limit its provider stated: the run waits for the reset rather than
+      // start work that can't go anywhere (never a switch to another provider).
+      const agent = action.kind === 'launch' ? action.preset : action.kind === 'send' ? this.deps.harnessOf?.(action.target) : null;
+      const held = agent ? await this.deps.capacity?.(agent).catch(() => null) : null;
+      if (held) {
+        if (!run.error?.startsWith('waiting for')) await this.setRun(run.id, { error: `waiting for ${agent}'s limit to reset at ${new Date(held.until * 1000).toISOString()} (${held.why})` });
+        continue;
+      }
       if (run.attempt > 1 && retries >= limits.maxRetriesPerMinute) continue;
       if (policy.concurrencyKey) {
         const busy = await this.db.jobRun.findMany({ where: { state: { in: ['running', 'waiting'] }, NOT: { id: run.id } } });
         const keys = await Promise.all(busy.map(async (b) => parse<Policy>((await this.db.job.findUnique({ where: { id: b.jobId } }))?.policyJson, {}).concurrencyKey));
         if (keys.includes(policy.concurrencyKey)) continue;
       }
-      const claimed = await this.db.jobRun.updateMany({ where: { id: run.id, state: 'eligible' }, data: { state: 'running', owner: this.instance, leaseUntil: t + 300, startedAt: run.startedAt ?? t, updatedAt: t } });
+      const claimed = await this.db.jobRun.updateMany({ where: { id: run.id, state: 'eligible' }, data: { state: 'running', owner: this.instance, leaseUntil: t + 300, startedAt: run.startedAt ?? t, error: null, updatedAt: t } });
       if (!claimed.count) continue;
       if (!isDecision) running++;
       if (action.kind === 'launch') launches++;

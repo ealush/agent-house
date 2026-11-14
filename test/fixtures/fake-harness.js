@@ -59,12 +59,14 @@ if (kind === 'claude') {
   }
 }
 
-let n = 0;
-const claudeLine = (type, content, extra = {}) =>
-  appendFileSync(
-    file,
-    JSON.stringify({ type, uuid: randomUUID(), sessionId: id, cwd, gitBranch: 'main', timestamp: now(), message: type === 'assistant' ? { role: 'assistant', model: 'claude-opus-5-5', id: `msg_${++n}`, content, usage: { input_tokens: 1200, cache_read_input_tokens: 800, cache_creation_input_tokens: 100, output_tokens: 60 } } : { role: type, content }, ...extra }) + '\n',
-  );
+// Like the real one, an assistant message is one line per content block, each with the
+// message's id and usage (counted once); ids are unique across resumes.
+const claudeLine = (type, content, extra = {}) => {
+  const msgId = `msg_${randomUUID().replace(/-/g, '').slice(0, 20)}`;
+  const line = (blocks) => JSON.stringify({ type, uuid: randomUUID(), sessionId: id, cwd, gitBranch: 'main', timestamp: now(), message: type === 'assistant' ? { role: 'assistant', model: 'claude-opus-5-5', id: msgId, content: blocks, usage: { input_tokens: 1200, cache_read_input_tokens: 800, cache_creation_input_tokens: 100, output_tokens: 60 } } : { role: type, content: blocks }, ...extra }) + '\n';
+  appendFileSync(file, line(content));
+  if (type === 'assistant' && !extra.isApiErrorMessage) appendFileSync(file, line([{ type: 'thinking', thinking: '' }]));
+};
 const codexLine = (type, payload) => appendFileSync(file, JSON.stringify({ timestamp: now(), type, payload }) + '\n');
 
 function prompt(text) {

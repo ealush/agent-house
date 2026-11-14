@@ -259,6 +259,24 @@ export type JobRun = { id: string; jobId: string; seq: number; state: string; tr
 export type Job = { id: string; name: string; state: string; action: JobAction; trigger: JobTrigger; policy: Record<string, unknown>; nextRunAt: number | null; runCount: number; createdAt: number; updatedAt: number; lastRun: JobRun | null };
 export type JobsState = { next: Array<{ id: string; name: string; at: number }>; running: Array<{ id: string; name: string; runId: string; sessionUid: string | null }>; waiting: Array<{ id: string; name: string; runId: string; title: string; body: string }>; uncertain: Array<{ id: string; name: string; runId: string }> };
 
+/** Usage (server/usage): one grouped row; tokens are local telemetry, cost an estimate. */
+export type UsageRow = {
+  key: string;
+  provider: string | null;
+  harness: string | null;
+  model: string | null;
+  uid: string | null;
+  tokens: { input: number; output: number; cacheRead: number; cacheWrite: number; reasoning: number; source: 'local_telemetry' };
+  messages: number;
+  sessions: number;
+  cost: { estimateUsd: number | null; basis: string | null; unpricedTokens: number; billing: string | null };
+};
+export type UsageReport = { from: string; to: string; by: string; rows: UsageRow[]; notes: { tokens: string; cost: string; listPricesAsOf: string } };
+export type UsageLimits = {
+  windows: Array<{ harness: string; provider: string; window: string; usedPercent: number | null; windowMinutes: number | null; resetsAt: number | null; source: string; observedAt: number }>;
+  cooldowns: Array<{ harness: string; uid: string; resetsAt: number | null; source: 'screen' | 'transcript'; text: string }>;
+};
+
 /** One continuation (a lineage edge) and how far it got. */
 export type ContinueOp = { id: string; kind: string; strategy: string; state: 'preparing' | 'launching' | 'delivering' | 'linked' | 'failed' | 'cancelled'; childUid: string | null; parentUid: string | null; fromHarness: string; toHarness: string; fromName: string; toName: string; error: string | null; limitations: Limitation[] };
 
@@ -441,6 +459,10 @@ export function hostApi(base: string) {
     continueOp: (id: string) => r<ContinueOp>('GET', `/api/portable/operations/${enc(id)}`),
     recovery: (uid: string) => r<{ auto: boolean; recovery: (Recovery & { key: string }) | null; events: Array<{ at: number; state: string; detail: string }> }>('GET', `/api/sessions/${enc(uid)}/recovery`),
     recoveryAction: (uid: string, body: { action: 'retry' | 'pause' | 'resume' | 'cancel' } | { auto: boolean }) => r<{ auto: boolean }>('POST', `/api/sessions/${enc(uid)}/recovery`, body),
+    usage: (o: { by: 'day' | 'model' | 'provider' | 'harness' | 'session'; from?: string; to?: string }) =>
+      r<UsageReport>('GET', `/api/usage?by=${o.by}${o.from ? `&from=${o.from}` : ''}${o.to ? `&to=${o.to}` : ''}`),
+    usageLimits: () => r<UsageLimits>('GET', '/api/usage/limits'),
+    usageExportUrl: (format: 'csv' | 'json') => `${base}/api/usage/export?format=${format}`,
     jobs: () => r<{ jobs: Job[]; state: JobsState }>('GET', '/api/jobs'),
     job: (id: string) => r<Job & { runs: JobRun[] }>('GET', `/api/jobs/${enc(id)}`),
     createJob: (body: { name: string; action: JobAction; trigger: JobTrigger; policy?: Record<string, unknown> }) => r<Job>('POST', '/api/jobs', body),

@@ -28,6 +28,7 @@ never guessed). `ah list` shows titles and the shared status words.
 | `move <target> --to HOST [--cwd DIR] [--preview] [--yes] [--json]` | move a stopped session to another host (CND-3) | History → Move |
 | `migrations [--json]`, `migrations retry\|cancel <id>` | moves between hosts and how far they got | the Move dialog |
 | `jobs [--json]` | scheduled work: next, running, waiting on you | Jobs |
+| `usage [--days N] [--by …] [--json]`, `usage limits`, `usage export [--json]` | tokens, estimates and limit windows (CND-6) | Usage |
 | `recovery [target] [--retry\|--pause\|--resume\|--cancel] [--auto on\|off]` | limits, provider errors, crashes, and what ah does about them (CND-5) | the ↻ pill, session menu |
 | `job add --name N (--launch AGENT --cwd DIR --prompt … \| --send TARGET --text …) [trigger] [--retries N] [--notify]` | schedule agent work (CND-4) | Jobs → New job |
 | `job show\|pause\|resume\|cancel\|run <id>`, `job decide <run> yes\|no`, `job resolve <run> resend\|leave` | one job and its runs; answers | Jobs, Inbox |

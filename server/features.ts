@@ -25,6 +25,8 @@ export const FEATURES: Record<string, number> = {
   jobs: 1,
   /** Recovery from rate limits, provider errors and crashes: windows' `recovery`, /api/sessions/:uid/recovery (server/recovery). */
   recovery: 1,
+  /** /api/usage: tokens per session, model, provider and day, rate-limit windows, estimates, export (server/usage). */
+  usage: 1,
 };
 
 export function features(): Record<string, number> {

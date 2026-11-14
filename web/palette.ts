@@ -46,7 +46,7 @@ export const TREE: Spec = {
       label: 'Go to',
       icon: 'search',
       detail: 'Sessions, pages and focus',
-      children: [{ provider: 'sessions' }, 'go-inbox', 'go-review', 'go-jobs', 'go-history', 'go-search', 'go-settings', 'worktrees', 'cycle-prev', 'cycle-next', 'focus-sidebar', 'focus-main'],
+      children: [{ provider: 'sessions' }, 'go-inbox', 'go-review', 'go-jobs', 'go-history', 'go-usage', 'go-search', 'go-settings', 'worktrees', 'cycle-prev', 'cycle-next', 'focus-sidebar', 'focus-main'],
     },
     {
       key: 'session',

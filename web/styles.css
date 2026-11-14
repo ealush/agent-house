@@ -9911,3 +9911,121 @@ label:has(> input[type='checkbox'][switch]) {
   max-width: 640px;
   margin: 0 0 24px;
 }
+
+/* Usage (UsageView): stat tiles, one chart, plain tables. */
+.stat-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin: 0 0 24px;
+}
+.stat-tile {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--raised);
+}
+.stat-label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+.stat-value {
+  font-size: 24px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.stat-hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+.usage-section {
+  margin: 0 0 24px;
+}
+.usage-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.usage-chart {
+  margin: 8px 0 0;
+}
+.usage-chart svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.usage-chart .mark {
+  fill: var(--chart-1);
+}
+.usage-chart .mark.on {
+  opacity: 0.8;
+}
+.usage-chart .grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.usage-chart .axis {
+  stroke: var(--muted);
+  stroke-width: 1;
+  opacity: 0.5;
+}
+.usage-axis {
+  display: flex;
+  justify-content: space-between;
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.usage-tip {
+  min-height: 20px;
+  color: var(--text-2);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.usage-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.usage-table th {
+  text-align: left;
+  color: var(--muted);
+  font-weight: 500;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.usage-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.usage-limits {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.usage-limits li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 14px;
+}
+.usage-limits .meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+.usage-limits .link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  text-align: left;
+  cursor: pointer;
+}

@@ -33,6 +33,7 @@ export type CommandId =
   | 'go-history'
   | 'go-review'
   | 'go-jobs'
+  | 'go-usage'
   | 'go-settings'
   | 'toggle-view'
   | 'toggle-steps'
@@ -219,6 +220,15 @@ export const COMMANDS: Command[] = [
     chords: [{ key: '6', ctrl: true, shift: true }],
     scopes: nav,
     terms: ['schedule', 'cron', 'workflow'],
+  },
+  {
+    id: 'go-usage',
+    group: 'Navigate',
+    label: 'Usage',
+    detail: 'Tokens, limits and estimated cost, per model and conversation.',
+    chords: [{ key: '7', ctrl: true, shift: true }],
+    scopes: nav,
+    terms: ['tokens', 'cost', 'quota'],
   },
   {
     id: 'go-search',

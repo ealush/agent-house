@@ -255,3 +255,20 @@ test('scheduler: after a crash the evidence decides: relaunch what never started
   for (let i = 0; i < 8; i++) await restarted.tick(b.windows());
   assert.equal(b.sent.filter((s) => s.text === 'lost text').length, 1, 'sent again once, at your word');
 });
+
+test('scheduler: work for an agent at a stated limit waits for the reset (no other provider), then goes', async () => {
+  const b = await bed();
+  let until: number | null = Math.floor(Date.now() / 1000) + 3600;
+  b.deps.capacity = async (h) => (h === 'claude' && until ? { until, why: 'session limit' } : null);
+  const job = await b.sched.create({ name: 'Held', action: launchAction, trigger: { kind: 'manual' }, createdBy: 't' });
+  const run = await b.sched.runNow(job.id);
+  await b.settle();
+  assert.equal(b.launched.length, 0, 'not launched into a known limit');
+  const held = await b.sched.run(run.id);
+  assert.equal(held.state, 'eligible');
+  assert.match(held.error!, /waiting for claude's limit to reset/);
+  until = null;
+  await b.settle();
+  assert.equal(b.launched.length, 1, 'goes once the limit is gone');
+  assert.equal((await b.sched.run(run.id)).error, null);
+});

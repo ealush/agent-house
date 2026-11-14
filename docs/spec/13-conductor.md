@@ -39,6 +39,7 @@ TypeScript sources of truth are named beside each section.
 | `migration` | 1 | `/api/migrations/*` |
 | `jobs` | 1 | `/api/jobs/*`, state `jobs` |
 | `recovery` | 1 | windows' and history's `recovery`, `/api/recovery`, `/api/sessions/:uid/recovery` |
+| `usage` | 1 | `/api/usage`, `/api/usage/limits`, `/api/usage/export`, `/api/sessions/:uid/usage` |
 
 ## CND-1 Uploads (`uploads` v2)
 
@@ -495,3 +496,56 @@ recovery: { state, reason, evidence, attempts, maxAttempts, nextAttemptAt, reset
   and crashes*.
 - **CLI:** `ah recovery` (what's being recovered), `ah recovery <target>` (its history),
   `--retry`, `--pause`, `--resume`, `--cancel`, `--auto on|off`.
+
+## CND-6 Usage, limits and cost (`usage` v1)
+
+Sources: `server/usage/{ingest,prices,service}.ts`. Read every minute, incrementally.
+
+**Where each number comes from**, said beside it:
+
+| Field | Source | Means |
+|---|---|---|
+| tokens (`input`, `output`, `cacheRead`, `cacheWrite`, `reasoning`) | `local_telemetry` | read from the agent's own transcript on this host. Claude Code: each message's `usage`, counted **once** per message id (it repeats it on every line of a message). Codex: each turn's `token_count` (`cached_input_tokens` split out of input; reasoning is part of output) |
+| rate-limit windows | `provider_telemetry` | what Codex recorded the provider told it (`used_percent`, window length, reset) |
+| cooldowns | `screen` / `transcript` | a limit notice or error line (from recovery, CND-5) with its reset |
+| `cost.estimateUsd` | estimate | at list price (`basis: list_price`, Anthropic's as of 2026-10-06) or your price (`configured`); **never a bill** |
+| `cost.billing` | your config | `api`, `subscription` or `unknown` per provider: a subscription doesn't bill per token |
+| anything else | unknown | agents that record no usage (Gemini, Grok, opencode, Hermes, Cursor, …) are unknown, not zero; tokens with no price are `unpricedTokens`, left out of the estimate, not counted as free |
+
+ah never calls a provider's private endpoints, and never makes a decision about money:
+the only use of limits is that **jobs wait** for an agent whose provider stated a limit
+(any session of that agent at a limit, or a reported window at 100%), until its reset.
+Nothing switches provider or model.
+
+**Bounded.** Daily rows per conversation and model (`usage.retentionDays`, 400); limit
+samples kept when they change, 30 days. A pass reads at most 64 MB, from where the last
+one stopped, so a long transcript is read once. A rewritten transcript is recounted, not
+added; a transcript ah copied (a fork, a native continuation, a move from another host)
+counts only what's written to it after the copy, since its history counted where it
+happened.
+
+Config: `usage: { retentionDays, prices: { "<model id>": { input, output, cacheRead?, cacheWrite? } }, billing: { anthropic: 'subscription', openai: 'api' } }` (USD per million tokens).
+
+### Routes
+
+| Route | Answer |
+|---|---|
+| `GET /api/usage?by=day\|model\|provider\|harness\|session&from=&to=` | `{ from, to, by, rows: [UsageRow], notes }` |
+| `GET /api/usage/limits` | `{ windows: [{ harness, provider, window, usedPercent, windowMinutes, resetsAt, source, observedAt }], cooldowns: [{ harness, uid, resetsAt, source, text }] }` |
+| `GET /api/usage/export?format=csv\|json` | every daily row (CSV cells can't start a spreadsheet formula) |
+| `GET /api/sessions/:uid/usage` | `{ metered, models: [{ model, input, output, cacheRead, cacheWrite, messages, cost }], notes }` |
+| `POST /api/usage/refresh` | reads what's new now: `{ files, bytes, events }` |
+
+```ts
+UsageRow = { key, provider, harness, model, uid,
+  tokens: { input, output, cacheRead, cacheWrite, reasoning, source: 'local_telemetry' },
+  messages, sessions,
+  cost: { estimateUsd: number | null, basis: 'list_price' | 'configured' | null, unpricedTokens, billing } }
+```
+
+### Surfaces
+
+- **Web:** Usage (Ctrl+Shift+7): tiles (tokens in, out, cache reads, the estimate marked
+  *estimate* with your billing), tokens per day (a chart with a readout, or a table), the
+  limit windows with their source, by model, the busiest conversations, CSV/JSON export.
+- **CLI:** `ah usage [--days N] [--by …] [--json]`, `ah usage limits`, `ah usage export [--json]`.

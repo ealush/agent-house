@@ -352,6 +352,11 @@ export class RecoveryEngine {
     return { auto: this.auto(uid), recovery: row ? { ...this.view(key), state: row.state, key } : null, events: events.map((e) => ({ at: e.at, state: e.state, detail: e.detail })) };
   }
 
+  /** The rows now, synchronously (usage's live limits). */
+  listNow(): Array<{ uid: string; harness: string; reason: string; resetsAt: number | null; source: string; evidence: string }> {
+    return [...this.rows.values()].filter((r) => r.state !== 'resolved').map((r) => ({ uid: r.uid, harness: r.key.includes(':') ? r.key.slice(0, r.key.indexOf(':')) : '', reason: r.reason, resetsAt: r.resetsAt, source: r.source, evidence: r.evidence }));
+  }
+
   async list() {
     await this.load();
     return [...this.rows.values()].map((r) => ({ key: r.key, uid: r.uid, ...this.view(r.key)! }));

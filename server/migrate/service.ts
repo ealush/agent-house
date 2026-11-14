@@ -64,6 +64,8 @@ export type MigrateDeps = {
   rules: () => PathRule[];
   roots: () => string[];
   changed: () => void;
+  /** A transcript restored here from another host: its history's usage was counted there. */
+  copied?: (file: string) => void;
 };
 
 const now = () => Math.floor(Date.now() / 1000);
@@ -526,6 +528,7 @@ export class MigrationService {
         for (const p of moved) await rm(p, { force: true });
         throw err;
       }
+      this.deps.copied?.(file);
     }
     // Its portable record and its lineage, with documents at this host's paths.
     const docs = new Map<string, string>();

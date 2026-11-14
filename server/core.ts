@@ -180,6 +180,8 @@ export class Core {
   reviewState: () => ReviewState | null = () => null;
   /** The scheduler's summary for the stream; main.ts wires it. */
   jobsState: () => JobsState | null = () => null;
+  /** A transcript ah just made as a copy (a fork): usage counts only what's written to it from now. */
+  onCopy: (file: string) => void = () => {};
   /** Each session's recovery, if any (server/recovery); main.ts wires the engine. */
   recoveryOf: (s: { uid: string; agent?: string | null; harness?: string; harnessId: string | null }) => RecoveryView | null = () => null;
   /**
@@ -684,6 +686,7 @@ export class Core {
       let copied: { harnessId: string; file: string };
       try {
         copied = await copyTranscript(parent.harness, found.file, wt.path);
+        this.onCopy(copied.file);
       } catch (err) {
         await removeWorktree(wt.path, true).catch(() => {});
         if (err instanceof ForkError) throw new CoreError(err.status, err.message);

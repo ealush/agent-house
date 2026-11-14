@@ -74,7 +74,7 @@
 | F38 | Scheduled runs | ✅ | `server/jobs/` (CND-4): one-time, cron in a time zone, after another job, on a session settling or ending; decisions; idempotent runs, evidence-based restart recovery, bounded concurrency and retries. Jobs page, Inbox decisions, `ah job`. |
 | F39 | Snapshots + rollback | ✅ | Per-turn git snapshots under private refs (`server/snapshots.ts`), captured at turn start, with rollback that takes a safety snapshot first so a restore is itself undoable; `Snapshots.tsx` panel with per-turn list and restore. |
 | F40 | Idle respawn / rate-limit resume | ✅ | `server/recovery/` (CND-5): limits waited out to the reset the agent names, provider errors backed off, crashed agents resumed in their window, sessions cut off by a reboot picked up, credentials left to you; evidence-based, bounded, off by default per host, a switch per session. |
-| F41 | Quota display | ✗ | |
+| F41 | Quota display | ✅ | `server/usage/` (CND-6): tokens per session, model, provider and day from the agents' own transcripts (once each), the provider's rate-limit windows, list-price estimates labelled as such, unknown said, export; jobs wait on stated limits. |
 | F42 | Launch choices | ✅ | Preset modes, models, and quoted additional arguments in the web dialog and CLI. Resume retains configured mode/model choices. |
 | F43 | Session ordering | ✅ | Drag to reorder within a sidebar group; sparse keys persist across devices. |
 | F44 | Session termination | ✅ | Sidebar and session controls, with confirmation for stopping a session. |
@@ -292,6 +292,7 @@ The owner lifted the freeze for ah as an always-on conductor. Spec and protocol:
 | C2 | Move between hosts | ✅ | F31: a stopped session moves to a trusted peer with its conversation, attachments and lineage, and resumes there; the original stays. Path mapping across Linux and macOS (path map, home, git remote). `ah move`, History → Move. |
 | C3 | Scheduled and conditional work | ✅ | F38. An implementation agent finishes, a review starts on its own, its answer comes to you as a decision, and Go ahead sends it back: no page polls. Runs never repeat on a guess: one per cause, claimed once, and an unprovable delivery is `uncertain` for you to settle. |
 | C4 | Recovery | ✅ | F40. Workflow D: a rate limit is recorded with its reset, waited out, and the agent continued exactly once; a crash is resumed in the same conversation. Never a model, provider or permission change; never a hidden loop: off unless switched on, every step explained. |
+| C5 | Usage and limits | ✅ | F41. Workflow E: Usage shows what agents used and which are at a limit and until when; Inbox, Jobs and the ↻ pills show what's waiting. Every number says its source; estimates are never a bill. |
 | C1 | Portable conversations | ✅ | `server/portable/`: a versioned document read from any harness's transcript, with provenance and honest limitations; Continue in through the host (preview, native copy back into an agent the lineage started in, else a bounded reconstructed hand-off); lineage edges that survive restarts; lineage search; `ah continue/portable/lineage`. Replaces P13's in-page hand-off where the host supports it. |
 
 ## Design rules
