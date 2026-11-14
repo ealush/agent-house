@@ -371,6 +371,8 @@ struct ComposerFloat: View {
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .body) private var control: CGFloat = 44
+    /// Each of /, @ and Panels in their capsule: the least a control gets.
+    @ScaledMetric(relativeTo: .body) private var toolWidth: CGFloat = 32
     @State private var trayHeight: CGFloat = 60
 
     /// The session has settings to show: a live agent's model, effort and permissions.
@@ -421,10 +423,8 @@ struct ComposerFloat: View {
             LaunchChips(session: session, scene: scene, showsRisky: false)
             // A step apart from the settings, but with them: at the far end of a wide box,
             // / and @ sat stranded half a screen away.
-            Spacer(minLength: 4).frame(maxWidth: 16)
-            // A command is the whole message, so / starts an empty box only.
-            if composer.text.isEmpty { trigger("/", label: "Insert a command") }
-            trigger("@", label: "Mention a file")
+            Spacer(minLength: 0).frame(maxWidth: 8)
+            tools
         }
         // In line with the box's text, past the + in its corner.
         .padding(.leading, 12)
@@ -449,6 +449,50 @@ struct ComposerFloat: View {
         })
     }
 
+    /// / and @ (the two ways into suggestions a finger otherwise has to know about) and the
+    /// session's panels, in one capsule of glass: as three round buttons with room between
+    /// them they pushed the settings chips beside them past a phone's width.
+    private var tools: some View {
+        HStack(spacing: 0) {
+            // A command is the whole message, so / starts an empty box only.
+            if composer.text.isEmpty { trigger("/", label: "Insert a command") }
+            trigger("@", label: "Mention a file")
+            panels
+        }
+        .padding(.horizontal, 2)
+        .glassEffect(.regular.interactive(), in: Capsule())
+    }
+
+    /// The session's panels (Diff, Files, Chat, Queue, Snapshots, Preview, Stack), one menu
+    /// away. In the session menu they were a menu inside that menu, which opened over it askew.
+    @ViewBuilder
+    private var panels: some View {
+        let available = SceneSnapshot.Panel.allCases.filter { $0.applies(to: session) }
+        if !available.isEmpty {
+            Menu {
+                ForEach(available) { panel in
+                    Button {
+                        withAnimation(Self.motion(opening: false, reduceMotion: reduceMotion)) { composer.trayOpen = false }
+                        session.panel = session.panel == panel ? nil : panel
+                    } label: {
+                        if session.panel == panel { Label(panel.title, systemImage: "checkmark") } else { Label(panel.title, systemImage: panel.symbol) }
+                    }
+                }
+            } label: {
+                Image(systemName: "sidebar.right")
+                    .font(.ah(.callout).weight(.semibold))
+                    .foregroundStyle(theme.text2)
+                    .frame(width: toolWidth, height: control * 0.82)
+                    .contentShape(.hoverEffect, Capsule())
+                    .hoverEffect(.highlight)
+            }
+            // In the order written, wherever the menu opens.
+            .menuOrder(.fixed)
+            .tint(.primary)
+            .accessibilityLabel("Panels")
+        }
+    }
+
     private func trigger(_ mark: String, label: String) -> some View {
         Button {
             Haptics.selection()
@@ -460,9 +504,8 @@ struct ComposerFloat: View {
             Text(mark)
                 .font(.ahMono(.body).weight(.semibold))
                 .foregroundStyle(theme.text2)
-                .frame(width: control * 0.82, height: control * 0.82)
-                .glassEffect(.regular.interactive(), in: Circle())
-                .contentShape(.hoverEffect, Circle())
+                .frame(width: toolWidth, height: control * 0.82)
+                .contentShape(.hoverEffect, Capsule())
                 .hoverEffect(.highlight)
         }
         .buttonStyle(.plain)

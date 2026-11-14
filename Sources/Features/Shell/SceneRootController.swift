@@ -830,8 +830,8 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
         return place.isEmpty ? word : word + AttributedString(" · " + place.joined(separator: " · "))
     }
 
-    /// The menu's first row, in the medium size (a glyph over its word, three abreast): the
-    /// other view of the session, its panels, and search.
+    /// The menu's first row, in the medium size (a glyph over its word): the other view of the
+    /// session, and search; then its panels, where the composer's chips don't have them.
     private func quickActions() -> [UIMenuElement] {
         var row: [UIMenuElement] = []
         if session.isLive && session.hasGUI && !session.isShell {
@@ -841,14 +841,16 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
                 scene.setSurface(other, for: session.key)
             })
         }
-        let panels = panelActions()
-        if !panels.isEmpty {
-            row.append(UIMenu(title: "Panels", image: UIImage(systemName: "sidebar.right"), children: panels))
-        }
         row.append(UIAction(title: "Search", image: UIImage(systemName: "magnifyingglass")) { [weak self] _ in self?.scene.perform("go-search") })
         let menu = UIMenu(options: .displayInline, children: row)
         menu.preferredElementSize = .medium
-        return [menu]
+        // A live agent's conversation has its panels as a button among the composer's chips
+        // (`ComposerFloat`). Anywhere else (a shell, the terminal, an ended session) they're a
+        // section here: as a menu in this row they opened a second menu over this one, askew.
+        let panels = panelActions()
+        let onChips = ComposerFloat.hasTray(session) && session.surface == .gui && session.hasGUI
+        guard !panels.isEmpty, !onChips else { return [menu] }
+        return [menu, UIMenu(title: "Panels", options: .displayInline, children: panels)]
     }
 
     private func panelActions() -> [UIMenuElement] {
