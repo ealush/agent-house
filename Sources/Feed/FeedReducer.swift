@@ -451,6 +451,13 @@ extension FeedProjection {
         return items.lastIndex { ($0.seq ?? .max) <= topSeq } ?? 0
     }
 
+    /// What a tick's bubble says: your words on one line, attachments as "1 image · …", cut
+    /// well past two lines' worth (the bubble ends what's left with an ellipsis).
+    static func railPreview(_ text: String) -> String {
+        let flat = Uploads.summary(text).split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return flat.isEmpty ? "Attachment" : String(flat.prefix(160))
+    }
+
     /// Which ticks show: all of them, or a window of `railWindow` centred on `lead`.
     static func railRange(count: Int, lead: Int) -> Range<Int> {
         guard count > railWindow else { return 0..<count }

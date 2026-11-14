@@ -240,6 +240,14 @@ private let result = ToolResult(callId: "c1", text: "ok", isError: false, data: 
     #expect(FeedProjection.activeRail([], topSeq: 3, atLatest: false) == nil)
 }
 
+@Test func aTicksBubbleShowsYourWordsWithAttachmentsNamed() {
+    #expect(FeedProjection.railPreview("Fix the\n\nheader   test") == "Fix the header test")
+    #expect(FeedProjection.railPreview("/home/me/.cache/ah/uploads/2026-11-14T19-53-44-159Z-video.mp4 It shows two letters") == "1 file · It shows two letters")
+    #expect(FeedProjection.railPreview("/home/me/.cache/ah/uploads/2026-11-14T19-53-44-159Z-shot.png") == "1 image")
+    #expect(FeedProjection.railPreview("  \n ") == "Attachment")
+    #expect(FeedProjection.railPreview(String(repeating: "word ", count: 100)).count == 160)
+}
+
 @Test func pastFifteenTicksTheRailIsAWindowAroundWhatYouRead() {
     #expect(FeedProjection.railRange(count: 6, lead: 5) == 0..<6)
     #expect(FeedProjection.railRange(count: 40, lead: 0) == 0..<15)

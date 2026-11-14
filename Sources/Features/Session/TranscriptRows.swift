@@ -72,18 +72,17 @@ struct MessageRail: View {
                 .init(color: range.upperBound < items.count ? .clear : .black, location: 1),
             ], startPoint: .top, endPoint: .bottom)
         }
-        .overlay(alignment: .topLeading) {
+        // A finger covers what's beside it, so a press shows the bubble above it (its bottom
+        // edge on the rail's, moved up); a pointer's hover, beside the tick (centre on centre).
+        .overlay(alignment: scrub != nil ? .bottomLeading : .leading) {
             if let tip, range.contains(tip) {
-                Text(preview(items[tip].text))
-                    .font(.ah(.caption))
-                    .lineLimit(2)
-                    .frame(maxWidth: 260, alignment: .leading)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(theme.surface, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.faint.opacity(0.35), lineWidth: 0.5))
-                    .shadow(color: .black.opacity(0.15), radius: 8, y: 3)
-                    .offset(x: 30, y: 4 + CGFloat(tip - range.lowerBound) * pitch - 10)
+                let height = 8 + CGFloat(range.count) * pitch
+                let tick = 4 + (CGFloat(tip - range.lowerBound) + 0.5) * pitch
+                RailBubble(text: FeedProjection.railPreview(items[tip].text))
+                    // Its own width: an overlay is offered the rail's 28 points, and the words
+                    // wrapped there a letter to a line.
+                    .frame(width: 280, alignment: .leading)
+                    .offset(x: scrub != nil ? 12 : 30, y: scrub != nil ? tick - height - 28 : tick - height / 2)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }
@@ -100,10 +99,26 @@ struct MessageRail: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Your messages")
     }
+}
 
-    private func preview(_ text: String) -> String {
-        let flat = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
-        return flat.isEmpty ? "Attachment" : flat
+/// A tick's message as a small copy of its bubble in the conversation: your words on ah's
+/// raised card with a hairline, two lines at most, then an ellipsis.
+private struct RailBubble: View {
+    let text: String
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        Text(text)
+            .font(.ah(.subheadline))
+            .foregroundStyle(theme.text)
+            .lineLimit(2)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(theme.raised, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(theme.line, lineWidth: 1))
+            .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
+            // Both its lines, however short the rail it hangs from.
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
