@@ -113,5 +113,8 @@ a blank transcript still lists its rows to accessibility.
   https://developer.apple.com/documentation/uikit/automatic-observation-tracking
 - `UIView.AnimationOptions.flushUpdates`: https://developer.apple.com/documentation/uikit/uiview/animationoptions/flushupdates
 - Diffable reconfigure vs reload (WWDC21 10252): https://developer.apple.com/videos/play/wwdc2021/10252/
-- Lazy stacks estimate their content (WWDC26 321, "Group Lab"); the reason the transcript isn't a
-  ScrollView over a LazyVStack any more.
+- Lazy stacks estimate their content offset and size, and layout that keeps changing after
+  rows appear can knock the scroll position off its target. That's the reason the transcript
+  isn't a ScrollView over a LazyVStack any more. WWDC26 "Dive into lazy stacks and scrolling":
+  https://developer.apple.com/videos/play/wwdc2026/321/ and its Group Lab:
+  https://developer.apple.com/videos/play/wwdc2026/8006/

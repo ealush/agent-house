@@ -260,6 +260,25 @@ UI only, written on Linux: **not compiled and not seen running** (as the section
 To look at first when this runs: that the transcript still opens at its end and holds it
 with the keyboard (it now sits in a container of its own for the fade).
 
+### The conversation's layout, measured, 14 November 2026
+
+macOS 27.0.1, Xcode 27.2, iPhone 18 Pro and iPad Pro 13-inch (M5) simulators on iOS 27.0, against the demo host. `ConversationLayoutUITests` drive the host themselves through its local token: `/long`, `/stream` and `/burst` (15 steps a second), and 4–12 queued messages. They assert geometry:
+- the dock's bottom is the keyboard guide's top (from the layout probe), or the safe area's bottom;
+- the bar is above the keys and under the navigation bar;
+- the queue is inside the screen, at no more than half the room, and never over the box or the pictures;
+- the box holds still while the queue changes and the transcript streams;
+- a row being read holds still;
+- the transcript is drawn, judged from the screenshot's pixels.
+
+| Build | iPhone | iPad |
+| --- | --- | --- |
+| main (46a7f2d) with the same tests and the collection-view transcript | 8 of 15. The bar is 17 pt off the keyboard at six lines, 31 pt after pasting pictures and 87 pt after cancelling a queued message. Opening or folding a long queue, and rotating with the keyboard up, held the main thread for 30 s. The keyboard wouldn't go during the model change. | not run |
+| the rebuild | 15 of 15 | 15 of 15 |
+
+The SwiftUI transcript on main also went blank after scrolling far up and tapping ↓, reproduced with the session's own 2,855-entry transcript. The collection view doesn't do this.
+
+Not automated: a hardware keyboard connecting or disconnecting (a simulator setting), a floating or split iPad keyboard, Stage Manager and window resizing (XCUITest can't resize windows), Dynamic Type at accessibility sizes, the dark palette. Instruments: the SwiftUI instrument records no updates when attached on the simulator; the Time Profiler showed the main thread about equally busy before and after under `/burst` (inconclusive, about 0.1 s sampled).
+
 ## Still to run (in order)
 
 1. On a Mac: `brew install xcodegen && ./scripts/verify.sh` — expect compile fixes in the UI layer, which has never been type-checked.
