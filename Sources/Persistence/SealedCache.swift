@@ -113,6 +113,27 @@ struct CredentialVault: Sendable {
         try store.set(credential.map { try JSONEncoder().encode($0) }, for: credentialAccount(origin))
     }
 
+    private static let pendingLogoutsAccount = "pending-logouts"
+
+    /// Sign-ins this device ended locally while their host couldn't be told (offline): the
+    /// host still holds them, and alerts them, until one of these reaches it. By origin.
+    func pendingLogouts() -> [String: String] {
+        guard let data = try? store.data(for: Self.pendingLogoutsAccount) else { return [:] }
+        return (try? JSONDecoder().decode([String: String].self, from: data)) ?? [:]
+    }
+
+    func addPendingLogout(_ token: String, origin: String) throws {
+        var all = pendingLogouts()
+        all[origin] = token
+        try store.set(try JSONEncoder().encode(all), for: Self.pendingLogoutsAccount)
+    }
+
+    func clearPendingLogout(origin: String) throws {
+        var all = pendingLogouts()
+        guard all.removeValue(forKey: origin) != nil else { return }
+        try store.set(all.isEmpty ? nil : try JSONEncoder().encode(all), for: Self.pendingLogoutsAccount)
+    }
+
     /// The device half of the cache key, created once.
     func deviceCacheKey() throws -> SymmetricKey {
         if let data = try store.data(for: Self.cacheKeyAccount), data.count == 32 { return SymmetricKey(data: data) }

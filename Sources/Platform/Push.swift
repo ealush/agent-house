@@ -10,14 +10,19 @@ final class PushRegistrar {
     static let shared = PushRegistrar()
 
     private(set) var token: Data?
+    /// The hosts (account origins) that took this device's registration: they push its
+    /// alerts. A host without an APNs key refuses it (409), and the app alerts for that one
+    /// itself (`LocalAlerts`), so each host alerts once.
+    private(set) var registered: Set<String> = []
     private(set) var authorization: UNAuthorizationStatus = .notDetermined
     private(set) var lastError: String?
 
     /// Debug builds are signed with the development `aps-environment`; App Store and
-    /// TestFlight builds with production. The host sends to the matching APNs gateway.
+    /// TestFlight builds with production. The host sends to the matching APNs gateway, which
+    /// it calls "sandbox" and "production" (`server/apns.ts`): "development" was refused.
     nonisolated static var environment: String {
         #if DEBUG
-        return "development"
+        return "sandbox"
         #else
         return "production"
         #endif
@@ -26,20 +31,22 @@ final class PushRegistrar {
     /// The approval category: Approve and Deny straight from the notification. Approve asks
     /// for the device to be unlocked (`.authenticationRequired`); neither opens the app.
     static let approvalCategory = "AH_APPROVAL"
-    static let approveAction = "AH_APPROVE"
-    static let denyAction = "AH_DENY"
+    static let approveAction = NotificationResponses.approveAction
+    static let denyAction = NotificationResponses.denyAction
     /// A finished session: Reply sends a follow-up without opening the app.
     static let replyCategory = "AH_REPLY"
-    static let replyAction = "AH_REPLY_SEND"
+    static let replyAction = NotificationResponses.replyAction
 
     func installCategories() {
         let approve = UNNotificationAction(identifier: Self.approveAction, title: "Approve", options: [.authenticationRequired], icon: UNNotificationActionIcon(systemImageName: "checkmark"))
         let deny = UNNotificationAction(identifier: Self.denyAction, title: "Deny", options: [.destructive, .authenticationRequired], icon: UNNotificationActionIcon(systemImageName: "xmark"))
         // Alerts group by session (`thread-id`); a stack of them says how many more there are.
-        let approval = UNNotificationCategory(identifier: Self.approvalCategory, actions: [approve, deny], intentIdentifiers: [], hiddenPreviewsBodyPlaceholder: "An agent needs you", categorySummaryFormat: "%u more from this session", options: [.hiddenPreviewsShowTitle])
+        // With iOS hiding previews, the placeholder stands in for the title too: a title
+        // names the session ("Fix login needs you").
+        let approval = UNNotificationCategory(identifier: Self.approvalCategory, actions: [approve, deny], intentIdentifiers: [], hiddenPreviewsBodyPlaceholder: "An agent needs you", categorySummaryFormat: "%u more from this session", options: [])
         let reply = UNTextInputNotificationAction(identifier: Self.replyAction, title: "Reply", options: [.authenticationRequired], icon: UNNotificationActionIcon(systemImageName: "arrowshape.turn.up.left"),
                                                   textInputButtonTitle: "Send", textInputPlaceholder: "Tell the agent what’s next")
-        let finished = UNNotificationCategory(identifier: Self.replyCategory, actions: [reply], intentIdentifiers: [], hiddenPreviewsBodyPlaceholder: "A session finished", categorySummaryFormat: "%u more from this session", options: [.hiddenPreviewsShowTitle])
+        let finished = UNNotificationCategory(identifier: Self.replyCategory, actions: [reply], intentIdentifiers: [], hiddenPreviewsBodyPlaceholder: "A session finished", categorySummaryFormat: "%u more from this session", options: [])
         UNUserNotificationCenter.current().setNotificationCategories([approval, finished])
     }
 
@@ -86,19 +93,48 @@ final class PushRegistrar {
     /// This build can't receive the hosts' push; the app alerts on its own (`LocalAlerts`).
     private(set) var pushUnavailable = false
 
-    static let unavailableNote = "This build can’t receive your hosts’ push notifications: it’s signed without the Push Notifications capability, which a Personal Team can’t add. Agent Hub notifies you itself while it’s running: on a Mac in the background, on an iPad beside another app, and for a short while after you leave it with a session at work."
+    static let unavailableNote = "This build can’t receive your hosts’ push notifications: it’s signed without the Push Notifications capability. Agent Hub notifies you itself while it’s running: on a Mac in the background, on an iPad beside another app, and for a short while after you leave it with a session at work."
 
-    /// Sends this device's token and opt-ins to every signed-in host (or withdraws them).
+    /// A host that couldn't be reached is tried again this long after (once per sync).
+    private var retry: Task<Void, Never>?
+
+    /// Sends this device's token and opt-ins to every signed-in host (or withdraws them, from
+    /// a host muted on this device). A host that didn't answer is tried again in a minute.
     func sync(_ app: AppModel) async {
         guard let token else { return }
         let preferences = app.preferences.notifications
         let environment = Self.environment
         // Every host at once: one slow or unreachable host doesn't hold up the others.
         let registering = app.accounts.filter { $0.status == .signedIn }.map { account in
-            Task { @MainActor in await NotificationSettings(api: account.api).register(token: token, environment: environment, preferences: preferences) }
+            Task { @MainActor in
+                let settings = NotificationSettings(api: account.api)
+                var host = preferences
+                if preferences.mutedHosts.contains(account.origin) { host.enabled = false }
+                await settings.register(token: token, environment: environment, preferences: host)
+                return (account.origin, settings.status?.registration != nil, settings.unreachable)
+            }
         }
-        for registration in registering { await registration.value }
+        var registered: Set<String> = []
+        var unreachable = false
+        for registration in registering {
+            let (origin, took, missed) = await registration.value
+            if took { registered.insert(origin) }
+            unreachable = unreachable || missed
+        }
+        self.registered = registered
+        retry?.cancel()
+        retry = nil
+        if unreachable {
+            retry = Task { [weak app] in
+                try? await Task.sleep(for: .seconds(60))
+                guard !Task.isCancelled, let app else { return }
+                await PushRegistrar.shared.sync(app)
+            }
+        }
     }
+
+    /// The host at `origin` pushes this device's alerts, so the app doesn't post them too.
+    func delivers(for origin: String) -> Bool { token != nil && registered.contains(origin) }
 
     /// The icon badge: sessions waiting on you, across hosts (never the unread count).
     func updateBadge(_ count: Int) {
@@ -122,6 +158,18 @@ enum AlertJanitor {
         return (account, key)
     }
 
+    /// A host said the session no longer waits (its quiet `resolved` push): its "needs you"
+    /// alerts come down, whatever the app's own lists say yet.
+    static func resolve(_ link: DeepLink) async {
+        let center = UNUserNotificationCenter.current()
+        let ids = await center.deliveredNotifications().compactMap { note -> String? in
+            guard let payload = PushPayload(note.request.content.userInfo), payload.event == "waiting", payload.link == link else { return nil }
+            return note.request.identifier
+        }
+        alertLog.debug("resolved: \(ids.count, privacy: .public) alerts taken down")
+        if !ids.isEmpty { center.removeDeliveredNotifications(withIdentifiers: ids) }
+    }
+
     /// Takes stale alerts out. `seen`: sessions a window just showed.
     static func sweep(_ app: AppModel, seen: Set<String> = []) async {
         let center = UNUserNotificationCenter.current()
@@ -139,18 +187,6 @@ enum AlertJanitor {
         let stale = AlertRules.stale(delivered, waiting: waiting, seen: seen)
         alertLog.debug("\(delivered.count, privacy: .public) delivered, \(stale.count, privacy: .public) no longer apply")
         if !stale.isEmpty { center.removeDeliveredNotifications(withIdentifiers: stale) }
-    }
-}
-
-/// What a notification's `ah` payload names (`server/apns.ts`): where to go, and what for.
-struct PushPayload: Equatable, Sendable {
-    let link: DeepLink
-    let event: String
-
-    init?(_ userInfo: [AnyHashable: Any]) {
-        guard let ah = userInfo["ah"] as? [String: Any], let route = ah["route"] as? String else { return nil }
-        link = DeepLink(route: route, host: ah["host"] as? String)
-        event = ah["event"] as? String ?? ""
     }
 }
 
@@ -175,18 +211,18 @@ enum LocalAlerts {
             let alerts = watcher.observe(origin: account.origin, rows: rows) { id in hub.presets(host: nil).first { $0.id == id }?.name ?? id }
             for alert in alerts {
                 alertLog.debug("session \(alert.event.rawValue, privacy: .public): \(alert.id, privacy: .private)")
-                post(alert, app: app)
+                post(alert, origin: account.origin, app: app)
             }
         }
         // Back in the background with nothing working: no reason to keep the app awake.
         if background != .invalid, !lists.contains(where: { $0.1.contains { $0.dto.status == .busy } }) { endBackground() }
     }
 
-    private static func post(_ alert: AlertWatcher.Alert, app: AppModel) {
+    private static func post(_ alert: AlertWatcher.Alert, origin: String, app: AppModel) {
         let prefs = app.preferences.notifications
-        guard prefs.enabled, alert.event == .waiting ? prefs.needsYou : prefs.finished else { return }
+        guard prefs.enabled, !prefs.mutedHosts.contains(origin), alert.event == .waiting ? prefs.needsYou : prefs.finished else { return }
         // The host's push carries it already.
-        guard PushRegistrar.shared.token == nil else { return }
+        guard !PushRegistrar.shared.delivers(for: origin) else { return }
         guard !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }) else {
             alertLog.debug("not posted: a window is in front")
             return
@@ -202,7 +238,7 @@ enum LocalAlerts {
         content.sound = .default
         content.threadIdentifier = alert.uid
         content.categoryIdentifier = alert.event == .waiting ? (alert.answerable ? PushRegistrar.approvalCategory : "") : PushRegistrar.replyCategory
-        content.userInfo = ["ah": ["v": 1, "host": alert.host, "route": alert.uid, "event": alert.event.rawValue]]
+        content.userInfo = PushPayload.userInfo(host: alert.host, route: alert.uid, event: alert.event.rawValue, prompt: alert.prompt)
         // One per session, the newest replacing the last (the host's apns-collapse-id).
         let request = UNNotificationRequest(identifier: "ah.local.\(alert.id)", content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request) { _ in }
@@ -211,9 +247,10 @@ enum LocalAlerts {
     /// Leaving the app with a session at work: ask for the time iOS allows, so its reply
     /// can still be told. Ends when nothing works any more, or when the time is up.
     static func keepWatching(_ app: AppModel) {
-        alertLog.debug("left the app: token \(PushRegistrar.shared.token != nil, privacy: .public), enabled \(app.preferences.notifications.enabled, privacy: .public)")
-        guard background == .invalid, PushRegistrar.shared.token == nil, app.preferences.notifications.enabled else { return }
-        let working = app.accounts.contains { $0.status == .signedIn && $0.hub.rows.contains { $0.dto.status == .busy } }
+        alertLog.debug("left the app: pushed by \(PushRegistrar.shared.registered.count, privacy: .public) hosts, enabled \(app.preferences.notifications.enabled, privacy: .public)")
+        guard background == .invalid, app.preferences.notifications.enabled else { return }
+        // Only hosts that don't push this device need the app awake to tell their replies.
+        let working = app.accounts.contains { $0.status == .signedIn && !PushRegistrar.shared.delivers(for: $0.origin) && $0.hub.rows.contains { $0.dto.status == .busy } }
         guard working else { return }
         background = UIApplication.shared.beginBackgroundTask(withName: "Watching sessions at work") { endBackground() }
         alertLog.debug("keeping watch in the background")
@@ -223,5 +260,49 @@ enum LocalAlerts {
         guard background != .invalid else { return }
         UIApplication.shared.endBackgroundTask(background)
         background = .invalid
+    }
+}
+
+/// Notes the app posts about an action taken from a notification that didn't go through
+/// (`NotificationResponses.failure`): nothing is left looking done when it isn't.
+@MainActor
+enum NotificationNotes {
+    static func post(_ failure: NotificationResponses.Failure, about payload: PushPayload, draft: String? = nil) {
+        let content = UNMutableNotificationContent()
+        content.title = failure.title
+        content.body = failure.body
+        content.sound = .default
+        content.interruptionLevel = .active
+        // Tapping it opens the session (with the words, for a reply).
+        let route: String = {
+            switch payload.link {
+            case .session(_, let uid): return uid
+            case .review(_, let route): return route.fragment
+            case .inbox: return ""
+            }
+        }()
+        content.userInfo = PushPayload.userInfo(host: payload.link.host, route: route, event: "failed", draft: draft)
+        if case .session(_, let uid) = payload.link { content.threadIdentifier = uid }
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "ah.note.\(UUID().uuidString)", content: content, trigger: nil)) { _ in }
+    }
+}
+
+/// A notification response handled once: a tap that launches the app reaches both the new
+/// window (its connection options) and the app delegate, and opening it twice pushed the
+/// session twice on a phone.
+@MainActor
+enum NotificationClaims {
+    private static var claimed: [String] = []
+
+    nonisolated static func id(_ response: UNNotificationResponse) -> String {
+        "\(response.notification.request.identifier)@\(response.notification.date.timeIntervalSince1970)#\(response.actionIdentifier)"
+    }
+
+    /// True the first time `id` is claimed.
+    static func claim(_ id: String) -> Bool {
+        guard !claimed.contains(id) else { return false }
+        claimed.append(id)
+        if claimed.count > 20 { claimed.removeFirst() }
+        return true
     }
 }

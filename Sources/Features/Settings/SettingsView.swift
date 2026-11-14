@@ -117,7 +117,7 @@ private struct SettingsDetail: View {
             case .security: SecuritySection(scene: scene, account: account)
             case .appearance: AppearanceSection(app: scene.app)
             case .shortcuts: ShortcutsSection(app: scene.app)
-            case .notifications: NotificationsSection(app: scene.app, api: account.api)
+            case .notifications: NotificationsSection(app: scene.app, account: account)
             case .agents: AgentsSection(model: AgentsSettings(api: account.api))
             case .subscriptions: SubscriptionsSection(model: SubscriptionsSettings(api: account.api))
             case .environment: EnvironmentSection(model: EnvironmentSettings(api: account.api))
@@ -772,14 +772,18 @@ struct ChordRecorder: UIViewRepresentable {
 
 private struct NotificationsSection: View {
     @Bindable var app: AppModel
+    let account: AccountSession
     @State private var model: NotificationSettings
     private let push = PushRegistrar.shared
     @Environment(\.theme) private var theme
 
-    init(app: AppModel, api: APIClient) {
+    init(app: AppModel, account: AccountSession) {
         self.app = app
-        _model = State(initialValue: NotificationSettings(api: api))
+        self.account = account
+        _model = State(initialValue: NotificationSettings(api: account.api))
     }
+
+    private var muted: Bool { app.preferences.notifications.mutedHosts.contains(account.origin) }
 
     var body: some View {
         AhForm {
@@ -809,7 +813,19 @@ private struct NotificationsSection: View {
                 Toggle("When a session finishes", isOn: binding(\.finished)).disabled(!app.preferences.notifications.enabled)
                 Toggle("Hide what it says on the lock screen", isOn: binding(\.privatePreview)).disabled(!app.preferences.notifications.enabled)
             } footer: {
-                Text("Approve and Deny appear on a notification only for a plain permission prompt; Reply on a session that finished. Both need the device unlocked. The icon badge counts sessions waiting on you.")
+                Text("Approve and Deny appear on a notification only for a plain permission prompt, and only answer the prompt it shows: if the session asks something else by then, nothing is sent and a note says so. Reply appears on a session that finished. Both need the device unlocked. The icon badge counts sessions waiting on you, on every host.")
+            }
+            Section {
+                Toggle("Notifications from \(account.hostname)", isOn: Binding(get: { !muted }, set: { on in
+                    var prefs = app.preferences.notifications
+                    prefs.mutedHosts.removeAll { $0 == account.origin }
+                    if !on { prefs.mutedHosts.append(account.origin) }
+                    app.preferences.notifications = prefs
+                    Task { await push.sync(app); await model.load() }
+                }))
+                .disabled(!app.preferences.notifications.enabled)
+            } footer: {
+                Text(muted ? "\(account.hostname) won’t notify this device. Your other hosts still do." : "The choices above apply to every host this device is signed in to. Turn this off to hear nothing from \(account.hostname) on this device.")
             }
             if let registration = model.status?.registration {
                 Section("Registered with this host") {

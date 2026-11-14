@@ -188,6 +188,16 @@ final class TourUITests: XCTestCase {
                 element(springboard, argument)?.tap()
             case "sb-press":
                 element(springboard, argument)?.press(forDuration: 1.2)
+            case "sb-swipe":
+                // `sb-swipe:left@~text`: flicks a SpringBoard element (a notification) sideways.
+                let parts = argument.split(separator: "@", maxSplits: 1).map(String.init)
+                let target = element(springboard, parts[1])
+                if parts[0] == "left" { target?.swipeLeft() } else { target?.swipeRight() }
+            case "sb-pressat":
+                // A long press at a point of the Lock Screen or Home Screen (a notification's
+                // actions open from a press that doesn't move).
+                let xy = argument.split(separator: ",").compactMap { Double($0) }
+                springboard.coordinate(withNormalizedOffset: CGVector(dx: xy[0], dy: xy[1])).press(forDuration: 2.0)
             case "sb-wait":
                 let shown = springboard.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", argument)).firstMatch
                 XCTAssertTrue(shown.waitForExistence(timeout: 120), "SpringBoard never showed \(argument)")

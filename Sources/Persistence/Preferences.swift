@@ -77,6 +77,21 @@ struct DevicePreferences: Codable, Equatable, Sendable {
         var finished = false
         /// Keep titles and questions off the lock screen.
         var privatePreview = false
+        /// Hosts (account origins) this device hears nothing from: the host is told to stop
+        /// alerting it, and the app posts nothing for it either.
+        var mutedHosts: [String] = []
+
+        init() {}
+
+        // Each one on its own: a preference added later mustn't reset the ones saved before it.
+        init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+            needsYou = try c.decodeIfPresent(Bool.self, forKey: .needsYou) ?? true
+            finished = try c.decodeIfPresent(Bool.self, forKey: .finished) ?? false
+            privatePreview = try c.decodeIfPresent(Bool.self, forKey: .privatePreview) ?? false
+            mutedHosts = try c.decodeIfPresent([String].self, forKey: .mutedHosts) ?? []
+        }
     }
 
     var appearance: Appearance = .system

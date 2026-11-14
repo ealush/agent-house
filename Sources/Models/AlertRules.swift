@@ -62,6 +62,8 @@ struct AlertWatcher {
         let uid: String
         /// One-tap Approve / Deny is safe (a plain permission prompt).
         let answerable: Bool
+        /// The prompt it's about (the host's `askId`), sent back with Approve / Deny.
+        var prompt: String? = nil
     }
 
     private var last: [String: SessionDTO.Status] = [:]
@@ -94,7 +96,8 @@ struct AlertWatcher {
                 body: "\(row.dto.project) · \(detail.isEmpty ? fallback : detail)",
                 host: row.host,
                 uid: row.uid,
-                answerable: event == .waiting && row.dto.answerable
+                answerable: event == .waiting && row.dto.answerable,
+                prompt: event == .waiting ? row.dto.askId : nil
             ))
         }
         return alerts

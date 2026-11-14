@@ -398,6 +398,8 @@ final class NotificationSettings {
     let api: APIClient
     private(set) var status: APNsStatus?
     private(set) var error: String?
+    /// The last registration didn't reach the host (offline, Tailscale down): worth trying again.
+    private(set) var unreachable = false
 
     init(api: APIClient) { self.api = api }
 
@@ -415,8 +417,11 @@ final class NotificationSettings {
         do {
             status = try await api.registerAPNs(token: token.map { String(format: "%02x", $0) }.joined(), environment: environment, waiting: preferences.needsYou, done: preferences.finished, privatePreview: preferences.privatePreview)
             error = nil
+            unreachable = false
         } catch {
-            self.error = APIError.wrap(error).message
+            let wrapped = APIError.wrap(error)
+            self.error = wrapped.message
+            if case .transport = wrapped { unreachable = true } else { unreachable = false }
         }
     }
 }

@@ -129,6 +129,9 @@ struct SessionDTO: Codable, Equatable, Sendable {
     let limit: String?
     let ask: AskDTO?
     let answerable: Bool
+    /// The prompt it waits on, as the host's opaque fingerprint; nil when not waiting, or
+    /// from a host that predates it. One-tap answers carry it so a changed prompt refuses them.
+    let askId: String?
     let viewers: Int
     let devices: [String]
     let activity: Double
@@ -162,7 +165,7 @@ struct SessionDTO: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case id, uid, session, index, name, title, agent, harnessId, model, statusSource, command, cwd, project, projectPath
-        case branch, worktree, status, detail, limit, ask, answerable, viewers, devices, activity, createdAt, panes, pinned
+        case branch, worktree, status, detail, limit, ask, answerable, askId, viewers, devices, activity, createdAt, panes, pinned
         case queued, order, launch, launchModel, launchEffort, launchMode, feed, fork
     }
 
@@ -189,6 +192,7 @@ struct SessionDTO: Codable, Equatable, Sendable {
         limit = try c.decodeIfPresent(String.self, forKey: .limit)
         ask = try c.decodeIfPresent(AskDTO.self, forKey: .ask)
         answerable = try c.decodeIfPresent(Bool.self, forKey: .answerable) ?? false
+        askId = try c.decodeIfPresent(String.self, forKey: .askId)
         viewers = try c.decodeIfPresent(Int.self, forKey: .viewers) ?? 0
         devices = try c.decodeIfPresent([String].self, forKey: .devices) ?? []
         activity = try c.decodeIfPresent(Double.self, forKey: .activity) ?? 0

@@ -162,7 +162,13 @@ struct APIClient: Sendable {
     func send(_ ref: String, text: String, enter: Bool = true) async throws -> SendResult {
         try await call("POST", "\(s(ref))/send", json: SendBody(text: text, enter: enter))
     }
-    func answer(_ uid: String, approve: Bool) async throws { try await perform("POST", "\(s(uid))/answer", json: ["answer": approve ? "approve" : "deny"]) }
+    /// One-tap Approve / Deny. `prompt`: the `askId` the answer is about (a notification's);
+    /// the host refuses it (409) if the session asks something else now. Older hosts ignore it.
+    func answer(_ uid: String, approve: Bool, prompt: String? = nil) async throws {
+        var body = ["answer": approve ? "approve" : "deny"]
+        if let prompt { body["prompt"] = prompt }
+        try await perform("POST", "\(s(uid))/answer", json: body)
+    }
     func choose(_ uid: String, key: String) async throws -> ChooseResult { try await call("POST", "\(s(uid))/choose", json: ["key": key]) }
     func commands(_ uid: String) async throws -> [SlashCommand] { try await call("GET", "\(s(uid))/commands") }
     func files(_ uid: String, query: String) async throws -> [String] { try await call("GET", "\(s(uid))/files", query: [URLQueryItem(name: "q", value: query)]) }

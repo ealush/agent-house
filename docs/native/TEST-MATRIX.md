@@ -7,13 +7,14 @@ Environments: Arch Linux with the official Swift 6.2 toolchain in `~/.cache/ah-n
 | Check | Invocation | Result (24 October 2026) |
 | --- | --- | --- |
 | Workspace, links, plists, provenance, 89-command rows | `./scripts/verify.sh --static` | PASS |
-| Unit tests (all non-UI sources) | `swift test` (here: `swiftw test`) | PASS — 141 tests in 3 suites |
+| Unit tests (all non-UI sources) | `swift test` (here: `swiftw test`) | PASS — 260 tests in 5 suites on the Mac, 259 on Linux (14 November 2026; Linux needed `FoundationNetworking` in two test files) |
 | Integration against a disposable `ah` | `AH_SOURCE=<ah checkout with native branches> ./scripts/integration.sh` | PASS — 33 tests in 5 suites (26 October 2026) |
 | Every backend route has a native path (or a stated reason) | `AH_SOURCE=<ah> node scripts/backend-coverage.mjs` (also the first step of `integration.sh`); map in [BACKEND-COVERAGE.md](BACKEND-COVERAGE.md) | PASS (25 October 2026) — 169 of 169 routes |
 | Backend suite on `native/1-device-auth` + `native/2-apns` | `npm test`, `npx tsc --noEmit` in `ah` | PASS — 552/552, typecheck clean |
 | Xcode build, unit + UI tests on a simulator | `./scripts/verify.sh` on macOS (by hand; CI blocked by Actions billing) | PASS (25 October 2026) — app and tests build; 122 unit tests, 2 UI tests (setup screen). Every stack layer passes on its own. |
 | Mac app (Mac Catalyst) | built by `./scripts/verify.sh`; run with `open --env AH_EPHEMERAL=1 --env 'AH_DEBUG_PAIR=<origin>|<code>' --env AH_SNAPSHOT_DIR=<dir> AgentHubNative.app` | Builds; runs, pairs with the demo host and shows the Inbox and a session (25 October 2026). No UI tests on the Mac without a signing team. |
 | Setup → Inbox → session → terminal on a simulator against a real host (G-0) | Manual | **Not run** |
+| Notification actions on the simulator (suspended and terminated app) | `simctl push` payloads from `scripts/demo/push.mjs` (`--prompt` for a stale prompt, `resolved`), tour steps `sb-swipe:left@~<text>` then `sb-tap:View` / `sb-tap:Approve` | PASS (14 November 2026, iPhone 18 Pro, iOS 27.0): a stale prompt is refused with nothing typed and a "Not approved" note; the current prompt approves from a terminated app. The quiet `resolved` push didn't reach the app on the simulator |
 | Device journeys, APNs delivery, hardware keyboard | Signed iPhone/iPad | **Not run** — needs signing and devices |
 
 `scripts/integration.sh` starts `ah` from `AH_SOURCE` through its own test helper (isolated home, port and tmux socket), with fake agents named `ahit-agent`, `ahit-claude`, `ahit-picker`, `ahit-question` (ah's question-dialog fixture) and `ahit-demo` (the demo's scripted Claude), runs the suites serially (see the `ah` window-creation race in RISKS) and tears everything down. `AH_IT_LOG` keeps the host log.

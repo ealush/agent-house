@@ -42,6 +42,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             guard let app else { return }
             Task { await AlertJanitor.sweep(app, seen: keys) }
         }
+        // Signed in again (Face ID) or newly paired: that host gets this device's push again.
+        app.didSignIn = { [weak app] _ in
+            guard let app else { return }
+            Task { await PushRegistrar.shared.sync(app) }
+        }
         return true
     }
 
@@ -160,61 +165,109 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     }
 
     /// A tap opens the session or review layer in the most recent window; Approve, Deny and
-    /// Reply answer from the notification itself (all require the device unlocked).
+    /// Reply answer from the notification itself (all require the device unlocked), against
+    /// the host the alert came from and nowhere else (`NotificationResponses.plan`).
     /// UIKit finishes handling a response on the main thread (it refreshes the window's
     /// snapshot); the `async` form of this method completes on another thread and aborts.
+    /// The handler is called once the answer has reached the host (or failed, with a note
+    /// saying so): called at once, a suspended or just-launched app could be stopped before
+    /// its request went out.
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping @Sendable () -> Void) {
         let payload = PushPayload(response.notification.request.content.userInfo)
         let action = response.actionIdentifier
         let reply = (response as? UNTextInputNotificationResponse)?.userText
+        let id = NotificationClaims.id(response)
         Task { @MainActor in
-            if let payload { self.route(payload, action: action, reply: reply) }
+            if let payload, NotificationClaims.claim(id) { await self.respond(payload, action: action, reply: reply) }
             completionHandler()
         }
     }
 
-    private func route(_ payload: PushPayload, action: String, reply: String? = nil) {
+    private func respond(_ payload: PushPayload, action: String, reply: String?) async {
         guard let app else { return }
-        let account = app.accounts.first { $0.status == .signedIn && ($0.hostname == payload.link.host || $0.hub.hosts.contains { $0.name == payload.link.host }) } ?? app.accounts.first
-        if action == PushRegistrar.approveAction || action == PushRegistrar.denyAction {
-            guard let account, let key = payload.link.sessionKey(localHost: account.hostname) else { return }
-            let approve = action == PushRegistrar.approveAction
-            Task {
-                do {
-                    let uid = SessionKey(key)?.uid ?? key
-                    try await account.hub.client(forKey: key).answer(uid, approve: approve)
-                } catch {
-                    // The session moved on (answered elsewhere, ended): opening it shows where it is.
-                    SceneDelegate.open(payload.link, origin: account.origin)
-                }
-            }
+        let signedIn = app.accounts.filter { $0.status == .signedIn }
+        let plan = NotificationResponses.plan(payload, action: action, reply: reply, accounts: signedIn.map { NotifiedAccount(origin: $0.origin, hostname: $0.hostname, peers: $0.hub.hosts.map(\.name)) })
+        let account = { (origin: String) in signedIn.first { $0.origin == origin } }
+        // An answer from the Lock Screen outlives the moment iOS gives a background app.
+        let task = UIApplication.shared.beginBackgroundTask(withName: "Answering from a notification")
+        defer { if task != .invalid { UIApplication.shared.endBackgroundTask(task) } }
+        switch plan {
+        case .nothing:
             return
-        }
-        if action == PushRegistrar.replyAction, let text = reply?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
-            guard let account, let key = payload.link.sessionKey(localHost: account.hostname) else { return }
-            Task {
-                do {
-                    _ = try await account.hub.client(forKey: key).send(SessionKey(key)?.uid ?? key, text: text)
-                } catch {
-                    // Not delivered (ended, signed out): open it with the words in the box.
+        case .open(let link, let origin):
+            SceneDelegate.open(link, origin: origin)
+            if let draft = payload.draft, let key = origin.flatMap(account).flatMap({ link.sessionKey(localHost: $0.hostname) }) {
+                SceneDelegate.draft(draft, into: key)
+            }
+        case .notSignedIn:
+            if let note = NotificationResponses.failure(plan, error: nil, hostname: nil) { NotificationNotes.post(note, about: payload, draft: reply) }
+        case .answer(let origin, let key, let approve, let prompt):
+            guard let account = account(origin) else { return }
+            do {
+                try await account.hub.client(forKey: key).answer(SessionKey(key)?.uid ?? key, approve: approve, prompt: prompt)
+                alertLog.debug("answered from a notification")
+            } catch {
+                let failure = NotificationResponses.failure(plan, error: APIError.wrap(error), hostname: account.hostname)
+                alertLog.debug("answer from a notification failed: \(APIError.wrap(error).message, privacy: .public)")
+                if let failure { NotificationNotes.post(failure, about: payload) }
+            }
+        case .reply(let origin, let key, let text):
+            guard let account = account(origin) else { return }
+            do {
+                _ = try await account.hub.client(forKey: key).send(SessionKey(key)?.uid ?? key, text: text)
+            } catch {
+                // Not delivered (ended, signed out, unreachable): a note that opens it with
+                // the words in the box. Opening a window from the background isn't possible.
+                if let failure = NotificationResponses.failure(plan, error: APIError.wrap(error), hostname: account.hostname) {
+                    NotificationNotes.post(failure, about: payload, draft: text)
+                }
+                if UIApplication.shared.applicationState == .active {
                     SceneDelegate.open(payload.link, origin: account.origin)
                     SceneDelegate.draft(text, into: key)
                 }
             }
-            return
         }
-        SceneDelegate.open(payload.link, origin: account?.origin)
+    }
+
+    /// A host's quiet push (`event: resolved`): a session that alerted "needs you" no longer
+    /// waits (answered on another device, moved on, ended). Its alert comes down, and the
+    /// badge is counted again with the host's own number.
+    /// (The completion-handler form, called on the main thread, as for responses above.)
+    func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any], fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+        guard let app, let payload = PushPayload(userInfo) else { return completionHandler(.noData) }
+        let signedIn = app.accounts.filter { $0.status == .signedIn }
+        let found = NotificationResponses.account(for: payload.link, in: signedIn.map { NotifiedAccount(origin: $0.origin, hostname: $0.hostname, peers: $0.hub.hosts.map(\.name)) })
+        if let found, let waiting = payload.waiting { badges.set(waiting, for: found.origin) }
+        guard payload.event == "resolved" else { return completionHandler(.noData) }
+        Task { @MainActor in
+            await AlertJanitor.resolve(payload.link)
+            self.updateBadge()
+            completionHandler(.newData)
+        }
     }
 
     // MARK: Badge
+
+    /// Each signed-in host's count of sessions waiting on you: from its live list while the
+    /// app follows it, else the last its push said.
+    private var badges = BadgeLedger()
+
+    private func updateBadge() {
+        guard let app else { return }
+        let signedIn = app.accounts.filter { $0.status == .signedIn }
+        badges.keep(Set(signedIn.map(\.origin)))
+        for account in signedIn where account.hub.phase == .live { badges.set(account.hub.inbox(narrow: false).badge, for: account.origin) }
+        PushRegistrar.shared.updateBadge(badges.total)
+    }
 
     /// The icon badge follows sessions waiting on you across hosts, live.
     private func observeBadge() {
         guard let app else { return }
         withObservationTracking {
             let count = app.badgeCount
-            PushRegistrar.shared.updateBadge(count)
-            QuickActions.update(needsYou: count, signedIn: app.accounts.contains { $0.status == .signedIn })
+            _ = app.accounts.map { $0.hub.phase }
+            updateBadge()
+            QuickActions.update(needsYou: max(count, badges.total), signedIn: app.accounts.contains { $0.status == .signedIn })
             // Fewer waiting: some "needs you" alert may be answered (here or elsewhere).
             Task { await AlertJanitor.sweep(app) }
         } onChange: {

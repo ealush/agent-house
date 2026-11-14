@@ -82,6 +82,8 @@ final class AccountSession: Identifiable {
 
     @ObservationIgnored private let credentials: AccountCredentials
     @ObservationIgnored private let services: AppServices
+    /// Signed in again (Face ID): the platform registers this device's push with it again.
+    @ObservationIgnored var didSignIn: (() -> Void)?
 
     init(account: Account, credential: NativeCredential?, services: AppServices) {
         self.account = account
@@ -131,6 +133,7 @@ final class AccountSession: Identifiable {
             try? services.accounts.touch(origin: origin)
             status = .signedIn
             activate()
+            didSignIn?()
         } catch let error as APIError {
             if case .unauthorized(let message) = error, message.contains("unknown device") {
                 status = .unenrolled("This host no longer knows this device. Pair it again with a new setup code.")
@@ -145,7 +148,7 @@ final class AccountSession: Identifiable {
     /// Lock now / Sign out: the host ends this sign-in (closing its streams and terminals);
     /// the device stays enrolled.
     func lock() async {
-        try? await api.logout()
+        await endOnHost()
         await credentials.set(nil)
         try? services.vault.save(nil, origin: origin)
         hub.stop()
@@ -159,8 +162,10 @@ final class AccountSession: Identifiable {
         await forget()
     }
 
-    /// Forget the account locally (after removal elsewhere, or by choice).
+    /// Forget the account locally (after removal elsewhere, or by choice). A sign-in it still
+    /// holds is ended on the host first, so nothing keeps alerting a device that forgot it.
     func forget() async {
+        if status == .signedIn { await endOnHost() }
         await credentials.set(nil)
         hub.stop()
         try? services.vault.save(nil, origin: origin)
@@ -169,6 +174,18 @@ final class AccountSession: Identifiable {
         try? services.cache.clear(origin: origin)
         cacheKey = nil
         status = .unenrolled("Removed from this device.")
+    }
+
+    /// Ends this sign-in on the host. Unreachable (offline, Tailscale down), the bearer is kept
+    /// aside and the host told at the next chance (`AppModel.endPendingSignIns`): until then it
+    /// would still hold the sign-in, and push this device its alerts.
+    private func endOnHost() async {
+        let token = await credentials.bearer()
+        do {
+            try await api.logout()
+        } catch {
+            if case .transport = APIError.wrap(error), let token { try? services.vault.addPendingLogout(token, origin: origin) }
+        }
     }
 
     private func loadCacheKey() async {
@@ -282,9 +299,46 @@ final class AppModel {
         DeviceDescriptor.sanitizedName(preferences.deviceName ?? systemName)
     }
 
-    func activateAll() { accounts.forEach { $0.activate() } }
+    func activateAll() {
+        accounts.forEach { $0.activate() }
+        Task { await endPendingSignIns() }
+    }
+
+    /// Tells hosts about sign-ins ended here while they couldn't be reached. Done, refused
+    /// (already over) or unknown host: forgotten; still unreachable: kept for next time.
+    func endPendingSignIns() async {
+        for (origin, token) in services.vault.pendingLogouts() {
+            guard let url = URL(string: origin) else {
+                try? services.vault.clearPendingLogout(origin: origin)
+                continue
+            }
+            let api = APIClient(origin: url, transport: services.transport, credentials: AccountCredentials(token: token) {}, device: services.device)
+            do {
+                try await api.logout()
+                try? services.vault.clearPendingLogout(origin: origin)
+            } catch {
+                if case .transport = APIError.wrap(error) { continue }
+                try? services.vault.clearPendingLogout(origin: origin)
+            }
+        }
+    }
     func resyncAll() { accounts.forEach { $0.hub.resync() } }
-    func wakeAll() { accounts.forEach { $0.hub.wake() } }
+    func wakeAll() {
+        accounts.forEach { $0.hub.wake() }
+        Task { await endPendingSignIns() }
+    }
+
+    /// Called for each account when it signs in again; set by the platform (push registration).
+    @ObservationIgnored var didSignIn: ((AccountSession) -> Void)? {
+        didSet { accounts.forEach(wire) }
+    }
+
+    private func wire(_ session: AccountSession) {
+        session.didSignIn = { [weak self, weak session] in
+            guard let self, let session else { return }
+            self.didSignIn?(session)
+        }
+    }
 
     /// Sessions that need you, on every signed-in host.
     var badgeCount: Int {
@@ -321,8 +375,10 @@ final class AppModel {
             try services.vault.save(credential, origin: origin)
             accounts.removeAll { $0.origin == origin }
             let session = AccountSession(account: account, credential: credential, services: services)
+            wire(session)
             accounts.insert(session, at: 0)
             session.activate()
+            didSignIn?(session)
             return session
         } catch {
             try? services.keys.delete(origin: origin)

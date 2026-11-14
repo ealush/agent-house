@@ -73,6 +73,12 @@
     </array>
     <key>NSSupportsLiveActivities</key>
     <true/>
+    <!-- A host's quiet push (a session stopped waiting on you) wakes the app to take that
+         alert out of Notification Center and count the badge again. No capability needed. -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>remote-notification</string>
+    </array>
     <!-- Only exempt encryption (HTTPS/TLS to the host, CryptoKit for signing in), so TestFlight
          doesn't hold each build on the export compliance question. -->
     <key>ITSAppUsesNonExemptEncryption</key>

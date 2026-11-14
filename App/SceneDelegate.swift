@@ -58,8 +58,12 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             model.continueHandoff(handoff)
         }
         if let link = (options.userActivities.first?.userInfo?["link"] as? String).flatMap(URL.init(string:)) { handle(link) }
-        if let response = options.notificationResponse, let payload = PushPayload(response.notification.request.content.userInfo) {
+        // A tap that opened the app (an action never opens a window); the app delegate hears
+        // the same response and leaves it to this window.
+        if let response = options.notificationResponse, response.actionIdentifier == NotificationResponses.defaultAction,
+           let payload = PushPayload(response.notification.request.content.userInfo), NotificationClaims.claim(NotificationClaims.id(response)) {
             open(payload.link, origin: nil)
+            if let draft = payload.draft, let key = payload.link.sessionKey(localHost: model.account?.hostname) { Self.draft(draft, into: key) }
         }
         if let item = options.shortcutItem { _ = perform(item) }
     }
