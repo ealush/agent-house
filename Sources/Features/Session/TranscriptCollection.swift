@@ -1070,6 +1070,20 @@ final class TranscriptCell: UICollectionViewCell {
     /// The row it shows now.
     var item: TranscriptItem?
 
+    /// No safe area above or below a row: the transcript places its rows itself, from the
+    /// insets the conversation hands it. The cell's SwiftUI was laid out in the part of the
+    /// cell outside the safe area, which reaches up to the top of the dock (the queue, the
+    /// box): a row sliding under the dock had its content ride up (110 points above the row's
+    /// top under a queue of three), held still while the row moved on and cut off at its top
+    /// edge, so the row above seemed to slide over it. The row's own `ignoresSafeArea` doesn't
+    /// reach past the hosting configuration, and the transcript's controller can't take the
+    /// insets back (UIKit doesn't go below its parent's). Sideways insets stay: a phone on its
+    /// side keeps the rows off the notch.
+    override var safeAreaInsets: UIEdgeInsets {
+        let insets = super.safeAreaInsets
+        return UIEdgeInsets(top: 0, left: insets.left, bottom: 0, right: insets.right)
+    }
+
     override func preferredLayoutAttributesFitting(_ attributes: UICollectionViewLayoutAttributes) -> UICollectionViewLayoutAttributes {
         attributes
     }
