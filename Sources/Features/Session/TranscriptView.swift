@@ -477,7 +477,7 @@ struct TranscriptView: View {
 
 /// A glass pill at the top of the transcript while the host's copy is on its way, there once
 /// the wait is long enough to notice (a quick link never shows it).
-private struct CatchingUp: View {
+struct CatchingUp: View {
     @State private var shown = false
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -505,7 +505,7 @@ private struct CatchingUp: View {
 /// the transcript's leading edge; the bright one is the turn in view. Tap a tick, or press
 /// and slide like an iPhone's section index, to go there. Past fifteen it's a window that
 /// follows the reading, faded where more lie beyond.
-private struct MessageRail: View {
+struct MessageRail: View {
     let items: [RailItem]
     let active: Int
     let jump: (RailItem) -> Void
@@ -578,7 +578,7 @@ private struct MessageRail: View {
     }
 }
 
-private struct BlockRow: View {
+struct BlockRow: View {
     let block: FeedBlock
     let session: SessionModel
     let scene: SceneModel
@@ -1071,7 +1071,7 @@ struct ChecklistView: View {
 }
 
 /// The end of an answered turn: how long the agent took.
-private struct TurnFooter: View {
+struct TurnFooter: View {
     let seconds: Double
     @Environment(\.theme) private var theme
 
@@ -1086,7 +1086,7 @@ private struct TurnFooter: View {
 
 /// The agent at work: what it says it's doing (with a slow shimmer), how long it's been at
 /// it, and how to stop or steer from the keyboard. Still under Reduce Motion.
-private struct WorkingRow: View {
+struct WorkingRow: View {
     let detail: String?
     let queued: Int
     let hardwareKeyboard: Bool
@@ -1188,7 +1188,7 @@ private struct Shimmer: ViewModifier {
 
 /// A fresh conversation: who's ready and where, a few ways to start, and this project's
 /// recent conversations to pick up instead (`Blank` in `../ah/web/gui/GuiSurface.tsx`).
-private struct StartConversation: View {
+struct StartConversation: View {
     let session: SessionModel
     let scene: SceneModel
     @Environment(\.theme) private var theme
@@ -1309,7 +1309,7 @@ private struct TrustQuestion: View {
     }
 }
 
-private struct UnavailableFeed: View {
+struct UnavailableFeed: View {
     let reason: String?
     let useTerminal: () -> Void
 

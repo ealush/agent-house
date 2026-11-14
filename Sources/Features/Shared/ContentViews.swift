@@ -401,6 +401,15 @@ struct HostImage: View {
     @State private var image: UIImage?
     @State private var failed = false
 
+    /// Drawn again (a row laid out anew), it starts as it last ended: the picture, or the line
+    /// saying it isn't there. Started over as loading, its row changed height and back.
+    init(source: String, alt: String = "") {
+        self.source = source
+        self.alt = alt
+        _image = State(initialValue: Self.shown.object(forKey: source as NSString))
+        _failed = State(initialValue: Self.missedLately(source))
+    }
+
     var body: some View {
         Group {
             if let image {
@@ -429,11 +438,20 @@ struct HostImage: View {
         return cache
     }()
 
+    /// Pictures that weren't there, and when: asked for again only after a while (a host that
+    /// was out of reach may be back).
+    @MainActor private static var missing: [String: Date] = [:]
+
+    @MainActor private static func missedLately(_ source: String) -> Bool {
+        missing[source].map { Date.now.timeIntervalSince($0) < 60 } ?? false
+    }
+
     private func load() async {
         if let seen = Self.shown.object(forKey: source as NSString) {
             image = seen
             return
         }
+        guard !Self.missedLately(source) else { return }
         // A picture the agent drew comes inline, megabytes of base64: read off the main thread.
         let found = await Task.detached(priority: .userInitiated) { [source] in WidgetModel.imageSource(source) }.value
         let data: Data? = switch found {
@@ -447,6 +465,7 @@ struct HostImage: View {
             image = decoded
         }
         failed = image == nil
+        if failed { Self.missing[source] = .now }
     }
 
     /// Decoded off the main thread, at no more pixels than it's ever drawn at (a screenshot

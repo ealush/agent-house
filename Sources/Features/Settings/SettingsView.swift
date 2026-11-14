@@ -396,13 +396,14 @@ private struct AppearanceSection: View {
             }
             Section {
                 Toggle("Focus mode", isOn: $app.preferences.focusMode)
+                Toggle("New transcript", isOn: $app.preferences.newTranscript)
                 if !app.preferences.focusMode {
                     Toggle("Fold tool steps in transcripts", isOn: $app.preferences.stepsHidden)
                 }
             } header: {
                 Text("Reading")
             } footer: {
-                Text("Focus mode shows the conversation: your messages and the agent’s replies. Its steps and thinking stay out of the way until you tap the working line above the box, or Show Steps in the session’s menu. Anything it asks you always shows.")
+                Text("Focus mode shows the conversation: your messages and the agent’s replies. Its steps and thinking stay out of the way until you tap the working line above the box, or Show Steps in the session’s menu. Anything it asks you always shows. New transcript lays the conversation out the new way, while it’s being tried.")
             }
             Section("Sessions") {
                 Picker("Sort sessions", selection: $app.preferences.sessionSort) {
