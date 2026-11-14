@@ -110,7 +110,12 @@ to terminal rules and output activity, and matches live agents to their transcri
 - **Notifications.** Web Push for "needs you" / "finished", per device, even with ah closed
   (HTTPS + home-screen app on iOS).
 - **Multi-host.** Run ah on every machine; the one you open finds the others on your
-  tailnet and proxies them, so one inbox covers all of them.
+  tailnet and proxies them, so one inbox covers all of them. A stopped session can
+  **move** to another host (History → Move, `ah move`): its conversation goes with it and
+  resumes there, in that machine's checkout of the project; the original stays.
+- **Continue in another agent.** Carry a conversation from Claude Code to Codex and back
+  (or any other agent): the host says first what carries over and what doesn't, copies
+  natively where the agent's own history can hold it, and keeps the lineage.
 - **Phone-first touches.** Bottom tabs, big targets, key row with one-tap Ctrl/Alt/Shift
   and clipboard Paste, swipe to scroll tmux, dictation-friendly composer, scrollback as
   selectable text. Shift+Enter sends multiline input; pasted screenshots upload to the host.
@@ -247,6 +252,7 @@ drive tmux directly, so treat ah's security as protecting *remote* access.
   "idleAfter": 4,
   "preview": { "ports": [47600, 47699] },
   "uploads": { "maxBytes": 4294967296, "maxTotalBytes": 21474836480, "minFreeBytes": 1073741824 },
+  "migration": { "pathMap": [{ "from": "/home/me/", "to": "/Users/me/" }] },
   "presets": [
     { "id": "shell", "name": "Shell", "command": "" },
     {
@@ -264,7 +270,8 @@ drive tmux directly, so treat ah's security as protecting *remote* access.
 `[{ "name", "url" }]` with https URLs, or `"auto"` (your own online tailnet machines
 running ah). `uploads` caps one upload, the total kept in ah's upload folder, and the free
 space an upload must leave (bytes); uploads stream to disk, so large screen recordings
-fit. `files.roots` limits the file browser; add `"~"` deliberately if you want your
+fit. `migration.pathMap` tells this host where another machine's paths are here, for
+sessions moved to it. `files.roots` limits the file browser; add `"~"` deliberately if you want your
 whole home. `promptHistory: 0` keeps no prompt history. `preview.ports` is the range
 preview proxies listen on and publish with `tailscale serve` (ah needs Tailscale's
 operator permission, the same as for `tailscale serve` itself). Presets whose command isn't

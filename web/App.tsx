@@ -74,6 +74,7 @@ import { ReviewContext } from './reviewContext.ts';
 const Settings = lazy(() => import('./Settings.tsx').then((m) => ({ default: m.Settings })));
 const ReviewPage = lazy(() => import('./review/ReviewPage.tsx'));
 const ForkDialog = lazy(() => import('./ForkDialog.tsx').then((m) => ({ default: m.ForkDialog })));
+const MoveDialog = lazy(() => import('./MoveDialog.tsx').then((m) => ({ default: m.MoveDialog })));
 const ChatSearchDialog = lazy(() => import('./ChatHistory.tsx').then((m) => ({ default: m.ChatSearchDialog })));
 
 function scratchKey(): string | null {
@@ -154,6 +155,8 @@ export function App({ onLock }: { onLock: () => void }) {
   const [inboxGroup, setInboxGroup] = stored<InboxGroup>('ah.inboxGroup', 'status');
   const [creating, setCreating] = useState<{ cwd?: string; host?: string; prompt?: string; preset?: string; project?: boolean } | null>(null);
   const [forking, setForking] = useState<ForkTarget | null>(null);
+  /** Move to another host: the History item being moved, while its dialog is open. */
+  const [moving, setMoving] = useState<{ ref: string; host: string; title: string } | null>(null);
   const [switching, setSwitching] = useState(false);
   const [palette, setPalette] = useState(false);
   const [keymap, setKeymap] = useState(false);
@@ -1118,6 +1121,7 @@ export function App({ onLock }: { onLock: () => void }) {
           onResume={(h) => resume(h.host, h.ref)}
           onForget={forget}
           onFork={(h) => setForking({ ref: h.ref, host: h.host, harness: h.harness, title: h.title })}
+          onMove={(h) => setMoving({ ref: h.ref, host: h.host, title: h.title })}
         />
       ) : shown === 'sessions' && narrow ? (
         <SessionsView state={state} onOpen={(w) => open(w.key)} onNew={() => setCreating({})} />
@@ -1406,6 +1410,18 @@ export function App({ onLock }: { onLock: () => void }) {
             setForking(null);
             await refresh(host);
             open(keyFor(host, uid));
+          }}
+        />
+      )}
+      {moving && state && (
+        <MoveDialog
+          client={clientFor(moving.host)}
+          target={moving}
+          hosts={state.hosts.filter((x) => x.online && x.name !== moving.host).map((x) => x.name)}
+          onClose={() => setMoving(null)}
+          onMoved={(host, uid) => {
+            setMoving(null);
+            void resume(host, uid);
           }}
         />
       )}

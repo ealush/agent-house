@@ -41,6 +41,10 @@ export const HELP = `usage: ah <command>
                                               carry the conversation into another agent (keeps lineage)
   portable <target> [--out FILE]              the conversation as a portable document (JSON)
   lineage <target> [--json]                   where the conversation came from and what came from it
+  move <target> --to HOST [--cwd DIR] [--preview] [--yes] [--json]
+                                              move a stopped session to another host (it resumes there)
+  migrations [--json] | migrations retry|cancel <id>
+                                              moves between hosts and how far they got
   answer <target> <yes|no|N>                  answer what it's asking: approve, deny, or pick option N
   stop <target>                               stop the agent's current turn
   terminate <target>                          end the session (its conversation stays in history); also: kill
@@ -274,6 +278,47 @@ export async function run(cmd, args) {
         for (const e of kids.get(n.conversationId) ?? []) if (byId.has(e.childId)) line(byId.get(e.childId), depth + 1, e);
       };
       line(byId.get(tree.root), 0, null);
+      return;
+    }
+    case 'move': {
+      const to = opt(args, '--to', undefined);
+      if (!to) fail('which host? --to <host>');
+      const cwd = opt(args, '--cwd', undefined);
+      const preview = flag(args, '--preview');
+      const yes = flag(args, '--yes');
+      const json = flag(args, '--json');
+      const found = await find(args[0], { history: true });
+      const ref = found.live?.uid ?? found.past.ref;
+      const shown = await call('POST', '/api/migrations/preview', { ref, to, ...(cwd ? { cwd } : {}) });
+      const pre = shown.preflight;
+      if (json && preview) return console.log(JSON.stringify(shown, null, 2));
+      console.log(`${pre.ok ? '✓' : '✗'} ${pre.host}: ${pre.destCwd ?? '(no folder)'}${pre.resolvedBy ? `  (found by ${pre.resolvedBy.replace('_', ' ')})` : ''}`);
+      for (const r of pre.requirements) console.log(`  ${r.blocking ? '✗' : '!'} ${r.message}`);
+      if (preview) return;
+      if (!pre.ok) process.exit(1);
+      const warnings = pre.requirements.filter((r) => !r.blocking).length;
+      if (warnings && !yes) fail('confirm the warnings above with --yes');
+      const out = await call('POST', '/api/migrations', { ref, to, ...(cwd ? { cwd } : {}), acceptWarnings: yes, idempotencyKey: `cli:${randomBytes(8).toString('hex')}` });
+      let m = out.migration;
+      while (!['completed', 'failed', 'cancelled'].includes(m.state)) {
+        await new Promise((r) => setTimeout(r, 500));
+        m = await call('GET', `/api/migrations/${m.id}`);
+      }
+      if (json) return console.log(JSON.stringify(m, null, 2));
+      if (m.state !== 'completed') fail(`${m.id} ${m.state}: ${m.error ?? ''} (ah migrations retry ${m.id})`);
+      console.log(`moved: ${m.id} → ${m.peer} as ${m.destUid} in ${m.destCwd}; resume it there (ah resume on ${m.peer}, or from any device)`);
+      return;
+    }
+    case 'migrations': {
+      const json = flag(args, '--json');
+      if (args[0] === 'retry' || args[0] === 'cancel') {
+        const m = await call('POST', `/api/migrations/${encodeURIComponent(args[1] ?? '')}/${args[0]}`);
+        return console.log(`${m.id} ${m.state}${m.error ? `: ${m.error}` : ''}`);
+      }
+      const { migrations } = await call('GET', '/api/migrations');
+      if (json) return console.log(JSON.stringify(migrations, null, 2));
+      if (!migrations.length) return console.log('no moves between hosts yet');
+      table([['ID', 'DIRECTION', 'STATE', 'SESSION', 'WHERE'], ...migrations.map((m) => [m.id, m.role === 'outgoing' ? `→ ${m.peer}` : `← ${m.peer}`, m.state, m.title || m.harness, m.destCwd ?? ''])]);
       return;
     }
     case 'send': {

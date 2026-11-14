@@ -1140,7 +1140,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
                   onClick={() => w.continued?.fromUid && onOpenKey?.(keyOnThisHost(w.continued.fromUid))}
                   title={`Continued from “${w.continued.fromTitle}” in ${look(w.continued.fromHarness).name}${w.continued.kind === 'portable' ? ' (handed over as a record of the conversation)' : w.continued.kind === 'migration' ? ` (moved from ${w.continued.fromHost ?? 'another host'})` : ''}`}
                 >
-                  ↪ {look(w.continued.fromHarness).name}
+                  ↪ {w.continued.kind === 'migration' ? (w.continued.fromHost ?? 'another host') : look(w.continued.fromHarness).name}
                 </button>
               )}
               {w.queued > 0 && (

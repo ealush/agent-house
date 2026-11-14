@@ -19,6 +19,8 @@ export const FEATURES: Record<string, number> = {
   concurrentCreate: 1,
   /** /api/portable: portable documents, preview/continue in another agent, lineage, operations (server/portable). */
   portable: 1,
+  /** /api/migrations: move a stopped session to another trusted host, with progress, retry and rollback (server/migrate). */
+  migration: 1,
 };
 
 export function features(): Record<string, number> {

@@ -275,8 +275,11 @@ export class PortableService {
       const forkable = !!preset?.feed && ['claude', 'codex', 'muse'].includes(preset.feed) && !!preset.resumeId;
       if (!conv || !forkable) break;
       const found = (await this.deps.transcripts()).find((t) => t.harness === preset.feed && t.harnessId === conv.harnessId);
-      const sha = found ? await prefixSha(found.file, leaving.checkpoint.bytes) : null;
-      if (sha !== leaving.checkpoint.sha256) {
+      if (!found) {
+        limitations.push({ code: 'source_changed', message: `The ${dest.name} conversation this came from isn't on this host, so it is handed over as a record instead of copied natively.` });
+        break;
+      }
+      if ((await prefixSha(found.file, leaving.checkpoint.bytes)) !== leaving.checkpoint.sha256) {
         limitations.push({ code: 'source_changed', message: `The ${dest.name} conversation this came from has changed on disk since it branched, so it is handed over as a record instead of copied natively.` });
         break;
       }

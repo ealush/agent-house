@@ -135,6 +135,8 @@ export type HistoryItem = {
   fork: { parentTitle: string } | null;
   /** Portable lineage: the conversation this one continues (see WindowView.continued). */
   continued: Continued | null;
+  /** Moved to another host (server/migrate): the conversation goes on there; this copy stays as it was. */
+  moved?: { host: string; uid: string; at: number } | null;
 };
 
 const HOME = homedir();
@@ -793,5 +795,11 @@ function fromRecord(r: SessionRecord, t?: Transcript): HistoryItem {
     worktree: wt?.path ? shortPath(wt.path) : null,
     fork: fork ? { parentTitle: fork.rootTitle } : null,
     continued: continuedOf(r),
+    moved: movedOf(r),
   };
+}
+
+function movedOf(r: SessionRecord): { host: string; uid: string; at: number } | null {
+  const m = r.meta['ah.movedTo'] as { host?: unknown; uid?: unknown; at?: unknown } | undefined;
+  return m && typeof m.host === 'string' && typeof m.uid === 'string' ? { host: m.host, uid: m.uid, at: typeof m.at === 'number' ? m.at : 0 } : null;
 }

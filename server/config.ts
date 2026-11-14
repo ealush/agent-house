@@ -135,6 +135,11 @@ export type Config = {
    * upload may send nothing before it's dropped. Bytes and milliseconds.
    */
   uploads: UploadLimits;
+  /**
+   * Moving sessions between hosts (server/migrate): where a path on another machine
+   * is on this one, by prefix ({ "from": "/home/me/", "to": "/Users/me/" }).
+   */
+  migration: { pathMap: Array<{ from: string; to: string }> };
   presets: Preset[];
 };
 
@@ -442,6 +447,7 @@ export function loadConfig(): Config {
     snapshots: { maxFileBytes: 10 * 1024 * 1024, keepTurns: 50, retentionDays: 7, ...user.snapshots },
     preview: { ports: [47600, 47699], ...user.preview },
     uploads: uploadLimits(user.uploads),
+    migration: { pathMap: Array.isArray(user.migration?.pathMap) ? user.migration.pathMap.filter((r) => typeof r?.from === 'string' && typeof r?.to === 'string' && r.from.startsWith('/') && r.to.startsWith('/')) : [] },
     presets: user.presets ?? DEFAULT_PRESETS,
   };
 }

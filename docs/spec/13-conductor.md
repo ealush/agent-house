@@ -36,6 +36,7 @@ TypeScript sources of truth are named beside each section.
 | `uploads` | 2 | `POST /api/upload`, `POST /api/fs/upload` (streamed, limits, `code`) |
 | `concurrentCreate` | 1 | `POST /api/windows` safe under concurrent requests |
 | `portable` | 1 | `/api/portable/*` |
+| `migration` | 1 | `/api/migrations/*` |
 
 ## CND-1 Uploads (`uploads` v2)
 
@@ -203,3 +204,103 @@ Failure codes: `not_found` (404), `not_a_conversation`, `unsupported_source`,
 - **CLI:** `ah continue <target> --in <agent> [--fork] [--worktree] [--preview] [--json]`,
   `ah portable <target> [--out FILE]`, `ah lineage <target> [--json]`.
 - **Native:** the routes above; gate on `features.portable`.
+
+## CND-3 Moving a session to another host (`migration` v1)
+
+Sources: `server/migrate/{manifest,paths,service,api}.ts`.
+
+A **stopped** agent session moves to another host you trust and resumes there with
+its own conversation: the same conversation id, the harness's own transcript
+re-homed to the destination's folder. A running session stays where it is
+(409 `source_running`); live hand-off of a running process is not offered.
+
+**Trust.** The source pushes, with the token the destination issued it
+(`ah auth token <source>` on the destination, `ah peers trust <dest> <token>` on the
+source): the same trust as the multi-host proxy. The destination's
+`/api/migrations/incoming/*` routes take only such a machine token (a device's
+sign-in gets 403 `machine_only`), and validate everything sent.
+
+**What moves.** The transcript; its portable document; files the person attached from
+ah's uploads (their paths in the conversation are rewritten to the destination's
+uploads); the conversation's lineage edges and the documents they read. Each file is
+listed in the manifest by role with its size and sha256, and the destination checks
+each hash as it lands (400 `hash_mismatch`, nothing kept). **What never moves:**
+environment variable values (names only, to say which are missing), credential stores,
+SSH keys, provider tokens, anything outside the conversation. Workspace files move
+through git, not through ah: uncommitted changes stay on the source and are named.
+
+**Where it lands.** Only inside the destination's project and file roots. In order: a
+folder you name; `migration.pathMap` prefix rules in the destination's config
+(`{ "from": "/home/me/", "to": "/Users/me/" }`); the same path; the same place under
+home; a checkout of the same repository (by origin URL, credentials stripped) up to two
+levels under its roots. The preview says which (`resolvedBy`).
+
+**Requirements**, from the destination before anything moves (`blocking` ones refuse;
+the rest need `acceptWarnings: true`):
+
+| code | blocking | meaning |
+|---|---|---|
+| `missing_harness` | yes | no such agent there, or its CLI isn't installed |
+| `unsupported_harness` | yes | conversations of that agent can't be moved (only Claude Code, Codex, Muse) |
+| `missing_project` | yes | no folder for it inside the roots |
+| `conflict` | yes | the destination already has a conversation under that id; nothing is overwritten |
+| `commit_missing` | no | the source's HEAD isn't in the destination's repository (push and pull first) |
+| `branch_differs` | no | the destination's checkout is on another branch |
+| `not_a_repository` | no | the folder isn't a git checkout |
+| `uncommitted_changes` | no | they stay on the source |
+| `env_missing` | no | session variables set on the source but not here (values never travel) |
+
+**State machine.** Durable on both ends (table `Migration`, `role` outgoing/incoming).
+
+```
+outgoing:  planned → transferring → committing → verifying → completed
+incoming:  receiving → committed → verified
+either:    failed  (retry resumes: a file already staged with the right hash isn't resent)
+           cancelled (the destination's restore rolled back)
+```
+
+- **transferring:** each file is streamed (`PUT …/incoming/:id/files/:name`, header
+  `x-ah-sha256`) to a staging folder; progress per file is recorded.
+- **committing:** the destination writes the transcript into its own store (never over
+  an existing file), its portable record and lineage, and an *ended* session record
+  (`continued: { kind: 'migration', fromHost, … }`), so it is in History and resumable.
+- **verifying:** the destination's own discovery must find the transcript where the
+  restore put it. Only then does the source mark its record `movedTo` (History:
+  "→ moved to <host>") and record a `migration` lineage edge. **The source's
+  conversation is never deleted**: it stays resumable there.
+- A restart of the source resumes every unfinished outgoing move; each step is
+  idempotent (a commit that already happened returns the same uid).
+- **cancel** rolls the destination back: the restored transcript, copied uploads and
+  the record go. Refused (409 `in_use` / `diverged`) once it was resumed there.
+
+**Known limit.** Moving a conversation back to a host that still has the original
+copy is a `conflict` (nothing is overwritten): remove that copy first.
+
+### Routes
+
+| Route | Body | Answer |
+|---|---|---|
+| `POST /api/migrations/preview` | `{ ref, to, cwd? }` | `{ manifest, preflight }`; nothing moves |
+| `POST /api/migrations` | `{ ref, to, cwd?, acceptWarnings?, idempotencyKey? }` | 201 `{ migration, existed: false }` / 200 existed; 409 with the first blocking `code`, or `needs_confirmation` |
+| `GET /api/migrations` | | `{ migrations: [Migration] }` (both directions, newest 50) |
+| `GET /api/migrations/:id` | | `Migration` |
+| `POST /api/migrations/:id/retry` · `/cancel` | | `Migration` |
+| `POST /api/migrations/incoming/preflight` | `{ manifest, cwd? }` | `Preflight` (machine token only) |
+| `POST /api/migrations/incoming` · `PUT …/:id/files/:name` · `POST …/:id/commit` · `POST …/:id/verify` · `DELETE …/:id` | | the destination's steps (machine token only) |
+
+```ts
+Preflight = { ok, destCwd, resolvedBy: 'explicit'|'path_map'|'same_path'|'home_relative'|'git_remote'|null,
+              requirements: [{ code, message, blocking }], existing: 'none'|'identical'|'conflict', host }
+Migration = { id: 'mg-xxxxxxxx', role, state, peer, sourceUid, destUid, harness, title, sourceCwd, destCwd,
+              preflight, progress: { [file]: { bytes, sent } }, error, createdAt, updatedAt }
+```
+
+History items gain `moved: { host, uid, at } | null` on the source.
+
+### Surfaces
+
+- **Web:** History → *Move* (with more than one host online, for Claude Code, Codex and
+  Muse conversations): the destination's verdict, a confirmation for warnings, progress,
+  then *Resume on <host>*. A moved session's header shows `↪ <source host>`.
+- **CLI:** `ah move <target> --to HOST [--cwd DIR] [--preview] [--yes]`,
+  `ah migrations [--json]`, `ah migrations retry|cancel <id>`.

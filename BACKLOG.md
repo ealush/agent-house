@@ -17,7 +17,7 @@
 | # | Feature | | Where / notes |
 |---|---|---|---|
 | F6 | Harness adapter table | ✅ | Presets (`command`, `resume`, `resumeId`, `match`, `waitingPatterns`) + discoverers for Claude Code and Codex. No transcript code. Other harnesses fall back to "continue last". |
-| F7 | Resume on chosen host | ◐ | Resumes on the host that holds the conversation. Resuming a conversation on a *different* machine needs its files moved first (F31). |
+| F7 | Resume on chosen host | ✅ | Resumes on the host that holds the conversation; move it first to resume it elsewhere (F31). |
 | F8 | Alive/dead branch on send | ✅ | `Core.send`: types into idle agents, delivers immediately to waiting ones (the reply is the answer to the prompt), queues for busy ones, resumes dead ones then delivers. The caller can't tell which happened (unless it wants to). |
 | F9 | Lifecycle states | ✅ | `starting / live / ended / unavailable`, with `pendingResume` as an orthogonal flag. "Saved" = discovered history. |
 | F10 | Transcript discovery | ✅ | `server/discovery.ts` (~20 ms cold, cached per file). Live agent windows without hooks adopt their transcript id by conversation identity (launch novelty + ownership, never recency). |
@@ -59,7 +59,7 @@
 |---|---|---|---|
 | F29 | Worktree per session | ✅ | "Isolated git worktree" → `ah/<name>` branch in `<parent>/.worktrees/<repo>/`. |
 | F30 | Worktree lifecycle | ✅ | List with dirty/ahead/in-use, orphan detection, safe removal, and background on-disk size reporting (`server/size.ts`). |
-| F31 | Move session between hosts | ✗ | |
+| F31 | Move session between hosts | ✅ | Stopped sessions (`server/migrate/`, CND-3): preview with the destination's requirements, sha256-checked transfer, restore re-homed into the destination's own checkout, verify, rollback, resume across restarts. Live hand-off of a running process is not offered. |
 
 ## Phase 6 — Nice to have
 
@@ -289,6 +289,7 @@ The owner lifted the freeze for ah as an always-on conductor. Spec and protocol:
 | # | Item | | Notes |
 |---|---|---|---|
 | C0 | Reliability | ✅ | Concurrent `POST /api/windows` never collide on a tmux session (ah-native RISKS P1); uploads stream to disk with explicit limits (`uploads`), no 50 MB cap, nothing left behind; `features` announce capabilities without moving `api`. |
+| C2 | Move between hosts | ✅ | F31: a stopped session moves to a trusted peer with its conversation, attachments and lineage, and resumes there; the original stays. Path mapping across Linux and macOS (path map, home, git remote). `ah move`, History → Move. |
 | C1 | Portable conversations | ✅ | `server/portable/`: a versioned document read from any harness's transcript, with provenance and honest limitations; Continue in through the host (preview, native copy back into an agent the lineage started in, else a bounded reconstructed hand-off); lineage edges that survive restarts; lineage search; `ah continue/portable/lineage`. Replaces P13's in-page hand-off where the host supports it. |
 
 ## Design rules

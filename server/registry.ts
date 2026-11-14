@@ -301,6 +301,19 @@ export class Registry {
     return f ? this.records.get(f.parentUid) : undefined;
   }
 
+  /**
+   * Adds the record of a conversation that arrived from another host (a migration):
+   * ended here, resumable from History. Never replaces a record that exists.
+   */
+  restore(r: SessionRecord): boolean {
+    if (this.records.has(r.id)) return false;
+    this.records.set(r.id, { ...r, host: hostName(), lifecycle: 'ended', status: 'ended', tmux: undefined, pendingResume: false });
+    this.removed.delete(r.id);
+    this.dirty = true;
+    this.flush();
+    return true;
+  }
+
   setMeta(id: string, key: string, value: unknown) {
     const r = this.records.get(id);
     if (!r) return;

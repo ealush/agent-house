@@ -161,6 +161,50 @@ async function forkMuse(sourceFile: string, newId: string, targetCwd: string, up
 
 type Forker = (sourceFile: string, newId: string, targetCwd: string, uptoBytes?: number) => Promise<{ file: string }>;
 
+/**
+ * A transcript's text re-homed: conversation id `id`, working directory `cwd`, the
+ * same rewrite a fork does. A migration keeps the id and changes only the home.
+ */
+export const REHOME: Record<string, (text: string, id: string, cwd: string) => string> = {
+  claude: (text, id, cwd) =>
+    rewriteJsonl(text, (d) => {
+      if ('sessionId' in d) d.sessionId = id;
+      if ('cwd' in d) d.cwd = cwd;
+    }),
+  codex: (text, id, cwd) =>
+    rewriteJsonl(text, (d) => {
+      const p = d?.payload;
+      if (!p || typeof p !== 'object') return;
+      if (d.type === 'session_meta') {
+        if ('id' in p) p.id = id;
+        if ('session_id' in p) p.session_id = id;
+      }
+      if ('cwd' in p) p.cwd = cwd;
+    }),
+  muse: (text, id, cwd) => rewriteJsonl(text, (d) => reidMuse(d, id, cwd)),
+};
+
+/**
+ * Where this host's copy of the harness keeps conversation `id` homed at `cwd`.
+ * `name` is the source's file name (Codex names its rollouts by time and id).
+ */
+export function nativeFile(harness: string, id: string, cwd: string, name?: string): string {
+  const now = new Date();
+  const day = [String(now.getFullYear()), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')];
+  if (harness === 'claude') return join(claudeProjectsDir(), encodeClaudeProjectDir(cwd), `${id}.jsonl`);
+  if (harness === 'codex') {
+    const stamp = name?.match(/^rollout-(.+)-[^-]+\.jsonl$/)?.[1] ?? now.toISOString().replace(/[:.]/g, '-');
+    return join(codexHome(), 'sessions', ...day, `rollout-${stamp}-${id}.jsonl`);
+  }
+  if (harness === 'muse') return join(museDir(), 'sessions', ...day, id, 'session.jsonl');
+  throw new ForkError(422, `${harness} conversations can't be moved yet (only Claude Code, Codex and Muse can)`);
+}
+
+/** Writes a native transcript where none exists (never over one). */
+export async function writeNative(file: string, text: string): Promise<void> {
+  await writeCopy(file, text);
+}
+
 /** Harnesses whose transcripts ah knows how to duplicate. Everything else is honestly unavailable. */
 export const FORKERS: Record<string, Forker> = {
   claude: forkClaude,

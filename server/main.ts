@@ -58,6 +58,8 @@ import { conversationKey } from './registry.ts';
 import { PortableService, type Resolved } from './portable/service.ts';
 import { PortableStore } from './portable/store.ts';
 import { portableApi } from './portable/api.ts';
+import { MigrationService } from './migrate/service.ts';
+import { migrateApi } from './migrate/api.ts';
 import { fileContains } from './portable/extract.ts';
 import { discover } from './discovery.ts';
 import { copyTranscript, removeCopiedTranscript } from './fork.ts';
@@ -79,6 +81,7 @@ const HOST = String(flag('host') ?? process.env.AH_HOST ?? config.host);
 // AH_DIST: serve another build of the page (the browser tests build their own, never touching dist/).
 const DIST = process.env.AH_DIST ? resolve(process.env.AH_DIST) : fileURLToPath(new URL('../dist', import.meta.url));
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
+const UPLOAD_DIR = join(process.env.XDG_CACHE_HOME ?? join(homedir(), '.cache'), 'ah', 'uploads');
 
 // Invariant 1. No flag turns this off: exposure belongs to Tailscale, not to ah.
 if (!LOOPBACK_BIND.has(HOST)) {
@@ -222,6 +225,36 @@ const portable = new PortableService(new PortableStore(getDb()), {
   changed: () => void core.tick().catch(() => {}),
 });
 core.afterTick.add(() => portable.reconcile());
+
+// Moving stopped sessions between hosts (server/migrate): the source pushes to a peer with
+// the token that peer issued it; the destination restores into its own stores.
+const migrations = new MigrationService(getDb(), {
+  host: hostName,
+  home: () => homedir(),
+  stateDir: join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah'),
+  uploadsDir: UPLOAD_DIR,
+  limits: () => config.uploads,
+  peer: (name) => peers.get(name),
+  resolve: resolveConversation,
+  record: (uid) => core.registry.get(uid),
+  restoreRecord: (r) => core.registry.restore(r),
+  removeRecord: (uid) => core.registry.remove(uid),
+  setMeta: (uid, k, v) => core.registry.setMeta(uid, k, v),
+  freshUid: () => core.registry.freshId(),
+  presets: () => core.presets(),
+  available: (id) => core.presetAvailable(id),
+  exportDoc: (ref) => portable.export(ref),
+  portable: portable.store,
+  envNames: async () => (await envStore.list()).vars.map((v) => v.name),
+  findTranscript: async (harness, harnessId) => {
+    const adapter = core.presets().find((p) => p.id === harness)?.feed ?? harness;
+    return (await discover(0)).find((x) => x.harness === adapter && x.harnessId === harnessId) ?? null;
+  },
+  isLive: (uid) => !!core.registry.get(uid) && (core.registry.get(uid)!.lifecycle === 'live' || core.registry.get(uid)!.lifecycle === 'starting'),
+  rules: () => config.migration.pathMap,
+  roots: () => [...new Set([...config.projectRoots, ...config.files.roots].map(expandHome))],
+  changed: () => void core.tick().catch(() => {}),
+});
 const gate = new Gate();
 
 // Browser previews (server/preview.ts): a session's dev server behind ah's own
@@ -254,7 +287,6 @@ const peers = new Peers(config.peers, PORT);
 core.peers = peers;
 setRoots(config.files.roots.map(expandHome));
 
-const UPLOAD_DIR = join(process.env.XDG_CACHE_HOME ?? join(homedir(), '.cache'), 'ah', 'uploads');
 
 /** Routes reachable without signing in: only what's needed to sign in. Everything else is denied. */
 export const PUBLIC_ROUTES = new Set([
@@ -379,6 +411,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   }
   if (path.startsWith('/api/review/')) return reviewApi(req, res, url, path, review, audit);
   if (path.startsWith('/api/portable/')) return portableApi(req, res, url, path, portable, audit);
+  if (path === '/api/migrations' || path.startsWith('/api/migrations/')) return migrateApi(req, res, path, caller, migrations, audit);
 
   if (route('GET', /^\/api\/state$/)) return send(res, 200, await core.current());
 
@@ -1644,6 +1677,8 @@ await portable.recover().then(
   (r) => (r.resumed || r.failed) && console.log(`portable: ${r.resumed} continuation(s) resumed, ${r.failed} marked failed`),
   (err) => console.error('portable recovery failed:', err),
 );
+void migrations.recover().then((n) => n && console.log(`migrations: ${n} resumed`)).catch((err) => console.error('migration recovery failed:', err));
+void migrations.sweep().catch(() => {});
 core.start();
 review.start();
 search.start();

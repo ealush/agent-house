@@ -296,3 +296,36 @@ model ConversationLink {
   @@index([childId])
   @@index([childUid])
 }
+
+// Moving a stopped session to another host (docs/spec/13-conductor.md, CND-3). The
+// same table on both ends: `role` says which. The source keeps its conversation
+// until the destination says it can resume it, and never deletes it on its own.
+// state: planned → transferring → committing → verifying → completed, or failed /
+// cancelled (rolled back on the destination).
+model Migration {
+  id             String  @id
+  /// outgoing (this host is the source) | incoming (this host is the destination)
+  role           String
+  state          String  @default("planned")
+  /// The other host's name: the destination for outgoing, the source for incoming.
+  peer           String
+  sourceUid      String?
+  destUid        String?
+  harness        String
+  harnessId      String
+  title          String  @default("")
+  sourceCwd      String  @default("")
+  destCwd        String?
+  /// What moves and what it needs (no secrets: environment variables by name only).
+  manifestJson   String  @default("{}")
+  /// The destination's verdict before anything moved: requirements, warnings, conflicts.
+  preflightJson  String  @default("{}")
+  /// Per-file progress: { name: { bytes, sha256, sent } }.
+  progressJson   String  @default("{}")
+  error          String?
+  idempotencyKey String? @unique
+  createdAt      Int     @default(0)
+  updatedAt      Int     @default(0)
+
+  @@index([role, state])
+}

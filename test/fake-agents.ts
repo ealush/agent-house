@@ -88,3 +88,39 @@ export function transcriptFile(ah: { dir: string }, id: string): string | null {
   const walk = (d: string): string[] => (existsSync(d) ? readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)])) : []);
   return [...walk(join(ah.dir, 'claude', 'projects')), ...walk(join(ah.dir, 'codex', 'sessions'))].find((f) => f.endsWith(`${id}.jsonl`)) ?? null;
 }
+
+// ---------- two hosts (migration)
+
+export const REMOTE = 'https://github.com/example/proj.git';
+const git = (dir: string, ...a: string[]) => execFileSync('git', ['-C', dir, ...a], { encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } });
+
+export async function withHost<T>(name: string, fn: () => Promise<T>): Promise<T> {
+  const prev = process.env.AH_HOSTNAME;
+  process.env.AH_HOSTNAME = name;
+  try {
+    return await fn();
+  } finally {
+    if (prev === undefined) delete process.env.AH_HOSTNAME;
+    else process.env.AH_HOSTNAME = prev;
+  }
+}
+
+export type Pair = { a: Ah; b: Ah; aBed: ReturnType<typeof bedDir>; bBed: ReturnType<typeof bedDir>; bCheckout: string; token: string };
+
+/** B first (A probes its peers at start), then A trusting B with B's token. */
+export async function hostPair(o: { bPresets?: (bin: string) => unknown[]; bConfig?: Record<string, unknown> } = {}): Promise<Pair> {
+  const aBed = bedDir();
+  const bBed = bedDir();
+  git(aBed.project, 'remote', 'add', 'origin', REMOTE);
+  // B's checkout of the same repository, somewhere else entirely.
+  const bCheckout = join(bBed.dir, 'files', 'work', 'proj');
+  mkdirSync(join(bBed.dir, 'files', 'work'), { recursive: true });
+  execFileSync('git', ['clone', '-q', aBed.project, bCheckout]);
+  git(bCheckout, 'remote', 'set-url', 'origin', REMOTE);
+  const b = await withHost('mac-b', () => startAh({ auth: { mode: 'passkey' }, idleAfter: 1, presets: (o.bPresets ?? fakePresets)(bBed.bin), ...o.bConfig }, bBed.dir));
+  const token = (await http(b, 'POST', '/api/auth/tokens', { token: b.localToken(), body: { name: 'omarchy-a' } })).json().token;
+  const a = await withHost('omarchy-a', () => startAh({ auth: { mode: 'off' }, idleAfter: 1, presets: fakePresets(aBed.bin), peers: [{ name: 'mac-b', url: `http://127.0.0.1:${b.port}`, token }] }, aBed.dir));
+  await until(async () => (await http(a, 'GET', '/api/state')).json().hosts.some((h: any) => h.name === 'mac-b' && h.online), 10000, 'a sees b');
+  return { a, b, aBed, bBed, bCheckout, token };
+}
+

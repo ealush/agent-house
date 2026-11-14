@@ -132,6 +132,8 @@ export type HistoryItem = {
   /** Fork lineage (F36): the title of the session this one was forked from. */
   fork: { parentTitle: string } | null;
   continued?: Continued | null;
+  /** Moved to another host: it goes on there. */
+  moved?: { host: string; uid: string; at: number } | null;
 };
 
 export type PresetChoice = { id: string; name: string; args?: string[]; dangerous?: boolean; description?: string; appliesTo?: string };
@@ -236,6 +238,11 @@ export type ContinuePlan = {
   ancestor: { conversationId: string; harness: string; title: string; checkpointLine: number } | null;
   handoff: { chars: number; messagesIncluded: number; messagesOmitted: number; preview: string } | null;
 };
+
+/** Moving a stopped session to another host (server/migrate). */
+export type MoveRequirement = { code: string; message: string; blocking: boolean };
+export type MovePreview = { preflight: { ok: boolean; destCwd: string | null; resolvedBy: string | null; requirements: MoveRequirement[]; existing: string; host: string } };
+export type Migration = { id: string; role: 'outgoing' | 'incoming'; state: string; peer: string; sourceUid: string | null; destUid: string | null; harness: string; title: string; sourceCwd: string; destCwd: string | null; error: string | null; createdAt: number; updatedAt: number };
 
 /** One continuation (a lineage edge) and how far it got. */
 export type ContinueOp = { id: string; kind: string; strategy: string; state: 'preparing' | 'launching' | 'delivering' | 'linked' | 'failed' | 'cancelled'; childUid: string | null; parentUid: string | null; fromHarness: string; toHarness: string; fromName: string; toName: string; error: string | null; limitations: Limitation[] };
@@ -415,6 +422,11 @@ export function hostApi(base: string) {
     continueIn: (ref: string, body: { to: string; intent?: 'continue' | 'fork'; worktree?: boolean; name?: string; model?: string; effort?: string; mode?: string; idempotencyKey: string }) =>
       r<{ operation: ContinueOp; existed: boolean }>('POST', `/api/portable/conversations/${enc(ref)}/continue`, body),
     continueOp: (id: string) => r<ContinueOp>('GET', `/api/portable/operations/${enc(id)}`),
+    movePreview: (ref: string, to: string, cwd?: string) => r<MovePreview>('POST', '/api/migrations/preview', { ref, to, ...(cwd ? { cwd } : {}) }),
+    moveStart: (ref: string, to: string, o: { cwd?: string; acceptWarnings?: boolean; idempotencyKey: string }) => r<{ migration: Migration; existed: boolean }>('POST', '/api/migrations', { ref, to, ...o }),
+    migration: (id: string) => r<Migration>('GET', `/api/migrations/${enc(id)}`),
+    moveRetry: (id: string) => r<Migration>('POST', `/api/migrations/${enc(id)}/retry`),
+    moveCancel: (id: string) => r<Migration>('POST', `/api/migrations/${enc(id)}/cancel`),
     send: (ref: string, text: string, enter: boolean) => r<SendResult>('POST', `/api/sessions/${enc(ref)}/send`, { text, enter }),
     answer: (uid: string, answer: 'approve' | 'deny') => r('POST', `/api/sessions/${enc(uid)}/answer`, { answer }),
     choose: (uid: string, key: string) => r('POST', `/api/sessions/${enc(uid)}/choose`, { key }),

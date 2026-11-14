@@ -25,6 +25,8 @@ never guessed). `ah list` shows titles and the shared status words.
 | `continue <target> --in AGENT [--fork] [--worktree] [--name] [--preview] [--json]` | carry the conversation into another agent, with lineage (CND-2) | Continue in… |
 | `portable <target> [--out FILE]` | the conversation as a portable document | — |
 | `lineage <target> [--json]` | where the conversation came from and what came from it | the ↪ pill |
+| `move <target> --to HOST [--cwd DIR] [--preview] [--yes] [--json]` | move a stopped session to another host (CND-3) | History → Move |
+| `migrations [--json]`, `migrations retry\|cancel <id>` | moves between hosts and how far they got | the Move dialog |
 | `answer <target> <yes\|no\|N>` | approve, deny, or pick option N of what it is asking (re-checked on screen first) | the ask's options |
 | `stop <target>` | stop the agent's current turn | Stop |
 | `terminate <target>` (also `kill`) | end the session; the conversation stays in History | Terminate session |

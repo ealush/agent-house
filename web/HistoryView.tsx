@@ -16,8 +16,10 @@ import { createPortal } from 'react-dom';
 import { historyLine } from './sessionLine.tsx';
 
 /** Ended and saved conversations from every host; one tap resumes on the host that has it. */
-export function HistoryView({ state, onResume, onForget, onFork, touch = false, narrow = false }: { state: State; onResume: (h: HistoryItem) => void; onForget: (h: HistoryItem) => void; onFork?: (h: HistoryItem) => void; touch?: boolean; narrow?: boolean }) {
+export function HistoryView({ state, onResume, onForget, onFork, onMove, touch = false, narrow = false }: { state: State; onResume: (h: HistoryItem) => void; onForget: (h: HistoryItem) => void; onFork?: (h: HistoryItem) => void; onMove?: (h: HistoryItem) => void; touch?: boolean; narrow?: boolean }) {
   const multiHost = state.hosts.length > 1;
+  // Moving needs another host online, and an agent whose conversations can travel.
+  const canMoveAnywhere = !!onMove && state.hosts.filter((x) => x.online).length > 1;
   const [filter, setFilter] = useState('');
   // Touch: the row itself resumes (like any list on a phone), and Fork and
   // Hide wait behind ··· so the title keeps the width.
@@ -96,6 +98,7 @@ export function HistoryView({ state, onResume, onForget, onFork, touch = false, 
           const { color } = look(h.harness);
           const key = `${h.host}:${h.ref}`;
           const canFork = !!onFork && (h.harness === 'claude' || h.harness === 'codex' || h.harness === 'muse');
+          const canMove = canMoveAnywhere && h.kind === 'ended' && !h.moved && (h.harness === 'claude' || h.harness === 'codex' || h.harness === 'muse');
           const open = menuFor === key;
           return (
             <li key={key} className={open ? 'open' : undefined}>
@@ -111,6 +114,7 @@ export function HistoryView({ state, onResume, onForget, onFork, touch = false, 
                   {...press.bind(() => [
                     { label: 'Resume', icon: 'reload', run: () => onResume(h) },
                     ...(canFork ? [{ label: 'Fork…', icon: 'fork' as const, run: () => onFork?.(h) }] : []),
+                    ...(canMove ? [{ label: 'Move to another host…', icon: 'reload' as const, run: () => onMove?.(h) }] : []),
                     { label: 'Hide', icon: 'close', danger: true, run: () => onForget(h) },
                   ])}
                   onClick={
@@ -156,6 +160,7 @@ export function HistoryView({ state, onResume, onForget, onFork, touch = false, 
                             <>
                               <button onClick={() => { setMenuFor(null); onResume(h); }}>Resume</button>
                               {canFork && <button onClick={() => { setMenuFor(null); onFork?.(h); }}>Fork…</button>}
+                              {canMove && <button onClick={() => { setMenuFor(null); onMove?.(h); }}>Move to another host…</button>}
                               <button className="danger" onClick={() => { setMenuFor(null); onForget(h); }}>Hide</button>
                             </>
                           );
@@ -184,6 +189,11 @@ export function HistoryView({ state, onResume, onForget, onFork, touch = false, 
                     {canFork && (
                       <button className="btn small ghost" onClick={() => onFork(h)}>
                         Fork
+                      </button>
+                    )}
+                    {canMove && (
+                      <button className="btn small ghost" onClick={() => onMove?.(h)}>
+                        Move
                       </button>
                     )}
                     <button className="icon-btn small" title="Hide" onClick={() => onForget(h)}>

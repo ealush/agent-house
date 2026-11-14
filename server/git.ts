@@ -125,6 +125,15 @@ export async function remoteUrl(dir: string): Promise<string | null> {
   }
 }
 
+/** Whether `dir`'s repository has commit `sha` (it was pushed and fetched, or made here). */
+export async function hasCommit(dir: string, sha: string): Promise<boolean> {
+  if (!/^[0-9a-f]{7,64}$/.test(sha)) return false;
+  return git(dir, 'cat-file', '-e', `${sha}^{commit}`).then(
+    () => true,
+    () => false,
+  );
+}
+
 export type HeadInfo = { branch: string | null; head: string; dirty: number };
 
 /** Where a checkout stands: current branch, HEAD commit, uncommitted file count. */

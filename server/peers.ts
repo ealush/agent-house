@@ -184,3 +184,30 @@ export function proxyWs(peer: Peer, path: string, client: WebSocket) {
   client.on('error', () => upstream.terminate());
   client.on('close', () => upstream.terminate());
 }
+
+/**
+ * A request to a peer as this host (a migration's calls), with the same rules as the
+ * proxy: only the token that peer issued us, its exact origin, X-AH on writes, never
+ * a redirect. `body` may be a file stream (sent with its length, never buffered).
+ */
+export async function peerFetch(peer: Peer, path: string, init: { method?: string; json?: unknown; body?: Readable; length?: number; headers?: Record<string, string>; timeoutMs?: number } = {}): Promise<Response> {
+  if (!peerUrlAllowed(peer.url)) throw new Error(`${peer.name}'s address isn't https (or loopback)`);
+  const method = init.method ?? (init.json !== undefined || init.body ? 'POST' : 'GET');
+  const headers: Record<string, string> = { origin: new URL(peer.url).origin, accept: 'application/json', ...init.headers };
+  if (peer.token) headers.authorization = `Bearer ${peer.token}`;
+  if (method !== 'GET') headers['x-ah'] = '1';
+  if (init.json !== undefined) headers['content-type'] = 'application/json';
+  if (init.body) {
+    headers['content-type'] = 'application/octet-stream';
+    if (init.length !== undefined) headers['content-length'] = String(init.length);
+  }
+  return fetch(new URL(path, peer.url), {
+    method,
+    headers,
+    body: init.json !== undefined ? JSON.stringify(init.json) : init.body ? (Readable.toWeb(init.body) as ReadableStream) : undefined,
+    // @ts-expect-error duplex is required by undici for streamed request bodies
+    duplex: init.body ? 'half' : undefined,
+    redirect: 'manual',
+    signal: AbortSignal.timeout(init.timeoutMs ?? 30_000),
+  });
+}

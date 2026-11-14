@@ -1,7 +1,7 @@
 // Durable side of portable conversations: identity rows, lineage edges (each one
 // also the record of the operation that made it), and the portable documents on
 // disk. Owner-only, like the rest of ah's state.
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -116,9 +116,15 @@ export class PortableStore {
     return join(this.dir, id, 'attachments');
   }
 
-  /** Writes a document owner-only, atomically (a reader never sees half of one). */
+  /**
+   * Writes a document owner-only, atomically (a reader never sees half of one). A
+   * document is named by the source bytes it was read from and never rewritten: the
+   * first one stands, so its hash holds for anyone who recorded it (a lineage edge,
+   * a migration under way).
+   */
   async writeDoc(doc: PortableConversation): Promise<string> {
     const path = this.docPath(doc.id, doc.source.sha256);
+    if (await stat(path).catch(() => null)) return path;
     await mkdir(join(this.dir, doc.id), { recursive: true, mode: 0o700 });
     const tmp = `${path}.${randomUUID().slice(0, 8)}.tmp`;
     await writeFile(tmp, JSON.stringify(doc), { mode: 0o600 });
@@ -189,6 +195,18 @@ export class PortableStore {
     if (patch.detail) data.detailJson = JSON.stringify(patch.detail);
     if (patch.limitations) data.limitationsJson = JSON.stringify(patch.limitations);
     return toLink(await this.db.conversationLink.update({ where: { id }, data }));
+  }
+
+  /** An edge that came with a conversation from another host (a migration), as it was there. */
+  async importLink(l: { id: string; kind: string; strategy: string; parentId: string; childId: string | null; parentUid: string | null; childUid: string | null; fromHarness: string; toHarness: string; fromHost: string; toHost: string; checkpoint: Link['checkpoint']; limitations: unknown[]; detail: Record<string, unknown>; createdAt: number }): Promise<void> {
+    await this.db.conversationLink.create({
+      data: {
+        id: l.id, kind: l.kind, strategy: l.strategy, state: 'linked', parentId: l.parentId, childId: l.childId, parentUid: l.parentUid, childUid: l.childUid,
+        fromHarness: l.fromHarness, toHarness: l.toHarness, fromHost: l.fromHost, toHost: l.toHost,
+        checkpointLine: l.checkpoint?.line ?? null, checkpointBytes: l.checkpoint?.bytes ?? null, checkpointSha: l.checkpoint?.sha256 ?? null,
+        limitationsJson: JSON.stringify(l.limitations), detailJson: JSON.stringify(l.detail), createdAt: l.createdAt, updatedAt: now(),
+      },
+    });
   }
 
   async linkByKey(key: string): Promise<Link | null> {
