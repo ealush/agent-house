@@ -370,6 +370,7 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
         collectionView.contentInsetAdjustmentBehavior = .never
         collectionView.alwaysBounceVertical = true
         collectionView.delegate = self
+        collectionView.accessibilityIdentifier = "transcript"
         collectionView.topEdgeEffect.style = .soft
         collectionView.bottomEdgeEffect.style = .soft
         collectionView.afterLayout = { [weak self] in self?.place() }

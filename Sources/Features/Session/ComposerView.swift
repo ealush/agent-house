@@ -94,6 +94,9 @@ struct ComposerView: View {
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
+        // For the layout tests (ConversationLayoutUITests): where the whole bar is.
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("composer-dock")
         .onChange(of: composer.text) { _, _ in
             if composer.suggestionIndex != 0 { composer.suggestionIndex = 0 }
             composer.updateSuggestions()
@@ -269,7 +272,7 @@ struct ComposerView: View {
             // As tall as its tiles, always: a sideways scroll view takes whatever height it's
             // given, and with the bar short of room (a long queue, the keyboard up) the tiles
             // were squeezed to a sliver over + while the text spilled out under the box.
-            if !composer.attachments.isEmpty { attachments.fixedSize(horizontal: false, vertical: true).padding(.top, 2) }
+            if !composer.attachments.isEmpty { attachments.fixedSize(horizontal: false, vertical: true).padding(.top, 2).accessibilityElement(children: .contain).accessibilityIdentifier("attachments") }
             // The text wraps short of Send, which sits in the box's corner (as Messages has it):
             // beside it in a row, the box was measured at one width and laid out at another,
             // and a long message lost its first line.
@@ -1503,6 +1506,7 @@ struct QueueTrayView: View {
             .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: queue.sending)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Queued messages")
+            .accessibilityIdentifier("queue-tray")
         }
     }
 

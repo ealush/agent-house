@@ -8,7 +8,9 @@
 //   node agent.mjs [--scenario=onboarding|api|review|approve|none]   (default: by folder)
 //
 // Typing /ask (or /design, with previews) opens Claude Code's question dialog; /rotate, a permission prompt; /plan or /trust, its plan approval or
-// folder-trust picker, for the app's answer-from-anywhere views. A folder holding `.demo-untrusted` opens on the
+// folder-trust picker, for the app's answer-from-anywhere views. /stream [n] works for a minute and more, a step
+// about every second (the app's layout tests type and queue under it), /burst [n] 15 steps a second; /long [n]
+// writes n turns at once. A folder holding `.demo-untrusted` opens on the
 // folder-trust picker, as Claude Code does in a folder it hasn't been trusted in; trusting it removes the mark.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
@@ -263,7 +265,70 @@ async function turn(prompt) {
   current = null;
   box();
   busy = false;
-  if (queue.length) turn(queue.shift());
+  next();
+}
+
+/** The next queued line: a turn, or one of the long ones below. */
+function next() {
+  if (!queue.length) return;
+  const prompt = queue.shift();
+  const long = /^\/(stream|burst|long)(?:\s+(\d+))?$/.exec(prompt);
+  if (!long) return turn(prompt);
+  const n = long[2] ? Number(long[2]) : undefined;
+  if (long[1] === 'long') history(n ?? 120);
+  else stream(n ?? (long[1] === 'burst' ? 300 : 90), long[1]);
+}
+
+// ---------- long turns, for the app's layout tests (deterministic content, real timing)
+
+/** What a step of a long turn writes: thinking, a read, a command with output, or a few words. */
+const STEP_FILES = ['README.md', 'package.json', 'src/users.ts', 'src/cache.ts', 'src/teams.ts'];
+function longStep(i) {
+  switch (i % 5) {
+    case 0: return think(`Step ${i + 1}: check what the last step changed before going on, and keep the users query cached for 30 seconds.`);
+    case 1: return read(STEP_FILES[i % STEP_FILES.length]);
+    case 2: return bash(`npm test -- --grep "step ${i + 1}"`, `Run the tests for step ${i + 1}`, Array.from({ length: 6 + (i % 7) }, (_, k) => `  ✓ step ${i + 1} case ${k + 1} (${3 + ((i * 7 + k) % 40)} ms)`).join('\n') + `\n\n  ${6 + (i % 7)} passing`);
+    case 3: return say(`Step ${i + 1} is in. ${i % 2 ? 'The cache now drops the entry when a team changes.' : 'Reads of the users list stay under a millisecond while it is warm.'}`, 1);
+    default: return say(`### After step ${i + 1}\n\n${Array.from({ length: 3 + (i % 4) }, (_, k) => `- Point ${k + 1}: the users query ${k % 2 ? 'misses' : 'hits'} the cache on request ${i * 4 + k}.`).join('\n')}`, 1);
+  }
+}
+
+/** `/stream [n]`: a turn of n steps about a second apart (90 by default, a minute and a half), so the
+ *  transcript streams under the app while it scrolls, types and queues. `/burst [n]`: the same 15 a
+ *  second (300 by default), for the stress test. Esc stops either. */
+async function stream(steps, kind = 'stream') {
+  busy = true;
+  clock = Math.max(clock, Date.now());
+  const abort = new AbortController();
+  current = abort;
+  user(`/${kind} ${steps}`, 1);
+  process.stdout.write(`\n${accent('>')} /${kind} ${steps}\n\n`);
+  // The working line Claude Code draws, which is how ah tells a turn is under way.
+  const started = Date.now();
+  const spinner = setInterval(() => process.stdout.write(`\r${accent('✻')} Working… ${dim(`(${Math.floor((Date.now() - started) / 1000)}s · esc to interrupt)`)}`), 120);
+  for (let i = 0; i < steps && !abort.signal.aborted; i++) {
+    await sleep(kind === 'burst' ? 66 : 900 + (i % 3) * 200, abort.signal);
+    if (!abort.signal.aborted) longStep(i);
+  }
+  clearInterval(spinner);
+  process.stdout.write('\r\x1b[2K');
+  if (abort.signal.aborted) line('user', '[Request interrupted by user]', {}, 1);
+  else say(`Streamed ${steps} steps.`, 1);
+  current = null;
+  box();
+  busy = false;
+  next();
+}
+
+/** `/long [n]`: n turns written at once (a long conversation to scroll back through), then a reply. */
+function history(turns) {
+  for (let t = 0; t < turns; t++) {
+    user(`Turn ${t + 1}: carry on with the cache work.`, 30);
+    for (let i = 0; i < 5; i++) longStep(t * 5 + i);
+  }
+  say(`Wrote ${turns} turns.`, 1);
+  box();
+  next();
 }
 
 /** The permission prompt's answer: run it (1, 2 or Enter) or not (3 or Esc). */
@@ -580,8 +645,8 @@ process.stdin.on('data', (chunk) => {
       process.stdout.write('\x1b[2J\x1b[H' + promptLines().join('\n') + '\n');
       return;
     }
-    if (busy) queue.push(prompt);
-    else turn(prompt);
+    queue.push(prompt);
+    if (!busy) next();
   }
 });
 
