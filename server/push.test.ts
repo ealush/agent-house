@@ -68,6 +68,18 @@ test('alerts use the session title and say what a waiting session asks', () => {
   assert.equal(sent[0].body, 'p · Wants to run pnpm test --filter auth');
 });
 
+test('alerts say what was said last: the answer when it finished, not the tool it ran', () => {
+  const push = new Push();
+  const sent: Array<{ title: string; body: string }> = [];
+  (push as any).send = (_event: string, p: { title: string; body: string }) => sent.push(p);
+  const name = (id: string) => (id === 'claude' ? 'Claude Code' : id);
+  const w = { ...win('g', 'busy'), title: 'Left rail sidebar design', detail: '$ cd /tmp/claude-1000/x' };
+  push.observe([w], name);
+  push.observe([{ ...w, status: 'attention', reply: { role: 'assistant', text: 'Fixed in the app:\nan edited message goes back.', at: 1 } }], name);
+  assert.equal(sent[0].title, 'Left rail sidebar design finished');
+  assert.equal(sent[0].body, 'p · Fixed in the app: an edited message goes back.');
+});
+
 test('askLine reads a question and a hook-reported command', () => {
   assert.equal(askLine({ kind: 'command', text: 'pnpm test' } as any), 'Wants to run pnpm test');
   assert.equal(askLine({ kind: 'choice', text: 'How should old names be handled?' } as any), 'Asks: How should old names be handled?');

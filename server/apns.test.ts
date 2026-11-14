@@ -168,6 +168,23 @@ test('a Live Activity says what the session is doing, asks or hit, in one short 
   assert.equal(activityState(view('u', 'busy', { detail: 'x'.repeat(300) }), askLine, 9).detail!.length, 120);
 });
 
+test('a Live Activity says what was said last, not the tool running; its answer once done', () => {
+  const said = (role: 'assistant' | 'user', text: string) => ({ reply: { role, text, at: 1 } });
+  // Working: what the agent said last, not the command it runs.
+  assert.equal(activityState(view('u', 'busy', { detail: '$ cd /tmp/claude-1000/x && ls', ...said('assistant', 'Pulling frames from\nyour recording.') }), askLine, 9).detail, 'Pulling frames from your recording.');
+  // Your message, while it hasn't answered yet.
+  assert.equal(activityState(view('u', 'busy', { detail: '$ ls', ...said('user', 'Fix the queue') }), askLine, 9).detail, 'You: Fix the queue');
+  // Done: its answer stays on the Lock Screen.
+  assert.equal(activityState(view('u', 'attention', said('assistant', 'Fixed it.')), askLine, 9).detail, 'Fixed it.');
+  assert.equal(activityState(view('u', 'attention', said('user', 'Fix it')), askLine, 9).detail, null);
+  // Needing you: what it asks, first.
+  const ask = { kind: 'command', text: 'Bash command\npnpm test' };
+  assert.equal(activityState(view('u', 'waiting', { ask, ...said('assistant', 'Running the tests.') }), askLine, 9).detail, 'Wants to run pnpm test');
+  // No transcript (a shell, an agent without one): the tool, as before.
+  assert.equal(activityState(view('u', 'busy', { detail: 'Editing server/apns.ts' }), askLine, 9).detail, 'Editing server/apns.ts');
+  assert.equal(activityState(view('u', 'busy', said('assistant', 'y'.repeat(300))), askLine, 9).detail!.length, 120);
+});
+
 test('activity registration needs configuration, a token and a session; one per session per sign-in', () => {
   const off = new Apns(null, { file: join(dir, 'act-off.json') });
   assert.throws(() => off.registerActivity({ uid: 'u1', token: ACT, environment: 'sandbox', sessionId: 's1' }), /not configured/);

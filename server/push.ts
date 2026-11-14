@@ -9,7 +9,7 @@ import { homedir } from 'node:os';
 import { hostName } from './host.ts';
 import { dirname, join } from 'node:path';
 import type { WindowView } from './sessions.ts';
-import type { Apns } from './apns.ts';
+import { lastSaid, type Apns } from './apns.ts';
 
 export type PushEvents = { waiting: boolean; done: boolean };
 type Subscription = { endpoint: string; keys: { p256dh: string; auth: string } };
@@ -90,7 +90,9 @@ export class Push {
         // A turn that ended on the plan's usage limit didn't finish: say so, and when it resets.
         title: event === 'waiting' ? `${title} needs you` : w.limit ? `${title} hit its usage limit` : `${title} finished`,
         // Needing you: what for ("Wants to run pnpm test"), so the lock screen is enough to decide.
-        body: `${w.project} · ${(event === 'waiting' && askLine(w.ask)) || w.limit || (w.agent ? name(w.agent) : 'Shell')}`,
+        // Otherwise what it said last (its answer, when it's done), as a chat's notification
+        // shows the message; the agent's name only where there's no transcript to read.
+        body: `${w.project} · ${(event === 'waiting' && askLine(w.ask)) || w.limit || lastSaid(w.reply, 240) || (w.agent ? name(w.agent) : 'Shell')}`,
         tag: w.uid,
         url: `/#${w.uid}`,
         badge: waiting,

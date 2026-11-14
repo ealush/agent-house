@@ -87,10 +87,20 @@ export class LastReplies {
     return (this.running ??= this.pass(targets).finally(() => (this.running = null)));
   }
 
-  private async pass(targets: ReplyTarget[]): Promise<boolean> {
+  /**
+   * These sessions read now, after any pass under way: one that just stopped working, whose
+   * answer its "finished" alert and Live Activity say, can't wait for the next pass. The others
+   * are left as they are.
+   */
+  async readNow(targets: ReplyTarget[]): Promise<void> {
+    await this.running?.catch(() => false);
+    await this.pass(targets, false);
+  }
+
+  private async pass(targets: ReplyTarget[], prune = true): Promise<boolean> {
     let changed = false;
     const live = new Set(targets.map((t) => t.uid));
-    for (const uid of [...this.known.keys()]) if (!live.has(uid)) this.known.delete(uid);
+    if (prune) for (const uid of [...this.known.keys()]) if (!live.has(uid)) this.known.delete(uid);
     for (const t of targets) {
       const s = await stat(t.file).catch(() => null);
       if (!s) continue;

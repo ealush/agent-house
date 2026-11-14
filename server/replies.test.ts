@@ -57,3 +57,17 @@ test('each session is read again only when its transcript grows', async () => {
   await replies.refresh([]);
   assert.equal(replies.peek('u1'), null, 'a session that is gone is forgotten');
 });
+
+test('a session that just finished is read at once, the others left as they are', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ah-replies-'));
+  const a = join(dir, 'a.jsonl');
+  const b = join(dir, 'b.jsonl');
+  await writeFile(a, said('user', 'fix it') + '\n');
+  await writeFile(b, said('assistant', 'Other.') + '\n');
+  const replies = new LastReplies();
+  await replies.refresh([{ uid: 'a', file: a, adapter: 'claude' }, { uid: 'b', file: b, adapter: 'claude' }]);
+  await appendFile(a, said('assistant', 'Fixed it.') + '\n');
+  await replies.readNow([{ uid: 'a', file: a, adapter: 'claude' }]);
+  assert.equal(replies.peek('a')?.text, 'Fixed it.', 'its answer, without waiting for the next pass');
+  assert.equal(replies.peek('b')?.text, 'Other.', 'a session not asked about is kept');
+});

@@ -314,6 +314,14 @@ export class Core {
       this.acceptTrust(windows);
       await this.queues.confirmDeliveries(windows);
       await this.queues.deliverDue(windows);
+      // One that just stopped working: its answer read now rather than on the next pass, so its
+      // "finished" alert and its Live Activity's last line are that answer, not what came before.
+      const stopped = targets.filter((t) => this.busyBefore.has(t.uid) && windows.find((w) => w.uid === t.uid)?.status !== 'busy');
+      if (stopped.length) {
+        await this.replies.readNow(stopped).catch(() => {});
+        for (const w of windows) if (stopped.some((t) => t.uid === w.uid)) w.reply = this.replies.peek(w.uid);
+      }
+      this.busyBefore = new Set(windows.filter((w) => w.status === 'busy').map((w) => w.uid));
       this.push.observe(windows, (id) => this.config.presets.find((p) => p.id === id)?.name ?? id);
       for (const w of windows) if (w.agent) w.recovery = this.recoveryOf(w);
       const history = (await buildHistory(this.registry, windows)).filter((h) => !this.hidden.has(h.ref));
@@ -838,6 +846,8 @@ export class Core {
 
   /** Each live session's last message (`WindowView.reply`). */
   private replies = new LastReplies();
+  /** Sessions working at the last tick: one that's stopped since has its answer read at once. */
+  private busyBefore = new Set<string>();
 
   private justSent(uid: string): boolean {
     return Date.now() - (this.sentAt.get(uid) ?? 0) < 5000;

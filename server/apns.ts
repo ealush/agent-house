@@ -105,12 +105,28 @@ const ACTIVITY_DETAIL_INTERVAL_MS = 15_000;
 /** A finished session stays on the Lock Screen this long, then leaves. */
 const ACTIVITY_LINGER_S = 15 * 60;
 
-/** What a session's Live Activity says now; `detail` is one short line. */
-export function activityState(w: Pick<WindowView, 'status' | 'detail' | 'limit' | 'ask' | 'answerable'> & Partial<Pick<WindowView, 'recovery' | 'limitResetsAt'>>, askLine: (ask: WindowView['ask']) => string, since: number): ActivityState {
+/**
+ * The last thing said in a session, as a list shows it under its title: the agent's words, or
+ * yours ("You: …") while it works on them and hasn't answered yet. One line, at most `max`.
+ */
+export function lastSaid(reply: WindowView['reply'], max = 120): string | null {
+  const flat = reply?.text.replace(/\s+/g, ' ').trim();
+  if (!flat) return null;
+  const said = reply!.role === 'user' ? `You: ${flat}` : flat;
+  return said.length > max ? said.slice(0, max - 1) + '…' : said;
+}
+
+/**
+ * What a session's Live Activity says now; `detail` is one short line. While it works, the
+ * last thing said rather than the tool it's running ("$ cd /tmp/…" says little about where a
+ * conversation is), and once it's done, its answer; the tool only where there's no transcript.
+ */
+export function activityState(w: Pick<WindowView, 'status' | 'detail' | 'limit' | 'ask' | 'answerable'> & Partial<Pick<WindowView, 'recovery' | 'limitResetsAt' | 'reply'>>, askLine: (ask: WindowView['ask']) => string, since: number): ActivityState {
   const line = (t: string | null | undefined) => {
     const first = t?.split('\n').map((l) => l.trim()).find(Boolean) ?? null;
     return first && first.length > 120 ? first.slice(0, 119) + '…' : first;
   };
+  const said = lastSaid(w.reply);
   // Recovery (server/recovery) says more than the screen: whether ah will carry on, and when.
   const r = w.status === 'busy' ? null : w.recovery;
   if (r?.state === 'failed') return { phase: 'failed', detail: line(r.evidence), answerable: false, since };
@@ -118,9 +134,9 @@ export function activityState(w: Pick<WindowView, 'status' | 'detail' | 'limit' 
   if (r?.state === 'needs_user') return { phase: 'waiting', detail: line(r.reason === 'credentials' ? 'Sign the agent in again' : r.evidence), answerable: false, since };
   if (r?.state === 'scheduled') return { phase: 'limited', detail: line(r.reason === 'rate_limit' ? `Going on after the reset (${r.evidence})` : `Trying again (${r.evidence})`), answerable: false, since, until: r.nextAttemptAt };
   if (w.limit && w.status !== 'busy') return { phase: 'limited', detail: line(w.limit), answerable: false, since, until: w.limitResetsAt ?? r?.resetsAt ?? null };
-  if (w.status === 'waiting') return { phase: 'waiting', detail: line(askLine(w.ask) || w.detail), answerable: w.answerable, since };
-  if (w.status === 'busy') return { phase: 'working', detail: line(w.detail), answerable: false, since };
-  return { phase: 'finished', detail: null, answerable: false, since };
+  if (w.status === 'waiting') return { phase: 'waiting', detail: line(askLine(w.ask) || said || w.detail), answerable: w.answerable, since };
+  if (w.status === 'busy') return { phase: 'working', detail: said ?? line(w.detail), answerable: false, since };
+  return { phase: 'finished', detail: w.reply?.role === 'assistant' ? said : null, answerable: false, since };
 }
 
 export class ApnsError extends Error {
