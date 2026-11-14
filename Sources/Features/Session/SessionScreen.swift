@@ -20,16 +20,12 @@ struct SessionScreen: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var panelWidth: CGFloat = 380
     @State private var previewURL: URL?
-    /// The screen's height and the question's: a long question scrolls inside a panel of at
-    /// most a little over half the screen, so the conversation and its bar stay in view.
-    @State private var screenHeight: CGFloat = 800
     @State private var screenWidth: CGFloat = 1000
     @State private var room: CGFloat = 800
     /// This screen put the sidebar away to make room for a panel, and brings it back after.
     @State private var hidSidebarForPanel = false
     /// The conversation's least width beside a panel; past it, the sidebar makes way.
     static let roomBesidePanel: CGFloat = 460
-    @State private var askHeight: CGFloat = 0
     /// How tall the bar under the transcript is: what opens out of the composer floats just
     /// above it.
     @State private var barHeight: CGFloat = 0
@@ -64,26 +60,12 @@ struct SessionScreen: View {
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { room = $0 }
                     .safeAreaBar(edge: .bottom, spacing: 0) {
                         if session.surface == .gui && session.hasGUI {
+                            // The question is the conversation's last row (`AskRow`), scrolling with
+                            // it: in a panel of its own here it scrolled apart from the page, and a
+                            // bar that tall washed the conversation under it out.
                             VStack(spacing: 0) {
-                                if session.waiting, session.row?.dto.ask != nil {
-                                    ScrollView {
-                                        AskPanelView(target: AskTarget(session: session), keyboard: AskKeyboard(scene: scene, key: session.key, leave: .composer(session.key)), onReply: { scene.requestFocus(.composer(session.key)) }, onUseTerminal: { scene.setSurface(.terminal, for: session.key) })
-                                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { askHeight = $0 }
-                                    }
-                                    .scrollBounceBehavior(.basedOnSize)
-                                    .scrollIndicators(.automatic)
-                                    // A drag puts the keyboard away: the choices come back into view.
-                                    .scrollDismissesKeyboard(.immediately)
-                                    .frame(height: min(askHeight, screenHeight * 0.55))
-                                    .padding(.horizontal, 12)
-                                    .padding(.bottom, 6)
-                                    // Rises out of the composer when the agent asks, and folds back
-                                    // into it once answered, rather than cutting in and out.
-                                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
-                                }
                                 ComposerView(session: session, composer: session.composer, scene: scene, room: room)
                             }
-                            .animation(reduceMotion ? nil : .snappy(duration: 0.32), value: session.waiting && session.row?.dto.ask != nil)
                             // Toasts sit above the composer (and the keyboard under it): a phone's,
                             // or the focused pane's on a big screen.
                             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
@@ -145,7 +127,6 @@ struct SessionScreen: View {
         // Under the keyboard and the bars too: the keyboard's rounded corners showed the
         // window's black over a terminal that stops at the keyboard.
         .background { theme.surface.ignoresSafeArea() }
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { screenHeight = $0 }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { screenWidth = $0 }
         // A panel beside the conversation in an iPad's portrait left it a column a few words
         // wide, with the sidebar beside it: the sidebar makes way while the panel is out.

@@ -196,6 +196,12 @@ struct TranscriptView: View {
                         }
                             .id("working-" + (blocks.last { if case .user = $0 { return true } else { return false } }?.id ?? ""))
                     }
+                    // What it asks you, last, just above the composer: part of the page.
+                    if AskRow.shows(session) {
+                        AskRow(session: session, scene: scene)
+                            .id("ask")
+                            .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                    }
                     // The very end, margin and all: scrolled to, nothing is left below it.
                     Color.clear.frame(height: 1).padding(.bottom, 11).id("bottom")
                 }
@@ -206,7 +212,17 @@ struct TranscriptView: View {
                 .frame(maxWidth: .infinity)
                 .animation(reduceMotion ? nil : .spring(duration: 0.35, bounce: 0.3), value: session.outgoing.map(\.id))
                 .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: session.working)
+                .animation(reduceMotion ? nil : .snappy(duration: 0.32), value: AskRow.shows(session))
                 .scrollTargetLayout()
+            }
+            // A question coming in at the end: its top in view (a long form starts at its first
+            // question; a short one is simply the end).
+            .onChange(of: AskRow.shows(session)) { _, shows in
+                guard shows, atBottom else { return }
+                Task {
+                    try? await Task.sleep(for: .milliseconds(150))
+                    withAnimation(reduceMotion ? nil : .snappy) { reader.scrollTo("ask", anchor: .top) }
+                }
             }
             // One rule for where the transcript sits, so nothing fights over it: it opens at the
             // newest message, a short one sits down by the composer, and when anything changes
@@ -835,12 +851,14 @@ private struct ToolGroupView: View {
     @State private var showAll = false
     @State private var unfolded = false
     @Environment(\.theme) private var theme
+    @Environment(\.rowWillResize) private var rowWillResize
 
     var body: some View {
         let summary = ToolGroupSummary(calls: calls, results: session.feed.results, awaitingCall: session.awaitingCall, turnLive: session.turnLive)
         VStack(alignment: .leading, spacing: 6) {
             if stepsHidden && !summary.asking {
                 Button {
+                    rowWillResize?()
                     withAnimation(.snappy) { unfolded.toggle() }
                 } label: {
                     HStack(spacing: 6) {
@@ -857,7 +875,10 @@ private struct ToolGroupView: View {
             } else {
                 let hidden = ToolGroupSummary.hiddenCount(total: calls.count, showAll: showAll)
                 if hidden > 0 {
-                    Button("\(hidden) earlier step\(hidden == 1 ? "" : "s")") { withAnimation(.snappy) { showAll = true } }
+                    Button("\(hidden) earlier step\(hidden == 1 ? "" : "s")") {
+                        rowWillResize?()
+                        withAnimation(.snappy) { showAll = true }
+                    }
                         .font(.ah(.footnote))
                         .buttonStyle(.plain)
                         .hoverEffect(.highlight)
@@ -884,6 +905,7 @@ struct ToolRowView: View {
     let view: ToolPresentation
     @State private var open: Bool
     @Environment(\.theme) private var theme
+    @Environment(\.rowWillResize) private var rowWillResize
 
     init(view: ToolPresentation) {
         self.view = view
@@ -895,6 +917,7 @@ struct ToolRowView: View {
         // edge, beside the 16-point line of text, used to miss.
         VStack(alignment: .leading, spacing: 0) {
             Button {
+                rowWillResize?()
                 withAnimation(.snappy) { open.toggle() }
             } label: {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -926,6 +949,9 @@ struct ToolRowView: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
+        // The details fold up inside the card: unclipped, they slid up over its header and out
+        // past its edge as it closed.
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         // ah's ToolRow: a raised card with a hairline; what waits on you is pink-edged.
         .background(view.status == .awaiting ? theme.accentTint : theme.raised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(view.status == .awaiting ? theme.accentLine : theme.line, lineWidth: 1))
@@ -1392,4 +1418,12 @@ enum TranscriptEnd {
         let maxOffset = max(contentHeight - room - insets.top, -insets.top)
         return (maxOffset - offset).rounded()
     }
+}
+
+extension EnvironmentValues {
+    /// Set by the UIKit transcript for each row: one about to fold or unfold (in `.snappy`) says
+    /// so, and the rows around it and the view's place move in the same animation. Otherwise
+    /// the row's new height arrived at once and everything around it jumped while it was still
+    /// folding.
+    @Entry var rowWillResize: (@MainActor @Sendable () -> Void)? = nil
 }

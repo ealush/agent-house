@@ -42,6 +42,8 @@ enum TranscriptItem: Hashable, Sendable {
     case block(String)
     case outgoing(Int)
     case working
+    /// What a waiting session asks you (`AskRow`), last.
+    case ask
 
     var blockID: String {
         if case .block(let id) = self { id } else { "" }
@@ -69,12 +71,15 @@ struct TranscriptContent: Equatable {
     var linked: String?
     /// The host's copy is in: near the top, the page before can be read.
     var live = false
+    /// It's asking you something: the question is the last row.
+    var ask = false
 
     var items: [TranscriptItem] {
         var items: [TranscriptItem] = hasOlder ? [.older] : []
         items += blocks.map { .block($0.id) }
         items += outgoing.map { .outgoing($0.id) }
         if working != nil { items.append(.working) }
+        if ask { items.append(.ask) }
         return items
     }
 }
@@ -125,7 +130,8 @@ struct TranscriptCollection: View {
             stepsHidden: scene.app.preferences.stepsHidden,
             epoch: session.feed.epoch,
             linked: scroll.linked,
-            live: session.feed.status == .live
+            live: session.feed.status == .live,
+            ask: AskRow.shows(session)
         )
         ZStack {
             TranscriptCollectionHost(session: session, scene: scene, scroll: scroll, content: content, insets: insets, theme: theme, hostFiles: hostFiles)
@@ -283,8 +289,17 @@ private final class TranscriptCollectionView: UICollectionView {
     var afterLayout: (() -> Void)?
     /// Laying out: what moves the view meanwhile is the layout, not anyone scrolling.
     private(set) var laying = false
+    /// The next layout moves in this animation (a row folding, which SwiftUI animates in it).
+    var animatesNextLayout: Animation?
 
     override func layoutSubviews() {
+        guard let animation = animatesNextLayout else { return lay() }
+        animatesNextLayout = nil
+        // The rows' frames and the view's place, both set in here, move with the row.
+        UIView.animate(animation) { self.lay() }
+    }
+
+    private func lay() {
         laying = true
         super.layoutSubviews()
         laying = false
@@ -332,6 +347,8 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
     /// The row being read, grown at its top by a page that carried its turn on, and how tall it
     /// was: once it's measured again, what was read stays where it was.
     private var growing: (item: TranscriptItem, height: CGFloat)?
+    /// A question just came in, not yet measured.
+    private var askArrived = false
 
     init(session: SessionModel, scene: SceneModel, scroll: TranscriptScroll) {
         self.session = session
@@ -361,6 +378,8 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
         let registration = UICollectionView.CellRegistration<TranscriptCell, TranscriptItem> { [weak self] cell, _, item in
             guard let self else { return }
             cell.item = item
+            // A row growing or folding in an animation is drawn inside its cell as it goes.
+            cell.clipsToBounds = true
             cell.contentConfiguration = UIHostingConfiguration { self.row(item, in: cell) }.margins(.all, 0)
             cell.backgroundConfiguration = .clear()
         }
@@ -423,17 +442,23 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
                 }
             case .working:
                 if let working = content.working {
-                    WorkingRow(detail: working.detail, queued: working.queued, hardwareKeyboard: working.hardwareKeyboard, steps: working.steps) { [session] in
+                    WorkingRow(detail: working.detail, queued: working.queued, hardwareKeyboard: working.hardwareKeyboard, steps: working.steps) { [weak self, session] in
+                        self?.willResize(.working)
                         withAnimation(.snappy) { session.stepsShown.toggle() }
                     }
                     // A new turn (the newest message you sent) starts the clock again.
                     .id("working-" + (content.blocks.last { if case .user = $0 { return true } else { return false } }?.id ?? ""))
                     .modifier(Arrival(style: .rise, active: arrives, reduceMotion: reduceMotion))
                 }
+            case .ask:
+                // Follows the session itself (what it asks, what's been picked), not the content.
+                AskRow(session: session, scene: scene)
+                    .modifier(Arrival(style: .rise, active: arrives, reduceMotion: reduceMotion))
             }
         }
         .environment(\.theme, theme)
         .environment(\.hostFiles, hostFiles)
+        .environment(\.rowWillResize) { [weak self] in self?.willResize(item) }
         .tint(theme.accent)
         .font(.ah(.body))
         // As tall as it is, whatever the cell's height: what it measures is the row's height.
@@ -512,6 +537,13 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
             for item in new.outgoing where !oldItems.contains(.outgoing(item.id)) { arriving.insert(.outgoing(item.id)) }
         }
         if new.working != nil, !oldItems.contains(.working), !old.outgoing.isEmpty || new.outgoing.count > old.outgoing.count { arriving.insert(.working) }
+        // A question coming in rises in; once it's measured, a long one shows its top.
+        if new.ask, !old.ask {
+            if !old.blocks.isEmpty { arriving.insert(.ask) }
+            askArrived = true
+        }
+        // Answered while you read it: back to the end, where the conversation goes on.
+        if !new.ask, case .row(.ask, _) = anchor { anchor = .end }
         arriving.formIntersection(snapshot.itemIdentifiers)
 
         let more = new.items.count > old.items.count || new.blocks.last != old.blocks.last
@@ -537,9 +569,27 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
         place()
     }
 
+    /// A row about to fold or unfold in `.snappy`, and when it said so.
+    private var resizing: (item: TranscriptItem, at: Date)?
+
+    private func willResize(_ item: TranscriptItem) {
+        resizing = (item, .now)
+    }
+
     /// A row drew at a new height: laid out again at it before the frame is shown.
     private func measured(_ item: TranscriptItem, _ height: CGFloat) {
         guard let layout = collectionView.collectionViewLayout as? TranscriptLayout, layout.set(height, for: item) else { return }
+        // Folding or unfolding as you asked: what's around it moves with it, in its animation.
+        if let resizing, resizing.item == item {
+            self.resizing = nil
+            if Date.now.timeIntervalSince(resizing.at) < 0.5, !reduceMotion { collectionView.animatesNextLayout = .snappy }
+        }
+        // A question taller than the room, just in at the end: its first question in view, not
+        // its last button.
+        if item == .ask, askArrived {
+            askArrived = false
+            if anchor == .end, height > placement.room - Self.slack { anchor = .row(.ask, 8) }
+        }
         collectionView.setNeedsLayout()
     }
 

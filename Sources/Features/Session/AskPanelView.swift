@@ -43,6 +43,8 @@ struct AskTarget {
     let api: APIClient
     let hub: HubStore
     let notify: (String, Bool) -> Void
+    /// Where a session keeps its form, so a form drawn again keeps what's been picked.
+    var forms: AskFormStore?
 
     init(row: SessionRow, hub: HubStore, notify: @escaping (String, Bool) -> Void) {
         self.row = row
@@ -53,6 +55,7 @@ struct AskTarget {
 
     init(session: SessionModel) {
         self.init(row: session.row!, hub: session.hub) { text, error in session.notify(text, tone: error ? .error : .info) }
+        forms = session.askForms
     }
 
     private func run(_ what: String, _ body: () async throws -> Void) async {
@@ -151,10 +154,11 @@ struct AskPanelView: View {
                     }
                 }
                 if ask.kind == .choice, !questions.isEmpty {
-                    QuestionFormView(form: QuestionForm(questions: questions), progress: nil, keys: keys, leave: leave, chat: { await target.chatAbout(question: nil) }) { answers in
+                    let id = questions.map(\.question).joined(separator: "\n")
+                    QuestionFormView(form: QuestionForm(questions: questions), progress: nil, keys: keys, leave: leave, chat: { await target.chatAbout(question: nil) }, kept: target.forms.map { ($0, id) }) { answers in
                         await target.answerQuestions(answers)
                     }
-                    .id(questions.map(\.question).joined(separator: "\n"))
+                    .id(id)
                 } else if let dialog {
                     // Read off the screen, only the highlighted option's preview is known; the
                     // others still answer as a preview question does.
@@ -165,7 +169,8 @@ struct AskPanelView: View {
                         progress: dialog.total > 1 ? "Question \(min(dialog.answered + 1, dialog.total)) of \(dialog.total)" : nil,
                         keys: keys,
                         leave: leave,
-                        chat: { await target.chatAbout(question: dialog.question) }
+                        chat: { await target.chatAbout(question: dialog.question) },
+                        kept: target.forms.map { ($0, "dialog\n" + dialog.question) }
                     ) { answers in
                         if let answer = answers.first { await target.answerDialog(question: dialog.question, answer: answer) }
                     }
@@ -650,8 +655,11 @@ struct QuestionFormView: View {
     @FocusState private var noting: Int?
     @State private var chatting = false
 
-    init(form: QuestionForm, progress: String?, keys: AskKeyInput, leave: @escaping () -> Void = {}, chat: (() async -> Void)? = nil, submit: @escaping ([QuestionAnswer]) async -> Void) {
-        _model = State(initialValue: QuestionFormModel(form: form, submit: submit))
+    /// `kept`: the session's store and this form's identity there, so the form drawn again (a
+    /// transcript row scrolled back to) has what was picked.
+    init(form: QuestionForm, progress: String?, keys: AskKeyInput, leave: @escaping () -> Void = {}, chat: (() async -> Void)? = nil, kept: (AskFormStore, String)? = nil, submit: @escaping ([QuestionAnswer]) async -> Void) {
+        let make = { QuestionFormModel(form: form, submit: submit) }
+        _model = State(initialValue: kept.map { $0.0.model($0.1, make: make) } ?? make())
         self.progress = progress
         self.keys = keys
         self.leave = leave
@@ -879,6 +887,21 @@ private struct AskActionLabel: LabelStyle {
         HStack(spacing: 10) {
             configuration.icon.frame(width: AskSecondaryAction.glyphWidth)
             configuration.title
+        }
+    }
+}
+
+/// What a waiting session asks, as the conversation's last row, just above the composer: it
+/// scrolls with the page like the rest of the conversation.
+struct AskRow: View {
+    let session: SessionModel
+    let scene: SceneModel
+
+    static func shows(_ session: SessionModel) -> Bool { session.waiting && session.row?.dto.ask != nil }
+
+    var body: some View {
+        if Self.shows(session) {
+            AskPanelView(target: AskTarget(session: session), keyboard: AskKeyboard(scene: scene, key: session.key, leave: .composer(session.key)), onReply: { scene.requestFocus(.composer(session.key)) }, onUseTerminal: { scene.setSurface(.terminal, for: session.key) })
         }
     }
 }

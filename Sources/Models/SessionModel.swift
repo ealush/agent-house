@@ -144,6 +144,9 @@ final class SessionModel: Identifiable {
     /// to hide them again.
     var stepsShown = false
 
+    /// The question form it's showing, with what's been picked so far (`AskFormStore`).
+    @ObservationIgnored let askForms = AskFormStore()
+
     /// The blocks focus mode shows (see `FeedProjection.focused`), once per change.
     var focusedBlocks: [FeedBlock] {
         let all = blocks, awaiting = awaitingCall, live = turnLive
