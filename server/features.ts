@@ -29,6 +29,8 @@ export const FEATURES: Record<string, number> = {
   usage: 1,
   /** PUT/DELETE /api/push/apns/activity: Live Activity updates over APNs; phases incl. starting/failed, `until`, `rotated` tokens. */
   activityPush: 1,
+  /** Sessions cut off by a tmux server stop, a host restart or a closed window: history's `interrupted`, state `interruptions`, /api/interruptions (server/interruptions). */
+  interruptions: 1,
 };
 
 export function features(): Record<string, number> {

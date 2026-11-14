@@ -41,6 +41,7 @@ TypeScript sources of truth are named beside each section.
 | `recovery` | 1 | windows' and history's `recovery`, `/api/recovery`, `/api/sessions/:uid/recovery` |
 | `usage` | 1 | `/api/usage`, `/api/usage/limits`, `/api/usage/export`, `/api/sessions/:uid/usage` |
 | `activityPush` | 1 | `PUT /api/push/apns/activity`, `DELETE /api/push/apns/activity/:uid` |
+| `interruptions` | 1 | history's `interrupted`, state `interruptions`, `/api/interruptions/*`, `POST /api/sessions/:uid/restore` |
 
 ## CND-1 Uploads (`uploads` v2)
 
@@ -459,7 +460,9 @@ last attempt's message isn't still queued. Then it sends **one** continuation
 (`recovery.prompt`, "Continue where you left off.") through the normal send path,
 queued under an id naming the attempt, which resumes an ended session first: the same
 conversation, the same launch choices. If work is already queued, it only resumes and
-lets the queue go in. An agent that died in a live window is restarted there with its
+lets the queue go in. A session cut off by a tmux stop or a host restart (CND-8) is
+restored instead: its note, saying what happened and where it stopped, takes the place of
+the generic continuation. An agent that died in a live window is restarted there with its
 own resume command, only when the pane is at a shell prompt, and continued once it's up.
 **It never changes model, provider or permissions.** Attempts back off exponentially with
 jitter, capped (`maxBackoffSeconds`), and at most `maxActionsPerMinute` (3) go out across
@@ -581,7 +584,7 @@ survive an ah restart.
   until?: number | null }  // limited: the reset, or when ah will carry on
 ```
 
-`starting`, `failed` and `until` are newer than the first app build: a client that
+`starting`, `failed`, `interrupted` and `until` are newer than the first app build: a client that
 doesn't know a phase shows its name, and ignores `until`.
 
 | The session | Phase | Ends it |
@@ -595,9 +598,77 @@ doesn't know a phase shows its name, and ignores `until`.
 | credentials (`needs_user`) | `waiting`, "Sign the agent in again" | |
 | recovery gave up (`failed`) | `failed`, the evidence | yes |
 | done (idle, attention), or gone | `finished` | yes |
+| gone in a crash or restart (CND-8) | `interrupted`, what cut it off | yes |
 
 A change of phase goes out at once (priority 10); a new line of what it's doing at most
 every 15 s at priority 5 (Apple budgets these). An activity starts following only once
 the message reached the session (it was working), lingers a while after it ends, and is
 dropped when Apple says its token is gone or after Apple's eight hours.
+
+## CND-8 Interrupted sessions (`interruptions` v1)
+
+Source: `server/interruptions.ts`, fed by the registry's end sweep and `serverSeen()` in
+`server/tmux.ts`. The case it's built for: on 14 November 2026 the tmux server died and
+seven sessions ended in the same second, recorded as plain `ended`, indistinguishable from
+sessions you'd finished; two were mid-turn.
+
+**What counts.** A session you didn't end (Terminate) and that wasn't moved, with a
+conversation to resume, is *interrupted* when:
+
+| `cause` | Evidence | Which sessions |
+|---|---|---|
+| `tmux_server` | tmux answers "no server running", or a server with another pid than ah last listed (the old one died, a new one started). At ah's start: a pid other than the one ah saved (`tmux-server.json` in ah's state dir, at most a minute old while ah runs) | every session that was open in it, working or not |
+| `host_restart` | at ah's start, the host booted after ah last ticked (else after the session's last activity) | every session that was open |
+| `window` | its window closed while the agent was working or waiting | that one |
+
+A window that closes while its agent is idle is someone closing it: an end, as before.
+Shell sessions and sessions with no conversation yet are never interrupted. ah's own
+restarts aren't interruptions: tmux outlives ah, so its windows are still there.
+
+**Where you see it.** One notification per incident ("7 sessions were interrupted · The
+tmux server stopped; 2 were working. Restore them in ah."), `ah restore`, and every
+client through the state (`interruptions`, history's `interrupted`, below). A Live Activity following an interrupted
+session ends as `interrupted` with what cut it off (CND-7).
+
+**Restoring** is one step for one or all. Mid-turn ones go first, one after another, each
+resumed in its own conversation with its own launch choices (the resume path; never
+another model, provider or permission mode). Prompts you'd queued stay queued, in order.
+A mid-turn one is first sent a note, queued ahead of your prompts:
+
+> [ah] This session was interrupted at Sat Nov 14 2026 15:38:05 GMT+0200: the tmux server
+> it ran in stopped while you were working, and ah has restarted you in the same
+> conversation. The last step recorded: you called Bash ("npm test"). Check the state of
+> whatever you were in the middle of (files being edited, commands or servers that were
+> running) before you carry on from where you stopped.
+
+The last step is the newest assistant entry in the transcript's last 256 KB: its last
+tool call with its main argument (command, file, path, pattern, URL, query), else the start
+of its text, on one line and clipped. One that had finished is resumed without a message.
+`note: false` restores without the note. Restoring twice, or concurrently, restores once;
+any way back (Resume, sending to it, recovery) clears the interruption. Dismissing clears
+it and drops an unsent note, leaving your prompts. With automatic recovery on (CND-5), a
+mid-turn session's recovery attempt goes through the same restore (the note under the
+attempt's id); restoring it yourself settles its recovery.
+
+### Shapes and routes
+
+```ts
+// history[].interrupted (optional; null when it wasn't)
+interrupted: { cause: 'tmux_server' | 'host_restart' | 'window', at, lastSeenAt, incident, lastStatus, midTurn } | null
+// state.interruptions (always present on hosts with the feature)
+interruptions: { count, midTurn, incidents: [{ id, cause, at, count, midTurn }] }
+```
+
+`at` is when ah noticed, `lastSeenAt` when it last saw it running (they differ after a
+restart: it went down in between). Sessions cut off together share an `incident`.
+
+| Route | Body | Answer |
+|---|---|---|
+| `GET /api/interruptions` | | `{ interruptions: [{ uid, title, harness, cwd, queued, ...interrupted }], count, midTurn, incidents }`, mid-turn first |
+| `POST /api/interruptions/restore` | `{ uids?: string[] } \| { incident } \| { all: true }`, `note?: false` | `{ restored: [{ uid, windowId, resumed, noted, midTurn }], failed: [{ uid, error, code }] }` |
+| `POST /api/interruptions/dismiss` | `{ uids? } \| { incident } \| { all: true }` | `{ dismissed }` |
+| `POST /api/sessions/:uid/restore` | `{ note?: false }` | the restored entry (201 when resumed); 409 `not_interrupted`, 404 `not_found` |
+
+A body with no target is refused (400 `invalid_target`): everything happens only when
+you say `all`. Restores and dismissals are in the audit log.
 

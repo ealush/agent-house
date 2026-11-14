@@ -255,8 +255,10 @@ export class Registry {
       tmux: f.tmux,
       meta: { ...prev?.meta, ...f.meta },
     });
-    // Running again: an earlier "you ended it" no longer says anything about this run.
+    // Running again: an earlier "you ended it" or "it was interrupted" (server/interruptions)
+    // no longer says anything about this run.
     delete this.records.get(id)!.meta['ah.endedBy'];
+    delete this.records.get(id)!.meta['ah.interrupted'];
     this.dirty = true;
     this.inheritQueue(id);
     this.flush();

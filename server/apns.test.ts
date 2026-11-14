@@ -312,3 +312,16 @@ test('a rotated activity token carries the activity on; a new activity starts ov
   apns.follow([view('u1', 'idle')], askLine);
   assert.equal(sent.length, 0);
 });
+
+test('a session cut off by a crash ends its activity as interrupted, saying what happened', async () => {
+  const sent: any[] = [];
+  const transport = async (_o: string, _p: string, _h: Record<string, string>, body: string) => (sent.push(JSON.parse(body)), { status: 200 });
+  const apns = new Apns(config, { file: join(dir, 'act-interrupted.json'), transport });
+  apns.goneAs = (uid) => (uid === 'u1' ? { phase: 'interrupted', detail: 'The tmux server stopped. Restore it in ah.' } : null);
+  apns.registerActivity({ uid: 'u1', token: ACT, environment: 'sandbox', sessionId: 's1' });
+  apns.registerActivity({ uid: 'u2', token: 'f'.repeat(64), environment: 'sandbox', sessionId: 's1' });
+  apns.follow([view('u1', 'busy', { detail: 'Reading' }), view('u2', 'busy')], askLine);
+  apns.follow([], askLine);
+  const ends = sent.filter((s) => s.aps.event === 'end').map((s) => s.aps['content-state']);
+  assert.deepEqual(ends.map((c) => [c.phase, c.detail]), [['interrupted', 'The tmux server stopped. Restore it in ah.'], ['finished', null]]);
+});

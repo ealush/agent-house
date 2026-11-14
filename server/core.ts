@@ -10,6 +10,7 @@ import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
+import type { InterruptionsState } from './interruptions.ts';
 import { buildWindows, buildHistory, adoptTranscripts, footerMode, isQuestionDialog, type WindowView, type HistoryItem } from './sessions.ts';
 import { Registry, forkMetaOf, type ForkMeta, type SessionRecord } from './registry.ts';
 import { copyTranscript, forkUnavailableReason, removeCopiedTranscript, ForkError } from './fork.ts';
@@ -62,6 +63,8 @@ export type State = {
   features: Record<string, number>;
   /** Scheduled work (server/jobs): what's next, what's running, what needs your decision. */
   jobs?: JobsState | null;
+  /** Sessions cut off mid-flight, to restore (server/interruptions). */
+  interruptions?: InterruptionsState | null;
 };
 
 /** `key` is the client's session key (a uid, or "<host>/<uid>" for a peer's session). */
@@ -180,6 +183,7 @@ export class Core {
   reviewState: () => ReviewState | null = () => null;
   /** The scheduler's summary for the stream; main.ts wires it. */
   jobsState: () => JobsState | null = () => null;
+  interruptionsState: () => InterruptionsState | null = () => null;
   /** A transcript ah just made as a copy (a fork): usage counts only what's written to it from now. */
   onCopy: (file: string) => void = () => {};
   /** Each session's recovery, if any (server/recovery); main.ts wires the engine. */
@@ -324,6 +328,7 @@ export class Core {
         review: this.reviewState(),
         features: features(),
         jobs: this.jobsState(),
+        interruptions: this.interruptionsState(),
       };
       this.state = state;
       // Subscribers get only the top-level fields that changed: history and the
@@ -876,6 +881,11 @@ export class Core {
     const items = this.queues.move(uid, itemId, to);
     if (!items) throw new CoreError(404, 'that message is no longer queued');
     return items;
+  }
+
+  /** Put an item first in line (server/interruptions: the note goes before your prompts). */
+  queueFirst(uid: string, item: QueueItem) {
+    this.queues.requeue(uid, item);
   }
 
   /** Drop one queued item or the whole queue. */

@@ -90,7 +90,17 @@ const WINDOW_FIELDS = [
   '@ah-model',
   '@ah-detail',
   '@ah-ask',
+  // The server's own pid (any row says it): a new one means the old server died.
+  'pid',
 ];
+
+/**
+ * The tmux server as ah last listed it (server/interruptions.ts). `gone`: no server
+ * answered; `pid` 0 when never seen. An empty server still has a pid.
+ */
+export type ServerSeen = { pid: number; gone: boolean; empty: boolean };
+let server: ServerSeen = { pid: 0, gone: false, empty: false };
+export const serverSeen = (): ServerSeen => ({ ...server });
 
 export async function listWindows(): Promise<RawWindow[]> {
   let out: string;
@@ -98,13 +108,21 @@ export async function listWindows(): Promise<RawWindow[]> {
     // list-windows reports the active pane's fields for pane_* formats.
     out = await tmux('list-windows', '-a', '-F', WINDOW_FIELDS.map((f) => `#{${f}}`).join(SEP));
   } catch (err) {
-    if (isNoServer(err)) return [];
-    throw err;
+    if (!isNoServer(err)) throw err;
+    if (!/no current target/.test(String((err as { stderr?: string }).stderr ?? err))) server = { pid: 0, gone: true, empty: false };
+    else if (!server.empty || !server.pid) {
+      // Alive but empty: its pid once (it may be a new server), then while it stays empty, as is.
+      const pid = Number((await tmux('display-message', '-p', '#{pid}').catch(() => '')).trim()) || 0;
+      server = { pid, gone: !pid, empty: !!pid };
+    }
+    return [];
   }
   const rows: RawWindow[] = [];
+  let pid = 0;
   for (const line of out.split('\n')) {
     if (!line) continue;
     const f = fields(line);
+    pid ||= Number(f[24]) || 0;
     if (f[0].startsWith(VIEWER_PREFIX)) continue;
     rows.push({
       session: f[0],
@@ -133,6 +151,7 @@ export async function listWindows(): Promise<RawWindow[]> {
       hookAsk: f[23] ?? '',
     });
   }
+  if (pid) server = { pid, gone: false, empty: false };
   return rows;
 }
 

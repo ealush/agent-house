@@ -70,11 +70,12 @@ export type ApnsActivity = {
 
 /**
  * The app's `SessionAttributes.ContentState`: these keys and values decode on the device as-is.
- * `starting` (resuming, or picking up after a failure) and `failed` (recovery gave up) are newer
- * phases, and `until` a newer optional key: a client that doesn't know them shows the phase name.
+ * `starting` (resuming, or picking up after a failure), `failed` (recovery gave up) and
+ * `interrupted` (gone in a crash or restart, server/interruptions) are newer phases, and `until` a
+ * newer optional key: a client that doesn't know them shows the phase name.
  */
 export type ActivityState = {
-  phase: 'working' | 'waiting' | 'finished' | 'limited' | 'starting' | 'failed';
+  phase: 'working' | 'waiting' | 'finished' | 'limited' | 'starting' | 'failed' | 'interrupted';
   /** What it's doing, what it asks, or when its limit resets; null on a private preview. */
   detail: string | null;
   answerable: boolean;
@@ -307,6 +308,9 @@ export class Apns {
    * at most every 15 s at low priority (Apple budgets these). A session that stops working
    * ends its activity, which lingers a while showing how it finished.
    */
+  /** How a session that's gone ended, when it didn't just finish (server/interruptions). */
+  goneAs: (uid: string) => Pick<ActivityState, 'phase' | 'detail'> | null = () => null;
+
   follow(windows: WindowView[], askLine: (ask: WindowView['ask']) => string) {
     if (!this.enabled || !this.activities.size) return;
     const byUid = new Map(windows.map((w) => [w.uid, w]));
@@ -315,8 +319,9 @@ export class Apns {
     for (const a of [...this.activities.values()]) {
       const w = byUid.get(a.uid);
       if (t - a.at > ACTIVITY_MAX_AGE_MS || (!w && a.started)) {
-        // Too old for Apple, or the session is gone: end it if it was showing anything.
-        if (a.sent) void this.deliverActivity(a, { ...a.sent, phase: 'finished', detail: null, answerable: false }, 'end');
+        // Too old for Apple, or the session is gone: end it if it was showing anything, saying
+        // so when it didn't finish but was cut off.
+        if (a.sent) void this.deliverActivity(a, { ...a.sent, phase: 'finished', detail: null, answerable: false, until: null, ...(w ? null : this.goneAs(a.uid)) }, 'end');
         this.activities.delete(a.token);
         changed = true;
         continue;

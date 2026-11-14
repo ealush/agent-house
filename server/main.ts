@@ -64,6 +64,7 @@ import { Scheduler } from './jobs/scheduler.ts';
 import { jobsApi } from './jobs/api.ts';
 import { linesAfter, readAfter } from './jobs/transcript.ts';
 import { RecoveryEngine, RecoveryError } from './recovery/engine.ts';
+import { InterruptionError, Interruptions, interruptedOf, shortWhy } from './interruptions.ts';
 import { UsageService } from './usage/service.ts';
 import { fileContains } from './portable/extract.ts';
 import { discover } from './discovery.ts';
@@ -289,6 +290,28 @@ const scheduler = new Scheduler(getDb(), {
 });
 core.jobsState = () => scheduler.state();
 
+// Sessions cut off by a tmux server stop, a host restart or a closed window
+// (server/interruptions): noticed, said where you'll see it, restored in one step.
+const interruptions = new Interruptions({
+  record: (uid) => core.registry.get(uid),
+  records: () => core.registry.all(),
+  setMeta: (uid, key, value) => core.registry.setMeta(uid, key, value),
+  server: () => t.serverSeen(),
+  file: join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah', 'tmux-server.json'),
+  queue: { items: (uid) => core.queue(uid), first: (uid, item) => core.queueFirst(uid, item), clear: (uid, id) => core.clearQueue(uid, id) },
+  resume: (uid) => core.resume(uid),
+  transcript: (uid) => transcriptOf(uid),
+  settle: (uid, why) => recovery.settle(uid, why),
+  alert: (p) => core.push.alert(p),
+  changed: () => void core.tick().catch(() => {}),
+});
+core.interruptionsState = () => interruptions.state();
+apns.goneAs = (uid) => {
+  const r = core.registry.get(uid);
+  const i = r ? interruptedOf(r) : null;
+  return i ? { phase: 'interrupted', detail: shortWhy(i) } : null;
+};
+
 // Keeping agents going through temporary failures (server/recovery): evidence from
 // transcripts, screens and sessions that died mid-turn; actions only when it's on.
 const recovery = new RecoveryEngine(getDb(), {
@@ -300,8 +323,10 @@ const recovery = new RecoveryEngine(getDb(), {
     const s = await stat(file).catch(() => null);
     return !!s && Date.now() - s.mtimeMs < seconds * 1000;
   },
-  send: (uid, text, id) => core.send(uid, text, true, undefined, { id, remember: false }),
-  resume: async (uid) => void (await core.resume(uid)),
+  // An interrupted session (server/interruptions) comes back through its restore: told first
+  // what happened (under the attempt's id), its queued prompts after.
+  send: async (uid, text, id) => (interruptions.pending(uid) ? { outcome: (await interruptions.restore(uid, { id, by: 'recovery' })).noted ? 'queued' : 'resumed' } : core.send(uid, text, true, undefined, { id, remember: false })),
+  resume: async (uid) => void (interruptions.pending(uid) ? await interruptions.restore(uid, { by: 'recovery' }) : await core.resume(uid)),
   restartInPlace: async (uid) => {
     const rec = core.registry.get(uid);
     const w = (await core.tick()).windows.find((x) => x.uid === uid);
@@ -331,7 +356,11 @@ const usage = new UsageService(getDb(), {
   },
 });
 core.onCopy = (file) => void usage.copied(file).catch(() => {});
-core.registry.onEnd = (r, last) => recovery.sessionEnded(r, last);
+core.registry.onEnd = (r, last) => {
+  interruptions.ended(r, last);
+  recovery.sessionEnded(r, last);
+};
+core.afterTick.add(() => interruptions.tick());
 core.afterTick.add((state) => recovery.tick(state.windows));
 core.afterTick.add((state) => scheduler.tick(state.windows));
 
@@ -555,6 +584,37 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   }
 
   // Recovery (server/recovery): what went wrong in a session, what ah will do, and your controls.
+  // Interrupted sessions (server/interruptions): the list, restore one or all, dismiss.
+  if (route('GET', /^\/api\/interruptions$/)) return send(res, 200, { interruptions: interruptions.list(), ...interruptions.state() });
+  if ((m = route('POST', /^\/api\/interruptions\/(restore|dismiss)$/))) {
+    const body = await readJson(req);
+    const action = m[1];
+    const uids = body.uids === undefined ? undefined : Array.isArray(body.uids) && body.uids.length <= 200 && body.uids.every((u: unknown) => typeof u === 'string' && /^[\w-]{1,40}$/.test(u)) ? (body.uids as string[]) : null;
+    if (uids === null) throw new HttpError(400, 'uids must be a list of session ids', 'invalid_uids');
+    const incident = body.incident === undefined ? undefined : typeof body.incident === 'string' && /^[\w-]{1,80}$/.test(body.incident) ? body.incident : null;
+    if (incident === null) throw new HttpError(400, 'incident must be an incident id', 'invalid_incident');
+    // Everything at once only when you say so: no filter and no `all` is a mistake, not "all".
+    if (!uids && !incident && body.all !== true) throw new HttpError(400, 'name uids, an incident, or all: true', 'invalid_target');
+    if (action === 'dismiss') {
+      const dismissed = interruptions.dismiss({ uids, incident });
+      audit(req, 'interruptions.dismiss', { uids: uids?.length ?? null, incident: incident ?? null, dismissed });
+      return send(res, 200, { dismissed });
+    }
+    const out = await interruptions.restoreAll({ uids, incident, note: body.note !== false });
+    audit(req, 'interruptions.restore', { restored: out.restored.map((r) => r.uid), failed: out.failed.map((f) => f.uid) });
+    return send(res, 200, out);
+  }
+  if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/restore$/))) {
+    const body = await readJson(req);
+    try {
+      const out = await interruptions.restore(m[1], { note: body.note !== false, by: 'you' });
+      audit(req, 'session.restore', { uid: m[1], window: out.windowId, noted: out.noted });
+      return send(res, out.resumed ? 201 : 200, out);
+    } catch (err) {
+      if (err instanceof InterruptionError) throw new HttpError(err.status, err.message, err.code);
+      throw err;
+    }
+  }
   if (route('GET', /^\/api\/recovery$/)) return send(res, 200, { recoveries: await recovery.list(), config: { auto: config.recovery.auto, maxAttempts: config.recovery.maxAttempts } });
   if ((m = route('GET', /^\/api\/sessions\/([\w-]{1,40})\/recovery$/))) return send(res, 200, await recovery.get(m[1]).catch(recoveryError));
   if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/recovery$/))) {

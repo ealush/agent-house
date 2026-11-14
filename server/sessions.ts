@@ -5,6 +5,7 @@ import type { RecoveryView } from './recovery/engine.ts';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
+import { interruptedOf, type Interrupted } from './interruptions.ts';
 import { capturePane, listWindows, setWindowOption, type RawWindow } from './tmux.ts';
 import { Registry, forkMetaOf, type SessionRecord } from './registry.ts';
 import { procTree, withArgv, descendants } from './procs.ts';
@@ -144,6 +145,8 @@ export type HistoryItem = {
   moved?: { host: string; uid: string; at: number } | null;
   /** A crash or failure ah is (or could be) recovering from (server/recovery). */
   recovery?: RecoveryView | null;
+  /** It didn't end, it was cut off: the tmux server stopped, the host restarted, its window closed mid-turn (server/interruptions). */
+  interrupted?: Interrupted | null;
 };
 
 const HOME = homedir();
@@ -807,6 +810,7 @@ function fromRecord(r: SessionRecord, t?: Transcript): HistoryItem {
     fork: fork ? { parentTitle: fork.rootTitle } : null,
     continued: continuedOf(r),
     moved: movedOf(r),
+    interrupted: interruptedOf(r),
   };
 }
 

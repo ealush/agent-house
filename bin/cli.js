@@ -57,6 +57,8 @@ export const HELP = `usage: ah <command>
                                               tokens, estimates and limit windows (local telemetry; estimates, not a bill)
   recovery [target] [--retry|--pause|--resume|--cancel] [--auto on|off]
                                               limits, provider errors and crashes, and what ah does about them
+  restore [target | --all | --incident ID] [--no-note] [--dismiss]
+                                              sessions cut off by a tmux stop, a host restart or a closed window
   answer <target> <yes|no|N>                  answer what it's asking: approve, deny, or pick option N
   stop <target>                               stop the agent's current turn
   terminate <target>                          end the session (its conversation stays in history); also: kill
@@ -360,6 +362,32 @@ export async function run(cmd, args) {
       console.log(`automatic recovery: ${r.auto ? 'on' : 'off'}`);
       if (r.recovery) console.log(`${r.recovery.state}: ${r.recovery.reason}, ${r.recovery.attempts}/${r.recovery.maxAttempts} attempts${r.recovery.nextAttemptAt ? `, next at ${new Date(r.recovery.nextAttemptAt * 1000).toLocaleTimeString()}` : ''}`);
       for (const e of r.events.slice(0, 8).reverse()) console.log(`  ${new Date(e.at * 1000).toLocaleTimeString()}  ${e.state}  ${e.detail}`);
+      return;
+    }
+    case 'restore': {
+      const note = !flag(args, '--no-note');
+      const dismiss = flag(args, '--dismiss');
+      const incident = opt(args, '--incident', undefined);
+      const all = flag(args, '--all');
+      const target = args.find((a) => !a.startsWith('--'));
+      const why = { tmux_server: 'the tmux server stopped', host_restart: 'the host restarted', window: 'its window closed' };
+      if (!target && !all && !incident) {
+        const { interruptions: list } = await call('GET', '/api/interruptions');
+        if (flag(args, '--json')) return console.log(JSON.stringify(list, null, 2));
+        if (!list.length) return console.log('nothing was interrupted');
+        table([['SESSION', 'TITLE', 'WHEN', 'WHY', 'WAS', 'QUEUED'], ...list.map((s) => [s.uid, s.title, new Date(s.at * 1000).toLocaleString(), why[s.cause] ?? s.cause, s.midTurn ? s.lastStatus : 'done', String(s.queued || '')])]);
+        console.log(`
+ah restore --all   (mid-turn ones first; they're told where they stopped)`);
+        return;
+      }
+      const found = target ? await find(target, { history: true }) : null;
+      const body = found ? { uids: [found.live?.uid ?? found.past.ref] } : incident ? { incident } : { all: true };
+      if (dismiss) return console.log(`dismissed ${(await call('POST', '/api/interruptions/dismiss', body)).dismissed}`);
+      const out = await call('POST', '/api/interruptions/restore', { ...body, note });
+      for (const r of out.restored) console.log(`restored ${r.uid}${r.noted ? ' (told where it stopped)' : ''}${r.resumed ? '' : ' (already running)'}`);
+      for (const f of out.failed) console.log(`could not restore ${f.uid}: ${f.error}`);
+      if (!out.restored.length && !out.failed.length) console.log('nothing to restore');
+      if (out.failed.length) process.exitCode = 1;
       return;
     }
     case 'jobs': {

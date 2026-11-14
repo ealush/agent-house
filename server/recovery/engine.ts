@@ -332,6 +332,14 @@ export class RecoveryEngine {
     this.rows.delete(key);
   }
 
+  /** You brought the session back yourself (server/interruptions): nothing left to recover. */
+  async settle(uid: string, why: string) {
+    await this.load();
+    const rec = this.deps.record(uid);
+    const key = rec ? conversationKey(rec.harness, rec.harnessId, uid) : uid;
+    if (this.rows.has(key)) await this.resolve(key, why);
+  }
+
   // ---------- your controls
 
   private async rowOf(uid: string): Promise<Row> {

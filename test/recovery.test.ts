@@ -113,10 +113,16 @@ test('an agent cut off by a host restart is picked up again in the same conversa
     await ah.stop();
     ah.tmux('kill-server');
     const ah2 = await ah.restart();
-    // (The restarted bed's tmux doesn't carry the prompt log: its transcript says.)
-    await until(async () => (await transcriptOf(ah2, s.uid))?.includes(`Got: ${CONT}`), 30000, 'continued after the restart');
+    // (The restarted bed's tmux doesn't carry the prompt log: its transcript says.) Cut off
+    // by the restart, it's restored (server/interruptions): told what happened, not just "continue".
+    const NOTE = 'Got: [ah] This session was interrupted';
+    await until(async () => (await transcriptOf(ah2, s.uid))?.includes(NOTE), 30000, 'continued after the restart');
     const back = await until(async () => (await windows(ah2)).find((w) => w.uid === s.uid && w.harnessId), 15000, 'running again');
     assert.equal(back.harnessId, s.harnessId);
+    await until(async () => !(await windows(ah2)).find((w) => w.uid === s.uid)?.recovery, 15000, 'resolved');
+    const text = (await transcriptOf(ah2, s.uid))!;
+    assert.equal(text.split(NOTE).length - 1, 1, 'once');
+    assert.ok(!text.includes(`Got: ${CONT}`), 'the note instead of the generic continuation');
   } finally {
     await cleanup(ah);
   }
