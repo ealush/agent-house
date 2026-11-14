@@ -140,6 +140,8 @@ struct ComposerView: View {
             case .failed(let message):
                 Haptics.failure()
                 scene.toast(message, error: true)
+            case .requeue(let id, let before):
+                Task { await session.queue.place(id, before: before) }
             case .interrupted:
                 scene.toast("Interrupted")
             case .notice(let text):
@@ -1467,7 +1469,7 @@ struct QueueTrayView: View {
                             .accessibilityLabel("Send Now")
                             .accessibilityHint("Stops the current turn and sends this now")
                     }
-                    Button { Task { if let text = await queue.edit(item) { composer.compose(text) } } } label: { queueGlyph("pencil") }
+                    Button { Task { await queue.edit(item, into: composer) } } label: { queueGlyph("pencil") }
                         .accessibilityLabel("Edit")
                     Button(role: .destructive) { Task { await queue.cancel(item) } } label: { queueGlyph("xmark") }
                         .accessibilityLabel("Cancel")
@@ -1485,7 +1487,7 @@ struct QueueTrayView: View {
         .contentShape(Rectangle())
         .contextMenu {
             if !held { Button("Send Now", systemImage: "bolt") { Task { await queue.steer(item) } } }
-            Button("Edit", systemImage: "pencil") { Task { if let text = await queue.edit(item) { composer.compose(text) } } }
+            Button("Edit", systemImage: "pencil") { Task { await queue.edit(item, into: composer) } }
             if index > 0 { Button("Move Up", systemImage: "arrow.up") { Task { await queue.move(item.id, to: index - 1) } } }
             if index < queue.items.count - 1 { Button("Move Down", systemImage: "arrow.down") { Task { await queue.move(item.id, to: index + 1) } } }
             Divider()

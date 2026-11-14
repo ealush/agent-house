@@ -786,7 +786,7 @@ private struct QueuePanel: View {
                     // cancelled, and a list aborts when a row swiped away as deleted is not gone.
                     Button("Cancel") { Task { await session.queue.cancel(item) } }.tint(theme.danger)
                     Button("Edit") {
-                        Task { if let text = await session.queue.edit(item) { session.composer.compose(text) } }
+                        Task { await session.queue.edit(item, into: session.composer) }
                     }
                 }
                 // Always reorderable, so always in edit mode, where a list offers no swipes:
@@ -794,7 +794,7 @@ private struct QueuePanel: View {
                 .contextMenu {
                     Button("Send Now", systemImage: "bolt") { Task { await session.queue.steer(item) } }
                     Button("Edit", systemImage: "pencil") {
-                        Task { if let text = await session.queue.edit(item) { session.composer.compose(text) } }
+                        Task { await session.queue.edit(item, into: session.composer) }
                     }
                     Button("Cancel", systemImage: "xmark", role: .destructive) { Task { await session.queue.cancel(item) } }
                 }

@@ -369,16 +369,27 @@ final class QueueModel {
         await act("reorder the queue") { listed = try await api.moveQueued(uid, item: id, to: to) }
     }
 
-    /// Edit: take it out of the queue; its text goes back into the composer.
-    func edit(_ item: QueueItem) async -> String? {
+    /// Edit: take it out of the queue, its text back into the box. Queued again from there, it
+    /// goes back where it was (`place`), not to the end.
+    func edit(_ item: QueueItem, into composer: ComposerModel) async {
+        let shown = items
+        let next = shown.firstIndex { $0.id == item.id }.flatMap { shown.indices.contains($0 + 1) ? shown[$0 + 1].id : nil }
         do {
             try await api.clearQueue(uid, item: item.id)
             await load()
-            return item.text
+            composer.compose(item.text)
+            composer.requeueBefore = next
         } catch {
             self.error = "Couldn’t edit it: \(APIError.wrap(error).message)"
-            return nil
         }
+    }
+
+    /// An edited message queued again: before the one that followed it, if that one's still
+    /// waiting (gone ahead or cancelled meanwhile, the end is as near as it gets).
+    func place(_ id: String, before next: String) async {
+        await load()
+        guard let to = items.firstIndex(where: { $0.id == next }), let at = items.firstIndex(where: { $0.id == id }), at > to else { return }
+        await move(id, to: to)
     }
 }
 
@@ -402,6 +413,8 @@ final class ComposerModel {
 
     enum Event: Equatable, Sendable {
         case sent(SendResult)
+        /// A message edited out of the queue went back into it: before this one (`QueueModel.place`).
+        case requeue(String, before: String)
         case failed(String)
         case interrupted
         case notice(String)
@@ -420,8 +433,13 @@ final class ComposerModel {
         didSet {
             guard text != oldValue else { return }
             drafts.edited(text)
+            if text.isEmpty, attachments.isEmpty { requeueBefore = nil }
         }
     }
+    /// A queued message taken out to edit (`QueueModel.edit`): queued again from this box, it
+    /// goes back before the message that followed it (this one's id). The next send takes it;
+    /// a box emptied without one lets it go, so a later message isn't moved for it.
+    var requeueBefore: String?
     private(set) var attachments: [Attachment] = []
     /// Each attachment's upload while it runs, by attachment: what a message sent before it's
     /// up waits on. Not cancelled by sending (the message needs it) or by leaving.
@@ -534,6 +552,8 @@ final class ComposerModel {
         let typed = text
         let sentFiles = attachments
         guard !isEmpty else { return false }
+        let requeueBefore = requeueBefore
+        self.requeueBefore = nil
         let words = typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : typed
         func compose(_ paths: [String]) -> String { (paths.map(Uploads.shellQuote) + [words]).filter { !$0.isEmpty }.joined(separator: " ") }
         // Sent now, whatever's still uploading: it waits for that (in the outbox, which
@@ -594,6 +614,10 @@ final class ComposerModel {
                 let held = result.outcome == .queued && result.starting == true
                 self?.outbox.update(id, state: result.outcome == .queued && !held ? .queued : .sent, confirmedAt: Date().timeIntervalSince1970, heldAs: held ? result.queueId : nil)
                 self?.events.append(.sent(result))
+                // Edited out of the queue and queued again: back in its place.
+                if let requeueBefore, result.outcome == .queued, !held, let queued = result.queueId {
+                    self?.events.append(.requeue(queued, before: requeueBefore))
+                }
             } catch {
                 // No answer isn't no: the connection can drop after the host has typed it in (a
                 // handover from Wi-Fi to cellular), and the text back in the box was sent twice
@@ -811,6 +835,7 @@ final class ComposerModel {
     func removeAttachment(_ id: Int) {
         uploads[id]?.cancel()
         attachments.removeAll { $0.id == id }
+        if text.isEmpty, attachments.isEmpty { requeueBefore = nil }
     }
 
     /// What was attached in another box: New session's, before this session existed. Its
