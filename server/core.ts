@@ -11,6 +11,7 @@ import { dirname, join, resolve, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import type { InterruptionsState } from './interruptions.ts';
+import { LastReplies, type ReplyTarget } from './replies.ts';
 import { buildWindows, buildHistory, adoptTranscripts, footerMode, isQuestionDialog, type WindowView, type HistoryItem } from './sessions.ts';
 import { Registry, forkMetaOf, type ForkMeta, type SessionRecord } from './registry.ts';
 import { copyTranscript, forkUnavailableReason, removeCopiedTranscript, ForkError } from './fork.ts';
@@ -276,7 +277,18 @@ export class Core {
       // A just-started agent's transcript appears within seconds; look for it sooner
       // than the usual rescan so its title and GUI view don't lag behind.
       const fresh = windows.some((w) => w.agent && !w.harnessId && Date.now() / 1000 - w.createdAt < 120);
-      adoptTranscripts(windows, await discover(fresh ? 2000 : 15_000), this.registry);
+      const transcripts = await discover(fresh ? 2000 : 15_000);
+      adoptTranscripts(windows, transcripts, this.registry);
+      // The last thing said in each session (lists show it as a chat shows its last message):
+      // read in the background when a transcript grows, picked up by the next pass.
+      const targets: ReplyTarget[] = [];
+      for (const w of windows) {
+        const adapter = w.agent ? this.config.presets.find((p) => p.id === w.agent)?.feed : undefined;
+        const file = adapter && w.harnessId ? transcripts.find((t) => t.harness === adapter && t.harnessId === w.harnessId)?.file : undefined;
+        if (adapter && file) targets.push({ uid: w.uid, file, adapter });
+        w.reply = this.replies.peek(w.uid);
+      }
+      void this.replies.refresh(targets).catch(() => false);
       // A submit can precede the agent's next hook/output. Protect that interval
       // so a second device or queued prompt cannot submit another turn into it.
       for (const w of windows) {
@@ -823,6 +835,9 @@ export class Core {
     const s = file ? await stat(file).catch(() => null) : null;
     return file && s ? { file, size: s.size } : null;
   }
+
+  /** Each live session's last message (`WindowView.reply`). */
+  private replies = new LastReplies();
 
   private justSent(uid: string): boolean {
     return Date.now() - (this.sentAt.get(uid) ?? 0) < 5000;

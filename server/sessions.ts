@@ -78,6 +78,12 @@ export type WindowView = {
   continued: Continued | null;
   /** Something went wrong and ah is (or could be) keeping it going (server/recovery). */
   recovery?: RecoveryView | null;
+  /**
+   * The last thing said in its conversation (the agent's reply, or the person's message
+   * while it works on it), plain and clipped, for lists to show as a chat shows its last
+   * message. Null until its transcript has been read, or for agents without one.
+   */
+  reply?: { role: 'assistant' | 'user'; text: string; at: number } | null;
 };
 
 /**
