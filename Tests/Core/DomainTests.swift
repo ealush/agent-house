@@ -329,7 +329,7 @@ import Testing
     #expect(AgentLogo.initial("custom-") == "?")
     #expect(AgentLogo.tiles.isSubset(of: AgentLogo.known))
     // Every logo the app names is in the asset catalog (scripts/agent-logos.sh).
-    let catalog = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../App/Assets.xcassets/Agents").standardized
+    let catalog = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../Shared/AgentLogos.xcassets/Agents").standardized
     let sets = Set(((try? FileManager.default.contentsOfDirectory(atPath: catalog.path)) ?? []).filter { $0.hasSuffix(".imageset") }.map { String($0.dropLast(9)) })
     #expect(sets == AgentLogo.known)
 }

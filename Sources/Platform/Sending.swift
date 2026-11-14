@@ -22,7 +22,10 @@ enum Sending {
             held.task = UIApplication.shared.beginBackgroundTask(withName: "Sending a message") { held.end() }
             let live = Live.start(for: id, outbox: outbox, session: app.flatMap { title(of: id, outbox: outbox, in: $0) } ?? "Agent Hub")
             return {
-                live?.finish(outbox.items.first { $0.id == id })
+                let item = outbox.items.first { $0.id == id }
+                live?.finish(item)
+                // It went (sent, or queued behind the turn at work): follow the session.
+                if let item, item.state != .sending, let app { SessionActivities.began(key: item.key, app: app) }
                 held.end()
             }
         }

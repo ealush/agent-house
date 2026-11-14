@@ -383,6 +383,11 @@ struct APIClient: Sendable {
         try await call("PUT", "/api/push/apns", json: APNsRegistration(token: token, environment: environment, events: .init(waiting: waiting, done: done), preview: privatePreview ? "private" : "full"))
     }
     func unregisterAPNs() async throws { try await perform("DELETE", "/api/push/apns") }
+    /// A Live Activity this device started for session `uid`: the host moves it along by push.
+    func registerActivity(_ uid: String, token: String, environment: String) async throws {
+        try await perform("PUT", "/api/push/apns/activity", json: ActivityRegistration(uid: uid, token: token, environment: environment))
+    }
+    func unregisterActivity(_ uid: String) async throws { try await perform("DELETE", "/api/push/apns/activity/\(Self.enc(uid))") }
 
     // MARK: Terminal
 

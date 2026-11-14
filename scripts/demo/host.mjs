@@ -212,7 +212,33 @@ process.env.AH_REBUILD_CMD = 'sleep 2';
 // The scripted agent's /design calls ah's Claude Code hook, as Claude Code does.
 process.env.AH_DEMO_HOOK = join(source, 'bin', 'ah-hook.js');
 mkdirSync(join(dir, 'cache', 'ah', 'uploads'), { recursive: true });
-const ah = await startAh({ idleAfter: 2, files: { roots: [join(dir, 'files'), join(dir, 'cache', 'ah', 'uploads')] } }, dir);
+// AH_DEMO_APNS=1: an APNs key of its own and a loopback stand-in for Apple's gateway that takes
+// every push (alerts, Live Activity updates) and writes it to <dir>/apns.jsonl, to watch what
+// the host sends the app without a real key. Nothing reaches Apple.
+let apns;
+if (process.env.AH_DEMO_APNS === '1') {
+  const { generateKeyPairSync } = await import('node:crypto');
+  const { createServer } = await import('node:http2');
+  const { appendFileSync } = await import('node:fs');
+  const keyFile = join(dir, 'AuthKey_DEMO.p8');
+  writeFileSync(keyFile, generateKeyPairSync('ec', { namedCurve: 'P-256' }).privateKey.export({ format: 'pem', type: 'pkcs8' }));
+  const gateway = createServer();
+  gateway.on('stream', (stream, headers) => {
+    let body = '';
+    stream.setEncoding('utf8');
+    stream.on('data', (d) => (body += d));
+    stream.on('end', () => {
+      const pick = (k) => headers[k];
+      appendFileSync(join(dir, 'apns.jsonl'), JSON.stringify({ at: Date.now(), path: pick(':path'), type: pick('apns-push-type'), topic: pick('apns-topic'), priority: pick('apns-priority'), body: JSON.parse(body) }) + '\n');
+      stream.respond({ ':status': 200 });
+      stream.end();
+    });
+  });
+  await new Promise((r) => gateway.listen(0, '127.0.0.1', r));
+  process.env.AH_APNS_ORIGIN = `http://127.0.0.1:${gateway.address().port}`;
+  apns = { teamId: 'DEMOTEAM01', keyId: 'DEMOKEY001', keyFile, topic: 'dev.ealush.ah.native' };
+}
+const ah = await startAh({ idleAfter: 2, files: { roots: [join(dir, 'files'), join(dir, 'cache', 'ah', 'uploads')] }, ...(apns ? { apns } : {}) }, dir);
 
 const call = async (method, path, body) => {
   const res = await fetch(`http://localhost:${ah.port}${path}`, {

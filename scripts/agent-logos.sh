@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Rasterizes ah's vendored agent logos (`../ah/web/public/logos`, provenance in `web/logos.tsx`)
-# into App/Assets.xcassets/Agents, at 2x and 3x of a 40 pt mark.
+# into Shared/AgentLogos.xcassets/Agents, at 2x and 3x of a 40 pt mark.
 #
 #   AH_SOURCE=../ah ./scripts/agent-logos.sh
 #
@@ -9,7 +9,7 @@
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 src=${AH_SOURCE:-$root/../ah}/web/public/logos
-out=$root/App/Assets.xcassets/Agents
+out=$root/Shared/AgentLogos.xcassets/Agents
 [[ -d $src ]] || { echo "no logos at $src" >&2; exit 1; }
 
 # key → file, as web/logos.tsx maps them.

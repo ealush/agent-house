@@ -506,6 +506,12 @@ struct APNsStatus: Codable, Equatable, Sendable {
     let registration: Registration?
 }
 
+struct ActivityRegistration: Codable, Equatable, Sendable {
+    let uid: String
+    let token: String
+    let environment: String
+}
+
 struct SummaryResult: Codable, Equatable, Sendable { let summary: String }
 struct ModelsResult: Codable, Equatable, Sendable { let models: [String] }
 struct SwitchModeResult: Codable, Equatable, Sendable { let switched: Bool }

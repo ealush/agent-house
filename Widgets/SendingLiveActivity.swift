@@ -5,6 +5,7 @@ import WidgetKit
 @main
 struct AgentHubWidgets: WidgetBundle {
     var body: some Widget {
+        SessionLiveActivity()
         SendingLiveActivity()
     }
 }

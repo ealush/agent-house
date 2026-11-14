@@ -38,14 +38,16 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         observeBadge()
         LocalAlerts.watch(app)
         Sending.install(app)
+        SessionActivities.install(app)
         app.didShowSessions = { [weak app] keys in
             guard let app else { return }
             Task { await AlertJanitor.sweep(app, seen: keys) }
         }
         // Signed in again (Face ID) or newly paired: that host gets this device's push again.
-        app.didSignIn = { [weak app] _ in
+        app.didSignIn = { [weak app] account in
             guard let app else { return }
             Task { await PushRegistrar.shared.sync(app) }
+            SessionActivities.signedIn(account)
         }
         return true
     }
@@ -215,6 +217,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             guard let account = account(origin) else { return }
             do {
                 _ = try await account.hub.client(forKey: key).send(SessionKey(key)?.uid ?? key, text: text)
+                SessionActivities.began(key: key, app: app)
             } catch {
                 // Not delivered (ended, signed out, unreachable): a note that opens it with
                 // the words in the box. Opening a window from the background isn't possible.

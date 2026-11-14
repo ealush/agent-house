@@ -2,7 +2,7 @@
 /// (`scripts/agent-logos.sh`), or, for one added on a host without a known logo, its initial
 /// in its tint.
 enum AgentLogo {
-    /// Agents with a logo in `App/Assets.xcassets/Agents`.
+    /// Agents with a logo in `Shared/AgentLogos.xcassets/Agents`.
     static let known: Set<String> = [
         "claude", "codex", "gemini", "grok", "muse", "hermes", "opencode", "cursor", "copilot", "crush", "pi",
         "aider", "amp", "auggie", "cline", "codebuff", "droid", "goose", "jules", "kilocode", "kimi", "kiro",

@@ -54,8 +54,8 @@ targets:
         product: GRDB
       - package: SwiftTerm
         product: SwiftTerm
-      # A message going with its attachments, on the Lock Screen and in the Dynamic Island
-      # (an iPhone's and iPad's; the Mac app has none).
+      # A message going with its attachments, and a session you sent to while it works, on
+      # the Lock Screen and in the Dynamic Island (an iPhone's and iPad's; the Mac app has none).
       - target: AgentHubNativeWidgets
         embed: true
         platformFilter: iOS
@@ -65,6 +65,10 @@ targets:
     sources:
       - path: Widgets
       - path: Shared
+      # What a session's Live Activity shows, and which logo its agent draws: the types it
+      # shares with the app's Sources (the logos themselves are in Shared/AgentLogos.xcassets).
+      - path: Sources/Domain/SessionActivityState.swift
+      - path: Sources/Domain/AgentLogo.swift
     configFiles:
       Debug: Config/Debug.xcconfig
       Release: Config/Release.xcconfig

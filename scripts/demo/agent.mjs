@@ -7,7 +7,7 @@
 //
 //   node agent.mjs [--scenario=onboarding|api|review|approve|none]   (default: by folder)
 //
-// Typing /ask (or /design, with previews) opens Claude Code's question dialog; /plan or /trust, its plan approval or
+// Typing /ask (or /design, with previews) opens Claude Code's question dialog; /rotate, a permission prompt; /plan or /trust, its plan approval or
 // folder-trust picker, for the app's answer-from-anywhere views. A folder holding `.demo-untrusted` opens on the
 // folder-trust picker, as Claude Code does in a folder it hasn't been trusted in; trusting it removes the mark.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -571,6 +571,13 @@ process.stdin.on('data', (chunk) => {
     const opens = { '/ask': 'ask', '/design': 'design', '/plan': 'plan', '/trust': 'trust' }[prompt];
     if (opens && !busy) {
       openPicker(opens);
+      return;
+    }
+    // /rotate: the key rotation's permission prompt (orbit-infra's opening one), mid-conversation,
+    // for walking Approve and Deny on a session you've just sent to.
+    if (prompt === '/rotate' && !busy) {
+      approve();
+      process.stdout.write('\x1b[2J\x1b[H' + promptLines().join('\n') + '\n');
       return;
     }
     if (busy) queue.push(prompt);

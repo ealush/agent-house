@@ -827,6 +827,11 @@ private struct NotificationsSection: View {
             } footer: {
                 Text(muted ? "\(account.hostname) won’t notify this device. Your other hosts still do." : "The choices above apply to every host this device is signed in to. Turn this off to hear nothing from \(account.hostname) on this device.")
             }
+            Section {
+                Toggle("Live Activities", isOn: Binding(get: { app.preferences.notifications.liveActivities }, set: { app.preferences.notifications.liveActivities = $0 }))
+            } footer: {
+                Text("A session you send a message to from here shows on the Lock Screen and in the Dynamic Island while it works, and for a while after it finishes. With the app put away, the host keeps it current once it has an APNs key.")
+            }
             if let registration = model.status?.registration {
                 Section("Registered with this host") {
                     LabeledContent("Environment", value: registration.environment)

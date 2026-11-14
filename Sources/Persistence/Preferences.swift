@@ -80,6 +80,8 @@ struct DevicePreferences: Codable, Equatable, Sendable {
         /// Hosts (account origins) this device hears nothing from: the host is told to stop
         /// alerting it, and the app posts nothing for it either.
         var mutedHosts: [String] = []
+        /// A session you send to shows on the Lock Screen and in the Dynamic Island while it works.
+        var liveActivities = true
 
         init() {}
 
@@ -91,6 +93,7 @@ struct DevicePreferences: Codable, Equatable, Sendable {
             finished = try c.decodeIfPresent(Bool.self, forKey: .finished) ?? false
             privatePreview = try c.decodeIfPresent(Bool.self, forKey: .privatePreview) ?? false
             mutedHosts = try c.decodeIfPresent([String].self, forKey: .mutedHosts) ?? []
+            liveActivities = try c.decodeIfPresent(Bool.self, forKey: .liveActivities) ?? true
         }
     }
 
