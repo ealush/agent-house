@@ -47,7 +47,11 @@ struct ReviewAPI: Sendable {
     func busy(_ id: String, pr: Int) async throws -> ReviewBusy { try await api.call("GET", "\(l(id, pr))/busy") }
     func summarize(_ id: String, pr: Int, force: Bool = false) async throws -> SummaryStart { try await api.call("POST", "\(l(id, pr))/summary", json: ["force": force]) }
     /// Marking reviewed is a human decision; withdrawing it is `approved: false`.
-    func approve(_ id: String, pr: Int, approved: Bool = true) async throws -> ReviewStack { try await api.call("POST", "\(l(id, pr))/approve", json: ["approved": approved]) }
+    /// `head`: the head the approval is for (the one shown). A host that checks it refuses the
+    /// approval if the layer has moved on since (409); older hosts approve the current one.
+    func approve(_ id: String, pr: Int, approved: Bool = true, head: String? = nil) async throws -> ReviewStack {
+        try await api.call("POST", "\(l(id, pr))/approve", json: ApproveBody(approved: approved, head: head))
+    }
     func accept(_ id: String, pr: Int, overrides: [Int: String] = [:]) async throws -> ReviewStack {
         try await api.call("POST", "\(l(id, pr))/accept", json: ["overrides": Dictionary(uniqueKeysWithValues: overrides.map { (String($0.key), $0.value) })])
     }
@@ -179,3 +183,9 @@ private struct DecisionBody: Encodable {
     }
 }
 private struct AskBody: Encodable { let text: String; let pr: Int?; let context: [AskContext]; let subscriptionId: String? }
+
+private struct ApproveBody: Encodable {
+    let approved: Bool
+    let head: String?
+}
+

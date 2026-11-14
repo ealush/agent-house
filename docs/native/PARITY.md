@@ -195,7 +195,7 @@ Evidence shorthand used below: **UT** = `swift test` (Linux, Swift 6.2); **IT** 
 | F-123 | Add/remove/reorder/rename/skips layers; change owner, plan, merge method, sync | P2 | StackManageSheet | implemented | [AUDIT.md:224](../../AUDIT.md#L224); rename/method/plan/owner/order/roles/skip/add/remove; UI |
 | F-124 | Convert chain to GitHub native stack, follow new PRs | P2 | StackManageSheet link | implemented | [AUDIT.md:225](../../AUDIT.md#L225); UI |
 | F-125 | Review Inbox cards, notifications, stack panel in sessions | P2 | InboxView, StackPanel, APNs review alerts | implemented | [AUDIT.md:226](../../AUDIT.md#L226); UI |
-| F-126 | Semantic overview of what changes, architecture visualization, evidence-backed diagrams | P2 | Review | unstarted | [AUDIT.md:227](../../AUDIT.md#L227); no native journey evidence |
+| F-126 | Semantic overview of what changes, architecture visualization, evidence-backed diagrams | P2 | ArchitectureOverview, ArchitectureSection | implemented | [AUDIT.md:227](../../AUDIT.md#L227); no native journey evidence |
 | F-127 | Session side chat independent of the coding agent, includes code/repo context | P1 | SideChatModel, ChatPanel | implemented | [AUDIT.md:235](../../AUDIT.md#L235); UI |
 | F-128 | Read-only repo tools (`repo_map`, `pr_info`, `pr_diff`, `working_diff`, `read_file`, `commit_show`) | P1 | host tools via ChatPanel | implemented | [AUDIT.md:236](../../AUDIT.md#L236); tools run on the host |
 | F-129 | Review tools (`stack_map`, exact `layer_diff`, `read_file`, `pr_threads`, `origin`, plan, findings, commits) | P1 | host tools via reviewer | implemented | [AUDIT.md:237](../../AUDIT.md#L237); tools run on the host |
@@ -664,7 +664,7 @@ These are deliberate specification boundaries, not pending requests to clone web
 | F-152 entire host config editor | Keep host config/CLI authority; do not invent parity for knobs absent from the source GUI | Meaningful existing controls via SET/N; record any future scope decision |
 | Web CSS/DOM/layout heuristics, IndexedDB and cached web shell | Native layout/focus/preferences and account-bound encrypted GRDB cache | R/K/Q lists; no React/PWA/WKWebView app shell |
 | Web VAPID push | Preserve existing clients; implement actual APNs separately | AP-01–AP-09; Web Push is not native notification completion |
-| F-126 — semantic architecture visualization | Not a shipped dedicated web feature; retain as explicit later enhancement, not a web-parity claim | Native product/design decision and evidence before implementation/completion |
+| F-126 — semantic architecture visualization | Built natively (14 November 2026): Review → a layer → Architecture, read deterministically from the layer's own diff at its pinned head (`ArchitectureOverview`): components, a before/after dependency graph, entry points, interfaces, uses across files, where it reaches out, tests; each claim with its lines ("In the diff" or "Likely"), a tap scrolls the diff to the line. No model text; nothing marks a layer reviewed | UT ArchitectureTests; simulator tour on the demo's orbit-api #102. A host-side reading (importers outside the diff, tests that cover a changed file without changing) would need an `ah` route |
 
 No additional P0/P1 feature is waived. No remaining P2 item is silently deferred or considered complete.
 

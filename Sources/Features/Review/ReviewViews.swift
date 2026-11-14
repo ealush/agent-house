@@ -668,6 +668,8 @@ struct LayerView: View {
     @State private var resolving: Finding?
     /// Files folded shut in the diff, by path.
     @State private var folded: Set<String> = []
+    /// Files shown whole (past the first 300 lines): a line was asked for further down.
+    @State private var whole: Set<String> = []
     @FocusState private var asking: Bool
     /// Asked something on this page: the thread's answers are followed to the field. The
     /// thread arriving on its own (the page opening) leaves the layer at its top.
@@ -684,6 +686,7 @@ struct LayerView: View {
                     LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                         header(layer).padding(.bottom, 28)
                         understand(layer).padding(.bottom, 28)
+                        architecture(layer, proxy).padding(.bottom, 28)
                         inspectHead(layer, proxy).padding(.bottom, 12)
                         diffFiles(layer, proxy)
                         challenge(layer, stack, proxy).id("challenge").padding(.top, 28)
@@ -776,7 +779,7 @@ struct LayerView: View {
     }
 
     private func understand(_ layer: Layer) -> some View {
-        section("Understand", "lightbulb") {
+        section("Intent", "lightbulb") {
             if let summary = layer.current?.summary, !summary.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
@@ -834,7 +837,7 @@ struct LayerView: View {
 
     /// The diff's head: which diff, how much of it is read, and the way to any file in it.
     private func inspectHead(_ layer: Layer, _ proxy: ScrollViewProxy) -> some View {
-        section("Inspect the code", "doc.text.magnifyingglass") {
+        section("Evidence", "doc.text.magnifyingglass") {
             Picker("Diff", selection: Binding(get: { model.diffScope }, set: { scope in Task { await model.loadDiff(scope) } })) {
                 ForEach(DiffScope.allCases, id: \.self) { Text($0.label).tag($0) }
             }
@@ -922,7 +925,7 @@ struct LayerView: View {
             ForEach(model.diffFiles, id: \.path) { file in
                 Section {
                     if !isShut(file.path) {
-                        DiffFileBody(file: file, selected: selectedLines?.path == file.path ? selectedLines?.index : nil) { index, line in
+                        DiffFileBody(file: file, selected: selectedLines?.path == file.path ? selectedLines?.index : nil, maxLines: whole.contains(file.path) ? nil : 300) { index, line in
                             pick(file.path, index, line)
                         }
                         .equatable()
@@ -1039,6 +1042,46 @@ struct LayerView: View {
         }
     }
 
+    // MARK: Architecture
+
+    /// How the layer changes the system, read from its whole diff (This layer) at the head shown.
+    @ViewBuilder
+    private func architecture(_ layer: Layer, _ proxy: ScrollViewProxy) -> some View {
+        section("Architecture", "point.3.filled.connected.trianglepath.dotted") {
+            if let overview = model.architecture {
+                if overview.isEmpty {
+                    Text("This layer’s diff is empty.").font(.ah(.callout)).foregroundStyle(theme.muted)
+                } else {
+                    ArchitectureSection(overview: overview, stale: model.architectureIsStale, currentHead: layer.current?.headSha ?? layer.headSha,
+                                        reload: { Task { await model.loadDiff(.this) } },
+                                        show: { show($0, proxy) })
+                }
+            } else if model.diffScope != .this {
+                Button("Read it from this layer’s whole change", systemImage: "point.3.filled.connected.trianglepath.dotted") { Task { await model.loadDiff(.this) } }
+                    .font(.ah(.callout)).buttonStyle(.borderless)
+            } else if model.loading.contains("diff") {
+                ProgressView().frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    /// A claim's line, in the diff: its file opens (whole, when the line is past the first
+    /// 300), the page scrolls to it, and it's picked, as a finding's line is.
+    private func show(_ evidence: ArchitectureOverview.Evidence, _ proxy: ScrollViewProxy) {
+        guard let file = model.diffFiles.first(where: { $0.path == evidence.path }), file.lines.indices.contains(evidence.index) else { return }
+        Haptics.selection()
+        withAnimation(.snappy(duration: 0.25)) {
+            if isShut(file.path) { toggleFold(file.path) }
+            if evidence.index >= 300 { whole.insert(file.path) }
+            selectedLines = (file.path, evidence.index, [file.lines[evidence.index]])
+            proxy.scrollTo(Self.fileID(file.path), anchor: .top)
+        }
+        Task {
+            try? await Task.sleep(for: .milliseconds(280))
+            withAnimation(.smooth(duration: 0.4)) { proxy.scrollTo("\(file.path):\(evidence.index)", anchor: .center) }
+        }
+    }
+
     /// Where a finding's line sits in the diff shown, if it's there.
     private func place(of finding: Finding) -> (file: FileDiff, index: Int)? {
         guard let path = finding.path, let file = model.diffFiles.first(where: { $0.path == path }) else { return nil }
@@ -1081,7 +1124,7 @@ struct LayerView: View {
     }
 
     private func challenge(_ layer: Layer, _ stack: ReviewStack, _ proxy: ScrollViewProxy) -> some View {
-        section("Challenge", "bubble.left.and.exclamationmark.bubble.right") {
+        section("Risks", "bubble.left.and.exclamationmark.bubble.right") {
             ForEach(model.thread.filter { $0.pr == nil || $0.pr == layer.pr }) { message in
                 if message.role == "user" {
                     UserBubble(text: message.text)
@@ -1151,7 +1194,7 @@ struct LayerView: View {
     }
 
     private func verify(_ layer: Layer, _ confidence: LayerConfidence) -> some View {
-        section("Verify", "checkmark.shield") {
+        section("Tests", "checkmark.shield") {
             // One checklist: your review and the checks first, then the host's gates, less the
             // two that would only say those again.
             let gates = layer.gates.filter { $0.key != "reviewed" && $0.key != "checks" }
@@ -1482,14 +1525,15 @@ private struct ReviewerQuestionField: View {
 private struct DiffFileBody: View, Equatable {
     let file: FileDiff
     let selected: Int?
+    var maxLines: Int? = 300
     let pick: (Int, DiffLine) -> Void
 
     nonisolated static func == (a: DiffFileBody, b: DiffFileBody) -> Bool {
-        a.selected == b.selected && a.file == b.file
+        a.selected == b.selected && a.maxLines == b.maxLines && a.file == b.file
     }
 
     var body: some View {
-        DiffLinesView(lines: file.lines, maxLines: 300, onLineAt: pick, selected: selected.map { [$0] } ?? [], idPrefix: file.path)
+        DiffLinesView(lines: file.lines, maxLines: maxLines, onLineAt: pick, selected: selected.map { [$0] } ?? [], idPrefix: file.path)
     }
 }
 

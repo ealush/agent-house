@@ -169,7 +169,19 @@ final class ReviewModel {
     private(set) var threadSubscription: String?
     private(set) var followups: [Followup] = []
     private(set) var diff: DiffOut? {
-        didSet { if diff != oldValue { diffFiles = diff.map { FileDiff.files(in: $0.text) } ?? [] } }
+        didSet {
+            guard diff != oldValue else { return }
+            diffFiles = diff.map { FileDiff.files(in: $0.text) } ?? []
+            // Read from the layer's whole change only, and kept with the head it was read at.
+            architecture = diff.flatMap { d in diffScope == .this ? ArchitectureOverview.read(diffFiles, head: d.to) : nil }
+        }
+    }
+    /// How this layer changes the system, read from its own diff (`ArchitectureOverview`).
+    private(set) var architecture: ArchitectureOverview?
+    /// The layer moved on since the architecture was read: it describes an older head.
+    var architectureIsStale: Bool {
+        guard let read = architecture?.head, let now = layer?.headSha, !read.isEmpty, !now.isEmpty else { return false }
+        return !(read.hasPrefix(now) || now.hasPrefix(read))
     }
     /// The diff split into files, once per diff: parsing it in the view redid the work on
     /// every keystroke in the reviewer's field.
@@ -497,7 +509,10 @@ final class ReviewModel {
     /// Your decision, at the head you're looking at. Withdraw with `false`.
     func markReviewed(_ approved: Bool = true) async {
         guard let id = stack?.id, let pr = selectedPR else { return }
-        await load("approve") { stack = try await review.approve(id, pr: pr, approved: approved) }
+        // The head of the revision this page shows: a host that checks it refuses an approval
+        // for any other (a push since, synced meanwhile).
+        let head = layer?.current?.headSha ?? layer?.headSha
+        await load("approve") { stack = try await review.approve(id, pr: pr, approved: approved, head: head) }
     }
 
     /// Accept a model re-review's verdict on the fixes, with your overrides.
