@@ -30,7 +30,7 @@ never guessed). `ah list` shows titles and the shared status words.
 | `jobs [--json]` | scheduled work: next, running, waiting on you | Jobs |
 | `usage [--days N] [--by …] [--json]`, `usage limits`, `usage export [--json]` | tokens, estimates and limit windows (CND-6) | Usage |
 | `recovery [target] [--retry\|--pause\|--resume\|--cancel] [--auto on\|off]` | limits, provider errors, crashes, and what ah does about them (CND-5) | the ↻ pill, session menu |
-| `restore [target \| --all \| --incident ID] [--no-note] [--dismiss]` | sessions cut off by a tmux stop, a host restart or a closed window: list, restore (mid-turn first, told where they stopped), dismiss (CND-8) | — |
+| `restore [target \| --all \| --incident ID] [--no-note] [--dismiss]` | sessions cut off by a tmux stop, a host restart or a closed window: list, restore (mid-turn first, told where they stopped), dismiss (CND-8) | the Interrupted card, History → Restore |
 | `job add --name N (--launch AGENT --cwd DIR --prompt … \| --send TARGET --text …) [trigger] [--retries N] [--notify]` | schedule agent work (CND-4) | Jobs → New job |
 | `job show\|pause\|resume\|cancel\|run <id>`, `job decide <run> yes\|no`, `job resolve <run> resend\|leave` | one job and its runs; answers | Jobs, Inbox |
 | `answer <target> <yes\|no\|N>` | approve, deny, or pick option N of what it is asking (re-checked on screen first) | the ask's options |

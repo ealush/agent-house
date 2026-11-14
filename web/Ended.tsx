@@ -7,6 +7,7 @@ import { ConfirmButton } from './ConfirmButton.tsx';
 import { showError } from './ask.tsx';
 import { surfaceFor } from './surface.ts';
 import { useDraftSync } from './useDraftSync.ts';
+import { interruptedLine, wasWord } from './InterruptedCard.tsx';
 
 type Props = {
   item: HistoryItem;
@@ -57,6 +58,16 @@ export function EndedSession({ item, client, feed, narrow, onResume, onClose, cl
     setBusy(true);
     try {
       const msg = text.trim();
+      if (item.interrupted) {
+        // Restored first (server/interruptions): told where it stopped, then your message after.
+        await onResume();
+        if (msg) {
+          await client.send(item.ref, msg, true);
+          setText('');
+          draftSync.saveNow('');
+        }
+        return;
+      }
       if (msg) {
         // The send path resumes a dead session first, then delivers.
         await client.send(item.ref, msg, true);
@@ -65,13 +76,16 @@ export function EndedSession({ item, client, feed, narrow, onResume, onClose, cl
       }
       await onResume();
     } catch (e) {
-      showError(e, "Couldn't resume");
+      showError(e, cut ? "Couldn't restore" : "Couldn't resume");
     } finally {
       setBusy(false);
     }
   }
 
-  const endedWord = `Ended ${age(item.at) === 'now' ? 'just now' : `· ${age(item.at)}`}`;
+  const cut = item.interrupted ?? null;
+  const endedWord = `${cut ? 'Interrupted' : 'Ended'} ${age(item.at) === 'now' ? 'just now' : `· ${age(item.at)}`}`;
+  const pill = cut ? 'pill ended interrupted' : 'pill ended';
+  const verb = cut ? 'Restore' : 'Resume';
 
   return (
     // A screen for ⌘↵ (confirm.ts): Resume answers it from anywhere in the view.
@@ -91,7 +105,7 @@ export function EndedSession({ item, client, feed, narrow, onResume, onClose, cl
           <div className="session-title">
             <span className="name static">{item.title}</span>
             <span className="eyebrow">
-              <span className="pill ended">{endedWord}</span>
+              <span className={pill}>{endedWord}</span>
               {[agent ? name : 'Shell', item.project].filter(Boolean).join(' · ')}
             </span>
           </div>
@@ -102,7 +116,9 @@ export function EndedSession({ item, client, feed, narrow, onResume, onClose, cl
               <span className="name static">{item.title}</span>
             </div>
             <div className="session-pills">
-              <span className="pill ended">{endedWord}</span>
+              <span className={pill} title={cut ? `${interruptedLine(cut)}; it ${wasWord(cut)}` : undefined}>
+                {endedWord}
+              </span>
             </div>
           </>
         )}
@@ -124,10 +140,15 @@ export function EndedSession({ item, client, feed, narrow, onResume, onClose, cl
                 <AgentLogo id={agent} size={28} />
               </span>
               <p>
-                <strong>{item.title}</strong> ended {age(item.at) === 'now' ? 'just now' : `${age(item.at)} ago`}.
+                <strong>{item.title}</strong> {cut ? 'was interrupted' : 'ended'} {age(item.at) === 'now' ? 'just now' : `${age(item.at)} ago`}.
               </p>
-              <p className="hint">Resume starts {agent ? `${name} on the same conversation` : 'a shell'} in {item.cwd}.</p>
+              <p className="hint">{verb} starts {agent ? `${name} on the same conversation` : 'a shell'} in {item.cwd}.</p>
             </div>
+          )}
+          {cut && (
+            <p className="interrupted-note" role="status">
+              {interruptedLine(cut)}, and it {wasWord(cut)}. {cut.midTurn ? `${verb} brings it back in the same conversation and tells it where it stopped, before your message.` : `${verb} brings it back in the same conversation.`}
+            </p>
           )}
           <form
             className="composer ended-bar"
@@ -152,7 +173,7 @@ export function EndedSession({ item, client, feed, narrow, onResume, onClose, cl
               }}
             />
             <ConfirmButton type="submit" className="btn primary" disabled={busy}>
-              {busy ? 'Resuming…' : text.trim() ? 'Resume and send' : 'Resume'}
+              {busy ? (cut ? 'Restoring…' : 'Resuming…') : text.trim() ? `${verb} and send` : verb}
             </ConfirmButton>
           </form>
         </div>

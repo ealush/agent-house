@@ -672,3 +672,17 @@ restart: it went down in between). Sessions cut off together share an `incident`
 A body with no target is refused (400 `invalid_target`): everything happens only when
 you say `all`. Restores and dismissals are in the audit log.
 
+### Surfaces
+
+- **Web:** a card per incident first under the Inbox's *Needs you* ("3 sessions were
+  interrupted · The tmux server stopped at 3:38 PM; 1 was working"), each session with what
+  it was doing (was working, was asking, had finished) and its own Restore, then Restore
+  all and Dismiss; the tagline counts them instead of "All quiet.". An interrupted session's
+  page says *Interrupted* and what Restore will do, and Restore (with a message: Restore and
+  send) restores it first so your message goes in after the note. History marks them
+  *interrupted* / *interrupted mid-turn*, with Restore in place of Resume.
+- **CLI:** `ah restore` (the list), `ah restore --all`, `ah restore <target>`,
+  `--incident ID`, `--no-note`, `--dismiss`.
+- **Native:** state `interruptions` and history's `interrupted`; the incident's alert
+  (route `interrupted`); the Live Activity's `interrupted` end.
+

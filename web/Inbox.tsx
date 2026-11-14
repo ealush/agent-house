@@ -1,5 +1,6 @@
 import { useContext } from 'react';
 import { DecisionCard } from './DecisionCard.tsx';
+import { InterruptedCard } from './InterruptedCard.tsx';
 import type { HistoryItem, HostApi, ReviewAlert, State, Win } from './api.ts';
 import { AskPanel, AskSummary } from './AskPanel.tsx';
 import { KIND_LABEL } from './askView.ts';
@@ -36,19 +37,25 @@ type Props = {
   handoff?: React.ReactNode;
   /** An empty inbox offers the latest conversations to resume. */
   onResume?: (h: HistoryItem) => void;
+  /** Opens an ended conversation where it was (an interrupted one, from its card). */
+  onOpenHistory?: (h: HistoryItem) => void;
 };
 
 
 const where = (w: Win, multiHost: boolean) => [multiHost ? w.host : null, w.project].filter(Boolean).join(' · ');
 
 /** The home screen: what's blocked on you first, then what's working, then the rest. */
-export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, clientFor, onNew, onSearch, onSettings, onReview, handoff, onResume }: Props) {
-  const recent = state.windows.length ? [] : state.history.slice(0, 3);
+export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, clientFor, onNew, onSearch, onSettings, onReview, handoff, onResume, onOpenHistory }: Props) {
+  // Sessions cut off by a crash or restart (server/interruptions), on the host you opened: one card per incident.
+  const incidents = state.interruptions?.incidents ?? [];
+  const cutOff = state.history.filter((h) => h.interrupted && h.host === state.hostname);
+  const recent = state.windows.length ? [] : state.history.filter((h) => !h.interrupted).slice(0, 3);
   const multiHost = state.hosts.length > 1;
   const waiting = state.windows.filter((w) => w.status === 'waiting');
   const reviews = onReview ? (state.review?.alerts ?? []) : [];
   // Scheduled workflows waiting on you (server/jobs), on the host you opened.
   const decisions = state.jobs?.waiting ?? [];
+  const needs = waiting.length + reviews.length + decisions.length + incidents.length;
   const running = state.windows.filter((w) => w.status === 'busy');
   const rest = state.windows.filter((w) => w.status === 'attention' || w.status === 'idle').sort((a, b) => b.activity - a.activity);
   const flip = useFlip<HTMLDivElement>([groupBy, waiting, running, rest, reviews.map((r) => ({ key: `${r.stackId}:${r.pr}:${r.kind}` }))].map((l) => (typeof l === 'string' ? l : l.map((w) => w.key).join(','))).join('|'));
@@ -56,7 +63,36 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, cl
 
   // A phone has no sidebar to show hosts in: it says how many are up, when there is more than one.
   const hosts = narrow && state.hosts.length > 1 ? `${online} of ${state.hosts.length} hosts online. ` : '';
-  const subtitle = hosts + statusCounts(state.windows);
+  // "All quiet." isn't true while sessions sit cut off by a crash.
+  const cutCount = state.interruptions?.count ?? 0;
+  const cutWord = cutCount ? `${cutCount} interrupted.` : '';
+  const subtitle = hosts + (cutCount && !state.windows.length ? cutWord : [statusCounts(state.windows), cutWord].filter(Boolean).join(' '));
+
+  const empty = state.windows.length === 0 && (
+    <div className="empty-state">
+      <p className="empty-title">Nothing running.</p>
+      <p className="hint">Start something new, or pick up where you left off.</p>
+      <button className="btn light" onClick={onNew}>
+        Start a session <ShortcutHint id="new-session" />
+      </button>
+      {recent.length > 0 && onResume && (
+        <ul className="empty-recent">
+          {recent.map((h) => (
+            <li key={`${h.host}:${h.ref}`}>
+              <button className="empty-recent-row" onClick={() => onResume(h)} title={`Resume ${h.title}`}>
+                <span className="chip sm" style={{ '--agent': look(h.harness).color } as React.CSSProperties}>
+                  <AgentLogo id={h.harness} size={13} />
+                </span>
+                <span className="grow">{h.title}</span>
+                <span className="when">{[h.project, age(h.at)].filter(Boolean).join(' · ')}</span>
+                <span className="resume-word">Resume</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 
   return (
     <div className="page" data-title="Inbox" ref={flip} data-rove="button.card-title, button.row, button.empty-recent-row">
@@ -95,42 +131,21 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, cl
       </header>
       <Reveal>{handoff}</Reveal>
 
-      {state.windows.length === 0 && (
-        <div className="empty-state">
-          <p className="empty-title">Nothing running.</p>
-          <p className="hint">Start something new, or pick up where you left off.</p>
-          <button className="btn light" onClick={onNew}>
-            Start a session <ShortcutHint id="new-session" />
-          </button>
-          {recent.length > 0 && onResume && (
-            <ul className="empty-recent">
-              {recent.map((h) => (
-                <li key={`${h.host}:${h.ref}`}>
-                  <button className="empty-recent-row" onClick={() => onResume(h)} title={`Resume ${h.title}`}>
-                    <span className="chip sm" style={{ '--agent': look(h.harness).color } as React.CSSProperties}>
-                      <AgentLogo id={h.harness} size={13} />
-                    </span>
-                    <span className="grow">{h.title}</span>
-                    <span className="when">{[h.project, age(h.at)].filter(Boolean).join(' · ')}</span>
-                    <span className="resume-word">Resume</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
+      {!incidents.length && empty}
 
       {groupBy !== 'status' && !narrow ? (
         <Grouped windows={state.windows} by={groupBy} multiHost={multiHost} onOpen={onOpen} />
       ) : (
         <>
-          {waiting.length + reviews.length + decisions.length > 0 && (
+          {needs > 0 && (
             <>
               <h2 className="section-label waiting first" data-flip="h:waiting">
-                Needs you <span className="count">{waiting.length + reviews.length + decisions.length}</span>
+                Needs you <span className="count">{needs}</span>
               </h2>
               <div className="cards">
+                {incidents.map((i) => (
+                  <InterruptedCard key={i.id} incident={i} sessions={cutOff.filter((h) => h.interrupted!.incident === i.id).sort((a, b) => Number(b.interrupted!.midTurn) - Number(a.interrupted!.midTurn))} client={clientFor(state.hostname)} onOpen={(h) => (onOpenHistory ?? onResume)?.(h)} />
+                ))}
                 {waiting.map((w) => (
                   <AskCard key={w.key} w={w} client={clientFor(w.host)} multiHost={multiHost} narrow={narrow} onOpen={onOpen} onAnswer={onAnswer} />
                 ))}
@@ -145,7 +160,7 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, cl
           )}
           {running.length > 0 && (
             <>
-              <h2 className={`section-label busy ${waiting.length + reviews.length + decisions.length ? '' : 'first'}`} data-flip="h:running">
+              <h2 className={`section-label busy ${needs ? '' : 'first'}`} data-flip="h:running">
                 Working <span className="count">{running.length}</span>
               </h2>
               {!narrow && <ListHead flip="lh:running" />}
@@ -154,13 +169,14 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, cl
           )}
           {rest.length > 0 && (
             <>
-              <h2 className={`section-label ${waiting.length || reviews.length || running.length ? '' : 'first'}`} data-flip="h:rest">Idle and done <span className="count">{rest.length}</span></h2>
+              <h2 className={`section-label ${needs || running.length ? '' : 'first'}`} data-flip="h:rest">Idle and done <span className="count">{rest.length}</span></h2>
               {!narrow && <ListHead flip="lh:rest" />}
               <Rows windows={rest} multiHost={multiHost} narrow={narrow} onOpen={onOpen} quiet />
             </>
           )}
         </>
       )}
+      {incidents.length > 0 && empty}
     </div>
   );
 }

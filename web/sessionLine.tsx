@@ -67,7 +67,7 @@ export function historyLine(h: HistoryItem, where: Where = {}): ReactNode {
     where.project ? h.project : null,
     look(h.harness).name,
     shortModel(h.model),
-    h.kind === 'ended' ? 'ended' : null,
+    h.interrupted ? (h.interrupted.midTurn ? 'interrupted mid-turn' : 'interrupted') : h.kind === 'ended' ? 'ended' : null,
     h.worktree ? '⎇ worktree' : null,
     h.fork ? `⑂ fork of ${h.fork.parentTitle}` : null,
     h.continued?.kind === 'migration' ? `↪ from ${h.continued.fromHost ?? 'another host'}` : h.continued && h.continued.kind !== 'fork' ? `↪ from ${look(h.continued.fromHarness).name}` : null,

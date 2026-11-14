@@ -136,7 +136,16 @@ export type HistoryItem = {
   continued?: Continued | null;
   /** Moved to another host: it goes on there. */
   moved?: { host: string; uid: string; at: number } | null;
+  /** Cut off, not ended: the tmux server stopped, the host restarted, or its window closed mid-turn (server/interruptions). */
+  interrupted?: Interrupted | null;
 };
+
+export type InterruptCause = 'tmux_server' | 'host_restart' | 'window';
+export type Interrupted = { cause: InterruptCause; at: number; lastSeenAt: number; incident: string; lastStatus: string; midTurn: boolean };
+export type InterruptionsState = { count: number; midTurn: number; incidents: Array<{ id: string; cause: InterruptCause; at: number; count: number; midTurn: number }> };
+export type Restored = { uid: string; windowId: string; resumed: boolean; noted: boolean; midTurn: boolean };
+/** Which interrupted sessions an action is for: some, one incident, or all of them. */
+export type InterruptTarget = { uids: string[] } | { incident: string } | { all: true };
 
 export type PresetChoice = { id: string; name: string; args?: string[]; dangerous?: boolean; description?: string; appliesTo?: string };
 export type ModelChoice = { id: string; name: string; args: string[]; appliesTo?: string; description?: string; efforts?: string[]; isDefault?: boolean };
@@ -286,6 +295,8 @@ export type State = {
   features?: Record<string, number>;
   /** Scheduled work on this host: next, running, waiting for your decision (server/jobs). */
   jobs?: JobsState | null;
+  /** Sessions cut off by a crash or restart, waiting to be restored (server/interruptions). */
+  interruptions?: InterruptionsState | null;
   hostname: string;
   hosts: Host[];
   home: string;
@@ -463,6 +474,9 @@ export function hostApi(base: string) {
       r<UsageReport>('GET', `/api/usage?by=${o.by}${o.from ? `&from=${o.from}` : ''}${o.to ? `&to=${o.to}` : ''}`),
     usageLimits: () => r<UsageLimits>('GET', '/api/usage/limits'),
     usageExportUrl: (format: 'csv' | 'json') => `${base}/api/usage/export?format=${format}`,
+    restore: (uid: string, note = true) => r<Restored>('POST', `/api/sessions/${enc(uid)}/restore`, note ? {} : { note: false }),
+    restoreInterrupted: (target: InterruptTarget) => r<{ restored: Restored[]; failed: Array<{ uid: string; error: string; code: string }> }>('POST', '/api/interruptions/restore', target),
+    dismissInterrupted: (target: InterruptTarget) => r<{ dismissed: number }>('POST', '/api/interruptions/dismiss', target),
     jobs: () => r<{ jobs: Job[]; state: JobsState }>('GET', '/api/jobs'),
     job: (id: string) => r<Job & { runs: JobRun[] }>('GET', `/api/jobs/${enc(id)}`),
     createJob: (body: { name: string; action: JobAction; trigger: JobTrigger; policy?: Record<string, unknown> }) => r<Job>('POST', '/api/jobs', body),

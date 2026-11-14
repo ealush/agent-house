@@ -9865,6 +9865,62 @@ label:has(> input[type='checkbox'][switch]) {
   color: var(--text-2);
   font-size: 13px;
 }
+
+/* ---------- sessions cut off by a crash or restart (web/InterruptedCard.tsx) */
+
+.card-interrupted .decision-body {
+  margin-bottom: 14px;
+}
+.interrupted-list {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+}
+.interrupted-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+}
+.interrupted-list li:last-child {
+  border-bottom: 1px solid var(--line);
+}
+.interrupted-row {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  text-align: left;
+}
+.interrupted-row .grow {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.interrupted-row .tag {
+  flex: none;
+}
+.interrupted-row .tag.mid {
+  color: var(--run);
+}
+.pill.ended.interrupted {
+  background: color-mix(in srgb, var(--limited) 12%, transparent);
+  color: var(--limited);
+}
+.interrupted-note {
+  margin: 0 16px 8px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-2);
+}
 .row.job-row {
   display: flex;
   gap: 12px;

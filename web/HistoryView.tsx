@@ -112,7 +112,7 @@ export function HistoryView({ state, onResume, onForget, onFork, onMove, touch =
                   className={`row quiet history-row ${touch ? 'tap' : ''}`}
                   style={{ '--agent': color } as React.CSSProperties}
                   {...press.bind(() => [
-                    { label: 'Resume', icon: 'reload', run: () => onResume(h) },
+                    { label: h.interrupted ? 'Restore' : 'Resume', icon: 'reload', run: () => onResume(h) },
                     ...(canFork ? [{ label: 'Fork…', icon: 'fork' as const, run: () => onFork?.(h) }] : []),
                     ...(canMove ? [{ label: 'Move to another host…', icon: 'reload' as const, run: () => onMove?.(h) }] : []),
                     { label: 'Hide', icon: 'close', danger: true, run: () => onForget(h) },
@@ -158,7 +158,7 @@ export function HistoryView({ state, onResume, onForget, onFork, onMove, touch =
                         (() => {
                           const items = (
                             <>
-                              <button onClick={() => { setMenuFor(null); onResume(h); }}>Resume</button>
+                              <button onClick={() => { setMenuFor(null); onResume(h); }}>{h.interrupted ? 'Restore' : 'Resume'}</button>
                               {canFork && <button onClick={() => { setMenuFor(null); onFork?.(h); }}>Fork…</button>}
                               {canMove && <button onClick={() => { setMenuFor(null); onMove?.(h); }}>Move to another host…</button>}
                               <button className="danger" onClick={() => { setMenuFor(null); onForget(h); }}>Hide</button>
@@ -183,8 +183,8 @@ export function HistoryView({ state, onResume, onForget, onFork, onMove, touch =
                     </span>
                   ) : (
                   <span className="row-actions">
-                    <button className="btn small resume" onClick={() => onResume(h)}>
-                      Resume
+                    <button className="btn small resume" onClick={() => onResume(h)} title={h.interrupted ? 'Resume it in its conversation; if it was working, tell it where it stopped' : undefined}>
+                      {h.interrupted ? 'Restore' : 'Resume'}
                     </button>
                     {canFork && (
                       <button className="btn small ghost" onClick={() => onFork(h)}>

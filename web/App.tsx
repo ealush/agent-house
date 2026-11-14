@@ -133,7 +133,8 @@ const onTop = (el: HTMLElement | null) => {
   } catch {}
 };
 
-// URL hash: "#<uid>" (local session), "#<host>/<uid>" (peer session), "#history", "#sessions".
+// URL hash: "#<uid>" (local session), "#<host>/<uid>" (peer session), "#history", "#sessions",
+// "#interrupted" (the Inbox, where interrupted sessions are).
 // "#security" still lands on settings, where Security lives now. Old links
 // ("#@12", a tmux window id) still open: App upgrades them once windows are known.
 const PAGES = ['history', 'sessions', 'settings', 'search', 'review', 'jobs', 'usage'] as const;
@@ -147,6 +148,8 @@ function fromHash(): { page: Page; selected: string | null } {
   if (h === 'security' || h.startsWith('settings/')) h = 'settings';
   // Review keeps its own place after the page: #review/<stack>/<pr> (web/review/ReviewPage.tsx).
   if (h.startsWith('review/')) h = 'review';
+  // A notification about sessions a crash cut off (server/interruptions): their card is on the Inbox.
+  if (h === 'interrupted') return { page: 'inbox', selected: null };
   if ((PAGES as readonly string[]).includes(h)) return { page: h as Page, selected: null };
   if (/^(?:[\w.-]+\/)?(?:@\d+|[\w-]{4,40})$/.test(h)) return { page: 'inbox', selected: h };
   return { page: 'inbox', selected: null };
@@ -945,10 +948,13 @@ export function App({ onLock }: { onLock: () => void }) {
   /** The key the session came back under; null when it failed (already reported). */
   async function resumeKey(host: string, ref: string) {
     try {
-      const out = await clientFor(host).resume(ref);
+      // Cut off by a crash or restart (server/interruptions): restored, so one that was
+      // working is told where it stopped before anything else goes in.
+      const cut = state?.history.find((h) => h.host === host && h.ref === ref)?.interrupted;
+      const out = cut ? await clientFor(host).restore(ref).then((x) => ({ id: x.windowId, uid: x.uid, resumed: x.resumed })) : await clientFor(host).resume(ref);
       // Listed before it's shown: a key the state doesn't have yet reads as gone.
       await waitForWindow(() => refresh(host), out);
-      if (out.resumed) flash('Resuming…');
+      if (out.resumed) flash(cut ? 'Restoring…' : 'Resuming…');
       return keyFor(host, out.uid);
     } catch (e) {
       showError(e, "Couldn't resume");
@@ -1155,6 +1161,7 @@ export function App({ onLock }: { onLock: () => void }) {
           onReview={openReview}
           handoff={narrow ? handoff : null}
           onResume={(h) => resume(h.host, h.ref)}
+          onOpenHistory={(h) => open(keyFor(h.host, h.ref))}
         />
       )}
       {narrow && (
