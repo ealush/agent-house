@@ -279,10 +279,11 @@ struct DetailView: View {
         // A page gives way to a session (or the panes) through a short fade, where it cut.
         // Only the kind of thing changing does it: one session to the next stays in place.
         .animation(.smooth(duration: 0.18), value: kind)
-        // A session's screen stands above the keyboard by itself (`KeyboardFrame`), and SwiftUI
-        // lets the keyboard go only at the root of what's hosted, which in the split is here:
-        // left to the column as well, its bar rose twice, a keyboard's height of nothing
-        // under the box. Pages (and New session) keep the column's own room for it.
+        // A session's screen stands above the keyboard by itself (UIKit's keyboard layout guide:
+        // `ConversationController`, `AboveKeyboard`), and SwiftUI lets the keyboard go only at the
+        // root of what's hosted, which in the split is here: left to the column as well, the box
+        // rose twice, a keyboard's height of nothing under it. Pages (and New session) keep the
+        // column's own room for it, SwiftUI's.
         .ignoresSafeArea(.keyboard, edges: kind == 0 || kind == 1 ? .all : [])
         // The scratchpad drops in from the top and goes back up: its transition was written,
         // and nothing ever ran it.
@@ -322,7 +323,7 @@ private struct ScratchpadView: View {
                 Button { Task { await scene.toggleScratchpad() } } label: { Image(systemName: "chevron.down") }.accessibilityLabel("Hide the scratchpad")
             }
             .padding(10)
-            TerminalScreen(session: session, scene: scene)
+            AboveKeyboard { TerminalScreen(session: session, scene: scene) }
         }
         .background(theme.background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(theme.faint.opacity(0.4)))
@@ -659,7 +660,19 @@ struct PaneMenuItems: View {
 
 /// An empty pane: search for a session right here (it takes the keyboard after a split),
 /// start a new one, or cancel.
+/// Its list stands above the keyboard in a short pane (`AboveKeyboard`): the panes let go of the
+/// column's keyboard room, and the sessions in them stand above it by themselves.
 private struct ChooserPane: View {
+    let scene: SceneModel
+    let path: LayoutNode.Path
+
+    var body: some View {
+        AboveKeyboard { ChooserContent(scene: scene, path: path) }
+            .ignoresSafeArea(.container, edges: .bottom)
+    }
+}
+
+private struct ChooserContent: View {
     let scene: SceneModel
     let path: LayoutNode.Path
     @State private var query = ""
@@ -741,9 +754,6 @@ private struct ChooserPane: View {
         // Scrolls when it can't fit (the on-screen keyboard up in a short pane), so its title
         // isn't pushed up under the status bar; centered while it fits.
         .wrappedInScrollWhenTall()
-        // Its own room above the keyboard: the panes let go of the column's (the sessions
-        // in them stand above it by themselves), and the list went under the keyboard.
-        .modifier(KeyboardRoom())
         .onAppear { if scene.focusRequest?.target == .chooser(path) || scene.workspace.focusPath == path { focused = true } }
         .onChange(of: scene.focusRequest) { _, request in if request?.target == .chooser(path) { focused = true } }
         .onChange(of: focused) { _, now in if now { scene.didFocus(.chooser(path)) } else { scene.didBlur(.chooser(path)) } }

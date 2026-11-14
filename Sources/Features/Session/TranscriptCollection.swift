@@ -105,16 +105,10 @@ struct TranscriptCollection: View {
     @Environment(\.theme) private var theme
     @Environment(\.hostFiles) private var hostFiles
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var scroll = TranscriptScroll()
-    /// The whole screen the transcript goes under, and the part of it the bars (the navigation
-    /// bar, the composer, the keyboard) leave clear: the collection view keeps its rows inside it.
-    @State private var whole = CGRect.zero
-    @State private var clear = CGRect.zero
+    /// The conversation's (`ConversationController`), which sets the transcript's insets from where
+    /// the dock and the keyboard are.
+    let scroll: TranscriptScroll
     @FocusState private var browseFocused: Bool
-    private var insets: EdgeInsets {
-        guard !whole.isEmpty, !clear.isEmpty else { return EdgeInsets() }
-        return EdgeInsets(top: max(0, clear.minY - whole.minY), leading: 0, bottom: max(0, whole.maxY - clear.maxY), trailing: 0)
-    }
 
     private var focused: Bool { scene.app.preferences.focusMode && !session.stepsShown }
     private var shownBlocks: [FeedBlock] { focused ? session.focusedBlocks : session.blocks }
@@ -134,14 +128,13 @@ struct TranscriptCollection: View {
             live: session.feed.status == .live,
             ask: AskRow.shows(session)
         )
-        ZStack {
-            TranscriptCollectionHost(session: session, scene: scene, scroll: scroll, content: content, insets: insets, theme: theme, hostFiles: hostFiles)
-                // Measured inside: what's measured outside is the frame the bars leave clear.
-                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { whole = $0 }
-                .ignoresSafeArea()
-            Color.clear
-                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { clear = $0 }
-        }
+        // The rows go under the bars and the dock (their insets keep them clear); what's laid over
+        // them here keeps to the safe area, which reaches down to the dock's top.
+        Color.clear
+            .background {
+                TranscriptCollectionHost(session: session, scene: scene, scroll: scroll, content: content, theme: theme, hostFiles: hostFiles)
+                    .ignoresSafeArea()
+            }
             .overlay { status(blocks) }
             .overlay(alignment: .bottom) {
                 // Animated here alone: on the whole transcript, leaving the end handed the
@@ -265,7 +258,6 @@ private struct TranscriptCollectionHost: UIViewControllerRepresentable {
     let scene: SceneModel
     let scroll: TranscriptScroll
     let content: TranscriptContent
-    let insets: EdgeInsets
     let theme: Theme
     let hostFiles: HostFiles?
 
@@ -277,10 +269,6 @@ private struct TranscriptCollectionHost: UIViewControllerRepresentable {
         controller.theme = theme
         controller.hostFiles = hostFiles
         controller.reduceMotion = context.environment.accessibilityReduceMotion
-        // The keyboard and the composer move in SwiftUI's animation; the rows follow in it.
-        context.animate {
-            controller.setInsets(top: insets.top, bottom: insets.bottom)
-        }
         controller.update(content)
     }
 }
@@ -350,6 +338,10 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
     private var growing: (item: TranscriptItem, height: CGFloat)?
     /// A question just came in, not yet measured.
     private var askArrived = false
+    #if DEBUG
+    /// After every placing and scroll: the layout probe reads where the transcript is.
+    var placed: (() -> Void)?
+    #endif
 
     init(session: SessionModel, scene: SceneModel, scroll: TranscriptScroll) {
         self.session = session
@@ -500,7 +492,9 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
         }
         content = new
         blocksByID = Dictionary(uniqueKeysWithValues: new.blocks.enumerated().map { (item($0.element.id).blockID, ($0.element, $0.offset)) })
-        collectionView.keyboardDismissMode = scene.hardwareKeyboard ? .none : .onDrag
+        // A drag down the transcript takes the keyboard with it, under the finger; the dock rides
+        // its top (the keyboard layout guide follows the drag).
+        collectionView.keyboardDismissMode = scene.hardwareKeyboard ? .none : .interactive
         if let index = browsing, index >= new.blocks.count { browsing = new.blocks.indices.last }
 
         // Reading back, the anchor is where the finger left the view (a page may go in above).
@@ -667,6 +661,9 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
         // Near the top once it's placed (a short first page): the page before is read in, as it
         // would be on the way up.
         if nearTop, content.hasOlder, content.live { loadOlder() }
+        #if DEBUG
+        placed?()
+        #endif
     }
 
     /// The anchor from where the view is: the end if it's within reach, else the first row whose
@@ -833,6 +830,9 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
     // MARK: Scrolling
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        #if DEBUG
+        placed?()
+        #endif
         // Someone scrolling (a finger, a trackpad, a fling, VoiceOver's three-finger scroll):
         // the anchor is where they've taken it. Not anything else that moves the view (turning
         // the screen, a pane resized), which isn't reading anywhere.
@@ -998,3 +998,38 @@ final class TranscriptCell: UICollectionViewCell {
         attributes
     }
 }
+
+#if DEBUG
+extension TranscriptController {
+    /// Where the transcript is, for the layout probe (`LayoutProbe`): sizes and its anchor, no text.
+    struct Diagnostics: Equatable, Encodable {
+        var offset: CGFloat
+        var contentHeight: CGFloat
+        var viewHeight: CGFloat
+        var insetTop: CGFloat
+        var insetBottom: CGFloat
+        /// "end", or the row being read and how far below the top bar it's held.
+        var anchor: String
+        var rows: Int
+        var visibleRows: Int
+    }
+
+    var diagnostics: Diagnostics? {
+        guard let collectionView else { return nil }
+        let anchor: String
+        switch self.anchor {
+        case .end: anchor = "end"
+        case .row(let item, let fromTop): anchor = "row \(String(describing: item).prefix(24)) at \(Int(fromTop))"
+        }
+        return Diagnostics(
+            offset: collectionView.contentOffset.y.rounded(),
+            contentHeight: collectionView.contentSize.height.rounded(),
+            viewHeight: collectionView.bounds.height.rounded(),
+            insetTop: collectionView.contentInset.top.rounded(),
+            insetBottom: collectionView.contentInset.bottom.rounded(),
+            anchor: anchor,
+            rows: dataSource.snapshot().numberOfItems,
+            visibleRows: collectionView.indexPathsForVisibleItems.count)
+    }
+}
+#endif

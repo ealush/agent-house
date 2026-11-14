@@ -21,14 +21,10 @@ struct SessionScreen: View {
     @State private var panelWidth: CGFloat = 380
     @State private var previewURL: URL?
     @State private var screenWidth: CGFloat = 1000
-    @State private var room: CGFloat = 800
     /// This screen put the sidebar away to make room for a panel, and brings it back after.
     @State private var hidSidebarForPanel = false
     /// The conversation's least width beside a panel; past it, the sidebar makes way.
     static let roomBesidePanel: CGFloat = 460
-    /// How tall the bar under the transcript is: what opens out of the composer floats just
-    /// above it.
-    @State private var barHeight: CGFloat = 0
 
     private var narrow: Bool { sizeClass == .compact || scene.narrow }
     /// How wide the conversation and its composer grow on a big screen: past this, lines get
@@ -46,68 +42,24 @@ struct SessionScreen: View {
                 if !session.isLive, let history = session.history {
                     EndedBanner(session: session, scene: scene, item: history)
                 }
-                // The question and the composer float over the transcript, which scrolls on
-                // beneath them (and fades under, at the bar's edge). Soft at both edges, said
-                // outright: left to the system, a phone drew the hard edge, an opaque band
-                // with a hairline in a tint the transcript doesn't have.
                 // The conversation and the terminal change places through a short fade: the
-                // switch cut from one to the other.
+                // switch cut from one to the other. Soft at both edges, said outright: left to the
+                // system, a phone drew the hard edge, an opaque band with a hairline in a tint the
+                // transcript doesn't have.
                 ZStack { surface }
                     .animation(.smooth(duration: 0.18), value: session.surface)
                     .scrollEdgeEffectStyle(.soft, for: .vertical)
-                    // The room under the header and above the keyboard, which the bar over the
-                    // conversation must fit in.
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { room = $0 }
-                    .safeAreaBar(edge: .bottom, spacing: 0) {
-                        if session.surface == .gui && session.hasGUI {
-                            // The question is the conversation's last row (`AskRow`), scrolling with
-                            // it: in a panel of its own here it scrolled apart from the page, and a
-                            // bar that tall washed the conversation under it out.
-                            VStack(spacing: 0) {
-                                ComposerView(session: session, composer: session.composer, scene: scene, room: room)
-                            }
-                            // Toasts sit above the composer (and the keyboard under it): a phone's,
-                            // or the focused pane's on a big screen.
-                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
-                                if narrow || paneFocused {
-                                    scene.composerTop = Double(frame.minY)
-                                    scene.composerMidX = Double(frame.midX)
-                                }
-                            }
-                            .onChange(of: paneFocused) { _, focused in
-                                if !focused && !narrow {
-                                    scene.composerTop = nil
-                                    scene.composerMidX = nil
-                                }
-                            }
-                            .onDisappear {
-                                if narrow || paneFocused {
-                                    scene.composerTop = nil
-                                    scene.composerMidX = nil
-                                }
-                            }
-                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { barHeight = $0 }
-                            .frame(maxWidth: Self.readableWidth)
-                            .frame(maxWidth: .infinity)
-                        }
-                    }
-            }
-            // Over the transcript, above the bar and outside it (a view past the bar's edge
-            // draws but takes no touch).
-            .overlay(alignment: .bottom) {
-                if session.surface == .gui && session.hasGUI {
-                    ComposerFloat(session: session, composer: session.composer, scene: scene)
-                        .frame(maxWidth: Self.readableWidth)
-                        .frame(maxWidth: .infinity)
-                        .padding(.bottom, barHeight)
-                }
             }
             if !narrow, let panel = session.panel {
                 Divider()
-                NavigationStack {
-                    PanelView(panel: panel, session: session, scene: scene)
-                        .modifier(PanelChrome(panel: panel, session: session, scene: scene))
+                // Its comment box and fields stay above the keyboard, as the conversation's does.
+                AboveKeyboard {
+                    NavigationStack {
+                        PanelView(panel: panel, session: session, scene: scene)
+                            .modifier(PanelChrome(panel: panel, session: session, scene: scene))
+                    }
                 }
+                .ignoresSafeArea(.container, edges: .bottom)
                 .frame(width: max(280, min(640, panelWidth - CGFloat(scene.panelWidthDelta))))
                 .transition(.move(edge: .trailing))
             }
@@ -115,14 +67,11 @@ struct SessionScreen: View {
         // A panel slides in as it slides out (opened from the menu, it cut in), the
         // conversation making room beside it; Reduce Motion keeps it short.
         .animation(narrow ? nil : (reduceMotion ? Animation.smooth(duration: 0.12) : Animation.snappy(duration: 0.25)), value: session.panel != nil)
-        // Above the keyboard by where the keyboard is, not by the keyboard safe area: the bar
-        // sits in the transcript's inset, which UIKit moves with the keyboard, while the safe
-        // area settles only afterwards, so what floats over the bar sat still as the bar went
-        // down and then jumped after it. Ignored here at the screen's root, which is where
-        // SwiftUI honours that: asked of the float alone, it was still placed by the safe
-        // area, and rose twice as far.
-        // As far as the keyboard covers this screen, which in a split is this pane's share.
-        .modifier(KeyboardRoom())
+        // SwiftUI doesn't move this screen for the keyboard: the conversation stands on it by
+        // itself (`ConversationController`, UIKit's keyboard layout guide), and the terminal and a
+        // side panel through `AboveKeyboard`, each by as much as the keyboard covers it (in a
+        // split, this pane's share). The hosting controllers leave the keyboard out of SwiftUI's
+        // safe area (a phone's `SessionHostController`, an iPad's detail column here at its root).
         .ignoresSafeArea(.keyboard)
         // Under the keyboard and the bars too: the keyboard's rounded corners showed the
         // window's black over a terminal that stops at the keyboard.
@@ -190,10 +139,20 @@ struct SessionScreen: View {
         if session.surface == .gui && session.hasGUI {
             // One per session, as the terminal is: a pane switched to another kept the last one's
             // place in its conversation (scrolled back there, this one opened scrolled back too).
-            TranscriptCollection(session: session, scene: scene).id(session.key).transition(.opacity)
+            // Under the bars and the home indicator: the transcript runs on beneath them, and the
+            // controller keeps its rows and the dock clear of them.
+            ConversationSurface(session: session, scene: scene, paneFocused: paneFocused, narrow: narrow) { path in
+                Task { await preview(path) }
+            }
+            .ignoresSafeArea(.container)
+            .id(session.key)
+            .transition(.opacity)
         } else if session.isLive {
             // One per session: a pane switched to another kept the last one's terminal.
-            TerminalScreen(session: session, scene: scene).id(session.key).transition(.opacity)
+            AboveKeyboard { TerminalScreen(session: session, scene: scene) }
+                .ignoresSafeArea(.container, edges: .bottom)
+                .id(session.key)
+                .transition(.opacity)
         } else {
             // An ended session without a transcript: its last screen, read-only.
             EndedScreen(session: session).transition(.opacity)

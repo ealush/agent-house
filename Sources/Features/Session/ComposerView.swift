@@ -11,10 +11,11 @@ struct ComposerView: View {
     @Bindable var session: SessionModel
     @Bindable var composer: ComposerModel
     @Bindable var scene: SceneModel
-    /// How tall the conversation's area is (under the header, above the keyboard): what's
-    /// over the box has to fit in it, or the bar overflowed both ways, the queue under the
-    /// header and the box afloat above the keyboard.
-    var room: CGFloat = .infinity
+    /// The conversation's room (under the header, down to the keyboard), from the controller
+    /// that places the dock: what's over the box has to fit in it with the transcript.
+    let room: ConversationRoom
+    /// The room, or no limit until it's been laid out once.
+    private var roomHeight: CGFloat { room.available > 0 ? room.available : .infinity }
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pickingPhotos: [PhotosPickerItem] = []
@@ -54,12 +55,12 @@ struct ComposerView: View {
             // (the two together, over a long queue, left a sliver of the conversation), and
             // while the Queue panel shows the same list beside it.
             QueueTrayView(queue: session.queue, composer: composer, working: session.working, held: session.awaitingTrust, hardwareKeyboard: scene.hardwareKeyboard,
-                          folded: scene.app.preferences.queueFolded || showsTray || session.panel == .queue || room < Self.roomForQueue,
-                          listCap: max(80, room * 0.35),
+                          folded: scene.app.preferences.queueFolded || showsTray || session.panel == .queue || roomHeight < Self.roomForQueue,
+                          listCap: max(80, roomHeight * 0.35),
                           // Too little room to open it here: the line opens the Queue panel (a
                           // sheet on a phone), where the whole list fits.
                           toggleFold: {
-                              if room < Self.roomForQueue, SceneSnapshot.Panel.queue.applies(to: session) {
+                              if roomHeight < Self.roomForQueue, SceneSnapshot.Panel.queue.applies(to: session) {
                                   session.panel = .queue
                               } else {
                                   withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { scene.app.preferences.queueFolded.toggle() }

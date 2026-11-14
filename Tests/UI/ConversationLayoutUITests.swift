@@ -37,7 +37,7 @@ final class ConversationLayoutUITests: XCTestCase {
         try await host.reset(Self.main)
         try await host.reset(Self.other)
         app = XCUIApplication()
-        app.launchArguments += ["-AHFreshWindow", "-AHTouchOnly"]
+        app.launchArguments += ["-AHFreshWindow", "-AHTouchOnly", "-AHLayoutProbe"]
         app.launch()
         try enroll()
     }
@@ -173,7 +173,7 @@ final class ConversationLayoutUITests: XCTestCase {
         assertTranscriptDrawn("second session")
         XCTAssertFalse((composer.value as? String ?? "").contains("Draft for the first"), "the first session's draft showed in the second")
         back()
-        open(Self.main)
+        open(Self.main, keepDraft: true)
         XCTAssertTrue((composer.value as? String ?? "").contains("Draft for the first"), "the draft was lost going to another session and back")
         assertTranscriptDrawn("back to the first")
     }
@@ -186,10 +186,11 @@ final class ConversationLayoutUITests: XCTestCase {
         composer.typeText("Draft that outlives a model change")
         XCTAssertTrue(tray.waitForExistence(timeout: 15))
         app.buttons["Show session settings"].tap()
-        let model = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Model'")).firstMatch
+        // The chip is a menu, labelled "Model, <value>"; its choices are toggles.
+        let model = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Model, '")).firstMatch
         XCTAssertTrue(model.waitForExistence(timeout: 5), "no model chip in the settings")
         model.tap()
-        let choice = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Sonnet' OR label CONTAINS 'Haiku'")).firstMatch
+        let choice = app.descendants(matching: .any).matching(NSPredicate(format: "(label CONTAINS 'Sonnet' OR label CONTAINS 'Haiku') AND NOT (label BEGINSWITH 'Model, ')")).firstMatch
         XCTAssertTrue(choice.waitForExistence(timeout: 5), "no other model to pick")
         choice.tap()
         settle()
@@ -317,7 +318,7 @@ final class ConversationLayoutUITests: XCTestCase {
 
     // MARK: Steps
 
-    private func open(_ title: String) {
+    private func open(_ title: String, keepDraft: Bool = false) {
         if isPhone, app.tabBars.buttons["Sessions"].exists { app.tabBars.buttons["Sessions"].tap() }
         let row = app.descendants(matching: .any).matching(identifier: "session:\(title)").firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 15), "no session row for \(title)")
@@ -325,6 +326,16 @@ final class ConversationLayoutUITests: XCTestCase {
         XCTAssertTrue(composer.waitForExistence(timeout: 15), "no composer in \(title)")
         XCTAssertTrue(transcript.waitForExistence(timeout: 15), "no transcript in \(title)")
         settle(1.5)
+        if !keepDraft { clearDraft() }
+    }
+
+    /// A draft left from an earlier test (they're kept per session, across launches) goes first.
+    private func clearDraft() {
+        let left = (composer.value as? String) ?? ""
+        guard !left.isEmpty, left != composer.placeholderValue else { return }
+        composer.tap()
+        composer.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: left.count + 2))
+        dismissKeyboardByTap()
     }
 
     private func back() {
@@ -374,14 +385,31 @@ final class ConversationLayoutUITests: XCTestCase {
 
     // MARK: Assertions
 
-    /// On the keyboard: no gap under the bar and no overlap with the keys.
+    /// On the keyboard: no gap under the bar and no overlap with the keys. XCUI's keyboard is its
+    /// keys, without the suggestions row above them (part of the keyboard all the same), so against
+    /// it alone a bar on the keyboard sits up to a suggestions row above. The app's layout probe
+    /// (`-AHLayoutProbe`, debug builds) has the keyboard's real top: there, the dock's bottom is it.
     private func assertBarOnKeyboard(_ when: String, file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertTrue(keyboardUp, "\(when): no keyboard", file: file, line: line)
         let bar = dock.frame, keys = keyboard.frame
-        XCTAssertLessThanOrEqual(bar.maxY, keys.minY + 1, "\(when): the bar is \(bar.maxY - keys.minY) pt under the keyboard", file: file, line: line)
-        XCTAssertGreaterThanOrEqual(bar.maxY, keys.minY - 14, "\(when): a \(keys.minY - bar.maxY) pt gap between the bar and the keyboard", file: file, line: line)
+        XCTAssertLessThanOrEqual(bar.maxY, keys.minY + 1, "\(when): the bar is \(bar.maxY - keys.minY) pt into the keys", file: file, line: line)
+        XCTAssertGreaterThanOrEqual(bar.maxY, keys.minY - 64, "\(when): a \(keys.minY - bar.maxY) pt gap between the bar and the keys", file: file, line: line)
+        if let probe = probe() {
+            XCTAssertEqual(probe.dockBottom, probe.keyboardTop, accuracy: 1, "\(when): the dock ends at \(probe.dockBottom), the keyboard starts at \(probe.keyboardTop)", file: file, line: line)
+            XCTAssertLessThanOrEqual(probe.keyboardTop, keys.minY + 1, "\(when): the keyboard guide is under the keys' top", file: file, line: line)
+        }
         assertBarUnderTop(when, file: file, line: line)
         keep(when)
+    }
+
+    /// What the app's layout probe says (debug builds launched with `-AHLayoutProbe`), or nil.
+    private func probe() -> (keyboardTop: CGFloat, dockBottom: CGFloat, json: [String: Any])? {
+        let element = app.descendants(matching: .any)["layout-probe"]
+        guard element.exists, let text = element.value as? String, let data = text.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let top = json["keyboardTopInWindow"] as? Double,
+              let dock = json["dockInWindow"] as? [[Double]], dock.count == 2, dock[0].count == 2, dock[1].count == 2 else { return nil }
+        return (CGFloat(top), CGFloat(dock[0][1] + dock[1][1]), json)
     }
 
     /// No keyboard: the bar stands on the bottom edge (above the home indicator).

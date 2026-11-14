@@ -770,6 +770,10 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
         self.scene = root.scene
         self.theme = root.theme
         super.init(rootView: Themed(app: root.scene.app, theme: root.theme) { SessionPage(session: session, scene: root.scene) })
+        // The session's conversation and terminal stand on the keyboard by themselves (UIKit's
+        // keyboard layout guide): left in SwiftUI's safe area too, the keyboard moved and shrank
+        // the whole screen as well, and the box landed a keyboard's height above it.
+        safeAreaRegions = .container
         navigationItem.largeTitleDisplayMode = .never
         navigationItem.backButtonDisplayMode = .minimal
         menuItem.accessibilityLabel = "Session menu"
