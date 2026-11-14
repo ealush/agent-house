@@ -396,7 +396,6 @@ private struct AppearanceSection: View {
             }
             Section {
                 Toggle("Focus mode", isOn: $app.preferences.focusMode)
-                Toggle("New transcript", isOn: $app.preferences.newTranscript)
                 if !app.preferences.focusMode {
                     Toggle("Fold tool steps in transcripts", isOn: $app.preferences.stepsHidden)
                 }

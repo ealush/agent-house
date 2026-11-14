@@ -37,7 +37,7 @@ final class ConversationLayoutUITests: XCTestCase {
         try await host.reset(Self.main)
         try await host.reset(Self.other)
         app = XCUIApplication()
-        app.launchArguments += ["-AHFreshWindow", "-AHTouchOnly", "-AHNewTranscript"]
+        app.launchArguments += ["-AHFreshWindow", "-AHTouchOnly"]
         app.launch()
         try enroll()
     }

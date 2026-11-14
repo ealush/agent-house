@@ -1,11 +1,12 @@
 import SwiftUI
 import UIKit
 
-// The transcript on a UIKit collection view (Settings → Appearance → New transcript). The rows
-// are the same SwiftUI views as `TranscriptView`'s, each in a cell; what's new is who decides
-// where the transcript sits. One anchor does, the end or a row you're reading, and every layout
-// puts the view there before it's drawn: no scroll view guessing at a lazy stack's heights, no
-// follow scrolling a frame later, nothing pulling against anything else.
+// The transcript, on a UIKit collection view. The rows are SwiftUI views (TranscriptRows.swift),
+// each in a cell; the collection view decides where the transcript sits. One anchor does, the end
+// or a row you're reading, and every layout puts the view there before it's drawn: no scroll view
+// guessing at a lazy stack's heights, no follow scrolling a frame later, nothing pulling against
+// anything else. (A SwiftUI ScrollView over a LazyVStack did this before, and its estimated row
+// heights left it past the end of a long turn, laid out but not drawn: a blank screen.)
 
 /// Where the transcript can sit, from its scroll view's size, the bars over it and its content.
 struct TranscriptPlacement: Equatable {
@@ -238,7 +239,7 @@ struct TranscriptCollection: View {
             .background(theme.surface)
     }
 
-    /// A fresh conversation, a transcript on its way or none to show (as `TranscriptView` says).
+    /// A fresh conversation, a transcript on its way or none to show.
     @ViewBuilder
     private func status(_ blocks: [FeedBlock]) -> some View {
         let fresh = session.isLive && !session.isShell && session.outgoing.isEmpty && blocks.isEmpty

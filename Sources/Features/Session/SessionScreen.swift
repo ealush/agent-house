@@ -190,11 +190,7 @@ struct SessionScreen: View {
         if session.surface == .gui && session.hasGUI {
             // One per session, as the terminal is: a pane switched to another kept the last one's
             // place in its conversation (scrolled back there, this one opened scrolled back too).
-            if scene.app.preferences.newTranscript || ProcessInfo.processInfo.arguments.contains("-AHNewTranscript") {
-                TranscriptCollection(session: session, scene: scene).id(session.key).transition(.opacity)
-            } else {
-                TranscriptView(session: session, scene: scene).id(session.key).transition(.opacity)
-            }
+            TranscriptCollection(session: session, scene: scene).id(session.key).transition(.opacity)
         } else if session.isLive {
             // One per session: a pane switched to another kept the last one's terminal.
             TerminalScreen(session: session, scene: scene).id(session.key).transition(.opacity)

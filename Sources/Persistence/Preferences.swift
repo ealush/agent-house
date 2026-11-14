@@ -104,8 +104,6 @@ struct DevicePreferences: Codable, Equatable, Sendable {
     /// Transcripts show the conversation only: the agent's steps and thinking are out of the
     /// way until asked for (a session's working line, or Show Steps).
     var focusMode = false
-    /// Transcripts on the UIKit collection view (`TranscriptCollection`), while it's new.
-    var newTranscript = false
     /// The terminal's on-screen key row: on touch only (auto), always, or never.
     var keyBar: KeyBarMode = .auto
     var terminalFontSize: Double = TerminalTextSize.standard
@@ -164,7 +162,7 @@ struct DevicePreferences: Codable, Equatable, Sendable {
 
     init() {}
 
-    private enum CodingKeys: String, CodingKey { case appearance, deviceName, stepsHidden, focusMode, newTranscript, keyBar, terminalFontSize, inboxGrouping, notifications, recentAgents, focusFollowsPointer, recentPalette, launchMemory, lastPlace, groupOrder, collapsedGroups, sessionSort, queueFolded }
+    private enum CodingKeys: String, CodingKey { case appearance, deviceName, stepsHidden, focusMode, keyBar, terminalFontSize, inboxGrouping, notifications, recentAgents, focusFollowsPointer, recentPalette, launchMemory, lastPlace, groupOrder, collapsedGroups, sessionSort, queueFolded }
 
     private enum LegacyKeys: String, CodingKey { case keyBarVisible }
 
@@ -176,7 +174,6 @@ struct DevicePreferences: Codable, Equatable, Sendable {
         deviceName = try? c.decodeIfPresent(String.self, forKey: .deviceName)
         stepsHidden = (try? c.decode(Bool.self, forKey: .stepsHidden)) ?? false
         focusMode = (try? c.decode(Bool.self, forKey: .focusMode)) ?? false
-        newTranscript = (try? c.decode(Bool.self, forKey: .newTranscript)) ?? false
         // Older rows stored a switch: on meant "when it helps", off meant never.
         keyBar = (try? c.decode(KeyBarMode.self, forKey: .keyBar)) ?? ((try? legacy.decode(Bool.self, forKey: .keyBarVisible)) == false ? .off : .auto)
         terminalFontSize = TerminalTextSize.clamped((try? c.decode(Double.self, forKey: .terminalFontSize)) ?? TerminalTextSize.standard)

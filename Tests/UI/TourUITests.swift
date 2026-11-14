@@ -51,8 +51,6 @@ final class TourUITests: XCTestCase {
         app.launchArguments += ["-AHFreshWindow"]
         // As a phone in the hand: no hardware keyboard, whatever the simulator has.
         if environment["AH_TOUCH_ONLY"] == "1" { app.launchArguments += ["-AHTouchOnly"] }
-        // The transcript on the collection view, while it's behind a setting.
-        if environment["AH_NEW_TRANSCRIPT"] == "1" { app.launchArguments += ["-AHNewTranscript"] }
         app.launch()
         try enrollIfNeeded(app)
         var target = app
