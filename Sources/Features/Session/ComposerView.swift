@@ -81,7 +81,7 @@ struct ComposerView: View {
                                   if queueRoom < QueueTrayView.leastOpen, SceneSnapshot.Panel.queue.applies(to: session) {
                                       session.panel = .queue
                                   } else {
-                                      withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { scene.app.preferences.queueFolded.toggle() }
+                                      withAnimation(reduceMotion ? nil : QueueTrayView.motion) { scene.app.preferences.queueFolded.toggle() }
                                   }
                               },
                               showInPanel: SceneSnapshot.Panel.queue.applies(to: session) ? { session.panel = .queue } : nil)
@@ -1298,6 +1298,8 @@ struct QueueTrayView: View {
     @ScaledMetric(relativeTo: .callout) private var rowHeight: CGFloat = 48
     /// Less budget than this and the tray keeps to its line.
     static let leastOpen: CGFloat = 110
+    /// How the queue folds and opens; the conversation above it moves in the same.
+    static let motion = Animation.snappy(duration: 0.25)
     private var expanded: Bool { queue.expanded }
 
     /// What's next stays in view; the rest fold into a row that says how many. Five long
@@ -1404,7 +1406,7 @@ struct QueueTrayView: View {
                     .frame(height: min(listHeight > 0 ? listHeight : rowHeight * CGFloat(shown.count + queue.pendingRows.count), room))
                     if folds {
                         Button {
-                            withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { queue.expanded.toggle() }
+                            withAnimation(reduceMotion ? nil : Self.motion) { queue.expanded.toggle() }
                         } label: {
                             HStack(spacing: 6) {
                                 Image(systemName: "chevron.down")

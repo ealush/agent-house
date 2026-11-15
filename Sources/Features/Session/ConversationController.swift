@@ -171,7 +171,10 @@ final class ConversationController: UIViewController {
         }
         if insetsFollow {
             insetsFollow = false
-            UIView.animate(springDuration: 0.25, bounce: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+            // The queue's own animation, not a UIKit spring of the same length: in one, the
+            // conversation set off a frame or two ahead of the queue and pulled away from it by
+            // a line, and the queue caught up after.
+            UIView.animate(QueueTrayView.motion) {
                 follow()
                 self.transcript.view.layoutIfNeeded()
             }
@@ -229,7 +232,7 @@ final class ConversationController: UIViewController {
     }
 
     /// The dock's content is this tall at the dock's width. The transcript's end follows at once,
-    /// in a spring like the queue's own folding (unless motion is reduced); the dock's frame
+    /// in the queue's own animation (unless motion is reduced); the dock's frame
     /// takes the height once SwiftUI has moved what's in it.
     ///
     /// SwiftUI animates the dock's content (the queue folding, a row coming) in the dock's own
