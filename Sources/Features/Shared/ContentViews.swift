@@ -293,19 +293,15 @@ struct CodeBlockView: View {
                         .padding(.vertical, 11)
                 }
                 if let runs, let snippetRun {
-                    // A menu, not a button: a tap beside Copy runs nothing by itself.
-                    Menu {
-                        Section("In a shell in \(snippetRun.place)") {
-                            Button("Run in Terminal", systemImage: "terminal") {
-                                Haptics.tap()
-                                snippetRun.run(runs)
-                            }
-                        }
+                    Button {
+                        Haptics.tap()
+                        snippetRun.run(runs)
                     } label: {
                         glyph("terminal", tint: theme.muted)
                     }
                     .buttonStyle(.borderless)
-                    .accessibilityLabel("Run in Terminal")
+                    .accessibilityLabel("Send to terminal")
+                    .accessibilityHint("Runs in this session’s attached shell in \(snippetRun.place)")
                 }
                 Button {
                     UIPasteboard.general.string = code

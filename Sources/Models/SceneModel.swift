@@ -198,6 +198,7 @@ final class SceneModel {
     enum FocusTarget: Equatable, Sendable {
         case composer(String)
         case terminal(String)
+        case attachedTerminal(String)
         case ask(String)
         case sidebar
         case page
@@ -212,7 +213,7 @@ final class SceneModel {
         /// The session this target is in, if any.
         var sessionKey: String? {
             switch self {
-            case .composer(let k), .terminal(let k), .ask(let k), .messages(let k), .latest(let k), .rename(let k), .turn(let k, _): return k
+            case .composer(let k), .terminal(let k), .attachedTerminal(let k), .ask(let k), .messages(let k), .latest(let k), .rename(let k), .turn(let k, _): return k
             case .sidebar, .page, .chooser: return nil
             }
         }
@@ -334,7 +335,7 @@ final class SceneModel {
         }
         guard let key = target.sessionKey else { return }
         switch target {
-        case .composer, .terminal: focusMemory[key] = target
+        case .composer, .terminal, .attachedTerminal: focusMemory[key] = target
         default: break
         }
         if let layout = workspace.layout, workspace.focusedKey != key, let leaf = layout.leaves().first(where: { $0.sessionKey == key }) {
@@ -385,7 +386,11 @@ final class SceneModel {
         let model = session(key)
         // A waiting session's answer controls come first in the GUI, as Reply does.
         if let model, model.surface == .gui, let ask = answerFocus(model) { return ask }
-        if let remembered = focusMemory[key] { return remembered }
+        if let remembered = focusMemory[key] {
+            if case .attachedTerminal = remembered {
+                if model?.panel == .terminal { return remembered }
+            } else { return remembered }
+        }
         guard let model else { return .composer(key) }
         return model.surface == .gui && model.hasGUI ? .composer(key) : .terminal(key)
     }
@@ -949,8 +954,8 @@ final class SceneModel {
         case "send-to": return s.map { $0.isLive && $0.hasGUI } ?? false
         case "continue-in": return s.map { $0.hasGUI && !$0.isShell } ?? false
         case "conversation-lineage": return s.map { !$0.isShell && portable($0) } ?? false
-        case "toggle-keys": return s?.surface == .terminal
-        case "terminal-text-bigger", "terminal-text-smaller", "terminal-text-reset": return s?.surface == .terminal || workspace.scratchVisible
+        case "toggle-keys": return s?.surface == .terminal || s?.panel == .terminal
+        case "terminal-text-bigger", "terminal-text-smaller", "terminal-text-reset": return s?.surface == .terminal || s?.panel == .terminal || workspace.scratchVisible
         default: return false
         }
     }
@@ -1123,6 +1128,7 @@ final class SceneModel {
         case "panel-snapshots": togglePanel(.snapshots)
         case "panel-preview": togglePanel(.preview)
         case "panel-stack": togglePanel(.stack)
+        case "panel-terminal": togglePanel(.terminal)
         case "session-menu": if let key { sheet = .sessionMenu(key) }
         case "scrollback":
             guard let s, let key else { return }
@@ -1612,6 +1618,10 @@ final class SceneModel {
         hub?.state(host: SessionKey(session.key)?.host)?.supports("portable") ?? false
     }
 
+    func attachedTerminal(_ session: SessionModel) -> Bool {
+        hub?.state(host: SessionKey(session.key)?.host)?.supports("attachedTerminal") ?? false
+    }
+
     /// Start a session and open it once the host lists it.
     @discardableResult
     func start(_ request: NewSessionRequest, host: String? = nil, prompt: String? = nil, intoPane: LayoutNode.Path? = nil) async -> String? {
@@ -1651,46 +1661,19 @@ final class SceneModel {
         _ = await start(request, host: near.flatMap { $0.isLocal ? nil : $0.host }, intoPane: path)
     }
 
-    /// Run a snippet from a session's conversation in a shell in its folder: one waiting at its
-    /// prompt there, or a new one (`ShellRun`). Typed with Return, then shown where you can
-    /// watch it: beside the conversation on a wide screen, in its place on a phone.
+    /// A snippet always goes to its owner's companion shell; the host checks readiness.
     func runInShell(_ snippet: String, from session: SessionModel) async {
         let command = ShellRun.command(snippet)
-        guard !command.isEmpty, let hub, let row = hub.row(session.key) else { return }
-        let host = row.isLocal ? nil : row.host
-        let api = hub.client(host: host)
-        let uid: String
-        if let shell = ShellRun.shell(for: row, among: hub.rows) {
-            uid = shell.uid
-        } else {
-            // Not `create`: a shell started this way isn't the agent New session offers next.
-            let cwd = row.dto.cwd.isEmpty ? row.dto.projectPath : row.dto.cwd
-            do {
-                uid = try await api.create(NewSessionRequest(preset: "shell", cwd: cwd, session: row.dto.session, label: "")).uid
-            } catch {
-                toast("Couldn’t start a shell: \(APIError.wrap(error).message)", error: true)
-                return
-            }
-            hub.refresh(host: host)
-        }
-        let key = host.flatMap { $0 == hub.hostname ? nil : $0 }.map { "\($0)/\(uid)" } ?? uid
+        guard !command.isEmpty, attachedTerminal(session) else { return }
+        session.panel = .terminal
+        scheduleSave()
         do {
-            _ = try await api.send(uid, text: command)
+            _ = try await session.api.openTerminal(session.ref, command: command)
+            session.hub.refresh(host: SessionKey(session.key)?.host)
+            if hardwareKeyboard { requestFocus(.attachedTerminal(session.key)) }
         } catch {
             toast("Couldn’t run it: \(APIError.wrap(error).message)", error: true)
-            return
         }
-        if let leaf = workspace.layout?.leaves().first(where: { $0.sessionKey == key }) {
-            following { workspace.focus(leaf.path) }
-        } else if narrow {
-            open(key)
-            return
-        } else {
-            following { workspace.openTile(key, wide: true) }
-            syncRouteToWorkspace()
-        }
-        pruneSessions()
-        scheduleSave()
     }
 
     /// Terminate after the confirmation sheet.
@@ -1770,6 +1753,9 @@ extension SceneSnapshot.Panel {
         case .diff, .stack: return session.row?.dto.branch != nil
         case .queue, .snapshots: return session.isLive && !session.isShell
         case .files, .chat, .preview: return true
+        case .terminal:
+            guard session.row != nil || session.history?.dto.kind == .ended else { return false }
+            return session.hub.state(host: SessionKey(session.key)?.host)?.supports("attachedTerminal") ?? false
         }
     }
 }

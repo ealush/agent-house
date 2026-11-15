@@ -1143,6 +1143,9 @@ struct ConfirmTerminateSheet: View {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Terminate “\(session.title)”?").font(.ah(.title3).weight(.semibold))
                 Text("Its process stops now. The conversation stays in History and can be resumed.").foregroundStyle(theme.muted)
+                if session.row?.dto.terminal != nil {
+                    Text("Its attached terminal and anything running in it will also stop.").foregroundStyle(theme.muted)
+                }
                 if session.working { Label("It’s in the middle of a turn.", systemImage: "exclamationmark.triangle").foregroundStyle(theme.limited) }
                 Spacer()
                 Button(role: .destructive) {
@@ -1362,7 +1365,7 @@ struct SessionMenuSheet: View {
     }
 
     private var items: [Command] {
-        let ids: [CommandID] = ["rename", "pin", "toggle-view", "pick-model", "pick-effort", "switch-branch", "fork", "continue-in", "conversation-lineage", "send-to", "scrollback", "copy-attach", "copy-last", "panel-diff", "panel-files", "panel-chat", "panel-queue", "panel-snapshots", "panel-preview", "panel-stack", "terminate"]
+        let ids: [CommandID] = ["rename", "pin", "toggle-view", "pick-model", "pick-effort", "switch-branch", "fork", "continue-in", "conversation-lineage", "send-to", "scrollback", "copy-attach", "copy-last", "panel-terminal", "panel-diff", "panel-files", "panel-chat", "panel-queue", "panel-snapshots", "panel-preview", "panel-stack", "terminate"]
         return ids.compactMap { id in scene.isAvailable(id) ? CommandCatalog.byID[id] : nil }
     }
 }

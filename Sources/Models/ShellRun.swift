@@ -1,7 +1,6 @@
 import Foundation
 
-/// A snippet from a conversation run in a shell (a code block's Run, Run in Terminal on
-/// selected words): what's typed, and which shell takes it.
+/// Shell snippets sent to the session’s attached terminal: runnable languages and prompt removal.
 enum ShellRun {
     /// A code block in no language, or in a shell's, is something to run; Swift or JSON isn't.
     static func runs(language: String?) -> Bool {
@@ -26,23 +25,4 @@ enum ShellRun {
         return text
     }
 
-    /// The shell it's typed into: one of the session's host's shells in the session's folder,
-    /// waiting at its prompt, the one used last. One running a server or an editor would take
-    /// the words as its own input. Nil: start one.
-    static func shell(for session: SessionRow, among rows: [SessionRow]) -> SessionRow? {
-        rows.filter { row in
-            row.host == session.host && row.key != session.key && row.dto.agent == nil
-                && row.dto.cwd == session.dto.cwd && prompts.contains(name(row.dto.command))
-        }
-        .max { $0.dto.activity < $1.dto.activity }
-    }
-
-    /// A pane at its shell's prompt has the shell as its foreground command (`-zsh` when it's
-    /// a login shell).
-    private static let prompts: Set<String> = ["bash", "zsh", "fish", "sh", "dash", "ksh", "mksh", "tcsh", "csh", "nu", "elvish", "xonsh", "pwsh"]
-
-    private static func name(_ command: String) -> String {
-        let word = command.trimmingCharacters(in: .whitespaces)
-        return String((word.hasPrefix("-") ? word.dropFirst() : Substring(word)).split(separator: "/").last ?? "")
-    }
 }

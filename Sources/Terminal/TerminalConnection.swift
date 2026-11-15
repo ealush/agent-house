@@ -23,7 +23,7 @@ enum TerminalEnd: Equatable, Sendable {
 /// resumed session reattaches to its new window. Input is never queued or replayed: a
 /// keystroke either goes out on a live socket or is reported as not sent.
 actor TerminalConnection {
-    typealias WindowResolver = @Sendable () async -> String?
+    typealias WindowResolver = @Sendable () async throws -> String?
 
     private let api: APIClient
     private let resolveWindow: WindowResolver
@@ -102,9 +102,19 @@ actor TerminalConnection {
     private func run() async {
         var backoff = Duration.milliseconds(500)
         while !Task.isCancelled {
-            guard let windowId = await resolveWindow() else {
-                emit(.ended(.sessionGone))
-                return
+            let windowId: String
+            do {
+                guard let resolved = try await resolveWindow() else {
+                    emit(.ended(.sessionGone))
+                    return
+                }
+                windowId = resolved
+            } catch {
+                if Task.isCancelled { return }
+                emit(.disconnected(reason: APIError.wrap(error).message, retrying: true))
+                try? await Task.sleep(for: backoff)
+                backoff = min(backoff * 2, .seconds(10))
+                continue
             }
             let opened = (columns: columns, rows: rows)
             let socket = await api.terminalSocket(windowId: windowId, columns: opened.columns, rows: opened.rows)

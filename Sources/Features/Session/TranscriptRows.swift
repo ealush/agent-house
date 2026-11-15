@@ -213,7 +213,7 @@ extension BlockRow {
 
     /// Run in Terminal on the code in the agent's message, in a shell in the session's folder.
     fileprivate var snippetRun: SnippetRun? {
-        guard session.isLive, !session.isShell, let row = session.row else { return nil }
+        guard session.isLive, !session.isShell, scene.attachedTerminal(session), let row = session.row else { return nil }
         let (session, scene) = (session, scene)
         let place = [row.dto.project, row.dto.branch ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
         return SnippetRun(place: place.isEmpty ? "its folder" : place) { code in
@@ -234,8 +234,8 @@ extension BlockRow {
                     Haptics.tap()
                 })
             }
-            if session.isLive && !session.isShell {
-                items.append(UIAction(title: "Run in Terminal", image: UIImage(systemName: "terminal")) { _ in
+            if session.isLive && !session.isShell && scene.attachedTerminal(session) {
+                items.append(UIAction(title: "Send to terminal", image: UIImage(systemName: "terminal")) { _ in
                     Haptics.tap()
                     Task { await scene.runInShell(selected, from: session) }
                 })

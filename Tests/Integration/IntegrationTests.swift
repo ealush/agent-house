@@ -223,6 +223,41 @@ struct IntegrationTests {
         collector.cancel()
     }
 
+    @Test func attachedShellRunsViaTheNativeAPIAndTerminalWithoutBecomingASession() async throws {
+        let device = try await LiveHost.enrolled()
+        let api = device.api
+        let owner = try await LiveHost.launch(api, preset: "shell", label: "attached-owner")
+        defer { Task { try? await api.terminate(owner.uid) } }
+        #expect(try await api.state().supports("attachedTerminal"))
+        let opened = try #require(try await api.openTerminal(owner.uid).terminal)
+        let terminal = TerminalConnection(api: api, columns: 100, rows: 30) {
+            try await api.attachedTerminal(owner.uid).terminal?.id
+        }
+        let events = await terminal.events()
+        let emulator = HeadlessEmulator(columns: 100, rows: 30)
+        let collector = Task {
+            for await event in events {
+                if case .output(let data) = event { await emulator.feed(data) }
+            }
+        }
+        await terminal.start()
+        _ = try await until("attached shell connected", timeout: 10) { await terminal.isConnected ? true : nil }
+        _ = try await api.openTerminal(owner.uid, command: "printf 'companion-%s\\n' $((6*7))")
+        _ = try await until("native attached output", timeout: 10) { () -> String? in
+            let text = await emulator.screenText()
+            return text.contains("companion-42") ? text : nil
+        }
+        #expect(try await api.openTerminal(owner.uid).terminal?.id == opened.id)
+        let state = try await api.state()
+        #expect(!state.windows.contains { $0.id == opened.id })
+        #expect(state.windows.first { $0.uid == owner.uid }?.terminal?.id == opened.id)
+        await terminal.stop()
+        collector.cancel()
+        try await api.closeTerminal(owner.uid)
+        #expect(try await api.attachedTerminal(owner.uid).terminal == nil)
+        #expect(try await api.state().windows.contains { $0.uid == owner.uid })
+    }
+
     @Test func draftsFollowTheSessionAcrossDevicesAndClearWhenEmpty() async throws {
         let phone = try await LiveHost.enrolled(label: "iPhone")
         let pad = try await LiveHost.enrolled(label: "iPad")

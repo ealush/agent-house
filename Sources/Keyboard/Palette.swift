@@ -84,7 +84,7 @@ enum PaletteTree {
             .category(key: "turn", label: "Turn and queue", icon: "list.bullet.rectangle", detail: "Stop, send queued messages now, cancel them", children: [.command("interrupt"), .command("send-now"), .provider(.queue), .command("clear-queue")]),
             .category(key: "model", label: "Model and effort", icon: "cpu", detail: "Switch what runs this session, and its permissions", terms: ["permissions", "mode"], children: [.provider(.models), .provider(.efforts), .provider(.modes), .command("pick-model"), .command("pick-effort")]),
             .category(key: "panels", label: "Panels", icon: "sidebar.right", detail: "Diff, files, chat, queue, snapshots", children: [
-                .command("panel-diff"), .command("panel-files"), .command("panel-chat"), .command("panel-queue"), .command("panel-snapshots"), .command("panel-preview"), .command("panel-stack"), .command("toggle-panel"),
+                .command("panel-terminal"), .command("panel-diff"), .command("panel-files"), .command("panel-chat"), .command("panel-queue"), .command("panel-snapshots"), .command("panel-preview"), .command("panel-stack"), .command("toggle-panel"),
             ]),
             .category(key: "view", label: "View", icon: "eye", detail: "GUI or terminal, steps, copy, scroll", children: [
                 .command("toggle-view"), .command("toggle-steps"), .command("browse-messages"), .command("copy-last"), .command("jump-latest"), .command("scrollback"), .command("toggle-keys"), .command("terminal-text-bigger"), .command("terminal-text-smaller"), .command("terminal-text-reset"),

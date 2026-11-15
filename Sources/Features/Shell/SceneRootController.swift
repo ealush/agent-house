@@ -854,7 +854,7 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
         var row: [UIMenuElement] = []
         if session.isLive && session.hasGUI && !session.isShell {
             let other: SceneSnapshot.Surface = session.surface == .gui ? .terminal : .gui
-            row.append(UIAction(title: other == .terminal ? "Terminal" : "Messages", image: UIImage(systemName: other == .terminal ? "terminal" : "text.bubble")) { [weak self] _ in
+            row.append(UIAction(title: other == .terminal ? "Agent Terminal" : "Messages", image: UIImage(systemName: other == .terminal ? "terminal" : "text.bubble")) { [weak self] _ in
                 guard let self else { return }
                 scene.setSurface(other, for: session.key)
             })

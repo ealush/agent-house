@@ -114,7 +114,19 @@ struct OmarchyStampDTO: Codable, Equatable, Sendable {
     let font: String?
 }
 
+struct AttachedTerminalDTO: Codable, Equatable, Sendable {
+    let id: String
+    let cwd: String
+    let command: String
+    let busy: Bool
+}
+
+struct AttachedTerminalResponse: Decodable, Sendable {
+    let terminal: AttachedTerminalDTO?
+}
+
 struct SessionDTO: Codable, Equatable, Sendable {
+    let terminal: AttachedTerminalDTO?
     /// Transient tmux address; never use this as the navigation identity.
     let id: String
     let uid: String
@@ -187,6 +199,7 @@ struct SessionDTO: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
+        case terminal
         case id, uid, session, index, name, title, agent, harnessId, model, statusSource, command, cwd, project, projectPath
         case branch, worktree, status, detail, limit, ask, answerable, askId, viewers, devices, activity, createdAt, panes, pinned
         case queued, order, launch, launchModel, launchEffort, launchMode, feed, fork, reply, continued
@@ -194,6 +207,7 @@ struct SessionDTO: Codable, Equatable, Sendable {
 
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        terminal = try c.decodeIfPresent(AttachedTerminalDTO.self, forKey: .terminal)
         id = try c.decode(String.self, forKey: .id)
         uid = try c.decode(String.self, forKey: .uid)
         session = try c.decodeIfPresent(String.self, forKey: .session) ?? ""

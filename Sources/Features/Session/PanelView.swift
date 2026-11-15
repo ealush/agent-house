@@ -11,6 +11,7 @@ struct PanelView: View {
 
     var body: some View {
         switch panel {
+        case .terminal: AttachedTerminalPanel(session: session, scene: scene)
         case .diff: DiffPanel(model: DiffModel(api: session.api, uid: session.ref), session: session, scene: scene)
         case .files: FilesPanel(model: FilesModel(api: session.api), session: session, scene: scene)
         case .chat: ChatPanel(model: SideChatModel(api: session.api, uid: session.ref), session: session, scene: scene)

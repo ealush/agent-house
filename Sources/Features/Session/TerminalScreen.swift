@@ -9,6 +9,7 @@ import UniformTypeIdentifiers
 struct TerminalScreen: View {
     let session: SessionModel
     @Bindable var scene: SceneModel
+    var attached = false
     @State private var controller: TerminalController?
     @State private var ctrl = false
     @State private var alt = false
@@ -22,7 +23,7 @@ struct TerminalScreen: View {
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
                 if let controller {
-                    TerminalViewRepresentable(controller: controller, scene: scene, sessionKey: session.key, sticky: StickyModifiers(ctrl: $ctrl, alt: $alt, shift: $shift))
+                    TerminalViewRepresentable(controller: controller, scene: scene, sessionKey: session.key, sticky: StickyModifiers(ctrl: $ctrl, alt: $alt, shift: $shift), attached: attached)
                         // A view of its own per controller: kept, the last session's frozen
                         // screen stayed up, taking the keys, while the new one wasn't drawn.
                         .id(ObjectIdentifier(controller))
@@ -48,7 +49,7 @@ struct TerminalScreen: View {
                 controller?.upload(providers)
                 return controller != nil
             }
-            if session.waiting, session.row?.dto.ask != nil {
+            if !attached, session.waiting, session.row?.dto.ask != nil {
                 AskPanelView(target: AskTarget(session: session), keyboard: AskKeyboard(scene: scene, key: session.key, leave: .terminal(session.key)), onReply: { scene.requestFocus(.terminal(session.key)) })
                     .padding(10)
             }
@@ -61,8 +62,8 @@ struct TerminalScreen: View {
             }
         }
         .background(Color(uiColor: UIColor(hex: theme.palette.terminal.background)))
-        .task(id: "\(session.key)#\(attachment)") {
-            let made = TerminalController(session: session, fontSize: scene.app.preferences.terminalFontSize, palette: theme.palette.terminal)
+        .task(id: "\(session.key)#\(attached)#\(attachment)") {
+            let made = TerminalController(session: session, fontSize: scene.app.preferences.terminalFontSize, palette: theme.palette.terminal, attached: attached)
             // The one before (another session's, in the same pane) detaches: left running, its
             // socket stayed open and counted this device as watching that session.
             controller?.stop()
@@ -97,6 +98,7 @@ struct StickyModifiers {
 @Observable
 final class TerminalController: NSObject, TerminalViewDelegate {
     let session: SessionModel
+    let isCompanion: Bool
     let view: AppTerminalView
     private let connection: TerminalConnection
     private(set) var status: Status = .connecting
@@ -114,13 +116,17 @@ final class TerminalController: NSObject, TerminalViewDelegate {
         case ended(TerminalEnd)
     }
 
-    init(session: SessionModel, fontSize: Double, palette: TerminalPalette) {
+    init(session: SessionModel, fontSize: Double, palette: TerminalPalette, attached: Bool = false) {
         self.session = session
+        self.isCompanion = attached
         view = AppTerminalView(frame: .zero, font: AhType.terminalFont(fontSize))
         let hub = session.hub
         let key = session.key
+        let api = session.api
+        let ref = session.ref
         connection = TerminalConnection(api: session.api, columns: 80, rows: 24) {
-            await MainActor.run { hub.row(key)?.dto.id }
+            if attached { return try await api.attachedTerminal(ref).terminal?.id }
+            return await MainActor.run { hub.row(key)?.dto.id }
         }
         super.init()
         view.terminalDelegate = self
@@ -131,7 +137,7 @@ final class TerminalController: NSObject, TerminalViewDelegate {
         view.isScrollEnabled = false
         apply(palette)
         view.controller = self
-        view.accessibilityLabel = "Terminal for \(session.title)"
+        view.accessibilityLabel = "\(attached ? "Attached terminal" : "Terminal") for \(session.title)"
     }
 
     func apply(_ palette: TerminalPalette) {
@@ -291,6 +297,8 @@ final class AppTerminalView: TerminalView {
     weak var scene: SceneModel?
     /// The session this terminal shows, for the window's focus bookkeeping.
     var sessionKey: String?
+    var attached = false
+    private var focusTarget: SceneModel.FocusTarget? { sessionKey.map { attached ? .attachedTerminal($0) : .terminal($0) } }
     var sticky: StickyModifiers?
     private var panRemainder: CGFloat = 0
 
@@ -299,7 +307,7 @@ final class AppTerminalView: TerminalView {
         if became {
             controller?.hasKeyboard = true
             scene?.keyScope = .terminal
-            if let sessionKey { scene?.didFocus(.terminal(sessionKey)) }
+            if let focusTarget { scene?.didFocus(focusTarget) }
         }
         return became
     }
@@ -308,7 +316,7 @@ final class AppTerminalView: TerminalView {
         let resigned = super.resignFirstResponder()
         if resigned { controller?.hasKeyboard = false }
         if resigned, scene?.keyScope == .terminal { scene?.keyScope = .app }
-        if resigned, let sessionKey { scene?.didBlur(.terminal(sessionKey)) }
+        if resigned, let focusTarget { scene?.didBlur(focusTarget) }
         return resigned
     }
 
@@ -443,11 +451,13 @@ struct TerminalViewRepresentable: UIViewRepresentable {
     let scene: SceneModel
     let sessionKey: String
     let sticky: StickyModifiers
+    var attached = false
 
     func makeUIView(context: Context) -> AppTerminalView {
         let view = controller.view
         view.scene = scene
         view.sessionKey = sessionKey
+        view.attached = attached
         view.sticky = sticky
         view.installTouchScrolling()
         return view
@@ -457,7 +467,7 @@ struct TerminalViewRepresentable: UIViewRepresentable {
         view.sticky = sticky
         if let request = scene.focusRequest, request.nonce != context.coordinator.handled {
             context.coordinator.handled = request.nonce
-            if request.target == .terminal(sessionKey), request.isFresh(forBoxMadeAt: context.coordinator.made) {
+            if request.target == (attached ? .attachedTerminal(sessionKey) : .terminal(sessionKey)), request.isFresh(forBoxMadeAt: context.coordinator.made) {
                 DispatchQueue.main.async { _ = view.becomeFirstResponder() }
             }
         }
@@ -494,7 +504,7 @@ private struct TerminalStatusOverlay: View {
             .padding(.top, 8)
             .accessibilityLabel("Terminal reconnecting. \(reason)")
         case .ended(let end):
-            Banner(text: end == .signedOut ? "Signed out: this terminal closed." : "This session isn’t running any more.", tone: .warning)
+            Banner(text: end == .signedOut ? "Signed out: this terminal closed." : controller.isCompanion ? "The attached terminal has stopped. Reopen its panel to start a shell." : "This session isn’t running any more.", tone: .warning)
                 .padding()
         }
     }

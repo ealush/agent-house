@@ -24,7 +24,7 @@ def digest(path: Path) -> str:
 
 def ignored(path: Path) -> bool:
     return any(
-        part in IGNORED or part.endswith((".xcodeproj", ".xcresult", ".xcworkspace"))
+        part in IGNORED or part.startswith("DerivedData-") or part.endswith((".xcodeproj", ".xcresult", ".xcworkspace"))
         for part in path.relative_to(ROOT).parts
     )
 

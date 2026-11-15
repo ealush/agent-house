@@ -74,11 +74,12 @@ struct SceneSnapshot: Codable, Equatable, Sendable {
     enum Surface: String, Codable, Sendable, Hashable { case gui, terminal }
 
     enum Panel: String, Codable, Sendable, Hashable, CaseIterable {
-        case diff, files, chat, queue, snapshots, preview, stack
+        case diff, files, chat, queue, snapshots, preview, stack, terminal
 
         var command: CommandID { CommandID(rawValue: "panel-\(rawValue)") }
         var title: String {
             switch self {
+            case .terminal: return "Terminal"
             case .diff: return "Diff"
             case .files: return "Files"
             case .chat: return "Chat"
@@ -90,6 +91,7 @@ struct SceneSnapshot: Codable, Equatable, Sendable {
         }
         var symbol: String {
             switch self {
+            case .terminal: return "terminal"
             case .diff: return "plusminus"
             case .files: return "folder"
             case .chat: return "bubble.left.and.text.bubble.right"

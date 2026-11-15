@@ -48,6 +48,37 @@ struct SceneIntegrationTests {
         account.deactivate()
     }
 
+    @Test func aSnippetOpensItsOwnersTerminalPanelAndKeepsItsSessionIdentity() async throws {
+        let (app, account, _) = try await signedInApp()
+        let owner = try await LiveHost.launch(account.api, preset: "shell", label: "snippet-owner")
+        _ = try await waitFor("owner listed") { account.hub.row(owner.uid) }
+        let scene = SceneModel(sceneID: "attached-snippet", app: app)
+        scene.hardwareKeyboard = true
+        scene.restore()
+        scene.sheet = nil
+        scene.open(owner.uid)
+        let session = try #require(scene.session(owner.uid))
+        await scene.runInShell("printf 'scene-companion\\n'", from: session)
+        #expect(session.panel == .terminal)
+        #expect(scene.route == .session(owner.uid))
+        #expect(scene.focusRequest?.target == .attachedTerminal(owner.uid))
+        let terminal = try #require(try await account.api.attachedTerminal(owner.uid).terminal)
+        let state = try await account.api.state()
+        #expect(!state.windows.contains { $0.id == terminal.id })
+        #expect(state.windows.first { $0.uid == owner.uid }?.terminal?.id == terminal.id)
+        session.panel = nil
+        #expect(try await account.api.attachedTerminal(owner.uid).terminal?.id == terminal.id)
+        scene.perform("panel-terminal")
+        #expect(session.panel == .terminal)
+        scene.didFocus(.attachedTerminal(owner.uid))
+        #expect(scene.contentFocusTarget == .attachedTerminal(owner.uid))
+        session.panel = nil
+        #expect(scene.contentFocusTarget != .attachedTerminal(owner.uid), "a hidden terminal never takes the keyboard")
+        try await account.api.terminate(owner.uid)
+        #expect(try await account.api.attachedTerminal(owner.uid).terminal == nil)
+        account.deactivate()
+    }
+
     @Test func hardwareKeysDriveTheWorkspace() async throws {
         let (app, account, _) = try await signedInApp()
         let a = try await LiveHost.launch(account.api, preset: "shell", label: "keys-a")

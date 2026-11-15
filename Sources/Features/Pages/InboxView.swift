@@ -327,6 +327,12 @@ struct SessionRowView: View {
         HStack(spacing: 6) {
             if row.dto.pinned { Image(systemName: "pin.fill").font(.ah(.caption2)).foregroundStyle(tertiary(onAccent)) }
             Text(row.title).font(dense ? Font.ah(.body) : Font.ah(.body).weight(.medium)).foregroundStyle(primary(onAccent)).lineLimit(1)
+            if let terminal = row.dto.terminal {
+                Image(systemName: "terminal")
+                    .font(.ah(.caption2))
+                    .foregroundStyle(terminal.busy ? AnyShapeStyle(theme.danger) : tertiary(onAccent))
+                    .accessibilityLabel(terminal.busy ? "Attached terminal active" : "Terminal attached")
+            }
             if let fork = row.dto.fork {
                 // A fork (or a session others were forked from): its lineage at a glance.
                 HStack(spacing: 2) {
@@ -596,6 +602,12 @@ struct SessionRowMenu: View {
 
     var body: some View {
         Button("Open", systemImage: "arrow.up.right") { scene.open(row.key) }
+        if hub.state(host: row.isLocal ? nil : row.host)?.supports("attachedTerminal") == true {
+            Button("Terminal", systemImage: "terminal") {
+                scene.open(row.key)
+                scene.session(row.key)?.panel = .terminal
+            }
+        }
         if !scene.narrow {
             Button("Open as New Pane", systemImage: "rectangle.split.2x1") { scene.run(.openAsPane(row.key)) }
         }

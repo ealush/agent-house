@@ -300,11 +300,11 @@ private struct SessionHeader: View {
                             Image(systemName: other == .terminal ? "terminal" : "text.bubble").headerGlyph()
                         }
                         .buttonStyle(.borderless)
-                        .accessibilityLabel(other == .terminal ? "Terminal" : "Messages")
+                        .accessibilityLabel(other == .terminal ? "Agent Terminal" : "Messages")
                     } else {
                         Picker("View", selection: Binding(get: { session.surface }, set: { scene.setSurface($0, for: session.key) })) {
                             Image(systemName: "text.bubble").accessibilityLabel("Messages").tag(SceneSnapshot.Surface.gui)
-                            Image(systemName: "terminal").accessibilityLabel("Terminal").tag(SceneSnapshot.Surface.terminal)
+                            Image(systemName: "terminal").accessibilityLabel("Agent Terminal").tag(SceneSnapshot.Surface.terminal)
                         }
                         .pickerStyle(.segmented)
                         .frame(width: 96)
@@ -461,6 +461,9 @@ struct SessionAction: Identifiable {
         }
         let pinned = session.row?.dto.pinned == true
         var work: [SessionAction] = []
+        if scene.attachedTerminal(session) {
+            work.append(SessionAction(title: session.row?.dto.terminal?.busy == true ? "Terminal · Active" : "Terminal", symbol: "terminal") { session.panel = .terminal })
+        }
         if session.row?.dto.branch != nil { work.append(SessionAction(title: "Switch Branch…", symbol: CommandCatalog.icon("switch-branch")) { scene.sheet = .branch(session.key) }) }
         if !session.isShell { work.append(SessionAction(title: "Fork…", symbol: CommandCatalog.icon("fork")) { scene.sheet = .fork(session.key) }) }
         if session.row?.dto.fork != nil { work.append(SessionAction(title: "Forks…", symbol: "arrow.triangle.branch") { scene.sheet = .forks(session.key) }) }
