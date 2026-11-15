@@ -135,7 +135,10 @@ struct TranscriptCollection: View {
                 TranscriptCollectionHost(session: session, scene: scene, scroll: scroll, content: content, theme: theme, hostFiles: hostFiles)
                     .ignoresSafeArea()
             }
-            .overlay { status(blocks) }
+            // Over the transcript, centred in all of it: while the session asks something (its
+            // trust question, a sign-in) the question is the transcript's last row, and this
+            // would cover it and take its taps. The question says what it is; this steps aside.
+            .overlay { if !AskRow.shows(session) { status(blocks) } }
             .overlay(alignment: .bottom) {
                 // Animated here alone: on the whole transcript, leaving the end handed the
                 // animation to every row that changed with it (a page going in), and they grew

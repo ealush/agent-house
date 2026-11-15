@@ -245,8 +245,26 @@ struct AskDTO: Codable, Equatable, Sendable {
     /// The agent's startup folder-trust prompt; `accept` is the option that trusts the folder.
     /// A message sent meanwhile waits in the queue until the prompt is answered.
     var trust: Trust? = nil
+    /// A screen in front of the agent's prompt (`server/agentgate.ts`): its trust question, a
+    /// sign-in, setup. A message sent meanwhile waits in the queue until it's answered.
+    var gate: Gate? = nil
 
     struct Trust: Codable, Equatable, Sendable { let accept: String }
+
+    struct Gate: Codable, Equatable, Sendable {
+        /// "trust", "signin" or "setup"; a kind this build doesn't know reads as setup.
+        let kind: String
+        /// Links on the screen, whole.
+        var links: [String]? = nil
+        /// A one-time code to enter on another page.
+        var code: String? = nil
+        /// It takes typed text (a code pasted back, an API key): the line that asks for it.
+        var input: String? = nil
+        /// Its sign-in link hands back to 127.0.0.1 on the agent's host: only a browser there finishes it.
+        var local: Bool? = nil
+        /// Esc goes back a step, as the screen says.
+        var back: Bool? = nil
+    }
 
     enum Kind: String, Codable, Sendable {
         case command, tool, question, screen, choice
@@ -274,6 +292,8 @@ struct AskDTO: Codable, Equatable, Sendable {
     struct ScreenOption: Codable, Equatable, Sendable {
         let key: String
         let label: String
+        /// The line under the row ("Sign in from another device with a one-time code").
+        var description: String? = nil
     }
 
     struct Dialog: Codable, Equatable, Sendable {

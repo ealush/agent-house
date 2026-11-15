@@ -14,6 +14,9 @@ struct SendResult: Codable, Equatable, Sendable {
     let queueId: String?
     /// Queued only because a new agent's UI isn't up yet.
     let starting: Bool?
+    /// Queued because a screen is in front of the agent's prompt ("signin", "trust", "setup")
+    /// or a picker is up ("picker"); it goes in once that's answered.
+    var held: String? = nil
 }
 
 struct QueueItem: Codable, Equatable, Sendable, Identifiable {

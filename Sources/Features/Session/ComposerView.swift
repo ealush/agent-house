@@ -72,7 +72,7 @@ struct ComposerView: View {
             // With hardly any room (a phone on its side, the keyboard up), not even its line: the box
             // comes first, and the queue is a tap away in its panel (and the menu's Send Queued Now).
             if roomHeight >= Self.roomForQueueLine {
-                QueueTrayView(queue: session.queue, composer: composer, working: session.working, held: session.awaitingTrust, hardwareKeyboard: scene.hardwareKeyboard,
+                QueueTrayView(queue: session.queue, composer: composer, working: session.working, held: session.awaitingGate, hardwareKeyboard: scene.hardwareKeyboard,
                               folded: scene.app.preferences.queueFolded || showsTray || session.panel == .queue,
                               maxHeight: queueRoom,
                               // Too little room to open it here: the line opens the Queue panel (a
@@ -126,6 +126,16 @@ struct ComposerView: View {
         .onDisappear { composer.trayOpen = false }
     }
 
+    /// What a message held behind a screen in front of the agent's prompt waits for.
+    static func heldText(_ held: String) -> String {
+        switch held {
+        case "signin": return "Your message goes in once you’ve signed in"
+        case "trust": return "Your message goes in once the folder is trusted"
+        case "picker": return "Your message goes in once its question is answered"
+        default: return "Your message goes in once the setup screen is answered"
+        }
+    }
+
     private func deliverEvents() {
         for event in composer.takeEvents() {
             switch event {
@@ -136,6 +146,8 @@ struct ComposerView: View {
                 // Held for a just-started agent: it's your message in the conversation already,
                 // with the box's working light; a toast saying so was one thing too many.
                 if result.resumed { scene.toast("Resumed the session") }
+                // Held behind a screen in front of the prompt: say what it waits for.
+                else if let held = result.held { scene.toast(Self.heldText(held)) }
                 session.stateChanged()
             case .failed(let message):
                 Haptics.failure()
@@ -896,7 +908,7 @@ struct ComposerTextField: UIViewRepresentable {
             view.selectedTextRange = view.textRange(from: caret, to: caret)
         }
         let settings = ComposerFloat.hasTray(session) ? [session.launch.modelLabel, session.launch.effort.map(LaunchState.effortName)].compactMap { $0 } : []
-        view.placeholder = composer.placeholder(working: session.working, queued: session.row?.dto.queued ?? 0, touchOnly: !scene.hardwareKeyboard, agent: session.launch.preset?.name, waiting: session.waiting, trusting: session.awaitingTrust, ended: !session.isLive, settings: settings)
+        view.placeholder = composer.placeholder(working: session.working, queued: session.row?.dto.queued ?? 0, touchOnly: !scene.hardwareKeyboard, agent: session.launch.preset?.name, waiting: session.waiting, trusting: session.awaitingGate, ended: !session.isLive, settings: settings)
         // Only when the theme changes: setting it restyles all the text, every keystroke, under
         // autocorrect and the keyboard's predictions.
         if context.coordinator.theme != theme {

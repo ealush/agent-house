@@ -798,15 +798,11 @@ struct StartConversation: View {
                 VStack(spacing: 12) {
                     AgentMark(agent: session.row?.dto.agent, size: 58)
                         .scaleEffect(appeared || reduceMotion ? 1 : 0.85)
-                    Text(session.awaitingTrust ? "Trust this folder?" : "\(session.launch.preset?.name ?? "The agent") is ready")
+                    Text("\(session.launch.preset?.name ?? "The agent") is ready")
                         .font(.ah(.title2).weight(.semibold))
                     Text(place).font(.ah(.callout)).foregroundStyle(theme.muted).multilineTextAlignment(.center)
                 }
-                if session.awaitingTrust {
-                    TrustQuestion(agent: session.launch.preset?.name ?? "The agent")
-                } else {
-                    startingPoints
-                }
+                startingPoints
             }
             .frame(maxWidth: 460)
             .padding(.horizontal, 24)
@@ -872,19 +868,6 @@ struct StartConversation: View {
 
 /// The agent's folder-trust prompt on the first screen: its question and choices sit above
 /// the composer, and a message sent meanwhile waits in Up next.
-private struct TrustQuestion: View {
-    let agent: String
-    @Environment(\.theme) private var theme
-
-    var body: some View {
-        Text("\(agent) asks before it works in a folder it hasn’t opened before. Anything you send waits until you answer below.")
-            .font(.ah(.callout))
-            .foregroundStyle(theme.muted)
-            .multilineTextAlignment(.center)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-}
-
 struct UnavailableFeed: View {
     let reason: String?
     let useTerminal: () -> Void

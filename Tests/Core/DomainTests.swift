@@ -165,6 +165,31 @@ import Testing
     #expect(plan.kind == "Plan ready" && plan.question == "Start on this plan?", "a plan is named as one, not as a generic prompt")
 }
 
+@Test func aScreenInFrontOfThePromptReadsWholeWithoutItsKeyHints() throws {
+    // As server/agentgate.ts sends Codex's device-code sign-in.
+    let json = #"{"kind":"screen","text":"Welcome to Codex, OpenAI's command-line coding agent\nFinish signing in via your browser\n1. Open this link in your browser and sign in\nhttps://auth.openai.com/codex/device\n2. Enter this one-time code after you are signed in (expires in 15 minutes)\nJUC6-GKWC4\nPress esc to cancel","gate":{"kind":"signin","links":["https://auth.openai.com/codex/device"],"code":"JUC6-GKWC4","back":true}}"#
+    let ask = try JSONDecoder().decode(AskDTO.self, from: Data(json.utf8))
+    let parts = AskParts(ask)
+    #expect(parts.kind == "Needs you to sign in")
+    #expect(parts.gate?.code == "JUC6-GKWC4" && parts.gate?.back == true)
+    #expect(parts.gateLines.contains("JUC6-GKWC4"), "the code stands where the screen put it")
+    #expect(parts.gateLines.contains("https://auth.openai.com/codex/device"))
+    #expect(!parts.gateLines.contains("Press esc to cancel"), "Back is a button")
+    for hint in ["Esc cancel", "(escape/ctrl+c to cancel)", "↑↓ navigate  enter select  escape/ctrl+c cancel", "c copy code • u copy url • enter copy & open • esc exit", "ctrl+q  quit"] {
+        #expect(AskParts.isTerminalHint(hint), "\(hint)")
+    }
+    #expect(!AskParts.isTerminalHint("Enter the authorization code:"), "a question it asks stays")
+    #expect(!AskParts.isTerminalHint("Press any key to log in..."), "what the terminal waits for stays")
+    #expect(AskParts.line(ask) == "Needs you to sign in")
+    #expect(AskParts.gateLabel("trust") == "Asks to trust this folder")
+    #expect(AskParts.gateLabel("something-new") == "Needs setting up", "a kind this build doesn't know still reads")
+    // Rows keep the line under them; a send held behind it says so.
+    let row = try JSONDecoder().decode(AskDTO.ScreenOption.self, from: Data(#"{"key":"2","label":"Sign in with Device Code","description":"Sign in from another device with a one-time code"}"#.utf8))
+    #expect(row.description == "Sign in from another device with a one-time code")
+    let sent = try JSONDecoder().decode(SendResult.self, from: Data(#"{"outcome":"queued","windowId":"@1","resumed":false,"queued":1,"queueId":"a1","held":"signin"}"#.utf8))
+    #expect(sent.held == "signin")
+}
+
 @Test func deepLinksFromPushRoutesAndURLs() {
     // server/push.ts strips "/#" from the web hash: a bare uid, or a review layer.
     #expect(DeepLink(route: "ah-1a2b", host: "box") == .session(host: "box", uid: "ah-1a2b"))

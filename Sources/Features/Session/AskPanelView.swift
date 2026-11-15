@@ -12,6 +12,10 @@ struct AskSummaryView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(parts.kind).font(.ah(.subheadline).weight(.semibold)).foregroundStyle(theme.brand)
+            // A screen in front of the prompt is read whole: its words are the instructions.
+            if let gate = parts.gate {
+                GateTextView(lines: parts.gateLines, gate: gate)
+            }
             if let command = parts.command {
                 CodeBlockView(code: "$ \(command)", tone: .command)
             }
@@ -74,6 +78,20 @@ struct AskTarget {
 
     func choose(_ option: AskDTO.ScreenOption) async {
         await run("answer") { _ = try await api.choose(row.uid, key: option.key) }
+    }
+
+    /// What the screen in front of the prompt asks to have typed. True once the host took it.
+    func answerGate(_ text: String) async -> Bool {
+        var ok = false
+        await run("send that") {
+            try await api.answerGate(row.uid, text: text)
+            ok = true
+        }
+        return ok
+    }
+
+    func gateBack() async {
+        await run("go back") { try await api.gateBack(row.uid) }
     }
 
     func answerQuestions(_ answers: [QuestionAnswer]) async {
@@ -175,15 +193,27 @@ struct AskPanelView: View {
                         if let answer = answers.first { await target.answerDialog(question: dialog.question, answer: answer) }
                     }
                     .id(dialog.question)
-                } else if let options = ask.options, !options.isEmpty {
-                    ScreenChoicesView(target: target, options: options, keys: keys, leave: leave)
-                        .id(ask.text + options.map(\.label).joined(separator: "\n"))
                 } else {
-                    ApproveDenyView(target: target, compact: compact, onReply: onReply, keys: keys, leave: leave)
+                    if let gate = ask.gate {
+                        GateActionsView(target: target, gate: gate)
+                    }
+                    if let options = ask.options, !options.isEmpty {
+                        ScreenChoicesView(target: target, options: options, keys: keys, leave: leave)
+                            .id(ask.text + options.map(\.label).joined(separator: "\n"))
+                    } else if ask.gate == nil {
+                        ApproveDenyView(target: target, compact: compact, onReply: onReply, keys: keys, leave: leave)
+                    }
                 }
-                if let onUseTerminal {
-                    Button(action: onUseTerminal) { Label("Answer in terminal", systemImage: "apple.terminal") }
-                        .modifier(AskSecondaryAction())
+                if ask.gate?.back == true || onUseTerminal != nil {
+                    HStack(spacing: 12) {
+                        if ask.gate?.back == true {
+                            GateBackButton(target: target).modifier(AskSecondaryAction())
+                        }
+                        if let onUseTerminal {
+                            Button(action: onUseTerminal) { Label("Answer in terminal", systemImage: "apple.terminal") }
+                                .modifier(AskSecondaryAction())
+                        }
+                    }
                 }
             }
             .padding(compact ? 0 : 14)
@@ -496,8 +526,14 @@ private struct ScreenChoicesView: View {
                             .frame(minWidth: keycap, minHeight: keycap)
                             .background(theme.surface, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                         // Every choice reads in full, even with the keyboard up: the transcript gives way.
-                        Text(AskParts.keepingPaths(AskParts.choiceLabel(option.label))).foregroundStyle(theme.text).multilineTextAlignment(.leading)
-                            .fixedSize(horizontal: false, vertical: true)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(AskParts.keepingPaths(AskParts.choiceLabel(option.label))).foregroundStyle(theme.text)
+                            if let description = option.description {
+                                Text(description).font(.ah(.footnote)).foregroundStyle(theme.muted)
+                            }
+                        }
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
                         Spacer()
                         if cursor.sent == option.key { ProgressView().controlSize(.small) }
                     }

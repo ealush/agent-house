@@ -119,8 +119,13 @@ final class SessionModel: Identifiable {
     var hasGUI: Bool { row != nil ? hold.feed != nil : !isShell }
     var working: Bool { row?.dto.status == .busy }
     var waiting: Bool { row?.dto.status == .waiting }
-    /// On the agent's folder-trust prompt: what's sent waits in the queue until it's answered.
-    var awaitingTrust: Bool { waiting && row?.dto.ask?.trust != nil }
+    /// A screen in front of the agent's prompt (its folder-trust question, a sign-in, setup):
+    /// what's sent waits in the queue until it's answered. An older host says only `trust`.
+    var gate: AskDTO.Gate? {
+        guard waiting, let ask = row?.dto.ask else { return nil }
+        return ask.gate ?? ask.trust.map { _ in AskDTO.Gate(kind: "trust") }
+    }
+    var awaitingGate: Bool { gate != nil }
     var turnLive: Bool { working || waiting }
     var launch: LaunchState { LaunchState(preset: slot.preset ?? heldPreset, session: row?.dto, preferChosen: modelReport.pickIsNewer) }
     /// The held agent's preset while a scan misses it, so its model and effort stay put.

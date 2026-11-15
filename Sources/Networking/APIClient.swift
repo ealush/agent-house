@@ -170,6 +170,10 @@ struct APIClient: Sendable {
         try await perform("POST", "\(s(uid))/answer", json: body)
     }
     func choose(_ uid: String, key: String) async throws -> ChooseResult { try await call("POST", "\(s(uid))/choose", json: ["key": key]) }
+    /// Types what the screen in front of the prompt asks for (a code, an API key); the host
+    /// never keeps it. Or, with `back`, Esc where the screen says Esc goes back.
+    func answerGate(_ uid: String, text: String) async throws { try await perform("POST", "\(s(uid))/gate", json: ["text": text]) }
+    func gateBack(_ uid: String) async throws { try await perform("POST", "\(s(uid))/gate", json: ["back": true]) }
     func commands(_ uid: String) async throws -> [SlashCommand] { try await call("GET", "\(s(uid))/commands") }
     func files(_ uid: String, query: String) async throws -> [String] { try await call("GET", "\(s(uid))/files", query: [URLQueryItem(name: "q", value: query)]) }
     func answerQuestions(_ uid: String, _ answers: [QuestionAnswer]) async throws { try await perform("POST", "\(s(uid))/questions", json: ["answers": answers]) }

@@ -13,6 +13,11 @@ struct AskParts: Equatable, Sendable {
     let context: String?
     /// The question dialog's last step: each question and the answer given, to check before submitting.
     var review: [Reviewed] = []
+    /// A screen in front of the agent's prompt (a sign-in, its trust question), and its words
+    /// to show whole: they are the instructions. The terminal's own key hints are left out;
+    /// the card has buttons for those.
+    var gate: AskDTO.Gate?
+    var gateLines: [String] = []
 
     struct Reviewed: Equatable, Sendable, Hashable {
         let question: String
@@ -37,6 +42,21 @@ struct AskParts: Equatable, Sendable {
         return out
     }
 
+    static func gateLabel(_ kind: String) -> String {
+        switch kind {
+        case "trust": return "Asks to trust this folder"
+        case "signin": return "Needs you to sign in"
+        default: return "Needs setting up"
+        }
+    }
+
+    /// "Press esc to cancel", "↑↓ navigate  enter select", "(escape/ctrl+c to cancel)": keys
+    /// the terminal takes, buttons on the card. "Enter the authorization code:" asks for
+    /// something, so it stays (as `web/GateView.tsx` HINT).
+    static func isTerminalHint(_ line: String) -> Bool {
+        line.count < 90 && line.range(of: #"^\(?(press (enter|esc|[a-z])\b|enter (to )?(continue|confirm|select|save|submit|choose|validate|copy)\b|esc(ape)?\b|ctrl\+|[↑↓]|[a-z] copy\b|use up/down\b)"#, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
     static func kindLabel(_ kind: AskDTO.Kind) -> String {
         switch kind {
         case .command: return "Wants to run a command"
@@ -56,6 +76,14 @@ struct AskParts: Equatable, Sendable {
     }
 
     init(_ ask: AskDTO, detail: String? = nil) {
+        if let gate = ask.gate {
+            self.init(kind: Self.gateLabel(gate.kind))
+            self.gate = gate
+            gateLines = ScreenText.clean(ask.text).split(separator: "\n")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty && !Self.isTerminalHint($0) }
+            return
+        }
         let kind = Self.kindLabel(ask.kind)
         let text = ask.text
         let question = ScreenText.questionLine(text)
@@ -151,6 +179,7 @@ struct AskParts: Equatable, Sendable {
     /// One line for a lock screen or a list row (`server/push.ts askLine`).
     static func line(_ ask: AskDTO?) -> String {
         guard let ask else { return "" }
+        if let gate = ask.gate { return gateLabel(gate.kind) }
         func first(_ t: String) -> String {
             t.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty } ?? ""
         }

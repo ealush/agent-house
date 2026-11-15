@@ -501,7 +501,7 @@ final class ComposerModel {
     nonisolated static func placeholder(isShell: Bool, working: Bool, queued: Int, touchOnly: Bool, agent: String? = nil, waiting: Bool = false, trusting: Bool = false, ended: Bool = false, settings: [String] = []) -> String {
         if isShell { return "Type or paste a command" }
         if ended { return "Message to resume" }
-        // A folder-trust prompt isn't answered in words: the message waits for it.
+        // A screen in front of the prompt (trust, a sign-in) isn't answered in words: the message waits for it.
         if trusting { return "Message \(agent ?? "the agent") · sent once you answer" }
         if waiting { return "Reply to answer" }
         if working && queued > 0 { return touchOnly ? "Add to the queue · sent when it’s free" : "Add to the queue · ↵ on empty steers the next · ⌘↵ sends now · esc stops" }
