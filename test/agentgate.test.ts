@@ -62,3 +62,43 @@ test('a sign-in screen holds the message, shows its link, code and box, and lets
     await cleanup(ah);
   }
 });
+
+// A sign-in that hands back to 127.0.0.1 (Codex's "Sign in with ChatGPT"): finished from
+// another device by pasting the address its browser ended on, which ah opens here.
+const callbackFixture = fileURLToPath(new URL('./fixtures/callback.js', import.meta.url));
+
+test("a sign-in that hands back to this host finishes from the address a browser elsewhere ended on", async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ah-it-'));
+  const log = `${dir}/keys.log`;
+  const ah = await startAh({ auth: { mode: 'off' }, idleAfter: 1, presets: [{ id: 'test-callback', name: 'Test', command: `exec ${process.execPath} ${callbackFixture} ${log}`, match: '^node$' }] }, dir);
+  try {
+    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'test-callback', cwd: `${ah.dir}/files` } });
+    const { uid } = created.json();
+    const window = async () => (await http(ah, 'GET', '/api/state')).json().windows.find((w: any) => w.uid === uid);
+    const w = await until(async () => ((await window())?.ask?.gate?.callback ? await window() : null), 15000, 'the sign-in with its callback');
+    const callback: string = w.ask.gate.callback;
+    assert.match(callback, /^http:\/\/127\.0\.0\.1:\d+\/auth\/callback$/);
+    assert.equal(w.ask.gate.local, true);
+    assert.equal(w.ask.gate.back, true, '"Press esc and choose …" goes back');
+    assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'hello after sign-in' } })).json().held, 'signin');
+
+    const gate = (body: object) => http(ah, 'POST', `/api/sessions/${uid}/gate`, { body });
+    const port = new URL(callback).port;
+    // Only this sign-in's own address is opened: its port, path and state.
+    assert.equal((await gate({ callback: `http://127.0.0.1:${port}/auth/callback?code=c0de&state=other` })).status, 400, 'another sign-in');
+    assert.equal((await gate({ callback: `http://127.0.0.1:1/auth/callback?code=c0de&state=st4te` })).status, 400, 'another port');
+    assert.equal((await gate({ callback: `http://127.0.0.1:${port}/elsewhere?code=c0de&state=st4te` })).status, 400, 'another path');
+    assert.equal((await gate({ callback: `http://example.com:${port}/auth/callback?code=c0de&state=st4te` })).status, 400, 'another host');
+    assert.ok(!logged(log, 'CALLBACK').length, 'none of those reached the agent');
+
+    const done = await gate({ callback: ` http://localhost:${port}/auth/callback?code=c0de&state=st4te ` });
+    assert.equal(done.status, 200, done.body);
+    assert.equal(done.json().status, 200, "the agent's own answer");
+    assert.deepEqual(logged(log, 'CALLBACK'), ['?code=c0de&state=st4te']);
+    await until(() => logged(log, 'PROMPT').length > 0, 15000, 'the held message reached the prompt');
+    assert.deepEqual(logged(log, 'PROMPT'), ['hello after sign-in']);
+    assert.doesNotMatch(readFileSync(`${ah.dir}/state/ah/audit.log`, 'utf8'), /c0de/, 'the code is in no log');
+  } finally {
+    await cleanup(ah);
+  }
+});

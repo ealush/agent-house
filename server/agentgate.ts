@@ -27,6 +27,12 @@ export type Gate = {
   input?: string;
   /** Its sign-in link returns to 127.0.0.1 or localhost: only a browser on this host finishes it. */
   local?: boolean;
+  /**
+   * Where that link hands back to ("http://127.0.0.1:1455/auth/callback"). A browser on
+   * another device stops there on a page that won't load; the address it shows can be
+   * handed to ah, which opens it here, where the agent listens (`POST …/gate` callback).
+   */
+  callback?: string;
   /** The screen says Esc goes back (or cancels), so Back is safe to offer. */
   back?: boolean;
 };
@@ -53,14 +59,14 @@ const SIGNIN_ROW = /^(?:sign|log)[ -]?in\b|^login\b/i;
  * approval…"). An agent at its prompt draws its input box there instead.
  */
 const FOOTER = /\besc(?:ape)?\b.{0,12}\b(?:to )?(?:cancel|go back|back|exit|quit)\b|\bpress (?:enter|esc|any key|[a-z])\b|\benter(?: to)? (?:continue|confirm|select|submit|save|choose|validate)\b|[↑↓]|\bwaiting for (?:sign|log|auth|approval|the browser|you)|\bverifying\b/i;
-const BACK = /\besc(?:ape)?\b.{0,12}\b(?:to )?(?:cancel|go back|back)\b|\bpress esc\b(?! and)|\besc (?:cancels|goes back)\b/i;
+const BACK = /\besc(?:ape)?\b.{0,12}\b(?:to )?(?:cancel|go back|back)\b|\bpress esc\b|\besc (?:cancels|goes back)\b/i;
 /** A line that asks for typed text: "Paste code here if prompted >", "Enter your Anthropic Key.", "Paste or type your API key below." */
 const INPUT = /\b(?:paste|type|enter)\b.{0,40}\b(?:code|key|token)\b|\b(?:paste|enter)\s+(?:the|your)\b.{0,30}\burl\b/i;
 /** A line-reading prompt at the very bottom: "Choice [1/2/3]:", "Set up a provider now? [Y/n]:", "…(or Enter to cancel):", "… if prompted >". */
 const PROMPT = /[\])?]\s*:\s*$|\s>\s*$/;
 const CODE_LINE = /^\s*([A-Z0-9]{3,8}(?:-[A-Z0-9]{3,8}){1,3})\s*$/;
 const CODE_INLINE = /\bcode\b[^A-Za-z0-9\n]{1,20}([A-Z0-9]{3,8}(?:-[A-Z0-9]{3,8}){1,3})(?![A-Za-z0-9-])/;
-const URL = /https?:\/\/[^\s<>"'`│]+/g;
+const LINK = /https?:\/\/[^\s<>"'`│]+/g;
 const URL_CHARS = /^[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+/;
 /** A redirect back to this machine: `redirect_uri=http://127.0.0.1:1455/…`, encoded or not. */
 const LOCAL_REDIRECT = /[?&](?:redirect_uri|redirect_url|callback)=https?(?::|%3A)(?:\/\/|%2F%2F)(?:localhost|127\.0\.0\.1)\b/i;
@@ -135,10 +141,45 @@ export function readGate(tail: string[], gates: CompiledGates): GateRead | null 
     ...(code ? { code } : {}),
     ...(input && !pickerUp ? { input } : {}),
     ...(links.some((l) => LOCAL_REDIRECT.test(l)) ? { local: true } : {}),
+    ...callbackOf(links),
     ...(BACK.test(words.slice(-6).map(unbox).join('\n')) ? { back: true } : {}),
   };
   const text = pickerUp ? readable(picker!.context.split('\n')) : readable(joinLinks(bottom.slice(anchor)).slice(-16));
   return { gate, text, ...(pickerUp ? { options: picker!.options } : {}), ...(accept ? { accept } : {}) };
+}
+
+/** Where the first link that hands back to this host does: its redirect's origin and path. */
+function callbackOf(links: string[]): { callback?: string } {
+  for (const l of links) {
+    if (!LOCAL_REDIRECT.test(l)) continue;
+    try {
+      const u = new URL(l);
+      const back = new URL(u.searchParams.get('redirect_uri') ?? u.searchParams.get('redirect_url') ?? u.searchParams.get('callback') ?? '');
+      return { callback: back.origin + back.pathname };
+    } catch {}
+  }
+  return {};
+}
+
+/**
+ * Whether `pasted` is the address a browser ended on after the sign-in `gate` sent it
+ * to: this host's loopback, the redirect's port and path, and the sign-in's own `state`
+ * when its link carries one. Only then is it opened here (a GET, as the browser would).
+ */
+export function callbackFor(gate: Gate, pasted: string): URL | null {
+  if (!gate.callback) return null;
+  let url: URL;
+  try {
+    url = new URL(pasted.trim());
+  } catch {
+    return null;
+  }
+  const want = new URL(gate.callback);
+  if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) return null;
+  if (url.port !== want.port || url.pathname !== want.pathname) return null;
+  const state = gate.links?.map((l) => new URL(l).searchParams.get('state')).find(Boolean);
+  if (state && url.searchParams.get('state') !== state) return null;
+  return new URL(want.origin + url.pathname + url.search);
 }
 
 /** The page to open first: the one carrying the code, then a sign-in page, then the rest. */
@@ -181,7 +222,7 @@ function linkSpans(lines: string[]): Array<{ url: string; from: number; to: numb
   const out: Array<{ url: string; from: number; to: number; at: number }> = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trimEnd();
-    for (const m of line.matchAll(URL)) {
+    for (const m of line.matchAll(LINK)) {
       let url = m[0];
       let j = i;
       // Only the last link on a line can carry on, and only from a line at the edge.

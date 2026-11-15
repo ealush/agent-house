@@ -812,9 +812,16 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   }
 
   // The screen in front of an agent's prompt: what it asks to have typed (a code, an
-  // API key — never logged), or Esc back a step where it says so.
+  // API key — never logged), Esc back a step where it says so, or the address a
+  // browser elsewhere ended on after a sign-in that hands back to this host.
   if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/gate$/))) {
     const body = await readJson(req);
+    // A sign-in's callback address carries its one-time code: never in the audit log.
+    if (body.callback !== undefined) {
+      const { status } = await core.answerGate(m[1], { callback: str(body.callback, 'callback', 8192) });
+      audit(req, 'session.gate', { uid: m[1], callback: true, status });
+      return send(res, 200, { ok: true, status });
+    }
     if (body.back === true) await core.answerGate(m[1], { back: true });
     else await core.answerGate(m[1], { text: str(body.text, 'text', 4000) });
     audit(req, 'session.gate', { uid: m[1], ...(body.back === true ? { back: true } : { typed: true }) });

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { compileGates, pickerAtBottom, readGate, readLinks } from './agentgate.ts';
+import { callbackFor, compileGates, pickerAtBottom, readGate, readLinks } from './agentgate.ts';
 
 // Screens captured from Codex 0.162.1 signed out, at 90 columns and at 49 (a phone
 // attached to the window), blank lines dropped as screenTail does.
@@ -106,7 +106,11 @@ test('a browser sign-in gives the whole link, says it returns to this host, and 
     'https://auth.openai.com/oauth/authorize?response_type=code&client_id=app_EMoamEEZ73f0CkXaXp7hrann&redirect_uri=http%3A%2F%2F127.0.0.1%3A1455%2Fauth%2Fcallback&code_challenge=8Ka5qAoLbl3zgtpFbYX8oXPIQXUPkrRoXPtmOFnRDaU&code_challenge_method=S256&state=nRVcFgFJpQJz0jfLKAxonc1zwpXDhOBopAxVmTQxfO4&scope=openid+profile+email+offline_access+api.connectors.read+api.connectors.invoke&id_token_add_organizations=true&codex_cli_simplified_flow=true&originator=codex-tui',
   ]);
   assert.equal(g.gate.local, true);
+  assert.equal(g.gate.callback, 'http://127.0.0.1:1455/auth/callback');
   assert.equal(g.gate.back, true);
+  // A short window (a phone's, 21 rows) cuts "Press esc to cancel": "Press esc and choose
+  // Sign in with Device Code" still says Esc goes back.
+  assert.equal(readGate(CODEX_BROWSER_NARROW.slice(0, -1), none)?.gate.back, true);
   assert.equal(g.gate.code, undefined);
   assert.equal(g.options, undefined);
   assert.ok(g.text.split('\n').some((l) => l.trim().startsWith('https://auth.openai.com/oauth/authorize?response_type=code&') && l.endsWith('originator=codex-tui')), 'the link is one line of the text');
@@ -274,3 +278,22 @@ test('an agent at its prompt, signed out or past a sign-in it printed, is not be
     assert.equal(read(agent, name), null, name);
   }
 });
+
+test("only the address this sign-in hands back to is opened, from this sign-in", () => {
+  const gate = readGate(CODEX_BROWSER_NARROW, none)!.gate;
+  const state = 'nRVcFgFJpQJz0jfLKAxonc1zwpXDhOBopAxVmTQxfO4';
+  const ok = callbackFor(gate, `http://localhost:1455/auth/callback?code=ac_123&scope=openid&state=${state}`);
+  assert.equal(ok?.href, `http://127.0.0.1:1455/auth/callback?code=ac_123&scope=openid&state=${state}`, 'opened on the redirect host itself');
+  for (const bad of [
+    `http://127.0.0.1:1455/auth/callback?code=ac_123&state=someone-else`,
+    `http://127.0.0.1:1455/auth/callback?code=ac_123`,
+    `http://127.0.0.1:22/auth/callback?code=ac_123&state=${state}`,
+    `http://127.0.0.1:1455/admin?state=${state}`,
+    `http://10.0.0.5:1455/auth/callback?code=ac_123&state=${state}`,
+    `https://127.0.0.1:1455/auth/callback?code=ac_123&state=${state}`,
+    `file:///etc/passwd`,
+    'not a url',
+  ]) assert.equal(callbackFor(gate, bad), null, bad);
+  assert.equal(callbackFor(readGate(CODEX_DEVICE, none)!.gate, `http://127.0.0.1:1455/auth/callback?state=${state}`), null, 'a device code has no callback');
+});
+

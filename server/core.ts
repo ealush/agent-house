@@ -30,7 +30,7 @@ import { QueueManager, starting, transcriptHas, type LaunchChange, type QueueIte
 import { ADAPTERS } from './feed/feed.ts';
 import { Push } from './push.ts';
 import { omarchyStamp } from './omarchy.ts';
-import { compileGates, readGate, type Gate, type GateKind } from './agentgate.ts';
+import { callbackFor, compileGates, readGate, type Gate, type GateKind } from './agentgate.ts';
 import { chatSteps, claudeQuestionGroups, cursorKeys, dialogAt, dialogSteps, parsePicker, parseQuestionDialog, type Answer, type ScreenOption, type Step } from './choices.ts';
 import type { Peers } from './peers.ts';
 import { fingerprint } from './env.ts';
@@ -1004,27 +1004,49 @@ export class Core {
    * Answers the screen in front of the agent's prompt with the text it asks for (a
    * code pasted back, an API key), or takes it a step back with Esc where the screen
    * says Esc does that. The text may be a secret: it is never remembered or logged.
+   *
+   * `callback`: the address a browser on another device ended on after a sign-in that
+   * hands back to this host (127.0.0.1, where the agent listens). ah opens it here, as
+   * a browser on this host would have, once it matches that sign-in exactly.
    */
-  async answerGate(uid: string, o: { text: string } | { back: true }) {
+  async answerGate(uid: string, o: { text: string } | { back: true } | { callback: string }): Promise<{ status?: number }> {
     const state = await this.tick();
     const w = state.windows.find((w) => w.uid === uid);
     if (!w) throw new CoreError(404, 'session not found');
     const back = 'back' in o;
-    if (!back && !o.text.trim()) throw new CoreError(400, 'nothing to type');
-    const fits = (g: Gate | undefined) => (back ? !!g?.back : !!g?.input);
-    if (w.status !== 'waiting' || !fits(w.ask?.gate)) throw new CoreError(409, back ? 'this screen has no way back' : 'this screen takes nothing typed');
+    const relay = 'callback' in o;
+    if ('text' in o && !o.text.trim()) throw new CoreError(400, 'nothing to type');
+    const fits = (g: Gate | undefined) => (back ? !!g?.back : relay ? !!g?.callback : !!g?.input);
+    if (w.status !== 'waiting' || !fits(w.ask?.gate)) {
+      throw new CoreError(409, back ? 'this screen has no way back' : relay ? 'this screen has no sign-in to finish' : 'this screen takes nothing typed');
+    }
     const preset = this.config.presets.find((p) => p.id === w.agent);
+    let status: number | undefined;
     await this.withInput(uid, async () => {
       // Read the screen again inside the lock: it must still be the one that asked.
       const lines = (await t.capturePane(w.id, 0).catch(() => '')).split('\n').map((l) => l.trimEnd()).filter((l) => l.trim());
-      if (!fits(readGate(lines.slice(-40), compileGates(preset ?? {}))?.gate)) throw new CoreError(409, 'the screen has changed; look again');
+      const gate = readGate(lines.slice(-40), compileGates(preset ?? {}))?.gate;
+      if (!fits(gate)) throw new CoreError(409, 'the screen has changed; look again');
       if (back) return void (await t.tmux('send-keys', '-t', w.id, 'Escape'));
+      if ('callback' in o) {
+        const url = callbackFor(gate!, o.callback);
+        if (!url) throw new CoreError(400, `that isn't the address this sign-in hands back to (${gate!.callback}…, from this sign-in)`);
+        try {
+          const res = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(10_000) });
+          status = res.status;
+          await res.body?.cancel().catch(() => {});
+        } catch {
+          throw new CoreError(502, 'nothing answered there: the sign-in may have timed out; start it again');
+        }
+        return;
+      }
       // Not the prompt's paste: that one watches the agent's input box, which this isn't.
-      await t.pasteText(w.id, o.text, false);
+      await t.pasteText(w.id, (o as { text: string }).text, false);
       await new Promise((r) => setTimeout(r, 150));
       await t.tmux('send-keys', '-t', w.id, 'Enter');
     });
     this.tick().catch(() => {});
+    return status === undefined ? {} : { status };
   }
 
   /**
