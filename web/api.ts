@@ -131,6 +131,8 @@ export type Gate = {
   input?: string;
   /** Its sign-in link returns to 127.0.0.1 on the agent's host: only a browser there finishes it. */
   local?: boolean;
+  /** Where that link hands back to ("http://127.0.0.1:1455/auth/callback"): the address a browser elsewhere stops on can be pasted back. */
+  callback?: string;
   /** Esc goes back a step (or cancels), as the screen says. */
   back?: boolean;
 };
@@ -509,8 +511,8 @@ export function hostApi(base: string) {
     send: (ref: string, text: string, enter: boolean) => r<SendResult>('POST', `/api/sessions/${enc(ref)}/send`, { text, enter }),
     answer: (uid: string, answer: 'approve' | 'deny') => r('POST', `/api/sessions/${enc(uid)}/answer`, { answer }),
     choose: (uid: string, key: string) => r('POST', `/api/sessions/${enc(uid)}/choose`, { key }),
-    /** Types what the screen in front of the prompt asks for (a code, an API key), or Esc back. */
-    answerGate: (uid: string, answer: { text: string } | { back: true }) => r('POST', `/api/sessions/${enc(uid)}/gate`, answer),
+    /** Types what the screen in front of the prompt asks for (a code, an API key), Esc back, or opens a sign-in's callback address on the host. */
+    answerGate: (uid: string, answer: { text: string } | { back: true } | { callback: string }) => r('POST', `/api/sessions/${enc(uid)}/gate`, answer),
     commands: (uid: string) => r<SlashCommand[]>('GET', `/api/sessions/${enc(uid)}/commands`),
     files: (uid: string, q: string) => r<string[]>('GET', `/api/sessions/${enc(uid)}/files?q=${enc(q)}`),
     answerQuestions: (uid: string, answers: QuestionAnswer[]) => r('POST', `/api/sessions/${enc(uid)}/questions`, { answers }),

@@ -95,23 +95,77 @@ const onHost = () => ['localhost', '127.0.0.1', '[::1]', '::1'].includes(locatio
 /** The link to open, and the box for what the screen asks to have typed. */
 export function GateActions({ w, client, gate }: { w: Win; client: HostApi; gate: Gate }) {
   const first = gate.links?.[0];
-  // A page that hands back to the host's own browser can't finish here: not the way to go.
+  // A page that hands back to the host's own browser (127.0.0.1) stops short here. With
+  // its address pasted back, the host finishes it; without one, it's not the way to go.
   const away = !!gate.local && !onHost();
+  const stuck = away && !gate.callback;
   return (
     <>
       {first && (
         <div className="actions">
-          <a className={`btn ${away ? '' : 'primary'}`} data-ask-first href={first} target="_blank" rel="noopener noreferrer">
+          <a className={`btn ${stuck ? '' : 'primary'}`} data-ask-first href={first} target="_blank" rel="noopener noreferrer">
             {gate.kind === 'signin' ? 'Open the sign-in page' : `Open ${shortLink(first)}`}
           </a>
         </div>
       )}
-      {away && (
+      {away && gate.callback && <CallbackPaste key={gate.callback} w={w} client={client} callback={gate.callback} />}
+      {stuck && (
         <p className="muted small gate-note">
           That page hands back to a browser on {w.host}, so it can only finish there.{gate.back ? ' Go back for another way in, like a code to enter here.' : ''}
         </p>
       )}
       {gate.input && <GateInput key={gate.input} w={w} client={client} prompt={gate.input} />}
+    </>
+  );
+}
+
+/**
+ * The address a browser here stopped on after signing in (127.0.0.1 on this device,
+ * where nothing listens), handed to the host, which opens it where the agent does.
+ */
+function CallbackPaste({ w, client, callback }: { w: Win; client: HostApi; callback: string }) {
+  const [text, setText] = useState('');
+  const [state, setState] = useState<'idle' | 'sending' | 'sent'>('idle');
+  const where = callback.replace(/^https?:\/\//, '');
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!text.trim() || state === 'sending') return;
+    setState('sending');
+    try {
+      await client.answerGate(w.uid, { callback: text.trim() });
+      setText('');
+      setState('sent');
+    } catch (err) {
+      setState('idle');
+      showError(err, "Couldn't finish the sign-in");
+    }
+  };
+  return (
+    <>
+      <p className="muted small gate-note">
+        After you sign in, your browser stops on a page that won&rsquo;t load ({where}…). Copy that page&rsquo;s address and paste it here: {w.host} finishes the sign-in.
+      </p>
+      <form className="gate-input" onSubmit={submit}>
+        <input
+          type="url"
+          inputMode="url"
+          autoComplete="off"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          aria-label="The address your browser stopped on"
+          placeholder={`http://${where}?code=…`}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            if (state === 'sent') setState('idle');
+          }}
+        />
+        <button type="submit" className="btn primary" disabled={!text.trim() || state === 'sending'}>
+          {state === 'sending' ? 'Finishing…' : 'Finish signing in'}
+        </button>
+        {state === 'sent' && <span className="muted small">Sent: {w.host} is finishing it.</span>}
+      </form>
     </>
   );
 }

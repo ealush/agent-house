@@ -29,12 +29,20 @@ before(async () => {
   const saved = process.env.AH_DIST;
   process.env.AH_DIST = dist;
   try {
-    ah = await startAh({ auth: { mode: 'off' }, idleAfter: 1, presets: [{ id: 'codex', name: 'Codex', command: `exec ${process.execPath} ${fixture} ${log}`, match: '^node$', feed: 'codex' }] }, dir);
+    ah = await startAh({
+      auth: { mode: 'off' },
+      idleAfter: 1,
+      presets: [
+        { id: 'codex', name: 'Codex', command: `exec ${process.execPath} ${fixture} ${log}`, match: '^node$', feed: 'codex' },
+        { id: 'claude', name: 'Loopback', command: `exec ${process.execPath} ${fileURLToPath(new URL('../fixtures/callback.js', import.meta.url))} ${dir}/callback.log`, match: '^node$', feed: 'claude' },
+      ],
+    }, dir);
   } finally {
     if (saved === undefined) delete process.env.AH_DIST;
     else process.env.AH_DIST = saved;
   }
-  browser = await chromium.launch({ executablePath: chrome });
+  // The tailnet name, for a page that isn't on the agent's host (helpers' AH_TAILNET_DNS).
+  browser = await chromium.launch({ executablePath: chrome, args: ['--host-resolver-rules=MAP box.test.ts.net 127.0.0.1'] });
 });
 
 after(async () => {
@@ -84,3 +92,34 @@ test('the page shows the sign-in, holds the message, and signs in through the ca
   await card.waitFor({ state: 'detached' });
   await ctx.close();
 });
+
+test('a sign-in that hands back to the host asks, away from it, for the address the browser stopped on', { skip }, async () => {
+  const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'claude', cwd: `${ah.dir}/files`, label: 'Loopback test' } });
+  assert.equal(created.status, 201, created.body);
+  const { uid } = created.json();
+  const w = await until(async () => (await http(ah, 'GET', '/api/state')).json().windows.find((x: any) => x.uid === uid && x.ask?.gate?.callback), 20_000, 'the sign-in with its callback');
+  const where = w.ask.gate.callback.replace('http://', '');
+
+  // On the host itself, its own browser finishes it: no box.
+  const here = await browser.newContext({ ...devices['iPhone 15 Pro'] });
+  await here.addInitScript(() => localStorage.setItem('ah.view', 'gui'));
+  const local = await here.newPage();
+  await local.goto(`http://127.0.0.1:${ah.port}/#${uid}`);
+  await local.locator('.gui .ask-panel').getByText('Needs you to sign in').waitFor();
+  assert.equal(await local.locator('.gui .ask-panel input[type=url]').count(), 0);
+  await here.close();
+
+  // From a phone on the tailnet: the page is still the way in, and the box takes the address.
+  const away = await browser.newContext({ ...devices['iPhone 15 Pro'], extraHTTPHeaders: { 'Tailscale-User-Login': 'owner@example.com' } });
+  await away.addInitScript(() => localStorage.setItem('ah.view', 'gui'));
+  const page = await away.newPage();
+  await page.goto(`http://box.test.ts.net:${ah.port}/#${uid}`);
+  const card = page.locator('.gui .ask-panel');
+  const box = card.locator('input[type=url]');
+  await box.waitFor();
+  assert.equal(await box.getAttribute('placeholder'), `http://${where}?code=…`);
+  assert.match((await card.getByRole('link', { name: 'Open the sign-in page' }).getAttribute('class')) ?? '', /\bprimary\b/, 'still the way in');
+  assert.match((await card.locator('.gate-note').textContent()) ?? '', new RegExp(`stops on a page that won.t load \\(${where.replace(/[.]/g, '\\.')}…\\)`));
+  await away.close();
+});
+
