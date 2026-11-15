@@ -6470,6 +6470,67 @@ ul.queue-items {
   padding: 6px 0 6px 10px;
 }
 
+/* A screen in front of an agent's prompt (GateView): its words read as text, its
+   code large enough to read off and type on another device, a box for a code or key. */
+.gate-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.gate-text p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+.gate-text a {
+  color: var(--accent);
+}
+.gate-code {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  padding: 6px 6px 6px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--sunken);
+  border: 1px solid var(--line);
+}
+.gate-code code {
+  font: 600 20px var(--mono);
+  letter-spacing: 0.08em;
+  color: var(--text);
+  user-select: all;
+}
+.gate-input {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+/* As a form's field (.field input). */
+.gate-input input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line-2);
+  background: var(--sunken);
+  font-family: var(--mono);
+  /* 16px keeps iOS from zooming the page when the field takes focus. */
+  font-size: 16px;
+}
+.gate-note {
+  margin: 0;
+}
+/* A link as a button: no prose underline (.gui a). */
+.ask-panel a.btn {
+  text-decoration: none;
+}
+
 .ask-banner .ask-panel {
   max-height: 45vh;
   overflow: auto;

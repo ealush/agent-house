@@ -22,6 +22,7 @@ type Props = {
 
 export { cleanScreen, questionLine } from './screenText.ts';
 import { KIND_LABEL, readAsk } from './askView.ts';
+import { GATE_LABEL, GateActions, GateBack, GateText } from './GateView.tsx';
 
 /**
  * What a waiting agent asks, the same everywhere (the Inbox card, the GUI, the bar
@@ -30,6 +31,14 @@ import { KIND_LABEL, readAsk } from './askView.ts';
  */
 export function AskSummary({ w, terminalText = true }: { w: Win; terminalText?: boolean }) {
   if (!w.ask) return null;
+  // A screen in front of the prompt is read whole: its words are the instructions.
+  if (w.ask.gate)
+    return (
+      <div className="ask-summary">
+        <span className="card-kind">{GATE_LABEL[w.ask.gate.kind]}</span>
+        <GateText text={w.ask.text} gate={w.ask.gate} />
+      </div>
+    );
   const parts = readAsk(w.ask, w.detail);
   return (
     <div className="ask-summary">
@@ -86,10 +95,11 @@ export const AskPanel = forwardRef<AskHandle, Props>(function AskPanel({ w, clie
         />
       ) : (
         <>
+          {ask.gate && <GateActions w={w} client={client} gate={ask.gate} />}
           {options.length > 0 ? (
             // Keyed by the prompt: the next prompt is a fresh set of buttons, never the last one's "sent" state.
             <ScreenChoices key={`${ask.text}\n${options.map((o) => o.label).join('\n')}`} w={w} client={client} options={options} />
-          ) : (
+          ) : ask.gate ? null : (
             <div className="actions">
               {w.answerable ? (
                 <>
@@ -109,11 +119,16 @@ export const AskPanel = forwardRef<AskHandle, Props>(function AskPanel({ w, clie
               )}
             </div>
           )}
-          {onUseTerminal && (
-            <button className="btn ghost small ask-terminal" onClick={onUseTerminal}>
-              Answer in terminal
-            </button>
-          )}
+          {ask.gate?.back || onUseTerminal ? (
+            <div className="actions">
+              {ask.gate?.back && <GateBack w={w} client={client} />}
+              {onUseTerminal && (
+                <button className="btn ghost small ask-terminal" onClick={onUseTerminal}>
+                  Answer in terminal
+                </button>
+              )}
+            </div>
+          ) : null}
         </>
       )}
     </div>
@@ -125,7 +140,7 @@ export const AskPanel = forwardRef<AskHandle, Props>(function AskPanel({ w, clie
  * Once one is sent the rows are aria-disabled, not disabled: focus stays on the answer
  * instead of falling to the page until the prompt goes.
  */
-function ScreenChoices({ w, client, options }: { w: Win; client: HostApi; options: Array<{ key: string; label: string }> }) {
+function ScreenChoices({ w, client, options }: { w: Win; client: HostApi; options: Array<{ key: string; label: string; description?: string }> }) {
   const [sent, setSent] = useState<string | null>(null);
   // If the same prompt is still up a while later, the key didn't take: allow another try.
   useEffect(() => {
@@ -163,7 +178,10 @@ function ScreenChoices({ w, client, options }: { w: Win; client: HostApi; option
       {options.map((o, i) => (
         <button key={o.key} className={`ask-option ${i === 0 ? 'first' : ''} ${sent === o.key ? 'on' : ''}`} data-ask-first={i === 0 || undefined} aria-disabled={!!sent || undefined} onClick={() => void pick(o.key)}>
           <kbd>{o.key.startsWith('nav:') ? i + 1 : o.key.toUpperCase()}</kbd>
-          <span>{o.label}</span>
+          <span className="ask-row-text">
+            <span className="ask-label">{o.label}</span>
+            {o.description && <span className="ask-desc">{o.description}</span>}
+          </span>
         </button>
       ))}
     </div>

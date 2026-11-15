@@ -112,10 +112,27 @@ export type Ask = {
   text: string;
   /** `choice`: the agent's multiple-choice questions, when its hook reported them. */
   questions?: Question[];
-  /** Rows of a numbered picker on screen; `key` is what gets typed. */
-  options?: Array<{ key: string; label: string }>;
+  /** Rows of a numbered picker on screen; `key` is what gets typed, `description` the line under it. */
+  options?: Array<{ key: string; label: string; description?: string }>;
   /** The one question the dialog shows now, when the whole set isn't known or it's half answered. */
   dialog?: { question: string; multiSelect: boolean; options: Array<{ label: string; description?: string; checked?: boolean }>; total: number; answered: number };
+  /** A screen in front of the agent's prompt (server/agentgate.ts): a message waits until it's answered. */
+  gate?: Gate;
+};
+
+/** What the screen in front of an agent's prompt wants: to trust its folder, to sign in, setup. */
+export type Gate = {
+  kind: 'trust' | 'signin' | 'setup';
+  /** Links on the screen, whole. */
+  links?: string[];
+  /** A one-time code to enter on another page. */
+  code?: string;
+  /** It takes typed text (a code pasted back, an API key): the line that asks for it. */
+  input?: string;
+  /** Its sign-in link returns to 127.0.0.1 on the agent's host: only a browser there finishes it. */
+  local?: boolean;
+  /** Esc goes back a step (or cancels), as the screen says. */
+  back?: boolean;
 };
 
 export type HistoryItem = {
@@ -357,7 +374,8 @@ export type BulkRemoveResult = { path: string; ok: boolean; error?: string; gone
 export type BranchInfo = { name: string; current: boolean; remote: boolean; worktree?: string | null };
 export type BranchList = { current: string | null; branches: BranchInfo[]; dirty: number };
 
-export type SendResult = { outcome: 'delivered' | 'queued'; windowId: string; resumed: boolean; queued: number; starting?: boolean; queueId?: string };
+/** `held`: queued because a screen in front of the agent's prompt, or a picker, is up; it goes in once that's answered. */
+export type SendResult = { outcome: 'delivered' | 'queued'; windowId: string; resumed: boolean; queued: number; starting?: boolean; queueId?: string; held?: Gate['kind'] | 'picker' };
 export type QueueItem = { id: string; text: string; enter: boolean; at: number };
 
 /** A session's browser preview (server/preview.ts): its dev server's port, and ah's proxy port for it. */
@@ -491,6 +509,8 @@ export function hostApi(base: string) {
     send: (ref: string, text: string, enter: boolean) => r<SendResult>('POST', `/api/sessions/${enc(ref)}/send`, { text, enter }),
     answer: (uid: string, answer: 'approve' | 'deny') => r('POST', `/api/sessions/${enc(uid)}/answer`, { answer }),
     choose: (uid: string, key: string) => r('POST', `/api/sessions/${enc(uid)}/choose`, { key }),
+    /** Types what the screen in front of the prompt asks for (a code, an API key), or Esc back. */
+    answerGate: (uid: string, answer: { text: string } | { back: true }) => r('POST', `/api/sessions/${enc(uid)}/gate`, answer),
     commands: (uid: string) => r<SlashCommand[]>('GET', `/api/sessions/${enc(uid)}/commands`),
     files: (uid: string, q: string) => r<string[]>('GET', `/api/sessions/${enc(uid)}/files?q=${enc(q)}`),
     answerQuestions: (uid: string, answers: QuestionAnswer[]) => r('POST', `/api/sessions/${enc(uid)}/questions`, { answers }),

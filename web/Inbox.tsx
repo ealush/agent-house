@@ -185,8 +185,9 @@ function AskCard({ w, client, multiHost, narrow, onOpen, onAnswer }: { w: Win; c
   const { color, name } = look(w.agent);
   const modelLabel = shortModel(w.model);
   const ask = w.ask;
-  // Answerable right here: the agent's questions, or the rows of its picker.
-  const inline = !!ask && ((ask.kind === 'choice' && (!!ask.questions?.length || !!ask.dialog)) || !!ask.options?.length);
+  // Answerable right here: the agent's questions, the rows of its picker, or the
+  // screen in front of its prompt (its link, code and box).
+  const inline = !!ask && ((ask.kind === 'choice' && (!!ask.questions?.length || !!ask.dialog)) || !!ask.options?.length || !!ask.gate);
   const form = ask?.kind === 'choice' && inline;
   return (
     <article

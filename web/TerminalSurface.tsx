@@ -93,7 +93,7 @@ export const TerminalSurface = forwardRef<SurfaceHandle, SurfaceProps>(function 
         <div className="ask-banner">
           {/* The same summary as the Inbox and the GUI; the screen itself is right above. */}
           {w.ask.kind === 'choice' ? <span className="card-kind">{KIND_LABEL[w.ask.kind]}</span> : <AskSummary w={w} terminalText={false} />}
-          {w.ask.options?.length || ((w.ask.questions?.length || w.ask.dialog) && coarse()) ? (
+          {w.ask.options?.length || w.ask.gate || ((w.ask.questions?.length || w.ask.dialog) && coarse()) ? (
             // A phone can't comfortably drive a picker through the key bar: answer it here.
             <AskPanel ref={askRef} w={w} client={client} onAnswer={onAnswer} compact />
           ) : w.ask.kind === 'choice' ? (

@@ -155,6 +155,14 @@ function fromHash(): { page: Page; selected: string | null } {
   return { page: 'inbox', selected: null };
 }
 
+/** What a message held behind a screen in front of the agent's prompt waits for. */
+const HELD: Record<NonNullable<SendResult['held']>, string> = {
+  signin: "Your message goes in once you've signed in",
+  trust: 'Your message goes in once the folder is trusted',
+  setup: 'Your message goes in once the setup screen is answered',
+  picker: 'Your message goes in once its question is answered',
+};
+
 export function App({ onLock }: { onLock: () => void }) {
   const [{ page, selected }, setRoute] = useState(fromHash);
   const [inboxGroup, setInboxGroup] = stored<InboxGroup>('ah.inboxGroup', 'status');
@@ -1026,6 +1034,8 @@ export function App({ onLock }: { onLock: () => void }) {
     // The GUI composer shows the message itself (in the feed, or the queue tray).
     if (r.resumed) flash('Resuming the session; your message goes in once it is ready');
     else if (r.starting) flash('Your message goes in once the agent is ready');
+    // Held behind a screen in front of the prompt: say what it waits for, even where the tray shows it.
+    else if (r.held) flash(HELD[r.held]);
     // Delivered shows itself where it lands; a queued message needs saying.
     else if (!opts.quiet && r.outcome !== 'delivered') flash(`Queued (${r.queued}) — sent when the agent is free`);
     refresh(current?.host);
