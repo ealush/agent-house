@@ -186,6 +186,8 @@ import Testing
     // Rows keep the line under them; a send held behind it says so.
     let row = try JSONDecoder().decode(AskDTO.ScreenOption.self, from: Data(#"{"key":"2","label":"Sign in with Device Code","description":"Sign in from another device with a one-time code"}"#.utf8))
     #expect(row.description == "Sign in from another device with a one-time code")
+    let local = try JSONDecoder().decode(AskDTO.Gate.self, from: Data(#"{"kind":"signin","links":["https://auth.openai.com/oauth/authorize?x=1"],"local":true,"callback":"http://127.0.0.1:1455/auth/callback","back":true}"#.utf8))
+    #expect(local.callback == "http://127.0.0.1:1455/auth/callback" && local.local == true)
     let sent = try JSONDecoder().decode(SendResult.self, from: Data(#"{"outcome":"queued","windowId":"@1","resumed":false,"queued":1,"queueId":"a1","held":"signin"}"#.utf8))
     #expect(sent.held == "signin")
 }

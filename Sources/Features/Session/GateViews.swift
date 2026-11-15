@@ -96,11 +96,12 @@ struct GateActionsView: View {
 
     var body: some View {
         // This device is never the agent's host: a page that hands back to 127.0.0.1 there
-        // can't finish here, so it isn't the way to go.
-        let away = gate.local == true
+        // stops short here. With its address pasted back the host finishes it; without a
+        // callback to hand it to, it isn't the way to go.
+        let stuck = gate.local == true && gate.callback == nil
         VStack(alignment: .leading, spacing: 10) {
             if let first = gate.links?.first, let url = URL(string: first) {
-                if away {
+                if stuck {
                     Link(destination: url) { Label(openTitle(first), systemImage: "safari") }
                         .buttonStyle(.bordered)
                 } else {
@@ -109,7 +110,10 @@ struct GateActionsView: View {
                         .tint(theme.accentStrong)
                 }
             }
-            if away {
+            if gate.local == true, let callback = gate.callback {
+                CallbackPasteView(target: target, callback: callback).id(callback)
+            }
+            if stuck {
                 Text("That page hands back to a browser on \(target.row.host), so it can only finish there.\(gate.back == true ? " Go back for another way in, like a code to enter here." : "")")
                     .font(.ah(.footnote))
                     .foregroundStyle(theme.muted)
@@ -123,6 +127,74 @@ struct GateActionsView: View {
 
     private func openTitle(_ link: String) -> String {
         gate.kind == "signin" ? "Open the sign-in page" : "Open \(GateTextView.shortLink(link))"
+    }
+}
+
+/// After signing in, the browser here stops on a page that won't load (127.0.0.1 on this
+/// phone, where nothing listens). Its address, pasted back, goes to the host, which opens
+/// it where the agent listens. The system Paste button reads it without asking.
+private struct CallbackPasteView: View {
+    let target: AskTarget
+    let callback: String
+    @Environment(\.theme) private var theme
+    @State private var text = ""
+    @State private var sending = false
+    @State private var sent = false
+
+    private var place: String { callback.replacingOccurrences(of: "http://", with: "") }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("After you sign in, your browser stops on a page that won’t load (\(place)…). Copy that page’s address and paste it here: \(target.row.host) finishes the sign-in.")
+                .font(.ah(.footnote))
+                .foregroundStyle(theme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+            PasteButton(payloadType: String.self) { strings in
+                guard let address = strings.first else { return }
+                Task { @MainActor in
+                    text = address
+                    send()
+                }
+            }
+            .buttonBorderShape(.capsule)
+            .tint(theme.accentStrong)
+            .disabled(sending)
+            HStack(spacing: 8) {
+                TextField("http://\(place)?code=…", text: $text)
+                    .font(.ahMono(.footnote))
+                    .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .submitLabel(.done)
+                    .onSubmit(send)
+                    .accessibilityLabel("The address your browser stopped on")
+                    .accessibilityIdentifier("gateCallback")
+                    .padding(.vertical, 9)
+                    .padding(.horizontal, 10)
+                    .background(theme.sunken, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(theme.line, lineWidth: 0.5))
+                Button(sending ? "Finishing…" : "Finish", action: send)
+                    .accessibilityIdentifier("gateFinish")
+                    .buttonStyle(.borderedProminent)
+                    .tint(theme.accentStrong)
+                    .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty || sending)
+            }
+            if sent { Text("Sent: \(target.row.host) is finishing it.").font(.ah(.footnote)).foregroundStyle(theme.muted) }
+        }
+    }
+
+    private func send() {
+        let address = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !address.isEmpty, !sending else { return }
+        sending = true
+        Task {
+            if await target.finishSignIn(address) {
+                text = ""
+                sent = true
+                Haptics.success()
+            }
+            sending = false
+        }
     }
 }
 

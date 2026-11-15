@@ -174,6 +174,9 @@ struct APIClient: Sendable {
     /// never keeps it. Or, with `back`, Esc where the screen says Esc goes back.
     func answerGate(_ uid: String, text: String) async throws { try await perform("POST", "\(s(uid))/gate", json: ["text": text]) }
     func gateBack(_ uid: String) async throws { try await perform("POST", "\(s(uid))/gate", json: ["back": true]) }
+    /// The address a browser here stopped on after a sign-in that hands back to the host's
+    /// 127.0.0.1: the host opens it where the agent listens, if it is that sign-in's own.
+    func gateCallback(_ uid: String, address: String) async throws { try await perform("POST", "\(s(uid))/gate", json: ["callback": address]) }
     func commands(_ uid: String) async throws -> [SlashCommand] { try await call("GET", "\(s(uid))/commands") }
     func files(_ uid: String, query: String) async throws -> [String] { try await call("GET", "\(s(uid))/files", query: [URLQueryItem(name: "q", value: query)]) }
     func answerQuestions(_ uid: String, _ answers: [QuestionAnswer]) async throws { try await perform("POST", "\(s(uid))/questions", json: ["answers": answers]) }

@@ -94,6 +94,16 @@ struct AskTarget {
         await run("go back") { try await api.gateBack(row.uid) }
     }
 
+    /// Hands the host the address the browser stopped on. True once the host took it.
+    func finishSignIn(_ address: String) async -> Bool {
+        var ok = false
+        await run("finish the sign-in") {
+            try await api.gateCallback(row.uid, address: address)
+            ok = true
+        }
+        return ok
+    }
+
     func answerQuestions(_ answers: [QuestionAnswer]) async {
         await run("answer") { try await api.answerQuestions(row.uid, answers) }
     }

@@ -262,6 +262,9 @@ struct AskDTO: Codable, Equatable, Sendable {
         var input: String? = nil
         /// Its sign-in link hands back to 127.0.0.1 on the agent's host: only a browser there finishes it.
         var local: Bool? = nil
+        /// Where that link hands back to ("http://127.0.0.1:1455/auth/callback"): the address a
+        /// browser here stops on, pasted back, lets the host finish the sign-in.
+        var callback: String? = nil
         /// Esc goes back a step, as the screen says.
         var back: Bool? = nil
     }
