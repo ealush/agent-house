@@ -56,9 +56,9 @@ export function confirmTerminate(w: Win) {
   return askConfirm({
     title: `Terminate "${w.title}"?`,
     // Say what survives: an agent's conversation can be picked up again; a shell's processes can't.
-    body: w.agent
+    body: (w.agent
       ? `${hot ? `It ${why}, and will be stopped.` : 'The agent will be stopped.'} Its conversation stays in History, and Resume picks it up again.`
-      : `${hot ? `It ${why}. ` : ''}The shell and anything running in it will be stopped.`,
+      : `${hot ? `It ${why}. ` : ''}The shell and anything running in it will be stopped.`) + (w.terminal ? ' Its attached terminal and anything running in it will also stop.' : ''),
     confirm: 'Terminate',
     danger: true,
   });
@@ -212,6 +212,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
             </span>
           )}
           {w.queued > 0 && <span className="count">⇥{w.queued}</span>}
+          {w.terminal && <span className={`terminal-indicator${w.terminal.busy ? ' busy' : ''}`} title={w.terminal.busy ? `Attached terminal running ${w.terminal.command}` : 'Terminal attached'} aria-label={w.terminal.busy ? 'Attached terminal active' : 'Terminal attached'}><Icon name="terminal" size={13} /></span>}
         </button>
         <button
           className="row-kill"
@@ -240,7 +241,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
             >
               Open
             </button>
-            {(['rename', 'pin', ...(w.agent ? (['send-to'] as const) : [])] as const).map((id) => (
+            {(['panel-terminal', 'rename', 'pin', ...(w.agent ? (['send-to'] as const) : [])] as const).map((id) => (
               <button
                 key={id}
                 onClick={() => {

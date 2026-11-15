@@ -11,19 +11,12 @@ import { useGui } from './context.ts';
 export function CodeBlock({ children, className, text, runnable }: { children?: ReactNode; className?: string; text?: string; runnable?: boolean }) {
   const pre = useRef<HTMLPreElement>(null);
   const [copied, setCopied] = useState(false);
-  // Run asks once: the first press says where it runs, the second runs it.
-  const [armed, setArmed] = useState(false);
   const { snippetRun } = useGui();
   useEffect(() => {
     if (!copied) return;
     const t = setTimeout(() => setCopied(false), 1200);
     return () => clearTimeout(t);
   }, [copied]);
-  useEffect(() => {
-    if (!armed) return;
-    const t = setTimeout(() => setArmed(false), 4000);
-    return () => clearTimeout(t);
-  }, [armed]);
   // A passed string wins (a shell line drops the "$ " prompt). Otherwise the
   // rendered text, minus the newline a markdown fence leaves on the last line.
   const source = () => (text ?? pre.current?.innerText ?? '').replace(/\n$/, '');
@@ -36,19 +29,15 @@ export function CodeBlock({ children, className, text, runnable }: { children?: 
       {run && (
         <button
           type="button"
-          className={`code-run${armed ? ' armed' : ''}`}
-          aria-label={armed ? `Run in a shell in ${run.place}` : 'Run in Terminal'}
-          title={armed ? `Run in a shell in ${run.place}` : 'Run in Terminal'}
-          onBlur={() => setArmed(false)}
+          className="code-run"
+          aria-label="Send to terminal"
+          title={`Send to this session's terminal and run in ${run.place}`}
           onClick={() => {
-            if (!armed) return setArmed(true);
-            setArmed(false);
             const value = source();
             if (value) run.run(value);
           }}
         >
           <Icon name="terminal" size={13} />
-          {armed && <span>Run in {run.place}</span>}
         </button>
       )}
       <button

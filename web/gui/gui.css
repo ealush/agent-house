@@ -382,7 +382,7 @@
   visibility: hidden;
 }
 
-/* Run sits left of Copy, and armed, grows to the left to say where it runs. */
+/* Send to terminal sits beside Copy. */
 .gui .code-run {
   right: 40px;
   gap: 6px;
@@ -390,12 +390,6 @@
   width: auto;
   font-size: 12px;
   white-space: nowrap;
-}
-
-.gui .code-run.armed {
-  padding: 0 10px;
-  border-color: var(--accent);
-  color: var(--text);
 }
 
 :where(:root:not([data-touch])) .gui .code-snippet:hover .code-copy,

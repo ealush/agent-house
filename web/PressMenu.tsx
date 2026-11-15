@@ -174,6 +174,7 @@ export function sessionItems(w: Win, a: SessionActions): PressItem[] {
   };
   return [
     { label: 'Open', icon: 'terminal', run: () => a.open(w) },
+    { label: 'Terminal', icon: 'terminal', run: thenRun('panel-terminal') },
     { label: commandLabel('rename'), icon: 'edit', run: thenRun('rename') },
     { label: w.pinned ? 'Unpin' : commandLabel('pin'), icon: 'pin', run: () => a.pin(w) },
     ...(w.agent

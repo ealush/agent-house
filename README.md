@@ -82,6 +82,13 @@ to terminal rules and output activity, and matches live agents to their transcri
   from the agent's own transcript: markdown, tool calls with diffs and output, plans,
   approvals, and widgets the agent can ask for (choices, tables, stats, charts).
   Same live session, no restart. See [docs/gui.md](docs/gui.md).
+- **Attached terminal.** Session menu → Terminal opens a companion shell in the
+  session's folder, beside the conversation on desktop and in its own tab on a phone.
+  It keeps running when hidden and across ah restarts, without adding a session row.
+  Shell snippets offer **Send to terminal** beside Copy to paste and run with one click.
+  A terminal icon shows attachment and turns red while a command is running; a busy
+  terminal refuses another snippet. Web and native use the same shell. See
+  [the attachment contract](docs/attached-terminal.md).
 - **History.** Every session ah has run, plus past Claude Code and Codex conversations
   found on disk. Resume continues the same conversation (`claude --resume <id>`, …).
 - **Files.** Browse the host, upload from any device into any folder, download, preview,

@@ -25,3 +25,22 @@ The existing authenticated `/ws/:id` terminal transport renders the shell. Clien
 resolve the attachment again on reconnect so closing and recreating it cannot send
 input to an old tmux window. Shell commands must be deliberately selected by the
 person using a snippet button; rendering a snippet never executes it.
+
+## Web and native clients
+
+Session menu → Terminal opens the shell. The web app uses a side panel on desktop
+and a tab within the owner on a phone. The native app uses a side panel on iPad and
+a panel sheet on iPhone, with its own SwiftTerm viewer and keyboard focus. The
+terminal icon shows attachment and turns red during foreground work. Send to
+terminal beside Copy pastes and runs shell snippets in that attachment.
+
+Verified on 15 November 2026: desktop/phone browser journeys, restart persistence,
+concurrent opens, busy refusal, Preview discovery and stopping an attached viewer;
+native core tests and real-host SwiftTerm/scene integration tests. The native app
+builds and passes its standard checks in Xcode 27.2 on the MacBook Air, and the
+attached shell was exercised on an iPhone simulator. Physical-device validation
+remains separate.
+
+![Desktop companion shell](screenshots/attached-terminal-desktop.png)
+
+![Phone companion shell](screenshots/attached-terminal-phone.png)

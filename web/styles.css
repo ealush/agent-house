@@ -1348,6 +1348,26 @@ button.pill {
   min-height: 0;
 }
 
+.attached-terminal {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.attached-terminal-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.attached-terminal-bar .grow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.terminal-indicator { display: inline-flex; align-items: center; gap: 3px; color: var(--muted); flex-shrink: 0; }
+.terminal-indicator.busy { color: var(--red, #e56b6f); }
+
 /* Drag handle on the side panel's edge; the shared divider brings the look. */
 .panel-divider {
   touch-action: none;

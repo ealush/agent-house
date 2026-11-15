@@ -45,6 +45,7 @@ const ForksDialog = lazy(() => load.fork().then((m) => ({ default: m.ForksDialog
 const ContinueDialog = lazy(() => load.continueIn().then((m) => ({ default: m.ContinueDialog })));
 const SendToDialog = lazy(() => load.sendTo().then((m) => ({ default: m.SendToDialog })));
 const SnapshotsPanel = lazy(() => load.snapshots().then((m) => ({ default: m.SnapshotsPanel })));
+const AttachedTerminalPanel = lazy(() => import('./AttachedTerminal.tsx').then((m) => ({ default: m.AttachedTerminalPanel })));
 if (typeof window !== 'undefined') window.setTimeout(() => Object.values(load).forEach((f) => void f().catch(() => {})), 5000);
 import { ShortcutHint, shortcutTitle, useCommand, usePaletteProvider, useShortcutRevision } from './shortcuts.tsx';
 import { commandLabel as L } from './shortcuts.ts';
@@ -56,7 +57,7 @@ import { ActionSheet, SheetBar, useSheet } from './sheet.tsx';
 import { placeOf } from './requeue.ts';
 import { runInShell, runPlace } from './runInShell.ts';
 
-type Panel = 'diff' | 'files' | 'chat' | 'queue' | 'snapshots' | 'preview' | 'stack';
+type Panel = 'diff' | 'files' | 'chat' | 'queue' | 'snapshots' | 'preview' | 'stack' | 'terminal';
 
 type Props = {
   w: Win;
@@ -189,26 +190,29 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
   const body = useRef<HTMLDivElement>(null);
   const tabRow = useRef<HTMLDivElement>(null);
   const review = useReviewFor(w.host, w.uid, w.branch);
-  // Run in Terminal on the reply's code: a shell in this session's folder runs it, shown beside
-  // the conversation, or in its place on a phone. What it reads is the newest list, not the
-  // one from when the reply drew, and the transcript doesn't redraw on every poll for it.
-  const latest = useRef({ w, windows, client, onOpenKey, onSplitWith });
-  latest.current = { w, windows, client, onOpenKey, onSplitWith };
+  const features = useContext(HostFeaturesContext)(w.host);
+  const terminalSupported = (features?.attachedTerminal ?? 0) > 0;
+  // Snippets always target this session's companion shell. Keep the transcript callback
+  // stable as polling changes the session's status and the attachment's activity.
+  const latest = useRef({ w, client, narrow, refresh });
+  latest.current = { w, client, narrow, refresh };
   const runsIn = runPlace(w);
   const snippetRun = useMemo(
     () =>
-      w.agent
+      w.agent && terminalSupported
         ? {
             place: runsIn,
             run: (snippet: string) => {
-              const { w, windows, client, onOpenKey, onSplitWith } = latest.current;
-              void runInShell(client, w, windows, snippet)
-                .then((key) => key && (onSplitWith ?? onOpenKey)?.(key))
+              const { w, client, narrow, refresh } = latest.current;
+              if (narrow) setTab('terminal');
+              else { setPanel('terminal'); setPanelCollapsed(false); }
+              void runInShell(client, w, snippet)
+                .then(() => refresh())
                 .catch((e) => showError(e, "Couldn't run it"));
             },
           }
         : undefined,
-    [!!w.agent, runsIn],
+    [!!w.agent, runsIn, terminalSupported],
   );
   // 'main' is the session itself, drawn by whichever surface is chosen.
   const [tab, setTab] = useState<'main' | Panel>('main');
@@ -219,7 +223,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
   // The stack a session builds is read on the host Review lives on, in a git checkout.
   const reviewHost = useContext(ReviewContext)?.host;
   const stackTab = reviewHost === w.host && !!w.branch;
-  const panel: Panel | '' = (!turns && (storedPanel === 'queue' || storedPanel === 'snapshots')) || (!stackTab && storedPanel === 'stack') ? 'files' : storedPanel;
+  const panel: Panel | '' = (!terminalSupported && storedPanel === 'terminal') || (!turns && (storedPanel === 'queue' || storedPanel === 'snapshots')) || (!stackTab && storedPanel === 'stack') ? 'files' : storedPanel;
   // Last non-empty panel, so the single header toggle reopens where you left off.
   const [lastPanel, setLastPanel] = useState<Panel>('files');
   useEffect(() => {
@@ -346,7 +350,6 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
   const [continuing, setContinuing] = useState<string | null>(null);
   /** This session's automatic recovery switch (server/recovery), read when its menu opens. */
   const [autoRecover, setAutoRecover] = useState(false);
-  const features = useContext(HostFeaturesContext)(w.host);
   useEffect(() => {
     if (!menu || !w.agent || !(features?.recovery ?? 0)) return;
     client.recovery(w.uid).then((r) => setAutoRecover(r.auto), () => {});
@@ -437,7 +440,8 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
     if (replyKey) reply();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [replyKey]);
-  const showKeys = (keysPref === 'on' || (keysPref === 'auto' && touch)) && tab === 'main' && view === 'terminal';
+  const keysEnabled = keysPref === 'on' || (keysPref === 'auto' && touch);
+  const showKeys = keysEnabled && tab === 'main' && view === 'terminal';
   const elsewhere = others(w.devices);
 
   /**
@@ -718,6 +722,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
     if (narrow) setTab(tab === p ? 'main' : p);
     else openPanel(p);
   };
+  useCommand('panel-terminal', () => togglePanel('terminal'), active && terminalSupported);
   useCommand('panel-diff', () => togglePanel('diff'), active && !!diffTab);
   useCommand('panel-files', () => togglePanel('files'), active);
   useCommand('panel-chat', () => togglePanel('chat'), active);
@@ -758,7 +763,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
       void copyText(`ah attach ${w.uid}`).then((ok) => onToast(ok ? `Copied “ah attach ${w.uid}”` : "Couldn't copy")),
     active,
   );
-  useCommand('toggle-keys', () => setKeysPref(showKeys ? 'off' : 'on'), active && view === 'terminal');
+  useCommand('toggle-keys', () => setKeysPref(keysEnabled ? 'off' : 'on'), active && (view === 'terminal' || panel === 'terminal' || tab === 'terminal'));
   useCommand('session-menu', () => setMenu(true), active);
 
   // Continue in…: the same conversation, handed to another agent in a new session here.
@@ -828,7 +833,9 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
 
   const panelView = (p: Panel) => <Suspense fallback={<div className="panel-body" />}>{panelOf(p)}</Suspense>;
   const panelOf = (p: Panel) =>
-    p === 'queue' ? (
+    p === 'terminal' ? (
+      <AttachedTerminalPanel key={w.key} w={w} client={client} refresh={refresh} showKeys={keysEnabled} focusOnOpen={active && !touch} />
+    ) : p === 'queue' ? (
       <QueuePanel client={client} uid={w.uid} onChange={refresh} />
     ) : p === 'snapshots' ? (
       <SnapshotsPanel client={client} w={w} onChange={refresh} />
@@ -862,6 +869,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
   const mobileTabs = (
     [
       ['main', 'sessions', 'Session', true],
+      ['terminal', 'terminal', 'Terminal', !!w.terminal || tab === 'terminal'],
       ['diff', 'diff', L('panel-diff'), diffTab],
       ['files', 'files', L('panel-files'), true],
       // A side chat's own mark: the chat bubble is the header's GUI view, right above.
@@ -953,6 +961,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
       )}
       <button onClick={() => act(() => client.pin(w.uid, !w.pinned))}>{w.pinned ? 'Unpin' : L('pin')}</button>
       <hr />
+      {terminalSupported && <button aria-label="Terminal" onClick={() => { setMenu(false); togglePanel('terminal'); }}><Icon name="terminal" size={14} /><span className="grow">Terminal</span>{w.terminal && <span className={`terminal-indicator${w.terminal.busy ? ' busy' : ''}`} aria-hidden>●</span>}</button>}
       {diffTab && !onStrip('diff') && <button onClick={() => { setMenu(false); togglePanel('diff'); }}><span className="grow">{L('panel-diff')}</span><ShortcutHint id="panel-diff" /></button>}
       {!onStrip('files') && <button onClick={() => { setMenu(false); togglePanel('files'); }}><span className="grow">{L('panel-files')}</span><ShortcutHint id="panel-files" /></button>}
       {!onStrip('chat') && <button onClick={() => { setMenu(false); togglePanel('chat'); }}><span className="grow">{L('panel-chat')}</span><ShortcutHint id="panel-chat" /></button>}
@@ -1067,14 +1076,14 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
           <ShortcutHint id="toggle-steps" />
         </button>
       )}
-      {view === 'terminal' && (
+      {(view === 'terminal' || panel === 'terminal' || tab === 'terminal') && (
         <button
           onClick={() => {
-            setKeysPref(showKeys ? 'off' : 'on');
+            setKeysPref(keysEnabled ? 'off' : 'on');
             setMenu(false);
           }}
         >
-          <span className="grow">{showKeys ? 'Hide' : 'Show'} on-screen keys</span>
+          <span className="grow">{keysEnabled ? 'Hide' : 'Show'} on-screen keys</span>
           <ShortcutHint id="toggle-keys" />
         </button>
       )}
@@ -1242,6 +1251,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
         )}
         {/* The trailing controls share one glass capsule, as iOS and macOS 26 group a bar's buttons. */}
         <div className="nav-group">
+          {w.terminal && <button className={`icon-btn terminal-indicator${w.terminal.busy ? ' busy' : ''}`} aria-label={w.terminal.busy ? 'Attached terminal active' : 'Open attached terminal'} title={w.terminal.busy ? `Terminal running ${w.terminal.command}` : 'Open attached terminal'} onClick={() => togglePanel('terminal')}><Icon name="terminal" size={15} />{w.terminal.busy && <span aria-hidden>●</span>}</button>}
           {views.length > 1 && (
             <div className={narrow ? 'view-toggle' : 'view-toggle labels'} role="group" aria-label="View">
               <Glide match="[aria-pressed='true']" className="thumb" />
@@ -1329,7 +1339,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
             />
           </Suspense>
           {tab !== 'main' && <div className="session-main" style={{ minHeight: 0 }}>{panelView(tab)}</div>}
-          {view === 'gui' && (
+          {view === 'gui' && tab !== 'terminal' && (
             <MobileOverlay enabled={mobileGlass} edge="bottom" floating={floatGlass}>
             <ComposerBar ref={composer} compact={narrow || touchScreen} client={client} target={w.uid} agent={w.agent} w={w} onSent={onSent} onChange={refresh} focusKey={focus} active={active}
               onSettingsOpen={() => switchView('terminal', true)}
@@ -1342,7 +1352,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
           {fileDrop.over && <div className="drop-hint">Drop to attach to your message</div>}
         </div>
 
-        {!narrow && panel && (panel === 'files' || panel === 'chat' || panel === 'queue' || panel === 'snapshots' || panel === 'preview' || panel === 'stack' || diffTab) && (
+        {!narrow && panel && (panel === 'terminal' || panel === 'files' || panel === 'chat' || panel === 'queue' || panel === 'snapshots' || panel === 'preview' || panel === 'stack' || diffTab) && (
           <>
             {!panelCollapsed && <PanelDivider onResize={resizePanel} onReset={resetPanelWidth} />}
             {panelCollapsed ? (
@@ -1361,6 +1371,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
                       the open one with its label, so all six fit in the narrowest panel. */}
                   {(
                     [
+                      ['terminal', 'terminal', terminalSupported],
                       ['diff', 'diff', diffTab],
                       // Beside Diff: both are about the branch.
                       ['stack', 'stack', stackTab],
@@ -1372,7 +1383,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
                     ] as const
                   ).map(([id, icon, shown]) => {
                     if (!shown) return null;
-                    const label = L(`panel-${id}`);
+                    const label = id === 'terminal' ? 'Terminal' : L(`panel-${id}`);
                     return (
                       <button
                         key={id}

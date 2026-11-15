@@ -18,14 +18,9 @@ let browser: Browser;
 let scratch: string;
 let uid: string;
 
-const windows = async () => (await http(ah, 'GET', '/api/state')).json().windows as Array<{ uid: string; agent: string | null; cwd: string; command: string }>;
-const capture = async (id: string) => (await http(ah, 'GET', `/api/sessions/${id}/capture`)).body;
-/** Shells in the agent's folder (the host's own first window is elsewhere). */
-const shellsHere = async () => {
-  const all = await windows();
-  const cwd = all.find((w) => w.uid === uid)!.cwd;
-  return all.filter((w) => !w.agent && w.cwd === cwd);
-};
+const windows = async () => (await http(ah, 'GET', '/api/state')).json().windows as Array<{ uid: string; id: string; terminal?: { id: string; busy: boolean } | null }>;
+const terminal = async () => (await http(ah, 'GET', `/api/sessions/${uid}/terminal`)).json().terminal as { id: string; busy: boolean } | null;
+const capture = (id: string) => ah.tmux('capture-pane', '-p', '-S', '-200', '-t', id);
 
 before(async () => {
   if (skip) return;
@@ -69,58 +64,53 @@ async function open(options: BrowserContextOptions) {
   return { ctx, page, errors };
 }
 
-test('desktop: a shell block runs in a shell in the session’s folder, beside it; a second run reuses that shell', { skip, timeout: 90_000 }, async () => {
+test('desktop: Send to terminal runs beside the conversation, reuses its attachment, and adds no session', { skip, timeout: 90_000 }, async () => {
   const { ctx, page, errors } = await open({ viewport: { width: 1440, height: 900 } });
+  const before = (await windows()).length;
   const sh = page.locator('.code-snippet', { has: page.locator('code.language-sh') });
   const ts = page.locator('.code-snippet', { has: page.locator('code.language-ts') });
   assert.equal(await ts.locator('.code-run').count(), 0, 'TypeScript is not run');
   await sh.hover();
-  const run = sh.getByRole('button', { name: 'Run in Terminal' });
-  await run.click();
-  // The first press only says where.
-  const armed = sh.getByRole('button', { name: /^Run in a shell in / });
-  await armed.waitFor();
-  if (shots) await page.screenshot({ path: join(shots, 'armed.png') });
-  assert.equal((await shellsHere()).length, 0, 'nothing ran on the first press');
-  await armed.click();
-  const shell = await until(async () => (await shellsHere())[0], 15_000, 'a shell in the session’s folder');
-  await until(async () => (await capture(shell.uid)).includes('\nsnippets-ran'), 15_000, 'the snippet’s output');
-  // Shown beside the conversation: two panes, the conversation still there.
-  await until(async () => (await page.locator('.pane').count()) === 2, 10_000, 'the shell beside the conversation');
-  assert.equal(await page.getByText('snippets-ran').count() > 0, true);
-  if (shots) {
-    // Once the split (or the page's fade) has settled and the shell has drawn.
-    await page.waitForTimeout(1500);
-    await page.screenshot({ path: join(shots, 'beside.png') });
-  }
-
-  // Again: the same shell, waiting at its prompt, takes it; no second one starts, nor a third pane.
-  await until(async () => /\$ ?$/.test((await capture(shell.uid)).trimEnd()), 10_000, 'the shell back at its prompt');
+  await sh.getByRole('button', { name: 'Send to terminal' }).click();
+  const shell = await until(terminal, 15_000, 'the attached shell');
+  await until(() => capture(shell.id).includes('\nsnippets-ran'), 15_000, 'snippet output').catch((e) => { throw new Error(`${e.message}\nScreen: ${capture(shell.id)}\nHost: ${ah.log()}`); });
+  await page.getByLabel('Attached terminal', { exact: true }).waitFor();
+  assert.equal((await windows()).length, before, 'the shell has no session row');
+  assert.equal(await page.locator('.pane').count(), 0, 'the attachment is a panel, not a workspace tile');
+  if (shots) await page.screenshot({ path: join(shots, 'beside.png') });
+  await until(async () => !(await terminal())?.busy, 10_000, 'shell ready');
   await sh.hover();
-  await sh.getByRole('button', { name: 'Run in Terminal' }).click();
-  await sh.getByRole('button', { name: /^Run in a shell in / }).click();
-  await until(async () => (await capture(shell.uid)).split('\nsnippets-ran').length === 3, 15_000, 'the second run’s output');
-  assert.equal((await shellsHere()).length, 1);
-  assert.equal(await page.locator('.pane').count(), 2);
+  await sh.getByRole('button', { name: 'Send to terminal' }).click();
+  await until(() => capture(shell.id).split('\nsnippets-ran').length === 3, 15_000, 'second output');
+  assert.equal((await terminal())?.id, shell.id);
+  assert.equal((await windows()).length, before);
+  // Hiding and reopening via the session menu keeps the same process.
+  await page.getByRole('button', { name: 'Close panel', exact: true }).click();
+  await page.getByRole('button', { name: 'More', exact: true }).click();
+  await page.getByRole('menu').getByRole('button', { name: 'Terminal', exact: true }).click();
+  await page.getByLabel('Attached terminal', { exact: true }).waitFor();
+  assert.equal((await terminal())?.id, shell.id);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
 
-test('phone: Run is always there, and the shell opens in the conversation’s place', { skip, timeout: 60_000 }, async () => {
+test('phone: Send opens the attached terminal within its owner, and Session returns to the conversation', { skip, timeout: 60_000 }, async () => {
   const { ctx, page, errors } = await open({ ...devices['iPhone 15'] });
+  const before = (await windows()).length;
   const sh = page.locator('.code-snippet', { has: page.locator('code.language-sh') });
-  const run = sh.getByRole('button', { name: 'Run in Terminal' });
+  const run = sh.getByRole('button', { name: 'Send to terminal' });
   assert.equal(await run.isVisible(), true, 'visible without hover');
+  const shell = await terminal();
+  const count = shell ? capture(shell.id).split('\nsnippets-ran').length : 0;
   await run.tap();
-  await sh.getByRole('button', { name: /^Run in a shell in / }).tap();
-  const [shell] = await shellsHere();
-  await until(() => page.url().endsWith(`#${shell.uid}`), 15_000, `the shell in its place (at ${page.url()})`);
-  assert.equal(await page.getByText('snippets-ran').count(), 0, 'the conversation gave its place');
-  if (shots) {
-    // Once the split (or the page's fade) has settled and the shell has drawn.
-    await page.waitForTimeout(1500);
-    await page.screenshot({ path: join(shots, 'phone.png') });
-  }
+  await page.getByLabel('Attached terminal', { exact: true }).waitFor();
+  await until(async () => { const t = await terminal(); return t && capture(t.id).split('\nsnippets-ran').length > count; }, 15_000, 'phone snippet output');
+  assert.ok(page.url().endsWith(`#${uid}`), 'navigation stays on the owner');
+  assert.equal((await windows()).length, before);
+  if (shots) await page.screenshot({ path: join(shots, 'phone.png') });
+  await page.getByRole('tab', { name: 'Session', exact: true }).tap();
+  await sh.waitFor({ state: 'visible' });
+  assert.ok(await terminal(), 'hiding the panel leaves its shell running');
   assert.deepEqual(errors, []);
   await ctx.close();
 });

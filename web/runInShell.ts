@@ -1,4 +1,4 @@
-import type { HostApi, Win } from './api.ts';
+import type { AttachedTerminal, HostApi, Win } from './api.ts';
 
 /**
  * Run in Terminal on a code block in the agent's reply: what the snippet types, and which
@@ -28,34 +28,15 @@ export function shellCommand(snippet: string): string {
   return text;
 }
 
-/** A pane at its shell's prompt has the shell as its foreground command (`-zsh` for a login shell). */
-const PROMPTS = new Set(['bash', 'zsh', 'fish', 'sh', 'dash', 'ksh', 'mksh', 'tcsh', 'csh', 'nu', 'elvish', 'xonsh', 'pwsh']);
-
-const commandName = (command: string) => command.trim().replace(/^-/, '').split('/').pop() ?? '';
-
-/**
- * The shell it's typed into: one of the session's host's shells in the session's folder,
- * waiting at its prompt, the one used last. One running a server or an editor would take
- * the words as its own input. Undefined: start one.
- */
-export function idleShell(w: Win, windows: Win[]): Win | undefined {
-  return windows
-    .filter((x) => x.host === w.host && x.key !== w.key && !x.agent && x.cwd === w.cwd && PROMPTS.has(commandName(x.command)))
-    .reduce<Win | undefined>((best, x) => (!best || x.activity > best.activity ? x : best), undefined);
-}
-
 /** Where it runs, as the button says it: the project, and the branch when there is one. */
 export const runPlace = (w: Win) => [w.project, w.branch ?? ''].filter(Boolean).join(' · ') || 'its folder';
 
 /**
- * Types the snippet with Enter into that shell, or a new one in the session's folder, and
- * returns the shell's key to show it by (the session's own form: bare here, `host/uid` on a peer).
+ * The host owns the attachment and checks that its shell is ready. It never chooses a
+ * standalone shell by directory or silently starts another when this one is busy.
  */
-export async function runInShell(client: Pick<HostApi, 'create' | 'send'>, w: Win, windows: Win[], snippet: string): Promise<string | null> {
+export async function runInShell(client: Pick<HostApi, 'openTerminal'>, w: Win, snippet: string): Promise<AttachedTerminal | null> {
   const command = shellCommand(snippet);
   if (!command) return null;
-  let uid = idleShell(w, windows)?.uid;
-  uid ??= (await client.create({ preset: 'shell', cwd: w.cwd || w.projectPath, session: w.session, label: '', resume: false })).uid;
-  await client.send(uid, command, true);
-  return w.key === w.uid ? uid : `${w.host}/${uid}`;
+  return (await client.openTerminal(w.uid, command)).terminal;
 }

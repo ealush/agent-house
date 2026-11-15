@@ -56,6 +56,7 @@ export type CommandId =
   | 'panel-snapshots'
   | 'panel-preview'
   | 'panel-stack'
+  | 'panel-terminal'
   | 'pick-model'
   | 'pick-effort'
   | 'copy-last'
@@ -294,6 +295,14 @@ export const COMMANDS: Command[] = [
     label: 'GUI or terminal',
     detail: 'Switch the focused session between the terminal and the transcript GUI.',
     chords: [{ key: 'g', ctrl: true, shift: true }],
+    scopes: session,
+  },
+  {
+    id: 'panel-terminal',
+    group: 'Session',
+    label: 'Terminal',
+    detail: 'Open this session’s attached shell. It stays running when hidden.',
+    chords: [],
     scopes: session,
   },
   {

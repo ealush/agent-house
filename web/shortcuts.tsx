@@ -135,6 +135,7 @@ const BASE_ICONS = {
   'panel-snapshots': 'history',
   'panel-preview': 'globe',
   'panel-stack': 'stack',
+  'panel-terminal': 'terminal',
   'pick-model': 'model',
   'pick-effort': 'effort',
   'copy-last': 'copy',

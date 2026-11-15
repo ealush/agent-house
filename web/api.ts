@@ -2,8 +2,10 @@ import type { FeedPage, FeedPrompt } from '../server/feed/schema.ts';
 import { reachText } from './errors.ts';
 
 export type Status = 'busy' | 'idle' | 'waiting' | 'attention';
+export type AttachedTerminal = { id: string; cwd: string; command: string; busy: boolean };
 
 export type Win = {
+  terminal?: AttachedTerminal | null;
   id: string;
   /** Added client-side: which machine, and a selection key unique across machines. */
   host: string;
@@ -479,6 +481,9 @@ export function hostApi(base: string) {
     order: (uid: string, order: number) => r('POST', `/api/sessions/${enc(uid)}/order`, { order }),
     rename: (uid: string, name: string) => r('PUT', `/api/sessions/${enc(uid)}/name`, { name }),
     kill: (uid: string) => r('POST', `/api/sessions/${enc(uid)}/terminate`),
+    terminal: (uid: string) => r<{ terminal: AttachedTerminal | null }>('GET', `/api/sessions/${enc(uid)}/terminal`),
+    openTerminal: (uid: string, command?: string) => r<{ terminal: AttachedTerminal }>('POST', `/api/sessions/${enc(uid)}/terminal`, command === undefined ? {} : { command }),
+    closeTerminal: (uid: string) => r('DELETE', `/api/sessions/${enc(uid)}/terminal`),
     capture: (uid: string) => r<string>('GET', `/api/sessions/${enc(uid)}/capture?lines=3000`),
     resume: (ref: string) => r<{ id: string; uid: string; resumed: boolean }>('POST', `/api/sessions/${enc(ref)}/resume`),
     forkInfo: (ref: string) => r<ForkInfo>('GET', `/api/sessions/${enc(ref)}/fork-info`),
