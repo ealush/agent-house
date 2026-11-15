@@ -357,7 +357,7 @@ export type BulkRemoveResult = { path: string; ok: boolean; error?: string; gone
 export type BranchInfo = { name: string; current: boolean; remote: boolean; worktree?: string | null };
 export type BranchList = { current: string | null; branches: BranchInfo[]; dirty: number };
 
-export type SendResult = { outcome: 'delivered' | 'queued'; windowId: string; resumed: boolean; queued: number; starting?: boolean };
+export type SendResult = { outcome: 'delivered' | 'queued'; windowId: string; resumed: boolean; queued: number; starting?: boolean; queueId?: string };
 export type QueueItem = { id: string; text: string; enter: boolean; at: number };
 
 /** A session's browser preview (server/preview.ts): its dev server's port, and ah's proxy port for it. */

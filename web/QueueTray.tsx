@@ -6,11 +6,12 @@ import { removeOutgoing, useOutbox } from './outbox.ts';
 import { shortcutTitle } from './shortcuts.tsx';
 import { uploadSummary } from './uploads.ts';
 import { every } from './poll.ts';
+import { placeOf } from './requeue.ts';
 
 /**
  * Follow-ups waiting for a working agent, stacked on top of the composer (the way
  * Codex shows its queue). Steer stops the turn and sends one now; edit takes it
- * back into the box. What you just queued shows here at once, before the server
+ * back into the box, and queued again it goes back where it was. What you just queued shows here at once, before the server
  * has answered. Enter in an empty composer steers the top row (steerFirst).
  * With two or more queued, each row has a grip: drag it (mouse or touch), or
  * focus it and press ↑/↓, to change what goes next.
@@ -20,7 +21,8 @@ export type QueueTrayHandle = {
   steerFirst: () => boolean;
 };
 
-type Props = { client: HostApi; uid: string; queued: number; onEdit: (text: string) => void; onChange: () => void };
+/** `before`: the message it came out from in front of, to go back before (none for the last). */
+type Props = { client: HostApi; uid: string; queued: number; onEdit: (text: string, before?: string) => void; onChange: () => void };
 
 export const QueueTray = forwardRef<QueueTrayHandle, Props>(function QueueTray({ client, uid, queued, onEdit, onChange }, ref) {
   const [items, setItems] = useState<QueueItem[]>([]);
@@ -182,8 +184,9 @@ export const QueueTray = forwardRef<QueueTrayHandle, Props>(function QueueTray({
             aria-label="Edit"
             onClick={() =>
               act(async () => {
+                const before = placeOf(items, q.id);
                 await client.clearQueue(uid, q.id);
-                onEdit(q.text);
+                onEdit(q.text, before);
               }, 'edit it')
             }
           >

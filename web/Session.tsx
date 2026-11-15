@@ -53,6 +53,7 @@ import { useLaunch, useLaunchPalette } from './useLaunch.ts';
 import { Glide } from './Glide.tsx';
 import { toggleSteps, useStepsHidden } from './gui/steps.ts';
 import { ActionSheet, SheetBar, useSheet } from './sheet.tsx';
+import { placeOf } from './requeue.ts';
 
 type Panel = 'diff' | 'files' | 'chat' | 'queue' | 'snapshots' | 'preview' | 'stack';
 
@@ -789,9 +790,10 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
               icon: 'edit' as const,
               detail: 'Take it out of the queue and into the composer',
               run: act(async () => {
+                const before = placeOf(items, item.id);
                 await client.clearQueue(w.uid, item.id);
                 if (view !== 'gui') switchView('gui');
-                requestAnimationFrame(() => window.dispatchEvent(new CustomEvent('ah:compose', { detail: { uid: w.uid, text: item.text } })));
+                requestAnimationFrame(() => window.dispatchEvent(new CustomEvent('ah:compose', { detail: { uid: w.uid, text: item.text, before } })));
               }, 'Back in the composer'),
             },
             { key: 'cancel', label: 'Cancel', icon: 'close' as const, detail: 'Drop this message', run: act(() => client.clearQueue(w.uid, item.id), 'Cancelled') },

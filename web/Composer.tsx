@@ -10,6 +10,7 @@ import { SuggestList, triggerAt, useSuggestions } from './Suggest.tsx';
 import { useLaunch, useLaunchPalette } from './useLaunch.ts';
 import { addOutgoing, removeOutgoing, updateOutgoing, useOutbox } from './outbox.ts';
 import { QueueTray, type QueueTrayHandle } from './QueueTray.tsx';
+import { putBack } from './requeue.ts';
 import { useDraftSync } from './useDraftSync.ts';
 import { splitUploads } from './uploads.ts';
 
@@ -75,6 +76,9 @@ const drafts = new Map<string, string>();
 // Per session, like the text, so switching away and back keeps them.
 const attachments = new Map<string, Attachment[]>();
 let attachmentId = 0;
+// A queued message taken out to edit: the one it goes back in front of when it's
+// queued again. Let go once the box is emptied, so a later message isn't moved for it.
+const requeueBefore = new Map<string, string>();
 
 type Recognition = { start(): void; stop(): void; onresult: ((e: any) => void) | null; onend: (() => void) | null; onerror: ((e: any) => void) | null; continuous: boolean; interimResults: boolean; lang: string };
 const SpeechRecognition: (new () => Recognition) | undefined = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
@@ -127,8 +131,10 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
   }
   const uploading = files.some((f) => !f.path);
   /** A message coming back to the box (Edit on a queued one): its uploads as tiles again. */
-  function compose(message: string) {
+  function compose(message: string, before?: string) {
     const { uploads, rest } = splitUploads(message);
+    if (before) requeueBefore.set(target, before);
+    else requeueBefore.delete(target);
     setText(rest);
     if (uploads.length) editFiles(target, (l) => [...l, ...uploads.map((u) => ({ id: ++attachmentId, name: u.name, image: u.image, path: u.path, src: u.image ? client.fs.url(u.path) : undefined }))]);
     requestAnimationFrame(() => area.current?.focus());
@@ -162,9 +168,9 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
   // "Edit" on a queued message puts its text back here.
   useEffect(() => {
     const onCompose = (e: Event) => {
-      const d = (e as CustomEvent<{ uid: string; text: string }>).detail;
+      const d = (e as CustomEvent<{ uid: string; text: string; before?: string }>).detail;
       if (d.uid !== target) return;
-      compose(d.text);
+      compose(d.text, d.before);
     };
     window.addEventListener('ah:compose', onCompose);
     return () => window.removeEventListener('ah:compose', onCompose);
@@ -178,6 +184,9 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
   useEffect(() => {
     drafts.set(target, text);
   }, [target, text]);
+  useEffect(() => {
+    if (!text.trim() && !files.length) requeueBefore.delete(target);
+  }, [target, text, files]);
   useEffect(() => {
     if (focusKey) area.current?.focus();
   }, [focusKey]);
@@ -214,6 +223,8 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
     const sentFiles = files;
     if ((!typed.trim() && !sentFiles.length) || busy || uploading) return;
     const draft = [...sentFiles.map((f) => shellQuote(f.path!)), typed.trim() ? typed : ''].filter(Boolean).join(' ');
+    const before = requeueBefore.get(target);
+    requeueBefore.delete(target);
     // A working agent queues it; anything else types it in now. The server decides,
     // this only picks where it shows until the server says. Right after a send the
     // session list may not say "working" yet, so a message still landing counts too.
@@ -228,6 +239,8 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
     sending.current = sending.current.then(async () => {
       try {
         const result = await client.send(target, draft, true);
+        // Back where it was before the tray shows the server's list, so it never shows at the end.
+        if (before && result.outcome === 'queued' && result.queueId) await putBack(client, target, result.queueId, before);
         updateOutgoing(id, { state: result.outcome === 'queued' ? 'queued' : 'sent', confirmedAt: Date.now() });
         onSent(result, { quiet: true });
       } catch (e) {
@@ -235,6 +248,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
         // Back into the box, unless something new was typed or attached there meanwhile.
         if (target === current.current) setText((t) => t || typed);
         editFiles(target, (list) => (list.length ? list : sentFiles));
+        if (before && !requeueBefore.has(target)) requeueBefore.set(target, before);
         showError(e, "Couldn't send");
       }
     });

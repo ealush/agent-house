@@ -312,3 +312,32 @@ test('phone: a working agent offers Queue, and the follow-up really enters its q
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+test('phone: a queued message edited and queued again goes back to its place', { skip, timeout: 60_000 }, async () => {
+  const busy = async () => (await http(ah, 'GET', '/api/state')).json().windows.some((w: any) => w.uid === uid && w.status === 'busy');
+  if (!(await busy())) {
+    ah.tmux('send-keys', '-t', 'it:', '-l', 'BEGIN_COMPOSER_WORK');
+    ah.tmux('send-keys', '-t', 'it:', 'Enter');
+    await until(busy, 8000, 'working transcript fixture');
+  }
+  assert.equal((await http(ah, 'DELETE', `/api/sessions/${uid}/queue`)).status, 200);
+  for (const text of ['first', 'second', 'third']) {
+    assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text } })).json().outcome, 'queued');
+  }
+  const { ctx, page, composer, input, errors } = await open(devices['iPhone 15 Pro'], uid, 'dark');
+  const tray = page.getByRole('list', { name: 'Queued messages' });
+  await tray.getByRole('listitem').filter({ hasText: 'third' }).waitFor();
+  await tray.getByRole('listitem').filter({ hasText: 'second' }).getByRole('button', { name: 'Edit', exact: true }).tap();
+  await until(async () => (await input.inputValue()) === 'second', 5000, 'the middle one back in the box');
+  await input.fill('second, reworded');
+  if (shots) await page.screenshot({ path: join(shots, 'phone-queue-edit.png') });
+  await composer.getByRole('button', { name: 'Queue', exact: true }).tap();
+  const placed = JSON.stringify(['first', 'second, reworded', 'third']);
+  let order = '';
+  await until(async () => (order = JSON.stringify((await http(ah, 'GET', `/api/sessions/${uid}/queue`)).json().map((q: any) => q.text))) === placed, 8000, 'back in its place')
+    .catch(() => assert.fail(`the queue reads ${order}`));
+  await until(async () => JSON.stringify((await tray.getByRole('listitem').allInnerTexts()).map((r) => r.split('\n')[0].trim())) === placed, 8000, 'the tray shows it in its place');
+  if (shots) await page.screenshot({ path: join(shots, 'phone-queue-edit-placed.png') });
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
