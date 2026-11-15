@@ -1,4 +1,4 @@
-import { lazy, Suspense, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTabFlow } from './tabFlow.ts';
 import { useHardwareKeyboard } from './hardwareKeyboard.ts';
 import { createPortal } from 'react-dom';
@@ -54,6 +54,7 @@ import { Glide } from './Glide.tsx';
 import { toggleSteps, useStepsHidden } from './gui/steps.ts';
 import { ActionSheet, SheetBar, useSheet } from './sheet.tsx';
 import { placeOf } from './requeue.ts';
+import { runInShell, runPlace } from './runInShell.ts';
 
 type Panel = 'diff' | 'files' | 'chat' | 'queue' | 'snapshots' | 'preview' | 'stack';
 
@@ -188,6 +189,27 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
   const body = useRef<HTMLDivElement>(null);
   const tabRow = useRef<HTMLDivElement>(null);
   const review = useReviewFor(w.host, w.uid, w.branch);
+  // Run in Terminal on the reply's code: a shell in this session's folder runs it, shown beside
+  // the conversation, or in its place on a phone. What it reads is the newest list, not the
+  // one from when the reply drew, and the transcript doesn't redraw on every poll for it.
+  const latest = useRef({ w, windows, client, onOpenKey, onSplitWith });
+  latest.current = { w, windows, client, onOpenKey, onSplitWith };
+  const runsIn = runPlace(w);
+  const snippetRun = useMemo(
+    () =>
+      w.agent
+        ? {
+            place: runsIn,
+            run: (snippet: string) => {
+              const { w, windows, client, onOpenKey, onSplitWith } = latest.current;
+              void runInShell(client, w, windows, snippet)
+                .then((key) => key && (onSplitWith ?? onOpenKey)?.(key))
+                .catch((e) => showError(e, "Couldn't run it"));
+            },
+          }
+        : undefined,
+    [!!w.agent, runsIn],
+  );
   // 'main' is the session itself, drawn by whichever surface is chosen.
   const [tab, setTab] = useState<'main' | Panel>('main');
   const [storedPanel, setPanel] = stored<Panel | ''>('ah.panel', '');
@@ -1303,6 +1325,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
               refresh={refresh}
               recent={recent}
               onResume={recent.length ? (h) => void resumeRecent(h) : undefined}
+              snippetRun={snippetRun}
             />
           </Suspense>
           {tab !== 'main' && <div className="session-main" style={{ minHeight: 0 }}>{panelView(tab)}</div>}

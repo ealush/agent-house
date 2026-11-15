@@ -226,7 +226,8 @@
   .gui .msg-actions,
   .gui .msg-meta .msg-copy,
   .gui .msg-snap,
-  .gui .code-snippet .code-copy {
+  .gui .code-snippet .code-copy,
+  .gui .code-snippet .code-run {
     visibility: visible;
   }
 }
@@ -357,7 +358,12 @@
   padding-right: 44px;
 }
 
-.gui .code-copy {
+.gui .code-snippet.runs > pre {
+  padding-right: 80px;
+}
+
+.gui .code-copy,
+.gui .code-run {
   position: absolute;
   top: 4px;
   right: 4px;
@@ -376,8 +382,26 @@
   visibility: hidden;
 }
 
+/* Run sits left of Copy, and armed, grows to the left to say where it runs. */
+.gui .code-run {
+  right: 40px;
+  gap: 6px;
+  min-width: 32px;
+  width: auto;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.gui .code-run.armed {
+  padding: 0 10px;
+  border-color: var(--accent);
+  color: var(--text);
+}
+
 :where(:root:not([data-touch])) .gui .code-snippet:hover .code-copy,
-.gui .code-snippet:focus-within .code-copy {
+:where(:root:not([data-touch])) .gui .code-snippet:hover .code-run,
+.gui .code-snippet:focus-within .code-copy,
+.gui .code-snippet:focus-within .code-run {
   visibility: visible;
 }
 
@@ -385,13 +409,15 @@
    block's own ground with a short fade before it, and the text goes under it rather than
    showing on both sides of it. */
 @media (hover: none) {
-  .gui .code-snippet .code-copy {
+  .gui .code-snippet .code-copy,
+  .gui .code-snippet .code-run {
     background: var(--sunken);
     box-shadow: -14px 0 10px -4px var(--sunken), 5px 0 0 var(--sunken);
   }
 }
 
-:where(:root:not([data-touch])) .gui .code-copy:hover {
+:where(:root:not([data-touch])) .gui .code-copy:hover,
+:where(:root:not([data-touch])) .gui .code-run:hover {
   background: var(--line);
   color: var(--text);
 }

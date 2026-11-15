@@ -1,7 +1,16 @@
 import { memo } from 'react';
 import { Markdown as SharedMarkdown } from '../Markdown.tsx';
+import { runsLanguage } from '../runInShell.ts';
 import { CodeBlock } from './CodeBlock.tsx';
 import { useGui } from './context.ts';
+
+/** A fence's language, from its `<code class="language-sh">`; empty for none. */
+function fenceLanguage(node: unknown): string {
+  const code = (node as { children?: Array<{ properties?: { className?: unknown } }> } | undefined)?.children?.[0];
+  const names = code?.properties?.className;
+  const name = (Array.isArray(names) ? names : []).map(String).find((c) => c.startsWith('language-'));
+  return name ? name.slice('language-'.length) : '';
+}
 
 /** Local paths (`/home/…`, `~/…`) open through the files API instead of the web. */
 function isLocalPath(href: string) {
@@ -18,7 +27,7 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
     <SharedMarkdown
       text={text}
       resolveHref={(href) => (isLocalPath(href) ? gui.fileUrl(gui.resolvePath(href.replace(/:\d+(:\d+)?$/, ''))) : href)}
-      components={{ pre: ({ children }) => <CodeBlock>{children}</CodeBlock> }}
+      components={{ pre: ({ children, node }) => <CodeBlock runnable={runsLanguage(fenceLanguage(node))}>{children}</CodeBlock> }}
     />
   );
 });

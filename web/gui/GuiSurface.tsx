@@ -168,7 +168,7 @@ function Blank({ agent, project, recent, onResume }: { agent: string | null; pro
   );
 }
 
-const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({ w, client, hidden, onAnswer, onReply, onUseTerminal, refresh, recent, onResume }, ref) {
+const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({ w, client, hidden, onAnswer, onReply, onUseTerminal, refresh, recent, onResume, snippetRun }, ref) {
   const { state, loadOlder, loadingOlder } = useFeed(client, w.uid);
   // What was already there when the conversation opened draws still; what arrives after rises in.
   const freshAfter = useRef<number | null>(null);
@@ -322,8 +322,9 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
         const root = w.projectPath.replace(/\/$/, '');
         return root && p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p;
       },
+      snippetRun,
     }),
-    [client, w.uid, w.cwd, w.projectPath],
+    [client, w.uid, w.cwd, w.projectPath, snippetRun],
   );
 
   // Search jump (issue #9): a result asked for one entry by seq. Page older

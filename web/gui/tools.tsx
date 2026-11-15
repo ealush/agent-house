@@ -78,7 +78,7 @@ const Shell: ToolView = {
     return (
       <>
         {s(call.args.description) && <p className="muted small">{s(call.args.description)}</p>}
-        <CodeBlock className="code-block command" text={cmd}>
+        <CodeBlock className="code-block command" text={cmd} runnable>
           $ {cmd}
         </CodeBlock>
         <Output result={result} />

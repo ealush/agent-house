@@ -238,7 +238,12 @@ export function Workspace(props: Props) {
             if (hit) props.onFocus(hit.path);
             else props.onLayout(replaceLeaf(layout, path, key));
           }}
-          onSplitWith={(key) => props.onLayout(splitLeaf(layout, path, 'horizontal', key))}
+          onSplitWith={(key) => {
+            // Already in a pane: that one takes the focus rather than showing twice.
+            const hit = panes.find((p) => p.sessionKey === key);
+            if (hit) props.onFocus(hit.path);
+            else props.onLayout(splitLeaf(layout, path, 'horizontal', key));
+          }}
           onReplace={() => props.onLayout(replaceLeaf(layout, path, pickKey(w.key)))}
           onClosePane={() => props.onLayout(closeLeaf(layout, path))}
           onFlipSplit={() => props.onLayout(toggleSplit(layout, path))}

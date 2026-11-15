@@ -8587,6 +8587,7 @@ select:not([multiple]) {
      title (it renames), small icon buttons, the sidebar's search, links. */
   .composer-model:active,
   .gui .code-copy:active,
+  .gui .code-run:active,
   .gui .msg-copy:active,
   .session-head .session-title .name:active,
   .label-add:active,

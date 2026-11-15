@@ -36,6 +36,8 @@ export type SurfaceProps = {
   recent?: HistoryItem[];
   /** Resume one of them in place of this blank session. */
   onResume?: (h: HistoryItem) => void;
+  /** Run in Terminal on the reply's code (GUI, a live agent's session). */
+  snippetRun?: { place: string; run: (snippet: string) => void };
 };
 
 export type View = 'terminal' | 'gui';

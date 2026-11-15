@@ -11,6 +11,9 @@ export type GuiActions = {
   resolvePath: (path: string) => string;
   /** A path as a person reads it: relative to the project when it is inside it. */
   displayPath: (path: string) => string;
+  /** Run in Terminal on code in a live agent's reply: a shell in the session's folder runs it
+   *  (`web/runInShell.ts`). `place` says where: "ah · main". */
+  snippetRun?: { place: string; run: (snippet: string) => void };
 };
 
 export const GuiContext = createContext<GuiActions>({ reply: () => {}, fileUrl: () => '#', resolvePath: (p) => p, displayPath: (p) => p });

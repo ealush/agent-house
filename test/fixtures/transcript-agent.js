@@ -35,7 +35,10 @@ process.stdin.on('data', (chunk) => {
     write('assistant', [
       {
         type: 'text',
-        text: `Echoed **${prompt}**.\n\n| key | value |\n|---|---|\n| prompt | ${prompt} |\n\n\`\`\`ah-widget\n${JSON.stringify({ type: 'choices', prompt: 'Next?', options: [{ label: 'Again', reply: 'again' }, 'Stop'] })}\n\`\`\``,
+        text:
+          `Echoed **${prompt}**.\n\n| key | value |\n|---|---|\n| prompt | ${prompt} |\n\n\`\`\`ah-widget\n${JSON.stringify({ type: 'choices', prompt: 'Next?', options: [{ label: 'Again', reply: 'again' }, 'Stop'] })}\n\`\`\`` +
+          // Code to run, and code not to (Run in Terminal), only when asked for.
+          (prompt.startsWith('snippets') ? `\n\nRun it:\n\n\`\`\`sh\necho ${prompt}-ran\n\`\`\`\n\nThe change:\n\n\`\`\`ts\nconst ran = true;\n\`\`\`` : ''),
       },
     ]);
   }
