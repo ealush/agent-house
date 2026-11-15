@@ -11,6 +11,9 @@ import { Glide } from './Glide.tsx';
 import { EffortPicker, ModelPicker, Popover, effectiveModel, effortsFor, type Pick } from './ModelPicker.tsx';
 import { SheetBar, useSheet } from './sheet.tsx';
 import { errorText } from './errors.ts';
+import { AttachmentTiles, uploadAttachments, withAttachments, type Attachment } from './attachments.tsx';
+import { clipboardFiles } from './clipboard.ts';
+import { useFileDrop } from './useFileDrop.ts';
 
 type Props = {
   /** Online machines; starting "here or there" is the same code path (F4). */
@@ -35,6 +38,9 @@ type Props = {
 };
 
 const NEW_SESSION = '\u0000new';
+
+const toast = (msg: string) => window.dispatchEvent(new CustomEvent('ah:toast', { detail: msg }));
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Why the typed path can't be used; a new folder gets its own row instead. */
 const DIR_PROBLEM: Partial<Record<DirState, string>> = {
@@ -126,6 +132,13 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
   const [mode, setMode] = useState('default');
   const [pick, setPick] = useState<Pick>({});
   const [prompt, setPrompt] = useState(initialPrompt);
+  // Files for the first message: uploading to the host now, before the session exists.
+  // They're on that host only, so choosing another one lets them go.
+  const [files, setFiles] = useState<Attachment[]>([]);
+  const filesNow = useRef(files);
+  filesNow.current = files;
+  const hostNow = useRef(host);
+  const fileInput = useRef<HTMLInputElement>(null);
   const [extraArgs, setExtraArgs] = useState('');
   const [more, setMore] = useState(false);
   const [projects, setProjects] = useState<string[]>([]);
@@ -248,6 +261,28 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
     input.setSelectionRange(input.value.length, input.value.length);
   }, [cwd]);
 
+  function attach(picked: FileList | File[] | null) {
+    const list = picked ? [...picked] : [];
+    if (!list.length || isShell) return;
+    const at = host;
+    // An upload that finishes after the host changed has nowhere to go.
+    void uploadAttachments(clientFor(at), list, (edit) => {
+      if (hostNow.current === at) setFiles(edit);
+    });
+  }
+
+  function chooseHost(h: string) {
+    if (h === host) return;
+    hostNow.current = h;
+    if (files.length) {
+      setFiles([]);
+      toast('Attach the files again: they went to the other machine');
+    }
+    setHost(h);
+  }
+
+  const fileDrop = useFileDrop(attach, !isShell);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!preset) return;
@@ -289,7 +324,10 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
         ...(eff ? { effort: eff } : {}),
         ...(extraArgs.trim() ? { extraArgs: extraArgs.trim() } : {}),
       });
-      const first = prompt.trim();
+      // With the files, once those still uploading are up (a failed one leaves the list).
+      if (!isShell) for (let i = 0; i < 1200 && filesNow.current.some((f) => !f.path); i++) await sleep(100);
+      const attached = isShell ? [] : filesNow.current.filter((f) => f.path);
+      const first = attached.length ? withAttachments(attached, prompt.trim()) : prompt.trim();
       let sent: SendResult | null = null;
       let sendError: unknown = null;
       if (first) {
@@ -320,7 +358,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
           {hosts.length > 1 && (
             <div className="seg" role="radiogroup" aria-label="Machine">
               {hosts.map((h) => (
-                <button type="button" key={h} role="radio" aria-checked={h === host} className={h === host ? 'on' : ''} onClick={() => setHost(h)}>
+                <button type="button" key={h} role="radio" aria-checked={h === host} className={h === host ? 'on' : ''} onClick={() => chooseHost(h)}>
                   {h}
                 </button>
               ))}
@@ -543,10 +581,39 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
         )}
         {activeMode?.description && activeMode.id !== 'default' && <p className={activeMode.dangerous ? 'warn' : 'hint'}>{activeMode.description}</p>}
 
-        <label className="field">
-          <span>Prompt</span>
-          <textarea className="prose" value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={initialPrompt ? 8 : 3} placeholder="Optional. Sent once the session starts." />
-        </label>
+        <div className="field ns-prompt" {...fileDrop.handlers}>
+          {fileDrop.over && <div className="drop-hint">Drop to attach to the first message</div>}
+          <div className="ns-prompt-head">
+            <label htmlFor="ns-prompt">Prompt</label>
+            {!isShell && (
+              <button type="button" className="icon-btn small" title="Attach files (uploaded to the host now, sent with the first message)" aria-label="Attach files" onClick={() => fileInput.current?.click()}>
+                <Icon name="attach" size={16} />
+              </button>
+            )}
+            <input ref={fileInput} type="file" multiple hidden onChange={(e) => {
+              attach(e.target.files);
+              // Picking the same file again should attach it again.
+              e.target.value = '';
+            }} />
+          </div>
+          {!isShell && <AttachmentTiles files={files} onRemove={(id) => setFiles((l) => l.filter((f) => f.id !== id))} />}
+          <textarea
+            id="ns-prompt"
+            className="prose"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onPaste={(e) => {
+              // Screenshots often arrive via items with an empty files list.
+              const pasted = isShell ? [] : clipboardFiles(e.clipboardData);
+              if (pasted.length) {
+                e.preventDefault();
+                attach(pasted);
+              }
+            }}
+            rows={initialPrompt ? 8 : 3}
+            placeholder={isShell ? 'Optional. Sent once the session starts.' : 'Optional. Sent once the session starts, with any files.'}
+          />
+        </div>
 
         <button type="button" className="disclosure" aria-expanded={more} onClick={() => setMore(!more)}>
           <span aria-hidden>{more ? '▾' : '▸'}</span> More options
@@ -614,7 +681,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
             className={`btn ${activeMode?.dangerous ? 'danger-solid' : 'primary'}`}
             disabled={busy || !preset}
           >
-            {busy ? 'Starting…' : `${isNew ? 'Create & start' : 'Start'} ${preset?.name ?? ''}`}
+            {busy ? (files.some((f) => !f.path) && !isShell ? 'Uploading…' : 'Starting…') : `${isNew ? 'Create & start' : 'Start'} ${preset?.name ?? ''}`}
           </ConfirmButton>
         </div>
       </form>

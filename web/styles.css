@@ -6951,6 +6951,25 @@ ul.queue-items {
   flex: none;
 }
 
+/* New session's prompt: its caption with the attach button at the end, files waiting
+   above the text as the composer's do, and the field takes a drop. */
+.ns-prompt {
+  position: relative;
+}
+
+.ns-prompt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 24px;
+  margin-bottom: 4px;
+}
+
+.ns-prompt-head label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
 /* Side panel header: tabs take what's left and scroll; the icon buttons never leave. */
 .side-panel .tabs > .icon-btn {
   flex: none;

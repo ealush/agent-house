@@ -27,6 +27,9 @@ before(async () => {
   const fixture = new URL('../fixtures/transcript-agent.js', import.meta.url).href;
   // Behave normally until the queue test asks this same, already adopted agent to work.
   writeFileSync(runner, `import ${JSON.stringify(fixture)};\nlet input = '', working = false;\nprocess.stdin.on('data', (chunk) => {\n  input += chunk.toString();\n  if (!working && input.includes('BEGIN_COMPOSER_WORK')) {\n    working = true;\n    setInterval(() => console.log('Working', Date.now()), 100);\n  }\n});\n`);
+  // For New session, which offers only what's on the host to launch (an "exec …" command isn't).
+  const idle = join(scratch, 'idle.mjs');
+  writeFileSync(idle, 'setInterval(() => {}, 1 << 30);\n');
   const dist = join(scratch, 'dist');
   execFileSync(process.execPath, [join(root, 'node_modules/vite/bin/vite.js'), 'build', '--outDir', dist, '--logLevel', 'error'], { cwd: root, stdio: 'inherit' });
   const saved = process.env.AH_DIST;
@@ -37,7 +40,7 @@ before(async () => {
       match: '^node$', feed: 'claude', models: [{ id: 'sonnet', name: 'Sonnet', args: [], isDefault: true }],
       modelArgs: ['--model', '{model}'], effort: { args: ['--effort', '{level}'], levels: ['medium', 'high'] },
       modes: [{ id: 'default', name: 'Ask before changes' }, { id: 'plan', name: 'Plan', args: [] }],
-    }] });
+    }, { id: 'starter', name: 'Starter', command: `${process.execPath} ${idle}`, match: '^never-detected$' }] });
   } finally {
     if (saved === undefined) delete process.env.AH_DIST;
     else process.env.AH_DIST = saved;
@@ -338,6 +341,28 @@ test('phone: a queued message edited and queued again goes back to its place', {
     .catch(() => assert.fail(`the queue reads ${order}`));
   await until(async () => JSON.stringify((await tray.getByRole('listitem').allInnerTexts()).map((r) => r.split('\n')[0].trim())) === placed, 8000, 'the tray shows it in its place');
   if (shots) await page.screenshot({ path: join(shots, 'phone-queue-edit-placed.png') });
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+// Last: it opens a window in the test's tmux session, which the tests above type into as "it:".
+test('desktop: New session takes files for its first message, uploaded before the session exists', { skip, timeout: 60_000 }, async () => {
+  const { ctx, page, errors } = await open({ viewport: { width: 1280, height: 900 } });
+  await page.keyboard.press('Control+Shift+Enter');
+  const dialog = page.locator('.new-session');
+  await dialog.locator('#ns-prompt').waitFor();
+  await dialog.getByRole('button', { name: 'Attach files', exact: true }).waitFor();
+  await dialog.locator('.ns-prompt input[type=file]').setInputFiles({ name: 'brief.txt', mimeType: 'text/plain', buffer: Buffer.from('Notes for the new session.') });
+  // On the host already, with no session yet: the tile's title is where it landed.
+  await dialog.locator('.composer-file:not(.uploading)').waitFor();
+  const path = await dialog.locator('.composer-file').getAttribute('title');
+  assert.match(path ?? '', /\/ah\/uploads\/\S*brief\.txt$/);
+  await dialog.locator('#ns-prompt').fill('Read the brief first');
+  if (shots) await page.screenshot({ path: join(shots, 'new-session-attached.png') });
+  const sent = page.waitForRequest((r) => /\/api\/sessions\/[^/]+\/send$/.test(r.url()) && r.method() === 'POST');
+  await dialog.getByRole('button', { name: /^Start/ }).click();
+  const body = JSON.parse((await sent).postData() ?? '{}');
+  assert.equal(body.text, `${path} Read the brief first`, 'the first message carries the file, in front of the prompt');
   assert.deepEqual(errors, []);
   await ctx.close();
 });

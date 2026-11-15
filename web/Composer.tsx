@@ -13,6 +13,7 @@ import { QueueTray, type QueueTrayHandle } from './QueueTray.tsx';
 import { putBack } from './requeue.ts';
 import { useDraftSync } from './useDraftSync.ts';
 import { splitUploads } from './uploads.ts';
+import { AttachmentTiles, uploadAttachments, uploadedAttachments, withAttachments, type Attachment } from './attachments.tsx';
 
 /** Touch only (a phone, an iPad without a pointer): no keys to name in hints, as keycaps drop there. */
 const TOUCH_SCREEN = typeof matchMedia === 'function' && matchMedia('(hover: none) and (pointer: coarse)').matches;
@@ -57,25 +58,9 @@ type Props = {
 
 export type ComposerHandle = { attach: (files: File[]) => void; focus: () => void };
 
-/** A file on its way into the message. `path` is set once it is on the host. */
-type Attachment = { id: number; name: string; image: boolean; src?: string; path?: string };
-
-/** A small data: URL of an image, for its tile. The CSP allows data: images but not blob:. */
-async function thumbnail(file: File): Promise<string> {
-  const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, 192 / Math.min(bitmap.width, bitmap.height));
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  bitmap.close();
-  return canvas.toDataURL('image/png');
-}
-
 const drafts = new Map<string, string>();
 // Per session, like the text, so switching away and back keeps them.
 const attachments = new Map<string, Attachment[]>();
-let attachmentId = 0;
 // A queued message taken out to edit: the one it goes back in front of when it's
 // queued again. Let go once the box is emptied, so a later message isn't moved for it.
 const requeueBefore = new Map<string, string>();
@@ -136,7 +121,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
     if (before) requeueBefore.set(target, before);
     else requeueBefore.delete(target);
     setText(rest);
-    if (uploads.length) editFiles(target, (l) => [...l, ...uploads.map((u) => ({ id: ++attachmentId, name: u.name, image: u.image, path: u.path, src: u.image ? client.fs.url(u.path) : undefined }))]);
+    if (uploads.length) editFiles(target, (l) => [...l, ...uploadedAttachments(uploads, client)]);
     requestAnimationFrame(() => area.current?.focus());
   }
 
@@ -222,7 +207,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
     const typed = text;
     const sentFiles = files;
     if ((!typed.trim() && !sentFiles.length) || busy || uploading) return;
-    const draft = [...sentFiles.map((f) => shellQuote(f.path!)), typed.trim() ? typed : ''].filter(Boolean).join(' ');
+    const draft = withAttachments(sentFiles, typed);
     const before = requeueBefore.get(target);
     requeueBefore.delete(target);
     // A working agent queues it; anything else types it in now. The server decides,
@@ -290,22 +275,9 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
     }
     // The tile shows at once, from the local file; the upload runs behind it.
     const uid = target;
-    const added = list.map((f) => ({ id: ++attachmentId, name: f.name || 'paste', image: f.type.startsWith('image/') }));
-    editFiles(uid, (l) => [...l, ...added]);
+    const uploads = uploadAttachments(client, list, (edit) => editFiles(uid, edit));
     area.current?.focus();
-    const set = (id: number, patch: Partial<Attachment>) => editFiles(uid, (l) => l.map((x) => (x.id === id ? { ...x, ...patch } : x)));
-    await Promise.all(
-      list.map(async (f, i) => {
-        const { id, image } = added[i];
-        if (image) thumbnail(f).then((src) => set(id, { src }), () => {});
-        try {
-          set(id, { path: await client.upload(f) });
-        } catch (e) {
-          editFiles(uid, (l) => l.filter((x) => x.id !== id));
-          showError(e, `Couldn't attach ${added[i].name}`);
-        }
-      }),
-    );
+    await uploads;
   }
 
   useImperativeHandle(ref, () => ({ attach: (f) => void attach(f), focus: () => area.current?.focus() }));
@@ -371,26 +343,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
           <Icon name="send" size={11} /> Continued from {draftSync.from}
         </div>
       )}
-      {files.length > 0 && (
-        <div className="composer-files">
-          {files.map((f) => (
-            <div key={f.id} className={`composer-file ${f.image ? 'image' : ''} ${f.path ? '' : 'uploading'}`} title={f.path ?? `Uploading ${f.name}…`}>
-              {f.image ? (
-                f.src && <img src={f.src} alt={f.name} />
-              ) : (
-                <>
-                  {/* A file, not the Files tab's folder. */}
-                  <Icon name="file" size={16} />
-                  <span className="composer-file-name">{f.name}</span>
-                </>
-              )}
-              <button type="button" className="composer-file-remove" aria-label={`Remove ${f.name}`} title="Remove" onClick={() => removeFile(f.id)}>
-                <Icon name="close" size={10} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+      <AttachmentTiles files={files} onRemove={removeFile} />
       <div className="composer-input">
         {isShell && <span className="prompt-sign">➜</span>}
         <textarea
