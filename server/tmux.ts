@@ -19,6 +19,8 @@ export function fields(line: string): string[] {
 }
 
 export const VIEWER_PREFIX = 'ah-v-';
+/** Private shells owned by a registry uid, never registered as sessions themselves. */
+export const TERMINAL_PREFIX = 'ah-terminal-';
 
 export async function tmux(...args: string[]): Promise<string> {
   // Bounded: a wedged tmux server would otherwise hang the tick (and every caller

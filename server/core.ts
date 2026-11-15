@@ -509,6 +509,7 @@ export class Core {
     /** Runs once the window exists and is registered, just before the command is typed. */
     beforeCommand?: () => Promise<void>;
   }) {
+    if (o.session.startsWith(t.TERMINAL_PREFIX)) throw new CoreError(400, 'reserved terminal session name');
     const uid = o.uid ?? this.registry.freshId();
     let meta = o.meta;
     // A new agent conversation has no id yet: snapshot the transcript ids that
@@ -920,9 +921,11 @@ export class Core {
   /** The processes in a live session's pane: its shell and everything under it. Null when it isn't running. */
   async sessionPids(uid: string): Promise<number[] | null> {
     const w = (await this.current()).windows.find((x) => x.uid === uid);
-    const raw = w && (await t.listWindows()).find((r) => r.windowId === w.id);
-    if (!raw) return null;
-    return descendants(await procTree(), raw.panePid, true).map((p) => p.pid);
+    if (!w) return null;
+    const raw = (await t.listWindows()).filter((r) => r.windowId === w.id || r.session === t.TERMINAL_PREFIX + uid);
+    if (!raw.length) return null;
+    const tree = await procTree();
+    return raw.flatMap((r) => descendants(tree, r.panePid, true).map((p) => p.pid));
   }
 
   /** A copy of the session's queued items, oldest first (state lives in the QueueManager). */

@@ -7,7 +7,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { interruptedOf, type Interrupted } from './interruptions.ts';
-import { capturePane, listWindows, setWindowOption, type RawWindow } from './tmux.ts';
+import { capturePane, listWindows, setWindowOption, TERMINAL_PREFIX, type RawWindow } from './tmux.ts';
 import { Registry, forkMetaOf, type SessionRecord } from './registry.ts';
 import { procTree, withArgv, descendants } from './procs.ts';
 import { discover, type Transcript } from './discovery.ts';
@@ -20,7 +20,10 @@ import { parsePicker, parseQuestionDialog, pickerAtStart, type Question, type Sc
 // you last looked · idle: nothing new. When unsure we say done/idle, never "waiting".
 export type Status = 'busy' | 'idle' | 'waiting' | 'attention';
 
+export type AttachedTerminal = { id: string; cwd: string; command: string; busy: boolean };
+
 export type WindowView = {
+  terminal?: AttachedTerminal | null;
   id: string;
   session: string;
   index: number;
@@ -519,6 +522,7 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
 
   const views = await Promise.all(
     raw.map(async (w): Promise<WindowView | null> => {
+      if (w.session.startsWith(TERMINAL_PREFIX)) return null;
       const devices = viewerMap.get(w.windowId) ?? [];
       const viewers = devices.length;
       // Anything printed while someone is looking counts as read.
@@ -718,7 +722,16 @@ export async function buildWindows(config: Config, viewerMap: Map<string, string
   for (const id of limitSeen.keys()) if (!liveIds.has(id)) limitSeen.delete(id);
   for (const id of screenCache.keys()) if (!liveIds.has(id)) screenCache.delete(id);
   for (const id of scrollCache.keys()) if (!liveIds.has(id)) scrollCache.delete(id);
-  return views.filter((v): v is WindowView => v !== null);
+  const visible = views.filter((v): v is WindowView => v !== null);
+  for (const v of visible) {
+    const terminal = raw.find((w) => w.session === TERMINAL_PREFIX + v.uid);
+    v.terminal = terminal ? terminalView(terminal, procs) : null;
+  }
+  return visible;
+}
+
+export function terminalView(w: RawWindow, procs: Awaited<ReturnType<typeof procTree>>): AttachedTerminal {
+  return { id: w.windowId, cwd: shortPath(w.path), command: w.command, busy: !atShellPrompt(w.command, procs, w.panePid, true) };
 }
 
 // ---------- transcript adoption (F10): live agent windows without hooks learn their conversation id

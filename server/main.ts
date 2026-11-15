@@ -20,6 +20,7 @@ import type { AddressInfo } from 'node:net';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { loadConfig, expandHome, CONFIG_PATH, type Config } from './config.ts';
 import { shortPath } from './sessions.ts';
+import { AttachedTerminals } from './attachedTerminal.ts';
 import { compressible, encoded } from './compress.ts';
 import { Core, CoreError, resolveDir, defaultName, API_VERSION } from './core.ts';
 import { features } from './features.ts';
@@ -120,6 +121,7 @@ const drafts = new Drafts();
 const sidechat = new SideChatStore();
 const envStore = new EnvStore();
 core.launchEnv = () => envStore.forLaunch();
+const terminals = new AttachedTerminals(core.registry, () => core.launchEnv());
 const search = new SearchIndexer(getDb(), () => core.searchSources());
 // Stack review (docs/stack-review.md): sessions it can send findings to are the live
 // windows plus ended conversations that resume.
@@ -542,6 +544,26 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   if (route('GET', /^\/api\/hello$/)) return send(res, 200, { ah: true, hostname: hostName(), auth: auth.enabled, features: features() });
   if (path.startsWith('/api/auth/')) return authApi(req, res, path, method, caller);
   if (!caller) throw new HttpError(401, 'sign in required'); // belt and braces; handle() already denied
+
+  if ((m = route('GET', /^\/api\/sessions\/([\w-]{1,40})\/terminal$/))) {
+    return send(res, 200, { terminal: await terminals.get(m[1]) });
+  }
+  if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/terminal$/))) {
+    const uid = m[1];
+    const body = await readJson(req);
+    const command = body.command === undefined ? undefined : str(body.command, 'command', 60_000);
+    if (command !== undefined && !command.trim()) throw new HttpError(400, 'command required');
+    const terminal = await terminals.open(uid, command);
+    audit(req, command === undefined ? 'terminal.open' : 'terminal.run', { uid });
+    await core.tick();
+    return send(res, 200, { terminal });
+  }
+  if ((m = route('DELETE', /^\/api\/sessions\/([\w-]{1,40})\/terminal$/))) {
+    await terminals.close(m[1]);
+    audit(req, 'terminal.close', { uid: m[1] });
+    await core.tick();
+    return send(res, 200, { ok: true });
+  }
 
   // A session by its uid, which outlives tmux windows (resume, relaunch, a tmux restart): the
   // window routes below, resolved to the window the session has now. Naming the session means a
@@ -1182,6 +1204,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
 
   if ((m = route('DELETE', /^\/api\/sessions\/([\w:.-]{1,80})$/))) {
     await core.forget(m[1]);
+    await terminals.close(m[1]);
     return send(res, 200, { ok: true });
   }
 
@@ -1584,6 +1607,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
       // You ended it: recovery (server/recovery) must not take this for a crash.
       const ending = (await core.current()).windows.find((w) => w.id === id);
       if (ending) core.registry.setMeta(ending.uid, 'ah.endedBy', 'you');
+      if (ending) await terminals.close(ending.uid);
       await t.killWindow(id);
       audit(req, 'session.kill', { window: id });
       core.tick().catch(() => {});
