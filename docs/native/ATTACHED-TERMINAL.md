@@ -28,8 +28,21 @@ A server started there appears in the owner's Preview port list.
   native enrollment/bearer → owner → attached shell → command → SwiftTerm output;
   scene snippet → owner's panel and focus → hide/reopen → terminate cleanup;
   regression coverage for the agent terminal's existing input/rendering.
-- All modified UIKit/SwiftUI files pass Swift parser checks. New Apple UI code has
-  not been typechecked in Xcode or walked on a simulator/device in this environment.
+- Xcode 27.2 on the MacBook Air: `scripts/verify.sh` completed with **TEST SUCCEEDED**
+  (revision `9a98bdd`): Mac Catalyst build, iPhone 18 Pro / iOS 27.0 build,
+  268 unit tests and both setup UI tests passed. The 16 host-dependent UI tests
+  were skipped in that standard run.
+- The dedicated iPhone simulator walk paired with a disposable host and the native
+  Send to terminal button ran `echo snippets-ran` in the real attached shell.
+  The session menu's TUI entry is named Agent Terminal to distinguish it from
+  Terminal, the companion shell.
+- The dedicated `AttachedTerminalUITests` test passed in Xcode at revision
+  `10d52c2`: fresh pairing → transcript → Send to terminal → shell panel → close
+  → session menu → Terminal → reopened shell panel. Host-side verification confirmed
+  the snippet output and no extra session row. The fixture and reverse SSH tunnel
+  were cleaned up afterward. The blinking cursor makes Xcode wait for animation
+  quiescence; the successful run took about 201 seconds.
+- Physical-device signing and iPad interaction checks remain separate.
 - The repository's `integration.sh` launcher stops before tests at its pre-existing
   API coverage check: 12 routes for usage, interruptions, recovery and capabilities
   lack native paths. The three new terminal routes have native paths. Targeted
@@ -37,3 +50,5 @@ A server started there appears in the owner's Preview port list.
 
 The native feature is on the local `feat/session-terminal` stack branch. Its host
 requires the backend `feat/session-terminal-api` branch (or a descendant).
+
+![Attached terminal running on the iPhone simulator](screenshots/attached-terminal-iphone.png)
