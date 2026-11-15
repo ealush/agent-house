@@ -1651,6 +1651,48 @@ final class SceneModel {
         _ = await start(request, host: near.flatMap { $0.isLocal ? nil : $0.host }, intoPane: path)
     }
 
+    /// Run a snippet from a session's conversation in a shell in its folder: one waiting at its
+    /// prompt there, or a new one (`ShellRun`). Typed with Return, then shown where you can
+    /// watch it: beside the conversation on a wide screen, in its place on a phone.
+    func runInShell(_ snippet: String, from session: SessionModel) async {
+        let command = ShellRun.command(snippet)
+        guard !command.isEmpty, let hub, let row = hub.row(session.key) else { return }
+        let host = row.isLocal ? nil : row.host
+        let api = hub.client(host: host)
+        let uid: String
+        if let shell = ShellRun.shell(for: row, among: hub.rows) {
+            uid = shell.uid
+        } else {
+            // Not `create`: a shell started this way isn't the agent New session offers next.
+            let cwd = row.dto.cwd.isEmpty ? row.dto.projectPath : row.dto.cwd
+            do {
+                uid = try await api.create(NewSessionRequest(preset: "shell", cwd: cwd, session: row.dto.session, label: "")).uid
+            } catch {
+                toast("Couldn’t start a shell: \(APIError.wrap(error).message)", error: true)
+                return
+            }
+            hub.refresh(host: host)
+        }
+        let key = host.flatMap { $0 == hub.hostname ? nil : $0 }.map { "\($0)/\(uid)" } ?? uid
+        do {
+            _ = try await api.send(uid, text: command)
+        } catch {
+            toast("Couldn’t run it: \(APIError.wrap(error).message)", error: true)
+            return
+        }
+        if let leaf = workspace.layout?.leaves().first(where: { $0.sessionKey == key }) {
+            following { workspace.focus(leaf.path) }
+        } else if narrow {
+            open(key)
+            return
+        } else {
+            following { workspace.openTile(key, wide: true) }
+            syncRouteToWorkspace()
+        }
+        pruneSessions()
+        scheduleSave()
+    }
+
     /// Terminate after the confirmation sheet.
     func terminate(_ key: String) async {
         guard let s = session(key) else { return }

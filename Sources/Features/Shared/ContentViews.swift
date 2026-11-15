@@ -21,6 +21,26 @@ extension EnvironmentValues {
     }
 }
 
+/// Run in Terminal: types a snippet into a shell in the session's folder and presses Return
+/// (`SceneModel.runInShell`). Set on a live session's agent messages, so their code blocks
+/// offer it; absent elsewhere.
+struct SnippetRun: Sendable {
+    /// Where it runs, for the menu: the project, and the branch when there is one.
+    let place: String
+    let run: @MainActor @Sendable (String) -> Void
+}
+
+private struct SnippetRunKey: EnvironmentKey {
+    static let defaultValue: SnippetRun? = nil
+}
+
+extension EnvironmentValues {
+    var snippetRun: SnippetRun? {
+        get { self[SnippetRunKey.self] }
+        set { self[SnippetRunKey.self] = newValue }
+    }
+}
+
 /// Parsed GFM drawn natively. Links go through `LinkPolicy`: web links open in the browser,
 /// host paths open through the file API, anything else is refused.
 struct MarkdownView: View {
@@ -231,18 +251,29 @@ private struct TableBlock: View {
     }
 }
 
-/// A code block: scrolls sideways rather than wrapping, selectable, one-tap copy.
+/// A code block: scrolls sideways rather than wrapping, selectable, one-tap copy, and in a
+/// live session's messages, Run in Terminal.
 struct CodeBlockView: View {
     let code: String
     var language: String?
     var tone: Tone = .plain
+    /// What Run types when the block shows more than the command: a tool's, under its `$ `.
+    var command: String?
     @Environment(\.theme) private var theme
+    @Environment(\.snippetRun) private var snippetRun
     @State private var copied = false
 
     enum Tone { case plain, command, error }
 
+    /// What Run in Terminal would type: a shell's code, not Swift or JSON, and never an error.
+    private var runs: String? {
+        guard snippetRun != nil, tone != .error else { return nil }
+        if let command { return command }
+        return ShellRun.runs(language: language) ? code : nil
+    }
+
     var body: some View {
-        // The copy button sits beside the first line rather than on a row of its own, so a
+        // The buttons sit beside the first line rather than on a row of their own, so a
         // one-line command is evenly padded, not a blank strip over it. A language names
         // the block above the code.
         VStack(alignment: .leading, spacing: 2) {
@@ -261,6 +292,21 @@ struct CodeBlockView: View {
                         .padding(.trailing, 4)
                         .padding(.vertical, 11)
                 }
+                if let runs, let snippetRun {
+                    // A menu, not a button: a tap beside Copy runs nothing by itself.
+                    Menu {
+                        Section("In a shell in \(snippetRun.place)") {
+                            Button("Run in Terminal", systemImage: "terminal") {
+                                Haptics.tap()
+                                snippetRun.run(runs)
+                            }
+                        }
+                    } label: {
+                        glyph("terminal", tint: theme.muted)
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Run in Terminal")
+                }
                 Button {
                     UIPasteboard.general.string = code
                     copied = true
@@ -270,15 +316,7 @@ struct CodeBlockView: View {
                         copied = false
                     }
                 } label: {
-                    Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                        .font(.ah(.footnote).weight(.medium))
-                        .contentTransition(.symbolEffect(.replace))
-                        .foregroundStyle(copied ? theme.done : theme.muted)
-                        // Grows with the glyph: at the largest text sizes a fixed 40 points
-                        // let it spill over the code beside it.
-                        .padding(.horizontal, 8)
-                        .frame(minWidth: 40, minHeight: 40)
-                        .contentShape(Rectangle())
+                    glyph(copied ? "checkmark" : "doc.on.doc", tint: copied ? theme.done : theme.muted)
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel(copied ? "Copied" : "Copy code")
@@ -288,6 +326,18 @@ struct CodeBlockView: View {
         .overlay(alignment: .leading) {
             if tone == .command { RoundedRectangle(cornerRadius: 1.5).fill(theme.run.opacity(0.6)).frame(width: 3) }
         }
+    }
+
+    private func glyph(_ name: String, tint: Color) -> some View {
+        Image(systemName: name)
+            .font(.ah(.footnote).weight(.medium))
+            .contentTransition(.symbolEffect(.replace))
+            .foregroundStyle(tint)
+            // Grows with the glyph: at the largest text sizes a fixed 40 points let it spill
+            // over the code beside it.
+            .padding(.horizontal, 8)
+            .frame(minWidth: 40, minHeight: 40)
+            .contentShape(Rectangle())
     }
 }
 

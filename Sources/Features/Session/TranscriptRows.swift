@@ -182,6 +182,7 @@ struct BlockRow: View {
                     }
                 }
             }
+            .environment(\.snippetRun, snippetRun)
         case .notice(_, _, _, let kind, let text):
             HStack(spacing: 8) {
                 Image(systemName: kind == .compacted ? "arrow.down.right.and.arrow.up.left" : kind == .interrupted ? "stop.circle" : "info.circle")
@@ -210,6 +211,16 @@ extension BlockRow {
         }
     }
 
+    /// Run in Terminal on the code in the agent's message, in a shell in the session's folder.
+    fileprivate var snippetRun: SnippetRun? {
+        guard session.isLive, !session.isShell, let row = session.row else { return nil }
+        let (session, scene) = (session, scene)
+        let place = [row.dto.project, row.dto.branch ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
+        return SnippetRun(place: place.isEmpty ? "its folder" : place) { code in
+            Task { await scene.runInShell(code, from: session) }
+        }
+    }
+
     /// After Copy in the edit menu of words selected in the agent's message: quoting just
     /// those words, and the message's own actions folded under one item.
     fileprivate var wordsMenu: TextMenu {
@@ -221,6 +232,12 @@ extension BlockRow {
                 items.append(UIAction(title: "Quote in Reply", image: UIImage(systemName: "text.quote")) { _ in
                     session.composer.compose(Markdown.quote(Markdown.source(ofSelected: selected)))
                     Haptics.tap()
+                })
+            }
+            if session.isLive && !session.isShell {
+                items.append(UIAction(title: "Run in Terminal", image: UIImage(systemName: "terminal")) { _ in
+                    Haptics.tap()
+                    Task { await scene.runInShell(selected, from: session) }
                 })
             }
             items.append(UIMenu(title: "Message", image: UIImage(systemName: "text.bubble"), children: [
@@ -517,7 +534,7 @@ private struct ToolBodyView: View {
         switch body_ {
         case .shell(let command, let description, let output):
             if let description { Text(description).font(.ah(.caption)).foregroundStyle(theme.muted) }
-            CodeBlockView(code: "$ \(command)", tone: .command)
+            CodeBlockView(code: "$ \(command)", tone: .command, command: command)
             OutputView(result: output)
         case .fileDiff(let path, let lines, let error):
             FileLink(path: path)
@@ -594,7 +611,9 @@ private struct ToolBodyView: View {
                 if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text(empty).font(.ah(.caption)).foregroundStyle(theme.faint)
                 } else {
+                    // What a command printed isn't one to run.
                     CodeBlockView(code: text, tone: result.isError ? .error : .plain)
+                        .environment(\.snippetRun, nil)
                 }
                 ForEach(result.images ?? [], id: \.self) { src in HostImage(source: src) }
             }
