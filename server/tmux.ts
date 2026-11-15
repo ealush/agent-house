@@ -9,10 +9,10 @@ const run = promisify(execFile);
 const SEP = '\x1f';
 
 /**
- * Splits one line of `-F` output. tmux ≥ 3.5 prints the separator raw; older
- * releases (3.4, as shipped by Ubuntu LTS) escape control characters in output,
- * so it arrives as the four characters "\037". Values are escaped the same way,
- * so splitting on the escaped form is unambiguous there too.
+ * Splits one line of `-F` output. tmux ≥ 3.5 prints the separator raw (with `-u`,
+ * whatever the locale); older releases (3.4, as shipped by Ubuntu LTS) escape
+ * control characters in output, so it arrives as the four characters "\037". Values
+ * are escaped the same way, so splitting on the escaped form is unambiguous there too.
  */
 export function fields(line: string): string[] {
   return line.includes(SEP) ? line.split(SEP) : line.split('\\037');
@@ -22,8 +22,11 @@ export const VIEWER_PREFIX = 'ah-v-';
 
 export async function tmux(...args: string[]): Promise<string> {
   // Bounded: a wedged tmux server would otherwise hang the tick (and every caller
-  // waiting on it) forever instead of failing one pass.
-  const { stdout } = await run('tmux', args, { env: cleanEnv(), maxBuffer: 16 * 1024 * 1024, timeout: 15_000 });
+  // waiting on it) forever instead of failing one pass. `-u`: without a UTF-8 locale
+  // (ah started over ssh or by launchd on a Mac, LANG unset) tmux prints every
+  // control character and non-ASCII letter of its output as "_", the field
+  // separator and window names included, and no window would read.
+  const { stdout } = await run('tmux', ['-u', ...args], { env: cleanEnv(), maxBuffer: 16 * 1024 * 1024, timeout: 15_000 });
   return stdout;
 }
 

@@ -167,13 +167,13 @@ else if (freshTurn) args.push(';', 'set-option', '-w', '-q', '-u', '-t', pane, '
 if (ask === 'pending' || ask?.kind === 'question') {
   // Promote the last tool call to the question; needs a read, so do it as a second step.
   // A question dialog recorded at PreToolUse is richer than either, so it stays.
-  execFile('tmux', ['show-options', '-w', '-v', '-q', '-t', pane, '@ah-ask'], (_e, current) => {
+  execFile('tmux', ['-u', 'show-options', '-w', '-v', '-q', '-t', pane, '@ah-ask'], (_e, current) => {
     if (/"kind":"choice"/.test(current ?? '')) return execFile('tmux', args, () => process.exit(0));
     if (ask !== 'pending') {
       args.push(';', 'set-option', '-w', '-q', '-t', pane, '@ah-ask', JSON.stringify(ask));
       return execFile('tmux', args, () => process.exit(0));
     }
-    execFile('tmux', ['show-options', '-w', '-v', '-q', '-t', pane, '@ah-detail'], (_e2, out) => {
+    execFile('tmux', ['-u', 'show-options', '-w', '-v', '-q', '-t', pane, '@ah-detail'], (_e2, out) => {
       if (out?.trim()) args.push(';', 'set-option', '-w', '-q', '-t', pane, '@ah-ask', out.trim());
       execFile('tmux', args, () => process.exit(0));
     });
