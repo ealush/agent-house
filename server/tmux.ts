@@ -318,6 +318,23 @@ async function watchInput(target: string, done: (s: string | null) => boolean, m
 }
 
 /**
+ * Empties an input box (see pendingInput) that has text in it within `ms`, and says
+ * whether it did. Ctrl+U takes Claude Code's box a line at a time, read again after
+ * each. Not Ctrl+C, which clears it at once: a second Ctrl+C in the next second or
+ * so quits Claude Code, even with text in the box, and two stops in a row press two.
+ */
+export async function clearInput(target: string, ms: number): Promise<boolean> {
+  let typed = await watchInput(target, (s) => !!s, ms);
+  if (!typed) return false;
+  for (let i = 0; typed && i < 40; i++) {
+    const was = typed;
+    await tmux('send-keys', '-t', target, 'C-u');
+    typed = await watchInput(target, (s) => s !== was, 200);
+  }
+  return typed === '';
+}
+
+/**
  * Types text into a window as one paste (bracketed if the app asked for it), so a
  * multi-line prompt arrives as a single message instead of one submit per line.
  * With `enter`, an agent that shows its input box gets the Enter once the text is

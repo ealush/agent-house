@@ -1329,9 +1329,22 @@ export class Core {
     const w = state.windows.find((w) => w.uid === uid);
     if (!w) throw new CoreError(404, 'session not found');
     const sent = Math.floor(Date.now() / 1000);
+    const box = w.agent ? await t.inputBox(w.id) : null;
     await t.tmux('send-keys', '-t', w.id, ...this.interruptKeys(w));
+    // Taken now, so whatever's typed next (a queued message, a send) waits for the box.
+    if (box === '') void this.withInput(uid, () => this.clearHandedBack(w, 1000)).catch(() => {});
     this.tick().catch(() => {});
     void this.recordStop(w, sent).then(() => this.tick()).catch(() => {});
+  }
+
+  /**
+   * Claude Code stopped before its first word hands the prompt back: it's in the
+   * input box again, and what ah typed next was added to it (a queued "1" went in
+   * as "…animation1"). It was sent once and shows in the conversation, so what the
+   * stop put in a box that was empty before it goes. `ms`: how long to look for it.
+   */
+  private async clearHandedBack(w: WindowView, ms: number): Promise<void> {
+    if (await t.clearInput(w.id, ms)) console.log(`interrupt: cleared the prompt ${w.id}'s stop handed back`);
   }
 
   /** Sends the interrupt keys; resolves once a hooked turn has visibly stopped. */
@@ -1401,6 +1414,7 @@ export class Core {
         // for the stop to land: pasting into the teardown redraw drops the
         // submit and strands this text behind the previous one. Shells
         // clear their own line on Ctrl-C, so they need no settle wait.
+        const box = await t.inputBox(live.id);
         await this.sendInterrupt(live);
         this.sentAt.delete(uid);
         for (let i = 0; i < 12; i++) {
@@ -1419,6 +1433,8 @@ export class Core {
         // The stop threw away anything the agent held unsent, a follow-up ah typed
         // into a turn it had started on its own among them: back first in line.
         await this.queues.recover(uid);
+        // By now the stop has landed and drawn: a prompt it handed back is there to see.
+        if (box === '') await this.clearHandedBack(live, 0);
       } else if (stopping) {
         await t.tmux('send-keys', '-t', live.id, ...this.interruptKeys(live));
       }

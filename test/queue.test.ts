@@ -220,3 +220,56 @@ test('a prompt left in the input box by a lost Enter is submitted with another',
     await cleanup(ah);
   }
 });
+
+test('a prompt Stop hands back to the input box is cleared before the next message goes in', async () => {
+  const boxed = fileURLToPath(new URL('./fixtures/boxed-agent.js', import.meta.url));
+  const ah = await startAh({
+    auth: { mode: 'off' },
+    idleAfter: 1,
+    presets: [{ id: 'test-agent', name: 'Test agent', command: `exec ${process.execPath} ${boxed} --restore`, match: '^node$' }],
+  });
+  try {
+    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'test-agent', cwd: `${ah.dir}/files` } });
+    assert.equal(created.status, 201, created.body);
+    const { id, uid } = created.json();
+    await until(() => ah.tmux('capture-pane', '-p', '-t', id).includes('Try "something"'), 10000, 'the agent draws its input box');
+    await sleep(5500);
+    assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'testing the queue' } })).json().outcome, 'delivered');
+    assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'one' } })).json().outcome, 'queued');
+    // Stopped before it answered: the agent puts "testing the queue" back in its box.
+    assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/interrupt`, {})).status, 200);
+    const received = () => ah.tmux('capture-pane', '-p', '-t', id).match(/RECEIVED:.*/g) ?? [];
+    await until(() => received().length > 1, 15000, 'the queued message went in');
+    assert.deepEqual(received(), ['RECEIVED:testing the queue', 'RECEIVED:one'], 'on its own, not after the prompt handed back');
+    const screen = ah.tmux('capture-pane', '-p', '-t', id);
+    assert.match(screen, /❯ Try "something"/, 'nothing left in the box');
+  } finally {
+    await cleanup(ah);
+  }
+});
+
+test('send-now clears a prompt its stop hands back before the urgent message goes in', async () => {
+  const boxed = fileURLToPath(new URL('./fixtures/boxed-agent.js', import.meta.url));
+  const ah = await startAh({
+    auth: { mode: 'off' },
+    idleAfter: 1,
+    presets: [{ id: 'test-agent', name: 'Test agent', command: `exec ${process.execPath} ${boxed} --restore`, match: '^node$' }],
+  });
+  try {
+    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'test-agent', cwd: `${ah.dir}/files` } });
+    assert.equal(created.status, 201, created.body);
+    const { id, uid } = created.json();
+    await until(() => ah.tmux('capture-pane', '-p', '-t', id).includes('Try "something"'), 10000, 'the agent draws its input box');
+    await sleep(5500);
+    assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'testing the queue' } })).json().outcome, 'delivered');
+    const queued = (await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'urgent' } })).json();
+    assert.equal(queued.outcome, 'queued');
+    const now = await http(ah, 'POST', `/api/sessions/${uid}/queue/${queued.queueId}/send-now`, {});
+    assert.equal(now.status, 200, now.body);
+    const received = () => ah.tmux('capture-pane', '-p', '-t', id).match(/RECEIVED:.*/g) ?? [];
+    await until(() => received().length > 1, 10000, 'the urgent message went in');
+    assert.deepEqual(received(), ['RECEIVED:testing the queue', 'RECEIVED:urgent'], 'on its own, not after the prompt handed back');
+  } finally {
+    await cleanup(ah);
+  }
+});
