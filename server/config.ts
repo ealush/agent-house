@@ -2,6 +2,7 @@ import { readFileSync, existsSync, accessSync, constants } from 'node:fs';
 import { DEFAULT_USAGE, type UsageConfig } from './usage/service.ts';
 import { DEFAULT_RECOVERY, type RecoveryConfig } from './recovery/engine.ts';
 import { DEFAULT_UPLOAD_LIMITS, type UploadLimits } from './uploads.ts';
+import type { GateRule } from './agentgate.ts';
 import { homedir } from 'node:os';
 import { join, isAbsolute } from 'node:path';
 
@@ -62,6 +63,17 @@ export type Preset = {
    * `trust` has it accepted by ah.
    */
   trust?: { pattern: string; accept: string };
+  /**
+   * The agent's other screens in front of its prompt (server/agentgate.ts): its own
+   * sign-in and first-run setup, where any agent's sign-in isn't enough to tell.
+   * While one is up the session waits for you and a message waits in the queue.
+   */
+  gates?: GateRule[];
+  /**
+   * Text the agent shows once it's past those screens, at its prompt (multiline regex):
+   * for an agent that prints them line by line, they stay on screen above it after.
+   */
+  ready?: string;
   /** tmux key names typed for one-tap Approve / Deny on a permission prompt. */
   approveKeys?: string[];
   denyKeys?: string[];
@@ -159,7 +171,7 @@ export type Config = {
 };
 
 // Flags below are taken from each CLI's own --help; keep them that way.
-const DEFAULT_PRESETS: Preset[] = [
+export const DEFAULT_PRESETS: Preset[] = [
   {
     id: 'shell',
     name: 'Shell',
@@ -202,6 +214,12 @@ const DEFAULT_PRESETS: Preset[] = [
     resume: 'claude --continue',
     resumeId: 'claude --resume {id}',
     match: '^claude$',
+    // First run: the text-style picker, then the login method and its sub-screens
+    // (the paste-a-code page is read as any agent's sign-in).
+    gates: [
+      { kind: 'setup', pattern: 'Choose the text style that looks best with your terminal' },
+      { kind: 'signin', pattern: 'Select login method:|How do you want to sign in\\?|Using 3rd-party platforms|How do you authenticate to (?:AWS|Google Cloud)\\?' },
+    ],
     // For windows without hooks: permission prompts, the question dialog's footer
     // (AskUserQuestion), and the folder-trust prompt (a picker without numbers).
     waitingPatterns: ['Do you want to (proceed|make this edit|create|allow)', '^\\s*❯\\s*1\\.\\s*Yes', 'Enter to select · .*to navigate', 'trust this folder|Enter to confirm · Esc to cancel'],
@@ -255,6 +273,10 @@ const DEFAULT_PRESETS: Preset[] = [
     resume: 'codex resume --last',
     resumeId: 'codex resume {id}',
     match: '^codex',
+    // In a git folder: "› 1. Trust and continue" / "2. Back to Agent Command Center". Its
+    // sign-in (a picker of ways in, a browser link, a device code, an API key box) is
+    // read as any agent's.
+    trust: { pattern: 'Trust this folder\\? Codex can', accept: '^Trust and continue' },
     waitingPatterns: ['Would you like to (run|make|apply)', 'Allow (Codex|command)', '\\(y\\)es.*\\(n\\)o'],
     approveKeys: ['y'],
     denyKeys: ['Escape'],
@@ -305,6 +327,8 @@ const DEFAULT_PRESETS: Preset[] = [
     resumeId: 'grok --resume {id}',
     modelArgs: ['-m', '{model}'],
     match: '^grok$',
+    // Signed out it opens on a device code alone; its page is behind "click here".
+    gates: [{ kind: 'signin', pattern: 'Approve in your browser to finish signing in|Select the URL below with your mouse', link: 'https://accounts.x.ai/oauth2/device?user_code={code}' }],
     // Rows with hotkeys, no cursor glyph: "Yes, proceed   y" / "No, quit   n".
     trust: { pattern: 'Do you trust the contents of this directory\\?', accept: '^Yes, proceed' },
     interruptKeys: ['Escape'],
@@ -326,6 +350,8 @@ const DEFAULT_PRESETS: Preset[] = [
     settingsCommands: { model: '/models', effort: '/effort', mode: '/permissions' },
     modelArgs: ['--model', '{model}'],
     match: '^muse',
+    // "Log in with browser · Enter to choose" / "Set an API key": no cursor glyph to read rows by.
+    gates: [{ kind: 'signin', pattern: 'Log in with browser|^\\s*Set an API key\\s*$' }],
     // The TUI draws its own permission picker ("Would you like to allow this
     // network access?", "Yes, don't ask again this session (p)"). There are no
     // hooks, so these screen rules are what surfaces "needs you" in the inbox
@@ -357,6 +383,13 @@ const DEFAULT_PRESETS: Preset[] = [
     resume: 'hermes --continue',
     resumeId: 'hermes --resume {id}',
     match: '^hermes',
+    // No provider yet: "Set up a provider now? [Y/n]:", then radio lists of providers and
+    // their sign-ins, read line by line (input() prompts).
+    gates: [
+      { kind: 'setup', pattern: 'No inference provider is configured yet|^\\s*(?:→ )?\\([●○]\\) ' },
+      { kind: 'signin', pattern: 'Choose authentication method:|Starting Hermes login|\\(or Enter to cancel\\):\\s*$' },
+    ],
+    ready: '^Welcome to Hermes Agent!|^❯ |^(?:Login|Provider setup) (?:cancelled|succeeded|complete)',
     interruptKeys: ['Escape'],
   },
   {
@@ -387,6 +420,7 @@ const DEFAULT_PRESETS: Preset[] = [
     resume: 'cursor-agent --continue',
     resumeId: 'cursor-agent --resume {id}',
     match: '^cursor-agent$',
+    gates: [{ kind: 'signin', pattern: 'Press any key to log in|Signing in with the browser|Scan this QR code to log in' }],
     interruptKeys: ['Escape'],
   },
   {
@@ -403,6 +437,10 @@ const DEFAULT_PRESETS: Preset[] = [
     resume: 'copilot --continue',
     resumeId: 'copilot --resume {id}',
     match: '^copilot$',
+    // A boxed numbered list: "❯ 1. Yes", "2. Yes, and remember this folder…", "3. No (Esc)".
+    trust: { pattern: 'Confirm folder trust', accept: '^Yes$' },
+    // /login: which account, then browser (back to 127.0.0.1) or a device code.
+    gates: [{ kind: 'signin', pattern: 'What account do you want to log into\\?' }],
     interruptKeys: ['Escape'],
   },
   {
@@ -416,6 +454,8 @@ const DEFAULT_PRESETS: Preset[] = [
     resume: 'crush --continue',
     resumeId: 'crush --session {id}',
     match: '^crush$',
+    // First run: choose a provider and model ("↑/↓ choose • enter confirm"), then its sign-in.
+    gates: [{ kind: 'setup', pattern: '↑/↓ choose • enter confirm' }],
     interruptKeys: ['Escape'],
   },
   {
@@ -427,6 +467,8 @@ const DEFAULT_PRESETS: Preset[] = [
     resume: 'pi --continue',
     resumeId: 'pi --session {id}',
     match: '^pi$',
+    // /login, drawn above pi's own status bar: methods, providers, then a link, a code or a box.
+    gates: [{ kind: 'signin', pattern: 'Select authentication method:|Select provider to configure:|Select .{1,40} login method:|^\\s*Login to \\S|Complete login in your browser' }],
     interruptKeys: ['Escape'],
   },
 ];

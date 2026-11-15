@@ -1,0 +1,11 @@
+
+  Muse Code 1.4.20
+
+  Sign in at this page:
+    https://auth.meta.com/oauth/device/?code=LWJG-XLXJ
+  confirm this code matches:
+    LWJG-XLXJ
+
+  Waiting for approval…
+  Esc cancel
+

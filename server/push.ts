@@ -2,6 +2,7 @@
 // subscribed devices, so a phone hears "needs you" even with ah closed. Each
 // device opts in per event. Requires HTTPS (pnpm serve) and, on iOS, the
 // home-screen app.
+import type { GateKind } from './agentgate.ts';
 import webpush from 'web-push';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -156,9 +157,13 @@ export class Push {
   }
 }
 
+/** A screen in front of the agent's prompt, in the words the apps use. */
+const GATE_LINE: Record<GateKind, string> = { trust: 'Asks to trust this folder', signin: 'Needs you to sign in', setup: 'Needs setting up' };
+
 /** One line for what a waiting session asks: the command, the question, or the tool. */
 export function askLine(ask: WindowView['ask']): string {
   if (!ask) return '';
+  if (ask.gate) return GATE_LINE[ask.gate.kind];
   const first = (t: string) => t.split('\n').map((l) => l.trim()).find(Boolean) ?? '';
   const short = (t: string) => (t.length > 120 ? t.slice(0, 119) + '…' : t);
   if (ask.kind === 'command') {

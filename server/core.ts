@@ -30,7 +30,8 @@ import { QueueManager, starting, transcriptHas, type LaunchChange, type QueueIte
 import { ADAPTERS } from './feed/feed.ts';
 import { Push } from './push.ts';
 import { omarchyStamp } from './omarchy.ts';
-import { chatSteps, claudeQuestionGroups, cursorKeys, dialogAt, dialogSteps, parsePicker, parseQuestionDialog, type Answer, type Step } from './choices.ts';
+import { compileGates, readGate, type Gate, type GateKind } from './agentgate.ts';
+import { chatSteps, claudeQuestionGroups, cursorKeys, dialogAt, dialogSteps, parsePicker, parseQuestionDialog, type Answer, type ScreenOption, type Step } from './choices.ts';
 import type { Peers } from './peers.ts';
 import { fingerprint } from './env.ts';
 import { features } from './features.ts';
@@ -72,7 +73,26 @@ export type State = {
 export type Focus = { key: string; device: string; client: string; at: number };
 
 /** `starting`: queued only because the agent just launched; it goes in once its UI is up. */
-export type SendResult = { outcome: 'delivered' | 'queued'; windowId: string; resumed: boolean; queued: number; queueId?: string; starting?: boolean; trust?: boolean };
+/**
+ * `held`: queued only because a screen is in front of the agent's prompt (its trust
+ * question, a sign-in, setup) or a picker is up; it goes in once that's answered.
+ * `trust` is the same for the trust question, for clients that only know that one.
+ */
+export type SendResult = { outcome: 'delivered' | 'queued'; windowId: string; resumed: boolean; queued: number; queueId?: string; starting?: boolean; trust?: boolean; held?: GateKind | 'picker' };
+
+/** What a send now says when a screen is in front of the prompt. */
+const GATE_FIRST: Record<GateKind, string> = {
+  trust: 'answer the folder-trust prompt first',
+  signin: 'sign in first',
+  setup: 'answer the screen in front of its prompt first',
+};
+
+/** The picker row a message names by its key ("2", "y"); a cursor list's rows by their number. */
+export function pickerRow(options: ScreenOption[] | undefined, text: string): ScreenOption | undefined {
+  const typed = text.trim().toLowerCase();
+  if (!options?.length || !/^[0-9a-z]$/.test(typed)) return undefined;
+  return options.find((o, i) => o.key === typed || (o.key.startsWith('nav:') && String(i + 1) === typed));
+}
 
 export type ForkInfo = {
   canFork: boolean;
@@ -778,8 +798,16 @@ export class Core {
   async send(ref: string, text: string, enter = true, launchChange?: LaunchChange, o: { id?: string; remember?: boolean } = {}): Promise<SendResult> {
     if (!text) throw new CoreError(400, 'empty message');
     const target = await this.resume(ref);
-    if (o.remember !== false) this.remember(text);
     const state = target.resumed ? await this.tick() : await this.current();
+    // A message that is just one of the picker's keys ("2", "y") picks that row, as
+    // typing it in the terminal would; anything else waits for the picker to go.
+    const shown = state.windows.find((w) => w.id === target.windowId);
+    const row = enter && !target.resumed && shown?.agent && shown.status === 'waiting' ? pickerRow(shown.ask?.options, text) : undefined;
+    if (row) {
+      await this.choose(shown!.uid, row.key);
+      return { outcome: 'delivered', windowId: target.windowId, resumed: false, queued: 0 };
+    }
+    if (o.remember !== false) this.remember(text);
     return this.withInput<SendResult>(target.uid, async () => {
       const w = state.windows.find((w) => w.id === target.windowId);
       const queued = this.queues.items(target.uid);
@@ -798,11 +826,12 @@ export class Core {
       // (the window still looks like a shell), so the launch record says what it is.
       const settled = !!w?.agent && w.status !== 'busy';
       const fresh = !!w && starting(w) && !settled && (!!w.agent || (this.registry.get(w.uid)?.harness ?? 'shell') !== 'shell');
-      // The startup trust prompt is not a question this text answers: it would drop
-      // the paste and take the Enter as its default row. The text waits in the queue
-      // and goes in once the folder is trusted and the agent is at its prompt.
-      const trusting = !!w?.agent && w.status === 'waiting' && !!w.ask?.trust;
-      const answering = !!w?.agent && w.status === 'waiting' && !trusting;
+      // A screen in front of the prompt (trust, sign-in, setup) or a picker is not a
+      // question this text answers: the TUI drops the paste and takes the Enter as its
+      // highlighted row, so the text would vanish and the row be chosen for you. It
+      // waits in the queue and goes in once that's answered and the agent is at its prompt.
+      const held: SendResult['held'] = w?.agent && w.status === 'waiting' ? (w.ask?.gate?.kind ?? (w.ask?.options?.length ? 'picker' : undefined)) : undefined;
+      const answering = !!w?.agent && w.status === 'waiting' && !held;
       const ready = !target.resumed && !!w && !fresh && (answering || queued.length === 0) && (answering || !w.agent || (!this.justSent(w.uid) && (w.status === 'idle' || w.status === 'attention')));
       if (ready) {
         if (w.agent) {
@@ -822,7 +851,7 @@ export class Core {
         ...(launchChange ? { launchChange } : {}),
       };
       const queuedCount = this.queues.enqueue(target.uid, item);
-      return { outcome: 'queued', windowId: target.windowId, resumed: target.resumed, queued: queuedCount, queueId: item.id, ...(fresh ? { starting: true } : {}), ...(trusting ? { trust: true } : {}) };
+      return { outcome: 'queued', windowId: target.windowId, resumed: target.resumed, queued: queuedCount, queueId: item.id, ...(fresh ? { starting: true } : {}), ...(held ? { held } : {}), ...(held === 'trust' ? { trust: true } : {}) };
     });
   }
 
@@ -969,6 +998,33 @@ export class Core {
     });
     this.tick().catch(() => {});
     return option;
+  }
+
+  /**
+   * Answers the screen in front of the agent's prompt with the text it asks for (a
+   * code pasted back, an API key), or takes it a step back with Esc where the screen
+   * says Esc does that. The text may be a secret: it is never remembered or logged.
+   */
+  async answerGate(uid: string, o: { text: string } | { back: true }) {
+    const state = await this.tick();
+    const w = state.windows.find((w) => w.uid === uid);
+    if (!w) throw new CoreError(404, 'session not found');
+    const back = 'back' in o;
+    if (!back && !o.text.trim()) throw new CoreError(400, 'nothing to type');
+    const fits = (g: Gate | undefined) => (back ? !!g?.back : !!g?.input);
+    if (w.status !== 'waiting' || !fits(w.ask?.gate)) throw new CoreError(409, back ? 'this screen has no way back' : 'this screen takes nothing typed');
+    const preset = this.config.presets.find((p) => p.id === w.agent);
+    await this.withInput(uid, async () => {
+      // Read the screen again inside the lock: it must still be the one that asked.
+      const lines = (await t.capturePane(w.id, 0).catch(() => '')).split('\n').map((l) => l.trimEnd()).filter((l) => l.trim());
+      if (!fits(readGate(lines.slice(-40), compileGates(preset ?? {}))?.gate)) throw new CoreError(409, 'the screen has changed; look again');
+      if (back) return void (await t.tmux('send-keys', '-t', w.id, 'Escape'));
+      // Not the prompt's paste: that one watches the agent's input box, which this isn't.
+      await t.pasteText(w.id, o.text, false);
+      await new Promise((r) => setTimeout(r, 150));
+      await t.tmux('send-keys', '-t', w.id, 'Enter');
+    });
+    this.tick().catch(() => {});
   }
 
   /**
@@ -1402,11 +1458,13 @@ export class Core {
         this.queues.requeue(uid, next);
         throw new CoreError(404, 'session is not running');
       }
-      // A folder-trust prompt has no turn to stop: the interrupt key would cancel the
-      // prompt (Claude Code exits on Esc) and the text would land in it. It stays first.
-      if (live.agent && live.status === 'waiting' && live.ask?.trust) {
+      // A screen in front of the prompt has no turn to stop: the interrupt key would
+      // cancel it (Claude Code exits on Esc at its trust prompt) and the text would land
+      // in it. It stays first.
+      const gate = live.agent && live.status === 'waiting' ? live.ask?.gate : undefined;
+      if (gate) {
         this.queues.requeue(uid, next);
-        throw new CoreError(409, 'answer the folder-trust prompt first; the message goes in right after');
+        throw new CoreError(409, `${GATE_FIRST[gate.kind]}; the message goes in right after`);
       }
       const stopping = live.status === 'busy' || live.status === 'waiting' || this.justSent(uid);
       if (stopping && live.agent) {

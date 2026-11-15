@@ -1,0 +1,43 @@
+│         ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⠷⠄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                                                           │
+│         ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⠑⢶⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀          Available Skills                                 │
+│         ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⠁⢰⡆⠈⡿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀          autonomous-ai-agents: claude-code, codex, +3     │
+│         ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠳⠈⣡⠞⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀          more                                             │
+│         ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀          creative: architecture-diagram, +9 more          │
+│                                                 devops: sdlc-review                              │
+│   no model configured — run /model or hermes    email: email-inbox-triage, himalaya              │
+│                      setup                      media: gif-search, songsee, youtube-content      │
+│  /home/me/code/app                          note-taking: obsidian                            │
+│         Session: 20261115_172553_f7c9c7         productivity: airtable, box, +12 more            │
+│                                                 research: arxiv, competitor-news-monitor, +2     │
+│                                                 more                                             │
+│                                                 social-media: xurl                               │
+│                                                 software-development: codebase-inspection, +11   │
+│                                                 more                                             │
+│                                                 web: blocked-page-recovery                       │
+│                                                                                                  │
+│                                                 20 tools · 54 skills · /help for commands        │
+│                                                 ⚠ 46373 commits behind — run hermes update to    │
+│                                                 update                                           │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+⚕ No inference provider is configured yet — let's fix that.
+  You'll pick a provider (Nous Portal OAuth is the fastest; no API key needed) and a model.
+  Set up a provider now? [Y/n]:
+Warning: No inference provider configured. Run 'hermes model' to choose a provider and model, or set
+ an API key (OPENROUTER_API_KEY, OPENAI_API_KEY, etc.) in ~/.hermes/.env. Falling back to auto provi
+der detection.
+
+  Current model:    (not set)
+  Active provider:  none
+
+Not logged into Nous Portal. Starting login...
+
+Starting Hermes login via Nous Portal...
+Portal: https://portal.nousresearch.com
+
+To continue:
+  1. Open: https://portal.nousresearch.com/manage-subscription?user_code=EP26-28KT
+  2. If prompted, enter code: EP26-28KT
+  Could not open browser automatically — use the URL above.
+Waiting for approval (polling every 1s)...
+

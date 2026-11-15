@@ -811,6 +811,16 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     return send(res, 200, { ok: true, label: option.label });
   }
 
+  // The screen in front of an agent's prompt: what it asks to have typed (a code, an
+  // API key — never logged), or Esc back a step where it says so.
+  if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/gate$/))) {
+    const body = await readJson(req);
+    if (body.back === true) await core.answerGate(m[1], { back: true });
+    else await core.answerGate(m[1], { text: str(body.text, 'text', 4000) });
+    audit(req, 'session.gate', { uid: m[1], ...(body.back === true ? { back: true } : { typed: true }) });
+    return send(res, 200, { ok: true });
+  }
+
   if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/questions$/))) {
     const body = await readJson(req);
     const answerOf = (a: any) => ({

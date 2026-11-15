@@ -6,6 +6,8 @@ export type ScreenOption = {
   /** What gets typed: the option's digit, or its own hotkey ("(y)") when it shows one. */
   key: string;
   label: string;
+  /** The line under the row, at its text's indent ("Sign in from another device with a one-time code"). */
+  description?: string;
 };
 
 export type Question = {
@@ -51,7 +53,7 @@ export function parseScreenOptions(lines: string[]): ScreenOption[] {
  * The picker and what it is about: up to `max` lines above its first row (the
  * command to approve, a dialog's summary), stopping at a rule or the screen top.
  */
-export function parsePicker(lines: string[], max = 8): { options: ScreenOption[]; context: string; cursor?: number } | null {
+export function parsePicker(lines: string[], max = 8): { options: ScreenOption[]; context: string; cursor?: number; end: number } | null {
   return parseNumbered(lines, max) ?? parseCursorList(lines, max) ?? parseHotkeyList(lines, max);
 }
 
@@ -62,7 +64,7 @@ const HOTKEY_ROW = /^(\s*)(\S.*?\S)\s{4,}([a-z])$/;
  * and drawn without a cursor glyph ("Yes, proceed        y" / "No, quit        n",
  * Grok's trust prompt). The last such run of two or more rows at one indent counts.
  */
-function parseHotkeyList(lines: string[], max: number): { options: ScreenOption[]; context: string } | null {
+function parseHotkeyList(lines: string[], max: number): { options: ScreenOption[]; context: string; end: number } | null {
   for (let end = lines.length - 1; end > 0; end--) {
     const last = lines[end].match(HOTKEY_ROW);
     if (!last) continue;
@@ -77,7 +79,7 @@ function parseHotkeyList(lines: string[], max: number): { options: ScreenOption[
       end = start;
       continue;
     }
-    return { options: rows.map((r) => ({ key: r[3], label: r[2] })), context: contextAbove(lines, start, max) };
+    return { options: rows.map((r) => ({ key: r[3], label: r[2] })), context: contextAbove(lines, start, max), end };
   }
   return null;
 }
@@ -99,19 +101,21 @@ function contextAbove(lines: string[], start: number, max: number): string {
  * "Enter to confirm" footer: rows aligned with the cursor row's text. Its keys are
  * `nav:<index>`; the server turns one into arrow moves from the cursor, then Enter.
  */
-function parseCursorList(lines: string[], max: number): { options: ScreenOption[]; context: string; cursor: number } | null {
-  const footer = lines.findLastIndex((l) => /Enter to (confirm|select|continue)/.test(l));
+function parseCursorList(lines: string[], max: number): { options: ScreenOption[]; context: string; cursor: number; end: number } | null {
+  // "Enter to confirm · Esc to cancel" (Claude Code), "↑↓ navigate  enter select" (pi).
+  const footer = lines.findLastIndex((l) => /Enter to (confirm|select|continue)|[↑↓]{2}\s+navigate\s+enter select/i.test(l));
   if (footer < 1) return null;
   let end = footer - 1;
   while (end >= 0 && !lines[end].trim()) end--;
   const cursorAt = (() => {
-    for (let i = end; i >= 0 && i > end - 20; i--) if (/^\s*❯\s+\S/.test(lines[i])) return i;
+    for (let i = end; i >= 0 && i > end - 20; i--) if (/^\s*[❯→]\s+\S/.test(lines[i])) return i;
     return -1;
   })();
   if (cursorAt < 0) return null;
-  const indent = lines[cursorAt].indexOf('❯') + 2;
+  const glyph = lines[cursorAt].trimStart()[0];
+  const indent = lines[cursorAt].indexOf(glyph) + 2;
   const row = (l: string) => {
-    const m = l.match(/^(\s*)❯\s+(\S.*)$/);
+    const m = l.match(glyph === '❯' ? /^(\s*)❯\s+(\S.*)$/ : /^(\s*)→\s+(\S.*)$/);
     if (m && m[1].length + 2 === indent) return { label: m[2].trim(), cursor: true };
     return l.length > indent && l.slice(0, indent).trim() === '' && /\S/.test(l[indent]) ? { label: l.trim(), cursor: false } : null;
   };
@@ -120,7 +124,7 @@ function parseCursorList(lines: string[], max: number): { options: ScreenOption[
   const rows = lines.slice(start, end + 1).map(row);
   if (rows.length < 2 || rows.some((r) => !r)) return null;
   const options = rows.map((r, j) => ({ key: `nav:${j}`, label: r!.label }));
-  return { options, context: contextAbove(lines, start, max), cursor: rows.findIndex((r) => r!.cursor) };
+  return { options, context: contextAbove(lines, start, max), cursor: rows.findIndex((r) => r!.cursor), end };
 }
 
 /** Keys that pick row `target` of a cursor list whose cursor is on `cursor`. */
@@ -129,9 +133,14 @@ export function cursorKeys(cursor: number, target: number): string[] {
   return [...Array(Math.abs(n)).fill(n > 0 ? 'Down' : 'Up'), 'Enter'];
 }
 
-function parseNumbered(lines: string[], max: number): { options: ScreenOption[]; context: string } | null {
-  let best: Array<{ n: number; label: string; cursor: boolean; col: number }> = [];
+function parseNumbered(lines: string[], max: number): { options: ScreenOption[]; context: string; end: number } | null {
+  let best: Array<{ n: number; label: string; cursor: boolean; col: number; description?: string }> = [];
   let bestStart = -1;
+  let bestEnd = -1;
+  // How wide the window lets text run, inside a box when there is one: a line that
+  // reaches it may go on in the next, wherever the TUI starts that one.
+  const inner = lines.map((l) => (l.match(BOXED)?.[1] ?? l).trimEnd());
+  const width = Math.max(0, ...inner.map((l) => l.length));
   let run: typeof best = [];
   let start = -1;
   let wrapping = false;
@@ -151,17 +160,25 @@ function parseNumbered(lines: string[], max: number): { options: ScreenOption[];
       if (run.length >= 2 && run.some((o) => o.cursor)) {
         best = [...run];
         bestStart = start;
+        bestEnd = i;
       }
       wrapping = true;
       continue;
     }
     // A label the agent wrapped continues on the next line, aligned with its text
-    // ("2. Yes, and switch to accept edits (… common file" / "   commands) …").
+    // ("2. Yes, and switch to accept edits (… common file" / "   commands) …"). Under
+    // a row that stopped short of the edge, that line is the row's description instead
+    // ("1. Sign in with ChatGPT" / "   Usage included with Plus, Pro…").
+    // A narrow window (a phone attached) wraps either one back to the first column.
     const last = run.at(-1);
-    if (wrapping && last && line.trim() && line.length - line.trimStart().length === last.col) {
-      // A break inside a token longer than the line (a path) was the window's, not a space.
-      const token = last.label.slice(last.label.lastIndexOf(' ') + 1);
-      last.label += `${token.length > 24 ? '' : ' '}${line.trim()}`;
+    const indent = line.length - line.trimStart().length;
+    const atEdge = i > 0 && inner[i - 1].length >= width - 12;
+    if (wrapping && last && line.trim() && (indent === last.col || (atEdge && indent < last.col))) {
+      if (last.description === undefined && atEdge) {
+        // A break inside a token longer than the line (a path) was the window's, not a space.
+        const token = last.label.slice(last.label.lastIndexOf(' ') + 1);
+        last.label += `${token.length > 24 ? '' : ' '}${line.trim()}`;
+      } else last.description = last.description ? `${last.description} ${line.trim()}` : line.trim();
       continue;
     }
     wrapping = false;
@@ -173,9 +190,9 @@ function parseNumbered(lines: string[], max: number): { options: ScreenOption[];
   const options = best.map((o) => {
     const hot = o.label.match(/\s\(([a-z])\)$/i);
     const label = o.label.replace(/\s\([a-z]\)$/i, '').replace(/^\[[ x✔]\]\s*/i, '').trim();
-    return { key: hot ? hot[1].toLowerCase() : String(o.n), label };
+    return { key: hot ? hot[1].toLowerCase() : String(o.n), label, ...(o.description ? { description: o.description } : {}) };
   });
-  return { options, context: contextAbove(lines, bestStart, max) };
+  return { options, context: contextAbove(lines, bestStart, max), end: bestEnd };
 }
 
 function dedent(lines: string[]): string[] {

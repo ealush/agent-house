@@ -162,6 +162,7 @@ test('a Live Activity says what the session is doing, asks or hit, in one short 
   assert.deepEqual(activityState(view('u', 'busy', { detail: 'Editing server/apns.ts\nmore' }), askLine, 9), { phase: 'working', detail: 'Editing server/apns.ts', answerable: false, since: 9 });
   const ask = { kind: 'command', text: 'Bash command\npnpm test' };
   assert.deepEqual(activityState(view('u', 'waiting', { ask, answerable: true }), askLine, 9), { phase: 'waiting', detail: 'Wants to run pnpm test', answerable: true, since: 9 });
+  assert.equal(activityState(view('u', 'waiting', { ask: { kind: 'screen', text: 'Welcome to Codex', gate: { kind: 'signin' } } }), askLine, 9).detail, 'Needs you to sign in');
   assert.equal(activityState(view('u', 'attention', { limit: 'Session limit · resets 12am' }), askLine, 9).phase, 'limited');
   assert.equal(activityState(view('u', 'attention'), askLine, 9).phase, 'finished');
   assert.equal(activityState(view('u', 'idle'), askLine, 9).phase, 'finished');
