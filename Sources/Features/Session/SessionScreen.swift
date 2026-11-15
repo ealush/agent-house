@@ -310,6 +310,7 @@ private struct SessionHeader: View {
                         .frame(width: 96)
                     }
                 }
+                PermissionShield(session: session, scene: scene)
                 PanelsMenu(session: session)
                 if !scene.narrow && !tight {
                     Menu {
@@ -412,6 +413,40 @@ private struct PanelsMenu: View {
             Image(systemName: "sidebar.right").headerGlyph()
         }
         .accessibilityLabel("Panels")
+    }
+}
+
+/// A dangerous permission mode in force: a red shield whose menu says what it means, and the
+/// modes to switch to, each with what it lets the agent do. The phone's navigation bar has
+/// the same as a UIMenu (`SessionHostController`).
+struct PermissionShield: View {
+    let session: SessionModel
+    let scene: SceneModel
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        let launch = session.launch
+        if session.isLive, !session.isShell, let warning = launch.warning, let modes = launch.preset?.modes {
+            Menu {
+                Section(warning) {
+                    ForEach(modes, id: \.id) { mode in
+                        // A toggle, since a picker's option shows only its first line.
+                        Toggle(isOn: Binding(get: { mode.id == launch.mode?.id }, set: { _ in
+                            if mode.id != launch.mode?.id { scene.applyPlan(session.planMode(mode.id), to: session) }
+                        })) {
+                            Text(mode.name)
+                            if let detail = mode.description { Text(detail) }
+                        }
+                    }
+                }
+                Section { Text(launch.footer(.mode)) }
+            } label: {
+                Image(systemName: "exclamationmark.shield.fill").foregroundStyle(theme.danger).headerGlyph()
+            }
+            .menuOrder(.fixed)
+            .accessibilityLabel("Permissions, \(launch.mode?.name ?? "")")
+            .accessibilityHint(warning)
+        }
     }
 }
 

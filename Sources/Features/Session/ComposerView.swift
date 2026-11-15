@@ -97,20 +97,14 @@ struct ComposerView: View {
             // its trailing one (beside the box, + left it short, and what floated over it
             // read as loose); the settings chips wait folded away until a swipe up brings
             // them out, floating over the transcript above the box (`ComposerFloat`):
-            // nothing here changes height for them, so the transcript doesn't move.
-            VStack(alignment: .leading, spacing: 8) {
-                if hasTray, session.launch.mode?.dangerous == true {
-                    // Approvals off is never tucked away: its chip stays out, in red, open
-                    // tray or not.
-                    LaunchChips(session: session, scene: scene, onlyRisky: true)
-                        .transition(.opacity)
-                }
-                field
-                    // Over the glass, not under it: laid on the box from within, a mark
-                    // showed only as a smear refracted through it. Centred, as a sheet's is.
-                    .overlay(alignment: .top) { grabber }
-            }
-            .gesture(ComposerSwipe { swiped($0) })
+            // nothing here changes height for them, so the transcript doesn't move. A
+            // dangerous permission mode is a red shield in the header: as a chip kept out
+            // over the box, it took a row of the screen for as long as the mode lasted.
+            field
+                // Over the glass, not under it: laid on the box from within, a mark
+                // showed only as a smear refracted through it. Centred, as a sheet's is.
+                .overlay(alignment: .top) { grabber }
+                .gesture(ComposerSwipe { swiped($0) })
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
@@ -430,11 +424,10 @@ struct ComposerFloat: View {
     }
 
     /// What waits folded above the box: the settings in force, and the two ways into
-    /// suggestions a finger otherwise has to know about (/ for a command, @ for a file). A
-    /// dangerous permission mode isn't here: it's out in the bar already, in red.
+    /// suggestions a finger otherwise has to know about (/ for a command, @ for a file).
     private var tray: some View {
         HStack(spacing: 8) {
-            LaunchChips(session: session, scene: scene, showsRisky: false)
+            LaunchChips(session: session, scene: scene)
             // A step apart from the settings, but with them: at the far end of a wide box,
             // / and @ sat stranded half a screen away.
             Spacer(minLength: 0).frame(maxWidth: 8)
@@ -606,11 +599,6 @@ struct CameraPicker: UIViewControllerRepresentable {
 struct LaunchChips: View {
     let session: SessionModel
     let scene: SceneModel
-    /// Only a dangerous permission mode, if that's what's in force: the one setting that stays
-    /// out when the rest fold away.
-    var onlyRisky = false
-    /// A dangerous permission mode among the rest (not where it's already out on its own).
-    var showsRisky = true
     /// As tall as the / and @ beside them, at every text size.
     @ScaledMetric(relativeTo: .body) private var height: CGFloat = 36
     @Environment(\.theme) private var theme
@@ -652,7 +640,7 @@ struct LaunchChips: View {
         let launch = session.launch
         if let preset = launch.preset {
             HStack(spacing: 8) {
-                if !onlyRisky, !(preset.models ?? []).isEmpty || preset.modelArgs != nil || preset.settingsCommands?.model != nil {
+                if !(preset.models ?? []).isEmpty || preset.modelArgs != nil || preset.settingsCommands?.model != nil {
                     let models = preset.models ?? []
                     if models.isEmpty {
                         chip("Model", "cpu", launch.modelLabel, fallback: "Default model", density) { scene.sheet = .modelPicker(session.key) }
@@ -667,7 +655,7 @@ struct LaunchChips: View {
                         }
                     }
                 }
-                if !onlyRisky, !launch.levels.isEmpty || preset.settingsCommands?.effort != nil {
+                if !launch.levels.isEmpty || preset.settingsCommands?.effort != nil {
                     if launch.levels.isEmpty {
                         chip("Effort", "gauge.with.dots.needle.50percent", launch.effort.map(LaunchState.effortName), fallback: "Default effort", density) { scene.sheet = .effortPicker(session.key) }
                     } else {
@@ -678,7 +666,9 @@ struct LaunchChips: View {
                         }
                     }
                 }
-                if let modes = preset.modes, modes.count > 1, !onlyRisky || launch.mode?.dangerous == true, showsRisky || launch.mode?.dangerous != true {
+                // A dangerous mode is the red shield in the header (`PermissionShield`): its
+                // chip here as well pushed the row past a phone's width.
+                if let modes = preset.modes, modes.count > 1, launch.mode?.dangerous != true {
                     let current = launch.mode ?? modes.first { $0.id == "default" }
                     Menu {
                         Picker("Permissions", selection: Binding(get: { current?.id ?? "default" }, set: { scene.applyPlan(session.planMode($0)) })) {

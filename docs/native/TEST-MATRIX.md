@@ -279,6 +279,18 @@ The SwiftUI transcript on main also went blank after scrolling far up and tappin
 
 Not automated: a hardware keyboard connecting or disconnecting (a simulator setting), a floating or split iPad keyboard, Stage Manager and window resizing (XCUITest can't resize windows), Dynamic Type at accessibility sizes, the dark palette. Instruments: the SwiftUI instrument records no updates when attached on the simulator; the Time Profiler showed the main thread about equally busy before and after under `/burst` (inconclusive, about 0.1 s sampled).
 
+### A dangerous mode as a shield in the header, 16 November 2026
+
+From the owner's phone screenshot: a Codex session in Full access kept a red "Permissions ⚠ Full access" chip out above the box, a row of the screen under the settings chips. The warning is now a red shield beside the session menu. iPhone 17 Pro and iPad Pro 11-inch (M5) simulators on iOS 27.0, light mode, against the demo host with two extra sessions started in a dangerous mode through `/api/windows`: Claude Code in Skip permissions ("Hotfix deploy", orbit-api) and the Codex stand-in in Full access ("Respond to greeting").
+
+![iPhone: main, then this layer, then the shield's menu for Claude Code and Codex](screenshots/permission-shield-iphone.png)
+
+- Seen on main: the red chip above the box, with the tray folded and out (it stacks under Model, Effort and / @).
+- Seen at this layer: no row over the box; the shield beside ··· in the bar's glass capsule; its menu headed "Claude Code runs with permission checks off" (or "Codex …"), each mode with its description and the one in force checked, then "Changes this session" (Claude Code switches modes live) or "Restarts this session with it" (Codex). The tray out shows Model, Effort and / @ in one row; the Permissions chip as well (tried first) pushed it into its scrolling fallback with the red chip cut off, so a dangerous mode stays out of the tray. On the iPad, the shield sits in the pane header between the view switch and Panels, with the same menu.
+- The simulator raised the soft keyboard under every bar menu, the unchanged ··· menu too; the earlier note on headless simulators and menus applies.
+- Not seen: picking another mode from the shield (the demo's scripted agent doesn't change modes); dark mode; a real phone.
+- Checks: `swift test` on Linux, 306 tests pass. `./scripts/verify.sh` on the Mac (Xcode, iOS 27.0 iPhone 17 Pro simulator) at the shots' commit: the Mac Catalyst build succeeds, TEST SUCCEEDED with 269 unit tests and the 2 setup UI tests, the 17 that need a host skipped. The layer's last change (`applyPlan(_:to:)`, the shield's own session rather than the focused pane) then built for Mac Catalyst and for testing on the simulator. `ConversationLayoutUITests` against the demo host weren't run: the Mac ran out of processes (`fork: Resource temporarily unavailable`) with eleven other simulators booted.
+
 ## Still to run (in order)
 
 1. On a Mac: `brew install xcodegen && ./scripts/verify.sh` — expect compile fixes in the UI layer, which has never been type-checked.

@@ -145,6 +145,13 @@ struct LaunchState: Equatable, Sendable {
         return .relaunch(change, title: "Relaunch with \(what)?", body: body, dangerous: dangerous)
     }
 
+    /// What the red shield in a session's header says while a dangerous permission mode is in
+    /// force; nil while the agent asks before it acts.
+    var warning: String? {
+        guard mode?.dangerous == true else { return nil }
+        return "\(preset?.name ?? "The agent") runs with permission checks off"
+    }
+
     /// Where a change of this setting happens, for the picker's footer.
     func footer(_ setting: Setting) -> String {
         switch setting {

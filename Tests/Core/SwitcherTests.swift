@@ -129,6 +129,22 @@ private actor Counter {
     #expect(risky == ("default", "claude-opus-5-5", "medium"), "a dangerous mode and an unknown effort aren't restored; a typed model id is")
 }
 
+@Test func onlyADangerousModeRaisesTheShield() throws {
+    let preset = try JSONDecoder().decode(PresetDTO.self, from: Data(#"""
+    {"id":"codex","name":"Codex","command":"codex","available":true,
+     "modes":[{"id":"default","name":"Ask"},{"id":"auto","name":"Full auto"},{"id":"yolo","name":"Full access","dangerous":true}]}
+    """#.utf8))
+    func launched(_ mode: String?) throws -> LaunchState {
+        var object: [String: Any] = ["id": "%1", "uid": "s1", "name": "S", "statusSource": "hook", "project": "ah", "projectPath": "/p/ah", "status": "idle", "command": "node", "agent": "codex"]
+        if let mode { object["launchMode"] = mode }
+        return LaunchState(preset: preset, session: try JSONDecoder().decode(SessionDTO.self, from: JSONSerialization.data(withJSONObject: object)))
+    }
+    #expect(try launched("yolo").warning == "Codex runs with permission checks off")
+    #expect(try launched("auto").warning == nil, "a mode that runs without asking but isn't flagged dangerous")
+    #expect(try launched(nil).warning == nil, "launched with no mode: the default")
+    #expect(LaunchState(preset: nil, session: nil).warning == nil)
+}
+
 @Test func eachModelComesBackWithItsOwnEffort() throws {
     let preset = try JSONDecoder().decode(PresetDTO.self, from: Data(#"""
     {"id":"claude","name":"Claude Code","command":"claude","available":true,"defaultEffort":"medium",

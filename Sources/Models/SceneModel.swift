@@ -1551,8 +1551,10 @@ final class SceneModel {
     }
 
     /// A plan that needs a confirmation goes through a sheet; the rest run now.
-    func applyPlan(_ plan: LaunchState.Plan?) {
-        guard let plan, let s = focusedSession else { return }
+    /// `session`: the one the plan was made for, from a control that knows it (a pane
+    /// header's), so a split's other pane, if it has the focus, isn't the one changed.
+    func applyPlan(_ plan: LaunchState.Plan?, to session: SessionModel? = nil) {
+        guard let plan, let s = session ?? focusedSession else { return }
         switch plan {
         case .relaunch(_, _, _, _), .switchMode(_, true):
             sheet = .confirmPlan(key: s.key, plan: plan)

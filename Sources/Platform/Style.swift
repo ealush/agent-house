@@ -90,6 +90,8 @@ struct Theme: Equatable, Sendable {
     var uiAccent: UIColor { uiPair(\.accent) }
     /// The ground for UIKit's own views (the window behind everything).
     var uiBackground: UIColor { uiPair(\.background) }
+    /// A warning for UIKit's own controls (a bar button's glyph).
+    var uiDanger: UIColor { uiPair(\.danger) }
     /// A status word's color for UIKit text (a bar's subtitle); nil where it rests (idle).
     func uiStatus(_ word: StatusWord) -> UIColor? {
         switch word {

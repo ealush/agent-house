@@ -781,6 +781,9 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
     private lazy var menuItem = UIBarButtonItem(image: UIImage(systemName: "ellipsis"), menu: UIMenu(children: [
         UIDeferredMenuElement.uncached { [weak self] done in done((self?.quickActions() ?? []) + (self?.sessionActions() ?? [])) },
     ]))
+    /// A dangerous permission mode in force, beside the menu: a red shield whose menu says what
+    /// it means and switches to a safer mode (`PermissionShield` on the iPad).
+    private lazy var shieldItem = UIBarButtonItem(image: UIImage(systemName: "exclamationmark.shield.fill"), menu: nil)
 
     init(key: String, root: SceneRootController, session: SessionModel) {
         self.key = key
@@ -795,7 +798,6 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
         navigationItem.largeTitleDisplayMode = .never
         navigationItem.backButtonDisplayMode = .minimal
         menuItem.accessibilityLabel = "Session menu"
-        navigationItem.rightBarButtonItems = [menuItem]
         // A session gets the whole screen: the composer and terminal sit where the tabs were.
         hidesBottomBarWhenPushed = true
         updateBar()
@@ -825,10 +827,24 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
         if navigationItem.title != session.title { navigationItem.title = session.title }
         let subtitle = attributedSubtitle
         if navigationItem.attributedSubtitle != subtitle { navigationItem.attributedSubtitle = subtitle }
+        let current = theme.theme(scene.app.preferences.appearance)
+        let launch = session.launch
+        let warning = session.isLive && !session.isShell ? launch.warning : nil
+        if let warning {
+            shieldItem.tintColor = current.uiDanger
+            if shieldItem.menu?.title != warning {
+                shieldItem.menu = UIMenu(title: warning, children: [
+                    UIDeferredMenuElement.uncached { [weak self] done in done(self?.permissionActions() ?? []) },
+                ])
+            }
+            shieldItem.accessibilityLabel = "Permissions, \(launch.mode?.name ?? "")"
+            shieldItem.accessibilityHint = warning
+        }
+        let items = warning == nil ? [menuItem] : [menuItem, shieldItem]
+        if navigationItem.rightBarButtonItems != items { navigationItem.rightBarButtonItems = items }
         // The live terminal fills the screen under a see-through bar: over a dark one its title
         // and buttons go light.
-        let palette = theme.theme(scene.app.preferences.appearance).palette
-        let overDarkTerminal = session.isLive && !(session.surface == .gui && session.hasGUI) && palette.terminal.isDark
+        let overDarkTerminal = session.isLive && !(session.surface == .gui && session.hasGUI) && current.palette.terminal.isDark
         if isViewLoaded, view.window != nil {
             navigationController?.navigationBar.overrideUserInterfaceStyle = overDarkTerminal ? .dark : .unspecified
         }
@@ -880,6 +896,20 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
                 session.panel = session.panel == panel ? nil : panel
             }
         }
+    }
+
+    /// The shield's menu: each permission mode with what it lets the agent do, the one in
+    /// force checked, and how a change applies.
+    private func permissionActions() -> [UIMenuElement] {
+        let launch = session.launch
+        let modes = (launch.preset?.modes ?? []).map { mode in
+            UIAction(title: mode.name, subtitle: mode.description, state: mode.id == launch.mode?.id ? .on : .off) { [weak self] _ in
+                guard let self, mode.id != session.launch.mode?.id else { return }
+                scene.applyPlan(session.planMode(mode.id), to: session)
+            }
+        }
+        let footer = UIAction(title: launch.footer(.mode), attributes: .disabled) { _ in }
+        return [UIMenu(options: .displayInline, children: modes), UIMenu(options: .displayInline, children: [footer])]
     }
 
     private func sessionActions() -> [UIMenuElement] {
