@@ -1064,7 +1064,7 @@ struct WorktreesView: View {
                 // Red by tint, not role: a destructive action swiped all the way is taken for
                 // the row's deletion, and the list aborts when the row is still there (it is,
                 // until the confirmation says).
-                Button("Remove", systemImage: "trash") { removing = tree }.tint(theme.danger)
+                Button("Remove", systemImage: "trash") { removing = tree }.tint(theme.swipe(\.danger))
             }
         }
         .contextMenu {

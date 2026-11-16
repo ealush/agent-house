@@ -95,7 +95,8 @@ struct Theme: Equatable, Sendable {
     /// A status word's color for UIKit text (a bar's subtitle); nil where it rests (idle).
     func uiStatus(_ word: StatusWord) -> UIColor? {
         switch word {
-        case .needsYou: return uiPair(\.brand)
+        // Words, so the accent (4.5:1 on the ground), not the brand pink a fill uses.
+        case .needsYou: return uiPair(\.accent)
         case .working: return uiPair(\.run)
         case .done, .newOutput: return uiPair(\.done)
         case .limited: return uiPair(\.limited)
@@ -121,6 +122,15 @@ struct Theme: Equatable, Sendable {
     var done: Color { pair(\.done) }
     var limited: Color { pair(\.limited) }
     var danger: Color { pair(\.danger) }
+
+    /// A swipe action's fill: the palette's color, deep enough for the system's white label
+    /// (`ThemePalette.underWhite`).
+    func swipe(_ key: KeyPath<ThemePalette, String>) -> Color {
+        if followsSystem {
+            return Color(uiColor: .dynamic(dark: ThemePalette.underWhite(ThemePalette.dark[keyPath: key]), light: ThemePalette.underWhite(ThemePalette.light[keyPath: key])))
+        }
+        return Color(uiColor: .cached(hex: ThemePalette.underWhite(palette[keyPath: key])))
+    }
 
     func status(_ word: StatusWord) -> Color {
         switch word {

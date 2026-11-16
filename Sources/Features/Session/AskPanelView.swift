@@ -11,7 +11,7 @@ struct AskSummaryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(parts.kind).font(.ah(.subheadline).weight(.semibold)).foregroundStyle(theme.brand)
+            Text(parts.kind).font(.ah(.subheadline).weight(.semibold)).foregroundStyle(theme.accent)
             // A screen in front of the prompt is read whole: its words are the instructions.
             if let gate = parts.gate {
                 GateTextView(lines: parts.gateLines, gate: gate)
@@ -176,7 +176,7 @@ struct AskPanelView: View {
                 let dialog = !review && ask.kind == .choice && questions.isEmpty ? ask.dialog : nil
                 if !compact {
                     if !questions.isEmpty || dialog != nil {
-                        Text(AskParts.kindLabel(ask.kind)).font(.ah(.subheadline).weight(.semibold)).foregroundStyle(theme.brand)
+                        Text(AskParts.kindLabel(ask.kind)).font(.ah(.subheadline).weight(.semibold)).foregroundStyle(theme.accent)
                     } else {
                         AskSummaryView(parts: parts)
                     }

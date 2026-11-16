@@ -476,7 +476,7 @@ struct ToolRowView: View {
                     if view.status == .running || view.status == .awaiting || view.status == .stopped {
                         Text(view.status == .awaiting ? "Waiting for you" : view.status == .stopped ? "No result" : "Running…")
                             .font(.ah(.caption2))
-                            .foregroundStyle(view.status == .awaiting ? theme.brand : theme.faint)
+                            .foregroundStyle(view.status == .awaiting ? theme.accent : theme.faint)
                     }
                     if view.truncated { Text("trimmed").font(.ah(.caption2)).foregroundStyle(theme.faint) }
                     Image(systemName: "chevron.right").font(.ah(.caption2)).foregroundStyle(theme.faint).rotationEffect(.degrees(open ? 90 : 0))
@@ -514,7 +514,9 @@ struct ToolRowView: View {
             case .running: Circle().strokeBorder(theme.run, lineWidth: 2).overlay { PulseRing(color: theme.run) }
             case .awaiting: Circle().fill(theme.brand)
             case .stopped: Circle().strokeBorder(theme.faint, lineWidth: 1.5)
-            case .error: Circle().fill(theme.danger)
+            // Failed has a shape of its own: red against green is the pair color blindness
+            // takes away.
+            case .error: Image(systemName: "xmark").font(.system(size: 7, weight: .black)).foregroundStyle(theme.danger).frame(width: 8, height: 8)
             case .done: Circle().fill(theme.done)
             }
         }

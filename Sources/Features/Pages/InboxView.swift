@@ -198,7 +198,7 @@ private struct AskCard: View {
             if let ask = row.dto.ask {
                 if AskParts.isForm(ask) {
                     // The form below says the question; the card only says what this is.
-                    Text(AskParts.kindLabel(ask.kind)).font(.ah(.subheadline).weight(.semibold)).foregroundStyle(theme.brand)
+                    Text(AskParts.kindLabel(ask.kind)).font(.ah(.subheadline).weight(.semibold)).foregroundStyle(theme.accent)
                 } else {
                     AskSummaryView(parts: AskParts(ask, detail: row.dto.detail), showTerminalText: false)
                 }
@@ -223,7 +223,7 @@ private struct ReviewAlertRow: View {
     var body: some View {
         Button(action: open) {
             HStack(spacing: 10) {
-                Image(systemName: "checkmark.seal").foregroundStyle(theme.brand)
+                Image(systemName: "checkmark.seal").foregroundStyle(theme.brand).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).font(.ah(.subheadline).weight(.semibold))
                     Text("\(alert.stackTitle) · #\(alert.pr) \(alert.title)").font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(1)
@@ -261,7 +261,7 @@ struct SessionRowView: View {
         if selectable {
             content.contentShape(Rectangle())
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("\(row.title), \(row.word.rawValue). \(detail)")
+                .accessibilityLabel(spoken)
                 .accessibilityIdentifier("session:\(row.title)")
                 .accessibilityAddTraits(.isButton)
         } else {
@@ -269,9 +269,22 @@ struct SessionRowView: View {
                 .buttonStyle(.plain)
                 .hoverEffect(.highlight)
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("\(row.title), \(row.word.rawValue). \(detail)")
+                .accessibilityLabel(spoken)
                 .accessibilityIdentifier("session:\(row.title)")
         }
+    }
+
+    /// Everything the row shows, in the order it matters: name, status, what's said, then
+    /// pinned, queued, a terminal, a fork, and when (the label replaced all of those).
+    private var spoken: String {
+        var parts = ["\(row.title), \(row.word.rawValue)"]
+        if !detail.isEmpty { parts.append(detail) }
+        if row.dto.pinned { parts.append("Pinned") }
+        if row.dto.queued > 0 { parts.append("\(row.dto.queued) queued") }
+        if let terminal = row.dto.terminal { parts.append(terminal.busy ? "Attached terminal active" : "Terminal attached") }
+        if let fork = row.dto.fork { parts.append(fork.parentTitle.isEmpty ? "\(fork.forks) fork\(fork.forks == 1 ? "" : "s")" : "Fork of \(fork.parentTitle)") }
+        parts.append(Elapsed.format(Date(timeIntervalSince1970: row.dto.activity), now: .now))
+        return parts.joined(separator: ". ")
     }
 
     @ViewBuilder
@@ -326,7 +339,7 @@ struct SessionRowView: View {
     private func titleLine(onAccent: Bool) -> some View {
         HStack(spacing: 6) {
             if row.dto.pinned { Image(systemName: "pin.fill").font(.ah(.caption2)).foregroundStyle(tertiary(onAccent)) }
-            Text(row.title).font(dense ? Font.ah(.body) : Font.ah(.body).weight(.medium)).foregroundStyle(primary(onAccent)).lineLimit(1)
+            Text(row.title).font(dense ? Font.ah(.body) : Font.ah(.body).weight(.medium)).foregroundStyle(primary(onAccent)).lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
             if let terminal = row.dto.terminal {
                 Image(systemName: "terminal")
                     .font(.ah(.caption2))
@@ -640,7 +653,7 @@ struct SessionSwipes: ViewModifier {
                     Image(systemName: row.dto.pinned ? "pin.slash" : "pin")
                 }
                 .accessibilityLabel(row.dto.pinned ? "Unpin" : "Pin")
-                .tint(theme.limited)
+                .tint(theme.swipe(\.limited))
             }
             .swipeActions(edge: .trailing) {
                 // A glyph alone: given a title too, the system draws the action as a wide pill
@@ -649,7 +662,7 @@ struct SessionSwipes: ViewModifier {
                 // and the list aborts when the row is still there (it is, until the sheet says).
                 Button { scene.sheet = .confirmTerminate(row.key) } label: { Image(systemName: "xmark.octagon") }
                     .accessibilityLabel("Terminate")
-                    .tint(theme.danger)
+                    .tint(theme.swipe(\.danger))
             }
     }
 }
@@ -730,7 +743,7 @@ struct HistoryRowView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 4) {
                         if item.dto.pinned { Image(systemName: "pin.fill").font(.ah(.caption2)).foregroundStyle(theme.faint) }
-                        Text(item.dto.title).lineLimit(1).foregroundStyle(theme.text)
+                        Text(item.dto.title).lineLimit(typeSize.isAccessibilitySize ? 3 : 1).foregroundStyle(theme.text)
                     }
                     Text([hub.multiHost ? item.host : nil, item.dto.project, item.dto.fork.map { "fork of \($0.parentTitle)" }, item.dto.continued.map { c in "↪\u{FE0E} from \(hub.presets(host: item.isLocal ? nil : item.host).first { $0.id == c.fromHarness }?.name ?? c.fromHarness)" }].compactMap { $0 }.joined(separator: " · "))
                         .font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(1)
@@ -744,13 +757,13 @@ struct HistoryRowView: View {
         .buttonStyle(.plain)
         .hoverEffect(.highlight)
         .swipeActions(edge: .leading) {
-            Button("Resume") { resume() }.tint(theme.done)
+            Button("Resume") { resume() }.tint(theme.swipe(\.done))
         }
         .swipeActions(edge: .trailing) {
             // Red by tint, not role, as a session's Terminate is: the row stays until the
             // host's list comes back without it.
             Button("Hide") { hide() }
-            .tint(theme.danger)
+            .tint(theme.swipe(\.danger))
         }
         .contextMenu {
             Button("Resume", systemImage: "play") { resume() }

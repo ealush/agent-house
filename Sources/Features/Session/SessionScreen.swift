@@ -123,10 +123,13 @@ struct SessionScreen: View {
         // One tap for what changed: it asks (a question that ends a turn isn't also "done"),
         // or it finished. Not when you stopped it, and not when the session went away.
         .onChange(of: session.row?.dto.status) { old, new in
+            // Said aloud too: with VoiceOver on, the pill changing colour said nothing.
             if new == .waiting {
                 Haptics.warning()
+                AccessibilityNotification.Announcement("\(session.title) needs you").post()
             } else if old == .busy, let new, new != .busy, !session.composer.stoppedLately {
                 Haptics.success()
+                AccessibilityNotification.Announcement("\(session.title) finished").post()
             }
         }
         .accessibilityElement(children: .contain)
@@ -226,6 +229,7 @@ private struct SessionHeader: View {
     var pane: LayoutNode.Path?
     var paneFocused = true
     @Environment(\.theme) private var theme
+    @Environment(\.dynamicTypeSize) private var typeSize
     @FocusState private var renameFocused: Bool
     /// The header's own width: a pane beside a panel, or a quarter of a split, is narrow.
     @State private var width: CGFloat = 1000
@@ -274,7 +278,7 @@ private struct SessionHeader: View {
                 } else {
                     Text(session.title)
                         .font(compact ? .ah(.subheadline).weight(.semibold) : .ah(.headline))
-                        .lineLimit(1)
+                        .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
                         .layoutPriority(1)
                         .accessibilityAddTraits(.isHeader)
                 }
@@ -546,7 +550,7 @@ private struct EndedBanner: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "moon.zzz").foregroundStyle(theme.muted)
+            Image(systemName: "moon.zzz").foregroundStyle(theme.muted).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text("This session has ended").font(.ah(.subheadline).weight(.semibold))
                 // A message resumes it only where there's a composer to send one from.
@@ -639,6 +643,8 @@ private struct NoticeStack: View {
                     }
                     .onTapGesture { session.dismiss(notice.id) }
                     .accessibilityAddTraits(.isStaticText)
+                    // Spoken as it comes, as the window's toasts are; it's gone in seconds.
+                    .onAppear { AccessibilityNotification.Announcement(notice.text).post() }
             }
         }
         .padding(.top, 60)
@@ -674,6 +680,7 @@ private extension View {
     /// A pane header's glyph button, big enough for a finger on an iPad: the bare glyph was
     /// a 22 by 17 point target.
     func headerGlyph() -> some View {
-        frame(minWidth: 30, minHeight: 30).contentShape(Rectangle())
+        // Drawn in 30 points, hit in the 44 a finger needs.
+        frame(minWidth: 30, minHeight: 30).contentShape(Rectangle()).touchTarget()
     }
 }

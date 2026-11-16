@@ -437,7 +437,7 @@ private struct FilesPanel: View {
         .accessibilityAddTraits(.isButton)
         .draggable(FilesModel.mention(path, shell: session.isShell, cwd: cwd).trimmingCharacters(in: .whitespaces))
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button { insert(path) } label: { Label("Mention", systemImage: "at") }.tint(theme.accent)
+            Button { insert(path) } label: { Label("Mention", systemImage: "at") }.tint(theme.swipe(\.accent))
         }
         .swipeActions(edge: .leading) {
             if entry.type == .file {
@@ -802,12 +802,12 @@ private struct QueuePanel: View {
                 }
                 .ahRow()
                 .swipeActions(edge: .leading) {
-                    Button("Send Now") { Task { await session.queue.steer(item) } }.tint(theme.limited)
+                    Button("Send Now") { Task { await session.queue.steer(item) } }.tint(theme.swipe(\.limited))
                 }
                 .swipeActions(edge: .trailing) {
                     // Red by tint, not role: the row is still there until the host says it's
                     // cancelled, and a list aborts when a row swiped away as deleted is not gone.
-                    Button("Remove") { Task { await session.queue.cancel(item) } }.tint(theme.danger)
+                    Button("Remove") { Task { await session.queue.cancel(item) } }.tint(theme.swipe(\.danger))
                     Button("Edit") {
                         Task { await session.queue.edit(item, into: session.composer) }
                     }

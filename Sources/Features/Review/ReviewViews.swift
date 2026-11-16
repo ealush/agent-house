@@ -41,7 +41,7 @@ struct ReviewHomeView: View {
                                     .font(.ah(.caption).weight(.semibold))
                                     .padding(.horizontal, 8).padding(.vertical, 3)
                                     .background(theme.brand.opacity(0.14), in: Capsule())
-                                    .foregroundStyle(theme.brand)
+                                    .foregroundStyle(theme.accent)
                             }
                         }
                         SpineBar(spine: stack.spine)
@@ -449,7 +449,7 @@ struct StackCockpitView: View {
                 ForEach(stack.decisions) { decision in
                     Text(decision.text).font(.ah(.callout))
                         // Red by tint, not role: the row stays until the host's stack comes back.
-                        .swipeActions { Button("Unpin") { Task { await model.removeDecision(decision.id) } }.tint(theme.danger) }
+                        .swipeActions { Button("Unpin") { Task { await model.removeDecision(decision.id) } }.tint(theme.swipe(\.danger)) }
                 }
                 HStack(spacing: 10) {
                     Image(systemName: "pin").foregroundStyle(theme.faint).accessibilityHidden(true)
@@ -625,7 +625,7 @@ private struct LayerRow: View {
                 Label(confidence.checksText, systemImage: checksSymbol(confidence.checks)).foregroundStyle(checksColor(confidence.checks))
                 if layer.blocking > 0 { Label("\(layer.blocking) blocking", systemImage: "exclamationmark.octagon").foregroundStyle(theme.danger) }
                 else if layer.open > 0 { Label("\(layer.open) open", systemImage: "flag").foregroundStyle(theme.muted) }
-                if confidence.review == .changedSinceReview { Label("changed", systemImage: "arrow.triangle.2.circlepath").foregroundStyle(theme.brand) }
+                if confidence.review == .changedSinceReview { Label("changed", systemImage: "arrow.triangle.2.circlepath").foregroundStyle(theme.accent) }
             }
             .font(.ah(.caption2))
         }

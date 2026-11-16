@@ -611,7 +611,9 @@ private struct KeyToggleStyle: ToggleStyle {
             configuration.label
         }
         .buttonStyle(KeyCapStyle(on: configuration.isOn, ink: ink))
-        .accessibilityAddTraits(configuration.isOn ? .isSelected : [])
+        // A switch that holds for the next key: VoiceOver says on or off, not "selected".
+        .accessibilityAddTraits(.isToggle)
+        .accessibilityValue(configuration.isOn ? "On" : "Off")
     }
 }
 
