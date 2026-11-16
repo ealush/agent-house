@@ -138,11 +138,11 @@ enum MenuCommands {
         // The ⌘ chord where there is one, as the menu bar and the ⌘-hold overlay expect.
         let chord = singles.first { $0.meta } ?? singles.first
         if let chord, command.field == nil {
-            let element = UIKeyCommand(title: command.label, image: image, action: action, input: chord.keyCommandInput, modifierFlags: chord.modifierFlags, propertyList: command.id.rawValue, alternates: [], discoverabilityTitle: command.detail, attributes: [], state: .off)
+            let element = UIKeyCommand(title: command.title, image: image, action: action, input: chord.keyCommandInput, modifierFlags: chord.modifierFlags, propertyList: command.id.rawValue, alternates: [], discoverabilityTitle: command.detail, attributes: [], state: .off)
             element.wantsPriorityOverSystemBehavior = command.scopes.contains(.field)
             return element
         }
-        return UICommand(title: command.label, image: image, action: action, propertyList: command.id.rawValue, alternates: [], discoverabilityTitle: command.detail, attributes: [], state: .off)
+        return UICommand(title: command.title, image: image, action: action, propertyList: command.id.rawValue, alternates: [], discoverabilityTitle: command.detail, attributes: [], state: .off)
     }
 
     /// Hidden key commands for the first key of every two-key chord, so a chord starts

@@ -24,7 +24,7 @@ private let ctrlK = Chord("k", ctrl: true)
     #expect(CommandMatcher.completeSequence(ctrlK, Chord("s"), scope: .app, bindings: bindings) == nil)
     #expect(KeyBindings(json: bindings.json()) == bindings, "stored with its second key")
     let legend = CommandMatcher.continuations(after: ctrlK, active: { _ in true }, bindings: bindings)
-    #expect(legend == [CommandMatcher.WhichKeyRow(id: "toggle-sidebar", label: "Toggle sidebar", key: "⌃S")])
+    #expect(legend == [CommandMatcher.WhichKeyRow(id: "toggle-sidebar", label: "Toggle Sidebar", key: "⌃S")], "named as a menu names it")
     let held = CommandMatcher.whichKey(ctrl: true, alt: false, shift: false, meta: false, active: { _ in true }, bindings: bindings)
     #expect(held.contains { $0.key == "K…" })
     // A bare second key is fine; Escape can't be one (it cancels).
@@ -208,3 +208,13 @@ private let ctrlK = Chord("k", ctrl: true)
     }
 }
 #endif
+
+@Test func commandsAreNamedAsMenusNameThem() {
+    #expect(TitleCase.apply("New session") == "New Session")
+    #expect(TitleCase.apply("Copy the agent's last reply") == "Copy the Agent's Last Reply")
+    #expect(TitleCase.apply("GUI or terminal") == "GUI or Terminal", "a word already in capitals stays as written")
+    #expect(TitleCase.apply("Hide / show steps") == "Hide / Show Steps")
+    #expect(TitleCase.apply("Send to…") == "Send To…", "a short word that ends the title is capitalized")
+    #expect(TitleCase.apply("Switch to the iPad layout") == "Switch to the iPad Layout")
+    #expect(CommandCatalog.all.allSatisfy { !$0.title.isEmpty })
+}

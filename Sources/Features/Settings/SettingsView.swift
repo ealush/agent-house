@@ -13,7 +13,7 @@ struct SettingsView: View {
         NavigationSplitView {
             List(selection: $section) {
                 Section("This device") {
-                    NavigationLink(value: SettingsSection.security) { SettingsRowLabel(section: .security, title: "Hosts and security") }
+                    NavigationLink(value: SettingsSection.security) { SettingsRowLabel(section: .security, title: "Hosts and Security") }
                 }
                 .ahRow(sizeClass == .compact)
                 Section("Agent Hub") {
@@ -32,9 +32,9 @@ struct SettingsView: View {
                 if let section, let account = scene.account {
                     SettingsDetail(section: section, scene: scene, account: account)
                 } else if scene.account == nil {
-                    EmptyState(symbol: "server.rack", title: "No host yet", message: "Add a host to manage its settings.")
+                    EmptyState(symbol: "server.rack", title: "No Host Yet", message: "Add a host to manage its settings.")
                 } else {
-                    EmptyState(symbol: "gearshape", title: "Pick a section", message: "")
+                    EmptyState(symbol: "gearshape", title: "Pick a Section", message: "")
                 }
             }
         }
@@ -125,7 +125,7 @@ private struct SettingsDetail: View {
             case .system: SystemSection(model: SystemSettings(api: account.api), scene: scene)
             }
         }
-        .navigationTitle(section == .security ? "Hosts and security" : section.title)
+        .navigationTitle(section == .security ? "Hosts and Security" : section.title)
         // A link straight to this section (the overflow menu), here or in the web app.
         .toolbar {
             ToolbarItemGroup(placement: .secondaryAction) {
@@ -174,12 +174,12 @@ private struct SecuritySection: View {
                         }
                     }
                 }
-                Button("Add a host…", systemImage: "plus") { scene.sheet = .setup }
+                Button("Add a Host…", systemImage: "plus") { scene.sheet = .setup }
             }
             Section {
                 LabeledContent("Enrolled as", value: account.account.label)
                 LabeledContent("Device ID", value: String(account.account.deviceId.prefix(12)))
-                Button("Lock now", systemImage: "lock") { Task { await account.lock() } }
+                Button("Lock Now", systemImage: "lock") { Task { await account.lock() } }
                 Button("Remove this device from \(account.hostname)…", systemImage: "trash", role: .destructive) { confirmRemove = true }
             } header: {
                 Text("This device on \(account.hostname)")
@@ -213,7 +213,7 @@ private struct SecuritySection: View {
                         }
                     }
                 }
-                Button(model.code == nil ? "Issue a setup code" : "Issue a new code", systemImage: "number") { Task { await model.newCode() } }
+                Button(model.code == nil ? "Issue a Setup Code" : "Issue a New Code", systemImage: "number") { Task { await model.newCode() } }
             } header: {
                 Text("Add another device")
             } footer: {
@@ -228,10 +228,10 @@ private struct SecuritySection: View {
                                 Text("\(signIn.via) · last seen \(Elapsed.format(Date(timeIntervalSince1970: signIn.lastSeenAt / 1000), now: .now))").font(.ah(.caption)).foregroundStyle(theme.muted)
                             }
                             Spacer()
-                            if !signIn.current { Button("Sign out") { Task { await model.revoke(signIn) } }.buttonStyle(.borderless) }
+                            if !signIn.current { Button("Sign Out") { Task { await model.revoke(signIn) } }.buttonStyle(.borderless) }
                         }
                     }
-                    Button("Sign out every other device", role: .destructive) { confirmOthers = true }
+                    Button("Sign Out Every Other Device", role: .destructive) { confirmOthers = true }
                 }
                 if let devices = overview.devices, !devices.isEmpty {
                     Section("Enrolled devices") {
@@ -269,7 +269,7 @@ private struct SecuritySection: View {
                             Button("Revoke", role: .destructive) { Task { await model.removeToken(token) } }.buttonStyle(.borderless)
                         }
                     }
-                    Button("New token…", systemImage: "key") { naming = true }
+                    Button("New Token…", systemImage: "key") { naming = true }
                 } header: {
                     Text("API tokens")
                 } footer: {
@@ -293,7 +293,7 @@ private struct SecuritySection: View {
                 }
             }
             Section {
-                Button("Clear prompt history", role: .destructive) { Task { await model.clearPrompts() } }
+                Button("Clear Prompt History", role: .destructive) { Task { await model.clearPrompts() } }
             }
         }
         .task { await model.load() }
@@ -402,7 +402,7 @@ private struct AppearanceSection: View {
             } header: {
                 Text("Reading")
             } footer: {
-                Text("Focus mode shows the conversation: your messages and the agent’s replies. Its steps and thinking stay out of the way until you tap the working line above the box, or Show Steps in the session’s menu. Anything it asks you always shows. New transcript lays the conversation out the new way, while it’s being tried.")
+                Text("Focus mode shows the conversation: your messages and the agent’s replies. Its steps and thinking stay out of the way until you tap the working line above the box, or Show Steps in the session’s menu. Anything it asks you always shows.")
             }
             Section("Sessions") {
                 Picker("Sort sessions", selection: $app.preferences.sessionSort) {
@@ -570,7 +570,7 @@ private struct ShortcutsSection: View {
                 Text(pressed != nil ? "Nothing is bound to those keys." : "No command matches.").foregroundStyle(theme.muted)
             }
             Section {
-                Button("Reset every shortcut", role: .destructive) { confirmReset = true }
+                Button("Reset Every Shortcut", role: .destructive) { confirmReset = true }
                     .disabled(app.keyBindings.modified.isEmpty)
             }
             }
@@ -913,6 +913,7 @@ private struct AgentsSection: View {
                     TextField("Resume command (optional)", text: $resume).font(.ahMono(.body)).textInputAutocapitalization(.never).autocorrectionDisabled()
                 }
                 .navigationTitle("Add an Agent")
+                .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { adding = false }.keyboardShortcut(.cancelAction).tint(.primary) }
                     ToolbarItem(placement: .confirmationAction) {
@@ -1036,7 +1037,7 @@ private struct SubscriptionEditor: View {
                     if !model.models.isEmpty {
                         Picker("Available", selection: $draft.model) { ForEach(model.models, id: \.self) { Text($0).tag($0) } }
                     }
-                    Button("Load the model list") { Task { await model.discoverModels(baseUrl: draft.baseUrl, apiKey: key.isEmpty ? nil : key, id: draft.id) } }
+                    Button("Load the Model List") { Task { await model.discoverModels(baseUrl: draft.baseUrl, apiKey: key.isEmpty ? nil : key, id: draft.id) } }
                 }
                 Section {
                     Toggle("Export the key to new sessions", isOn: Binding(get: { draft.envName != nil }, set: { on in
@@ -1048,6 +1049,7 @@ private struct SubscriptionEditor: View {
                 }
             }
             .navigationTitle(draft.id == nil ? "Add a Provider" : draft.name)
+            .navigationBarTitleDisplayMode(.inline)
             .onAppear { model.beginEditing() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: .cancel, action: close).keyboardShortcut(.cancelAction).tint(.primary) }
@@ -1102,7 +1104,7 @@ private struct EnvironmentSection: View {
                         }
                         .swipeActions { Button("Remove") { Task { await model.remove(v) } }.tint(theme.danger) }
                     }
-                    Button("Add a variable", systemImage: "plus") { editing = EnvVarDraft(name: "", value: "", secret: false) }
+                    Button("Add a Variable", systemImage: "plus") { editing = EnvVarDraft(name: "", value: "", secret: false) }
                 } footer: {
                     Text("Every new session window starts with these. Secret values never come back to this device.")
                 }
@@ -1126,7 +1128,7 @@ private struct EnvironmentSection: View {
                                 }
                             }
                         }
-                        if model.ready.count > 1 { Button("Restart all \(model.ready.count)") { Task { await model.restartAll() } } }
+                        if model.ready.count > 1 { Button("Restart All \(model.ready.count)") { Task { await model.restartAll() } } }
                     }
                 }
             } else {
@@ -1156,7 +1158,8 @@ private struct EnvEditor: View {
                 }
                 Toggle("Secret", isOn: $draft.secret)
             }
-            .navigationTitle(draft.original ?? "New variable")
+            .navigationTitle(draft.original ?? "New Variable")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: .cancel, action: close).keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .confirmationAction) {
@@ -1287,7 +1290,7 @@ private struct SystemSection: View {
                                 if let last = a.last { Text("Last miss: \(last.ask)").font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(2) }
                             }
                         }
-                        Button("Reset the audit") { Task { await model.resetAudit() } }
+                        Button("Reset the Audit") { Task { await model.resetAudit() } }
                     }
                 }
             }

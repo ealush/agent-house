@@ -879,7 +879,7 @@ struct UnavailableFeed: View {
         case "unreadable": "Its transcript couldn’t be read here. The terminal shows everything."
         default: "There’s no transcript for this session."
         }
-        EmptyState(symbol: "terminal", title: "No GUI for this session", message: message, action: ("Use the terminal", useTerminal))
+        EmptyState(symbol: "terminal", title: "No GUI for This Session", message: message, action: ("Use the Terminal", useTerminal))
     }
 }
 

@@ -607,9 +607,9 @@ private struct ChatPanel: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     if model.subscriptions.isEmpty {
-                        EmptyState(symbol: "key", title: "No chat model yet", message: "Add a subscription in Settings to discuss this work with another model, outside the agent’s context.", action: ("Open Settings", { scene.sheet = .settings(SettingsSection.subscriptions.rawValue) }))
+                        EmptyState(symbol: "key", title: "No Chat Model Yet", message: "Add a subscription in Settings to discuss this work with another model, outside the agent’s context.", action: ("Open Settings", { scene.sheet = .settings(SettingsSection.subscriptions.rawValue) }))
                     } else if model.messages.isEmpty && !model.sending {
-                        EmptyState(symbol: "bubble.left.and.text.bubble.right", title: "Ask about this change", message: "A review, an explanation, or a plan. Nothing here reaches the agent unless you send it over.")
+                        EmptyState(symbol: "bubble.left.and.text.bubble.right", title: "Ask About This Change", message: "A review, an explanation, or a plan. Nothing here reaches the agent unless you send it over.")
                             .padding(.top, 40)
                     }
                     ForEach(Array(model.messages.enumerated()), id: \.offset) { _, message in
@@ -720,13 +720,13 @@ private struct PastChatsView: View {
                     .ahRow()
                 }
                 if chats.isEmpty && error == nil {
-                    EmptyState(symbol: "bubble.left.and.text.bubble.right", title: query.isEmpty ? "No side chats yet" : "Nothing matches", message: "Side chats you’ve had about this session’s changes show here.")
+                    EmptyState(symbol: "bubble.left.and.text.bubble.right", title: query.isEmpty ? "No Side Chats Yet" : "No Results", message: query.isEmpty ? "Side chats you’ve had about this session’s changes show here." : "No side chat matches “\(query.trimmingCharacters(in: .whitespaces))”.")
                         .listRowBackground(Color.clear)
                 }
             }
             .ahFormGround()
             .searchable(text: $query)
-            .navigationTitle("Past chats")
+            .navigationTitle("Past Chats")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) } }
             .task(id: query) {
@@ -770,7 +770,7 @@ private struct QueuePanel: View {
     var body: some View {
         List {
             if session.queue.items.isEmpty {
-                EmptyState(symbol: "text.line.last.and.arrowtriangle.forward", title: "Nothing queued", message: "Messages you send while the agent works wait here, in order. Drag to reorder, or send one now to stop the turn and go first.")
+                EmptyState(symbol: "text.line.last.and.arrowtriangle.forward", title: "Nothing Queued", message: "Messages you send while the agent works wait here, in order. Drag to reorder, or send one now to stop the turn and go first.")
                     .listRowBackground(Color.clear)
             }
             ForEach(session.queue.items) { item in
@@ -1144,7 +1144,7 @@ private struct PreviewPanel: View {
                     picker(info)
                 }
             } else if let error = model.error {
-                ContentUnavailableView("Can’t reach the preview", systemImage: "exclamationmark.triangle", description: Text(error))
+                ContentUnavailableView("Can’t Reach the Preview", systemImage: "exclamationmark.triangle", description: Text(error))
             } else {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -1392,7 +1392,7 @@ private struct StackPanel: View {
                     .ahRow()
                 }
                 if stack.branches.isEmpty {
-                    EmptyState(symbol: "square.stack.3d.up", title: "Not a stack", message: "\(session.row?.dto.branch ?? "This branch") isn’t part of a stack. When the agent stacks branches with gh stack, they show here bottom to top, with their pull requests and checks.")
+                    EmptyState(symbol: "square.stack.3d.up", title: "Not a Stack", message: "\(session.row?.dto.branch ?? "This branch") isn’t part of a stack. When the agent stacks branches with gh stack, they show here bottom to top, with their pull requests and checks.")
                         .listRowBackground(Color.clear)
                 } else {
                 Section("Bottom to top, onto \(stack.trunk)") {

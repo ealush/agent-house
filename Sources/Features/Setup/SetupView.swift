@@ -78,7 +78,7 @@ struct SetupView: View {
                 } header: {
                     Text("Setup code")
                 } footer: {
-                    Text("On a device that’s already signed in: Settings → Security → Issue a setup code. On the host itself: `ah auth code`.")
+                    Text("On a device that’s already signed in: Settings → Hosts and Security → Issue a Setup Code. On the host itself: `ah auth code`.")
                 }
                 Section("This device’s name") {
                     TextField("Name", text: $label)
@@ -121,7 +121,7 @@ struct SetupView: View {
             // ah's ground and cards from the first screen on, not the system's black and grey.
             .scrollContentBackground(.hidden)
             .background(theme.background.ignoresSafeArea())
-            .navigationTitle(app.accounts.isEmpty ? "" : "Add a host")
+            .navigationTitle(app.accounts.isEmpty ? "" : "Add a Host")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if !app.accounts.isEmpty {

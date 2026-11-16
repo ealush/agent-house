@@ -581,7 +581,7 @@ struct ShortcutsView: View {
                                 HStack(spacing: 10) {
                                     Image(systemName: CommandCatalog.icon(c.id)).frame(width: 22).foregroundStyle(theme.muted)
                                     VStack(alignment: .leading, spacing: 1) {
-                                        Text(c.label).foregroundStyle(scene.isAvailable(c.id) ? theme.text : theme.faint)
+                                        Text(c.title).foregroundStyle(scene.isAvailable(c.id) ? theme.text : theme.faint)
                                         Text(CommandCatalog.whenLabel(c.id)).font(.ah(.caption2)).foregroundStyle(theme.faint)
                                     }
                                     Spacer()
@@ -605,7 +605,7 @@ struct ShortcutsView: View {
             }
             .ahFormGround()
             .searchable(text: $query, prompt: "Name or keys, like “ctrl shift p”")
-            .navigationTitle("Keyboard shortcuts")
+            .navigationTitle("Keyboard Shortcuts")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: .close) { scene.showingShortcuts = false }.keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .primaryAction) { Button("Edit…") { scene.showingShortcuts = false; scene.sheet = .settings(SettingsSection.shortcuts.rawValue) } }

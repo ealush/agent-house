@@ -26,4 +26,7 @@ private func row(_ status: String, reply: [String: Any]? = nil, detail: String? 
     #expect(SessionSnippet.line(try row("busy", detail: "Reading users.ts")) == "Reading users.ts")
     #expect(SessionSnippet.line(try row("idle", detail: "$ git push -q mac origin/main")) == nil)
     #expect(try row("idle", reply: ["role": 7]).reply == nil, "a reply it can't read is left out, not the session")
+    // A reply whose first line leads into a list trails off in the row, not on a colon.
+    #expect(SessionSnippet.line(try row("idle", reply: ["role": "assistant", "text": "Two findings worth fixing first:", "at": 3])) == "Two findings worth fixing first…")
+    #expect(SessionSnippet.ending("Ratio 3:2") == "Ratio 3:2", "a colon inside the line stays")
 }

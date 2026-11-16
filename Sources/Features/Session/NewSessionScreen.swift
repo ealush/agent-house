@@ -340,7 +340,7 @@ struct NewSessionScreen: View {
             .glassEffect(.regular.interactive(), in: Circle())
             .accessibilityLabel("Close New Session")
             VStack(alignment: .leading, spacing: 1) {
-                Text("New session").font(.ah(.headline))
+                Text("New Session").font(.ah(.headline))
                 Text(place).font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(1)
             }
             Spacer(minLength: 0)
@@ -774,7 +774,7 @@ struct NewSessionMore: View {
                     .disabled(!draft.canStart)
                 }
             }
-            .navigationTitle("New session")
+            .navigationTitle("New Session")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
@@ -813,7 +813,7 @@ final class NewSessionHostController: UIHostingController<Themed<NewSessionScree
         super.init(rootView: Themed(app: root.scene.app, theme: root.theme) { NewSessionScreen(draft: draft, scene: root.scene, inNavigationBar: true) })
         navigationItem.largeTitleDisplayMode = .never
         navigationItem.backButtonDisplayMode = .minimal
-        navigationItem.title = "New session"
+        navigationItem.title = "New Session"
         hidesBottomBarWhenPushed = true
     }
 

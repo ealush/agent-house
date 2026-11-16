@@ -77,7 +77,7 @@ struct StackManageSheet: View {
                 }
                 if stack.source != "native" {
                     Section {
-                        Button("Make it a GitHub stack") { Task { await model.link() } }
+                        Button("Make It a GitHub Stack") { Task { await model.link() } }
                             .disabled(stack.link?.ok == false)
                         if let why = stack.link?.why { Text(why).font(.ah(.caption)).foregroundStyle(theme.muted) }
                     } footer: {
@@ -85,13 +85,13 @@ struct StackManageSheet: View {
                     }
                 }
                 Section {
-                    Button("Delete this review", role: .destructive) { confirmDelete = true }
+                    Button("Delete This Review", role: .destructive) { confirmDelete = true }
                 } footer: {
                     Text("Only the review goes: PRs, branches and findings on GitHub stay.")
                 }
             }
             .environment(\.editMode, .constant(.active))
-            .navigationTitle("Manage stack")
+            .navigationTitle("Manage Stack")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(role: .close) { dismiss() }.tint(.primary) } }
             .task { owners = await model.owners() }
@@ -160,7 +160,7 @@ struct ResolveThreadSheet: View {
                 Section("Thread") { Text(finding.title).font(.ah(.callout)) }
                 Section("Your reply") { TextEditor(text: $reply).frame(minHeight: 120) }
             }
-            .navigationTitle("Reply and resolve")
+            .navigationTitle("Reply and Resolve")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) }

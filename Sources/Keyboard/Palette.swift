@@ -126,7 +126,7 @@ enum PaletteTree {
             switch spec {
             case .command(let id):
                 guard id != "command-palette", active(id), let command = CommandCatalog.command(id) else { return [] }
-                return [PaletteNode(key: id.rawValue, label: command.label, icon: CommandCatalog.icon(id), detail: command.detail, terms: command.terms, action: .command(id))]
+                return [PaletteNode(key: id.rawValue, label: command.title, icon: CommandCatalog.icon(id), detail: command.detail, terms: command.terms, action: .command(id))]
             case .provider(let provider):
                 return provide(provider)
             case .category(let key, let label, let icon, let detail, let terms, let children):

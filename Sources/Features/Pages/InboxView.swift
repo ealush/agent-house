@@ -110,7 +110,7 @@ struct InboxView: View {
                 }
             } else if hub.rows.isEmpty {
                 Section {
-                    EmptyState(symbol: "tray", title: "No sessions running", message: "Start one, or pick up where you left off.", action: ("New Session", { scene.perform("new-session") }))
+                    EmptyState(symbol: "tray", title: "No Sessions Running", message: "Start one, or pick up where you left off.", action: ("New Session", { scene.perform("new-session") }))
                         .listRowBackground(Color.clear)
                 }
                 let recent = Array(hub.history.prefix(3))
@@ -285,7 +285,7 @@ struct SessionRowView: View {
                 AgentMark(agent: row.dto.agent)
                 VStack(alignment: .leading, spacing: 2) {
                     titleLine(onAccent: onAccent)
-                    Text(detail).font(.ah(.caption)).foregroundStyle(secondary(onAccent)).lineLimit(stacked ? 2 : 1)
+                    Text(AskParts.keepingPaths(detail)).font(.ah(.caption)).foregroundStyle(secondary(onAccent)).lineLimit(stacked ? 2 : 1)
                     if stacked { status(onAccent: onAccent, compact: false) }
                 }
                 // The title takes the room first; the status keeps its own size beside it.
@@ -310,7 +310,7 @@ struct SessionRowView: View {
                     }
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         // Two lines, as a chat list shows a conversation's last message.
-                        Text(detail.isEmpty ? " " : detail).font(.ah(.footnote)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.muted).lineLimit(2)
+                        Text(detail.isEmpty ? " " : AskParts.keepingPaths(detail)).font(.ah(.footnote)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.muted).lineLimit(2)
                         Spacer(minLength: 6)
                         if row.dto.queued > 0 {
                             Text("\(row.dto.queued) queued").font(.ah(.caption2)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint)
@@ -551,7 +551,7 @@ struct SessionListView: View {
             if hub.awaitingState {
                 ForEach(0..<3, id: \.self) { index in SessionRowPlaceholder(title: [0.62, 0.45, 0.7][index]).ahRow(!showsPages) }
             } else if hub.rows.isEmpty {
-                EmptyState(symbol: "terminal", title: "No sessions", message: "Start one with New Session.", action: ("New Session", { scene.perform("new-session") }))
+                EmptyState(symbol: "terminal", title: "No Sessions", message: "The sessions you start show up here, grouped by project.", action: ("New Session", { scene.perform("new-session") }))
                     .listRowBackground(Color.clear)
             }
         }
@@ -681,7 +681,7 @@ struct HistoryView: View {
                 // Still asking the host: not "No history yet" for the second that takes.
                 ProgressView().frame(maxWidth: .infinity).listRowBackground(Color.clear)
             } else if rows.isEmpty {
-                EmptyState(symbol: "clock", title: scene.historyFilter.isEmpty ? "No history yet" : "Nothing matches", message: "Ended and past conversations appear here.")
+                EmptyState(symbol: scene.historyFilter.isEmpty ? "clock" : "magnifyingglass", title: scene.historyFilter.isEmpty ? "No History Yet" : "No Results", message: scene.historyFilter.isEmpty ? "Ended and past conversations appear here." : "No conversation in History matches “\(scene.historyFilter.trimmingCharacters(in: .whitespaces))”.")
                     .listRowBackground(Color.clear)
             }
             ForEach(days, id: \.day) { day in
@@ -896,11 +896,11 @@ struct SearchView: View {
                     .ahRow()
                 }
                 if response.results.count < response.total {
-                    Button("More results") { Task { await model.more() } }
+                    Button("More Results") { Task { await model.more() } }
                         .ahRow()
                 }
                 if response.results.isEmpty && response.enabled && !model.searching {
-                    EmptyState(symbol: "magnifyingglass", title: "No matches", message: "Nothing said “\(model.query.q.trimmingCharacters(in: .whitespaces))”. Try fewer or different words.")
+                    EmptyState(symbol: "magnifyingglass", title: "No Results", message: "Nothing said “\(model.query.q.trimmingCharacters(in: .whitespaces))”. Try fewer or different words.")
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
                 }
@@ -908,7 +908,7 @@ struct SearchView: View {
                 ProgressView().frame(maxWidth: .infinity).padding(.top, 24).listRowBackground(Color.clear)
             } else if model.query.q.trimmingCharacters(in: .whitespaces).isEmpty {
                 // Before a word is typed: what this searches, not a blank page.
-                EmptyState(symbol: "text.magnifyingglass", title: "Search every conversation", message: "What you and your agents said, in transcripts and side chats, on every host.")
+                EmptyState(symbol: "text.magnifyingglass", title: "Search Every Conversation", message: "What you and your agents said, in transcripts and side chats, on every host.")
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
             }
@@ -917,7 +917,7 @@ struct SearchView: View {
         // The chips sit under the field and its scopes as one set of controls, not a
         // grouped list's first section away.
         .contentMargins(.top, 6, for: .scrollContent)
-        .searchable(text: $model.query.q, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search every conversation")
+        .searchable(text: $model.query.q, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search")
         .searchFocused($fieldFocused)
         .searchScopes($model.query.scopeOrAll) {
             Text("All").tag("all")

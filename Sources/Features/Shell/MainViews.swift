@@ -435,7 +435,7 @@ private struct PaneView: View {
             } else if let session = scene.session(tile.sessionKey) {
                 SessionScreen(session: session, scene: scene, paneFocused: focused, compactHeader: tile.box.w < 0.5 || tile.box.h < 0.5, pane: tile.path)
             } else {
-                EmptyState(symbol: "questionmark.square.dashed", title: "Session ended", message: "Pick another for this pane.")
+                EmptyState(symbol: "questionmark.square.dashed", title: "Session Ended", message: "Pick another for this pane.")
             }
         }
         .background(theme.surface)

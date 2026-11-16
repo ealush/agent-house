@@ -1235,7 +1235,7 @@ final class SceneModel {
     var handoff: Handoff? {
         guard let account, account.status == .signedIn, let hub else { return nil }
         if let key = workspace.focusedKey ?? { if case .session(let k) = route { return k } else { return nil } }() {
-            let title = key == Self.newSessionKey ? "New session" : hub.slot(key).row?.title ?? hub.history.first { $0.id == key }?.dto.title ?? "Session"
+            let title = key == Self.newSessionKey ? "New Session" : hub.slot(key).row?.title ?? hub.history.first { $0.id == key }?.dto.title ?? "Session"
             return Handoff(origin: account.origin, route: .session(key), title: title)
         }
         let titles: [String: String] = ["sessions": "Sessions", "history": "History", "search": "Search", "settings": "Settings"]

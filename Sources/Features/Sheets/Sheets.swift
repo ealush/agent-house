@@ -35,7 +35,7 @@ struct SceneSheet: View {
             content(session)
         } else {
             NavigationStack {
-                EmptyState(symbol: "questionmark.square.dashed", title: "That session is gone", message: "It ended or moved while this was opening.")
+                EmptyState(symbol: "questionmark.square.dashed", title: "That Session Is Gone", message: "It ended or moved while this was opening.")
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .close) { scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) } }
             }
         }
@@ -482,7 +482,7 @@ struct ForksSheet: View {
         NavigationStack {
             List {
                 if lines.isEmpty {
-                    ContentUnavailableView("No forks", systemImage: "arrow.branch", description: Text("Fork this session to try another approach on its own branch."))
+                    ContentUnavailableView("No Forks", systemImage: "arrow.branch", description: Text("Fork this session to try another approach on its own branch."))
                 }
                 ForEach(lines) { line in
                     HStack(spacing: 12) {
@@ -777,7 +777,7 @@ struct SendToSheet: View {
                 }
             }
             // An ellipsis is for the menu item that opens this, not the title of what it opened.
-            .navigationTitle("Send to a session")
+            .navigationTitle("Send To")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) }
@@ -918,7 +918,7 @@ struct BranchSheet: View {
             .onSubmit(of: .search) {
                 if let first = model.branches.map(rows)?.first(where: { !$0.current && $0.worktree == nil }), created == nil { switchTo(first.name) } else if let created { switchTo(created) }
             }
-            .navigationTitle("Switch branch")
+            .navigationTitle("Switch Branch")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) } }
             .task { await model.loadBranches() }
@@ -966,7 +966,7 @@ struct WorktreesView: View {
                 }
                 let sections = model.sections
                 if model.trees.isEmpty && model.error == nil {
-                    ContentUnavailableView("No worktrees", systemImage: "square.on.square.dashed", description: Text("Start a session with “Its own worktree” to give an agent a branch and checkout of its own."))
+                    ContentUnavailableView("No Worktrees", systemImage: "square.on.square.dashed", description: Text("Start a session with “Its own worktree” to give an agent a branch and checkout of its own."))
                 }
                 if !sections.inUse.isEmpty {
                     Section("In use") { ForEach(sections.inUse) { row($0) } }
@@ -1306,7 +1306,7 @@ struct LaunchPickerSheet: View {
                 .ahRow()
             }
             .ahFormGround()
-            .navigationTitle(setting == .model ? "Model" : "Reasoning effort")
+            .navigationTitle(setting == .model ? "Model" : "Reasoning Effort")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) } }
         }
