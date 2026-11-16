@@ -523,7 +523,7 @@ function firstLine(s: string): string {
 }
 
 /** A provider's error body as words: its JSON error's message (OpenAI, Anthropic, Gemini), else its first line. */
-function providerMessage(body: string): string {
+export function providerMessage(body: string): string {
   try {
     const j = JSON.parse(body) as { error?: { message?: unknown } | unknown; message?: unknown };
     const e = j.error as { message?: unknown } | undefined;
@@ -612,9 +612,9 @@ export class SideChatStore {
    * The chat models an endpoint offers (GET {baseUrl}/models), newest first,
    * for the form to pick from. With no key typed, a saved subscription's key
    * is used, but only at the URL it was saved with: a stored key never goes to
-   * a new host.
+   * a new host. `pick` chooses from the listed rows (Voice lists speech models).
    */
-  async models(input: { baseUrl: string; apiKey?: string; id?: string }): Promise<string[]> {
+  async models(input: { baseUrl: string; apiKey?: string; id?: string }, pick: (rows: unknown[]) => string[] = chatModels): Promise<string[]> {
     const baseUrl = input.baseUrl.trim().replace(/\/+$/, '');
     if (!/^https?:\/\/[^/]+/.test(baseUrl)) throw new SideChatError(400, 'base URL must be http(s)');
     let apiKey = input.apiKey ?? '';
@@ -646,7 +646,7 @@ export class SideChatStore {
     } catch {
       throw new SideChatError(502, 'provider returned invalid JSON');
     }
-    return chatModels(Array.isArray(data.data) ? data.data : []);
+    return pick(Array.isArray(data.data) ? data.data : []);
   }
 
   /** A session variable name no other subscription or saved variable already uses; null for ''. */
@@ -930,6 +930,19 @@ export class SideChatStore {
     ]);
     const saved = await this.db.chatMessage.findFirst({ where: { uid }, orderBy: { id: 'desc' }, select: { id: true } });
     return { message: { role: 'assistant', text: answer, at, id: saved?.id }, followups };
+  }
+
+  /** One plain completion: no tools, no history (dictation's cleanup). */
+  async once(sub: Subscription, system: string, user: string, timeoutMs: number): Promise<string> {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const { content } = await this.complete(sub, [{ role: 'system', content: system }, { role: 'user', content: user }], null, ctrl.signal);
+      if (typeof content !== 'string') throw new SideChatError(502, 'chat provider returned an empty reply');
+      return content.trim();
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /**

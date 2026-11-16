@@ -135,6 +135,9 @@ to terminal rules and output activity, and matches live agents to their transcri
 - **Continue in another agent.** Carry a conversation from Claude Code to Codex and back
   (or any other agent): the host says first what carries over and what doesn't, copies
   natively where the agent's own history can hold it, and keeps the lineage.
+- **Voice.** Dictate into the composer from the native app: a speech subscription on the
+  host (Groq, OpenAI) writes down what you said, a chat subscription can tidy it into what
+  you meant, and with no speech key the phone transcribes on the device. It never sends.
 - **Phone-first touches.** Bottom tabs, big targets, key row with one-tap Ctrl/Alt/Shift
   and clipboard Paste, swipe to scroll tmux, dictation-friendly composer, scrollback as
   selectable text. Shift+Enter sends multiline input; pasted screenshots upload to the host.

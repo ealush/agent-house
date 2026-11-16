@@ -52,7 +52,7 @@ Review's briefings, Send to — shows the one in use in the same menu and can
 switch it; a side chat or thread keeps its pick, briefings and re-checks share
 one choice (also here).
 
-A new one starts from a provider — Claude, OpenAI, Gemini, Muse — that fills in
+A new one starts from a provider — Claude, OpenAI, Gemini, Muse, Groq — that fills in
 its endpoint, name and a model and links to where keys are made; **Other** takes
 any OpenAI-compatible URL. Once a key is in, Model lists the endpoint's chat
 models to pick from (a saved key is only sent to its own URL); one can still be

@@ -36,6 +36,7 @@ import { listeningPorts } from './procs.ts';
 import * as t from './tmux.ts';
 import { createWorktree, initRepo, changes, listBranches, switchBranch, pullRequest, GitError } from './git.ts';
 import { SideChatStore, SideChatError, changeContext } from './sidechat.ts';
+import { VoiceService, MAX_AUDIO_BYTES } from './voice.ts';
 import { ensureClient, ensureMigrated, getDb } from './db.ts';
 import { importLegacyJson } from './migrate.ts';
 import { FsError, dirStatus, list, makeDir, receive, sendFile, setRoots, roots, clearUploadDir, safePath } from './files.ts';
@@ -44,7 +45,7 @@ import { SearchIndexer, combineResponses, type SearchParams } from './search.ts'
 import { Auth, AuthError, clearCookies, type Caller } from './auth.ts';
 import { Gate, LOOPBACK_BIND, servedAt } from './gate.ts';
 import { Apns, ApnsError } from './apns.ts';
-import { HttpError, send, readJson, str, safeDecode } from './http.ts';
+import { HttpError, send, readBody, readJson, str, safeDecode } from './http.ts';
 import { admit, declaredLength, streamToFile, sweepParts, UploadError } from './uploads.ts';
 import { rebuildFailure, rebuildWeb } from './rebuild.ts';
 import { slashCommands, projectFiles } from './complete.ts';
@@ -119,6 +120,7 @@ core.harnesses = new Harnesses();
 core.applyHarnesses();
 const drafts = new Drafts();
 const sidechat = new SideChatStore();
+const voice = new VoiceService(sidechat);
 const envStore = new EnvStore();
 core.launchEnv = () => envStore.forLaunch();
 const terminals = new AttachedTerminals(core.registry, () => core.launchEnv());
@@ -1412,6 +1414,47 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     await sidechat.setDefault(id);
     audit(req, 'subscription.default', { id });
     return send(res, 200, { ok: true });
+  }
+
+  // ---------- voice dictation (docs/spec/14-voice.md): speech and cleanup through
+  // subscriptions; the text only fills a composer. Neither audio nor text is logged.
+
+  if (route('GET', /^\/api\/voice$/)) return send(res, 200, await voice.settings());
+
+  if (route('PUT', /^\/api\/voice$/)) {
+    const out = await voice.update(await readJson(req));
+    audit(req, 'voice.settings', { speech: out.speech?.name ?? null, cleanup: out.cleanup?.name ?? null, style: out.style });
+    return send(res, 200, out);
+  }
+
+  if (route('POST', /^\/api\/voice\/models$/)) {
+    const models = await voice.models(str((await readJson(req)).subscriptionId, 'subscriptionId', 40));
+    return send(res, 200, { models });
+  }
+
+  if (route('POST', /^\/api\/voice\/dictate$/)) {
+    const declared = Number(req.headers['content-length']);
+    if (declared > MAX_AUDIO_BYTES) throw new HttpError(413, 'recording too large', 'voice_too_large');
+    let audio: Buffer;
+    try {
+      audio = await readBody(req, MAX_AUDIO_BYTES);
+    } catch (err) {
+      if (err instanceof HttpError && err.status === 413) throw new HttpError(413, 'recording too large', 'voice_too_large');
+      throw err;
+    }
+    const q = url.searchParams;
+    const out = await voice.dictate(audio, { name: q.get('name'), style: q.get('style'), language: q.get('language') });
+    audit(req, 'voice.dictate', { bytes: audio.length, speech: out.speech, cleanedBy: out.cleanedBy, ...(out.cleanupError ? { cleanupFailed: true } : {}) });
+    return send(res, 200, out);
+  }
+
+  if (route('POST', /^\/api\/voice\/refine$/)) {
+    const body = await readJson(req);
+    const text = str(body.text ?? '', 'text', 24_000).trim();
+    if (!text) throw new HttpError(400, 'text required');
+    const out = await voice.refine(text, body.style);
+    audit(req, 'voice.refine', { chars: text.length, cleanedBy: out.cleanedBy });
+    return send(res, 200, out);
   }
 
   // ---------- session environment (Settings → Environment)

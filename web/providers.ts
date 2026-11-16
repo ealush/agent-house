@@ -7,6 +7,8 @@
 // - OpenAI: developers.openai.com/api/docs/models
 // - Gemini: ai.google.dev/gemini-api/docs/openai
 // - Muse: dev.meta.ai/docs/quickstart (Meta Model API)
+// - Groq: console.groq.com/docs/models (checked 2026-11-16); also speech to text
+//   (whisper-large-v3-turbo) for Voice, docs/spec/14-voice.md
 
 export type Provider = {
   id: string;
@@ -59,6 +61,16 @@ export const PROVIDERS: Provider[] = [
     keyUrl: 'https://dev.meta.ai',
     envName: 'MODEL_API_KEY',
   },
+  {
+    id: 'groq',
+    name: 'Groq',
+    // No mark of its own: the globe, as Other has.
+    logo: '',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    model: 'openai/gpt-oss-120b',
+    keyUrl: 'https://console.groq.com/keys',
+    envName: 'GROQ_API_KEY',
+  },
 ];
 
 /** "Other": any OpenAI-compatible endpoint, typed in. */
@@ -102,7 +114,7 @@ export function switchProvider(form: Form, to: string): Form {
  */
 export function logoFor(baseUrl: string, model: string): string | null {
   const p = PROVIDERS.find((x) => x.id === providerFor(baseUrl));
-  if (p) return p.logo;
+  if (p) return p.logo || null;
   const m = model.toLowerCase();
   if (m.includes('claude')) return 'claude';
   if (m.includes('gemini')) return 'gemini';

@@ -5,7 +5,7 @@ import { blank, logoFor, OTHER, PROVIDERS, providerFor, switchProvider } from '.
 test('the common providers are there, each a full OpenAI-compatible setup', () => {
   assert.deepEqual(
     PROVIDERS.map((p) => p.id),
-    ['claude', 'openai', 'gemini', 'muse'],
+    ['claude', 'openai', 'gemini', 'muse', 'groq'],
   );
   for (const p of PROVIDERS) {
     assert.match(p.baseUrl, /^https:\/\/[^/]+\/.+[^/]$/, `${p.id}: https, a path, no trailing slash`);
@@ -36,6 +36,8 @@ test('a saved endpoint maps back to its provider', () => {
   assert.equal(providerFor('https://api.openai.com/v1/'), 'openai');
   assert.equal(providerFor('HTTPS://api.meta.ai/v1'), 'muse');
   assert.equal(providerFor('http://localhost:11434/v1'), OTHER);
+  assert.equal(providerFor('https://api.groq.com/openai/v1'), 'groq');
+  assert.equal(logoFor('https://api.groq.com/openai/v1', 'openai/gpt-oss-120b'), null, 'no mark of its own: the globe');
 });
 
 test('a subscription shows its provider mark, or the one its model names', () => {

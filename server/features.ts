@@ -33,6 +33,8 @@ export const FEATURES: Record<string, number> = {
   activityPush: 1,
   /** Sessions cut off by a tmux server stop, a host restart or a closed window: history's `interrupted`, state `interruptions`, /api/interruptions (server/interruptions). */
   interruptions: 1,
+  /** /api/voice: dictation through a speech subscription, cleanup by a chat one, the Voice settings (server/voice.ts, docs/spec/14-voice.md). */
+  voice: 1,
 };
 
 export function features(): Record<string, number> {
