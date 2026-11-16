@@ -1476,7 +1476,7 @@ struct QueueTrayView: View {
                     Button { Task { await queue.edit(item, into: composer) } } label: { queueGlyph("pencil") }
                         .accessibilityLabel("Edit")
                     Button(role: .destructive) { Task { await queue.cancel(item) } } label: { queueGlyph("xmark") }
-                        .accessibilityLabel("Cancel")
+                        .accessibilityLabel("Remove")
                 }
                 .buttonStyle(.ahPress)
                 .font(.ah(.callout))
@@ -1495,7 +1495,7 @@ struct QueueTrayView: View {
             if index > 0 { Button("Move Up", systemImage: "arrow.up") { Task { await queue.move(item.id, to: index - 1) } } }
             if index < queue.items.count - 1 { Button("Move Down", systemImage: "arrow.down") { Task { await queue.move(item.id, to: index + 1) } } }
             Divider()
-            Button("Cancel", systemImage: "xmark", role: .destructive) { Task { await queue.cancel(item) } }
+            Button("Remove", systemImage: "xmark", role: .destructive) { Task { await queue.cancel(item) } }
         }
         .draggable(item.id) {
             Text(Uploads.summary(item.text)).padding(8).background(theme.raised, in: RoundedRectangle(cornerRadius: 10))

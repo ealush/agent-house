@@ -591,6 +591,7 @@ private struct ChatPanel: View {
     @Environment(\.theme) private var theme
     @State private var draft = ""
     @State private var browsing = false
+    @State private var confirmClear = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -598,8 +599,8 @@ private struct ChatPanel: View {
             HStack {
                 Text("Side chat").font(.ah(.caption).weight(.semibold)).foregroundStyle(theme.muted)
                 Spacer()
-                Button { browsing = true } label: { Image(systemName: "clock.arrow.circlepath") }.accessibilityLabel("Past chats")
-                Button { Task { await model.clear() } } label: { Image(systemName: "trash") }.accessibilityLabel("Clear the chat")
+                Button { browsing = true } label: { Image(systemName: "clock.arrow.circlepath") }.accessibilityLabel("Past Chats")
+                Button { confirmClear = true } label: { Image(systemName: "trash") }.accessibilityLabel("Clear the Chat")
                     .disabled(model.messages.isEmpty)
             }
             .padding(.horizontal, 12)
@@ -682,6 +683,11 @@ private struct ChatPanel: View {
         }
         .task { await model.load() }
         .sheet(isPresented: $browsing) { PastChatsView(api: model.api) }
+        .confirmationDialog("Clear this chat?", isPresented: $confirmClear, titleVisibility: .visible) {
+            Button("Clear Chat", role: .destructive) { Task { await model.clear() } }
+        } message: {
+            Text("Its messages are deleted from the host, and a new chat starts.")
+        }
     }
 
     private func send() {
@@ -766,6 +772,7 @@ private struct PastChatView: View {
 private struct QueuePanel: View {
     let session: SessionModel
     @Environment(\.theme) private var theme
+    @State private var confirmRemoveAll = false
 
     var body: some View {
         List {
@@ -785,7 +792,7 @@ private struct QueuePanel: View {
                 .swipeActions(edge: .trailing) {
                     // Red by tint, not role: the row is still there until the host says it's
                     // cancelled, and a list aborts when a row swiped away as deleted is not gone.
-                    Button("Cancel") { Task { await session.queue.cancel(item) } }.tint(theme.danger)
+                    Button("Remove") { Task { await session.queue.cancel(item) } }.tint(theme.danger)
                     Button("Edit") {
                         Task { await session.queue.edit(item, into: session.composer) }
                     }
@@ -797,7 +804,7 @@ private struct QueuePanel: View {
                     Button("Edit", systemImage: "pencil") {
                         Task { await session.queue.edit(item, into: session.composer) }
                     }
-                    Button("Cancel", systemImage: "xmark", role: .destructive) { Task { await session.queue.cancel(item) } }
+                    Button("Remove", systemImage: "xmark", role: .destructive) { Task { await session.queue.cancel(item) } }
                 }
             }
             .onMove { from, to in
@@ -806,11 +813,17 @@ private struct QueuePanel: View {
                 Task { await session.queue.move(item.id, to: to > index ? to - 1 : to) }
             }
             if !session.queue.items.isEmpty {
-                Button("Cancel All", role: .destructive) { Task { await session.queue.cancelAll() } }
+                Button("Remove All…", role: .destructive) { confirmRemoveAll = true }
                     .ahRow()
             }
         }
         .environment(\.editMode, .constant(.active))
+        // What was queued is gone with one tap otherwise, and none of it can come back.
+        .confirmationDialog("Remove \(session.queue.items.count == 1 ? "the queued message" : "all \(session.queue.items.count) queued messages")?", isPresented: $confirmRemoveAll, titleVisibility: .visible) {
+            Button("Remove All", role: .destructive) { Task { await session.queue.cancelAll() } }
+        } message: {
+            Text("They won’t be sent.")
+        }
         .task { await session.queue.load() }
     }
 }

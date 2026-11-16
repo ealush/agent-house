@@ -264,3 +264,15 @@ struct AhPanel: ViewModifier {
         }
     }
 }
+
+extension View {
+    /// Asks before `item` goes for good: its name in the question, a destructive button over
+    /// Cancel. A swipe or a row's button sets it; nothing is removed until the answer.
+    func confirmingRemoval<Item>(_ item: Binding<Item?>, title: @escaping (Item) -> String, message: String, verb: String = "Remove", remove: @escaping (Item) -> Void) -> some View {
+        confirmationDialog(item.wrappedValue.map(title) ?? "", isPresented: Binding(get: { item.wrappedValue != nil }, set: { if !$0 { item.wrappedValue = nil } }), titleVisibility: .visible, presenting: item.wrappedValue) { asked in
+            Button(verb, role: .destructive) { remove(asked) }
+        } message: { _ in
+            Text(message)
+        }
+    }
+}

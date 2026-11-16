@@ -144,6 +144,8 @@ private struct SecuritySection: View {
     @State private var model: SecuritySettings
     @State private var confirmRemove = false
     @State private var confirmOthers = false
+    /// A sign-in, device, passkey or token about to go, or the prompt history: asked first.
+    @State private var confirming: SecurityConfirm?
     @State private var naming = false
     @State private var tokenName = ""
     @Environment(\.theme) private var theme
@@ -228,7 +230,7 @@ private struct SecuritySection: View {
                                 Text("\(signIn.via) · last seen \(Elapsed.format(Date(timeIntervalSince1970: signIn.lastSeenAt / 1000), now: .now))").font(.ah(.caption)).foregroundStyle(theme.muted)
                             }
                             Spacer()
-                            if !signIn.current { Button("Sign Out") { Task { await model.revoke(signIn) } }.buttonStyle(.borderless) }
+                            if !signIn.current { Button("Sign Out") { confirming = .signIn(signIn) }.buttonStyle(.borderless) }
                         }
                     }
                     Button("Sign Out Every Other Device", role: .destructive) { confirmOthers = true }
@@ -239,7 +241,7 @@ private struct SecuritySection: View {
                             HStack {
                                 Text(device.label + (device.current ? " (this one)" : ""))
                                 Spacer()
-                                if !device.current { Button("Remove", role: .destructive) { Task { await model.removeDevice(device) } }.buttonStyle(.borderless) }
+                                if !device.current { Button("Remove", role: .destructive) { confirming = .device(device) }.buttonStyle(.borderless) }
                             }
                         }
                     }
@@ -250,7 +252,7 @@ private struct SecuritySection: View {
                             HStack {
                                 Text(passkey.label)
                                 Spacer()
-                                Button("Remove", role: .destructive) { Task { await model.removePasskey(passkey) } }.buttonStyle(.borderless)
+                                Button("Remove", role: .destructive) { confirming = .passkey(passkey) }.buttonStyle(.borderless)
                             }
                         }
                     }
@@ -266,7 +268,7 @@ private struct SecuritySection: View {
                                 Text(tokenUse(token)).font(.ah(.caption)).foregroundStyle(theme.muted)
                             }
                             Spacer()
-                            Button("Revoke", role: .destructive) { Task { await model.removeToken(token) } }.buttonStyle(.borderless)
+                            Button("Revoke", role: .destructive) { confirming = .token(token) }.buttonStyle(.borderless)
                         }
                     }
                     Button("New Token…", systemImage: "key") { naming = true }
@@ -283,17 +285,23 @@ private struct SecuritySection: View {
                 } footer: {
                     Text("The master password is set or removed on the host itself (`ah auth password`).")
                 }
+                // Above the log, which runs to sixty rows: it sat at the bottom of them.
+                Section {
+                    Button("Clear Prompt History", role: .destructive) { confirming = .prompts }
+                }
                 Section("Activity") {
                     ForEach(Array(model.activity.prefix(60).enumerated()), id: \.offset) { _, row in
                         VStack(alignment: .leading, spacing: 2) {
-                            HStack { Text(row.event).font(.ah(.callout)); Spacer(); Text(row.at).font(.ah(.caption2)).foregroundStyle(theme.faint) }
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(row.event).font(.ah(.callout))
+                                Spacer()
+                                // When, as the sign-ins above say it ("5 min ago"), not the log's timestamp.
+                                Text(row.date.map { Elapsed.format($0, now: .now) } ?? row.at).font(.ah(.caption2)).foregroundStyle(theme.faint)
+                            }
                             if !row.detail.isEmpty { Text(row.detail).font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(2) }
                         }
                     }
                 }
-            }
-            Section {
-                Button("Clear Prompt History", role: .destructive) { Task { await model.clearPrompts() } }
             }
         }
         .task { await model.load() }
@@ -310,6 +318,23 @@ private struct SecuritySection: View {
         .confirmationDialog("Sign out every other device?", isPresented: $confirmOthers, titleVisibility: .visible) {
             Button("Sign Out Others", role: .destructive) { Task { await model.signOutOthers() } }
         }
+        // None of these can be taken back from here: each asks first, as signing out the
+        // others does.
+        .confirmationDialog(confirming?.title ?? "", isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }), titleVisibility: .visible, presenting: confirming) { asked in
+            Button(asked.verb, role: .destructive) {
+                Task {
+                    switch asked {
+                    case .signIn(let signIn): await model.revoke(signIn)
+                    case .device(let device): await model.removeDevice(device)
+                    case .passkey(let passkey): await model.removePasskey(passkey)
+                    case .token(let token): await model.removeToken(token)
+                    case .prompts: await model.clearPrompts()
+                    }
+                }
+            }
+        } message: { asked in
+            Text(asked.message)
+        }
         .alert("New API Token", isPresented: $naming) {
             TextField("Name, like “backup script”", text: $tokenName)
             Button("Cancel", role: .cancel) { tokenName = "" }
@@ -323,6 +348,39 @@ private struct SecuritySection: View {
         }
         // The secret never outlives this screen.
         .onDisappear { model.dismissToken() }
+    }
+
+    private enum SecurityConfirm {
+        case signIn(AuthOverview.SignIn), device(AuthOverview.Device), passkey(AuthOverview.Passkey), token(AuthOverview.Token), prompts
+
+        var title: String {
+            switch self {
+            case .signIn(let signIn): "Sign out \(signIn.label)?"
+            case .device(let device): "Remove \(device.label)?"
+            case .passkey(let passkey): "Remove the passkey “\(passkey.label)”?"
+            case .token(let token): "Revoke “\(token.name)”?"
+            case .prompts: "Clear prompt history?"
+            }
+        }
+
+        var verb: String {
+            switch self {
+            case .signIn: "Sign Out"
+            case .device, .passkey: "Remove"
+            case .token: "Revoke"
+            case .prompts: "Clear History"
+            }
+        }
+
+        var message: String {
+            switch self {
+            case .signIn: "That sign-in ends now; it needs to sign in again to reach this host."
+            case .device: "Every sign-in from that device ends and its key is deleted. It needs a new setup code to come back."
+            case .passkey: "The web app can’t sign in with it any more."
+            case .token: "Anything still using it is refused from now on. A token can’t be shown again, so a new one has to be made."
+            case .prompts: "Recent prompts are forgotten on every device signed in to this host."
+            }
+        }
     }
 
     private func tokenUse(_ token: AuthOverview.Token) -> String {
@@ -943,6 +1001,7 @@ private struct AgentsSection: View {
 private struct SubscriptionsSection: View {
     @State var model: SubscriptionsSettings
     @State private var editing: SubscriptionDraft?
+    @State private var removing: Subscription?
     @State private var briefing: String?
     @State private var briefingLoaded = false
     @Environment(\.theme) private var theme
@@ -965,7 +1024,7 @@ private struct SubscriptionsSection: View {
                         }
                     }
                     .swipeActions {
-                        Button("Remove") { Task { await model.remove(s) } }.tint(theme.danger)
+                        Button("Remove") { removing = s }.tint(theme.danger)
                         if !s.isDefault { Button("Default") { Task { await model.makeDefault(s) } } }
                     }
                 }
@@ -1003,6 +1062,7 @@ private struct SubscriptionsSection: View {
         .sheet(item: Binding(get: { editing.map { IdentifiedDraft(draft: $0) } }, set: { editing = $0?.draft })) { item in
             SubscriptionEditor(model: model, draft: item.draft) { editing = nil }
         }
+        .confirmingRemoval($removing, title: { "Remove \($0.name)?" }, message: "Its API key is deleted from the host.") { s in Task { await model.remove(s) } }
     }
 
     struct IdentifiedDraft: Identifiable {
@@ -1077,6 +1137,7 @@ private struct SubscriptionEditor: View {
 private struct EnvironmentSection: View {
     @State var model: EnvironmentSettings
     @State private var editing: EnvVarDraft?
+    @State private var removing: EnvVar?
     @Environment(\.theme) private var theme
 
     struct EnvVarDraft: Identifiable {
@@ -1102,7 +1163,7 @@ private struct EnvironmentSection: View {
                                 Text(v.secret ? (v.hint ?? "••••") : (v.value ?? "")).font(.ahMono(.caption)).foregroundStyle(theme.muted).lineLimit(1)
                             }
                         }
-                        .swipeActions { Button("Remove") { Task { await model.remove(v) } }.tint(theme.danger) }
+                        .swipeActions { Button("Remove") { removing = v }.tint(theme.danger) }
                     }
                     Button("Add a Variable", systemImage: "plus") { editing = EnvVarDraft(name: "", value: "", secret: false) }
                 } footer: {
@@ -1139,6 +1200,7 @@ private struct EnvironmentSection: View {
         .sheet(item: $editing) { draft in
             EnvEditor(model: model, draft: draft) { editing = nil }
         }
+        .confirmingRemoval($removing, title: { "Remove \($0.name)?" }, message: "New sessions start without it. A secret value can’t be shown again.") { v in Task { await model.remove(v) } }
     }
 }
 

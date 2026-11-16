@@ -132,7 +132,7 @@ final class ConversationLayoutUITests: XCTestCase {
         focusComposer()
         XCTAssertTrue(tray.waitForExistence(timeout: 15))
         let rest = box.frame.maxY
-        app.buttons.matching(identifier: "Cancel").firstMatch.tap()
+        app.buttons.matching(NSPredicate(format: "identifier == %@ OR label == %@", "Remove", "Remove")).firstMatch.tap()
         settle()
         XCTAssertEqual(box.frame.maxY, rest, accuracy: 1, "cancelling a queued message moved the box")
         assertBarOnKeyboard("cancelled one")

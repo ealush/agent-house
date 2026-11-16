@@ -19,8 +19,9 @@ struct SceneSheet: View {
         case .branch(let key): sessionSheet(key) { BranchSheet(scene: scene, session: $0) }
         case .worktrees: if let hub = scene.hub { WorktreesView(model: WorktreesModel(api: hub.api), scene: scene) }
         case .settings(let section): SettingsView(scene: scene, section: section.flatMap(SettingsSection.init(rawValue:)))
-        case .confirmTerminate(let key): sessionSheet(key) { ConfirmTerminateSheet(scene: scene, session: $0) }
-        case .confirmPlan(let key, let plan): sessionSheet(key) { ConfirmPlanSheet(scene: scene, session: $0, plan: plan) }
+        // Asked as system alerts (`SceneRootController.terminateAlert`, `planAlert`); a sheet
+        // only when the session went while it was being asked.
+        case .confirmTerminate(let key), .confirmPlan(let key, _): sessionSheet(key) { _ in EmptyView() }
         case .scrollback(_, let text): ScrollbackSheet(text: text)
         case .modelPicker(let key): sessionSheet(key) { LaunchPickerSheet(scene: scene, session: $0, setting: .model) }
         case .effortPicker(let key): sessionSheet(key) { LaunchPickerSheet(scene: scene, session: $0, setting: .effort) }
@@ -1128,89 +1129,6 @@ struct WorktreesView: View {
             let request = NewSessionRequest(preset: "shell", cwd: tree.path, session: scene.hub?.hub.state?.defaultSession ?? "", label: tree.branch)
             if await scene.start(request) != nil { scene.sheet = nil }
         }
-    }
-}
-
-// MARK: Confirmations
-
-struct ConfirmTerminateSheet: View {
-    let scene: SceneModel
-    let session: SessionModel
-    @Environment(\.theme) private var theme
-
-    var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Terminate “\(session.title)”?").font(.ah(.title3).weight(.semibold))
-                Text("Its process stops now. The conversation stays in History and can be resumed.").foregroundStyle(theme.muted)
-                if session.row?.dto.terminal != nil {
-                    Text("Its attached terminal and anything running in it will also stop.").foregroundStyle(theme.muted)
-                }
-                if session.working { Label("It’s in the middle of a turn.", systemImage: "exclamationmark.triangle").foregroundStyle(theme.limited) }
-                Spacer()
-                Button(role: .destructive) {
-                    scene.sheet = nil
-                    Task { await scene.terminate(session.key) }
-                } label: {
-                    Text("Terminate").fontWeight(.semibold).frame(maxWidth: .infinity)
-                }
-                // The danger color as the words on its own tint: filled, white type on the
-                // theme's light red barely read.
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .tint(theme.danger)
-                .keyboardShortcut(.return, modifiers: .command)
-                Button("Cancel") { scene.sheet = nil }.frame(maxWidth: .infinity)
-                    .keyboardShortcut(.cancelAction)
-            }
-            .padding(20)
-            // The theme's surface: on the short sheet's pale glass the words washed out.
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(theme.surface)
-            .containerBackground(theme.surface, for: .navigation)
-        }
-        .presentationDetents([.height(280)])
-    }
-}
-
-struct ConfirmPlanSheet: View {
-    let scene: SceneModel
-    let session: SessionModel
-    let plan: LaunchState.Plan
-    @Environment(\.theme) private var theme
-
-    var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 16) {
-                switch plan {
-                case .relaunch(_, let title, let body, let dangerous):
-                    Text(title).font(.ah(.title3).weight(.semibold))
-                    Text(body).foregroundStyle(theme.muted)
-                    if dangerous { Label("Permission checks are off in the new session.", systemImage: "exclamationmark.shield").foregroundStyle(theme.danger) }
-                case .switchMode(let id, _):
-                    Text("Turn off permission checks?").font(.ah(.title3).weight(.semibold))
-                    Text("“\(session.launch.preset?.modes?.first { $0.id == id }?.name ?? id)” lets the agent run commands and edit files without asking.").foregroundStyle(theme.muted)
-                default:
-                    EmptyView()
-                }
-                Spacer()
-                Button {
-                    scene.sheet = nil
-                    Task { await scene.runPlan(plan, on: session) }
-                } label: {
-                    Text("Continue").frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent).tint(theme.accentStrong)
-                .keyboardShortcut(.return, modifiers: .command)
-                Button("Cancel") { scene.sheet = nil }.frame(maxWidth: .infinity).keyboardShortcut(.cancelAction)
-            }
-            .padding(20)
-            // The theme's surface: on the short sheet's pale glass the words washed out.
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(theme.surface)
-            .containerBackground(theme.surface, for: .navigation)
-        }
-        .presentationDetents([.medium])
     }
 }
 
