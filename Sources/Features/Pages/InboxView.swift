@@ -536,10 +536,17 @@ struct SessionListView: View {
             guard let tag else { return }
             if let page = Self.pages.first(where: { Self.tag($0.route) == tag }) { scene.show(page.route) } else { scene.open(tag) }
         })) {
-            ConnectionBanner(phase: hub.phase, lastUpdated: hub.lastUpdated, cached: hub.showingCached) { hub.resync() }
-                .listRowBackground(Color.clear)
             if scene.narrow && !showsPages {
-                Section { } header: { AhLargeTitle(title: "Sessions", tagline: hub.awaitingState ? "Asking your host…" : hub.inbox(narrow: true).summary).textCase(nil) }
+                // Under the page's title, as the Inbox has it: above it, the banner pushed the
+                // title down the screen.
+                Section {
+                    ConnectionBanner(phase: hub.phase, lastUpdated: hub.lastUpdated, cached: hub.showingCached) { hub.resync() }
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                } header: { AhLargeTitle(title: "Sessions", tagline: hub.awaitingState ? "Asking your host…" : hub.inbox(narrow: true).summary).textCase(nil) }
+            } else {
+                ConnectionBanner(phase: hub.phase, lastUpdated: hub.lastUpdated, cached: hub.showingCached) { hub.resync() }
+                    .listRowBackground(Color.clear)
             }
             if showsPages {
                 Section {

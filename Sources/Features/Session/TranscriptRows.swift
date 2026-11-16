@@ -7,18 +7,25 @@ import UIKit
 /// A glass pill at the top of the transcript while the host's copy is on its way, there once
 /// the wait is long enough to notice (a quick link never shows it).
 struct CatchingUp: View {
+    let scene: SceneModel
+    let key: String
     @Environment(\.theme) private var theme
 
     var body: some View {
-        HStack(spacing: 8) {
-            ProgressView().controlSize(.small)
-            Text("Catching up").font(.ah(.footnote)).foregroundStyle(theme.text2)
+        // Not while the host isn't answering: the bar says Offline, and a spinner here said it
+        // was on its way. Asked here, not in the transcript's body, so the host's state ticking
+        // draws this pill again and not the whole transcript.
+        if scene.connectionNote(key) == nil {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Catching up").font(.ah(.footnote)).foregroundStyle(theme.text2)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .glassEffect(.regular, in: Capsule())
+            .accessibilityElement(children: .combine)
+            .afterABeat()
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .glassEffect(.regular, in: Capsule())
-        .accessibilityElement(children: .combine)
-        .afterABeat()
     }
 }
 

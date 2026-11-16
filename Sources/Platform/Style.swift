@@ -550,7 +550,10 @@ struct ConnectionBanner: View {
         case .polling:
             Banner(text: "Live updates are reconnecting; showing what the host said a moment ago.", tone: .warning, symbol: "wifi.exclamationmark")
         case .offline(let message):
-            Banner(text: lastUpdated.map { "Offline. Shown as of \(Elapsed.format($0, now: .now)). \(message)" } ?? message, tone: .error, action: ("Retry", retry), symbol: "wifi.slash")
+            // "Can’t reach your host" says it: the system's words after it ("Could not connect to
+            // the server.") said it a third time.
+            let said = message.hasPrefix("Can’t reach your host.") ? "Can’t reach your host." : message
+            Banner(text: lastUpdated.map { "Offline. Shown as of \(Elapsed.format($0, now: .now)). \(said)" } ?? said, tone: .error, action: ("Retry", retry), symbol: "wifi.slash")
         }
     }
 }
