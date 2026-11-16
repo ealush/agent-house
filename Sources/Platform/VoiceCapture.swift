@@ -106,8 +106,8 @@ final class VoiceCapture: DictationCapture {
 
         let tap = CaptureTap(file: file, batch: batch, newBatch: recording, converter: converter, feed: feed, level: { level in
             Task { @MainActor in events(.level(level)) }
-        }, cut: { batch in
-            Task { @MainActor in events(.batch(batch)) }
+        }, cut: { batch, speech in
+            Task { @MainActor in events(.batch(batch, speech: speech)) }
         })
         self.tap = tap
         firstBatch = nil
@@ -158,7 +158,7 @@ final class VoiceCapture: DictationCapture {
         analyzer = nil
         heard = nil
         deactivate()
-        return CaptureResult(file: url, text: text, lastBatch: closed?.open, batches: closed?.cut ?? [])
+        return CaptureResult(file: url, text: text, lastBatch: closed?.open, batches: closed?.cut ?? [], speech: closed?.speech ?? [:])
     }
 
     func cancel() async {
@@ -274,6 +274,9 @@ private final class CaptureTap: @unchecked Sendable {
     private var file: AVAudioFile?
     private var batch: (file: AVAudioFile, url: URL)?
     private var batchSeconds: TimeInterval = 0
+    /// How much of the batch being filled is speech (louder than the room by 10 dB).
+    private var batchSpeech: TimeInterval = 0
+    private var speech: [URL: TimeInterval] = [:]
     private var cutter = BatchCutter()
     /// Every batch cut so far, in order: handed back at the end too, so one cut just before
     /// Done isn't lost on its way to the model.
@@ -282,13 +285,13 @@ private final class CaptureTap: @unchecked Sendable {
     private let converter: AVAudioConverter?
     private var feed: AsyncStream<AnalyzerInput>.Continuation?
     private let level: @Sendable (Float) -> Void
-    private let cut: @Sendable (URL) -> Void
+    private let cut: @Sendable (URL, TimeInterval) -> Void
     /// The meter's window (a thirtieth of a second): a buffer holds several (the engine's are
     /// about 85 ms), so the waves get thirty readings a second rather than twelve.
     private var windowSquares: Float = 0
     private var windowFrames = 0
 
-    init(file: AVAudioFile, batch: (AVAudioFile, URL), newBatch: @escaping @Sendable () throws -> (AVAudioFile, URL), converter: AVAudioConverter?, feed: AsyncStream<AnalyzerInput>.Continuation?, level: @escaping @Sendable (Float) -> Void, cut: @escaping @Sendable (URL) -> Void) {
+    init(file: AVAudioFile, batch: (AVAudioFile, URL), newBatch: @escaping @Sendable () throws -> (AVAudioFile, URL), converter: AVAudioConverter?, feed: AsyncStream<AnalyzerInput>.Continuation?, level: @escaping @Sendable (Float) -> Void, cut: @escaping @Sendable (URL, TimeInterval) -> Void) {
         self.file = file
         self.batch = batch
         self.newBatch = newBatch
@@ -311,13 +314,16 @@ private final class CaptureTap: @unchecked Sendable {
             try? batch.file.write(from: buffer)
             let seconds = Double(buffer.frameLength) / buffer.format.sampleRate
             batchSeconds += seconds
+            if loud > cutter.floor + 0.2 { batchSpeech += seconds }
             if cutter.take(seconds: seconds, level: loud) {
                 // Closed (whole on disk) before it's handed on; the next one starts here.
                 batch.file.close()
                 self.batch = nil
                 cutBatches.append(batch.url)
-                cut(batch.url)
+                speech[batch.url] = batchSpeech
+                cut(batch.url, batchSpeech)
                 batchSeconds = 0
+                batchSpeech = 0
                 self.batch = try? newBatch()
             }
         }
@@ -342,21 +348,22 @@ private final class CaptureTap: @unchecked Sendable {
     /// No more audio: the recording is closed (whole on disk), the recognizer told, and the
     /// batches handed back: every one cut, and the one being filled (nil when it holds next
     /// to nothing).
-    func close() -> (cut: [URL], open: URL?) {
+    func close() -> (cut: [URL], open: URL?, speech: [URL: TimeInterval]) {
         lock.lock()
         defer { lock.unlock() }
         file?.close()
         file = nil
         feed?.finish()
         feed = nil
-        guard let open = batch else { return (cutBatches, nil) }
+        guard let open = batch else { return (cutBatches, nil, speech) }
         open.file.close()
         batch = nil
         if batchSeconds < 0.3 {
             try? FileManager.default.removeItem(at: open.url)
-            return (cutBatches, nil)
+            return (cutBatches, nil, speech)
         }
-        return (cutBatches, open.url)
+        speech[open.url] = batchSpeech
+        return (cutBatches, open.url, speech)
     }
 
     private static func convert(_ buffer: AVAudioPCMBuffer, with converter: AVAudioConverter) -> AVAudioPCMBuffer? {

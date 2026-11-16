@@ -64,6 +64,8 @@ private final class FakeCapture: DictationCapture {
     var slowStart = false
     /// A batch whose word reaches the model only after Done (as the audio thread's can).
     var late = false
+    /// Seconds of speech each batch holds, by its loudness.
+    var speechPerBatch: TimeInterval = 0.5
     private var events: (@MainActor (CaptureEvent) -> Void)?
     private(set) var batchFiles: [URL] = []
     private(set) var startedWith: [Locale?] = []
@@ -83,17 +85,19 @@ private final class FakeCapture: DictationCapture {
         if let startError, locale != nil || startError == .microphoneDenied { throw startError }
         events(.level(0.4))
         if locale != nil, let heard { events(.partial(heard)) }
-        for _ in 0..<batches { events(.batch(newFile())) }
+        for _ in 0..<batches { events(.batch(newFile(), speech: speechPerBatch)) }
     }
     func finish() async throws -> CaptureResult {
         let announced = batchFiles
         var quiet = (0..<unannounced).map { _ in newFile() }
         if late {
             let file = newFile()
-            events?(.batch(file))
+            events?(.batch(file, speech: speechPerBatch))
             quiet.append(file)
         }
-        return CaptureResult(file: file, text: startedWith.last! == nil ? nil : heard, lastBatch: batches + unannounced > 0 ? newFile() : nil, batches: announced + quiet)
+        let tail = batches + unannounced > 0 ? newFile() : nil
+        let all = announced + quiet + [tail].compactMap { $0 }
+        return CaptureResult(file: file, text: startedWith.last! == nil ? nil : heard, lastBatch: tail, batches: announced + quiet, speech: Dictionary(uniqueKeysWithValues: all.map { ($0, speechPerBatch) }))
     }
     private func newFile() -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("dictation-batch-\(UUID().uuidString).m4a")
@@ -598,5 +602,33 @@ private func query(_ q: String?) -> [String: String] {
     await model.toggle(into: composer)
     #expect(composer.text == "first late tail", "heard by the host from its file, not lost or left to the device")
     #expect(capture.transcribed.isEmpty)
+}
+
+@MainActor
+@Test func aSilentBatchIsntSentAndOneTheHostMissedIsHeardByThisDevice() async {
+    let host = VoiceHost()
+    host.settings["speech"] = groq
+    host.batchTexts = ["", ""]
+    let (model, composer, capture) = bed(host, live: false)
+    capture.batches = 1
+    capture.speechPerBatch = 0.1
+    await model.refresh()
+    await model.toggle(into: composer)
+    await model.toggle(into: composer)
+    #expect(host.all("/api/voice/dictate").isEmpty, "silence isn't sent, nor made up into words")
+    #expect(composer.takeEvents() == [.notice("Didn’t catch anything.")])
+
+    let host2 = VoiceHost()
+    host2.settings["speech"] = groq
+    host2.batchTexts = ["so", "and that's it"]
+    let (model2, composer2, capture2) = bed(host2, live: false)
+    capture2.batches = 1
+    capture2.speechPerBatch = 9
+    capture2.fromFile = "so I want the layout fixed before the waves go in"
+    await model2.refresh()
+    await model2.toggle(into: composer2)
+    await model2.toggle(into: composer2)
+    #expect(composer2.text.hasPrefix("so I want the layout fixed before the waves go in"), "one word for nine seconds of speech: this device's hearing of it instead")
+    #expect(composer2.takeEvents() == [.notice("Groq missed part of it, so this iPhone wrote that part down.")])
 }
 

@@ -28,6 +28,8 @@ struct CaptureResult: Sendable, Equatable {
     var lastBatch: URL?
     /// Every batch cut while listening, in order (each was also sent as `CaptureEvent.batch`).
     var batches: [URL] = []
+    /// How many seconds of each batch (the last one's too) were speech, by its loudness.
+    var speech: [URL: TimeInterval] = [:]
 }
 
 enum CaptureEvent: Sendable, Equatable {
@@ -37,8 +39,9 @@ enum CaptureEvent: Sendable, Equatable {
     case partial(String)
     /// Something else took the microphone (a call): what was said so far goes in.
     case interrupted
-    /// A batch of the recording, cut at a pause once it held 10 seconds: the host can hear it now.
-    case batch(URL)
+    /// A batch of the recording, cut at a pause once it held 10 seconds: the host can hear it
+    /// now. `speech`: how many seconds of it were speech, by its loudness.
+    case batch(URL, speech: TimeInterval)
 }
 
 enum CaptureError: Error, Equatable, Sendable {
@@ -155,11 +158,21 @@ final class DictationModel {
     /// with what came before as its context.
     private struct Batch: Sendable {
         let file: URL
+        /// Seconds of speech in it, by its loudness; nil when not known.
+        var speech: TimeInterval?
         var text: String?
         var queued = false
         /// The host didn't hear it; this device did.
         var byDevice = false
+        /// The host heard far fewer words than it held; this device's were used.
+        var missed = false
     }
+
+    /// Less speech than this in a batch is silence: it isn't sent (nor made up into words).
+    static let leastSpeech: TimeInterval = 0.25
+    /// Fewer words than this for each second of speech, and the host missed some of it
+    /// (people say two or three a second).
+    static let fewestWordsASecond = 0.8
     private var batches: [Batch] = []
     private var hearing: Task<Void, Never>?
 
@@ -237,7 +250,7 @@ final class DictationModel {
             guard let self else { return }
             // A cancelled dictation's last words are nobody's: its late batches go.
             guard self.attempt == mine else {
-                if case .batch(let file) = event { try? FileManager.default.removeItem(at: file) }
+                if case .batch(let file, _) = event { try? FileManager.default.removeItem(at: file) }
                 return
             }
             // This one's, once it stopped listening: Done hands back every batch cut (`finish`).
@@ -250,7 +263,7 @@ final class DictationModel {
                 if self.levels.count > Self.levelsKept { self.levels.removeFirst(self.levels.count - Self.levelsKept) }
             case .partial(let words): self.partial = words
             case .interrupted: Task { await self.finish(into: composer) }
-            case .batch(let file): self.take(file, into: composer)
+            case .batch(let file, let speech): self.take(file, speech: speech, into: composer)
             }
         }
         do {
@@ -296,7 +309,11 @@ final class DictationModel {
         await settingsRead()
         // Every batch cut, in order, whether or not its word reached us before Done.
         let known = Dictionary(batches.map { ($0.file, $0) }, uniquingKeysWith: { a, _ in a })
-        batches = (result.batches + [result.lastBatch].compactMap { $0 }).map { known[$0] ?? Batch(file: $0) }
+        batches = (result.batches + [result.lastBatch].compactMap { $0 }).map { file in
+            var batch = known[file] ?? Batch(file: file)
+            if batch.speech == nil { batch.speech = result.speech[file] }
+            return batch
+        }
         if case .host = route, !batches.isEmpty {
             await writeBatches(result, into: composer)
         } else {
@@ -371,8 +388,8 @@ final class DictationModel {
     // MARK: Batches
 
     /// A batch cut as you speak: heard now when the host hears this dictation.
-    private func take(_ file: URL, into composer: ComposerModel) {
-        batches.append(Batch(file: file))
+    private func take(_ file: URL, speech: TimeInterval?, into composer: ComposerModel) {
+        batches.append(Batch(file: file, speech: speech))
         if case .host = route { queue(into: composer) }
     }
 
@@ -393,21 +410,37 @@ final class DictationModel {
     private func hear(_ i: Int, into composer: ComposerModel) async {
         guard !Task.isCancelled, batches.indices.contains(i), batches[i].text == nil else { return }
         let file = batches[i].file
+        let speech = batches[i].speech
+        // Silence: nothing to hear, and nothing for a speech model to make up.
+        if let speech, speech < Self.leastSpeech {
+            batches[i].text = ""
+            return
+        }
         let context = batches[..<i].compactMap(\.text).joined(separator: " ")
+        let locale = (settings ?? VoiceSettings()).locale
         var text: String?
         var byDevice = false
+        var missed = false
         for _ in 0..<2 where text == nil && !Task.isCancelled {
             if let heard = try? await api.dictate(file, style: .verbatim, context: context) {
                 text = heard.text.trimmingCharacters(in: .whitespacesAndNewlines)
             }
         }
-        if text == nil, !Task.isCancelled, let mine = try? await deviceWords(CaptureResult(file: file), locale: (settings ?? VoiceSettings()).locale) {
+        if text == nil, !Task.isCancelled, let mine = try? await deviceWords(CaptureResult(file: file), locale: locale) {
             text = mine
             byDevice = true
+        } else if let heard = text, let speech, Self.words(heard) < Int(speech * Self.fewestWordsASecond), !Task.isCancelled,
+                  let mine = try? await deviceWords(CaptureResult(file: file), locale: locale),
+                  Self.words(mine) > Self.words(heard) * 3 / 2 + 1 {
+            // Far fewer words than it held: the host lost some, and this device heard them.
+            text = mine
+            byDevice = true
+            missed = true
         }
         guard !Task.isCancelled, batches.indices.contains(i), batches[i].file == file else { return }
         batches[i].text = text
         batches[i].byDevice = byDevice
+        batches[i].missed = missed
         if live, let text, !text.isEmpty { place(text, into: composer) }
     }
 
@@ -502,6 +535,7 @@ final class DictationModel {
         }
         let raw = batches.compactMap(\.text).filter { !$0.isEmpty }.joined(separator: " ")
         let byDevice = batches.contains(where: \.byDevice)
+        let missed = batches.contains(where: \.missed)
         guard !raw.isEmpty else {
             finished(result)
             composer.notify("Didn’t catch anything.")
@@ -516,7 +550,7 @@ final class DictationModel {
         }
         var text = raw
         var cleanedBy: String?
-        var note: String? = byDevice ? "\(speech) didn’t answer for part of it, so \(thisDevice) wrote that part down." : nil
+        var note: String? = missed ? "\(speech) missed part of it, so \(thisDevice) wrote that part down." : byDevice ? "\(speech) didn’t answer for part of it, so \(thisDevice) wrote that part down." : nil
         if let cleanup = settings?.cleanup, settings?.style != .verbatim {
             do {
                 let tidy = try await api.refine(raw, style: settings?.style, phone: result.text)
@@ -642,6 +676,10 @@ final class DictationModel {
         } catch {
             return .init(text: mine, raw: mine, heardBy: thisDevice, cleanedBy: nil, note: "Couldn’t tidy it with \(cleanup), so it’s as said.")
         }
+    }
+
+    nonisolated static func words(_ text: String) -> Int {
+        text.split(whereSeparator: { $0.isWhitespace }).count
     }
 
     /// A refusal this device hearing the recording itself can fix (the host or its
