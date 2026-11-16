@@ -860,6 +860,11 @@ struct SearchView: View {
                     filterChip(model.query.host ?? "Every host", symbol: "server.rack", on: model.query.host != nil)
                 }
             }
+            // A new query on its way while the last one's answers still show: they stayed
+            // up with nothing to say they were about to change.
+            if model.searching {
+                ProgressView().controlSize(.small).afterABeat(.milliseconds(250)).accessibilityLabel("Searching")
+            }
         }
         .menuOrder(.fixed)
     }
@@ -888,6 +893,8 @@ struct SearchView: View {
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                 .listRowSeparator(.hidden)
+            // Up top, where the eye is: under a page of the last query's results it went unseen.
+            if let error = model.error { Banner(text: error, tone: .error, action: ("Retry", { model.search(debounce: .zero) })).listRowBackground(Color.clear) }
             if let response = model.response {
                 if !response.enabled {
                     Banner(text: "Search is off on this host. Turn it on in Settings → Search.", tone: .warning)
@@ -931,8 +938,17 @@ struct SearchView: View {
                     .ahRow()
                 }
                 if response.results.count < response.total {
-                    Button("More Results") { Task { await model.more() } }
-                        .ahRow()
+                    Button {
+                        Task { await model.more() }
+                    } label: {
+                        // On its way, said where the tap was.
+                        HStack(spacing: 8) {
+                            Text("More Results")
+                            if model.loadingMore { ProgressView().controlSize(.small) }
+                        }
+                    }
+                    .disabled(model.loadingMore)
+                    .ahRow()
                 }
                 if response.results.isEmpty && response.enabled && !model.searching {
                     EmptyState(symbol: "magnifyingglass", title: "No Results", message: "Nothing said “\(model.query.q.trimmingCharacters(in: .whitespaces))”. Try fewer or different words.")
@@ -947,7 +963,6 @@ struct SearchView: View {
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
             }
-            if let error = model.error { Banner(text: error, tone: .error).listRowBackground(Color.clear) }
         }
         // The chips sit under the field and its scopes as one set of controls, not a
         // grouped list's first section away.

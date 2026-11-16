@@ -618,7 +618,14 @@ private struct ChatPanel: View {
             .padding(.vertical, 6)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
-                    if model.subscriptions.isEmpty {
+                    if !model.loaded {
+                        // Asking the host, or it couldn't say: not "No Chat Model Yet".
+                        if let error = model.error {
+                            Banner(text: error, tone: .error, action: ("Retry", { Task { await model.load() } }))
+                        } else {
+                            ProgressView().frame(maxWidth: .infinity).padding(.top, 40).afterABeat(.milliseconds(300))
+                        }
+                    } else if model.subscriptions.isEmpty {
                         EmptyState(symbol: "key", title: "No Chat Model Yet", message: "Add a subscription in Settings to discuss this work with another model, outside the agent’s context.", action: ("Open Settings", { scene.sheet = .settings(SettingsSection.subscriptions.rawValue) }))
                     } else if model.messages.isEmpty && !model.sending {
                         EmptyState(symbol: "bubble.left.and.text.bubble.right", title: "Ask About This Change", message: "A review, an explanation, or a plan. Nothing here reaches the agent unless you send it over.")
@@ -654,7 +661,7 @@ private struct ChatPanel: View {
                             }
                         }
                     }
-                    if let error = model.error { Banner(text: error, tone: .error) }
+                    if model.loaded, let error = model.error { Banner(text: error, tone: .error) }
                 }
                 .padding()
             }
@@ -720,11 +727,13 @@ private struct PastChatsView: View {
     @State private var query = ""
     @State private var chats: [ChatSummary] = []
     @State private var error: String?
+    /// The query the list shows the answer to: nil until the first one comes back.
+    @State private var answered: String?
 
     var body: some View {
         NavigationStack {
             List {
-                if let error { Banner(text: error, tone: .error) }
+                if let error { Banner(text: error, tone: .error, action: ("Retry", { answered = nil; Task { await search() } })) }
                 ForEach(chats) { chat in
                     NavigationLink {
                         PastChatView(api: api, chat: chat)
@@ -740,7 +749,9 @@ private struct PastChatsView: View {
                     }
                     .ahRow()
                 }
-                if chats.isEmpty && error == nil {
+                if chats.isEmpty && error == nil && answered == nil {
+                    ProgressView().frame(maxWidth: .infinity).listRowBackground(Color.clear).afterABeat(.milliseconds(300))
+                } else if chats.isEmpty && error == nil {
                     EmptyState(symbol: "bubble.left.and.text.bubble.right", title: query.isEmpty ? "No Side Chats Yet" : "No Results", message: query.isEmpty ? "Side chats you’ve had about this session’s changes show here." : "No side chat matches “\(query.trimmingCharacters(in: .whitespaces))”.")
                         .listRowBackground(Color.clear)
                 }
@@ -751,14 +762,21 @@ private struct PastChatsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) } }
             .task(id: query) {
-                try? await Task.sleep(for: .milliseconds(250))
-                do {
-                    chats = try await api.pastChats(query: query.isEmpty ? nil : query)
-                    error = nil
-                } catch {
-                    self.error = APIError.wrap(error).message
-                }
+                // A pause while typing; the first list asks at once.
+                if answered != nil { try? await Task.sleep(for: .milliseconds(250)) }
+                guard !Task.isCancelled else { return }
+                await search()
             }
+        }
+    }
+
+    private func search() async {
+        do {
+            chats = try await api.pastChats(query: query.isEmpty ? nil : query)
+            error = nil
+            answered = query
+        } catch {
+            self.error = APIError.wrap(error).message
         }
     }
 }
@@ -766,19 +784,35 @@ private struct PastChatsView: View {
 private struct PastChatView: View {
     let api: APIClient
     let chat: ChatSummary
-    @State private var messages: [ChatMessage] = []
+    @State private var messages: [ChatMessage]?
+    @State private var error: String?
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
-                ForEach(Array(messages.enumerated()), id: \.offset) { _, message in
+                if let error {
+                    Banner(text: error, tone: .error, action: ("Retry", { Task { await load() } }))
+                } else if messages == nil {
+                    // On its way, not a blank page.
+                    ProgressView().frame(maxWidth: .infinity).padding(.top, 40).afterABeat(.milliseconds(300))
+                }
+                ForEach(Array((messages ?? []).enumerated()), id: \.offset) { _, message in
                     if message.role == .user { UserBubble(text: message.text) } else { MarkdownView(message.text) }
                 }
             }
             .padding()
         }
         .navigationTitle(chat.title)
-        .task { messages = (try? await api.pastChat(chat.uid)) ?? [] }
+        .task { await load() }
+    }
+
+    private func load() async {
+        do {
+            messages = try await api.pastChat(chat.uid)
+            error = nil
+        } catch {
+            self.error = APIError.wrap(error).message
+        }
     }
 }
 
@@ -1161,6 +1195,8 @@ private struct PreviewPanel: View {
     let session: SessionModel
     @Environment(\.theme) private var theme
     @State private var cookie: PreviewCookie?
+    /// Why the preview's sign-in didn't come: said, with a way to ask again.
+    @State private var cookieError: String?
     @State private var browser = PreviewBrowser()
     @State private var typed = ""
     @FocusState private var portFocused: Bool
@@ -1236,10 +1272,21 @@ private struct PreviewPanel: View {
             if let cookie {
                 PreviewWebView(url: url, cookie: cookie, hubHost: session.api.origin.host ?? "", browser: browser)
                     .id(preview.port * 100_000 + preview.target)
+            } else if let cookieError {
+                // It spun forever when the host refused.
+                ContentUnavailableView {
+                    Label("Can’t Open the Preview", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(cookieError)
+                } actions: {
+                    Button("Try Again") { self.cookieError = nil }.buttonStyle(.bordered)
+                }
             } else {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .task { cookie = try? await session.api.previewSession() }
+                    .task {
+                        do { cookie = try await session.api.previewSession() } catch { cookieError = APIError.wrap(error).message }
+                    }
             }
         }
     }

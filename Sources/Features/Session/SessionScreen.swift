@@ -283,7 +283,17 @@ private struct SessionHeader: View {
                         .layoutPriority(1)
                         .accessibilityAddTraits(.isHeader)
                 }
-                if let row = session.row { StatusPill(word: row.word, compact: tight).fixedSize() }
+                if let note = scene.connectionNote(session.key) {
+                    // Its status is as of the last word from the host: say that instead.
+                    Label(note, systemImage: "wifi.slash")
+                        .font(.ah(.caption).weight(.semibold))
+                        .foregroundStyle(theme.danger)
+                        .labelStyle(.titleAndIcon)
+                        .fixedSize()
+                        .transition(.opacity)
+                } else if let row = session.row {
+                    StatusPill(word: row.word, compact: tight).fixedSize()
+                }
                 if let pane, scene.workspace.zoom, let leaves = scene.workspace.layout?.leaves(), let index = leaves.firstIndex(where: { $0.path == pane }) {
                     // Maximized: which pane of how many, and the way back to the split.
                     Button {

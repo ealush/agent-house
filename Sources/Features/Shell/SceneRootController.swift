@@ -930,7 +930,11 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
     private var attributedSubtitle: AttributedString {
         guard let row = session.row else { return AttributedString(session.isLive ? "" : "Ended") }
         var word = AttributedString(row.word.label)
-        if let color = theme.theme(scene.app.preferences.appearance).uiStatus(row.word) {
+        if let note = scene.connectionNote(session.key) {
+            // Its status is as of the last word from the host: say that instead.
+            word = AttributedString(note)
+            word.uiKit.foregroundColor = theme.theme(scene.app.preferences.appearance).uiDanger
+        } else if let color = theme.theme(scene.app.preferences.appearance).uiStatus(row.word) {
             word.uiKit.foregroundColor = color
         }
         // Where its conversation came from, when another agent handed it over: "↪ Claude Code".

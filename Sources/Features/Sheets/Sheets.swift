@@ -906,6 +906,9 @@ struct BranchSheet: View {
                     if rows.isEmpty && created == nil {
                         Text("No branches yet. Type a name to create one.").foregroundStyle(theme.muted)
                     }
+                } else if model.error != nil {
+                    // The banner above says why: a way to ask again, not a spinner that never stops.
+                    Button("Try Again", systemImage: "arrow.clockwise") { Task { await model.loadBranches() } }
                 } else {
                     ProgressView()
                 }
@@ -955,7 +958,7 @@ struct WorktreesView: View {
         NavigationStack {
             List {
                 Group {
-                if let error = model.error { Banner(text: error, tone: .error) }
+                if let error = model.error { Banner(text: error, tone: .error, action: model.loaded ? nil : ("Retry", { Task { await model.load() } })) }
                 if !model.results.isEmpty {
                     Section("Just now") {
                         ForEach(model.results, id: \.path) { r in
@@ -966,7 +969,9 @@ struct WorktreesView: View {
                     }
                 }
                 let sections = model.sections
-                if model.trees.isEmpty && model.error == nil {
+                if !model.loaded && model.error == nil {
+                    ProgressView().frame(maxWidth: .infinity).listRowBackground(Color.clear).afterABeat(.milliseconds(300))
+                } else if model.trees.isEmpty && model.error == nil {
                     ContentUnavailableView("No Worktrees", systemImage: "square.on.square.dashed", description: Text("Start a session with “Its own worktree” to give an agent a branch and checkout of its own."))
                 }
                 if !sections.inUse.isEmpty {

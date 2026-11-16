@@ -527,6 +527,21 @@ final class SceneModel {
     // MARK: Sessions on screen
 
     /// The model for a session shown in this window, created (and connected) on first use.
+    /// What a session's host connection says in place of its status while it isn't live: the
+    /// last state is all there is ("Offline"), or live updates are catching up
+    /// ("Reconnecting"). Inside a session nothing said so; only the lists had the banner.
+    func connectionNote(_ key: String) -> String? {
+        guard let hub else { return nil }
+        if let host = SessionKey(key)?.host, let peer = hub.hosts.first(where: { !$0.isSelf && $0.name == host }) {
+            return peer.online ? nil : "Offline"
+        }
+        switch hub.phase {
+        case .offline: return "Offline"
+        case .polling: return "Reconnecting"
+        default: return nil
+        }
+    }
+
     func session(_ key: String) -> SessionModel? {
         if let existing = sessions[key] { return existing }
         // New session's place, before there's a session in it.

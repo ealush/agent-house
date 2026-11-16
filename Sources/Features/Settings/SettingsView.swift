@@ -958,6 +958,9 @@ private struct AgentsSection: View {
                         }
                     }
                 }
+            } else if model.error != nil {
+                // The banner above says why; a way to ask again, not a spinner that never stops.
+                Button("Try Again", systemImage: "arrow.clockwise") { Task { await model.load() } }
             } else {
                 ProgressView()
             }
@@ -1194,6 +1197,9 @@ private struct EnvironmentSection: View {
                         if model.ready.count > 1 { Button("Restart All \(model.ready.count)") { Task { await model.restartAll() } } }
                     }
                 }
+            } else if model.error != nil {
+                // The banner above says why; a way to ask again, not a spinner that never stops.
+                Button("Try Again", systemImage: "arrow.clockwise") { Task { await model.load() } }
             } else {
                 ProgressView()
             }
@@ -1259,8 +1265,11 @@ private struct SearchSection: View {
                     LabeledContent("Entries", value: "\(status.entries)")
                     LabeledContent("Side chats", value: "\(status.chatEntries)")
                     if status.lastBuiltAt > 0 { LabeledContent("Built", value: Elapsed.format(Date(timeIntervalSince1970: status.lastBuiltAt / 1000), now: .now)) }
-                    Button(status.building ? "Building…" : "Rebuild the index") { Task { await model.rebuild() } }.disabled(status.building || !status.enabled)
+                    Button(status.building ? "Building…" : "Rebuild the Index") { Task { await model.rebuild() } }.disabled(status.building || !status.enabled)
                 }
+            } else if model.error != nil {
+                // The banner above says why; a way to ask again, not a spinner that never stops.
+                Button("Try Again", systemImage: "arrow.clockwise") { Task { await model.load() } }
             } else {
                 ProgressView()
             }
