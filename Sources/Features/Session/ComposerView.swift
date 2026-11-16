@@ -134,7 +134,6 @@ struct ComposerView: View {
         for event in composer.takeEvents() {
             switch event {
             case .sent(let result):
-                Haptics.tap()
                 // Said and done: the settings fold back out of the way.
                 if trayOpen { withAnimation(ComposerFloat.motion(opening: false, reduceMotion: reduceMotion)) { trayOpen = false } }
                 // Held for a just-started agent: it's your message in the conversation already,
@@ -294,7 +293,9 @@ struct ComposerView: View {
             // ⌘Return) sends now instead.
             let queues = !session.isShell
             Button {
-                composer.submit(working: session.working)
+                // Felt as the finger lifts, as the bubble shows: the host's answer can be
+                // seconds away (an upload first), and the tap came with it.
+                if composer.submit(working: session.working) { Haptics.tap() }
             } label: {
                 // Send's pink, its height and its place, with the word for what it does.
                 Text(queues ? "Queue" : "Run")
@@ -321,7 +322,7 @@ struct ComposerView: View {
         } else if !composer.isEmpty {
             // Folded away while there's nothing to send: it comes up with the first letter.
             Button {
-                composer.submit(working: session.working)
+                if composer.submit(working: session.working) { Haptics.tap() }
             } label: {
                 // ah's Send: the accent-filled circle, the one pink control.
                 Image(systemName: "arrow.up")

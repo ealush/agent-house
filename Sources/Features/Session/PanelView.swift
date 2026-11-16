@@ -171,10 +171,21 @@ private struct DiffPanel: View {
     private func send() {
         guard let target = commenting, !comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let text = comment
+        let place = commentingAt
         cancel()
         Task {
             if let result = await model.send(comment: text, file: target.file, line: target.line) {
                 scene.toast(result.outcome == .queued ? "Queued for the agent" : "Sent to the agent")
+            } else {
+                // Back on its line with what you wrote, and why it didn't go: it was gone,
+                // and the panel had a diff to show, so the error never did.
+                scene.toast(model.error ?? "Couldn’t send the comment", error: true)
+                if commenting == nil {
+                    commenting = target
+                    commentingAt = place
+                    comment = text
+                    commentFocused = true
+                }
             }
         }
     }
@@ -292,7 +303,7 @@ private struct FilesPanel: View {
                     if let path = model.listing?.path {
                         Divider()
                         Button("Mention This Folder", systemImage: "at") { insert(path) }
-                        Button("Copy Path", systemImage: "doc.on.doc") { UIPasteboard.general.string = path }
+                        Button("Copy Path", systemImage: "doc.on.doc") { scene.copy(path, say: "the path") }
                     }
                 } label: {
                     Image(systemName: "ellipsis")
@@ -436,7 +447,7 @@ private struct FilesPanel: View {
         .contextMenu {
             Button(entry.type == .dir ? "Open" : "Preview", systemImage: entry.type == .dir ? "folder" : "eye") { Task { await open(entry) } }
             Button("Mention in Message", systemImage: "at") { insert(path) }
-            Button("Copy Path", systemImage: "doc.on.doc") { UIPasteboard.general.string = path }
+            Button("Copy Path", systemImage: "doc.on.doc") { scene.copy(path, say: "the path") }
             if entry.type == .file {
                 Button("Share or Save…", systemImage: "square.and.arrow.up") { Task { await share(entry) } }
             }
@@ -623,7 +634,7 @@ private struct ChatPanel: View {
                                         session.composer.text = message.text
                                         scene.requestFocus(.composer(session.key))
                                     }
-                                    Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = message.text }
+                                    Button("Copy", systemImage: "doc.on.doc") { scene.copy(message.text, say: "the message") }
                                 }
                         }
                     }
@@ -693,7 +704,11 @@ private struct ChatPanel: View {
     private func send() {
         let text = draft
         draft = ""
-        Task { await model.send(text) }
+        Task {
+            // A question that didn't go comes back to the field (the chat takes it out again).
+            let sent = await model.send(text)
+            if !sent, draft.isEmpty { draft = text }
+        }
     }
 }
 
@@ -994,7 +1009,8 @@ private struct SnapshotsPanel: View {
                     last: index == rows.count - 1,
                     restoring: model.restoring == snap.turn,
                     busy: model.restoring != nil,
-                    restore: { confirming = snap }
+                    restore: { confirming = snap },
+                    copy: { scene.copy($0, say: "the commit") }
                 )
                 .id(snap.id)
                 .background(theme.accent.opacity(highlight == snap.id ? 0.14 : 0), in: RoundedRectangle(cornerRadius: 12, style: .continuous).inset(by: -6))
@@ -1050,6 +1066,7 @@ private struct SnapshotRow: View {
     let restoring: Bool
     let busy: Bool
     let restore: () -> Void
+    let copy: (String) -> Void
     @Environment(\.theme) private var theme
 
     private var safety: Bool { snap.kind == "safety" }
@@ -1112,7 +1129,7 @@ private struct SnapshotRow: View {
         .contextMenu {
             Button(safety ? "Restore This Safety Copy" : "Restore Files to Before Turn \(snap.turn)", systemImage: "arrow.uturn.backward", action: restore)
                 .disabled(busy)
-            Button("Copy Commit", systemImage: "doc.on.doc") { UIPasteboard.general.string = snap.commit }
+            Button("Copy Commit", systemImage: "doc.on.doc") { copy(snap.commit) }
         }
         .accessibilityElement(children: .combine)
         .accessibilityAction(named: "Restore", restore)

@@ -530,8 +530,9 @@ struct KeyBar: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(TerminalKeys.bar, id: \.label) { key in
+                    // Quiet, as the system keyboard is (its key haptics are the person's to turn
+                    // on); the sticky modifiers, which hold a state, still tick.
                     Button(key.label) {
-                        Haptics.tap()
                         send(TerminalKeys.applyModifiers(key.bytes, ctrl: ctrl, alt: alt, shift: shift))
                         ctrl = false
                         alt = false

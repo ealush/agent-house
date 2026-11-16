@@ -504,7 +504,8 @@ private struct ApproveDenyView: View {
 
     private static func answer(_ approve: Bool, cursor: RowCursor, target: AskTarget) {
         guard cursor.sent == nil else { return }
-        if approve { Haptics.success() } else { Haptics.warning() }
+        // Denying is an answer, not a failure: a firm tap, not the warning's double buzz.
+        if approve { Haptics.success() } else { Haptics.threshold() }
         cursor.sent = approve ? "approve" : "deny"
         Task {
             await target.answer(approve: approve)

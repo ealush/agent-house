@@ -120,9 +120,14 @@ struct SessionScreen: View {
         .onChange(of: session.isShell, initial: true) { _, shell in session.composer.isShell = shell }
         .onChange(of: session.hasGUI) { _, _ in session.stateChanged() }
         .onChange(of: session.row?.dto.queued) { _, _ in session.stateChanged() }
+        // One tap for what changed: it asks (a question that ends a turn isn't also "done"),
+        // or it finished. Not when you stopped it, and not when the session went away.
         .onChange(of: session.row?.dto.status) { old, new in
-            if old == .busy && new != .busy { Haptics.success() }
-            if new == .waiting { Haptics.warning() }
+            if new == .waiting {
+                Haptics.warning()
+            } else if old == .busy, let new, new != .busy, !session.composer.stoppedLately {
+                Haptics.success()
+            }
         }
         .accessibilityElement(children: .contain)
     }
@@ -549,11 +554,21 @@ private struct EndedBanner: View {
                     .font(.ah(.caption)).foregroundStyle(theme.muted)
             }
             Spacer()
-            Button("Resume") {
+            // Says it's on its way while the host starts it again (a few seconds for an
+            // agent), and takes no second tap: one did, and two sessions resumed.
+            let resuming = session.busy.contains("resume")
+            Button {
                 Task { if let key = await session.resume() { scene.open(key) } }
+            } label: {
+                ZStack {
+                    Text("Resume").opacity(resuming ? 0 : 1)
+                    if resuming { ProgressView().controlSize(.small).tint(theme.accentInk) }
+                }
             }
             .buttonStyle(.borderedProminent)
             .tint(theme.accentStrong)
+            .disabled(resuming)
+            .accessibilityLabel(resuming ? "Resuming" : "Resume")
         }
         .padding(12)
         .background(theme.raised)

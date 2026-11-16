@@ -1069,7 +1069,7 @@ struct WorktreesView: View {
         }
         .contextMenu {
             Button("Open a Shell Here", systemImage: "terminal") { shell(tree) }
-            Button("Copy Path", systemImage: "doc.on.doc") { UIPasteboard.general.string = tree.path }
+            Button("Copy Path", systemImage: "doc.on.doc") { scene.copy(tree.path, say: "the path") }
             if !inUse {
                 Divider()
                 Button("Remove…", systemImage: "trash", role: .destructive) { removing = tree }

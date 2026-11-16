@@ -662,9 +662,14 @@ final class ComposerModel {
     /// Waits for every send so far (tests, and before leaving a session).
     func settle() async { await chain?.value }
 
+    /// When you last stopped a turn from here: the turn that ends because of it isn't news.
+    private(set) var interruptedAt: Date?
+    var stoppedLately: Bool { interruptedAt.map { Date().timeIntervalSince($0) < 15 } ?? false }
+
     func stop() async {
         do {
             try await api.interrupt(uid)
+            interruptedAt = Date()
             events.append(.interrupted)
         } catch {
             events.append(.failed("Couldn’t interrupt: \(APIError.wrap(error).message)"))

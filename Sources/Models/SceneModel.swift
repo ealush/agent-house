@@ -1313,8 +1313,14 @@ final class SceneModel {
 
     func copyLink(to place: Place) {
         guard let url = link(to: place) else { return }
-        clipboard(url.absoluteString)
-        toast(place.message != nil ? "Copied a link to the message" : "Copied the link")
+        copy(url.absoluteString, say: place.message != nil ? "a link to the message" : "the link")
+    }
+
+    /// Copies text and says what was copied ("Copied the path"). The same wherever something
+    /// is copied: from a menu, which has closed by then, nothing else showed it had worked.
+    func copy(_ text: String, say what: String) {
+        clipboard(text)
+        toast("Copied \(what)")
     }
 
     func shareLink(to place: Place) {

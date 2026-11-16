@@ -614,9 +614,7 @@ struct SessionRowMenu: View {
         if scene.openWindow != nil {
             Button("Open in New Window", systemImage: "macwindow.badge.plus") { scene.openInNewWindow(row.key) }
         }
-        Button(row.dto.pinned ? "Unpin" : "Pin", systemImage: row.dto.pinned ? "pin.slash" : "pin") {
-            Task { try? await hub.client(forKey: row.key).pin(row.uid, pinned: !row.dto.pinned); hub.refresh() }
-        }
+        Button(row.dto.pinned ? "Unpin" : "Pin", systemImage: row.dto.pinned ? "pin.slash" : "pin") { SessionPin.toggle(row, scene: scene, hub: hub) }
         if row.dto.agent != nil && row.dto.feed != nil {
             Button("Continue in Another Agent…", systemImage: CommandCatalog.icon("continue-in")) { scene.sheet = .continueIn(key: row.key, preset: nil) }
         }
@@ -637,7 +635,7 @@ struct SessionSwipes: ViewModifier {
         content
             .swipeActions(edge: .leading) {
                 Button {
-                    Task { try? await hub.client(forKey: row.key).pin(row.uid, pinned: !row.dto.pinned); hub.refresh() }
+                    SessionPin.toggle(row, scene: scene, hub: hub)
                 } label: {
                     Image(systemName: row.dto.pinned ? "pin.slash" : "pin")
                 }
@@ -653,6 +651,22 @@ struct SessionSwipes: ViewModifier {
                     .accessibilityLabel("Terminate")
                     .tint(theme.danger)
             }
+    }
+}
+
+/// Pin or unpin a session's row, on every device; a host that refuses says so.
+@MainActor
+enum SessionPin {
+    static func toggle(_ row: SessionRow, scene: SceneModel, hub: HubStore) {
+        let pinned = !row.dto.pinned
+        Task {
+            do {
+                try await hub.client(forKey: row.key).pin(row.uid, pinned: pinned)
+            } catch {
+                scene.toast("Couldn’t \(pinned ? "pin" : "unpin") “\(row.title)”: \(APIError.wrap(error).message)", error: true)
+            }
+            hub.refresh()
+        }
     }
 }
 
@@ -704,6 +718,8 @@ struct HistoryRowView: View {
     let hub: HubStore
     @Environment(\.theme) private var theme
     @Environment(\.dynamicTypeSize) private var typeSize
+    /// A resume on its way: a second swipe or menu tap waits for it, not a second session.
+    @State private var resuming = false
 
     var body: some View {
         Button {
@@ -733,12 +749,7 @@ struct HistoryRowView: View {
         .swipeActions(edge: .trailing) {
             // Red by tint, not role, as a session's Terminate is: the row stays until the
             // host's list comes back without it.
-            Button("Hide") {
-                Task {
-                    try? await hub.client(host: item.isLocal ? nil : item.host).forget(item.dto.ref)
-                    hub.refresh(host: item.isLocal ? nil : item.host)
-                }
-            }
+            Button("Hide") { hide() }
             .tint(theme.danger)
         }
         .contextMenu {
@@ -747,17 +758,15 @@ struct HistoryRowView: View {
                 Button("Fork…", systemImage: "arrow.branch") { scene.sheet = .fork(item.id) }
                 Button("Continue in Another Agent…", systemImage: CommandCatalog.icon("continue-in")) { scene.sheet = .continueIn(key: item.id, preset: nil) }
             }
-            Button("Hide from History", systemImage: "eye.slash", role: .destructive) {
-                Task {
-                    try? await hub.client(host: item.isLocal ? nil : item.host).forget(item.dto.ref)
-                    hub.refresh(host: item.isLocal ? nil : item.host)
-                }
-            }
+            Button("Hide from History", systemImage: "eye.slash", role: .destructive) { hide() }
         }
     }
 
     private func resume() {
+        guard !resuming else { return }
+        resuming = true
         Task {
+            defer { resuming = false }
             let api = hub.client(host: item.isLocal ? nil : item.host)
             do {
                 let result = try await api.resume(item.dto.ref)
@@ -766,6 +775,19 @@ struct HistoryRowView: View {
             } catch {
                 scene.toast("Couldn’t resume: \(APIError.wrap(error).message)", error: true)
             }
+        }
+    }
+
+    /// Out of History on every device; a host that refuses says so, instead of the row
+    /// staying with nothing said.
+    private func hide() {
+        Task {
+            do {
+                try await hub.client(host: item.isLocal ? nil : item.host).forget(item.dto.ref)
+            } catch {
+                scene.toast("Couldn’t hide “\(item.dto.title)”: \(APIError.wrap(error).message)", error: true)
+            }
+            hub.refresh(host: item.isLocal ? nil : item.host)
         }
     }
 }

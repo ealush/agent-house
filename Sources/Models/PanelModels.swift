@@ -391,9 +391,11 @@ final class SideChatModel {
         }
     }
 
-    func send(_ text: String) async {
+    /// False when it didn't go: the question is out of the chat again, for the field to keep.
+    @discardableResult
+    func send(_ text: String) async -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !sending else { return }
+        guard !trimmed.isEmpty, !sending else { return false }
         sending = true
         defer { sending = false }
         messages.append(ChatMessage(role: .user, text: trimmed, at: Date().timeIntervalSince1970 * 1000, id: nil))
@@ -402,9 +404,11 @@ final class SideChatModel {
             messages.append(reply.message)
             followups = reply.followups
             error = nil
+            return true
         } catch {
             messages.removeLast()
             self.error = APIError.wrap(error).message
+            return false
         }
     }
 

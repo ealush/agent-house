@@ -139,7 +139,7 @@ struct BlockRow: View {
                 // A brief tap: the message's actions where the finger was (`MessageActions`).
                 .onTapGesture { messageTapped?() }
                 .contextMenu {
-                    Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = text }
+                    Button("Copy", systemImage: "doc.on.doc") { scene.copy(text, say: "the message") }
                     LinkButtons(place: messagePlace, scene: scene)
                     if session.isLive {
                         Button("Edit & Send Again", systemImage: "pencil") {
@@ -201,7 +201,7 @@ extension BlockRow {
 
     /// The agent's message, on a long press of its steps, pictures and widgets.
     @ViewBuilder fileprivate var agentMenu: some View {
-        Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = block.text }
+        Button("Copy", systemImage: "doc.on.doc") { scene.copy(block.text, say: "the message") }
         LinkButtons(place: messagePlace, scene: scene)
         if session.isLive && block.hasText {
             Button("Quote in Reply", systemImage: "text.quote") {
@@ -905,8 +905,7 @@ enum MessageActions {
         var items: [UIMenuElement] = []
         if block.hasText {
             items.append(UIAction(title: "Copy", image: UIImage(systemName: "doc.on.doc")) { _ in
-                UIPasteboard.general.string = block.text
-                scene.toast("Copied the message")
+                scene.copy(block.text, say: "the message")
             })
         }
         if session.isLive, block.hasText {
