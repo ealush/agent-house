@@ -40,12 +40,13 @@ export function send(res: ServerResponse, status: number, body: unknown) {
   else gzip(json, done);
 }
 
-export async function readBody(req: IncomingMessage, limit: number): Promise<Buffer> {
+/** `ms`: how long the whole body may take (a recording on a phone's connection needs more). */
+export async function readBody(req: IncomingMessage, limit: number, ms = BODY_MS): Promise<Buffer> {
   let size = 0;
   const chunks: Buffer[] = [];
   // The server has no whole-request timeout (a long upload must not be cut), so a
   // small body that stops arriving is dropped here.
-  const timer = setTimeout(() => req.destroy(new HttpError(408, 'request body timed out')), BODY_MS);
+  const timer = setTimeout(() => req.destroy(new HttpError(408, 'request body timed out')), ms);
   try {
     for await (const chunk of req) {
       size += chunk.length;

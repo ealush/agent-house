@@ -36,7 +36,7 @@ import { listeningPorts } from './procs.ts';
 import * as t from './tmux.ts';
 import { createWorktree, initRepo, changes, listBranches, switchBranch, pullRequest, GitError } from './git.ts';
 import { SideChatStore, SideChatError, changeContext } from './sidechat.ts';
-import { VoiceService, MAX_AUDIO_BYTES } from './voice.ts';
+import { VoiceService, MAX_AUDIO_BYTES, AUDIO_UPLOAD_MS, MAX_DICTATING } from './voice.ts';
 import { ensureClient, ensureMigrated, getDb } from './db.ts';
 import { importLegacyJson } from './migrate.ts';
 import { FsError, dirStatus, list, makeDir, receive, sendFile, setRoots, roots, clearUploadDir, safePath } from './files.ts';
@@ -121,6 +121,8 @@ core.applyHarnesses();
 const drafts = new Drafts();
 const sidechat = new SideChatStore();
 const voice = new VoiceService(sidechat);
+/** Dictations being read or heard now (each holds its recording in memory). */
+let dictating = 0;
 const envStore = new EnvStore();
 core.launchEnv = () => envStore.forLaunch();
 const terminals = new AttachedTerminals(core.registry, () => core.launchEnv());
@@ -1435,19 +1437,25 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   if (route('POST', /^\/api\/voice\/dictate$/)) {
     const declared = Number(req.headers['content-length']);
     if (declared > MAX_AUDIO_BYTES) throw new HttpError(413, 'recording too large', 'voice_too_large');
-    let audio: Buffer;
-    try {
-      audio = await readBody(req, MAX_AUDIO_BYTES);
-    } catch (err) {
-      if (err instanceof HttpError && err.status === 413) throw new HttpError(413, 'recording too large', 'voice_too_large');
-      throw err;
-    }
     const q = url.searchParams;
     const context = q.get('context');
     if (context !== null && context.length > 2000) throw new HttpError(400, 'invalid context');
-    const out = await voice.dictate(audio, { name: q.get('name'), style: q.get('style'), language: q.get('language'), context });
-    audit(req, 'voice.dictate', { bytes: audio.length, speech: out.speech, cleanedBy: out.cleanedBy, ...(out.cleanupError ? { cleanupFailed: true } : {}) });
-    return send(res, 200, out);
+    if (dictating >= MAX_DICTATING) throw new HttpError(429, 'too many dictations at once', 'voice_busy');
+    dictating++;
+    try {
+      let audio: Buffer;
+      try {
+        audio = await readBody(req, MAX_AUDIO_BYTES, AUDIO_UPLOAD_MS);
+      } catch (err) {
+        if (err instanceof HttpError && err.status === 413) throw new HttpError(413, 'recording too large', 'voice_too_large');
+        throw err;
+      }
+      const out = await voice.dictate(audio, { name: q.get('name'), style: q.get('style'), language: q.get('language'), context });
+      audit(req, 'voice.dictate', { bytes: audio.length, speech: out.speech, cleanedBy: out.cleanedBy, ...(out.cleanupError ? { cleanupFailed: true } : {}) });
+      return send(res, 200, out);
+    } finally {
+      dictating--;
+    }
   }
 
   if (route('POST', /^\/api\/voice\/refine$/)) {

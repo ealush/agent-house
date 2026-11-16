@@ -829,7 +829,9 @@ export class SideChatStore {
     let data: { choices?: Array<{ message?: { content?: unknown; tool_calls?: Array<{ id?: unknown; type?: unknown; function?: { name?: unknown; arguments?: unknown } }> } }> };
     try {
       data = await res.json();
-    } catch {
+    } catch (err) {
+      // Headers in, then nothing until the deadline: a timeout, not a bad answer.
+      if (signal.aborted) throw new SideChatError(504, 'chat provider timed out');
       throw new SideChatError(502, 'chat provider returned invalid JSON');
     }
     const msg = data.choices?.[0]?.message;

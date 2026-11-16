@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
+import { getDb } from './db.ts';
 import { join } from 'node:path';
 import { SideChatStore } from './sidechat.ts';
 import { ensureMigrated } from './db.ts';
@@ -258,5 +259,45 @@ test('the speech prompt: words first, then the end of what came before, under 30
   assert.ok(p.startsWith('SwiftUI. word'), p.slice(0, 20));
   assert.ok(p.endsWith('word199'));
   assert.match(p.slice('SwiftUI. '.length).split(' ')[0], /^word\d+$/, 'starts on a whole word');
+});
+
+test('review: a provider answering nonsense is a failure, not silence; a stall after the headers is a timeout', async () => {
+  const { voice, groq } = await bed();
+  await voice.update({ speech: { subscriptionId: groq.id, model: 'whisper-large-v3-turbo' } });
+  for (const body of [{}, [], { text: 42 }, { error: { message: 'backend failed' } }]) {
+    await withFetch(
+      () => json(body),
+      async () => {
+        await assert.rejects(voice.dictate(AUDIO, { name: 'x.m4a' }), (e: any) => e.status === 502 && e.code === 'voice_provider', JSON.stringify(body));
+      },
+    );
+  }
+  await withFetch(
+    () => json({ text: '' }),
+    async () => {
+      assert.equal((await voice.dictate(AUDIO, { name: 'x.m4a' })).text, '', 'a real empty transcription is silence');
+    },
+  );
+  await withFetch(
+    () => ({ ok: true, status: 200, text: () => Promise.reject(Object.assign(new Error('timed out'), { name: 'TimeoutError' })) }) as unknown as Response,
+    async () => {
+      await assert.rejects(voice.dictate(AUDIO, { name: 'x.m4a' }), (e: any) => e.status === 504 && e.code === 'voice_timeout');
+    },
+  );
+});
+
+test('review: settings stored by hand are read as they would have been accepted', async () => {
+  const path = file();
+  await ensureMigrated(path);
+  const voice = new VoiceService(new SideChatStore(path), path);
+  await getDb(path).setting.upsert({ where: { key: 'voice.settings' }, create: { key: 'voice.settings', value: '{"style":{},"language":7,"vocabulary":["a\\nb"],"speech":{"id":5}}' }, update: {} });
+  assert.deepEqual(await voice.settings(), { speech: null, cleanup: null, style: 'clean', language: 'auto', vocabulary: [], maxBytes: 25 * 1024 * 1024 });
+});
+
+test('review: the speech prompt keeps whole words to spell', () => {
+  const words = Array.from({ length: 60 }, (_, i) => `Term${String(i).padStart(2, '0')}`);
+  const p = speechPrompt(words, '');
+  assert.ok(p.length <= 150, `${p.length}`);
+  assert.ok(p.split(', ').every((w) => /^Term\d\d$/.test(w)), 'no word cut in half');
 });
 

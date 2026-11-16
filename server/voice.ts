@@ -13,6 +13,10 @@ export type VoiceStyle = (typeof STYLES)[number];
 
 /** The providers' own direct-upload limit (Groq and OpenAI both take 25 MB). */
 export const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
+/** How long a recording may take to arrive (25 MiB at about 1 Mbit/s). */
+export const AUDIO_UPLOAD_MS = 240_000;
+/** Dictations held in memory at once; more wait their turn as 429s (each holds its audio). */
+export const MAX_DICTATING = 4;
 const SPEECH_MS = 90_000;
 const CLEANUP_MS = 45_000;
 const MAX_WORDS = 60;
@@ -87,7 +91,13 @@ function vocabulary(v: unknown): string[] {
  * Whisper's prompt is capped at 224 tokens; 300 characters stays under it in any script.
  */
 export function speechPrompt(words: string[], context = ''): string {
-  const spelled = words.join(', ').slice(0, 150);
+  // Whole words only, as many as fit: a word cut in half is worse than none.
+  let spelled = '';
+  for (const w of words) {
+    const next = spelled ? `${spelled}, ${w}` : w;
+    if (next.length > 150) break;
+    spelled = next;
+  }
   const room = 300 - spelled.length - (spelled ? 2 : 0);
   let before = context.replace(/\s+/g, ' ').trim();
   if (before.length > room) {
@@ -134,6 +144,11 @@ type Segment = { text?: unknown; no_speech_prob?: unknown; avg_logprob?: unknown
  * so a recording of nothing comes back empty.
  */
 export function heard(data: { text?: unknown; segments?: unknown; language?: unknown; duration?: unknown }): { text: string; language?: string; seconds?: number } {
+  // A transcription has its text, or its segments; anything else is a provider failing,
+  // not silence (a batch read as silence would lose its words without a word).
+  if (!data || typeof data !== 'object' || Array.isArray(data) || (typeof data.text !== 'string' && !Array.isArray(data.segments))) {
+    throw new HttpError(502, 'speech provider returned no transcription', 'voice_provider');
+  }
   let text = typeof data.text === 'string' ? data.text : '';
   if (Array.isArray(data.segments) && data.segments.length) {
     const kept = (data.segments as Segment[]).filter((s) => !(Number(s.no_speech_prob) > 0.6 && Number(s.avg_logprob) < -1));
@@ -176,12 +191,33 @@ export class VoiceService {
   private async stored(): Promise<Stored> {
     const row = await this.db.setting.findUnique({ where: { key: SETTING } });
     if (!row) return { ...EMPTY };
+    let v: Record<string, unknown>;
     try {
-      const v = JSON.parse(row.value) as Partial<Stored>;
-      return { ...EMPTY, ...v, vocabulary: Array.isArray(v.vocabulary) ? v.vocabulary.filter((w) => typeof w === 'string') : [] };
+      v = JSON.parse(row.value);
+      if (!v || typeof v !== 'object') return { ...EMPTY };
     } catch {
       return { ...EMPTY };
     }
+    // Each field as it would have been accepted, or its default: a hand-edited row can't
+    // hand the routes a bad type.
+    const pick = (p: unknown): Pick | null => {
+      const o = p as { id?: unknown; model?: unknown } | null;
+      return o && typeof o.id === 'string' && o.id.length <= 40 && typeof o.model === 'string' && o.model.length <= 80 ? { id: o.id, model: o.model } : null;
+    };
+    const safe = <T>(read: () => T, fallback: T): T => {
+      try {
+        return read();
+      } catch {
+        return fallback;
+      }
+    };
+    return {
+      speech: pick(v.speech),
+      cleanup: pick(v.cleanup),
+      style: safe(() => style(v.style, EMPTY.style), EMPTY.style),
+      language: safe(() => language(v.language), EMPTY.language),
+      vocabulary: safe(() => vocabulary(v.vocabulary), []),
+    };
   }
 
   /** A pick whose subscription still exists, with its key. */
@@ -245,7 +281,8 @@ export class VoiceService {
 
   private async transcribe(speech: { sub: Subscription; model: string }, audio: Buffer, file: { name: string; type: string }, lang: string, words: string[], context: string) {
     const form = new FormData();
-    form.append('file', new Blob([new Uint8Array(audio)], { type: file.type }), file.name);
+    // The request's own bytes, not a copy of them.
+    form.append('file', new Blob([audio as Uint8Array<ArrayBuffer>], { type: file.type }), file.name);
     form.append('model', speech.model);
     // Whisper reports per-segment silence and the language; the newer
     // transcribe models only take json.
@@ -268,13 +305,22 @@ export class VoiceService {
       const timedOut = err instanceof Error && err.name === 'TimeoutError';
       throw new HttpError(timedOut ? 504 : 502, timedOut ? 'speech provider timed out' : 'speech provider unreachable', timedOut ? 'voice_timeout' : 'voice_provider');
     }
-    const body = await res.text().catch(() => '');
-    if (!res.ok) throw new HttpError(502, `speech provider: ${res.status} ${providerMessage(body).slice(0, 200) || res.statusText}`.trim(), 'voice_provider');
+    let body: string;
     try {
-      return heard(JSON.parse(body));
+      body = await res.text();
+    } catch (err) {
+      // Headers in, then nothing until the deadline.
+      const timedOut = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
+      throw new HttpError(timedOut ? 504 : 502, timedOut ? 'speech provider timed out' : 'speech provider cut off', timedOut ? 'voice_timeout' : 'voice_provider');
+    }
+    if (!res.ok) throw new HttpError(502, `speech provider: ${res.status} ${providerMessage(body).slice(0, 200) || res.statusText}`.trim(), 'voice_provider');
+    let data: unknown;
+    try {
+      data = JSON.parse(body);
     } catch {
       throw new HttpError(502, 'speech provider returned invalid JSON', 'voice_provider');
     }
+    return heard(data as Parameters<typeof heard>[0]);
   }
 
   private async clean(cleanup: { sub: Subscription; model: string }, text: string, s: Exclude<VoiceStyle, 'verbatim'>, words: string[], phone = ''): Promise<string> {
