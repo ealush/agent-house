@@ -51,6 +51,8 @@ final class TourUITests: XCTestCase {
         app.launchArguments += ["-AHFreshWindow"] + (environment["AH_HUD"] == "1" ? ["-AHLayoutHUD"] : [])
         // As a phone in the hand: no hardware keyboard, whatever the simulator has.
         if environment["AH_TOUCH_ONLY"] == "1" { app.launchArguments += ["-AHTouchOnly"] }
+        // Dictation hears this recording as if it were spoken (a simulator has no microphone).
+        if let voice = environment["AH_VOICE_FILE"] { app.launchEnvironment["AH_VOICE_FILE"] = voice }
         app.launch()
         try enrollIfNeeded(app)
         var target = app

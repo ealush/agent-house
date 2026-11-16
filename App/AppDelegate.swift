@@ -13,6 +13,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         AhType.applyToBars()
+        // Dictation listens with the real microphone and this device's own speech.
+        DictationModel.makeCapture = { VoiceCapture() }
+        DictationModel.thisDeviceName = DeviceSpeech.thisDevice
         do {
             let ephemeral = Self.ephemeral
             let services = AppServices(

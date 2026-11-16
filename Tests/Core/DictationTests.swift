@@ -140,6 +140,7 @@ private var claude: [String: Any] { ["subscriptionId": "s2", "name": "Claude", "
     await model.toggle(into: composer)
     #expect(capture.startedWith.map { $0?.identifier } == ["he"], "this device listens, in the host's language")
     #expect(model.partial == "um fix the build", "its words show as it hears them")
+    #expect(model.levels == [0.4], "how loud, for the box's waves")
     await model.toggle(into: composer)
     #expect(composer.text == "Fix the build.")
     #expect(model.last?.heardBy == "this iPhone")
@@ -235,6 +236,7 @@ private var claude: [String: Any] { ["subscriptionId": "s2", "name": "Claude", "
     await model.cancel()
     #expect(capture.cancelled)
     #expect(model.phase == .idle)
+    #expect(model.levels.isEmpty, "the waves go with it")
     #expect(composer.text == "draft")
 }
 
@@ -243,3 +245,28 @@ private var claude: [String: Any] { ["subscriptionId": "s2", "name": "Claude", "
     #expect(DictationModel.swap("edited away", "Fix it.", for: "fix it") == nil)
     #expect(DictationModel.swap("שלום Fix it.", "Fix it.", for: "fix it")!.caret == "שלום fix it".utf16.count)
 }
+
+@MainActor
+@Test func theFirstTapAfterAColdStartAsksTheHostBeforeGuessing() async {
+    let host = VoiceHost()
+    host.settings["speech"] = groq
+    let (model, composer, capture) = bed(host)
+    // No refresh first: the settings aren't known when the microphone is tapped.
+    await model.toggle(into: composer)
+    #expect(capture.startedWith == [nil], "the host hears it, so this device only records")
+    await model.toggle(into: composer)
+    #expect(composer.text == "Fix the build.")
+}
+
+@MainActor
+@Test func whenThisDeviceCantListenTheHostsSpeechSubscriptionStillCan() async {
+    let host = VoiceHost()
+    let (model, composer, capture) = bed(host)
+    await model.refresh()
+    capture.startError = .failed("Couldn’t get English ready on this iPhone.")
+    host.settings["speech"] = groq
+    await model.toggle(into: composer)
+    #expect(capture.startedWith.count == 2 && capture.startedWith.last! == nil, "tried here, then recorded for the host")
+    #expect(model.isListening)
+}
+

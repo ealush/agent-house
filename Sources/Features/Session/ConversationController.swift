@@ -226,8 +226,9 @@ final class ConversationController: UIViewController {
 
     override func updateProperties() {
         super.updateProperties()
-        // What floats over the transcript takes touches only while it shows something.
-        let floats = session.composer.floats
+        // What floats over the transcript takes touches only while it shows something: the
+        // settings, suggestions, or dictation's card.
+        let floats = session.composer.floats || DictationCard.shows(session.dictation, in: session.composer)
         if let float, float.view.isUserInteractionEnabled != floats { float.view.isUserInteractionEnabled = floats }
     }
 

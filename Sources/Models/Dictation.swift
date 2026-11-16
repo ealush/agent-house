@@ -32,6 +32,8 @@ enum CaptureEvent: Sendable, Equatable {
     case level(Float)
     /// What this device has heard so far (it may still change).
     case partial(String)
+    /// Something else took the microphone (a call): what was said so far goes in.
+    case interrupted
 }
 
 enum CaptureError: Error, Equatable, Sendable {
@@ -101,8 +103,17 @@ final class DictationModel {
     /// The longest recording: past it, listening stops and the words go in.
     static let longest: TimeInterval = 300
 
+    /// The microphone this app listens with (`VoiceCapture`, set at launch); none where there's
+    /// no app around it (tests, the command line).
+    static var makeCapture: @MainActor () -> any DictationCapture = { NoMicrophone() }
+    /// "this iPhone", "this iPad", set at launch.
+    static var thisDeviceName = "this device"
+
     private(set) var phase: Phase = .idle
     private(set) var level: Float = 0
+    /// Loudness over the last few seconds, oldest first (about 20 a second): the box's waves.
+    private(set) var levels: [Float] = []
+    static let levelsKept = 96
     /// This device's words so far, while it listens.
     private(set) var partial = ""
     private(set) var last: Inserted?
@@ -151,29 +162,37 @@ final class DictationModel {
         phase = .starting
         partial = ""
         level = 0
+        levels = []
         // The words may need this device after all (the settings changed): read them while
         // listening, and decide when the recording ends.
         reading = Task { await refresh() }
         let capture = makeCapture()
         self.capture = capture
+        // A host that does voice whose settings haven't been read yet (a cold start straight
+        // into a session): read them first, rather than guess this device.
+        if settings == nil, hostDoesVoice() { await settingsRead() }
         // Known to go to the host: only the recording. Otherwise this device listens too, so
         // its words are there the moment you stop.
         let onDevice: Locale? = if case .host = route { nil } else { (settings ?? VoiceSettings()).locale }
         let events: @MainActor (CaptureEvent) -> Void = { [weak self] event in
             guard let self, self.phase == .starting || self.isListening else { return }
             switch event {
-            case .level(let v): self.level = v
+            case .level(let v):
+                self.level = v
+                self.levels.append(v)
+                if self.levels.count > Self.levelsKept { self.levels.removeFirst(self.levels.count - Self.levelsKept) }
             case .partial(let words): self.partial = words
+            case .interrupted: Task { await self.finish(into: composer) }
             }
         }
         do {
             do {
                 try await capture.start(transcribing: onDevice, events: events)
-            } catch CaptureError.noDeviceSpeech(let language) where hostDoesVoice() {
-                // This device can't write the language down; the host may have a speech
-                // subscription by now.
-                await reading?.value
-                guard case .host = route else { throw CaptureError.noDeviceSpeech(language) }
+            } catch let error as CaptureError where error != .microphoneDenied && onDevice != nil && hostDoesVoice() {
+                // This device can't listen for the language (none, or not readied); the host may
+                // have a speech subscription by now.
+                await settingsRead()
+                guard case .host = route else { throw error }
                 try await capture.start(transcribing: nil, events: events)
             }
         } catch {
@@ -203,7 +222,7 @@ final class DictationModel {
             phase = .failed((error as? CaptureError)?.message ?? "Couldn’t finish listening: \(error.localizedDescription)", retry: false)
             return
         }
-        await reading?.value
+        await settingsRead()
         await write(result, into: composer)
     }
 
@@ -217,13 +236,14 @@ final class DictationModel {
         phase = .idle
         partial = ""
         level = 0
+        levels = []
     }
 
     /// A failed dictation's recording, written down again.
     func retry(into composer: ComposerModel) async {
         guard case .failed(_, true) = phase, let kept else { return }
         phase = .writing
-        await reading?.value
+        await settingsRead()
         await write(kept, into: composer)
     }
 
@@ -252,6 +272,18 @@ final class DictationModel {
         }
     }
 
+    /// The settings read as listening began, but not a host that doesn't answer: after a few
+    /// seconds the words go by the settings as they were.
+    private func settingsRead() async {
+        guard let reading else { return }
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await reading.value }
+            group.addTask { try? await Task.sleep(for: .seconds(3)) }
+            await group.next()
+            group.cancelAll()
+        }
+    }
+
     private func finished(_ result: CaptureResult) {
         if let file = result.file { try? FileManager.default.removeItem(at: file) }
         kept = nil
@@ -259,6 +291,7 @@ final class DictationModel {
         phase = .idle
         partial = ""
         level = 0
+        levels = []
     }
 
     private func discardKept() {
@@ -317,6 +350,9 @@ final class DictationModel {
 
     // MARK: Undoing a cleanup
 
+    /// The tidied words stay; Use What I Said is no longer offered.
+    func keepTidied() { last = nil }
+
     /// Whether the last dictation was tidied and is still in the box as it went in.
     func canUseWhatWasSaid(in text: String) -> Bool {
         guard let last, last.raw != last.text else { return false }
@@ -342,3 +378,13 @@ final class DictationModel {
         return (text, caret)
     }
 }
+
+/// Where there's no microphone to listen with (tests, the command line).
+@MainActor
+private final class NoMicrophone: DictationCapture {
+    func start(transcribing locale: Locale?, events: @escaping @MainActor (CaptureEvent) -> Void) async throws { throw CaptureError.failed("There’s no microphone to listen with.") }
+    func finish() async throws -> CaptureResult { CaptureResult() }
+    func cancel() async {}
+    func transcribe(_ file: URL, locale: Locale) async throws -> String { throw CaptureError.failed("There’s no microphone to listen with.") }
+}
+

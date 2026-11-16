@@ -41,6 +41,8 @@ struct ComposerView: View {
     @Namespace private var glass
 
     private var hasTray: Bool { ComposerFloat.hasTray(session) }
+    /// Dictation is listening: the box shows it (`DictationWaves`).
+    private var listening: Bool { session.dictation.isListening }
     /// The most the queue tray may take: under half the conversation's room, and never so much
     /// that the transcript keeps less than `transcriptKeeps` beside the box. Worked out from the
     /// room (the keyboard and the bars) and the box, never from the tray itself.
@@ -116,8 +118,20 @@ struct ComposerView: View {
             composer.updateSuggestions()
         }
         .onChange(of: composer.events.count) { _, count in if count > 0 { deliverEvents() } }
-        // Come back to the session and the box is as it rests, settings folded.
-        .onDisappear { composer.trayOpen = false }
+        // The host's Voice settings, read as the box shows, so the first tap knows who hears it.
+        .task(id: session.key) { await session.dictation.refresh() }
+        .onChange(of: session.dictation.last) { _, last in
+            if last != nil {
+                Haptics.selection()
+                AccessibilityNotification.Announcement("Dictation added to the message").post()
+            }
+        }
+        // Come back to the session and the box is as it rests, settings folded. Left while
+        // listening, what was said goes into this session's box.
+        .onDisappear {
+            composer.trayOpen = false
+            if session.dictation.isListening { Task { await session.dictation.finish(into: composer) } }
+        }
     }
 
     /// What a message held behind a screen in front of the agent's prompt waits for.
@@ -204,6 +218,20 @@ struct ComposerView: View {
             ComposerTextField(composer: composer, session: session, scene: scene, leadingRoom: attachSize.width > 0 ? attachSize.width + 2 : 0, trailingRoom: sendSize.width > 0 ? sendSize.width + 4 : 0, cornerHeight: sendSize.height, maxHeight: textCap)
                 .frame(minHeight: control - 12)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { textHeight = $0 }
+                // While dictation listens, the box says so: waves where the text goes, a draft
+                // faded back under them until the words go in, the placeholder gone.
+                .opacity(listening ? (composer.text.isEmpty ? 0 : 0.12) : 1)
+                .overlay {
+                    if listening {
+                        DictationWaves(levels: session.dictation.levels, color: theme.accent)
+                            .frame(height: min(28, max(16, textHeight - 8)))
+                            .padding(.leading, attachSize.width + 6)
+                            .padding(.trailing, sendSize.width + 6)
+                            .allowsHitTesting(false)
+                            .transition(.opacity)
+                    }
+                }
+                .animation(.easeOut(duration: 0.2), value: listening)
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 6)
@@ -220,7 +248,12 @@ struct ComposerView: View {
         }
         .overlay(alignment: .topTrailing) { expandButton.padding(.top, 4).padding(.trailing, 6) }
         .overlay(alignment: .bottomTrailing) {
-            ZStack { sendButton }
+            // The microphone beside Send, in the same corner: alone there while the box is
+            // empty, as Messages has it, and still there to add to a draft.
+            HStack(spacing: 2) {
+                micButton
+                ZStack { sendButton }
+            }
                 .onGeometryChange(for: CGSize.self) { $0.size } action: { sendSize = $0 }
                 .animation(.snappy(duration: 0.22), value: composer.showsStop(working: session.working))
                 .animation(.snappy(duration: 0.22), value: session.isShell || (session.working && composer.canSend))
@@ -270,6 +303,40 @@ struct ComposerView: View {
     }
 
     private var attachMenu: some View { AttachMenu(composer: composer, recall: true) }
+
+    /// Dictation: a tap starts listening (the card over the conversation shows it), another
+    /// puts the words in the box. Never for a shell, whose box takes commands.
+    @ViewBuilder
+    private var micButton: some View {
+        if !session.isShell {
+            let dictation = session.dictation
+            Button {
+                Haptics.tap()
+                if trayOpen { withAnimation(ComposerFloat.motion(opening: false, reduceMotion: reduceMotion)) { trayOpen = false } }
+                Task { await dictation.toggle(into: composer) }
+            } label: {
+                Group {
+                    switch dictation.phase {
+                    case .starting, .writing: ProgressView().controlSize(.small)
+                    case .listening: Image(systemName: "mic.fill")
+                    default: Image(systemName: "mic")
+                    }
+                }
+                .font(.system(size: control * 0.36, weight: .medium))
+                .foregroundStyle(dictation.isListening ? theme.accent : theme.muted)
+                .frame(width: control - 12, height: control - 12)
+                .contentShape(Circle())
+                .contentShape(.hoverEffect, Circle())
+                .hoverEffect(.highlight)
+                .touchTarget()
+            }
+            .buttonStyle(.ahPress)
+            .disabled(dictation.phase == .starting || dictation.phase == .writing)
+            .accessibilityIdentifier("dictate")
+            .accessibilityLabel(dictation.isListening ? "Stop Dictating" : "Dictate")
+            .accessibilityHint(dictation.isListening ? "Puts what you said into the box" : "Your words go into the box; nothing is sent")
+        }
+    }
 
     @ViewBuilder
     private var sendButton: some View {
@@ -394,6 +461,9 @@ struct ComposerFloat: View {
             if !composer.suggestions.isEmpty {
                 SuggestionList(items: composer.suggestions, index: composer.suggestionIndex) { composer.accept($0) }
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+            } else if DictationCard.shows(session.dictation, in: composer) {
+                DictationCard(dictation: session.dictation, composer: composer)
+                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
             } else if Self.hasTray(session) {
                 // Out from behind the box and back under it: a slide alone, no fade. Slid, not
                 // removed: a view on its way out is laid out no more, so chips folding while the
@@ -414,7 +484,10 @@ struct ComposerFloat: View {
         // rather than drop onto it from above; open past the other edges, for the glass.
         .mask(alignment: .bottom) { Rectangle().frame(width: 4000, height: 4000) }
         .animation(Self.motion(opening: !composer.suggestions.isEmpty, reduceMotion: reduceMotion), value: composer.suggestions.isEmpty)
+        .animation(Self.motion(opening: dictating, reduceMotion: reduceMotion), value: dictating)
     }
+
+    private var dictating: Bool { DictationCard.shows(session.dictation, in: composer) }
 
     /// How what floats over the box moves, the settings chips and the / and @ suggestions
     /// alike, by whichever way they're brought out or put away: a spring. Coming out from

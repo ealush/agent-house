@@ -16,6 +16,8 @@ final class SessionModel: Identifiable {
     private let slot: HubStore.Slot
     let outbox: Outbox
     let composer: ComposerModel
+    /// Dictation into the box: the host's speech subscription, else this device (`DictationModel`).
+    let dictation: DictationModel
     let queue: QueueModel
 
     private(set) var feed = FeedState.initial
@@ -72,6 +74,8 @@ final class SessionModel: Identifiable {
         let row = hub.row(key)
         let isShell = row.map { $0.dto.agent == nil } ?? false
         composer = ComposerModel(api: api, outbox: outbox, key: key, uid: ref, isShell: isShell)
+        let host = parsed?.host
+        dictation = DictationModel(api: api, thisDevice: DictationModel.thisDeviceName, hostDoesVoice: { [weak hub] in hub?.state(host: host)?.supports("voice") ?? false }, makeCapture: { DictationModel.makeCapture() })
         queue = QueueModel(api: api, outbox: outbox, uid: ref, key: key)
         // Agents open in the GUI unless this device chose the terminal. Not pinned to the
         // terminal when the host hasn't attached a transcript reader yet: a session opened
