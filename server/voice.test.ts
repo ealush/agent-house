@@ -219,6 +219,11 @@ test('helpers: names, edits, segments, prompt', () => {
   assert.equal(edited('“Fix it.”'), 'Fix it.');
   assert.equal(edited('He said "go" now.'), 'He said "go" now.', 'inner quotes stay');
   assert.deepEqual(heard({ text: 'a', segments: [{ text: ' one', no_speech_prob: 0.1, avg_logprob: -0.3 }, { text: ' bye', no_speech_prob: 0.9, avg_logprob: -1.2 }] }), { text: 'one' });
+  assert.deepEqual(
+    heard({ text: 'x', segments: [{ text: ' and then, um, how do I sort out the layout', no_speech_prob: 0.7, avg_logprob: -1.3 }] }),
+    { text: 'and then, um, how do I sort out the layout' },
+    'unsure real speech is kept: only a short stretch it is sure is silence goes',
+  );
   assert.deepEqual(heard({ text: '  two  words ' }), { text: 'two words' });
   assert.deepEqual(speechModels([{ id: 'models/whisper-1' }, { id: 'whisper-1' }, {}, null]), ['whisper-1']);
   assert.doesNotMatch(cleanupPrompt('clean', []), /Spell these/);
@@ -239,6 +244,7 @@ test('a batch of a longer dictation goes with what was said before it; the phone
       assert.equal(tidy.text, 'Look at the GRDB cache, and then the migration.');
       const chat = JSON.parse(String(seen[1].init.body));
       assert.match(chat.messages[0].content, /A second hearing of the same speech, by the speaker's phone/);
+      assert.match(chat.messages[0].content, /a whole passage the transcript lacks/, 'a part the speech model lost comes back from the phone');
       assert.equal(chat.messages[1].content, '<transcript>\nokay so look at the grdb cash and then the migration\n</transcript>\n<phone>\nOkay so look at the GRDB cache and then the migration\n</phone>');
 
       await voice.refine('same words', 'clean', ' same words ');

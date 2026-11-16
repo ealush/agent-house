@@ -93,8 +93,9 @@ extension tells the provider the format), and answers `200`:
 - `raw` is what the speech model heard; `text` is what goes into the composer.
   With `verbatim`, or no cleanup subscription, `text` is `raw` and `cleanedBy` is
   `null`. Clients keep both, so a cleanup can be undone ("Use what I said").
-- Segments the speech model marks as silence are dropped, so a recording of
-  nothing comes back as `""`, not as a hallucinated "Thank you."
+- A short segment (four words at most) the speech model is sure is silence
+  (`no_speech_prob` ≥ 0.8) is dropped, so a recording of nothing comes back as
+  `""`, not as a hallucinated "Thank you."; anything longer is kept, sure or not.
 - A cleanup that fails doesn't fail the dictation: `text` is `raw` and
   `cleanupError` says why.
 - `language` and `seconds` are present when the provider reports them.
@@ -102,7 +103,8 @@ extension tells the provider the format), and answers `200`:
 `POST /api/voice/refine { "text", "style"?, "phone"? }` → `{ "text", "cleanedBy" }`
 tidies text written elsewhere: on the device, or a batched dictation's batches put
 together. `phone` is the device's own hearing of the same speech; the cleanup follows
-`text` and checks a word that makes no sense against it. With no cleanup subscription
+`text`, checks a word that makes no sense against it, and puts back a whole passage
+the phone heard that `text` lacks (a batch the speech model lost). With no cleanup subscription
 it is `400 voice_no_cleanup`.
 
 **Batches.** A client may send a long dictation as it's spoken, in batches: each one
