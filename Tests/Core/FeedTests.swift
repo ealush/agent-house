@@ -327,6 +327,32 @@ private let result = ToolResult(callId: "c1", text: "ok", isError: false, data: 
     #expect(outbox.items.map(\.id) == [older, again])
 }
 
+@MainActor
+@Test func aSentMessageIsDrawnOnceWhenTheAgentWritesItItsOwnWay() {
+    // Claude Code keeps a pasted message whole in a wrapper; a host that leaves the wrapper
+    // in, or text with an invisible joiner, is still the message sent.
+    #expect(Outbox.sameText("<pasted_content id=\"0781\">\nStart an overnight polish\n</pasted_content id=\"0781\">", "Start an overnight polish"))
+    #expect(Outbox.sameText("Start an\u{200B} overnight polish", "Start an overnight polish"))
+    #expect(!Outbox.sameText("Start a polish", "Start an overnight polish"))
+    // Taken by the host, and a turn of yours lands after it in words that match nothing here:
+    // that turn is this message, and the bubble goes (it stayed beside it for half a minute).
+    let outbox = Outbox()
+    outbox.now = { 1000 }
+    _ = outbox.add(key: "a", text: "Start an overnight polish campaign", state: .sent)
+    outbox.retireSent(key: "a", userTurns: [(at: 995, text: "The message before it"), (at: 1000.4, text: "[Pasted text #1 +12 lines]")])
+    #expect(outbox.items.isEmpty)
+    // The turn of the message sent just before isn't this one's, and one still sending waits
+    // for its own words.
+    let next = outbox.add(key: "a", text: "Another", state: .sent)
+    let sending = outbox.add(key: "a", text: "Third", state: .sending)
+    outbox.retireSent(key: "a", userTurns: [(at: 995, text: "The message before it")])
+    #expect(outbox.items.map(\.id) == [next, sending])
+    // A new turn whose words are a queued message's is that one's, not this bubble's.
+    _ = outbox.add(key: "a", text: "Queued one", state: .queued)
+    outbox.retireSent(key: "a", userTurns: [(at: 1001, text: "Queued one")])
+    #expect(outbox.items.map(\.id).contains(next))
+}
+
 @Test func onlyTheAgentsWordsAreSelectableText() {
     #expect(FeedPart.text("hi").isWords)
     #expect(FeedPart.reasoning("hmm").isWords)

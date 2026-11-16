@@ -118,24 +118,60 @@ final class Outbox {
 
     func items(for key: String) -> [Item] { items.filter { $0.key == key } }
 
-    /// Whitespace-insensitive, the way a transcript may reflow what was typed.
+    /// The same message, as a transcript may have written it: whitespace reflowed, and past
+    /// that, its letters and digits alone (a paste's wrapper, invisible joiners and punctuation
+    /// an input box changed left out).
     static func sameText(_ a: String, _ b: String) -> Bool {
         func squash(_ s: String) -> String { s.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
-        return squash(a) == squash(b)
+        if squash(a) == squash(b) { return true }
+        let x = letters(a)
+        return !x.isEmpty && x == letters(b)
+    }
+
+    private static func letters(_ s: String) -> String {
+        let unwrapped = s.replacingOccurrences(of: #"</?pasted_content\b[^>]*>"#, with: "", options: .regularExpression)
+        return String(String.UnicodeScalarView(unwrapped.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) })).lowercased()
     }
 
     /// Sent bubbles leave once the transcript shows a user turn with the same text from
     /// around then (an older identical message isn't this one), or after 30 seconds. One still
     /// sending leaves too when the transcript has it: it landed, and waiting for the request to
-    /// answer drew the message twice until the next update.
+    /// answer drew the message twice until the next update. Each turn answers for one bubble.
+    ///
+    /// One the host has taken (sent) also leaves for a turn of yours that came after it and
+    /// matches nothing here by its words: an agent can write what it was given its own way (a
+    /// paste wrapped and kept whole, a picture as a placeholder), and the bubble stayed beside
+    /// its own turn, the message drawn twice, for the half minute. Oldest bubble first.
     func retireSent(key: String, userTurns: [(at: Double, text: String)]) {
         let t = now()
-        let done = items.filter { item in
-            guard item.key == key, item.state == .sent || item.state == .sending else { return false }
-            if item.state == .sent, t - item.at > 30 { return true }
-            return userTurns.contains { turn in (turn.at == 0 || turn.at >= item.at - 10) && Outbox.sameText(turn.text, item.text) }
+        let mine = items.filter { $0.key == key && ($0.state == .sent || $0.state == .sending) }.sorted { $0.at < $1.at }
+        var done = Set<Int>()
+        var answered = Set<Int>()
+        for item in mine {
+            if item.state == .sent, t - item.at > 30 {
+                done.insert(item.id)
+                continue
+            }
+            if let i = userTurns.indices.first(where: { !answered.contains($0) && (userTurns[$0].at == 0 || userTurns[$0].at >= item.at - 10) && Outbox.sameText(userTurns[$0].text, item.text) }) {
+                answered.insert(i)
+                done.insert(item.id)
+            }
         }
-        remove(done.map(\.id))
+        // By order, only for a turn after it was sent (a couple of seconds' clock between the
+        // device and the host): the turn of the message before it, sent a moment earlier,
+        // isn't this one's.
+        for item in mine where item.state == .sent && !done.contains(item.id) {
+            if let i = userTurns.indices.first(where: { !answered.contains($0) && userTurns[$0].at >= item.at - 2 && !matchedElsewhere(userTurns[$0], key: key) }) {
+                answered.insert(i)
+                done.insert(item.id)
+            }
+        }
+        remove(Array(done))
+    }
+
+    /// A turn whose words are another message still on its way here (it's that one's).
+    private func matchedElsewhere(_ turn: (at: Double, text: String), key: String) -> Bool {
+        items.contains { $0.key == key && $0.state == .queued && Outbox.sameText(turn.text, $0.text) }
     }
 
     /// Queued copies leave once a queue fetch that began after the server confirmed them returns.
