@@ -527,6 +527,21 @@ final class SceneModel {
     // MARK: Sessions on screen
 
     /// The model for a session shown in this window, created (and connected) on first use.
+    /// What a session's host connection says in place of its status while it isn't live: the
+    /// last state is all there is ("Offline"), or live updates are catching up
+    /// ("Reconnecting"). Inside a session nothing said so; only the lists had the banner.
+    func connectionNote(_ key: String) -> String? {
+        guard let hub else { return nil }
+        if let host = SessionKey(key)?.host, let peer = hub.hosts.first(where: { !$0.isSelf && $0.name == host }) {
+            return peer.online ? nil : "Offline"
+        }
+        switch hub.phase {
+        case .offline: return "Offline"
+        case .polling: return "Reconnecting"
+        default: return nil
+        }
+    }
+
     func session(_ key: String) -> SessionModel? {
         if let existing = sessions[key] { return existing }
         // New session's place, before there's a session in it.
@@ -1235,7 +1250,7 @@ final class SceneModel {
     var handoff: Handoff? {
         guard let account, account.status == .signedIn, let hub else { return nil }
         if let key = workspace.focusedKey ?? { if case .session(let k) = route { return k } else { return nil } }() {
-            let title = key == Self.newSessionKey ? "New session" : hub.slot(key).row?.title ?? hub.history.first { $0.id == key }?.dto.title ?? "Session"
+            let title = key == Self.newSessionKey ? "New Session" : hub.slot(key).row?.title ?? hub.history.first { $0.id == key }?.dto.title ?? "Session"
             return Handoff(origin: account.origin, route: .session(key), title: title)
         }
         let titles: [String: String] = ["sessions": "Sessions", "history": "History", "search": "Search", "settings": "Settings"]
@@ -1313,8 +1328,14 @@ final class SceneModel {
 
     func copyLink(to place: Place) {
         guard let url = link(to: place) else { return }
-        clipboard(url.absoluteString)
-        toast(place.message != nil ? "Copied a link to the message" : "Copied the link")
+        copy(url.absoluteString, say: place.message != nil ? "a link to the message" : "the link")
+    }
+
+    /// Copies text and says what was copied ("Copied the path"). The same wherever something
+    /// is copied: from a menu, which has closed by then, nothing else showed it had worked.
+    func copy(_ text: String, say what: String) {
+        clipboard(text)
+        toast("Copied \(what)")
     }
 
     func shareLink(to place: Place) {

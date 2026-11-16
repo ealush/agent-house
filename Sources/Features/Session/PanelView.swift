@@ -171,10 +171,21 @@ private struct DiffPanel: View {
     private func send() {
         guard let target = commenting, !comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let text = comment
+        let place = commentingAt
         cancel()
         Task {
             if let result = await model.send(comment: text, file: target.file, line: target.line) {
                 scene.toast(result.outcome == .queued ? "Queued for the agent" : "Sent to the agent")
+            } else {
+                // Back on its line with what you wrote, and why it didn't go: it was gone,
+                // and the panel had a diff to show, so the error never did.
+                scene.toast(model.error ?? "Couldn’t send the comment", error: true)
+                if commenting == nil {
+                    commenting = target
+                    commentingAt = place
+                    comment = text
+                    commentFocused = true
+                }
             }
         }
     }
@@ -292,7 +303,7 @@ private struct FilesPanel: View {
                     if let path = model.listing?.path {
                         Divider()
                         Button("Mention This Folder", systemImage: "at") { insert(path) }
-                        Button("Copy Path", systemImage: "doc.on.doc") { UIPasteboard.general.string = path }
+                        Button("Copy Path", systemImage: "doc.on.doc") { scene.copy(path, say: "the path") }
                     }
                 } label: {
                     Image(systemName: "ellipsis")
@@ -426,17 +437,17 @@ private struct FilesPanel: View {
         .accessibilityAddTraits(.isButton)
         .draggable(FilesModel.mention(path, shell: session.isShell, cwd: cwd).trimmingCharacters(in: .whitespaces))
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button { insert(path) } label: { Label("Mention", systemImage: "at") }.tint(theme.accent)
+            Button { insert(path) } label: { Image(systemName: "at") }.accessibilityLabel("Mention").tint(theme.swipe(\.accent))
         }
         .swipeActions(edge: .leading) {
             if entry.type == .file {
-                Button { Task { await share(entry) } } label: { Label("Share", systemImage: "square.and.arrow.up") }.tint(theme.chart)
+                Button { Task { await share(entry) } } label: { Image(systemName: "square.and.arrow.up") }.accessibilityLabel("Share").tint(theme.chart)
             }
         }
         .contextMenu {
             Button(entry.type == .dir ? "Open" : "Preview", systemImage: entry.type == .dir ? "folder" : "eye") { Task { await open(entry) } }
             Button("Mention in Message", systemImage: "at") { insert(path) }
-            Button("Copy Path", systemImage: "doc.on.doc") { UIPasteboard.general.string = path }
+            Button("Copy Path", systemImage: "doc.on.doc") { scene.copy(path, say: "the path") }
             if entry.type == .file {
                 Button("Share or Save…", systemImage: "square.and.arrow.up") { Task { await share(entry) } }
             }
@@ -591,25 +602,23 @@ private struct ChatPanel: View {
     @Environment(\.theme) private var theme
     @State private var draft = ""
     @State private var browsing = false
+    @State private var confirmClear = false
 
     var body: some View {
         VStack(spacing: 0) {
-            // Inline, so it shows in an iPad side panel as well as a phone sheet.
-            HStack {
-                Text("Side chat").font(.ah(.caption).weight(.semibold)).foregroundStyle(theme.muted)
-                Spacer()
-                Button { browsing = true } label: { Image(systemName: "clock.arrow.circlepath") }.accessibilityLabel("Past chats")
-                Button { Task { await model.clear() } } label: { Image(systemName: "trash") }.accessibilityLabel("Clear the chat")
-                    .disabled(model.messages.isEmpty)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
-                    if model.subscriptions.isEmpty {
-                        EmptyState(symbol: "key", title: "No chat model yet", message: "Add a subscription in Settings to discuss this work with another model, outside the agent’s context.", action: ("Open Settings", { scene.sheet = .settings(SettingsSection.subscriptions.rawValue) }))
+                    if !model.loaded {
+                        // Asking the host, or it couldn't say: not "No Chat Model Yet".
+                        if let error = model.error {
+                            Banner(text: error, tone: .error, action: ("Retry", { Task { await model.load() } }))
+                        } else {
+                            ProgressView().frame(maxWidth: .infinity).padding(.top, 40).afterABeat(.milliseconds(300))
+                        }
+                    } else if model.subscriptions.isEmpty {
+                        EmptyState(symbol: "key", title: "No Chat Model Yet", message: "Add a subscription in Settings to discuss this work with another model, outside the agent’s context.", action: ("Open Settings", { scene.sheet = .settings(SettingsSection.subscriptions.rawValue) }))
                     } else if model.messages.isEmpty && !model.sending {
-                        EmptyState(symbol: "bubble.left.and.text.bubble.right", title: "Ask about this change", message: "A review, an explanation, or a plan. Nothing here reaches the agent unless you send it over.")
+                        EmptyState(symbol: "bubble.left.and.text.bubble.right", title: "Ask About This Change", message: "A review, an explanation, or a plan. Nothing here reaches the agent unless you send it over.")
                             .padding(.top, 40)
                     }
                     ForEach(Array(model.messages.enumerated()), id: \.offset) { _, message in
@@ -622,7 +631,7 @@ private struct ChatPanel: View {
                                         session.composer.text = message.text
                                         scene.requestFocus(.composer(session.key))
                                     }
-                                    Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = message.text }
+                                    Button("Copy", systemImage: "doc.on.doc") { scene.copy(message.text, say: "the message") }
                                 }
                         }
                     }
@@ -642,7 +651,7 @@ private struct ChatPanel: View {
                             }
                         }
                     }
-                    if let error = model.error { Banner(text: error, tone: .error) }
+                    if model.loaded, let error = model.error { Banner(text: error, tone: .error) }
                 }
                 .padding()
             }
@@ -681,13 +690,31 @@ private struct ChatPanel: View {
             .padding(10)
         }
         .task { await model.load() }
+        // In the panel's bar, as Files keeps its actions (a row under the bar said "Side chat"
+        // under a bar that says "Chat"), beside an iPad's panel as in a phone's sheet.
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button { browsing = true } label: { Image(systemName: "clock.arrow.circlepath") }.accessibilityLabel("Past Chats").tint(.primary)
+                Button { confirmClear = true } label: { Image(systemName: "trash") }.accessibilityLabel("Clear the Chat").tint(.primary)
+                    .disabled(model.messages.isEmpty)
+            }
+        }
         .sheet(isPresented: $browsing) { PastChatsView(api: model.api) }
+        .confirmationDialog("Clear this chat?", isPresented: $confirmClear, titleVisibility: .visible) {
+            Button("Clear Chat", role: .destructive) { Task { await model.clear() } }
+        } message: {
+            Text("Its messages are deleted from the host, and a new chat starts.")
+        }
     }
 
     private func send() {
         let text = draft
         draft = ""
-        Task { await model.send(text) }
+        Task {
+            // A question that didn't go comes back to the field (the chat takes it out again).
+            let sent = await model.send(text)
+            if !sent, draft.isEmpty { draft = text }
+        }
     }
 }
 
@@ -699,11 +726,13 @@ private struct PastChatsView: View {
     @State private var query = ""
     @State private var chats: [ChatSummary] = []
     @State private var error: String?
+    /// The query the list shows the answer to: nil until the first one comes back.
+    @State private var answered: String?
 
     var body: some View {
         NavigationStack {
             List {
-                if let error { Banner(text: error, tone: .error) }
+                if let error { Banner(text: error, tone: .error, action: ("Retry", { answered = nil; Task { await search() } })) }
                 ForEach(chats) { chat in
                     NavigationLink {
                         PastChatView(api: api, chat: chat)
@@ -719,25 +748,34 @@ private struct PastChatsView: View {
                     }
                     .ahRow()
                 }
-                if chats.isEmpty && error == nil {
-                    EmptyState(symbol: "bubble.left.and.text.bubble.right", title: query.isEmpty ? "No side chats yet" : "Nothing matches", message: "Side chats you’ve had about this session’s changes show here.")
+                if chats.isEmpty && error == nil && answered == nil {
+                    ProgressView().frame(maxWidth: .infinity).listRowBackground(Color.clear).afterABeat(.milliseconds(300))
+                } else if chats.isEmpty && error == nil {
+                    EmptyState(symbol: "bubble.left.and.text.bubble.right", title: query.isEmpty ? "No Side Chats Yet" : "No Results", message: query.isEmpty ? "Side chats you’ve had about this session’s changes show here." : "No side chat matches “\(query.trimmingCharacters(in: .whitespaces))”.")
                         .listRowBackground(Color.clear)
                 }
             }
             .ahFormGround()
             .searchable(text: $query)
-            .navigationTitle("Past chats")
+            .navigationTitle("Past Chats")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) } }
             .task(id: query) {
-                try? await Task.sleep(for: .milliseconds(250))
-                do {
-                    chats = try await api.pastChats(query: query.isEmpty ? nil : query)
-                    error = nil
-                } catch {
-                    self.error = APIError.wrap(error).message
-                }
+                // A pause while typing; the first list asks at once.
+                if answered != nil { try? await Task.sleep(for: .milliseconds(250)) }
+                guard !Task.isCancelled else { return }
+                await search()
             }
+        }
+    }
+
+    private func search() async {
+        do {
+            chats = try await api.pastChats(query: query.isEmpty ? nil : query)
+            error = nil
+            answered = query
+        } catch {
+            self.error = APIError.wrap(error).message
         }
     }
 }
@@ -745,19 +783,35 @@ private struct PastChatsView: View {
 private struct PastChatView: View {
     let api: APIClient
     let chat: ChatSummary
-    @State private var messages: [ChatMessage] = []
+    @State private var messages: [ChatMessage]?
+    @State private var error: String?
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
-                ForEach(Array(messages.enumerated()), id: \.offset) { _, message in
+                if let error {
+                    Banner(text: error, tone: .error, action: ("Retry", { Task { await load() } }))
+                } else if messages == nil {
+                    // On its way, not a blank page.
+                    ProgressView().frame(maxWidth: .infinity).padding(.top, 40).afterABeat(.milliseconds(300))
+                }
+                ForEach(Array((messages ?? []).enumerated()), id: \.offset) { _, message in
                     if message.role == .user { UserBubble(text: message.text) } else { MarkdownView(message.text) }
                 }
             }
             .padding()
         }
         .navigationTitle(chat.title)
-        .task { messages = (try? await api.pastChat(chat.uid)) ?? [] }
+        .task { await load() }
+    }
+
+    private func load() async {
+        do {
+            messages = try await api.pastChat(chat.uid)
+            error = nil
+        } catch {
+            self.error = APIError.wrap(error).message
+        }
     }
 }
 
@@ -766,11 +820,12 @@ private struct PastChatView: View {
 private struct QueuePanel: View {
     let session: SessionModel
     @Environment(\.theme) private var theme
+    @State private var confirmRemoveAll = false
 
     var body: some View {
         List {
             if session.queue.items.isEmpty {
-                EmptyState(symbol: "text.line.last.and.arrowtriangle.forward", title: "Nothing queued", message: "Messages you send while the agent works wait here, in order. Drag to reorder, or send one now to stop the turn and go first.")
+                EmptyState(symbol: "text.line.last.and.arrowtriangle.forward", title: "Nothing Queued", message: "Messages you send while the agent works wait here, in order. Drag to reorder, or send one now to stop the turn and go first.")
                     .listRowBackground(Color.clear)
             }
             ForEach(session.queue.items) { item in
@@ -780,24 +835,27 @@ private struct QueuePanel: View {
                 }
                 .ahRow()
                 .swipeActions(edge: .leading) {
-                    Button("Send Now") { Task { await session.queue.steer(item) } }.tint(theme.limited)
+                    Button { Task { await session.queue.steer(item) } } label: { Image(systemName: "bolt.fill") }.accessibilityLabel("Send Now").tint(theme.swipe(\.limited))
                 }
                 .swipeActions(edge: .trailing) {
                     // Red by tint, not role: the row is still there until the host says it's
                     // cancelled, and a list aborts when a row swiped away as deleted is not gone.
-                    Button("Cancel") { Task { await session.queue.cancel(item) } }.tint(theme.danger)
-                    Button("Edit") {
+                    Button { Task { await session.queue.cancel(item) } } label: { Image(systemName: "xmark") }.accessibilityLabel("Remove").tint(theme.swipe(\.danger))
+                    Button {
                         Task { await session.queue.edit(item, into: session.composer) }
+                    } label: {
+                        Image(systemName: "pencil")
                     }
+                    .accessibilityLabel("Edit")
                 }
                 // Always reorderable, so always in edit mode, where a list offers no swipes:
                 // the same actions on a press, as the composer's queue rows have them.
                 .contextMenu {
-                    Button("Send Now", systemImage: "bolt") { Task { await session.queue.steer(item) } }
+                    Button("Send Now", systemImage: "bolt.fill") { Task { await session.queue.steer(item) } }
                     Button("Edit", systemImage: "pencil") {
                         Task { await session.queue.edit(item, into: session.composer) }
                     }
-                    Button("Cancel", systemImage: "xmark", role: .destructive) { Task { await session.queue.cancel(item) } }
+                    Button("Remove", systemImage: "xmark", role: .destructive) { Task { await session.queue.cancel(item) } }
                 }
             }
             .onMove { from, to in
@@ -806,11 +864,17 @@ private struct QueuePanel: View {
                 Task { await session.queue.move(item.id, to: to > index ? to - 1 : to) }
             }
             if !session.queue.items.isEmpty {
-                Button("Cancel All", role: .destructive) { Task { await session.queue.cancelAll() } }
+                Button("Remove All…", role: .destructive) { confirmRemoveAll = true }
                     .ahRow()
             }
         }
         .environment(\.editMode, .constant(.active))
+        // What was queued is gone with one tap otherwise, and none of it can come back.
+        .confirmationDialog("Remove \(session.queue.items.count == 1 ? "the queued message" : "all \(session.queue.items.count) queued messages")?", isPresented: $confirmRemoveAll, titleVisibility: .visible) {
+            Button("Remove All", role: .destructive) { Task { await session.queue.cancelAll() } }
+        } message: {
+            Text("They won’t be sent.")
+        }
         .task { await session.queue.load() }
     }
 }
@@ -981,7 +1045,8 @@ private struct SnapshotsPanel: View {
                     last: index == rows.count - 1,
                     restoring: model.restoring == snap.turn,
                     busy: model.restoring != nil,
-                    restore: { confirming = snap }
+                    restore: { confirming = snap },
+                    copy: { scene.copy($0, say: "the commit") }
                 )
                 .id(snap.id)
                 .background(theme.accent.opacity(highlight == snap.id ? 0.14 : 0), in: RoundedRectangle(cornerRadius: 12, style: .continuous).inset(by: -6))
@@ -1037,6 +1102,7 @@ private struct SnapshotRow: View {
     let restoring: Bool
     let busy: Bool
     let restore: () -> Void
+    let copy: (String) -> Void
     @Environment(\.theme) private var theme
 
     private var safety: Bool { snap.kind == "safety" }
@@ -1099,7 +1165,7 @@ private struct SnapshotRow: View {
         .contextMenu {
             Button(safety ? "Restore This Safety Copy" : "Restore Files to Before Turn \(snap.turn)", systemImage: "arrow.uturn.backward", action: restore)
                 .disabled(busy)
-            Button("Copy Commit", systemImage: "doc.on.doc") { UIPasteboard.general.string = snap.commit }
+            Button("Copy Commit", systemImage: "doc.on.doc") { copy(snap.commit) }
         }
         .accessibilityElement(children: .combine)
         .accessibilityAction(named: "Restore", restore)
@@ -1131,6 +1197,8 @@ private struct PreviewPanel: View {
     let session: SessionModel
     @Environment(\.theme) private var theme
     @State private var cookie: PreviewCookie?
+    /// Why the preview's sign-in didn't come: said, with a way to ask again.
+    @State private var cookieError: String?
     @State private var browser = PreviewBrowser()
     @State private var typed = ""
     @FocusState private var portFocused: Bool
@@ -1144,7 +1212,7 @@ private struct PreviewPanel: View {
                     picker(info)
                 }
             } else if let error = model.error {
-                ContentUnavailableView("Can’t reach the preview", systemImage: "exclamationmark.triangle", description: Text(error))
+                ContentUnavailableView("Can’t Reach the Preview", systemImage: "exclamationmark.triangle", description: Text(error))
             } else {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -1206,10 +1274,21 @@ private struct PreviewPanel: View {
             if let cookie {
                 PreviewWebView(url: url, cookie: cookie, hubHost: session.api.origin.host ?? "", browser: browser)
                     .id(preview.port * 100_000 + preview.target)
+            } else if let cookieError {
+                // It spun forever when the host refused.
+                ContentUnavailableView {
+                    Label("Can’t Open the Preview", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(cookieError)
+                } actions: {
+                    Button("Try Again") { self.cookieError = nil }.buttonStyle(.bordered)
+                }
             } else {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .task { cookie = try? await session.api.previewSession() }
+                    .task {
+                        do { cookie = try await session.api.previewSession() } catch { cookieError = APIError.wrap(error).message }
+                    }
             }
         }
     }
@@ -1392,7 +1471,7 @@ private struct StackPanel: View {
                     .ahRow()
                 }
                 if stack.branches.isEmpty {
-                    EmptyState(symbol: "square.stack.3d.up", title: "Not a stack", message: "\(session.row?.dto.branch ?? "This branch") isn’t part of a stack. When the agent stacks branches with gh stack, they show here bottom to top, with their pull requests and checks.")
+                    EmptyState(symbol: "square.stack.3d.up", title: "Not a Stack", message: "\(session.row?.dto.branch ?? "This branch") isn’t part of a stack. When the agent stacks branches with gh stack, they show here bottom to top, with their pull requests and checks.")
                         .listRowBackground(Color.clear)
                 } else {
                 Section("Bottom to top, onto \(stack.trunk)") {

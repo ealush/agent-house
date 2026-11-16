@@ -134,7 +134,6 @@ struct ComposerView: View {
         for event in composer.takeEvents() {
             switch event {
             case .sent(let result):
-                Haptics.tap()
                 // Said and done: the settings fold back out of the way.
                 if trayOpen { withAnimation(ComposerFloat.motion(opening: false, reduceMotion: reduceMotion)) { trayOpen = false } }
                 // Held for a just-started agent: it's your message in the conversation already,
@@ -294,7 +293,9 @@ struct ComposerView: View {
             // ⌘Return) sends now instead.
             let queues = !session.isShell
             Button {
-                composer.submit(working: session.working)
+                // Felt as the finger lifts, as the bubble shows: the host's answer can be
+                // seconds away (an upload first), and the tap came with it.
+                if composer.submit(working: session.working) { Haptics.tap() }
             } label: {
                 // Send's pink, its height and its place, with the word for what it does.
                 Text(queues ? "Queue" : "Run")
@@ -309,10 +310,11 @@ struct ComposerView: View {
             .buttonStyle(.ahPress)
             .contextMenu {
                 if queues {
-                    Button("Send Now (Stops the Turn)", systemImage: "bolt.fill") {
+                    Button("Send Now", systemImage: "bolt.fill") {
                         Haptics.threshold()
                         composer.submit(working: true, steer: true)
                     }
+                    .accessibilityHint("Stops the turn and sends this now")
                 }
             }
             .accessibilityLabel(queues ? "Queue" : "Run")
@@ -321,7 +323,7 @@ struct ComposerView: View {
         } else if !composer.isEmpty {
             // Folded away while there's nothing to send: it comes up with the first letter.
             Button {
-                composer.submit(working: session.working)
+                if composer.submit(working: session.working) { Haptics.tap() }
             } label: {
                 // ah's Send: the accent-filled circle, the one pink control.
                 Image(systemName: "arrow.up")
@@ -477,12 +479,13 @@ struct ComposerFloat: View {
         let available = SceneSnapshot.Panel.allCases.filter { $0.applies(to: session) }
         if !available.isEmpty {
             Menu {
+                // The open one checked, its glyph kept, as the iPad header's menu has them.
                 ForEach(available) { panel in
-                    Button {
+                    Toggle(isOn: Binding(get: { session.panel == panel }, set: { on in
                         withAnimation(Self.motion(opening: false, reduceMotion: reduceMotion)) { composer.trayOpen = false }
-                        session.panel = session.panel == panel ? nil : panel
-                    } label: {
-                        if session.panel == panel { Label(panel.title, systemImage: "checkmark") } else { Label(panel.title, systemImage: panel.symbol) }
+                        session.panel = on ? panel : nil
+                    })) {
+                        Label(panel.title, systemImage: panel.symbol)
                     }
                 }
             } label: {
@@ -1320,7 +1323,9 @@ struct QueueTrayView: View {
                             Image(systemName: "text.line.first.and.arrowtriangle.forward").foregroundStyle(theme.accent)
                             VStack(alignment: .leading, spacing: 0) {
                                 HStack(spacing: 5) {
+                                    // The count rolls as messages join and leave, as the tray already moves.
                                     Text("Up next · \(queue.items.count + queue.pendingRows.count)").font(.ah(.footnote).weight(.semibold))
+                                        .contentTransition(.numericText(value: Double(queue.items.count + queue.pendingRows.count)))
                                     Image(systemName: "chevron.down")
                                         .font(.ah(.caption2).weight(.bold))
                                         .foregroundStyle(theme.faint)
@@ -1356,7 +1361,8 @@ struct QueueTrayView: View {
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "bolt.fill")
-                                Text("Steer Now")
+                                // One name for it wherever it is: the rows, the menus and the panel say Send Now.
+                                Text("Send Now")
                                 if hardwareKeyboard { Text("↵").foregroundStyle(theme.accent.opacity(0.7)) }
                             }
                             .font(.ah(.caption).weight(.semibold))
@@ -1469,14 +1475,14 @@ struct QueueTrayView: View {
                 // Glyph-sized to look at, finger-sized to hit: they sat 14 points apart on 16.
                 HStack(spacing: 2) {
                     if !held {
-                        Button { Haptics.threshold(); Task { await queue.steer(item) } } label: { queueGlyph("bolt") }
+                        Button { Haptics.threshold(); Task { await queue.steer(item) } } label: { queueGlyph("bolt.fill") }
                             .accessibilityLabel("Send Now")
                             .accessibilityHint("Stops the current turn and sends this now")
                     }
                     Button { Task { await queue.edit(item, into: composer) } } label: { queueGlyph("pencil") }
                         .accessibilityLabel("Edit")
                     Button(role: .destructive) { Task { await queue.cancel(item) } } label: { queueGlyph("xmark") }
-                        .accessibilityLabel("Cancel")
+                        .accessibilityLabel("Remove")
                 }
                 .buttonStyle(.ahPress)
                 .font(.ah(.callout))
@@ -1490,12 +1496,12 @@ struct QueueTrayView: View {
         .padding(.vertical, 3)
         .contentShape(Rectangle())
         .contextMenu {
-            if !held { Button("Send Now", systemImage: "bolt") { Task { await queue.steer(item) } } }
+            if !held { Button("Send Now", systemImage: "bolt.fill") { Task { await queue.steer(item) } } }
             Button("Edit", systemImage: "pencil") { Task { await queue.edit(item, into: composer) } }
             if index > 0 { Button("Move Up", systemImage: "arrow.up") { Task { await queue.move(item.id, to: index - 1) } } }
             if index < queue.items.count - 1 { Button("Move Down", systemImage: "arrow.down") { Task { await queue.move(item.id, to: index + 1) } } }
             Divider()
-            Button("Cancel", systemImage: "xmark", role: .destructive) { Task { await queue.cancel(item) } }
+            Button("Remove", systemImage: "xmark", role: .destructive) { Task { await queue.cancel(item) } }
         }
         .draggable(item.id) {
             Text(Uploads.summary(item.text)).padding(8).background(theme.raised, in: RoundedRectangle(cornerRadius: 10))

@@ -39,7 +39,7 @@ struct AhSectionHeader: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(title.uppercased()).font(.ah(.caption).weight(.semibold)).tracking(1.1).foregroundStyle(theme.text)
-            if let count { Text("\(count)").font(.ah(.caption)).foregroundStyle(theme.faint) }
+            if let count { Text("\(count)").font(.ah(.caption)).foregroundStyle(theme.faint).contentTransition(.numericText(value: Double(count))) }
         }
         .fixedSize(horizontal: false, vertical: true)
         .textCase(nil)
@@ -56,6 +56,9 @@ struct AhPressStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.88 : 1)
             .opacity(configuration.isPressed ? 0.85 : 1)
             .animation(.spring(response: 0.25, dampingFraction: 0.6), value: configuration.isPressed)
+            // An iPad pointer finds it, as it does the system buttons around it (Send, Stop,
+            // Queue, the agent tiles).
+            .hoverEffect(.highlight)
     }
 }
 
@@ -263,4 +266,40 @@ struct AhPanel: ViewModifier {
                 .padding(8)
         }
     }
+}
+
+extension View {
+    /// Asks before `item` goes for good: its name in the question, a destructive button over
+    /// Cancel. A swipe or a row's button sets it; nothing is removed until the answer.
+    func confirmingRemoval<Item>(_ item: Binding<Item?>, title: @escaping (Item) -> String, message: String, verb: String = "Remove", remove: @escaping (Item) -> Void) -> some View {
+        confirmationDialog(item.wrappedValue.map(title) ?? "", isPresented: Binding(get: { item.wrappedValue != nil }, set: { if !$0 { item.wrappedValue = nil } }), titleVisibility: .visible, presenting: item.wrappedValue) { asked in
+            Button(verb, role: .destructive) { remove(asked) }
+        } message: { _ in
+            Text(message)
+        }
+    }
+}
+
+/// Shown only once it has lasted a beat: a status that's over in a moment ("Catching up",
+/// "Attaching…") flashed for a frame. It comes in with a fade (and a small scale, unless
+/// Reduce Motion is on).
+private struct AfterABeat: ViewModifier {
+    let delay: Duration
+    @State private var shown = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .scaleEffect(shown || reduceMotion ? 1 : 0.9)
+            .accessibilityHidden(!shown)
+            .task {
+                try? await Task.sleep(for: delay)
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { shown = true }
+            }
+    }
+}
+
+extension View {
+    func afterABeat(_ delay: Duration = .milliseconds(800)) -> some View { modifier(AfterABeat(delay: delay)) }
 }

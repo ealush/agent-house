@@ -250,7 +250,8 @@ final class SearchModel {
     @ObservationIgnored private var task: Task<Void, Never>?
     /// Bumped by each new search: a page asked for under an older one is dropped.
     @ObservationIgnored private var generation = 0
-    @ObservationIgnored private var loadingMore = false
+    /// A next page on its way (More Results shows it).
+    private(set) var loadingMore = false
 
     init(api: APIClient) { self.api = api }
 
@@ -358,6 +359,9 @@ final class SideChatModel {
     private(set) var followups: [Followup] = []
     private(set) var sending = false
     private(set) var error: String?
+    /// The thread and the models came back: until then nothing is "none" (no chat model, no
+    /// messages), only on its way.
+    private(set) var loaded = false
 
     init(api: APIClient, uid: String) {
         self.api = api
@@ -371,8 +375,9 @@ final class SideChatModel {
             let t = try await thread
             messages = t.messages
             subscriptionId = t.subscriptionId
-            subscriptions = (try? await subs) ?? []
+            subscriptions = try await subs
             error = nil
+            loaded = true
         } catch {
             self.error = APIError.shown(error)
         }
@@ -391,9 +396,11 @@ final class SideChatModel {
         }
     }
 
-    func send(_ text: String) async {
+    /// False when it didn't go: the question is out of the chat again, for the field to keep.
+    @discardableResult
+    func send(_ text: String) async -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !sending else { return }
+        guard !trimmed.isEmpty, !sending else { return false }
         sending = true
         defer { sending = false }
         messages.append(ChatMessage(role: .user, text: trimmed, at: Date().timeIntervalSince1970 * 1000, id: nil))
@@ -402,9 +409,11 @@ final class SideChatModel {
             messages.append(reply.message)
             followups = reply.followups
             error = nil
+            return true
         } catch {
             messages.removeLast()
             self.error = APIError.wrap(error).message
+            return false
         }
     }
 
@@ -626,6 +635,8 @@ final class WorktreesModel {
     private(set) var error: String?
     private(set) var results: [BulkRemoveResult] = []
     var selected: Set<String> = []
+    /// The host has listed them once: before that, "No Worktrees" would be a guess.
+    private(set) var loaded = false
 
     init(api: APIClient) { self.api = api }
 
@@ -633,6 +644,7 @@ final class WorktreesModel {
         do {
             trees = try await settled { [api] in try await api.worktrees() }
             error = nil
+            loaded = true
         } catch {
             self.error = APIError.shown(error)
         }

@@ -166,6 +166,30 @@ struct Command: Sendable, Identifiable, Equatable {
         self.field = field
         self.terms = terms
     }
+
+    /// The label as a menu writes it: the menu bar, the ⌘-hold overlay, the palette and the
+    /// shortcut table say "New Session" and "Copy the Agent's Last Reply", as every Apple
+    /// menu does, where ah's web table says "New session".
+    var title: String { TitleCase.apply(label) }
+}
+
+/// Apple's title case for menu items and buttons: every word capitalized except articles,
+/// short conjunctions and short prepositions, which stay lowercase unless they open or close
+/// the title. Words already holding a capital (GUI, PR, iPad) and symbols are left as written.
+enum TitleCase {
+    private static let minor: Set<String> = ["a", "an", "and", "as", "at", "but", "by", "for", "in", "nor", "of", "on", "or", "the", "to", "via", "vs"]
+
+    static func apply(_ text: String) -> String {
+        let words = text.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
+        let last = words.lastIndex { $0.first?.isLetter == true }
+        return words.enumerated().map { index, word in
+            guard let first = word.first, first.isLetter, first.isLowercase, !word.dropFirst().contains(where: \.isUppercase) else { return word }
+            let edge = index == 0 || index == last
+            if !edge, minor.contains(word) { return word }
+            // A word after a slash ("Hide / show") starts a title of its own.
+            return first.uppercased() + word.dropFirst()
+        }.joined(separator: " ")
+    }
 }
 
 struct CommandID: RawRepresentable, Hashable, Codable, Sendable, ExpressibleByStringLiteral, CustomStringConvertible {
@@ -306,10 +330,10 @@ enum CommandCatalog {
         "toggle-panel": "sidebar.right", "reply": "arrowshape.turn.up.left", "approve": "checkmark.circle", "deny": "xmark.circle",
         "interrupt": "stop.circle", "send-now": "paperplane", "clear-queue": "trash", "pick-model": "cpu", "pick-effort": "speedometer",
         "copy-last": "doc.on.doc", "jump-latest": "arrow.down.to.line", "browse-messages": "text.bubble", "switch-branch": "arrow.triangle.branch",
-        "continue-in": "arrow.triangle.branch", "conversation-lineage": "point.3.connected.trianglepath.dotted",
+        "continue-in": "arrow.turn.down.right", "conversation-lineage": "point.3.connected.trianglepath.dotted",
         "rename": "pencil", "fork": "arrow.branch", "send-to": "arrowshape.turn.up.right", "pin": "pin", "panel-diff": "plusminus",
         "panel-files": "folder", "panel-chat": "bubble.left.and.bubble.right", "panel-queue": "list.bullet.rectangle", "panel-snapshots": "clock.arrow.circlepath",
-        "panel-preview": "safari", "panel-stack": "square.stack.3d.up", "panel-terminal": "terminal", "session-menu": "ellipsis.circle", "scrollback": "scroll",
+        "panel-preview": "safari", "panel-stack": "square.stack.3d.up", "panel-terminal": "terminal", "session-menu": "ellipsis", "scrollback": "scroll",
         "copy-attach": "terminal", "toggle-keys": "keyboard.chevron.compact.down", "terminal-text-bigger": "textformat.size.larger", "terminal-text-smaller": "textformat.size.smaller", "terminal-text-reset": "textformat.size", "terminate": "xmark.octagon",
         "split-right": "rectangle.split.2x1", "split-below": "rectangle.split.1x2", "split-left": "rectangle.lefthalf.inset.filled",
         "split-above": "rectangle.tophalf.inset.filled", "close-pane": "xmark.square",
@@ -539,7 +563,7 @@ enum CommandMatcher {
         var rows: [WhichKeyRow] = []
         for command in CommandCatalog.all where active(command.id) {
             for chord in bindings.chords(command.id) where chord.isSequence && chord.lead == lead.lead {
-                rows.append(WhichKeyRow(id: command.id, label: command.label, key: chord.next!.formatted(mac: mac)))
+                rows.append(WhichKeyRow(id: command.id, label: command.title, key: chord.next!.formatted(mac: mac)))
             }
         }
         return rows.sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
@@ -596,7 +620,7 @@ enum CommandMatcher {
         for command in CommandCatalog.all where active(command.id) {
             let held = bindings.chords(command.id).filter { (mac || !$0.meta) && $0.ctrl == ctrl && $0.alt == alt && $0.shift == shift && $0.meta == meta }
             if let chord = held.first(where: { !$0.isSequence }) {
-                rows.append(WhichKeyRow(id: command.id, label: command.label, key: chord.parts(mac: mac).last!))
+                rows.append(WhichKeyRow(id: command.id, label: command.title, key: chord.parts(mac: mac).last!))
             }
             // A two-key chord's first key shows once, as "K…".
             for chord in held where chord.isSequence {
@@ -605,7 +629,7 @@ enum CommandMatcher {
                     rows[i] = WhichKeyRow(id: rows[i].id, label: "Two-key shortcuts", key: key)
                 } else {
                     leads[key] = rows.count
-                    rows.append(WhichKeyRow(id: command.id, label: "Then: \(command.label)", key: key))
+                    rows.append(WhichKeyRow(id: command.id, label: "Then: \(command.title)", key: key))
                 }
             }
         }

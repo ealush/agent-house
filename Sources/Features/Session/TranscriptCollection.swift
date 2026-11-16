@@ -167,7 +167,7 @@ struct TranscriptCollection: View {
             }
             .overlay(alignment: .top) {
                 if session.feed.status == .connecting, !blocks.isEmpty {
-                    CatchingUp().padding(.top, 8)
+                    CatchingUp(scene: scene, key: session.key).padding(.top, 8)
                 }
             }
             .overlay(alignment: .leading) {

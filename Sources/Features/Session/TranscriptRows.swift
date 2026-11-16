@@ -7,25 +7,24 @@ import UIKit
 /// A glass pill at the top of the transcript while the host's copy is on its way, there once
 /// the wait is long enough to notice (a quick link never shows it).
 struct CatchingUp: View {
-    @State private var shown = false
+    let scene: SceneModel
+    let key: String
     @Environment(\.theme) private var theme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 8) {
-            ProgressView().controlSize(.small)
-            Text("Catching up").font(.ah(.footnote)).foregroundStyle(theme.text2)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .glassEffect(.regular, in: Capsule())
-        .opacity(shown ? 1 : 0)
-        .scaleEffect(shown || reduceMotion ? 1 : 0.9)
-        .accessibilityElement(children: .combine)
-        .accessibilityHidden(!shown)
-        .task {
-            try? await Task.sleep(for: .milliseconds(800))
-            withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { shown = true }
+        // Not while the host isn't answering: the bar says Offline, and a spinner here said it
+        // was on its way. Asked here, not in the transcript's body, so the host's state ticking
+        // draws this pill again and not the whole transcript.
+        if scene.connectionNote(key) == nil {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Catching up").font(.ah(.footnote)).foregroundStyle(theme.text2)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .glassEffect(.regular, in: Capsule())
+            .accessibilityElement(children: .combine)
+            .afterABeat()
         }
     }
 }
@@ -139,7 +138,7 @@ struct BlockRow: View {
                 // A brief tap: the message's actions where the finger was (`MessageActions`).
                 .onTapGesture { messageTapped?() }
                 .contextMenu {
-                    Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = text }
+                    Button("Copy", systemImage: "doc.on.doc") { scene.copy(text, say: "the message") }
                     LinkButtons(place: messagePlace, scene: scene)
                     if session.isLive {
                         Button("Edit & Send Again", systemImage: "pencil") {
@@ -201,7 +200,7 @@ extension BlockRow {
 
     /// The agent's message, on a long press of its steps, pictures and widgets.
     @ViewBuilder fileprivate var agentMenu: some View {
-        Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = block.text }
+        Button("Copy", systemImage: "doc.on.doc") { scene.copy(block.text, say: "the message") }
         LinkButtons(place: messagePlace, scene: scene)
         if session.isLive && block.hasText {
             Button("Quote in Reply", systemImage: "text.quote") {
@@ -338,6 +337,7 @@ private struct PartView: View {
     /// A turn the conversation has moved past: its choices are history, not buttons.
     var answered = false
     @Environment(\.theme) private var theme
+    @Environment(\.rowWillResize) private var rowWillResize
     @State private var showReasoning = false
 
     var body: some View {
@@ -350,7 +350,10 @@ private struct PartView: View {
                 // small chevron.
                 VStack(alignment: .leading, spacing: 8) {
                     Button {
-                        withAnimation(.snappy(duration: 0.2)) { showReasoning.toggle() }
+                        // As a step's fold does: the list moves with the row as it grows,
+                        // instead of the rows under it jumping to the new height at once.
+                        rowWillResize?()
+                        withAnimation(.snappy) { showReasoning.toggle() }
                     } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "brain").foregroundStyle(theme.faint)
@@ -476,7 +479,7 @@ struct ToolRowView: View {
                     if view.status == .running || view.status == .awaiting || view.status == .stopped {
                         Text(view.status == .awaiting ? "Waiting for you" : view.status == .stopped ? "No result" : "Running…")
                             .font(.ah(.caption2))
-                            .foregroundStyle(view.status == .awaiting ? theme.brand : theme.faint)
+                            .foregroundStyle(view.status == .awaiting ? theme.accent : theme.faint)
                     }
                     if view.truncated { Text("trimmed").font(.ah(.caption2)).foregroundStyle(theme.faint) }
                     Image(systemName: "chevron.right").font(.ah(.caption2)).foregroundStyle(theme.faint).rotationEffect(.degrees(open ? 90 : 0))
@@ -514,7 +517,9 @@ struct ToolRowView: View {
             case .running: Circle().strokeBorder(theme.run, lineWidth: 2).overlay { PulseRing(color: theme.run) }
             case .awaiting: Circle().fill(theme.brand)
             case .stopped: Circle().strokeBorder(theme.faint, lineWidth: 1.5)
-            case .error: Circle().fill(theme.danger)
+            // Failed has a shape of its own: red against green is the pair color blindness
+            // takes away.
+            case .error: Image(systemName: "xmark").font(.system(size: 7, weight: .black)).foregroundStyle(theme.danger).frame(width: 8, height: 8)
             case .done: Circle().fill(theme.done)
             }
         }
@@ -857,6 +862,8 @@ struct StartConversation: View {
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 9)
+                        // The whole row resumes it, not only its words.
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .hoverEffect(.highlight)
@@ -879,7 +886,7 @@ struct UnavailableFeed: View {
         case "unreadable": "Its transcript couldn’t be read here. The terminal shows everything."
         default: "There’s no transcript for this session."
         }
-        EmptyState(symbol: "terminal", title: "No GUI for this session", message: message, action: ("Use the terminal", useTerminal))
+        EmptyState(symbol: "terminal", title: "No GUI for This Session", message: message, action: ("Use the Terminal", useTerminal))
     }
 }
 
@@ -905,8 +912,7 @@ enum MessageActions {
         var items: [UIMenuElement] = []
         if block.hasText {
             items.append(UIAction(title: "Copy", image: UIImage(systemName: "doc.on.doc")) { _ in
-                UIPasteboard.general.string = block.text
-                scene.toast("Copied the message")
+                scene.copy(block.text, say: "the message")
             })
         }
         if session.isLive, block.hasText {

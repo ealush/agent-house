@@ -19,8 +19,9 @@ struct SceneSheet: View {
         case .branch(let key): sessionSheet(key) { BranchSheet(scene: scene, session: $0) }
         case .worktrees: if let hub = scene.hub { WorktreesView(model: WorktreesModel(api: hub.api), scene: scene) }
         case .settings(let section): SettingsView(scene: scene, section: section.flatMap(SettingsSection.init(rawValue:)))
-        case .confirmTerminate(let key): sessionSheet(key) { ConfirmTerminateSheet(scene: scene, session: $0) }
-        case .confirmPlan(let key, let plan): sessionSheet(key) { ConfirmPlanSheet(scene: scene, session: $0, plan: plan) }
+        // Asked as system alerts (`SceneRootController.terminateAlert`, `planAlert`); a sheet
+        // only when the session went while it was being asked.
+        case .confirmTerminate(let key), .confirmPlan(let key, _): sessionSheet(key) { _ in EmptyView() }
         case .scrollback(_, let text): ScrollbackSheet(text: text)
         case .modelPicker(let key): sessionSheet(key) { LaunchPickerSheet(scene: scene, session: $0, setting: .model) }
         case .effortPicker(let key): sessionSheet(key) { LaunchPickerSheet(scene: scene, session: $0, setting: .effort) }
@@ -35,7 +36,7 @@ struct SceneSheet: View {
             content(session)
         } else {
             NavigationStack {
-                EmptyState(symbol: "questionmark.square.dashed", title: "That session is gone", message: "It ended or moved while this was opening.")
+                EmptyState(symbol: "questionmark.square.dashed", title: "That Session Is Gone", message: "It ended or moved while this was opening.")
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .close) { scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) } }
             }
         }
@@ -157,7 +158,8 @@ struct NewSessionSheet: View {
                         Button {
                             browsing = true
                         } label: {
-                            Image(systemName: "ellipsis.circle")
+                            // A folder to browse, not "more".
+                            Image(systemName: "folder")
                         }
                         .buttonStyle(.borderless)
                         .accessibilityLabel("Browse folders on the host")
@@ -482,7 +484,7 @@ struct ForksSheet: View {
         NavigationStack {
             List {
                 if lines.isEmpty {
-                    ContentUnavailableView("No forks", systemImage: "arrow.branch", description: Text("Fork this session to try another approach on its own branch."))
+                    ContentUnavailableView("No Forks", systemImage: "arrow.branch", description: Text("Fork this session to try another approach on its own branch."))
                 }
                 ForEach(lines) { line in
                     HStack(spacing: 12) {
@@ -777,7 +779,7 @@ struct SendToSheet: View {
                 }
             }
             // An ellipsis is for the menu item that opens this, not the title of what it opened.
-            .navigationTitle("Send to a session")
+            .navigationTitle("Send To")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) }
@@ -905,6 +907,9 @@ struct BranchSheet: View {
                     if rows.isEmpty && created == nil {
                         Text("No branches yet. Type a name to create one.").foregroundStyle(theme.muted)
                     }
+                } else if model.error != nil {
+                    // The banner above says why: a way to ask again, not a spinner that never stops.
+                    Button("Try Again", systemImage: "arrow.clockwise") { Task { await model.loadBranches() } }
                 } else {
                     ProgressView()
                 }
@@ -918,7 +923,7 @@ struct BranchSheet: View {
             .onSubmit(of: .search) {
                 if let first = model.branches.map(rows)?.first(where: { !$0.current && $0.worktree == nil }), created == nil { switchTo(first.name) } else if let created { switchTo(created) }
             }
-            .navigationTitle("Switch branch")
+            .navigationTitle("Switch Branch")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) } }
             .task { await model.loadBranches() }
@@ -954,7 +959,7 @@ struct WorktreesView: View {
         NavigationStack {
             List {
                 Group {
-                if let error = model.error { Banner(text: error, tone: .error) }
+                if let error = model.error { Banner(text: error, tone: .error, action: model.loaded ? nil : ("Retry", { Task { await model.load() } })) }
                 if !model.results.isEmpty {
                     Section("Just now") {
                         ForEach(model.results, id: \.path) { r in
@@ -965,8 +970,10 @@ struct WorktreesView: View {
                     }
                 }
                 let sections = model.sections
-                if model.trees.isEmpty && model.error == nil {
-                    ContentUnavailableView("No worktrees", systemImage: "square.on.square.dashed", description: Text("Start a session with “Its own worktree” to give an agent a branch and checkout of its own."))
+                if !model.loaded && model.error == nil {
+                    ProgressView().frame(maxWidth: .infinity).listRowBackground(Color.clear).afterABeat(.milliseconds(300))
+                } else if model.trees.isEmpty && model.error == nil {
+                    ContentUnavailableView("No Worktrees", systemImage: "square.on.square.dashed", description: Text("Start a session with “Its own worktree” to give an agent a branch and checkout of its own."))
                 }
                 if !sections.inUse.isEmpty {
                     Section("In use") { ForEach(sections.inUse) { row($0) } }
@@ -1063,12 +1070,12 @@ struct WorktreesView: View {
                 // Red by tint, not role: a destructive action swiped all the way is taken for
                 // the row's deletion, and the list aborts when the row is still there (it is,
                 // until the confirmation says).
-                Button("Remove", systemImage: "trash") { removing = tree }.tint(theme.danger)
+                Button { removing = tree } label: { Image(systemName: "trash") }.accessibilityLabel("Remove").tint(theme.swipe(\.danger))
             }
         }
         .contextMenu {
             Button("Open a Shell Here", systemImage: "terminal") { shell(tree) }
-            Button("Copy Path", systemImage: "doc.on.doc") { UIPasteboard.general.string = tree.path }
+            Button("Copy Path", systemImage: "doc.on.doc") { scene.copy(tree.path, say: "the path") }
             if !inUse {
                 Divider()
                 Button("Remove…", systemImage: "trash", role: .destructive) { removing = tree }
@@ -1128,89 +1135,6 @@ struct WorktreesView: View {
             let request = NewSessionRequest(preset: "shell", cwd: tree.path, session: scene.hub?.hub.state?.defaultSession ?? "", label: tree.branch)
             if await scene.start(request) != nil { scene.sheet = nil }
         }
-    }
-}
-
-// MARK: Confirmations
-
-struct ConfirmTerminateSheet: View {
-    let scene: SceneModel
-    let session: SessionModel
-    @Environment(\.theme) private var theme
-
-    var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Terminate “\(session.title)”?").font(.ah(.title3).weight(.semibold))
-                Text("Its process stops now. The conversation stays in History and can be resumed.").foregroundStyle(theme.muted)
-                if session.row?.dto.terminal != nil {
-                    Text("Its attached terminal and anything running in it will also stop.").foregroundStyle(theme.muted)
-                }
-                if session.working { Label("It’s in the middle of a turn.", systemImage: "exclamationmark.triangle").foregroundStyle(theme.limited) }
-                Spacer()
-                Button(role: .destructive) {
-                    scene.sheet = nil
-                    Task { await scene.terminate(session.key) }
-                } label: {
-                    Text("Terminate").fontWeight(.semibold).frame(maxWidth: .infinity)
-                }
-                // The danger color as the words on its own tint: filled, white type on the
-                // theme's light red barely read.
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .tint(theme.danger)
-                .keyboardShortcut(.return, modifiers: .command)
-                Button("Cancel") { scene.sheet = nil }.frame(maxWidth: .infinity)
-                    .keyboardShortcut(.cancelAction)
-            }
-            .padding(20)
-            // The theme's surface: on the short sheet's pale glass the words washed out.
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(theme.surface)
-            .containerBackground(theme.surface, for: .navigation)
-        }
-        .presentationDetents([.height(280)])
-    }
-}
-
-struct ConfirmPlanSheet: View {
-    let scene: SceneModel
-    let session: SessionModel
-    let plan: LaunchState.Plan
-    @Environment(\.theme) private var theme
-
-    var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 16) {
-                switch plan {
-                case .relaunch(_, let title, let body, let dangerous):
-                    Text(title).font(.ah(.title3).weight(.semibold))
-                    Text(body).foregroundStyle(theme.muted)
-                    if dangerous { Label("Permission checks are off in the new session.", systemImage: "exclamationmark.shield").foregroundStyle(theme.danger) }
-                case .switchMode(let id, _):
-                    Text("Turn off permission checks?").font(.ah(.title3).weight(.semibold))
-                    Text("“\(session.launch.preset?.modes?.first { $0.id == id }?.name ?? id)” lets the agent run commands and edit files without asking.").foregroundStyle(theme.muted)
-                default:
-                    EmptyView()
-                }
-                Spacer()
-                Button {
-                    scene.sheet = nil
-                    Task { await scene.runPlan(plan, on: session) }
-                } label: {
-                    Text("Continue").frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent).tint(theme.accentStrong)
-                .keyboardShortcut(.return, modifiers: .command)
-                Button("Cancel") { scene.sheet = nil }.frame(maxWidth: .infinity).keyboardShortcut(.cancelAction)
-            }
-            .padding(20)
-            // The theme's surface: on the short sheet's pale glass the words washed out.
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(theme.surface)
-            .containerBackground(theme.surface, for: .navigation)
-        }
-        .presentationDetents([.medium])
     }
 }
 
@@ -1306,9 +1230,10 @@ struct LaunchPickerSheet: View {
                 .ahRow()
             }
             .ahFormGround()
-            .navigationTitle(setting == .model ? "Model" : "Reasoning effort")
+            .navigationTitle(setting == .model ? "Model" : "Reasoning Effort")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) } }
+            // A pick applies at once: there's nothing to cancel, only to close.
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .close) { scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) } }
         }
         .presentationDetents([.medium, .large])
     }

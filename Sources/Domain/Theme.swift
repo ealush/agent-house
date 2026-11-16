@@ -110,6 +110,22 @@ struct ThemePalette: Equatable, Sendable {
         return String(format: "#%02x%02x%02x", mixed[0], mixed[1], mixed[2])
     }
 
+    /// A fill the system's white words and glyphs read on (a row's swipe actions): the color
+    /// itself where white on it reaches 4.5:1, else darkened until it does. A dark palette's
+    /// statuses are pale (salmon, amber, mint) to read on its dark ground, and white on them
+    /// was under 2.3:1.
+    static func underWhite(_ hex: String) -> String {
+        var color = String(hex.prefix(7))
+        var t = 0.0
+        while contrastWithWhite(color) < 4.5, t < 0.9 {
+            t += 0.05
+            color = mix(hex, "#000000", t)
+        }
+        return color
+    }
+
+    static func contrastWithWhite(_ hex: String) -> Double { 1.05 / (luminance(hex) + 0.05) }
+
     /// "#rrggbb" with an alpha: "#rrggbbaa".
     static func alpha(_ hex: String, _ a: Double) -> String {
         let digits = hex.hasPrefix("#") ? String(hex.dropFirst().prefix(6)) : String(hex.prefix(6))

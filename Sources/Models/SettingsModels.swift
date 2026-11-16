@@ -55,13 +55,28 @@ final class SecuritySettings {
     func clearPrompts() async { await act("Prompt history cleared.") { try await api.clearPrompts() } }
 
     /// The audit log as rows: when, what, from where.
-    var activity: [(at: String, event: String, detail: String)] {
+    var activity: [(at: String, date: Date?, event: String, detail: String)] {
         (overview?.audit ?? []).map { entry in
             let at = entry["at"].text
             let event = entry["event"].text
             let rest = (entry.object ?? [:]).filter { $0.key != "at" && $0.key != "event" }.sorted { $0.key < $1.key }.map { "\($0.key): \($0.value.text)" }.joined(separator: " · ")
-            return (at, Self.eventNames[event] ?? event, rest)
+            return (at, Self.date(at), Self.eventName(event), rest)
         }
+    }
+
+    /// The host writes ISO 8601 with milliseconds ("2026-11-16T00:01:03.858Z").
+    static func date(_ text: String) -> Date? {
+        let precise = ISO8601DateFormatter()
+        precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return precise.date(from: text) ?? ISO8601DateFormatter().date(from: text)
+    }
+
+    /// An event as words: its name where it has one, else its key spelled out ("review.merge"
+    /// reads "Review merge"), never the key itself.
+    static func eventName(_ event: String) -> String {
+        if let name = eventNames[event] { return name }
+        let words = event.replacingOccurrences(of: ".", with: " ").replacingOccurrences(of: "_", with: " ")
+        return words.prefix(1).uppercased() + words.dropFirst()
     }
 
     static let eventNames: [String: String] = [
@@ -71,6 +86,18 @@ final class SecuritySettings {
         "auth.password_set": "Master password set", "auth.password_removed": "Master password removed", "auth.preview_session": "Preview opened",
         "session.create": "Session started", "session.send": "Message sent", "session.approve": "Approved", "session.deny": "Denied",
         "session.kill": "Session terminated", "file.upload": "File uploaded", "push.apns.register": "Notifications registered",
+        "session.resume": "Session resumed", "session.fork": "Session forked", "session.relaunch": "Session relaunched",
+        "session.interrupt": "Turn stopped", "session.branch": "Branch switched", "session.mode": "Permission mode changed",
+        "session.switch": "Model or effort changed", "session.restore": "Files restored", "session.choose": "Choice answered",
+        "session.questions": "Questions answered", "snapshot.restore": "Snapshot restored", "project.create": "Project created",
+        "worktree.remove": "Worktree removed", "terminal.close": "Terminal closed", "preview.start": "Preview started", "preview.stop": "Preview stopped",
+        "review.stack": "Review started", "review.link": "Review linked to GitHub", "review.merge": "Pull request merged",
+        "review.ready": "Marked ready for review", "review.remove": "Review deleted", "review.resolve": "Finding resolved",
+        "review.retarget": "Pull request retargeted", "review.dispatch": "Fixes sent to an agent", "prompts.clear": "Prompt history cleared",
+        "subscription.save": "Provider saved", "subscription.remove": "Provider removed", "subscription.default": "Default provider set",
+        "env.save": "Variable saved", "env.remove": "Variable removed", "harnesses.add": "Agent added", "harnesses.remove": "Agent removed",
+        "harnesses.check": "Agent versions checked", "search.rebuild": "Search index rebuilt", "system.restart": "Agent Hub restarted",
+        "system.rebuild": "Agent Hub rebuilt", "system.uploads.clear": "Uploaded files cleared",
     ]
 }
 

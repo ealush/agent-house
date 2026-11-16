@@ -77,7 +77,7 @@ struct StackManageSheet: View {
                 }
                 if stack.source != "native" {
                     Section {
-                        Button("Make it a GitHub stack") { Task { await model.link() } }
+                        Button("Make It a GitHub Stack") { Task { await model.link() } }
                             .disabled(stack.link?.ok == false)
                         if let why = stack.link?.why { Text(why).font(.ah(.caption)).foregroundStyle(theme.muted) }
                     } footer: {
@@ -85,20 +85,34 @@ struct StackManageSheet: View {
                     }
                 }
                 Section {
-                    Button("Delete this review", role: .destructive) { confirmDelete = true }
+                    Button("Delete This Review", role: .destructive) { confirmDelete = true }
                 } footer: {
                     Text("Only the review goes: PRs, branches and findings on GitHub stay.")
                 }
             }
             .environment(\.editMode, .constant(.active))
-            .navigationTitle("Manage stack")
+            .navigationTitle("Manage Stack")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(role: .close) { dismiss() }.tint(.primary) } }
+            // Leading, with Esc, as every sheet's close in the app.
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) } }
+            // A name or plan file typed and left without Return is kept: closing threw it away,
+            // the only fields here that waited to be confirmed.
+            .onDisappear { saveTyped() }
             .task { owners = await model.owners() }
             .confirmationDialog("Delete this review?", isPresented: $confirmDelete, titleVisibility: .visible) {
-                Button("Delete", role: .destructive) { Task { await model.remove(); dismiss() } }
+                // Closes only once it's gone: a refused delete closed the sheet with the review
+                // still there.
+                Button("Delete", role: .destructive) { Task { if await model.remove() { dismiss() } } }
             }
         }
+    }
+
+    private func saveTyped() {
+        let name = title.trimmingCharacters(in: .whitespaces)
+        let plan = planPath.trimmingCharacters(in: .whitespaces)
+        let patch = StackPatch(title: name != stack.title && !name.isEmpty ? name : nil, planPath: plan != (stack.planPath ?? "") ? .some(plan.isEmpty ? nil : plan) : nil)
+        guard patch.title != nil || patch.planPath != nil else { return }
+        Task { await model.update(patch) }
     }
 }
 
@@ -160,7 +174,7 @@ struct ResolveThreadSheet: View {
                 Section("Thread") { Text(finding.title).font(.ah(.callout)) }
                 Section("Your reply") { TextEditor(text: $reply).frame(minHeight: 120) }
             }
-            .navigationTitle("Reply and resolve")
+            .navigationTitle("Reply and Resolve")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) }

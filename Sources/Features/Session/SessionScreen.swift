@@ -61,7 +61,7 @@ struct SessionScreen: View {
                 }
                 .ignoresSafeArea(.container, edges: .bottom)
                 .frame(width: max(280, min(640, panelWidth - CGFloat(scene.panelWidthDelta))))
-                .transition(.move(edge: .trailing))
+                .transition(reduceMotion ? .opacity : .move(edge: .trailing))
             }
         }
         // A panel slides in as it slides out (opened from the menu, it cut in), the
@@ -120,9 +120,17 @@ struct SessionScreen: View {
         .onChange(of: session.isShell, initial: true) { _, shell in session.composer.isShell = shell }
         .onChange(of: session.hasGUI) { _, _ in session.stateChanged() }
         .onChange(of: session.row?.dto.queued) { _, _ in session.stateChanged() }
+        // One tap for what changed: it asks (a question that ends a turn isn't also "done"),
+        // or it finished. Not when you stopped it, and not when the session went away.
         .onChange(of: session.row?.dto.status) { old, new in
-            if old == .busy && new != .busy { Haptics.success() }
-            if new == .waiting { Haptics.warning() }
+            // Said aloud too: with VoiceOver on, the pill changing colour said nothing.
+            if new == .waiting {
+                Haptics.warning()
+                AccessibilityNotification.Announcement("\(session.title) needs you").post()
+            } else if old == .busy, let new, new != .busy, !session.composer.stoppedLately {
+                Haptics.success()
+                AccessibilityNotification.Announcement("\(session.title) finished").post()
+            }
         }
         .accessibilityElement(children: .contain)
     }
@@ -221,6 +229,8 @@ private struct SessionHeader: View {
     var pane: LayoutNode.Path?
     var paneFocused = true
     @Environment(\.theme) private var theme
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var renameFocused: Bool
     /// The header's own width: a pane beside a panel, or a quarter of a split, is narrow.
     @State private var width: CGFloat = 1000
@@ -269,11 +279,21 @@ private struct SessionHeader: View {
                 } else {
                     Text(session.title)
                         .font(compact ? .ah(.subheadline).weight(.semibold) : .ah(.headline))
-                        .lineLimit(1)
+                        .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
                         .layoutPriority(1)
                         .accessibilityAddTraits(.isHeader)
                 }
-                if let row = session.row { StatusPill(word: row.word, compact: tight).fixedSize() }
+                if let note = scene.connectionNote(session.key) {
+                    // Its status is as of the last word from the host: say that instead.
+                    Label(note, systemImage: "wifi.slash")
+                        .font(.ah(.caption).weight(.semibold))
+                        .foregroundStyle(theme.danger)
+                        .labelStyle(.titleAndIcon)
+                        .fixedSize()
+                        .transition(.opacity)
+                } else if let row = session.row {
+                    StatusPill(word: row.word, compact: tight).fixedSize()
+                }
                 if let pane, scene.workspace.zoom, let leaves = scene.workspace.layout?.leaves(), let index = leaves.firstIndex(where: { $0.path == pane }) {
                     // Maximized: which pane of how many, and the way back to the split.
                     Button {
@@ -297,7 +317,9 @@ private struct SessionHeader: View {
                         Button {
                             scene.setSurface(other, for: session.key)
                         } label: {
-                            Image(systemName: other == .terminal ? "terminal" : "text.bubble").headerGlyph()
+                            Image(systemName: other == .terminal ? "terminal" : "text.bubble")
+                                .contentTransition(.symbolEffect(.replace))
+                                .headerGlyph()
                         }
                         .buttonStyle(.borderless)
                         .accessibilityLabel(other == .terminal ? "Agent Terminal" : "Messages")
@@ -311,6 +333,7 @@ private struct SessionHeader: View {
                     }
                 }
                 PermissionShield(session: session, scene: scene)
+                    .transition(.scale.combined(with: .opacity))
                 PanelsMenu(session: session)
                 if !scene.narrow && !tight {
                     Menu {
@@ -370,6 +393,9 @@ private struct SessionHeader: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+        // The shield arrives and leaves, and the view switch turns its glyph over, in place.
+        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: session.launch.warning != nil)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: session.surface)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         // Glyphs in the label color, as a bar's are; status and branch keep their own.
         .tint(.primary)
@@ -402,11 +428,11 @@ private struct PanelsMenu: View {
         Menu {
             // Only what this session has: no Diff or Stack without a branch, no Queue or
             // Snapshots in a shell.
+            // The open one checked, as a menu marks what's on, its glyph kept (a checkmark
+            // stood in for it).
             ForEach(SceneSnapshot.Panel.allCases.filter { $0.applies(to: session) }) { panel in
-                Button {
-                    session.panel = session.panel == panel ? nil : panel
-                } label: {
-                    if session.panel == panel { Label(panel.title, systemImage: "checkmark") } else { Label(panel.title, systemImage: panel.symbol) }
+                Toggle(isOn: Binding(get: { session.panel == panel }, set: { session.panel = $0 ? panel : nil })) {
+                    Label(panel.title, systemImage: panel.symbol)
                 }
             }
         } label: {
@@ -465,7 +491,8 @@ struct SessionMenu: View {
                 }
             }
         } label: {
-            Image(systemName: "ellipsis.circle").headerGlyph()
+            // The bars' "more" glyph, as the phone's session bar and every page's has it.
+            Image(systemName: "ellipsis").headerGlyph()
         }
         .accessibilityLabel("Session menu")
     }
@@ -501,7 +528,7 @@ struct SessionAction: Identifiable {
         }
         if session.row?.dto.branch != nil { work.append(SessionAction(title: "Switch Branch…", symbol: CommandCatalog.icon("switch-branch")) { scene.sheet = .branch(session.key) }) }
         if !session.isShell { work.append(SessionAction(title: "Fork…", symbol: CommandCatalog.icon("fork")) { scene.sheet = .fork(session.key) }) }
-        if session.row?.dto.fork != nil { work.append(SessionAction(title: "Forks…", symbol: "arrow.triangle.branch") { scene.sheet = .forks(session.key) }) }
+        if session.row?.dto.fork != nil { work.append(SessionAction(title: "Forks…", symbol: "square.on.square") { scene.sheet = .forks(session.key) }) }
         if !session.isShell && session.hasGUI { work.append(SessionAction(title: "Continue in Another Agent…", symbol: CommandCatalog.icon("continue-in")) { scene.sheet = .continueIn(key: session.key, preset: nil) }) }
         if !session.isShell && scene.portable(session) { work.append(SessionAction(title: "Conversation Lineage", symbol: CommandCatalog.icon("conversation-lineage")) { scene.sheet = .lineage(session.key) }) }
         if session.isLive && session.hasGUI { work.append(SessionAction(title: "Send To…", symbol: CommandCatalog.icon("send-to")) { scene.sheet = .sendTo(session.key) }) }
@@ -541,7 +568,7 @@ private struct EndedBanner: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "moon.zzz").foregroundStyle(theme.muted)
+            Image(systemName: "moon.zzz").foregroundStyle(theme.muted).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text("This session has ended").font(.ah(.subheadline).weight(.semibold))
                 // A message resumes it only where there's a composer to send one from.
@@ -549,11 +576,21 @@ private struct EndedBanner: View {
                     .font(.ah(.caption)).foregroundStyle(theme.muted)
             }
             Spacer()
-            Button("Resume") {
+            // Says it's on its way while the host starts it again (a few seconds for an
+            // agent), and takes no second tap: one did, and two sessions resumed.
+            let resuming = session.busy.contains("resume")
+            Button {
                 Task { if let key = await session.resume() { scene.open(key) } }
+            } label: {
+                ZStack {
+                    Text("Resume").opacity(resuming ? 0 : 1)
+                    if resuming { ProgressView().controlSize(.small).tint(theme.accentInk) }
+                }
             }
             .buttonStyle(.borderedProminent)
             .tint(theme.accentStrong)
+            .disabled(resuming)
+            .accessibilityLabel(resuming ? "Resuming" : "Resume")
         }
         .padding(12)
         .background(theme.raised)
@@ -599,6 +636,7 @@ private struct EndedScreen: View {
 private struct NoticeStack: View {
     let session: SessionModel
     @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 6) {
@@ -617,17 +655,19 @@ private struct NoticeStack: View {
                     .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(notice.tone == .error ? theme.danger.opacity(0.35) : theme.line, lineWidth: 0.75))
                     .shadow(color: theme.shadow, radius: 12, y: 5)
                     .padding(.horizontal, 16)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
                     .task {
                         try? await Task.sleep(for: .seconds(notice.tone == .error ? 6 : 3))
                         session.dismiss(notice.id)
                     }
                     .onTapGesture { session.dismiss(notice.id) }
                     .accessibilityAddTraits(.isStaticText)
+                    // Spoken as it comes, as the window's toasts are; it's gone in seconds.
+                    .onAppear { AccessibilityNotification.Announcement(notice.text).post() }
             }
         }
         .padding(.top, 60)
-        .animation(.snappy, value: session.notices.map(\.id))
+        .animation(reduceMotion ? .smooth(duration: 0.2) : .spring(duration: 0.35, bounce: 0.2), value: session.notices.map(\.id))
     }
 }
 
@@ -659,6 +699,7 @@ private extension View {
     /// A pane header's glyph button, big enough for a finger on an iPad: the bare glyph was
     /// a 22 by 17 point target.
     func headerGlyph() -> some View {
-        frame(minWidth: 30, minHeight: 30).contentShape(Rectangle())
+        // Drawn in 30 points, hit in the 44 a finger needs.
+        frame(minWidth: 30, minHeight: 30).contentShape(Rectangle()).touchTarget()
     }
 }

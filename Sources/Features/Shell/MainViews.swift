@@ -435,7 +435,22 @@ private struct PaneView: View {
             } else if let session = scene.session(tile.sessionKey) {
                 SessionScreen(session: session, scene: scene, paneFocused: focused, compactHeader: tile.box.w < 0.5 || tile.box.h < 0.5, pane: tile.path)
             } else {
-                EmptyState(symbol: "questionmark.square.dashed", title: "Session ended", message: "Pick another for this pane.")
+                // Two ways on, by touch as by keys: it said "pick another" with nothing to pick with.
+                ContentUnavailableView {
+                    Label("Session Ended", systemImage: "questionmark.square.dashed")
+                } description: {
+                    Text("Choose another session for this pane, or close it.")
+                } actions: {
+                    Button("Choose a Session") {
+                        scene.workspace.focus(tile.path)
+                        scene.perform("replace-pane")
+                    }
+                    .buttonStyle(.bordered)
+                    Button("Close Pane") {
+                        scene.workspace.focus(tile.path)
+                        scene.perform("close-pane")
+                    }
+                }
             }
         }
         .background(theme.surface)

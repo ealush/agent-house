@@ -24,7 +24,7 @@ struct LineageSheet: View {
                         }
                     }
                 } else if let error {
-                    EmptyState(symbol: "exclamationmark.triangle", title: "Couldn’t read its lineage", message: error)
+                    EmptyState(symbol: "exclamationmark.triangle", title: "Couldn’t Read Its Lineage", message: error)
                 } else {
                     ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -34,7 +34,7 @@ struct LineageSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: .close) { scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .primaryAction) {
-                    Button("Continue in Another Agent…", systemImage: "arrow.triangle.branch") { scene.sheet = .continueIn(key: session.key, preset: nil) }
+                    Button("Continue in Another Agent…", systemImage: CommandCatalog.icon("continue-in")) { scene.sheet = .continueIn(key: session.key, preset: nil) }
                 }
             }
             .task {

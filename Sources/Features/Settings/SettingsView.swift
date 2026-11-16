@@ -13,7 +13,7 @@ struct SettingsView: View {
         NavigationSplitView {
             List(selection: $section) {
                 Section("This device") {
-                    NavigationLink(value: SettingsSection.security) { SettingsRowLabel(section: .security, title: "Hosts and security") }
+                    NavigationLink(value: SettingsSection.security) { SettingsRowLabel(section: .security, title: "Hosts and Security") }
                 }
                 .ahRow(sizeClass == .compact)
                 Section("Agent Hub") {
@@ -32,9 +32,9 @@ struct SettingsView: View {
                 if let section, let account = scene.account {
                     SettingsDetail(section: section, scene: scene, account: account)
                 } else if scene.account == nil {
-                    EmptyState(symbol: "server.rack", title: "No host yet", message: "Add a host to manage its settings.")
+                    EmptyState(symbol: "server.rack", title: "No Host Yet", message: "Add a host to manage its settings.")
                 } else {
-                    EmptyState(symbol: "gearshape", title: "Pick a section", message: "")
+                    EmptyState(symbol: "gearshape", title: "Pick a Section", message: "")
                 }
             }
         }
@@ -125,7 +125,7 @@ private struct SettingsDetail: View {
             case .system: SystemSection(model: SystemSettings(api: account.api), scene: scene)
             }
         }
-        .navigationTitle(section == .security ? "Hosts and security" : section.title)
+        .navigationTitle(section == .security ? "Hosts and Security" : section.title)
         // A link straight to this section (the overflow menu), here or in the web app.
         .toolbar {
             ToolbarItemGroup(placement: .secondaryAction) {
@@ -144,6 +144,8 @@ private struct SecuritySection: View {
     @State private var model: SecuritySettings
     @State private var confirmRemove = false
     @State private var confirmOthers = false
+    /// A sign-in, device, passkey or token about to go, or the prompt history: asked first.
+    @State private var confirming: SecurityConfirm?
     @State private var naming = false
     @State private var tokenName = ""
     @Environment(\.theme) private var theme
@@ -174,12 +176,12 @@ private struct SecuritySection: View {
                         }
                     }
                 }
-                Button("Add a host…", systemImage: "plus") { scene.sheet = .setup }
+                Button("Add a Host…", systemImage: "plus") { scene.sheet = .setup }
             }
             Section {
                 LabeledContent("Enrolled as", value: account.account.label)
                 LabeledContent("Device ID", value: String(account.account.deviceId.prefix(12)))
-                Button("Lock now", systemImage: "lock") { Task { await account.lock() } }
+                Button("Lock Now", systemImage: "lock") { Task { await account.lock() } }
                 Button("Remove this device from \(account.hostname)…", systemImage: "trash", role: .destructive) { confirmRemove = true }
             } header: {
                 Text("This device on \(account.hostname)")
@@ -213,7 +215,7 @@ private struct SecuritySection: View {
                         }
                     }
                 }
-                Button(model.code == nil ? "Issue a setup code" : "Issue a new code", systemImage: "number") { Task { await model.newCode() } }
+                Button(model.code == nil ? "Issue a Setup Code" : "Issue a New Code", systemImage: "number") { Task { await model.newCode() } }
             } header: {
                 Text("Add another device")
             } footer: {
@@ -228,10 +230,10 @@ private struct SecuritySection: View {
                                 Text("\(signIn.via) · last seen \(Elapsed.format(Date(timeIntervalSince1970: signIn.lastSeenAt / 1000), now: .now))").font(.ah(.caption)).foregroundStyle(theme.muted)
                             }
                             Spacer()
-                            if !signIn.current { Button("Sign out") { Task { await model.revoke(signIn) } }.buttonStyle(.borderless) }
+                            if !signIn.current { Button("Sign Out") { confirming = .signIn(signIn) }.buttonStyle(.borderless) }
                         }
                     }
-                    Button("Sign out every other device", role: .destructive) { confirmOthers = true }
+                    Button("Sign Out Every Other Device", role: .destructive) { confirmOthers = true }
                 }
                 if let devices = overview.devices, !devices.isEmpty {
                     Section("Enrolled devices") {
@@ -239,7 +241,7 @@ private struct SecuritySection: View {
                             HStack {
                                 Text(device.label + (device.current ? " (this one)" : ""))
                                 Spacer()
-                                if !device.current { Button("Remove", role: .destructive) { Task { await model.removeDevice(device) } }.buttonStyle(.borderless) }
+                                if !device.current { Button("Remove", role: .destructive) { confirming = .device(device) }.buttonStyle(.borderless) }
                             }
                         }
                     }
@@ -250,7 +252,7 @@ private struct SecuritySection: View {
                             HStack {
                                 Text(passkey.label)
                                 Spacer()
-                                Button("Remove", role: .destructive) { Task { await model.removePasskey(passkey) } }.buttonStyle(.borderless)
+                                Button("Remove", role: .destructive) { confirming = .passkey(passkey) }.buttonStyle(.borderless)
                             }
                         }
                     }
@@ -266,10 +268,10 @@ private struct SecuritySection: View {
                                 Text(tokenUse(token)).font(.ah(.caption)).foregroundStyle(theme.muted)
                             }
                             Spacer()
-                            Button("Revoke", role: .destructive) { Task { await model.removeToken(token) } }.buttonStyle(.borderless)
+                            Button("Revoke", role: .destructive) { confirming = .token(token) }.buttonStyle(.borderless)
                         }
                     }
-                    Button("New token…", systemImage: "key") { naming = true }
+                    Button("New Token…", systemImage: "key") { naming = true }
                 } header: {
                     Text("API tokens")
                 } footer: {
@@ -283,17 +285,23 @@ private struct SecuritySection: View {
                 } footer: {
                     Text("The master password is set or removed on the host itself (`ah auth password`).")
                 }
+                // Above the log, which runs to sixty rows: it sat at the bottom of them.
+                Section {
+                    Button("Clear Prompt History", role: .destructive) { confirming = .prompts }
+                }
                 Section("Activity") {
                     ForEach(Array(model.activity.prefix(60).enumerated()), id: \.offset) { _, row in
                         VStack(alignment: .leading, spacing: 2) {
-                            HStack { Text(row.event).font(.ah(.callout)); Spacer(); Text(row.at).font(.ah(.caption2)).foregroundStyle(theme.faint) }
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(row.event).font(.ah(.callout))
+                                Spacer()
+                                // When, as the sign-ins above say it ("5 min ago"), not the log's timestamp.
+                                Text(row.date.map { Elapsed.format($0, now: .now) } ?? row.at).font(.ah(.caption2)).foregroundStyle(theme.faint)
+                            }
                             if !row.detail.isEmpty { Text(row.detail).font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(2) }
                         }
                     }
                 }
-            }
-            Section {
-                Button("Clear prompt history", role: .destructive) { Task { await model.clearPrompts() } }
             }
         }
         .task { await model.load() }
@@ -310,6 +318,23 @@ private struct SecuritySection: View {
         .confirmationDialog("Sign out every other device?", isPresented: $confirmOthers, titleVisibility: .visible) {
             Button("Sign Out Others", role: .destructive) { Task { await model.signOutOthers() } }
         }
+        // None of these can be taken back from here: each asks first, as signing out the
+        // others does.
+        .confirmationDialog(confirming?.title ?? "", isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }), titleVisibility: .visible, presenting: confirming) { asked in
+            Button(asked.verb, role: .destructive) {
+                Task {
+                    switch asked {
+                    case .signIn(let signIn): await model.revoke(signIn)
+                    case .device(let device): await model.removeDevice(device)
+                    case .passkey(let passkey): await model.removePasskey(passkey)
+                    case .token(let token): await model.removeToken(token)
+                    case .prompts: await model.clearPrompts()
+                    }
+                }
+            }
+        } message: { asked in
+            Text(asked.message)
+        }
         .alert("New API Token", isPresented: $naming) {
             TextField("Name, like “backup script”", text: $tokenName)
             Button("Cancel", role: .cancel) { tokenName = "" }
@@ -323,6 +348,39 @@ private struct SecuritySection: View {
         }
         // The secret never outlives this screen.
         .onDisappear { model.dismissToken() }
+    }
+
+    private enum SecurityConfirm {
+        case signIn(AuthOverview.SignIn), device(AuthOverview.Device), passkey(AuthOverview.Passkey), token(AuthOverview.Token), prompts
+
+        var title: String {
+            switch self {
+            case .signIn(let signIn): "Sign out \(signIn.label)?"
+            case .device(let device): "Remove \(device.label)?"
+            case .passkey(let passkey): "Remove the passkey “\(passkey.label)”?"
+            case .token(let token): "Revoke “\(token.name)”?"
+            case .prompts: "Clear prompt history?"
+            }
+        }
+
+        var verb: String {
+            switch self {
+            case .signIn: "Sign Out"
+            case .device, .passkey: "Remove"
+            case .token: "Revoke"
+            case .prompts: "Clear History"
+            }
+        }
+
+        var message: String {
+            switch self {
+            case .signIn: "That sign-in ends now; it needs to sign in again to reach this host."
+            case .device: "Every sign-in from that device ends and its key is deleted. It needs a new setup code to come back."
+            case .passkey: "The web app can’t sign in with it any more."
+            case .token: "Anything still using it is refused from now on. A token can’t be shown again, so a new one has to be made."
+            case .prompts: "Recent prompts are forgotten on every device signed in to this host."
+            }
+        }
     }
 
     private func tokenUse(_ token: AuthOverview.Token) -> String {
@@ -375,7 +433,9 @@ private struct AppearanceSection: View {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: 4), spacing: 16) {
                     ForEach(choices, id: \.0) { appearance, name, palette in
                         Button {
-                            withAnimation(.snappy(duration: 0.2)) { app.preferences.appearance = appearance }
+                            // SwiftUI eases its colors; the window crosses its bars over in step
+                            // (`SceneRootController`).
+                            withAnimation(.smooth(duration: 0.3)) { app.preferences.appearance = appearance }
                         } label: {
                             VStack(spacing: 6) {
                                 PaletteSwatch(palette: palette, symbol: appearance == .omarchy ? "paintpalette" : nil, selected: app.preferences.appearance == appearance, ring: theme.accent)
@@ -402,7 +462,7 @@ private struct AppearanceSection: View {
             } header: {
                 Text("Reading")
             } footer: {
-                Text("Focus mode shows the conversation: your messages and the agent’s replies. Its steps and thinking stay out of the way until you tap the working line above the box, or Show Steps in the session’s menu. Anything it asks you always shows. New transcript lays the conversation out the new way, while it’s being tried.")
+                Text("Focus mode shows the conversation: your messages and the agent’s replies. Its steps and thinking stay out of the way until you tap the working line above the box, or Show Steps in the session’s menu. Anything it asks you always shows.")
             }
             Section("Sessions") {
                 Picker("Sort sessions", selection: $app.preferences.sessionSort) {
@@ -570,7 +630,7 @@ private struct ShortcutsSection: View {
                 Text(pressed != nil ? "Nothing is bound to those keys." : "No command matches.").foregroundStyle(theme.muted)
             }
             Section {
-                Button("Reset every shortcut", role: .destructive) { confirmReset = true }
+                Button("Reset Every Shortcut", role: .destructive) { confirmReset = true }
                     .disabled(app.keyBindings.modified.isEmpty)
             }
             }
@@ -882,7 +942,7 @@ private struct AgentsSection: View {
                             ForEach(agent.changes, id: \.self) { change in Text("• \(change)").font(.ah(.caption)).foregroundStyle(theme.muted) }
                         }
                         // Red by tint, not role: the row is there until the host has removed it.
-                        .swipeActions { if agent.custom { Button("Remove") { Task { await model.remove(agent) } }.tint(theme.danger) } }
+                        .swipeActions { if agent.custom { Button { Task { await model.remove(agent) } } label: { Image(systemName: "trash") }.accessibilityLabel("Remove").tint(theme.swipe(\.danger)) } }
                     }
                 } header: {
                     Text("Offered in New Session")
@@ -898,6 +958,9 @@ private struct AgentsSection: View {
                         }
                     }
                 }
+            } else if model.error != nil {
+                // The banner above says why; a way to ask again, not a spinner that never stops.
+                Button("Try Again", systemImage: "arrow.clockwise") { Task { await model.load() } }
             } else {
                 ProgressView()
             }
@@ -913,6 +976,7 @@ private struct AgentsSection: View {
                     TextField("Resume command (optional)", text: $resume).font(.ahMono(.body)).textInputAutocapitalization(.never).autocorrectionDisabled()
                 }
                 .navigationTitle("Add an Agent")
+                .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { adding = false }.keyboardShortcut(.cancelAction).tint(.primary) }
                     ToolbarItem(placement: .confirmationAction) {
@@ -942,6 +1006,7 @@ private struct AgentsSection: View {
 private struct SubscriptionsSection: View {
     @State var model: SubscriptionsSettings
     @State private var editing: SubscriptionDraft?
+    @State private var removing: Subscription?
     @State private var briefing: String?
     @State private var briefingLoaded = false
     @Environment(\.theme) private var theme
@@ -960,12 +1025,12 @@ private struct SubscriptionsSection: View {
                                 Text("\(s.model) · \(s.hasKey ? "key \(s.keyHint)" : "no key")").font(.ah(.caption)).foregroundStyle(theme.muted)
                             }
                             Spacer()
-                            if s.isDefault { Text("Default").font(.ah(.caption)).foregroundStyle(theme.brand) }
+                            if s.isDefault { Text("Default").font(.ah(.caption)).foregroundStyle(theme.accent) }
                         }
                     }
                     .swipeActions {
-                        Button("Remove") { Task { await model.remove(s) } }.tint(theme.danger)
-                        if !s.isDefault { Button("Default") { Task { await model.makeDefault(s) } } }
+                        Button { removing = s } label: { Image(systemName: "trash") }.accessibilityLabel("Remove").tint(theme.swipe(\.danger))
+                        if !s.isDefault { Button { Task { await model.makeDefault(s) } } label: { Image(systemName: "star") }.accessibilityLabel("Make Default") }
                     }
                 }
                 Menu {
@@ -1002,6 +1067,7 @@ private struct SubscriptionsSection: View {
         .sheet(item: Binding(get: { editing.map { IdentifiedDraft(draft: $0) } }, set: { editing = $0?.draft })) { item in
             SubscriptionEditor(model: model, draft: item.draft) { editing = nil }
         }
+        .confirmingRemoval($removing, title: { "Remove \($0.name)?" }, message: "Its API key is deleted from the host.") { s in Task { await model.remove(s) } }
     }
 
     struct IdentifiedDraft: Identifiable {
@@ -1036,7 +1102,7 @@ private struct SubscriptionEditor: View {
                     if !model.models.isEmpty {
                         Picker("Available", selection: $draft.model) { ForEach(model.models, id: \.self) { Text($0).tag($0) } }
                     }
-                    Button("Load the model list") { Task { await model.discoverModels(baseUrl: draft.baseUrl, apiKey: key.isEmpty ? nil : key, id: draft.id) } }
+                    Button("Load the Model List") { Task { await model.discoverModels(baseUrl: draft.baseUrl, apiKey: key.isEmpty ? nil : key, id: draft.id) } }
                 }
                 Section {
                     Toggle("Export the key to new sessions", isOn: Binding(get: { draft.envName != nil }, set: { on in
@@ -1048,6 +1114,7 @@ private struct SubscriptionEditor: View {
                 }
             }
             .navigationTitle(draft.id == nil ? "Add a Provider" : draft.name)
+            .navigationBarTitleDisplayMode(.inline)
             .onAppear { model.beginEditing() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: .cancel, action: close).keyboardShortcut(.cancelAction).tint(.primary) }
@@ -1075,6 +1142,7 @@ private struct SubscriptionEditor: View {
 private struct EnvironmentSection: View {
     @State var model: EnvironmentSettings
     @State private var editing: EnvVarDraft?
+    @State private var removing: EnvVar?
     @Environment(\.theme) private var theme
 
     struct EnvVarDraft: Identifiable {
@@ -1100,9 +1168,9 @@ private struct EnvironmentSection: View {
                                 Text(v.secret ? (v.hint ?? "••••") : (v.value ?? "")).font(.ahMono(.caption)).foregroundStyle(theme.muted).lineLimit(1)
                             }
                         }
-                        .swipeActions { Button("Remove") { Task { await model.remove(v) } }.tint(theme.danger) }
+                        .swipeActions { Button { removing = v } label: { Image(systemName: "trash") }.accessibilityLabel("Remove").tint(theme.swipe(\.danger)) }
                     }
-                    Button("Add a variable", systemImage: "plus") { editing = EnvVarDraft(name: "", value: "", secret: false) }
+                    Button("Add a Variable", systemImage: "plus") { editing = EnvVarDraft(name: "", value: "", secret: false) }
                 } footer: {
                     Text("Every new session window starts with these. Secret values never come back to this device.")
                 }
@@ -1126,9 +1194,12 @@ private struct EnvironmentSection: View {
                                 }
                             }
                         }
-                        if model.ready.count > 1 { Button("Restart all \(model.ready.count)") { Task { await model.restartAll() } } }
+                        if model.ready.count > 1 { Button("Restart All \(model.ready.count)") { Task { await model.restartAll() } } }
                     }
                 }
+            } else if model.error != nil {
+                // The banner above says why; a way to ask again, not a spinner that never stops.
+                Button("Try Again", systemImage: "arrow.clockwise") { Task { await model.load() } }
             } else {
                 ProgressView()
             }
@@ -1137,6 +1208,7 @@ private struct EnvironmentSection: View {
         .sheet(item: $editing) { draft in
             EnvEditor(model: model, draft: draft) { editing = nil }
         }
+        .confirmingRemoval($removing, title: { "Remove \($0.name)?" }, message: "New sessions start without it. A secret value can’t be shown again.") { v in Task { await model.remove(v) } }
     }
 }
 
@@ -1156,7 +1228,8 @@ private struct EnvEditor: View {
                 }
                 Toggle("Secret", isOn: $draft.secret)
             }
-            .navigationTitle(draft.original ?? "New variable")
+            .navigationTitle(draft.original ?? "New Variable")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: .cancel, action: close).keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .confirmationAction) {
@@ -1192,8 +1265,11 @@ private struct SearchSection: View {
                     LabeledContent("Entries", value: "\(status.entries)")
                     LabeledContent("Side chats", value: "\(status.chatEntries)")
                     if status.lastBuiltAt > 0 { LabeledContent("Built", value: Elapsed.format(Date(timeIntervalSince1970: status.lastBuiltAt / 1000), now: .now)) }
-                    Button(status.building ? "Building…" : "Rebuild the index") { Task { await model.rebuild() } }.disabled(status.building || !status.enabled)
+                    Button(status.building ? "Building…" : "Rebuild the Index") { Task { await model.rebuild() } }.disabled(status.building || !status.enabled)
                 }
+            } else if model.error != nil {
+                // The banner above says why; a way to ask again, not a spinner that never stops.
+                Button("Try Again", systemImage: "arrow.clockwise") { Task { await model.load() } }
             } else {
                 ProgressView()
             }
@@ -1287,7 +1363,7 @@ private struct SystemSection: View {
                                 if let last = a.last { Text("Last miss: \(last.ask)").font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(2) }
                             }
                         }
-                        Button("Reset the audit") { Task { await model.resetAudit() } }
+                        Button("Reset the Audit") { Task { await model.resetAudit() } }
                     }
                 }
             }

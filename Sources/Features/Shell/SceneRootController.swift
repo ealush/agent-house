@@ -185,14 +185,25 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
         // window's tint set again is passed down to every view in it.
         let current = theme.theme(appearance)
         if current != appliedTheme || view.window !== themedWindow {
+            // A palette picked while the window shows (Settings → Appearance, or the host's
+            // Omarchy theme changing) crosses over as one picture: SwiftUI's colors eased while
+            // the bars, materials and tab bar cut.
+            let changing = appliedTheme != nil && view.window != nil && view.window === themedWindow
             appliedTheme = current
             themedWindow = view.window
-            view.window?.overrideUserInterfaceStyle = current.interfaceStyle
-            // UIKit's own controls (the tab bar's selection) take the theme's accent, not the asset's pink.
-            view.window?.tintColor = current.uiAccent
-            // What shows where nothing's drawn (around the keyboard's corners, under a terminal)
-            // is the theme's ground, not the system's black.
-            view.backgroundColor = current.uiBackground
+            let apply = { [self] in
+                view.window?.overrideUserInterfaceStyle = current.interfaceStyle
+                // UIKit's own controls (the tab bar's selection) take the theme's accent, not the asset's pink.
+                view.window?.tintColor = current.uiAccent
+                // What shows where nothing's drawn (around the keyboard's corners, under a terminal)
+                // is the theme's ground, not the system's black.
+                view.backgroundColor = current.uiBackground
+            }
+            if changing, let window = view.window {
+                UIView.transition(with: window, duration: 0.3, options: [.transitionCrossDissolve, .allowUserInteraction], animations: apply)
+            } else {
+                apply()
+            }
             syncOverlayWindow()
         }
         if !scene.toasts.isEmpty { placeToasts() }
@@ -293,7 +304,9 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
                 return
             }
             let controller = self.makeModal(wanted)
-            controller.presentationController?.delegate = self
+            // An alert reports from its buttons (it can't be swiped away), and its presentation
+            // controller is its own.
+            if !(controller is UIAlertController) { controller.presentationController?.delegate = self }
             (controller as? any ModalReporting)?.dismissed = { [weak self, weak controller] in
                 guard let self, let controller else { return }
                 self.modalGone(controller)
@@ -311,12 +324,19 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
 
     private func makeModal(_ modal: Modal) -> UIViewController {
         switch modal {
+        // A confirmation is asked as iOS asks one: a system alert, which needs no anchor (it's
+        // asked from swipes, menus and keys), reads at every text size, and keeps the safe
+        // choice where the system puts it.
+        case .sheet(.confirmTerminate(let key)) where scene.session(key) != nil:
+            return terminateAlert(scene.session(key)!)
+        case .sheet(.confirmPlan(let key, let plan)) where scene.session(key) != nil && confirmsAsAlert(plan):
+            return planAlert(plan, session: scene.session(key)!)
         case .sheet(let sheet):
             let controller = modalHost(SceneSheet(sheet: sheet, scene: scene))
             switch sheet {
             case .confirmTerminate, .confirmPlan:
                 controller.modalPresentationStyle = .formSheet
-                controller.sheetPresentationController?.detents = [.custom { _ in 300 }]
+                controller.sheetPresentationController?.detents = [.medium()]
             case .modelPicker, .effortPicker, .sessionMenu, .fork, .forks, .branch, .lineage:
                 controller.modalPresentationStyle = .formSheet
                 controller.sheetPresentationController?.detents = [.medium(), .large()]
@@ -340,6 +360,60 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
             controller.modalPresentationStyle = .formSheet
             return controller
         }
+    }
+
+    private func terminateAlert(_ session: SessionModel) -> UIViewController {
+        var lines: [String] = []
+        if session.working { lines.append("It’s in the middle of a turn.") }
+        lines.append("Its process stops now. The conversation stays in History and can be resumed.")
+        if session.row?.dto.terminal != nil { lines.append("Its attached terminal and anything running in it stop too.") }
+        let alert = UIAlertController(title: "Terminate “\(session.title)”?", message: lines.joined(separator: " "), preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self, weak alert] _ in self?.alertGone(alert) })
+        alert.addAction(UIAlertAction(title: "Terminate", style: .destructive) { [weak self, weak alert, scene, key = session.key] _ in
+            self?.alertGone(alert)
+            Task { await scene.terminate(key) }
+        })
+        return alert
+    }
+
+    private func confirmsAsAlert(_ plan: LaunchState.Plan) -> Bool {
+        switch plan {
+        case .relaunch, .switchMode: return true
+        default: return false
+        }
+    }
+
+    private func planAlert(_ plan: LaunchState.Plan, session: SessionModel) -> UIViewController {
+        let title: String, message: String, verb: String, dangerous: Bool
+        switch plan {
+        case .relaunch(_, let asked, let body, let off):
+            title = asked
+            message = off ? body + " Permission checks are off in the new session." : body
+            verb = "Relaunch"
+            dangerous = off
+        case .switchMode(let id, _):
+            title = "Turn Off Permission Checks?"
+            message = "“\(session.launch.preset?.modes?.first { $0.id == id }?.name ?? id)” lets the agent run commands and edit files without asking."
+            verb = "Turn Off Checks"
+            dangerous = true
+        default:
+            preconditionFailure("only relaunches and mode switches are confirmed")
+        }
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self, weak alert] _ in self?.alertGone(alert) })
+        let go = UIAlertAction(title: verb, style: dangerous ? .destructive : .default) { [weak self, weak alert, scene] _ in
+            self?.alertGone(alert)
+            Task { await scene.runPlan(plan, on: session) }
+        }
+        alert.addAction(go)
+        // Return relaunches; turning the checks off is never the default.
+        if !dangerous { alert.preferredAction = go }
+        return alert
+    }
+
+    /// An alert's button was pressed: the alert goes by itself, and the window's state follows.
+    private func alertGone(_ alert: UIAlertController?) {
+        if let alert { modalGone(alert) }
     }
 
     /// The palette and switcher: over everything, dimmed, a tap outside closes.
@@ -841,7 +915,8 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
             shieldItem.accessibilityHint = warning
         }
         let items = warning == nil ? [menuItem] : [menuItem, shieldItem]
-        if navigationItem.rightBarButtonItems != items { navigationItem.rightBarButtonItems = items }
+        // The shield joins the menu's glass as the bar does it, not between two frames.
+        if navigationItem.rightBarButtonItems != items { navigationItem.setRightBarButtonItems(items, animated: isViewLoaded && view.window != nil) }
         // The live terminal fills the screen under a see-through bar: over a dark one its title
         // and buttons go light.
         let overDarkTerminal = session.isLive && !(session.surface == .gui && session.hasGUI) && current.palette.terminal.isDark
@@ -855,7 +930,11 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
     private var attributedSubtitle: AttributedString {
         guard let row = session.row else { return AttributedString(session.isLive ? "" : "Ended") }
         var word = AttributedString(row.word.label)
-        if let color = theme.theme(scene.app.preferences.appearance).uiStatus(row.word) {
+        if let note = scene.connectionNote(session.key) {
+            // Its status is as of the last word from the host: say that instead.
+            word = AttributedString(note)
+            word.uiKit.foregroundColor = theme.theme(scene.app.preferences.appearance).uiDanger
+        } else if let color = theme.theme(scene.app.preferences.appearance).uiStatus(row.word) {
             word.uiKit.foregroundColor = color
         }
         // Where its conversation came from, when another agent handed it over: "↪ Claude Code".

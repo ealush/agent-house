@@ -590,3 +590,16 @@ import Testing
     #expect(hold.agent == nil && hold.feed == nil)
 }
 
+
+@Test func swipeFillsCarryTheSystemsWhiteLabel() {
+    // The dark palette's statuses are pale, made for its dark ground; under white they were
+    // 1.7–2.3:1. Deepened, they reach 4.5:1 and keep their hue.
+    for hex in [ThemePalette.dark.danger, ThemePalette.dark.limited, ThemePalette.dark.done, ThemePalette.dark.accent] {
+        let fill = ThemePalette.underWhite(hex)
+        #expect(ThemePalette.contrastWithWhite(fill) >= 4.5, "\(hex) → \(fill)")
+        #expect(fill != hex)
+    }
+    // The light palette's are deep already: left as they are.
+    #expect(ThemePalette.underWhite(ThemePalette.light.danger) == ThemePalette.light.danger)
+    #expect(ThemePalette.underWhite(ThemePalette.light.done) == ThemePalette.light.done)
+}

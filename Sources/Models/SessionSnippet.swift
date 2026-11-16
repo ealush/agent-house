@@ -6,6 +6,18 @@ import Foundation
 /// "$ git push …" says little about where a conversation is.
 enum SessionSnippet {
     static func line(_ dto: SessionDTO) -> String? {
+        said(dto).map(ending)
+    }
+
+    /// A line that stops on a colon ("Two findings worth fixing first:") goes on in the
+    /// message, below: in a list it trails off, as a cut line does, instead of pointing at
+    /// nothing.
+    static func ending(_ line: String) -> String {
+        let text = line.trimmingCharacters(in: .whitespaces)
+        return text.hasSuffix(":") ? String(text.dropLast()) + "…" : text
+    }
+
+    private static func said(_ dto: SessionDTO) -> String? {
         if dto.status == .waiting {
             let ask = AskParts.line(dto.ask)
             if !ask.isEmpty { return ask }

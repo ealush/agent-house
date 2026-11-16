@@ -22,7 +22,7 @@ struct ReviewHomeView: View {
                 // page that then says there's nothing (before it knows).
                 ForEach(0..<2, id: \.self) { _ in StackPlaceholder().ahRow() }
             } else if model.stacks.isEmpty && !model.loading.contains("stacks") {
-                EmptyState(symbol: "square.stack.3d.up", title: "No stacks in review", message: "Start from a PR chain, a GitHub stack, or PRs you pick.", action: ("Start a review", { starting = true }))
+                EmptyState(symbol: "square.stack.3d.up", title: "No Stacks in Review", message: "Start from a PR chain, a GitHub stack, or PRs you pick.", action: ("Start a Review", { starting = true }))
                     .listRowBackground(Color.clear)
             }
             ForEach(model.stacks) { stack in
@@ -41,7 +41,7 @@ struct ReviewHomeView: View {
                                     .font(.ah(.caption).weight(.semibold))
                                     .padding(.horizontal, 8).padding(.vertical, 3)
                                     .background(theme.brand.opacity(0.14), in: Capsule())
-                                    .foregroundStyle(theme.brand)
+                                    .foregroundStyle(theme.accent)
                             }
                         }
                         SpineBar(spine: stack.spine)
@@ -66,7 +66,7 @@ struct ReviewHomeView: View {
         .ahPage("Review")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button { starting = true } label: { Label("Start a review", systemImage: "plus").foregroundStyle(theme.background) }
+                Button { starting = true } label: { Label("Start a Review", systemImage: "plus").foregroundStyle(theme.background) }
                     .buttonStyle(.glassProminent)
                     .tint(theme.text)
             }
@@ -273,9 +273,19 @@ private struct StartReviewView: View {
             .ahRow()
         }
         .ahFormGround()
-        .navigationTitle("Start a review")
+        .navigationTitle("Start a Review")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) } }
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) }
+            // Picked PRs start from the bar too, with ⌘↩, as every sheet that makes something
+            // does (the stacks and chains above start with a tap of their own).
+            if !picked.isEmpty {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Start") { start(.manual(picked)) }
+                        .keyboardShortcut(.return, modifiers: .command)
+                }
+            }
+        }
         .task { if model.repos.isEmpty { await model.loadList() } }
     }
 
@@ -349,7 +359,7 @@ struct StackCockpitView: View {
                         if model.layer != nil {
                             LayerView(scene: scene, model: model)
                         } else {
-                            EmptyState(symbol: "square.stack.3d.up", title: "Pick a layer", message: "Its evidence and decision show here.")
+                            EmptyState(symbol: "square.stack.3d.up", title: "Pick a Layer", message: "Its evidence and decision show here.")
                         }
                     }
                 } else {
@@ -358,7 +368,7 @@ struct StackCockpitView: View {
             } else if let error = model.error {
                 Banner(text: error, tone: .error).padding()
             } else if model.removed {
-                EmptyState(symbol: "trash", title: "Review deleted", message: "It’s gone from the list too.")
+                EmptyState(symbol: "trash", title: "Review Deleted", message: "It’s gone from the list too.")
             } else {
                 ProgressView()
             }
@@ -372,7 +382,12 @@ struct StackCockpitView: View {
         .navigationBarTitleDisplayMode(scene.narrow ? .inline : .automatic)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                Button { Task { await model.refresh() } } label: { Image(systemName: "arrow.clockwise") }.accessibilityLabel("Sync with GitHub").tint(.primary)
+                // Turns while it syncs, and takes no second tap meanwhile: nothing showed it had begun.
+                Button { Task { await model.refresh() } } label: {
+                    if model.loading.contains("sync") { ProgressView().controlSize(.small) } else { Image(systemName: "arrow.clockwise") }
+                }
+                .disabled(model.loading.contains("sync"))
+                .accessibilityLabel(model.loading.contains("sync") ? "Syncing with GitHub" : "Sync with GitHub").tint(.primary)
                 // A phone has it in the bar at the bottom, beside what to review next.
                 if !scene.narrow {
                     Button { mergingStack = true } label: { Label("Merge the stack", systemImage: "arrow.triangle.merge") }
@@ -449,7 +464,7 @@ struct StackCockpitView: View {
                 ForEach(stack.decisions) { decision in
                     Text(decision.text).font(.ah(.callout))
                         // Red by tint, not role: the row stays until the host's stack comes back.
-                        .swipeActions { Button("Unpin") { Task { await model.removeDecision(decision.id) } }.tint(theme.danger) }
+                        .swipeActions { Button { Task { await model.removeDecision(decision.id) } } label: { Image(systemName: "pin.slash") }.accessibilityLabel("Unpin").tint(theme.swipe(\.danger)) }
                 }
                 HStack(spacing: 10) {
                     Image(systemName: "pin").foregroundStyle(theme.faint).accessibilityHidden(true)
@@ -467,7 +482,7 @@ struct StackCockpitView: View {
             .ahRow(scene.narrow)
             if stack.planPath != nil {
                 Section {
-                    if let plan = model.plan?.text { MarkdownView(plan, compact: true) } else { Button("Show the plan") { Task { await model.loadPlan() } } }
+                    if let plan = model.plan?.text { MarkdownView(plan, compact: true) } else { Button("Show the Plan") { Task { await model.loadPlan() } } }
                 } header: {
                     AhSectionHeader(title: "Plan")
                 }
@@ -625,7 +640,7 @@ private struct LayerRow: View {
                 Label(confidence.checksText, systemImage: checksSymbol(confidence.checks)).foregroundStyle(checksColor(confidence.checks))
                 if layer.blocking > 0 { Label("\(layer.blocking) blocking", systemImage: "exclamationmark.octagon").foregroundStyle(theme.danger) }
                 else if layer.open > 0 { Label("\(layer.open) open", systemImage: "flag").foregroundStyle(theme.muted) }
-                if confidence.review == .changedSinceReview { Label("changed", systemImage: "arrow.triangle.2.circlepath").foregroundStyle(theme.brand) }
+                if confidence.review == .changedSinceReview { Label("changed", systemImage: "arrow.triangle.2.circlepath").foregroundStyle(theme.accent) }
             }
             .font(.ah(.caption2))
         }
@@ -823,7 +838,7 @@ struct LayerView: View {
                     }
                 }
             } else {
-                Button("Brief me on this layer", systemImage: "text.bubble") { Task { await model.brief() } }.buttonStyle(.bordered)
+                Button("Brief Me on This Layer", systemImage: "text.bubble") { Task { await model.brief() } }.buttonStyle(.bordered)
             }
             if let description = model.description, !description.body.isEmpty {
                 DisclosureGroup("The PR’s description") {
@@ -1229,7 +1244,14 @@ struct LayerView: View {
                             Text("• \(change.title)\(change.path.map { " (\($0))" } ?? "")").font(.ah(.caption))
                         }
                     }
-                    Button("Accept these fixes") { Task { await model.acceptFixes() } }.buttonStyle(.bordered)
+                    Button { Task { await model.acceptFixes() } } label: {
+                        HStack(spacing: 6) {
+                            Text("Accept These Fixes")
+                            if model.loading.contains("accept") { ProgressView().controlSize(.small) }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(model.loading.contains("accept"))
                 }
                 .padding(12)
                 .background(theme.tile, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -1431,11 +1453,13 @@ struct LayerView: View {
                     Button("Ask the Agent to Restack…", systemImage: "square.stack.3d.up") { dispatching = .some("restack") }
                 case "retarget":
                     Button("Retarget onto \(model.stack?.trunk ?? "trunk")", systemImage: "arrow.turn.down.right") { Task { await model.retarget() } }
+                        .disabled(model.loading.contains("retarget"))
                 default:
                     EmptyView()
                 }
                 if layer.draft {
                     Button("Mark Ready for Review", systemImage: "eye") { Task { await model.ready() } }
+                        .disabled(model.loading.contains("ready"))
                 }
             }
             if layer.approved && confidence.review != .changedSinceReview {
@@ -1770,7 +1794,7 @@ private struct NewFindingSheet: View {
             }
             // A new finding starts with its name: the keyboard's up for it.
             .onAppear { naming = true }
-            .navigationTitle("New finding")
+            .navigationTitle("New Finding")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) }
@@ -1817,7 +1841,7 @@ private struct DispatchSheet: View {
                 Section {
                     TextEditor(text: $text).frame(minHeight: 160).font(.ah(.callout))
                     if kind == nil {
-                        Button("Draft from the findings") {
+                        Button("Draft from the Findings") {
                             Task { text = await model.draftDispatch(findings: Array(selected)) ?? text }
                         }
                     }

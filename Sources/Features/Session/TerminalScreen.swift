@@ -486,13 +486,23 @@ private struct TerminalStatusOverlay: View {
     let controller: TerminalController
     let session: SessionModel
     @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        // Each state comes and goes in a short fade, not between two frames.
+        ZStack(alignment: .top) { state.transition(.opacity) }
+            .animation(reduceMotion ? nil : .smooth(duration: 0.2), value: controller.status)
+    }
+
+    @ViewBuilder
+    private var state: some View {
         switch controller.status {
         case .live:
             EmptyView()
         case .connecting:
+            // Only when attaching takes a while: a quick one showed it for a frame.
             Label("Attaching…", systemImage: "bolt.horizontal").font(.ah(.caption)).padding(8).background(.thinMaterial, in: Capsule()).padding(.top, 8)
+                .afterABeat()
         case .reconnecting(let reason):
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
@@ -530,8 +540,9 @@ struct KeyBar: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(TerminalKeys.bar, id: \.label) { key in
+                    // Quiet, as the system keyboard is (its key haptics are the person's to turn
+                    // on); the sticky modifiers, which hold a state, still tick.
                     Button(key.label) {
-                        Haptics.tap()
                         send(TerminalKeys.applyModifiers(key.bytes, ctrl: ctrl, alt: alt, shift: shift))
                         ctrl = false
                         alt = false
@@ -610,7 +621,9 @@ private struct KeyToggleStyle: ToggleStyle {
             configuration.label
         }
         .buttonStyle(KeyCapStyle(on: configuration.isOn, ink: ink))
-        .accessibilityAddTraits(configuration.isOn ? .isSelected : [])
+        // A switch that holds for the next key: VoiceOver says on or off, not "selected".
+        .accessibilityAddTraits(.isToggle)
+        .accessibilityValue(configuration.isOn ? "On" : "Off")
     }
 }
 

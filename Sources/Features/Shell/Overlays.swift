@@ -103,8 +103,11 @@ struct PaletteView: View {
             }
             .frame(maxHeight: 440)
             .clipped()
-            Divider().overlay(theme.faint.opacity(0.25))
-            footer(items)
+            // Its key legend only with keys to press (the palette opens from the More menu too).
+            if scene.hardwareKeyboard {
+                Divider().overlay(theme.faint.opacity(0.25))
+                footer(items)
+            }
         }
         .background(theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(theme.faint.opacity(0.35), lineWidth: 0.5))
@@ -429,19 +432,23 @@ struct SwitcherView: View {
                 .onChange(of: selection) { _, new in if all.indices.contains(new) { proxy.scrollTo(all[new].id) } }
             }
             .frame(maxHeight: 440)
-            Divider().overlay(theme.faint.opacity(0.25))
-            HStack(spacing: 14) {
-                HStack(spacing: 4) { Keycaps(parts: ["↑", "↓"]); Text("move") }
-                HStack(spacing: 4) { Keycaps(parts: ["↵"]); Text(tile ? "open as a new pane" : "open or resume") }
-                if !tile && !scene.narrow { HStack(spacing: 4) { Keycaps(parts: ["⌘", "↵"]); Text("as a new pane") } }
-                Spacer()
-                HStack(spacing: 4) { Keycaps(parts: ["esc"]); Text("close") }
+            // Keys to press only where there are keys: under a finger they were a legend for
+            // a keyboard that isn't there.
+            if scene.hardwareKeyboard {
+                Divider().overlay(theme.faint.opacity(0.25))
+                HStack(spacing: 14) {
+                    HStack(spacing: 4) { Keycaps(parts: ["↑", "↓"]); Text("move") }
+                    HStack(spacing: 4) { Keycaps(parts: ["↵"]); Text(tile ? "open as a new pane" : "open or resume") }
+                    if !tile && !scene.narrow { HStack(spacing: 4) { Keycaps(parts: ["⌘", "↵"]); Text("as a new pane") } }
+                    Spacer()
+                    HStack(spacing: 4) { Keycaps(parts: ["esc"]); Text("close") }
+                }
+                .font(.ah(.caption))
+                .foregroundStyle(theme.muted)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .accessibilityHidden(true)
             }
-            .font(.ah(.caption))
-            .foregroundStyle(theme.muted)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .accessibilityHidden(true)
         }
         .background(theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(theme.faint.opacity(0.35), lineWidth: 0.5))
@@ -581,7 +588,7 @@ struct ShortcutsView: View {
                                 HStack(spacing: 10) {
                                     Image(systemName: CommandCatalog.icon(c.id)).frame(width: 22).foregroundStyle(theme.muted)
                                     VStack(alignment: .leading, spacing: 1) {
-                                        Text(c.label).foregroundStyle(scene.isAvailable(c.id) ? theme.text : theme.faint)
+                                        Text(c.title).foregroundStyle(scene.isAvailable(c.id) ? theme.text : theme.faint)
                                         Text(CommandCatalog.whenLabel(c.id)).font(.ah(.caption2)).foregroundStyle(theme.faint)
                                     }
                                     Spacer()
@@ -605,7 +612,7 @@ struct ShortcutsView: View {
             }
             .ahFormGround()
             .searchable(text: $query, prompt: "Name or keys, like “ctrl shift p”")
-            .navigationTitle("Keyboard shortcuts")
+            .navigationTitle("Keyboard Shortcuts")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: .close) { scene.showingShortcuts = false }.keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .primaryAction) { Button("Edit…") { scene.showingShortcuts = false; scene.sheet = .settings(SettingsSection.shortcuts.rawValue) } }
@@ -714,6 +721,7 @@ struct NudgeStack: View {
         VStack(alignment: .trailing, spacing: 8) {
             ForEach(scene.nudges) { nudge in
                 card(nudge)
+                    .modifier(FollowsFinger { scene.dismissNudge(nudge.id) })
                     .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
             }
         }
@@ -759,11 +767,31 @@ struct NudgeStack: View {
             try? await Task.sleep(for: .seconds(6))
             scene.dismissNudge(nudge.id)
         }
-        .gesture(DragGesture(minimumDistance: 12).onEnded { value in
-            if value.translation.height < -20 || abs(value.translation.width) > 60 { scene.dismissNudge(nudge.id) }
-        })
         .overlayTarget("nudge-\(nudge.id)", in: targets)
         .accessibilityElement(children: .contain)
+    }
+}
+
+/// A card that goes with the finger as a system banner does: up and sideways freely, down
+/// with resistance, fading as it nears the edge; let go far enough and it's dismissed, else it
+/// springs back. It stood still under the finger and vanished when let go.
+private struct FollowsFinger: ViewModifier {
+    let dismiss: () -> Void
+    @GestureState private var drag: CGSize = .zero
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .offset(x: drag.width, y: drag.height < 0 ? drag.height : drag.height / 4)
+            .opacity(1 - min(0.6, max(abs(drag.width) / 240, -drag.height / 120)))
+            .animation(reduceMotion ? nil : .spring(duration: 0.3, bounce: 0.2), value: drag == .zero)
+            .gesture(
+                DragGesture(minimumDistance: 12)
+                    .updating($drag) { value, state, _ in state = value.translation }
+                    .onEnded { value in
+                        if value.translation.height < -20 || abs(value.translation.width) > 60 { dismiss() }
+                    }
+            )
     }
 }
 
@@ -772,6 +800,7 @@ struct ToastStack: View {
     let scene: SceneModel
     let targets: OverlayTargets
     @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 6) {
@@ -799,12 +828,13 @@ struct ToastStack: View {
                         try? await Task.sleep(for: .seconds(toast.isError ? 6 : 3))
                         scene.dismissToast(toast.id)
                     }
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                     .accessibilityAddTraits(.updatesFrequently)
             }
         }
         .padding(.bottom, 24)
-        .animation(.snappy, value: scene.toasts.map(\.id))
+        // As the nudges arrive (they bounced in while these slid in half a second's spring).
+        .animation(reduceMotion ? .smooth(duration: 0.2) : .spring(duration: 0.35, bounce: 0.2), value: scene.toasts.map(\.id))
         .onChange(of: scene.toasts.last?.id) { _, _ in
             if let last = scene.toasts.last { UIAccessibility.post(notification: .announcement, argument: last.text) }
         }

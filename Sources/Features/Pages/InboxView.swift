@@ -54,7 +54,9 @@ struct InboxView: View {
                         AskCard(row: row, scene: scene, hub: hub)
                     }
                     ForEach(inbox.reviews, id: \.self) { alert in
+                        // On the theme's card, as the cards around it are (it drew the system's grey).
                         ReviewAlertRow(alert: alert) { scene.openReview(ReviewRoute(stack: alert.stackId, pr: alert.pr)) }
+                            .ahRow()
                     }
                 } header: {
                     AhSectionHeader(title: "Needs you", count: inbox.waiting.count + inbox.reviews.count)
@@ -110,7 +112,7 @@ struct InboxView: View {
                 }
             } else if hub.rows.isEmpty {
                 Section {
-                    EmptyState(symbol: "tray", title: "No sessions running", message: "Start one, or pick up where you left off.", action: ("New Session", { scene.perform("new-session") }))
+                    EmptyState(symbol: "tray", title: "No Sessions Running", message: "Start one, or pick up where you left off.", action: ("New Session", { scene.perform("new-session") }))
                         .listRowBackground(Color.clear)
                 }
                 let recent = Array(hub.history.prefix(3))
@@ -130,7 +132,7 @@ struct InboxView: View {
         // …and the connection's banner comes and goes the same way.
         .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: hub.phase)
         .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: hub.awaitingState)
-        .refreshable { hub.resync() }
+        .refreshable { await hub.resyncAndWait() }
         .ahPage("Inbox")
         .toolbar {
             // Bar glyphs in the label color; only the primary action (New) carries the tint, in
@@ -192,13 +194,15 @@ private struct AskCard: View {
                     Spacer()
                     if !typeSize.isAccessibilitySize { Elapsed(seconds: row.dto.activity).font(.ah(.caption)).foregroundStyle(theme.faint) }
                 }
+                // The whole line opens it: a tap between the title and the time did nothing.
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .hoverEffect(.highlight)
             if let ask = row.dto.ask {
                 if AskParts.isForm(ask) {
                     // The form below says the question; the card only says what this is.
-                    Text(AskParts.kindLabel(ask.kind)).font(.ah(.subheadline).weight(.semibold)).foregroundStyle(theme.brand)
+                    Text(AskParts.kindLabel(ask.kind)).font(.ah(.subheadline).weight(.semibold)).foregroundStyle(theme.accent)
                 } else {
                     AskSummaryView(parts: AskParts(ask, detail: row.dto.detail), showTerminalText: false)
                 }
@@ -223,7 +227,7 @@ private struct ReviewAlertRow: View {
     var body: some View {
         Button(action: open) {
             HStack(spacing: 10) {
-                Image(systemName: "checkmark.seal").foregroundStyle(theme.brand)
+                Image(systemName: "checkmark.seal").foregroundStyle(theme.brand).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).font(.ah(.subheadline).weight(.semibold))
                     Text("\(alert.stackTitle) · #\(alert.pr) \(alert.title)").font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(1)
@@ -261,7 +265,7 @@ struct SessionRowView: View {
         if selectable {
             content.contentShape(Rectangle())
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("\(row.title), \(row.word.rawValue). \(detail)")
+                .accessibilityLabel(spoken)
                 .accessibilityIdentifier("session:\(row.title)")
                 .accessibilityAddTraits(.isButton)
         } else {
@@ -269,9 +273,22 @@ struct SessionRowView: View {
                 .buttonStyle(.plain)
                 .hoverEffect(.highlight)
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("\(row.title), \(row.word.rawValue). \(detail)")
+                .accessibilityLabel(spoken)
                 .accessibilityIdentifier("session:\(row.title)")
         }
+    }
+
+    /// Everything the row shows, in the order it matters: name, status, what's said, then
+    /// pinned, queued, a terminal, a fork, and when (the label replaced all of those).
+    private var spoken: String {
+        var parts = ["\(row.title), \(row.word.rawValue)"]
+        if !detail.isEmpty { parts.append(detail) }
+        if row.dto.pinned { parts.append("Pinned") }
+        if row.dto.queued > 0 { parts.append("\(row.dto.queued) queued") }
+        if let terminal = row.dto.terminal { parts.append(terminal.busy ? "Attached terminal active" : "Terminal attached") }
+        if let fork = row.dto.fork { parts.append(fork.parentTitle.isEmpty ? "\(fork.forks) fork\(fork.forks == 1 ? "" : "s")" : "Fork of \(fork.parentTitle)") }
+        parts.append(Elapsed.format(Date(timeIntervalSince1970: row.dto.activity), now: .now))
+        return parts.joined(separator: ". ")
     }
 
     @ViewBuilder
@@ -280,18 +297,29 @@ struct SessionRowView: View {
         // row's width instead of a few letters.
         let stacked = typeSize.isAccessibilitySize
         let onAccent = prominence == .increased
+        // A status in words ("needs you") on the sidebar's narrow row goes on the line under
+        // the title: beside it, it left the title a few letters ("Rotate…").
+        let wordsUnder = dense && !stacked && row.word.asksForAttention
         if dense || stacked {
             HStack(spacing: 10) {
                 AgentMark(agent: row.dto.agent)
                 VStack(alignment: .leading, spacing: 2) {
                     titleLine(onAccent: onAccent)
-                    Text(detail).font(.ah(.caption)).foregroundStyle(secondary(onAccent)).lineLimit(stacked ? 2 : 1)
+                    if wordsUnder {
+                        HStack(alignment: .center, spacing: 6) {
+                            Text(AskParts.keepingPaths(detail)).font(.ah(.caption)).foregroundStyle(secondary(onAccent)).lineLimit(1)
+                            Spacer(minLength: 4)
+                            status(onAccent: onAccent, compact: false).fixedSize()
+                        }
+                    } else {
+                        Text(AskParts.keepingPaths(detail)).font(.ah(.caption)).foregroundStyle(secondary(onAccent)).lineLimit(stacked ? 2 : 1)
+                    }
                     if stacked { status(onAccent: onAccent, compact: false) }
                 }
                 // The title takes the room first; the status keeps its own size beside it.
                 .layoutPriority(1)
                 Spacer(minLength: 4)
-                if !stacked { status(onAccent: onAccent, compact: dense && !row.word.asksForAttention).fixedSize() }
+                if !stacked && !wordsUnder { status(onAccent: onAccent, compact: dense && !row.word.asksForAttention).fixedSize() }
             }
         } else {
             // A page's row, with room: a larger mark, the title with when it last moved
@@ -310,10 +338,10 @@ struct SessionRowView: View {
                     }
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         // Two lines, as a chat list shows a conversation's last message.
-                        Text(detail.isEmpty ? " " : detail).font(.ah(.footnote)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.muted).lineLimit(2)
+                        Text(detail.isEmpty ? " " : AskParts.keepingPaths(detail)).font(.ah(.footnote)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.muted).lineLimit(2)
                         Spacer(minLength: 6)
                         if row.dto.queued > 0 {
-                            Text("\(row.dto.queued) queued").font(.ah(.caption2)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint)
+                            Text("\(row.dto.queued) queued").font(.ah(.caption2)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint).contentTransition(.numericText(value: Double(row.dto.queued)))
                         }
                         if row.word != .idle { StatusPill(word: row.word) }
                     }
@@ -326,7 +354,7 @@ struct SessionRowView: View {
     private func titleLine(onAccent: Bool) -> some View {
         HStack(spacing: 6) {
             if row.dto.pinned { Image(systemName: "pin.fill").font(.ah(.caption2)).foregroundStyle(tertiary(onAccent)) }
-            Text(row.title).font(dense ? Font.ah(.body) : Font.ah(.body).weight(.medium)).foregroundStyle(primary(onAccent)).lineLimit(1)
+            Text(row.title).font(dense ? Font.ah(.body) : Font.ah(.body).weight(.medium)).foregroundStyle(primary(onAccent)).lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
             if let terminal = row.dto.terminal {
                 Image(systemName: "terminal")
                     .font(.ah(.caption2))
@@ -364,7 +392,7 @@ struct SessionRowView: View {
     private func status(onAccent: Bool, compact: Bool) -> some View {
         VStack(alignment: .trailing, spacing: 2) {
             StatusPill(word: row.word, compact: compact)
-            if row.dto.queued > 0 { Text("\(row.dto.queued) queued").font(.ah(.caption2)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint) }
+            if row.dto.queued > 0 { Text("\(row.dto.queued) queued").font(.ah(.caption2)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint).contentTransition(.numericText(value: Double(row.dto.queued))) }
         }
     }
 
@@ -508,10 +536,17 @@ struct SessionListView: View {
             guard let tag else { return }
             if let page = Self.pages.first(where: { Self.tag($0.route) == tag }) { scene.show(page.route) } else { scene.open(tag) }
         })) {
-            ConnectionBanner(phase: hub.phase, lastUpdated: hub.lastUpdated, cached: hub.showingCached) { hub.resync() }
-                .listRowBackground(Color.clear)
             if scene.narrow && !showsPages {
-                Section { } header: { AhLargeTitle(title: "Sessions", tagline: hub.awaitingState ? "Asking your host…" : hub.inbox(narrow: true).summary).textCase(nil) }
+                // Under the page's title, as the Inbox has it: above it, the banner pushed the
+                // title down the screen.
+                Section {
+                    ConnectionBanner(phase: hub.phase, lastUpdated: hub.lastUpdated, cached: hub.showingCached) { hub.resync() }
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                } header: { AhLargeTitle(title: "Sessions", tagline: hub.awaitingState ? "Asking your host…" : hub.inbox(narrow: true).summary).textCase(nil) }
+            } else {
+                ConnectionBanner(phase: hub.phase, lastUpdated: hub.lastUpdated, cached: hub.showingCached) { hub.resync() }
+                    .listRowBackground(Color.clear)
             }
             if showsPages {
                 Section {
@@ -551,7 +586,7 @@ struct SessionListView: View {
             if hub.awaitingState {
                 ForEach(0..<3, id: \.self) { index in SessionRowPlaceholder(title: [0.62, 0.45, 0.7][index]).ahRow(!showsPages) }
             } else if hub.rows.isEmpty {
-                EmptyState(symbol: "terminal", title: "No sessions", message: "Start one with New Session.", action: ("New Session", { scene.perform("new-session") }))
+                EmptyState(symbol: "terminal", title: "No Sessions", message: "The sessions you start show up here, grouped by project.", action: ("New Session", { scene.perform("new-session") }))
                     .listRowBackground(Color.clear)
             }
         }
@@ -560,7 +595,7 @@ struct SessionListView: View {
         // do, instead of the list cutting to its new order.
         .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: sections.map { $0.rows.map(\.key) })
         .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: hub.phase)
-        .refreshable { hub.resync() }
+        .refreshable { await hub.resyncAndWait() }
         .toolbar {
             // A phone's Sessions page offers New like the Inbox and Review do (each project's
             // own plus starts one there).
@@ -614,9 +649,7 @@ struct SessionRowMenu: View {
         if scene.openWindow != nil {
             Button("Open in New Window", systemImage: "macwindow.badge.plus") { scene.openInNewWindow(row.key) }
         }
-        Button(row.dto.pinned ? "Unpin" : "Pin", systemImage: row.dto.pinned ? "pin.slash" : "pin") {
-            Task { try? await hub.client(forKey: row.key).pin(row.uid, pinned: !row.dto.pinned); hub.refresh() }
-        }
+        Button(row.dto.pinned ? "Unpin" : "Pin", systemImage: row.dto.pinned ? "pin.slash" : "pin") { SessionPin.toggle(row, scene: scene, hub: hub) }
         if row.dto.agent != nil && row.dto.feed != nil {
             Button("Continue in Another Agent…", systemImage: CommandCatalog.icon("continue-in")) { scene.sheet = .continueIn(key: row.key, preset: nil) }
         }
@@ -637,12 +670,12 @@ struct SessionSwipes: ViewModifier {
         content
             .swipeActions(edge: .leading) {
                 Button {
-                    Task { try? await hub.client(forKey: row.key).pin(row.uid, pinned: !row.dto.pinned); hub.refresh() }
+                    SessionPin.toggle(row, scene: scene, hub: hub)
                 } label: {
                     Image(systemName: row.dto.pinned ? "pin.slash" : "pin")
                 }
                 .accessibilityLabel(row.dto.pinned ? "Unpin" : "Pin")
-                .tint(theme.limited)
+                .tint(theme.swipe(\.limited))
             }
             .swipeActions(edge: .trailing) {
                 // A glyph alone: given a title too, the system draws the action as a wide pill
@@ -651,8 +684,24 @@ struct SessionSwipes: ViewModifier {
                 // and the list aborts when the row is still there (it is, until the sheet says).
                 Button { scene.sheet = .confirmTerminate(row.key) } label: { Image(systemName: "xmark.octagon") }
                     .accessibilityLabel("Terminate")
-                    .tint(theme.danger)
+                    .tint(theme.swipe(\.danger))
             }
+    }
+}
+
+/// Pin or unpin a session's row, on every device; a host that refuses says so.
+@MainActor
+enum SessionPin {
+    static func toggle(_ row: SessionRow, scene: SceneModel, hub: HubStore) {
+        let pinned = !row.dto.pinned
+        Task {
+            do {
+                try await hub.client(forKey: row.key).pin(row.uid, pinned: pinned)
+            } catch {
+                scene.toast("Couldn’t \(pinned ? "pin" : "unpin") “\(row.title)”: \(APIError.wrap(error).message)", error: true)
+            }
+            hub.refresh()
+        }
     }
 }
 
@@ -681,7 +730,7 @@ struct HistoryView: View {
                 // Still asking the host: not "No history yet" for the second that takes.
                 ProgressView().frame(maxWidth: .infinity).listRowBackground(Color.clear)
             } else if rows.isEmpty {
-                EmptyState(symbol: "clock", title: scene.historyFilter.isEmpty ? "No history yet" : "Nothing matches", message: "Ended and past conversations appear here.")
+                EmptyState(symbol: scene.historyFilter.isEmpty ? "clock" : "magnifyingglass", title: scene.historyFilter.isEmpty ? "No History Yet" : "No Results", message: scene.historyFilter.isEmpty ? "Ended and past conversations appear here." : "No conversation in History matches “\(scene.historyFilter.trimmingCharacters(in: .whitespaces))”.")
                     .listRowBackground(Color.clear)
             }
             ForEach(days, id: \.day) { day in
@@ -693,6 +742,8 @@ struct HistoryView: View {
             }
         }
         .scrollDismissesKeyboard(.immediately)
+        // History is the host's list too: pulled, it asks again, as the Inbox does.
+        .refreshable { await hub.resyncAndWait() }
         .onChange(of: scene.historyFilter) { _, _ in scene.scheduleSave() }
         .navigationTitle("History")
     }
@@ -704,6 +755,8 @@ struct HistoryRowView: View {
     let hub: HubStore
     @Environment(\.theme) private var theme
     @Environment(\.dynamicTypeSize) private var typeSize
+    /// A resume on its way: a second swipe or menu tap waits for it, not a second session.
+    @State private var resuming = false
 
     var body: some View {
         Button {
@@ -714,7 +767,7 @@ struct HistoryRowView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 4) {
                         if item.dto.pinned { Image(systemName: "pin.fill").font(.ah(.caption2)).foregroundStyle(theme.faint) }
-                        Text(item.dto.title).lineLimit(1).foregroundStyle(theme.text)
+                        Text(item.dto.title).lineLimit(typeSize.isAccessibilitySize ? 3 : 1).foregroundStyle(theme.text)
                     }
                     Text([hub.multiHost ? item.host : nil, item.dto.project, item.dto.fork.map { "fork of \($0.parentTitle)" }, item.dto.continued.map { c in "↪\u{FE0E} from \(hub.presets(host: item.isLocal ? nil : item.host).first { $0.id == c.fromHarness }?.name ?? c.fromHarness)" }].compactMap { $0 }.joined(separator: " · "))
                         .font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(1)
@@ -728,18 +781,13 @@ struct HistoryRowView: View {
         .buttonStyle(.plain)
         .hoverEffect(.highlight)
         .swipeActions(edge: .leading) {
-            Button("Resume") { resume() }.tint(theme.done)
+            Button { resume() } label: { Image(systemName: "play.fill") }.accessibilityLabel("Resume").tint(theme.swipe(\.done))
         }
         .swipeActions(edge: .trailing) {
             // Red by tint, not role, as a session's Terminate is: the row stays until the
             // host's list comes back without it.
-            Button("Hide") {
-                Task {
-                    try? await hub.client(host: item.isLocal ? nil : item.host).forget(item.dto.ref)
-                    hub.refresh(host: item.isLocal ? nil : item.host)
-                }
-            }
-            .tint(theme.danger)
+            Button { hide() } label: { Image(systemName: "eye.slash") }.accessibilityLabel("Hide")
+            .tint(theme.swipe(\.danger))
         }
         .contextMenu {
             Button("Resume", systemImage: "play") { resume() }
@@ -747,17 +795,15 @@ struct HistoryRowView: View {
                 Button("Fork…", systemImage: "arrow.branch") { scene.sheet = .fork(item.id) }
                 Button("Continue in Another Agent…", systemImage: CommandCatalog.icon("continue-in")) { scene.sheet = .continueIn(key: item.id, preset: nil) }
             }
-            Button("Hide from History", systemImage: "eye.slash", role: .destructive) {
-                Task {
-                    try? await hub.client(host: item.isLocal ? nil : item.host).forget(item.dto.ref)
-                    hub.refresh(host: item.isLocal ? nil : item.host)
-                }
-            }
+            Button("Hide from History", systemImage: "eye.slash", role: .destructive) { hide() }
         }
     }
 
     private func resume() {
+        guard !resuming else { return }
+        resuming = true
         Task {
+            defer { resuming = false }
             let api = hub.client(host: item.isLocal ? nil : item.host)
             do {
                 let result = try await api.resume(item.dto.ref)
@@ -766,6 +812,19 @@ struct HistoryRowView: View {
             } catch {
                 scene.toast("Couldn’t resume: \(APIError.wrap(error).message)", error: true)
             }
+        }
+    }
+
+    /// Out of History on every device; a host that refuses says so, instead of the row
+    /// staying with nothing said.
+    private func hide() {
+        Task {
+            do {
+                try await hub.client(host: item.isLocal ? nil : item.host).forget(item.dto.ref)
+            } catch {
+                scene.toast("Couldn’t hide “\(item.dto.title)”: \(APIError.wrap(error).message)", error: true)
+            }
+            hub.refresh(host: item.isLocal ? nil : item.host)
         }
     }
 }
@@ -825,6 +884,11 @@ struct SearchView: View {
                     filterChip(model.query.host ?? "Every host", symbol: "server.rack", on: model.query.host != nil)
                 }
             }
+            // A new query on its way while the last one's answers still show: they stayed
+            // up with nothing to say they were about to change.
+            if model.searching {
+                ProgressView().controlSize(.small).afterABeat(.milliseconds(250)).accessibilityLabel("Searching")
+            }
         }
         .menuOrder(.fixed)
     }
@@ -853,6 +917,8 @@ struct SearchView: View {
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                 .listRowSeparator(.hidden)
+            // Up top, where the eye is: under a page of the last query's results it went unseen.
+            if let error = model.error { Banner(text: error, tone: .error, action: ("Retry", { model.search(debounce: .zero) })).listRowBackground(Color.clear) }
             if let response = model.response {
                 if !response.enabled {
                     Banner(text: "Search is off on this host. Turn it on in Settings → Search.", tone: .warning)
@@ -896,11 +962,20 @@ struct SearchView: View {
                     .ahRow()
                 }
                 if response.results.count < response.total {
-                    Button("More results") { Task { await model.more() } }
-                        .ahRow()
+                    Button {
+                        Task { await model.more() }
+                    } label: {
+                        // On its way, said where the tap was.
+                        HStack(spacing: 8) {
+                            Text("More Results")
+                            if model.loadingMore { ProgressView().controlSize(.small) }
+                        }
+                    }
+                    .disabled(model.loadingMore)
+                    .ahRow()
                 }
                 if response.results.isEmpty && response.enabled && !model.searching {
-                    EmptyState(symbol: "magnifyingglass", title: "No matches", message: "Nothing said “\(model.query.q.trimmingCharacters(in: .whitespaces))”. Try fewer or different words.")
+                    EmptyState(symbol: "magnifyingglass", title: "No Results", message: "Nothing said “\(model.query.q.trimmingCharacters(in: .whitespaces))”. Try fewer or different words.")
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
                 }
@@ -908,16 +983,15 @@ struct SearchView: View {
                 ProgressView().frame(maxWidth: .infinity).padding(.top, 24).listRowBackground(Color.clear)
             } else if model.query.q.trimmingCharacters(in: .whitespaces).isEmpty {
                 // Before a word is typed: what this searches, not a blank page.
-                EmptyState(symbol: "text.magnifyingglass", title: "Search every conversation", message: "What you and your agents said, in transcripts and side chats, on every host.")
+                EmptyState(symbol: "text.magnifyingglass", title: "Search Every Conversation", message: "What you and your agents said, in transcripts and side chats, on every host.")
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
             }
-            if let error = model.error { Banner(text: error, tone: .error).listRowBackground(Color.clear) }
         }
         // The chips sit under the field and its scopes as one set of controls, not a
         // grouped list's first section away.
         .contentMargins(.top, 6, for: .scrollContent)
-        .searchable(text: $model.query.q, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search every conversation")
+        .searchable(text: $model.query.q, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search")
         .searchFocused($fieldFocused)
         .searchScopes($model.query.scopeOrAll) {
             Text("All").tag("all")
