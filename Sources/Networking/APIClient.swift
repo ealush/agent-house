@@ -287,6 +287,33 @@ struct APIClient: Sendable {
         return (try await call("GET", "/api/chats/\(Self.enc(key))", query: messageID.map { [URLQueryItem(name: "msgId", value: String($0))] } ?? [], as: R.self)).messages
     }
 
+    // MARK: Voice (`features.voice`, ../ah/docs/spec/14-voice.md)
+
+    func voiceSettings() async throws -> VoiceSettings { try await call("GET", "/api/voice") }
+    func saveVoice(_ change: VoiceChange) async throws -> VoiceSettings { try await call("PUT", "/api/voice", json: change) }
+    /// The speech models a subscription's endpoint lists (chat ones come from `subscriptionModels`).
+    func speechModels(subscriptionId: String) async throws -> [String] {
+        (try await call("POST", "/api/voice/models", json: ["subscriptionId": subscriptionId], as: ModelsResult.self)).models
+    }
+    /// A recording (AAC in an `.m4a`) heard by the host's speech subscription, tidied unless `style` is verbatim.
+    func dictate(_ file: URL, style: VoiceStyle? = nil) async throws -> DictationResult {
+        var query = [URLQueryItem(name: "name", value: "speech.\(file.pathExtension.isEmpty ? "m4a" : file.pathExtension)")]
+        if let style { query.append(URLQueryItem(name: "style", value: style.rawValue)) }
+        var req = await request("POST", "/api/voice/dictate", query: query, contentType: "audio/mp4")
+        req.httpBody = nil
+        // A minute of speech is a few hundred KB; the provider then takes its time.
+        req.timeoutInterval = 120
+        do {
+            return try JSONDecoder().decode(DictationResult.self, from: try await send(req, fromFile: file))
+        } catch let error as DecodingError {
+            throw APIError.decoding(String(describing: error))
+        }
+    }
+    /// Text this device wrote down, tidied by the host's cleanup subscription.
+    func refine(_ text: String, style: VoiceStyle? = nil) async throws -> RefinedText {
+        try await call("POST", "/api/voice/refine", json: RefineBody(text: text, style: style?.rawValue))
+    }
+
     // MARK: Environment
 
     func env() async throws -> EnvState { try await call("GET", "/api/env") }
@@ -482,6 +509,7 @@ private struct ChatAboutQuestions: Encodable {
 private struct LaunchChange: Encodable { let model: String?; let effort: String?; let mode: String? }
 private struct ModelsQuery: Encodable { let baseUrl: String; let apiKey: String?; let id: String? }
 private struct SummarizeBody: Encodable { let text: String; let subscriptionId: String? }
+private struct RefineBody: Encodable { let text: String; let style: String? }
 private struct EnvBody: Encodable { let name: String; let value: String?; let secret: Bool }
 private struct CustomAgent: Encodable { let name: String; let command: String; let resume: String? }
 private struct RemoveWorktree: Encodable { let path: String; let force: Bool }

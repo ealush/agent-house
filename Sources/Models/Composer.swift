@@ -555,6 +555,9 @@ final class ComposerModel {
         return parts.joined(separator: " · ")
     }
 
+    /// A word for the person, shown the way the box's other notices are.
+    func notify(_ message: String) { events.append(.notice(message)) }
+
     func takeEvents() -> [Event] {
         defer { events = [] }
         return events
