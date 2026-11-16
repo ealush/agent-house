@@ -95,11 +95,24 @@ struct StackManageSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             // Leading, with Esc, as every sheet's close in the app.
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) } }
+            // A name or plan file typed and left without Return is kept: closing threw it away,
+            // the only fields here that waited to be confirmed.
+            .onDisappear { saveTyped() }
             .task { owners = await model.owners() }
             .confirmationDialog("Delete this review?", isPresented: $confirmDelete, titleVisibility: .visible) {
-                Button("Delete", role: .destructive) { Task { await model.remove(); dismiss() } }
+                // Closes only once it's gone: a refused delete closed the sheet with the review
+                // still there.
+                Button("Delete", role: .destructive) { Task { if await model.remove() { dismiss() } } }
             }
         }
+    }
+
+    private func saveTyped() {
+        let name = title.trimmingCharacters(in: .whitespaces)
+        let plan = planPath.trimmingCharacters(in: .whitespaces)
+        let patch = StackPatch(title: name != stack.title && !name.isEmpty ? name : nil, planPath: plan != (stack.planPath ?? "") ? .some(plan.isEmpty ? nil : plan) : nil)
+        guard patch.title != nil || patch.planPath != nil else { return }
+        Task { await model.update(patch) }
     }
 }
 

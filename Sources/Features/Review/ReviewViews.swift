@@ -275,7 +275,17 @@ private struct StartReviewView: View {
         .ahFormGround()
         .navigationTitle("Start a Review")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) } }
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) }
+            // Picked PRs start from the bar too, with ⌘↩, as every sheet that makes something
+            // does (the stacks and chains above start with a tap of their own).
+            if !picked.isEmpty {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Start") { start(.manual(picked)) }
+                        .keyboardShortcut(.return, modifiers: .command)
+                }
+            }
+        }
         .task { if model.repos.isEmpty { await model.loadList() } }
     }
 
@@ -372,7 +382,12 @@ struct StackCockpitView: View {
         .navigationBarTitleDisplayMode(scene.narrow ? .inline : .automatic)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                Button { Task { await model.refresh() } } label: { Image(systemName: "arrow.clockwise") }.accessibilityLabel("Sync with GitHub").tint(.primary)
+                // Turns while it syncs, and takes no second tap meanwhile: nothing showed it had begun.
+                Button { Task { await model.refresh() } } label: {
+                    if model.loading.contains("sync") { ProgressView().controlSize(.small) } else { Image(systemName: "arrow.clockwise") }
+                }
+                .disabled(model.loading.contains("sync"))
+                .accessibilityLabel(model.loading.contains("sync") ? "Syncing with GitHub" : "Sync with GitHub").tint(.primary)
                 // A phone has it in the bar at the bottom, beside what to review next.
                 if !scene.narrow {
                     Button { mergingStack = true } label: { Label("Merge the stack", systemImage: "arrow.triangle.merge") }
@@ -1229,7 +1244,14 @@ struct LayerView: View {
                             Text("• \(change.title)\(change.path.map { " (\($0))" } ?? "")").font(.ah(.caption))
                         }
                     }
-                    Button("Accept These Fixes") { Task { await model.acceptFixes() } }.buttonStyle(.bordered)
+                    Button { Task { await model.acceptFixes() } } label: {
+                        HStack(spacing: 6) {
+                            Text("Accept These Fixes")
+                            if model.loading.contains("accept") { ProgressView().controlSize(.small) }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(model.loading.contains("accept"))
                 }
                 .padding(12)
                 .background(theme.tile, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -1431,11 +1453,13 @@ struct LayerView: View {
                     Button("Ask the Agent to Restack…", systemImage: "square.stack.3d.up") { dispatching = .some("restack") }
                 case "retarget":
                     Button("Retarget onto \(model.stack?.trunk ?? "trunk")", systemImage: "arrow.turn.down.right") { Task { await model.retarget() } }
+                        .disabled(model.loading.contains("retarget"))
                 default:
                     EmptyView()
                 }
                 if layer.draft {
                     Button("Mark Ready for Review", systemImage: "eye") { Task { await model.ready() } }
+                        .disabled(model.loading.contains("ready"))
                 }
             }
             if layer.approved && confidence.review != .changedSinceReview {

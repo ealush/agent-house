@@ -692,14 +692,17 @@ final class ReviewModel {
         return created
     }
 
-    func remove() async {
-        guard let id = stack?.id else { return }
+    /// Whether it went: a refused delete leaves the review, and says why (`error`).
+    @discardableResult
+    func remove() async -> Bool {
+        guard let id = stack?.id else { return false }
         await load("remove") {
             try await review.remove(id)
             stack = nil
             removed = true
         }
         await loadList()
+        return removed
     }
 
     /// The open stack was just deleted (its page goes back to the list).
