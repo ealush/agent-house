@@ -61,7 +61,7 @@ struct SessionScreen: View {
                 }
                 .ignoresSafeArea(.container, edges: .bottom)
                 .frame(width: max(280, min(640, panelWidth - CGFloat(scene.panelWidthDelta))))
-                .transition(.move(edge: .trailing))
+                .transition(reduceMotion ? .opacity : .move(edge: .trailing))
             }
         }
         // A panel slides in as it slides out (opened from the menu, it cut in), the
@@ -230,6 +230,7 @@ private struct SessionHeader: View {
     var paneFocused = true
     @Environment(\.theme) private var theme
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var renameFocused: Bool
     /// The header's own width: a pane beside a panel, or a quarter of a split, is narrow.
     @State private var width: CGFloat = 1000
@@ -306,7 +307,9 @@ private struct SessionHeader: View {
                         Button {
                             scene.setSurface(other, for: session.key)
                         } label: {
-                            Image(systemName: other == .terminal ? "terminal" : "text.bubble").headerGlyph()
+                            Image(systemName: other == .terminal ? "terminal" : "text.bubble")
+                                .contentTransition(.symbolEffect(.replace))
+                                .headerGlyph()
                         }
                         .buttonStyle(.borderless)
                         .accessibilityLabel(other == .terminal ? "Agent Terminal" : "Messages")
@@ -320,6 +323,7 @@ private struct SessionHeader: View {
                     }
                 }
                 PermissionShield(session: session, scene: scene)
+                    .transition(.scale.combined(with: .opacity))
                 PanelsMenu(session: session)
                 if !scene.narrow && !tight {
                     Menu {
@@ -379,6 +383,9 @@ private struct SessionHeader: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+        // The shield arrives and leaves, and the view switch turns its glyph over, in place.
+        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: session.launch.warning != nil)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: session.surface)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         // Glyphs in the label color, as a bar's are; status and branch keep their own.
         .tint(.primary)
@@ -618,6 +625,7 @@ private struct EndedScreen: View {
 private struct NoticeStack: View {
     let session: SessionModel
     @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 6) {
@@ -636,7 +644,7 @@ private struct NoticeStack: View {
                     .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(notice.tone == .error ? theme.danger.opacity(0.35) : theme.line, lineWidth: 0.75))
                     .shadow(color: theme.shadow, radius: 12, y: 5)
                     .padding(.horizontal, 16)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
                     .task {
                         try? await Task.sleep(for: .seconds(notice.tone == .error ? 6 : 3))
                         session.dismiss(notice.id)
@@ -648,7 +656,7 @@ private struct NoticeStack: View {
             }
         }
         .padding(.top, 60)
-        .animation(.snappy, value: session.notices.map(\.id))
+        .animation(reduceMotion ? .smooth(duration: 0.2) : .spring(duration: 0.35, bounce: 0.2), value: session.notices.map(\.id))
     }
 }
 

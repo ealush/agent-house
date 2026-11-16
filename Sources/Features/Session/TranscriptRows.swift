@@ -7,9 +7,7 @@ import UIKit
 /// A glass pill at the top of the transcript while the host's copy is on its way, there once
 /// the wait is long enough to notice (a quick link never shows it).
 struct CatchingUp: View {
-    @State private var shown = false
     @Environment(\.theme) private var theme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 8) {
@@ -19,14 +17,8 @@ struct CatchingUp: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
         .glassEffect(.regular, in: Capsule())
-        .opacity(shown ? 1 : 0)
-        .scaleEffect(shown || reduceMotion ? 1 : 0.9)
         .accessibilityElement(children: .combine)
-        .accessibilityHidden(!shown)
-        .task {
-            try? await Task.sleep(for: .milliseconds(800))
-            withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { shown = true }
-        }
+        .afterABeat()
     }
 }
 
@@ -338,6 +330,7 @@ private struct PartView: View {
     /// A turn the conversation has moved past: its choices are history, not buttons.
     var answered = false
     @Environment(\.theme) private var theme
+    @Environment(\.rowWillResize) private var rowWillResize
     @State private var showReasoning = false
 
     var body: some View {
@@ -350,7 +343,10 @@ private struct PartView: View {
                 // small chevron.
                 VStack(alignment: .leading, spacing: 8) {
                     Button {
-                        withAnimation(.snappy(duration: 0.2)) { showReasoning.toggle() }
+                        // As a step's fold does: the list moves with the row as it grows,
+                        // instead of the rows under it jumping to the new height at once.
+                        rowWillResize?()
+                        withAnimation(.snappy) { showReasoning.toggle() }
                     } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "brain").foregroundStyle(theme.faint)

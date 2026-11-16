@@ -486,13 +486,23 @@ private struct TerminalStatusOverlay: View {
     let controller: TerminalController
     let session: SessionModel
     @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        // Each state comes and goes in a short fade, not between two frames.
+        ZStack(alignment: .top) { state.transition(.opacity) }
+            .animation(reduceMotion ? nil : .smooth(duration: 0.2), value: controller.status)
+    }
+
+    @ViewBuilder
+    private var state: some View {
         switch controller.status {
         case .live:
             EmptyView()
         case .connecting:
+            // Only when attaching takes a while: a quick one showed it for a frame.
             Label("Attaching…", systemImage: "bolt.horizontal").font(.ah(.caption)).padding(8).background(.thinMaterial, in: Capsule()).padding(.top, 8)
+                .afterABeat()
         case .reconnecting(let reason):
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)

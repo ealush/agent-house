@@ -772,6 +772,7 @@ struct ToastStack: View {
     let scene: SceneModel
     let targets: OverlayTargets
     @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 6) {
@@ -799,12 +800,13 @@ struct ToastStack: View {
                         try? await Task.sleep(for: .seconds(toast.isError ? 6 : 3))
                         scene.dismissToast(toast.id)
                     }
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                     .accessibilityAddTraits(.updatesFrequently)
             }
         }
         .padding(.bottom, 24)
-        .animation(.snappy, value: scene.toasts.map(\.id))
+        // As the nudges arrive (they bounced in while these slid in half a second's spring).
+        .animation(reduceMotion ? .smooth(duration: 0.2) : .spring(duration: 0.35, bounce: 0.2), value: scene.toasts.map(\.id))
         .onChange(of: scene.toasts.last?.id) { _, _ in
             if let last = scene.toasts.last { UIAccessibility.post(notification: .announcement, argument: last.text) }
         }

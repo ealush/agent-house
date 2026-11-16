@@ -326,7 +326,7 @@ struct SessionRowView: View {
                         Text(detail.isEmpty ? " " : AskParts.keepingPaths(detail)).font(.ah(.footnote)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.muted).lineLimit(2)
                         Spacer(minLength: 6)
                         if row.dto.queued > 0 {
-                            Text("\(row.dto.queued) queued").font(.ah(.caption2)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint)
+                            Text("\(row.dto.queued) queued").font(.ah(.caption2)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint).contentTransition(.numericText(value: Double(row.dto.queued)))
                         }
                         if row.word != .idle { StatusPill(word: row.word) }
                     }
@@ -377,7 +377,7 @@ struct SessionRowView: View {
     private func status(onAccent: Bool, compact: Bool) -> some View {
         VStack(alignment: .trailing, spacing: 2) {
             StatusPill(word: row.word, compact: compact)
-            if row.dto.queued > 0 { Text("\(row.dto.queued) queued").font(.ah(.caption2)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint) }
+            if row.dto.queued > 0 { Text("\(row.dto.queued) queued").font(.ah(.caption2)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint).contentTransition(.numericText(value: Double(row.dto.queued))) }
         }
     }
 

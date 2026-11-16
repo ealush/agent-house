@@ -433,7 +433,9 @@ private struct AppearanceSection: View {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: 4), spacing: 16) {
                     ForEach(choices, id: \.0) { appearance, name, palette in
                         Button {
-                            withAnimation(.snappy(duration: 0.2)) { app.preferences.appearance = appearance }
+                            // SwiftUI eases its colors; the window crosses its bars over in step
+                            // (`SceneRootController`).
+                            withAnimation(.smooth(duration: 0.3)) { app.preferences.appearance = appearance }
                         } label: {
                             VStack(spacing: 6) {
                                 PaletteSwatch(palette: palette, symbol: appearance == .omarchy ? "paintpalette" : nil, selected: app.preferences.appearance == appearance, ring: theme.accent)

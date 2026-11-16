@@ -185,14 +185,25 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
         // window's tint set again is passed down to every view in it.
         let current = theme.theme(appearance)
         if current != appliedTheme || view.window !== themedWindow {
+            // A palette picked while the window shows (Settings → Appearance, or the host's
+            // Omarchy theme changing) crosses over as one picture: SwiftUI's colors eased while
+            // the bars, materials and tab bar cut.
+            let changing = appliedTheme != nil && view.window != nil && view.window === themedWindow
             appliedTheme = current
             themedWindow = view.window
-            view.window?.overrideUserInterfaceStyle = current.interfaceStyle
-            // UIKit's own controls (the tab bar's selection) take the theme's accent, not the asset's pink.
-            view.window?.tintColor = current.uiAccent
-            // What shows where nothing's drawn (around the keyboard's corners, under a terminal)
-            // is the theme's ground, not the system's black.
-            view.backgroundColor = current.uiBackground
+            let apply = { [self] in
+                view.window?.overrideUserInterfaceStyle = current.interfaceStyle
+                // UIKit's own controls (the tab bar's selection) take the theme's accent, not the asset's pink.
+                view.window?.tintColor = current.uiAccent
+                // What shows where nothing's drawn (around the keyboard's corners, under a terminal)
+                // is the theme's ground, not the system's black.
+                view.backgroundColor = current.uiBackground
+            }
+            if changing, let window = view.window {
+                UIView.transition(with: window, duration: 0.3, options: [.transitionCrossDissolve, .allowUserInteraction], animations: apply)
+            } else {
+                apply()
+            }
             syncOverlayWindow()
         }
         if !scene.toasts.isEmpty { placeToasts() }
@@ -904,7 +915,8 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
             shieldItem.accessibilityHint = warning
         }
         let items = warning == nil ? [menuItem] : [menuItem, shieldItem]
-        if navigationItem.rightBarButtonItems != items { navigationItem.rightBarButtonItems = items }
+        // The shield joins the menu's glass as the bar does it, not between two frames.
+        if navigationItem.rightBarButtonItems != items { navigationItem.setRightBarButtonItems(items, animated: isViewLoaded && view.window != nil) }
         // The live terminal fills the screen under a see-through bar: over a dark one its title
         // and buttons go light.
         let overDarkTerminal = session.isLive && !(session.surface == .gui && session.hasGUI) && current.palette.terminal.isDark

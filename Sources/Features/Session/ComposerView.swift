@@ -1321,7 +1321,9 @@ struct QueueTrayView: View {
                             Image(systemName: "text.line.first.and.arrowtriangle.forward").foregroundStyle(theme.accent)
                             VStack(alignment: .leading, spacing: 0) {
                                 HStack(spacing: 5) {
+                                    // The count rolls as messages join and leave, as the tray already moves.
                                     Text("Up next · \(queue.items.count + queue.pendingRows.count)").font(.ah(.footnote).weight(.semibold))
+                                        .contentTransition(.numericText(value: Double(queue.items.count + queue.pendingRows.count)))
                                     Image(systemName: "chevron.down")
                                         .font(.ah(.caption2).weight(.bold))
                                         .foregroundStyle(theme.faint)
