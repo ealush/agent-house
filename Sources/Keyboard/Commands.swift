@@ -333,7 +333,7 @@ enum CommandCatalog {
         "continue-in": "arrow.turn.down.right", "conversation-lineage": "point.3.connected.trianglepath.dotted",
         "rename": "pencil", "fork": "arrow.branch", "send-to": "arrowshape.turn.up.right", "pin": "pin", "panel-diff": "plusminus",
         "panel-files": "folder", "panel-chat": "bubble.left.and.bubble.right", "panel-queue": "list.bullet.rectangle", "panel-snapshots": "clock.arrow.circlepath",
-        "panel-preview": "safari", "panel-stack": "square.stack.3d.up", "panel-terminal": "terminal", "session-menu": "ellipsis.circle", "scrollback": "scroll",
+        "panel-preview": "safari", "panel-stack": "square.stack.3d.up", "panel-terminal": "terminal", "session-menu": "ellipsis", "scrollback": "scroll",
         "copy-attach": "terminal", "toggle-keys": "keyboard.chevron.compact.down", "terminal-text-bigger": "textformat.size.larger", "terminal-text-smaller": "textformat.size.smaller", "terminal-text-reset": "textformat.size", "terminate": "xmark.octagon",
         "split-right": "rectangle.split.2x1", "split-below": "rectangle.split.1x2", "split-left": "rectangle.lefthalf.inset.filled",
         "split-above": "rectangle.tophalf.inset.filled", "close-pane": "xmark.square",

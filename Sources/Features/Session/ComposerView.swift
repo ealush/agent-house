@@ -310,10 +310,11 @@ struct ComposerView: View {
             .buttonStyle(.ahPress)
             .contextMenu {
                 if queues {
-                    Button("Send Now (Stops the Turn)", systemImage: "bolt.fill") {
+                    Button("Send Now", systemImage: "bolt.fill") {
                         Haptics.threshold()
                         composer.submit(working: true, steer: true)
                     }
+                    .accessibilityHint("Stops the turn and sends this now")
                 }
             }
             .accessibilityLabel(queues ? "Queue" : "Run")
@@ -478,12 +479,13 @@ struct ComposerFloat: View {
         let available = SceneSnapshot.Panel.allCases.filter { $0.applies(to: session) }
         if !available.isEmpty {
             Menu {
+                // The open one checked, its glyph kept, as the iPad header's menu has them.
                 ForEach(available) { panel in
-                    Button {
+                    Toggle(isOn: Binding(get: { session.panel == panel }, set: { on in
                         withAnimation(Self.motion(opening: false, reduceMotion: reduceMotion)) { composer.trayOpen = false }
-                        session.panel = session.panel == panel ? nil : panel
-                    } label: {
-                        if session.panel == panel { Label(panel.title, systemImage: "checkmark") } else { Label(panel.title, systemImage: panel.symbol) }
+                        session.panel = on ? panel : nil
+                    })) {
+                        Label(panel.title, systemImage: panel.symbol)
                     }
                 }
             } label: {
@@ -1359,7 +1361,8 @@ struct QueueTrayView: View {
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "bolt.fill")
-                                Text("Steer Now")
+                                // One name for it wherever it is: the rows, the menus and the panel say Send Now.
+                                Text("Send Now")
                                 if hardwareKeyboard { Text("↵").foregroundStyle(theme.accent.opacity(0.7)) }
                             }
                             .font(.ah(.caption).weight(.semibold))
@@ -1472,7 +1475,7 @@ struct QueueTrayView: View {
                 // Glyph-sized to look at, finger-sized to hit: they sat 14 points apart on 16.
                 HStack(spacing: 2) {
                     if !held {
-                        Button { Haptics.threshold(); Task { await queue.steer(item) } } label: { queueGlyph("bolt") }
+                        Button { Haptics.threshold(); Task { await queue.steer(item) } } label: { queueGlyph("bolt.fill") }
                             .accessibilityLabel("Send Now")
                             .accessibilityHint("Stops the current turn and sends this now")
                     }
@@ -1493,7 +1496,7 @@ struct QueueTrayView: View {
         .padding(.vertical, 3)
         .contentShape(Rectangle())
         .contextMenu {
-            if !held { Button("Send Now", systemImage: "bolt") { Task { await queue.steer(item) } } }
+            if !held { Button("Send Now", systemImage: "bolt.fill") { Task { await queue.steer(item) } } }
             Button("Edit", systemImage: "pencil") { Task { await queue.edit(item, into: composer) } }
             if index > 0 { Button("Move Up", systemImage: "arrow.up") { Task { await queue.move(item.id, to: index - 1) } } }
             if index < queue.items.count - 1 { Button("Move Down", systemImage: "arrow.down") { Task { await queue.move(item.id, to: index + 1) } } }

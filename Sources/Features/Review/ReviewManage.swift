@@ -93,7 +93,8 @@ struct StackManageSheet: View {
             .environment(\.editMode, .constant(.active))
             .navigationTitle("Manage Stack")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(role: .close) { dismiss() }.tint(.primary) } }
+            // Leading, with Esc, as every sheet's close in the app.
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) } }
             .task { owners = await model.owners() }
             .confirmationDialog("Delete this review?", isPresented: $confirmDelete, titleVisibility: .visible) {
                 Button("Delete", role: .destructive) { Task { await model.remove(); dismiss() } }

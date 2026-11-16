@@ -855,6 +855,8 @@ struct StartConversation: View {
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 9)
+                        // The whole row resumes it, not only its words.
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .hoverEffect(.highlight)

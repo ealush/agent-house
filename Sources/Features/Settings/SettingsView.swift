@@ -942,7 +942,7 @@ private struct AgentsSection: View {
                             ForEach(agent.changes, id: \.self) { change in Text("• \(change)").font(.ah(.caption)).foregroundStyle(theme.muted) }
                         }
                         // Red by tint, not role: the row is there until the host has removed it.
-                        .swipeActions { if agent.custom { Button("Remove") { Task { await model.remove(agent) } }.tint(theme.swipe(\.danger)) } }
+                        .swipeActions { if agent.custom { Button { Task { await model.remove(agent) } } label: { Image(systemName: "trash") }.accessibilityLabel("Remove").tint(theme.swipe(\.danger)) } }
                     }
                 } header: {
                     Text("Offered in New Session")
@@ -1029,8 +1029,8 @@ private struct SubscriptionsSection: View {
                         }
                     }
                     .swipeActions {
-                        Button("Remove") { removing = s }.tint(theme.swipe(\.danger))
-                        if !s.isDefault { Button("Default") { Task { await model.makeDefault(s) } } }
+                        Button { removing = s } label: { Image(systemName: "trash") }.accessibilityLabel("Remove").tint(theme.swipe(\.danger))
+                        if !s.isDefault { Button { Task { await model.makeDefault(s) } } label: { Image(systemName: "star") }.accessibilityLabel("Make Default") }
                     }
                 }
                 Menu {
@@ -1168,7 +1168,7 @@ private struct EnvironmentSection: View {
                                 Text(v.secret ? (v.hint ?? "••••") : (v.value ?? "")).font(.ahMono(.caption)).foregroundStyle(theme.muted).lineLimit(1)
                             }
                         }
-                        .swipeActions { Button("Remove") { removing = v }.tint(theme.swipe(\.danger)) }
+                        .swipeActions { Button { removing = v } label: { Image(systemName: "trash") }.accessibilityLabel("Remove").tint(theme.swipe(\.danger)) }
                     }
                     Button("Add a Variable", systemImage: "plus") { editing = EnvVarDraft(name: "", value: "", secret: false) }
                 } footer: {

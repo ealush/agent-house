@@ -158,7 +158,8 @@ struct NewSessionSheet: View {
                         Button {
                             browsing = true
                         } label: {
-                            Image(systemName: "ellipsis.circle")
+                            // A folder to browse, not "more".
+                            Image(systemName: "folder")
                         }
                         .buttonStyle(.borderless)
                         .accessibilityLabel("Browse folders on the host")
@@ -1069,7 +1070,7 @@ struct WorktreesView: View {
                 // Red by tint, not role: a destructive action swiped all the way is taken for
                 // the row's deletion, and the list aborts when the row is still there (it is,
                 // until the confirmation says).
-                Button("Remove", systemImage: "trash") { removing = tree }.tint(theme.swipe(\.danger))
+                Button { removing = tree } label: { Image(systemName: "trash") }.accessibilityLabel("Remove").tint(theme.swipe(\.danger))
             }
         }
         .contextMenu {
@@ -1231,7 +1232,8 @@ struct LaunchPickerSheet: View {
             .ahFormGround()
             .navigationTitle(setting == .model ? "Model" : "Reasoning Effort")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) } }
+            // A pick applies at once: there's nothing to cancel, only to close.
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .close) { scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) } }
         }
         .presentationDetents([.medium, .large])
     }

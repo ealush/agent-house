@@ -428,11 +428,11 @@ private struct PanelsMenu: View {
         Menu {
             // Only what this session has: no Diff or Stack without a branch, no Queue or
             // Snapshots in a shell.
+            // The open one checked, as a menu marks what's on, its glyph kept (a checkmark
+            // stood in for it).
             ForEach(SceneSnapshot.Panel.allCases.filter { $0.applies(to: session) }) { panel in
-                Button {
-                    session.panel = session.panel == panel ? nil : panel
-                } label: {
-                    if session.panel == panel { Label(panel.title, systemImage: "checkmark") } else { Label(panel.title, systemImage: panel.symbol) }
+                Toggle(isOn: Binding(get: { session.panel == panel }, set: { session.panel = $0 ? panel : nil })) {
+                    Label(panel.title, systemImage: panel.symbol)
                 }
             }
         } label: {
@@ -491,7 +491,8 @@ struct SessionMenu: View {
                 }
             }
         } label: {
-            Image(systemName: "ellipsis.circle").headerGlyph()
+            // The bars' "more" glyph, as the phone's session bar and every page's has it.
+            Image(systemName: "ellipsis").headerGlyph()
         }
         .accessibilityLabel("Session menu")
     }

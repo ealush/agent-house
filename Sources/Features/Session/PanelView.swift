@@ -437,11 +437,11 @@ private struct FilesPanel: View {
         .accessibilityAddTraits(.isButton)
         .draggable(FilesModel.mention(path, shell: session.isShell, cwd: cwd).trimmingCharacters(in: .whitespaces))
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button { insert(path) } label: { Label("Mention", systemImage: "at") }.tint(theme.swipe(\.accent))
+            Button { insert(path) } label: { Image(systemName: "at") }.accessibilityLabel("Mention").tint(theme.swipe(\.accent))
         }
         .swipeActions(edge: .leading) {
             if entry.type == .file {
-                Button { Task { await share(entry) } } label: { Label("Share", systemImage: "square.and.arrow.up") }.tint(theme.chart)
+                Button { Task { await share(entry) } } label: { Image(systemName: "square.and.arrow.up") }.accessibilityLabel("Share").tint(theme.chart)
             }
         }
         .contextMenu {
@@ -606,16 +606,6 @@ private struct ChatPanel: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Inline, so it shows in an iPad side panel as well as a phone sheet.
-            HStack {
-                Text("Side chat").font(.ah(.caption).weight(.semibold)).foregroundStyle(theme.muted)
-                Spacer()
-                Button { browsing = true } label: { Image(systemName: "clock.arrow.circlepath") }.accessibilityLabel("Past Chats")
-                Button { confirmClear = true } label: { Image(systemName: "trash") }.accessibilityLabel("Clear the Chat")
-                    .disabled(model.messages.isEmpty)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     if !model.loaded {
@@ -700,6 +690,15 @@ private struct ChatPanel: View {
             .padding(10)
         }
         .task { await model.load() }
+        // In the panel's bar, as Files keeps its actions (a row under the bar said "Side chat"
+        // under a bar that says "Chat"), beside an iPad's panel as in a phone's sheet.
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button { browsing = true } label: { Image(systemName: "clock.arrow.circlepath") }.accessibilityLabel("Past Chats").tint(.primary)
+                Button { confirmClear = true } label: { Image(systemName: "trash") }.accessibilityLabel("Clear the Chat").tint(.primary)
+                    .disabled(model.messages.isEmpty)
+            }
+        }
         .sheet(isPresented: $browsing) { PastChatsView(api: model.api) }
         .confirmationDialog("Clear this chat?", isPresented: $confirmClear, titleVisibility: .visible) {
             Button("Clear Chat", role: .destructive) { Task { await model.clear() } }
@@ -836,20 +835,23 @@ private struct QueuePanel: View {
                 }
                 .ahRow()
                 .swipeActions(edge: .leading) {
-                    Button("Send Now") { Task { await session.queue.steer(item) } }.tint(theme.swipe(\.limited))
+                    Button { Task { await session.queue.steer(item) } } label: { Image(systemName: "bolt.fill") }.accessibilityLabel("Send Now").tint(theme.swipe(\.limited))
                 }
                 .swipeActions(edge: .trailing) {
                     // Red by tint, not role: the row is still there until the host says it's
                     // cancelled, and a list aborts when a row swiped away as deleted is not gone.
-                    Button("Remove") { Task { await session.queue.cancel(item) } }.tint(theme.swipe(\.danger))
-                    Button("Edit") {
+                    Button { Task { await session.queue.cancel(item) } } label: { Image(systemName: "xmark") }.accessibilityLabel("Remove").tint(theme.swipe(\.danger))
+                    Button {
                         Task { await session.queue.edit(item, into: session.composer) }
+                    } label: {
+                        Image(systemName: "pencil")
                     }
+                    .accessibilityLabel("Edit")
                 }
                 // Always reorderable, so always in edit mode, where a list offers no swipes:
                 // the same actions on a press, as the composer's queue rows have them.
                 .contextMenu {
-                    Button("Send Now", systemImage: "bolt") { Task { await session.queue.steer(item) } }
+                    Button("Send Now", systemImage: "bolt.fill") { Task { await session.queue.steer(item) } }
                     Button("Edit", systemImage: "pencil") {
                         Task { await session.queue.edit(item, into: session.composer) }
                     }

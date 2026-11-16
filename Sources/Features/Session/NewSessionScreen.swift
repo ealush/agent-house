@@ -777,7 +777,9 @@ struct NewSessionMore: View {
             .navigationTitle("New Session")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
+                // What's set here applies as it's set: a close, as Settings has, not a "Done"
+                // that reads as if nothing counted until it was pressed.
+                ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) }
             }
         }
         .presentationDetents([.medium, .large])

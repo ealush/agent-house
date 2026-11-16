@@ -449,7 +449,7 @@ struct StackCockpitView: View {
                 ForEach(stack.decisions) { decision in
                     Text(decision.text).font(.ah(.callout))
                         // Red by tint, not role: the row stays until the host's stack comes back.
-                        .swipeActions { Button("Unpin") { Task { await model.removeDecision(decision.id) } }.tint(theme.swipe(\.danger)) }
+                        .swipeActions { Button { Task { await model.removeDecision(decision.id) } } label: { Image(systemName: "pin.slash") }.accessibilityLabel("Unpin").tint(theme.swipe(\.danger)) }
                 }
                 HStack(spacing: 10) {
                     Image(systemName: "pin").foregroundStyle(theme.faint).accessibilityHidden(true)

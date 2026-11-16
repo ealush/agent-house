@@ -54,7 +54,9 @@ struct InboxView: View {
                         AskCard(row: row, scene: scene, hub: hub)
                     }
                     ForEach(inbox.reviews, id: \.self) { alert in
+                        // On the theme's card, as the cards around it are (it drew the system's grey).
                         ReviewAlertRow(alert: alert) { scene.openReview(ReviewRoute(stack: alert.stackId, pr: alert.pr)) }
+                            .ahRow()
                     }
                 } header: {
                     AhSectionHeader(title: "Needs you", count: inbox.waiting.count + inbox.reviews.count)
@@ -192,6 +194,8 @@ private struct AskCard: View {
                     Spacer()
                     if !typeSize.isAccessibilitySize { Elapsed(seconds: row.dto.activity).font(.ah(.caption)).foregroundStyle(theme.faint) }
                 }
+                // The whole line opens it: a tap between the title and the time did nothing.
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .hoverEffect(.highlight)
@@ -757,12 +761,12 @@ struct HistoryRowView: View {
         .buttonStyle(.plain)
         .hoverEffect(.highlight)
         .swipeActions(edge: .leading) {
-            Button("Resume") { resume() }.tint(theme.swipe(\.done))
+            Button { resume() } label: { Image(systemName: "play.fill") }.accessibilityLabel("Resume").tint(theme.swipe(\.done))
         }
         .swipeActions(edge: .trailing) {
             // Red by tint, not role, as a session's Terminate is: the row stays until the
             // host's list comes back without it.
-            Button("Hide") { hide() }
+            Button { hide() } label: { Image(systemName: "eye.slash") }.accessibilityLabel("Hide")
             .tint(theme.swipe(\.danger))
         }
         .contextMenu {
