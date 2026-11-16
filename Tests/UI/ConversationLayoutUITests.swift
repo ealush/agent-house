@@ -482,10 +482,15 @@ final class ConversationLayoutUITests: XCTestCase {
             .sorted { $0.frame.minY < $1.frame.minY }
     }
 
-    /// A text near the middle of the transcript's view, to watch.
+    /// A text near the middle of the transcript's view, to watch: one whose words show once in
+    /// view, so it's the one found again. A step's "Thinking", "Read" or "The agent took 15s"
+    /// repeat down the screen, and the first of them was taken for the one watched: test 11
+    /// reported 397 points of movement with every text where it had been.
     private func middleText() -> XCUIElement? {
         let middle = (topEdge + dock.frame.minY) / 2
-        return transcriptTexts().min { abs($0.frame.midY - middle) < abs($1.frame.midY - middle) }
+        let texts = transcriptTexts()
+        let counts = Dictionary(texts.map { ($0.label, 1) }, uniquingKeysWith: +)
+        return texts.filter { counts[$0.label] == 1 }.min { abs($0.frame.midY - middle) < abs($1.frame.midY - middle) }
     }
 
     /// Keeps a screenshot in the results (and in AH_TOUR_OUT, when set) named for the moment.
