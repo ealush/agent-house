@@ -26,6 +26,8 @@ struct CaptureResult: Sendable, Equatable {
     var file: URL?
     var text: String?
     var lastBatch: URL?
+    /// Every batch cut while listening, in order (each was also sent as `CaptureEvent.batch`).
+    var batches: [URL] = []
 }
 
 enum CaptureEvent: Sendable, Equatable {
@@ -127,8 +129,16 @@ final class DictationModel {
     private(set) var settings: VoiceSettings?
     /// This dictation puts each batch in the box as it's heard (Words as You Speak).
     private(set) var live = false
-    /// What this dictation has put in the box so far, as it went.
+    /// What this dictation has put in the box so far, as it went, and where (UTF-16 offset).
     private(set) var placed = ""
+    private var placedAt = 0
+    /// What went in as you spoke was edited meanwhile: it's yours now, and nothing replaces it.
+    private var editedLive = false
+    /// Where the last dictation went in (UTF-16 offset), for Use What I Said.
+    private var lastAt: Int?
+    /// Each start, cancel and close moves this on: a start that resumes after it moved isn't
+    /// this dictation's any more.
+    private var attempt = 0
 
     /// A long dictation's batches (VOX-3), each heard by the host after the one before it,
     /// with what came before as its context.
@@ -184,12 +194,15 @@ final class DictationModel {
 
     func start(into composer: ComposerModel) async {
         discardKept()
+        attempt += 1
+        let mine = attempt
         phase = .starting
         partial = ""
         level = 0
         levels = []
         live = wantsWordsAsYouSpeak()
         placed = ""
+        editedLive = false
         // The words may need this device after all (the settings changed): read them while
         // listening, and decide when the recording ends.
         reading = Task { await refresh() }
@@ -198,6 +211,7 @@ final class DictationModel {
         // A host that does voice whose settings haven't been read yet (a cold start straight
         // into a session): read them first, rather than guess this device.
         if settings == nil, hostDoesVoice() { await settingsRead() }
+        guard attempt == mine, phase == .starting else { return }
         // This device listens too unless nothing needs its words: with the host hearing it,
         // they show as you speak (Words as You Speak) and are the cleanup's second hearing.
         let phone = live || (settings?.cleanup != nil && settings?.style != .verbatim)
@@ -221,15 +235,18 @@ final class DictationModel {
                 // This device can't listen for the language (none, or not readied); the host may
                 // have a speech subscription by now.
                 await settingsRead()
-                guard case .host = route else { throw error }
+                guard attempt == mine, case .host = route else { throw error }
                 try await capture.start(transcribing: nil, events: events)
             }
         } catch {
+            guard attempt == mine else { return }
             self.capture = nil
             phase = error as? CaptureError == .microphoneDenied ? .denied : .failed((error as? CaptureError)?.message ?? "Couldn’t start listening: \(error.localizedDescription)", retry: false)
             return
         }
-        guard phase == .starting else { await capture.cancel(); return }
+        // Cancelled, left, or started again while this one waited (a permission prompt, a
+        // language's download): it stops here and keeps nothing.
+        guard attempt == mine, phase == .starting else { await capture.cancel(); return }
         phase = .listening(since: Date())
         limit = Task { [weak self] in
             try? await Task.sleep(for: .seconds(Self.longest))
@@ -252,7 +269,9 @@ final class DictationModel {
             return
         }
         await settingsRead()
-        if let tail = result.lastBatch { batches.append(Batch(file: tail)) }
+        // Every batch cut, in order, whether or not its word reached us before Done.
+        let known = Dictionary(batches.map { ($0.file, $0) }, uniquingKeysWith: { a, _ in a })
+        batches = (result.batches + [result.lastBatch].compactMap { $0 }).map { known[$0] ?? Batch(file: $0) }
         if case .host = route, !batches.isEmpty {
             await writeBatches(result, into: composer)
         } else {
@@ -263,12 +282,13 @@ final class DictationModel {
 
     /// Stops listening and keeps nothing: what went into the box as you spoke comes out again.
     func cancel(in composer: ComposerModel? = nil) async {
+        attempt += 1
         limit?.cancel()
         reading?.cancel()
         hearing?.cancel()
-        if let capture { await capture.cancel() }
-        capture = nil
-        if let composer, !placed.isEmpty, let back = Self.swap(composer.text, placed, for: "") {
+        let capture = self.capture
+        self.capture = nil
+        if let composer, !placed.isEmpty, let back = Self.replacing(placed, at: placedAt, in: composer.text, with: "") {
             composer.text = back.text
             composer.caret = back.caret
             composer.placeCaret = back.caret
@@ -279,6 +299,28 @@ final class DictationModel {
         partial = ""
         level = 0
         levels = []
+        if let capture { await capture.cancel() }
+    }
+
+    /// The session is closing (off screen, or signed out): what was being said goes into its
+    /// box, a start still waiting stops, and a failed recording kept for Try Again is deleted.
+    /// One being written down finishes into its box.
+    func close(into composer: ComposerModel) {
+        switch phase {
+        case .listening: Task { await self.finish(into: composer) }
+        case .starting: Task { await self.cancel(in: composer) }
+        case .failed, .denied: dismiss()
+        case .idle, .writing: break
+        }
+    }
+
+    /// Recordings left in the temporary folder by a dictation the app didn't live to finish
+    /// (they're deleted once written down): at launch, when none is under way.
+    nonisolated static func sweep(_ folder: URL = FileManager.default.temporaryDirectory) {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        for name in names where name.hasPrefix("dictation-") && name.hasSuffix(".m4a") {
+            try? FileManager.default.removeItem(at: folder.appendingPathComponent(name))
+        }
     }
 
     /// A failed dictation's recording, written down again.
@@ -339,16 +381,19 @@ final class DictationModel {
 
     /// A heard batch into the box, after the ones before it.
     private func place(_ text: String, into composer: ComposerModel) {
-        if !placed.isEmpty, let after = Self.swap(composer.text, placed, for: placed + " " + text) {
+        if !placed.isEmpty, let after = Self.replacing(placed, at: placedAt, in: composer.text, with: placed + " " + text) {
             composer.text = after.text
             composer.caret = after.caret
             composer.placeCaret = after.caret
+            placedAt = after.caret - (placed + " " + text).utf16.count
             placed += " " + text
         } else {
-            // The first, or what went in before was edited: it's yours now, and this goes in
-            // at the caret.
+            // The first; or what went in before was edited, which makes it yours: this goes in
+            // at the caret, and nothing replaces either once you're done.
+            if !placed.isEmpty { editedLive = true }
             composer.insert(text)
             placed = text
+            placedAt = composer.caret - text.utf16.count
         }
     }
 
@@ -371,6 +416,13 @@ final class DictationModel {
             composer.notify("Didn’t catch anything.")
             return
         }
+        if live, editedLive || (!placed.isEmpty && Self.located(placed, at: placedAt, in: composer.text) == nil) {
+            // What went in as you spoke was edited: it stays as you left it, untidied.
+            finished(result)
+            last = nil
+            composer.notify("Kept your edits; the rest went in as said.")
+            return
+        }
         var text = raw
         var cleanedBy: String?
         var note: String? = byDevice ? "\(speech) didn’t answer for part of it, so \(thisDevice) wrote that part down." : nil
@@ -385,14 +437,18 @@ final class DictationModel {
         }
         if placed.isEmpty {
             composer.insert(text)
-        } else if let after = Self.swap(composer.text, placed, for: text) {
+            lastAt = composer.caret - text.utf16.count
+        } else if let after = Self.replacing(placed, at: placedAt, in: composer.text, with: text) {
             composer.text = after.text
             composer.caret = after.caret
             composer.placeCaret = after.caret
+            lastAt = after.caret - text.utf16.count
         } else {
-            // What went in as you spoke was edited: it stays as you left it.
-            text = placed
-            cleanedBy = nil
+            // Edited while it was being tidied: yours stays.
+            finished(result)
+            last = nil
+            composer.notify("Kept your edits; the rest went in as said.")
+            return
         }
         last = Inserted(text: text, raw: raw, heardBy: byDevice ? thisDevice : speech, cleanedBy: cleanedBy)
         finished(result)
@@ -405,6 +461,7 @@ final class DictationModel {
         for batch in batches { try? FileManager.default.removeItem(at: batch.file) }
         batches = []
         placed = ""
+        placedAt = 0
     }
 
     func dismiss() {
@@ -422,6 +479,7 @@ final class DictationModel {
             }
             finished(result)
             composer.insert(words.text)
+            lastAt = composer.caret - words.text.utf16.count
             last = Inserted(text: words.text, raw: words.raw, heardBy: words.heardBy, cleanedBy: words.cleanedBy)
             if let note = words.note { composer.notify(note) }
         } catch {
@@ -436,12 +494,14 @@ final class DictationModel {
     /// seconds the words go by the settings as they were.
     private func settingsRead() async {
         guard let reading else { return }
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask { await reading.value }
-            group.addTask { try? await Task.sleep(for: .seconds(3)) }
-            await group.next()
-            group.cancelAll()
+        // Cancelling the read itself is what ends the wait: its request stops, and the settings
+        // stay as they were.
+        let deadline = Task {
+            try? await Task.sleep(for: .seconds(3))
+            if !Task.isCancelled { reading.cancel() }
         }
+        await reading.value
+        deadline.cancel()
     }
 
     private func finished(_ result: CaptureResult) {
@@ -518,22 +578,37 @@ final class DictationModel {
     /// Whether the last dictation was tidied and is still in the box as it went in.
     func canUseWhatWasSaid(in text: String) -> Bool {
         guard let last, last.raw != last.text else { return false }
-        return text.contains(last.text)
+        return Self.located(last.text, at: lastAt, in: text) != nil
     }
 
     /// The last dictation back as said, in place of its tidied words.
     func useWhatWasSaid(in composer: ComposerModel) {
-        guard let last, let swapped = Self.swap(composer.text, last.text, for: last.raw) else { return }
+        guard let last, let swapped = Self.replacing(last.text, at: lastAt, in: composer.text, with: last.raw) else { return }
         composer.text = swapped.text
         composer.caret = swapped.caret
         composer.placeCaret = swapped.caret
         self.last = nil
+        lastAt = nil
     }
 
-    /// `draft` with its last copy of `inserted` replaced by `replacement`, and the caret
-    /// (UTF-16) just after it; nil when `inserted` is no longer there.
-    nonisolated static func swap(_ draft: String, _ inserted: String, for replacement: String) -> (text: String, caret: Int)? {
-        guard !inserted.isEmpty, let range = draft.range(of: inserted, options: .backwards) else { return nil }
+    /// Where `inserted` is in `draft`: where it went in (`at`, UTF-16), if it's still there;
+    /// else its one copy, if text before it moved it. Nil when it was edited, or when the draft
+    /// has it twice and neither is where it went in: replacing a guess could take your words.
+    nonisolated static func located(_ inserted: String, at offset: Int?, in draft: String) -> Range<String.Index>? {
+        guard !inserted.isEmpty else { return nil }
+        if let offset, offset >= 0, offset + inserted.utf16.count <= draft.utf16.count {
+            let lower = String.Index(utf16Offset: offset, in: draft)
+            let upper = String.Index(utf16Offset: offset + inserted.utf16.count, in: draft)
+            if draft[lower..<upper] == inserted { return lower..<upper }
+        }
+        guard let first = draft.range(of: inserted), draft.range(of: inserted, range: first.upperBound..<draft.endIndex) == nil else { return nil }
+        return first
+    }
+
+    /// `draft` with `inserted` (`located`) replaced by `replacement`, and the caret (UTF-16)
+    /// just after it; nil when it can't be found for sure.
+    nonisolated static func replacing(_ inserted: String, at offset: Int?, in draft: String, with replacement: String) -> (text: String, caret: Int)? {
+        guard let range = located(inserted, at: offset, in: draft) else { return nil }
         var text = draft
         text.replaceSubrange(range, with: replacement)
         let caret = draft[..<range.lowerBound].utf16.count + replacement.utf16.count

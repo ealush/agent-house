@@ -15,6 +15,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         AhType.applyToBars()
         // Dictation listens with the real microphone and this device's own speech.
         DictationModel.makeCapture = { VoiceCapture() }
+        DictationModel.sweep()
         DictationModel.thisDeviceName = DeviceSpeech.thisDevice
         do {
             let ephemeral = Self.ephemeral

@@ -86,7 +86,8 @@ struct DictationCard: View {
             .accessibilityLabel("Listening")
             // The words are in the box as you speak: the waves are here instead.
             if dictation.live && !dictation.placed.isEmpty {
-                DictationWaves(levels: dictation.levels, color: theme.accent).frame(height: 18).frame(maxWidth: 140)
+                // What's left of the row once the buttons have theirs.
+                DictationWaves(levels: dictation.levels, color: theme.accent).frame(height: 18).frame(maxWidth: 110).layoutPriority(-1)
             }
             Spacer(minLength: 0)
             Button("Cancel") {
@@ -99,7 +100,7 @@ struct DictationCard: View {
             Button {
                 Task { await dictation.finish(into: composer) }
             } label: {
-                Label("Done", systemImage: "checkmark").labelStyle(.titleAndIcon)
+                Label("Done", systemImage: "checkmark").labelStyle(.titleAndIcon).lineLimit(1).fixedSize()
             }
             .buttonStyle(.glassProminent)
             .accessibilityIdentifier("dictation-done")

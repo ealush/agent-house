@@ -59,6 +59,9 @@ private final class FakeCapture: DictationCapture {
     var startError: CaptureError?
     /// Batches cut while listening (each a file), and the one still open at Done.
     var batches = 0
+    /// Batches cut whose word never reached the model before Done (returned only by finish).
+    var unannounced = 0
+    var slowStart = false
     private(set) var batchFiles: [URL] = []
     private(set) var startedWith: [Locale?] = []
     private(set) var transcribed: [URL] = []
@@ -72,13 +75,16 @@ private final class FakeCapture: DictationCapture {
 
     func start(transcribing locale: Locale?, events: @escaping @MainActor (CaptureEvent) -> Void) async throws {
         startedWith.append(locale)
+        if slowStart { try? await Task.sleep(for: .milliseconds(150)) }
         if let startError, locale != nil || startError == .microphoneDenied { throw startError }
         events(.level(0.4))
         if locale != nil, let heard { events(.partial(heard)) }
         for _ in 0..<batches { events(.batch(newFile())) }
     }
     func finish() async throws -> CaptureResult {
-        CaptureResult(file: file, text: startedWith.last! == nil ? nil : heard, lastBatch: batches > 0 ? newFile() : nil)
+        let announced = batchFiles
+        let quiet = (0..<unannounced).map { _ in newFile() }
+        return CaptureResult(file: file, text: startedWith.last! == nil ? nil : heard, lastBatch: batches + unannounced > 0 ? newFile() : nil, batches: announced + quiet)
     }
     private func newFile() -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("dictation-batch-\(UUID().uuidString).m4a")
@@ -264,10 +270,14 @@ private var claude: [String: Any] { ["subscriptionId": "s2", "name": "Claude", "
     #expect(composer.text == "draft")
 }
 
-@Test func swappingBackFindsTheLastCopyOnly() {
-    #expect(DictationModel.swap("Fix it. Fix it.", "Fix it.", for: "fix it")! == ("Fix it. fix it", 14))
-    #expect(DictationModel.swap("edited away", "Fix it.", for: "fix it") == nil)
-    #expect(DictationModel.swap("שלום Fix it.", "Fix it.", for: "fix it")!.caret == "שלום fix it".utf16.count)
+@Test func whatWentInIsFoundWhereItWentInOrNotAtAll() {
+    let twice = "Fix it. Fix it."
+    #expect(DictationModel.replacing("Fix it.", at: 8, in: twice, with: "fix it")! == ("Fix it. fix it", 14), "the copy that went in, not the other")
+    #expect(DictationModel.replacing("Fix it.", at: 0, in: twice, with: "fix it")! == ("fix it Fix it.", 6))
+    #expect(DictationModel.replacing("Fix it.", at: 3, in: twice, with: "x") == nil, "moved, and there are two: no guessing")
+    #expect(DictationModel.replacing("Fix it.", at: 0, in: "Hi Fix it.", with: "x")! == ("Hi x", 4), "moved by text before it, but only one copy")
+    #expect(DictationModel.replacing("Fix it.", at: 0, in: "edited away", with: "x") == nil)
+    #expect(DictationModel.replacing("Fix it.", at: 5, in: "שלום Fix it.", with: "fix it")!.caret == "שלום fix it".utf16.count)
 }
 
 @MainActor
@@ -409,5 +419,91 @@ private func query(_ q: String?) -> [String: String] {
     var t = 0.5
     while at == nil, t < 60 { t += buffer; if steady.take(seconds: buffer, level: 0.9) { at = t } }
     #expect((40...41).contains(at ?? 0), "forty seconds of one loud sound: cut anyway")
+}
+
+@MainActor
+@Test func review_aDraftThatSaysTheSameIsntTheOneTakenBack() async {
+    let host = VoiceHost()
+    host.settings["speech"] = groq
+    host.batchTexts = ["Repeat."]
+    let (model, composer, capture) = bed(host, draft: "Repeat.")
+    composer.caret = 0
+    capture.batches = 1
+    await model.refresh()
+    await model.toggle(into: composer)
+    await until { model.placed == "Repeat." }
+    #expect(composer.text == "Repeat.Repeat.")
+    await model.cancel(in: composer)
+    #expect(composer.text == "Repeat.", "the copy dictation put in goes; yours stays")
+}
+
+@MainActor
+@Test func review_anEditWhileItGoesInIsKeptAndNothingIsDoubled() async {
+    let host = VoiceHost()
+    host.settings["speech"] = groq
+    host.settings["cleanup"] = claude
+    host.batchTexts = ["alpha", "beta"]
+    let (model, composer, capture) = bed(host)
+    capture.batches = 1
+    await model.refresh()
+    await model.toggle(into: composer)
+    await until { model.placed == "alpha" }
+    composer.text = "ALPHA"
+    composer.caret = 5
+    await model.toggle(into: composer)
+    #expect(composer.text == "ALPHA beta", "the edit stays, the rest goes after it, nothing twice")
+    #expect(composer.takeEvents() == [.notice("Kept your edits; the rest went in as said.")])
+    #expect(host.last("/api/voice/refine") == nil, "nothing tidies over your edit")
+}
+
+@MainActor
+@Test func review_aBatchCutJustBeforeDoneIsStillHeard() async {
+    let host = VoiceHost()
+    host.settings["speech"] = groq
+    host.batchTexts = ["first", "second", "last"]
+    let (model, composer, capture) = bed(host, live: false)
+    capture.batches = 1
+    capture.unannounced = 1
+    await model.refresh()
+    await model.toggle(into: composer)
+    await model.toggle(into: composer)
+    #expect(composer.text == "first second last")
+    #expect(capture.batchFiles.allSatisfy { !FileManager.default.fileExists(atPath: $0.path) })
+}
+
+@MainActor
+@Test func review_aStartCancelledWhileItWaitedStopsThere() async {
+    let host = VoiceHost()
+    let (model, composer, capture) = bed(host, voice: false)
+    capture.slowStart = true
+    let starting = Task { await model.toggle(into: composer) }
+    try? await Task.sleep(for: .milliseconds(30))
+    #expect(model.phase == .starting)
+    await model.cancel(in: composer)
+    await starting.value
+    #expect(model.phase == .idle, "it doesn't come back to life once its wait is over")
+    #expect(capture.cancelled)
+}
+
+@MainActor
+@Test func review_closingTheSessionLeavesNoRecordingBehind() async {
+    let host = VoiceHost()
+    host.settings["speech"] = groq
+    host.dictation = (401, ["error": "signed out"])
+    let (model, composer, capture) = bed(host, live: false)
+    await model.refresh()
+    await model.toggle(into: composer)
+    await model.toggle(into: composer)
+    #expect(model.phase == .failed("signed out", retry: true))
+    #expect(FileManager.default.fileExists(atPath: capture.file.path))
+    model.close(into: composer)
+    #expect(!FileManager.default.fileExists(atPath: capture.file.path), "the kept recording is deleted")
+
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("sweep-\(UUID().uuidString)")
+    try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    FileManager.default.createFile(atPath: folder.appendingPathComponent("dictation-1.m4a").path, contents: Data("x".utf8))
+    FileManager.default.createFile(atPath: folder.appendingPathComponent("other.m4a").path, contents: Data("x".utf8))
+    DictationModel.sweep(folder)
+    #expect((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) == ["other.m4a"])
 }
 

@@ -132,6 +132,8 @@ struct ComposerView: View {
         .onDisappear {
             composer.trayOpen = false
             if session.dictation.isListening { Task { await session.dictation.finish(into: composer) } }
+            // Still waiting to start (a permission prompt, a language's download): not after leaving.
+            else if session.dictation.phase == .starting { Task { await session.dictation.cancel(in: composer) } }
         }
     }
 

@@ -233,6 +233,7 @@ final class SessionModel: Identifiable {
         if let stream = feedStream { Task { await stream.close() } }
         feedStream = nil
         queue.stop()
+        dictation.close(into: composer)
         Task { await composer.background() }
     }
 

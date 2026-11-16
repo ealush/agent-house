@@ -13,6 +13,10 @@ final class VoiceCapture: DictationCapture {
     private var analyzer: SpeechAnalyzer?
     private var heard: Task<String, any Error>?
     private var started = false
+    /// The engine's input has our tap on it (it takes one): removed before any other goes on.
+    private var tapped = false
+    /// The first batch's file, until the tap owns it.
+    private var firstBatch: URL?
     #if DEBUG
     /// Tours: a recording played in as if spoken (`AH_VOICE_FILE`), where a simulator has no
     /// microphone to speak into.
@@ -56,12 +60,13 @@ final class VoiceCapture: DictationCapture {
         let batch: (AVAudioFile, URL)
         do {
             (file, url) = try recording()
+            self.url = url
             batch = try recording()
+            firstBatch = batch.1
         } catch {
-            deactivate()
+            cleanUp()
             throw CaptureError.failed("Couldn’t record: \(error.localizedDescription)")
         }
-        self.url = url
 
         var feed: AsyncStream<AnalyzerInput>.Continuation?
         var converter: AVAudioConverter?
@@ -91,16 +96,21 @@ final class VoiceCapture: DictationCapture {
             Task { @MainActor in events(.batch(batch)) }
         })
         self.tap = tap
+        firstBatch = nil
         if let source {
             #if DEBUG
             playing = Task.detached { await CaptureTap.play(source, into: tap) }
             #endif
         } else {
-            engine.inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, _ in tap.take(buffer) }
+            engine.inputNode.installTap(onBus: 0, bufferSize: 4096, format: format, block: Self.tapBlock(tap))
+            tapped = true
             engine.prepare()
             do {
                 try engine.start()
             } catch {
+                untap()
+                _ = tap.close()
+                self.tap = nil
                 cleanUp()
                 throw CaptureError.failed("Couldn’t start the microphone: \(error.localizedDescription)")
             }
@@ -117,29 +127,31 @@ final class VoiceCapture: DictationCapture {
 
     func finish() async throws -> CaptureResult {
         stopInput()
-        let lastBatch = tap?.close()
+        let closed = tap?.close()
         tap = nil
         var text: String?
         if let analyzer {
+            // This device's words are a help, not the dictation: failing, the recording still
+            // goes on (to the host, or to be written down from the file).
             do {
                 try await analyzer.finalizeAndFinishThroughEndOfInput()
                 text = try await heard?.value
             } catch {
                 await analyzer.cancelAndFinishNow()
-                deactivate()
-                if let lastBatch { try? FileManager.default.removeItem(at: lastBatch) }
-                throw CaptureError.failed("Couldn’t write it down on this device: \(error.localizedDescription)")
+                text = nil
             }
         }
         analyzer = nil
         heard = nil
         deactivate()
-        return CaptureResult(file: url, text: text, lastBatch: lastBatch)
+        return CaptureResult(file: url, text: text, lastBatch: closed?.open, batches: closed?.cut ?? [])
     }
 
     func cancel() async {
         stopInput()
-        if let lastBatch = tap?.close() { try? FileManager.default.removeItem(at: lastBatch) }
+        if let closed = tap?.close() {
+            for file in closed.cut + [closed.open].compactMap({ $0 }) { try? FileManager.default.removeItem(at: file) }
+        }
         tap = nil
         if let analyzer { await analyzer.cancelAndFinishNow() }
         heard?.cancel()
@@ -166,17 +178,29 @@ final class VoiceCapture: DictationCapture {
         playing?.cancel()
         playing = nil
         #endif
+        untap()
         guard started else { return }
         started = false
-        if Self.debugSource == nil {
-            engine.inputNode.removeTap(onBus: 0)
-            engine.stop()
-        }
+        if Self.debugSource == nil { engine.stop() }
+    }
+
+    private func untap() {
+        guard tapped else { return }
+        tapped = false
+        engine.inputNode.removeTap(onBus: 0)
+    }
+
+    /// The tap's block, made outside the main actor: AVAudioEngine calls it on its own audio
+    /// thread, and a block that inherited main-actor isolation traps there (Swift 6).
+    nonisolated private static func tapBlock(_ tap: CaptureTap) -> AVAudioNodeTapBlock {
+        { buffer, _ in tap.take(buffer) }
     }
 
     private func cleanUp() {
         if let url { try? FileManager.default.removeItem(at: url) }
         url = nil
+        if let firstBatch { try? FileManager.default.removeItem(at: firstBatch) }
+        firstBatch = nil
         analyzer = nil
         heard = nil
         deactivate()
@@ -234,6 +258,9 @@ private final class CaptureTap: @unchecked Sendable {
     private var batch: (file: AVAudioFile, url: URL)?
     private var batchSeconds: TimeInterval = 0
     private var cutter = BatchCutter()
+    /// Every batch cut so far, in order: handed back at the end too, so one cut just before
+    /// Done isn't lost on its way to the model.
+    private var cutBatches: [URL] = []
     private let newBatch: @Sendable () throws -> (AVAudioFile, URL)
     private let converter: AVAudioConverter?
     private var feed: AsyncStream<AnalyzerInput>.Continuation?
@@ -268,6 +295,7 @@ private final class CaptureTap: @unchecked Sendable {
                 // Closed (whole on disk) before it's handed on; the next one starts here.
                 batch.file.close()
                 self.batch = nil
+                cutBatches.append(batch.url)
                 cut(batch.url)
                 batchSeconds = 0
                 self.batch = try? newBatch()
@@ -282,22 +310,23 @@ private final class CaptureTap: @unchecked Sendable {
     }
 
     /// No more audio: the recording is closed (whole on disk), the recognizer told, and the
-    /// batch being filled handed back (nil when it holds next to nothing).
-    func close() -> URL? {
+    /// batches handed back: every one cut, and the one being filled (nil when it holds next
+    /// to nothing).
+    func close() -> (cut: [URL], open: URL?) {
         lock.lock()
         defer { lock.unlock() }
         file?.close()
         file = nil
         feed?.finish()
         feed = nil
-        guard let open = batch else { return nil }
+        guard let open = batch else { return (cutBatches, nil) }
         open.file.close()
         batch = nil
         if batchSeconds < 0.3 {
             try? FileManager.default.removeItem(at: open.url)
-            return nil
+            return (cutBatches, nil)
         }
-        return open.url
+        return (cutBatches, open.url)
     }
 
     private static func convert(_ buffer: AVAudioPCMBuffer, with converter: AVAudioConverter) -> AVAudioPCMBuffer? {
