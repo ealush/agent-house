@@ -296,9 +296,12 @@ struct APIClient: Sendable {
         (try await call("POST", "/api/voice/models", json: ["subscriptionId": subscriptionId], as: ModelsResult.self)).models
     }
     /// A recording (AAC in an `.m4a`) heard by the host's speech subscription, tidied unless `style` is verbatim.
-    func dictate(_ file: URL, style: VoiceStyle? = nil) async throws -> DictationResult {
+    /// `context`: what was heard before it, for a batch of a longer dictation (the speech model reads it as what came before).
+    func dictate(_ file: URL, style: VoiceStyle? = nil, context: String = "") async throws -> DictationResult {
         var query = [URLQueryItem(name: "name", value: "speech.\(file.pathExtension.isEmpty ? "m4a" : file.pathExtension)")]
         if let style { query.append(URLQueryItem(name: "style", value: style.rawValue)) }
+        // Its end is what the speech model reads; the host takes up to 2000 characters.
+        if !context.isEmpty { query.append(URLQueryItem(name: "context", value: String(context.suffix(1200)))) }
         var req = await request("POST", "/api/voice/dictate", query: query, contentType: "audio/mp4")
         req.httpBody = nil
         // A minute of speech is a few hundred KB; the provider then takes its time.
@@ -309,9 +312,10 @@ struct APIClient: Sendable {
             throw APIError.decoding(String(describing: error))
         }
     }
-    /// Text this device wrote down, tidied by the host's cleanup subscription.
-    func refine(_ text: String, style: VoiceStyle? = nil) async throws -> RefinedText {
-        try await call("POST", "/api/voice/refine", json: RefineBody(text: text, style: style?.rawValue))
+    /// Text tidied by the host's cleanup subscription: written on this device, or a batched
+    /// dictation's batches. `phone`: this device's own hearing of the same speech, to check against.
+    func refine(_ text: String, style: VoiceStyle? = nil, phone: String? = nil) async throws -> RefinedText {
+        try await call("POST", "/api/voice/refine", json: RefineBody(text: text, style: style?.rawValue, phone: phone))
     }
 
     // MARK: Environment
@@ -509,7 +513,7 @@ private struct ChatAboutQuestions: Encodable {
 private struct LaunchChange: Encodable { let model: String?; let effort: String?; let mode: String? }
 private struct ModelsQuery: Encodable { let baseUrl: String; let apiKey: String?; let id: String? }
 private struct SummarizeBody: Encodable { let text: String; let subscriptionId: String? }
-private struct RefineBody: Encodable { let text: String; let style: String? }
+private struct RefineBody: Encodable { let text: String; let style: String?; let phone: String? }
 private struct EnvBody: Encodable { let name: String; let value: String?; let secret: Bool }
 private struct CustomAgent: Encodable { let name: String; let command: String; let resume: String? }
 private struct RemoveWorktree: Encodable { let path: String; let force: Bool }

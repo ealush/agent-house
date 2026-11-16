@@ -77,7 +77,20 @@ function reviewerReply(system, question) {
 // Voice (ah docs/spec/14-voice.md): it can't hear, so every recording "says" the same, and the
 // cleanup tidies that sentence the way a real one would. Both say they're the demo's.
 const HEARD = "um so the demo host can't really hear you but this is where your words would go";
-const TIDIED = "The demo host can't really hear you, but this is where your words would go.";
+const NEXT = 'and this is where the next part would go';
+
+/** The scripted cleanup: fillers out, a capital and a full stop per batch heard. */
+function tidied(text) {
+  return text
+    .replace(/<phone>[\s\S]*<\/phone>/, '')
+    .replace(/<\/?transcript>/g, '')
+    .replace(/\b(um|uh) (so )?/g, '')
+    .trim()
+    .replace(/ (and this is where the next part)/g, '. And this is where the next part')
+    .replace(/you but/g, 'you, but')
+    .replace(/^./, (c) => c.toUpperCase())
+    .replace(/([^.])$/, '$1.');
+}
 
 function chatReply(question) {
   return `You asked: “${question.slice(0, 200)}”.\n\nThis is the demo host's scripted model, so there's no real answer here: pick a real subscription in Settings → Subscriptions for that.\n\n${NOTE}`;
@@ -94,10 +107,13 @@ export function startModel({ delay = 4000 } = {}) {
     };
     if (req.method === 'GET' && req.url === '/v1/models') return send(200, { data: [{ id: 'demo-briefer', created: 0, object: 'model' }, { id: 'demo-whisper', created: 0, object: 'model' }] });
     if (req.method === 'POST' && req.url === '/v1/audio/transcriptions') {
-      let bytes = 0;
-      for await (const chunk of req) bytes += chunk.length;
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const form = Buffer.concat(chunks).toString('latin1');
       await new Promise((r) => setTimeout(r, 900));
-      return send(200, { text: bytes > 0 ? HEARD : '', language: 'english', duration: 3.1 });
+      // A batch that comes after another (its prompt holds what came before) "says" what's next.
+      const later = /name="prompt"[\s\S]*demo host can't really hear/.test(form);
+      return send(200, { text: form.length > 0 ? (later ? NEXT : HEARD) : '', language: 'english', duration: 3.1 });
     }
     if (req.method !== 'POST' || req.url !== '/v1/chat/completions') return send(404, { error: { message: 'not found' } });
     let body = '';
@@ -116,7 +132,7 @@ export function startModel({ delay = 4000 } = {}) {
       content = briefing(last);
     } else if (system.includes('You edit dictated speech')) {
       await new Promise((r) => setTimeout(r, 700));
-      content = last.includes(HEARD) ? TIDIED : last.replace(/<\/?transcript>/g, '').trim();
+      content = tidied(last);
     } else if (system.includes('Reply with ONLY a JSON object')) {
       await new Promise((r) => setTimeout(r, 1200));
       content = reviewerReply(system, last);

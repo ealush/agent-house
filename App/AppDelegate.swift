@@ -26,6 +26,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
                 device: DeviceDescriptor(name: Self.deviceName, client: DeviceDescriptor.newClientID()),
                 allowLoopback: Self.allowLoopback)
             app = AppModel(services: services)
+            let model: AppModel = app
+            DictationModel.wordsAsYouSpeak = { [weak model] in model?.preferences.wordsAsYouSpeak ?? true }
         } catch {
             startupError = error.localizedDescription
             return true

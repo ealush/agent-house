@@ -2,7 +2,8 @@ import AVFoundation
 import Speech
 
 /// The microphone for dictation (`DictationModel`): AVAudioEngine's input, written to an AAC
-/// `.m4a` for the host's speech subscription and, when asked, fed to this device's own speech
+/// `.m4a` for the host's speech subscription, and cut into batches as you speak (`BatchCutter`)
+/// so the host can hear each while you go on; when asked, also fed to this device's own speech
 /// recognizer as it comes (`DeviceSpeech`), its words reported as they're heard.
 @MainActor
 final class VoiceCapture: DictationCapture {
@@ -39,15 +40,23 @@ final class VoiceCapture: DictationCapture {
             deactivate()
             throw CaptureError.failed("There’s no microphone to listen with.")
         }
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("dictation-\(UUID().uuidString).m4a")
-        let file: AVAudioFile
-        do {
-            file = try AVAudioFile(forWriting: url, settings: [
+        // The whole recording, and each batch on its own: AAC, as the speech providers take it.
+        let recording: @Sendable () throws -> (AVAudioFile, URL) = {
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("dictation-\(UUID().uuidString).m4a")
+            let file = try AVAudioFile(forWriting: url, settings: [
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
                 AVSampleRateKey: format.sampleRate,
                 AVNumberOfChannelsKey: format.channelCount,
                 AVEncoderBitRateKey: 48_000,
             ], commonFormat: format.commonFormat, interleaved: format.isInterleaved)
+            return (file, url)
+        }
+        let file: AVAudioFile
+        let url: URL
+        let batch: (AVAudioFile, URL)
+        do {
+            (file, url) = try recording()
+            batch = try recording()
         } catch {
             deactivate()
             throw CaptureError.failed("Couldn’t record: \(error.localizedDescription)")
@@ -76,9 +85,11 @@ final class VoiceCapture: DictationCapture {
             }
         }
 
-        let tap = CaptureTap(file: file, converter: converter, feed: feed) { level in
+        let tap = CaptureTap(file: file, batch: batch, newBatch: recording, converter: converter, feed: feed, level: { level in
             Task { @MainActor in events(.level(level)) }
-        }
+        }, cut: { batch in
+            Task { @MainActor in events(.batch(batch)) }
+        })
         self.tap = tap
         if let source {
             #if DEBUG
@@ -106,7 +117,7 @@ final class VoiceCapture: DictationCapture {
 
     func finish() async throws -> CaptureResult {
         stopInput()
-        tap?.close()
+        let lastBatch = tap?.close()
         tap = nil
         var text: String?
         if let analyzer {
@@ -116,18 +127,19 @@ final class VoiceCapture: DictationCapture {
             } catch {
                 await analyzer.cancelAndFinishNow()
                 deactivate()
+                if let lastBatch { try? FileManager.default.removeItem(at: lastBatch) }
                 throw CaptureError.failed("Couldn’t write it down on this device: \(error.localizedDescription)")
             }
         }
         analyzer = nil
         heard = nil
         deactivate()
-        return CaptureResult(file: url, text: text)
+        return CaptureResult(file: url, text: text, lastBatch: lastBatch)
     }
 
     func cancel() async {
         stopInput()
-        tap?.close()
+        if let lastBatch = tap?.close() { try? FileManager.default.removeItem(at: lastBatch) }
         tap = nil
         if let analyzer { await analyzer.cancelAndFinishNow() }
         heard?.cancel()
@@ -213,21 +225,30 @@ final class VoiceCapture: DictationCapture {
     }
 }
 
-/// What the microphone's buffers go to, off the main thread: the recording, this device's
-/// recognizer (converted to its format), and the meter.
+/// What the microphone's buffers go to, off the main thread: the recording, the batch being
+/// filled (cut at a pause once it holds 10 seconds, and handed on), this device's recognizer
+/// (converted to its format), and the meter.
 private final class CaptureTap: @unchecked Sendable {
     private let lock = NSLock()
     private var file: AVAudioFile?
+    private var batch: (file: AVAudioFile, url: URL)?
+    private var batchSeconds: TimeInterval = 0
+    private var cutter = BatchCutter()
+    private let newBatch: @Sendable () throws -> (AVAudioFile, URL)
     private let converter: AVAudioConverter?
     private var feed: AsyncStream<AnalyzerInput>.Continuation?
     private let level: @Sendable (Float) -> Void
+    private let cut: @Sendable (URL) -> Void
     private var lastLevel = Date.distantPast
 
-    init(file: AVAudioFile, converter: AVAudioConverter?, feed: AsyncStream<AnalyzerInput>.Continuation?, level: @escaping @Sendable (Float) -> Void) {
+    init(file: AVAudioFile, batch: (AVAudioFile, URL), newBatch: @escaping @Sendable () throws -> (AVAudioFile, URL), converter: AVAudioConverter?, feed: AsyncStream<AnalyzerInput>.Continuation?, level: @escaping @Sendable (Float) -> Void, cut: @escaping @Sendable (URL) -> Void) {
         self.file = file
+        self.batch = batch
+        self.newBatch = newBatch
         self.converter = converter
         self.feed = feed
         self.level = level
+        self.cut = cut
     }
 
     func take(_ buffer: AVAudioPCMBuffer) {
@@ -238,21 +259,45 @@ private final class CaptureTap: @unchecked Sendable {
         if let converter, let feed, let converted = Self.convert(buffer, with: converter) {
             feed.yield(AnalyzerInput(buffer: converted))
         }
+        let loud = Self.loudness(buffer)
+        if let batch {
+            try? batch.file.write(from: buffer)
+            let seconds = Double(buffer.frameLength) / buffer.format.sampleRate
+            batchSeconds += seconds
+            if cutter.take(seconds: seconds, level: loud) {
+                // Closed (whole on disk) before it's handed on; the next one starts here.
+                batch.file.close()
+                self.batch = nil
+                cut(batch.url)
+                batchSeconds = 0
+                self.batch = try? newBatch()
+            }
+        }
         // The meter at about 20 a second: more is only work for the main thread.
         let now = Date()
         if now.timeIntervalSince(lastLevel) > 0.05 {
             lastLevel = now
-            level(Self.loudness(buffer))
+            level(loud)
         }
     }
 
-    /// No more audio: the recording is closed (whole on disk) and the recognizer told.
-    func close() {
+    /// No more audio: the recording is closed (whole on disk), the recognizer told, and the
+    /// batch being filled handed back (nil when it holds next to nothing).
+    func close() -> URL? {
         lock.lock()
         defer { lock.unlock() }
+        file?.close()
         file = nil
         feed?.finish()
         feed = nil
+        guard let open = batch else { return nil }
+        open.file.close()
+        batch = nil
+        if batchSeconds < 0.3 {
+            try? FileManager.default.removeItem(at: open.url)
+            return nil
+        }
+        return open.url
     }
 
     private static func convert(_ buffer: AVAudioPCMBuffer, with converter: AVAudioConverter) -> AVAudioPCMBuffer? {

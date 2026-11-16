@@ -20,11 +20,12 @@ enum DictationRoute: Equatable, Sendable {
     }
 }
 
-/// What the microphone took: always the recording, and this device's transcript when it
-/// wrote one as it listened.
+/// What the microphone took: always the recording, this device's transcript when it wrote
+/// one as it listened, and the batch still open when it stopped (`BatchCutter`).
 struct CaptureResult: Sendable, Equatable {
     var file: URL?
     var text: String?
+    var lastBatch: URL?
 }
 
 enum CaptureEvent: Sendable, Equatable {
@@ -34,6 +35,8 @@ enum CaptureEvent: Sendable, Equatable {
     case partial(String)
     /// Something else took the microphone (a call): what was said so far goes in.
     case interrupted
+    /// A batch of the recording, cut at a pause once it held 10 seconds: the host can hear it now.
+    case batch(URL)
 }
 
 enum CaptureError: Error, Equatable, Sendable {
@@ -108,6 +111,9 @@ final class DictationModel {
     static var makeCapture: @MainActor () -> any DictationCapture = { NoMicrophone() }
     /// "this iPhone", "this iPad", set at launch.
     static var thisDeviceName = "this device"
+    /// Words as You Speak (Settings → Voice, this device's): each batch goes into the box as
+    /// soon as the host hears it; set at launch from the device's preferences.
+    static var wordsAsYouSpeak: @MainActor () -> Bool = { true }
 
     private(set) var phase: Phase = .idle
     private(set) var level: Float = 0
@@ -119,6 +125,22 @@ final class DictationModel {
     private(set) var last: Inserted?
     /// The host's Voice settings; nil when it doesn't do voice or before they're read.
     private(set) var settings: VoiceSettings?
+    /// This dictation puts each batch in the box as it's heard (Words as You Speak).
+    private(set) var live = false
+    /// What this dictation has put in the box so far, as it went.
+    private(set) var placed = ""
+
+    /// A long dictation's batches (VOX-3), each heard by the host after the one before it,
+    /// with what came before as its context.
+    private struct Batch: Sendable {
+        let file: URL
+        var text: String?
+        var queued = false
+        /// The host didn't hear it; this device did.
+        var byDevice = false
+    }
+    private var batches: [Batch] = []
+    private var hearing: Task<Void, Never>?
 
     private let api: APIClient
     private let hostDoesVoice: @MainActor () -> Bool
@@ -131,11 +153,14 @@ final class DictationModel {
     private var reading: Task<Void, Never>?
     private var limit: Task<Void, Never>?
 
-    init(api: APIClient, thisDevice: String, hostDoesVoice: @escaping @MainActor () -> Bool, makeCapture: @escaping @MainActor () -> any DictationCapture) {
+    private let wantsWordsAsYouSpeak: @MainActor () -> Bool
+
+    init(api: APIClient, thisDevice: String, hostDoesVoice: @escaping @MainActor () -> Bool, makeCapture: @escaping @MainActor () -> any DictationCapture, wordsAsYouSpeak: @escaping @MainActor () -> Bool = { DictationModel.wordsAsYouSpeak() }) {
         self.api = api
         self.thisDevice = thisDevice
         self.hostDoesVoice = hostDoesVoice
         self.makeCapture = makeCapture
+        self.wantsWordsAsYouSpeak = wordsAsYouSpeak
     }
 
     var route: DictationRoute { .of(settings) }
@@ -163,6 +188,8 @@ final class DictationModel {
         partial = ""
         level = 0
         levels = []
+        live = wantsWordsAsYouSpeak()
+        placed = ""
         // The words may need this device after all (the settings changed): read them while
         // listening, and decide when the recording ends.
         reading = Task { await refresh() }
@@ -171,9 +198,10 @@ final class DictationModel {
         // A host that does voice whose settings haven't been read yet (a cold start straight
         // into a session): read them first, rather than guess this device.
         if settings == nil, hostDoesVoice() { await settingsRead() }
-        // Known to go to the host: only the recording. Otherwise this device listens too, so
-        // its words are there the moment you stop.
-        let onDevice: Locale? = if case .host = route { nil } else { (settings ?? VoiceSettings()).locale }
+        // This device listens too unless nothing needs its words: with the host hearing it,
+        // they show as you speak (Words as You Speak) and are the cleanup's second hearing.
+        let phone = live || (settings?.cleanup != nil && settings?.style != .verbatim)
+        let onDevice: Locale? = if case .host = route, !phone { nil } else { (settings ?? VoiceSettings()).locale }
         let events: @MainActor (CaptureEvent) -> Void = { [weak self] event in
             guard let self, self.phase == .starting || self.isListening else { return }
             switch event {
@@ -183,6 +211,7 @@ final class DictationModel {
                 if self.levels.count > Self.levelsKept { self.levels.removeFirst(self.levels.count - Self.levelsKept) }
             case .partial(let words): self.partial = words
             case .interrupted: Task { await self.finish(into: composer) }
+            case .batch(let file): self.take(file, into: composer)
             }
         }
         do {
@@ -223,15 +252,28 @@ final class DictationModel {
             return
         }
         await settingsRead()
-        await write(result, into: composer)
+        if let tail = result.lastBatch { batches.append(Batch(file: tail)) }
+        if case .host = route, !batches.isEmpty {
+            await writeBatches(result, into: composer)
+        } else {
+            dropBatches()
+            await write(result, into: composer)
+        }
     }
 
-    /// Stops listening and keeps nothing.
-    func cancel() async {
+    /// Stops listening and keeps nothing: what went into the box as you spoke comes out again.
+    func cancel(in composer: ComposerModel? = nil) async {
         limit?.cancel()
         reading?.cancel()
+        hearing?.cancel()
         if let capture { await capture.cancel() }
         capture = nil
+        if let composer, !placed.isEmpty, let back = Self.swap(composer.text, placed, for: "") {
+            composer.text = back.text
+            composer.caret = back.caret
+            composer.placeCaret = back.caret
+        }
+        dropBatches()
         discardKept()
         phase = .idle
         partial = ""
@@ -244,7 +286,125 @@ final class DictationModel {
         guard case .failed(_, true) = phase, let kept else { return }
         phase = .writing
         await settingsRead()
-        await write(kept, into: composer)
+        if !batches.isEmpty {
+            for i in batches.indices where batches[i].text == nil { batches[i].queued = false }
+            await writeBatches(kept, into: composer)
+        } else {
+            await write(kept, into: composer)
+        }
+    }
+
+    // MARK: Batches
+
+    /// A batch cut as you speak: heard now when the host hears this dictation.
+    private func take(_ file: URL, into composer: ComposerModel) {
+        batches.append(Batch(file: file))
+        if case .host = route { queue(into: composer) }
+    }
+
+    /// Every batch not yet on its way, each after the one before it.
+    private func queue(into composer: ComposerModel) {
+        for i in batches.indices where !batches[i].queued {
+            batches[i].queued = true
+            let before = hearing
+            hearing = Task { [weak self] in
+                await before?.value
+                await self?.hear(i, into: composer)
+            }
+        }
+    }
+
+    /// One batch heard by the host, with what was heard before it as its context; tried
+    /// twice, then by this device.
+    private func hear(_ i: Int, into composer: ComposerModel) async {
+        guard !Task.isCancelled, batches.indices.contains(i), batches[i].text == nil else { return }
+        let file = batches[i].file
+        let context = batches[..<i].compactMap(\.text).joined(separator: " ")
+        var text: String?
+        var byDevice = false
+        for _ in 0..<2 where text == nil && !Task.isCancelled {
+            if let heard = try? await api.dictate(file, style: .verbatim, context: context) {
+                text = heard.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+        if text == nil, !Task.isCancelled, let mine = try? await deviceWords(CaptureResult(file: file), locale: (settings ?? VoiceSettings()).locale) {
+            text = mine
+            byDevice = true
+        }
+        guard !Task.isCancelled, batches.indices.contains(i), batches[i].file == file else { return }
+        batches[i].text = text
+        batches[i].byDevice = byDevice
+        if live, let text, !text.isEmpty { place(text, into: composer) }
+    }
+
+    /// A heard batch into the box, after the ones before it.
+    private func place(_ text: String, into composer: ComposerModel) {
+        if !placed.isEmpty, let after = Self.swap(composer.text, placed, for: placed + " " + text) {
+            composer.text = after.text
+            composer.caret = after.caret
+            composer.placeCaret = after.caret
+            placed += " " + text
+        } else {
+            // The first, or what went in before was edited: it's yours now, and this goes in
+            // at the caret.
+            composer.insert(text)
+            placed = text
+        }
+    }
+
+    /// Once you're done: the last batch heard, the batches' words tidied once (with this
+    /// device's hearing to check against), in the box in place of what went in as you spoke.
+    private func writeBatches(_ result: CaptureResult, into composer: ComposerModel) async {
+        guard case .host(let speech) = route else { return }
+        queue(into: composer)
+        await hearing?.value
+        if batches.contains(where: { $0.text == nil }) {
+            kept = result
+            capture = nil
+            phase = .failed("Couldn’t write down part of it: \(speech) didn’t answer, nor did \(thisDevice).", retry: true)
+            return
+        }
+        let raw = batches.compactMap(\.text).filter { !$0.isEmpty }.joined(separator: " ")
+        let byDevice = batches.contains(where: \.byDevice)
+        guard !raw.isEmpty else {
+            finished(result)
+            composer.notify("Didn’t catch anything.")
+            return
+        }
+        var text = raw
+        var cleanedBy: String?
+        var note: String? = byDevice ? "\(speech) didn’t answer for part of it, so \(thisDevice) wrote that part down." : nil
+        if let cleanup = settings?.cleanup, settings?.style != .verbatim {
+            do {
+                let tidy = try await api.refine(raw, style: settings?.style, phone: result.text)
+                text = tidy.text
+                cleanedBy = tidy.cleanedBy
+            } catch {
+                note = "Couldn’t tidy it with \(cleanup.name), so it’s as said."
+            }
+        }
+        if placed.isEmpty {
+            composer.insert(text)
+        } else if let after = Self.swap(composer.text, placed, for: text) {
+            composer.text = after.text
+            composer.caret = after.caret
+            composer.placeCaret = after.caret
+        } else {
+            // What went in as you spoke was edited: it stays as you left it.
+            text = placed
+            cleanedBy = nil
+        }
+        last = Inserted(text: text, raw: raw, heardBy: byDevice ? thisDevice : speech, cleanedBy: cleanedBy)
+        finished(result)
+        if let note { composer.notify(note) }
+    }
+
+    private func dropBatches() {
+        hearing?.cancel()
+        hearing = nil
+        for batch in batches { try? FileManager.default.removeItem(at: batch.file) }
+        batches = []
+        placed = ""
     }
 
     func dismiss() {
@@ -286,6 +446,7 @@ final class DictationModel {
 
     private func finished(_ result: CaptureResult) {
         if let file = result.file { try? FileManager.default.removeItem(at: file) }
+        dropBatches()
         kept = nil
         capture = nil
         phase = .idle
@@ -297,6 +458,7 @@ final class DictationModel {
     private func discardKept() {
         if let file = kept?.file { try? FileManager.default.removeItem(at: file) }
         kept = nil
+        dropBatches()
     }
 
     /// The words for the box, by the settings as they are now; nil for none heard.

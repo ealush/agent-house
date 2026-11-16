@@ -41,8 +41,9 @@ struct ComposerView: View {
     @Namespace private var glass
 
     private var hasTray: Bool { ComposerFloat.hasTray(session) }
-    /// Dictation is listening: the box shows it (`DictationWaves`).
-    private var listening: Bool { session.dictation.isListening }
+    /// Dictation is listening and the box shows it (`DictationWaves`): until the first words go
+    /// in as you speak (Words as You Speak), after which the box shows them and the card the waves.
+    private var listening: Bool { session.dictation.isListening && (!session.dictation.live || session.dictation.placed.isEmpty) }
     /// The most the queue tray may take: under half the conversation's room, and never so much
     /// that the transcript keeps less than `transcriptKeeps` beside the box. Worked out from the
     /// room (the keyboard and the bars) and the box, never from the tray itself.

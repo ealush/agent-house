@@ -111,6 +111,9 @@ struct DevicePreferences: Codable, Equatable, Sendable {
     var sessionSort: SessionSort = .project
     /// The queue above the box folded to its one line (what's next), on this device.
     var queueFolded = false
+    /// Dictation puts each part into the box as soon as it's heard, and shows the phone's
+    /// words for what you're saying now (Settings → Voice); off, the words go in when you're done.
+    var wordsAsYouSpeak = true
     var notifications = Notifications()
     /// Agents chosen recently in New session, newest first.
     var recentAgents: [String] = []
@@ -162,7 +165,7 @@ struct DevicePreferences: Codable, Equatable, Sendable {
 
     init() {}
 
-    private enum CodingKeys: String, CodingKey { case appearance, deviceName, stepsHidden, focusMode, keyBar, terminalFontSize, inboxGrouping, notifications, recentAgents, focusFollowsPointer, recentPalette, launchMemory, lastPlace, groupOrder, collapsedGroups, sessionSort, queueFolded }
+    private enum CodingKeys: String, CodingKey { case appearance, deviceName, stepsHidden, focusMode, keyBar, terminalFontSize, inboxGrouping, notifications, recentAgents, focusFollowsPointer, recentPalette, launchMemory, lastPlace, groupOrder, collapsedGroups, sessionSort, queueFolded, wordsAsYouSpeak }
 
     private enum LegacyKeys: String, CodingKey { case keyBarVisible }
 
@@ -188,6 +191,7 @@ struct DevicePreferences: Codable, Equatable, Sendable {
         collapsedGroups = (try? c.decode([String].self, forKey: .collapsedGroups)) ?? []
         sessionSort = (try? c.decode(SessionSort.self, forKey: .sessionSort)) ?? .project
         queueFolded = (try? c.decode(Bool.self, forKey: .queueFolded)) ?? false
+        wordsAsYouSpeak = (try? c.decode(Bool.self, forKey: .wordsAsYouSpeak)) ?? true
     }
 
     enum KeyBarMode: String, Codable, Sendable, CaseIterable {

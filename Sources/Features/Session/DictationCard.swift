@@ -58,13 +58,15 @@ struct DictationCard: View {
             Text(words).font(.ah(.callout)).foregroundStyle(theme.muted)
             Spacer(minLength: 0)
             if dictation.phase == .starting {
-                Button("Cancel") { Task { await dictation.cancel() } }.foregroundStyle(theme.muted)
+                Button("Cancel") { Task { await dictation.cancel(in: composer) } }.foregroundStyle(theme.muted)
             }
         }
     }
 
     private var writing: String {
         switch dictation.route {
+        case .host(let speech) where !dictation.placed.isEmpty:
+            dictation.settings?.cleanup.map { "Tidying it with \($0.name)…" } ?? "Writing down the rest with \(speech)…"
         case .host(let speech): "Writing it down with \(speech)…"
         case .device(let cleanup?): "Tidying it with \(cleanup)…"
         case .device(nil): "Writing it down…"
@@ -82,10 +84,14 @@ struct DictationCard: View {
                     .foregroundStyle(theme.text)
             }
             .accessibilityLabel("Listening")
+            // The words are in the box as you speak: the waves are here instead.
+            if dictation.live && !dictation.placed.isEmpty {
+                DictationWaves(levels: dictation.levels, color: theme.accent).frame(height: 18).frame(maxWidth: 140)
+            }
             Spacer(minLength: 0)
             Button("Cancel") {
                 Haptics.selection()
-                Task { await dictation.cancel() }
+                Task { await dictation.cancel(in: composer) }
             }
             .foregroundStyle(theme.muted)
             .accessibilityIdentifier("dictation-cancel")
@@ -104,7 +110,7 @@ struct DictationCard: View {
             if !dictation.partial.isEmpty {
                 Text(dictation.partial).lineLimit(3).truncationMode(.head).foregroundStyle(theme.text)
             } else if case .host(let speech) = dictation.route {
-                Text("Speak. \(speech) writes it down when you tap Done.").foregroundStyle(theme.muted)
+                Text(dictation.live ? "Speak. Each part goes into the box as \(speech) hears it." : "Speak. \(speech) writes it down when you tap Done.").foregroundStyle(theme.muted)
             } else {
                 Text("Speak. Your words show here as \(dictation.thisDevice) hears them.").foregroundStyle(theme.muted)
             }

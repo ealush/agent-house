@@ -1186,6 +1186,7 @@ private struct VoiceSection: View {
                 tidy(settings)
                 languageSection(settings)
                 words(settings)
+                whileYouSpeak
             } else if model.loaded {
                 Button("Try Again", systemImage: "arrow.clockwise") { Task { await model.load(hostDoesVoice: hostDoesVoice) } }
             } else {
@@ -1293,6 +1294,15 @@ private struct VoiceSection: View {
             Text("Words to Spell Right")
         } footer: {
             Text("Names and terms dictation should write the way you do, like SwiftUI, GRDB or tmux.")
+        }
+    }
+
+    /// This device's own choice, not the host's.
+    private var whileYouSpeak: some View {
+        Section {
+            Toggle("Words as You Speak", isOn: Binding(get: { scene.app.preferences.wordsAsYouSpeak }, set: { scene.app.preferences.wordsAsYouSpeak = $0 }))
+        } footer: {
+            Text("A long dictation is heard in parts of about ten seconds while you speak. On, each goes into the box as soon as it’s heard, and \(device) shows what you’re saying now above it; everything is tidied once you’re done. Off, the words go in when you tap Done.")
         }
     }
 

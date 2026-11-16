@@ -16,7 +16,13 @@ private final class VoiceHost: HTTPTransport, @unchecked Sendable {
     var settings: [String: Any] = ["speech": NSNull(), "cleanup": NSNull(), "style": "clean", "language": "auto", "vocabulary": [], "maxBytes": 26_214_400]
     var dictation: (status: Int, body: [String: Any]) = (200, ["raw": "um fix the build", "text": "Fix the build.", "style": "clean", "speech": "Groq", "cleanedBy": "Claude"])
     var refined: (status: Int, body: [String: Any]) = (200, ["text": "Fix the build.", "cleanedBy": "Claude"])
+    /// What each batch "says", in order (a batched dictation), and how many of the next
+    /// dictate calls fail first.
+    var batchTexts: [String] = []
+    var failing = 0
     private(set) var asked: [(method: String, path: String, query: String?, body: Data?)] = []
+
+    func all(_ path: String) -> [(query: String?, body: Data?)] { lock.withLock { asked.filter { $0.path == path }.map { ($0.query, $0.body) } } }
 
     func paths() -> [String] { lock.withLock { asked.map { "\($0.method) \($0.path)" } } }
     func last(_ path: String) -> (query: String?, body: Data?)? { lock.withLock { asked.last { $0.path == path }.map { ($0.query, $0.body) } } }
@@ -29,7 +35,13 @@ private final class VoiceHost: HTTPTransport, @unchecked Sendable {
         }
         switch url.path {
         case "/api/voice": return answer(200, settings)
-        case "/api/voice/dictate": return answer(dictation.status, dictation.body)
+        case "/api/voice/dictate":
+            let next: (Int, Any) = lock.withLock {
+                if failing > 0 { failing -= 1; return (502, ["error": "speech provider: 503 busy", "code": "voice_provider"]) }
+                if !batchTexts.isEmpty { let t = batchTexts.removeFirst(); return (200, ["raw": t, "text": t, "style": "verbatim", "speech": "Groq", "cleanedBy": NSNull()]) }
+                return (dictation.status, dictation.body)
+            }
+            return answer(next.0, next.1)
         case "/api/voice/refine": return answer(refined.status, refined.body)
         case "/api/voice/models": return answer(200, ["models": ["whisper-large-v3-turbo"]])
         default: return answer(200, ["draft": NSNull()])
@@ -45,6 +57,9 @@ private final class FakeCapture: DictationCapture {
     var heard: String?
     var fromFile = "heard on the device"
     var startError: CaptureError?
+    /// Batches cut while listening (each a file), and the one still open at Done.
+    var batches = 0
+    private(set) var batchFiles: [URL] = []
     private(set) var startedWith: [Locale?] = []
     private(set) var transcribed: [URL] = []
     private(set) var cancelled = false
@@ -60,20 +75,29 @@ private final class FakeCapture: DictationCapture {
         if let startError, locale != nil || startError == .microphoneDenied { throw startError }
         events(.level(0.4))
         if locale != nil, let heard { events(.partial(heard)) }
+        for _ in 0..<batches { events(.batch(newFile())) }
     }
-    func finish() async throws -> CaptureResult { CaptureResult(file: file, text: startedWith.last! == nil ? nil : heard) }
+    func finish() async throws -> CaptureResult {
+        CaptureResult(file: file, text: startedWith.last! == nil ? nil : heard, lastBatch: batches > 0 ? newFile() : nil)
+    }
+    private func newFile() -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("dictation-batch-\(UUID().uuidString).m4a")
+        FileManager.default.createFile(atPath: url.path, contents: Data("aac".utf8))
+        batchFiles.append(url)
+        return url
+    }
     func cancel() async { cancelled = true }
     func transcribe(_ file: URL, locale: Locale) async throws -> String { transcribed.append(file); return fromFile }
 }
 
 @MainActor
-private func bed(_ host: VoiceHost, voice: Bool = true, draft: String = "") -> (DictationModel, ComposerModel, FakeCapture) {
+private func bed(_ host: VoiceHost, voice: Bool = true, draft: String = "", live: Bool = true) -> (DictationModel, ComposerModel, FakeCapture) {
     let api = APIClient(origin: URL(string: "https://desk.example.ts.net")!, transport: host, credentials: AccountCredentials(token: "t", onRejected: {}), device: DeviceDescriptor(name: "iPhone", client: "c"))
     let composer = ComposerModel(api: api, outbox: Outbox(), key: "u1", uid: "u1", isShell: false, draftDebounce: .seconds(3600))
     composer.text = draft
     composer.caret = draft.utf16.count
     let capture = FakeCapture()
-    let model = DictationModel(api: api, thisDevice: "this iPhone", hostDoesVoice: { voice }, makeCapture: { capture })
+    let model = DictationModel(api: api, thisDevice: "this iPhone", hostDoesVoice: { voice }, makeCapture: { capture }, wordsAsYouSpeak: { live })
     return (model, composer, capture)
 }
 
@@ -112,7 +136,7 @@ private var claude: [String: Any] { ["subscriptionId": "s2", "name": "Claude", "
     await model.refresh()
     await model.toggle(into: composer)
     #expect(model.isListening)
-    #expect(capture.startedWith == [nil], "the host hears it: this device only records")
+    #expect(capture.startedWith.count == 1 && capture.startedWith[0] != nil, "the host hears it; this device listens too, for the cleanup's second hearing")
     await model.toggle(into: composer)
     #expect(model.phase == .idle)
     #expect(composer.text == "Then Fix the build.", "at the caret, spaced from the draft; never sent")
@@ -250,7 +274,7 @@ private var claude: [String: Any] { ["subscriptionId": "s2", "name": "Claude", "
 @Test func theFirstTapAfterAColdStartAsksTheHostBeforeGuessing() async {
     let host = VoiceHost()
     host.settings["speech"] = groq
-    let (model, composer, capture) = bed(host)
+    let (model, composer, capture) = bed(host, live: false)
     // No refresh first: the settings aren't known when the microphone is tapped.
     await model.toggle(into: composer)
     #expect(capture.startedWith == [nil], "the host hears it, so this device only records")
@@ -268,5 +292,122 @@ private var claude: [String: Any] { ["subscriptionId": "s2", "name": "Claude", "
     await model.toggle(into: composer)
     #expect(capture.startedWith.count == 2 && capture.startedWith.last! == nil, "tried here, then recorded for the host")
     #expect(model.isListening)
+}
+
+@MainActor
+private func until(_ done: () -> Bool) async {
+    for _ in 0..<400 where !done() { try? await Task.sleep(for: .milliseconds(5)) }
+}
+
+private func query(_ q: String?) -> [String: String] {
+    Dictionary(uniqueKeysWithValues: (URLComponents(string: "x:/?" + (q ?? ""))?.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+}
+
+@MainActor
+@Test func aLongDictationIsHeardInBatchesAndGoesInAsYouSpeak() async throws {
+    let host = VoiceHost()
+    host.settings["speech"] = groq
+    host.settings["cleanup"] = claude
+    host.batchTexts = ["okay so first", "then the second part", "and the last"]
+    host.refined = (200, ["text": "First, the second part, and the last.", "cleanedBy": "Claude"])
+    let (model, composer, capture) = bed(host, draft: "Note:")
+    capture.heard = "okay so first then the second part and the last"
+    capture.batches = 2
+    await model.refresh()
+    await model.toggle(into: composer)
+    #expect(capture.startedWith.map { $0?.identifier } == [Locale.current.identifier], "this device listens too: the words as you speak, and the cleanup's second hearing")
+    await until { composer.text == "Note: okay so first then the second part" }
+    #expect(composer.text == "Note: okay so first then the second part", "each batch goes in as it's heard, after the one before")
+    #expect(model.isListening)
+    await model.toggle(into: composer)
+    #expect(composer.text == "Note: First, the second part, and the last.", "tidied once, in place of what went in as you spoke")
+    #expect(model.last?.raw == "okay so first then the second part and the last")
+
+    let batches = host.all("/api/voice/dictate").map { query($0.query) }
+    #expect(batches.map { $0["style"] } == ["verbatim", "verbatim", "verbatim"], "batches are only heard")
+    #expect(batches.map { $0["context"] } == [nil, "okay so first", "okay so first then the second part"], "each goes with what was heard before it")
+    let refine = try #require(host.last("/api/voice/refine")?.body)
+    #expect(try JSONSerialization.jsonObject(with: refine) as? [String: String] == ["text": "okay so first then the second part and the last", "style": "clean", "phone": "okay so first then the second part and the last"])
+    #expect(capture.batchFiles.allSatisfy { !FileManager.default.fileExists(atPath: $0.path) }, "every batch's file is gone")
+    #expect(!host.paths().contains { $0.hasSuffix("/send") })
+}
+
+@MainActor
+@Test func withoutWordsAsYouSpeakTheBatchesGoInWhenYouAreDone() async {
+    let host = VoiceHost()
+    host.settings["speech"] = groq
+    host.batchTexts = ["one", "two"]
+    let (model, composer, capture) = bed(host, live: false)
+    capture.batches = 1
+    await model.refresh()
+    await model.toggle(into: composer)
+    #expect(capture.startedWith == [nil], "nothing needs this device's words: it only records")
+    try? await Task.sleep(for: .milliseconds(50))
+    #expect(composer.text.isEmpty, "nothing in the box while you speak")
+    await model.toggle(into: composer)
+    #expect(composer.text == "one two")
+}
+
+@MainActor
+@Test func aBatchTheHostCantHearIsHeardByThisDevice() async {
+    let host = VoiceHost()
+    host.settings["speech"] = groq
+    host.batchTexts = ["the rest"]
+    host.failing = 2
+    let (model, composer, capture) = bed(host, live: false)
+    capture.batches = 1
+    capture.fromFile = "the start"
+    await model.refresh()
+    await model.toggle(into: composer)
+    await model.toggle(into: composer)
+    #expect(composer.text == "the start the rest", "tried twice, then this device; the rest by the host")
+    #expect(capture.transcribed.count == 1)
+    #expect(composer.takeEvents() == [.notice("Groq didn’t answer for part of it, so this iPhone wrote that part down.")])
+}
+
+@MainActor
+@Test func cancellingTakesBackWhatWentInAsYouSpoke() async {
+    let host = VoiceHost()
+    host.settings["speech"] = groq
+    host.batchTexts = ["never mind this"]
+    let (model, composer, capture) = bed(host, draft: "Keep")
+    capture.batches = 1
+    await model.refresh()
+    await model.toggle(into: composer)
+    await until { model.placed == "never mind this" }
+    #expect(composer.text == "Keep never mind this")
+    await model.cancel(in: composer)
+    #expect(composer.text.trimmingCharacters(in: .whitespaces) == "Keep")
+    #expect(model.phase == .idle)
+}
+
+@Test func batchesAreCutAtAPauseOnceTheyHoldTenSeconds() {
+    var cutter = BatchCutter()
+    let buffer = 0.085
+    func run(_ seconds: Double, _ level: Float) -> [Double] {
+        var cuts: [Double] = []
+        var t = 0.0
+        while t < seconds - 1e-9 {
+            t += buffer
+            if cutter.take(seconds: buffer, level: level) { cuts.append(t) }
+        }
+        return cuts
+    }
+    _ = run(0.5, 0.1)
+    #expect(run(8, 0.7).isEmpty, "speech")
+    #expect(run(0.6, 0.1).isEmpty, "a pause under ten seconds is no cut")
+    #expect(run(1.5, 0.7).isEmpty, "past ten seconds, still speaking")
+    #expect(run(0.6, 0.1).count == 1, "the first pause past ten seconds")
+    #expect(cutter.length < 0.5, "the next batch starts there")
+    let long = run(29, 0.7)
+    #expect(long.isEmpty, "no pause yet")
+    #expect(run(1, 0.75).isEmpty, "louder: still not a moment to cut")
+    #expect(run(0.2, cutter.floor + 0.15).count == 1, "past thirty seconds, a quieter moment, short of a pause")
+    var steady = BatchCutter()
+    _ = steady.take(seconds: 0.5, level: 0.2)
+    var at: Double?
+    var t = 0.5
+    while at == nil, t < 60 { t += buffer; if steady.take(seconds: buffer, level: 0.9) { at = t } }
+    #expect((40...41).contains(at ?? 0), "forty seconds of one loud sound: cut anyway")
 }
 
