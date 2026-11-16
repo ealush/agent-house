@@ -30,6 +30,10 @@
     </array>
     <key>NSCameraUsageDescription</key>
     <string>Take a photo to attach to a message for your agent.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Dictation hears what you say and writes it into the message box. Nothing is sent until you send it.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>With no speech subscription on your host, dictation is written down on this device.</string>
     <key>NSFaceIDUsageDescription</key>
     <string>Face ID unlocks this device’s key to sign in to your Agent Hub host.</string>
     <key>CFBundleURLTypes</key>

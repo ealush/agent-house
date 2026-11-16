@@ -1720,9 +1720,10 @@ final class SceneModel {
     }
 }
 
-/// The nine settings sections (`../ah/web/settingsMenu.ts`).
+/// The settings sections: the web's nine (`../ah/web/settingsMenu.ts`) and Voice, the app's
+/// own for now (`../ah/docs/spec/14-voice.md`).
 enum SettingsSection: String, CaseIterable, Sendable {
-    case security, appearance, shortcuts, notifications, agents, subscriptions, environment, search, system
+    case security, appearance, shortcuts, notifications, agents, subscriptions, voice, environment, search, system
 
     var title: String {
         switch self {
@@ -1732,6 +1733,7 @@ enum SettingsSection: String, CaseIterable, Sendable {
         case .notifications: return "Notifications"
         case .agents: return "Agents"
         case .subscriptions: return "Subscriptions"
+        case .voice: return "Voice"
         case .environment: return "Environment"
         case .search: return "Search"
         case .system: return "System"
@@ -1746,6 +1748,7 @@ enum SettingsSection: String, CaseIterable, Sendable {
         case .notifications: return "Needs you and finished, on this device"
         case .agents: return "The agents New session offers"
         case .subscriptions: return "Model providers for side chat and review"
+        case .voice: return "Dictation: who hears you, and how it’s tidied"
         case .environment: return "Variables every session starts with"
         case .search: return "The full-text index"
         case .system: return "Hooks, launcher, restart, rebuild, uploads"
@@ -1760,6 +1763,7 @@ enum SettingsSection: String, CaseIterable, Sendable {
         case .notifications: return "bell.badge"
         case .agents: return "person.2.badge.gearshape"
         case .subscriptions: return "key"
+        case .voice: return "mic"
         case .environment: return "list.bullet.indent"
         case .search: return "magnifyingglass"
         case .system: return "gearshape.2"

@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// Settings: the nine sections of the web's Settings, plus this device's accounts. A split on
+/// Settings: the sections of the web's Settings and Voice, plus this device's accounts. A split on
 /// iPad, a push list on iPhone.
 struct SettingsView: View {
     let scene: SceneModel
@@ -85,6 +85,7 @@ private extension SettingsSection {
         case .notifications: return "bell.badge.fill"
         case .agents: return "person.2.fill"
         case .subscriptions: return "key.fill"
+        case .voice: return "mic.fill"
         case .system: return "gearshape.2.fill"
         default: return symbol
         }
@@ -99,6 +100,7 @@ private extension SettingsSection {
         case .notifications: return .red
         case .agents: return .orange
         case .subscriptions: return .green
+        case .voice: return .pink
         case .environment: return .teal
         case .search: return .purple
         case .system: return Color(white: 0.45)
@@ -120,6 +122,7 @@ private struct SettingsDetail: View {
             case .notifications: NotificationsSection(app: scene.app, account: account)
             case .agents: AgentsSection(model: AgentsSettings(api: account.api))
             case .subscriptions: SubscriptionsSection(model: SubscriptionsSettings(api: account.api))
+            case .voice: VoiceSection(model: VoiceSettingsModel(api: account.api), scene: scene)
             case .environment: EnvironmentSection(model: EnvironmentSettings(api: account.api))
             case .search: SearchSection(model: SearchSettings(api: account.api))
             case .system: SystemSection(model: SystemSettings(api: account.api), scene: scene)
@@ -1134,6 +1137,228 @@ private struct SubscriptionEditor: View {
                 }
             }
         }
+    }
+}
+
+// MARK: Voice
+
+/// Settings → Voice (`../ah/docs/spec/14-voice.md`): who hears a dictation, who tidies it
+/// and how, the language, the words to spell right, and this device's side (the microphone,
+/// its own speech for the language).
+private struct VoiceSection: View {
+    @State var model: VoiceSettingsModel
+    let scene: SceneModel
+    @State private var providers: SubscriptionsSettings
+    @State private var adding: SubscriptionDraft?
+    @State private var word = ""
+    @State private var microphone = DeviceSpeech.microphone
+    @State private var readiness: DeviceSpeech.Readiness?
+    @State private var downloaded: Double?
+    @Environment(\.theme) private var theme
+    @Environment(\.openURL) private var openURL
+
+    init(model: VoiceSettingsModel, scene: SceneModel) {
+        _model = State(initialValue: model)
+        self.scene = scene
+        _providers = State(initialValue: SubscriptionsSettings(api: model.api))
+    }
+
+    /// Whether the host does voice, by its state's `features`; nil until that's in.
+    private var hostDoesVoice: Bool? { scene.hub?.state(host: nil).map { $0.supports("voice") } }
+    private var device: String { DeviceSpeech.thisDevice }
+    private var Device: String { device.prefix(1).uppercased() + device.dropFirst() }
+    private var locale: Locale { (model.settings ?? VoiceSettings()).locale }
+    private var language: String { DeviceSpeech.name(of: locale) }
+    /// A Groq or OpenAI key is there to hear you.
+    private var hasSpeechProvider: Bool {
+        model.subscriptions.contains { ["groq", "openai"].contains(SubscriptionsSettings.provider(for: $0.baseUrl)?.id) }
+    }
+
+    var body: some View {
+        AhForm {
+            if let error = model.error { Banner(text: error, tone: .error).formBanner() }
+            if model.hostDoesVoice == false {
+                Section {
+                    Text("This host’s Agent Hub can’t hear dictation yet. Until it’s updated, \(device) writes down what you say.").foregroundStyle(theme.muted)
+                }
+            } else if let settings = model.settings {
+                speech(settings)
+                tidy(settings)
+                languageSection(settings)
+                words(settings)
+            } else if model.loaded {
+                Button("Try Again", systemImage: "arrow.clockwise") { Task { await model.load(hostDoesVoice: hostDoesVoice) } }
+            } else {
+                ProgressView()
+            }
+            onDevice
+        }
+        .task { await checkDevice() }
+        // Again once the host's state is in (a link can open the page before it is).
+        .task(id: hostDoesVoice) { await model.load(hostDoesVoice: hostDoesVoice) }
+        .sheet(item: Binding(get: { adding.map { SubscriptionsSection.IdentifiedDraft(draft: $0) } }, set: { adding = $0?.draft })) { item in
+            SubscriptionEditor(model: providers, draft: item.draft) {
+                adding = nil
+                Task { await model.added() }
+            }
+        }
+    }
+
+    @ViewBuilder private func speech(_ settings: VoiceSettings) -> some View {
+        Section {
+            Picker("Hears You", selection: Binding(get: { settings.speech?.subscriptionId }, set: { id in Task { await model.hearWith(id) } })) {
+                Text(Device).tag(String?.none)
+                ForEach(model.subscriptions) { s in Text(s.name).tag(Optional(s.id)) }
+            }
+            if let speech = settings.speech {
+                Picker("Model", selection: Binding(get: { speech.model }, set: { m in Task { await model.setSpeechModel(m) } })) {
+                    ForEach(Self.including(model.speechModels, speech.model), id: \.self) { Text($0).tag($0) }
+                }
+            }
+            if !hasSpeechProvider, let groq = SubscriptionsSettings.presets.first(where: { $0.id == "groq" }) {
+                Button("Add a Groq Key…", systemImage: "plus") {
+                    adding = SubscriptionDraft(name: groq.name, baseUrl: groq.baseUrl, model: groq.model)
+                }
+            }
+        } header: {
+            Text("Speech to Text")
+        } footer: {
+            if let speech = settings.speech {
+                Text("Recordings go through your host to \(speech.name). Its key stays on the host.")
+            } else {
+                Text("\(Device) writes down what you say: free, private, and the words show as you speak. A Groq or OpenAI key on the host hears more languages and code words better.")
+            }
+        }
+    }
+
+    @ViewBuilder private func tidy(_ settings: VoiceSettings) -> some View {
+        Section {
+            Picker("Tidied By", selection: Binding(get: { settings.cleanup?.subscriptionId }, set: { id in Task { await model.tidyWith(id) } })) {
+                Text("Nobody").tag(String?.none)
+                ForEach(model.subscriptions) { s in Text(s.name).tag(Optional(s.id)) }
+            }
+            if let cleanup = settings.cleanup {
+                Picker("Model", selection: Binding(get: { cleanup.model }, set: { m in Task { await model.setCleanupModel(m) } })) {
+                    ForEach(Self.including(model.chatModels, cleanup.model), id: \.self) { Text($0).tag($0) }
+                }
+                Picker("Style", selection: Binding(get: { settings.style }, set: { s in Task { await model.setStyle(s) } })) {
+                    ForEach(VoiceStyle.allCases) { Text($0.title).tag($0) }
+                }
+            }
+        } header: {
+            Text("Tidy Up")
+        } footer: {
+            if settings.cleanup == nil {
+                Text("Your words go in as said.")
+            } else {
+                Text("\(settings.style.summary) It never adds or answers anything, and Use What I Said puts your own words back.")
+            }
+        }
+    }
+
+    @ViewBuilder private func languageSection(_ settings: VoiceSettings) -> some View {
+        Section {
+            Picker("Language", selection: Binding(get: { settings.language }, set: { code in
+                Task {
+                    await model.setLanguage(code)
+                    await checkDevice()
+                }
+            })) {
+                Text("Automatic").tag("auto")
+                ForEach(VoiceSettingsModel.languages(including: settings.language), id: \.self) { code in
+                    Text(Locale.current.localizedString(forLanguageCode: code) ?? code).tag(code)
+                }
+            }
+        } footer: {
+            Text("What the speech model listens for. Automatic hears any language; \(device) then listens for \(DeviceSpeech.name(of: .current)).")
+        }
+    }
+
+    @ViewBuilder private func words(_ settings: VoiceSettings) -> some View {
+        Section {
+            ForEach(settings.vocabulary, id: \.self) { w in
+                Text(w)
+                    .swipeActions { Button { Task { await model.removeWord(w) } } label: { Image(systemName: "trash") }.accessibilityLabel("Remove").tint(theme.swipe(\.danger)) }
+            }
+            TextField("Add a Word", text: $word)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.done)
+                .onSubmit {
+                    let w = word
+                    word = ""
+                    Task { await model.addWord(w) }
+                }
+        } header: {
+            Text("Words to Spell Right")
+        } footer: {
+            Text("Names and terms dictation should write the way you do, like SwiftUI, GRDB or tmux.")
+        }
+    }
+
+    private var onDevice: some View {
+        Section {
+            LabeledContent("Microphone") {
+                switch microphone {
+                case .allowed: Text("Allowed")
+                case .notAsked:
+                    Button("Allow") {
+                        Task {
+                            _ = await DeviceSpeech.askForMicrophone()
+                            microphone = DeviceSpeech.microphone
+                        }
+                    }
+                case .off:
+                    Button("Turn On in Settings") { if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) } }
+                }
+            }
+            LabeledContent(language) {
+                if let downloaded {
+                    ProgressView(value: downloaded).frame(maxWidth: 120)
+                } else {
+                    switch readiness {
+                    case .ready: Text("Ready")
+                    case .download: Button("Download") { download() }
+                    case .downloading: Text("Downloading…")
+                    case .unavailable: Text("Not Available")
+                    case nil: ProgressView()
+                    }
+                }
+            }
+        } header: {
+            Text("On \(Device)")
+        } footer: {
+            if readiness == .unavailable {
+                Text("\(Device) can’t write down \(language). A speech subscription can.")
+            } else if let speech = model.settings?.speech {
+                Text("Used when \(speech.name) can’t be reached.")
+            } else {
+                Text("Dictation is written down here; nothing leaves \(device) unless a subscription tidies it.")
+            }
+        }
+    }
+
+    private func checkDevice() async {
+        microphone = DeviceSpeech.microphone
+        readiness = await DeviceSpeech.readiness(for: locale)
+    }
+
+    private func download() {
+        downloaded = 0
+        Task {
+            do {
+                try await DeviceSpeech.download(for: locale) { downloaded = $0 }
+            } catch {
+                scene.toast("Couldn’t download \(language): \(error.localizedDescription)", error: true)
+            }
+            downloaded = nil
+            await checkDevice()
+        }
+    }
+
+    /// A list that also has the value set now, in its order, then that value.
+    static func including(_ listed: [String], _ current: String) -> [String] {
+        listed.contains(current) || current.isEmpty ? listed : listed + [current]
     }
 }
 

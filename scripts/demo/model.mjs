@@ -74,6 +74,11 @@ function reviewerReply(system, question) {
   return JSON.stringify({ content, followups: [], findings });
 }
 
+// Voice (ah docs/spec/14-voice.md): it can't hear, so every recording "says" the same, and the
+// cleanup tidies that sentence the way a real one would. Both say they're the demo's.
+const HEARD = "um so the demo host can't really hear you but this is where your words would go";
+const TIDIED = "The demo host can't really hear you, but this is where your words would go.";
+
 function chatReply(question) {
   return `You asked: “${question.slice(0, 200)}”.\n\nThis is the demo host's scripted model, so there's no real answer here: pick a real subscription in Settings → Subscriptions for that.\n\n${NOTE}`;
 }
@@ -87,7 +92,13 @@ export function startModel({ delay = 4000 } = {}) {
       res.writeHead(code, { 'content-type': 'application/json' });
       res.end(JSON.stringify(body));
     };
-    if (req.method === 'GET' && req.url === '/v1/models') return send(200, { data: [{ id: 'demo-briefer', created: 0, object: 'model' }] });
+    if (req.method === 'GET' && req.url === '/v1/models') return send(200, { data: [{ id: 'demo-briefer', created: 0, object: 'model' }, { id: 'demo-whisper', created: 0, object: 'model' }] });
+    if (req.method === 'POST' && req.url === '/v1/audio/transcriptions') {
+      let bytes = 0;
+      for await (const chunk of req) bytes += chunk.length;
+      await new Promise((r) => setTimeout(r, 900));
+      return send(200, { text: bytes > 0 ? HEARD : '', language: 'english', duration: 3.1 });
+    }
     if (req.method !== 'POST' || req.url !== '/v1/chat/completions') return send(404, { error: { message: 'not found' } });
     let body = '';
     for await (const chunk of req) body += chunk;
@@ -103,6 +114,9 @@ export function startModel({ delay = 4000 } = {}) {
     if (system.includes('Write a briefing')) {
       await new Promise((r) => setTimeout(r, delay));
       content = briefing(last);
+    } else if (system.includes('You edit dictated speech')) {
+      await new Promise((r) => setTimeout(r, 700));
+      content = last.includes(HEARD) ? TIDIED : last.replace(/<\/?transcript>/g, '').trim();
     } else if (system.includes('Reply with ONLY a JSON object')) {
       await new Promise((r) => setTimeout(r, 1200));
       content = reviewerReply(system, last);

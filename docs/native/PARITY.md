@@ -214,7 +214,7 @@ Evidence shorthand used below: **UT** = `swift test` (Linux, Swift 6.2); **IT** 
 | F-141 | **Notifications:** enable, Needs you, Finished toggle per device | P0 | NotificationsSection, PushRegistrar, LocalAlerts, AlertJanitor | implemented | [AUDIT.md:254](../../AUDIT.md#L254); ah APNs tests; without push (a Personal Team build) the app posts the same alerts itself while it runs (Mac in the background, iPad beside another app, the grace period after leaving with a session at work); no banner for the session on screen, Notification Center only while the app is in front, alerts leave once answered or opened; leaving the app stops being a viewer, so a turn that ends meanwhile isn't taken as seen; UT AlertRules/AlertWatcher; simulator walk |
 | F-142 | **Agents:** show/hide from New session, installed CLI names/versions, check updates | P1 | AgentsSection | implemented | [AUDIT.md:255](../../AUDIT.md#L255); UI |
 | F-143 | **Agents:** add arbitrary CLI command / remove custom preset | P2 | AgentsSection | implemented | [AUDIT.md:256](../../AUDIT.md#L256); UI |
-| F-144 | **Subscriptions:** provider presets Claude/OpenAI/Gemini/Muse/Other; name, URL, model, key | P1 | SubscriptionsSection | implemented | [AUDIT.md:257](../../AUDIT.md#L257); UI |
+| F-144 | **Subscriptions:** provider presets Claude/OpenAI/Gemini/Muse/Groq/Other; name, URL, model, key | P1 | SubscriptionsSection | implemented | [AUDIT.md:257](../../AUDIT.md#L257); UI |
 | F-145 | **Subscriptions:** active default, per-chat/review/briefing choice, model discovery, edit/delete | P1 | SubscriptionsSection, ChatPanel | implemented | [AUDIT.md:258](../../AUDIT.md#L258); default, discovery, per-chat, briefing choice; UI |
 | F-146 | **Subscriptions:** optionally expose key to launched sessions via named env var | P1 | SubscriptionEditor | implemented | [AUDIT.md:259](../../AUDIT.md#L259); UI |
 | F-147 | **Environment:** add/edit/delete global values, secret mask, stale running sessions, restart one/all idle | P1 | EnvironmentSection | implemented | [AUDIT.md:260](../../AUDIT.md#L260); UI |
@@ -434,7 +434,7 @@ Source: SPEC P1 widget list, F-058 and `../ah/web/gui/widgets.tsx`/`docs/gui.md`
 | [ ] | W-11 | `diff`: safe code comparison with readable additions/deletions — *WidgetView; UI* | P1 | implemented |
 | [ ] | W-12 | Unknown/malformed/oversized widget: safe readable fallback; never execute arbitrary content — *WidgetView; UI* | P1 | implemented |
 
-### All nine settings sections
+### All settings sections
 
 Source: SPEC settings, F-134–F-152 and the source files named in each group. Native destination: UIKit Settings routing and SwiftUI settings forms backed by the appropriate device preferences or host APIs. All nine sections are built in `Sources/Features/Settings/SettingsView.swift` against the host APIs and device preferences; none has run on an Apple platform yet.
 
@@ -500,6 +500,11 @@ Source: SPEC settings, F-134–F-152 and the source files named in each group. N
 | [ ] | SET-58 | System — restart host service with confirmation and reconnect/result handling — *SettingsView; UI* | P2 | implemented |
 | [ ] | SET-59 | System — uploads disk-usage display — *the source has no uploads-usage endpoint* | P2 | substituted |
 | [ ] | SET-60 | System — clear uploads with confirmation and actual result — *SettingsView; UI* | P2 | implemented |
+| [x] | SET-61 | Voice — who hears a dictation: this device, or a host subscription with its speech model; Add a Groq Key… — *VoiceSection, VoiceSettingsModel* | P1 | verified: VoiceSettingsTests; simulator tour 2026-11-16 (demo host on ah voice/1) |
+| [x] | SET-62 | Voice — who tidies it (or nobody), its chat model, style As Said / Clean / Structured — *VoiceSection* | P1 | verified: VoiceSettingsTests; simulator tour 2026-11-16 |
+| [x] | SET-63 | Voice — language hint, words to spell right — *VoiceSection* | P2 | verified: VoiceSettingsTests; simulator tour 2026-11-16 |
+| [ ] | SET-64 | Voice — on this device: microphone permission, the language's on-device model (Ready / Download / Not Available) — *VoiceSection, DeviceSpeech* | P2 | implemented: simulator shows Allow and Download; downloading needs a device |
+| [x] | SET-65 | Voice — a host without `features.voice` says the device writes dictation down until it's updated — *VoiceSection* | P2 | verified: VoiceSettingsTests |
 
 Source mapping: Security `../ah/web/Security.tsx`; Appearance `web/Appearance.tsx`/`theme.ts`; Shortcuts `web/shortcuts.tsx`/`shortcuts.ts`; Notifications `web/NotifyDialog.tsx`/`notify.ts`; Agents `web/AgentsSettings.tsx`; Subscriptions `web/Subscriptions.tsx`/`SubscriptionPicker.tsx`; Environment `web/Environment.tsx`; Search `web/SearchSettings.tsx`; System `web/System.tsx`. All are relative to `../ah`. Device appearance, keymap, notification opt-in, layouts, surface/hide-steps/keyboard preferences, Inbox grouping and agent recents also need deliberate native preference storage; none is implemented.
 
