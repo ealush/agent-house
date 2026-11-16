@@ -231,11 +231,14 @@ final class DictationModel {
         let phone = live || (settings?.cleanup != nil && settings?.style != .verbatim)
         let onDevice: Locale? = if case .host = route, !phone { nil } else { (settings ?? VoiceSettings()).locale }
         let events: @MainActor (CaptureEvent) -> Void = { [weak self] event in
-            // Only this dictation's: a cancelled one's last words are nobody's.
-            guard let self, self.attempt == mine, self.phase == .starting || self.isListening else {
+            guard let self else { return }
+            // A cancelled dictation's last words are nobody's: its late batches go.
+            guard self.attempt == mine else {
                 if case .batch(let file) = event { try? FileManager.default.removeItem(at: file) }
                 return
             }
+            // This one's, once it stopped listening: Done hands back every batch cut (`finish`).
+            guard self.phase == .starting || self.isListening else { return }
             switch event {
             case .level(let v):
                 self.level = v
@@ -457,16 +460,26 @@ final class DictationModel {
         }
     }
 
-    /// Where `before` became `after` (UTF-16): the changed stretch's start and end in `before`,
-    /// and how much longer it got; nil for no change.
+    /// Where `before` became `after` (UTF-16): the stretch of `before` that may have changed,
+    /// its start and end, and how much longer it got; nil for no change. Two snapshots can't
+    /// say which of two same words was edited ("Repeat.Repeat." to "Repeat." is either copy
+    /// gone), so the stretch covers every place the change could have been: what's in it is
+    /// no longer known to be ours.
     nonisolated static func change(from before: String, to after: String) -> (start: Int, oldEnd: Int, delta: Int)? {
         let old = Array(before.utf16), new = Array(after.utf16)
         guard old != new else { return nil }
-        var start = 0
-        while start < old.count, start < new.count, old[start] == new[start] { start += 1 }
+        let shorter = min(old.count, new.count)
+        // As early as it could be: the longest shared start, then the shared end.
+        var head = 0
+        while head < shorter, old[head] == new[head] { head += 1 }
         var tail = 0
-        while tail < old.count - start, tail < new.count - start, old[old.count - 1 - tail] == new[new.count - 1 - tail] { tail += 1 }
-        return (start, old.count - tail, new.count - old.count)
+        while tail < shorter - head, old[old.count - 1 - tail] == new[new.count - 1 - tail] { tail += 1 }
+        // As late as it could be: the longest shared end, then the shared start.
+        var lateTail = 0
+        while lateTail < shorter, old[old.count - 1 - lateTail] == new[new.count - 1 - lateTail] { lateTail += 1 }
+        var lateHead = 0
+        while lateHead < shorter - lateTail, old[lateHead] == new[lateHead] { lateHead += 1 }
+        return (min(head, lateHead), max(old.count - tail, old.count - lateTail), new.count - old.count)
     }
 
     /// Once you're done: the last batch heard, the batches' words tidied once (with this

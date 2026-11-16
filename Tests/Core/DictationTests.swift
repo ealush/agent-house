@@ -62,6 +62,9 @@ private final class FakeCapture: DictationCapture {
     /// Batches cut whose word never reached the model before Done (returned only by finish).
     var unannounced = 0
     var slowStart = false
+    /// A batch whose word reaches the model only after Done (as the audio thread's can).
+    var late = false
+    private var events: (@MainActor (CaptureEvent) -> Void)?
     private(set) var batchFiles: [URL] = []
     private(set) var startedWith: [Locale?] = []
     private(set) var transcribed: [URL] = []
@@ -75,6 +78,7 @@ private final class FakeCapture: DictationCapture {
 
     func start(transcribing locale: Locale?, events: @escaping @MainActor (CaptureEvent) -> Void) async throws {
         startedWith.append(locale)
+        self.events = events
         if slowStart { try? await Task.sleep(for: .milliseconds(150)) }
         if let startError, locale != nil || startError == .microphoneDenied { throw startError }
         events(.level(0.4))
@@ -83,7 +87,12 @@ private final class FakeCapture: DictationCapture {
     }
     func finish() async throws -> CaptureResult {
         let announced = batchFiles
-        let quiet = (0..<unannounced).map { _ in newFile() }
+        var quiet = (0..<unannounced).map { _ in newFile() }
+        if late {
+            let file = newFile()
+            events?(.batch(file))
+            quiet.append(file)
+        }
         return CaptureResult(file: file, text: startedWith.last! == nil ? nil : heard, lastBatch: batches + unannounced > 0 ? newFile() : nil, batches: announced + quiet)
     }
     private func newFile() -> URL {
@@ -279,6 +288,8 @@ private var claude: [String: Any] { ["subscriptionId": "s2", "name": "Claude", "
     #expect(DictationModel.replacing("Fix it.", at: 0, in: "edited away", with: "x") == nil)
     #expect(DictationModel.change(from: "abc", to: "aXbc")! == (1, 1, 1))
     #expect(DictationModel.change(from: "abc", to: "ac")! == (1, 2, -1))
+    #expect(DictationModel.change(from: "Repeat.Repeat.", to: "Repeat.")! == (0, 14, -7), "either copy could be the one gone")
+    #expect(DictationModel.change(from: "aa", to: "aaa")! == (0, 2, 1), "a letter added to a run could be anywhere in it")
     #expect(DictationModel.change(from: "abc", to: "abc") == nil)
     #expect(DictationModel.replacing("Fix it.", at: 5, in: "שלום Fix it.", with: "fix it")!.caret == "שלום fix it".utf16.count)
 }
@@ -555,5 +566,37 @@ private func query(_ q: String?) -> [String: String] {
     try? await Task.sleep(for: .milliseconds(50))
     #expect(model.phase == .idle, "no Try Again for a session that's gone")
     #expect(!FileManager.default.fileExists(atPath: capture.file.path))
+}
+
+@MainActor
+@Test func review3_deletingOneOfTwoSameCopiesTakesNothingOfYours() async {
+    let host = VoiceHost()
+    host.settings["speech"] = groq
+    host.batchTexts = ["Repeat."]
+    let (model, composer, capture) = bed(host, draft: "Repeat.")
+    composer.caret = 0
+    capture.batches = 1
+    await model.refresh()
+    await model.toggle(into: composer)
+    await until { model.placed == "Repeat." }
+    #expect(composer.text == "Repeat.Repeat.")
+    composer.text = "Repeat."
+    await model.cancel(in: composer)
+    #expect(composer.text == "Repeat.", "which copy went can't be told, so neither is taken")
+}
+
+@MainActor
+@Test func review3_aBatchWhoseWordArrivesAfterDoneIsStillHeard() async {
+    let host = VoiceHost()
+    host.settings["speech"] = groq
+    host.batchTexts = ["first", "late", "tail"]
+    let (model, composer, capture) = bed(host, live: false)
+    capture.batches = 1
+    capture.late = true
+    await model.refresh()
+    await model.toggle(into: composer)
+    await model.toggle(into: composer)
+    #expect(composer.text == "first late tail", "heard by the host from its file, not lost or left to the device")
+    #expect(capture.transcribed.isEmpty)
 }
 
