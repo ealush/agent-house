@@ -31,7 +31,7 @@ struct CaptureResult: Sendable, Equatable {
 }
 
 enum CaptureEvent: Sendable, Equatable {
-    /// Loudness now, 0…1, for the meter.
+    /// Loudness now, 0…1, about thirty times a second, for the waves.
     case level(Float)
     /// What this device has heard so far (it may still change).
     case partial(String)
@@ -119,9 +119,11 @@ final class DictationModel {
 
     private(set) var phase: Phase = .idle
     private(set) var level: Float = 0
-    /// Loudness over the last few seconds, oldest first (about 20 a second): the box's waves.
+    /// Loudness over the last few seconds, oldest first (about 30 a second): the box's waves.
     private(set) var levels: [Float] = []
-    static let levelsKept = 96
+    /// How many levels have come in all, this dictation: the waves take them in order.
+    private(set) var levelCount = 0
+    static let levelsKept = 120
     /// This device's words so far, while it listens.
     private(set) var partial = ""
     private(set) var last: Inserted?
@@ -211,6 +213,7 @@ final class DictationModel {
         partial = ""
         level = 0
         levels = []
+        levelCount = 0
         live = wantsWordsAsYouSpeak()
         placed = ""
         editedLive = false
@@ -243,6 +246,7 @@ final class DictationModel {
             case .level(let v):
                 self.level = v
                 self.levels.append(v)
+                self.levelCount += 1
                 if self.levels.count > Self.levelsKept { self.levels.removeFirst(self.levels.count - Self.levelsKept) }
             case .partial(let words): self.partial = words
             case .interrupted: Task { await self.finish(into: composer) }
@@ -325,6 +329,7 @@ final class DictationModel {
         partial = ""
         level = 0
         levels = []
+        levelCount = 0
         await stopping?.value
     }
 
@@ -600,6 +605,7 @@ final class DictationModel {
         partial = ""
         level = 0
         levels = []
+        levelCount = 0
     }
 
     private func discardKept() {

@@ -283,7 +283,10 @@ private final class CaptureTap: @unchecked Sendable {
     private var feed: AsyncStream<AnalyzerInput>.Continuation?
     private let level: @Sendable (Float) -> Void
     private let cut: @Sendable (URL) -> Void
-    private var lastLevel = Date.distantPast
+    /// The meter's window (a thirtieth of a second): a buffer holds several (the engine's are
+    /// about 85 ms), so the waves get thirty readings a second rather than twelve.
+    private var windowSquares: Float = 0
+    private var windowFrames = 0
 
     init(file: AVAudioFile, batch: (AVAudioFile, URL), newBatch: @escaping @Sendable () throws -> (AVAudioFile, URL), converter: AVAudioConverter?, feed: AsyncStream<AnalyzerInput>.Continuation?, level: @escaping @Sendable (Float) -> Void, cut: @escaping @Sendable (URL) -> Void) {
         self.file = file
@@ -318,11 +321,21 @@ private final class CaptureTap: @unchecked Sendable {
                 self.batch = try? newBatch()
             }
         }
-        // The meter at about 20 a second: more is only work for the main thread.
-        let now = Date()
-        if now.timeIntervalSince(lastLevel) > 0.05 {
-            lastLevel = now
-            level(loud)
+        meter(buffer)
+    }
+
+    /// The buffer's loudness in windows of a thirtieth of a second, each sent on its own.
+    private func meter(_ buffer: AVAudioPCMBuffer) {
+        guard let samples = buffer.floatChannelData?[0] else { return }
+        let window = max(1, Int(buffer.format.sampleRate / 30))
+        for i in 0..<Int(buffer.frameLength) {
+            windowSquares += samples[i] * samples[i]
+            windowFrames += 1
+            if windowFrames >= window {
+                level(Self.loudness(rms: (windowSquares / Float(windowFrames)).squareRoot()))
+                windowSquares = 0
+                windowFrames = 0
+            }
         }
     }
 
@@ -369,7 +382,10 @@ private final class CaptureTap: @unchecked Sendable {
         guard let samples = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return 0 }
         var sum: Float = 0
         for i in 0..<Int(buffer.frameLength) { sum += samples[i] * samples[i] }
-        let rms = (sum / Float(buffer.frameLength)).squareRoot()
+        return loudness(rms: (sum / Float(buffer.frameLength)).squareRoot())
+    }
+
+    private static func loudness(rms: Float) -> Float {
         let db = 20 * log10(max(rms, 1e-7))
         return max(0, min(1, (db + 50) / 50))
     }

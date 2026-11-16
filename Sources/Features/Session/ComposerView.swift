@@ -226,7 +226,7 @@ struct ComposerView: View {
                 .opacity(listening ? (composer.text.isEmpty ? 0 : 0.12) : 1)
                 .overlay {
                     if listening {
-                        DictationWaves(levels: session.dictation.levels, color: theme.accent)
+                        DictationWaves(levels: session.dictation.levels, count: session.dictation.levelCount, color: theme.accent)
                             .frame(height: min(28, max(16, textHeight - 8)))
                             .padding(.leading, attachSize.width + 6)
                             .padding(.trailing, sendSize.width + 6)

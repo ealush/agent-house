@@ -179,7 +179,7 @@ private var claude: [String: Any] { ["subscriptionId": "s2", "name": "Claude", "
     await model.toggle(into: composer)
     #expect(capture.startedWith.map { $0?.identifier } == ["he"], "this device listens, in the host's language")
     #expect(model.partial == "um fix the build", "its words show as it hears them")
-    #expect(model.levels == [0.4], "how loud, for the box's waves")
+    #expect(model.levels == [0.4] && model.levelCount == 1, "how loud, for the box's waves")
     await model.toggle(into: composer)
     #expect(composer.text == "Fix the build.")
     #expect(model.last?.heardBy == "this iPhone")
@@ -275,7 +275,7 @@ private var claude: [String: Any] { ["subscriptionId": "s2", "name": "Claude", "
     await model.cancel()
     #expect(capture.cancelled)
     #expect(model.phase == .idle)
-    #expect(model.levels.isEmpty, "the waves go with it")
+    #expect(model.levels.isEmpty && model.levelCount == 0, "the waves go with it")
     #expect(composer.text == "draft")
 }
 

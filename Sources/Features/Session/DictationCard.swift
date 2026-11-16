@@ -87,7 +87,7 @@ struct DictationCard: View {
             // The words are in the box as you speak: the waves are here instead.
             if dictation.live && !dictation.placed.isEmpty {
                 // What's left of the row once the buttons have theirs.
-                DictationWaves(levels: dictation.levels, color: theme.accent).frame(height: 18).frame(maxWidth: 110).layoutPriority(-1)
+                DictationWaves(levels: dictation.levels, count: dictation.levelCount, color: theme.accent).frame(height: 18).frame(maxWidth: 110).layoutPriority(-1)
             }
             Spacer(minLength: 0)
             Button("Cancel") {
@@ -110,10 +110,10 @@ struct DictationCard: View {
         Group {
             if !dictation.partial.isEmpty {
                 Text(dictation.partial).lineLimit(3).truncationMode(.head).foregroundStyle(theme.text)
-            } else if case .host(let speech) = dictation.route {
-                Text(dictation.live ? "Speak. Each part goes into the box as \(speech) hears it." : "Speak. \(speech) writes it down when you tap Done.").foregroundStyle(theme.muted)
+            } else if case .host = dictation.route {
+                Text(dictation.live ? "Listening… your words go into the box as they’re heard." : "Listening… tap Done when you’re finished.").foregroundStyle(theme.muted)
             } else {
-                Text("Speak. Your words show here as \(dictation.thisDevice) hears them.").foregroundStyle(theme.muted)
+                Text("Listening…").foregroundStyle(theme.muted)
             }
         }
         .font(.ah(.callout))
@@ -154,32 +154,108 @@ struct DictationCard: View {
 /// While dictation listens, across the box where the text goes: what the microphone hears, a
 /// line for each moment, the newest beside the microphone and the oldest fading out at the
 /// far end. Before any sound, a row of dots: it's on, and waiting for you. Drawn over the box
-/// (its size never changes for it), in a canvas: about twenty new lines a second.
+/// (its size never changes for it). The lines keep their own clock (`WaveTape`): one every
+/// thirtieth of a second, eased, gliding left at the screen's own rate, however unevenly the
+/// microphone's readings arrive.
 struct DictationWaves: View {
     let levels: [Float]
+    /// How many readings came in all; the newest is `levels.last`.
+    let count: Int
     let color: Color
-    /// One line and the gap after it.
-    private static let pitch: CGFloat = 4.5
-    private static let line: CGFloat = 2.5
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var tape = WaveTape()
 
     var body: some View {
-        Canvas { context, size in
-            let count = max(1, Int(size.width / Self.pitch))
-            let recent = Array(levels.suffix(count))
-            let middle = size.height / 2
-            for slot in 0..<count {
-                // Slot 0 is the newest, at the trailing end.
-                let level = slot < recent.count ? recent[recent.count - 1 - slot] : 0
-                // Quiet stays a dot; speech rises fast (the meter is linear in dB).
-                let shaped = CGFloat(pow(max(0, (level - 0.18) / 0.82), 1.3))
-                let height = max(Self.line, shaped * size.height)
-                let x = size.width - CGFloat(slot) * Self.pitch - Self.line
-                guard x >= 0 else { break }
-                let fade = 1 - 0.75 * CGFloat(slot) / CGFloat(count)
-                let rect = CGRect(x: x, y: middle - height / 2, width: Self.line, height: height)
-                context.fill(Capsule().path(in: rect), with: .color(color.opacity(fade)))
+        TimelineView(.animation(paused: reduceMotion)) { context in
+            Canvas { gc, size in
+                let glide = reduceMotion ? tape.jump(levels: levels, count: count) : tape.advance(to: context.date, levels: levels, count: count)
+                tape.draw(in: &gc, size: size, color: color, glide: glide)
             }
         }
         .accessibilityHidden(true)
+    }
+}
+
+/// The waves' lines: added at a steady pace from the readings in order, each eased toward its
+/// reading (quick to rise, slower to fall), and how far the newest has slid in so far.
+@MainActor
+final class WaveTape {
+    static let rate: Double = 30
+    private static let pitch: CGFloat = 4
+    private static let line: CGFloat = 2.2
+    /// Eased heights, 0…1, newest last.
+    private var lines: [CGFloat] = []
+    private var shown: CGFloat = 0
+    /// Readings taken so far (of `count`).
+    private var taken = 0
+    private var clock: Date?
+
+    /// Lines due since the last frame, and how far into the next step it is (0…1).
+    func advance(to now: Date, levels: [Float], count: Int) -> CGFloat {
+        if count < taken { reset() }
+        guard let last = clock else {
+            clock = now
+            return 0
+        }
+        let step = 1 / Self.rate
+        var elapsed = now.timeIntervalSince(last)
+        // Back from a pause (the app away): not a burst of lines all at once.
+        if elapsed > 0.5 { elapsed = step }
+        while elapsed >= step {
+            addLine(levels: levels, count: count)
+            elapsed -= step
+        }
+        clock = now.addingTimeInterval(-elapsed)
+        return CGFloat(elapsed / step)
+    }
+
+    /// Reduce Motion: no sliding, a line per reading as it comes.
+    func jump(levels: [Float], count: Int) -> CGFloat {
+        if count < taken { reset() }
+        while taken < count { addLine(levels: levels, count: count) }
+        return 0
+    }
+
+    private func reset() {
+        lines = []
+        shown = 0
+        taken = 0
+        clock = nil
+    }
+
+    private func addLine(levels: [Float], count: Int) {
+        // Fallen behind (readings came in a burst): skip to the last few.
+        if count - taken > 4 { taken = count - 2 }
+        let target: CGFloat
+        let index = levels.count - (count - taken)
+        if taken < count, levels.indices.contains(index) {
+            target = Self.shaped(levels[index])
+            taken += 1
+        } else {
+            // No new reading yet: the last one, fading.
+            target = shown * 0.8
+        }
+        shown += (target - shown) * (target > shown ? 0.65 : 0.3)
+        lines.append(shown)
+        if lines.count > 240 { lines.removeFirst(lines.count - 240) }
+    }
+
+    /// Quiet stays a dot; speech rises fast (the readings are linear in dB).
+    private static func shaped(_ level: Float) -> CGFloat {
+        CGFloat(pow(max(0, (level - 0.18) / 0.82), 1.3))
+    }
+
+    func draw(in gc: inout GraphicsContext, size: CGSize, color: Color, glide: CGFloat) {
+        let slots = max(1, Int(size.width / Self.pitch) + 1)
+        let middle = size.height / 2
+        for slot in 0..<slots {
+            // Slot 0 is the newest line, sliding in from the trailing edge.
+            let height = slot < lines.count ? lines[lines.count - 1 - slot] : 0
+            let x = size.width - (CGFloat(slot) + glide) * Self.pitch - Self.line
+            guard x >= -Self.line else { break }
+            let tall = max(Self.line, height * size.height)
+            let fade = 1 - 0.75 * CGFloat(slot) / CGFloat(slots)
+            gc.fill(Capsule().path(in: CGRect(x: x, y: middle - tall / 2, width: Self.line, height: tall)), with: .color(color.opacity(fade)))
+        }
     }
 }
