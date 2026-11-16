@@ -103,8 +103,11 @@ struct PaletteView: View {
             }
             .frame(maxHeight: 440)
             .clipped()
-            Divider().overlay(theme.faint.opacity(0.25))
-            footer(items)
+            // Its key legend only with keys to press (the palette opens from the More menu too).
+            if scene.hardwareKeyboard {
+                Divider().overlay(theme.faint.opacity(0.25))
+                footer(items)
+            }
         }
         .background(theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(theme.faint.opacity(0.35), lineWidth: 0.5))
@@ -429,19 +432,23 @@ struct SwitcherView: View {
                 .onChange(of: selection) { _, new in if all.indices.contains(new) { proxy.scrollTo(all[new].id) } }
             }
             .frame(maxHeight: 440)
-            Divider().overlay(theme.faint.opacity(0.25))
-            HStack(spacing: 14) {
-                HStack(spacing: 4) { Keycaps(parts: ["↑", "↓"]); Text("move") }
-                HStack(spacing: 4) { Keycaps(parts: ["↵"]); Text(tile ? "open as a new pane" : "open or resume") }
-                if !tile && !scene.narrow { HStack(spacing: 4) { Keycaps(parts: ["⌘", "↵"]); Text("as a new pane") } }
-                Spacer()
-                HStack(spacing: 4) { Keycaps(parts: ["esc"]); Text("close") }
+            // Keys to press only where there are keys: under a finger they were a legend for
+            // a keyboard that isn't there.
+            if scene.hardwareKeyboard {
+                Divider().overlay(theme.faint.opacity(0.25))
+                HStack(spacing: 14) {
+                    HStack(spacing: 4) { Keycaps(parts: ["↑", "↓"]); Text("move") }
+                    HStack(spacing: 4) { Keycaps(parts: ["↵"]); Text(tile ? "open as a new pane" : "open or resume") }
+                    if !tile && !scene.narrow { HStack(spacing: 4) { Keycaps(parts: ["⌘", "↵"]); Text("as a new pane") } }
+                    Spacer()
+                    HStack(spacing: 4) { Keycaps(parts: ["esc"]); Text("close") }
+                }
+                .font(.ah(.caption))
+                .foregroundStyle(theme.muted)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .accessibilityHidden(true)
             }
-            .font(.ah(.caption))
-            .foregroundStyle(theme.muted)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .accessibilityHidden(true)
         }
         .background(theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(theme.faint.opacity(0.35), lineWidth: 0.5))

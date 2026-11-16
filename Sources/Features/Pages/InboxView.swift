@@ -297,18 +297,29 @@ struct SessionRowView: View {
         // row's width instead of a few letters.
         let stacked = typeSize.isAccessibilitySize
         let onAccent = prominence == .increased
+        // A status in words ("needs you") on the sidebar's narrow row goes on the line under
+        // the title: beside it, it left the title a few letters ("Rotate…").
+        let wordsUnder = dense && !stacked && row.word.asksForAttention
         if dense || stacked {
             HStack(spacing: 10) {
                 AgentMark(agent: row.dto.agent)
                 VStack(alignment: .leading, spacing: 2) {
                     titleLine(onAccent: onAccent)
-                    Text(AskParts.keepingPaths(detail)).font(.ah(.caption)).foregroundStyle(secondary(onAccent)).lineLimit(stacked ? 2 : 1)
+                    if wordsUnder {
+                        HStack(alignment: .center, spacing: 6) {
+                            Text(AskParts.keepingPaths(detail)).font(.ah(.caption)).foregroundStyle(secondary(onAccent)).lineLimit(1)
+                            Spacer(minLength: 4)
+                            status(onAccent: onAccent, compact: false).fixedSize()
+                        }
+                    } else {
+                        Text(AskParts.keepingPaths(detail)).font(.ah(.caption)).foregroundStyle(secondary(onAccent)).lineLimit(stacked ? 2 : 1)
+                    }
                     if stacked { status(onAccent: onAccent, compact: false) }
                 }
                 // The title takes the room first; the status keeps its own size beside it.
                 .layoutPriority(1)
                 Spacer(minLength: 4)
-                if !stacked { status(onAccent: onAccent, compact: dense && !row.word.asksForAttention).fixedSize() }
+                if !stacked && !wordsUnder { status(onAccent: onAccent, compact: dense && !row.word.asksForAttention).fixedSize() }
             }
         } else {
             // A page's row, with room: a larger mark, the title with when it last moved
