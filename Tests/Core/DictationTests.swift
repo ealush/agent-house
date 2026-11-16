@@ -274,9 +274,12 @@ private var claude: [String: Any] { ["subscriptionId": "s2", "name": "Claude", "
     let twice = "Fix it. Fix it."
     #expect(DictationModel.replacing("Fix it.", at: 8, in: twice, with: "fix it")! == ("Fix it. fix it", 14), "the copy that went in, not the other")
     #expect(DictationModel.replacing("Fix it.", at: 0, in: twice, with: "fix it")! == ("fix it Fix it.", 6))
-    #expect(DictationModel.replacing("Fix it.", at: 3, in: twice, with: "x") == nil, "moved, and there are two: no guessing")
-    #expect(DictationModel.replacing("Fix it.", at: 0, in: "Hi Fix it.", with: "x")! == ("Hi x", 4), "moved by text before it, but only one copy")
+    #expect(DictationModel.replacing("Fix it.", at: 3, in: twice, with: "x") == nil, "not where it went in: no guessing")
+    #expect(DictationModel.replacing("Fix it.", at: 0, in: "Hi Fix it.", with: "x") == nil, "the same words elsewhere may be yours")
     #expect(DictationModel.replacing("Fix it.", at: 0, in: "edited away", with: "x") == nil)
+    #expect(DictationModel.change(from: "abc", to: "aXbc")! == (1, 1, 1))
+    #expect(DictationModel.change(from: "abc", to: "ac")! == (1, 2, -1))
+    #expect(DictationModel.change(from: "abc", to: "abc") == nil)
     #expect(DictationModel.replacing("Fix it.", at: 5, in: "שלום Fix it.", with: "fix it")!.caret == "שלום fix it".utf16.count)
 }
 
@@ -505,5 +508,52 @@ private func query(_ q: String?) -> [String: String] {
     FileManager.default.createFile(atPath: folder.appendingPathComponent("other.m4a").path, contents: Data("x".utf8))
     DictationModel.sweep(folder)
     #expect((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) == ["other.m4a"])
+}
+
+@MainActor
+@Test func review2_whatWentInIsFollowedThroughYourEditsAndYourCopyIsNeverTaken() async {
+    let host = VoiceHost()
+    host.settings["speech"] = groq
+    host.batchTexts = ["Repeat."]
+    let (model, composer, capture) = bed(host, draft: "Repeat.")
+    composer.caret = 0
+    capture.batches = 1
+    await model.refresh()
+    await model.toggle(into: composer)
+    await until { model.placed == "Repeat." }
+    #expect(composer.text == "Repeat.Repeat.")
+    // You change the dictated copy: it's yours now, and so is the original.
+    composer.text = "Changed.Repeat."
+    await model.cancel(in: composer)
+    #expect(composer.text == "Changed.Repeat.", "nothing taken: neither copy is dictation's for sure any more")
+
+    // Typed before what went in: it moves, and is still found.
+    let host2 = VoiceHost()
+    host2.settings["speech"] = groq
+    host2.batchTexts = ["one", "two"]
+    let (model2, composer2, capture2) = bed(host2)
+    capture2.batches = 1
+    await model2.refresh()
+    await model2.toggle(into: composer2)
+    await until { model2.placed == "one" }
+    composer2.text = "Hi " + composer2.text
+    composer2.caret = composer2.text.utf16.count
+    await model2.toggle(into: composer2)
+    #expect(composer2.text == "Hi one two", "the next part joins it where it moved to")
+}
+
+@MainActor
+@Test func review2_aRecordingThatFailsAfterItsSessionClosedIsDeleted() async {
+    let host = VoiceHost()
+    host.settings["speech"] = groq
+    host.dictation = (401, ["error": "signed out"])
+    let (model, composer, capture) = bed(host, live: false)
+    await model.refresh()
+    await model.toggle(into: composer)
+    model.close(into: composer)
+    await until { model.phase != .writing && !model.isListening }
+    try? await Task.sleep(for: .milliseconds(50))
+    #expect(model.phase == .idle, "no Try Again for a session that's gone")
+    #expect(!FileManager.default.fileExists(atPath: capture.file.path))
 }
 

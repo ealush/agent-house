@@ -131,7 +131,7 @@ final class DictationModel {
     private(set) var live = false
     /// What this dictation has put in the box so far, as it went, and where (UTF-16 offset).
     private(set) var placed = ""
-    private var placedAt = 0
+    private var placedAt: Int?
     /// What went in as you spoke was edited meanwhile: it's yours now, and nothing replaces it.
     private var editedLive = false
     /// Where the last dictation went in (UTF-16 offset), for Use What I Said.
@@ -139,6 +139,15 @@ final class DictationModel {
     /// Each start, cancel and close moves this on: a start that resumes after it moved isn't
     /// this dictation's any more.
     private var attempt = 0
+    /// The last capture stopping (a cancel): the next start waits for it, so two never hold
+    /// the microphone and the audio session at once.
+    private var stopping: Task<Void, Never>?
+    /// The session closed: a recording that fails from here is deleted, not kept for a Try
+    /// Again nobody can reach.
+    private var closed = false
+    /// Which of our spans our own change to the box is about (the others follow it as any edit).
+    private enum Span { case live, last }
+    private var managing: Span?
 
     /// A long dictation's batches (VOX-3), each heard by the host after the one before it,
     /// with what came before as its context.
@@ -196,6 +205,8 @@ final class DictationModel {
         discardKept()
         attempt += 1
         let mine = attempt
+        closed = false
+        composer.onTextChange = { [weak self] before, after in self?.follow(before, after) }
         phase = .starting
         partial = ""
         level = 0
@@ -206,6 +217,9 @@ final class DictationModel {
         // The words may need this device after all (the settings changed): read them while
         // listening, and decide when the recording ends.
         reading = Task { await refresh() }
+        // The last one let go of the microphone first.
+        await stopping?.value
+        guard attempt == mine, phase == .starting else { return }
         let capture = makeCapture()
         self.capture = capture
         // A host that does voice whose settings haven't been read yet (a cold start straight
@@ -217,7 +231,11 @@ final class DictationModel {
         let phone = live || (settings?.cleanup != nil && settings?.style != .verbatim)
         let onDevice: Locale? = if case .host = route, !phone { nil } else { (settings ?? VoiceSettings()).locale }
         let events: @MainActor (CaptureEvent) -> Void = { [weak self] event in
-            guard let self, self.phase == .starting || self.isListening else { return }
+            // Only this dictation's: a cancelled one's last words are nobody's.
+            guard let self, self.attempt == mine, self.phase == .starting || self.isListening else {
+                if case .batch(let file) = event { try? FileManager.default.removeItem(at: file) }
+                return
+            }
             switch event {
             case .level(let v):
                 self.level = v
@@ -288,10 +306,15 @@ final class DictationModel {
         hearing?.cancel()
         let capture = self.capture
         self.capture = nil
+        if let capture {
+            let before = stopping
+            stopping = Task {
+                await before?.value
+                await capture.cancel()
+            }
+        }
         if let composer, !placed.isEmpty, let back = Self.replacing(placed, at: placedAt, in: composer.text, with: "") {
-            composer.text = back.text
-            composer.caret = back.caret
-            composer.placeCaret = back.caret
+            apply(back, to: composer, as: .live)
         }
         dropBatches()
         discardKept()
@@ -299,13 +322,14 @@ final class DictationModel {
         partial = ""
         level = 0
         levels = []
-        if let capture { await capture.cancel() }
+        await stopping?.value
     }
 
     /// The session is closing (off screen, or signed out): what was being said goes into its
     /// box, a start still waiting stops, and a failed recording kept for Try Again is deleted.
     /// One being written down finishes into its box.
     func close(into composer: ComposerModel) {
+        closed = true
         switch phase {
         case .listening: Task { await self.finish(into: composer) }
         case .starting: Task { await self.cancel(in: composer) }
@@ -381,20 +405,68 @@ final class DictationModel {
 
     /// A heard batch into the box, after the ones before it.
     private func place(_ text: String, into composer: ComposerModel) {
-        if !placed.isEmpty, let after = Self.replacing(placed, at: placedAt, in: composer.text, with: placed + " " + text) {
-            composer.text = after.text
-            composer.caret = after.caret
-            composer.placeCaret = after.caret
-            placedAt = after.caret - (placed + " " + text).utf16.count
+        if !placed.isEmpty, let at = placedAt, let after = Self.replacing(placed, at: at, in: composer.text, with: placed + " " + text) {
+            apply(after, to: composer, as: .live)
+            placedAt = at
             placed += " " + text
         } else {
             // The first; or what went in before was edited, which makes it yours: this goes in
             // at the caret, and nothing replaces either once you're done.
             if !placed.isEmpty { editedLive = true }
-            composer.insert(text)
+            placedAt = insert(text, into: composer, as: .live)
             placed = text
-            placedAt = composer.caret - text.utf16.count
         }
+    }
+
+    /// Our own change to the box, about one of our spans (`follow` moves the other).
+    private func apply(_ change: (text: String, caret: Int), to composer: ComposerModel, as span: Span) {
+        managing = span
+        composer.text = change.text
+        composer.caret = change.caret
+        composer.placeCaret = change.caret
+        managing = nil
+    }
+
+    /// Words in at the caret; where they start (UTF-16).
+    private func insert(_ text: String, into composer: ComposerModel, as span: Span) -> Int {
+        managing = span
+        composer.insert(text)
+        managing = nil
+        return composer.caret - text.utf16.count
+    }
+
+    /// A change to the box (yours, the host's draft, or ours): our spans move with text that
+    /// changed before them; one the change touched is no longer ours to replace.
+    private func follow(_ before: String, _ after: String) {
+        let followsLive = managing != .live && !placed.isEmpty && placedAt != nil
+        let followsLast = managing != .last && last != nil && lastAt != nil
+        guard followsLive || followsLast else { return }
+        guard let (start, oldEnd, delta) = Self.change(from: before, to: after) else { return }
+        func moved(_ at: Int, _ length: Int) -> Int? {
+            if oldEnd <= at { return at + delta }
+            if start >= at + length { return at }
+            return nil
+        }
+        if followsLive, let at = placedAt {
+            placedAt = moved(at, placed.utf16.count)
+            if placedAt == nil { editedLive = true }
+        }
+        if followsLast, let at = lastAt, let last {
+            lastAt = moved(at, last.text.utf16.count)
+            if lastAt == nil { self.last = nil }
+        }
+    }
+
+    /// Where `before` became `after` (UTF-16): the changed stretch's start and end in `before`,
+    /// and how much longer it got; nil for no change.
+    nonisolated static func change(from before: String, to after: String) -> (start: Int, oldEnd: Int, delta: Int)? {
+        let old = Array(before.utf16), new = Array(after.utf16)
+        guard old != new else { return nil }
+        var start = 0
+        while start < old.count, start < new.count, old[start] == new[start] { start += 1 }
+        var tail = 0
+        while tail < old.count - start, tail < new.count - start, old[old.count - 1 - tail] == new[new.count - 1 - tail] { tail += 1 }
+        return (start, old.count - tail, new.count - old.count)
     }
 
     /// Once you're done: the last batch heard, the batches' words tidied once (with this
@@ -404,6 +476,7 @@ final class DictationModel {
         queue(into: composer)
         await hearing?.value
         if batches.contains(where: { $0.text == nil }) {
+            if closed { finished(result); return }
             kept = result
             capture = nil
             phase = .failed("Couldn’t write down part of it: \(speech) didn’t answer, nor did \(thisDevice).", retry: true)
@@ -416,7 +489,7 @@ final class DictationModel {
             composer.notify("Didn’t catch anything.")
             return
         }
-        if live, editedLive || (!placed.isEmpty && Self.located(placed, at: placedAt, in: composer.text) == nil) {
+        if live, editedLive || (!placed.isEmpty && (placedAt == nil || Self.located(placed, at: placedAt, in: composer.text) == nil)) {
             // What went in as you spoke was edited: it stays as you left it, untidied.
             finished(result)
             last = nil
@@ -435,13 +508,12 @@ final class DictationModel {
                 note = "Couldn’t tidy it with \(cleanup.name), so it’s as said."
             }
         }
+        last = nil
+        lastAt = nil
         if placed.isEmpty {
-            composer.insert(text)
-            lastAt = composer.caret - text.utf16.count
+            lastAt = insert(text, into: composer, as: .live)
         } else if let after = Self.replacing(placed, at: placedAt, in: composer.text, with: text) {
-            composer.text = after.text
-            composer.caret = after.caret
-            composer.placeCaret = after.caret
+            apply(after, to: composer, as: .live)
             lastAt = after.caret - text.utf16.count
         } else {
             // Edited while it was being tidied: yours stays.
@@ -461,7 +533,7 @@ final class DictationModel {
         for batch in batches { try? FileManager.default.removeItem(at: batch.file) }
         batches = []
         placed = ""
-        placedAt = 0
+        placedAt = nil
     }
 
     func dismiss() {
@@ -478,11 +550,13 @@ final class DictationModel {
                 return
             }
             finished(result)
-            composer.insert(words.text)
-            lastAt = composer.caret - words.text.utf16.count
+            last = nil
+            lastAt = insert(words.text, into: composer, as: .last)
             last = Inserted(text: words.text, raw: words.raw, heardBy: words.heardBy, cleanedBy: words.cleanedBy)
             if let note = words.note { composer.notify(note) }
         } catch {
+            // Its session is gone: no Try Again to keep the recording for.
+            if closed { finished(result); return }
             kept = result
             capture = nil
             let message = (error as? CaptureError)?.message ?? APIError.wrap(error).message
@@ -584,25 +658,19 @@ final class DictationModel {
     /// The last dictation back as said, in place of its tidied words.
     func useWhatWasSaid(in composer: ComposerModel) {
         guard let last, let swapped = Self.replacing(last.text, at: lastAt, in: composer.text, with: last.raw) else { return }
-        composer.text = swapped.text
-        composer.caret = swapped.caret
-        composer.placeCaret = swapped.caret
+        apply(swapped, to: composer, as: .last)
         self.last = nil
         lastAt = nil
     }
 
-    /// Where `inserted` is in `draft`: where it went in (`at`, UTF-16), if it's still there;
-    /// else its one copy, if text before it moved it. Nil when it was edited, or when the draft
-    /// has it twice and neither is where it went in: replacing a guess could take your words.
+    /// Where `inserted` is in `draft`: where it went in (`at`, UTF-16, kept up to date by
+    /// `follow`), if it's still there as it went in. Nil otherwise: the same words elsewhere
+    /// may be yours, and replacing a guess could take them.
     nonisolated static func located(_ inserted: String, at offset: Int?, in draft: String) -> Range<String.Index>? {
-        guard !inserted.isEmpty else { return nil }
-        if let offset, offset >= 0, offset + inserted.utf16.count <= draft.utf16.count {
-            let lower = String.Index(utf16Offset: offset, in: draft)
-            let upper = String.Index(utf16Offset: offset + inserted.utf16.count, in: draft)
-            if draft[lower..<upper] == inserted { return lower..<upper }
-        }
-        guard let first = draft.range(of: inserted), draft.range(of: inserted, range: first.upperBound..<draft.endIndex) == nil else { return nil }
-        return first
+        guard !inserted.isEmpty, let offset, offset >= 0, offset + inserted.utf16.count <= draft.utf16.count else { return nil }
+        let lower = String.Index(utf16Offset: offset, in: draft)
+        let upper = String.Index(utf16Offset: offset + inserted.utf16.count, in: draft)
+        return draft[lower..<upper] == inserted ? lower..<upper : nil
     }
 
     /// `draft` with `inserted` (`located`) replaced by `replacement`, and the caret (UTF-16)

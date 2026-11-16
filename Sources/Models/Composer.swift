@@ -470,8 +470,11 @@ final class ComposerModel {
             guard text != oldValue else { return }
             drafts.edited(text)
             if text.isEmpty, attachments.isEmpty { requeueBefore = nil }
+            onTextChange?(oldValue, text)
         }
     }
+    /// Told of every change to the text, before and after (dictation follows what it put in).
+    @ObservationIgnored var onTextChange: ((String, String) -> Void)?
     /// A queued message taken out to edit (`QueueModel.edit`): queued again from this box, it
     /// goes back before the message that followed it (this one's id). The next send takes it;
     /// a box emptied without one lets it go, so a later message isn't moved for it.

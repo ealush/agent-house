@@ -17,6 +17,12 @@ final class VoiceCapture: DictationCapture {
     private var tapped = false
     /// The first batch's file, until the tap owns it.
     private var firstBatch: URL?
+    /// Cancelled, maybe while `start` waited (the permission prompt, a language's download):
+    /// it stops at its next step instead of going on to listen.
+    private var cancelled = false
+    /// This capture turned the audio session on (and only it turns it off again): a cancelled
+    /// one that resumes late can't turn off the next one's.
+    private var active = false
     #if DEBUG
     /// Tours: a recording played in as if spoken (`AH_VOICE_FILE`), where a simulator has no
     /// microphone to speak into.
@@ -29,11 +35,13 @@ final class VoiceCapture: DictationCapture {
         case .notAsked: guard await DeviceSpeech.askForMicrophone() else { throw CaptureError.microphoneDenied }
         case .allowed: break
         }
+        guard !cancelled else { throw CancellationError() }
         let session = AVAudioSession.sharedInstance()
         do {
             // Other audio ducks while you speak, and comes back after.
             try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.duckOthers, .defaultToSpeaker, .allowBluetoothHFP])
             try session.setActive(true)
+            active = true
         } catch {
             throw CaptureError.failed("Couldn’t use the microphone: \(error.localizedDescription)")
         }
@@ -74,6 +82,7 @@ final class VoiceCapture: DictationCapture {
             do {
                 // The language's model, downloaded the first time (`AssetInventory`).
                 guard let (module, target) = try await DeviceSpeech.ready(for: locale, live: true) else { throw Self.notReady(locale) }
+                guard !cancelled else { throw CancellationError() }
                 converter = AVAudioConverter(from: format, to: target)
                 let (stream, continuation) = AsyncStream.makeStream(of: AnalyzerInput.self)
                 feed = continuation
@@ -81,9 +90,14 @@ final class VoiceCapture: DictationCapture {
                 self.analyzer = analyzer
                 heard = Self.words(of: module) { words in events(.partial(words)) }
                 try await analyzer.start(inputSequence: stream)
+                guard !cancelled else { throw CancellationError() }
             } catch let error as CaptureError {
                 cleanUp()
                 throw error
+            } catch is CancellationError {
+                if let analyzer { await analyzer.cancelAndFinishNow() }
+                cleanUp()
+                throw CancellationError()
             } catch {
                 cleanUp()
                 throw CaptureError.failed("Couldn’t listen on this device: \(error.localizedDescription)")
@@ -148,6 +162,7 @@ final class VoiceCapture: DictationCapture {
     }
 
     func cancel() async {
+        cancelled = true
         stopInput()
         if let closed = tap?.close() {
             for file in closed.cut + [closed.open].compactMap({ $0 }) { try? FileManager.default.removeItem(at: file) }
@@ -207,6 +222,8 @@ final class VoiceCapture: DictationCapture {
     }
 
     private func deactivate() {
+        guard active else { return }
+        active = false
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
