@@ -721,6 +721,7 @@ struct NudgeStack: View {
         VStack(alignment: .trailing, spacing: 8) {
             ForEach(scene.nudges) { nudge in
                 card(nudge)
+                    .modifier(FollowsFinger { scene.dismissNudge(nudge.id) })
                     .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
             }
         }
@@ -766,11 +767,31 @@ struct NudgeStack: View {
             try? await Task.sleep(for: .seconds(6))
             scene.dismissNudge(nudge.id)
         }
-        .gesture(DragGesture(minimumDistance: 12).onEnded { value in
-            if value.translation.height < -20 || abs(value.translation.width) > 60 { scene.dismissNudge(nudge.id) }
-        })
         .overlayTarget("nudge-\(nudge.id)", in: targets)
         .accessibilityElement(children: .contain)
+    }
+}
+
+/// A card that goes with the finger as a system banner does: up and sideways freely, down
+/// with resistance, fading as it nears the edge; let go far enough and it's dismissed, else it
+/// springs back. It stood still under the finger and vanished when let go.
+private struct FollowsFinger: ViewModifier {
+    let dismiss: () -> Void
+    @GestureState private var drag: CGSize = .zero
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .offset(x: drag.width, y: drag.height < 0 ? drag.height : drag.height / 4)
+            .opacity(1 - min(0.6, max(abs(drag.width) / 240, -drag.height / 120)))
+            .animation(reduceMotion ? nil : .spring(duration: 0.3, bounce: 0.2), value: drag == .zero)
+            .gesture(
+                DragGesture(minimumDistance: 12)
+                    .updating($drag) { value, state, _ in state = value.translation }
+                    .onEnded { value in
+                        if value.translation.height < -20 || abs(value.translation.width) > 60 { dismiss() }
+                    }
+            )
     }
 }
 

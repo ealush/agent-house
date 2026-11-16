@@ -124,6 +124,18 @@ final class HubStore {
         }
     }
 
+    /// Pull to refresh: reconnect, and come back once the host has answered (or a few seconds
+    /// on), so the spinner lasts as long as the asking. It snapped back at once, before
+    /// anything new had come.
+    func resyncAndWait(limit: Duration = .seconds(4)) async {
+        let before = lastUpdated
+        resync()
+        let end = ContinuousClock.now + limit
+        while ContinuousClock.now < end, lastUpdated == before, !Task.isCancelled {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+    }
+
     /// Back in the foreground: every stream not just opened reconnects.
     func wake() {
         if let stream = hubStream { Task { await stream.wake() } }

@@ -132,7 +132,7 @@ struct InboxView: View {
         // …and the connection's banner comes and goes the same way.
         .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: hub.phase)
         .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: hub.awaitingState)
-        .refreshable { hub.resync() }
+        .refreshable { await hub.resyncAndWait() }
         .ahPage("Inbox")
         .toolbar {
             // Bar glyphs in the label color; only the primary action (New) carries the tint, in
@@ -588,7 +588,7 @@ struct SessionListView: View {
         // do, instead of the list cutting to its new order.
         .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: sections.map { $0.rows.map(\.key) })
         .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: hub.phase)
-        .refreshable { hub.resync() }
+        .refreshable { await hub.resyncAndWait() }
         .toolbar {
             // A phone's Sessions page offers New like the Inbox and Review do (each project's
             // own plus starts one there).
@@ -735,6 +735,8 @@ struct HistoryView: View {
             }
         }
         .scrollDismissesKeyboard(.immediately)
+        // History is the host's list too: pulled, it asks again, as the Inbox does.
+        .refreshable { await hub.resyncAndWait() }
         .onChange(of: scene.historyFilter) { _, _ in scene.scheduleSave() }
         .navigationTitle("History")
     }

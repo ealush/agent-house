@@ -56,6 +56,9 @@ struct AhPressStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.88 : 1)
             .opacity(configuration.isPressed ? 0.85 : 1)
             .animation(.spring(response: 0.25, dampingFraction: 0.6), value: configuration.isPressed)
+            // An iPad pointer finds it, as it does the system buttons around it (Send, Stop,
+            // Queue, the agent tiles).
+            .hoverEffect(.highlight)
     }
 }
 
