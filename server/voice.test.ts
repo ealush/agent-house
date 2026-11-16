@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SideChatStore } from './sidechat.ts';
 import { ensureMigrated } from './db.ts';
-import { VoiceService, audioName, cleanupPrompt, edited, heard, speechModels } from './voice.ts';
+import { VoiceService, audioName, cleanupPrompt, edited, heard, speechModels, speechPrompt } from './voice.ts';
 
 const file = () => join(tmpdir(), `ah-voice-test-${process.pid}-${Math.random().toString(36).slice(2)}.db`);
 
@@ -222,3 +222,41 @@ test('helpers: names, edits, segments, prompt', () => {
   assert.deepEqual(speechModels([{ id: 'models/whisper-1' }, { id: 'whisper-1' }, {}, null]), ['whisper-1']);
   assert.doesNotMatch(cleanupPrompt('clean', []), /Spell these/);
 });
+
+test('a batch of a longer dictation goes with what was said before it; the phone\'s hearing helps the cleanup', async () => {
+  const { voice, groq, claude } = await bed();
+  await voice.update({ speech: { subscriptionId: groq.id, model: 'whisper-large-v3-turbo' }, cleanup: { subscriptionId: claude.id, model: '' }, vocabulary: ['GRDB'] });
+  await withFetch(
+    (url) => (url.endsWith('/audio/transcriptions') ? json({ text: 'and then the migration' }) : reply('Look at the GRDB cache, and then the migration.')),
+    async (seen) => {
+      const batch = await voice.dictate(AUDIO, { name: 'speech.m4a', style: 'verbatim', context: 'okay so look at the grdb cache' });
+      assert.equal(batch.text, 'and then the migration');
+      assert.equal(seen.length, 1, 'a verbatim batch is only heard');
+      assert.equal((seen[0].init.body as FormData).get('prompt'), 'GRDB. okay so look at the grdb cache');
+
+      const tidy = await voice.refine('okay so look at the grdb cash and then the migration', 'clean', 'Okay so look at the GRDB cache and then the migration');
+      assert.equal(tidy.text, 'Look at the GRDB cache, and then the migration.');
+      const chat = JSON.parse(String(seen[1].init.body));
+      assert.match(chat.messages[0].content, /A second hearing of the same speech, by the speaker's phone/);
+      assert.equal(chat.messages[1].content, '<transcript>\nokay so look at the grdb cash and then the migration\n</transcript>\n<phone>\nOkay so look at the GRDB cache and then the migration\n</phone>');
+
+      await voice.refine('same words', 'clean', ' same words ');
+      const same = JSON.parse(String(seen[2].init.body));
+      assert.doesNotMatch(same.messages[0].content, /second hearing/, 'the same words twice is no second hearing');
+      assert.doesNotMatch(same.messages[1].content, /<phone>/);
+    },
+  );
+});
+
+test('the speech prompt: words first, then the end of what came before, under 300 characters, from a word', () => {
+  assert.equal(speechPrompt([], ''), '');
+  assert.equal(speechPrompt(['SwiftUI', 'GRDB'], ''), 'SwiftUI, GRDB');
+  assert.equal(speechPrompt([], '  so   then  '), 'so then');
+  const long = Array.from({ length: 200 }, (_, i) => `word${i}`).join(' ');
+  const p = speechPrompt(['SwiftUI'], long);
+  assert.ok(p.length <= 300, `${p.length}`);
+  assert.ok(p.startsWith('SwiftUI. word'), p.slice(0, 20));
+  assert.ok(p.endsWith('word199'));
+  assert.match(p.slice('SwiftUI. '.length).split(' ')[0], /^word\d+$/, 'starts on a whole word');
+});
+

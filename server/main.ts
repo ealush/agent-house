@@ -1443,7 +1443,9 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
       throw err;
     }
     const q = url.searchParams;
-    const out = await voice.dictate(audio, { name: q.get('name'), style: q.get('style'), language: q.get('language') });
+    const context = q.get('context');
+    if (context !== null && context.length > 2000) throw new HttpError(400, 'invalid context');
+    const out = await voice.dictate(audio, { name: q.get('name'), style: q.get('style'), language: q.get('language'), context });
     audit(req, 'voice.dictate', { bytes: audio.length, speech: out.speech, cleanedBy: out.cleanedBy, ...(out.cleanupError ? { cleanupFailed: true } : {}) });
     return send(res, 200, out);
   }
@@ -1452,7 +1454,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     const body = await readJson(req);
     const text = str(body.text ?? '', 'text', 24_000).trim();
     if (!text) throw new HttpError(400, 'text required');
-    const out = await voice.refine(text, body.style);
+    const out = await voice.refine(text, body.style, body.phone === undefined ? '' : str(body.phone, 'phone', 24_000));
     audit(req, 'voice.refine', { chars: text.length, cleanedBy: out.cleanedBy });
     return send(res, 200, out);
   }

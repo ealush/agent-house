@@ -71,7 +71,15 @@ test('voice: set up from subscriptions, dictate a recording, refine device text,
     assert.ok(speech.body.includes(audio), 'the recording reached the provider as sent');
     assert.ok(speech.body.includes('filename="speech.m4a"'));
 
-    const refined = await http(ah, 'POST', '/api/voice/refine', { body: { text: 'um make it stop', style: 'clean' } });
+    // A batch of a longer dictation: heard only, with what came before as the speech model's prompt.
+    const batch = await http(ah, 'POST', `/api/voice/dictate?name=speech.m4a&style=verbatim&context=${encodeURIComponent('so far so good')}`, { raw: audio, headers: { 'content-type': 'audio/mp4' } });
+    assert.equal(batch.status, 200, batch.body);
+    assert.equal(batch.json().cleanedBy, null);
+    assert.ok(p.seen.at(-1)!.body.includes('SwiftUI. so far so good'), 'the batch went with what came before');
+    const tooMuch = await http(ah, 'POST', `/api/voice/dictate?name=speech.m4a&context=${'x'.repeat(2001)}`, { raw: audio, headers: { 'content-type': 'audio/mp4' } });
+    assert.equal(tooMuch.status, 400);
+
+    const refined = await http(ah, 'POST', '/api/voice/refine', { body: { text: 'um make it stop', style: 'clean', phone: 'um make it stop now' } });
     assert.equal(refined.status, 200, refined.body);
     assert.deepEqual(refined.json(), { text: 'Make the composer stop jumping.', cleanedBy: 'Groq' });
 
@@ -87,7 +95,8 @@ test('voice: set up from subscriptions, dictate a recording, refine device text,
       .map((f) => readFileSync(join(state, f), 'utf8'))
       .join('\n');
     assert.match(logs, /"event":"voice.dictate"/);
-    for (const words of ['composer stop jumping', 'make it stop', SECRET]) assert.ok(!logs.includes(words), `"${words}" stays out of the logs`);
+    assert.match(p.seen.at(-1)!.body.toString(), /<phone>/, 'the phone\'s hearing went to the cleanup');
+    for (const words of ['composer stop jumping', 'make it stop', 'so far so good', SECRET]) assert.ok(!logs.includes(words), `"${words}" stays out of the logs`);
   } finally {
     p.close();
     await cleanup(ah);

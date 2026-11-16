@@ -99,9 +99,20 @@ extension tells the provider the format), and answers `200`:
   `cleanupError` says why.
 - `language` and `seconds` are present when the provider reports them.
 
-`POST /api/voice/refine { "text", "style"? }` → `{ "text", "cleanedBy" }` tidies
-text written elsewhere (on the device). With no cleanup subscription it is
-`400 voice_no_cleanup`.
+`POST /api/voice/refine { "text", "style"?, "phone"? }` → `{ "text", "cleanedBy" }`
+tidies text written elsewhere: on the device, or a batched dictation's batches put
+together. `phone` is the device's own hearing of the same speech; the cleanup follows
+`text` and checks a word that makes no sense against it. With no cleanup subscription
+it is `400 voice_no_cleanup`.
+
+**Batches.** A client may send a long dictation as it's spoken, in batches: each one
+cut at a pause once it holds at least 10 seconds (the providers bill 10 seconds a
+request at least; the last batch is whatever is left), sent to `dictate` with
+`style=verbatim` and `context=<what was heard before it>` (up to 2000 characters). The
+speech model gets the words to spell right and the end of the context as its prompt
+(300 characters at most), so a batch picks up where the last one ended. Once the speaker
+is done, the batches' text goes to `refine` once, with `phone`. A batch that fails costs
+only that batch.
 
 The cleanup model gets the transcript as data between tags, with rules: keep the
 meaning; fix punctuation, grammar and mis-hearings; keep commands, code, paths,
@@ -117,9 +128,11 @@ Error codes: `voice_no_speech` (400, no speech subscription), `voice_no_cleanup`
 ## VOX-4 Clients
 
 - **Native app** (ah-native): a microphone in the composer and **Settings → Voice**.
-  With `voice` in `features` and a speech subscription, it records and sends the
-  audio to `dictate`; otherwise it transcribes on the device, and `refine`s the
-  result when a cleanup subscription is set. A recording card floats over the
+  With `voice` in `features` and a speech subscription, it sends the recording in
+  batches as you speak (VOX-3) and `refine`s the whole with the phone's own hearing;
+  otherwise it transcribes on the device, and `refine`s the result when a cleanup
+  subscription is set. **Words as You Speak** (on that device, on by default) puts
+  each batch in the box as soon as it's heard. A recording card floats over the
   conversation while you speak, the text lands at the caret, and a cleaned-up
   dictation can be swapped back for the words as said.
 - **Web app**: unchanged. The composer's microphone uses the browser's own speech
