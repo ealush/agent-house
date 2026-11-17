@@ -114,7 +114,9 @@ enum Uploads {
         let image: Bool
     }
 
-    private static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "avif"]
+    /// The web's pictures, and what an iPhone's camera and a Mac's screenshots save as besides
+    /// (a photo from the library stays a HEIC): all drawn here.
+    private static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "avif", "heic", "heif", "tif", "tiff", "bmp"]
 
     static func split(_ text: String) -> (uploads: [Upload], rest: String) {
         var uploads: [Upload] = []
@@ -134,10 +136,10 @@ enum Uploads {
             if scanner.first == "'", let close = scanner.dropFirst().firstIndex(of: "'") {
                 token = scanner[...close]
                 let inner = String(scanner[scanner.index(after: scanner.startIndex)..<close])
-                if isUploadPath(inner) { path = inner }
+                if isUpload(inner) { path = inner }
             } else {
                 token = scanner.prefix { !($0 == " " || $0 == "\t" || $0 == "\n") }
-                if isUploadPath(String(token)) { path = String(token) }
+                if isUpload(String(token)) { path = String(token) }
             }
             if let path {
                 let file = path.split(separator: "/").last.map(String.init) ?? path
@@ -170,14 +172,15 @@ enum Uploads {
         return [label, words].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
-    private static func isUploadPath(_ s: String) -> Bool {
+    /// A file in ah's upload folder: saved under a name of its own each time, so never changed.
+    static func isUpload(_ s: String) -> Bool {
         guard s.hasPrefix("/"), let range = s.range(of: "/ah/uploads/") else { return false }
         let name = s[range.upperBound...]
         return !name.isEmpty && !name.contains("/")
     }
 
     /// Saved as "<ISO timestamp>-<name>": show the name you gave it.
-    private static func stripTimestamp(_ file: String) -> String {
+    static func stripTimestamp(_ file: String) -> String {
         let pattern = "^\\d{4}-\\d\\d-\\d\\dT[\\d-]+Z-"
         guard let range = file.range(of: pattern, options: .regularExpression) else { return file }
         return String(file[range.upperBound...])

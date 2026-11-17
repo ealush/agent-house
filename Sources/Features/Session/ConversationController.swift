@@ -41,8 +41,8 @@ struct ConversationSurface: UIViewControllerRepresentable {
     let scene: SceneModel
     var paneFocused = true
     var narrow = true
-    /// Opens a host path (a link to a file in the conversation) in Quick Look.
-    let open: @MainActor (String) -> Void
+    /// Opens a host path (a link to a file in the conversation, an attachment) in Quick Look.
+    let open: @MainActor (String) async -> Void
     @Environment(\.theme) private var theme
 
     func makeUIViewController(context: Context) -> ConversationController {
@@ -65,7 +65,7 @@ final class ConversationController: UIViewController {
     let room = ConversationRoom()
     /// The transcript's controller and what its SwiftUI shows about its scroll.
     let scroll = TranscriptScroll()
-    var open: @MainActor (String) -> Void
+    var open: @MainActor (String) async -> Void
 
     private var transcript: UIHostingController<Rooted<TranscriptCollection>>!
     private var dock: UIHostingController<Rooted<ComposerDock>>!
@@ -83,14 +83,15 @@ final class ConversationController: UIViewController {
     private var probe: LayoutProbe?
     #endif
 
-    init(session: SessionModel, scene: SceneModel, open: @escaping @MainActor (String) -> Void) {
+    init(session: SessionModel, scene: SceneModel, open: @escaping @MainActor (String) async -> Void) {
         self.session = session
         self.scene = scene
         self.open = open
         super.init(nibName: nil, bundle: nil)
         room.files = HostFiles(
             load: { [hub = session.hub, key = session.key] path in try? await hub.client(forKey: key).file(path) },
-            open: { [weak self] path in self?.open(path) })
+            open: { [weak self] path in await self?.open(path) },
+            kept: session.files)
     }
 
     @MainActor required dynamic init?(coder: NSCoder) { fatalError() }

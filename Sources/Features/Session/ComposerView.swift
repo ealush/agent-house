@@ -1768,35 +1768,50 @@ struct AttachMenu: View {
 }
 
 /// What's attached, as tiles above a box's text: the picture or the file's name, the upload's
-/// ring while it goes up, and × to take it off.
+/// ring while it goes up, and × to take it off. Once up, a tile opens what it is in Quick Look.
 struct AttachmentTiles: View {
     let composer: ComposerModel
     @Environment(\.theme) private var theme
+    @Environment(\.hostFiles) private var hostFiles
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(composer.attachments) { file in
-                    Group {
-                        if let data = file.thumbnail, let image = UIImage(data: data) {
-                            Image(uiImage: image).resizable().scaledToFill().frame(width: 64, height: 64)
-                                .overlay(alignment: .bottomLeading) {
-                                    if !file.image {
-                                        Image(systemName: "play.fill").font(.ah(.caption2)).foregroundStyle(.white).shadow(radius: 2).padding(6)
+                    Button {
+                        guard let path = file.path, let open = hostFiles?.open else { return }
+                        Haptics.tap()
+                        Task { await open(path) }
+                    } label: {
+                        Group {
+                            if let data = file.thumbnail, let image = UIImage(data: data) {
+                                Image(uiImage: image).resizable().scaledToFill().frame(width: 64, height: 64)
+                                    .overlay(alignment: .bottomLeading) {
+                                        if !file.image {
+                                            Image(systemName: "play.fill").font(.ah(.caption2)).foregroundStyle(.white).shadow(radius: 2).padding(6)
+                                        }
                                     }
+                            } else if let kept = Self.drawn(file) {
+                                // Back in the box (Edit on a message): the picture or the video's
+                                // frame, from the host.
+                                KeptPicture(attachment: kept, side: 64)
+                            } else {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Image(systemName: "doc.fill").font(.ah(.title3)).foregroundStyle(theme.muted)
+                                    Text(file.name).font(.ah(.caption2)).foregroundStyle(.primary).lineLimit(2)
                                 }
-                        } else {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Image(systemName: "doc.fill").font(.ah(.title3)).foregroundStyle(theme.muted)
-                                Text(file.name).font(.ah(.caption2)).foregroundStyle(.primary).lineLimit(2)
+                                .padding(8)
+                                .frame(width: 112, height: 64, alignment: .topLeading)
+                                .background(theme.tile)
                             }
-                            .padding(8)
-                            .frame(width: 112, height: 64, alignment: .topLeading)
-                            .background(theme.tile)
                         }
+                        .overlay { if file.path == nil { UploadRing(outbox: composer.outbox, upload: file.upload) } }
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .contentShape(.hoverEffect, RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .hoverEffect(.lift)
                     }
-                    .overlay { if file.path == nil { UploadRing(outbox: composer.outbox, upload: file.upload) } }
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .buttonStyle(TilePress())
+                    .disabled(file.path == nil || hostFiles?.open == nil)
                     .overlay(alignment: .topTrailing) {
                         Button {
                             withAnimation(.snappy(duration: 0.2)) { composer.removeAttachment(file.id) }
@@ -1806,14 +1821,17 @@ struct AttachmentTiles: View {
                                 .symbolRenderingMode(.palette)
                                 .foregroundStyle(.white, .black.opacity(0.55))
                                 .padding(3)
-                                // The glyph is small; the finger's target isn't.
-                                .touchTarget()
+                                // The glyph is small; the finger's target isn't, but keeps to the
+                                // corner: at 44 it reached past the tile's middle, where a tap
+                                // opens the attachment.
+                                .touchTarget(36)
                         }
                         .buttonStyle(.ahPress)
                         .accessibilityLabel("Remove \(file.name)")
                     }
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel(file.path == nil ? "Uploading \(file.name)" : file.name)
+                    .accessibilityHint(file.path == nil || hostFiles?.open == nil ? "" : "Opens it")
                     .transition(.scale(scale: 0.8).combined(with: .opacity))
                 }
             }
@@ -1822,6 +1840,14 @@ struct AttachmentTiles: View {
             .padding(.top, 2)
         }
         .animation(.snappy(duration: 0.25), value: composer.attachments.map(\.id))
+    }
+
+    /// An upload with no picture of its own here that can be drawn from the host's copy: a
+    /// picture or a video.
+    private static func drawn(_ file: ComposerModel.Attachment) -> Attachment? {
+        guard let path = file.path else { return nil }
+        let kept = Attachment.upload(Uploads.Upload(path: path, name: file.name, image: file.image))
+        return kept.look == .file ? nil : kept
     }
 }
 

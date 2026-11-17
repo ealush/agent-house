@@ -57,7 +57,8 @@ struct MessageRail: View {
                         if inside { hover = i } else if hover == i { hover = nil }
                     }
                     .accessibilityElement()
-                    .accessibilityLabel("Message \(i + 1) of \(items.count): \(String(items[i].text.prefix(120)))")
+                    // Its attachments as the bubble says them ("1 image · …"), not their paths.
+                    .accessibilityLabel("Message \(i + 1) of \(items.count): \(FeedProjection.railPreview(items[i].text).prefix(120))")
                     .accessibilityAddTraits(i == active ? [.isButton, .isSelected] : .isButton)
                     .accessibilityAction { jump(items[i]) }
             }
@@ -287,27 +288,22 @@ struct UploadBar: View {
     }
 }
 
-/// Your message: right-aligned, with what you attached drawn as attachments.
+/// Your message: right-aligned, what you attached over your words as tiles that open (a
+/// picture pasted into the agent's own terminal among them).
 struct UserBubble: View {
     let text: String
     var at: Double? = nil
     var pending: String? = nil
+    /// The message's parts: its pictures are drawn with what you attached.
     var media: [FeedPart] = []
     @Environment(\.theme) private var theme
+    @Environment(\.hostFiles) private var hostFiles
 
     var body: some View {
-        let split = Uploads.split(text)
+        let split = Attachment.of(text, media: media)
         VStack(alignment: .trailing, spacing: 6) {
-            if !split.uploads.isEmpty {
-                HStack {
-                    ForEach(split.uploads, id: \.path) { upload in
-                        if upload.image {
-                            HostImage(source: upload.path, alt: upload.name).frame(maxWidth: 160)
-                        } else {
-                            Label(upload.name, systemImage: "doc").font(.ah(.caption)).padding(8).background(theme.raised, in: Capsule())
-                        }
-                    }
-                }
+            if !split.attachments.isEmpty {
+                AttachmentStrip(attachments: split.attachments, alignment: .trailing)
             }
             if !split.rest.isEmpty {
                 // Your line breaks as you typed them: a new line in the box is one here too.
@@ -325,8 +321,16 @@ struct UserBubble: View {
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.leading, 40)
         .opacity(pending != nil ? 0.75 : 1)
+        // One element a message, as the agent's are; what it carries opens from its actions.
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("You: \(Uploads.summary(text))\(pending.map { ". \($0)" } ?? "")")
+        .accessibilityLabel("You: \(Uploads.summary(images: split.attachments.count { $0.look == .picture }, files: split.attachments.count { $0.look != .picture }, words: split.rest))\(pending.map { ". \($0)" } ?? "")")
+        .accessibilityActions {
+            if let open = hostFiles?.open {
+                ForEach(Array(split.attachments.enumerated()), id: \.offset) { _, attachment in
+                    Button("Open \(attachment.name)") { Task { await open(attachment.source) } }
+                }
+            }
+        }
     }
 }
 
@@ -381,7 +385,7 @@ private struct PartView: View {
                 }
             }
         case .media(_, let src, let alt):
-            HostImage(source: src, alt: alt ?? "")
+            AttachmentStrip(attachments: [.picture(src, alt: alt)])
         case .widget(let widget):
             WidgetView(model: WidgetModel(widget), answered: answered, reply: { text in Task { await session.reply(text) } })
         case .notice(_, let text):
@@ -596,7 +600,7 @@ private struct ToolBodyView: View {
         @Environment(\.theme) private var theme
         var body: some View {
             Button {
-                hostFiles?.open(path)
+                Task { await hostFiles?.open?(path) }
             } label: {
                 Label(path, systemImage: "doc.text").font(.ahMono(.caption)).lineLimit(1).truncationMode(.head)
             }
@@ -620,7 +624,10 @@ private struct ToolBodyView: View {
                     CodeBlockView(code: text, tone: result.isError ? .error : .plain)
                         .environment(\.snippetRun, nil)
                 }
-                ForEach(result.images ?? [], id: \.self) { src in HostImage(source: src) }
+                // What a tool saw (a screenshot it took): thumbnails that open.
+                if let images = result.images, !images.isEmpty {
+                    AttachmentStrip(attachments: images.map { .picture($0) })
+                }
             }
         }
     }

@@ -843,7 +843,7 @@ struct LayerView: View {
             if let description = model.description, !description.body.isEmpty {
                 DisclosureGroup("The PR’s description") {
                     MarkdownView(description.body, compact: true)
-                        .environment(\.hostFiles, HostFiles(load: { [review = model.review, id = model.stack?.id ?? ""] src in try? await review.image(id, src: src) }, open: { _ in }))
+                        .environment(\.hostFiles, HostFiles(load: { [review = model.review, id = model.stack?.id ?? ""] src in try? await review.image(id, src: src) }))
                 }
             }
         }

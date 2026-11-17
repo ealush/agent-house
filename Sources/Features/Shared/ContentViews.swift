@@ -6,8 +6,12 @@ import UIKit
 /// widgets, previews). Absent outside a signed-in session.
 struct HostFiles: Sendable {
     let load: @Sendable (String) async -> Data?
-    /// Opens a host path (a link to a file): Quick Look in the app.
-    let open: @MainActor @Sendable (String) -> Void
+    /// Opens a host path (a link to a file, an attachment) or a picture that came inline: Quick
+    /// Look in the app, once it's here. None where nothing opens (a review's pictures).
+    var open: (@MainActor @Sendable (String) async -> Void)?
+    /// The session's copies of its attachments (their tiles' thumbnails, what Quick Look opens);
+    /// none where nothing is kept (a review's pictures).
+    var kept: HostFileStore? = nil
 }
 
 private struct HostFilesKey: EnvironmentKey {
@@ -81,7 +85,7 @@ struct MarkdownView: View {
             switch LinkPolicy.classify(url.absoluteString.removingPercentEncoding ?? url.absoluteString) {
             case .external: return .systemAction
             case .hostFile(let path):
-                hostFiles?.open(path)
+                Task { await hostFiles?.open?(path) }
                 return .handled
             case .refused: return .discarded
             }
@@ -459,12 +463,24 @@ struct HostImage: View {
     var body: some View {
         Group {
             if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxHeight: 360)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .accessibilityLabel(alt.isEmpty ? "Image" : alt)
+                // Tapped, in full (Quick Look: zoom, share, save).
+                Button {
+                    guard let open = hostFiles?.open else { return }
+                    Haptics.tap()
+                    Task { await open(source) }
+                } label: {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxHeight: 360)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .contentShape(.hoverEffect, RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .hoverEffect(.lift)
+                }
+                .buttonStyle(TilePress())
+                .disabled(hostFiles?.open == nil)
+                .accessibilityLabel(alt.isEmpty ? "Image" : alt)
+                .accessibilityHint(hostFiles?.open == nil ? "" : "Opens it")
             } else if failed {
                 Label(alt.isEmpty ? "Image not available" : alt, systemImage: "photo").font(.ah(.caption)).foregroundStyle(theme.muted)
             } else {

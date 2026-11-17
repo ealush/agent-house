@@ -93,7 +93,8 @@ struct SessionScreen: View {
         // host, and a host path you tap opens in Quick Look.
         .environment(\.hostFiles, HostFiles(
             load: { [hub = session.hub, key = session.key] path in try? await hub.client(forKey: key).file(path) },
-            open: { path in Task { await preview(path) } }))
+            open: { path in await preview(path) },
+            kept: session.files))
         .quickLookPreview($previewURL)
         // A phone renames as iOS does, in an alert with the name selected: a header of its own
         // under the bar repeated the bar's buttons around a bare field.
@@ -135,11 +136,15 @@ struct SessionScreen: View {
         .accessibilityElement(children: .contain)
     }
 
-    private func preview(_ path: String) async {
-        guard let data = try? await session.hub.client(forKey: session.key).file(path) else { return }
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent((path as NSString).lastPathComponent)
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if (try? data.write(to: url, options: [.completeFileProtection])) != nil { previewURL = url }
+    /// A host path or an inline picture in Quick Look: the session's copy when it has one (an
+    /// attachment's tile fetched it for its thumbnail), else fetched now.
+    private func preview(_ source: String) async {
+        guard let url = await session.files.local(source) else {
+            let name = source.hasPrefix("data:") ? "the picture" : Uploads.stripTimestamp((source as NSString).lastPathComponent)
+            session.notify("Couldn’t open \(name)", tone: .error)
+            return
+        }
+        previewURL = url
     }
 
     @ViewBuilder
@@ -150,7 +155,7 @@ struct SessionScreen: View {
             // Under the bars and the home indicator: the transcript runs on beneath them, and the
             // controller keeps its rows and the dock clear of them.
             ConversationSurface(session: session, scene: scene, paneFocused: paneFocused, narrow: narrow) { path in
-                Task { await preview(path) }
+                await preview(path)
             }
             .ignoresSafeArea(.container)
             .id(session.key)

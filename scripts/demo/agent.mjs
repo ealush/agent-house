@@ -10,12 +10,14 @@
 // Typing /ask (or /design, with previews) opens Claude Code's question dialog; /rotate, a permission prompt; /plan or /trust, its plan approval or
 // folder-trust picker, for the app's answer-from-anywhere views. /stream [n] works for a minute and more, a step
 // about every second (the app's layout tests type and queue under it), /burst [n] 15 steps a second; /long [n]
-// writes n turns at once. A folder holding `.demo-untrusted` opens on the
+// writes n turns at once; /media sends attachments (pictures, a clip, a recording, a PDF, a log) as the app's
+// composer would, then a picture pasted into the terminal and one the agent reads. A folder holding `.demo-untrusted` opens on the
 // folder-trust picker, as Claude Code does in a folder it hasn't been trusted in; trusting it removes the mark.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { demoUploads } from './media.mjs';
 
 const cwd = process.cwd();
 const args = process.argv.slice(2);
@@ -272,6 +274,7 @@ async function turn(prompt) {
 function next() {
   if (!queue.length) return;
   const prompt = queue.shift();
+  if (prompt === '/media') return media();
   const long = /^\/(stream|burst|long)(?:\s+(\d+))?$/.exec(prompt);
   if (!long) return turn(prompt);
   const n = long[2] ? Number(long[2]) : undefined;
@@ -327,6 +330,33 @@ function history(turns) {
     for (let i = 0; i < 5; i++) longStep(t * 5 + i);
   }
   say(`Wrote ${turns} turns.`, 1);
+  box();
+  next();
+}
+
+/**
+ * `/media`: what you'd attach from the app's composer (their paths in ah's upload folder, then
+ * your words), a picture pasted straight into the terminal, and one the agent reads, each
+ * answered. Written at once, from the demo host's upload folder (`AH_DEMO_UPLOADS`).
+ */
+function media() {
+  clock = Math.max(clock, Date.now());
+  const folder = process.env.AH_DEMO_UPLOADS;
+  if (!folder) {
+    user('/media', 1);
+    say('There is no upload folder here: start me from the demo host.', 1);
+  } else {
+    const { files, pasted } = demoUploads(folder);
+    const image = (data) => ({ type: 'image', source: { type: 'base64', media_type: 'image/png', data } });
+    user(`${files.join(' ')} p95 jumped after the deploy. Here's the dashboard, the list it broke, a repro, my screen recording, the incident report and the log.`, 1);
+    think('The dashboard jump lines up with the deploy marker. Check the log for what the slow requests have in common.');
+    bash('grep -c "cache=miss" users-api.log', 'Count cache misses in the log', '160');
+    say('Every request over 300 ms in the log is a **cache miss** on a team lookup, and they start with deploy 1.42: the users cache is bypassed when a team is given.', 2);
+    line('user', [{ type: 'text', text: 'And this came up on my phone' }, image(pasted)], {}, 20);
+    const shot = files.find((f) => f.endsWith('dashboard.png'));
+    if (shot) tool('Read', { file_path: shot }, [image(readFileSync(shot).toString('base64'))], { type: 'image', file: { filePath: shot } });
+    say('That dialog is the users list timing out on the phone: the same misses. Restoring the cache key for team lookups fixes both.', 2);
+  }
   box();
   next();
 }

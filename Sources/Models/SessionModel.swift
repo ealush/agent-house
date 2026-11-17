@@ -19,6 +19,8 @@ final class SessionModel: Identifiable {
     /// Dictation into the box: the host's speech subscription, else this device (`DictationModel`).
     let dictation: DictationModel
     let queue: QueueModel
+    /// Its attachments' copies on this device: their thumbnails, and Quick Look (`HostFileStore`).
+    let files: HostFileStore
 
     private(set) var feed = FeedState.initial
     private(set) var prompts: [FeedPrompt] = []
@@ -77,6 +79,7 @@ final class SessionModel: Identifiable {
         let host = parsed?.host
         dictation = DictationModel(api: api, thisDevice: DictationModel.thisDeviceName, hostDoesVoice: { [weak hub] in hub?.state(host: host)?.supports("voice") ?? false }, makeCapture: { DictationModel.makeCapture() })
         queue = QueueModel(api: api, outbox: outbox, uid: ref, key: key)
+        files = HostFileStore(api: api)
         // Agents open in the GUI unless this device chose the terminal. Not pinned to the
         // terminal when the host hasn't attached a transcript reader yet: a session opened
         // right after it started would have stayed there.

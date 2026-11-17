@@ -21,6 +21,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { startModel } from './model.mjs';
+import { demoUploads } from './media.mjs';
 
 const source = resolve(process.env.AH_SOURCE ?? new URL('../../../ah', import.meta.url).pathname);
 const { startAh, cleanup } = await import(pathToFileURL(join(source, 'test/helpers.ts')).href);
@@ -219,6 +220,9 @@ process.env.AH_REBUILD_CMD = 'sleep 2';
 // The scripted agent's /design calls ah's Claude Code hook, as Claude Code does.
 process.env.AH_DEMO_HOOK = join(source, 'bin', 'ah-hook.js');
 mkdirSync(join(dir, 'cache', 'ah', 'uploads'), { recursive: true });
+// Attachments for the scripted agent's /media turn, in that upload folder (made once).
+process.env.AH_DEMO_UPLOADS = join(dir, 'cache', 'ah', 'uploads');
+demoUploads(process.env.AH_DEMO_UPLOADS);
 // AH_DEMO_APNS=1: an APNs key of its own and a loopback stand-in for Apple's gateway that takes
 // every push (alerts, Live Activity updates) and writes it to <dir>/apns.jsonl, to watch what
 // the host sends the app without a real key. Nothing reaches Apple.

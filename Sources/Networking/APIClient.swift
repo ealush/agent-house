@@ -106,21 +106,27 @@ struct APIClient: Sendable {
         var request = await request("GET", path, query: query)
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         do {
-            let (response, stream) = try await transport.stream(for: request)
-            guard (200..<300).contains(response.statusCode) else {
-                var body = Data()
-                for try await chunk in stream {
-                    body.append(chunk)
-                    if body.count > 4096 { break }
-                }
-                let error = APIError(status: response.statusCode, body: body)
-                if case .unauthorized = error { await refused(request) }
-                throw error
-            }
-            return stream
+            return try await checkedStream(request).stream
         } catch {
             throw APIError.wrap(error)
         }
+    }
+
+    /// A streaming response once it's known to be a success; a failure reads its first few
+    /// kilobytes for the host's reason.
+    private func checkedStream(_ request: URLRequest) async throws -> (response: HTTPURLResponse, stream: AsyncThrowingStream<Data, any Error>) {
+        let (response, stream) = try await transport.stream(for: request)
+        guard (200..<300).contains(response.statusCode) else {
+            var body = Data()
+            for try await chunk in stream {
+                body.append(chunk)
+                if body.count > 4096 { break }
+            }
+            let error = APIError(status: response.statusCode, body: body)
+            if case .unauthorized = error { await refused(request) }
+            throw error
+        }
+        return (response, stream)
     }
 
     /// A 401 from the hub itself is this device's sign-in refused. One through it from a peer
@@ -376,6 +382,50 @@ struct APIClient: Sendable {
     }
     /// A host file's bytes, authenticated (for Quick Look and images).
     func file(_ path: String) async throws -> Data { try await send(await request("GET", "/api/fs/file", query: [URLQueryItem(name: "path", value: path)])) }
+
+    /// How a host file's download to disk ended.
+    enum Download: Equatable, Sendable {
+        /// All of it is in the file: this many bytes.
+        case saved(Int)
+        /// Past the limit (this many bytes as the host said, or as many as came before it was
+        /// passed): nothing is kept.
+        case tooBig(Int)
+    }
+
+    /// A host file written to `file` as it comes, never all in memory (a screen recording runs to
+    /// hundreds of megabytes). `atMost`: given up on as soon as it's known to be bigger.
+    /// `progress`: the share so far, when the host says how big it is.
+    func download(_ path: String, to file: URL, atMost limit: Int? = nil, progress: (@Sendable (Double) -> Void)? = nil) async throws -> Download {
+        let request = await request("GET", "/api/fs/file", query: [URLQueryItem(name: "path", value: path)])
+        do {
+            let (response, stream) = try await checkedStream(request)
+            let expected = response.expectedContentLength
+            if let limit, expected > limit { return .tooBig(Int(expected)) }
+            guard FileManager.default.createFile(atPath: file.path, contents: nil) else { throw APIError.transport("couldn't write \(file.lastPathComponent)") }
+            #if os(iOS)
+            try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: file.path)
+            #endif
+            let handle = try FileHandle(forWritingTo: file)
+            defer { try? handle.close() }
+            var written = 0
+            for try await chunk in stream {
+                written += chunk.count
+                if let limit, written > limit {
+                    try? FileManager.default.removeItem(at: file)
+                    return .tooBig(written)
+                }
+                try handle.write(contentsOf: chunk)
+                if let progress, expected > 0 { progress(min(1, Double(written) / Double(expected))) }
+            }
+            // A stream cut short (cancelled, the connection dropped) can end as if it were done.
+            try Task.checkCancellation()
+            if expected > 0, written != expected { throw APIError.transport("\(file.lastPathComponent) came incomplete") }
+            return .saved(written)
+        } catch {
+            try? FileManager.default.removeItem(at: file)
+            throw APIError.wrap(error)
+        }
+    }
     func mkdir(_ path: String) async throws -> String { (try await call("POST", "/api/fs/mkdir", json: ["path": path], as: UploadedPath.self)).path }
     /// Upload into a folder on the host (Files panel).
     func uploadFile(into dir: String, name: String, data: Data) async throws -> String {

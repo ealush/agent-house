@@ -191,10 +191,15 @@ final class FilesModel {
 
         nonisolated init(_ entry: FsEntry) {
             guard entry.type != .dir else { self = .folder; return }
-            let name = entry.name.lowercased()
+            self.init(file: entry.name)
+        }
+
+        /// A file's, by its name alone (an attachment's).
+        nonisolated init(file: String) {
+            let name = file.lowercased()
             let ext = name.split(separator: ".").count > 1 ? String(name.split(separator: ".").last!) : ""
             switch ext {
-            case "png", "jpg", "jpeg", "gif", "webp", "avif", "heic", "svg", "ico", "bmp", "tiff": self = .image
+            case "png", "jpg", "jpeg", "gif", "webp", "avif", "heic", "heif", "svg", "ico", "bmp", "tif", "tiff": self = .image
             case "pdf": self = .pdf
             case "swift", "ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "rb", "go", "rs", "c", "h", "cc", "cpp", "hpp", "m", "mm",
                  "java", "kt", "kts", "cs", "php", "sh", "bash", "zsh", "fish", "lua", "sql", "html", "htm", "css", "scss", "vue",

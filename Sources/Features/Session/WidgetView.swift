@@ -133,7 +133,7 @@ struct WidgetView: View {
                     Button {
                         switch link.target {
                         case .web(let url): openURL(url)
-                        case .hostFile(let path): hostFiles?.open(path)
+                        case .hostFile(let path): Task { await hostFiles?.open?(path) }
                         case .unsupported: break
                         }
                     } label: {
