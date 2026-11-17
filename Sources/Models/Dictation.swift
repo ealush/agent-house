@@ -220,6 +220,11 @@ final class DictationModel {
     var route: DictationRoute { .of(settings) }
     var isListening: Bool { if case .listening = phase { true } else { false } }
     var isBusy: Bool { phase == .starting || phase == .writing || isListening }
+    /// Starting or listening: the box's corners are its controls (✕ and ✓).
+    var isDictating: Bool { phase == .starting || isListening }
+    /// Listening, and the box shows it (`DictationWaves`): until the first words go in as you
+    /// speak (Words as You Speak), after which the box shows them and the card the waves.
+    var showsWaves: Bool { isListening && (!live || placed.isEmpty) }
 
     /// Reads the host's settings (on showing the composer, and as each dictation starts).
     func refresh() async {

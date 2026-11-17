@@ -33,13 +33,18 @@ final class NewSessionDraft {
     var newTmux = ""
     var extraArgs = ""
     private(set) var projects: [String] = []
-    /// The first message, typed in the box.
-    var text = ""
-    /// What's attached in the box. Each file uploads to the host as soon as it's picked, with
-    /// no session yet to send it to; the session's box takes the files over with the first
-    /// message (`ComposerModel.adopt`). A box of its own, holding only the files, made for the
-    /// host the session starts on.
-    private(set) var files: ComposerModel?
+    /// The first message, typed (or dictated) in the box.
+    var text: String {
+        get { box?.text ?? "" }
+        set { box?.text = newValue }
+    }
+    /// The box: the first message and what's attached, made for the host the session starts
+    /// on. Each file uploads to the host as soon as it's picked, with no session yet to send it
+    /// to; the session's box takes the files over with the first message
+    /// (`ComposerModel.adopt`).
+    private(set) var box: ComposerModel?
+    /// Dictation into the box, heard as the host the session starts on hears it.
+    private(set) var dictation: DictationModel?
 
     enum Phase { case ready, starting }
     private(set) var phase: Phase = .ready
@@ -83,6 +88,8 @@ final class NewSessionDraft {
     var canStart: Bool {
         phase == .ready && preset != nil && !cwd.trimmingCharacters(in: .whitespaces).isEmpty && dirProblem == nil
             && (tmuxSession != nil || !newTmux.trimmingCharacters(in: .whitespaces).isEmpty)
+            // Not mid-dictation: its words aren't all in the box yet.
+            && dictation?.isBusy != true
     }
 
     /// Once, when the screen first shows: what it was opened with, else as last time.
@@ -95,7 +102,7 @@ final class NewSessionDraft {
         cwd = context.cwd ?? (last.flatMap { $0.host == host ? $0.cwd : nil })
             ?? LaunchState.newestProject(hub?.rows.filter { $0.isLocal == (host == nil) } ?? []) ?? "~"
         resetTmux()
-        makeFiles()
+        makeBox()
         if let first = context.preset.flatMap({ id in presets.first { $0.id == id } }) ?? presets.first {
             presetID = first.id
             applyDefaults(first)
@@ -114,7 +121,7 @@ final class NewSessionDraft {
         guard next != host else { return }
         host = next
         resetTmux()
-        makeFiles()
+        makeBox()
         projects = []
         if !presets.contains(where: { $0.id == presetID }), let first = presets.first { choose(preset: first) }
         Task { await loadProjects() }
@@ -154,18 +161,29 @@ final class NewSessionDraft {
         resume = false
     }
 
-    /// A box for the host it starts on. Files attached for another host go with that host's
-    /// box: they were uploaded to that machine, where this session won't run.
-    private func makeFiles() {
+    /// A box for the host it starts on, the words in it carried over. Files attached for
+    /// another host go with that host's box: they were uploaded to that machine, where this
+    /// session won't run. A dictation under way stops, what it put in the box so far kept.
+    private func makeBox() {
         guard let hub else { return }
-        let dropped = files?.attachments ?? []
-        for file in dropped { files?.removeAttachment(file.id) }
-        files = ComposerModel(api: hub.client(host: host), outbox: scene.app.outbox, key: SceneModel.newSessionKey, uid: "", isShell: false)
+        let old = box
+        let dropped = old?.attachments ?? []
+        for file in dropped { old?.removeAttachment(file.id) }
+        if let leaving = dictation, leaving.phase != .idle { Task { await leaving.cancel() } }
+        let api = hub.client(host: host)
+        let fresh = ComposerModel(api: api, outbox: scene.app.outbox, key: SceneModel.newSessionKey, uid: "", isShell: false)
+        fresh.text = old?.text ?? ""
+        box = fresh
+        let host = host
+        dictation = DictationModel(api: api, thisDevice: DictationModel.thisDeviceName, hostDoesVoice: { [weak hub] in hub?.state(host: host)?.supports("voice") ?? false }, makeCapture: { DictationModel.makeCapture() })
         if !dropped.isEmpty { scene.toast("Attach the files again: they went to the other host") }
     }
 
     /// What's attached, unless it starts a shell (a first command takes no files).
-    var attached: ComposerModel? { preset?.isShell == true ? nil : files }
+    var attached: ComposerModel? { preset?.isShell == true ? nil : box }
+
+    /// Dictation, unless it starts a shell (a first command isn't spoken).
+    var dictates: DictationModel? { preset?.isShell == true ? nil : dictation }
 
     private func resetTmux() {
         let state = hub?.state(host: host)
@@ -268,7 +286,8 @@ struct NewSessionScreen: View {
     @ScaledMetric(relativeTo: .body) private var corner: CGFloat = 22
     @ScaledMetric(relativeTo: .body) private var chipHeight: CGFloat = 36
     @ScaledMetric(relativeTo: .body) private var tile: CGFloat = 62
-    @FocusState private var focused: Bool
+    /// Each ask for the keyboard (`NewSessionTextField` takes it on a change).
+    @State private var keyboardAsk = 0
     @State private var choosingFolder = false
     @State private var typingFolder = false
     @State private var typedFolder = ""
@@ -283,6 +302,9 @@ struct NewSessionScreen: View {
             if !inNavigationBar { header }
             conversation
                 .frame(maxHeight: .infinity)
+                // Dictation's word just above the box, over the stage, as a session's floats
+                // over its conversation: nothing moves while it comes and goes.
+                .overlay(alignment: .bottom) { dictationCard }
             // The box alone at the bottom, as a session's is: what it starts with is the stage.
             box
                 .padding(.horizontal, 12)
@@ -302,13 +324,28 @@ struct NewSessionScreen: View {
         .onChange(of: scene.focusRequest) { _, request in
             if request?.target == .composer(SceneModel.newSessionKey), draft.phase == .ready { takeKeyboard() }
         }
-        .onChange(of: focused) { _, now in
-            if now { scene.didFocus(.composer(SceneModel.newSessionKey)) } else { scene.didBlur(.composer(SceneModel.newSessionKey)) }
+        // An upload that failed says so, as a session's box does, and dictation's notes.
+        .onChange(of: draft.box?.events.count ?? 0) { _, count in
+            guard count > 0, let box = draft.box else { return }
+            for event in box.takeEvents() {
+                switch event {
+                case .failed(let message): scene.toast(message, error: true)
+                case .notice(let text): scene.toast(text)
+                default: break
+                }
+            }
         }
-        // An upload that failed says so, as a session's box does.
-        .onChange(of: draft.files?.events.count ?? 0) { _, count in
-            guard count > 0, let files = draft.files else { return }
-            for case .failed(let message) in files.takeEvents() { scene.toast(message, error: true) }
+        // The host's Voice settings, read as the box shows, so the first tap knows who hears it.
+        .task(id: draft.dictation.map(ObjectIdentifier.init)) { await draft.dictation?.refresh() }
+        .onChange(of: draft.dictation?.last) { _, last in
+            if last != nil {
+                Haptics.selection()
+                AccessibilityNotification.Announcement("Dictation added to the message").post()
+            }
+        }
+        // Left while listening, what was said goes into the box; a start still waiting stops.
+        .onDisappear {
+            if let box = draft.box { draft.dictation?.close(into: box) }
         }
         .sheet(isPresented: $showingMore) { NewSessionMore(draft: draft) }
         .sheet(isPresented: $choosingFolder) {
@@ -613,9 +650,27 @@ struct NewSessionScreen: View {
 
     // MARK: The box
 
+    private var dictating: Bool { draft.dictates?.isDictating == true }
+
+    /// While dictating, held to start, failed, or tidied: what a session's box shows above it.
+    @ViewBuilder
+    private var dictationCard: some View {
+        let shows = draft.phase == .ready && draft.dictates.map { d in draft.box.map { DictationCard.shows(d, in: $0) } ?? false } == true
+        Group {
+            if shows, let dictation = draft.dictates, let box = draft.box {
+                DictationCard(dictation: dictation, composer: box)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
+                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(ComposerFloat.motion(opening: shows, reduceMotion: reduceMotion), value: shows)
+    }
+
     private var box: some View {
         let files = draft.attached
         let empty = draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && files?.attachments.isEmpty != false
+        let waves = draft.dictates?.showsWaves == true
         return VStack(alignment: .leading, spacing: 0) {
             // What's attached, above the text, as a session's box has it: uploading already.
             // Gone from the box as it starts, with the words: they go with the first message.
@@ -628,11 +683,37 @@ struct NewSessionScreen: View {
                     .accessibilityIdentifier("attachments")
             }
             HStack(alignment: .bottom, spacing: 0) {
-                if let files {
+                // While dictating, + is Cancel: the same size in the same place.
+                if dictating, let dictation = draft.dictates, let box = draft.box {
+                    DictationCancel(dictation: dictation, composer: box).padding(6)
+                } else if let files {
                     AttachMenu(composer: files).padding(6).disabled(draft.phase != .ready)
                 }
-                field(files == nil)
-                if !empty || draft.phase == .starting { sendButton }
+                NewSessionTextField(draft: draft, scene: scene, keyboardAsk: keyboardAsk, start: send)
+                    .padding(.leading, files == nil && !dictating ? 8 : 0)
+                    .padding(.vertical, 6)
+                    // While dictation listens, the box says so: waves where the text goes, the
+                    // words so far faded back under them, the placeholder gone.
+                    .opacity(waves ? (draft.text.isEmpty ? 0 : 0.12) : 1)
+                    .overlay {
+                        if waves, let dictation = draft.dictates {
+                            DictationWaves(levels: dictation.levels, count: dictation.levelCount, color: theme.accent)
+                                .frame(height: 24)
+                                .padding(.horizontal, 6)
+                                .allowsHitTesting(false)
+                                .transition(.opacity)
+                        }
+                    }
+                    .animation(.easeOut(duration: 0.2), value: waves)
+                // The microphone beside Send, as a session's box has it: alone while the box is
+                // empty, and still there to add to the words.
+                HStack(spacing: 2) {
+                    if let dictation = draft.dictates, let box = draft.box, draft.phase == .ready {
+                        DictationMic(dictation: dictation, composer: box)
+                    }
+                    if (!empty || draft.phase == .starting) && !dictating { sendButton }
+                }
+                .padding(6)
             }
         }
         .frame(minHeight: control)
@@ -652,29 +733,8 @@ struct NewSessionScreen: View {
             return AttachDrop.attach(providers, to: files)
         }
         .animation(.snappy(duration: 0.22), value: empty)
+        .animation(.snappy(duration: 0.22), value: dictating)
         .animation(.snappy(duration: 0.25), value: files?.attachments.isEmpty)
-    }
-
-    /// The first message: a hardware Return starts the session.
-    private func field(_ leadingInset: Bool) -> some View {
-        TextField(draft.preset?.isShell == true ? "First command" : "Message \(agentName)", text: $draft.text, axis: .vertical)
-            .font(.ah(.body))
-            .lineLimit(1...8)
-            .focused($focused)
-            // A hardware Return starts the session, as a session's composer sends on it;
-            // Shift- or Option-Return starts a new line. Left to the field, the press went
-            // on to the sidebar's list, which opened its first session instead.
-            .onKeyPress(.return, phases: .down) { press in
-                guard press.modifiers.isDisjoint(with: [.shift, .option, .command, .control]) else { return .ignored }
-                if draft.canStart { send() }
-                return .handled
-            }
-            .textInputAutocapitalization(draft.preset?.isShell == true ? .never : .sentences)
-            .autocorrectionDisabled(draft.preset?.isShell == true)
-            .padding(.leading, leadingInset ? 14 : 0)
-            .padding(.vertical, 11)
-            .disabled(draft.phase != .ready)
-            .accessibilityIdentifier("new-session-message")
     }
 
     private var sendButton: some View {
@@ -691,23 +751,175 @@ struct NewSessionScreen: View {
         }
         .buttonStyle(.ahPress)
         .disabled(!draft.canStart)
-        .padding(6)
         .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
         .accessibilityLabel("Send")
         .accessibilityHint("Starts \(agentName) with this as its first message")
         .keyboardShortcut(.return, modifiers: .command)
     }
 
-    /// Now, and again once the screen is in its window: a field not yet in one can't take it.
-    private func takeKeyboard() {
-        focused = true
-        DispatchQueue.main.async { if draft.phase == .ready { focused = true } }
-    }
+    /// The box takes the keyboard (now, and again once it's in its window).
+    private func takeKeyboard() { keyboardAsk += 1 }
 
     private func send() {
-        // The keyboard goes down with the choices: what comes next is the conversation.
-        focused = false
+        // The keyboard goes down with the choices (the box gives it up as it starts): what
+        // comes next is the conversation.
         Task { await draft.start(animated: !reduceMotion) }
+    }
+}
+
+/// New session's text: the text view a session's box has (`ComposerTextView`), so a pasted
+/// picture, video or file attaches as it does there, and dictation's words land at the caret.
+/// A hardware Return starts the session; Shift- or Option-Return starts a new line, as a touch
+/// keyboard's Return does.
+struct NewSessionTextField: UIViewRepresentable {
+    let draft: NewSessionDraft
+    let scene: SceneModel
+    /// Changed for each ask for the keyboard.
+    let keyboardAsk: Int
+    let start: () -> Void
+    @Environment(\.theme) private var theme
+
+    private var isShell: Bool { draft.preset?.isShell == true }
+
+    func makeUIView(context: Context) -> ComposerTextView {
+        let view = ComposerTextView()
+        view.delegate = context.coordinator
+        view.coordinator = context.coordinator
+        view.pasteDelegate = context.coordinator
+        view.pasteConfiguration = UIPasteConfiguration(acceptableTypeIdentifiers: ComposerTextView.pastedTypes)
+        view.font = AhType.uiFont(.body)
+        view.adjustsFontForContentSizeCategory = true
+        view.backgroundColor = .clear
+        view.textContainerInset = UIEdgeInsets(top: 6, left: 2, bottom: 6, right: 2)
+        view.isScrollEnabled = true
+        view.accessibilityIdentifier = "new-session-message"
+        view.text = draft.text
+        setTraits(view)
+        return view
+    }
+
+    /// Commands aren't sentences: no capitals, corrections or curly quotes for a shell.
+    private func setTraits(_ view: ComposerTextView) {
+        view.autocapitalizationType = isShell ? .none : .sentences
+        view.autocorrectionType = isShell ? .no : .default
+        view.spellCheckingType = isShell ? .no : .default
+        view.smartQuotesType = isShell ? .no : .default
+        view.accessibilityLabel = isShell ? "First command" : "Message"
+    }
+
+    func updateUIView(_ view: ComposerTextView, context: Context) {
+        context.coordinator.parent = self
+        if (view.autocapitalizationType == .none) != isShell {
+            setTraits(view)
+            if view.isFirstResponder { view.reloadInputViews() }
+        }
+        view.takesMedia = draft.attached != nil
+        if view.text != draft.text {
+            view.text = draft.text
+            view.invalidateIntrinsicContentSize()
+            // Where the change left the caret (dictation's words put in mid-text), else the end.
+            let offset = draft.box?.placeCaret.map { min(max(0, $0), view.text.utf16.count) }
+            draft.box?.placeCaret = nil
+            let caret = offset.flatMap { view.position(from: view.beginningOfDocument, offset: $0) } ?? view.endOfDocument
+            view.selectedTextRange = view.textRange(from: caret, to: caret)
+        }
+        view.placeholder = isShell ? "First command" : "Message \(draft.preset?.name ?? "the agent")"
+        if context.coordinator.theme != theme {
+            context.coordinator.theme = theme
+            view.textColor = UIColor(theme.text)
+        }
+        let ready = draft.phase == .ready
+        if view.isEditable != ready { view.isEditable = ready }
+        if !ready, view.isFirstResponder { view.resignFirstResponder() }
+        if keyboardAsk != context.coordinator.handledAsk {
+            context.coordinator.handledAsk = keyboardAsk
+            // Now, and again once it's in its window: a view not yet in one can't take it.
+            if ready {
+                view.becomeFirstResponder()
+                DispatchQueue.main.async { if draft.phase == .ready { view.becomeFirstResponder() } }
+            }
+        }
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: ComposerTextView, context: Context) -> CGSize? {
+        uiView.fitting(proposal, maxHeight: .infinity, kept: &context.coordinator.measured)
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+
+    @MainActor
+    final class Coordinator: NSObject, UITextViewDelegate, UITextPasteDelegate, ComposerTextViewOwner {
+        var parent: NewSessionTextField
+        var handledAsk = 0
+        var theme: Theme?
+        var measured: [ComposerTextView.Measure: CGFloat] = [:]
+
+        init(parent: NewSessionTextField) { self.parent = parent }
+
+        private var target: SceneModel.FocusTarget { .composer(SceneModel.newSessionKey) }
+
+        func textViewDidChange(_ textView: UITextView) {
+            textView.invalidateIntrinsicContentSize()
+            parent.scene.fieldState = fieldState(textView)
+            parent.draft.text = textView.text
+            parent.draft.box?.caret = caret(textView)
+        }
+
+        func textViewDidChangeSelection(_ textView: UITextView) {
+            parent.scene.fieldState = fieldState(textView)
+            // Mid-keystroke the caret moves before the text arrives: the text's change sets it.
+            guard textView.text == parent.draft.text else { return }
+            parent.draft.box?.caret = caret(textView)
+        }
+
+        func textViewDidBeginEditing(_ textView: UITextView) {
+            parent.scene.keyScope = .field
+            parent.scene.fieldState = fieldState(textView)
+            parent.scene.didFocus(target)
+        }
+
+        func textViewDidEndEditing(_ textView: UITextView) {
+            parent.scene.keyScope = .app
+            parent.scene.didBlur(target)
+        }
+
+        private func caret(_ textView: UITextView) -> Int {
+            textView.offset(from: textView.beginningOfDocument, to: textView.selectedTextRange?.start ?? textView.endOfDocument)
+        }
+
+        private func fieldState(_ textView: UITextView) -> FieldState {
+            let selection = textView.selectedTextRange.map {
+                textView.offset(from: textView.beginningOfDocument, to: $0.start)..<textView.offset(from: textView.beginningOfDocument, to: $0.end)
+            }
+            return FieldState(text: textView.text, selection: selection)
+        }
+
+        /// A hardware Return starts the session (left to the box, the press went on to the
+        /// sidebar's list, which opened its first session instead); Option-Return is a new
+        /// line, as Shift-Return is.
+        func handle(_ press: KeyPress, in textView: ComposerTextView) -> Bool {
+            if parent.scene.handle(press, scope: .field, field: fieldState(textView)) { return true }
+            switch press.key {
+            case "Enter" where press.modifiers.isEmpty:
+                if parent.draft.canStart { parent.start() }
+                return true
+            case "Enter" where press.modifiers == [.option]:
+                textView.insertText("\n")
+                return true
+            default:
+                return false
+            }
+        }
+
+        /// Pasted media attaches, as in a session's box (not for a shell's first command).
+        func textPasteConfigurationSupporting(_ textPasteConfigurationSupporting: any UITextPasteConfigurationSupporting, transform item: any UITextPasteItem) {
+            ComposerTextView.paste(item, to: self, takesMedia: parent.draft.attached != nil)
+        }
+
+        func pasteMedia(_ providers: [NSItemProvider]) {
+            guard let box = parent.draft.attached else { return }
+            AttachPaste.attach(providers, to: box)
+        }
     }
 }
 

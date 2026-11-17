@@ -468,7 +468,8 @@ final class ComposerModel {
     var text = "" {
         didSet {
             guard text != oldValue else { return }
-            drafts.edited(text)
+            // A box with no session yet (New session's) has no draft on the host to keep.
+            if !uid.isEmpty { drafts.edited(text) }
             if text.isEmpty, attachments.isEmpty { requeueBefore = nil }
             onTextChange?(oldValue, text)
         }

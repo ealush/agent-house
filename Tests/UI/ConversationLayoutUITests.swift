@@ -1,4 +1,6 @@
+import AVFoundation
 import UIKit
+import UniformTypeIdentifiers
 import XCTest
 
 /// Where things are on the conversation screen, against a demo host (scripts/demo/host.mjs) that the
@@ -303,6 +305,44 @@ final class ConversationLayoutUITests: XCTestCase {
         assertBarOnKeyboard("after the burst")
     }
 
+    /// 17. New session's box takes what a session's does: pasted words as words, pasted pictures as
+    /// tiles inside the box (not dropped as nothing), and the microphone in its corner.
+    func test17NewSessionPasteAndMicrophone() throws {
+        if isPhone, app.tabBars.buttons["Sessions"].exists { app.tabBars.buttons["Sessions"].tap() }
+        let new = app.buttons["New Session"].firstMatch
+        XCTAssertTrue(new.waitForExistence(timeout: 15), "no New Session button")
+        new.tap()
+        let field = app.textViews["new-session-message"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "no box on New Session")
+        XCTAssertTrue(app.buttons["dictate"].waitForExistence(timeout: 5), "no microphone in New Session's box")
+        field.tap()
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "no keyboard after tapping New Session's box")
+        settle()
+        UIPasteboard.general.string = "Pasted words for the first message."
+        paste(into: field)
+        XCTAssertTrue((field.value as? String ?? "").contains("Pasted words"), "the pasted text isn't in New Session's box")
+        UIPasteboard.general.images = [Self.picture(.systemPink), Self.picture(.systemTeal)]
+        paste(into: field)
+        let strip = app.descendants(matching: .any)["attachments"]
+        XCTAssertTrue(strip.waitForExistence(timeout: 10), "no attachment strip after pasting pictures into New Session")
+        let removes = strip.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Remove '"))
+        let both = expectation(for: NSPredicate(format: "count == 2"), evaluatedWith: removes)
+        wait(for: [both], timeout: 10)
+        XCTAssertTrue((field.value as? String ?? "").contains("Pasted words"), "pasting pictures changed the words")
+        XCTAssertLessThan(strip.frame.maxY, field.frame.minY + 1, "the pictures aren't above the words in the box")
+        // A video and a PDF, as Photos and Files copy them: each a tile too.
+        UIPasteboard.general.setData(try Self.video(), forPasteboardType: UTType.mpeg4Movie.identifier)
+        paste(into: field)
+        UIPasteboard.general.setData(Self.document(), forPasteboardType: UTType.pdf.identifier)
+        paste(into: field)
+        let four = expectation(for: NSPredicate(format: "count == 4"), evaluatedWith: removes)
+        wait(for: [four], timeout: 20)
+        XCTAssertTrue(strip.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Remove ' AND label ENDSWITH '.mp4'")).firstMatch.exists, "the pasted video has no tile")
+        XCTAssertTrue(strip.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Remove ' AND label ENDSWITH '.pdf'")).firstMatch.exists, "the pasted PDF has no tile")
+        keep("pasted")
+    }
+
+    // MARK: Elements
     // MARK: Elements
 
     private var composer: XCUIElement { app.textViews["composer"] }
@@ -383,8 +423,8 @@ final class ConversationLayoutUITests: XCTestCase {
         settle()
     }
 
-    private func paste() {
-        composer.press(forDuration: 1.0)
+    private func paste(into field: XCUIElement? = nil) {
+        (field ?? composer).press(forDuration: 1.0)
         let item = app.menuItems["Paste"].exists ? app.menuItems["Paste"] : app.buttons["Paste"]
         XCTAssertTrue(item.waitForExistence(timeout: 5), "no Paste in the box's menu")
         item.tap()
@@ -536,6 +576,42 @@ final class ConversationLayoutUITests: XCTestCase {
             color.setFill()
             context.fill(CGRect(x: 0, y: 0, width: 120, height: 90))
         }
+    }
+
+    /// A one-page PDF.
+    private static func document() -> Data {
+        UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 200, height: 260)).pdfData { context in
+            context.beginPage()
+            ("Pasted document" as NSString).draw(at: CGPoint(x: 20, y: 20), withAttributes: [.font: UIFont.systemFont(ofSize: 16)])
+        }
+    }
+
+    /// A second of video: thirty pink frames, H.264 in an MP4.
+    private static func video() throws -> Data {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mp4")
+        let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 160, AVVideoHeightKey: 120])
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA, kCVPixelBufferWidthKey as String: 160, kCVPixelBufferHeightKey as String: 120])
+        writer.add(input)
+        writer.startWriting()
+        writer.startSession(atSourceTime: .zero)
+        for frame in 0..<30 {
+            while !input.isReadyForMoreMediaData { Thread.sleep(forTimeInterval: 0.01) }
+            var buffer: CVPixelBuffer?
+            CVPixelBufferPoolCreatePixelBuffer(nil, adaptor.pixelBufferPool!, &buffer)
+            guard let buffer else { continue }
+            CVPixelBufferLockBaseAddress(buffer, [])
+            let base = CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self)
+            for i in stride(from: 0, to: CVPixelBufferGetBytesPerRow(buffer) * 120, by: 4) { base[i] = 0x90; base[i + 1] = 0x2D; base[i + 2] = 0xFF; base[i + 3] = 0xFF }
+            CVPixelBufferUnlockBaseAddress(buffer, [])
+            adaptor.append(buffer, withPresentationTime: CMTime(value: CMTimeValue(frame), timescale: 30))
+        }
+        input.markAsFinished()
+        let done = DispatchSemaphore(value: 0)
+        writer.finishWriting { done.signal() }
+        done.wait()
+        defer { try? FileManager.default.removeItem(at: url) }
+        return try Data(contentsOf: url)
     }
 
     private static func queued(_ count: Int) -> [String] {

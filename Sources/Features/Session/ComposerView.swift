@@ -41,9 +41,8 @@ struct ComposerView: View {
     @Namespace private var glass
 
     private var hasTray: Bool { ComposerFloat.hasTray(session) }
-    /// Dictation is listening and the box shows it (`DictationWaves`): until the first words go
-    /// in as you speak (Words as You Speak), after which the box shows them and the card the waves.
-    private var listening: Bool { session.dictation.isListening && (!session.dictation.live || session.dictation.placed.isEmpty) }
+    /// Dictation is listening and the box shows it (`DictationWaves`).
+    private var listening: Bool { session.dictation.showsWaves }
     /// The most the queue tray may take: under half the conversation's room, and never so much
     /// that the transcript keeps less than `transcriptKeeps` beside the box. Worked out from the
     /// room (the keyboard and the bars) and the box, never from the tray itself.
@@ -309,109 +308,19 @@ struct ComposerView: View {
     private var attachMenu: some View { AttachMenu(composer: composer, recall: true) }
 
     /// Dictation is starting or listening: the box's corners are its controls (✕ and ✓).
-    private var dictating: Bool { session.dictation.phase == .starting || session.dictation.isListening }
+    private var dictating: Bool { session.dictation.isDictating }
 
-    /// ✕ in +'s place while dictating: nothing goes into the box (what went in as you spoke
-    /// comes out again).
-    private var cancelDictation: some View {
-        Button {
-            Haptics.selection()
-            Task { await session.dictation.cancel(in: composer) }
-        } label: {
-            Image(systemName: "xmark")
-                .font(.system(size: control * 0.3, weight: .semibold))
-                .foregroundStyle(theme.muted)
-                .frame(width: control - 12, height: control - 12)
-                .contentShape(Circle())
-                .contentShape(.hoverEffect, Circle())
-                .hoverEffect(.highlight)
-                .touchTarget()
-        }
-        .buttonStyle(.ahPress)
-        .transition(.opacity)
-        .accessibilityIdentifier("dictation-cancel")
-        .accessibilityLabel("Cancel Dictation")
-        .accessibilityHint("Nothing goes into the box")
-    }
+    /// ✕ in +'s place while dictating.
+    private var cancelDictation: some View { DictationCancel(dictation: session.dictation, composer: composer) }
 
-    /// The microphone held a moment (rather than tapped) to start: what you're saying now shows
-    /// above the box too. The tap that ends the hold isn't a second tap.
-    @State private var heldMic = false
-
-    /// Dictation: a tap starts listening (the card over the conversation shows it), another
-    /// puts the words in the box. Never for a shell, whose box takes commands.
+    /// Dictation: a tap starts listening, another puts the words in the box. Never for a
+    /// shell, whose box takes commands.
     @ViewBuilder
     private var micButton: some View {
         if !session.isShell {
-            let dictation = session.dictation
-            Button {
-                if heldMic {
-                    heldMic = false
-                    return
-                }
-                Haptics.tap()
+            DictationMic(dictation: session.dictation, composer: composer) {
                 if trayOpen { withAnimation(ComposerFloat.motion(opening: false, reduceMotion: reduceMotion)) { trayOpen = false } }
-                Task { await dictation.toggle(into: composer) }
-            } label: {
-                micLabel(dictation)
             }
-            .buttonStyle(.ahPress)
-            // Not while starting: the lift that ends a hold must reach the action (`heldMic`).
-            .disabled(dictation.phase == .writing)
-            .onChange(of: dictation.phase) {
-                if !dictating { heldMic = false }
-            }
-            // Held to start: the preview of what you're saying now, above the box.
-            .simultaneousGesture(LongPressGesture(minimumDuration: 0.35).onEnded { _ in
-                switch dictation.phase {
-                case .idle, .failed, .denied:
-                    heldMic = true
-                    Haptics.threshold()
-                    if trayOpen { withAnimation(ComposerFloat.motion(opening: false, reduceMotion: reduceMotion)) { trayOpen = false } }
-                    Task { await dictation.toggle(into: composer, preview: true) }
-                default: break
-                }
-            })
-            .accessibilityIdentifier("dictate")
-            .accessibilityLabel(dictation.isListening ? "Done Dictating" : "Dictate")
-            .accessibilityHint(dictation.isListening ? "Puts what you said into the box" : "Your words go into the box; nothing is sent. Hold to see them as you speak.")
-            .accessibilityAction(named: "Dictate and See Your Words") {
-                Task { await dictation.toggle(into: composer, preview: true) }
-            }
-        }
-    }
-
-    /// The microphone, or while listening ✓ (Done) in the accent, a ring around it breathing
-    /// with your voice: once the words are in the box, that's what says it's still listening.
-    @ViewBuilder
-    private func micLabel(_ dictation: DictationModel) -> some View {
-        switch dictation.phase {
-        case .starting, .writing:
-            ProgressView().controlSize(.small)
-                .frame(width: control - 12, height: control - 12)
-        case .listening:
-            Image(systemName: "checkmark")
-                .font(.system(size: control * 0.3, weight: .bold))
-                .foregroundStyle(theme.accentInk)
-                .frame(width: control - 12, height: control - 12)
-                .background(theme.accentStrong, in: Circle())
-                .background {
-                    Circle()
-                        .fill(theme.accent.opacity(0.28))
-                        .scaleEffect(1 + CGFloat(min(1, max(0, dictation.level - 0.18) / 0.6)) * 0.45)
-                        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: dictation.level)
-                }
-                .contentShape(Circle())
-                .touchTarget()
-        default:
-            Image(systemName: "mic")
-                .font(.system(size: control * 0.36, weight: .medium))
-                .foregroundStyle(theme.muted)
-                .frame(width: control - 12, height: control - 12)
-                .contentShape(Circle())
-                .contentShape(.hoverEffect, Circle())
-                .hoverEffect(.highlight)
-                .touchTarget()
         }
     }
 
@@ -513,6 +422,123 @@ struct ComposerView: View {
             .buttonStyle(.plain)
             .transition(.opacity)
             .accessibilityLabel("Open the message in a larger editor")
+        }
+    }
+}
+
+/// ✕ in a box's + place while dictating: nothing goes into the box (what went in as you spoke
+/// comes out again). The same size in the same place, so nothing moves.
+struct DictationCancel: View {
+    let dictation: DictationModel
+    let composer: ComposerModel
+    @Environment(\.theme) private var theme
+    @ScaledMetric(relativeTo: .body) private var control: CGFloat = 44
+
+    var body: some View {
+        Button {
+            Haptics.selection()
+            Task { await dictation.cancel(in: composer) }
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: control * 0.3, weight: .semibold))
+                .foregroundStyle(theme.muted)
+                .frame(width: control - 12, height: control - 12)
+                .contentShape(Circle())
+                .contentShape(.hoverEffect, Circle())
+                .hoverEffect(.highlight)
+                .touchTarget()
+        }
+        .buttonStyle(.ahPress)
+        .transition(.opacity)
+        .accessibilityIdentifier("dictation-cancel")
+        .accessibilityLabel("Cancel Dictation")
+        .accessibilityHint("Nothing goes into the box")
+    }
+}
+
+/// The microphone in a box's corner, beside Send: a tap starts listening (✓ in its place
+/// then puts the words in the box), a hold starts it with what you're saying shown above the
+/// box too (`DictationCard`).
+struct DictationMic: View {
+    let dictation: DictationModel
+    let composer: ComposerModel
+    /// Just before listening starts: the session's box folds its settings out of the way.
+    var willStart: () -> Void = {}
+    @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ScaledMetric(relativeTo: .body) private var control: CGFloat = 44
+    /// The microphone held a moment (rather than tapped) to start: the tap that ends the hold
+    /// isn't a second tap.
+    @State private var held = false
+
+    var body: some View {
+        Button {
+            if held {
+                held = false
+                return
+            }
+            Haptics.tap()
+            willStart()
+            Task { await dictation.toggle(into: composer) }
+        } label: {
+            label
+        }
+        .buttonStyle(.ahPress)
+        // Not while starting: the lift that ends a hold must reach the action (`held`).
+        .disabled(dictation.phase == .writing)
+        .onChange(of: dictation.phase) {
+            if !dictation.isDictating { held = false }
+        }
+        // Held to start: the preview of what you're saying now, above the box.
+        .simultaneousGesture(LongPressGesture(minimumDuration: 0.35).onEnded { _ in
+            switch dictation.phase {
+            case .idle, .failed, .denied:
+                held = true
+                Haptics.threshold()
+                willStart()
+                Task { await dictation.toggle(into: composer, preview: true) }
+            default: break
+            }
+        })
+        .accessibilityIdentifier("dictate")
+        .accessibilityLabel(dictation.isListening ? "Done Dictating" : "Dictate")
+        .accessibilityHint(dictation.isListening ? "Puts what you said into the box" : "Your words go into the box; nothing is sent. Hold to see them as you speak.")
+        .accessibilityAction(named: "Dictate and See Your Words") {
+            Task { await dictation.toggle(into: composer, preview: true) }
+        }
+    }
+
+    /// The microphone, or while listening ✓ (Done) in the accent, a ring around it breathing
+    /// with your voice: once the words are in the box, that's what says it's still listening.
+    @ViewBuilder
+    private var label: some View {
+        switch dictation.phase {
+        case .starting, .writing:
+            ProgressView().controlSize(.small)
+                .frame(width: control - 12, height: control - 12)
+        case .listening:
+            Image(systemName: "checkmark")
+                .font(.system(size: control * 0.3, weight: .bold))
+                .foregroundStyle(theme.accentInk)
+                .frame(width: control - 12, height: control - 12)
+                .background(theme.accentStrong, in: Circle())
+                .background {
+                    Circle()
+                        .fill(theme.accent.opacity(0.28))
+                        .scaleEffect(1 + CGFloat(min(1, max(0, dictation.level - 0.18) / 0.6)) * 0.45)
+                        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: dictation.level)
+                }
+                .contentShape(Circle())
+                .touchTarget()
+        default:
+            Image(systemName: "mic")
+                .font(.system(size: control * 0.36, weight: .medium))
+                .foregroundStyle(theme.muted)
+                .frame(width: control - 12, height: control - 12)
+                .contentShape(Circle())
+                .contentShape(.hoverEffect, Circle())
+                .hoverEffect(.highlight)
+                .touchTarget()
         }
     }
 }
@@ -993,10 +1019,10 @@ struct ComposerTextField: UIViewRepresentable {
         view.delegate = context.coordinator
         view.coordinator = context.coordinator
         view.pasteDelegate = context.coordinator
-        // Pictures too, as the menu's Paste takes them: a keyboard's ⌘V can go through the
+        // Media too, as the menu's Paste takes it: a keyboard's ⌘V can go through the
         // text system's paste, which drops whatever the box doesn't say it takes, and which
         // asks `pasteDelegate` what each pasted thing becomes.
-        view.pasteConfiguration = UIPasteConfiguration(acceptableTypeIdentifiers: [UTType.plainText.identifier, UTType.utf8PlainText.identifier, UTType.text.identifier, UTType.url.identifier, UTType.image.identifier])
+        view.pasteConfiguration = UIPasteConfiguration(acceptableTypeIdentifiers: ComposerTextView.pastedTypes)
         view.font = AhType.uiFont(.body)
         view.adjustsFontForContentSizeCategory = true
         view.backgroundColor = .clear
@@ -1070,36 +1096,13 @@ struct ComposerTextField: UIViewRepresentable {
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: ComposerTextView, context: Context) -> CGSize? {
-        let width = proposal.width ?? (uiView.bounds.width > 0 ? uiView.bounds.width : 320)
-        let line = uiView.font?.lineHeight ?? 20
-        // Measured from the text itself: the view's own answer came from its last layout, so a
-        // box emptied after a long message stayed that tall around a word.
-        let inset = uiView.textContainerInset
-        let lines = width - inset.left - inset.right - uiView.textContainer.lineFragmentPadding * 2
-        // SwiftUI asks several times a pass, at the same few widths: each answer is kept until
-        // the text, the width or the type size changes.
-        let key = Coordinator.Measure(text: uiView.text ?? "", lines: lines, line: line)
-        let cap = max(ComposerTextView.leastHeight, maxHeight)
-        if let kept = context.coordinator.measured[key] { return CGSize(width: width, height: min(kept, cap)) }
-        let text = uiView.attributedText ?? NSAttributedString()
-        var height = text.boundingRect(with: CGSize(width: max(lines, 1), height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil).height
-        // A new line just begun counts before anything is typed on it.
-        if text.string.hasSuffix("\n") { height += line }
-        // Only measured here, nothing set: SwiftUI asks at several widths in one pass, and an
-        // inset changed from inside the measuring (to centre a short line) changed between
-        // them, each change asking for another pass. The window never drew again. The line
-        // is centred where the view is laid out (`ComposerTextView.centreShortLine`).
-        height = ceil(max(height, line)) + ComposerTextView.verticalInset * 2
-        let fitted = min(max(height, ComposerTextView.leastHeight), line * 8 + 12)
-        if context.coordinator.measured.count > 8 { context.coordinator.measured.removeAll(keepingCapacity: true) }
-        context.coordinator.measured[key] = fitted
-        return CGSize(width: width, height: min(fitted, cap))
+        uiView.fitting(proposal, maxHeight: maxHeight, kept: &context.coordinator.measured)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
     @MainActor
-    final class Coordinator: NSObject, UITextViewDelegate, UITextPasteDelegate {
+    final class Coordinator: NSObject, UITextViewDelegate, UITextPasteDelegate, ComposerTextViewOwner {
         var parent: ComposerTextField
         var handledFocus = 0
         /// When this box was made: a focus request from long before isn't for it.
@@ -1107,13 +1110,7 @@ struct ComposerTextField: UIViewRepresentable {
         /// The theme the text was last colored for.
         var theme: Theme?
         /// The box's height for a text at a width, as last measured.
-        var measured: [Measure: CGFloat] = [:]
-
-        struct Measure: Hashable {
-            let text: String
-            let lines: CGFloat
-            let line: CGFloat
-        }
+        var measured: [ComposerTextView.Measure: CGFloat] = [:]
 
         init(parent: ComposerTextField) { self.parent = parent }
 
@@ -1246,41 +1243,30 @@ struct ComposerTextField: UIViewRepresentable {
             }
         }
 
-        /// A pasted picture with no text beside it (a screenshot, by ⌘V or the menu): attached,
-        /// rather than typed as nothing. Text pastes as text.
+        /// Pasted media with no text beside it (a screenshot, a video, a file, by ⌘V or the
+        /// menu): attached, rather than typed as nothing. Text pastes as text.
         func textPasteConfigurationSupporting(_ textPasteConfigurationSupporting: any UITextPasteConfigurationSupporting, transform item: any UITextPasteItem) {
-            guard ComposerTextView.isPicture(item.itemProvider) else {
-                item.setDefaultResult()
-                return
-            }
-            pastePictures([item.itemProvider])
-            item.setNoResult()
+            ComposerTextView.paste(item, to: self)
         }
 
-        /// Pictures from the pasteboard or a paste, loaded as they come: a screenshot handed
-        /// over from a Mac (Universal Clipboard) arrives a moment later, and a photo may be HEIC.
-        func pastePictures(_ providers: [NSItemProvider]) {
-            for provider in providers {
-                provider.loadObject(ofClass: UIImage.self) { [weak self] object, _ in
-                    guard let image = object as? UIImage else { return }
-                    DispatchQueue.main.async { self?.pasteImages([image]) }
-                }
-            }
-        }
-
-        func pasteImages(_ images: [UIImage]) {
-            for image in images {
-                guard let data = image.pngData() else { continue }
-                Task { await parent.composer.attach(name: "paste.png", data: data, image: true, thumbnail: data) }
-            }
-        }
+        func pasteMedia(_ providers: [NSItemProvider]) { AttachPaste.attach(providers, to: parent.composer) }
     }
 }
 
-/// A UITextView that hands hardware keys to the composer before typing them, and turns a
-/// pasted screenshot into an attachment instead of nothing.
+/// Who a `ComposerTextView` hands its hardware keys and pasted media to: a session's box
+/// (`ComposerTextField`), or New session's (`NewSessionTextField`).
+@MainActor
+protocol ComposerTextViewOwner: AnyObject {
+    /// A key the box answers itself before it's typed (Return sends); true when it took it.
+    func handle(_ press: KeyPress, in textView: ComposerTextView) -> Bool
+    /// The pasteboard's media, pasted: attached.
+    func pasteMedia(_ providers: [NSItemProvider])
+}
+
+/// A UITextView that hands hardware keys to the composer before typing them, and turns
+/// pasted media (a screenshot, a video, a file) into an attachment instead of nothing.
 final class ComposerTextView: UITextView {
-    weak var coordinator: ComposerTextField.Coordinator?
+    weak var coordinator: (any ComposerTextViewOwner)?
     var placeholder = "" { didSet { if placeholder != oldValue { setNeedsLayout() } } }
     /// The current Return came from a hardware key (handled in pressesBegan).
     fileprivate(set) var isHardwareReturn = false
@@ -1394,34 +1380,87 @@ final class ComposerTextView: UITextView {
         isHardwareReturn = false
     }
 
-    /// A picture with no text beside it: what a screenshot copied on the iPad, or on a Mac
-    /// nearby, is. Told by its types, so any kind of image counts: the pasteboard's own image
-    /// list left some out (a photo's HEIC), and those pasted as nothing.
-    static func isPicture(_ provider: NSItemProvider) -> Bool { isPicture(types: provider.registeredTypeIdentifiers) }
+    /// What the box takes besides text: the types a paste (or a drop on the text) may bring.
+    static let pastedTypes = [UTType.plainText, .utf8PlainText, .text, .url, .image, .audiovisualContent, .content, .archive].map(\.identifier)
 
-    static func isPicture(types identifiers: [String]) -> Bool {
+    /// The box attaches pasted media (a shell's first command on New session takes none).
+    var takesMedia = true
+
+    /// Media with no text beside it: a screenshot copied on the iPad, or on a Mac nearby, a
+    /// video or a recording, a PDF or another file. Told by its types, so any kind counts:
+    /// the pasteboard's own image list left some out (a photo's HEIC), and those pasted as
+    /// nothing. A link is text (it pastes as itself).
+    static func isMedia(_ provider: NSItemProvider) -> Bool { isMedia(types: provider.registeredTypeIdentifiers) }
+
+    static func isMedia(types identifiers: [String]) -> Bool {
         let types = identifiers.compactMap(UTType.init)
-        return types.contains { $0.conforms(to: .image) } && !types.contains { $0.conforms(to: .text) }
+        return !types.contains { $0.conforms(to: .text) } && types.contains { ($0.conforms(to: .content) || $0.conforms(to: .archive)) && !$0.conforms(to: .url) }
+    }
+
+    /// A pasted item, for a `UITextPasteDelegate`: media goes to the owner to attach, the rest
+    /// pastes as it would.
+    static func paste(_ item: any UITextPasteItem, to owner: any ComposerTextViewOwner, takesMedia: Bool = true) {
+        guard takesMedia, isMedia(item.itemProvider) else {
+            item.setDefaultResult()
+            return
+        }
+        owner.pasteMedia([item.itemProvider])
+        item.setNoResult()
     }
 
     /// By the pasteboard's types alone: asked whenever a menu is checked, and reading what's
     /// on the pasteboard would ask the person to allow the paste each time.
-    private static var pastesPicture: Bool {
+    private var pastesMedia: Bool {
         let board = UIPasteboard.general
-        return board.numberOfItems > 0 && isPicture(types: board.types)
+        return takesMedia && board.numberOfItems > 0 && Self.isMedia(types: board.types)
     }
 
     override func paste(_ sender: Any?) {
-        if Self.pastesPicture {
-            coordinator?.pastePictures(UIPasteboard.general.itemProviders)
+        if pastesMedia {
+            coordinator?.pasteMedia(UIPasteboard.general.itemProviders)
             return
         }
         super.paste(sender)
     }
 
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
-        if action == #selector(paste(_:)) && Self.pastesPicture { return true }
+        if action == #selector(paste(_:)) && pastesMedia { return true }
         return super.canPerformAction(action, withSender: sender)
+    }
+
+    /// A box's height for its text at the width offered: its lines, at least one, at most
+    /// eight, and no more than `maxHeight`. `kept` holds the answers so far, by text and width.
+    struct Measure: Hashable {
+        let text: String
+        let lines: CGFloat
+        let line: CGFloat
+    }
+
+    func fitting(_ proposal: ProposedViewSize, maxHeight: CGFloat, kept: inout [Measure: CGFloat]) -> CGSize {
+        let width = proposal.width ?? (bounds.width > 0 ? bounds.width : 320)
+        let line = font?.lineHeight ?? 20
+        // Measured from the text itself: the view's own answer came from its last layout, so a
+        // box emptied after a long message stayed that tall around a word.
+        let inset = textContainerInset
+        let lines = width - inset.left - inset.right - textContainer.lineFragmentPadding * 2
+        // SwiftUI asks several times a pass, at the same few widths: each answer is kept until
+        // the text, the width or the type size changes.
+        let key = Measure(text: text ?? "", lines: lines, line: line)
+        let cap = max(Self.leastHeight, maxHeight)
+        if let known = kept[key] { return CGSize(width: width, height: min(known, cap)) }
+        let text = attributedText ?? NSAttributedString()
+        var height = text.boundingRect(with: CGSize(width: max(lines, 1), height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil).height
+        // A new line just begun counts before anything is typed on it.
+        if text.string.hasSuffix("\n") { height += line }
+        // Only measured here, nothing set: SwiftUI asks at several widths in one pass, and an
+        // inset changed from inside the measuring (to centre a short line) changed between
+        // them, each change asking for another pass. The window never drew again. The line
+        // is centred where the view is laid out (`centreShortLine`).
+        height = ceil(max(height, line)) + Self.verticalInset * 2
+        let fitted = min(max(height, Self.leastHeight), line * 8 + 12)
+        if kept.count > 8 { kept.removeAll(keepingCapacity: true) }
+        kept[key] = fitted
+        return CGSize(width: width, height: min(fitted, cap))
     }
 }
 
@@ -1857,21 +1896,90 @@ enum AttachDrop {
     @MainActor
     static func attach(_ providers: [NSItemProvider], to composer: ComposerModel) -> Bool {
         guard !providers.isEmpty else { return false }
-        for provider in providers {
-            let type = provider.registeredContentTypes.first { !$0.conforms(to: .url) || $0.conforms(to: .fileURL) } ?? provider.registeredContentTypes.first ?? .data
-            let image = type.conforms(to: .image)
-            let name: String = {
-                let given = provider.suggestedName ?? (image ? "image" : "file")
-                if given.contains("."), !given.hasSuffix(".") { return given }
-                return type.preferredFilenameExtension.map { "\(given).\($0)" } ?? given
-            }()
-            provider.loadDataRepresentation(for: type) { data, _ in
-                guard let data else { return }
-                Task { @MainActor in await composer.attach(name: name, data: data, image: image, thumbnail: image ? data : nil) }
-            }
-        }
+        for provider in providers { attachFile(provider, to: composer) }
         Haptics.selection()
         return true
+    }
+
+    /// One file, loaded as the type it is and named for it.
+    @MainActor
+    static func attachFile(_ provider: NSItemProvider, to composer: ComposerModel) {
+        let type = provider.registeredContentTypes.first { !$0.conforms(to: .url) || $0.conforms(to: .fileURL) } ?? provider.registeredContentTypes.first ?? .data
+        let image = type.conforms(to: .image)
+        let name = name(provider, type, or: image ? "image" : "file")
+        provider.loadDataRepresentation(for: type) { data, _ in
+            guard let data else { return }
+            Task { @MainActor in await composer.attach(name: name, data: data, image: image, thumbnail: image ? data : nil) }
+        }
+    }
+
+    /// The name it came with ("Report.pdf"), or one for what it is ("video.mov").
+    static func name(_ provider: NSItemProvider, _ type: UTType, or fallback: String) -> String {
+        let given = provider.suggestedName ?? fallback
+        if given.contains("."), !given.hasSuffix(".") { return given }
+        return type.preferredFilenameExtension.map { "\(given).\($0)" } ?? given
+    }
+}
+
+/// Media pasted into a box (⌘V, or Paste in the edit menu): a picture as a screenshot is, a
+/// video streamed up from a file of its own (one can be too big to hold in memory), any
+/// other file as it is.
+enum AttachPaste {
+    @MainActor
+    static func attach(_ providers: [NSItemProvider], to composer: ComposerModel) {
+        for provider in providers {
+            let types = provider.registeredContentTypes
+            if types.contains(where: { $0.conforms(to: .image) }) {
+                // Loaded as it comes: a screenshot handed over from a Mac (Universal Clipboard)
+                // arrives a moment later, and a photo may be HEIC.
+                provider.loadObject(ofClass: UIImage.self) { object, _ in
+                    guard let data = (object as? UIImage)?.pngData() else { return }
+                    Task { @MainActor in await composer.attach(name: "paste.png", data: data, image: true, thumbnail: data) }
+                }
+            } else if let movie = types.first(where: { $0.conforms(to: .movie) }) {
+                let pasted = Pasted(provider: provider)
+                composer.attachVideo(name: AttachDrop.name(provider, movie, or: "video")) {
+                    let file = try await copy(pasted.provider, movie)
+                    return (file, await VideoFrame.first(of: file))
+                }
+            } else {
+                AttachDrop.attachFile(provider, to: composer)
+            }
+        }
+    }
+
+    /// A pasted item's provider, handed to the upload that loads it: only read from there once
+    /// handed over (an item provider loads on any thread).
+    private struct Pasted: @unchecked Sendable {
+        let provider: NSItemProvider
+    }
+
+    /// The pasted file, copied out to one of this app's own before the provider takes its away.
+    private static func copy(_ provider: NSItemProvider, _ type: UTType) async throws -> URL {
+        try await withCheckedThrowingContinuation { done in
+            _ = provider.loadFileRepresentation(for: type, openInPlace: false) { url, _, error in
+                guard let url else { return done.resume(throwing: error ?? CocoaError(.fileNoSuchFile)) }
+                let ext = url.pathExtension.isEmpty ? (type.preferredFilenameExtension ?? "mov") : url.pathExtension
+                let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension(ext)
+                do {
+                    try FileManager.default.copyItem(at: url, to: file)
+                    done.resume(returning: file)
+                } catch {
+                    done.resume(throwing: error)
+                }
+            }
+        }
+    }
+}
+
+/// A video's first frame, small, for its tile.
+enum VideoFrame {
+    static func first(of file: URL) async -> Data? {
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: file))
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 256, height: 256)
+        guard let frame = try? await generator.image(at: .zero).image else { return nil }
+        return UIImage(cgImage: frame).jpegData(compressionQuality: 0.7)
     }
 }
 
@@ -1888,13 +1996,7 @@ private struct LibraryVideo: Transferable {
     }
 
     /// Its first frame for the tile.
-    func thumbnail() async -> Data? {
-        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: file))
-        generator.appliesPreferredTrackTransform = true
-        generator.maximumSize = CGSize(width: 256, height: 256)
-        guard let frame = try? await generator.image(at: .zero).image else { return nil }
-        return UIImage(cgImage: frame).jpegData(compressionQuality: 0.7)
-    }
+    func thumbnail() async -> Data? { await VideoFrame.first(of: file) }
 }
 
 /// An attachment's upload as it goes, over its dimmed tile: a ring filling as the bytes go

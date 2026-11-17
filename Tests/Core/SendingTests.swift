@@ -104,6 +104,40 @@ private func until(_ done: () -> Bool) async {
     #expect(Uploads.summary(images: 0, files: 0, words: "hi") == "hi")
 }
 
+private actor Requests {
+    private(set) var paths: [String] = []
+    func record(_ path: String) { paths.append(path) }
+}
+
+private struct RecordingHost: HTTPTransport {
+    let requests: Requests
+
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        await requests.record("\(request.httpMethod ?? "GET") \(request.url!.path)")
+        return (Data(#"{"draft":null}"#.utf8), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+    }
+
+    func upload(for request: URLRequest, body: UploadBody, progress: @escaping @Sendable (Double) -> Void) async throws -> (Data, HTTPURLResponse) { fatalError("not used") }
+    func stream(for request: URLRequest) async throws -> (HTTPURLResponse, AsyncThrowingStream<Data, any Error>) { fatalError("not used") }
+    func webSocket(for request: URLRequest) -> any WebSocketConnection { fatalError("not used") }
+}
+
+@MainActor
+@Test func newSessionsBoxKeepsItsWordsOffTheHost() async throws {
+    let requests = Requests()
+    let api = APIClient(origin: URL(string: "https://desk.example.ts.net")!, transport: RecordingHost(requests: requests), credentials: AccountCredentials(token: "t", onRejected: {}), device: DeviceDescriptor(name: "iPhone", client: "c"))
+    // New session's box holds the first message (typed or dictated) with no session to keep a draft for.
+    let new = ComposerModel(api: api, outbox: Outbox(), key: "new", uid: "", isShell: false, draftDebounce: .milliseconds(1))
+    new.text = "fix the login page"
+    // A session's box saves its draft once typing stops.
+    let session = ComposerModel(api: api, outbox: Outbox(), key: "u1", uid: "u1", isShell: false, draftDebounce: .milliseconds(1))
+    session.text = "fix the login page"
+    for _ in 0..<400 where await !requests.paths.contains(where: { $0.hasPrefix("PUT") }) { try await Task.sleep(for: .milliseconds(5)) }
+    try await Task.sleep(for: .milliseconds(50))
+    let paths = await requests.paths
+    #expect(paths.count == 1 && paths[0].hasPrefix("PUT") && paths[0].hasSuffix("u1/draft"), "only the session's draft: \(paths)")
+}
+
 @MainActor
 @Test func uploadProgressMovesInPercentsAndAMessageAveragesItsUploads() {
     let outbox = Outbox()
