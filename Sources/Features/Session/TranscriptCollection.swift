@@ -318,6 +318,9 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
     var reduceMotion = false
 
     private var collectionView: TranscriptCollectionView!
+    /// The transcript's scroll view, for what overlays its edges to shape their soft edge
+    /// (`UIScrollEdgeElementContainerInteraction`); nil until it's loaded.
+    var scrollView: UIScrollView? { isViewLoaded ? collectionView : nil }
     private var dataSource: UICollectionViewDiffableDataSource<Int, TranscriptItem>!
     private var content = TranscriptContent()
     private var blocksByID: [String: (block: FeedBlock, index: Int)] = [:]

@@ -20,6 +20,13 @@ enum DictationRoute: Equatable, Sendable {
     }
 }
 
+/// A stretch of what this device heard, and when in the recording it began (seconds; nil
+/// when the recognizer didn't say).
+struct HeardWords: Sendable, Equatable {
+    let text: String
+    let start: TimeInterval?
+}
+
 /// What the microphone took: always the recording, this device's transcript when it wrote
 /// one as it listened, and the batch still open when it stopped (`BatchCutter`).
 struct CaptureResult: Sendable, Equatable {
@@ -35,13 +42,14 @@ struct CaptureResult: Sendable, Equatable {
 enum CaptureEvent: Sendable, Equatable {
     /// Loudness now, 0…1, about thirty times a second, for the waves.
     case level(Float)
-    /// What this device has heard so far (it may still change).
-    case partial(String)
+    /// What this device has heard so far (its last words may still change), each stretch with
+    /// when in the recording it began.
+    case partial([HeardWords])
     /// Something else took the microphone (a call): what was said so far goes in.
     case interrupted
     /// A batch of the recording, cut at a pause once it held 10 seconds: the host can hear it
     /// now. `speech`: how many seconds of it were speech, by its loudness.
-    case batch(URL, speech: TimeInterval)
+    case batch(URL, speech: TimeInterval, end: TimeInterval)
 }
 
 enum CaptureError: Error, Equatable, Sendable {
@@ -127,8 +135,18 @@ final class DictationModel {
     /// How many levels have come in all, this dictation: the waves take them in order.
     private(set) var levelCount = 0
     static let levelsKept = 120
-    /// This device's words so far, while it listens.
-    private(set) var partial = ""
+    /// This device's words so far, while it listens, each stretch with when it began.
+    private(set) var heard: [HeardWords] = []
+    var partial: String { heard.map(\.text).joined().trimmingCharacters(in: .whitespacesAndNewlines) }
+    /// This dictation shows what you're saying now above the box (the microphone held a
+    /// moment before it started): only what isn't in the box yet, so the two never disagree.
+    private(set) var preview = false
+    /// Where in the recording the batches in the box so far end (seconds).
+    private var placedThrough: TimeInterval = 0
+    /// This device's words for what isn't in the box yet: what you're saying now.
+    var pending: String {
+        heard.filter { ($0.start ?? .infinity) >= placedThrough - 0.1 }.map(\.text).joined().trimmingCharacters(in: .whitespacesAndNewlines)
+    }
     private(set) var last: Inserted?
     /// The host's Voice settings; nil when it doesn't do voice or before they're read.
     private(set) var settings: VoiceSettings?
@@ -160,6 +178,8 @@ final class DictationModel {
         let file: URL
         /// Seconds of speech in it, by its loudness; nil when not known.
         var speech: TimeInterval?
+        /// Where in the recording it ends (seconds); nil when not known.
+        var end: TimeInterval?
         var text: String?
         var queued = false
         /// The host didn't hear it; this device did.
@@ -207,27 +227,30 @@ final class DictationModel {
         if let fresh = try? await api.voiceSettings() { settings = fresh }
     }
 
-    /// The microphone button: starts listening, or stops and writes the words in.
-    func toggle(into composer: ComposerModel) async {
+    /// The microphone button: starts listening, or stops and writes the words in. Held a moment
+    /// to start (`preview`), what you're saying now shows above the box as well.
+    func toggle(into composer: ComposerModel, preview: Bool = false) async {
         switch phase {
-        case .idle, .failed, .denied: await start(into: composer)
+        case .idle, .failed, .denied: await start(into: composer, preview: preview)
         case .listening: await finish(into: composer)
         case .starting, .writing: break
         }
     }
 
-    func start(into composer: ComposerModel) async {
+    func start(into composer: ComposerModel, preview: Bool = false) async {
         discardKept()
         attempt += 1
         let mine = attempt
         closed = false
         composer.onTextChange = { [weak self] before, after in self?.follow(before, after) }
         phase = .starting
-        partial = ""
+        heard = []
         level = 0
         levels = []
         levelCount = 0
         live = wantsWordsAsYouSpeak()
+        self.preview = preview
+        placedThrough = 0
         placed = ""
         editedLive = false
         // The words may need this device after all (the settings changed): read them while
@@ -243,14 +266,15 @@ final class DictationModel {
         if settings == nil, hostDoesVoice() { await settingsRead() }
         guard attempt == mine, phase == .starting else { return }
         // This device listens too unless nothing needs its words: with the host hearing it,
-        // they show as you speak (Words as You Speak) and are the cleanup's second hearing.
-        let phone = live || (settings?.cleanup != nil && settings?.style != .verbatim)
+        // they're the cleanup's second hearing and a missed part's stand-in (and what you're
+        // saying now, in the preview).
+        let phone = preview || live || (settings?.cleanup != nil && settings?.style != .verbatim)
         let onDevice: Locale? = if case .host = route, !phone { nil } else { (settings ?? VoiceSettings()).locale }
         let events: @MainActor (CaptureEvent) -> Void = { [weak self] event in
             guard let self else { return }
             // A cancelled dictation's last words are nobody's: its late batches go.
             guard self.attempt == mine else {
-                if case .batch(let file, _) = event { try? FileManager.default.removeItem(at: file) }
+                if case .batch(let file, _, _) = event { try? FileManager.default.removeItem(at: file) }
                 return
             }
             // This one's, once it stopped listening: Done hands back every batch cut (`finish`).
@@ -261,9 +285,9 @@ final class DictationModel {
                 self.levels.append(v)
                 self.levelCount += 1
                 if self.levels.count > Self.levelsKept { self.levels.removeFirst(self.levels.count - Self.levelsKept) }
-            case .partial(let words): self.partial = words
+            case .partial(let words): self.heard = words
             case .interrupted: Task { await self.finish(into: composer) }
-            case .batch(let file, let speech): self.take(file, speech: speech, into: composer)
+            case .batch(let file, let speech, let end): self.take(file, speech: speech, end: end, into: composer)
             }
         }
         do {
@@ -343,7 +367,8 @@ final class DictationModel {
         dropBatches()
         discardKept()
         phase = .idle
-        partial = ""
+        preview = false
+        heard = []
         level = 0
         levels = []
         levelCount = 0
@@ -388,8 +413,8 @@ final class DictationModel {
     // MARK: Batches
 
     /// A batch cut as you speak: heard now when the host hears this dictation.
-    private func take(_ file: URL, speech: TimeInterval?, into composer: ComposerModel) {
-        batches.append(Batch(file: file, speech: speech))
+    private func take(_ file: URL, speech: TimeInterval?, end: TimeInterval?, into composer: ComposerModel) {
+        batches.append(Batch(file: file, speech: speech, end: end))
         if case .host = route { queue(into: composer) }
     }
 
@@ -442,6 +467,8 @@ final class DictationModel {
         batches[i].byDevice = byDevice
         batches[i].missed = missed
         if live, let text, !text.isEmpty { place(text, into: composer) }
+        // What's in the box now reaches this far into the recording: the preview shows what's after it.
+        if live, let end = batches[i].end { placedThrough = max(placedThrough, end) }
     }
 
     /// A heard batch into the box, after the ones before it.
@@ -636,7 +663,8 @@ final class DictationModel {
         kept = nil
         capture = nil
         phase = .idle
-        partial = ""
+        preview = false
+        heard = []
         level = 0
         levels = []
         levelCount = 0

@@ -1,18 +1,24 @@
 import SwiftUI
 import UIKit
 
-/// Dictation over the conversation, just above the box (`ComposerFloat`): while you speak,
-/// how long (how loud is the box's own waves, `DictationWaves`), and the words so far when
-/// this device writes them; Cancel and Done. Then a word if it went wrong, and, for words that were tidied, a way back to
-/// them as said. Over the transcript, not in the bar, so nothing moves while it comes and goes.
+/// Dictation over the conversation, just above the box (`ComposerFloat`): while you speak, when
+/// the microphone was held to start, how long and what you're saying now (only what isn't in
+/// the box yet); the box's ✕ and ✓ are Cancel and Done. Then a word if it went wrong, and, for
+/// words that were tidied, a way back to them as said. Over the transcript, not in the bar, so nothing moves while it comes and goes.
 struct DictationCard: View {
     let dictation: DictationModel
     let composer: ComposerModel
     @Environment(\.theme) private var theme
     @Environment(\.openURL) private var openURL
 
+    /// While listening only when held to start (the box's ✕ and ✓ are the controls); after,
+    /// a word on how it went.
     static func shows(_ dictation: DictationModel, in composer: ComposerModel) -> Bool {
-        dictation.phase != .idle || dictation.canUseWhatWasSaid(in: composer.text)
+        switch dictation.phase {
+        case .starting, .listening: dictation.preview
+        case .idle: dictation.canUseWhatWasSaid(in: composer.text)
+        default: true
+        }
     }
 
     var body: some View {
@@ -57,9 +63,6 @@ struct DictationCard: View {
             ProgressView().controlSize(.small)
             Text(words).font(.ah(.callout)).foregroundStyle(theme.muted)
             Spacer(minLength: 0)
-            if dictation.phase == .starting {
-                Button("Cancel") { Task { await dictation.cancel(in: composer) } }.foregroundStyle(theme.muted)
-            }
         }
     }
 
@@ -90,28 +93,14 @@ struct DictationCard: View {
                 DictationWaves(levels: dictation.levels, count: dictation.levelCount, color: theme.accent).frame(height: 18).frame(maxWidth: 110).layoutPriority(-1)
             }
             Spacer(minLength: 0)
-            Button("Cancel") {
-                Haptics.selection()
-                Task { await dictation.cancel(in: composer) }
-            }
-            .foregroundStyle(theme.muted)
-            .accessibilityIdentifier("dictation-cancel")
-            .accessibilityHint("Nothing goes into the box")
-            Button {
-                Task { await dictation.finish(into: composer) }
-            } label: {
-                Label("Done", systemImage: "checkmark").labelStyle(.titleAndIcon).lineLimit(1).fixedSize()
-            }
-            .buttonStyle(.glassProminent)
-            .accessibilityIdentifier("dictation-done")
-            .accessibilityHint("Puts what you said into the box")
         }
-        // The words so far when this device writes them, the newest in view; else who will.
+        // What you're saying now: this device's words for what isn't in the box yet, so the two
+        // never say the same thing twice, or differently.
         Group {
-            if !dictation.partial.isEmpty {
-                Text(dictation.partial).lineLimit(3).truncationMode(.head).foregroundStyle(theme.text)
+            if !dictation.pending.isEmpty {
+                Text(dictation.pending).lineLimit(3).truncationMode(.head).foregroundStyle(theme.text)
             } else if case .host = dictation.route {
-                Text(dictation.live ? "Listening… your words go into the box as they’re heard." : "Listening… tap Done when you’re finished.").foregroundStyle(theme.muted)
+                Text(dictation.live ? "Listening… your words go into the box as they’re heard." : "Listening… tap ✓ when you’re finished.").foregroundStyle(theme.muted)
             } else {
                 Text("Listening…").foregroundStyle(theme.muted)
             }

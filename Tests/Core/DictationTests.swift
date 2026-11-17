@@ -66,6 +66,8 @@ private final class FakeCapture: DictationCapture {
     var late = false
     /// Seconds of speech each batch holds, by its loudness.
     var speechPerBatch: TimeInterval = 0.5
+    /// This device's words with when each began (else `heard`, all at the start).
+    var heardRuns: [HeardWords]?
     private var events: (@MainActor (CaptureEvent) -> Void)?
     private(set) var batchFiles: [URL] = []
     private(set) var startedWith: [Locale?] = []
@@ -84,15 +86,15 @@ private final class FakeCapture: DictationCapture {
         if slowStart { try? await Task.sleep(for: .milliseconds(150)) }
         if let startError, locale != nil || startError == .microphoneDenied { throw startError }
         events(.level(0.4))
-        if locale != nil, let heard { events(.partial(heard)) }
-        for _ in 0..<batches { events(.batch(newFile(), speech: speechPerBatch)) }
+        if locale != nil, let heard { events(.partial(heardRuns ?? [HeardWords(text: heard, start: 0)])) }
+        for _ in 0..<batches { events(.batch(newFile(), speech: speechPerBatch, end: 10)) }
     }
     func finish() async throws -> CaptureResult {
         let announced = batchFiles
         var quiet = (0..<unannounced).map { _ in newFile() }
         if late {
             let file = newFile()
-            events?(.batch(file, speech: speechPerBatch))
+            events?(.batch(file, speech: speechPerBatch, end: 20))
             quiet.append(file)
         }
         let tail = batches + unannounced > 0 ? newFile() : nil
@@ -630,5 +632,31 @@ private func query(_ q: String?) -> [String: String] {
     await model2.toggle(into: composer2)
     #expect(composer2.text.hasPrefix("so I want the layout fixed before the waves go in"), "one word for nine seconds of speech: this device's hearing of it instead")
     #expect(composer2.takeEvents() == [.notice("Groq missed part of it, so this iPhone wrote that part down.")])
+}
+
+@MainActor
+@Test func heldToStartThePreviewShowsOnlyWhatIsntInTheBoxYet() async {
+    let host = VoiceHost()
+    host.settings["speech"] = groq
+    host.batchTexts = ["First part.", "Second part."]
+    let (model, composer, capture) = bed(host)
+    capture.heard = "first part second part"
+    capture.heardRuns = [HeardWords(text: "first ", start: 1), HeardWords(text: "part ", start: 2), HeardWords(text: "second ", start: 11), HeardWords(text: "part", start: 12)]
+    capture.batches = 1
+    await model.refresh()
+    await model.toggle(into: composer, preview: true)
+    #expect(model.preview, "held to start: what you're saying now shows above the box")
+    #expect(model.pending == "first part second part" || model.placed == "First part.")
+    await until { model.placed == "First part." }
+    #expect(composer.text == "First part.")
+    #expect(model.pending == "second part", "the part in the box isn't shown twice: only what follows it")
+    await model.toggle(into: composer)
+    #expect(composer.text == "First part. Second part.")
+    #expect(!model.preview)
+
+    let (plain, composer2, _) = bed(VoiceHost(), voice: false)
+    let starting = Task { await plain.toggle(into: composer2) }
+    await starting.value
+    #expect(!plain.preview, "a tap: the box alone")
 }
 

@@ -112,6 +112,15 @@ final class ConversationController: UIViewController {
         dock.safeAreaRegions = []
         float = embed(ComposerFloatRoot(session: session, scene: scene) { [weak self] height in self?.floatMeasured(height) })
         float.safeAreaRegions = []
+        // The transcript's soft bottom edge takes the box and what floats over it into account,
+        // as it does a toolbar: the conversation fades out under and below them, rather than
+        // reading on through the glass and in the strip under the box.
+        for host in [dock.view!, float.view!] {
+            let edge = UIScrollEdgeElementContainerInteraction()
+            edge.edge = .bottom
+            host.addInteraction(edge)
+            edges.append(edge)
+        }
 
         let guide = view.keyboardLayoutGuide
         // With no keyboard, the guide's top is the bottom of the safe area: the dock stands on it.
@@ -154,8 +163,15 @@ final class ConversationController: UIViewController {
         return host
     }
 
+    /// The dock's and the float's part in the transcript's soft bottom edge.
+    private var edges: [UIScrollEdgeElementContainerInteraction] = []
+
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        // The transcript's scroll view exists once its SwiftUI host has made it.
+        if let scrollView = scroll.controller?.scrollView {
+            for edge in edges where edge.scrollView !== scrollView { edge.scrollView = scrollView }
+        }
         // The transcript runs under the dock: its last row ends at the dock's top. Set here, in the
         // pass that moved the dock, so it moves in the same animation (the keyboard's, the dock's).
         // The content's top, which the frame's may lag behind while SwiftUI moves it; never above

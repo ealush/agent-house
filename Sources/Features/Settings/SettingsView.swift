@@ -1302,7 +1302,7 @@ private struct VoiceSection: View {
         Section {
             Toggle("Words as You Speak", isOn: Binding(get: { scene.app.preferences.wordsAsYouSpeak }, set: { scene.app.preferences.wordsAsYouSpeak = $0 }))
         } footer: {
-            Text("A long dictation is heard in parts of about ten seconds while you speak. On, each goes into the box as soon as it’s heard, and \(device) shows what you’re saying now above it; everything is tidied once you’re done. Off, the words go in when you tap Done.")
+            Text("A long dictation is heard in parts of about ten seconds while you speak. On, each goes into the box as soon as it’s heard, and everything is tidied once you’re done; off, the words go in when you’re done. Hold the microphone a moment to start, and you’ll also see what you’re saying now above the box.")
         }
     }
 

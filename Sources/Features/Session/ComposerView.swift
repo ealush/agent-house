@@ -244,7 +244,8 @@ struct ComposerView: View {
         .fixedSize(horizontal: false, vertical: true)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { boxHeight = $0 }
         .overlay(alignment: .bottomLeading) {
-            attachMenu
+            // While dictating, + is Cancel: the same size in the same place, so nothing moves.
+            Group { if dictating { cancelDictation } else { attachMenu } }
                 .onGeometryChange(for: CGSize.self) { $0.size } action: { attachSize = $0 }
                 .padding(.horizontal, 6)
                 .padding(.bottom, cornerInset(for: attachSize.height))
@@ -307,6 +308,36 @@ struct ComposerView: View {
 
     private var attachMenu: some View { AttachMenu(composer: composer, recall: true) }
 
+    /// Dictation is starting or listening: the box's corners are its controls (✕ and ✓).
+    private var dictating: Bool { session.dictation.phase == .starting || session.dictation.isListening }
+
+    /// ✕ in +'s place while dictating: nothing goes into the box (what went in as you spoke
+    /// comes out again).
+    private var cancelDictation: some View {
+        Button {
+            Haptics.selection()
+            Task { await session.dictation.cancel(in: composer) }
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: control * 0.3, weight: .semibold))
+                .foregroundStyle(theme.muted)
+                .frame(width: control - 12, height: control - 12)
+                .contentShape(Circle())
+                .contentShape(.hoverEffect, Circle())
+                .hoverEffect(.highlight)
+                .touchTarget()
+        }
+        .buttonStyle(.ahPress)
+        .transition(.opacity)
+        .accessibilityIdentifier("dictation-cancel")
+        .accessibilityLabel("Cancel Dictation")
+        .accessibilityHint("Nothing goes into the box")
+    }
+
+    /// The microphone held a moment (rather than tapped) to start: what you're saying now shows
+    /// above the box too. The tap that ends the hold isn't a second tap.
+    @State private var heldMic = false
+
     /// Dictation: a tap starts listening (the card over the conversation shows it), another
     /// puts the words in the box. Never for a shell, whose box takes commands.
     @ViewBuilder
@@ -314,36 +345,82 @@ struct ComposerView: View {
         if !session.isShell {
             let dictation = session.dictation
             Button {
+                if heldMic {
+                    heldMic = false
+                    return
+                }
                 Haptics.tap()
                 if trayOpen { withAnimation(ComposerFloat.motion(opening: false, reduceMotion: reduceMotion)) { trayOpen = false } }
                 Task { await dictation.toggle(into: composer) }
             } label: {
-                Group {
-                    switch dictation.phase {
-                    case .starting, .writing: ProgressView().controlSize(.small)
-                    case .listening: Image(systemName: "mic.fill")
-                    default: Image(systemName: "mic")
-                    }
+                micLabel(dictation)
+            }
+            .buttonStyle(.ahPress)
+            // Not while starting: the lift that ends a hold must reach the action (`heldMic`).
+            .disabled(dictation.phase == .writing)
+            .onChange(of: dictation.phase) {
+                if !dictating { heldMic = false }
+            }
+            // Held to start: the preview of what you're saying now, above the box.
+            .simultaneousGesture(LongPressGesture(minimumDuration: 0.35).onEnded { _ in
+                switch dictation.phase {
+                case .idle, .failed, .denied:
+                    heldMic = true
+                    Haptics.threshold()
+                    if trayOpen { withAnimation(ComposerFloat.motion(opening: false, reduceMotion: reduceMotion)) { trayOpen = false } }
+                    Task { await dictation.toggle(into: composer, preview: true) }
+                default: break
                 }
+            })
+            .accessibilityIdentifier("dictate")
+            .accessibilityLabel(dictation.isListening ? "Done Dictating" : "Dictate")
+            .accessibilityHint(dictation.isListening ? "Puts what you said into the box" : "Your words go into the box; nothing is sent. Hold to see them as you speak.")
+            .accessibilityAction(named: "Dictate and See Your Words") {
+                Task { await dictation.toggle(into: composer, preview: true) }
+            }
+        }
+    }
+
+    /// The microphone, or while listening ✓ (Done) in the accent, a ring around it breathing
+    /// with your voice: once the words are in the box, that's what says it's still listening.
+    @ViewBuilder
+    private func micLabel(_ dictation: DictationModel) -> some View {
+        switch dictation.phase {
+        case .starting, .writing:
+            ProgressView().controlSize(.small)
+                .frame(width: control - 12, height: control - 12)
+        case .listening:
+            Image(systemName: "checkmark")
+                .font(.system(size: control * 0.3, weight: .bold))
+                .foregroundStyle(theme.accentInk)
+                .frame(width: control - 12, height: control - 12)
+                .background(theme.accentStrong, in: Circle())
+                .background {
+                    Circle()
+                        .fill(theme.accent.opacity(0.28))
+                        .scaleEffect(1 + CGFloat(min(1, max(0, dictation.level - 0.18) / 0.6)) * 0.45)
+                        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: dictation.level)
+                }
+                .contentShape(Circle())
+                .touchTarget()
+        default:
+            Image(systemName: "mic")
                 .font(.system(size: control * 0.36, weight: .medium))
-                .foregroundStyle(dictation.isListening ? theme.accent : theme.muted)
+                .foregroundStyle(theme.muted)
                 .frame(width: control - 12, height: control - 12)
                 .contentShape(Circle())
                 .contentShape(.hoverEffect, Circle())
                 .hoverEffect(.highlight)
                 .touchTarget()
-            }
-            .buttonStyle(.ahPress)
-            .disabled(dictation.phase == .starting || dictation.phase == .writing)
-            .accessibilityIdentifier("dictate")
-            .accessibilityLabel(dictation.isListening ? "Stop Dictating" : "Dictate")
-            .accessibilityHint(dictation.isListening ? "Puts what you said into the box" : "Your words go into the box; nothing is sent")
         }
     }
 
     @ViewBuilder
     private var sendButton: some View {
-        if composer.showsStop(working: session.working) {
+        if dictating {
+            // ✓ beside it is what ends dictation; sending waits until it's done.
+            EmptyView()
+        } else if composer.showsStop(working: session.working) {
             Button {
                 Task { await composer.stop() }
             } label: {

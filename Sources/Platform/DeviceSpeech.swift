@@ -50,10 +50,17 @@ enum DeviceSpeech {
     static func modules(for locale: Locale, live: Bool) async -> [Module] {
         var found: [Module] = []
         if SpeechTranscriber.isAvailable, let supported = await SpeechTranscriber.supportedLocale(equivalentTo: locale) {
-            found.append(.speech(SpeechTranscriber(locale: supported, preset: live ? .progressiveTranscription : .transcription)))
+            // Live: each word with when it was said, so what you're saying now can be told from
+            // what's in the box already.
+            found.append(.speech(SpeechTranscriber(locale: supported, preset: live ? .timeIndexedProgressiveTranscription : .transcription)))
         }
         if let supported = await DictationTranscriber.supportedLocale(equivalentTo: locale) {
-            found.append(.dictation(DictationTranscriber(locale: supported, preset: live ? .progressiveLongDictation : .longDictation)))
+            if live {
+                let p = DictationTranscriber.Preset.progressiveLongDictation
+                found.append(.dictation(DictationTranscriber(locale: supported, contentHints: p.contentHints, transcriptionOptions: p.transcriptionOptions, reportingOptions: p.reportingOptions, attributeOptions: p.attributeOptions.union([.audioTimeRange]))))
+            } else {
+                found.append(.dictation(DictationTranscriber(locale: supported, preset: .longDictation)))
+            }
         }
         return found
     }

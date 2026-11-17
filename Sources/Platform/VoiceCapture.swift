@@ -106,8 +106,8 @@ final class VoiceCapture: DictationCapture {
 
         let tap = CaptureTap(file: file, batch: batch, newBatch: recording, converter: converter, feed: feed, level: { level in
             Task { @MainActor in events(.level(level)) }
-        }, cut: { batch, speech in
-            Task { @MainActor in events(.batch(batch, speech: speech)) }
+        }, cut: { batch, speech, end in
+            Task { @MainActor in events(.batch(batch, speech: speech, end: end)) }
         })
         self.tap = tap
         firstBatch = nil
@@ -227,19 +227,20 @@ final class VoiceCapture: DictationCapture {
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
-    /// A transcriber's words: the finished phrases, with the one still being heard after them.
-    private static func words(of module: DeviceSpeech.Module, _ partial: @escaping @MainActor (String) -> Void) -> Task<String, any Error> {
+    /// A transcriber's words: the finished phrases, with the one still being heard after them,
+    /// each word with when it was said.
+    private static func words(of module: DeviceSpeech.Module, _ partial: @escaping @MainActor ([HeardWords]) -> Void) -> Task<String, any Error> {
         switch module {
         case .speech(let m): collect(m.results, text: \.text, final: \.isFinal, partial)
         case .dictation(let m): collect(m.results, text: \.text, final: \.isFinal, partial)
         }
     }
 
-    private static func collect<S: AsyncSequence & Sendable>(_ results: S, text: @escaping @Sendable (S.Element) -> AttributedString, final: @escaping @Sendable (S.Element) -> Bool, _ partial: @escaping @MainActor (String) -> Void) -> Task<String, any Error> where S.Element: Sendable {
+    private static func collect<S: AsyncSequence & Sendable>(_ results: S, text: @escaping @Sendable (S.Element) -> AttributedString, final: @escaping @Sendable (S.Element) -> Bool, _ partial: @escaping @MainActor ([HeardWords]) -> Void) -> Task<String, any Error> where S.Element: Sendable {
         Task {
-            var done = ""
+            var done: [HeardWords] = []
             for try await result in results {
-                let words = String(text(result).characters)
+                let words = runs(of: text(result))
                 if final(result) {
                     done += words
                     partial(done)
@@ -247,7 +248,14 @@ final class VoiceCapture: DictationCapture {
                     partial(done + words)
                 }
             }
-            return done
+            return done.map(\.text).joined()
+        }
+    }
+
+    /// The words in a result, each with when it began (its time-code attribute, when asked for).
+    private static func runs(of text: AttributedString) -> [HeardWords] {
+        text.runs.map { run in
+            HeardWords(text: String(text[run.range].characters), start: run[AttributeScopes.SpeechAttributes.TimeRangeAttribute.self]?.start.seconds)
         }
     }
 
@@ -274,6 +282,8 @@ private final class CaptureTap: @unchecked Sendable {
     private var file: AVAudioFile?
     private var batch: (file: AVAudioFile, url: URL)?
     private var batchSeconds: TimeInterval = 0
+    /// Where in the recording the audio so far reaches (seconds), the recognizer's clock too.
+    private var elapsed: TimeInterval = 0
     /// How much of the batch being filled is speech (louder than the room by 10 dB).
     private var batchSpeech: TimeInterval = 0
     private var speech: [URL: TimeInterval] = [:]
@@ -285,13 +295,13 @@ private final class CaptureTap: @unchecked Sendable {
     private let converter: AVAudioConverter?
     private var feed: AsyncStream<AnalyzerInput>.Continuation?
     private let level: @Sendable (Float) -> Void
-    private let cut: @Sendable (URL, TimeInterval) -> Void
+    private let cut: @Sendable (URL, TimeInterval, TimeInterval) -> Void
     /// The meter's window (a thirtieth of a second): a buffer holds several (the engine's are
     /// about 85 ms), so the waves get thirty readings a second rather than twelve.
     private var windowSquares: Float = 0
     private var windowFrames = 0
 
-    init(file: AVAudioFile, batch: (AVAudioFile, URL), newBatch: @escaping @Sendable () throws -> (AVAudioFile, URL), converter: AVAudioConverter?, feed: AsyncStream<AnalyzerInput>.Continuation?, level: @escaping @Sendable (Float) -> Void, cut: @escaping @Sendable (URL, TimeInterval) -> Void) {
+    init(file: AVAudioFile, batch: (AVAudioFile, URL), newBatch: @escaping @Sendable () throws -> (AVAudioFile, URL), converter: AVAudioConverter?, feed: AsyncStream<AnalyzerInput>.Continuation?, level: @escaping @Sendable (Float) -> Void, cut: @escaping @Sendable (URL, TimeInterval, TimeInterval) -> Void) {
         self.file = file
         self.batch = batch
         self.newBatch = newBatch
@@ -314,6 +324,7 @@ private final class CaptureTap: @unchecked Sendable {
             try? batch.file.write(from: buffer)
             let seconds = Double(buffer.frameLength) / buffer.format.sampleRate
             batchSeconds += seconds
+            elapsed += seconds
             if loud > cutter.floor + 0.2 { batchSpeech += seconds }
             if cutter.take(seconds: seconds, level: loud) {
                 // Closed (whole on disk) before it's handed on; the next one starts here.
@@ -321,7 +332,7 @@ private final class CaptureTap: @unchecked Sendable {
                 self.batch = nil
                 cutBatches.append(batch.url)
                 speech[batch.url] = batchSpeech
-                cut(batch.url, batchSpeech)
+                cut(batch.url, batchSpeech, elapsed)
                 batchSeconds = 0
                 batchSpeech = 0
                 self.batch = try? newBatch()
