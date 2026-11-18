@@ -54,6 +54,10 @@ struct NoteSendSheet: View {
     @State private var askCombine = false
     /// The draft found in the chosen box, asked about before the note goes in with it.
     @State private var found = ""
+    /// The host couldn't say what the chosen box holds: only an explicit Replace goes on.
+    @State private var draftUnknown = false
+    /// Sending again a hand-off whose arrival nobody can confirm: asked first.
+    @State private var askResend = false
 
     private var note: Note? { scene.notes.note(id) }
 
@@ -79,7 +83,13 @@ struct NoteSendSheet: View {
         NavigationStack {
             List {
                 if let outcome {
-                    Section { OutcomeRow(outcome: outcome) }
+                    Section {
+                        OutcomeRow(outcome: outcome)
+                        if case .uncertain = outcome, hostKeepsNotes {
+                            Button("Send It Again…", role: .destructive) { askResend = true }
+                                .accessibilityIdentifier("note-send-again")
+                        }
+                    }
                 }
                 Section {
                     let all = destinations
@@ -126,13 +136,25 @@ struct NoteSendSheet: View {
                         .accessibilityIdentifier("note-send-confirm")
                 }
             }
-            .confirmationDialog(found.isEmpty ? "That box may have a draft in it" : "That box has a draft in it", isPresented: $askCombine, titleVisibility: .visible) {
-                Button("Add the Note Below It") { finishInsert(.below) }
-                Button("Add the Note Above It") { finishInsert(.above) }
-                Button("Replace the Draft", role: .destructive) { finishInsert(.replace) }
+            .confirmationDialog(draftUnknown ? "That box may have a draft in it" : "That box has a draft in it", isPresented: $askCombine, titleVisibility: .visible) {
+                if draftUnknown {
+                    // Nothing known to put the note beside: adding would be replacing.
+                    Button("Ask Again") { go() }
+                    Button("Replace Whatever’s There", role: .destructive) { finishInsert(.replace) }
+                } else {
+                    Button("Add the Note Below It") { finishInsert(.below) }
+                    Button("Add the Note Above It") { finishInsert(.above) }
+                    Button("Replace the Draft", role: .destructive) { finishInsert(.replace) }
+                }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text(found.isEmpty ? "The host couldn’t be asked. Nothing is lost unless you replace it." : "“\(found.prefix(80))\(found.count > 80 ? "…" : "")”. Nothing is lost unless you replace it.")
+                Text(draftUnknown ? "The host couldn’t say what’s in it. Asking again is safe; replacing loses any draft there." : "“\(found.prefix(80))\(found.count > 80 ? "…" : "")”. Nothing is lost unless you replace it.")
+            }
+            .confirmationDialog("It may already be in that session", isPresented: $askResend, titleVisibility: .visible) {
+                Button("Send Again", role: .destructive) { perform(resend: true) }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Nobody could confirm the last send arrived. Look in the session first; sending again may give the agent the note twice.")
             }
             .onAppear(perform: preselect)
         }
@@ -141,7 +163,7 @@ struct NoteSendSheet: View {
     private var actionTitle: String {
         if insert { return "Put in Box" }
         switch outcome {
-        case .uncertain: return "Try Again"
+        case .uncertain: return hostKeepsNotes ? "Check Again" : "Try Again"
         case .failed: return "Try Again"
         default: return "Send"
         }
@@ -155,10 +177,24 @@ struct NoteSendSheet: View {
         return parts.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
-    /// The note's project's session first, else the one in front.
+    private var hostKeepsNotes: Bool {
+        guard let target, let d = destinations.first(where: { $0.key == target }) else { return false }
+        return scene.hub?.state(host: d.host)?.supports("notes") ?? false
+    }
+
+    /// The note's project's session first, else the one in front. A send of this note that
+    /// was never confirmed (the answer lost, the app closed meanwhile) comes back first, to
+    /// ask about by its id rather than send again.
     private func preselect() {
         guard target == nil else { return }
         let all = destinations
+        if !insert, let open = (try? scene.notes.repository.handoffs(noteId: id))?.first(where: { $0.state == .sending || $0.state == .uncertain }),
+           all.contains(where: { $0.key == open.targetKey }) {
+            target = open.targetKey
+            record = open
+            outcome = .uncertain("an earlier send of this note wasn’t confirmed")
+            return
+        }
         if let project = note?.project, let match = all.first(where: { d in
             scene.hub?.row(d.key).map { $0.dto.projectPath == project.path && $0.host == project.host } ?? false
         }) {
@@ -166,31 +202,54 @@ struct NoteSendSheet: View {
         } else {
             target = all.first?.key
         }
-        if let note, note.markdown.count > NoteHandoff.maxText { asFile = true }
+        if let note, note.markdown.utf16.count > NoteHandoff.maxText { asFile = true }
     }
 
     private func go() {
         guard let target, let d = destinations.first(where: { $0.key == target }) else { return }
         if insert {
             busy = true
+            let key = d.key
             Task {
-                let draft = await scene.existingDraft(d.key)
+                let draft = await scene.existingDraft(key)
                 busy = false
+                // Another box chosen meanwhile: this answer was about the other one.
+                guard target == key else { return }
                 found = draft ?? ""
+                draftUnknown = draft == nil
                 if let draft, draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { finishInsert(.replace) } else { askCombine = true }
             }
             return
         }
+        // A host without the hand-off ledger can't say whether an unconfirmed send arrived:
+        // trying again sends again, so it's asked first.
+        if case .uncertain = outcome, !hostKeepsNotes {
+            askResend = true
+            return
+        }
+        perform(resend: false)
+    }
+
+    /// The hand-off to ask about again (its id, its text): the one not yet known to have
+    /// arrived, to the same session, while it still says what the note says (or it's
+    /// unconfirmed, which is about what went then). A host with the ledger answers it from
+    /// what happened, and sends a failed one again under the same id.
+    private func reusable(_ d: NoteHandoff.Destination) -> NoteHandoffRecord? {
+        guard let record, record.targetKey == d.key, !(outcome?.arrived ?? false) else { return nil }
+        if record.state == .uncertain || record.state == .sending { return record }
+        return record.version == note?.version && !asFile ? record : nil
+    }
+
+    private func perform(resend: Bool) {
+        guard let target, let d = destinations.first(where: { $0.key == target }) else { return }
         guard let hub = scene.hub, let origin = scene.accountOrigin else { return }
+        let keeps = hub.state(host: d.host)?.supports("notes") ?? false
         busy = true
-        let retrying: NoteHandoffRecord? = {
-            // Asking again about the same hand-off reuses its id: the host answers, never twice.
-            if case .uncertain = outcome { return record }
-            return nil
-        }()
+        // Without the ledger every send is a new one; with it, the same id unless sent anew.
+        let retrying = keeps ? reusable(d) : nil
         Task {
-            let (result, kept) = await NoteHandoff.send(id, to: d, notes: scene.notes, api: hub.client(host: d.host), hostKeepsNotes: hub.state(host: d.host)?.supports("notes") ?? false,
-                                                        reachable: reachable(d), asFile: asFile, retrying: retrying, origin: origin)
+            let (result, kept) = await NoteHandoff.send(id, to: d, notes: scene.notes, api: hub.client(host: d.host), hostKeepsNotes: keeps,
+                                                        reachable: reachable(d), asFile: asFile, retrying: retrying, resend: resend && keeps, origin: origin)
             busy = false
             outcome = result
             record = kept

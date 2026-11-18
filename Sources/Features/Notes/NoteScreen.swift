@@ -24,7 +24,10 @@ struct NoteScreen: View {
                 content(id: id, summary: summary, doc: doc)
             } else {
                 EmptyState(symbol: "note.text", title: "This Note Is Gone", message: "It was deleted, here or on another device.",
-                           action: (title: "Close", run: { if pane != nil { scene.perform("close-pane") } else { scene.closeSession() } }))
+                           action: (title: "Close", run: {
+                               // This pane, not whichever has the focus.
+                               if let pane { scene.workspace.focus(pane); scene.perform("close-pane") } else { scene.closeSession() }
+                           }))
             }
         }
         .background(theme.surface)
@@ -53,8 +56,9 @@ struct NoteScreen: View {
         }
         .task(id: ObjectIdentifier(doc)) { await doc.dictation.refresh() }
         .onDisappear {
-            // Leaving it isn't deleting it: what was typed is kept, a dictation finishes into it.
-            Task { await doc.dictation.close(into: doc.box) }
+            // Leaving it isn't deleting it: what was typed is kept, a dictation finishes into it,
+            // and a recording waiting for Try Again is still there when it's opened again.
+            doc.dictation.leave(into: doc.box)
             notes.flush()
         }
         .onChange(of: doc.box.events.count) {
@@ -288,9 +292,10 @@ private struct NoteBar: View {
 
     @ViewBuilder
     private func actions(words: Bool) -> some View {
-        action("Send", symbol: "paperplane", words: words, id: "note-send") { scene.perform("note-send") }
-        action("New Session", symbol: "plus.square", words: words, id: "note-new-session") { scene.perform("note-new-session") }
-        action("Save as File", symbol: "square.and.arrow.down", words: words, id: "note-save-file") { scene.perform("note-save-file") }
+        // This bar's note, whichever pane has the focus.
+        action("Send", symbol: "paperplane", words: words, id: "note-send") { scene.sheet = .noteSend(id, insert: false) }
+        action("New Session", symbol: "plus.square", words: words, id: "note-new-session") { scene.startSession(fromNote: id, attached: false) }
+        action("Save as File", symbol: "square.and.arrow.down", words: words, id: "note-save-file") { scene.sheet = .noteSaveFile(id) }
     }
 
     private func action(_ title: String, symbol: String, words: Bool, id: String, run: @escaping () -> Void) -> some View {

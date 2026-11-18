@@ -295,8 +295,9 @@ final class AppModel {
             let state = account.hub.shownState
             return NotesModel.HostLink(api: account.api, hostname: account.hostname, supportsNotes: state?.supports("notes") ?? false, online: account.hub.phase.isUsable && account.hub.hub.state != nil)
         }
-        notes.voice = { [weak self] in
-            guard let account = self?.accounts.first(where: { $0.status == .signedIn }) ?? self?.accounts.first else { return nil }
+        notes.voice = { [weak self] origin in
+            let signedIn = self?.accounts.filter { $0.status == .signedIn } ?? []
+            guard let account = signedIn.first(where: { $0.origin == origin }) ?? signedIn.first ?? self?.accounts.first else { return nil }
             let hub = account.hub
             return (account.api, { [weak hub] in hub?.state(host: nil)?.supports("voice") ?? false })
         }

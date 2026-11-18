@@ -26,6 +26,37 @@ struct NoteConflict: Codable, Equatable, Sendable {
     var at: Double
     /// The host deleted it while this device was changing it.
     var deleted: Bool
+    /// The project the host has it under (nil: none).
+    var project: NoteProjectDTO?
+}
+
+/// One write on its way to the host, kept exactly as it was first sent: a retry after a lost
+/// answer sends the same thing under the same id, so the host can answer it again without
+/// applying it twice, and only the version it carried counts as synced. Edits made meanwhile
+/// go in the next write, under a new id.
+struct NoteWrite: Codable, Equatable, Sendable {
+    var id: String
+    /// A deletion (title, markdown and project are what was deleted, to compare with).
+    var deletion: Bool
+    var baseRevision: Int
+    var title: String
+    var markdown: String
+    var project: NoteProjectDTO?
+    /// The note's version this write carries.
+    var version: Int
+
+    init(_ note: Note, id: String = NoteKey.newID()) {
+        self.id = id
+        deletion = note.deletedAt != nil
+        baseRevision = note.revision
+        title = note.title
+        markdown = note.markdown
+        project = note.project.map { NoteProjectDTO(host: $0.host, path: $0.path) }
+        version = note.version
+    }
+
+    /// Whether the host's note holds what this write did.
+    func matches(_ dto: NoteDTO) -> Bool { dto.title == title && dto.markdown == markdown && dto.project == project }
 }
 
 /// A scratchpad as this device keeps it. The text is authoritative here: every edit is
@@ -48,8 +79,8 @@ struct Note: Codable, Equatable, Sendable, Identifiable, FetchableRecord, Persis
     var version: Int
     /// The version the host has. Behind `version` means changes still to send.
     var syncedVersion: Int
-    /// The id of the write being sent, kept across retries until the host takes it.
-    var writeId: String?
+    /// The write being sent (`NoteWrite`), kept across retries until the host answers it.
+    var pendingJson: String?
     /// Deleted here, the host not told yet (a synced note); a local one is just removed.
     var deletedAt: Double?
     var conflictJson: String?
@@ -75,7 +106,7 @@ struct Note: Codable, Equatable, Sendable, Identifiable, FetchableRecord, Persis
         revision = 0
         version = 1
         syncedVersion = 0
-        writeId = nil
+        pendingJson = nil
         deletedAt = nil
         conflictJson = nil
         syncError = nil
@@ -103,6 +134,17 @@ struct Note: Codable, Equatable, Sendable, Identifiable, FetchableRecord, Persis
         get { conflictJson.flatMap { try? JSONDecoder().decode(NoteConflict.self, from: Data($0.utf8)) } }
         set { conflictJson = newValue.flatMap { try? JSONEncoder().encode($0) }.map { String(decoding: $0, as: UTF8.self) } }
     }
+
+    var pending: NoteWrite? {
+        get { pendingJson.flatMap { try? JSONDecoder().decode(NoteWrite.self, from: Data($0.utf8)) } }
+        set { pendingJson = newValue.flatMap { try? JSONEncoder().encode($0) }.map { String(decoding: $0, as: UTF8.self) } }
+    }
+
+    /// The project as the host names it (no account).
+    var projectDTO: NoteProjectDTO? { project.map { NoteProjectDTO(host: $0.host, path: $0.path) } }
+
+    /// Whether the host's note says what this one does: title, text and project.
+    func sameContent(_ dto: NoteDTO) -> Bool { dto.title == title && dto.markdown == markdown && dto.project == projectDTO }
 
     var exports: [NoteExportDTO] {
         get { (try? JSONDecoder().decode([NoteExportDTO].self, from: Data(exportsJson.utf8))) ?? [] }

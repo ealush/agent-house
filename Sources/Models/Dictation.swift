@@ -552,6 +552,17 @@ final class DictationModel {
         return (min(head, lateHead), max(old.count - tail, old.count - lateTail), new.count - old.count)
     }
 
+    /// A note left (its document stays open in the app, and this with it): what was being
+    /// said goes into it and a start still waiting stops, but a recording kept for Try Again
+    /// stays, for when the note is opened again. Not `close`: nothing is gone for good.
+    func leave(into composer: ComposerModel) {
+        switch phase {
+        case .listening: Task { await self.finish(into: composer) }
+        case .starting: Task { await self.cancel(in: composer) }
+        case .failed, .denied, .idle, .writing: break
+        }
+    }
+
     /// Once you're done: the last batch heard, the batches' words tidied once (with this
     /// device's hearing to check against), in the box in place of what went in as you spoke.
     private func writeBatches(_ result: CaptureResult, into composer: ComposerModel) async {

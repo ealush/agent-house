@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import Observation
 
 /// A note being edited: its text lives in a composer box (uid "", so no host draft), so
@@ -85,13 +88,17 @@ final class NotesModel {
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     /// Writes go here in order, off the main thread; `flush()` waits for them.
     @ObservationIgnored private let writer = DispatchQueue(label: "dev.ealush.ah.native.notes", qos: .userInitiated)
+    /// Writes to disk that failed, counted on `writer` (a sync cursor isn't moved past them).
+    @ObservationIgnored private let failedWrites = FailedWrites()
     @ObservationIgnored let saveDelay: Duration
     @ObservationIgnored let syncDelay: Duration
 
     /// The host an account's notes go to, if signed in.
     @ObservationIgnored var host: @MainActor (String) -> HostLink? = { _ in nil }
     /// What a new document dictates through (the window's account), and whether its host does voice.
-    @ObservationIgnored var voice: @MainActor () -> (api: APIClient, hostDoesVoice: @MainActor () -> Bool)? = { nil }
+    /// The account a note's dictation goes through: the one it syncs with (or its project's),
+    /// else any signed-in one.
+    @ObservationIgnored var voice: @MainActor (_ origin: String?) -> (api: APIClient, hostDoesVoice: @MainActor () -> Bool)? = { _ in nil }
     /// The microphone documents listen with (the app's; a stand-in in tests).
     @ObservationIgnored var makeCapture: @MainActor () -> any DictationCapture = { DictationModel.makeCapture() }
     /// A fallback for documents opened with no account at all (never called: uid "").
@@ -165,7 +172,7 @@ final class NotesModel {
     func document(_ id: String) -> NoteDocument? {
         if let kept = documents[id] { return kept }
         guard let note = note(id) else { return nil }
-        let voice = voice()
+        let voice = voice(note.syncOrigin ?? note.project?.origin)
         let api = voice?.api ?? nowhere
         let box = ComposerModel(api: api, outbox: outbox, key: note.key, uid: "", isShell: false)
         var hostDoesVoice: @MainActor () -> Bool = { false }
@@ -274,7 +281,7 @@ final class NotesModel {
     /// Whether a note can stop syncing in place: only one the host never had.
     func canKeepLocal(_ id: String) -> Bool {
         guard let note = note(id) else { return false }
-        return note.syncOrigin == nil || (note.revision == 0 && note.writeId == nil)
+        return note.syncOrigin == nil || (note.revision == 0 && note.pendingJson == nil)
     }
 
     /// Starts syncing a local note with an account, or keeps a never-synced one here.
@@ -284,7 +291,7 @@ final class NotesModel {
         note.syncOrigin = origin
         note.revision = 0
         note.syncedVersion = 0
-        note.writeId = nil
+        note.pending = nil
         note.syncError = nil
         note.conflict = nil
         store(note)
@@ -306,7 +313,7 @@ final class NotesModel {
         if let doc = documents[id], doc.dictation.phase != .idle { Task { await doc.dictation.cancel(in: doc.box) } }
         documents[id] = nil
         pendingText.remove(id)
-        if let origin = note.syncOrigin, note.revision > 0 || note.writeId != nil {
+        if let origin = note.syncOrigin, note.revision > 0 || note.pendingJson != nil {
             note.deletedAt = Date().timeIntervalSince1970
             notes[id] = note
             persistNow(note)
@@ -332,7 +339,7 @@ final class NotesModel {
                 return
             }
             note.revision = theirs.revision
-            note.writeId = nil
+            note.pending = nil
             note.version += 1
             store(note)
         case .keepTheirs, .keepBoth:
@@ -346,8 +353,9 @@ final class NotesModel {
             note.conflict = nil
             note.title = theirs.title
             note.markdown = theirs.markdown
+            note.project = theirs.project.map { NoteProject(origin: origin, host: $0.host, path: $0.path) }
             note.revision = theirs.revision
-            note.writeId = nil
+            note.pending = nil
             note.version += 1
             note.syncedVersion = note.version
             store(note)
@@ -395,7 +403,7 @@ final class NotesModel {
             note.syncOrigin = nil
             note.revision = 0
             note.syncedVersion = 0
-            note.writeId = nil
+            note.pending = nil
             note.conflict = nil
             note.syncError = nil
             notes[note.id] = note
@@ -422,11 +430,27 @@ final class NotesModel {
     }
 
     func persist(_ note: Note) {
-        writer.async { [repository] in try? repository.save(note) }
+        writer.async { [repository, failedWrites] in
+            do { try repository.save(note) } catch { failedWrites.count += 1 }
+        }
     }
 
-    private func persistNow(_ note: Note) {
-        writer.sync { [repository] in try? repository.save(note) }
+    func persistNow(_ note: Note) {
+        writer.sync { [repository, failedWrites] in
+            do { try repository.save(note) } catch { failedWrites.count += 1 }
+        }
+    }
+
+    /// How many writes have failed so far (read in turn after every write before it).
+    func failedWriteCount() -> Int { writer.sync { [failedWrites] in failedWrites.count } }
+
+    /// The host's change feed read up to `cursor`, written after (in turn with) the notes it
+    /// brought; not moved when one of those didn't reach the disk, so they come again.
+    func saveCursor(_ cursor: Int, origin: String, failuresBefore: Int) throws {
+        try writer.sync { [repository, failedWrites] in
+            guard failedWrites.count == failuresBefore else { throw NoteDiskError() }
+            try repository.setCursor(cursor, origin: origin)
+        }
     }
 
     /// What an open box holds goes into its note now (before a copy, a send, a sync).
@@ -465,3 +489,10 @@ private struct NoTransport: HTTPTransport {
     func webSocket(for request: URLRequest) -> any WebSocketConnection { fatalError("notes never open a terminal") }
     func upload(for request: URLRequest, body: UploadBody, progress: @escaping @Sendable (Double) -> Void) async throws -> (Data, HTTPURLResponse) { throw APIError.transport("No host") }
 }
+
+/// Touched only on the notes' writer queue.
+final class FailedWrites: @unchecked Sendable {
+    var count = 0
+}
+
+struct NoteDiskError: Error {}

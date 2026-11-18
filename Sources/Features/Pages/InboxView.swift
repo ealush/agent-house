@@ -948,6 +948,17 @@ struct SearchView: View {
                 .listRowSeparator(.hidden)
             // Up top, where the eye is: under a page of the last query's results it went unseen.
             if let error = model.error { Banner(text: error, tone: .error, action: ("Retry", { model.search(debounce: .zero) })).listRowBackground(Color.clear) }
+            // Notes are this device's: found here, offline too, above what the host found.
+            let words = model.query.q.trimmingCharacters(in: .whitespacesAndNewlines)
+            let notes = words.isEmpty ? [] : scene.notes.search(words, limit: 8)
+            if !notes.isEmpty {
+                Section("Notes") {
+                    ForEach(notes) { note in
+                        NoteRowView(note: note, showsProject: true) { scene.goTo(note.key) }
+                            .ahRow()
+                    }
+                }
+            }
             if let response = model.response {
                 if !response.enabled {
                     Banner(text: "Search is off on this host. Turn it on in Settings → Search.", tone: .warning)

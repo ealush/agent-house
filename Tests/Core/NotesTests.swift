@@ -25,19 +25,22 @@ private final class NotesHost: HTTPTransport, @unchecked Sendable {
     var offline = false
     /// The next write is applied but its answer never arrives (a dropped connection).
     var loseNextAnswer = false
+    /// The next request is refused with a 400 and no code (an older host's generic refusal).
+    var refuseIDOnce: String?
 
     func requests() -> [String] { lock.withLock { asked } }
     func note(_ id: String) -> NoteDTO? { lock.withLock { rows[id]?.dto } }
     func count() -> Int { lock.withLock { rows.values.filter { !$0.dto.deleted }.count } }
 
     /// Another device's write, straight into the host.
-    func write(_ id: String, markdown: String, title: String = "") {
+    func write(_ id: String, markdown: String, title: String = "", project: NoteProjectDTO?? = nil) {
         lock.withLock {
             seq += 1
             let at = Date().timeIntervalSince1970
             var dto = rows[id]?.dto ?? NoteDTO(id: id, title: title, markdown: markdown, project: nil, revision: 0, seq: 0, writer: "device:other", createdAt: at, updatedAt: at, deleted: false, exports: [])
             dto.markdown = markdown
             dto.title = title
+            if let project { dto.project = project }
             dto.revision += 1
             dto.seq = seq
             dto.writer = "device:other"
@@ -83,8 +86,16 @@ private final class NotesHost: HTTPTransport, @unchecked Sendable {
             if method == "PUT" {
                 let body = try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as! [String: Any]
                 let base = body["baseRevision"] as! Int, write = body["writeId"] as! String
+                if refuseIDOnce == id {
+                    refuseIDOnce = nil
+                    return answer(url, 400, ["error": "bad request"])
+                }
+                let markdown = body["markdown"] as! String, title = body["title"] as! String
+                let sentProject = (body["project"] as? [String: String]).map { NoteProjectDTO(host: $0["host"]!, path: $0["path"]!) }
+                if (markdown as NSString).length > 1_048_576 { return answer(url, 413, ["error": "too long", "code": "note_too_long"]) }
                 if let row = rows[id] {
-                    if row.lastWrite == write { return answer(url, 200, json(row.dto)) }
+                    // A retry is the same write: same id and the same content (store.ts).
+                    if row.lastWrite == write, row.dto.markdown == markdown, row.dto.title == title, row.dto.project == sentProject { return answer(url, 200, json(row.dto)) }
                     if row.dto.deleted { return answer(url, 409, ["error": "deleted", "code": "note_deleted", "note": json(row.dto)]) }
                     if row.dto.revision != base { return answer(url, 409, ["error": "changed", "code": "note_conflict", "note": json(row.dto)]) }
                 }
@@ -102,11 +113,14 @@ private final class NotesHost: HTTPTransport, @unchecked Sendable {
             if method == "DELETE" {
                 let base = Int(q("baseRevision") ?? "0") ?? 0, write = q("writeId") ?? ""
                 guard var row = rows[id] else { return answer(url, 200, ["ok": true]) }
-                if row.dto.deleted || row.lastWrite == write { return answer(url, 200, json(row.dto)) }
+                // Only a tombstone answers a deletion again; a PUT's id is no deletion's.
+                if row.dto.deleted { return answer(url, 200, json(row.dto)) }
                 if row.dto.revision != base { return answer(url, 409, ["error": "changed", "code": "note_conflict", "note": json(row.dto)]) }
                 seq += 1
                 row.dto.deleted = true
                 row.dto.markdown = ""
+                row.dto.title = ""
+                row.dto.project = nil
                 row.dto.revision += 1
                 row.dto.seq = seq
                 row.lastWrite = write
@@ -410,4 +424,79 @@ private final class Microphone: DictationCapture {
     await doc.dictation.start(into: doc.box)
     await doc.dictation.cancel(in: doc.box)
     #expect(doc.box.text == "# Spec, draft\n\nTests:\nadd a restore test")
+}
+
+// MARK: Review fixes (Codex, 18 November 2026)
+
+@MainActor
+@Test func aLostAnswerThenMoreTypingSendsTheFirstWriteAsItWasThenTheRest() async throws {
+    let host = NotesHost()
+    let phone = try Device.make(host: host)
+    let note = phone.notes.create(markdown: "A", syncOrigin: origin)
+    host.loseNextAnswer = true
+    await phone.notes.sync(origin)
+    #expect(host.note(note.id)?.markdown == "A", "the host took A; its answer was lost")
+    phone.notes.document(note.id)!.box.text = "B"
+    phone.notes.flush()
+    await phone.notes.sync(origin)
+    #expect(host.note(note.id)?.markdown == "B", "B, typed after, reached the host too")
+    #expect(host.note(note.id)?.revision == 2, "A answered again, B written once")
+    #expect(phone.notes.summary(note.id)?.sync == .synced)
+    let ipad = try Device.make(host: host)
+    await ipad.notes.sync(origin)
+    #expect(ipad.notes.note(note.id)?.markdown == "B")
+}
+
+@MainActor
+@Test func aDeletionAfterALostAnswerDeletesItOnTheHostAndItStaysGone() async throws {
+    let host = NotesHost()
+    let phone = try Device.make(host: host)
+    let note = phone.notes.create(markdown: "A", syncOrigin: origin)
+    host.loseNextAnswer = true
+    await phone.notes.sync(origin)
+    phone.notes.delete(note.id)
+    await phone.notes.sync(origin)
+    #expect(host.note(note.id)?.deleted == true, "a tombstone there, not the live note answered back")
+    await phone.notes.sync(origin)
+    #expect(phone.notes.note(note.id) == nil, "the next pull doesn't bring it back")
+    #expect(phone.notes.summaries.isEmpty)
+}
+
+@MainActor
+@Test func filingTheSameNoteUnderTwoProjectsApartIsAConflictToo() async throws {
+    let host = NotesHost()
+    let phone = try Device.make(host: host), ipad = try Device.make(host: host)
+    let note = phone.notes.create(markdown: "same text", syncOrigin: origin)
+    await phone.notes.sync(origin)
+    await ipad.notes.sync(origin)
+    let r = NoteProject(origin: origin, host: "mac", path: "/code/r"), q = NoteProject(origin: origin, host: "mac", path: "/code/q")
+    phone.notes.setProject(note.id, r)
+    await phone.notes.sync(origin)
+    ipad.notes.setProject(note.id, q)
+    await ipad.notes.sync(origin)
+    #expect(ipad.notes.summary(note.id)?.sync == .conflict, "the text matches, the project doesn't: not taken as in step")
+    #expect(ipad.notes.note(note.id)?.conflict?.project == NoteProjectDTO(host: "mac", path: "/code/r"))
+    ipad.notes.resolve(note.id, .keepTheirs)
+    #expect(ipad.notes.note(note.id)?.project?.path == "/code/r", "keeping theirs keeps their project")
+    await ipad.notes.sync(origin)
+    #expect(host.note(note.id)?.project?.path == "/code/r")
+}
+
+@MainActor
+@Test func oneNoteTheHostRefusesDoesntStopTheOthersOrThePull() async throws {
+    let host = NotesHost()
+    let phone = try Device.make(host: host)
+    let refused = phone.notes.create(markdown: "refused", syncOrigin: origin)
+    let huge = phone.notes.create(markdown: String(repeating: "a", count: NotesModel.maxMarkdown + 1), syncOrigin: origin)
+    let fine = phone.notes.create(markdown: "fine", syncOrigin: origin)
+    let elsewhere = NoteKey.newID()
+    host.write(elsewhere, markdown: "made on the Mac")
+    host.refuseIDOnce = refused.id
+    await phone.notes.sync(origin)
+    #expect(host.note(fine.id)?.markdown == "fine", "the notes after it still go")
+    #expect(phone.notes.note(elsewhere)?.markdown == "made on the Mac", "and the host's changes still come")
+    #expect(phone.notes.note(refused.id)?.syncError != nil, "the refused one says so")
+    #expect(phone.notes.note(huge.id)?.syncError?.contains("Too long") == true)
+    #expect(host.note(huge.id) == nil, "too long to sync isn't sent at all")
+    #expect(!host.requests().contains("PUT /api/notes/\(huge.id)"))
 }

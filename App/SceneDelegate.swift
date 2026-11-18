@@ -93,6 +93,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneDidDisconnect(_ scene: UIScene) {
+        model?.notes.flush()
         model?.scheduleSave(now: true)
     }
 

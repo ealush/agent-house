@@ -3,8 +3,8 @@ import Foundation
 /// Taking synced notes to their host and back (`../ah/docs/spec/15-scratchpads.md`).
 ///
 /// One pass per account at a time: send what changed here (each write names the revision
-/// it was made on and keeps its id across retries, so a lost answer is never a second
-/// write), then read what changed there since the last cursor. Nothing is merged: when the
+/// it was made on, and is kept exactly as sent until answered, so a lost answer is retried
+/// as the same write and never taken for a later one), then read what changed there since the last cursor. Nothing is merged: when the
 /// two changed apart, the host's version is kept beside this device's until the person
 /// chooses. Offline, a pass stops at the first unreachable request and waits for the next
 /// reason to run (an edit, the state stream's cursor, a reconnect).
@@ -62,93 +62,159 @@ extension NotesModel {
 
     // MARK: Sending
 
+    /// The most a note can hold on the host (UTF-16 units, as it counts).
+    static let maxMarkdown = 1_048_576
+    static let maxTitle = 200
+
     private func push(_ origin: String, _ api: APIClient) async throws {
-        let waiting = notes.values.filter { $0.syncOrigin == origin && $0.conflict == nil && $0.syncError == nil && ($0.hasUnsyncedChanges || $0.revision == 0) }
+        let waiting = notes.values.filter { $0.syncOrigin == origin && $0.conflict == nil && $0.syncError == nil && ($0.hasUnsyncedChanges || $0.revision == 0 || $0.pending != nil) }
             .sorted { $0.createdAt < $1.createdAt }
         for snapshot in waiting {
-            guard var note = notes[snapshot.id] else { continue }
-            // A write keeps its id until the host takes it: asked again, the host answers the
-            // first time's result instead of applying it twice.
-            if note.writeId == nil {
-                note.writeId = NoteKey.newID()
-                notes[note.id] = note
-                persist(note)
-                flush()
-            }
-            let writeId = note.writeId!
-            if note.deletedAt != nil {
-                try await sendDeletion(note, writeId: writeId, api: api, origin: origin)
-            } else {
-                try await sendWrite(note, writeId: writeId, api: api, origin: origin)
+            // A write still unanswered goes first, as it was; then what changed since, then a
+            // deletion: at most a few in a row for one note.
+            for _ in 0..<4 {
+                guard let write = nextWrite(snapshot.id) else { break }
+                do {
+                    guard try await send(write, of: snapshot.id, api: api, origin: origin) else { break }
+                } catch let error as APIError {
+                    // The host refused this note for good (a reason without a code): it waits,
+                    // marked, while the others go on. Anything else (offline, signed out) stops here.
+                    guard case .server(let status, let message) = error, (400..<500).contains(status) else { throw error }
+                    refuse(snapshot.id, message.isEmpty ? "The host refused this note." : message)
+                    break
+                }
             }
         }
     }
 
-    private func sendWrite(_ sent: Note, writeId: String, api: APIClient, origin: String) async throws {
-        let body = NoteWriteBody(baseRevision: sent.revision, writeId: writeId, title: sent.title, markdown: sent.markdown, project: sent.project.map { NoteProjectDTO(host: $0.host, path: $0.path) }, createdAt: sent.createdAt)
-        let answer = try await api.putNote(sent.id, body)
-        guard var note = notes[sent.id] else { return }
+    /// The write to send now for a note: the one still on its way, else one made from what
+    /// changed (kept on disk before it goes). Nil: nothing to send, or it can't go.
+    private func nextWrite(_ id: String) -> NoteWrite? {
+        guard var note = notes[id], note.syncOrigin != nil, note.conflict == nil, note.syncError == nil else { return nil }
+        if let pending = note.pending { return pending }
+        guard note.hasUnsyncedChanges || note.revision == 0 else { return nil }
+        if note.deletedAt == nil, let problem = Self.tooBig(note) {
+            refuse(id, problem)
+            return nil
+        }
+        let write = NoteWrite(note)
+        note.pending = write
+        notes[id] = note
+        persistNow(note)
+        return write
+    }
+
+    /// Why the host would refuse a note's size (it counts UTF-16 units).
+    static func tooBig(_ note: Note) -> String? {
+        if note.markdown.utf16.count > maxMarkdown { return "Too long to sync: a note holds at most about a million characters. It stays on this device." }
+        if note.title.utf16.count > maxTitle { return "The title is too long to sync (at most 200 characters)." }
+        return nil
+    }
+
+    private func refuse(_ id: String, _ reason: String) {
+        guard var note = notes[id] else { return }
+        note.pending = nil
+        note.syncError = reason
+        notes[id] = note
+        persist(note)
+    }
+
+    /// Sends one write; true when the note may have more to send.
+    private func send(_ write: NoteWrite, of id: String, api: APIClient, origin: String) async throws -> Bool {
+        if write.deletion {
+            let answer = try await api.deleteNote(id, baseRevision: write.baseRevision, writeId: write.id)
+            return deletion(write, of: id, answer: answer, origin: origin)
+        }
+        let body = NoteWriteBody(baseRevision: write.baseRevision, writeId: write.id, title: write.title, markdown: write.markdown, project: write.project, createdAt: notes[id]?.createdAt ?? Date().timeIntervalSince1970)
+        let answer = try await api.putNote(id, body)
+        return written(write, of: id, answer: answer, origin: origin)
+    }
+
+    private func written(_ write: NoteWrite, of id: String, answer: NoteAnswer<NoteDTO>, origin: String) -> Bool {
+        guard var note = notes[id] else { return false }
+        note.pending = nil
         switch answer {
         case .ok(let dto):
             note.revision = dto.revision
-            note.writeId = nil
-            note.exports = dto.exports.isEmpty ? note.exports : dto.exports
-            // Edited while it was on its way: still ahead of the host, sent next pass.
-            note.syncedVersion = sent.version
-            notes[note.id] = note
+            if !dto.exports.isEmpty { note.exports = dto.exports }
+            // Only what this write carried is on the host; edits since go next.
+            note.syncedVersion = max(note.syncedVersion, write.version)
+            notes[id] = note
             persist(note)
-            if note.version != note.syncedVersion { syncAgain.insert(origin) }
+            return note.hasUnsyncedChanges
         case .refused(let refusal):
-            note.writeId = nil
             switch refusal.code {
             case "note_conflict":
                 guard let theirs = refusal.note else { break }
-                if theirs.title == note.title && theirs.markdown == note.markdown {
-                    // Both sides wrote the same: in step.
+                if write.matches(theirs) || note.sameContent(theirs) {
+                    // This write reached the host (its answer was lost), or both sides wrote the same.
                     note.revision = theirs.revision
-                    note.syncedVersion = note.version
-                } else {
-                    note.conflict = NoteConflict(title: theirs.title, markdown: theirs.markdown, revision: theirs.revision, writer: theirs.writer, at: theirs.updatedAt, deleted: false)
+                    note.syncedVersion = max(note.syncedVersion, note.sameContent(theirs) ? note.version : write.version)
+                    notes[id] = note
+                    persist(note)
+                    return note.hasUnsyncedChanges
                 }
-                notes[note.id] = note
+                if note.deletedAt != nil {
+                    // Deleted here since: the deletion goes next, on the revision it saw, and
+                    // the host refuses it with their version, which then stays.
+                    notes[id] = note
+                    persist(note)
+                    return true
+                }
+                note.conflict = NoteConflict(title: theirs.title, markdown: theirs.markdown, revision: theirs.revision, writer: theirs.writer, at: theirs.updatedAt, deleted: false, project: theirs.project)
+                notes[id] = note
                 persist(note)
+                return false
             case "note_deleted":
-                keepAsCopy(note, origin: origin, reason: "“\(note.shownTitle)” was deleted on another device. Your edits are kept as a new note.")
+                notes[id] = note
+                if note.deletedAt != nil { remove(id) } else {
+                    keepAsCopy(note, origin: origin, reason: "“\(note.shownTitle)” was deleted on another device. Your edits are kept as a new note.")
+                }
+                return false
             default:
-                note.syncError = refusal.error
-                notes[note.id] = note
-                persist(note)
+                break
             }
+            note.syncError = refusal.error
+            notes[id] = note
+            persist(note)
+            return false
         }
     }
 
-    private func sendDeletion(_ sent: Note, writeId: String, api: APIClient, origin: String) async throws {
-        let answer = try await api.deleteNote(sent.id, baseRevision: sent.revision, writeId: writeId)
+    private func deletion(_ write: NoteWrite, of id: String, answer: NoteAnswer<NoteDTO>, origin: String) -> Bool {
+        guard var note = notes[id] else { return false }
+        note.pending = nil
         switch answer {
-        case .ok:
-            remove(sent.id)
+        case .ok(let dto):
+            if dto.deleted {
+                remove(id)
+                return false
+            }
+            // Not a tombstone (an older host's answer to an id it had seen): asked again, anew.
+            note.revision = dto.revision
+            notes[id] = note
+            persist(note)
+            return dto.revision != write.baseRevision
         case .refused(let refusal):
             guard refusal.code == "note_conflict", let theirs = refusal.note else {
-                remove(sent.id)
-                return
+                // Gone there already, or refused for good: gone here too.
+                remove(id)
+                return false
             }
-            if theirs.markdown == sent.markdown && theirs.title == sent.title {
-                // Our own write reached the host (its answer was lost): delete that revision.
-                guard var note = notes[sent.id] else { return }
+            if write.matches(theirs) {
+                // What was deleted here is what the host has, one revision on (this device's
+                // own write, its answer lost): delete that revision.
                 note.revision = theirs.revision
-                note.writeId = nil
-                notes[note.id] = note
+                notes[id] = note
                 persist(note)
-                syncAgain.insert(origin)
-                return
+                return true
             }
             // Changed on another device since you deleted it: their changes stay.
-            guard var note = notes[sent.id] else { return }
             note.deletedAt = nil
-            note.writeId = nil
             adopt(theirs, into: &note)
             store(note)
             tell("“\(note.shownTitle)” changed on another device, so it wasn’t deleted.")
+            return false
         }
     }
 
@@ -159,9 +225,10 @@ extension NotesModel {
         var pages = 0
         repeat {
             let page = try await api.notes(since: cursor)
+            let failures = failedWriteCount()
             for dto in page.notes { merge(dto, origin: origin) }
             cursor = page.cursor
-            try? repository.setCursor(cursor, origin: origin)
+            try saveCursor(cursor, origin: origin, failuresBefore: failures)
             pages += 1
             if !page.more { break }
         } while pages < 50
@@ -213,13 +280,16 @@ extension NotesModel {
             notes[note.id] = note
             persist(note)
             documents(showing: note)
-        } else if dto.title == note.title && dto.markdown == note.markdown {
+        } else if note.sameContent(dto) || note.pending?.matches(dto) == true {
+            // This device's own write, seen on the feed before its answer came.
+            let carried = note.pending.flatMap { $0.matches(dto) ? $0.version : nil }
+            if carried != nil { note.pending = nil }
+            note.syncedVersion = max(note.syncedVersion, note.sameContent(dto) ? note.version : (carried ?? note.syncedVersion))
             note.revision = dto.revision
-            note.syncedVersion = note.version
             notes[note.id] = note
             persist(note)
         } else {
-            note.conflict = NoteConflict(title: dto.title, markdown: dto.markdown, revision: dto.revision, writer: dto.writer, at: dto.updatedAt, deleted: false)
+            note.conflict = NoteConflict(title: dto.title, markdown: dto.markdown, revision: dto.revision, writer: dto.writer, at: dto.updatedAt, deleted: false, project: dto.project)
             notes[note.id] = note
             persist(note)
         }

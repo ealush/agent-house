@@ -789,11 +789,21 @@ final class SceneModel {
         watchSessionsIfNeeded()
         guard let pending = pendingRestore, let hub else { return }
         // Notes are on this device: a window of notes (and pages) comes back without the host.
-        guard hub.hub.state != nil || Self.onlyNotes(pending) else { return }
+        // One with sessions too waits for the host, unless it can't be reached: then it comes
+        // back as it was (the sessions as last known, none taken for gone on stale word), so
+        // the notes in it are there offline.
+        var offline = false
+        if case .offline = hub.phase { offline = true }
+        let provisional = hub.hub.state == nil && !Self.onlyNotes(pending)
+        guard hub.hub.state != nil || Self.onlyNotes(pending) || (offline && Self.hasNotes(pending)) else { return }
         pendingRestore = nil
         let notes = app.notes
         let outcome = RestorationReconciler.reconcile(pending) { key in
-            guard NoteKey.isNote(key) else { return hub.presence(of: key) }
+            guard NoteKey.isNote(key) else {
+                let presence = hub.presence(of: key)
+                if provisional, case .gone = presence { return .live }
+                return presence
+            }
             return NoteKey.id(notes.current(key)).flatMap { notes.note($0) } != nil ? .live : .gone
         }
         let snapshot = outcome.snapshot
@@ -855,6 +865,8 @@ final class SceneModel {
     @discardableResult
     func didEnterBackground() -> Task<Void, Never> {
         inBackground = true
+        // Every note's text on disk before the app can be suspended (not on a timer).
+        notes.flush()
         scheduleSave(now: true)
         hub?.saveCache(force: true)
         let leaving = sessions.values.map { model in Task { await model.background() } }
@@ -1220,8 +1232,12 @@ final class SceneModel {
         if let delta = workspace.nudge(dir) { panelWidthDelta += delta }
     }
 
+    /// What next and previous session go through: the sessions, then the notes (newest
+    /// first, as the switcher lists them).
+    var cycleOrder: [String] { sidebarOrder.map(\.key) + notes.summaries.map(\.key) }
+
     private func cycle(_ direction: Int) {
-        let keys = sidebarOrder.map(\.key)
+        let keys = cycleOrder
         let before = workspace.focusedKey
         workspace.cycle(keys, direction)
         if workspace.layout == nil, let key = workspace.selected, key != before { route = .session(key) }
@@ -1718,7 +1734,10 @@ final class SceneModel {
                 let result = try await api.send(created.uid, text: prompt)
                 toast(result.outcome == .queued ? "Your prompt goes in once it’s ready" : "Sent your prompt")
             } catch {
-                toast("Started, but your prompt didn’t go: \(APIError.wrap(error).message)", error: true)
+                // Not lost: it waits in the new session's box (its draft on the host, which the
+                // box reads on opening) to look at and send again.
+                let kept = (try? await api.saveDraft(created.uid, text: prompt)) != nil
+                toast("Started, but your prompt didn’t go: \(APIError.wrap(error).message)" + (kept ? ". It’s in the box to send." : ""), error: true)
             }
         }
         app.preferences.noteAgent(request.preset)

@@ -720,6 +720,8 @@ private struct ChooserContent: View {
         return scene.notes.search(query, limit: 12).filter { !visible.contains($0.key) }.prefix(query.isEmpty ? 3 : 5).map { $0 }
     }
 
+    private var choiceKeys: [String] { rows.map(\.key) + noteRows.map(\.key) }
+
     var body: some View {
         let rows = rows
         VStack(spacing: 14) {
@@ -732,9 +734,10 @@ private struct ChooserContent: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .onChange(of: query) { _, _ in selection = 0 }
-                    .onSubmit { if rows.indices.contains(selection) { scene.fillPane(path, with: rows[selection].key) } }
-                    .onKeyPress(.upArrow) { if !rows.isEmpty { selection = (selection - 1 + rows.count) % rows.count }; return .handled }
-                    .onKeyPress(.downArrow) { if !rows.isEmpty { selection = (selection + 1) % rows.count }; return .handled }
+                    // The sessions' rows, then the notes': one list for the arrows and Return.
+                    .onSubmit { let keys = choiceKeys; if keys.indices.contains(selection) { scene.fillPane(path, with: keys[selection]) } }
+                    .onKeyPress(.upArrow) { let n = choiceKeys.count; if n > 0 { selection = (selection - 1 + n) % n }; return .handled }
+                    .onKeyPress(.downArrow) { let n = choiceKeys.count; if n > 0 { selection = (selection + 1) % n }; return .handled }
                     .onKeyPress(.escape) { scene.cancelChooser(path); return .handled }
             }
             .padding(.horizontal, 12)
@@ -775,7 +778,8 @@ private struct ChooserContent: View {
             let notes = noteRows
             if !notes.isEmpty {
                 VStack(spacing: 2) {
-                    ForEach(notes) { note in
+                    ForEach(Array(notes.enumerated()), id: \.element.id) { offset, note in
+                        let index = rows.count + offset
                         HStack(spacing: 10) {
                             Image(systemName: "note.text").foregroundStyle(theme.accent).frame(width: 22)
                             VStack(alignment: .leading, spacing: 1) {
@@ -786,10 +790,12 @@ private struct ChooserContent: View {
                         }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
+                        .background(index == selection ? theme.accentStrong.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .contentShape(Rectangle())
                         .onTapGesture { scene.fillPane(path, with: note.key) }
+                        .onHover { if $0 { selection = index } }
                         .accessibilityElement(children: .combine)
-                        .accessibilityAddTraits(.isButton)
+                        .accessibilityAddTraits(index == selection ? [.isButton, .isSelected] : .isButton)
                     }
                 }
             }

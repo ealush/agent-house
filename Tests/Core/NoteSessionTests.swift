@@ -215,3 +215,45 @@ private let ended = NoteHandoff.Destination(key: "claude:0f0e", ref: "claude:0f0
     #expect(await NoteHandoff.send(long.id, to: idle, notes: notes, api: api, hostKeepsNotes: true, reachable: true, asFile: true, origin: o).0 == .delivered(resumed: false))
     #expect(host.prompts.last?.hasPrefix("/home/me/.cache/ah/uploads/") == true, "the file's path leads the message")
 }
+
+// MARK: Review fixes (Codex, 18 November 2026)
+
+@MainActor
+private func scene(_ name: String) throws -> SceneModel {
+    let services = AppServices(
+        database: try AppDatabase(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)),
+        vault: CredentialVault(store: MemorySecretStore()), keys: MemoryDeviceKeyStore(),
+        transport: URLSessionTransport(), device: DeviceDescriptor(name: "iPad", client: DeviceDescriptor.newClientID()), allowLoopback: true
+    )
+    return SceneModel(sceneID: name, app: AppModel(services: services))
+}
+
+@MainActor
+@Test func goingToTheBackgroundPutsANotesTextOnDiskAtOnce() throws {
+    let scene = try scene("background")
+    let key = scene.newNote(markdown: "first")
+    let id = try #require(NoteKey.id(key))
+    scene.notes.document(id)!.box.text = "typed a moment before leaving"
+    scene.didEnterBackground()
+    // Read straight from disk, with no wait for the save timer.
+    #expect(try scene.notes.repository.note(id)?.markdown == "typed a moment before leaving")
+}
+
+@MainActor
+@Test func nextAndPreviousSessionGoThroughNotesToo() throws {
+    let scene = try scene("cycle")
+    let a = scene.newNote(markdown: "a"), b = scene.newNote(markdown: "b")
+    #expect(scene.cycleOrder == [b, a])
+    scene.workspace.cycle(scene.cycleOrder, 1)
+    #expect(scene.workspace.selected == a)
+    scene.workspace.cycle(scene.cycleOrder, 1)
+    #expect(scene.workspace.selected == b)
+}
+
+@Test func aWindowWithNotesAndSessionsIsKnownToHaveNotes() {
+    let a = NoteKey.key(NoteKey.newID())
+    var snapshot = SceneSnapshot(sceneID: "w", hostOrigin: "https://box.example.ts.net", route: .inbox, session: nil)
+    #expect(!SceneModel.hasNotes(snapshot))
+    snapshot.workspaces.slots[snapshot.workspaces.current] = Workspaces.Slot(layout: .split(direction: .horizontal, ratio: 0.5, first: .session(a), second: .session("abc123")), selected: nil)
+    #expect(SceneModel.hasNotes(snapshot) && !SceneModel.onlyNotes(snapshot), "offline, it comes back as it was rather than wait")
+}

@@ -38,13 +38,23 @@ extension SceneModel {
     /// A journal whose sessions are all notes (or empty panes): it can come back before the
     /// host answers, offline included.
     nonisolated static func onlyNotes(_ snapshot: SceneSnapshot) -> Bool {
+        keys(snapshot).allSatisfy { NoteKey.isNote($0) || LayoutNode.isPick($0) }
+    }
+
+    /// Every key a journal shows: its session, its route, its workspaces' panes.
+    nonisolated static func keys(_ snapshot: SceneSnapshot) -> [String] {
         var keys = snapshot.session.map { [$0.key] } ?? []
         if case .session(let key) = snapshot.route { keys.append(key) }
         for slot in snapshot.workspaces.slots.values {
             keys += slot.layout?.leaves().map(\.sessionKey) ?? []
             if let selected = slot.selected { keys.append(selected) }
         }
-        return keys.allSatisfy { NoteKey.isNote($0) || LayoutNode.isPick($0) }
+        return keys
+    }
+
+    /// A journal with at least one note in it.
+    nonisolated static func hasNotes(_ snapshot: SceneSnapshot) -> Bool {
+        keys(snapshot).contains(where: NoteKey.isNote)
     }
 
     /// A new note in a chooser pane.

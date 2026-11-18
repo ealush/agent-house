@@ -660,3 +660,18 @@ private func query(_ q: String?) -> [String: String] {
     #expect(!plain.preview, "a tap: the box alone")
 }
 
+
+@MainActor
+@Test func review4_leavingANoteKeepsARecordingWaitingForTryAgain() async {
+    let host = VoiceHost()
+    host.settings["speech"] = groq
+    host.dictation = (401, ["error": "signed out"])
+    let (model, composer, capture) = bed(host, live: false)
+    await model.refresh()
+    await model.toggle(into: composer)
+    await model.toggle(into: composer)
+    #expect(model.phase == .failed("signed out", retry: true))
+    model.leave(into: composer)
+    #expect(model.phase == .failed("signed out", retry: true), "the note isn't gone: its Try Again is still there")
+    #expect(FileManager.default.fileExists(atPath: capture.file.path), "and so is the recording")
+}

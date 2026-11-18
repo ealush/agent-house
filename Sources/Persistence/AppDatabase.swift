@@ -90,7 +90,7 @@ final class AppDatabase: Sendable {
                 t.column("revision", .integer).notNull().defaults(to: 0)
                 t.column("version", .integer).notNull().defaults(to: 1)
                 t.column("syncedVersion", .integer).notNull().defaults(to: 0)
-                t.column("writeId", .text)
+                t.column("pendingJson", .text)
                 t.column("deletedAt", .double)
                 t.column("conflictJson", .text)
                 t.column("syncError", .text)
@@ -220,7 +220,7 @@ struct AccountRepository: Sendable {
             try db.execute(sql: "DELETE FROM cacheEntry WHERE origin = ?", arguments: [origin])
             try db.execute(sql: "DELETE FROM sessionSurface WHERE origin = ?", arguments: [origin])
             // Notes are the person's writing, not the host's: they stay, on this device only.
-            try db.execute(sql: "UPDATE note SET syncOrigin = NULL, revision = 0, syncedVersion = 0, writeId = NULL, conflictJson = NULL WHERE syncOrigin = ?", arguments: [origin])
+            try db.execute(sql: "UPDATE note SET syncOrigin = NULL, revision = 0, syncedVersion = 0, pendingJson = NULL, conflictJson = NULL WHERE syncOrigin = ?", arguments: [origin])
             try db.execute(sql: "DELETE FROM note WHERE syncOrigin IS NULL AND deletedAt IS NOT NULL")
             try db.execute(sql: "DELETE FROM noteCursor WHERE origin = ?", arguments: [origin])
         }

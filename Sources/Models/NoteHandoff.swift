@@ -34,7 +34,7 @@ enum NoteHandoff {
             switch self {
             case .delivered(let resumed): return resumed ? "Resumed the session and sent the note." : "Sent the note."
             case .queued(let resumed): return resumed ? "Resumed the session; the note is queued for its next turn." : "Queued: the note goes in when this turn ends."
-            case .uncertain(let why): return "Not sure it arrived (\(why)). Try Again asks the host what happened; it won’t send twice."
+            case .uncertain(let why): return "Not sure it arrived: \(why)."
             case .failed(let why): return "Not sent: \(why)"
             case .offline: return "Not sent: your host can’t be reached. The note is kept here."
             case .tooLong: return "Too long for one message. Send it as a file instead."
@@ -77,7 +77,7 @@ enum NoteHandoff {
             } else {
                 text = note.markdown
                 guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return (.failed("the note is empty"), nil) }
-                guard text.count <= maxText else { return (.tooLong, nil) }
+                guard text.utf16.count <= maxText else { return (.tooLong, nil) }
             }
             record = NoteHandoffRecord(id: NoteKey.newID(), noteId: id, version: note.version, targetKey: to.key, origin: origin, state: .sending, sentText: text, detail: nil, createdAt: Date().timeIntervalSince1970)
             // Kept before it goes: a crash or a lost answer can be asked about by this id.
@@ -107,9 +107,11 @@ enum NoteHandoff {
                 case .failed: return .failed(result.error ?? "the host couldn’t send it")
                 }
             case .refused(let refusal):
-                return refusal.code == "handoff_too_long" ? .tooLong : .failed(refusal.error)
+                return refusal.code == "handoff_too_long" || refusal.status == 413 ? .tooLong : .failed(refusal.error)
             }
         } catch {
+            // Past what the host reads at all: nothing was sent, and a file goes instead.
+            if case .server(413, _) = APIError.wrap(error) { return .tooLong }
             return failure(error)
         }
     }
