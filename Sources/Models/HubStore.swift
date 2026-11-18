@@ -27,6 +27,9 @@ final class HubStore {
     /// host answers, so a cold launch isn't blank. Never used to decide what still exists.
     private(set) var cachedState: HubStateDTO? { didSet { derived = Derived(); refreshSlots() } }
     var onSignedOut: (@MainActor () -> Void)?
+    /// The host's notes changed (its cursor moved) or it's reachable again: time to sync.
+    @ObservationIgnored var onNotes: (@MainActor () -> Void)?
+    @ObservationIgnored private var notesSeen: (cursor: Int?, usable: Bool) = (nil, false)
 
     struct StateCache {
         let load: @MainActor () -> HubStateDTO?
@@ -167,6 +170,15 @@ final class HubStore {
             return
         }
         syncPeers()
+        if let state = update.state {
+            let seen = (cursor: state.notes?.cursor, usable: update.phase.isUsable)
+            if seen.cursor != notesSeen.cursor || (seen.usable && !notesSeen.usable) {
+                notesSeen = seen
+                if state.supports("notes") { onNotes?() }
+            } else {
+                notesSeen.usable = seen.usable
+            }
+        }
         // Forget a hidden key once the host stops listing it, so a resume under the same uid shows.
         if !hidden.isEmpty {
             let live = Set(allRows.map(\.key))

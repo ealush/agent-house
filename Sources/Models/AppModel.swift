@@ -260,6 +260,8 @@ final class AppModel {
     let services: AppServices
     private(set) var accounts: [AccountSession] = []
     let outbox = Outbox()
+    /// Every scratchpad on this device, for every window (`NotesModel`).
+    let notes: NotesModel
     var preferences: DevicePreferences {
         didSet { if preferences != oldValue { try? services.preferences.save(preferences) } }
     }
@@ -287,6 +289,33 @@ final class AppModel {
         keyBindings = services.preferences.keyBindings()
         let saved = (try? services.accounts.all()) ?? []
         accounts = saved.map { AccountSession(account: $0, credential: try? services.vault.credential(origin: $0.origin), services: services) }
+        notes = NotesModel(repository: NoteRepository(database: services.database), outbox: outbox)
+        notes.host = { [weak self] origin in
+            guard let account = self?.account(origin: origin), account.origin == origin, account.status == .signedIn else { return nil }
+            let state = account.hub.shownState
+            return NotesModel.HostLink(api: account.api, hostname: account.hostname, supportsNotes: state?.supports("notes") ?? false, online: account.hub.phase.isUsable && account.hub.hub.state != nil)
+        }
+        notes.voice = { [weak self] in
+            guard let account = self?.accounts.first(where: { $0.status == .signedIn }) ?? self?.accounts.first else { return nil }
+            let hub = account.hub
+            return (account.api, { [weak hub] in hub?.state(host: nil)?.supports("voice") ?? false })
+        }
+        accounts.forEach(wireNotes)
+    }
+
+    /// A host's notes moved, or it's back: its synced notes go both ways.
+    private func wireNotes(_ session: AccountSession) {
+        let origin = session.origin
+        session.hub.onNotes = { [weak self] in
+            guard let self else { return }
+            Task { await self.notes.sync(origin) }
+        }
+    }
+
+    /// Accounts whose notes sync (foreground, pull to refresh).
+    func syncNotes() {
+        let origins = accounts.filter { $0.status == .signedIn }.map(\.origin)
+        Task { await notes.syncAll(origins: origins) }
     }
 
     func account(origin: String?) -> AccountSession? {
@@ -325,6 +354,7 @@ final class AppModel {
     func resyncAll() { accounts.forEach { $0.hub.resync() } }
     func wakeAll() {
         accounts.forEach { $0.hub.wake() }
+        syncNotes()
         Task { await endPendingSignIns() }
     }
 
@@ -375,6 +405,7 @@ final class AppModel {
             try services.vault.save(credential, origin: origin)
             accounts.removeAll { $0.origin == origin }
             let session = AccountSession(account: account, credential: credential, services: services)
+            wireNotes(session)
             wire(session)
             accounts.insert(session, at: 0)
             session.activate()
@@ -387,6 +418,7 @@ final class AppModel {
     }
 
     func removeLocally(_ session: AccountSession) async {
+        notes.detach(origin: session.origin)
         await session.forget()
         accounts.removeAll { $0.origin == session.origin }
     }

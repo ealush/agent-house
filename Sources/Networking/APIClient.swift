@@ -86,6 +86,22 @@ struct APIClient: Sendable {
         }
     }
 
+    /// Like `send`, but a refusal comes back as its status and body (a 409 that carries the
+    /// host's version of something); sign-in rejections and transport failures still throw.
+    func exchange(_ request: URLRequest) async throws -> (status: Int, data: Data) {
+        do {
+            try Task.checkCancellation()
+            let (data, response) = try await transport.data(for: request)
+            if response.statusCode == 401 {
+                await refused(request)
+                throw APIError(status: 401, body: data)
+            }
+            return (response.statusCode, data)
+        } catch {
+            throw APIError.wrap(error)
+        }
+    }
+
     func call<T: Decodable>(_ method: String, _ path: String, query: [URLQueryItem] = [], json: (any Encodable)? = nil, as type: T.Type = T.self) async throws -> T {
         let body = try json.map { try JSONEncoder().encode(AnyEncodable($0)) }
         let data = try await send(await request(method, path, query: query, body: body))

@@ -75,6 +75,51 @@ final class AppDatabase: Sendable {
             }
             try db.create(index: "cacheEntry_updatedAt", on: "cacheEntry", columns: ["updatedAt"])
         }
+        // Scratchpads: notes written on this device, the device's own copy (the host's, when
+        // it syncs, is another). Plain columns, not the sealed cache: a note must open with
+        // no sign-in and no network, and it's the person's own writing, not host state.
+        migrator.registerMigration("v3.notes") { db in
+            try db.create(table: "note") { t in
+                t.primaryKey("id", .text)
+                t.column("title", .text).notNull().defaults(to: "")
+                t.column("markdown", .text).notNull().defaults(to: "")
+                t.column("projectOrigin", .text)
+                t.column("projectHost", .text)
+                t.column("projectPath", .text)
+                t.column("syncOrigin", .text)
+                t.column("revision", .integer).notNull().defaults(to: 0)
+                t.column("version", .integer).notNull().defaults(to: 1)
+                t.column("syncedVersion", .integer).notNull().defaults(to: 0)
+                t.column("writeId", .text)
+                t.column("deletedAt", .double)
+                t.column("conflictJson", .text)
+                t.column("syncError", .text)
+                t.column("exportsJson", .text).notNull().defaults(to: "[]")
+                t.column("createdAt", .double).notNull()
+                t.column("updatedAt", .double).notNull()
+                t.column("selectionStart", .integer).notNull().defaults(to: 0)
+                t.column("selectionLength", .integer).notNull().defaults(to: 0)
+                t.column("scrollOffset", .double).notNull().defaults(to: 0)
+                t.column("preview", .boolean).notNull().defaults(to: false)
+            }
+            try db.create(index: "note_syncOrigin", on: "note", columns: ["syncOrigin"])
+            try db.create(table: "noteCursor") { t in
+                t.primaryKey("origin", .text)
+                t.column("cursor", .integer).notNull()
+            }
+            try db.create(table: "noteHandoff") { t in
+                t.primaryKey("id", .text)
+                t.column("noteId", .text).notNull()
+                t.column("version", .integer).notNull()
+                t.column("targetKey", .text).notNull()
+                t.column("origin", .text).notNull()
+                t.column("state", .text).notNull()
+                t.column("sentText", .text).notNull()
+                t.column("detail", .text)
+                t.column("createdAt", .double).notNull()
+            }
+            try db.create(index: "noteHandoff_noteId", on: "noteHandoff", columns: ["noteId"])
+        }
         return migrator
     }
 }
@@ -174,6 +219,10 @@ struct AccountRepository: Sendable {
             _ = try Account.deleteOne(db, key: origin)
             try db.execute(sql: "DELETE FROM cacheEntry WHERE origin = ?", arguments: [origin])
             try db.execute(sql: "DELETE FROM sessionSurface WHERE origin = ?", arguments: [origin])
+            // Notes are the person's writing, not the host's: they stay, on this device only.
+            try db.execute(sql: "UPDATE note SET syncOrigin = NULL, revision = 0, syncedVersion = 0, writeId = NULL, conflictJson = NULL WHERE syncOrigin = ?", arguments: [origin])
+            try db.execute(sql: "DELETE FROM note WHERE syncOrigin IS NULL AND deletedAt IS NOT NULL")
+            try db.execute(sql: "DELETE FROM noteCursor WHERE origin = ?", arguments: [origin])
         }
     }
 }
