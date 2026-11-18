@@ -65,7 +65,7 @@ import { migrateApi } from './migrate/api.ts';
 import { Scheduler } from './jobs/scheduler.ts';
 import { jobsApi } from './jobs/api.ts';
 import { NotesStore } from './notes/store.ts';
-import { Handoffs } from './notes/handoff.ts';
+import { Handoffs, MaybeArrived } from './notes/handoff.ts';
 import { notesApi } from './notes/api.ts';
 import { linesAfter, readAfter } from './jobs/transcript.ts';
 import { RecoveryEngine, RecoveryError } from './recovery/engine.ts';
@@ -309,6 +309,14 @@ const notes = new NotesStore(getDb(), () => void core.tick().catch(() => {}));
 const handoffs = new Handoffs(getDb(), {
   send: async (target, text, id) => {
     const out = await core.send(target, text, true, undefined, { id });
+    if (out.outcome === 'queued') {
+      // "Queued" only once the queue is on disk: a restart before that would lose it while
+      // every retry answered "queued". Already taken from the queue (being typed) is fine.
+      const holder = core.registry.all().find((r) => core.queue(r.id).some((q) => q.id === id));
+      if (holder) await core.registry.written(holder.id).catch((err) => {
+        throw new MaybeArrived(`queued, but not yet saved: ${(err as Error).message}`);
+      });
+    }
     return { outcome: out.outcome, resumed: out.resumed, queueId: out.queueId };
   },
   resolve: async (ref) => {

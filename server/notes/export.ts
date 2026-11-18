@@ -7,10 +7,17 @@
 // replaced only when asked; otherwise the answer is 409 with a free name to offer. The
 // text is written to a temporary file beside the target and moved into place, so a
 // reader never sees half a file and a failure leaves the old one as it was.
+//
+// `.git` is refused where a folder really is, not only as typed: a symlink to the repo's
+// .git is refused too. Each folder is checked through realpath, and checked again just
+// before the temporary file is made and just before it's moved into place, so a folder
+// swapped for a symlink in between is caught. Node has no openat, so a swap in the
+// instant between that last check and the rename itself can't be ruled out; that needs
+// another process on this host racing the write, with the owner's own permissions.
 import { randomBytes } from 'node:crypto';
 import { constants } from 'node:fs';
 import { link, lstat, mkdir, open, realpath, rename, stat, unlink } from 'node:fs/promises';
-import { basename, extname, join, sep } from 'node:path';
+import { basename, extname, join, relative, sep } from 'node:path';
 import { safePath } from '../files.ts';
 import { NoteError } from './store.ts';
 
@@ -32,6 +39,18 @@ export function relativeSegments(raw: string): string[] {
 
 const inside = (dir: string, p: string) => p === dir || p.startsWith(dir + sep);
 
+/** A resolved folder inside the project that is (or is in) a `.git`, whatever it was called. */
+const inGit = (project: string, real: string) => relative(project, real).split(sep).some((p) => p.toLowerCase() === '.git');
+
+/** `dir` (resolved and checked) is still that folder, with no symlink swapped in along it. */
+async function stillThere(project: string, dir: string): Promise<void> {
+  const now = await realpath(dir).catch(() => null);
+  if (now !== dir || !inside(project, now)) throw new NoteError(403, 'outside_project', 'that path leads outside the project');
+}
+
+/** Test seams: run just before the temporary file is made and before it's moved into place. */
+export type ExportHooks = { beforeOpen?: () => Promise<void>; beforePublish?: () => Promise<void> };
+
 /** "SPEC.md" → "SPEC (1).md", the first name not taken in `dir`. */
 async function freeName(dir: string, name: string): Promise<string> {
   const ext = extname(name);
@@ -47,10 +66,11 @@ async function freeName(dir: string, name: string): Promise<string> {
  * Writes `markdown` to `relative` inside `dir` (a project folder, absolute or ~). Folders
  * along the way are made. `replace`: an existing regular file may be replaced.
  */
-export async function exportNote(dirInput: string, relative: string, markdown: string, replace: boolean): Promise<ExportResult> {
-  const parts = relativeSegments(relative);
+export async function exportNote(dirInput: string, path: string, markdown: string, replace: boolean, hooks: ExportHooks = {}): Promise<ExportResult> {
+  const parts = relativeSegments(path);
   const project = await safePath(dirInput);
   if (!(await stat(project)).isDirectory()) throw new NoteError(400, 'not_a_directory', 'the project is not a folder');
+  if (project.split(sep).some((p) => p.toLowerCase() === '.git')) throw new NoteError(400, 'invalid_path', 'not inside .git');
   let dir = project;
   for (const seg of parts.slice(0, -1)) {
     const next = join(dir, seg);
@@ -62,6 +82,7 @@ export async function exportNote(dirInput: string, relative: string, markdown: s
     // A symlinked folder is followed only while it stays inside the project.
     const real = await realpath(next);
     if (!inside(project, real)) throw new NoteError(403, 'outside_project', 'that path leads outside the project');
+    if (inGit(project, real)) throw new NoteError(400, 'invalid_path', 'not inside .git');
     if (!(await stat(real)).isDirectory()) throw new NoteError(409, 'not_a_directory', `${seg} is not a folder`);
     dir = real;
   }
@@ -77,7 +98,9 @@ export async function exportNote(dirInput: string, relative: string, markdown: s
   }
   const data = Buffer.from(markdown, 'utf8');
   const tmp = join(dir, `.${basename(name)}.ah-${randomBytes(4).toString('hex')}.tmp`);
-  const fh = await open(tmp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, existing ? existing.mode & 0o777 : 0o644);
+  await hooks.beforeOpen?.();
+  await stillThere(project, dir);
+  const fh = await open(tmp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, existing ? existing.mode & 0o777 : 0o644);
   try {
     await fh.writeFile(data);
     await fh.sync();
@@ -85,6 +108,8 @@ export async function exportNote(dirInput: string, relative: string, markdown: s
     await fh.close();
   }
   try {
+    await hooks.beforePublish?.();
+    await stillThere(project, dir);
     if (existing) await rename(tmp, target);
     else {
       // A link never replaces: a file made at that name meanwhile is still refused.

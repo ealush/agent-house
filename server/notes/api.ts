@@ -2,16 +2,18 @@
 // sign-in as every route. Thin: the rules are in store.ts, export.ts and handoff.ts.
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Caller } from '../auth.ts';
-import { HttpError, readBody, readJson, send, str } from '../http.ts';
+import { HttpError, readBody, send, str } from '../http.ts';
 import { exportNote } from './export.ts';
 import type { Handoffs } from './handoff.ts';
-import { MAX_TITLE, NoteError, noteId, projectOf, revisionOf, writeId, type NotesStore } from './store.ts';
+import { MAX_MARKDOWN, NoteError, noteId, projectOf, revisionOf, writeId, type NotesStore } from './store.ts';
 
 type Audit = (req: IncomingMessage, event: string, detail?: Record<string, unknown>) => void;
 
 const NOTE = '([0-9a-fA-F-]{36})';
 /** A note's text is up to a million characters; JSON-escaped, it can be a few times that. */
 const NOTE_BODY = 8 * 1024 * 1024;
+/** A hand-off's text is up to 32 768 characters of any script (three UTF-8 bytes each, more escaped). */
+const HANDOFF_BODY = 512 * 1024;
 
 function who(caller: Caller | null): string {
   if (caller?.kind === 'token') return `token:${caller.token.name}`;
@@ -19,8 +21,14 @@ function who(caller: Caller | null): string {
   return 'local';
 }
 
-async function bigJson(req: IncomingMessage): Promise<Record<string, unknown>> {
-  const body = await readBody(req, NOTE_BODY);
+/** Text whose length the store or the hand-off checks (with its own code, not a bare 400). */
+function text(v: unknown, field: string): string {
+  if (typeof v !== 'string') throw new HttpError(400, `invalid ${field}`);
+  return v;
+}
+
+async function bigJson(req: IncomingMessage, limit = NOTE_BODY): Promise<Record<string, unknown>> {
+  const body = await readBody(req, limit);
   try {
     const v = JSON.parse(body.toString() || '{}');
     if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error();
@@ -51,7 +59,8 @@ export async function notesApi(
     // A snapshot of a note (from this host or only on the device) written into a project.
     if (route('POST', '/export')) {
       const body = await bigJson(req);
-      const markdown = str(body.markdown, 'markdown', 1024 * 1024);
+      const markdown = text(body.markdown, 'markdown');
+      if (markdown.length > MAX_MARKDOWN) throw new NoteError(413, 'note_too_long', `a note holds at most ${MAX_MARKDOWN} characters`);
       const dir = str(body.dir, 'dir', 1024);
       const out = await exportNote(dir, str(body.path, 'path', 512), markdown, body.replace === true);
       const revision = body.revision === undefined ? 0 : revisionOf(body.revision);
@@ -61,13 +70,13 @@ export async function notesApi(
     }
 
     if (route('POST', '/handoffs')) {
-      const body = await readJson(req);
+      const body = await bigJson(req, HANDOFF_BODY);
       const out = await o.handoffs.hand({
         id: str(body.id, 'id', 40),
         noteId: str(body.noteId, 'noteId', 36),
         revision: revisionOf(body.revision),
         target: str(body.target, 'target', 80),
-        text: str(body.text, 'text', 32 * 1024),
+        text: text(body.text, 'text'),
         resend: body.resend === true,
       });
       if (!out.replay) o.audit(req, 'note.handoff', { note: out.noteId, target: out.target, outcome: out.outcome });
@@ -81,8 +90,8 @@ export async function notesApi(
       const out = await o.store.put(m[1], {
         baseRevision: revisionOf(body.baseRevision),
         writeId: writeId(body.writeId),
-        title: body.title === undefined ? '' : str(body.title, 'title', MAX_TITLE),
-        markdown: body.markdown === undefined ? '' : str(body.markdown, 'markdown', 1024 * 1024),
+        title: body.title === undefined ? '' : text(body.title, 'title'),
+        markdown: body.markdown === undefined ? '' : text(body.markdown, 'markdown'),
         project: body.project === undefined ? null : projectOf(body.project),
         writer: who(caller),
         createdAt: typeof body.createdAt === 'number' ? body.createdAt : undefined,

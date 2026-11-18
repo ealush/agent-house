@@ -38,8 +38,13 @@ for a note the host hasn't seen); `writeId` names this write.
 - A different revision: **409 `note_conflict`**, with `note` as the host has it. Nothing
   is merged. The device keeps both versions and the person chooses; writing their
   choice on top of the host's revision is an ordinary write.
-- The same `writeId` as the write that made the note what it is: the same answer again
-  (a retry after a lost response is never applied twice).
+- The same `writeId` as the write that made the note what it is, with the same `title`,
+  `markdown` and `project`: the same answer again (a retry after a lost response is never
+  applied twice). The same `writeId` with anything else isn't a retry (a device that kept
+  editing after the answer was lost): it's checked as a write of its own, so it is
+  refused (`note_conflict`, with what the host has) rather than taken as written.
+- `markdown` over 1 048 576 characters (UTF-16 units): **413 `note_too_long`**; a `title`
+  over 200: **400 `title_too_long`**.
 - A host that has no row for an id with `baseRevision > 0` (a restored database) takes
   the note back from the device.
 
@@ -51,6 +56,16 @@ no title, text or project. A deletion made on an older revision is refused
 refused with **409 `note_deleted`**, so a device that was offline can't bring a deleted
 note back; one with unsynced edits keeps them as a new note. Deleting an id the host
 never had also leaves a tombstone.
+
+A deletion of a tombstone is a retry (the tombstone again). A live note is never answered
+as a retry, whichever `writeId` last wrote it: a deletion under an earlier write's id is
+checked on its revision like any other. So the answer to a deletion that succeeds is
+always a tombstone (`deleted: true`).
+
+Until the host has read where its change numbering is (at start; again on the next
+request if that failed), every notes route answers **503 `notes_unavailable`** and the
+state stream's `notes` is `null`: numbering from 0 would hide new changes from a device
+that has read further.
 
 ## SCR-4 Change discovery
 
@@ -71,14 +86,20 @@ at the relative `path` (`SPEC.md`, `docs/proposals/x.md`). The file is a copy at
 moment, not the note: nothing keeps them in step.
 
 - `path` can't be absolute, use `..`, `.` or empty parts, backslashes or control
-  characters, or go into `.git` (`invalid_path`). Folders along it are made.
+  characters, or go into `.git` (`invalid_path`). Folders along it are made. `.git` is
+  checked where each folder really is, too: a symlink to the repo's `.git` is refused.
 - Every folder along the way is resolved through symlinks and must stay inside `dir`
   (`outside_project`); the target can't be a symlink (`file_symlink`) or a folder
   (`not_a_file`).
 - An existing file is replaced only with `replace: true`; otherwise **409
   `file_exists`** with `suggestion` ("SPEC (1).md").
-- Written to a temporary file beside the target, synced, then moved into place (or
-  hard-linked, so a file made meanwhile is still refused).
+- Written to a temporary file beside the target (opened exclusively, never through a
+  link), synced, then moved into place (or hard-linked, so a file made meanwhile is still
+  refused). The folder is checked again just before the temporary file is made and just
+  before it's moved, so one swapped for a symlink in between is refused
+  (`outside_project`). Node has no `openat`, so a swap in the instant between that last
+  check and the move can't be ruled out; it needs another process on the host racing the
+  write with the owner's permissions.
 - With `noteId`, the note records `{ host, path, revision, at }` in `exports` without a
   new revision.
 
@@ -87,15 +108,21 @@ moment, not the note: nothing keeps them in step.
 `POST /api/notes/handoffs` `{ id, noteId, revision, target, text, resend? }` sends `text`
 to the session `target` (a uid, or `harness:harnessId` for an ended one) through the
 same send as a typed message: typed in when it's idle, queued while it works, resumed
-first when it has ended. Never straight into tmux. At most 32 768 characters
-(`handoff_too_long`: attach the note as a file instead).
+first when it has ended. Never straight into tmux. At most 32 768 characters (UTF-16
+units, of any script; the request may be up to 512 KB): **413 `handoff_too_long`**, attach
+the note as a file instead.
 
 `id` is chosen by the device. The `NoteHandoff` row is written before anything is
 sent, and requests for one id run one at a time, so a retry is answered from what
 happened: `delivered` or `queued` as before (`replay: true`; the queue item's id is the
 hand-off's); a crash mid-send is `queued` if it's still in the target's queue, otherwise
 **`uncertain`**, sent again only with `resend: true`. A send that failed (`failed`) can
-be retried with the same id. The same id with another target or text is
+be retried with the same id; `failed` means nothing reached the target. A send that may
+have typed some of the text (a paste that failed after it began), or that queued it but
+couldn't yet keep the queue on disk, answers 200 **`uncertain`** instead: sending again
+could deliver it twice. `queued` is answered only once the queue holding it is on disk.
+If the send went but the row couldn't be updated after, the row stays as sending, and a
+retry reads it as above (`queued` or `uncertain`), never `failed`. The same id with another target or text is
 `handoff_mismatch`. `revision` records which version of the note went (the sending
 device's count of its edits: a local note has no host revision). The note itself isn't
 touched.

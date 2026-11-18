@@ -10,7 +10,12 @@ import { randomUUID } from 'node:crypto';
 import { ensureMigrated, getDb } from './db.ts';
 import { NotesStore, NoteError } from './notes/store.ts';
 import { exportNote, relativeSegments } from './notes/export.ts';
-import { Handoffs } from './notes/handoff.ts';
+import { Handoffs, MaybeArrived } from './notes/handoff.ts';
+import { Registry } from './registry.ts';
+import { PasteError } from './tmux.ts';
+import { createServer } from 'node:http';
+import { notesApi } from './notes/api.ts';
+import { renameSync } from 'node:fs';
 import { setRoots } from './files.ts';
 
 async function bed() {
@@ -83,7 +88,7 @@ test('notes: a deletion leaves a tombstone no stale device brings back; a deleti
   const gone = await store.remove(id, 2, 'del-2', 'device:phone');
   assert.equal(gone.deleted, true);
   assert.equal(gone.markdown, '', 'a tombstone keeps no text');
-  assert.equal(store.state().count, 0);
+  assert.equal(store.state()!.count, 0);
   // Retried, and again from another device: still the one tombstone.
   assert.equal((await store.remove(id, 2, 'del-2', 'device:phone')).revision, gone.revision);
   assert.equal((await store.remove(id, 1, 'del-3', 'device:ipad')).deleted, true);
@@ -101,12 +106,12 @@ test('notes: the change feed — since a cursor, oldest first, tombstones and pa
   const { store, db } = await bed();
   const ids = [randomUUID(), randomUUID(), randomUUID()];
   for (const id of ids) await store.put(id, write({ title: id }));
-  const cursor = store.state().cursor;
+  const cursor = store.state()!.cursor;
   await store.put(ids[0], write({ baseRevision: 1, title: 'renamed' }));
   await store.remove(ids[1], 1, 'd', 'local');
   const since = await store.list(cursor);
   assert.deepEqual(since.notes.map((n) => [n.id, n.deleted]), [[ids[0], false], [ids[1], true]]);
-  assert.equal(since.cursor, store.state().cursor);
+  assert.equal(since.cursor, store.state()!.cursor);
   assert.equal(since.more, false);
   const nothing = await store.list(since.cursor);
   assert.deepEqual(nothing.notes, []);
@@ -127,8 +132,8 @@ test('notes: the change feed — since a cursor, oldest first, tombstones and pa
 test('notes: what a write may carry', async () => {
   const { store } = await bed();
   await refused(store.put('not-a-uuid', write()), 'invalid_note_id');
-  await refused(store.put(randomUUID(), write({ markdown: 'x'.repeat(1024 * 1024 + 1) })), 'note_too_large');
-  await refused(store.put(randomUUID(), write({ title: 't'.repeat(201) })), 'invalid_title');
+  await refused(store.put(randomUUID(), write({ markdown: 'x'.repeat(1024 * 1024 + 1) })), 'note_too_long');
+  await refused(store.put(randomUUID(), write({ title: 't'.repeat(201) })), 'title_too_long');
   const { projectOf, revisionOf } = await import('./notes/store.ts');
   assert.throws(() => projectOf({ host: 'a b', path: '/x' }), NoteError);
   assert.throws(() => projectOf({ host: 'mac', path: 'relative' }), NoteError);
@@ -306,4 +311,190 @@ test('hand-off: what it may carry', async () => {
   await refused(h.hand(handoff({ text: '  \n' })), 'empty_note');
   await refused(h.hand(handoff({ text: 'x'.repeat(32 * 1024 + 1) })), 'handoff_too_long');
   await refused(h.get(randomUUID()), 'handoff_not_found');
+});
+
+// ---------- what review found (retries that weren't, failures said to be safe)
+
+test('notes: the same writeId with other text is not a retry — checked as a write of its own', async () => {
+  const { store } = await bed();
+  const id = randomUUID();
+  await store.put(id, write());
+  // Text A goes as w1 and lands; the answer is lost. The device edits to B and asks again with w1.
+  const w1 = write({ baseRevision: 1, writeId: 'w1', markdown: 'A' });
+  assert.equal((await store.put(id, w1)).note.revision, 2);
+  const err = await refused(store.put(id, { ...w1, markdown: 'B' }), 'note_conflict');
+  assert.equal(err.note?.markdown, 'A', 'the device is told what the host has');
+  // A different project is a different write too.
+  await refused(store.put(id, { ...w1, project: { host: 'mac', path: '/p' } }), 'note_conflict');
+  // Exactly the same is a retry.
+  assert.equal((await store.put(id, w1)).note.revision, 2);
+  assert.equal((await store.get(id)).markdown, 'A');
+});
+
+test('notes: a deletion is never answered by a live note; a deletion that succeeds returns a tombstone', async () => {
+  const { store } = await bed();
+  const id = randomUUID();
+  await store.put(id, write());
+  await store.put(id, write({ baseRevision: 1, writeId: 'put-2', markdown: 'kept' }));
+  // The device lost put-2's answer (it thinks revision 1) and deletes under that same id.
+  const err = await refused(store.remove(id, 1, 'put-2', 'device:phone'), 'note_conflict');
+  assert.equal(err.note?.deleted, false);
+  assert.equal((await store.get(id)).markdown, 'kept');
+  // On the revision it is now, under the PUT's id: deleted, and the answer is a tombstone.
+  const gone = await store.remove(id, 2, 'put-2', 'device:phone');
+  assert.equal(gone.deleted, true);
+  assert.equal((await store.remove(id, 2, 'put-2', 'device:phone')).deleted, true, 'a retry: the tombstone again');
+});
+
+test('notes: a start that couldn’t read the cursor numbers nothing from 0 — 503, then on from where it was', async () => {
+  const { store, db } = await bed();
+  for (let i = 0; i < 3; i++) await store.put(randomUUID(), write());
+  const top = store.state()!.cursor;
+  let failing = true;
+  const flaky = new Proxy(db, {
+    get(target, prop, recv) {
+      if (prop !== 'note') return Reflect.get(target, prop, recv);
+      const note = target.note;
+      return new Proxy(note, { get: (n, p, r) => (failing && (p === 'aggregate' || p === 'count') ? async () => { throw new Error('database is locked'); } : Reflect.get(n, p, r)) });
+    },
+  });
+  const restarted = new NotesStore(flaky);
+  await assert.rejects(restarted.load(), /locked/);
+  assert.equal(restarted.state(), null, 'the stream doesn’t claim a cursor');
+  await refused(restarted.put(randomUUID(), write()), 'notes_unavailable');
+  await refused(restarted.list(0), 'notes_unavailable');
+  await refused(restarted.remove(randomUUID(), 0, 'd1', 'local'), 'notes_unavailable');
+  failing = false;
+  const made = await restarted.put(randomUUID(), write());
+  assert.equal(made.note.seq, top + 1, 'numbered after what was there');
+  assert.equal((await restarted.list(top)).notes.length, 1, 'a device that read to the top sees it');
+});
+
+test('hand-off: a paste that typed some of it, or a queue not yet kept, is uncertain — not failed, not sent again', async () => {
+  const { db } = await bed();
+  const s = sends();
+  let mode: 'typed' | 'untyped' | 'unsaved' | 'ok' = 'typed';
+  const deps = {
+    ...s.deps,
+    send: async (target: string, text: string, id: string) => {
+      if (mode === 'typed') throw new PasteError('send-keys Enter failed', true);
+      if (mode === 'untyped') throw new PasteError('load-buffer failed', false);
+      if (mode === 'unsaved') throw new MaybeArrived('queued, but not yet saved: disk full');
+      return s.deps.send(target, text, id);
+    },
+  };
+  const h = new Handoffs(db, deps);
+  const typed = handoff();
+  const a = await h.hand(typed);
+  assert.deepEqual([a.outcome, a.replay], ['uncertain', false]);
+  mode = 'ok';
+  assert.equal((await h.hand(typed)).outcome, 'uncertain', 'a plain retry sends nothing');
+  assert.equal(s.sent.length, 0);
+  mode = 'unsaved';
+  assert.equal((await h.hand(handoff({ target: 'busy' }))).outcome, 'uncertain');
+  mode = 'untyped';
+  const untyped = handoff();
+  await assert.rejects(h.hand(untyped), /load-buffer/);
+  assert.equal((await h.get(untyped.id)).outcome, 'failed', 'nothing typed: safe to send again');
+});
+
+test('hand-off: sent, but the ledger couldn’t be written after — the row stays sending, read as queued or uncertain', async () => {
+  const { db } = await bed();
+  const s = sends();
+  let breakAfterSend = true;
+  const flaky = new Proxy(db, {
+    get(target, prop, recv) {
+      if (prop !== 'noteHandoff') return Reflect.get(target, prop, recv);
+      const t = target.noteHandoff;
+      return new Proxy(t, {
+        get: (n, p, r) =>
+          p === 'update'
+            ? async (args: { data: { state?: string } }) => {
+                if (breakAfterSend && args.data.state && args.data.state !== 'sending') throw new Error('database is locked');
+                return t.update(args as never);
+              }
+            : Reflect.get(n, p, r),
+      });
+    },
+  });
+  const h = new Handoffs(flaky, s.deps);
+  const o = handoff();
+  await assert.rejects(h.hand(o), /locked/);
+  assert.equal((await db.noteHandoff.findUnique({ where: { id: o.id } }))?.state, 'sending', 'never “failed”');
+  breakAfterSend = false;
+  const retry = await h.hand(o);
+  assert.equal(retry.outcome, 'uncertain', 'delivered but unrecorded: nobody can say');
+  assert.equal(s.sent.length, 1, 'not sent again');
+});
+
+test('registry: written() says when a session (its queue) is on disk, and rejects when that write failed', async () => {
+  const path = join(mkdtempSync(join(tmpdir(), 'ah-notes-reg-')), 'ah.db');
+  await ensureMigrated(path);
+  const registry = new Registry(path);
+  await registry.ready();
+  registry.starting('u1', { harness: 'claude', harnessId: 'c1', cwd: '/tmp', title: 't', tmux: { session: 's', windowId: '@1' } });
+  registry.setMeta('u1', 'ah.queue', [{ id: 'h1', text: 'x', enter: true, at: 0 }]);
+  await registry.written('u1');
+  const real = (registry as unknown as { persist: unknown }).persist;
+  (registry as unknown as { persist: () => Promise<void> }).persist = async () => {
+    throw new Error('disk full');
+  };
+  registry.setMeta('u1', 'ah.queue', [{ id: 'h2', text: 'y', enter: true, at: 0 }]);
+  await assert.rejects(registry.written('u1'), /could not be saved/);
+  (registry as unknown as { persist: unknown }).persist = real;
+  await registry.written('u1');
+});
+
+test('export: .git reached through a symlink is refused; a folder swapped for a link mid-write is caught', async () => {
+  const { proj, outside } = project();
+  mkdirSync(join(proj, '.git', 'hooks'), { recursive: true });
+  symlinkSync(join(proj, '.git'), join(proj, 'alias'));
+  await refused(exportNote(proj, 'alias/hooks/pre-commit', '#!/bin/sh', true), 'invalid_path');
+  assert.equal(existsSync(join(proj, '.git', 'hooks', 'pre-commit')), false);
+  // A project that is itself a .git.
+  await refused(exportNote(join(proj, '.git'), 'x.md', 'x', false), 'invalid_path');
+
+  // docs/ is checked, then swapped for a link out before the file goes in: refused, nothing outside.
+  for (const when of ['beforeOpen', 'beforePublish'] as const) {
+    const docs = join(proj, `docs-${when}`);
+    mkdirSync(docs);
+    const swap = async () => {
+      renameSync(docs, `${docs}-moved`);
+      symlinkSync(outside, docs);
+    };
+    await refused(exportNote(proj, `docs-${when}/SPEC.md`, 'x', false, { [when]: swap }), 'outside_project');
+    assert.equal(existsSync(join(outside, 'SPEC.md')), false, when);
+  }
+});
+
+test('api: a hand-off of 24 000 CJK characters goes; one over the limit says handoff_too_long; notes say note_too_long', async () => {
+  const { db, store } = await bed();
+  const s = sends();
+  const handoffs = new Handoffs(db, s.deps);
+  const server = createServer((req, res) => {
+    const url = new URL(req.url ?? '/', 'http://x');
+    notesApi(req, res, url, url.pathname, null, { store, handoffs, host: () => 'box', audit: () => {} }).catch((err) => {
+      res.writeHead(err.status ?? 500, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: String(err.message) }));
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+  const port = (server.address() as { port: number }).port;
+  const call = async (method: string, path: string, body: unknown) => {
+    const r = await fetch(`http://127.0.0.1:${port}${path}`, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    return { status: r.status, json: (await r.json()) as Record<string, unknown> };
+  };
+  try {
+    const cjk = await call('POST', '/api/notes/handoffs', handoff({ text: '漢'.repeat(24_000) }));
+    assert.equal(cjk.status, 200, JSON.stringify(cjk.json));
+    assert.equal(cjk.json.outcome, 'delivered');
+    const long = await call('POST', '/api/notes/handoffs', handoff({ text: 'x'.repeat(33_000) }));
+    assert.deepEqual([long.status, long.json.code], [413, 'handoff_too_long']);
+    const big = await call('PUT', `/api/notes/${randomUUID()}`, { baseRevision: 0, writeId: 'w', title: 't', markdown: 'x'.repeat(1024 * 1024 + 1) });
+    assert.deepEqual([big.status, big.json.code], [413, 'note_too_long']);
+    const title = await call('PUT', `/api/notes/${randomUUID()}`, { baseRevision: 0, writeId: 'w', title: 't'.repeat(201), markdown: '' });
+    assert.deepEqual([title.status, title.json.code], [400, 'title_too_long']);
+  } finally {
+    server.close();
+  }
 });

@@ -5,8 +5,9 @@
 // Writes are conditional: each names the revision it was made on (`baseRevision`, 0 for a
 // note the host hasn't seen) and its own `writeId`. A write made on an older revision is
 // refused with the note as it is now, so the device keeps both versions; nothing is ever
-// merged or overwritten silently. A retried write (same `writeId`) gets the same answer.
-// Deleting leaves a tombstone, so a device that was offline can't bring a note back.
+// merged or overwritten silently. A retried write (same `writeId` and the same text, title
+// and project) gets the same answer; the same id with anything else is a new write, checked
+// like one. Deleting leaves a tombstone, so a device that was offline can't bring a note back.
 import type { PrismaClient, Note } from '@prisma/client';
 
 /** A note as the API shows it. Times are seconds since the epoch, as everywhere in ah. */
@@ -94,6 +95,8 @@ export class NotesStore {
   private db: PrismaClient;
   private changed: () => void;
   private summary: NotesState = { cursor: 0, count: 0 };
+  /** The cursor and count have been read: until then no `seq` can be given out. */
+  private loaded = false;
   /** Writes one at a time: `seq` is the next number, and a revision check and its write can't interleave. */
   private chain: Promise<unknown> = Promise.resolve();
 
@@ -102,15 +105,32 @@ export class NotesStore {
     this.changed = changed;
   }
 
-  /** Reads the cursor and count once at start. */
+  /** Reads the cursor and count (at start; again by the first request if that failed). */
   async load(): Promise<void> {
     const top = await this.db.note.aggregate({ _max: { seq: true } });
     const count = await this.db.note.count({ where: { deletedAt: null } });
     this.summary = { cursor: top._max.seq ?? 0, count };
+    this.loaded = true;
   }
 
-  state(): NotesState {
-    return { ...this.summary };
+  /**
+   * Before anything reads the cursor or gives out a `seq`. A start that couldn't read the
+   * database leaves nothing to number changes from: numbering from 0 would hide every new
+   * change from a device that has read further, so until it can, the answer is 503.
+   */
+  private async ready(): Promise<void> {
+    if (this.loaded) return;
+    try {
+      await this.load();
+    } catch (err) {
+      console.error('notes: reading the cursor failed:', err);
+      throw new NoteError(503, 'notes_unavailable', 'notes can’t be read on this host right now');
+    }
+  }
+
+  /** Null until the cursor is known: the stream doesn't claim a cursor it hasn't read. */
+  state(): NotesState | null {
+    return this.loaded ? { ...this.summary } : null;
   }
 
   private serial<T>(fn: () => Promise<T>): Promise<T> {
@@ -121,6 +141,7 @@ export class NotesStore {
 
   /** Every change after `since`, tombstones included, oldest first. */
   async list(since = 0, limit = 200): Promise<{ notes: NoteView[]; cursor: number; more: boolean }> {
+    await this.ready();
     const take = Math.max(1, Math.min(500, limit));
     const rows = await this.db.note.findMany({ where: { seq: { gt: since } }, orderBy: { seq: 'asc' }, take: take + 1 });
     const out: NoteView[] = [];
@@ -135,6 +156,7 @@ export class NotesStore {
   }
 
   async get(id: string): Promise<NoteView> {
+    await this.ready();
     const row = await this.db.note.findUnique({ where: { id: noteId(id) } });
     if (!row) throw new NoteError(404, 'note_not_found', 'no such note');
     return view(row);
@@ -143,12 +165,18 @@ export class NotesStore {
   /**
    * Creates (baseRevision 0) or changes a note. `created` says which. A host that lost a
    * note it once had (a restored database) takes it back from the device that still has it.
+   *
+   * A retry is the same `writeId` with the same title, text and project: answered as the
+   * first time was. The same id with something else (a device that kept editing while the
+   * first answer was lost) isn't one: it's checked as a write of its own, so it can't be
+   * taken as written when what the host has is the earlier text.
    */
   async put(rawId: string, w: NoteWrite): Promise<{ note: NoteView; created: boolean }> {
     const id = noteId(rawId);
-    if (w.markdown.length > MAX_MARKDOWN) throw new NoteError(413, 'note_too_large', `a note holds at most ${MAX_MARKDOWN} characters`);
-    if (w.title.length > MAX_TITLE) throw new NoteError(400, 'invalid_title', `a title is at most ${MAX_TITLE} characters`);
+    if (w.markdown.length > MAX_MARKDOWN) throw new NoteError(413, 'note_too_long', `a note holds at most ${MAX_MARKDOWN} characters`);
+    if (w.title.length > MAX_TITLE) throw new NoteError(400, 'title_too_long', `a title is at most ${MAX_TITLE} characters`);
     return this.serial(async () => {
+      await this.ready();
       const row = await this.db.note.findUnique({ where: { id } });
       const at = now();
       if (!row) {
@@ -171,7 +199,7 @@ export class NotesStore {
         return { note: view(made), created: true };
       }
       // A retry of the write that made the note what it is: the same answer again.
-      if (row.lastWriteId === w.writeId) return { note: view(row), created: false };
+      if (row.lastWriteId === w.writeId && row.deletedAt === null && sameContent(row, w)) return { note: view(row), created: false };
       if (row.deletedAt !== null) throw new NoteError(409, 'note_deleted', 'this note was deleted on another device', view(row));
       if (row.revision !== w.baseRevision) throw new NoteError(409, 'note_conflict', 'this note changed on another device since', view(row));
       const next = await this.db.note.update({
@@ -196,11 +224,14 @@ export class NotesStore {
   /**
    * Deletes a note made on `baseRevision`: one changed since is kept (409, with its text),
    * since the deletion didn't see those changes. An id the host never had gets a tombstone
-   * too, so no other device's copy brings it back. Deleting a tombstone again is fine.
+   * too, so no other device's copy brings it back. Deleting a tombstone again is fine (a
+   * retry). A live note is never a retry, whatever id last wrote it: the answer to a
+   * deletion that succeeds is always a tombstone.
    */
   async remove(rawId: string, baseRevision: number, wid: string, writer: string): Promise<NoteView> {
     const id = noteId(rawId);
     return this.serial(async () => {
+      await this.ready();
       const row = await this.db.note.findUnique({ where: { id } });
       const at = now();
       if (!row) {
@@ -208,7 +239,7 @@ export class NotesStore {
         this.bump(0);
         return view(made);
       }
-      if (row.deletedAt !== null || row.lastWriteId === wid) return view(row);
+      if (row.deletedAt !== null) return view(row);
       if (row.revision !== baseRevision) throw new NoteError(409, 'note_conflict', 'this note changed on another device since', view(row));
       const gone = await this.db.note.update({
         where: { id },
@@ -223,6 +254,7 @@ export class NotesStore {
   async recordExport(rawId: string, e: NoteExport): Promise<void> {
     const id = noteId(rawId);
     return this.serial(async () => {
+      await this.ready();
       const row = await this.db.note.findUnique({ where: { id } });
       if (!row || row.deletedAt !== null) return;
       const prior = parseExports(row.exportsJson).filter((x) => !(x.host === e.host && x.path === e.path));
@@ -236,6 +268,11 @@ export class NotesStore {
     this.summary = { cursor: this.summary.cursor + 1, count: this.summary.count + count };
     this.changed();
   }
+}
+
+/** What a write would make the note: the same as it is (title, text and project). */
+function sameContent(row: Note, w: NoteWrite): boolean {
+  return row.title === w.title && row.markdown === w.markdown && (row.projectHost ?? null) === (w.project?.host ?? null) && (row.projectPath ?? null) === (w.project?.path ?? null);
 }
 
 function parseExports(json: string): NoteExport[] {

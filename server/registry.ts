@@ -397,6 +397,27 @@ export class Registry {
       });
   }
 
+  /**
+   * Resolves once session `id` as it is now is in the database (its queue included);
+   * rejects when that write failed. For a caller that must not say something is kept
+   * before it is (a hand-off that answers "queued"). flush() itself never waits.
+   */
+  async written(id: string): Promise<void> {
+    const r0 = this.records.get(id);
+    if (!r0) throw new Error('no such session');
+    // A row an earlier write failed to keep is written again now, not at the next change.
+    if (this.saved.get(id) !== JSON.stringify(toRow(r0))) this.dirty = true;
+    this.flush();
+    // Writes run in order: once the latest settles, every one before it has.
+    let w: Promise<void>;
+    do {
+      w = this.writing;
+      await w;
+    } while (w !== this.writing);
+    const r = this.records.get(id);
+    if (r && this.saved.get(id) !== JSON.stringify(toRow(r))) throw new Error('the session could not be saved');
+  }
+
   private async persist(records: ReturnType<typeof toRow>[], removed: string[]) {
     if (removed.length) await this.db.session.deleteMany({ where: { uid: { in: removed } } });
     if (records.length) {

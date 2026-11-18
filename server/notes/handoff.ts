@@ -7,6 +7,10 @@
 // mid-send, is answered from what happened rather than sent twice: delivered or queued
 // as it was; still in the target's queue (the queue item's id is the hand-off's); or, when
 // that can't be known, `uncertain`, which is sent again only when the device asks.
+//
+// A send that fails is `failed` (safe to send again) only when nothing reached the target.
+// One that may have typed some of the text, or queued it where a restart could lose it, is
+// `uncertain`: sending it again could deliver it twice.
 import { createHash } from 'node:crypto';
 import type { PrismaClient, NoteHandoff } from '@prisma/client';
 import { NoteError, noteId } from './store.ts';
@@ -33,6 +37,17 @@ export type HandoffDeps = {
   resolve: (ref: string) => Promise<string | null>;
   queueIds: (uid: string) => string[];
 };
+
+/**
+ * Thrown by `send` when the text may have reached the target even though the send didn't
+ * finish (typed, or queued but not yet kept on disk). The hand-off is then `uncertain`.
+ */
+export class MaybeArrived extends Error {}
+
+/** Whether a send's error leaves the text possibly delivered (a paste that typed some of it). */
+export function mayHaveArrived(err: unknown): boolean {
+  return err instanceof MaybeArrived || (!!err && typeof err === 'object' && (err as { typed?: unknown }).typed === true);
+}
 
 export const MAX_HANDOFF_TEXT = 32 * 1024;
 const ID = /^[\w-]{8,40}$/;
@@ -95,13 +110,18 @@ export class Handoffs {
 
   private async deliver(id: string, target: string, text: string): Promise<HandoffView> {
     await this.settle(id, { state: 'sending', error: null });
+    let out: Awaited<ReturnType<HandoffDeps['send']>>;
     try {
-      const out = await this.deps.send(target, text, id);
-      return view(await this.settle(id, { state: out.outcome, queueId: out.queueId ?? null, resumed: out.resumed }), false);
+      out = await this.deps.send(target, text, id);
     } catch (err) {
-      await this.settle(id, { state: 'failed', error: (err as Error).message.slice(0, 500) });
+      const error = ((err as Error)?.message ?? String(err)).slice(0, 500);
+      if (mayHaveArrived(err)) return view(await this.settle(id, { state: 'uncertain', error }), false);
+      await this.settle(id, { state: 'failed', error });
       throw err;
     }
+    // Sent: if this can't be written down, the row stays `sending`, which a retry reads as
+    // queued (still in the queue) or uncertain, never as failed and safe to send again.
+    return view(await this.settle(id, { state: out.outcome, queueId: out.queueId ?? null, resumed: out.resumed }), false);
   }
 
   private settle(id: string, data: Partial<Pick<NoteHandoff, 'state' | 'queueId' | 'resumed' | 'error'>>): Promise<NoteHandoff> {
