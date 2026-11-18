@@ -64,6 +64,9 @@ import { MigrationService } from './migrate/service.ts';
 import { migrateApi } from './migrate/api.ts';
 import { Scheduler } from './jobs/scheduler.ts';
 import { jobsApi } from './jobs/api.ts';
+import { NotesStore } from './notes/store.ts';
+import { Handoffs } from './notes/handoff.ts';
+import { notesApi } from './notes/api.ts';
 import { linesAfter, readAfter } from './jobs/transcript.ts';
 import { RecoveryEngine, RecoveryError } from './recovery/engine.ts';
 import { InterruptionError, Interruptions, interruptedOf, shortWhy } from './interruptions.ts';
@@ -299,6 +302,24 @@ const scheduler = new Scheduler(getDb(), {
   harnessOf: (uid) => core.registry.get(uid)?.harness ?? null,
 });
 core.jobsState = () => scheduler.state();
+
+// Scratchpads (server/notes): notes the devices write, offline or not, and meet here.
+// Handed to an agent through core.send like a typed message (queue ids = hand-off ids).
+const notes = new NotesStore(getDb(), () => void core.tick().catch(() => {}));
+const handoffs = new Handoffs(getDb(), {
+  send: async (target, text, id) => {
+    const out = await core.send(target, text, true, undefined, { id });
+    return { outcome: out.outcome, resumed: out.resumed, queueId: out.queueId };
+  },
+  resolve: async (ref) => {
+    if (core.registry.get(ref)) return ref;
+    const i = ref.indexOf(':');
+    if (i <= 0) return null;
+    return core.registry.all().find((r) => r.harness === ref.slice(0, i) && r.harnessId === ref.slice(i + 1))?.id ?? null;
+  },
+  queueIds: (uid) => core.queue(uid).map((q) => q.id),
+});
+core.notesState = () => notes.state();
 
 // Sessions cut off by a tmux server stop, a host restart or a closed window
 // (server/interruptions): noticed, said where you'll see it, restored in one step.
@@ -587,6 +608,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   if (path.startsWith('/api/portable/')) return portableApi(req, res, url, path, portable, audit);
   if (path === '/api/migrations' || path.startsWith('/api/migrations/')) return migrateApi(req, res, path, caller, migrations, audit);
   if (path === '/api/jobs' || path.startsWith('/api/jobs/')) return jobsApi(req, res, path, caller, scheduler, audit);
+  if (path === '/api/notes' || path.startsWith('/api/notes/')) return notesApi(req, res, url, path, caller, { store: notes, handoffs, host: hostName, audit });
 
   // Usage (server/usage): tokens, limits and estimates, each with where it came from.
   if (route('GET', /^\/api\/usage$/)) {
@@ -2015,6 +2037,7 @@ try {
   process.exit(1);
 }
 await core.loadPrompts();
+await notes.load().catch((err) => console.error('notes: reading the cursor failed:', err));
 // Continuations a restart interrupted: watched again, or marked failed if nothing launched.
 await portable.recover().then(
   (r) => (r.resumed || r.failed) && console.log(`portable: ${r.resumed} continuation(s) resumed, ${r.failed} marked failed`),

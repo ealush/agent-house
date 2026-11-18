@@ -35,6 +35,8 @@ export const FEATURES: Record<string, number> = {
   interruptions: 1,
   /** /api/voice: dictation through a speech subscription, cleanup by a chat one, the Voice settings (server/voice.ts, docs/spec/14-voice.md). */
   voice: 1,
+  /** /api/notes: scratchpads, Markdown notes kept as sessions of their own, synced by revision, saved as files, handed to agents (server/notes, docs/spec/15-scratchpads.md). */
+  notes: 1,
 };
 
 export function features(): Record<string, number> {

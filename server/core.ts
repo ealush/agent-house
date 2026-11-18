@@ -35,6 +35,7 @@ import { chatSteps, claudeQuestionGroups, cursorKeys, dialogAt, dialogSteps, par
 import type { Peers } from './peers.ts';
 import { fingerprint } from './env.ts';
 import { features } from './features.ts';
+import type { NotesState } from './notes/store.ts';
 import type { TranscriptSource } from './search.ts';
 
 export type { LaunchChange, QueueItem } from './queue.ts';
@@ -67,6 +68,8 @@ export type State = {
   jobs?: JobsState | null;
   /** Sessions cut off mid-flight, to restore (server/interruptions). */
   interruptions?: InterruptionsState | null;
+  /** Scratchpads (server/notes): when `cursor` moves, `GET /api/notes?since=` has what changed. */
+  notes?: NotesState | null;
 };
 
 /** `key` is the client's session key (a uid, or "<host>/<uid>" for a peer's session). */
@@ -204,6 +207,7 @@ export class Core {
   reviewState: () => ReviewState | null = () => null;
   /** The scheduler's summary for the stream; main.ts wires it. */
   jobsState: () => JobsState | null = () => null;
+  notesState: () => NotesState | null = () => null;
   interruptionsState: () => InterruptionsState | null = () => null;
   /** A transcript ah just made as a copy (a fork): usage counts only what's written to it from now. */
   onCopy: (file: string) => void = () => {};
@@ -369,6 +373,7 @@ export class Core {
         features: features(),
         jobs: this.jobsState(),
         interruptions: this.interruptionsState(),
+        notes: this.notesState(),
       };
       this.state = state;
       // Subscribers get only the top-level fields that changed: history and the

@@ -485,3 +485,54 @@ model RateLimitSample {
 
   @@index([harness, window, observedAt])
 }
+
+// Scratchpads (docs/spec/15-scratchpads.md): Markdown notes that are sessions of
+// their own, with no agent, tmux window or process. The id is made on the device
+// that wrote the note first (a UUID), so a note written offline keeps its identity
+// once it reaches the host. Every write names the revision it was made on; one made
+// on an older revision is refused (409), never applied over the newer text. A
+// deleted note stays as a tombstone (no text), so a device that was offline can't
+// bring it back. `seq` orders every change across notes, for `GET /api/notes?since=`.
+model Note {
+  id          String  @id
+  title       String  @default("")
+  markdown    String  @default("")
+  /// The project it's filed under: a host's name (this one or a peer) and a folder there. Nothing is written into that folder.
+  projectHost String?
+  projectPath String?
+  revision    Int     @default(1)
+  seq         Int     @default(0)
+  /// The last accepted write: a retried write with the same id is answered, not applied twice.
+  lastWriteId String?
+  /// Who wrote last ("device:<label>", "token:<name>", "local").
+  writer      String  @default("")
+  /// Seconds since the epoch.
+  createdAt   Int     @default(0)
+  updatedAt   Int     @default(0)
+  deletedAt   Int?
+  /// Where it was saved as a file, newest first: [{ host, path, revision, at }].
+  exportsJson String  @default("[]")
+
+  @@index([seq])
+}
+
+// A note handed to an agent session (`POST /api/notes/handoffs`): one row per hand-off,
+// keyed by the id the device chose, written before the text goes anywhere. A retry with
+// the same id answers what happened instead of sending again. The note's text isn't kept
+// here, only which revision it was and its hash.
+// state: sending → delivered | queued, or failed (nothing was typed) / uncertain (a crash mid-send)
+model NoteHandoff {
+  id        String  @id
+  noteId    String
+  revision  Int
+  target    String
+  textSha   String
+  state     String  @default("sending")
+  queueId   String?
+  resumed   Boolean @default(false)
+  error     String?
+  createdAt Int     @default(0)
+  updatedAt Int     @default(0)
+
+  @@index([noteId])
+}

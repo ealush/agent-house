@@ -38,7 +38,8 @@ the spec ([12 Review](12-review.md), SET-6) and the audit's second pass
 (A-30 to A-37), and read the design system's tokens like everything else.
 A change that adds a capability needs the freeze lifted, and an entry here first.
 The owner lifted it on 14 November 2026 for the conductor work ([13](13-conductor.md)).
-On 16 November 2026 the owner lifted it for voice dictation ([14](14-voice.md)).
+On 16 November 2026 the owner lifted it for voice dictation ([14](14-voice.md)),
+and on 18 November for scratchpads ([15](15-scratchpads.md)).
 
 ## Spec files
 
@@ -58,6 +59,7 @@ On 16 November 2026 the owner lifted it for voice dictation ([14](14-voice.md)).
 | 12 | [Review](12-review.md) | `REV` | the Review page, making a stack, the stack, a layer, the reviewer, findings, GitHub's threads, sending, re-review, merging and GitHub's own stacks, the Stack tab |
 | 13 | [Conductor](13-conductor.md) | `CND` | feature versions and the client contract, streamed uploads, portable conversations and lineage (and, as they land: moving sessions between hosts, scheduled jobs, recovery, usage) |
 | 14 | [Voice](14-voice.md) | `VOX` | dictation into the composer: speech through a host subscription (or on the device), optional cleanup, the Voice settings |
+| 15 | [Scratchpads](15-scratchpads.md) | `SCR` | Markdown notes as sessions of their own: written offline, synced by revision with tombstones, filed under a project, saved as a file, handed to an agent |
 | — | [Security](../../SECURITY.md) | `SEC` | threat model and tested invariants (kept in SECURITY.md; summarised in 01) |
 | — | [Audit](audit.md) | `A` | parity matrix, vocabulary, findings, and their resolution |
 
