@@ -146,6 +146,14 @@ struct InboxView: View {
                     Button { scene.perform("go-search") } label: { Image(systemName: "magnifyingglass") }.accessibilityLabel("Search").tint(.primary)
                 }
             }
+            // A phone's Inbox offers a new note beside New, as its Sessions page does.
+            if scene.narrow {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { scene.perform("new-note") } label: { Image(systemName: "square.and.pencil") }
+                        .accessibilityLabel("New Note")
+                        .tint(.primary)
+                }
+            }
             ToolbarSpacer(.fixed, placement: .primaryAction)
             ToolbarItem(placement: .primaryAction) {
                 // ah's one light circle: New (ink on a light ground).

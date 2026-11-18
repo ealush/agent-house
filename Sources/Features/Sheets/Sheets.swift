@@ -122,6 +122,27 @@ struct NewSessionSheet: View {
                 Section("Agent") {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
+                            // A note first, the other kind of session: opened at once, with the first
+                            // message as its text, filed under the folder (not from a note's own).
+                            if context.attachment == nil {
+                                Button {
+                                    scene.newNote(fromNewSession: prompt, host: host, cwd: cwd, intoPane: context.intoPane)
+                                    scene.sheet = nil
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "note.text").frame(width: 20, height: 20)
+                                        Text("Note")
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(theme.raised, in: Capsule())
+                                }
+                                .buttonStyle(.plain)
+                                .hoverEffect(.highlight)
+                                .disabled(busy)
+                                .accessibilityHint("Opens a new note with the first message, filed under this folder")
+                                .accessibilityIdentifier("new-session-note")
+                            }
                             ForEach(presets, id: \.id) { p in
                                 Button {
                                     presetID = p.id

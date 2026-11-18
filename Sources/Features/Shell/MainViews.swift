@@ -8,6 +8,15 @@ struct SidebarView: View {
     @Bindable var scene: SceneModel
     @Environment(\.theme) private var theme
 
+    private func newSessionLabel(keys: Bool) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "plus")
+            Text("New Session").font(.ah(.callout).weight(.medium)).lineLimit(1)
+            Spacer(minLength: 4)
+            if keys, scene.hardwareKeyboard, let chord = scene.app.keyBindings.hint("new-session") { Keycaps(chord) }
+        }
+    }
+
     var body: some View {
         if let hub = scene.hub {
             VStack(spacing: 0) {
@@ -34,13 +43,13 @@ struct SidebarView: View {
                 .padding(.bottom, 4)
                 SessionListView(scene: scene, hub: hub, selection: scene.workspace.focusedKey, showsPages: true)
                     .scrollContentBackground(.hidden)
-                VStack(spacing: 8) {
+                // New session, and beside it a new note (a session of its own kind).
+                HStack(spacing: 8) {
                     Button { scene.perform("new-session") } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "plus")
-                            Text("New Session").font(.ah(.callout).weight(.medium))
-                            Spacer(minLength: 4)
-                            if scene.hardwareKeyboard, let chord = scene.app.keyBindings.hint("new-session") { Keycaps(chord) }
+                        // On one line: its keys go first when the sidebar is too narrow for them.
+                        ViewThatFits(in: .horizontal) {
+                            newSessionLabel(keys: true)
+                            newSessionLabel(keys: false)
                         }
                         .foregroundStyle(theme.text)
                         .padding(.horizontal, 12)
@@ -50,8 +59,20 @@ struct SidebarView: View {
                     }
                     .buttonStyle(.plain)
                     .hoverEffect(.highlight)
-                    .padding(.horizontal, 12)
+                    Button { scene.perform("new-note") } label: {
+                        Image(systemName: "square.and.pencil")
+                            .font(.ah(.callout).weight(.medium))
+                            .foregroundStyle(theme.text)
+                            .frame(width: 40, height: 40)
+                            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(theme.lineStrong, lineWidth: 1))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .hoverEffect(.highlight)
+                    .accessibilityLabel("New Note")
+                    .help("New Note")
                 }
+                .padding(.horizontal, 12)
                 .padding(.bottom, 12)
             }
             .background {
