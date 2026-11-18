@@ -169,6 +169,11 @@ final class TourUITests: XCTestCase {
             case "relaunch":
                 app.terminate()
                 app.launch()
+            case "restore":
+                // Killed and opened again as a person would: the window comes back from its journal.
+                app.terminate()
+                app.launchArguments.removeAll { $0 == "-AHFreshWindow" }
+                app.launch()
             case "terminate":
                 app.terminate()
             case "url":

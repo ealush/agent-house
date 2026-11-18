@@ -414,7 +414,7 @@ private struct SessionHeader: View {
 
 /// In a split, a session's mark drags its pane onto another (an edge splits beside it,
 /// the center swaps them).
-private struct PaneDragHandle: ViewModifier {
+struct PaneDragHandle: ViewModifier {
     let pane: LayoutNode.Path?
 
     func body(content: Content) -> some View {
@@ -700,7 +700,7 @@ private struct RenameAlertFields: View {
     }
 }
 
-private extension View {
+extension View {
     /// A pane header's glyph button, big enough for a finger on an iPad: the bare glyph was
     /// a 22 by 17 point target.
     func headerGlyph() -> some View {

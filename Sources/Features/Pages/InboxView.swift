@@ -532,6 +532,7 @@ struct SessionListView: View {
 
     var body: some View {
         let sections = scene.sidebarSections
+        let notes = NoteGrouping.place(scene.notes.summaries, sections: sections, multiHost: hub.multiHost)
         List(selection: Binding(get: { selected }, set: { tag in
             guard let tag else { return }
             if let page = Self.pages.first(where: { Self.tag($0.route) == tag }) { scene.show(page.route) } else { scene.open(tag) }
@@ -576,6 +577,8 @@ struct SessionListView: View {
                         }
                         // Latest active first is its own order: no dragging a row elsewhere.
                         .onMove(perform: recent ? nil : { (from: IndexSet, to: Int) in move(section: section, from: from, to: to) })
+                        // The project's notes, under its sessions, as if they were in its folder.
+                        ForEach(notes.inSections[section.id] ?? []) { note in noteRow(note, showsProject: hub.multiHost) }
                     }
                 } header: {
                     if !recent {
@@ -583,9 +586,20 @@ struct SessionListView: View {
                     }
                 }
             }
+            ForEach(notes.groups, id: \.id) { group in
+                Section {
+                    ForEach(group.notes) { note in noteRow(note, showsProject: group.id.hasPrefix("notes:host:")) }
+                } header: {
+                    Label(group.title, systemImage: group.id == NoteGrouping.unfiled ? "note.text" : "folder")
+                        .font(.ah(.caption).weight(.semibold))
+                        .foregroundStyle(theme.muted)
+                        .textCase(nil)
+                        .accessibilityAddTraits(.isHeader)
+                }
+            }
             if hub.awaitingState {
                 ForEach(0..<3, id: \.self) { index in SessionRowPlaceholder(title: [0.62, 0.45, 0.7][index]).ahRow(!showsPages) }
-            } else if hub.rows.isEmpty {
+            } else if hub.rows.isEmpty && scene.notes.summaries.isEmpty {
                 EmptyState(symbol: "terminal", title: "No Sessions", message: "The sessions you start show up here, grouped by project.", action: ("New Session", { scene.perform("new-session") }))
                     .listRowBackground(Color.clear)
             }
@@ -601,6 +615,10 @@ struct SessionListView: View {
             // own plus starts one there).
             if scene.narrow && !showsPages {
                 ToolbarItem(placement: .primaryAction) {
+                    Button { scene.perform("new-note") } label: { Image(systemName: "square.and.pencil") }
+                        .accessibilityLabel("New Note")
+                }
+                ToolbarItem(placement: .primaryAction) {
                     Button { scene.perform("new-session") } label: { Image(systemName: "plus").foregroundStyle(theme.background) }
                         .buttonStyle(.glassProminent)
                         .tint(theme.text)
@@ -610,6 +628,17 @@ struct SessionListView: View {
         }
         .focused($listFocused)
         .onChange(of: scene.focusRequest) { _, request in if request?.target == .sidebar { listFocused = true } }
+    }
+
+    private func noteRow(_ note: NotesModel.Summary, showsProject: Bool) -> some View {
+        NoteRowView(note: note, dense: !scene.narrow, showsProject: showsProject) { scene.open(note.key) }
+            .tag(note.key)
+            .draggable(SessionDrag(key: note.key))
+            .contextMenu { NoteRowMenu(note: note, scene: scene) }
+            .swipeActions(edge: .trailing) {
+                Button { scene.sheet = .noteDelete(note.id) } label: { Image(systemName: "trash") }.tint(theme.danger).accessibilityLabel("Delete")
+            }
+            .ahRow(!showsPages)
     }
 
     private func move(section: SessionOrdering.Section, from: IndexSet, to: Int) {

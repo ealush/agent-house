@@ -308,6 +308,17 @@ enum CommandCatalog {
         Command("continue-in", .session, "Continue in another agent…", "Carry this conversation on in another agent (or fork it): see what carries over and what doesn't before it starts. The original stays as it is.", terms: ["handoff", "hand off", "switch agent", "harness", "portable", "codex", "claude"]),
         Command("conversation-lineage", .session, "Conversation lineage", "Every conversation this one came from or went on to, across agents, and how each was carried.", terms: ["lineage", "history", "family", "parent", "origin"]),
         Command("focus-follows-pointer", .workspace, "Focus follows the pointer", "With a trackpad or mouse, hovering over a pane makes it the focused one. Again to turn it off.", terms: ["hover", "mouse", "trackpad", "focus"]),
+        // Notes (scratchpads): Markdown of your own, a session with no agent behind it.
+        Command("new-note", .navigate, "New note", "A Markdown scratchpad of your own, filed under the project you're in: write or dictate it, offline too, then hand it to an agent or save it as a file.", chords: [c("n", meta: true, alt: true)], terms: ["scratchpad", "notes", "markdown", "spec", "idea", "plan"]),
+        Command("note-preview", .session, "Edit or preview note", "Switch the note between its Markdown and how it reads.", chords: [c("e", meta: true, shift: true)], terms: ["markdown", "render", "read"]),
+        Command("note-send", .session, "Send note to an agent…", "Send the whole note to a session as a message: queued if it's working, resumed if it ended. The note stays as it is.", terms: ["hand off", "message", "agent", "prompt"]),
+        Command("note-insert", .session, "Put note in a session's box…", "Put the whole note in a session's message box to edit before you send it.", terms: ["composer", "draft", "paste"]),
+        Command("note-new-session", .session, "New session from note", "New session with the note as its first message, in the note's project.", terms: ["start", "agent", "prompt", "launch"]),
+        Command("note-new-session-file", .session, "New session with note attached", "New session with the note attached as a Markdown file.", terms: ["start", "agent", "attachment", "file"]),
+        Command("note-save-file", .session, "Save note as file…", "Write the note into a project folder (SPEC.md, PLAN.md, docs/…). The file is a copy; the note stays the original.", chords: [c("s", meta: true, shift: true)], terms: ["export", "spec", "plan", "markdown", "write"]),
+        Command("note-project", .session, "File note under a project…", "Choose the project this note belongs to, or none. Nothing is written into the folder.", terms: ["associate", "folder", "move"]),
+        Command("note-duplicate", .session, "Duplicate note", "A copy of the note beside it.", terms: ["copy", "clone"]),
+        Command("note-delete", .session, "Delete note…", "Delete the note on every device it syncs to.", terms: ["remove", "trash"]),
     ]
 
     static let all: [Command] = web + native
@@ -349,6 +360,9 @@ enum CommandCatalog {
         "go-to-session": "rectangle.stack", "focus-follows-pointer": "cursorarrow.motionlines",
         "copy-link": "link", "share-link": "square.and.arrow.up", "open-link": "arrow.up.forward.square",
         "new-window": "macwindow.badge.plus", "open-in-new-window": "rectangle.portrait.on.rectangle.portrait.angled",
+        "new-note": "square.and.pencil", "note-preview": "eye", "note-send": "paperplane", "note-insert": "text.insert",
+        "note-new-session": "plus.square", "note-new-session-file": "doc.badge.plus", "note-save-file": "square.and.arrow.down",
+        "note-project": "folder", "note-duplicate": "plus.square.on.square", "note-delete": "trash",
     ]
     static func label(_ id: CommandID) -> String { byID[id]?.label ?? id.rawValue }
 

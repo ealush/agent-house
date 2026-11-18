@@ -254,8 +254,9 @@ private struct PaletteRow: View {
     let bindings: KeyBindings
     @Environment(\.theme) private var theme
 
+    /// A session's row draws its agent's mark; a note's keeps its own glyph.
     private var sessionKey: String? {
-        if case .openSession(let key) = node.action { return key }
+        if case .openSession(let key) = node.action, !NoteKey.isNote(key) { return key }
         return nil
     }
 
@@ -337,6 +338,7 @@ struct SwitcherView: View {
     private enum Row: Identifiable {
         case link(AppLink, String)
         case live(SessionRow)
+        case note(NotesModel.Summary)
         case past(HistoryRow)
         case hit(SearchHit)
 
@@ -344,6 +346,7 @@ struct SwitcherView: View {
             switch self {
             case .link: return "link"
             case .live(let row): return "live:" + row.key
+            case .note(let note): return "note:" + note.id
             case .past(let row): return "past:" + row.id
             case .hit(let hit): return "hit:\(hit.host):\(hit.kind):\(hit.ref ?? hit.uid ?? hit.title)"
             }
@@ -353,19 +356,23 @@ struct SwitcherView: View {
     private var query: String { scene.switcher?.query ?? "" }
     private var tile: Bool { scene.switcher?.asTile == true || scene.switcher?.intoPane != nil }
 
-    private func rows() -> (live: [SessionRow], past: [HistoryRow], hits: [SearchHit]) {
-        guard let hub = scene.hub else { return ([], [], []) }
+    private func rows() -> (live: [SessionRow], notes: [NotesModel.Summary], past: [HistoryRow], hits: [SearchHit]) {
+        guard let hub = scene.hub else { return ([], [], [], []) }
         let parsed = SwitcherSearch.parse(query)
         let order = scene.sidebarOrder.map(\.key)
         let found = SwitcherSearch.results(live: hub.rows, order: order, history: tile ? [] : hub.history, parsed)
-        return (found.live, found.past, tile ? [] : (content?.hits ?? []))
+        // Notes by their title, text or project; a host or model filter is about sessions.
+        let filtered = query.contains(":")
+        let visible = tile ? Set(scene.workspace.visibleKeys) : []
+        let notes = filtered && parsed.text.isEmpty ? [] : scene.notes.search(parsed.text, limit: 12).filter { !visible.contains($0.key) }.prefix(parsed.text.isEmpty ? 3 : 6).map { $0 }
+        return (found.live, notes, found.past, tile ? [] : (content?.hits ?? []))
     }
 
     var body: some View {
         let found = rows()
         // A pasted link: go where it points, first.
         let lead: [Row] = tile ? [] : scene.pastedLink(query).map { [Row.link($0.link, $0.summary)] } ?? []
-        let all: [Row] = lead + found.live.map(Row.live) + found.past.map(Row.past) + found.hits.map(Row.hit)
+        let all: [Row] = lead + found.live.map(Row.live) + found.notes.map(Row.note) + found.past.map(Row.past) + found.hits.map(Row.hit)
         let text = SwitcherSearch.parse(query).text.trimmingCharacters(in: .whitespaces)
         VStack(spacing: 0) {
             HStack(spacing: 8) {
@@ -399,7 +406,7 @@ struct SwitcherView: View {
                                     .padding(.horizontal, 18).padding(.top, index == 0 ? 6 : 12).padding(.bottom, 4)
                                     .accessibilityAddTraits(.isHeader)
                             }
-                            if case .hit = row, index - lead.count == found.live.count + found.past.count, let note = content?.note {
+                            if case .hit = row, index - lead.count == found.live.count + found.notes.count + found.past.count, let note = content?.note {
                                 Text(note).font(.ah(.caption)).foregroundStyle(theme.muted).padding(.horizontal, 18)
                             }
                             SwitcherRow(row: display(row), selected: index == selection, multiHost: scene.hub?.multiHost == true)
@@ -471,6 +478,8 @@ struct SwitcherView: View {
             return SwitcherViewRow(title: "Open Link", detail: [summary])
         case .live(let r):
             return SwitcherViewRow(agent: r.dto.agent, title: r.title, fork: r.dto.fork != nil, host: r.host, detail: [r.dto.project, r.dto.branch ?? ""], status: r.word)
+        case .note(let note):
+            return SwitcherViewRow(symbol: "note.text", title: note.title, host: note.project?.host ?? "", detail: [note.project?.name ?? "", NoteScreen.syncWords(note, scene: scene)], tag: "Note")
         case .past(let h):
             return SwitcherViewRow(agent: h.dto.harness == "shell" ? nil : h.dto.harness, title: h.dto.title, fork: h.dto.fork != nil, host: h.host,
                                    detail: [h.dto.project, Elapsed.format(Date(timeIntervalSince1970: h.dto.at), now: .now)], tag: "Resume")
@@ -491,12 +500,13 @@ struct SwitcherView: View {
         return scene.hub?.presets(host: hit.host).first { $0.id == id }?.name ?? id
     }
 
-    private func heading(_ row: Row, index: Int, found: (live: [SessionRow], past: [HistoryRow], hits: [SearchHit])) -> String? {
+    private func heading(_ row: Row, index: Int, found: (live: [SessionRow], notes: [NotesModel.Summary], past: [HistoryRow], hits: [SearchHit])) -> String? {
         switch row {
         case .link: return nil
-        case .live: return index == 0 && !found.past.isEmpty ? "Sessions" : nil
-        case .past: return index == found.live.count ? "History" : nil
-        case .hit: return index == found.live.count + found.past.count ? "In conversations" : nil
+        case .live: return index == 0 && !(found.past.isEmpty && found.notes.isEmpty) ? "Sessions" : nil
+        case .note: return index == found.live.count ? "Notes" : nil
+        case .past: return index == found.live.count + found.notes.count ? "History" : nil
+        case .hit: return index == found.live.count + found.notes.count + found.past.count ? "In conversations" : nil
         }
     }
 
@@ -511,6 +521,11 @@ struct SwitcherView: View {
                 scene.switcher?.asTile = true
             }
             scene.pick(row.key)
+        case .note(let note):
+            if split && !scene.narrow && scene.switcher?.intoPane == nil {
+                scene.switcher?.asTile = true
+            }
+            scene.pick(note.key)
         case .past(let item):
             scene.switcher = nil
             Task { await scene.resume(item) }
@@ -528,7 +543,11 @@ private struct SwitcherRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            AgentMark(agent: row.agent, size: 22)
+            if let symbol = row.symbol {
+                Image(systemName: symbol).font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.accent).frame(width: 22, height: 22)
+            } else {
+                AgentMark(agent: row.agent, size: 22)
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.title + (row.fork ? " ⑂" : "")).font(.ah(.callout)).lineLimit(1).foregroundStyle(theme.text)
                 Text(row.subtitle(multiHost)).font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(1)
@@ -555,6 +574,8 @@ private struct SwitcherRow: View {
 /// What a switcher row shows, whatever it came from.
 struct SwitcherViewRow {
     var agent: String?
+    /// A glyph in the agent's place (a note has no agent).
+    var symbol: String?
     var title: String
     var fork = false
     var host: String?

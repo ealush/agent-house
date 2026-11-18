@@ -36,3 +36,8 @@ Updated 14 November 2026.
 
 The SwiftUI transcript stays the default and the UIKit collection view (`TranscriptCollection`, Settings → New transcript) stays opt-in. The collection view's last measurements (commit e615a9f: ten older pages read back with no frame against the scroll beyond 20 pt, a reply with the keyboard up following the end, the first message staying through a replayed real transcript, iPad split and rotation) and its known open item (an unfolding step settles by one frame at the end) are from the session that built it; this pass changed neither implementation and didn't measure them again, so it makes no case for switching. The owner's own TestFlight build of the collection view is the evidence still missing.
 
+### Scratchpads (notes)
+
+- Dictation into a note is the composer's (`DictationModel` on the note's own box): on-device speech and the real microphone are proven only on a device, as for the composer.
+- Two windows on one note share one document; two devices editing the same note at once meet as a conflict, not a merge, by design.
+- Notes made before any account is set up aren't possible: the app's setup screen comes first.

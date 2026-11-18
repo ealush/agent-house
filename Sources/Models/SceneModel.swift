@@ -147,6 +147,16 @@ final class SceneModel {
         case lineage(String)
         /// The composer's draft in a larger editor (a long message).
         case draft(String)
+        /// A note's hand-off: send it to a session, or put it in a session's box (by note id).
+        case noteSend(String, insert: Bool)
+        /// Save a note into a project as a file.
+        case noteSaveFile(String)
+        /// Choose the project a note is filed under.
+        case noteProject(String)
+        /// The host's version of a note beside this device's, to choose between.
+        case noteCompare(String)
+        /// Asked as a system alert: delete a note everywhere.
+        case noteDelete(String)
 
         var id: String {
             switch self {
@@ -167,6 +177,11 @@ final class SceneModel {
             case .continueIn(let k, let p): return "continue:\(k):\(p ?? "")"
             case .lineage(let k): return "lineage:\(k)"
             case .draft(let k): return "draft:\(k)"
+            case .noteSend(let k, let insert): return "note-send:\(k):\(insert)"
+            case .noteSaveFile(let k): return "note-save:\(k)"
+            case .noteProject(let k): return "note-project:\(k)"
+            case .noteCompare(let k): return "note-compare:\(k)"
+            case .noteDelete(let k): return "note-delete:\(k)"
             }
         }
     }
@@ -179,7 +194,19 @@ final class SceneModel {
         var preset: String?
         /// Fill this chooser pane with what starts, instead of navigating.
         var intoPane: LayoutNode.Path?
+        /// A name to start with (a note's title), still yours to change.
+        var label: String?
+        /// A file attached to the first message (a note as Markdown).
+        var attachment: Attachment?
+
+        struct Attachment: Equatable, Sendable {
+            var name: String
+            var data: Data
+        }
     }
+
+    /// The note whose title is being edited (rename), by id.
+    var renamingNote: String?
 
     struct PaletteState: Equatable, Sendable {
         /// Keys of the categories walked into.
@@ -544,8 +571,8 @@ final class SceneModel {
 
     func session(_ key: String) -> SessionModel? {
         if let existing = sessions[key] { return existing }
-        // New session's place, before there's a session in it.
-        guard key != Self.newSessionKey else { return nil }
+        // New session's place, before there's a session in it; a note has no host session at all.
+        guard key != Self.newSessionKey, !NoteKey.isNote(key) else { return nil }
         guard let hub, let account else { return nil }
         let surface = app.services.preferences.surface(origin: account.origin, sessionKey: key) ?? .gui
         let model = SessionModel(key: key, hub: hub, outbox: app.outbox, surface: surface)
@@ -560,15 +587,19 @@ final class SceneModel {
 
     var focusedSession: SessionModel? { workspace.focusedKey.flatMap(session) }
 
+    /// A session's model only if this window already has it (nothing opened for asking).
+    func sessionIfOpen(_ key: String) -> SessionModel? { sessions[key] }
+
     /// The window's name in Stage Manager, the app switcher and the Mac's Window menu: the
     /// session in front, else the page.
     var windowTitle: String {
         if workspace.layout != nil {
             guard let key = workspace.focusedKey else { return "New Pane" }
+            if let title = noteTitle(key) { return title }
             return hub?.row(key)?.title ?? "Session"
         }
         switch route {
-        case .session(let key): return hub?.row(key)?.title ?? hub?.history.first { $0.id == key }?.dto.title ?? "Session"
+        case .session(let key): return noteTitle(key) ?? hub?.row(key)?.title ?? hub?.history.first { $0.id == key }?.dto.title ?? "Session"
         case .inbox: return "Inbox"
         case .sessions: return "Sessions"
         case .history: return "History"
@@ -756,9 +787,15 @@ final class SceneModel {
     /// Called whenever the host's state changes: applies a pending restore once there is state.
     func reconcileIfReady() {
         watchSessionsIfNeeded()
-        guard let pending = pendingRestore, let hub, hub.hub.state != nil else { return }
+        guard let pending = pendingRestore, let hub else { return }
+        // Notes are on this device: a window of notes (and pages) comes back without the host.
+        guard hub.hub.state != nil || Self.onlyNotes(pending) else { return }
         pendingRestore = nil
-        let outcome = RestorationReconciler.reconcile(pending) { hub.presence(of: $0) }
+        let notes = app.notes
+        let outcome = RestorationReconciler.reconcile(pending) { key in
+            guard NoteKey.isNote(key) else { return hub.presence(of: key) }
+            return NoteKey.id(notes.current(key)).flatMap { notes.note($0) } != nil ? .live : .gone
+        }
         let snapshot = outcome.snapshot
         route = snapshot.route
         workspace.restore(snapshot)
@@ -929,6 +966,7 @@ final class SceneModel {
         // As the screen shows it: held through a scan that missed the agent.
         let agent = s.map { $0.isLive && !$0.isShell } ?? false
         let gui = s?.surface == .gui && (s?.hasGUI ?? false)
+        if let answer = noteAvailability(id) { return answer }
         if id.rawValue.hasPrefix("panel-"), let panel = SceneSnapshot.Panel(rawValue: String(id.rawValue.dropFirst(6))) {
             return s.map { panel.applies(to: $0) } ?? false
         }
@@ -964,7 +1002,8 @@ final class SceneModel {
         case "clear-queue": return (row?.dto.queued ?? 0) > 0 || !(s?.queue.items.isEmpty ?? true)
         case "pick-model", "pick-effort": return live && agent
         case "switch-branch": return row?.dto.branch != nil
-        case "rename", "pin", "terminate", "scrollback": return live
+        case "rename": return live || focusedNoteID != nil
+        case "pin", "terminate", "scrollback": return live
         case "fork": return agent || (s?.history != nil && s?.isShell == false)
         case "send-to": return s.map { $0.isLive && $0.hasGUI } ?? false
         case "continue-in": return s.map { $0.hasGUI && !$0.isShell } ?? false
@@ -1002,6 +1041,7 @@ final class SceneModel {
     }
 
     private func execute(_ id: CommandID) {
+        if executeNote(id) { return }
         let s = focusedSession
         let key = workspace.focusedKey
         switch id.rawValue {
@@ -1128,6 +1168,10 @@ final class SceneModel {
         case "browse-messages": if let key { requestFocus(.messages(key)) }
         case "switch-branch": if let key { sheet = .branch(key) }
         case "rename":
+            if let id = focusedNoteID {
+                renamingNote = id
+                return
+            }
             guard let s, let key else { return }
             s.renaming = s.title
             requestFocus(.rename(key))
@@ -1250,7 +1294,7 @@ final class SceneModel {
     var handoff: Handoff? {
         guard let account, account.status == .signedIn, let hub else { return nil }
         if let key = workspace.focusedKey ?? { if case .session(let k) = route { return k } else { return nil } }() {
-            let title = key == Self.newSessionKey ? "New Session" : hub.slot(key).row?.title ?? hub.history.first { $0.id == key }?.dto.title ?? "Session"
+            let title = key == Self.newSessionKey ? "New Session" : noteTitle(key) ?? hub.slot(key).row?.title ?? hub.history.first { $0.id == key }?.dto.title ?? "Session"
             return Handoff(origin: account.origin, route: .session(key), title: title)
         }
         let titles: [String: String] = ["sessions": "Sessions", "history": "History", "search": "Search", "settings": "Settings"]
@@ -1458,11 +1502,19 @@ final class SceneModel {
                 let host = hub.multiHost ? row.host : nil
                 let detail = [row.word.rawValue, row.dto.project, row.dto.branch, host, here ? "on screen" : nil].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
                 return PaletteNode(key: "session:\(row.key)", label: row.title, agent: row.dto.agent, detail: detail, terms: [row.dto.branch, row.host].compactMap { $0 }, action: .openSession(row.key), children: choices)
+            } + notes.summaries.map { note in
+                let here = visible.contains(note.key)
+                var choices = [PaletteNode(key: "go", label: here ? "Focus its pane" : "Open it", icon: "arrow.right.circle", action: .openSession(note.key))]
+                if !narrow && !here { choices.append(PaletteNode(key: "pane", label: "Open as a new pane", icon: "plus.rectangle.on.rectangle", detail: "Beside the focused pane", action: .openAsPane(note.key))) }
+                let detail = ["Note", note.project?.name, here ? "on screen" : nil].compactMap { $0 }.joined(separator: " · ")
+                return PaletteNode(key: "session:\(note.key)", label: note.title, icon: "note.text", detail: detail, terms: ["note", "scratchpad", note.project?.host].compactMap { $0 }, action: .openSession(note.key), children: choices)
             }
         case .tiles:
             let visible = Set(workspace.visibleKeys)
             return sidebarOrder.filter { !visible.contains($0.key) }.map { row in
                 PaletteNode(key: "tile:\(row.key)", label: row.title, agent: row.dto.agent, detail: [row.word.rawValue, row.dto.project].joined(separator: " · "), action: .openAsPane(row.key))
+            } + notes.summaries.filter { !visible.contains($0.key) }.map { note in
+                PaletteNode(key: "tile:\(note.key)", label: note.title, icon: "note.text", detail: ["Note", note.project?.name].compactMap { $0 }.joined(separator: " · "), action: .openAsPane(note.key))
             }
         case .queue:
             guard let s else { return [] }

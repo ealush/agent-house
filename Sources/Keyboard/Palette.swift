@@ -70,6 +70,7 @@ enum PaletteTree {
     static let root: Spec = .category(key: "root", label: "Commands", icon: "command", children: [
         .command("new-session"),
         .command("new-project"),
+        .command("new-note"),
         .command("switcher"),
         .command("scratchpad"),
         .category(key: "run", label: "Run in project", icon: "folder", detail: "Start an agent or a shell in one of your projects", children: [.provider(.projects)]),
@@ -93,6 +94,10 @@ enum PaletteTree {
                 .command("rename"), .command("switch-branch"), .command("fork"), .command("continue-in"), .command("conversation-lineage"), .command("send-to"), .command("pin"), .command("copy-attach"), .command("session-menu"), .command("terminate"),
             ]),
             .category(key: "continue", label: "Continue in…", icon: "paperplane", detail: "This conversation, in another agent", terms: ["handoff", "switch agent", "harness"], children: [.provider(.agents)]),
+        ]),
+        .category(key: "note", label: "Note", icon: "note.text", detail: "The note in front: hand it to an agent, start a session, save it", terms: ["scratchpad", "markdown"], children: [
+            .command("note-send"), .command("note-insert"), .command("note-new-session"), .command("note-new-session-file"), .command("note-save-file"),
+            .command("note-preview"), .command("note-project"), .command("note-duplicate"), .command("note-delete"),
         ]),
         .category(key: "workspace", label: "Workspace", icon: "rectangle.split.2x2", detail: "Splits, panes and the sidebar", children: [
             .command("pane-mode"),

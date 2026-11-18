@@ -634,6 +634,23 @@ Source: SPEC implementation gates, Apple standards and definition of excellence.
 | [ ] | Q-19 | Run Linux core and macOS simulator CI, and fix failures before any review-ready shipping claim — *CI runs on push; not pushed without authorization* | P0 | blocked |
 | [ ] | Q-20 | Backward-compatible backend/web/CLI/security regression evidence; meaningful independent stack-layer checks; publish/push/deploy only when user instructs — *ah suite 552/552 and tsc on native/1-device-auth + native/2-apns* | P0 | implemented |
 
+### Scratchpads (notes)
+
+Source: the owner's ask of 18 November 2026; host contract `../ah/docs/spec/15-scratchpads.md` (`features.notes` 1). Demo host for every tour below: `scripts/demo/host.mjs` on ah `notes/1-store`.
+
+| Done | ID | Item | Priority | Evidence |
+| --- | --- | --- | --- | --- |
+| [x] | SCR-N1 | Notes kept on the device first (GRDB `note`), autosaved within a moment and at backgrounding, back after the app is killed — *NotesModel, NoteRepository* | P0 | verified: NotesTests (kill without flush); iPhone tour 2026-11-18 with the host unreachable: written, app killed, relaunched offline, text and caret back |
+| [x] | SCR-N2 | Sync by revision with the host, retried idempotently, conflicts kept both ways, tombstones, older host left alone — *NoteSync* | P0 | verified: NotesTests (lost answer, two devices, Keep Both/Mine/Theirs, deletion vs offline edits, host without notes); tour 2026-11-18: offline note synced by itself once the host was back |
+| [x] | SCR-N3 | A note as a session: its key in routes, panes, the journal, the palette and the switcher; its own screen on iPhone (pushed) and iPad (detail, panes, chooser), no agent controls — *NoteScreen, NoteHostController, SceneNotes* | P0 | verified: NoteSessionTests; iPhone and iPad tours 2026-11-18 (sidebar under its project, switcher's Notes, pane chooser's New Note, a note beside a session) |
+| [x] | SCR-N4 | Restoration: a window of notes comes back with no host; a note pane beside a session after a kill — *SceneModel.reconcileIfReady, onlyNotes* | P0 | verified: NoteSessionTests; iPad tour 2026-11-18 (`restore` step: killed and opened without -AHFreshWindow) |
+| [x] | SCR-N5 | Editor: UIKit text view, undo, selection, hardware keys through the menu, lists carried on by Return, preview through MarkdownView, selection and scroll kept — *NoteEditor, NoteLists* | P0 | verified: NoteSessionTests (lists); tours (typing, list continuation, preview with headings, bullets and tasks); large notes and a hardware keyboard on a device: not yet |
+| [x] | SCR-N6 | Project: choose, change, clear; host-aware identity; listed under the project's block — *NoteProjectSheet, NoteGrouping* | P0 | verified: NotesTests, NoteSessionTests (same folder on two hosts); iPhone tour (filed under orbit-api, listed with its sessions) |
+| [x] | SCR-N7 | Send to Agent (idle, busy queued, ended resumed; Try Again never twice; offline sends nothing; as a file when long) and Put in a Session's Box (asks before combining with a draft, the host's draft included for a session not on screen) — *NoteHandoff, NoteSendSheet* | P0 | verified: NoteSessionTests; iPhone tours (sent to the project's session, the host's ledger says delivered, the agent took it; put in a box holding a draft: asked, Add Below kept both); ah test/notes.test.ts for idle/busy/ended on real stand-in agents |
+| [x] | SCR-N8 | New Session from a note: the same screen, project and host preselected, the note as the first message or attached as a Markdown file, the name suggested — *SceneModel.startSession(fromNote:), NewSessionDraft.load* | P0 | verified: iPhone tours (orbit-api preselected, the note in the box; attached: the note as a .md tile); the sheet used in an iPad split: not yet toured |
+| [x] | SCR-N9 | Save as File into a project (SPEC.md, docs/…), refused over an existing file unless replaced or renamed, recorded on the note — *NoteSaveFileSheet* | P0 | verified: iPhone tour (SPEC.md written into orbit-api, export recorded); path rules in NoteSessionTests and ah server/notes.test.ts |
+| [x] | SCR-N10 | Dictation in a note: the composer's DictationModel on the note's box, at the caret, edits kept, Cancel, Use What I Said | P1 | verified: NotesTests (at the caret with an edit meanwhile, cancel); iPhone tour 2026-11-18 against the demo host's scripted speech (listening with ✕ and ✓, the tidied words at the caret, Use What I Said); the real microphone and on-device speech need a device |
+
 ## Platform integration
 
 How the app reaches into iOS beyond its own windows. Verified scope in each row.

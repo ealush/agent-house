@@ -27,6 +27,12 @@ struct SceneSheet: View {
         case .effortPicker(let key): sessionSheet(key) { LaunchPickerSheet(scene: scene, session: $0, setting: .effort) }
         case .sessionMenu(let key): sessionSheet(key) { SessionMenuSheet(scene: scene, session: $0) }
         case .draft(let key): sessionSheet(key) { DraftSheet(scene: scene, session: $0) }
+        case .noteSend(let id, let insert): NoteSendSheet(scene: scene, id: id, insert: insert)
+        case .noteSaveFile(let id): NoteSaveFileSheet(scene: scene, id: id)
+        case .noteProject(let id): NoteProjectSheet(scene: scene, id: id)
+        case .noteCompare(let id): NoteCompareSheet(scene: scene, id: id)
+        // Asked as a system alert (`SceneRootController.noteDeleteAlert`); this only when it went meanwhile.
+        case .noteDelete: EmptyState(symbol: "note.text", title: "That Note Is Gone", message: "It was deleted while this was opening.")
         }
     }
 
@@ -226,6 +232,9 @@ struct NewSessionSheet: View {
                     TextField(preset?.isShell == true ? "First command (optional)" : "First message (optional)", text: $prompt, axis: .vertical)
                         .lineLimit(2...8)
                         .focused($promptFocused)
+                    if let file = context.attachment, preset?.isShell != true {
+                        Label("\(file.name) attached", systemImage: "doc.text").font(.ah(.callout)).foregroundStyle(theme.muted)
+                    }
                 }
                 Section("More") {
                     TextField("Name (optional)", text: $label)
@@ -282,6 +291,7 @@ struct NewSessionSheet: View {
                     applyDefaults(first)
                 }
                 if let p = context.prompt { prompt = p }
+                if let name = context.label, label.isEmpty { label = name }
                 projects = (try? await hub?.client(host: host).projects()) ?? []
             }
         }
@@ -354,7 +364,19 @@ struct NewSessionSheet: View {
             mode: mode == "default" ? nil : mode, model: chosenModel, effort: chosenEffort,
             extraArgs: extraArgs.trimmingCharacters(in: .whitespaces).isEmpty ? nil : extraArgs.trimmingCharacters(in: .whitespaces),
             trust: preset.trust != nil && trust ? true : nil)
-        if await scene.start(request, host: host, prompt: prompt, intoPane: context.intoPane) != nil {
+        // A note attached: uploaded to the host it starts on, its path leading the first
+        // message, as the box sends a file (`ComposerModel.submit`).
+        var first = prompt
+        if let file = context.attachment, preset.isShell == false {
+            do {
+                let path = try await hub.client(host: host).upload(name: file.name, data: file.data)
+                first = ([Uploads.shellQuote(path)] + (prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? [] : [prompt])).joined(separator: " ")
+            } catch {
+                scene.toast("Couldn’t attach \(file.name): \(APIError.wrap(error).message)", error: true)
+                return
+            }
+        }
+        if await scene.start(request, host: host, prompt: first, intoPane: context.intoPane) != nil {
             if !preset.isShell {
                 scene.app.preferences.launchMemory[preset.id] = LaunchState.remembering(
                     scene.app.preferences.launchMemory[preset.id], mode: mode, model: chosenModel ?? model, effort: effort, trust: preset.trust != nil ? trust : nil)

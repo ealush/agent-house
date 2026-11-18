@@ -249,6 +249,13 @@ final class WorkspaceModel {
     }
 
     /// Replace pane: the focused pane becomes its chooser, remembering what it showed.
+    /// Every pane (and the selection) that shows `old` shows `new` instead: a note kept under
+    /// a new id, a deleted one's pane turned into a chooser.
+    func replaceKey(_ old: String, with new: String) {
+        if let layout { self.layout = layout.mapKeys { $0 == old ? new : $0 } }
+        if selected == old { selected = LayoutNode.isPick(new) ? nil : new }
+    }
+
     func replaceWithChooser() {
         guard let layout, let path = focusPath, case .session(let key)? = layout.node(at: path), !LayoutNode.isPick(key) else { return }
         self.layout = layout.replacing(.path(path), with: LayoutNode.pickKey(previous: key))

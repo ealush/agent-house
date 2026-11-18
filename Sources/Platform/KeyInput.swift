@@ -67,7 +67,7 @@ enum MenuCommands {
         (.navigate, "Go", [
             .section(["switcher", "go-to-session", "cycle-prev", "cycle-next"]),
             .section(["go-inbox", "go-history", "go-review", "go-search", "worktrees"]),
-            .section(["new-session", "new-project"]),
+            .section(["new-session", "new-project", "new-note"]),
             .section(["toggle-sidebar", "focus-sidebar", "focus-main"]),
             .section(["copy-link", "share-link", "open-link", "reload-page"]),
             .section(["show-shortcuts"]),
@@ -80,6 +80,7 @@ enum MenuCommands {
             .submenu("Side Panel", "sidebar.right", ["toggle-panel", "panel-diff", "panel-files", "panel-chat", "panel-queue", "panel-snapshots", "panel-preview", "panel-stack"]),
             .submenu("Terminal", "terminal", ["toggle-keys", "terminal-text-bigger", "terminal-text-smaller", "terminal-text-reset", "scrollback", "copy-attach"]),
             .section(["session-menu", "terminate"]),
+            .submenu("Note", "note.text", ["note-preview", "note-send", "note-insert", "note-new-session", "note-new-session-file", "note-save-file", "note-project", "note-duplicate", "note-delete"]),
         ]),
         (.workspace, "Workspace", [
             .section(["split-right", "split-below", "split-left", "split-above", "toggle-split", "exit-split"]),

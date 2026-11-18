@@ -331,6 +331,8 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
             return terminateAlert(scene.session(key)!)
         case .sheet(.confirmPlan(let key, let plan)) where scene.session(key) != nil && confirmsAsAlert(plan):
             return planAlert(plan, session: scene.session(key)!)
+        case .sheet(.noteDelete(let id)) where scene.notes.note(id) != nil:
+            return noteDeleteAlert(id)
         case .sheet(let sheet):
             let controller = modalHost(SceneSheet(sheet: sheet, scene: scene))
             switch sheet {
@@ -346,9 +348,13 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
             case .setup:
                 controller.modalPresentationStyle = .formSheet
                 controller.isModalInPresentation = scene.app.accounts.isEmpty
-            case .newSession, .sendTo, .continueIn, .scrollback, .draft:
+            case .newSession, .sendTo, .continueIn, .scrollback, .draft, .noteSend, .noteSaveFile, .noteCompare:
                 controller.modalPresentationStyle = .formSheet
                 controller.sheetPresentationController?.detents = [.large()]
+            case .noteProject, .noteDelete:
+                controller.modalPresentationStyle = .formSheet
+                controller.sheetPresentationController?.detents = [.medium(), .large()]
+                controller.sheetPresentationController?.prefersGrabberVisible = true
             }
             return controller
         case .palette:
@@ -360,6 +366,19 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
             controller.modalPresentationStyle = .formSheet
             return controller
         }
+    }
+
+    /// Deleting a note is for good on every device it syncs to: asked as iOS asks it.
+    private func noteDeleteAlert(_ id: String) -> UIViewController {
+        let title = scene.notes.summary(id)?.title ?? "this note"
+        let synced = scene.notes.note(id)?.syncOrigin != nil
+        let alert = UIAlertController(title: "Delete “\(title)”?", message: synced ? "It’s deleted on every device it syncs to. Files you saved from it stay." : "It’s only on this device, so it’s gone for good. Files you saved from it stay.", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self, weak alert] _ in self?.alertGone(alert) })
+        alert.addAction(UIAlertAction(title: "Delete", style: .destructive) { [weak self, weak alert] _ in
+            self?.alertGone(alert)
+            self?.scene.deleteNote(id)
+        })
+        return alert
     }
 
     private func terminateAlert(_ session: SessionModel) -> UIViewController {
@@ -771,6 +790,17 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
                 // New session, pushed as a session is.
                 if let top = nav.topViewController as? NewSessionHostController, top.count == scene.newSessionCount { return }
                 let controller = NewSessionHostController(root: root, count: scene.newSessionCount)
+                if nav.viewControllers.count > 1 {
+                    nav.setViewControllers([nav.viewControllers[0], controller], animated: true)
+                } else {
+                    nav.pushViewController(controller, animated: true)
+                }
+                return
+            }
+            if NoteKey.isNote(key) {
+                // A note, pushed as a session is: its own editor.
+                if let top = nav.topViewController as? NoteHostController, top.key == key { return }
+                let controller = NoteHostController(key: key, root: root)
                 if nav.viewControllers.count > 1 {
                     nav.setViewControllers([nav.viewControllers[0], controller], animated: true)
                 } else {

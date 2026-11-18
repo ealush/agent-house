@@ -267,6 +267,9 @@ struct DetailView: View {
             } else if case .session(let key) = scene.route, key == SceneModel.newSessionKey {
                 // New session, where the session it starts will be.
                 NewSessionPane(scene: scene).id(scene.newSessionCount).modifier(AhPanel()).transition(.opacity)
+            } else if case .session(let key) = scene.route, NoteKey.isNote(key) {
+                // A note, where a session would be: its own editor, no transcript or terminal.
+                NoteScreen(scene: scene, key: key).id(key).modifier(AhPanel()).transition(.opacity)
             } else if case .session(let key) = scene.route, let session = scene.session(key) {
                 SingleSessionView(scene: scene, session: session).transition(.opacity)
             } else {
@@ -318,7 +321,8 @@ private struct ScratchpadView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Label("Scratchpad", systemImage: "terminal").font(.ah(.caption).weight(.semibold))
+                // "Shell": a note is something else (`NoteScreen`), and the two must not read alike.
+                Label("Scratchpad Shell", systemImage: "terminal").font(.ah(.caption).weight(.semibold))
                 Spacer()
                 Button { Task { await scene.toggleScratchpad() } } label: { Image(systemName: "chevron.down") }.accessibilityLabel("Hide the scratchpad")
             }
@@ -432,6 +436,8 @@ private struct PaneView: View {
         Group {
             if LayoutNode.isPick(tile.sessionKey) {
                 ChooserPane(scene: scene, path: tile.path)
+            } else if NoteKey.isNote(tile.sessionKey) {
+                NoteScreen(scene: scene, key: tile.sessionKey, compactHeader: tile.box.w < 0.5 || tile.box.h < 0.5, paneFocused: focused, pane: tile.path)
             } else if let session = scene.session(tile.sessionKey) {
                 SessionScreen(session: session, scene: scene, paneFocused: focused, compactHeader: tile.box.w < 0.5 || tile.box.h < 0.5, pane: tile.path)
             } else {
@@ -568,7 +574,8 @@ private struct PaneStrip: View {
                     } label: {
                         HStack(spacing: 6) {
                             if let row { StatusPill(word: row.word, compact: true) }
-                            Text(LayoutNode.isPick(tile.sessionKey) ? "Empty pane" : (row?.title ?? scene.session(tile.sessionKey)?.title ?? "Session"))
+                            if NoteKey.isNote(tile.sessionKey) { Image(systemName: "note.text").font(.ah(.caption)) }
+                            Text(LayoutNode.isPick(tile.sessionKey) ? "Empty pane" : (scene.noteTitle(tile.sessionKey) ?? row?.title ?? scene.session(tile.sessionKey)?.title ?? "Session"))
                                 .font(.ah(.caption).weight(active ? .semibold : .regular))
                                 .lineLimit(1)
                         }
@@ -707,6 +714,12 @@ private struct ChooserContent: View {
             .map(\.0)
     }
 
+    /// Notes not on screen, the newest (or those the search finds).
+    private var noteRows: [NotesModel.Summary] {
+        let visible = Set(scene.workspace.visibleKeys)
+        return scene.notes.search(query, limit: 12).filter { !visible.contains($0.key) }.prefix(query.isEmpty ? 3 : 5).map { $0 }
+    }
+
     var body: some View {
         let rows = rows
         VStack(spacing: 14) {
@@ -735,6 +748,7 @@ private struct ChooserContent: View {
                         scene.workspace.focus(path)
                         scene.sheet = .newSession(SceneModel.NewSessionContext(intoPane: path))
                     }
+                    action("New Note", "square.and.pencil") { scene.newNote(into: path) }
                     Divider().padding(.vertical, 4)
                 }
                 ForEach(Array(rows.enumerated()), id: \.element.key) { index, row in
@@ -756,6 +770,27 @@ private struct ChooserContent: View {
                     // One stop a row, which says when it's the one picked.
                     .accessibilityElement(children: .combine)
                     .accessibilityAddTraits(index == selection ? [.isButton, .isSelected] : .isButton)
+                }
+            }
+            let notes = noteRows
+            if !notes.isEmpty {
+                VStack(spacing: 2) {
+                    ForEach(notes) { note in
+                        HStack(spacing: 10) {
+                            Image(systemName: "note.text").foregroundStyle(theme.accent).frame(width: 22)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(note.title).font(.ah(.callout)).lineLimit(1)
+                                Text(note.project?.name ?? "Note").font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(1)
+                            }
+                            Spacer()
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .contentShape(Rectangle())
+                        .onTapGesture { scene.fillPane(path, with: note.key) }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityAddTraits(.isButton)
+                    }
                 }
             }
             Button("Cancel", role: .cancel) { scene.cancelChooser(path) }
