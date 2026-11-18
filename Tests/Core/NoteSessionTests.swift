@@ -257,27 +257,3 @@ private func scene(_ name: String) throws -> SceneModel {
     snapshot.workspaces.slots[snapshot.workspaces.current] = Workspaces.Slot(layout: .split(direction: .horizontal, ratio: 0.5, first: .session(a), second: .session("abc123")), selected: nil)
     #expect(SceneModel.hasNotes(snapshot) && !SceneModel.onlyNotes(snapshot), "offline, it comes back as it was rather than wait")
 }
-
-// MARK: New session's Note
-
-@MainActor
-@Test func newSessionsNoteTakesItsPlaceWithTheWordsAndTheFolder() throws {
-    let scene = try scene("new-session-note")
-    scene.beginNewSession(SceneModel.NewSessionContext())
-    #expect(scene.route == .session(SceneModel.newSessionKey))
-    scene.newNote(fromNewSession: "Ideas for restore", host: nil, cwd: "/home/me/code/ah ")
-    guard case .session(let key) = scene.route, let id = NoteKey.id(key) else {
-        Issue.record("the note is where New session was"); return
-    }
-    #expect(scene.newSession == nil)
-    let note = try #require(scene.notes.note(id))
-    #expect(note.markdown == "Ideas for restore")
-    #expect(note.project?.path == "/home/me/code/ah", "filed under the folder picked")
-    // A folder not yet a path on the host ("~"), and an empty box: a blank note, unfiled.
-    scene.beginNewSession(SceneModel.NewSessionContext())
-    scene.newNote(fromNewSession: "  \n", host: nil, cwd: "~")
-    guard case .session(let other) = scene.route, let second = NoteKey.id(other), other != key else {
-        Issue.record("a second note in its place"); return
-    }
-    #expect(scene.notes.note(second)?.project == nil && scene.notes.note(second)?.markdown == "")
-}

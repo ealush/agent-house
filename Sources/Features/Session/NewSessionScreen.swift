@@ -136,18 +136,6 @@ final class NewSessionDraft {
         Task { await checkDir() }
     }
 
-    /// Opened from a note (it's attached): no Note in the row, a copy of it isn't the ask.
-    var offersNote: Bool { context.attachment == nil }
-
-    /// A note instead (the Note tile; a note is a session of its own kind): the words in the
-    /// box so far, filed under the folder picked here, in this screen's place. Files in the box
-    /// stay out, and it says so: a note is text.
-    func startNote() {
-        guard phase == .ready, dictation?.isBusy != true else { return }
-        if box?.attachments.isEmpty == false { scene.toast("A note keeps the words; the files stayed out") }
-        scene.newNote(fromNewSession: text, host: host, cwd: cwd)
-    }
-
     /// Each model brings its own effort: the one picked with it here, else the one it last
     /// started with.
     func choose(model next: String?) {
@@ -467,12 +455,6 @@ struct NewSessionScreen: View {
     /// Every agent there is to start, as tiles: one tap picks, the one picked is ringed.
     private var agents: some View {
         let tiles = HStack(spacing: 10) {
-            // A note first, apart from the agents: the other kind of session, in sight on a
-            // phone (last, it was past the edge behind five agents).
-            if draft.offersNote {
-                noteTile
-                Capsule().fill(theme.line).frame(width: 1, height: tile * 0.6).padding(.bottom, 22)
-            }
             ForEach(draft.presets, id: \.id) { p in agentTile(p) }
         }
         return ViewThatFits(in: .horizontal) {
@@ -511,35 +493,6 @@ struct NewSessionScreen: View {
         .id(p.id)
         .accessibilityLabel(p.isShell ? "Shell" : p.name)
         .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
-    }
-
-    /// A note, the other kind of session there is: one tap opens it here, with
-    /// what's in the box and the folder picked (nothing else here is a note's to choose).
-    private var noteTile: some View {
-        Button {
-            draft.startNote()
-        } label: {
-            VStack(spacing: 7) {
-                Image(systemName: "note.text")
-                    .font(.system(size: 24, weight: .regular))
-                    .foregroundStyle(theme.text2)
-                    .frame(width: tile, height: tile)
-                    .background(theme.raised, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(theme.line, lineWidth: 1))
-                Text("Note")
-                    .font(.ah(.caption))
-                    .foregroundStyle(theme.muted)
-                    .lineLimit(1)
-            }
-            .frame(width: tile + 14)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.ahPress)
-        .disabled(draft.phase != .ready || draft.dictation?.isBusy == true)
-        .id("note")
-        .accessibilityLabel("Note")
-        .accessibilityHint("Opens a new note with what’s in the box, filed under this folder")
-        .accessibilityIdentifier("new-session-note")
     }
 
     /// Under the agent: what the first message does, or what the folder needs first.

@@ -64,23 +64,6 @@ extension SceneModel {
         requestFocus(.composer(note.key))
     }
 
-    /// New session's Note (a note is a session of its own kind): what was typed there is its
-    /// text, filed under the folder picked there (a path on the host; "~" isn't one yet). It
-    /// takes New session's place, or the pane the sheet was filling.
-    func newNote(fromNewSession text: String, host: String?, cwd: String, intoPane: LayoutNode.Path? = nil) {
-        let folder = cwd.trimmingCharacters(in: .whitespaces)
-        let project = folder.hasPrefix("/") ? NoteProject(origin: accountOrigin, host: host ?? hub?.hostname ?? "", path: folder) : nil
-        let note = notes.create(markdown: text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : text, project: project, syncOrigin: accountOrigin)
-        if let intoPane {
-            fillPane(intoPane, with: note.key)
-        } else if case .session(Self.newSessionKey) = route {
-            newSessionStarted(note.key)
-        } else {
-            open(note.key)
-        }
-        requestFocus(.composer(note.key))
-    }
-
     /// A window still showing a note kept under a new id goes to it.
     func followNote(_ key: String) {
         let now = notes.current(key)
