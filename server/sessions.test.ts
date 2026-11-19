@@ -129,6 +129,17 @@ test('adoption pairs a live window with its transcript, once', () => {
   assert.equal(windows[0].harnessId, 'new');
 });
 
+test("a window waiting for its own conversation id never takes a thread its agent spawned", () => {
+  const adopted: string[] = [];
+  const registry = { adopt: (uid: string, id: string) => adopted.push(`${uid}=${id}`), all: () => [] } as any;
+  const windows = [{ agent: 'codex', harnessId: null, cwd: '/p', createdAt: 100, activity: 500, uid: 'w', model: null } as unknown as WindowView];
+  const child = { harness: 'codex', harnessId: 'child', cwd: '/p', title: 'Map the routes', updatedAt: 450, birthAt: 120, file: '/s/child.jsonl', spawned: { parentId: 'root', rootId: 'root', depth: 1, kind: 'spawn' as const } };
+  adoptTranscripts(windows, [child], registry);
+  assert.deepEqual(adopted, []);
+  adoptTranscripts(windows, [child, { harness: 'codex', harnessId: 'root', cwd: '/p', title: 'Refactor', updatedAt: 440, birthAt: 110, file: '/s/root.jsonl' }], registry);
+  assert.deepEqual(adopted, ['w=root']);
+});
+
 test('fresh window does not adopt a transcript that ended before it started', () => {
   const win = (o: Partial<WindowView>) => ({ agent: 'muse', harnessId: null, cwd: '/p', createdAt: 1000, activity: 1000, uid: 'fresh', model: null, ...o }) as WindowView;
   const adopted: string[] = [];

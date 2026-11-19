@@ -785,6 +785,9 @@ export function adoptTranscripts(windows: WindowView[], transcripts: Transcript[
     const known = knownAtLaunch(w.uid);
     const cands = transcripts.filter((t) => {
       if (t.harness !== w.agent || t.cwd !== cwdOf(w) || claimed.has(t.harnessId)) return false;
+      // A thread the agent spawned is born after its window, in its directory, and novel:
+      // without this a window still waiting for its own id took its first subagent's.
+      if (t.spawned) return false;
       if (known) {
         // Session-bound: only a conversation id that did not exist when this
         // session launched can be its transcript. Set membership, no clocks —
@@ -839,6 +842,8 @@ export async function buildHistory(registry: Registry, windows: WindowView[]): P
   }
   for (const t of transcripts) {
     if (running.has(t.harnessId) || claimed.has(t.harnessId)) continue;
+    // A spawned thread is part of the conversation that started it (server/subagents), not one of its own.
+    if (t.spawned) continue;
     // One conversation can span several files (Codex writes a new rollout on resume): newest wins.
     claimed.add(t.harnessId);
     items.push({
