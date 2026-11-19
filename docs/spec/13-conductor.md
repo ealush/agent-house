@@ -29,8 +29,8 @@ TypeScript sources of truth are named beside each section.
 - **Idempotency.** Operations that start something take an `idempotencyKey`
   (8–120 of `[\w:.-]`). The same key returns the same operation (`existed: true`,
   HTTP 200) and starts nothing new, also when two requests race.
-- **One answer per prompt** (feature `answerOnce`). Approve, deny and choosing a row
-  type keys: a second answer to the prompt just answered is refused, 409
+- **One answer per prompt** (feature `answerOnce`). Approve, deny, choosing a row and
+  a free-text answer sent while it waits type keys: a second answer to the prompt just answered is refused, 409
   `already_answered`, until the session leaves that prompt (or 4 s pass); a prompt ah couldn't read is never held.
 - **Messages are named too** (feature `sendId`). `POST /api/sessions/:ref/send` takes
   an optional `id` (1–40 of `[\w-]`). Asked again with the same id, a message still

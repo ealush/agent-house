@@ -864,10 +864,12 @@ export class Core {
       // waits in the queue and goes in once that's answered and the agent is at its prompt.
       const held: SendResult['held'] = w?.agent && w.status === 'waiting' ? (w.ask?.gate?.kind ?? (w.ask?.options?.length ? 'picker' : undefined)) : undefined;
       // One answer per question, from any device (answers.ts): a second answer to the one
-      // just answered would land as a new turn, so it waits in the queue instead.
-      // (Claimed only when it's about to be typed.)
+      // just answered would land as a new turn nobody asked for, so it's refused, as a
+      // second approve is. Text typed without Enter answers nothing and claims nothing.
       const free = !target.resumed && !!w && !fresh;
-      const answering = free && !!w.agent && w.status === 'waiting' && !held && this.answers.claim(w.uid, w.askId ?? null, Date.now());
+      const asking = free && !!w.agent && w.status === 'waiting' && !held;
+      if (asking && enter && !this.answers.claim(w.uid, w.askId ?? null, Date.now())) throw new CoreError(409, 'that question was just answered', 'already_answered');
+      const answering = asking;
       const ready = free && (answering || queued.length === 0) && (answering || !w.agent || (!this.justSent(w.uid) && (w.status === 'idle' || w.status === 'attention')));
       if (ready) {
         if (w.agent) {
@@ -882,7 +884,7 @@ export class Core {
           // Some of it landed: it counts as typed (never twice), and still fails here.
           if (o.id && !typedNothing) this.queues.noteDelivered(target.uid, o.id);
           // Nothing reached it: the question is still unanswered.
-          if (answering && typedNothing) this.answers.release(w.uid, w.askId ?? null);
+          if (answering && enter && typedNothing) this.answers.release(w.uid, w.askId ?? null);
           throw err;
         }
         if (o.id) this.queues.noteDelivered(target.uid, o.id);

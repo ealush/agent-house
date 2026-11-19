@@ -224,29 +224,12 @@ test('a named message that picked a row, asked again, picks nothing more', async
   }
 });
 
-test('two devices answering the same question: the first is typed, the second waits its turn', async () => {
+test('two devices answering the same question: the first is typed, the second is told it was answered', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'ah-it-'));
   const log = `${dir}/keys.log`;
   const ah = await startAh({
     auth: { mode: 'off' },
     idleAfter: 1,
-    presets: [{ id: 'test-claude', name: 'Test', command: `exec ${process.execPath} ${fixture} permission ${log}`, match: '^node$', waitingPatterns: ['Do you want to proceed'], approveKeys: ['Enter'], denyKeys: ['Escape'] }],
-  }, dir);
-  try {
-    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'test-claude', cwd: `${ah.dir}/files` } });
-    const { uid } = created.json();
-    const window = async () => (await http(ah, 'GET', '/api/state')).json().windows.find((w: any) => w.uid === uid);
-    await until(async () => (await window())?.ask?.options?.length, 15000, 'the picker');
-    const first = await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: '2', id: 'pick-1' } });
-    assert.equal(first.json().outcome, 'delivered', first.body);
-    await until(() => keys(log) === '2', 5000, 'row picked');
-    // The answer was lost; asked again with the same id, long after the hold.
-    await sleep(4500);
-    const again = await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: '2', id: 'pick-1' } });
-    assert.equal(again.status, 200, again.body);
-    assert.equal(again.json().outcome, 'delivered');
-    await sleep(500);
-    assert.equal(keys(log), '2', 'picked once');
     presets: [{ id: 'test-claude', name: 'Test', command: `exec ${process.execPath} ${fixture} plain ${log}`, match: '^node$', waitingPatterns: ['all done here'] }],
   }, dir);
   try {
@@ -259,11 +242,14 @@ test('two devices answering the same question: the first is typed, the second wa
       http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'blue' } }),
       http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'green' } }),
     ]);
-    assert.deepEqual([a.json().outcome, b.json().outcome].sort(), ['delivered', 'queued']);
+    const [won, lost] = a.status === 200 ? [a, b] : [b, a];
+    assert.equal(won.json().outcome, 'delivered', won.body);
+    assert.equal(lost.status, 409, lost.body);
+    assert.equal(lost.json().code, 'already_answered');
     await sleep(500);
     const typed = keys(log);
     assert.ok(typed.includes('blue') !== typed.includes('green'), `one answer typed, not both: ${JSON.stringify(typed)}`);
-    assert.equal((await http(ah, 'GET', `/api/sessions/${uid}/queue`)).json().length, 1, 'the other waits in the queue');
+    assert.equal((await http(ah, 'GET', `/api/sessions/${uid}/queue`)).json().length, 0, 'and nothing waits to land later as a turn');
   } finally {
     await cleanup(ah);
   }
