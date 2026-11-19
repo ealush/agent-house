@@ -207,3 +207,18 @@ test('a pasted screenshot path is no way to find a prompt: Claude Code swaps it 
   assert.equal(needleFor('first\nthe "longest" line of the prompt'), 'the \\"longest\\" line of the prompt');
   assert.equal(needleFor('/home/me/shot.png'), null, 'only a path: nothing to tell it by');
 });
+
+test('a follow-up stays queued (on disk) through the turn snapshot: a restart then can’t lose it', async () => {
+  const during: string[][] = [];
+  let registry: Registry | undefined;
+  const { q, win } = await setup(async () => {}, {
+    captureTurnStart: async () => {
+      during.push(q.items('u1').map((i) => i.id));
+      during.push(((registry!.get('u1')?.meta['ah.queue'] as QueueItem[]) ?? []).map((i) => i.id));
+    },
+  });
+  registry = (q as unknown as { registry: Registry }).registry;
+  await q.deliverDue([win()]);
+  assert.deepEqual(during, [['a', 'b'], ['a', 'b']], 'still first in line, in memory and in the record, while the snapshot runs');
+  assert.deepEqual(q.items('u1').map((i) => i.id), ['b'], 'then typed and gone');
+});

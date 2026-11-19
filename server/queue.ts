@@ -266,11 +266,13 @@ export class QueueManager {
         const first = this.items(w.uid)[0];
         if (!first) return;
         const mark = await this.markFor(w, first);
+        // The turn's snapshot first (it can take seconds), with the follow-up still in
+        // the queue on disk: a restart meanwhile delivers it after, rather than lose it.
+        if (first.enter) await this.rt.captureTurnStart(w.uid, first.text);
         const taken = this.take(w.uid, first.id);
         if (!taken) return;
         const { next, rest } = taken;
         this.rt.markSent(w.uid);
-        if (next.enter) await this.rt.captureTurnStart(w.uid, next.text);
         try {
           await this.rt.paste(w.id, next.text, next.enter);
           this.delivered(w.uid, next, mark);

@@ -1496,34 +1496,22 @@ export class Core {
     const w = state.windows.find((w) => w.uid === uid);
     if (!w) throw new CoreError(404, 'session is not running');
     return this.withInput<SendResult>(uid, async () => {
-      const taken = this.queues.take(uid, itemId);
-      if (!taken) throw new CoreError(404, 'queued message not found');
-      const { next } = taken;
+      // The follow-up stays in the queue (on disk) until the moment it's typed: a
+      // failure, or a restart, anywhere before that leaves it where it was (at most
+      // once, never lost, never twice).
+      const next = this.queues.items(uid).find((q) => q.id === itemId);
+      if (!next) throw new CoreError(404, 'queued message not found');
       // The snapshot above can predate a delivery that ran while this call
       // waited for the lock. Decide the interrupt from a fresh read inside
       // the lock: pasting onto that stale input state appends this message
-      // to the previous text instead of starting a new turn. Nothing is
-      // typed before this point, so an early failure puts the follow-up
-      // back first in line (at-most-once, never lost, never twice).
-      let live;
-      try {
-        live = (await buildWindows(this.config, this.viewers, this.registry, this.launching)).find((x) => x.uid === uid);
-      } catch (err) {
-        this.queues.requeue(uid, next);
-        throw err;
-      }
-      if (!live) {
-        this.queues.requeue(uid, next);
-        throw new CoreError(404, 'session is not running');
-      }
+      // to the previous text instead of starting a new turn.
+      const live = (await buildWindows(this.config, this.viewers, this.registry, this.launching)).find((x) => x.uid === uid);
+      if (!live) throw new CoreError(404, 'session is not running');
       // A screen in front of the prompt has no turn to stop: the interrupt key would
       // cancel it (Claude Code exits on Esc at its trust prompt) and the text would land
       // in it. It stays first.
       const gate = live.agent && live.status === 'waiting' ? live.ask?.gate : undefined;
-      if (gate) {
-        this.queues.requeue(uid, next);
-        throw new CoreError(409, `${GATE_FIRST[gate.kind]}; the message goes in right after`);
-      }
+      if (gate) throw new CoreError(409, `${GATE_FIRST[gate.kind]}; the message goes in right after`);
       const stopping = live.status === 'busy' || live.status === 'waiting' || this.justSent(uid);
       if (stopping && live.agent) {
         // Stop the live turn so the urgent message replaces it, then wait
@@ -1535,15 +1523,9 @@ export class Core {
         this.sentAt.delete(uid);
         for (let i = 0; i < 12; i++) {
           const cur = (await buildWindows(this.config, this.viewers, this.registry, this.launching)).find((x) => x.uid === uid);
-          if (!cur) {
-            this.queues.requeue(uid, next);
-            throw new CoreError(404, 'session is not running');
-          }
+          if (!cur) throw new CoreError(404, 'session is not running');
           if (cur.status !== 'busy' && cur.status !== 'waiting') break;
-          if (i === 11) {
-            this.queues.requeue(uid, next);
-            throw new CoreError(409, 'the agent is working; it did not stop after the interrupt');
-          }
+          if (i === 11) throw new CoreError(409, 'the agent is working; it did not stop after the interrupt');
           await sleep(500);
         }
         // The stop threw away anything the agent held unsent, a follow-up ah typed
@@ -1561,6 +1543,8 @@ export class Core {
         if (next.enter) await this.captureTurnStart(uid, next.text);
       }
       const mark = live.agent ? await this.queues.markFor(live, next) : null;
+      // Only now out of the queue. Gone already: removed meanwhile (another device).
+      if (!this.queues.take(uid, itemId)) throw new CoreError(404, 'queued message not found');
       try {
         await t.pasteText(live.id, next.text, next.enter);
         this.queues.delivered(uid, next, mark);
