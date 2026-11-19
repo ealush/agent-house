@@ -605,7 +605,12 @@ export class Core {
     // The conversation already runs in another window (relaunched under a new uid, or
     // resumed from another device): that's where it is, not a second agent on it.
     if (rec?.harnessId) {
-      const running = state.windows.find((w) => w.uid !== rec.id && w.agent === rec.harness && w.harnessId === rec.harnessId);
+      // By the window's record, not by the process seen in it: a relaunched window is
+      // the conversation's from the moment it's registered, before its agent is up.
+      const running = state.windows.find((w) => {
+        const r = w.uid !== rec.id ? this.registry.get(w.uid) : undefined;
+        return !!r && (r.lifecycle === 'live' || r.lifecycle === 'starting') && r.harness === rec.harness && r.harnessId === rec.harnessId;
+      });
       if (running) return { uid: running.uid, windowId: running.id, resumed: false };
     }
 
