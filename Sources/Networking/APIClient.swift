@@ -260,6 +260,12 @@ struct APIClient: Sendable {
     }
     func feedPrompts(_ ref: String) async throws -> [FeedPrompt] { (try await call("GET", "\(s(ref))/feed/prompts", as: PromptsResult.self)).prompts }
 
+    // MARK: Subagents
+
+    /// The agents a session's agent spawned, as a tree (`features.subagents`). `ref`: a live
+    /// uid, a history ref, or a child's own ref (which answers its whole tree, naming it in `selfRef`).
+    func subagents(_ ref: String) async throws -> SubagentTreeDTO { try await call("GET", "\(s(ref))/subagents") }
+
     // MARK: Presence, drafts, prompts
 
     func focus(key: String) async throws { try await perform("POST", "/api/focus", json: ["key": key, "device": device.name, "client": device.client]) }

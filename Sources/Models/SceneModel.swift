@@ -157,6 +157,8 @@ final class SceneModel {
         case noteCompare(String)
         /// Asked as a system alert: delete a note everywhere.
         case noteDelete(String)
+        /// The agents a session's agent spawned, as a tree (by the session's key).
+        case subagents(String)
 
         var id: String {
             switch self {
@@ -182,6 +184,7 @@ final class SceneModel {
             case .noteProject(let k): return "note-project:\(k)"
             case .noteCompare(let k): return "note-compare:\(k)"
             case .noteDelete(let k): return "note-delete:\(k)"
+            case .subagents(let k): return "subagents:\(k)"
             }
         }
     }
@@ -596,10 +599,10 @@ final class SceneModel {
         if workspace.layout != nil {
             guard let key = workspace.focusedKey else { return "New Pane" }
             if let title = noteTitle(key) { return title }
-            return hub?.row(key)?.title ?? "Session"
+            return hub?.row(key)?.title ?? subagentTitle(key) ?? "Session"
         }
         switch route {
-        case .session(let key): return noteTitle(key) ?? hub?.row(key)?.title ?? hub?.history.first { $0.id == key }?.dto.title ?? "Session"
+        case .session(let key): return noteTitle(key) ?? hub?.row(key)?.title ?? subagentTitle(key) ?? hub?.history.first { $0.id == key }?.dto.title ?? "Session"
         case .inbox: return "Inbox"
         case .sessions: return "Sessions"
         case .history: return "History"
@@ -613,6 +616,8 @@ final class SceneModel {
     /// Disconnect sessions no longer on screen (their streams and timers stop).
     func pruneSessions() {
         var keep = Set(workspace.visibleKeys)
+        // A phone's parents under the subagent on top: Back shows them as they were.
+        keep.formUnion(phoneTrail)
         if case .session(let key) = route { keep.insert(key) }
         if let scratch = workspace.scratchKey, workspace.scratchVisible { keep.insert(scratch) }
         for (key, model) in sessions where !keep.contains(key) {
@@ -693,6 +698,74 @@ final class SceneModel {
         app.didShowSessions?([key])
         pruneSessions()
         scheduleSave()
+    }
+
+    // MARK: Subagents
+
+    /// The sessions a phone has under the one on top (a parent under its subagent), kept open
+    /// so Back shows them as they were. Set by the phone's navigation.
+    var phoneTrail: [String] = [] {
+        didSet { if phoneTrail != oldValue { pruneSessions() } }
+    }
+    /// Which session each subagent was opened from: on a phone it's pushed over that one, so
+    /// Back returns to it.
+    @ObservationIgnored private(set) var openedFrom: [String: String] = [:]
+    /// Where the Subagents chip is on screen (window coordinates): the iPad's browser points at it.
+    @ObservationIgnored var subagentsAnchor: CGRect?
+
+    /// A subagent's name, once its host has said it (its model is open).
+    func subagentTitle(_ key: String) -> String? {
+        guard SubagentKey.isSubagent(key) else { return nil }
+        return sessions[key]?.title
+    }
+
+    /// The browser of a session's subagents.
+    func showSubagents(_ key: String) {
+        sheet = .subagents(key)
+    }
+
+    /// A subagent, opened from `session` (its parent, or an ancestor's browser): where a
+    /// session opens, it opens, in the same presentation as any session's.
+    func openSubagent(_ node: SubagentNodeDTO, from session: SessionModel) {
+        let key = SubagentKey(host: session.host, ref: node.ref).description
+        openedFrom[key] = session.key
+        if case .subagents = sheet { sheet = nil }
+        open(key)
+    }
+
+    /// The same, beside the session it was opened from.
+    func openSubagentBeside(_ node: SubagentNodeDTO, from session: SessionModel) {
+        let key = SubagentKey(host: session.host, ref: node.ref).description
+        openedFrom[key] = session.key
+        if case .subagents = sheet { sheet = nil }
+        run(.openAsPane(key))
+    }
+
+    /// Where a subagent's parent opens: another subagent, or the conversation at the top, by
+    /// its live window or its history entry.
+    func subagentParentKey(of session: SessionModel) -> String? {
+        guard let child = session.child, let tree = session.subagents.tree, let node = session.subagentNode else { return openedFrom[session.key] }
+        if node.parentRef != tree.root.ref { return SubagentKey(host: child.host, ref: node.parentRef).description }
+        return subagentRootKey(tree.root, host: child.host)
+    }
+
+    /// The conversation a tree hangs from, as this window opens it: its live window while it
+    /// runs, else its history entry (by its conversation id), else its ref, which the host takes.
+    func subagentRootKey(_ root: SubagentTreeDTO.Root, host: String?) -> String {
+        if root.uid == nil, let hub, let colon = root.ref.firstIndex(of: ":") {
+            let harnessId = String(root.ref[root.ref.index(after: colon)...])
+            if let item = hub.history.first(where: { $0.dto.harnessId == harnessId && ($0.isLocal ? host == nil : $0.host == host) }) { return item.id }
+        }
+        return SubagentTree.rootKey(root, host: host)
+    }
+
+    /// Up from a subagent to its parent.
+    func openSubagentParent(of session: SessionModel) {
+        guard let key = subagentParentKey(of: session) else { return }
+        // A parent that's a subagent too stands over what its child was opened from, so Back
+        // from it still reaches the session at the top.
+        if SubagentKey.isSubagent(key), openedFrom[key] == nil, let from = openedFrom[session.key], from != key { openedFrom[key] = from }
+        open(key)
     }
 
     /// A session in a window of its own, beside this one.
@@ -799,6 +872,8 @@ final class SceneModel {
         pendingRestore = nil
         let notes = app.notes
         let outcome = RestorationReconciler.reconcile(pending) { key in
+            // A subagent is its host's to say: kept, and its screen says what the host knows.
+            if SubagentKey.isSubagent(key) { return .live }
             guard NoteKey.isNote(key) else {
                 let presence = hub.presence(of: key)
                 if provisional, case .gone = presence { return .live }
@@ -967,6 +1042,9 @@ final class SceneModel {
 
     // MARK: Commands
 
+    /// Commands that write to the session or carry its conversation on elsewhere.
+    static let writesToSession: Set<String> = ["reply", "copy-attach", "fork", "send-to", "continue-in", "conversation-lineage", "toggle-view", "send-now", "clear-queue", "pick-model", "pick-effort", "interrupt", "approve", "deny"]
+
     /// Whether a command can run right now in this window (the palette lists only these).
     func isAvailable(_ id: CommandID) -> Bool {
         // A link names its own host: it can open before this window has one.
@@ -979,6 +1057,8 @@ final class SceneModel {
         let agent = s.map { $0.isLive && !$0.isShell } ?? false
         let gui = s?.surface == .gui && (s?.hasGUI ?? false)
         if let answer = noteAvailability(id) { return answer }
+        // Read only: nothing is sent to a subagent, and its conversation is its parent agent's to carry on.
+        if s?.isSubagent == true, Self.writesToSession.contains(id.rawValue) { return false }
         if id.rawValue.hasPrefix("panel-"), let panel = SceneSnapshot.Panel(rawValue: String(id.rawValue.dropFirst(6))) {
             return s.map { panel.applies(to: $0) } ?? false
         }
@@ -1871,6 +1951,8 @@ extension SceneSnapshot.Panel {
     /// an agent (a shell has neither).
     @MainActor
     func applies(to session: SessionModel) -> Bool {
+        // A subagent works in its parent's folder, branch and queue: its parent's panels show them.
+        guard !session.isSubagent else { return false }
         switch self {
         case .diff, .stack: return session.row?.dto.branch != nil
         case .queue, .snapshots: return session.isLive && !session.isShell

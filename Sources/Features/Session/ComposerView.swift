@@ -608,6 +608,8 @@ struct ComposerFloat: View {
     /// suggestions a finger otherwise has to know about (/ for a command, @ for a file).
     private var tray: some View {
         HStack(spacing: 8) {
+            // First, where it sits on its own while the settings are folded (`SubagentsChipFloat`).
+            if session.hasSubagentsEntry { SubagentsChip(session: session, scene: scene) }
             LaunchChips(session: session, scene: scene)
             // A step apart from the settings, but with them: at the far end of a wide box,
             // / and @ sat stranded half a screen away.
@@ -913,16 +915,51 @@ struct LaunchChips: View {
         return Button(action: action) { chipLabel(name, symbol, shown, spoken: value ?? fallback, danger: false, labelled: density == .full, unset: value == nil) }.buttonStyle(.plain)
     }
 
-    /// ah's setting chip: a quiet label and the value in force ("Model Opus 5.5"); the label
-    /// drops first, then the value, leaving the symbol.
+    /// ah's setting chip (`SettingChipLabel`).
     private func chipLabel(_ name: String, _ symbol: String, _ value: String?, spoken: String, danger: Bool, labelled: Bool = true, unset: Bool = false) -> some View {
+        SettingChipLabel(name: name, symbol: symbol, value: value, spoken: spoken, danger: danger, labelled: labelled, unset: unset)
+    }
+}
+
+/// ah's setting chip: a quiet label and the value in force ("Model Opus 5.5"); the label
+/// drops first, then the value, leaving the symbol. Every chip over the box is one, so they
+/// read as one row: the settings, and Subagents beside them.
+struct SettingChipLabel<Badge: View>: View {
+    let name: String
+    let symbol: String
+    let value: String?
+    let spoken: String
+    let danger: Bool
+    let labelled: Bool
+    let unset: Bool
+    /// Drawn on the glyph's corner (Subagents' working dot).
+    let badge: Badge
+    /// As tall as the / and @ beside them, at every text size.
+    @ScaledMetric(relativeTo: .body) private var height: CGFloat = 36
+    @Environment(\.theme) private var theme
+
+    init(name: String, symbol: String, value: String?, spoken: String, danger: Bool = false, labelled: Bool = true, unset: Bool = false, @ViewBuilder badge: () -> Badge) {
+        self.name = name
+        self.symbol = symbol
+        self.value = value
+        self.spoken = spoken
+        self.danger = danger
+        self.labelled = labelled
+        self.unset = unset
+        self.badge = badge()
+    }
+
+    var body: some View {
         HStack(spacing: 4) {
             // Its glyph first, so a value alone ("High") still says what it's the value of.
             Image(systemName: symbol).imageScale(.small).foregroundStyle(value == nil || unset ? theme.muted : theme.text2)
+                .overlay(alignment: .topTrailing) { badge }
             if labelled, value != nil { Text(name).foregroundStyle(theme.muted) }
             if let value {
                 if danger { Image(systemName: "exclamationmark.triangle.fill").imageScale(.small).foregroundStyle(theme.danger) }
                 Text(value).foregroundStyle(danger ? theme.danger : unset ? theme.muted : theme.text).lineLimit(1)
+                    // A count that changes keeps the chip's width steady while its digits do.
+                    .monospacedDigit()
             }
         }
         .font(.ah(.footnote).weight(.medium))
@@ -936,6 +973,12 @@ struct LaunchChips: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(name), \(spoken)")
         .accessibilityAddTraits(.isButton)
+    }
+}
+
+extension SettingChipLabel where Badge == EmptyView {
+    init(name: String, symbol: String, value: String?, spoken: String, danger: Bool = false, labelled: Bool = true, unset: Bool = false) {
+        self.init(name: name, symbol: symbol, value: value, spoken: spoken, danger: danger, labelled: labelled, unset: unset, badge: { EmptyView() })
     }
 }
 

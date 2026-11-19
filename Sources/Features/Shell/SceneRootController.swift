@@ -355,6 +355,22 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
                 controller.modalPresentationStyle = .formSheet
                 controller.sheetPresentationController?.detents = [.medium(), .large()]
                 controller.sheetPresentationController?.prefersGrabberVisible = true
+            case .subagents:
+                // On a wide window, pointing at the chip it came from, the size of what it lists;
+                // on a phone (or a narrow window), a sheet that starts at half height.
+                if !scene.narrow, let anchor = scene.subagentsAnchor, anchor.width > 0 {
+                    controller.modalPresentationStyle = .popover
+                    controller.preferredContentSize = CGSize(width: 420, height: 520)
+                    if let popover = controller.popoverPresentationController {
+                        popover.sourceView = view
+                        popover.sourceRect = view.convert(anchor, from: nil)
+                        popover.permittedArrowDirections = [.down, .up]
+                    }
+                } else {
+                    controller.modalPresentationStyle = .formSheet
+                    controller.sheetPresentationController?.detents = [.medium(), .large()]
+                    controller.sheetPresentationController?.prefersGrabberVisible = true
+                }
             }
             return controller
         case .palette:
@@ -809,8 +825,22 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
                 return
             }
             if let top = nav.topViewController as? SessionHostController, top.key == key { return }
+            // Up from a subagent to a session already under it: back to it, as Back would.
+            if let below = nav.viewControllers.dropLast().last(where: { ($0 as? SessionHostController)?.key == key }) {
+                nav.popToViewController(below, animated: true)
+                trailChanged(nav)
+                return
+            }
             guard let session = scene.session(key) else { return }
             let controller = SessionHostController(key: key, root: root, session: session)
+            if SubagentKey.isSubagent(key), let from = scene.openedFrom[key],
+               let below = nav.viewControllers.lastIndex(where: { ($0 as? SessionHostController)?.key == from }) {
+                // A subagent over the session it was opened from (pushed, when that's on top), so
+                // Back goes up to it; whatever was over that one makes way.
+                nav.setViewControllers(Array(nav.viewControllers[...below]) + [controller], animated: true)
+                trailChanged(nav)
+                return
+            }
             if nav.topViewController is NewSessionHostController {
                 // The new session started: it takes New session's place, where it is, with
                 // no push (the first message is already there as the conversation's).
@@ -823,6 +853,13 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
         } else if nav.viewControllers.count > 1 {
             nav.popToRootViewController(animated: true)
         }
+        trailChanged(nav)
+    }
+
+    /// The sessions under the one on top (a parent under its subagent), kept open for Back.
+    private func trailChanged(_ nav: UINavigationController) {
+        let trail = nav.viewControllers.dropLast().compactMap { ($0 as? SessionHostController)?.key }
+        if scene.phoneTrail != trail { scene.phoneTrail = trail }
     }
 
     /// The tab you're on, tapped again: back to its top, as every iOS tab does (UIKit pops a
@@ -863,6 +900,12 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
 
     /// Back (button or edge swipe) from a session.
     func navigationController(_ navigationController: UINavigationController, didShow viewController: UIViewController, animated: Bool) {
+        // Back from a subagent to the session under it: that one is where you are now.
+        // Only one that was under a subagent: a session still landing from an earlier push isn't Back.
+        if let shown = viewController as? SessionHostController, scene.phoneTrail.contains(shown.key), case .session(let key) = scene.route, key != shown.key {
+            scene.open(shown.key)
+        }
+        trailChanged(navigationController)
         if viewController === navigationController.viewControllers.first, case .session = scene.route {
             scene.closeSession()
             if let id = Self.id(of: tabBar.selectedTab), let page = Self.pages.first(where: { $0.id == id }) { scene.show(scene.tabRoute(page.route)) }
@@ -958,6 +1001,12 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
     /// What it's doing, in its status color (working, needs you, done) as on its row, then
     /// where: the word was the same grey as the folder after it.
     private var attributedSubtitle: AttributedString {
+        if session.isSubagent {
+            // Whose it is and how it's doing: the way up is Back (or the bar below the conversation).
+            guard let node = session.subagentNode else { return AttributedString("Subagent") }
+            let parent = session.subagents.tree.map { tree in node.parentRef == tree.root.ref ? tree.root.title : session.subagents.node(node.parentRef)?.name ?? tree.root.title } ?? ""
+            return AttributedString(parent.isEmpty ? SubagentChip.word(node.state) : "\(SubagentChip.word(node.state)) · Subagent of \(parent)")
+        }
         guard let row = session.row else { return AttributedString(session.isLive ? "" : "Ended") }
         var word = AttributedString(row.word.label)
         if let note = scene.connectionNote(session.key) {

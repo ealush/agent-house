@@ -7,6 +7,8 @@
 //
 //   node agent.mjs [--scenario=onboarding|api|review|approve|none]   (default: by folder)
 //
+// Typing /delegate [seconds] hands a refactor to subagents the way Claude Code writes them (each one's transcript
+// and sidecar under <session>/subagents/, one nested, three in the background), working for about that long (60).
 // Typing /ask (or /design, with previews) opens Claude Code's question dialog; /rotate, a permission prompt; /plan or /trust, its plan approval or
 // folder-trust picker, for the app's answer-from-anywhere views. /stream [n] works for a minute and more, a step
 // about every second (the app's layout tests type and queue under it), /burst [n] 15 steps a second; /long [n]
@@ -275,11 +277,97 @@ function next() {
   if (!queue.length) return;
   const prompt = queue.shift();
   if (prompt === '/media') return media();
+  const sub = /^\/delegate(?:\s+(\d+))?$/.exec(prompt);
+  if (sub) return delegate(sub[1] ? Number(sub[1]) : 60);
   const long = /^\/(stream|burst|long)(?:\s+(\d+))?$/.exec(prompt);
   if (!long) return turn(prompt);
   const n = long[2] ? Number(long[2]) : undefined;
   if (long[1] === 'long') history(n ?? 120);
   else stream(n ?? (long[1] === 'burst' ? 300 : 90), long[1]);
+}
+
+// ---------- subagents, as Claude Code writes them (ah's server/subagents reads them)
+
+/** One subagent: its Agent call in its parent's transcript, its sidecar, and its own transcript. */
+function subagent(o) {
+  const folder = join(dir, id, 'subagents');
+  mkdirSync(folder, { recursive: true });
+  const aid = 'a' + randomUUID().replace(/-/g, '').slice(0, 16);
+  const call = `toolu_${aid.slice(1, 13)}`;
+  const parentFile = o.parent ? o.parent.file : file;
+  const at = (target, row) => appendFileSync(target, JSON.stringify({ ...row, sessionId: id, cwd, timestamp: new Date().toISOString() }) + '\n');
+  at(parentFile, { type: 'assistant', uuid: randomUUID(), ...(o.parent ? { isSidechain: true, agentId: o.parent.aid } : {}), message: { role: 'assistant', content: [{ type: 'tool_use', id: call, name: 'Agent', input: { description: o.description, subagent_type: o.type, prompt: o.prompt, ...(o.background ? { run_in_background: true } : {}) } }] } });
+  writeFileSync(join(folder, `agent-${aid}.meta.json`), JSON.stringify({ agentType: o.type, description: o.description, toolUseId: call, ...(o.parent ? { parentAgentId: o.parent.aid } : {}), spawnDepth: o.parent ? 2 : 1, requestShape: o.background ? 'background' : 'foreground' }));
+  const f = join(folder, `agent-${aid}.jsonl`);
+  const row = (type, content) => at(f, { type, uuid: randomUUID(), isSidechain: true, agentId: aid, message: { role: type, content } });
+  row('user', o.prompt);
+  if (o.background) at(parentFile, { type: 'user', uuid: randomUUID(), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: call, content: [{ type: 'text', text: `Async agent launched successfully. agentId: ${aid}` }] }] }, toolUseResult: { isAsync: true, status: 'async_launched', agentId: aid } });
+  let n = 0;
+  return {
+    aid, file: f,
+    /** One step of its work: a tool call and its result. */
+    tool(name, input, result) {
+      const c = `toolu_${aid.slice(1, 9)}_${++n}`;
+      row('assistant', [{ type: 'tool_use', id: c, name, input }]);
+      row('user', [{ type: 'tool_result', tool_use_id: c, content: result }]);
+    },
+    say: (text) => row('assistant', [{ type: 'text', text }]),
+    /** Its answer, and its parent told: the call's result, or a background agent's notification. */
+    finish(text) {
+      row('assistant', [{ type: 'text', text }]);
+      if (o.background) at(file, { type: 'queue-operation', operation: 'enqueue', content: `<task-notification><task-id>${aid}</task-id><tool-use-id>${call}</tool-use-id><status>completed</status><summary>Agent "${o.description}" finished</summary></task-notification>` });
+      else at(parentFile, { type: 'user', uuid: randomUUID(), ...(o.parent ? { isSidechain: true, agentId: o.parent.aid } : {}), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: call, content: [{ type: 'text', text }] }] }, toolUseResult: { status: 'completed', agentId: aid, totalDurationMs: 1000 } });
+    },
+  };
+}
+
+/** `/delegate [seconds]`: a refactor split across subagents, one of them with a subagent of its own, for about `seconds`. */
+async function delegate(seconds) {
+  busy = true;
+  clock = Math.max(clock, Date.now());
+  const abort = new AbortController();
+  current = abort;
+  const beat = (seconds * 1000) / 24;
+  const wait = (beats) => sleep(beat * beats, abort.signal);
+  user('Refactor the server architecture: audit the domain model, move the API boundary behind contracts, make the tests reliable, then review the whole change.', 1);
+  process.stdout.write(`\n${accent('>')} /delegate ${seconds}\n\n`);
+  // The working line Claude Code draws while its agents work, which is how ah tells a turn is under way.
+  const started = Date.now();
+  const spinner = setInterval(() => process.stdout.write(`\r${accent('✻')} Delegating… ${dim(`(${Math.floor((Date.now() - started) / 1000)}s · esc to interrupt)`)}`), 120);
+  say('Splitting this four ways: an audit first, the boundary and the tests in the background, and a review once the audit is in.', 1);
+  clock = Date.now();
+  const boundary = subagent({ description: 'API boundary refactor', type: 'general-purpose', background: true, prompt: 'Move every route in server/api behind typed contracts. Keep the wire shapes; add a validator for each.' });
+  const tests = subagent({ description: 'Test reliability', type: 'general-purpose', background: true, prompt: 'Find and fix the flaky tests: anything timing-based, order-dependent or sharing state.' });
+  const audit = subagent({ description: 'Domain model audit', type: 'Explore', prompt: 'Map the domain model: every session, record and identity type, and where each is created.' });
+  let validator = null;
+  let review = null;
+  for (let b = 1; b <= 24 && !abort.signal.aborted; b++) {
+    await wait(1);
+    if (abort.signal.aborted) break;
+    if (b <= 5) audit.tool(b % 2 ? 'Grep' : 'Read', b % 2 ? { pattern: 'type Session', path: 'src' } : { file_path: join(cwd, STEP_FILES[b % STEP_FILES.length]) }, b % 2 ? 'src/users.ts:4: type Session = {' : 'export const users = [];');
+    if (b === 6) {
+      audit.finish('Five identity types; sessions are created in two places (routes and the worker). Details in the report.');
+      say('The audit is in: five identity types, created in two places. Starting the review alongside the other two.', 1);
+      review = subagent({ description: 'Architecture review', type: 'Plan', background: true, prompt: 'Review the refactor as it lands: boundaries, naming, and anything the audit flagged.' });
+    }
+    if (b % 2 === 0 && b < 21) boundary.tool('Edit', { file_path: join(cwd, 'src/routes/users.ts'), old_string: 'export', new_string: 'export' }, 'The file has been updated.');
+    if (b === 5) validator = subagent({ parent: boundary, description: 'Contract validator', type: 'general-purpose', prompt: 'Check every route against its new contract and report any mismatch.' });
+    if (validator && b > 5 && b < 17) validator.tool('Bash', { command: `npm test -- contracts --shard ${b}`, description: `Validate contracts, shard ${b}` }, `  ✓ shard ${b}: 12 routes match`);
+    if (b === 17 && validator) validator.finish('All 36 routes match their contracts.');
+    if (b === 21) boundary.finish('All routes are behind contracts; the validator agrees.');
+    if (b % 3 === 1 && b < 18) tests.tool('Bash', { command: 'npm test -- --repeat 20', description: 'Run the suite 20 times' }, `  ${b < 12 ? '2 flaky' : '0 flaky'} in 20 runs`);
+    if (b === 18) tests.finish('Two timing-based tests fixed; 20 runs clean.');
+    if (review && b > 6 && b % 4 === 0) review.tool('Read', { file_path: join(cwd, 'src/routes/users.ts') }, 'export const users = [];');
+    if (b === 24 && review) review.finish('The refactor holds together. One naming nit, noted in the report.');
+  }
+  clearInterval(spinner);
+  process.stdout.write('\r\x1b[2K');
+  if (abort.signal.aborted) line('user', '[Request interrupted by user]', {}, 1);
+  else say('All four are done: the boundary is behind contracts, the tests are reliable, and the review is clean.', 1);
+  current = null;
+  box();
+  busy = false;
+  next();
 }
 
 // ---------- long turns, for the app's layout tests (deterministic content, real timing)

@@ -119,6 +119,8 @@ struct ToolPresentation: Equatable, Sendable {
     /// file written, the arguments laid out. Every card was built again on each update, open
     /// or not, and an edit's line diff cost milliseconds.
     var body: ToolBody { ToolPresentation.body(kind: kind, call: call, result: result) }
+    /// The call's own id: a Delegate card's subagent is found by it (`SubagentNodeDTO.toolCallId`).
+    var callId: String { call.id }
 
     /// `awaiting`: the call a permission prompt asks about; `turnLive`: the session still works or waits.
     init(call: ToolCall, result: ToolResult?, awaiting: Bool = false, turnLive: Bool = true) {

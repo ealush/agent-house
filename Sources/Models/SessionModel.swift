@@ -64,20 +64,31 @@ final class SessionModel: Identifiable {
 
     /// The session's tmux uid / history ref on its own host (what the API takes).
     let ref: String
+    /// A subagent's place, when this is one (`SubagentKey`): another agent runs it, and it reads
+    /// only what that host says of it.
+    let child: SubagentKey?
+    /// Its host: nil for the hub.
+    let host: String?
+    /// The agents its agent spawned (`features.subagents`), asked for when someone looks.
+    let subagents: SubagentsModel
 
     init(key: String, hub: HubStore, outbox: Outbox, surface: SceneSnapshot.Surface) {
         self.key = key
         self.hub = hub
         self.outbox = outbox
         let parsed = SessionKey(key)
-        api = hub.client(forKey: key)
+        let child = SubagentKey(key)
+        self.child = child
+        host = child?.host ?? parsed?.host
+        api = child.map { hub.client(host: $0.host) } ?? hub.client(forKey: key)
         slot = hub.slot(key)
-        ref = parsed?.uid ?? key.split(separator: "/").last.map(String.init) ?? key
+        ref = child?.ref ?? parsed?.uid ?? key.split(separator: "/").last.map(String.init) ?? key
+        subagents = SubagentsModel(ref: ref, host: host, api: api)
         let row = hub.row(key)
         let isShell = row.map { $0.dto.agent == nil } ?? false
         composer = ComposerModel(api: api, outbox: outbox, key: key, uid: ref, isShell: isShell)
-        let host = parsed?.host
-        dictation = DictationModel(api: api, thisDevice: DictationModel.thisDeviceName, hostDoesVoice: { [weak hub] in hub?.state(host: host)?.supports("voice") ?? false }, makeCapture: { DictationModel.makeCapture() })
+        let voiceHost = parsed?.host
+        dictation = DictationModel(api: api, thisDevice: DictationModel.thisDeviceName, hostDoesVoice: { [weak hub] in hub?.state(host: voiceHost)?.supports("voice") ?? false }, makeCapture: { DictationModel.makeCapture() })
         queue = QueueModel(api: api, outbox: outbox, uid: ref, key: key)
         files = HostFileStore(api: api)
         // Agents open in the GUI unless this device chose the terminal. Not pinned to the
@@ -97,6 +108,7 @@ final class SessionModel: Identifiable {
 
     private func takeRow(_ row: SessionRow?) {
         guard let row else { return }
+        subagents.rowChanged(rev: row.dto.subagents?.rev)
         var report = modelReport
         report.take(chosen: row.dto.launchModel, reported: row.dto.model)
         if report != modelReport { modelReport = report }
@@ -116,15 +128,44 @@ final class SessionModel: Identifiable {
     // MARK: What it is now
 
     var row: SessionRow? { slot.row }
-    var history: HistoryRow? { hub.history.first { $0.id == key || $0.dto.ref == ref } }
+    var history: HistoryRow? { child != nil ? nil : hub.history.first { $0.id == key || $0.dto.ref == ref } }
+    /// A window of its own runs it. A subagent never has one: its parent's agent runs it.
     var isLive: Bool { row != nil }
-    var title: String { row?.title ?? history?.dto.title ?? "Session" }
-    var isShell: Bool { row != nil ? hold.agent == nil : history?.dto.harness == "shell" }
+    var title: String { row?.title ?? history?.dto.title ?? subagentNode?.name ?? (child != nil ? "Subagent" : "Session") }
+    var isShell: Bool { row != nil ? hold.agent == nil : child == nil && history?.dto.harness == "shell" }
     /// Live: whether the host reads a transcript for it (held through a scan that missed the
     /// agent). Ended: any agent's conversation has one; a shell never did (it shows its last
-    /// screen instead).
+    /// screen instead). A subagent: always its own transcript.
     var hasGUI: Bool { row != nil ? hold.feed != nil : !isShell }
-    var working: Bool { row?.dto.status == .busy }
+
+    // MARK: Subagents
+
+    /// Another agent runs it (`SubagentKey`): it's read here, never written to.
+    var isSubagent: Bool { child != nil }
+    /// The box takes messages for it. A subagent's host says none reach it on its own
+    /// (`capabilities.send`), so it has no box at all, rather than one that can't send.
+    var acceptsInput: Bool { child == nil || subagentNode?.capabilities.send == true }
+    /// What the host says of this subagent: its name, state, parent, capabilities.
+    var subagentNode: SubagentNodeDTO? { child.flatMap { subagents.node($0.ref) } }
+    /// Its host reads subagents at all.
+    var hostReadsSubagents: Bool { hub.state(host: host)?.supports("subagents") ?? false }
+    /// Whether there's a Subagents entry for it: a host that reads them, and an agent it reads
+    /// them of (a live row says so by carrying a summary; an ended one, by its harness; a child
+    /// by being one). An entry with none yet still opens, to say so.
+    var hasSubagentsEntry: Bool {
+        guard hostReadsSubagents else { return false }
+        if subagents.phase == .unsupported { return false }
+        if child != nil { return true }
+        if let row { return row.dto.subagents != nil }
+        return ["claude", "codex"].contains(history?.dto.harness ?? "")
+    }
+    /// What's below it now: a live row's own count (the host's, every pass), else the tree's.
+    var subagentSummary: SubagentSummaryDTO {
+        if child == nil, let counted = row?.dto.subagents { return counted }
+        return subagents.summary
+    }
+    /// Its agent is at work: a row's status, or for a subagent, what its host says of it.
+    var working: Bool { child != nil ? subagentNode?.state == .running : row?.dto.status == .busy }
     var waiting: Bool { row?.dto.status == .waiting }
     /// A screen in front of the agent's prompt (its folder-trust question, a sign-in, setup):
     /// what's sent waits in the queue until it's answered. An older host says only `trust`.
@@ -204,8 +245,42 @@ final class SessionModel: Identifiable {
 
     // MARK: Lifecycle
 
+    /// A subagent's tree changes as its root's row says (its `rev`): followed while the root runs.
+    @ObservationIgnored private var rootWatch: HubStore.Slot?
+
+    private func watchRoot(host: String?) {
+        guard let root = subagents.tree?.root, let uid = root.uid else { return }
+        let slot = hub.slot(host.map { "\($0)/\(uid)" } ?? uid)
+        rootWatch = slot
+        followRoot(slot)
+    }
+
+    private func followRoot(_ slot: HubStore.Slot) {
+        let rev = withObservationTracking { slot.row?.dto.subagents?.rev } onChange: { [weak self, weak slot] in
+            Task { @MainActor in
+                guard let self, let slot, self.rootWatch === slot else { return }
+                self.followRoot(slot)
+            }
+        }
+        subagents.rowChanged(rev: rev)
+    }
+
     func open() async {
         if hasGUI { startFeed() }
+        if let child {
+            // Read-only: its transcript and the tree it's in, nothing to draft, queue or focus. A
+            // host out of reach a moment is asked again a few times before the screen says so.
+            for attempt in 0..<4 where subagents.tree == nil {
+                if attempt > 0 { try? await Task.sleep(for: .seconds(2 * attempt)) }
+                guard !Task.isCancelled else { return }
+                await subagents.load()
+            }
+            watchRoot(host: child.host)
+            prompts = (try? await api.feedPrompts(ref)) ?? []
+            return
+        }
+        // An ended session's tree, to know whether it had any (a live row says so itself).
+        if !isLive, hasSubagentsEntry { Task { await subagents.load() } }
         queue.watch(queued: row?.dto.queued ?? 0)
         // None of these waits on another: asked together, the rail's prompts and this
         // device's focus no longer queue behind the draft, the history and the queue (five
@@ -229,6 +304,8 @@ final class SessionModel: Identifiable {
     }
 
     func close() {
+        subagents.stop()
+        rootWatch = nil
         // What it showed last is what coming back paints, and where the stream carries on from.
         cacheFeed(feed, now: true)
         feedTask?.cancel()
@@ -537,7 +614,8 @@ final class SessionModel: Identifiable {
         var key: String?
         await run("resume") {
             let result = try await api.resume(ref)
-            let host = SessionKey(self.key)?.host
+            // A subagent's host is its key's too (a Codex thread going on as a session of its own).
+            let host = self.host
             key = host.map { "\($0)/\(result.uid)" } ?? result.uid
             hub.refresh(host: host)
         }

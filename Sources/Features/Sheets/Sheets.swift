@@ -33,6 +33,7 @@ struct SceneSheet: View {
         case .noteCompare(let id): NoteCompareSheet(scene: scene, id: id)
         // Asked as a system alert (`SceneRootController.noteDeleteAlert`); this only when it went meanwhile.
         case .noteDelete: EmptyState(symbol: "note.text", title: "That Note Is Gone", message: "It was deleted while this was opening.")
+        case .subagents(let key): sessionSheet(key) { SubagentsSheet(session: $0, scene: scene) }
         }
     }
 
