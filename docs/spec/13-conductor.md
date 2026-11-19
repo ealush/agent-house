@@ -31,7 +31,7 @@ TypeScript sources of truth are named beside each section.
   HTTP 200) and starts nothing new, also when two requests race.
 - **One answer per prompt** (feature `answerOnce`). Approve, deny and choosing a row
   type keys: a second answer to the prompt just answered is refused, 409
-  `already_answered`, until the session leaves that prompt (or 15 s pass).
+  `already_answered`, until the session leaves that prompt (or 4 s pass); a prompt ah couldn't read is never held.
 
 | Feature | Version | Routes |
 |---|---|---|

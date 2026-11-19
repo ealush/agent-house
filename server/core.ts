@@ -991,7 +991,9 @@ export class Core {
     if (!keys?.length) throw new CoreError(400, `no ${answer} keys configured for ${w.agent}`);
     await this.withInput(uid, async () => {
       // Nothing typed meanwhile (a send, another device's answer) changed what it asks.
-      const now = check((await this.tick()).windows.find((x) => x.uid === uid));
+      // Read here, never through tick(): a pass in flight may be waiting for this very
+      // lock to deliver a queued follow-up, and waiting on that pass would hold both.
+      const now = check((await buildWindows(this.config, this.viewers, this.registry, this.launching)).find((x) => x.uid === uid));
       if (now.askId !== w.askId) throw new CoreError(409, 'it is asking something else now');
       await this.answerOnce(uid, w.askId, () => t.tmux('send-keys', '-t', w.id, ...keys));
     });

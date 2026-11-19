@@ -41,3 +41,9 @@ test('keys that never went out leave the prompt unanswered', () => {
   g.release('u1', 'ask-other');
   assert.equal(g.claim('u1', 'ask-a', 2), false, 'releasing another prompt changes nothing');
 });
+
+test('a prompt ah couldn’t read (no fingerprint) is never held: the next one may differ', () => {
+  const g = new AnswerGuard();
+  assert.equal(g.claim('u1', null, 0), true);
+  assert.equal(g.claim('u1', null, 10), true);
+});
