@@ -23,9 +23,10 @@ import { withCatalog } from './catalog.ts';
 import { Harnesses, adjust, suggestions } from './harnesses.ts';
 import * as t from './tmux.ts';
 import { descendants, procTree } from './procs.ts';
-import { createSnapshot, restoreSnapshot as restoreSnapshotFiles, snapshotDiff, deleteSnapshotRef, createWorktree, headInfo, listWorktrees, mainRepo, removeWorktree, removeWorktreesBulk, GitError, type Worktree } from './git.ts';
+import { restoreSnapshot as restoreSnapshotFiles, createWorktree, headInfo, listWorktrees, mainRepo, removeWorktree, removeWorktreesBulk, GitError, type Worktree } from './git.ts';
 import { invalidateSize } from './size.ts';
 import { SnapshotStore, type SnapshotInfo } from './snapshots.ts';
+import { TurnSnapshots } from './turnSnapshots.ts';
 import { QueueManager, starting, transcriptHas, type LaunchChange, type QueueItem, type TranscriptMark } from './queue.ts';
 import { ADAPTERS } from './feed/feed.ts';
 import { Push } from './push.ts';
@@ -213,10 +214,7 @@ export class Core {
   private sentAt = new Map<string, number>();
   /** Sessions whose trust prompt ah is answering right now. */
   private trusting = new Set<string>();
-  private snapshotStore: SnapshotStore;
-  private snapLocks = new Map<string, Promise<unknown>>();
-  /** Sessions inside a turn (busy or waiting on a prompt): one snapshot per turn, taken at its start. */
-  private turnPeriod = new Set<string>();
+  private snapshots: TurnSnapshots;
   private lastPrune = 0;
   private peers: Peers | null = null;
   /** Each agent CLI's current choices, and the host's hidden and added agents. */
@@ -258,7 +256,7 @@ export class Core {
   constructor(config: Config, viewers: Map<string, string[]>, registry = new Registry(), prompts = new PromptStore(), snapshots = new SnapshotStore()) {
     this.registry = registry;
     this.promptStore = prompts;
-    this.snapshotStore = snapshots;
+    this.snapshots = new TurnSnapshots(registry, snapshots, () => this.config, STATE_DIR);
     this.config = config;
     this.basePresets = config.presets;
     this.viewers = viewers;
@@ -266,7 +264,7 @@ export class Core {
       withInput: (uid, fn) => this.withInput(uid, fn),
       justSent: (uid) => this.justSent(uid),
       markSent: (uid) => void this.sentAt.set(uid, Date.now()),
-      captureTurnStart: (uid, text) => this.captureTurnStart(uid, text),
+      captureTurnStart: (uid, text) => this.snapshots.turnStart(uid, text),
       paste: (windowId, text, enter) => t.pasteText(windowId, text, enter),
       applyLaunchChange: (uid, change) => this.applyLaunchChange(uid, change),
       transcriptMark: (w) => this.transcriptMark(w),
@@ -354,20 +352,12 @@ export class Core {
       }
       const alive = new Set(windows.map((w) => w.uid));
       for (const uid of this.sentAt.keys()) if (!alive.has(uid)) this.sentAt.delete(uid);
-      // Turn boundaries for snapshots (F39): entering busy/waiting from any
-      // other state starts a turn, but only hook status is exact enough to
-      // trust (activity-based busy also fires for a TUI merely drawing). The
-      // send path captures too (it knows the prompt, and is the fallback for
-      // agents without hooks); turnPeriod dedupes the two.
-      for (const w of windows) {
-        if (!w.agent) continue;
-        if (w.status === 'busy' || w.status === 'waiting') {
-          if (w.statusSource === 'hook' && !this.turnPeriod.has(w.uid)) void this.captureTurnStart(w.uid, '');
-        } else this.turnPeriod.delete(w.uid);
-      }
+      // Turn boundaries for snapshots (F39). The send path captures too (it knows the
+      // prompt, and is the fallback for agents without hooks); one capture per turn.
+      this.snapshots.observe(windows);
       if (now() - this.lastPrune > 3600) {
         this.lastPrune = now();
-        void this.pruneSnapshots().catch((err) => console.error('snapshot prune failed:', err));
+        void this.snapshots.prune().catch((err) => console.error('snapshot prune failed:', err));
       }
       this.answers.observe(windows);
       this.acceptTrust(windows);
@@ -868,7 +858,7 @@ export class Core {
         if (w.agent) {
           this.sentAt.set(w.uid, Date.now());
           // Snapshot before the prompt lands, so the turn starts from a known state (F39).
-          if (enter) await this.captureTurnStart(target.uid, text);
+          if (enter) await this.snapshots.turnStart(target.uid, text);
         }
         try {
           await t.pasteText(target.windowId, text, enter);
@@ -1443,7 +1433,7 @@ export class Core {
           }
         }),
     });
-    await this.snapshotStore.rekey(uid, out.uid).catch(() => {});
+    await this.snapshots.rekey(uid, out.uid);
     const snap = rec?.meta['ah.snapshots'];
     if (snap !== undefined) this.registry.setMeta(out.uid, 'ah.snapshots', snap);
     this.tick().catch(() => {});
@@ -1616,8 +1606,8 @@ export class Core {
       if (live.agent) {
         this.sentAt.set(uid, Date.now());
         // The interrupted turn is over; this delivery starts a new one (F39).
-        this.turnPeriod.delete(uid);
-        if (next.enter) await this.captureTurnStart(uid, next.text);
+        this.snapshots.turnOver(uid);
+        if (next.enter) await this.snapshots.turnStart(uid, next.text);
       }
       const mark = live.agent ? await this.queues.markFor(live, next) : null;
       // Only now out of the queue. Gone already: removed meanwhile (another device).
@@ -1639,95 +1629,17 @@ export class Core {
     });
   }
 
-  // ---------- per-turn snapshots (F39)
-
-  private snapConfig() {
-    return { maxFileBytes: this.config.snapshots?.maxFileBytes ?? 10 * 1024 * 1024, keepTurns: this.config.snapshots?.keepTurns ?? 50, retentionDays: this.config.snapshots?.retentionDays ?? 7 };
-  }
-
-  private snapSettings(uid: string): { enabled: boolean; lastTurn: number } {
-    const s = this.registry.get(uid)?.meta['ah.snapshots'] as { enabled?: unknown; lastTurn?: unknown } | undefined;
-    return { enabled: this.config.snapshots?.enabled !== false && s?.enabled !== false, lastTurn: typeof s?.lastTurn === 'number' ? s.lastTurn : 0 };
-  }
-
-  /** Serialize snapshot work per session: captures and restores never overlap. */
-  private async withSnap<T>(uid: string, fn: () => Promise<T>): Promise<T> {
-    const prior = this.snapLocks.get(uid) ?? Promise.resolve();
-    const task = prior.catch(() => {}).then(fn);
-    this.snapLocks.set(uid, task);
-    try {
-      return await task;
-    } finally {
-      if (this.snapLocks.get(uid) === task) this.snapLocks.delete(uid);
-    }
-  }
-
-  /**
-   * Marks the start of a turn and captures its pre-turn snapshot. Called from
-   * the send path (which knows the prompt and runs before the paste) and from
-   * the ticker's status transitions (terminal-typed turns, where the prompt
-   * is unknown). One capture per turn period; failures are silent because a
-   * snapshot must never block or break a turn.
-   */
-  captureTurnStart(uid: string, promptText: string): Promise<SnapshotInfo | null> {
-    if (this.turnPeriod.has(uid)) return Promise.resolve(null);
-    this.turnPeriod.add(uid);
-    return this.captureSnapshot(uid, 'turn', promptText).catch((err) => {
-      console.error(`snapshot capture for ${uid} failed:`, err);
-      return null;
-    });
-  }
-
-  private async captureSnapshot(uid: string, kind: 'turn' | 'safety', promptText: string): Promise<SnapshotInfo | null> {
-    return this.withSnap(uid, async () => {
-      const rec = this.registry.get(uid);
-      if (!rec || !rec.harness || rec.harness === 'shell') return null;
-      const settings = this.snapSettings(uid);
-      if (kind !== 'safety' && !settings.enabled) return null;
-      const cwd = expandHome(rec.cwd);
-      if (!(await isDir(cwd))) return null;
-      const latest = await this.snapshotStore.latest(uid).catch(() => null);
-      const turn = Math.max(settings.lastTurn, latest?.turn ?? 0) + 1;
-      let made;
-      try {
-        made = await createSnapshot(cwd, {
-          uid,
-          turn,
-          indexFile: join(STATE_DIR, 'snapshots', uid, `index-${turn}`),
-          parent: latest?.commit ?? null,
-          maxFileBytes: this.snapConfig().maxFileBytes,
-        });
-      } catch {
-        return null; // not a git repo, or git refused: snapshots are unavailable here
-      }
-      const diff = await snapshotDiff(cwd, latest?.commit ?? null, made.commit).catch(() => ({ filesChanged: 0, insertions: 0, deletions: 0 }));
-      const info = await this.snapshotStore.create({
-        uid,
-        turn,
-        commit: made.commit,
-        repoRoot: await mainRepo(cwd),
-        kind,
-        promptExcerpt: promptText.replace(/\s+/g, ' ').trim().slice(0, 120),
-        branch: made.branch,
-        createdAt: now(),
-        ...diff,
-        skipped: made.skipped,
-        submodules: made.submodules,
-      });
-      this.registry.setMeta(uid, 'ah.snapshots', { enabled: settings.enabled, lastTurn: turn });
-      return info;
-    });
-  }
+  // ---------- per-turn snapshots (F39): turnSnapshots.ts captures; restoring stops the agent first
 
   async listSnapshots(uid: string): Promise<{ snapshots: SnapshotInfo[]; enabled: boolean; available: boolean; partial: boolean; branch: string | null }> {
     const rec = this.registry.get(uid);
     if (!rec) throw new CoreError(404, 'session not found');
-    const snapshots = await this.snapshotStore.list(uid).catch(() => []);
+    const snapshots = await this.snapshots.list(uid);
     const available = !!rec.harness && rec.harness !== 'shell' && await mainRepo(expandHome(rec.cwd)).then(() => true).catch(() => false);
     const w = (await this.current()).windows.find((x) => x.uid === uid);
     return {
       snapshots,
-      enabled: this.snapSettings(uid).enabled,
+      enabled: this.snapshots.settings(uid).enabled,
       available,
       // Turns typed straight into the raw terminal are captured from status
       // transitions only when hooks report them exactly.
@@ -1739,8 +1651,7 @@ export class Core {
   setSnapshotsEnabled(uid: string, enabled: boolean) {
     const rec = this.registry.get(uid);
     if (!rec) throw new CoreError(404, 'session not found');
-    this.registry.setMeta(uid, 'ah.snapshots', { enabled, lastTurn: this.snapSettings(uid).lastTurn });
-    if (!enabled) this.turnPeriod.delete(uid);
+    this.snapshots.setEnabled(uid, enabled);
     this.tick().catch(() => {});
   }
 
@@ -1753,7 +1664,7 @@ export class Core {
   async restoreSnapshot(uid: string, turn: number, opts: { interrupt?: boolean } = {}): Promise<{ safety: SnapshotInfo; restored: SnapshotInfo; notified: boolean }> {
     const rec = this.registry.get(uid);
     if (!rec) throw new CoreError(404, 'session not found');
-    const target = await this.snapshotStore.get(uid, turn).catch(() => null);
+    const target = await this.snapshots.get(uid, turn);
     if (!target) throw new CoreError(404, 'snapshot not found');
     // A just-finished turn can still read as busy for a few seconds (the
     // submit-protection window in tick): give a working agent a short grace
@@ -1776,9 +1687,9 @@ export class Core {
         }
         if (w && (w.status === 'busy' || w.status === 'waiting')) throw new CoreError(409, 'the agent is working; it did not stop after the interrupt');
       }
-      this.turnPeriod.add(uid);
+      this.snapshots.holdTurn(uid);
       const cwd = expandHome(rec.cwd);
-      const safety = await this.captureSnapshot(uid, 'safety', `Before restoring turn ${turn}`);
+      const safety = await this.snapshots.safety(uid, `Before restoring turn ${turn}`);
       if (!safety) throw new CoreError(400, 'could not snapshot the current state; nothing was restored');
       try {
         await restoreSnapshotFiles(cwd, { target: target.commit, current: safety.commit, indexFile: join(STATE_DIR, 'snapshots', uid, 'index-restore') });
@@ -1813,24 +1724,8 @@ export class Core {
    * after it ends, and each session keeps at most keepTurns of them. Pruned
    * rows lose their git refs too, so their commits become collectable.
    */
-  async pruneSnapshots(): Promise<void> {
-    const { keepTurns, retentionDays } = this.snapConfig();
-    const rows = await this.snapshotStore.all().catch(() => []);
-    const byUid = new Map<string, SnapshotInfo[]>();
-    for (const r of rows) byUid.set(r.uid, [...(byUid.get(r.uid) ?? []), r]);
-    for (const [uid, list] of byUid) {
-      const rec = this.registry.get(uid);
-      const last = list[list.length - 1];
-      const expired = rec?.endedAt
-        ? now() - rec.endedAt > retentionDays * 86_400
-        : !rec && last && now() - last.createdAt > retentionDays * 86_400;
-      const doomed = expired ? list : list.slice(0, Math.max(0, list.length - keepTurns));
-      for (const row of doomed) {
-        const repo = row.repoRoot || (rec ? expandHome(rec.cwd) : null);
-        if (repo) await deleteSnapshotRef(repo, uid, row.turn);
-        await this.snapshotStore.remove(uid, row.turn).catch(() => {});
-      }
-    }
+  pruneSnapshots(): Promise<void> {
+    return this.snapshots.prune();
   }
 
   // ---------- small mutations
