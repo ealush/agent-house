@@ -209,7 +209,7 @@ async function setup() {
     { uid: 'u-shell', key: 'u-shell', title: 'zsh', agent: null, status: 'idle', cwd: w.local, branch: 'main', live: true },
   ];
   const sent: { uid: string; text: string; id: string }[] = [];
-  const failSend = { on: false };
+  const failSend = { on: false, partly: false };
   const alerts: string[] = [];
   const launched: { preset: string; root: string; label: string; fromRef: string }[] = [];
   const transcripts = new Map<string, { prompts: { at: number; text: string }[]; entries: { role: string; at: number; text: string }[] }>();
@@ -217,6 +217,7 @@ async function setup() {
     sessions: async () => sessions,
     send: async (uid, text, id) => {
       if (failSend.on) throw new Error('the session went away');
+      if (failSend.partly) throw Object.assign(new Error('Enter failed'), { typed: true });
       sent.push({ uid, text, id });
       return { outcome: 'queued', queueId: 'q1' };
     },
@@ -275,6 +276,12 @@ test('review: stack from a PR tree, fix loop through the owner, re-review, merge
     t.failSend.on = false;
     assert.equal(await t.db.reviewDispatch.count({ where: { stackId: v.id } }), 0);
     assert.equal((await t.svc.findings(v.id)).find((x) => x.id === f.id)?.state, 'open');
+    // A send that typed part of it and then failed: the agent has it, so the record stays.
+    t.failSend.partly = true;
+    await assert.rejects(t.svc.dispatch(v.id, 2, { findingIds: [], text: 'partial' }), /Enter failed/);
+    t.failSend.partly = false;
+    assert.equal(await t.db.reviewDispatch.count({ where: { stackId: v.id } }), 1);
+    await t.db.reviewDispatch.deleteMany({ where: { stackId: v.id } });
     await t.svc.dispatch(v.id, 2, { findingIds: [f.id], text });
     assert.deepEqual(t.sent.map((s) => s.uid), ['u-agent']);
     // Recorded before it went out, and sent under the record's name (a retry is recognized).

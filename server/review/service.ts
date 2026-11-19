@@ -1203,7 +1203,10 @@ export class ReviewService {
     try {
       sent = await this.deps.send(target.uid, text, `rd-${d.id}`);
     } catch (err) {
-      await this.db.reviewDispatch.delete({ where: { id: d.id } }).catch(() => {});
+      // Refused, or nothing typed: nothing went out, so no dispatch. Some of it landed
+      // (a paste that failed half way): the agent has it, so the record stays.
+      const typed = (err as { typed?: unknown }).typed === true;
+      if (!typed) await this.db.reviewDispatch.delete({ where: { id: d.id } }).catch(() => {});
       throw err;
     }
     if (sent.queueId) d = await this.db.reviewDispatch.update({ where: { id: d.id }, data: { queueId: sent.queueId } });
