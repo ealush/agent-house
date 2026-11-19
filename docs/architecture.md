@@ -141,3 +141,10 @@ delivered-id ledger, the dispatch row).
    second instance, the CLI writing) aren't serialized; invariants that must hold
    across processes (one open review per PR, one position per layer) have no database
    constraint.
+5. **A review dispatch has no outbox.** Its row is written before the message goes
+   out (so a sent message is never unrecorded), but a crash between the two leaves a
+   row whose message never went: it settles as "no push". Re-sending pending rows
+   under their own id at start (the send ledger makes that safe) would close it.
+6. **Tests aren't type-checked** (`tsconfig.json` covers `server/` and `web/`), and a
+   dozen unit tests leave their temporary databases and folders in `/tmp`.
+
