@@ -1427,14 +1427,19 @@ export class Core {
       // The old agent must be gone before the new one resumes the conversation:
       // if it won't stop, the relaunch fails (launch removes the new window)
       // rather than run two agents on one conversation. Already gone is fine.
-      beforeCommand: async () => {
-        try {
-          await t.killWindow(w.id);
-        } catch {
-          // A check that fails can't say it's gone: cancel rather than risk two agents.
-          if (await t.windowExists(w.id).catch(() => true)) throw new CoreError(409, "the old window wouldn't stop, so the relaunch was cancelled; nothing changed");
-        }
-      },
+      // In the old session's input lock, so nothing is typed into it as it stops: a
+      // message that went in since the check above is the old agent's to answer, and
+      // stopping it now would cut that turn off (and its message with it).
+      beforeCommand: () =>
+        this.withInput(uid, async () => {
+          if (this.justSent(uid)) throw new CoreError(409, 'a message just went in, so the relaunch was cancelled; nothing changed');
+          try {
+            await t.killWindow(w.id);
+          } catch {
+            // A check that fails can't say it's gone: cancel rather than risk two agents.
+            if (await t.windowExists(w.id).catch(() => true)) throw new CoreError(409, "the old window wouldn't stop, so the relaunch was cancelled; nothing changed");
+          }
+        }),
     });
     await this.snapshotStore.rekey(uid, out.uid).catch(() => {});
     const snap = rec?.meta['ah.snapshots'];
@@ -1479,11 +1484,25 @@ export class Core {
     const state = await this.current();
     const w = state.windows.find((w) => w.uid === uid);
     if (!w) throw new CoreError(404, 'session not found');
-    const sent = Math.floor(Date.now() / 1000);
-    const box = w.agent ? await t.inputBox(w.id) : null;
-    await t.tmux('send-keys', '-t', w.id, ...this.interruptKeys(w));
-    // Taken now, so whatever's typed next (a queued message, a send) waits for the box.
-    if (box === '') void this.withInput(uid, () => this.clearHandedBack(w, 1000)).catch(() => {});
+    // In the input lock: a Stop between a send's paste and its Enter would cancel the
+    // text that send reports delivered. Whatever's typed next (a queued message, a send)
+    // waits for the box to be cleared below; the answer doesn't.
+    let keysSent!: (err?: unknown) => void;
+    const sentKeys = new Promise<void>((resolve, reject) => (keysSent = (err) => (err ? reject(err) : resolve())));
+    let sent = 0;
+    void this.withInput(uid, async () => {
+      let box: string | null;
+      try {
+        box = w.agent ? await t.inputBox(w.id) : null;
+        sent = Math.floor(Date.now() / 1000);
+        await t.tmux('send-keys', '-t', w.id, ...this.interruptKeys(w));
+      } catch (err) {
+        return keysSent(err);
+      }
+      keysSent();
+      if (box === '') await this.clearHandedBack(w, 1000);
+    }).catch(() => {});
+    await sentKeys;
     this.tick().catch(() => {});
     void this.recordStop(w, sent).then(() => this.tick()).catch(() => {});
   }
