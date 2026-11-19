@@ -174,6 +174,8 @@ async function screenSettles(target: string, quietMs: number, ms: number): Promi
 
 /** A transcript written within this long is one the agent may be mid-turn in. */
 const WRITING_MS = 2000;
+/** How long a Stop waits for a send in progress to finish typing before it goes in anyway. */
+const STOP_WAIT_MS = 1000;
 
 
 export class CoreError extends DomainError {}
@@ -1485,24 +1487,44 @@ export class Core {
     const w = state.windows.find((w) => w.uid === uid);
     if (!w) throw new CoreError(404, 'session not found');
     // In the input lock: a Stop between a send's paste and its Enter would cancel the
-    // text that send reports delivered. Whatever's typed next (a queued message, a send)
-    // waits for the box to be cleared below; the answer doesn't.
+    // text that send reports delivered. But a Stop is urgent and the lock can be held for
+    // seconds (Send now waiting out a turn, a snapshot of a big tree): it waits at most
+    // STOP_WAIT_MS, then goes in anyway. Whatever's typed next waits for the box to be
+    // cleared below; the answer doesn't.
     let keysSent!: (err?: unknown) => void;
     const sentKeys = new Promise<void>((resolve, reject) => (keysSent = (err) => (err ? reject(err) : resolve())));
     let sent = 0;
-    void this.withInput(uid, async () => {
-      let box: string | null;
+    let started = false;
+    const stop = async (): Promise<string | null> => {
+      started = true;
       try {
-        box = w.agent ? await t.inputBox(w.id) : null;
+        const box = w.agent ? await t.inputBox(w.id) : null;
         sent = Math.floor(Date.now() / 1000);
         await t.tmux('send-keys', '-t', w.id, ...this.interruptKeys(w));
+        keysSent();
+        return box;
       } catch (err) {
-        return keysSent(err);
+        keysSent(err);
+        return null;
       }
-      keysSent();
-      if (box === '') await this.clearHandedBack(w, 1000);
+    };
+    void this.withInput(uid, async () => {
+      if (started) return;
+      if ((await stop()) === '') await this.clearHandedBack(w, 1000);
     }).catch(() => {});
-    await sentKeys;
+    const late = setTimeout(() => {
+      if (started) return;
+      void stop()
+        .then(async (box) => {
+          if (box === '') await this.withInput(uid, () => this.clearHandedBack(w, 1000));
+        })
+        .catch(() => {});
+    }, STOP_WAIT_MS);
+    try {
+      await sentKeys;
+    } finally {
+      clearTimeout(late);
+    }
     this.tick().catch(() => {});
     void this.recordStop(w, sent).then(() => this.tick()).catch(() => {});
   }
