@@ -505,7 +505,23 @@ const clip = (s: string, n = 160) => (s.length > n ? s.slice(0, n - 1) + '…' :
  * @ah-uid landed is left out of this pass, never stamped with a uid of its own:
  * that would replace the one launch chose, and the session would vanish under it.
  */
-export async function buildWindows(config: Config, viewerMap: Map<string, string[]>, registry: Registry, launching: ReadonlySet<string> = new Set()): Promise<WindowView[]> {
+/**
+ * One read of tmux into windows at a time. Reading registers what it finds — a window
+ * without a uid gets one, the registry learns who's live and who ended — so two reads
+ * overlapping (a pass, and Send now or an answer reading inside the input lock) could
+ * give one new window two uids and end the record of whichever lost. Callers queue;
+ * each gets a read that started after the one before it finished. (Never called with
+ * the input lock's waits inside it, so queueing here can't hold that lock up.)
+ */
+let reading: Promise<unknown> = Promise.resolve();
+
+export function buildWindows(config: Config, viewerMap: Map<string, string[]>, registry: Registry, launching: ReadonlySet<string> = new Set()): Promise<WindowView[]> {
+  const run = reading.then(() => readWindows(config, viewerMap, registry, launching));
+  reading = run.catch(() => {});
+  return run;
+}
+
+async function readWindows(config: Config, viewerMap: Map<string, string[]>, registry: Registry, launching: ReadonlySet<string>): Promise<WindowView[]> {
   const [raw, tree] = await Promise.all([listWindows(), procTree()]);
   const procs = await withArgv(tree, raw.map((w) => w.panePid));
   const forkCounts = new Map<string, number>();
