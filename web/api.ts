@@ -1,4 +1,5 @@
 import type { FeedPage, FeedPrompt } from '../server/feed/schema.ts';
+import type { SubagentSummary, SubagentTree } from '../server/subagents/model.ts';
 import { reachText } from './errors.ts';
 
 export type Status = 'busy' | 'idle' | 'waiting' | 'attention';
@@ -49,6 +50,8 @@ export type Win = {
   fork: { parentUid: string; parentTitle: string; rootUid: string; forks: number } | null;
   /** Portable lineage: the conversation this one continues (another agent's, a fork, another host's). */
   continued?: Continued | null;
+  /** The agents its agent spawned, counted over the whole tree (server/subagents); absent for agents ah reads none of. */
+  subagents?: SubagentSummary | null;
   /** Something went wrong and ah is (or could be) keeping it going (server/recovery). */
   recovery?: Recovery | null;
 };
@@ -533,6 +536,8 @@ export function hostApi(base: string) {
     feedUrl: (ref: string) => `${base}/api/sessions/${enc(ref)}/feed/stream?device=${enc(deviceName())}&client=${CLIENT_ID}`,
     feedPage: (ref: string, before: number, limit = 200) => r<FeedPage>('GET', `/api/sessions/${enc(ref)}/feed?before=${before}&limit=${limit}`),
     feedPrompts: (ref: string) => r<{ prompts: FeedPrompt[] }>('GET', `/api/sessions/${enc(ref)}/feed/prompts`),
+    /** The tree of what a session's agent spawned (`features.subagents`); a child's ref answers its whole tree. */
+    subagents: (ref: string) => r<SubagentTree & { self: string | null }>('GET', `/api/sessions/${enc(ref)}/subagents`),
     interrupt: (uid: string) => r('POST', `/api/sessions/${enc(uid)}/interrupt`, {}),
     clearQueue: (uid: string, itemId?: string) => r('DELETE', `/api/sessions/${enc(uid)}/queue${itemId ? `/${enc(itemId)}` : ''}`),
     preview: (uid: string) => r<PreviewInfo>('GET', `/api/sessions/${enc(uid)}/preview`),

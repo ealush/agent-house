@@ -10184,3 +10184,134 @@ label:has(> input[type='checkbox'][switch]) {
   text-align: left;
   cursor: pointer;
 }
+
+/* Subagents (web/Subagents.tsx): the tree beside the chosen one's conversation; under it on a phone. */
+.subagents-pill.busy {
+  color: var(--run);
+}
+.dialog.subagents {
+  width: min(1080px, calc(100vw - 24px));
+  height: min(760px, calc(var(--vh) - 24px));
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+}
+.dialog.subagents[open] {
+  display: flex;
+}
+.subagents-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) 1fr;
+}
+.subagents-tree {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  border-inline-end: 1px solid var(--line);
+}
+.subagent-row {
+  width: 100%;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) {
+  .subagent-row:hover {
+    background: var(--raised);
+  }
+}
+.subagent-row.on {
+  background: var(--accent-bg);
+}
+.subagent-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.subagent-name {
+  font-weight: 600;
+}
+.subagent-meta,
+.subagent-activity {
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.subagent-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.subagent-dot.running,
+.subagent-dot.waiting {
+  background: var(--run);
+}
+.subagent-dot.completed {
+  background: var(--done);
+}
+.subagent-dot.failed {
+  background: var(--danger);
+}
+.subagent-dot.unknown,
+.subagent-dot.canceled {
+  background: none;
+  border: 1.5px solid var(--muted);
+}
+.subagents-child {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.subagent-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 12px 16px 8px;
+}
+.subagent-head .subagent-dot {
+  margin-top: 0;
+}
+.subagent-feed {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.subagent-feed > * {
+  flex: 1;
+  min-width: 0;
+}
+.subagent-readonly {
+  margin: 0;
+  padding: 8px 16px 12px;
+  border-top: 1px solid var(--line);
+}
+.open-subagent {
+  margin-top: 8px;
+}
+@media (max-width: 720px) {
+  .subagents-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(120px, 35%) 1fr;
+  }
+  .subagents-tree {
+    border-inline-end: 0;
+    border-bottom: 1px solid var(--line);
+  }
+}

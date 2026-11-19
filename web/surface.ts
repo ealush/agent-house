@@ -38,6 +38,8 @@ export type SurfaceProps = {
   onResume?: (h: HistoryItem) => void;
   /** Run in Terminal on the reply's code (GUI, a live agent's session). */
   snippetRun?: { place: string; run: (snippet: string) => void };
+  /** Open the subagent a Delegate card's call spawned (`features.subagents`), by the call's id. */
+  onOpenSubagent?: (callId: string) => void;
 };
 
 export type View = 'terminal' | 'gui';

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTabFlow } from './tabFlow.ts';
 import { useHardwareKeyboard } from './hardwareKeyboard.ts';
 import { createPortal } from 'react-dom';
@@ -54,6 +54,7 @@ import { useLaunch, useLaunchPalette } from './useLaunch.ts';
 import { Glide } from './Glide.tsx';
 import { toggleSteps, useStepsHidden } from './gui/steps.ts';
 import { ActionSheet, SheetBar, useSheet } from './sheet.tsx';
+import { SubagentsDialog, SubagentsPill } from './Subagents.tsx';
 import { placeOf } from './requeue.ts';
 import { runInShell, runPlace } from './runInShell.ts';
 
@@ -357,6 +358,9 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
   const [branching, setBranching] = useState(false);
   const [sending, setSending] = useState(false);
   const [forksOpen, setForksOpen] = useState(false);
+  /** The subagents dialog: closed, open, or open on a child (its ref or the call that spawned it). */
+  const [subagents, setSubagents] = useState<{ open?: string } | null>(null);
+  const openSubagent = useCallback((callId: string) => setSubagents({ open: callId }), []);
   const [capture, setCapture] = useState<string | null>(null);
   const [focus, setFocus] = useState(0);
   const { color, name: agentName } = look(w.agent);
@@ -1190,6 +1194,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
         </div>
         {narrow ? (
           <>
+            <SubagentsPill w={w} onOpen={() => setSubagents({})} />
             {(w.fork?.parentTitle || (w.fork?.forks ?? 0) > 0) && (
               <button className="pill" onClick={() => setForksOpen(true)} title="Show the fork family">
                 ⑂{w.fork!.forks > 0 ? ` ${w.fork!.forks}` : ''}
@@ -1218,6 +1223,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
                   ↪ {w.continued.kind === 'migration' ? (w.continued.fromHost ?? 'another host') : look(w.continued.fromHarness).name}
                 </button>
               )}
+              <SubagentsPill w={w} onOpen={() => setSubagents({})} />
               {w.queued > 0 && (
                 <button className="pill waiting" onClick={() => openPanel('queue')} title="Review queued messages">
                   ⇥ {w.queued} queued
@@ -1336,6 +1342,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
               recent={recent}
               onResume={recent.length ? (h) => void resumeRecent(h) : undefined}
               snippetRun={snippetRun}
+              onOpenSubagent={w.subagents ? openSubagent : undefined}
             />
           </Suspense>
           {tab !== 'main' && <div className="session-main" style={{ minHeight: 0 }}>{panelView(tab)}</div>}
@@ -1462,6 +1469,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
           onNewSession={(prompt) => onStartSession?.(prompt)}
         />
       )}
+      {subagents && <SubagentsDialog w={w} client={client} open={subagents.open} onClose={() => setSubagents(null)} />}
       {forksOpen && (
         <ForksDialog
           client={client}

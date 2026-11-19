@@ -234,13 +234,24 @@ const Agent: ToolView = {
   label: 'Delegated',
   now: 'Delegate',
   summary: (c) => s(c.args.description ?? c.args.subagent_type),
-  Body: ({ call, result }) => (
+  Body: ({ call, result }) => <AgentBody call={call} result={result} />,
+};
+
+/** What was delegated and what came back, and the subagent's own conversation one click away. */
+function AgentBody({ call, result }: { call: ToolCall; result?: ToolResult }) {
+  const { openSubagent } = useGui();
+  return (
     <>
       {s(call.args.prompt) && <Markdown text={s(call.args.prompt)} />}
       {result && <Markdown text={result.text} />}
+      {openSubagent && (
+        <button type="button" className="btn ghost small open-subagent" onClick={() => openSubagent(call.id)}>
+          Open subagent ↗
+        </button>
+      )}
     </>
-  ),
-};
+  );
+}
 
 /** Anything without its own view: name, status, arguments and output. */
 const Default: ToolView = {
