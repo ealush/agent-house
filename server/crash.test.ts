@@ -22,8 +22,8 @@ const { loadConfig } = await import('./config.ts');
 const { Core } = await import('./core.ts');
 
 after(async () => {
-  // Only our isolated server listens under TMUX_TMPDIR.
-  await tmux('kill-server').catch(() => {});
+  // Only our isolated server, named by its socket: never resolved through TMUX_TMPDIR.
+  await tmux('-S', join(dir, `tmux-${process.getuid!()}`, 'default'), 'kill-server').catch(() => {});
 });
 
 let dbSeq = 0;

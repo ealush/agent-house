@@ -6,8 +6,11 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { after } from 'node:test';
 
 const dir = mkdtempSync(join(tmpdir(), 'ah-unit-'));
 process.env.TMPDIR = dir;
-after(() => rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+// Removed when the process exits — after every test and every one of the file's own
+// `after` hooks. Never earlier: a hook that cleans up after the tests (a tmux server's
+// `kill-server` under a TMUX_TMPDIR in here) must still find its directory, or tmux falls
+// back to the default socket, the developer's real server.
+process.on('exit', () => rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
