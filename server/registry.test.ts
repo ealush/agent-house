@@ -154,3 +154,23 @@ test('a failed start keeps what happened meanwhile: a removed follow-up stays re
   assert.equal(r.get('u1'), undefined);
   await r.settled();
 });
+
+test('a failed start keeps what changed meanwhile beyond the queue, and items a forgotten sibling can’t take back', async () => {
+  const r = await freshRegistry();
+  await r.ready();
+  r.starting('u1', { harness: 'codex', harnessId: 'c1', cwd: '/p', title: 'mine', tmux });
+  const undo = r.starting('u1', { harness: 'codex', harnessId: 'c1', cwd: '/p', title: 'mine', tmux, meta: { 'ah.env': 'new' } });
+  r.setMeta('u1', 'ah.pinned', true); // pinned from another device while it started
+  r.abandonStart(undo);
+  assert.equal(r.get('u1')?.meta['ah.pinned'], true);
+  assert.equal(r.get('u1')?.meta['ah.env'], undefined, 'what the start wrote is gone');
+  // A sibling's follow-ups, taken by a start, and the sibling forgotten before the rollback.
+  r.starting('old', { harness: 'claude', harnessId: 'k9', cwd: '/p', title: 'old', tmux });
+  r.setMeta('old', 'ah.queue', [q('z')]);
+  const undo2 = r.starting('new', { harness: 'claude', harnessId: 'k9', cwd: '/p', title: 'new', tmux: { session: 'agents', windowId: '@3' } });
+  r.remove('old');
+  r.abandonStart(undo2);
+  assert.deepEqual(r.get('new')?.meta['ah.queue'], [q('z')], 'kept here, ended, rather than lost');
+  assert.equal(r.get('new')?.lifecycle, 'ended');
+  await r.settled();
+});

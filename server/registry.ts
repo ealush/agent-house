@@ -13,7 +13,8 @@ import { defaultDbPath, getDb } from './db.ts';
 export type Lifecycle = 'starting' | 'live' | 'ended' | 'unavailable';
 
 /** What Registry.starting changed: the record before (none for a new one), and follow-ups it took from siblings. */
-export type StartUndo = { id: string; before: SessionRecord | undefined; moved: Array<{ from: string; items: unknown[] }> };
+/** What Registry.starting changed: the record before (none for a new one), the meta keys it wrote, and follow-ups it took from siblings. */
+export type StartUndo = { id: string; before: SessionRecord | undefined; wrote: string[]; moved: Array<{ from: string; items: unknown[] }> };
 
 export type SessionRecord = {
   id: string;
@@ -274,7 +275,7 @@ export class Registry {
     this.dirty = true;
     const moved = this.inheritQueue(id);
     this.flush();
-    return { id, before: prev && { ...prev, meta: { ...prev.meta } }, moved };
+    return { id, before: prev && { ...prev, meta: { ...prev.meta } }, wrote: [...Object.keys(f.meta ?? {}), 'ah.endedBy', 'ah.interrupted'], moved };
   }
 
   /**
@@ -295,18 +296,35 @@ export class Registry {
     const queue = (now.meta['ah.queue'] as unknown[] | undefined) ?? [];
     const from = new Map<string, string>();
     for (const m of undo.moved) for (const q of m.items) from.set(String(idOf(q)), m.from);
+    const returned = new Set<unknown>();
     for (const m of undo.moved) {
       const sib = this.records.get(m.from);
       const back = queue.filter((q) => from.get(String(idOf(q))) === m.from);
-      if (sib && back.length) sib.meta['ah.queue'] = [...back, ...((sib.meta['ah.queue'] as unknown[]) ?? [])];
+      // A sibling forgotten meanwhile can't take its items back: they stay here.
+      if (!sib || !back.length) continue;
+      sib.meta['ah.queue'] = [...back, ...((sib.meta['ah.queue'] as unknown[]) ?? [])];
+      for (const q of back) returned.add(q);
     }
-    const kept = queue.filter((q) => !from.has(String(idOf(q))));
+    const kept = queue.filter((q) => !returned.has(q));
     const withQueue = (meta: Record<string, unknown>) => {
       const { 'ah.queue': _, ...rest } = meta;
       return kept.length ? { ...rest, 'ah.queue': kept } : rest;
     };
     if (undo.before) {
-      this.records.set(undo.id, { ...undo.before, meta: withQueue(undo.before.meta) });
+      // Only what the start wrote goes back; anything else changed meanwhile (a pin,
+      // the delivered-ids ledger, snapshot settings) is kept as it is now.
+      const meta = { ...now.meta };
+      for (const k of undo.wrote) {
+        if (k in undo.before.meta) meta[k] = undo.before.meta[k];
+        else delete meta[k];
+      }
+      // And the fields it set (the record it made from scratch otherwise stays as it is now).
+      const restored: Record<string, unknown> = { ...now, meta: withQueue(meta) };
+      for (const k of ['lifecycle', 'status', 'tmux', 'pendingResume', 'endedAt', 'lastActivityAt', 'createdAt', 'cwd', 'title', 'harnessId', 'model', 'exitCode', 'host'] as const) {
+        if (k in undo.before) restored[k] = undo.before[k];
+        else delete restored[k];
+      }
+      this.records.set(undo.id, restored as SessionRecord);
     } else if (kept.length) {
       this.records.set(undo.id, { ...now, lifecycle: 'ended', status: 'ended', endedAt: now.endedAt ?? Math.floor(Date.now() / 1000), tmux: undefined, pendingResume: false, meta: withQueue(now.meta) });
     } else {
