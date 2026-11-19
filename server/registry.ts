@@ -12,6 +12,9 @@ import { defaultDbPath, getDb } from './db.ts';
 /** "Saved" (history only) is not a registry state: those come from transcript discovery. */
 export type Lifecycle = 'starting' | 'live' | 'ended' | 'unavailable';
 
+/** What Registry.starting changed: the record before (none for a new one), and follow-ups it took from siblings. */
+export type StartUndo = { id: string; before: SessionRecord | undefined; moved: Array<{ from: string; items: unknown[] }> };
+
 export type SessionRecord = {
   id: string;
   host: string;
@@ -244,7 +247,8 @@ export class Registry {
     }
   }
 
-  starting(id: string, f: { harness: string; harnessId?: string; cwd: string; title: string; tmux: Tmux; pendingResume?: boolean; meta?: Record<string, unknown> }) {
+  /** Returns what it changed, for abandonStart() if the start fails before the agent runs. */
+  starting(id: string, f: { harness: string; harnessId?: string; cwd: string; title: string; tmux: Tmux; pendingResume?: boolean; meta?: Record<string, unknown> }): StartUndo {
     const prev = this.records.get(id);
     this.records.set(id, {
       id,
@@ -268,7 +272,38 @@ export class Registry {
     delete this.records.get(id)!.meta['ah.endedBy'];
     delete this.records.get(id)!.meta['ah.interrupted'];
     this.dirty = true;
-    this.inheritQueue(id);
+    const moved = this.inheritQueue(id);
+    this.flush();
+    return { id, before: prev && { ...prev, meta: { ...prev.meta } }, moved };
+  }
+
+  /**
+   * A start that failed before its agent ran (the window couldn't be set up, a resume
+   * couldn't be typed): everything starting() changed goes back. A new record goes; a
+   * session that was being resumed is as it was, ended, never deleted; follow-ups taken
+   * from sibling records of the conversation return to them; and anything queued for it
+   * while it was starting stays queued, on the record that was there before or, for a
+   * new one, on the record itself, kept ended rather than lost.
+   */
+  abandonStart(undo: StartUndo) {
+    const now = this.records.get(undo.id);
+    const ids = (items: unknown[]) => new Set(items.map((q) => (q as { id?: string }).id));
+    const taken = ids(undo.moved.flatMap((m) => m.items));
+    const own = ids((undo.before?.meta['ah.queue'] as unknown[] | undefined) ?? []);
+    const arrived = ((now?.meta['ah.queue'] as unknown[] | undefined) ?? []).filter((q) => !taken.has((q as { id?: string }).id) && !own.has((q as { id?: string }).id));
+    for (const m of undo.moved) {
+      const r = this.records.get(m.from);
+      if (r) r.meta['ah.queue'] = [...m.items, ...((r.meta['ah.queue'] as unknown[]) ?? [])];
+    }
+    if (undo.before) {
+      const queue = [...((undo.before.meta['ah.queue'] as unknown[]) ?? []), ...arrived];
+      this.records.set(undo.id, { ...undo.before, meta: { ...undo.before.meta, ...(queue.length ? { 'ah.queue': queue } : {}) } });
+    } else if (now && arrived.length) {
+      this.records.set(undo.id, { ...now, lifecycle: 'ended', status: 'ended', endedAt: now.endedAt ?? Math.floor(Date.now() / 1000), tmux: undefined, pendingResume: false, meta: { ...now.meta, 'ah.queue': arrived } });
+    } else if (this.records.delete(undo.id)) {
+      this.removed.add(undo.id);
+    }
+    this.dirty = true;
     this.flush();
   }
 
@@ -289,18 +324,21 @@ export class Registry {
    * new uid), it inherits what was queued for that conversation from any
    * sibling record. A forked copy has a new id, so the parent keeps its queue.
    */
-  private inheritQueue(id: string): void {
+  private inheritQueue(id: string): StartUndo['moved'] {
+    const moved: StartUndo['moved'] = [];
     const r = this.records.get(id);
-    if (!r?.harnessId) return;
+    if (!r?.harnessId) return moved;
     for (const other of this.records.values()) {
       if (other.id === id || other.harness !== r.harness || other.harnessId !== r.harnessId) continue;
       const queued = other.meta['ah.queue'] as unknown[] | undefined;
       if (queued?.length) {
         r.meta['ah.queue'] = [...((r.meta['ah.queue'] as unknown[]) ?? []), ...queued];
         delete other.meta['ah.queue'];
+        moved.push({ from: other.id, items: queued });
         this.dirty = true;
       }
     }
+    return moved;
   }
 
   /** Direct forks of a session, oldest first (F36). */

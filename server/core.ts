@@ -13,7 +13,7 @@ import { randomUUID } from 'node:crypto';
 import type { InterruptionsState } from './interruptions.ts';
 import { LastReplies, type ReplyTarget } from './replies.ts';
 import { buildWindows, buildHistory, adoptTranscripts, footerMode, isQuestionDialog, type WindowView, type HistoryItem } from './sessions.ts';
-import { Registry, forkMetaOf, type ForkMeta, type SessionRecord } from './registry.ts';
+import { Registry, type StartUndo, forkMetaOf, type ForkMeta, type SessionRecord } from './registry.ts';
 import { copyTranscript, forkUnavailableReason, removeCopiedTranscript, ForkError } from './fork.ts';
 import { PromptStore } from './prompts.ts';
 import { discover } from './discovery.ts';
@@ -544,6 +544,7 @@ export class Core {
     // Until the fresh pass below: every pass that could have listed it before its
     // options landed has finished by then (passes run one at a time, in order).
     this.launching.add(windowId);
+    let started: StartUndo | null = null;
     try {
       const ts = String(now());
       await t.setWindowOptions(windowId, {
@@ -553,7 +554,7 @@ export class Core {
         '@ah-seen': ts,
         ...(o.harnessId ? { '@ah-harness': o.preset.id, '@ah-harness-id': o.harnessId } : {}),
       });
-      this.registry.starting(uid, {
+      started = this.registry.starting(uid, {
         harness: o.preset.id,
         harnessId: o.harnessId,
         cwd: o.cwd,
@@ -570,7 +571,10 @@ export class Core {
       return { uid, windowId };
     } catch (err) {
       await t.killWindow(windowId).catch(() => {});
-      this.registry.remove(uid);
+      // Undo exactly what the start changed: a session being resumed keeps its record,
+      // its queue and its links (it used to be deleted here, with all of them).
+      if (started) this.registry.abandonStart(started);
+      else if (!o.uid) this.registry.remove(uid);
       throw err;
     } finally {
       this.launching.delete(windowId);

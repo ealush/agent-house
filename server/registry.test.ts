@@ -74,3 +74,67 @@ test('a failed load rejects instead of leaving an empty registry', async () => {
   const r = new Registry(db()); // never migrated: the Session table is missing
   await assert.rejects(r.load());
 });
+
+// A start that fails before its agent runs (Core.launch's catch) undoes exactly what it did.
+const q = (id: string) => ({ id, text: id, enter: true, at: 1 });
+
+test('a resume that fails leaves the session as it was: ended, queued, pinned, never deleted', async () => {
+  const path = db();
+  await ensureMigrated(path);
+  const r = new Registry(path);
+  await r.ready();
+  r.starting('u1', { harness: 'codex', harnessId: 'c1', cwd: '/p', title: 'mine', tmux });
+  r.setMeta('u1', 'ah.queue', [q('q1')]);
+  r.setMeta('u1', 'ah.pinned', true);
+  r.setMeta('u1', 'ah.worktree', { path: '/wt', branch: 'b', repo: '/r' });
+  r.reconcile(new Set());
+  await new Promise((done) => setTimeout(done, 10));
+  // Ended a while ago: past the starting grace, it's ended.
+  const ended = r.get('u1')!;
+  ended.lifecycle = 'ended';
+  ended.status = 'ended';
+  const before = structuredClone(r.get('u1')!);
+
+  const undo = r.starting('u1', { harness: 'codex', harnessId: 'c1', cwd: '/p', title: 'mine', tmux: { session: 'agents', windowId: '@7' }, pendingResume: true, meta: { 'ah.env': 'x' } });
+  assert.equal(r.get('u1')!.lifecycle, 'starting');
+  r.abandonStart(undo);
+  assert.deepEqual(r.get('u1'), before);
+  // On disk too: a restart finds it.
+  await r.settled();
+  const again = new Registry(path);
+  await again.load();
+  assert.deepEqual(again.get('u1')?.meta['ah.queue'], [q('q1')]);
+  assert.equal(again.get('u1')?.meta['ah.pinned'], true);
+});
+
+test('follow-ups a failed start took from the conversation’s other record go back to it', async () => {
+  const r = await freshRegistry();
+  await r.ready();
+  r.starting('old', { harness: 'codex', harnessId: 'c1', cwd: '/p', title: 'old', tmux });
+  r.setMeta('old', 'ah.queue', [q('q1'), q('q2')]);
+  const undo = r.starting('new', { harness: 'codex', harnessId: 'c1', cwd: '/p', title: 'new', tmux: { session: 'agents', windowId: '@2' } });
+  assert.deepEqual(r.get('new')?.meta['ah.queue'], [q('q1'), q('q2')], 'taken while starting');
+  r.abandonStart(undo);
+  assert.equal(r.get('new'), undefined, 'a new record that never ran goes');
+  assert.deepEqual(r.get('old')?.meta['ah.queue'], [q('q1'), q('q2')]);
+  await r.settled();
+});
+
+test('something queued while it was starting is kept, never dropped with the failed start', async () => {
+  const r = await freshRegistry();
+  await r.ready();
+  // A new session: the message waits on a record kept ended.
+  const undo = r.starting('new', { harness: 'codex', cwd: '/p', title: 'new', tmux });
+  r.setMeta('new', 'ah.queue', [q('late')]);
+  r.abandonStart(undo);
+  assert.equal(r.get('new')?.lifecycle, 'ended');
+  assert.equal(r.get('new')?.tmux, undefined);
+  assert.deepEqual(r.get('new')?.meta['ah.queue'], [q('late')]);
+  // A resumed one: after its own, on the record as it was.
+  r.setMeta('new', 'ah.queue', [q('own')]);
+  const undo2 = r.starting('new', { harness: 'codex', cwd: '/p', title: 'new', tmux });
+  r.setMeta('new', 'ah.queue', [...(r.get('new')!.meta['ah.queue'] as unknown[]), q('late2')]);
+  r.abandonStart(undo2);
+  assert.deepEqual(r.get('new')?.meta['ah.queue'], [q('own'), q('late2')]);
+  await r.settled();
+});
