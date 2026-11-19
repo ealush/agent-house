@@ -6,7 +6,8 @@
 import { randomBytes } from 'node:crypto';
 import * as pty from 'node-pty';
 import type { WebSocket } from 'ws';
-import { cleanEnv, tmux, VIEWER_PREFIX, windowExists, setWindowOption } from './tmux.ts';
+import { markCommand } from './terminalCommands.ts';
+import { cleanEnv, tmux, TERMINAL_PREFIX, VIEWER_PREFIX, windowExists, setWindowOption } from './tmux.ts';
 
 /** windowId → labels of the devices currently looking at it ("iPad", "Mac"), one per page. */
 export const viewers = new Map<string, string[]>();
@@ -94,6 +95,7 @@ export async function attach(ws: WebSocket, windowId: string, cols: number, rows
     return;
   }
 
+  const companion = target.session.startsWith(TERMINAL_PREFIX);
   const viewer = VIEWER_PREFIX + randomBytes(4).toString('hex');
   const term = pty.spawn(
     'tmux',
@@ -168,11 +170,15 @@ export async function attach(ws: WebSocket, windowId: string, cols: number, rows
       // Typing into history scrolled back by touch goes to the prompt, as in any terminal:
       // copy mode would take the first keys as its own commands. Only copy mode this viewer's
       // scrolling entered; one you entered yourself (prefix [) keeps its keys.
-      if (!queued && !scrolledBack && !scrolling) term.write(d);
+      // A Return to a companion shell: the line it ends is noted first, while it still
+      // shows the command, so the command and its output can be read back for the chat.
+      const command = companion && d === '\r';
+      if (!queued && !scrolledBack && !scrolling && !command) term.write(d);
       else {
         queued++;
         typing = typing
           .then(backToPrompt)
+          .then(() => (command ? markCommand(windowId) : undefined))
           .then(() => !closed && term.write(d))
           .finally(() => queued--);
       }

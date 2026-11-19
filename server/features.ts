@@ -11,8 +11,8 @@
 
 /** Feature name → contract version. Each feature module adds itself when it ships. */
 export const FEATURES: Record<string, number> = {
-  /** Per-session companion shells: /api/sessions/:uid/terminal, windows' terminal status. */
-  attachedTerminal: 1,
+  /** Per-session companion shells: /api/sessions/:uid/terminal, windows' terminal status. 2: GET …/terminal/text, POST's `run: false`. */
+  attachedTerminal: 2,
   /** GET /api/capabilities and these versions. */
   capabilities: 1,
   /** /api/upload and /api/fs/upload stream to disk, with explicit limits and `code` on refusal. */

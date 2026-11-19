@@ -63,6 +63,7 @@ GET    ^\/api\/sessions\/([\w-]{1,40})\/snapshots$
 POST   ^\/api\/sessions\/([\w-]{1,40})\/snapshots\/(\d{1,9})\/restore$
 POST   ^\/api\/sessions\/([\w-]{1,40})\/snapshots\/toggle$
 GET    ^\/api\/sessions\/([\w-]{1,40})\/terminal$
+GET    ^\/api\/sessions\/([\w-]{1,40})\/terminal\/text$
 POST   ^\/api\/sessions\/([\w-]{1,40})\/terminal$
 DELETE ^\/api\/sessions\/([\w-]{1,40})\/terminal$
 GET    ^\/api\/sessions\/([\w-]{1,40})\/preview$

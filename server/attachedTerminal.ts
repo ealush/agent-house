@@ -5,6 +5,7 @@ import { HttpError } from './http.ts';
 import { procTree, withArgv } from './procs.ts';
 import type { Registry } from './registry.ts';
 import { terminalView, type AttachedTerminal } from './sessions.ts';
+import { forgetCommands, lastCommand, markCommand, screenText, type LastCommand } from './terminalCommands.ts';
 import * as t from './tmux.ts';
 
 export class AttachedTerminals {
@@ -32,7 +33,16 @@ export class AttachedTerminals {
     return terminalView(raw, procs);
   }
 
-  open(uid: string, command?: string): Promise<AttachedTerminal> {
+  /** Its text for the chat: the newest command and what that printed (`terminalCommands.ts`), and the screen. */
+  async text(uid: string): Promise<{ terminal: AttachedTerminal | null; last: LastCommand | null; screen: string | null }> {
+    const terminal = await this.get(uid);
+    if (!terminal) return { terminal, last: null, screen: null };
+    const [last, screen] = await Promise.all([lastCommand(terminal.id), screenText(terminal.id)]);
+    return { terminal, last, screen };
+  }
+
+  /** `run: false` types the command without pressing Enter, to look at or change first. */
+  open(uid: string, command?: string, run = true): Promise<AttachedTerminal> {
     return this.serial(uid, async () => {
       const owner = this.registry.get(uid);
       if (!owner) throw new HttpError(404, 'session not found');
@@ -54,10 +64,16 @@ export class AttachedTerminals {
         if (terminal.busy) {
           throw new HttpError(409, 'The attached terminal is running a command. Stop it or wait for it to finish.', 'terminal_busy');
         }
-        await t.pasteText(terminal.id, command, true);
-        // Let the shell consume Enter before releasing the submission lock. A following
-        // request checks the resulting foreground process, including for quiet servers.
-        await new Promise((r) => setTimeout(r, 100));
+        await t.pasteText(terminal.id, command, false);
+        if (run) {
+          // The shell shows the paste, its line is noted as this command's, then Enter.
+          await new Promise((r) => setTimeout(r, 150));
+          await markCommand(terminal.id, command.trimEnd().split('\n').length);
+          await t.tmux('send-keys', '-t', terminal.id, 'Enter');
+          // Let the shell consume Enter before releasing the submission lock. A following
+          // request checks the resulting foreground process, including for quiet servers.
+          await new Promise((r) => setTimeout(r, 100));
+        }
       }
       return terminal;
     });
@@ -68,7 +84,10 @@ export class AttachedTerminals {
       const raw = (await t.listWindows()).find((w) => w.session === t.TERMINAL_PREFIX + uid);
       // Kill the shared window, not just its original session: each connected viewer
       // has a grouped session linking it, which would otherwise keep the process alive.
-      if (raw) await t.killWindow(raw.windowId);
+      if (raw) {
+        await t.killWindow(raw.windowId);
+        forgetCommands(raw.windowId);
+      }
     });
   }
 }

@@ -372,6 +372,8 @@ export function trackContent(prev: { text: string; at: number } | undefined, tex
 }
 
 const SHELLS = /^-?(bash|zsh|fish|sh|dash|ksh|mksh|tcsh|nu|xonsh|elvish)$/;
+/** A pane's foreground command is a shell's own (it has its prompt, or a builtin of its). */
+export const shellPromptCommand = (command: string) => SHELLS.test(command);
 
 /**
  * Is the pane's shell sitting at its prompt? It is when it holds the
