@@ -16,7 +16,7 @@ test('a session’s snapshot switch: on unless it or the host turned it off', ()
   assert.deepEqual(snapshotSettings({ enabled: true, lastTurn: 'x' }, false), { enabled: false, lastTurn: 0 });
 });
 
-async function bed() {
+async function bed(hostSnapshots = true) {
   const dir = await mkdtemp(join(tmpdir(), 'ah-turnsnap-'));
   const repo = join(dir, 'repo');
   execFileSync('git', ['init', '-q', '-b', 'main', repo]);
@@ -28,7 +28,8 @@ async function bed() {
   await registry.ready();
   registry.starting('u1', { harness: 'claude', harnessId: 'c1', cwd: repo, title: 't', tmux: { session: 's', windowId: '@1' } });
   const store = new SnapshotStore(db);
-  const config = loadConfig();
+  const base = loadConfig();
+  const config = hostSnapshots ? base : { ...base, snapshots: { ...base.snapshots, enabled: false } };
   return { dir, repo, registry, store, snaps: new TurnSnapshots(registry, store, () => config, join(dir, 'state')) };
 }
 
@@ -86,6 +87,19 @@ test('a safety snapshot is taken with snapshots off, and leaves the switch as it
     b.snaps.setEnabled('u1', true);
     assert.equal((await b.snaps.safety('u1', 'again'))?.turn, 2);
     assert.equal(b.snaps.settings('u1').enabled, true);
+  } finally {
+    await b.registry.settled();
+    await rm(b.dir, { recursive: true, force: true });
+  }
+});
+
+test('a safety snapshot taken while the host has snapshots off leaves the session’s own switch on', async () => {
+  const b = await bed(false);
+  try {
+    assert.equal(b.snaps.settings('u1').enabled, false, 'off for the whole host');
+    assert.equal((await b.snaps.safety('u1', 'Before restoring turn 1'))?.kind, 'safety');
+    // The host's switch back on: the session's own was never turned off.
+    assert.notEqual((b.registry.get('u1')?.meta['ah.snapshots'] as { enabled?: boolean })?.enabled, false);
   } finally {
     await b.registry.settled();
     await rm(b.dir, { recursive: true, force: true });
