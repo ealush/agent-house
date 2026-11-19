@@ -216,9 +216,14 @@ extension BlockRow {
         guard session.isLive, !session.isShell, scene.attachedTerminal(session), let row = session.row else { return nil }
         let (session, scene) = (session, scene)
         let place = [row.dto.project, row.dto.branch ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
-        return SnippetRun(place: place.isEmpty ? "its folder" : place) { code in
+        let run: @MainActor @Sendable (String) -> Void = { code in
             Task { await scene.runInShell(code, from: session) }
         }
+        var type: (@MainActor @Sendable (String) -> Void)?
+        if scene.terminalChat(session) {
+            type = { code in Task { await scene.runInShell(code, from: session, run: false) } }
+        }
+        return SnippetRun(place: place.isEmpty ? "its folder" : place, run: run, type: type)
     }
 
     /// After Copy in the edit menu of words selected in the agent's message: quoting just
@@ -239,6 +244,12 @@ extension BlockRow {
                     Haptics.tap()
                     Task { await scene.runInShell(selected, from: session) }
                 })
+                if scene.terminalChat(session) {
+                    items.append(UIAction(title: "Type in terminal", image: UIImage(systemName: "keyboard")) { _ in
+                        Haptics.tap()
+                        Task { await scene.runInShell(selected, from: session, run: false) }
+                    })
+                }
             }
             items.append(UIMenu(title: "Message", image: UIImage(systemName: "text.bubble"), children: [
                 UIAction(title: "Copy Message", image: UIImage(systemName: "doc.on.doc")) { _ in UIPasteboard.general.string = block.text },

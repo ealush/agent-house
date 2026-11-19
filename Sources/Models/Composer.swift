@@ -746,6 +746,16 @@ final class ComposerModel {
         }
     }
 
+    /// A block of its own at the end (a terminal's text), after a blank line, the caret after it
+    /// to say what it's about.
+    func addBlock(_ block: String) {
+        var head = text
+        while let last = head.last, last.isWhitespace { head.removeLast() }
+        text = head.isEmpty ? block + "\n" : head + "\n\n" + block + "\n"
+        caret = text.utf16.count
+        placeCaret = caret
+    }
+
     /// Insert at the caret (a file path from Files, a diff line reference).
     func insert(_ snippet: String) {
         let utf16 = Array(text.utf16)

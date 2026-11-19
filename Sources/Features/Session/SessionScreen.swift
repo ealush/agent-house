@@ -196,7 +196,7 @@ private struct PanelChrome: ViewModifier {
                     Button {
                         session.panel = other
                     } label: {
-                        Label(other.title, systemImage: other.symbol)
+                        PanelLabel(panel: other, session: session)
                     }
                     .disabled(other == panel)
                 }
@@ -437,11 +437,11 @@ private struct PanelsMenu: View {
             // stood in for it).
             ForEach(SceneSnapshot.Panel.allCases.filter { $0.applies(to: session) }) { panel in
                 Toggle(isOn: Binding(get: { session.panel == panel }, set: { session.panel = $0 ? panel : nil })) {
-                    Label(panel.title, systemImage: panel.symbol)
+                    PanelLabel(panel: panel, session: session)
                 }
             }
         } label: {
-            Image(systemName: "sidebar.right").headerGlyph()
+            Image(systemName: "sidebar.right").headerGlyph().modifier(PanelsGlyphDot(session: session))
         }
         .accessibilityLabel("Panels")
     }
@@ -491,7 +491,18 @@ struct SessionMenu: View {
             ForEach(Array(SessionAction.sections(session, scene).enumerated()), id: \.offset) { _, section in
                 Section {
                     ForEach(section) { action in
-                        Button(action.title, systemImage: action.symbol, role: action.destructive ? .destructive : nil, action: action.run)
+                        if action.active, let image = TerminalGlyph.menuImage(action.symbol, active: true) {
+                            Button(role: action.destructive ? .destructive : nil, action: action.run) {
+                                Label {
+                                    Text(action.title)
+                                    if let subtitle = action.subtitle { Text(subtitle) }
+                                } icon: {
+                                    Image(uiImage: image).renderingMode(.original)
+                                }
+                            }
+                        } else {
+                            Button(action.title, systemImage: action.symbol, role: action.destructive ? .destructive : nil, action: action.run)
+                        }
                     }
                 }
             }
@@ -509,6 +520,10 @@ struct SessionAction: Identifiable {
     let title: String
     let symbol: String
     var destructive = false
+    /// Under the title: what it's doing (the attached terminal's running command).
+    var subtitle: String? = nil
+    /// The green dot on its glyph: the attached terminal runs a command.
+    var active = false
     let run: @MainActor () -> Void
 
     var id: String { title }
@@ -529,7 +544,7 @@ struct SessionAction: Identifiable {
         let pinned = session.row?.dto.pinned == true
         var work: [SessionAction] = []
         if scene.attachedTerminal(session) {
-            work.append(SessionAction(title: session.row?.dto.terminal?.busy == true ? "Terminal · Active" : "Terminal", symbol: "terminal") { session.panel = .terminal })
+            work.append(SessionAction(title: "Terminal", symbol: "terminal", subtitle: TerminalGlyph.subtitle(.terminal, session), active: session.row?.dto.terminal?.busy == true) { session.panel = .terminal })
         }
         if session.row?.dto.branch != nil { work.append(SessionAction(title: "Switch Branch…", symbol: CommandCatalog.icon("switch-branch")) { scene.sheet = .branch(session.key) }) }
         if !session.isShell { work.append(SessionAction(title: "Fork…", symbol: CommandCatalog.icon("fork")) { scene.sheet = .fork(session.key) }) }

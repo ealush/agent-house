@@ -10,6 +10,9 @@ struct TerminalScreen: View {
     let session: SessionModel
     @Bindable var scene: SceneModel
     var attached = false
+    /// Told the terminal's controller as it changes (a new attach, gone in the background):
+    /// the attached panel's Send to Chat reads its selection.
+    var onController: ((TerminalController?) -> Void)? = nil
     @State private var controller: TerminalController?
     @State private var ctrl = false
     @State private var alt = false
@@ -68,9 +71,13 @@ struct TerminalScreen: View {
             // socket stayed open and counted this device as watching that session.
             controller?.stop()
             controller = made
+            onController?(made)
             made.start()
         }
-        .onDisappear { controller?.stop() }
+        .onDisappear {
+            controller?.stop()
+            onController?(nil)
+        }
         // An attached terminal counts as this device looking (ah's viewers): its window going
         // to the background detaches it, so what happens meanwhile isn't taken as seen; coming
         // back reattaches. This window's, not the app's: on an iPad another window can stay up.
@@ -78,6 +85,7 @@ struct TerminalScreen: View {
             if away {
                 controller?.stop()
                 controller = nil
+                onController?(nil)
             } else if controller == nil {
                 attachment += 1
             }
@@ -205,6 +213,12 @@ final class TerminalController: NSObject, TerminalViewDelegate {
                 }
             }
         }
+    }
+
+    /// What's selected in the terminal now, if anything.
+    var selection: String? {
+        let text = view.getSelection() ?? ""
+        return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
     }
 
     /// Paste as the application asked for it: SwiftTerm brackets it when the app turned

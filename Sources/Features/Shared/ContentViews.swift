@@ -32,6 +32,9 @@ struct SnippetRun: Sendable {
     /// Where it runs, for the menu: the project, and the branch when there is one.
     let place: String
     let run: @MainActor @Sendable (String) -> Void
+    /// Types it at the prompt without pressing Return, to look at or change first; nil where
+    /// the host can't (attachedTerminal 1).
+    var type: (@MainActor @Sendable (String) -> Void)? = nil
 }
 
 private struct SnippetRunKey: EnvironmentKey {
@@ -306,6 +309,7 @@ struct CodeBlockView: View {
                     .buttonStyle(.borderless)
                     .accessibilityLabel("Send to terminal")
                     .accessibilityHint("Runs in this session’s attached shell in \(snippetRun.place)")
+                    .modifier(SnippetTypeMenu(snippet: runs, run: snippetRun))
                 }
                 Button {
                     UIPasteboard.general.string = code
@@ -338,6 +342,32 @@ struct CodeBlockView: View {
             .padding(.horizontal, 8)
             .frame(minWidth: 40, minHeight: 40)
             .contentShape(Rectangle())
+    }
+}
+
+/// Held, a snippet's terminal button runs it or only types it there, to look at or change
+/// before Return. Only where the host can type without running.
+private struct SnippetTypeMenu: ViewModifier {
+    let snippet: String
+    let run: SnippetRun
+
+    func body(content: Content) -> some View {
+        if let type = run.type {
+            content
+                .contextMenu {
+                    Button("Run in Terminal", systemImage: "play") {
+                        Haptics.tap()
+                        run.run(snippet)
+                    }
+                    Button("Type in Terminal Without Running", systemImage: "keyboard") {
+                        Haptics.tap()
+                        type(snippet)
+                    }
+                }
+                .accessibilityAction(named: "Type in Terminal Without Running") { type(snippet) }
+        } else {
+            content
+        }
     }
 }
 

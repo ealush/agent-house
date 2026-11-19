@@ -5,11 +5,27 @@ The session menu and row context menu open Terminal; iPad shows a side panel and
 iPhone a panel sheet. Closing either leaves the shell running. Shell code blocks
 and selected transcript text offer Send to terminal, which pastes and runs through
 that same attachment. A foreground server or editor returns the host's busy error;
-the app never picks another session's shell. The terminal glyph in session rows
-turns red while its foreground process is active.
+the app never picks another session's shell. Holding a snippet's terminal button
+also offers Type in Terminal Without Running (the words selected in a reply: Type
+in terminal), which types it at the prompt to look at or change before Return.
+
+While a command runs in the shell, a green dot sits at the terminal glyph's corner:
+in session rows, beside the panel's header (with "Running <command>"), on the
+panels button in the composer and the iPad header, and on Terminal in the session
+and panel menus (its subtitle says what runs).
+
+The panel's header has Send to Chat (a speech bubble), built as it opens from the
+host's text of that moment: Last Command and Its Output (named in its subtitle),
+Selection (what's selected in this terminal), What's on Screen. Each goes into
+the session's box after what's already there, fenced, the caret after it, to say
+what it's about before sending; on a phone the panel's sheet goes so the box shows.
+A Copy section puts the same text, unfenced, on the clipboard. The host finds the
+last command without shell configuration (`../ah/server/terminalCommands.ts`).
 
 The host advertises `features.attachedTerminal: 1`; older hosts don't offer these
-controls. `SessionDTO.terminal` and the typed GET/POST/DELETE
+controls. Version 2 adds `GET …/terminal/text` (`{ terminal, last, screen }`) and
+POST's `run: false`; on a version 1 host Send to Chat offers only the selection,
+and snippets only run. `SessionDTO.terminal` and the typed GET/POST/DELETE
 `/api/sessions/:uid/terminal` calls share the backend/web contract. The existing
 native bearer, peer routing and real SwiftTerm/WebSocket transport are used.
 Each reconnect resolves the attachment again. Lookup failures retry without

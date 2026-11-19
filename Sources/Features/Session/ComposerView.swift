@@ -664,7 +664,7 @@ struct ComposerFloat: View {
                         withAnimation(Self.motion(opening: false, reduceMotion: reduceMotion)) { composer.trayOpen = false }
                         session.panel = on ? panel : nil
                     })) {
-                        Label(panel.title, systemImage: panel.symbol)
+                        PanelLabel(panel: panel, session: session)
                     }
                 }
             } label: {
@@ -672,6 +672,7 @@ struct ComposerFloat: View {
                     .font(.ah(.callout).weight(.semibold))
                     .foregroundStyle(theme.text2)
                     .frame(width: toolWidth, height: control * 0.82)
+                    .modifier(PanelsGlyphDot(session: session))
                     .contentShape(.hoverEffect, Capsule())
                     .hoverEffect(.highlight)
             }

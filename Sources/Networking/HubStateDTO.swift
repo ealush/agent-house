@@ -129,6 +129,27 @@ struct AttachedTerminalResponse: Decodable, Sendable {
     let terminal: AttachedTerminalDTO?
 }
 
+/// The attached terminal's text for the chat (`GET …/terminal/text`, attachedTerminal 2).
+struct AttachedTerminalText: Decodable, Equatable, Sendable {
+    let terminal: AttachedTerminalDTO?
+    let last: LastCommandDTO?
+    /// What its screen shows now.
+    let screen: String?
+}
+
+/// The newest command run in the attached terminal, and what it printed.
+struct LastCommandDTO: Decodable, Equatable, Sendable {
+    /// What was typed, less the prompt when the host could tell it apart.
+    let command: String
+    /// The line it was typed on, as the terminal shows it (prompt and all).
+    let line: String
+    let output: String
+    /// Still running: the output so far.
+    let running: Bool
+    /// Only its last lines.
+    let truncated: Bool
+}
+
 struct SessionDTO: Codable, Equatable, Sendable {
     let terminal: AttachedTerminalDTO?
     /// Transient tmux address; never use this as the navigation identity.

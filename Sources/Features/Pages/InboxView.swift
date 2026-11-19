@@ -293,7 +293,7 @@ struct SessionRowView: View {
         if !detail.isEmpty { parts.append(detail) }
         if row.dto.pinned { parts.append("Pinned") }
         if row.dto.queued > 0 { parts.append("\(row.dto.queued) queued") }
-        if let terminal = row.dto.terminal { parts.append(terminal.busy ? "Attached terminal active" : "Terminal attached") }
+        if let terminal = row.dto.terminal { parts.append(terminal.busy ? "Attached terminal running \(terminal.command)" : "Terminal attached") }
         if let fork = row.dto.fork { parts.append(fork.parentTitle.isEmpty ? "\(fork.forks) fork\(fork.forks == 1 ? "" : "s")" : "Fork of \(fork.parentTitle)") }
         parts.append(Elapsed.format(Date(timeIntervalSince1970: row.dto.activity), now: .now))
         return parts.joined(separator: ". ")
@@ -364,10 +364,7 @@ struct SessionRowView: View {
             if row.dto.pinned { Image(systemName: "pin.fill").font(.ah(.caption2)).foregroundStyle(tertiary(onAccent)) }
             Text(row.title).font(dense ? Font.ah(.body) : Font.ah(.body).weight(.medium)).foregroundStyle(primary(onAccent)).lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
             if let terminal = row.dto.terminal {
-                Image(systemName: "terminal")
-                    .font(.ah(.caption2))
-                    .foregroundStyle(terminal.busy ? AnyShapeStyle(theme.danger) : tertiary(onAccent))
-                    .accessibilityLabel(terminal.busy ? "Attached terminal active" : "Terminal attached")
+                TerminalActivityGlyph(terminal: terminal, idle: tertiary(onAccent))
             }
             if let fork = row.dto.fork {
                 // A fork (or a session others were forked from): its lineage at a glance.

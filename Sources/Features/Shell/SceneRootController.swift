@@ -1000,7 +1000,7 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
         // Only what this session has: no Diff or Stack without a branch, no Queue or Snapshots
         // in a shell.
         SceneSnapshot.Panel.allCases.filter { $0.applies(to: session) }.map { panel in
-            UIAction(title: panel.title, image: UIImage(systemName: panel.symbol), state: session.panel == panel ? .on : .off) { [weak self] _ in
+            UIAction(title: panel.title, subtitle: TerminalGlyph.subtitle(panel, session), image: TerminalGlyph.panelImage(panel, session), state: session.panel == panel ? .on : .off) { [weak self] _ in
                 guard let self else { return }
                 session.panel = session.panel == panel ? nil : panel
             }
@@ -1024,7 +1024,7 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
     private func sessionActions() -> [UIMenuElement] {
         SessionAction.sections(session, scene).map { section in
             UIMenu(options: .displayInline, children: section.map { action in
-                UIAction(title: action.title, image: UIImage(systemName: action.symbol), attributes: action.destructive ? .destructive : []) { _ in action.run() }
+                UIAction(title: action.title, subtitle: action.subtitle, image: TerminalGlyph.menuImage(action.symbol, active: action.active), attributes: action.destructive ? .destructive : []) { _ in action.run() }
             })
         }
     }

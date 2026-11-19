@@ -176,9 +176,14 @@ struct APIClient: Sendable {
     func rename(_ uid: String, _ name: String) async throws { try await perform("PUT", "\(s(uid))/name", json: ["name": name]) }
     func terminate(_ uid: String) async throws { try await perform("POST", "\(s(uid))/terminate") }
     func attachedTerminal(_ uid: String) async throws -> AttachedTerminalResponse { try await call("GET", "\(s(uid))/terminal") }
-    func openTerminal(_ uid: String, command: String? = nil) async throws -> AttachedTerminalResponse {
-        try await call("POST", "\(s(uid))/terminal", json: command.map { ["command": $0] } ?? [:])
+    /// `run: false` types the command without pressing Return (attachedTerminal 2).
+    func openTerminal(_ uid: String, command: String? = nil, run: Bool = true) async throws -> AttachedTerminalResponse {
+        guard let command else { return try await call("POST", "\(s(uid))/terminal", json: [String: String]()) }
+        if run { return try await call("POST", "\(s(uid))/terminal", json: ["command": command]) }
+        return try await call("POST", "\(s(uid))/terminal", json: TypedCommand(command: command, run: false))
     }
+    private struct TypedCommand: Encodable { let command: String; let run: Bool }
+    func terminalText(_ uid: String) async throws -> AttachedTerminalText { try await call("GET", "\(s(uid))/terminal/text") }
     func closeTerminal(_ uid: String) async throws { try await perform("DELETE", "\(s(uid))/terminal") }
     func capture(_ uid: String, lines: Int = 3000) async throws -> String {
         String(decoding: try await send(await request("GET", "\(s(uid))/capture", query: [URLQueryItem(name: "lines", value: String(lines))])), as: UTF8.self)

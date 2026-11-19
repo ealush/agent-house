@@ -1756,18 +1756,42 @@ final class SceneModel {
     }
 
     /// A snippet always goes to its owner's companion shell; the host checks readiness.
-    func runInShell(_ snippet: String, from session: SessionModel) async {
+    /// `run: false` types it at the prompt without pressing Return, to look at or change first.
+    func runInShell(_ snippet: String, from session: SessionModel, run: Bool = true) async {
         let command = ShellRun.command(snippet)
-        guard !command.isEmpty, attachedTerminal(session) else { return }
+        guard !command.isEmpty, attachedTerminal(session), run || terminalChat(session) else { return }
         session.panel = .terminal
         scheduleSave()
         do {
-            _ = try await session.api.openTerminal(session.ref, command: command)
+            _ = try await session.api.openTerminal(session.ref, command: command, run: run)
             session.hub.refresh(host: SessionKey(session.key)?.host)
-            if hardwareKeyboard { requestFocus(.attachedTerminal(session.key)) }
+            // Typed, not run: the keys are wanted next (Return, or a change first).
+            if hardwareKeyboard || !run { requestFocus(.attachedTerminal(session.key)) }
+            if !run { toast("Typed in the terminal. Press Return to run it.") }
         } catch {
-            toast("Couldn’t run it: \(APIError.wrap(error).message)", error: true)
+            toast("Couldn’t \(run ? "run" : "type") it: \(APIError.wrap(error).message)", error: true)
         }
+    }
+
+    /// The host reads the attached terminal's last command and screen back, and types a
+    /// snippet without running it (attachedTerminal 2).
+    func terminalChat(_ session: SessionModel) -> Bool {
+        hub?.state(host: SessionKey(session.key)?.host)?.supports("attachedTerminal", version: 2) ?? false
+    }
+
+    /// The attached terminal has a conversation to send its text to: a live agent's with a box.
+    func terminalSendsToChat(_ session: SessionModel) -> Bool {
+        session.isLive && !session.isShell && session.hasGUI
+    }
+
+    /// Terminal text into the session's box, after what's there, to say what it's about and
+    /// send. On a phone the panel's sheet goes, so the box shows.
+    func addToMessage(_ block: String, in session: SessionModel, what: String) {
+        session.composer.addBlock(block)
+        if session.surface != .gui { setSurface(.gui, for: session.key) }
+        if narrow { session.panel = nil }
+        requestFocus(.composer(session.key))
+        toast("Added \(what) to your message")
     }
 
     /// Terminate after the confirmation sheet.
