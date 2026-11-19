@@ -47,6 +47,7 @@ import {
   type Verdict,
 } from './reviewer.ts';
 import { defaultOrder, descendants, forest, planRoles, subtree, validOrder, type Tree } from './stack.ts';
+import { resolveSession } from './owners.ts';
 import { DomainError } from '../errors.ts';
 
 export class ReviewError extends DomainError {}
@@ -227,12 +228,18 @@ function checksOf(l: ReviewLayer): Checks {
   }
 }
 
+/** A revision's stored verdict; one that doesn't parse (a reviewer's malformed answer) is none. */
+function verdictOf(r: { verdictJson: string | null } | null | undefined): Verdict | null {
+  try {
+    return r?.verdictJson ? (JSON.parse(r.verdictJson) as Verdict) : null;
+  } catch {
+    return null;
+  }
+}
+
 function revView(r: ReviewRevision | undefined | null): RevView | null {
   if (!r) return null;
-  let verdict: Verdict | null = null;
-  try {
-    verdict = r.verdictJson ? (JSON.parse(r.verdictJson) as Verdict) : null;
-  } catch {}
+  const verdict = verdictOf(r);
   return { id: r.id, baseSha: r.baseSha, headSha: r.headSha, patchId: r.patchId, files: r.files, additions: r.additions, deletions: r.deletions, summary: r.summary, verdict };
 }
 
@@ -668,7 +675,7 @@ export class ReviewService {
     const revById = new Map(revs.map((r) => [r.id, r]));
     const ownerOf = (uid: string | null, key: string | null): Owner => {
       if (!uid && !key) return null;
-      const sess = sessions.find((x) => (key && x.key === key && x.live) || x.uid === uid) ?? sessions.find((x) => key && x.key === key);
+      const sess = resolveSession(sessions, key, uid);
       return sess ? { uid: sess.uid, key: sess.key, title: sess.title, agent: sess.agent, status: sess.status, live: sess.live, branch: sess.branch } : { uid: uid ?? '', key: key ?? '', title: 'Ended session', agent: null, status: 'ended', live: false, branch: null };
     };
     const firstOpen = layers.find((l) => l.state === 'open')?.pr ?? null;
@@ -1268,8 +1275,7 @@ export class ReviewService {
     const key = l.ownerKey ?? s.ownerKey;
     const uid = l.ownerUid ?? s.ownerUid;
     if (!key && !uid) return null;
-    const sessions = await this.deps.sessions();
-    return sessions.find((x) => key && x.key === key && x.live) ?? sessions.find((x) => key && x.key === key) ?? sessions.find((x) => x.uid === uid) ?? null;
+    return resolveSession(await this.deps.sessions(), key, uid);
   }
 
   /** The message for the agent: findings with locations, the plan's constraints, and the restack of the layers above. */
@@ -1719,8 +1725,7 @@ export class ReviewService {
 
   private async originSession(s: ReviewStack): Promise<SessionLite | null> {
     if (!s.originUid && !s.originKey) return null;
-    const sessions = await this.deps.sessions();
-    return sessions.find((x) => s.originKey && x.key === s.originKey && x.live) ?? sessions.find((x) => s.originKey && x.key === s.originKey) ?? sessions.find((x) => x.uid === s.originUid) ?? null;
+    return resolveSession(await this.deps.sessions(), s.originKey, s.originUid);
   }
 
   /** What the reviewer's origin tool reads: the human's messages to the session that made the stack, or passages that mention a query. */
@@ -1965,10 +1970,10 @@ export class ReviewService {
   /** Apply a re-check's verdicts: addressed findings close; the rest go back to open. */
   async acceptVerdict(id: string, pr: number, overrides: Record<number, 'addressed' | 'open'> = {}): Promise<StackView> {
     const cur = await this.currentRev(id, pr);
-    const verdict = cur?.verdictJson ? (JSON.parse(cur.verdictJson) as Verdict) : null;
+    const verdict = verdictOf(cur);
     const sent = await this.db.reviewFinding.findMany({ where: { stackId: id, ownerPr: pr, state: 'sent' } });
     for (const f of sent) {
-      const v = verdict?.items.find((i) => i.id === f.id);
+      const v = verdict?.items?.find((i) => i.id === f.id);
       const state = overrides[f.id] ?? (v?.verdict === 'addressed' ? 'addressed' : 'open');
       await this.db.reviewFinding.update({ where: { id: f.id }, data: { state, note: v?.evidence || f.note, stateBy: overrides[f.id] ? 'you' : 'reviewer', stateRevId: cur?.id ?? null, updatedAt: now() } });
     }
