@@ -1,0 +1,375 @@
+# Wire shapes clients read (test/contract.test.ts). Every line must keep existing with its
+# type; additions are fine. `null`: present, any type. Regenerate after an additive change.
+GET /api/auth/status.authenticated: boolean
+GET /api/auth/status.enabled: boolean
+GET /api/auth/status.enrolled: boolean
+GET /api/auth/status.password: boolean
+GET /api/auth/status: object
+GET /api/capabilities.api: number
+GET /api/capabilities.features.activityPush: number
+GET /api/capabilities.features.answerOnce: number
+GET /api/capabilities.features.attachedTerminal: number
+GET /api/capabilities.features.capabilities: number
+GET /api/capabilities.features.concurrentCreate: number
+GET /api/capabilities.features.interruptions: number
+GET /api/capabilities.features.jobs: number
+GET /api/capabilities.features.migration: number
+GET /api/capabilities.features.notes: number
+GET /api/capabilities.features.portable: number
+GET /api/capabilities.features.recovery: number
+GET /api/capabilities.features.sendId: number
+GET /api/capabilities.features.uploads: number
+GET /api/capabilities.features.usage: number
+GET /api/capabilities.features.voice: number
+GET /api/capabilities.features: object
+GET /api/capabilities.host: string
+GET /api/capabilities.uploads.idleMs: number
+GET /api/capabilities.uploads.maxBytes: number
+GET /api/capabilities.uploads.maxTotalBytes: number
+GET /api/capabilities.uploads: object
+GET /api/capabilities: object
+GET /api/hello.ah: boolean
+GET /api/hello.auth: boolean
+GET /api/hello.features.activityPush: number
+GET /api/hello.features.answerOnce: number
+GET /api/hello.features.attachedTerminal: number
+GET /api/hello.features.capabilities: number
+GET /api/hello.features.concurrentCreate: number
+GET /api/hello.features.interruptions: number
+GET /api/hello.features.jobs: number
+GET /api/hello.features.migration: number
+GET /api/hello.features.notes: number
+GET /api/hello.features.portable: number
+GET /api/hello.features.recovery: number
+GET /api/hello.features.sendId: number
+GET /api/hello.features.uploads: number
+GET /api/hello.features.usage: number
+GET /api/hello.features.voice: number
+GET /api/hello.features: object
+GET /api/hello.hostname: string
+GET /api/hello: object
+GET /api/sessions/:uid/queue: array
+GET /api/state.api: number
+GET /api/state.defaultSession: string
+GET /api/state.features.activityPush: number
+GET /api/state.features.answerOnce: number
+GET /api/state.features.attachedTerminal: number
+GET /api/state.features.capabilities: number
+GET /api/state.features.concurrentCreate: number
+GET /api/state.features.interruptions: number
+GET /api/state.features.jobs: number
+GET /api/state.features.migration: number
+GET /api/state.features.notes: number
+GET /api/state.features.portable: number
+GET /api/state.features.recovery: number
+GET /api/state.features.sendId: number
+GET /api/state.features.uploads: number
+GET /api/state.features.usage: number
+GET /api/state.features.voice: number
+GET /api/state.features: object
+GET /api/state.focus: null
+GET /api/state.history: array
+GET /api/state.home: string
+GET /api/state.hostname: string
+GET /api/state.hosts: array
+GET /api/state.hosts[].name: string
+GET /api/state.hosts[].online: boolean
+GET /api/state.hosts[].self: boolean
+GET /api/state.hosts[]: object
+GET /api/state.interruptions.count: number
+GET /api/state.interruptions.incidents: array
+GET /api/state.interruptions.midTurn: number
+GET /api/state.interruptions: object
+GET /api/state.jobs.next: array
+GET /api/state.jobs.running: array
+GET /api/state.jobs.uncertain: array
+GET /api/state.jobs.waiting: array
+GET /api/state.jobs: object
+GET /api/state.notes.count: number
+GET /api/state.notes.cursor: number
+GET /api/state.notes: object
+GET /api/state.omarchy: null
+GET /api/state.presets: array
+GET /api/state.presets[].approveKeys: array
+GET /api/state.presets[].approveKeys[]: string
+GET /api/state.presets[].available: boolean
+GET /api/state.presets[].catalog: string
+GET /api/state.presets[].command: string
+GET /api/state.presets[].denyKeys: array
+GET /api/state.presets[].denyKeys[]: string
+GET /api/state.presets[].effort.args: array
+GET /api/state.presets[].effort.args[]: string
+GET /api/state.presets[].effort.levels: array
+GET /api/state.presets[].effort.levels[]: string
+GET /api/state.presets[].effort: object
+GET /api/state.presets[].feed: string
+GET /api/state.presets[].gates: array
+GET /api/state.presets[].gates[].kind: string
+GET /api/state.presets[].gates[].link: string
+GET /api/state.presets[].gates[].pattern: string
+GET /api/state.presets[].gates[]: object
+GET /api/state.presets[].id: string
+GET /api/state.presets[].interruptKeys: array
+GET /api/state.presets[].interruptKeys[]: string
+GET /api/state.presets[].match: string
+GET /api/state.presets[].modeCycle.detect.accept-edits: string
+GET /api/state.presets[].modeCycle.detect.auto: string
+GET /api/state.presets[].modeCycle.detect.dangerous: string
+GET /api/state.presets[].modeCycle.detect.default: string
+GET /api/state.presets[].modeCycle.detect.plan: string
+GET /api/state.presets[].modeCycle.detect: object
+GET /api/state.presets[].modeCycle.key: string
+GET /api/state.presets[].modeCycle: object
+GET /api/state.presets[].modelArgs: array
+GET /api/state.presets[].modelArgs[]: string
+GET /api/state.presets[].models: array
+GET /api/state.presets[].models[].args: array
+GET /api/state.presets[].models[].args[]: string
+GET /api/state.presets[].models[].description: string
+GET /api/state.presets[].models[].id: string
+GET /api/state.presets[].models[].isDefault: boolean
+GET /api/state.presets[].models[].name: string
+GET /api/state.presets[].models[]: object
+GET /api/state.presets[].modes: array
+GET /api/state.presets[].modes[].args: array
+GET /api/state.presets[].modes[].args[]: string
+GET /api/state.presets[].modes[].dangerous: boolean
+GET /api/state.presets[].modes[].description: string
+GET /api/state.presets[].modes[].id: string
+GET /api/state.presets[].modes[].name: string
+GET /api/state.presets[].modes[]: object
+GET /api/state.presets[].name: string
+GET /api/state.presets[].questions: string
+GET /api/state.presets[].ready: string
+GET /api/state.presets[].resetEffort: string
+GET /api/state.presets[].resetModel: string
+GET /api/state.presets[].resume: string
+GET /api/state.presets[].resumeId: string
+GET /api/state.presets[].settingsCommands.effort: string
+GET /api/state.presets[].settingsCommands.mode: string
+GET /api/state.presets[].settingsCommands.model: string
+GET /api/state.presets[].settingsCommands: object
+GET /api/state.presets[].switchEffort: string
+GET /api/state.presets[].switchModel: string
+GET /api/state.presets[].trust.accept: string
+GET /api/state.presets[].trust.pattern: string
+GET /api/state.presets[].trust: object
+GET /api/state.presets[].waitingPatterns: array
+GET /api/state.presets[].waitingPatterns[]: string
+GET /api/state.presets[]: object
+GET /api/state.review.alerts: array
+GET /api/state.review.branches: array
+GET /api/state.review.fixing: array
+GET /api/state.review: object
+GET /api/state.sessions: array
+GET /api/state.sessions[]: string
+GET /api/state.windows: array
+GET /api/state.windows[].activity: number
+GET /api/state.windows[].agent: null
+GET /api/state.windows[].answerable: boolean
+GET /api/state.windows[].ask: null
+GET /api/state.windows[].askId: null
+GET /api/state.windows[].branch: string
+GET /api/state.windows[].command: string
+GET /api/state.windows[].continued: null
+GET /api/state.windows[].createdAt: number
+GET /api/state.windows[].cwd: string
+GET /api/state.windows[].detail: null
+GET /api/state.windows[].devices: array
+GET /api/state.windows[].feed: null
+GET /api/state.windows[].fork: null
+GET /api/state.windows[].harnessId: null
+GET /api/state.windows[].id: string
+GET /api/state.windows[].index: number
+GET /api/state.windows[].launch: null
+GET /api/state.windows[].launchEffort: null
+GET /api/state.windows[].launchMode: null
+GET /api/state.windows[].launchModel: null
+GET /api/state.windows[].limit: null
+GET /api/state.windows[].limitResetsAt: null
+GET /api/state.windows[].model: null
+GET /api/state.windows[].name: string
+GET /api/state.windows[].order: number
+GET /api/state.windows[].panes: number
+GET /api/state.windows[].pinned: boolean
+GET /api/state.windows[].project: string
+GET /api/state.windows[].projectPath: string
+GET /api/state.windows[].queued: number
+GET /api/state.windows[].reply: null
+GET /api/state.windows[].session: string
+GET /api/state.windows[].status: string
+GET /api/state.windows[].statusSource: string
+GET /api/state.windows[].terminal: null
+GET /api/state.windows[].title: string
+GET /api/state.windows[].uid: string
+GET /api/state.windows[].viewers: number
+GET /api/state.windows[].worktree: boolean
+GET /api/state.windows[]: object
+GET /api/state: object
+POST /api/sessions/:uid/send.outcome: string
+POST /api/sessions/:uid/send.queued: number
+POST /api/sessions/:uid/send.resumed: boolean
+POST /api/sessions/:uid/send.windowId: string
+POST /api/sessions/:uid/send: object
+POST /api/windows.id: string
+POST /api/windows.uid: string
+POST /api/windows: object
+SSE /api/events state.api: number
+SSE /api/events state.defaultSession: string
+SSE /api/events state.features.activityPush: number
+SSE /api/events state.features.answerOnce: number
+SSE /api/events state.features.attachedTerminal: number
+SSE /api/events state.features.capabilities: number
+SSE /api/events state.features.concurrentCreate: number
+SSE /api/events state.features.interruptions: number
+SSE /api/events state.features.jobs: number
+SSE /api/events state.features.migration: number
+SSE /api/events state.features.notes: number
+SSE /api/events state.features.portable: number
+SSE /api/events state.features.recovery: number
+SSE /api/events state.features.sendId: number
+SSE /api/events state.features.uploads: number
+SSE /api/events state.features.usage: number
+SSE /api/events state.features.voice: number
+SSE /api/events state.features: object
+SSE /api/events state.focus: null
+SSE /api/events state.history: array
+SSE /api/events state.home: string
+SSE /api/events state.hostname: string
+SSE /api/events state.hosts: array
+SSE /api/events state.hosts[].name: string
+SSE /api/events state.hosts[].online: boolean
+SSE /api/events state.hosts[].self: boolean
+SSE /api/events state.hosts[]: object
+SSE /api/events state.interruptions.count: number
+SSE /api/events state.interruptions.incidents: array
+SSE /api/events state.interruptions.midTurn: number
+SSE /api/events state.interruptions: object
+SSE /api/events state.jobs.next: array
+SSE /api/events state.jobs.running: array
+SSE /api/events state.jobs.uncertain: array
+SSE /api/events state.jobs.waiting: array
+SSE /api/events state.jobs: object
+SSE /api/events state.notes.count: number
+SSE /api/events state.notes.cursor: number
+SSE /api/events state.notes: object
+SSE /api/events state.omarchy: null
+SSE /api/events state.presets: array
+SSE /api/events state.presets[].approveKeys: array
+SSE /api/events state.presets[].approveKeys[]: string
+SSE /api/events state.presets[].available: boolean
+SSE /api/events state.presets[].catalog: string
+SSE /api/events state.presets[].command: string
+SSE /api/events state.presets[].denyKeys: array
+SSE /api/events state.presets[].denyKeys[]: string
+SSE /api/events state.presets[].effort.args: array
+SSE /api/events state.presets[].effort.args[]: string
+SSE /api/events state.presets[].effort.levels: array
+SSE /api/events state.presets[].effort.levels[]: string
+SSE /api/events state.presets[].effort: object
+SSE /api/events state.presets[].feed: string
+SSE /api/events state.presets[].gates: array
+SSE /api/events state.presets[].gates[].kind: string
+SSE /api/events state.presets[].gates[].link: string
+SSE /api/events state.presets[].gates[].pattern: string
+SSE /api/events state.presets[].gates[]: object
+SSE /api/events state.presets[].id: string
+SSE /api/events state.presets[].interruptKeys: array
+SSE /api/events state.presets[].interruptKeys[]: string
+SSE /api/events state.presets[].match: string
+SSE /api/events state.presets[].modeCycle.detect.accept-edits: string
+SSE /api/events state.presets[].modeCycle.detect.auto: string
+SSE /api/events state.presets[].modeCycle.detect.dangerous: string
+SSE /api/events state.presets[].modeCycle.detect.default: string
+SSE /api/events state.presets[].modeCycle.detect.plan: string
+SSE /api/events state.presets[].modeCycle.detect: object
+SSE /api/events state.presets[].modeCycle.key: string
+SSE /api/events state.presets[].modeCycle: object
+SSE /api/events state.presets[].modelArgs: array
+SSE /api/events state.presets[].modelArgs[]: string
+SSE /api/events state.presets[].models: array
+SSE /api/events state.presets[].models[].args: array
+SSE /api/events state.presets[].models[].args[]: string
+SSE /api/events state.presets[].models[].description: string
+SSE /api/events state.presets[].models[].id: string
+SSE /api/events state.presets[].models[].isDefault: boolean
+SSE /api/events state.presets[].models[].name: string
+SSE /api/events state.presets[].models[]: object
+SSE /api/events state.presets[].modes: array
+SSE /api/events state.presets[].modes[].args: array
+SSE /api/events state.presets[].modes[].args[]: string
+SSE /api/events state.presets[].modes[].dangerous: boolean
+SSE /api/events state.presets[].modes[].description: string
+SSE /api/events state.presets[].modes[].id: string
+SSE /api/events state.presets[].modes[].name: string
+SSE /api/events state.presets[].modes[]: object
+SSE /api/events state.presets[].name: string
+SSE /api/events state.presets[].questions: string
+SSE /api/events state.presets[].ready: string
+SSE /api/events state.presets[].resetEffort: string
+SSE /api/events state.presets[].resetModel: string
+SSE /api/events state.presets[].resume: string
+SSE /api/events state.presets[].resumeId: string
+SSE /api/events state.presets[].settingsCommands.effort: string
+SSE /api/events state.presets[].settingsCommands.mode: string
+SSE /api/events state.presets[].settingsCommands.model: string
+SSE /api/events state.presets[].settingsCommands: object
+SSE /api/events state.presets[].switchEffort: string
+SSE /api/events state.presets[].switchModel: string
+SSE /api/events state.presets[].trust.accept: string
+SSE /api/events state.presets[].trust.pattern: string
+SSE /api/events state.presets[].trust: object
+SSE /api/events state.presets[].waitingPatterns: array
+SSE /api/events state.presets[].waitingPatterns[]: string
+SSE /api/events state.presets[]: object
+SSE /api/events state.review.alerts: array
+SSE /api/events state.review.branches: array
+SSE /api/events state.review.fixing: array
+SSE /api/events state.review: object
+SSE /api/events state.sessions: array
+SSE /api/events state.sessions[]: string
+SSE /api/events state.windows: array
+SSE /api/events state.windows[].activity: number
+SSE /api/events state.windows[].agent: null
+SSE /api/events state.windows[].answerable: boolean
+SSE /api/events state.windows[].ask: null
+SSE /api/events state.windows[].askId: null
+SSE /api/events state.windows[].branch: string
+SSE /api/events state.windows[].command: string
+SSE /api/events state.windows[].continued: null
+SSE /api/events state.windows[].createdAt: number
+SSE /api/events state.windows[].cwd: string
+SSE /api/events state.windows[].detail: null
+SSE /api/events state.windows[].devices: array
+SSE /api/events state.windows[].feed: null
+SSE /api/events state.windows[].fork: null
+SSE /api/events state.windows[].harnessId: null
+SSE /api/events state.windows[].id: string
+SSE /api/events state.windows[].index: number
+SSE /api/events state.windows[].launch: null
+SSE /api/events state.windows[].launchEffort: null
+SSE /api/events state.windows[].launchMode: null
+SSE /api/events state.windows[].launchModel: null
+SSE /api/events state.windows[].limit: null
+SSE /api/events state.windows[].limitResetsAt: null
+SSE /api/events state.windows[].model: null
+SSE /api/events state.windows[].name: string
+SSE /api/events state.windows[].order: number
+SSE /api/events state.windows[].panes: number
+SSE /api/events state.windows[].pinned: boolean
+SSE /api/events state.windows[].project: string
+SSE /api/events state.windows[].projectPath: string
+SSE /api/events state.windows[].queued: number
+SSE /api/events state.windows[].reply: null
+SSE /api/events state.windows[].session: string
+SSE /api/events state.windows[].status: string
+SSE /api/events state.windows[].statusSource: string
+SSE /api/events state.windows[].terminal: null
+SSE /api/events state.windows[].title: string
+SSE /api/events state.windows[].uid: string
+SSE /api/events state.windows[].viewers: number
+SSE /api/events state.windows[].worktree: boolean
+SSE /api/events state.windows[]: object
+SSE /api/events state: object
+error.error: string
+error: object

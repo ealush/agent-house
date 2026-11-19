@@ -55,7 +55,10 @@ peer hosts. Inside it:
 9. **Wire shapes are contracts.** Paths, field names, status codes, error `code`s, SSE
    frames and WebSocket close codes are consumed by ah-native and the web client.
    Change them only additively, and announce new capabilities in `features.ts`;
-   `API_VERSION` (core.ts) must stay 28 while the native app checks it for equality.
+   `API_VERSION` (core.ts) must stay 28 while the native app checks it for equality. `test/contract.test.ts` pins what clients read
+   (hello, auth status, state, capabilities, the first SSE frame, a send, a queue, the
+   error body) in `docs/spec/wire-shapes.txt`: every listed field must stay, with its
+   type; additions are fine. *(checked)*
 
 ## Bounded contexts
 
