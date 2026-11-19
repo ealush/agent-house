@@ -85,6 +85,7 @@ The operations that span more than one effect, in the order they take them, and 
 | Stop | input lock, waited for at most 1 s → keys | Not between a send's paste and its Enter; never more than a second late. |
 | Relaunch | new window → input lock → kill the old one | A message that went in since relaunch's check cancels it; a message to the old uid afterwards follows the conversation. |
 | Hand a note to an agent (`notes/handoff.ts`) | row `sending` → send (named) → wait for the queue on disk → row | Uncertain until confirmed; a retry is the same write. |
+| Take PRs into a review (create, add layers, a sync joining) | per-repo claim → "not under review"? → insert | One PR is in at most one open review. |
 | Dispatch review findings (`ReviewService.dispatch`) | dispatch row → send named `rd-<id>` → queue id | A failed send removes the row; a sent one is never unrecorded. |
 | Registry writes (`Registry.flush`) | changed rows + deletions, one write at a time | A failed write is pending again (rows and deletions): the next flush retries. |
 
