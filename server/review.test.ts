@@ -1119,3 +1119,25 @@ test('review: fixes can go to a new agent session, in a worktree at the layer, t
     assert.equal(v.layers.find((l) => l.pr === 2)!.status, 'fixing');
   });
 });
+
+test('review: two stacks started at once for the same PR — one takes it, the other is told', async () => {
+  const t = await setup();
+  // Each check that #4 is free waits for the other to have checked too (or 2 s): the
+  // moment two requests would both find it free and both take it.
+  const svc = t.svc as unknown as { untaken: (root: string, prs: number[]) => Promise<void> };
+  const check = svc.untaken.bind(t.svc);
+  let checked = 0;
+  let both!: () => void;
+  const met = new Promise<void>((r) => (both = r));
+  svc.untaken = async (root, prs) => {
+    await check(root, prs);
+    if (++checked === 2) both();
+    await Promise.race([met, new Promise((r) => setTimeout(r, 2000))]);
+  };
+  await withGh(t.w, async () => {
+    const out = await Promise.allSettled([t.svc.create(t.w.local, { prs: [4] }), t.svc.create(t.w.local, { prs: [4] })]);
+    assert.deepEqual(out.map((o) => o.status).sort(), ['fulfilled', 'rejected']);
+    assert.match(String((out.find((o) => o.status === 'rejected') as PromiseRejectedResult).reason), /already in a stack under review/);
+    assert.equal(await t.db.reviewLayer.count({ where: { pr: 4 } }), 1);
+  });
+});

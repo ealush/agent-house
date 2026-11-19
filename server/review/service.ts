@@ -279,6 +279,7 @@ export class ReviewService {
   private db: PrismaClient;
   private chat: SideChatStore;
   private deps: ReviewDeps;
+  private claims = new Map<string, Promise<unknown>>();
   private syncs = new Map<string, Promise<void>>();
   private jobs = new Set<string>();
   private bodies = new Map<string, string>();
@@ -523,11 +524,13 @@ export class ReviewService {
       base = prs.find((p) => p.number === order.find((n) => !heads.has(prs.find((x) => x.number === n)!.baseRefName)))?.baseRefName || trunk;
       source = 'manual';
     }
-    await this.untaken(main, order);
     const first = prs.find((p) => p.number === order[0])!;
     const id = randomUUID().slice(0, 8);
-    await this.db.reviewStack.create({ data: { id, repoRoot: main, repo, trunk: base, source, ghStack, title: (title?.trim() || first.title).slice(0, 120), createdAt: now() } });
-    await this.db.reviewLayer.createMany({ data: order.map((n, i) => this.layerRow(id, prs.find((x) => x.number === n)!, i)) });
+    await this.claiming(main, async () => {
+      await this.untaken(main, order);
+      await this.db.reviewStack.create({ data: { id, repoRoot: main, repo, trunk: base, source, ghStack, title: (title?.trim() || first.title).slice(0, 120), createdAt: now() } });
+      await this.db.reviewLayer.createMany({ data: order.map((n, i) => this.layerRow(id, prs.find((x) => x.number === n)!, i)) });
+    });
     for (const p of prs) this.bodies.set(`${id}:${p.number}`, p.body);
     // The session it's started from made it and owns it; else the one session working on these branches, if exactly one is.
     const maker = from ? (await this.deps.sessions()).find((x) => x.uid === from) : undefined;
@@ -556,6 +559,21 @@ export class ReviewService {
     return picked;
   }
 
+  /**
+   * "Not already under review" and taking the PRs are one step per repository: two
+   * requests (or a request and a sync) checking at once can't both take the same PR.
+   */
+  private async claiming<T>(root: string, fn: () => Promise<T>): Promise<T> {
+    const prior = this.claims.get(root) ?? Promise.resolve();
+    const task = prior.catch(() => {}).then(fn);
+    this.claims.set(root, task);
+    try {
+      return await task;
+    } finally {
+      if (this.claims.get(root) === task) this.claims.delete(root);
+    }
+  }
+
   private async untaken(root: string, prs: number[]): Promise<void> {
     const open = (await this.db.reviewStack.findMany({ where: { repoRoot: root, state: 'open' }, select: { id: true } })).map((s) => s.id);
     const taken = await this.db.reviewLayer.findFirst({ where: { pr: { in: prs }, stackId: { in: open } } });
@@ -574,9 +592,13 @@ export class ReviewService {
     const dup = picked.find((n) => layers.some((l) => l.pr === n));
     if (dup) throw new ReviewError(409, `#${dup} is already in this stack`);
     const order = this.pickedOrder(prs, picked, s.repo);
-    await this.untaken(s.repoRoot, order);
-    const end = layers.length ? layers[layers.length - 1].position + 1 : 0;
-    await this.db.reviewLayer.createMany({ data: order.map((n, i) => this.layerRow(id, prs.find((x) => x.number === n)!, end + i)) });
+    await this.claiming(s.repoRoot, async () => {
+      await this.untaken(s.repoRoot, order);
+      // Read again in the claim: a sync may have joined a layer since.
+      const now = await this.db.reviewLayer.findMany({ where: { stackId: id }, orderBy: { position: 'asc' } });
+      const end = now.length ? now[now.length - 1].position + 1 : 0;
+      await this.db.reviewLayer.createMany({ data: order.map((n, i) => this.layerRow(id, prs.find((x) => x.number === n)!, end + i)) });
+    });
     for (const p of prs) this.bodies.set(`${id}:${p.number}`, p.body);
     if (s.state === 'done') await this.db.reviewStack.update({ where: { id }, data: { state: 'open' } });
     void this.sync(id, true).catch((err) => console.error(`review sync ${id}:`, (err as Error).message));
@@ -790,23 +812,27 @@ export class ReviewService {
       }
       // New PRs stacked on an open layer join the stack, right after their parent's line; a stack you picked stays as picked.
       const heads = new Map(s.source !== 'tree' ? [] : layers.filter((l) => l.state === 'open').map((l) => [l.headRef, l]));
-      const others = await this.db.reviewLayer.findMany({ where: { pr: { in: all.map((p) => p.number) }, stackId: { not: id } }, select: { pr: true } });
-      const elsewhere = new Set(others.map((o) => o.pr));
-      for (const p of all) {
-        if (p.state !== 'OPEN' || p.crossRepo || elsewhere.has(p.number) || layers.some((l) => l.pr === p.number)) continue;
-        const parent = heads.get(p.baseRefName);
-        if (!parent) continue;
-        const nodes = layers.map((l) => ({ number: l.pr, headRefName: l.headRef, baseRefName: l.baseRef }));
-        const order = layers.map((l) => l.pr);
-        const tail = [parent.pr, ...descendants(nodes, parent.pr, order)];
-        const at = Math.max(...tail.map((n) => order.indexOf(n))) + 1;
-        await this.db.$transaction([
-          ...layers.filter((l) => l.position >= at).map((l) => this.db.reviewLayer.update({ where: { stackId_pr: { stackId: id, pr: l.pr } }, data: { position: l.position + 1 } })),
-          this.db.reviewLayer.create({ data: { stackId: id, pr: p.number, position: at, title: p.title, url: p.url, headRef: p.headRefName, baseRef: p.baseRefName, headSha: p.headRefOid, draft: p.isDraft, author: p.author } }),
-        ]);
-        layers = await this.db.reviewLayer.findMany({ where: { stackId: id }, orderBy: { position: 'asc' } });
-        heads.set(p.headRefName, layers.find((l) => l.pr === p.number)!);
-      }
+      // Joining checks and claims in one step, per repository: two stacks never take one PR.
+      let elsewhere = new Set<number>();
+      await this.claiming(s.repoRoot, async () => {
+        const others = await this.db.reviewLayer.findMany({ where: { pr: { in: all.map((p) => p.number) }, stackId: { not: id } }, select: { pr: true } });
+        elsewhere = new Set(others.map((o) => o.pr));
+        for (const p of all) {
+          if (p.state !== 'OPEN' || p.crossRepo || elsewhere.has(p.number) || layers.some((l) => l.pr === p.number)) continue;
+          const parent = heads.get(p.baseRefName);
+          if (!parent) continue;
+          const nodes = layers.map((l) => ({ number: l.pr, headRefName: l.headRef, baseRefName: l.baseRef }));
+          const order = layers.map((l) => l.pr);
+          const tail = [parent.pr, ...descendants(nodes, parent.pr, order)];
+          const at = Math.max(...tail.map((n) => order.indexOf(n))) + 1;
+          await this.db.$transaction([
+            ...layers.filter((l) => l.position >= at).map((l) => this.db.reviewLayer.update({ where: { stackId_pr: { stackId: id, pr: l.pr } }, data: { position: l.position + 1 } })),
+            this.db.reviewLayer.create({ data: { stackId: id, pr: p.number, position: at, title: p.title, url: p.url, headRef: p.headRefName, baseRef: p.baseRefName, headSha: p.headRefOid, draft: p.isDraft, author: p.author } }),
+          ]);
+          layers = await this.db.reviewLayer.findMany({ where: { stackId: id }, orderBy: { position: 'asc' } });
+          heads.set(p.headRefName, layers.find((l) => l.pr === p.number)!);
+        }
+      });
       const natives = await this.nativeStacks(s.repoRoot, s.repo, _force);
       if (natives && s.source === 'native') layers = await this.follow(s, natives, layers, all, elsewhere);
       // GitHub's view of each layer.
