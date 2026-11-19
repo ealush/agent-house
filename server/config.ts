@@ -1,6 +1,6 @@
 import { readFileSync, existsSync, accessSync, constants } from 'node:fs';
-import { DEFAULT_USAGE, type UsageConfig } from './usage/service.ts';
-import { DEFAULT_RECOVERY, type RecoveryConfig } from './recovery/engine.ts';
+import { DEFAULT_USAGE, type UsageConfig } from './usage/settings.ts';
+import { DEFAULT_RECOVERY, type RecoveryConfig } from './recovery/settings.ts';
 import { DEFAULT_UPLOAD_LIMITS, type UploadLimits } from './uploads.ts';
 import type { GateRule } from './agentgate.ts';
 import { homedir } from 'node:os';

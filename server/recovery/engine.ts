@@ -23,9 +23,8 @@ import { conversationKey } from '../registry.ts';
 import { classify, progressed, transcriptErrors, type Finding } from './classify.ts';
 import { DomainError } from '../errors.ts';
 
-export type RecoveryConfig = { auto: boolean; maxAttempts: number; backoffSeconds: number; maxBackoffSeconds: number; jitterSeconds: number; prompt: string; maxActionsPerMinute: number };
-
-export const DEFAULT_RECOVERY: RecoveryConfig = { auto: false, maxAttempts: 5, backoffSeconds: 60, maxBackoffSeconds: 3600, jitterSeconds: 30, prompt: 'Continue where you left off.', maxActionsPerMinute: 3 };
+import type { RecoveryConfig } from './settings.ts';
+export { DEFAULT_RECOVERY, type RecoveryConfig } from './settings.ts';
 
 export type RecoveryDeps = {
   config: () => RecoveryConfig;
