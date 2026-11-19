@@ -153,6 +153,8 @@ test('a failed start keeps what happened meanwhile: a removed follow-up stays re
   r.abandonStart(undo2);
   assert.equal(r.get('u1'), undefined);
   await r.settled();
+});
+
 /** A registry on `path` whose next `failures` writes fail. */
 async function flaky(path: string, failures: number) {
   const r = new Registry(path);
