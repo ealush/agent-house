@@ -109,6 +109,7 @@ const CORE = [
   'errors.ts',
   'admission.ts',
   'stateStream.ts',
+  'answers.ts',
   'features.ts',
   'choices.ts',
   'agentgate.ts',

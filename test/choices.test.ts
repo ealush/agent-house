@@ -4,7 +4,7 @@ import { readFileSync, existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { startAh, cleanup, http, until } from './helpers.ts';
+import { startAh, cleanup, http, until, sleep } from './helpers.ts';
 
 const fixture = fileURLToPath(new URL('./fixtures/picker.js', import.meta.url));
 const keys = (log: string) => (existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l.slice(4))).join('') : '');
@@ -116,6 +116,12 @@ test('picks a row of a permission prompt by its digit', async () => {
     assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/choose`, { body: { key: '7' } })).status, 409);
     assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/choose`, { body: { key: '2' } })).status, 200);
     await until(() => keys(log) === '2', 5000, 'digit typed');
+    // The picker is still on screen (the agent hasn't redrawn): a second tap types nothing.
+    const again = await http(ah, 'POST', `/api/sessions/${uid}/choose`, { body: { key: '2' } });
+    assert.equal(again.status, 409, again.body);
+    assert.equal(again.json().code, 'already_answered');
+    await sleep(300);
+    assert.equal(keys(log), '2', 'typed once');
   } finally {
     await cleanup(ah);
   }
@@ -149,6 +155,15 @@ test('approve from a notification goes through only while the same prompt is sho
     const ok = await http(ah, 'POST', `/api/sessions/${uid}/answer`, { body: { answer: 'approve', prompt: w.askId } });
     assert.equal(ok.status, 200, ok.body);
     await until(() => keys(log) === '\r', 5000, 'Enter typed');
+    // The prompt is still on screen (the agent hasn't redrawn): a second tap, from this
+    // device or another, with or without the prompt's id, types nothing.
+    for (const body of [{ answer: 'approve', prompt: w.askId }, { answer: 'approve' }, { answer: 'deny' }]) {
+      const again = await http(ah, 'POST', `/api/sessions/${uid}/answer`, { body });
+      assert.equal(again.status, 409, again.body);
+      assert.equal(again.json().code, 'already_answered');
+    }
+    await sleep(300);
+    assert.equal(keys(log), '\r', 'typed once');
   } finally {
     await cleanup(ah);
   }

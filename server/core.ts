@@ -35,6 +35,7 @@ import { chatSteps, claudeQuestionGroups, cursorKeys, dialogAt, dialogSteps, par
 import type { Peers } from './peers.ts';
 import type { Apns } from './apns.ts';
 import { StateStream } from './stateStream.ts';
+import { AnswerGuard } from './answers.ts';
 import { fingerprint } from './env.ts';
 import { features } from './features.ts';
 import type { NotesState } from './notes/store.ts';
@@ -190,6 +191,8 @@ export class Core {
   readonly push = new Push();
   readonly viewers: Map<string, string[]>;
   private state: State | null = null;
+  /** Which prompt each session was just answered on: one answer per prompt (answers.ts). */
+  private answers = new AnswerGuard();
   /** Subscribers get the whole state once, then what each pass changed (stateStream.ts). */
   private stream = new StateStream();
   private tmuxPath = process.env.PATH ?? '';
@@ -364,6 +367,7 @@ export class Core {
         this.lastPrune = now();
         void this.pruneSnapshots().catch((err) => console.error('snapshot prune failed:', err));
       }
+      this.answers.observe(windows);
       this.acceptTrust(windows);
       await this.queues.confirmDeliveries(windows);
       await this.queues.deliverDue(windows);
@@ -987,10 +991,22 @@ export class Core {
     if (!keys?.length) throw new CoreError(400, `no ${answer} keys configured for ${w.agent}`);
     await this.withInput(uid, async () => {
       // Nothing typed meanwhile (a send, another device's answer) changed what it asks.
-      if (prompt) check((await this.tick()).windows.find((x) => x.uid === uid));
-      await t.tmux('send-keys', '-t', w.id, ...keys);
+      const now = check((await this.tick()).windows.find((x) => x.uid === uid));
+      if (now.askId !== w.askId) throw new CoreError(409, 'it is asking something else now');
+      await this.answerOnce(uid, w.askId, () => t.tmux('send-keys', '-t', w.id, ...keys));
     });
     this.tick().catch(() => {});
+  }
+
+  /** Types an answer to the prompt `askId` unless it was just answered (answers.ts). */
+  private async answerOnce(uid: string, askId: string | null, type: () => Promise<unknown>): Promise<void> {
+    if (!this.answers.claim(uid, askId, Date.now())) throw new CoreError(409, 'that prompt was just answered', 'already_answered');
+    try {
+      await type();
+    } catch (err) {
+      this.answers.release(uid, askId);
+      throw err;
+    }
   }
 
   /**
@@ -1011,7 +1027,7 @@ export class Core {
       const found = picker?.options.find((o) => o.key === key);
       if (!picker || !found) throw new CoreError(409, 'that choice is no longer on screen');
       const keys = key.startsWith('nav:') ? cursorKeys(picker.cursor ?? 0, Number(key.slice(4))) : [key];
-      await t.tmux('send-keys', '-t', w.id, ...keys);
+      await this.answerOnce(uid, w.askId, () => t.tmux('send-keys', '-t', w.id, ...keys));
       return found;
     });
     this.tick().catch(() => {});
