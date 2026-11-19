@@ -153,6 +153,62 @@ test('a failed start keeps what happened meanwhile: a removed follow-up stays re
   r.abandonStart(undo2);
   assert.equal(r.get('u1'), undefined);
   await r.settled();
+/** A registry on `path` whose next `failures` writes fail. */
+async function flaky(path: string, failures: number) {
+  const r = new Registry(path);
+  await r.ready();
+  const self = r as unknown as { persist: (rows: unknown[], removed: string[]) => Promise<void> };
+  const real = self.persist.bind(r);
+  let left = failures;
+  self.persist = async (rows, removed) => {
+    if (left-- > 0) throw new Error('disk full');
+    return real(rows, removed);
+  };
+  return r;
+}
+
+async function quietly(fn: () => Promise<void>) {
+  const quiet = console.error;
+  console.error = () => {};
+  try {
+    await fn();
+  } finally {
+    console.error = quiet;
+  }
+}
+
+test('a row whose write failed is written at the next flush, with nothing else changed', async () => {
+  const path = db();
+  await ensureMigrated(path);
+  const r = await flaky(path, 1);
+  await quietly(async () => {
+    r.starting('keep', { harness: 'shell', cwd: '/p', title: 'keep', tmux });
+    await r.settled();
+    r.flush(); // the next pass
+    await r.settled();
+  });
+  const again = new Registry(path);
+  await again.load();
+  assert.equal(again.get('keep')?.title, 'keep');
+});
+
+test('a deletion whose write failed is tried again, so a forgotten session stays forgotten', async () => {
+  const path = db();
+  await ensureMigrated(path);
+  const r = await flaky(path, 0);
+  r.starting('gone', { harness: 'shell', cwd: '/p', title: 'gone', tmux });
+  await r.settled();
+  const r2 = await flaky(path, 1);
+  await r2.load();
+  await quietly(async () => {
+    r2.remove('gone');
+    await r2.settled();
+    r2.flush();
+    await r2.settled();
+  });
+  const again = new Registry(path);
+  await again.load();
+  assert.equal(again.get('gone'), undefined);
 });
 
 test('a failed start keeps what changed meanwhile beyond the queue, and items a forgotten sibling can’t take back', async () => {

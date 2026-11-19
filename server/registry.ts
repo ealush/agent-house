@@ -466,8 +466,11 @@ export class Registry {
       .then(() => prev.catch(() => {}))
       .then(() => this.persist(records, removed))
       .catch((err) => {
-        // Not written: the next flush tries these rows again.
+        // Not written: the next flush (the next pass, at the latest) tries again — the
+        // rows, and the deletions, which would otherwise come back after a restart.
         for (const r of records) this.saved.delete(r.uid);
+        for (const id of removed) if (!this.records.has(id)) this.removed.add(id);
+        this.dirty = true;
         console.error('registry write failed:', err);
       });
   }
