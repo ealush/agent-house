@@ -138,3 +138,19 @@ test('something queued while it was starting is kept, never dropped with the fai
   assert.deepEqual(r.get('new')?.meta['ah.queue'], [q('own'), q('late2')]);
   await r.settled();
 });
+
+test('a failed start keeps what happened meanwhile: a removed follow-up stays removed, a forgotten session stays forgotten', async () => {
+  const r = await freshRegistry();
+  await r.ready();
+  r.starting('u1', { harness: 'codex', harnessId: 'c1', cwd: '/p', title: 'mine', tmux });
+  r.setMeta('u1', 'ah.queue', [q('a'), q('b')]);
+  const undo = r.starting('u1', { harness: 'codex', harnessId: 'c1', cwd: '/p', title: 'mine', tmux });
+  r.setMeta('u1', 'ah.queue', [q('b')]); // 'a' deleted from another device while it started
+  r.abandonStart(undo);
+  assert.deepEqual(r.get('u1')?.meta['ah.queue'], [q('b')]);
+  const undo2 = r.starting('u1', { harness: 'codex', harnessId: 'c1', cwd: '/p', title: 'mine', tmux });
+  r.remove('u1');
+  r.abandonStart(undo2);
+  assert.equal(r.get('u1'), undefined);
+  await r.settled();
+});

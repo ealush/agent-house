@@ -281,31 +281,42 @@ export class Registry {
    * A start that failed before its agent ran (the window couldn't be set up, a resume
    * couldn't be typed): everything starting() changed goes back. A new record goes; a
    * session that was being resumed is as it was, ended, never deleted; follow-ups taken
-   * from sibling records of the conversation return to them; and anything queued for it
-   * while it was starting stays queued, on the record that was there before or, for a
-   * new one, on the record itself, kept ended rather than lost.
+   * from sibling records of the conversation return to them; and its queue is the queue
+   * as it is now (removed meanwhile stays removed, queued meanwhile stays queued — on a
+   * new record kept ended rather than lost). Forgotten meanwhile, it stays forgotten.
    */
   abandonStart(undo: StartUndo) {
     const now = this.records.get(undo.id);
-    const ids = (items: unknown[]) => new Set(items.map((q) => (q as { id?: string }).id));
-    const taken = ids(undo.moved.flatMap((m) => m.items));
-    const own = ids((undo.before?.meta['ah.queue'] as unknown[] | undefined) ?? []);
-    const arrived = ((now?.meta['ah.queue'] as unknown[] | undefined) ?? []).filter((q) => !taken.has((q as { id?: string }).id) && !own.has((q as { id?: string }).id));
+    // Forgotten meanwhile: nothing to put back.
+    if (!now) return;
+    const idOf = (q: unknown) => (q as { id?: string }).id;
+    // The queue as it is now: what was removed during the start stays removed. Items
+    // that came from a sibling record go back to it (first in line); the rest stay here.
+    const queue = (now.meta['ah.queue'] as unknown[] | undefined) ?? [];
+    const from = new Map<string, string>();
+    for (const m of undo.moved) for (const q of m.items) from.set(String(idOf(q)), m.from);
     for (const m of undo.moved) {
-      const r = this.records.get(m.from);
-      if (r) r.meta['ah.queue'] = [...m.items, ...((r.meta['ah.queue'] as unknown[]) ?? [])];
+      const sib = this.records.get(m.from);
+      const back = queue.filter((q) => from.get(String(idOf(q))) === m.from);
+      if (sib && back.length) sib.meta['ah.queue'] = [...back, ...((sib.meta['ah.queue'] as unknown[]) ?? [])];
     }
+    const kept = queue.filter((q) => !from.has(String(idOf(q))));
+    const withQueue = (meta: Record<string, unknown>) => {
+      const { 'ah.queue': _, ...rest } = meta;
+      return kept.length ? { ...rest, 'ah.queue': kept } : rest;
+    };
     if (undo.before) {
-      const queue = [...((undo.before.meta['ah.queue'] as unknown[]) ?? []), ...arrived];
-      this.records.set(undo.id, { ...undo.before, meta: { ...undo.before.meta, ...(queue.length ? { 'ah.queue': queue } : {}) } });
-    } else if (now && arrived.length) {
-      this.records.set(undo.id, { ...now, lifecycle: 'ended', status: 'ended', endedAt: now.endedAt ?? Math.floor(Date.now() / 1000), tmux: undefined, pendingResume: false, meta: { ...now.meta, 'ah.queue': arrived } });
-    } else if (this.records.delete(undo.id)) {
+      this.records.set(undo.id, { ...undo.before, meta: withQueue(undo.before.meta) });
+    } else if (kept.length) {
+      this.records.set(undo.id, { ...now, lifecycle: 'ended', status: 'ended', endedAt: now.endedAt ?? Math.floor(Date.now() / 1000), tmux: undefined, pendingResume: false, meta: withQueue(now.meta) });
+    } else {
+      this.records.delete(undo.id);
       this.removed.add(undo.id);
     }
     this.dirty = true;
     this.flush();
   }
+
 
   /** Records a conversation id learned from discovery rather than hooks. */
   adopt(id: string, harnessId: string, model?: string) {
