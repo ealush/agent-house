@@ -442,6 +442,9 @@ export class Registry {
     }
   }
 
+  /** Writes failing since `at` (0: they aren't), last said in the log at `logged`. */
+  private failingSince = { at: 0, logged: 0 };
+
   flush() {
     if (!this.dirty) return;
     this.dirty = false;
@@ -465,13 +468,21 @@ export class Registry {
       .catch(() => {})
       .then(() => prev.catch(() => {}))
       .then(() => this.persist(records, removed))
+      .then(() => {
+        if (this.failingSince.at) console.error(`registry writes recovered after ${Math.round((Date.now() - this.failingSince.at) / 1000)} s`);
+        this.failingSince = { at: 0, logged: 0 };
+      })
       .catch((err) => {
         // Not written: the next flush (the next pass, at the latest) tries again — the
         // rows, and the deletions, which would otherwise come back after a restart.
         for (const r of records) this.saved.delete(r.uid);
         for (const id of removed) if (!this.records.has(id)) this.removed.add(id);
         this.dirty = true;
-        console.error('registry write failed:', err);
+        // Said once, then at most once a minute while it keeps failing (every pass retries).
+        if (Date.now() - this.failingSince.logged > 60_000) {
+          console.error(this.failingSince.at ? 'registry writes still failing:' : 'registry write failed:', err);
+          this.failingSince = { at: this.failingSince.at || Date.now(), logged: Date.now() };
+        }
       });
   }
 
