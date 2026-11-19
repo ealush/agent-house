@@ -37,6 +37,8 @@ export const FEATURES: Record<string, number> = {
   voice: 1,
   /** /api/notes: scratchpads, Markdown notes kept as sessions of their own, synced by revision, saved as files, handed to agents (server/notes, docs/spec/15-scratchpads.md). */
   notes: 1,
+  /** A prompt is answered once: a second approve/deny/choose for the prompt just answered is 409 `already_answered`. */
+  answerOnce: 1,
 };
 
 export function features(): Record<string, number> {

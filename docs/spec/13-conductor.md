@@ -29,6 +29,9 @@ TypeScript sources of truth are named beside each section.
 - **Idempotency.** Operations that start something take an `idempotencyKey`
   (8–120 of `[\w:.-]`). The same key returns the same operation (`existed: true`,
   HTTP 200) and starts nothing new, also when two requests race.
+- **One answer per prompt** (feature `answerOnce`). Approve, deny and choosing a row
+  type keys: a second answer to the prompt just answered is refused, 409
+  `already_answered`, until the session leaves that prompt (or 15 s pass).
 
 | Feature | Version | Routes |
 |---|---|---|
