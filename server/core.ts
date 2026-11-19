@@ -1491,37 +1491,32 @@ export class Core {
     // seconds (Send now waiting out a turn, a snapshot of a big tree): it waits at most
     // STOP_WAIT_MS, then goes in anyway. Whatever's typed next waits for the box to be
     // cleared below; the answer doesn't.
-    let keysSent!: (err?: unknown) => void;
-    const sentKeys = new Promise<void>((resolve, reject) => (keysSent = (err) => (err ? reject(err) : resolve())));
     let sent = 0;
-    let started = false;
-    const stop = async (): Promise<string | null> => {
-      started = true;
-      try {
+    let stopping: Promise<string | null> | null = null;
+    // Reads the box and sends the keys, once, from whichever path gets there first.
+    const stop = () =>
+      (stopping ??= (async () => {
         const box = w.agent ? await t.inputBox(w.id) : null;
         sent = Math.floor(Date.now() / 1000);
         await t.tmux('send-keys', '-t', w.id, ...this.interruptKeys(w));
-        keysSent();
         return box;
-      } catch (err) {
-        keysSent(err);
-        return null;
-      }
+      })());
+    let begun!: () => void;
+    const begin = new Promise<void>((r) => (begun = r));
+    const go = () => {
+      const p = stop();
+      begun();
+      return p;
     };
+    // The locked turn, taken now: it sends the keys if the lock comes free in time, and
+    // either way clears a prompt the Stop handed back before anything else is typed.
     void this.withInput(uid, async () => {
-      if (started) return;
-      if ((await stop()) === '') await this.clearHandedBack(w, 1000);
+      if ((await go().catch(() => null)) === '') await this.clearHandedBack(w, 1000);
     }).catch(() => {});
-    const late = setTimeout(() => {
-      if (started) return;
-      void stop()
-        .then(async (box) => {
-          if (box === '') await this.withInput(uid, () => this.clearHandedBack(w, 1000));
-        })
-        .catch(() => {});
-    }, STOP_WAIT_MS);
+    const late = setTimeout(() => void go().catch(() => {}), STOP_WAIT_MS);
     try {
-      await sentKeys;
+      await begin;
+      await stopping;
     } finally {
       clearTimeout(late);
     }
