@@ -3,6 +3,7 @@
 // /api/sessions/:uid too, resolved to whichever window the session has now.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { startAh, cleanup, http, signIn, until, type Ah } from './helpers.ts';
 
 let ah: Ah;
@@ -44,4 +45,35 @@ test('rename, capture and terminate by session uid', async () => {
   const gone = await http(ah, 'GET', `/api/sessions/${uid}/capture`, { cookie });
   assert.equal(gone.status, 404);
   assert.match(gone.body, /isn't running|window not found/);
+});
+
+test('a send retried with the same id is typed once', async () => {
+  const created = await http(ah, 'POST', '/api/windows', { cookie, body: { preset: 'shell', cwd: `${ah.dir}/files`, label: 'retry' } });
+  assert.equal(created.status, 201, created.body);
+  const { uid } = created.json();
+  await until(async () => (await http(ah, 'GET', '/api/state', { cookie })).json().windows.some((w: { uid: string }) => w.uid === uid), 8000, 'session in state');
+  const log = `${ah.dir}/files/typed.log`;
+  const say = (id: string | undefined) => http(ah, 'POST', `/api/sessions/${uid}/send`, { cookie, body: { text: `echo said >> ${log}`, ...(id ? { id } : {}) } });
+  const lines = () => {
+    try {
+      return readFileSync(log, 'utf8').split('\n').filter(Boolean).length;
+    } catch {
+      return 0;
+    }
+  };
+  const first = await say('msg-1');
+  assert.equal(first.status, 200, first.body);
+  assert.equal(first.json().outcome, 'delivered');
+  await until(() => lines() === 1, 8000, 'typed');
+  // The answer was lost; the phone asks again with the same id.
+  const retry = await say('msg-1');
+  assert.equal(retry.status, 200, retry.body);
+  assert.equal(retry.json().outcome, 'delivered');
+  // A new message (another id, or none) is a new message.
+  await say('msg-2');
+  await until(() => lines() === 2, 8000, 'the second message typed');
+  await new Promise((r) => setTimeout(r, 500));
+  assert.equal(lines(), 2, 'the retry typed nothing');
+  assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/send`, { cookie, body: { text: 'x', id: 'has space' } })).status, 400);
+  assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/send`, { cookie, body: { text: 'x', id: 'x'.repeat(41) } })).status, 400);
 });

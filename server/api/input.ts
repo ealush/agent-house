@@ -16,7 +16,11 @@ export function inputRoutes({ audit, core, drafts }: InputRouteDeps): Route[] {
   return [
     route('POST', /^\/api\/sessions\/([\w:.-]{1,80})\/send$/, async ({ req, res, m }) => {
       const body = await readJson(req);
-      const out = await core.send(m[1], str(body.text, 'text', 32 * 1024), body.enter !== false);
+      // `id`: the client's name for this message, so a retry (an answer lost on a phone's
+      // network) is recognized rather than typed twice. Optional; it becomes the queue id.
+      const id = body.id === undefined ? undefined : str(body.id, 'id', 40);
+      if (id !== undefined && !/^[\w-]{1,40}$/.test(id)) throw new HttpError(400, 'invalid id');
+      const out = await core.send(m[1], str(body.text, 'text', 32 * 1024), body.enter !== false, undefined, { id });
       audit(req, 'session.send', { ref: m[1], window: out.windowId, outcome: out.outcome, resumed: out.resumed });
       return send(res, 200, out);
     }),

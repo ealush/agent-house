@@ -222,3 +222,21 @@ test('a follow-up stays queued (on disk) through the turn snapshot: a restart th
   assert.deepEqual(during, [['a', 'b'], ['a', 'b']], 'still first in line, in memory and in the record, while the snapshot runs');
   assert.deepEqual(q.items('u1').map((i) => i.id), ['b'], 'then typed and gone');
 });
+
+test('the delivered-ids ledger keeps the newest, once each', async () => {
+  const { withDelivered, DELIVERED_KEEP } = await import('./queue.ts');
+  assert.deepEqual(withDelivered([], 'a'), ['a']);
+  assert.deepEqual(withDelivered(['a', 'b'], 'a'), ['b', 'a'], 'asked again: newest, not twice');
+  const full = Array.from({ length: DELIVERED_KEEP }, (_, i) => `m${i}`);
+  const next = withDelivered(full, 'new');
+  assert.equal(next.length, DELIVERED_KEEP);
+  assert.equal(next[0], 'm1', 'the oldest goes');
+  assert.equal(next.at(-1), 'new');
+});
+
+test('a delivered follow-up is remembered by id, in the record', async () => {
+  const { q, win } = await setup(async () => {});
+  await q.deliverDue([win()]);
+  assert.equal(q.wasDelivered('u1', 'a'), true);
+  assert.equal(q.wasDelivered('u1', 'b'), false, 'still queued');
+});

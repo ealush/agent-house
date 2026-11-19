@@ -836,6 +836,10 @@ export class Core {
       if (o.id && queued.some((q) => q.id === o.id)) {
         return { outcome: 'queued', windowId: target.windowId, resumed: target.resumed, queued: queued.length, queueId: o.id };
       }
+      // …and already typed (directly, or from the queue), it isn't typed twice.
+      if (o.id && this.queues.wasDelivered(target.uid, o.id)) {
+        return { outcome: 'delivered', windowId: target.windowId, resumed: false, queued: queued.length };
+      }
       // A waiting agent is blocked on your input: what you send now is the
       // answer to its question or approval prompt, so it is typed immediately
       // instead of queued behind the turn that asked. (The ticker never flushes
@@ -859,7 +863,14 @@ export class Core {
           // Snapshot before the prompt lands, so the turn starts from a known state (F39).
           if (enter) await this.captureTurnStart(target.uid, text);
         }
-        await t.pasteText(target.windowId, text, enter);
+        try {
+          await t.pasteText(target.windowId, text, enter);
+        } catch (err) {
+          // Some of it landed: it counts as typed (never twice), and still fails here.
+          if (o.id && !(err instanceof t.PasteError && !err.typed)) this.queues.noteDelivered(target.uid, o.id);
+          throw err;
+        }
+        if (o.id) this.queues.noteDelivered(target.uid, o.id);
         if (launchChange) this.applyLaunchChange(target.uid, launchChange);
         return { outcome: 'delivered', windowId: target.windowId, resumed: false, queued: 0 };
       }
@@ -1557,6 +1568,7 @@ export class Core {
         // goes back first in line. Once any text landed it stays delivered
         // (never twice).
         if (err instanceof t.PasteError && !err.typed) this.queues.requeue(uid, next);
+        else this.queues.noteDelivered(uid, next.id);
         throw err;
       }
       if (next.launchChange) this.applyLaunchChange(uid, next.launchChange);
