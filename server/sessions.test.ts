@@ -1,3 +1,4 @@
+import '../test/scratch.ts';
 import { test, mock } from 'node:test';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';

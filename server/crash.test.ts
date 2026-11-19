@@ -1,3 +1,4 @@
+import '../test/scratch.ts';
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Registry as RegistryType } from './registry.ts';

@@ -1,3 +1,4 @@
+import '../test/scratch.ts';
 // Portable conversations, unit level: what a document holds and leaves out, the
 // hand-off's honesty and bounds, checkpoints, and restart recovery of an edge.
 import { test } from 'node:test';
