@@ -92,4 +92,6 @@ Kept current as layers land; the PR stack `arch/*` works down this list.
    root calls `core.connect({...})` once; every connection is required by its type.
 4. `Core.tick` still mixes reading tmux, adopting transcripts, queue delivery and
    snapshots in one pass. (The state stream's diff is out: `stateStream.ts`, pure.)
-5. `review/service.ts` (2,100 lines) holds stack derivation next to gh/git effects.
+5. `review/service.ts` (1,900 lines) still holds the sync, merge and dispatch decisions
+   next to their gh/git effects. (The stack view is out: `review/view.ts`, pure, with
+   one owner rule in `review/owners.ts`.)

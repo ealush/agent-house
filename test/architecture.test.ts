@@ -132,6 +132,7 @@ const CORE = [
   'recovery/settings.ts',
   'review/stack.ts',
   'review/owners.ts',
+  'review/view.ts',
   'usage/prices.ts',
   'usage/settings.ts',
 ];
