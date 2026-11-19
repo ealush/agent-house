@@ -20,7 +20,7 @@ enum Sending {
             let held = Held()
             // Out of time: the upload stops where it is (and the message comes back to its box).
             held.task = UIApplication.shared.beginBackgroundTask(withName: "Sending a message") { held.end() }
-            let live = Live.start(for: id, outbox: outbox, session: app.flatMap { title(of: id, outbox: outbox, in: $0) } ?? "Agent Hub")
+            let live = Live.start(for: id, outbox: outbox, session: app.flatMap { title(of: id, outbox: outbox, in: $0) } ?? "Agent House")
             return {
                 let item = outbox.items.first { $0.id == id }
                 live?.finish(item)

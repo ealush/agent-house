@@ -38,7 +38,7 @@ struct SetupView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                             .shadow(color: theme.brand.opacity(0.35), radius: 18, y: 8)
                             .accessibilityHidden(true)
-                        Text("Connect to Agent Hub").font(.ah(.title).weight(.bold))
+                        Text("Connect to Agent House").font(.ah(.title).weight(.bold))
                         Text("Your host stays private on your tailnet. This device gets its own key, which you can remove from any other device.")
                             .font(.ah(.callout))
                             .foregroundStyle(theme.muted)
@@ -62,7 +62,7 @@ struct SetupView: View {
                 } header: {
                     Text("Host address")
                 } footer: {
-                    Text("The HTTPS address Tailscale Serve gives Agent Hub.")
+                    Text("The HTTPS address Tailscale Serve gives Agent House.")
                 }
                 Section {
                     TextField("Setup code", text: $code)

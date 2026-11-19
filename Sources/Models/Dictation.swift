@@ -61,7 +61,7 @@ enum CaptureError: Error, Equatable, Sendable {
 
     var message: String {
         switch self {
-        case .microphoneDenied: "Agent Hub can’t use the microphone. Turn it on in Settings."
+        case .microphoneDenied: "Agent House can’t use the microphone. Turn it on in Settings."
         case .noDeviceSpeech(let language): "This device can’t write down \(language). Pick a speech subscription in Settings → Voice."
         case .failed(let why): why
         }

@@ -16,7 +16,7 @@ struct SettingsView: View {
                     NavigationLink(value: SettingsSection.security) { SettingsRowLabel(section: .security, title: "Hosts and Security") }
                 }
                 .ahRow(sizeClass == .compact)
-                Section("Agent Hub") {
+                Section("Agent House") {
                     ForEach(SettingsSection.allCases.filter { $0 != .security }, id: \.self) { s in
                         NavigationLink(value: s) { SettingsRowLabel(section: s, title: s.title) }
                             .contextMenu { LinkButtons(place: Place(.settings(s.rawValue)), scene: scene) }
@@ -491,7 +491,7 @@ private struct AppearanceSection: View {
             } header: {
                 Text("This device’s name")
             } footer: {
-                Text("What other devices see when this one has a session open, from the next time Agent Hub opens.")
+                Text("What other devices see when this one has a session open, from the next time Agent House opens.")
             }
         }
     }
@@ -858,7 +858,7 @@ private struct NotificationsSection: View {
                 Banner(text: "This host has no APNs key configured, so it can’t notify this device yet. Its owner adds one under `apns` in the host’s config.", tone: .warning).formBanner()
             }
             if push.authorization == .denied {
-                Banner(text: "Notifications are off for Agent Hub in iOS Settings.", tone: .warning, action: ("Open Settings", {
+                Banner(text: "Notifications are off for Agent House in iOS Settings.", tone: .warning, action: ("Open Settings", {
                     if let url = URL(string: UIApplication.openNotificationSettingsURLString) { UIApplication.shared.open(url) }
                 })).formBanner()
             }
@@ -1179,7 +1179,7 @@ private struct VoiceSection: View {
             if let error = model.error { Banner(text: error, tone: .error).formBanner() }
             if model.hostDoesVoice == false {
                 Section {
-                    Text("This host’s Agent Hub can’t hear dictation yet. Until it’s updated, \(device) writes down what you say.").foregroundStyle(theme.muted)
+                    Text("This host’s Agent House can’t hear dictation yet. Until it’s updated, \(device) writes down what you say.").foregroundStyle(theme.muted)
                 }
             } else if let settings = model.settings {
                 speech(settings)
@@ -1587,7 +1587,7 @@ private struct SystemSection: View {
                 } header: {
                     Text("Agent hooks")
                 } footer: {
-                    Text("Hooks tell Agent Hub the moment an agent needs you or finishes, instead of reading its screen.")
+                    Text("Hooks tell Agent House the moment an agent needs you or finishes, instead of reading its screen.")
                 }
                 if let audit = hooks.audit, !audit.isEmpty {
                     Section("Screen rules") {
@@ -1632,13 +1632,13 @@ private struct SystemSection: View {
                     Text("Desktop")
                 } footer: {
                     Text(desktop.omarchy
-                        ? "On the host’s Omarchy desktop, Agent Hub opens \(desktop.url) in its own window from SUPER+SPACE. Paste the shortcut into ~/.config/hypr/bindings.conf to open it with SUPER+ALT+A."
-                        : "On the host’s desktop, Agent Hub opens \(desktop.url) from the app launcher. The shortcut is for Hyprland’s bindings.conf.")
+                        ? "On the host’s Omarchy desktop, Agent House opens \(desktop.url) in its own window from SUPER+SPACE. Paste the shortcut into ~/.config/hypr/bindings.conf to open it with SUPER+ALT+A."
+                        : "On the host’s desktop, Agent House opens \(desktop.url) from the app launcher. The shortcut is for Hyprland’s bindings.conf.")
                 }
             }
             Section {
                 Button("Clear uploaded files…", role: .destructive) { confirmUploads = true }
-                Button("Restart Agent Hub…", role: .destructive) { confirmRestart = true }
+                Button("Restart Agent House…", role: .destructive) { confirmRestart = true }
                 Button(role: .destructive) {
                     confirmRebuild = true
                 } label: {
@@ -1670,13 +1670,13 @@ private struct SystemSection: View {
             }
         }
         .task { await model.load() }
-        .alert("Restart Agent Hub?", isPresented: $confirmRestart) {
+        .alert("Restart Agent House?", isPresented: $confirmRestart) {
             Button("Cancel", role: .cancel) {}
             Button("Restart", role: .destructive) { Task { await model.restartServer() } }
         } message: {
             Text("Sessions keep running in tmux; every device reconnects in a moment.")
         }
-        .alert("Rebuild and restart Agent Hub?", isPresented: $confirmRebuild) {
+        .alert("Rebuild and restart Agent House?", isPresented: $confirmRebuild) {
             Button("Cancel", role: .cancel) {}
             Button("Rebuild and Restart", role: .destructive) { Task { await model.rebuild() } }
         } message: {

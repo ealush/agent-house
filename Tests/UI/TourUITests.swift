@@ -34,7 +34,7 @@ import XCTest
 ///   sb-type:<text>        type into SpringBoard (Spotlight's field, a notification's reply)
 ///   sb-wait:<text>        wait up to two minutes for SpringBoard to show something containing it
 ///   open-app:<bundle id>  bring another app forward; tap, press, type and tree act on it
-///   use-app               back to Agent Hub as the app the steps act on
+///   use-app               back to Agent House as the app the steps act on
 ///
 /// TEST_RUNNER_AH_TOUR_OUT=<folder on the Mac> also writes shots and trees there.
 @MainActor

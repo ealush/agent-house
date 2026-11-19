@@ -312,7 +312,7 @@ private struct HandoffContinue: View {
         let chosen = presets.first { $0.id == preset }
         NavigationStack {
             AhForm {
-                Banner(text: "This host can’t carry a conversation between agents itself yet. Agent Hub starts the agent you pick with this conversation’s text as its first message: a record of what was said, not the other agent’s memory.", tone: .info).formBanner()
+                Banner(text: "This host can’t carry a conversation between agents itself yet. Agent House starts the agent you pick with this conversation’s text as its first message: a record of what was said, not the other agent’s memory.", tone: .info).formBanner()
                 Section("Continue in") {
                     Picker("Agent", selection: $preset) {
                         ForEach(presets, id: \.id) { p in Text(p.name).tag(Optional(p.id)) }

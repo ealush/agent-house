@@ -96,8 +96,8 @@ final class SecuritySettings {
         "review.retarget": "Pull request retargeted", "review.dispatch": "Fixes sent to an agent", "prompts.clear": "Prompt history cleared",
         "subscription.save": "Provider saved", "subscription.remove": "Provider removed", "subscription.default": "Default provider set",
         "env.save": "Variable saved", "env.remove": "Variable removed", "harnesses.add": "Agent added", "harnesses.remove": "Agent removed",
-        "harnesses.check": "Agent versions checked", "search.rebuild": "Search index rebuilt", "system.restart": "Agent Hub restarted",
-        "system.rebuild": "Agent Hub rebuilt", "system.uploads.clear": "Uploaded files cleared",
+        "harnesses.check": "Agent versions checked", "search.rebuild": "Search index rebuilt", "system.restart": "Agent House restarted",
+        "system.rebuild": "Agent House rebuilt", "system.uploads.clear": "Uploaded files cleared",
     ]
 }
 
@@ -509,7 +509,7 @@ final class SystemSettings {
         defer { rebuilding = false }
         do {
             try await api.rebuild()
-            notice = "Built. Agent Hub is restarting; sessions keep running and this reconnects in a moment."
+            notice = "Built. Agent House is restarting; sessions keep running and this reconnects in a moment."
         } catch {
             buildLog = APIError.wrap(error).message
         }

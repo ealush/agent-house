@@ -381,7 +381,7 @@ final class AppModel {
         case alreadyEnrolled
         var errorDescription: String? {
             switch self {
-            case .notAgentHub: return "That address didn’t answer as Agent Hub."
+            case .notAgentHub: return "That address didn’t answer as Agent House."
             case .alreadyEnrolled: return "This device is already enrolled with that host."
             }
         }
