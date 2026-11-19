@@ -31,6 +31,7 @@ export function windowsRoutes({ audit, core, terminals }: WindowsRouteDeps): Rou
       const name = str((await readJson(req)).name, 'name', 80).trim();
       if (!name) throw new HttpError(400, 'name required');
       await t.renameWindow(id, name);
+      audit(req, 'session.rename', { window: id });
       core.tick().catch(() => {});
       return send(res, 200, { ok: true });
     }),

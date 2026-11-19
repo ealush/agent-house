@@ -64,7 +64,10 @@ export function chatRoutes({ audit, core, sidechat }: ChatRouteDeps): Route[] {
       const body = await readJson(req);
       const text = str(body.text ?? '', 'text', 24_000).trim();
       if (!text) throw new HttpError(400, 'text required');
-      const summary = await sidechat.summarize(text, body.subscriptionId === undefined ? undefined : str(body.subscriptionId, 'subscriptionId', 40));
+      const subscriptionId = body.subscriptionId === undefined ? undefined : str(body.subscriptionId, 'subscriptionId', 40);
+      // Text leaves the host for a provider: said in the log (never what).
+      audit(req, 'chat.summarize', { subscription: subscriptionId ?? 'default', chars: text.length });
+      const summary = await sidechat.summarize(text, subscriptionId);
       return send(res, 200, { summary });
     }),
     route('GET', /^\/api\/windows\/(@\d+)\/chat$/, async ({ res, m }) => {
@@ -87,6 +90,8 @@ export function chatRoutes({ audit, core, sidechat }: ChatRouteDeps): Route[] {
       const text = str(body.text ?? '', 'text', 8000).trim();
       if (!text) throw new HttpError(400, 'text required');
       const dir = expandHome(w.cwd);
+      // The session's diff leaves the host for a provider: said in the log (never what).
+      audit(req, 'chat.send', { window: m![1], subscription: body.subscriptionId === undefined ? 'picked' : String(body.subscriptionId).slice(0, 40) });
       const [chg, pr] = await Promise.all([changeContext(dir).catch(() => null), pullRequest(dir).catch(() => null)]);
       const msg = await sidechat.chat(
         key,

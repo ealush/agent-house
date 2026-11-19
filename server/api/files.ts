@@ -27,7 +27,11 @@ export function filesRoutes({ audit, config, uploadDir }: FilesRouteDeps): Route
       audit(req, 'file.upload', { path });
       return send(res, 201, { path });
     }),
-    route('POST', /^\/api\/fs\/mkdir$/, async ({ req, res }) => send(res, 201, { path: await makeDir(str((await readJson(req)).path, 'path', 1024)) })),
+    route('POST', /^\/api\/fs\/mkdir$/, async ({ req, res }) => {
+      const path = await makeDir(str((await readJson(req)).path, 'path', 1024));
+      audit(req, 'file.mkdir', { path });
+      return send(res, 201, { path });
+    }),
     route('POST', /^\/api\/upload$/, async ({ req, res, url }) => {
       // Pasted/dropped files land in ah's own upload folder, readable only by you,
       // streamed to disk (a screen recording runs to hundreds of megabytes).

@@ -11,14 +11,17 @@ export type QueueRouteDeps = {
 export function queueRoutes({ audit, core }: QueueRouteDeps): Route[] {
   return [
     route('GET', /^\/api\/sessions\/([\w-]{1,40})\/queue$/, ({ res, m }) => send(res, 200, core.queue(m[1]))),
-    route('DELETE', /^\/api\/sessions\/([\w-]{1,40})\/queue(?:\/([\w-]{1,40}))?$/, ({ res, m }) => {
+    route('DELETE', /^\/api\/sessions\/([\w-]{1,40})\/queue(?:\/([\w-]{1,40}))?$/, ({ req, res, m }) => {
       core.clearQueue(m[1], m[2]);
+      audit(req, m[2] ? 'queue.remove' : 'queue.clear', { uid: m[1], ...(m[2] ? { item: m[2] } : {}) });
       return send(res, 200, { ok: true });
     }),
     route('POST', /^\/api\/sessions\/([\w-]{1,40})\/queue\/([\w-]{1,40})\/move$/, async ({ req, res, m }) => {
       const to = (await readJson(req)).to;
       if (!Number.isInteger(to) || (to as number) < 0 || (to as number) > 1000) throw new HttpError(400, 'invalid position');
-      return send(res, 200, core.moveQueued(m[1], m[2], to as number));
+      const order = core.moveQueued(m[1], m[2], to as number);
+      audit(req, 'queue.move', { uid: m[1], item: m[2], to });
+      return send(res, 200, order);
     }),
     // Urgent follow-up: deliver one queued message now, stopping the live turn.
     route('POST', /^\/api\/sessions\/([\w-]{1,40})\/queue\/([\w-]{1,40})\/send-now$/, async ({ req, res, m }) => {

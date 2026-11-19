@@ -130,9 +130,10 @@ export function lifecycleRoutes({ audit, config, core, terminals }: LifecycleRou
       await core.setOrder(m[1], order);
       return send(res, 200, { ok: true });
     }),
-    route('DELETE', /^\/api\/sessions\/([\w:.-]{1,80})$/, async ({ res, m }) => {
+    route('DELETE', /^\/api\/sessions\/([\w:.-]{1,80})$/, async ({ req, res, m }) => {
       await core.forget(m[1]);
       await terminals.close(m[1]);
+      audit(req, 'session.forget', { ref: m[1] });
       return send(res, 200, { ok: true });
     }),
   ];

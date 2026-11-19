@@ -24,10 +24,12 @@ export function pushRoutes({ apns, audit, auth, core }: PushRouteDeps): Route[] 
       } catch (err) {
         throw new HttpError(400, (err as Error).message);
       }
+      audit(req, 'push.subscribe', { label: String(body.label ?? '').slice(0, 60) });
       return send(res, 200, { ok: true });
     }),
     route('POST', /^\/api\/push\/unsubscribe$/, async ({ req, res }) => {
       core.push.unsubscribe(str((await readJson(req)).endpoint, 'endpoint', 2048));
+      audit(req, 'push.unsubscribe');
       return send(res, 200, { ok: true });
     }),
     // Native app push (server/apns.ts): one registration per native sign-in.
@@ -59,8 +61,9 @@ export function pushRoutes({ apns, audit, auth, core }: PushRouteDeps): Route[] 
       if (caller.kind === 'session') apns.unregisterActivity(caller.session.id, decodeURIComponent(m[1]));
       return send(res, 200, { ok: true });
     }),
-    route('DELETE', /^\/api\/push\/apns$/, ({ res, caller }) => {
+    route('DELETE', /^\/api\/push\/apns$/, ({ req, res, caller }) => {
       if (caller.kind === 'session') apns.unregister(caller.session.id);
+      audit(req, 'push.apns.unregister');
       return send(res, 200, { ok: true });
     }),
     route('POST', /^\/api\/push\/status$/, async ({ req, res }) => send(res, 200, { events: core.push.settings(str((await readJson(req)).endpoint, 'endpoint', 2048)) })),

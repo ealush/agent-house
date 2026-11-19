@@ -51,8 +51,9 @@ export function systemRoutes({ audit, config, core, harnesses, root, dist, uploa
   let rebuilding = false;
   return [
     route('GET', /^\/api\/system\/hooks$/, ({ res }) => send(res, 200, { ...hooksStatus(), audit: screenAudit.summary() })),
-    route('DELETE', /^\/api\/system\/screen-audit$/, ({ res }) => {
+    route('DELETE', /^\/api\/system\/screen-audit$/, ({ req, res }) => {
       screenAudit.reset();
+      audit(req, 'system.screen-audit.clear');
       return send(res, 200, { ok: true });
     }),
     // ah in the host's app launcher, in its own window (server/desktop.ts), like the hooks card.
@@ -103,6 +104,7 @@ export function systemRoutes({ audit, config, core, harnesses, root, dist, uploa
       if (typeof hidden !== 'boolean') throw new HttpError(400, 'hidden must be true or false');
       if (!config.presets.some((p) => p.id === m![1] && p.command.trim())) throw new HttpError(404, 'no such agent');
       harnesses.setHidden(m[1], hidden);
+      audit(req, hidden ? 'harnesses.hide' : 'harnesses.show', { id: m[1] });
       await core.tick();
       return send(res, 200, core.harnessList());
     }),

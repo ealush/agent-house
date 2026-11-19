@@ -66,6 +66,11 @@ one service call → `send()`; any `DomainError` on the way becomes its status a
    capabilities, the first SSE frame, a send, a queue, the error body) in
    `docs/spec/wire-shapes.txt`: every listed field must stay, with its type. *(checked)*
 
+10. **Every action is in the audit log.** A route that changes something calls
+    `audit(req, event, detail)` (never with secrets or message text), or is listed in
+    `NOT_AUDITED` in `server/routes.test.ts` with why not; `/api/auth` is audited inside
+    `auth.ts`. *(checked)*
+
 ## Effects, commit points and what a crash leaves
 
 The operations that span more than one effect, in the order they take them, and why.

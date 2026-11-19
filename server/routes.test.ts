@@ -64,3 +64,27 @@ test('no two routes share a method and pattern', () => {
     seen.add(k);
   }
 });
+
+// Every action is in the audit log (docs/spec/13-conductor.md): a route that changes
+// something says so, unless it's listed here with why not. /api/auth is audited by
+// auth.ts itself (sign-ins, codes, devices, passkeys, tokens, the password).
+const NOT_AUDITED: Record<string, string> = {
+  'POST ^\\/api\\/sessions\\/([\\w-]{1,40})\\/pin$': 'your list’s layout',
+  'POST ^\\/api\\/sessions\\/([\\w-]{1,40})\\/order$': 'your list’s layout',
+  'POST ^\\/api\\/focus$': 'which session a device shows, several times a minute',
+  'PUT ^\\/api\\/sessions\\/([\\w-]{1,40})\\/draft$': 'an unsent draft, as you type',
+  'POST ^\\/api\\/usage\\/refresh$': 're-reads transcripts; changes nothing',
+  'POST ^\\/api\\/subscriptions\\/models$': 'a read (lists a provider’s models)',
+  'POST ^\\/api\\/voice\\/models$': 'a read (lists a provider’s models)',
+  'POST ^\\/api\\/push\\/status$': 'a read (this device’s alert settings)',
+  'PUT ^\\/api\\/windows\\/(@\\d+)\\/chat\\/subscription$': 'which subscription a side chat uses',
+  'DELETE ^\\/api\\/windows\\/(@\\d+)\\/chat$': 'clears a side chat’s local history',
+  'PUT ^\\/api\\/push\\/apns\\/activity$': 'a Live Activity’s token, per session and device, often',
+  'DELETE ^\\/api\\/push\\/apns\\/activity\\/([^/]+)$': 'the same, ended',
+};
+
+test('every route that changes something is audited, or says why not', () => {
+  const unaudited = routes.filter((r) => r.method !== 'GET' && !r.run.toString().includes('audit(')).map((r) => `${r.method} ${r.path.source}`);
+  assert.deepEqual(unaudited.filter((k) => !NOT_AUDITED[k]), [], 'audit these, or list them in NOT_AUDITED with a reason');
+  assert.deepEqual(Object.keys(NOT_AUDITED).filter((k) => !unaudited.includes(k)), [], 'stale exemptions');
+});
