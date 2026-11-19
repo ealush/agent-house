@@ -51,7 +51,8 @@ test('a note refusal is still a DomainError, with the note it carries', () => {
 // needs to know any domain's error class to answer with the right status.
 test('every exported error class a request can meet extends DomainError', async () => {
   const root = fileURLToPath(new URL('.', import.meta.url));
-  // Internal to their module: always caught and rethrown as that domain's own error.
+  // Not refusals: internal to their module (caught and rethrown as that domain's own
+  // error), or a failure that is rightly a 500 at the edge (PasteError: tmux couldn't type).
   const internal = new Set(['DomainError', 'PasteError', 'ManifestError', 'CronError', 'GhError', 'MaybeArrived']);
   const files = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? (e.name === 'fixtures' ? [] : files(join(dir, e.name))) : e.name.endsWith('.ts') && !e.name.endsWith('.test.ts') ? [join(dir, e.name)] : []));
   const offenders: string[] = [];
