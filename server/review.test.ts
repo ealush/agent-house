@@ -208,14 +208,16 @@ async function setup() {
     { uid: 'u-agent', key: 'claude:conv-1', title: 'Feature work', agent: 'claude', status: 'idle', cwd: w.local, branch: 'feat', live: true },
     { uid: 'u-shell', key: 'u-shell', title: 'zsh', agent: null, status: 'idle', cwd: w.local, branch: 'main', live: true },
   ];
-  const sent: { uid: string; text: string }[] = [];
+  const sent: { uid: string; text: string; id: string }[] = [];
+  const failSend = { on: false };
   const alerts: string[] = [];
   const launched: { preset: string; root: string; label: string; fromRef: string }[] = [];
   const transcripts = new Map<string, { prompts: { at: number; text: string }[]; entries: { role: string; at: number; text: string }[] }>();
   const svc = new ReviewService(getDb(dbPath), chat, {
     sessions: async () => sessions,
-    send: async (uid, text) => {
-      sent.push({ uid, text });
+    send: async (uid, text, id) => {
+      if (failSend.on) throw new Error('the session went away');
+      sent.push({ uid, text, id });
       return { outcome: 'queued', queueId: 'q1' };
     },
     alert: (p) => alerts.push(p.title),
@@ -234,7 +236,7 @@ async function setup() {
     fn(cur);
     await writeFile(w.stateFile, JSON.stringify(cur));
   };
-  return { w, svc, db: getDb(dbPath), chat, sessions, sent, alerts, transcripts, launched, setState, heads: { h1, h2, h3, h4 } };
+  return { w, svc, db: getDb(dbPath), chat, sessions, sent, failSend, alerts, transcripts, launched, setState, heads: { h1, h2, h3, h4 } };
 }
 
 test('review: stack from a PR tree, fix loop through the owner, re-review, merge and next', async () => {
@@ -267,8 +269,18 @@ test('review: stack from a PR tree, fix loop through the owner, re-review, merge
     assert.match(text, /\[blocking\] Return 2\. c\.ts:1/);
     assert.match(text, /restack the layers above it.*docs \(#3, [0-9a-f]{8}\) on feat/);
     assert.match(text, /\(ah review [\w-]+\/2\)/);
+    // A send that fails leaves nothing behind: no dispatch, the finding still open.
+    t.failSend.on = true;
+    await assert.rejects(t.svc.dispatch(v.id, 2, { findingIds: [f.id], text }), /went away/);
+    t.failSend.on = false;
+    assert.equal(await t.db.reviewDispatch.count({ where: { stackId: v.id } }), 0);
+    assert.equal((await t.svc.findings(v.id)).find((x) => x.id === f.id)?.state, 'open');
     await t.svc.dispatch(v.id, 2, { findingIds: [f.id], text });
     assert.deepEqual(t.sent.map((s) => s.uid), ['u-agent']);
+    // Recorded before it went out, and sent under the record's name (a retry is recognized).
+    const row = await t.db.reviewDispatch.findFirst({ where: { stackId: v.id } });
+    assert.equal(t.sent[0].id, `rd-${row!.id}`);
+    assert.equal(row!.queueId, 'q1');
     v = await t.svc.view(v.id);
     assert.equal(v.layers.find((l) => l.pr === 2)!.status, 'fixing');
     assert.equal(t.svc.state().fixing[0]?.uid, 'u-agent', 'the session shows what it is fixing');

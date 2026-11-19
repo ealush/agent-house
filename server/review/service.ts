@@ -78,7 +78,8 @@ export type SessionLite = {
 
 export type ReviewDeps = {
   sessions: () => Promise<SessionLite[]>;
-  send: (uid: string, text: string) => Promise<{ outcome: string; queueId?: string }>;
+  /** `id` names the message: asked again with it, the session answers rather than types it twice. */
+  send: (uid: string, text: string, id: string) => Promise<{ outcome: string; queueId?: string }>;
   /** A needs-you push to devices that asked for those. */
   alert: (p: { title: string; body: string; tag: string; url: string }) => void;
   /** Recompute the streamed state (the Inbox reads review alerts from it). */
@@ -1192,10 +1193,20 @@ export class ReviewService {
       if (!s.ownerKey && !l.ownerKey) await this.db.reviewStack.update({ where: { id }, data: { ownerUid: target.uid, ownerKey: target.key } });
     } else target = await this.target(s, l);
     if (!target) throw new ReviewError(409, 'choose the session that owns this stack first');
-    const sent = await this.deps.send(target.uid, text);
-    const d = await this.db.reviewDispatch.create({
-      data: { stackId: id, pr, kind: input.kind ?? 'fix', targetUid: target.uid, targetKey: target.key, text, fromRevId: l.currentRevId, fromHead: l.headSha, queueId: sent.queueId ?? null, sentAt: now() },
+    // The record first, then the message, named after it: a dispatch that reached the
+    // agent is never unrecorded (and so never sent twice by a retry), and one that
+    // fails to go out leaves nothing behind.
+    let d = await this.db.reviewDispatch.create({
+      data: { stackId: id, pr, kind: input.kind ?? 'fix', targetUid: target.uid, targetKey: target.key, text, fromRevId: l.currentRevId, fromHead: l.headSha, queueId: null, sentAt: now() },
     });
+    let sent: { outcome: string; queueId?: string };
+    try {
+      sent = await this.deps.send(target.uid, text, `rd-${d.id}`);
+    } catch (err) {
+      await this.db.reviewDispatch.delete({ where: { id: d.id } }).catch(() => {});
+      throw err;
+    }
+    if (sent.queueId) d = await this.db.reviewDispatch.update({ where: { id: d.id }, data: { queueId: sent.queueId } });
     // The revision the findings were written against is the checkpoint the fix is compared with.
     if (input.kind !== 'merge') await this.db.reviewLayer.update({ where: { stackId_pr: { stackId: id, pr } }, data: { reviewedRevId: l.currentRevId ?? l.reviewedRevId } });
     if (input.findingIds.length) {
