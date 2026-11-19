@@ -1,7 +1,8 @@
 # Server architecture
 
 How `server/` is put together, which rules hold, and where each kind of code goes.
-The rules below marked **checked** are enforced by `test/architecture.test.ts`;
+The rules below marked **checked** are enforced by tests (`test/architecture.test.ts`,
+`server/errors.test.ts`, `server/routes.test.ts`);
 the rest are conventions a reviewer holds you to. Keep this page current: change it in
 the same commit as the code it describes.
 
@@ -15,7 +16,7 @@ peer hosts. Inside it:
 | **Domain core** | Decisions, policies, parsing, state transitions: plain values in, plain values out. | Other core modules; types from anywhere. |
 | **Application services** | A context's use cases (send a note, run a job, recover a session). Orchestrate effects through *ports* they're handed (a `deps` object, a `PrismaClient` passed in). | Core; ports (interfaces) only. |
 | **Infrastructure** | tmux, processes, the filesystem, Prisma, gh/git, providers, APNs/Web Push. | Node, packages. Never routes. |
-| **Delivery** | HTTP routes, SSE, the terminal WebSocket, the CLI. Decode and validate input, authorize, call one use case, map its outcome to the protocol. | Application services, `http.ts`, `errors.ts`. |
+| **Delivery** | `admission.ts` (who gets in), `api/*.ts` (one route table per context), the sub-routers (`review/api.ts`, `jobs/api.ts`, …), SSE, the terminal WebSocket, the CLI. Decode and validate input, authorize, call one use case, map its outcome to the protocol. | Application services, `http.ts`, `errors.ts`. |
 | **Composition root** | `main.ts`: builds every service, connects their ports, starts the server. The only place that knows every context. | Everything. Nothing depends on it. |
 
 ## Rules
@@ -43,7 +44,13 @@ peer hosts. Inside it:
    ah's own Origin, or the native app with nothing ambient), `/h/<host>` routing, and
    default deny outside `PUBLIC_ROUTES`. `handle()` and `upgrade()` only gather the facts
    and carry out the answer. Change a rule there, with its test, never in a handler.
-8. **Wire shapes are contracts.** Paths, field names, status codes, error `code`s, SSE
+8. **Routes live in their context's table.** `server/api/<context>.ts` exports
+   `<context>Routes(deps)`: an ordered list of `route(method, /^…$/, handler)`, given
+   only the services it uses. `api/index.ts` puts the tables together; main.ts hands
+   in the services. The full list is pinned in `docs/spec/api-routes.txt`
+   (`server/routes.test.ts`, which also fails on a route shadowed by an earlier one
+   and on a public route that admission doesn't let through). *(checked)*
+9. **Wire shapes are contracts.** Paths, field names, status codes, error `code`s, SSE
    frames and WebSocket close codes are consumed by ah-native and the web client.
    Change them only additively, and announce new capabilities in `features.ts`;
    `API_VERSION` (core.ts) must stay 28 while the native app checks it for equality.
@@ -72,9 +79,10 @@ peer hosts. Inside it:
 
 Kept current as layers land; the PR stack `arch/*` works down this list.
 
-1. `main.ts` is the composition root *and* the whole HTTP layer (2,100 lines, ~150
-   routes in one `if` chain). Routes should be per-context modules. (The admission
-   policy is out: `admission.ts`.)
+1. ~~`main.ts` is the composition root *and* the whole HTTP layer.~~ Admission is
+   `admission.ts`; routes are `api/*.ts`. main.ts (870 lines) is the composition root,
+   the static file server and the WebSocket upgrade. The adapters it builds for each
+   context are still inline (next item).
 2. The adapters main.ts hands each context duplicate the same rules: "a uid or
    `harness:harnessId`" is resolved in three places, "launch a preset" in four.
 3. `Core` is wired by assigning public fields after construction (`core.reviewState =`,

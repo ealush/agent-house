@@ -78,3 +78,15 @@ export function safeDecode(s: string): string {
     return s;
   }
 }
+
+/**
+ * One server-sent event. A client that stopped reading (a phone asleep behind
+ * tailscale serve, a stalled proxy) would otherwise buffer every patch and feed
+ * append in memory without limit: past 8 MB unread, drop it; it reconnects and
+ * gets a fresh snapshot.
+ */
+export function sse(res: ServerResponse, chunk: string) {
+  if (res.destroyed) return;
+  if (res.writableLength > 8 * 1024 * 1024) return void res.destroy();
+  res.write(chunk);
+}
