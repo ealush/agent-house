@@ -1512,6 +1512,10 @@ export class Core {
       // in it. It stays first.
       const gate = live.agent && live.status === 'waiting' ? live.ask?.gate : undefined;
       if (gate) throw new CoreError(409, `${GATE_FIRST[gate.kind]}; the message goes in right after`);
+      // Still queued? (Another device may have removed it while the window was read.)
+      // Checked last before the interrupt: stopping a turn for a message that's gone
+      // would cost the agent its turn for nothing.
+      if (!this.queues.items(uid).some((q) => q.id === itemId)) throw new CoreError(404, 'queued message not found');
       const stopping = live.status === 'busy' || live.status === 'waiting' || this.justSent(uid);
       if (stopping && live.agent) {
         // Stop the live turn so the urgent message replaces it, then wait
