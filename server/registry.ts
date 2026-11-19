@@ -12,6 +12,10 @@ import { defaultDbPath, getDb } from './db.ts';
 /** "Saved" (history only) is not a registry state: those come from transcript discovery. */
 export type Lifecycle = 'starting' | 'live' | 'ended' | 'unavailable';
 
+/** What Registry.starting changed: the record before (none for a new one), and follow-ups it took from siblings. */
+/** What Registry.starting changed: the record before (none for a new one), the meta keys it wrote, and follow-ups it took from siblings. */
+export type StartUndo = { id: string; before: SessionRecord | undefined; wrote: string[]; moved: Array<{ from: string; items: unknown[] }> };
+
 export type SessionRecord = {
   id: string;
   host: string;
@@ -73,6 +77,14 @@ const now = () => Math.floor(Date.now() / 1000);
  */
 export function conversationKey(harness: string, harnessId: string | undefined, uid: string): string {
   return harnessId ? `${harness}:${harnessId}` : uid;
+}
+
+/** The inverse, among known records: a uid as is, or the record holding `harness:harnessId`. */
+export function uidOfRef(records: readonly SessionRecord[], ref: string): string | null {
+  if (records.some((r) => r.id === ref)) return ref;
+  const i = ref.indexOf(':');
+  if (i <= 0) return null;
+  return records.find((r) => r.harness === ref.slice(0, i) && r.harnessId === ref.slice(i + 1))?.id ?? null;
 }
 
 function toRow(r: SessionRecord) {
@@ -236,7 +248,8 @@ export class Registry {
     }
   }
 
-  starting(id: string, f: { harness: string; harnessId?: string; cwd: string; title: string; tmux: Tmux; pendingResume?: boolean; meta?: Record<string, unknown> }) {
+  /** Returns what it changed, for abandonStart() if the start fails before the agent runs. */
+  starting(id: string, f: { harness: string; harnessId?: string; cwd: string; title: string; tmux: Tmux; pendingResume?: boolean; meta?: Record<string, unknown> }): StartUndo {
     const prev = this.records.get(id);
     this.records.set(id, {
       id,
@@ -260,9 +273,68 @@ export class Registry {
     delete this.records.get(id)!.meta['ah.endedBy'];
     delete this.records.get(id)!.meta['ah.interrupted'];
     this.dirty = true;
-    this.inheritQueue(id);
+    const moved = this.inheritQueue(id);
+    this.flush();
+    return { id, before: prev && { ...prev, meta: { ...prev.meta } }, wrote: [...Object.keys(f.meta ?? {}), 'ah.endedBy', 'ah.interrupted'], moved };
+  }
+
+  /**
+   * A start that failed before its agent ran (the window couldn't be set up, a resume
+   * couldn't be typed): everything starting() changed goes back. A new record goes; a
+   * session that was being resumed is as it was, ended, never deleted; follow-ups taken
+   * from sibling records of the conversation return to them; and its queue is the queue
+   * as it is now (removed meanwhile stays removed, queued meanwhile stays queued — on a
+   * new record kept ended rather than lost). Forgotten meanwhile, it stays forgotten.
+   */
+  abandonStart(undo: StartUndo) {
+    const now = this.records.get(undo.id);
+    // Forgotten meanwhile: nothing to put back.
+    if (!now) return;
+    const idOf = (q: unknown) => (q as { id?: string }).id;
+    // The queue as it is now: what was removed during the start stays removed. Items
+    // that came from a sibling record go back to it (first in line); the rest stay here.
+    const queue = (now.meta['ah.queue'] as unknown[] | undefined) ?? [];
+    const from = new Map<string, string>();
+    for (const m of undo.moved) for (const q of m.items) from.set(String(idOf(q)), m.from);
+    const returned = new Set<unknown>();
+    for (const m of undo.moved) {
+      const sib = this.records.get(m.from);
+      const back = queue.filter((q) => from.get(String(idOf(q))) === m.from);
+      // A sibling forgotten meanwhile can't take its items back: they stay here.
+      if (!sib || !back.length) continue;
+      sib.meta['ah.queue'] = [...back, ...((sib.meta['ah.queue'] as unknown[]) ?? [])];
+      for (const q of back) returned.add(q);
+    }
+    const kept = queue.filter((q) => !returned.has(q));
+    const withQueue = (meta: Record<string, unknown>) => {
+      const { 'ah.queue': _, ...rest } = meta;
+      return kept.length ? { ...rest, 'ah.queue': kept } : rest;
+    };
+    if (undo.before) {
+      // Only what the start wrote goes back; anything else changed meanwhile (a pin,
+      // the delivered-ids ledger, snapshot settings) is kept as it is now.
+      const meta = { ...now.meta };
+      for (const k of undo.wrote) {
+        if (k in undo.before.meta) meta[k] = undo.before.meta[k];
+        else delete meta[k];
+      }
+      // And the fields it set (the record it made from scratch otherwise stays as it is now).
+      const restored: Record<string, unknown> = { ...now, meta: withQueue(meta) };
+      for (const k of ['lifecycle', 'status', 'tmux', 'pendingResume', 'endedAt', 'lastActivityAt', 'createdAt', 'cwd', 'title', 'harnessId', 'model', 'exitCode', 'host'] as const) {
+        if (k in undo.before) restored[k] = undo.before[k];
+        else delete restored[k];
+      }
+      this.records.set(undo.id, restored as SessionRecord);
+    } else if (kept.length) {
+      this.records.set(undo.id, { ...now, lifecycle: 'ended', status: 'ended', endedAt: now.endedAt ?? Math.floor(Date.now() / 1000), tmux: undefined, pendingResume: false, meta: withQueue(now.meta) });
+    } else {
+      this.records.delete(undo.id);
+      this.removed.add(undo.id);
+    }
+    this.dirty = true;
     this.flush();
   }
+
 
   /** Records a conversation id learned from discovery rather than hooks. */
   adopt(id: string, harnessId: string, model?: string) {
@@ -281,18 +353,21 @@ export class Registry {
    * new uid), it inherits what was queued for that conversation from any
    * sibling record. A forked copy has a new id, so the parent keeps its queue.
    */
-  private inheritQueue(id: string): void {
+  private inheritQueue(id: string): StartUndo['moved'] {
+    const moved: StartUndo['moved'] = [];
     const r = this.records.get(id);
-    if (!r?.harnessId) return;
+    if (!r?.harnessId) return moved;
     for (const other of this.records.values()) {
       if (other.id === id || other.harness !== r.harness || other.harnessId !== r.harnessId) continue;
       const queued = other.meta['ah.queue'] as unknown[] | undefined;
       if (queued?.length) {
         r.meta['ah.queue'] = [...((r.meta['ah.queue'] as unknown[]) ?? []), ...queued];
         delete other.meta['ah.queue'];
+        moved.push({ from: other.id, items: queued });
         this.dirty = true;
       }
     }
+    return moved;
   }
 
   /** Direct forks of a session, oldest first (F36). */
@@ -367,6 +442,9 @@ export class Registry {
     }
   }
 
+  /** Writes failing since `at` (0: they aren't), last said in the log at `logged`. */
+  private failingSince = { at: 0, logged: 0 };
+
   flush() {
     if (!this.dirty) return;
     this.dirty = false;
@@ -390,10 +468,21 @@ export class Registry {
       .catch(() => {})
       .then(() => prev.catch(() => {}))
       .then(() => this.persist(records, removed))
+      .then(() => {
+        if (this.failingSince.at) console.error(`registry writes recovered after ${Math.round((Date.now() - this.failingSince.at) / 1000)} s`);
+        this.failingSince = { at: 0, logged: 0 };
+      })
       .catch((err) => {
-        // Not written: the next flush tries these rows again.
+        // Not written: the next flush (the next pass, at the latest) tries again — the
+        // rows, and the deletions, which would otherwise come back after a restart.
         for (const r of records) this.saved.delete(r.uid);
-        console.error('registry write failed:', err);
+        for (const id of removed) if (!this.records.has(id)) this.removed.add(id);
+        this.dirty = true;
+        // Said once, then at most once a minute while it keeps failing (every pass retries).
+        if (Date.now() - this.failingSince.logged > 60_000) {
+          console.error(this.failingSince.at ? 'registry writes still failing:' : 'registry write failed:', err);
+          this.failingSince = { at: this.failingSince.at || Date.now(), logged: Date.now() };
+        }
       });
   }
 

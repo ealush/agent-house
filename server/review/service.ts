@@ -47,14 +47,12 @@ import {
   type Verdict,
 } from './reviewer.ts';
 import { defaultOrder, descendants, forest, planRoles, subtree, validOrder, type Tree } from './stack.ts';
+import { resolveSession } from './owners.ts';
+import { ACTIVE_DISPATCH, buildStackView, checksOf, label, linkPlan, OPEN_FINDING, verdictOf } from './view.ts';
+export { linkPlan } from './view.ts';
+import { DomainError } from '../errors.ts';
 
-export class ReviewError extends Error {
-  status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
+export class ReviewError extends DomainError {}
 
 const now = () => Math.floor(Date.now() / 1000);
 const PLAN_MAX = 200_000;
@@ -80,7 +78,8 @@ export type SessionLite = {
 
 export type ReviewDeps = {
   sessions: () => Promise<SessionLite[]>;
-  send: (uid: string, text: string) => Promise<{ outcome: string; queueId?: string }>;
+  /** `id` names the message: asked again with it, the session answers rather than types it twice. */
+  send: (uid: string, text: string, id: string) => Promise<{ outcome: string; queueId?: string }>;
   /** A needs-you push to devices that asked for those. */
   alert: (p: { title: string; body: string; tag: string; url: string }) => void;
   /** Recompute the streamed state (the Inbox reads review alerts from it). */
@@ -221,25 +220,9 @@ type Candidate = { number: number; title: string; headRefName: string; baseRefNa
 export type CandidateTree = { pr: Candidate; children: CandidateTree[] };
 /** A stack on GitHub with open PRs, bottom to top. */
 export type CandidateStack = { number: number; base: string; prs: number[] };
-const sourceOf = (s: ReviewStack): StackView['source'] => (s.source === 'manual' || s.source === 'native' ? s.source : 'tree');
 
-function checksOf(l: ReviewLayer): Checks {
-  try {
-    const c = JSON.parse(l.checksJson) as Checks;
-    return { pass: c.pass ?? 0, fail: c.fail ?? 0, pending: c.pending ?? 0, failing: c.failing ?? [] };
-  } catch {
-    return { pass: 0, fail: 0, pending: 0, failing: [] };
-  }
-}
 
-function revView(r: ReviewRevision | undefined | null): RevView | null {
-  if (!r) return null;
-  let verdict: Verdict | null = null;
-  try {
-    verdict = r.verdictJson ? (JSON.parse(r.verdictJson) as Verdict) : null;
-  } catch {}
-  return { id: r.id, baseSha: r.baseSha, headSha: r.headSha, patchId: r.patchId, files: r.files, additions: r.additions, deletions: r.deletions, summary: r.summary, verdict };
-}
+
 
 function findingView(f: ReviewFinding, heads?: Map<number, string>): FindingView {
   return {
@@ -266,9 +249,6 @@ function findingView(f: ReviewFinding, heads?: Map<number, string>): FindingView
   };
 }
 
-const OPEN_FINDING = ['open', 'sent'];
-const ACTIVE_DISPATCH = ['sent', 'working'];
-const label = (l: { role: string; pr: number }) => (l.role ? `${l.role} #${l.pr}` : `#${l.pr}`);
 export const threadKey = (stackId: string, pr: number | null) => (pr === null ? `review:${stackId}` : `review:${stackId}:${pr}`);
 
 /** What a question to the reviewer points at, besides the layer you're on: a finding, lines of a layer's diff (as shown), a file. */
@@ -299,6 +279,7 @@ export class ReviewService {
   private db: PrismaClient;
   private chat: SideChatStore;
   private deps: ReviewDeps;
+  private claims = new Map<string, Promise<unknown>>();
   private syncs = new Map<string, Promise<void>>();
   private jobs = new Set<string>();
   private bodies = new Map<string, string>();
@@ -543,11 +524,13 @@ export class ReviewService {
       base = prs.find((p) => p.number === order.find((n) => !heads.has(prs.find((x) => x.number === n)!.baseRefName)))?.baseRefName || trunk;
       source = 'manual';
     }
-    await this.untaken(main, order);
     const first = prs.find((p) => p.number === order[0])!;
     const id = randomUUID().slice(0, 8);
-    await this.db.reviewStack.create({ data: { id, repoRoot: main, repo, trunk: base, source, ghStack, title: (title?.trim() || first.title).slice(0, 120), createdAt: now() } });
-    await this.db.reviewLayer.createMany({ data: order.map((n, i) => this.layerRow(id, prs.find((x) => x.number === n)!, i)) });
+    await this.claiming(main, async () => {
+      await this.untaken(main, order);
+      await this.db.reviewStack.create({ data: { id, repoRoot: main, repo, trunk: base, source, ghStack, title: (title?.trim() || first.title).slice(0, 120), createdAt: now() } });
+      await this.db.reviewLayer.createMany({ data: order.map((n, i) => this.layerRow(id, prs.find((x) => x.number === n)!, i)) });
+    });
     for (const p of prs) this.bodies.set(`${id}:${p.number}`, p.body);
     // The session it's started from made it and owns it; else the one session working on these branches, if exactly one is.
     const maker = from ? (await this.deps.sessions()).find((x) => x.uid === from) : undefined;
@@ -576,6 +559,21 @@ export class ReviewService {
     return picked;
   }
 
+  /**
+   * "Not already under review" and taking the PRs are one step per repository: two
+   * requests (or a request and a sync) checking at once can't both take the same PR.
+   */
+  private async claiming<T>(root: string, fn: () => Promise<T>): Promise<T> {
+    const prior = this.claims.get(root) ?? Promise.resolve();
+    const task = prior.catch(() => {}).then(fn);
+    this.claims.set(root, task);
+    try {
+      return await task;
+    } finally {
+      if (this.claims.get(root) === task) this.claims.delete(root);
+    }
+  }
+
   private async untaken(root: string, prs: number[]): Promise<void> {
     const open = (await this.db.reviewStack.findMany({ where: { repoRoot: root, state: 'open' }, select: { id: true } })).map((s) => s.id);
     const taken = await this.db.reviewLayer.findFirst({ where: { pr: { in: prs }, stackId: { in: open } } });
@@ -594,9 +592,13 @@ export class ReviewService {
     const dup = picked.find((n) => layers.some((l) => l.pr === n));
     if (dup) throw new ReviewError(409, `#${dup} is already in this stack`);
     const order = this.pickedOrder(prs, picked, s.repo);
-    await this.untaken(s.repoRoot, order);
-    const end = layers.length ? layers[layers.length - 1].position + 1 : 0;
-    await this.db.reviewLayer.createMany({ data: order.map((n, i) => this.layerRow(id, prs.find((x) => x.number === n)!, end + i)) });
+    await this.claiming(s.repoRoot, async () => {
+      await this.untaken(s.repoRoot, order);
+      // Read again in the claim: a sync may have joined a layer since.
+      const now = await this.db.reviewLayer.findMany({ where: { stackId: id }, orderBy: { position: 'asc' } });
+      const end = now.length ? now[now.length - 1].position + 1 : 0;
+      await this.db.reviewLayer.createMany({ data: order.map((n, i) => this.layerRow(id, prs.find((x) => x.number === n)!, end + i)) });
+    });
     for (const p of prs) this.bodies.set(`${id}:${p.number}`, p.body);
     if (s.state === 'done') await this.db.reviewStack.update({ where: { id }, data: { state: 'open' } });
     void this.sync(id, true).catch((err) => console.error(`review sync ${id}:`, (err as Error).message));
@@ -670,147 +672,7 @@ export class ReviewService {
       this.db.reviewDecision.findMany({ where: { stackId: id }, orderBy: { id: 'asc' } }),
       this.deps.sessions(),
     ]);
-    const revById = new Map(revs.map((r) => [r.id, r]));
-    const ownerOf = (uid: string | null, key: string | null): Owner => {
-      if (!uid && !key) return null;
-      const sess = sessions.find((x) => (key && x.key === key && x.live) || x.uid === uid) ?? sessions.find((x) => key && x.key === key);
-      return sess ? { uid: sess.uid, key: sess.key, title: sess.title, agent: sess.agent, status: sess.status, live: sess.live, branch: sess.branch } : { uid: uid ?? '', key: key ?? '', title: 'Ended session', agent: null, status: 'ended', live: false, branch: null };
-    };
-    const firstOpen = layers.find((l) => l.state === 'open')?.pr ?? null;
-    const natives = this.native.get(s.repoRoot)?.stacks ?? [];
-    const views: LayerView[] = layers.map((l) => {
-      const current = l.currentRevId ? revById.get(l.currentRevId) : undefined;
-      const reviewed = l.reviewedRevId ? revById.get(l.reviewedRevId) : undefined;
-      const mine = findings.filter((f) => f.ownerPr === l.pr && OPEN_FINDING.includes(f.state));
-      const blocking = mine.filter((f) => f.severity === 'blocking').length;
-      const d = dispatches.find((x) => x.pr === l.pr);
-      const samePatch = !!current && !!reviewed && current.patchId === reviewed.patchId;
-      const rebased = samePatch && (current!.headSha !== reviewed!.headSha || current!.baseSha !== reviewed!.baseSha);
-      const active = !!d && ACTIVE_DISPATCH.includes(d.state);
-      const status: LayerStatus =
-        l.state !== 'open'
-          ? (l.state as LayerStatus)
-          : active
-            ? 'fixing'
-            : reviewed && !samePatch
-              ? 'rereview'
-              : l.approved && samePatch
-                ? 'approved'
-                : mine.length
-                  ? 'changes'
-                  : 'unreviewed';
-      const checks = checksOf(l);
-      const lands = (l.ghStack !== null && natives.find((n) => n.number === l.ghStack)?.base) || null;
-      const blocked =
-        l.needs === 'merging'
-          ? 'GitHub is merging it'
-          : l.needs === 'queued'
-            ? 'In the merge queue'
-            : l.ghStack !== null && l.needs === 'restack'
-              ? `Not on top of ${l.baseRef}: needs a restack`
-              : l.mergeable === 'CONFLICTING'
-                ? `Conflicts with ${l.baseRef}`
-                : undefined;
-      const gates: Gate[] =
-        l.state !== 'open'
-          ? []
-          : [
-              {
-                key: 'reviewed',
-                ok: l.approved && samePatch,
-                label: 'Reviewed revision is current',
-                detail: !reviewed || !l.approved ? 'Not marked reviewed yet' : !samePatch ? 'Changed since your review' : rebased ? 'Rebased since your review, same patch' : undefined,
-              },
-              { key: 'findings', ok: blocking === 0, label: 'No open blocking findings', detail: blocking ? `${blocking} blocking` : mine.length ? `${mine.length} open, none blocking` : undefined },
-              {
-                key: 'checks',
-                ok: checks.fail === 0 && checks.pending === 0,
-                label: 'Checks passed',
-                detail: checks.fail ? `Failing: ${checks.failing.join(', ')}` : checks.pending ? `${checks.pending} check${checks.pending === 1 ? '' : 's'} running` : checks.pass ? undefined : 'No checks reported',
-              },
-              { key: 'mergeable', ok: !l.draft && !blocked, label: l.draft ? 'Draft' : 'Mergeable', detail: l.draft ? 'Mark it ready first' : blocked },
-              // A PR in a GitHub stack lands in the stack's base, whatever branch it targets now.
-              l.ghStack !== null
-                ? { key: 'base', ok: (lands ?? s.trunk) === s.trunk, label: `Lands in ${s.trunk}`, detail: (lands ?? s.trunk) === s.trunk ? undefined : `GitHub's stack #${l.ghStack} lands in ${lands}` }
-                : { key: 'base', ok: l.baseRef === s.trunk, label: `Targets ${s.trunk}`, detail: l.baseRef === s.trunk ? undefined : `Targets ${l.baseRef}` },
-              { key: 'order', ok: firstOpen === l.pr, label: 'Next in merge order', detail: firstOpen === l.pr ? undefined : `#${firstOpen} comes first` },
-            ];
-      const dv: DispatchView | null = d
-        ? { id: d.id, pr: d.pr, kind: d.kind, state: d.state, targetUid: d.targetUid, targetTitle: ownerOf(d.targetUid, d.targetKey)?.title ?? null, targetAgent: ownerOf(d.targetUid, d.targetKey)?.agent ?? null, sentAt: d.sentAt, doneAt: d.doneAt, findings: findings.filter((f) => f.dispatchId === d.id).map((f) => f.id), text: d.text }
-        : null;
-      return {
-        pr: l.pr,
-        role: l.role,
-        position: l.position,
-        title: l.title,
-        url: l.url,
-        author: l.author,
-        state: l.state,
-        draft: l.draft,
-        headRef: l.headRef,
-        baseRef: l.baseRef,
-        headSha: l.headSha,
-        mergeable: l.mergeable,
-        checks,
-        needs: l.needs,
-        status,
-        approved: l.approved,
-        samePatch,
-        rebased,
-        current: revView(current),
-        reviewed: revView(reviewed),
-        open: mine.length,
-        followups: l.pr === firstOpen ? findings.filter((f) => f.state === 'open' && layers.find((x) => x.pr === f.ownerPr)?.state === 'merged').length : 0,
-        blocking,
-        dispatch: dv,
-        gates,
-        ownerUid: l.ownerUid,
-        ghStack: l.ghStack,
-        ghPos: l.ghPos,
-      };
-    });
-    // GitHub merges a PR of its stack with every unmerged PR under it, so those have to be ready too.
-    for (const v of views) {
-      if (v.state !== 'open' || v.ghStack === null || v.ghPos === null) continue;
-      const under = views.filter((x) => x.ghStack === v.ghStack && x.ghPos !== null && x.ghPos < v.ghPos! && (x.state === 'open' || x.state === 'skipped'));
-      const ns = natives.find((n) => n.number === v.ghStack);
-      const outside = (ns?.prs ?? []).filter((p, i) => i + 1 < v.ghPos! && p.open && !p.merged && !views.some((x) => x.pr === p.number));
-      if (!under.length && !outside.length) continue;
-      const why = (x: LayerView) => {
-        const g = x.gates.find((y) => !y.ok && y.key !== 'order' && y.key !== 'below');
-        return x.state === 'skipped' ? 'skipped here' : g ? (g.detail ?? g.label).replace(/^./, (c) => c.toLowerCase()) : null;
-      };
-      const unready = under.map((x) => ({ x, g: why(x) })).find((u) => u.g);
-      const names = under.map((x) => label(x)).join(', ');
-      v.gates.splice(v.gates.length - 1, 0, {
-        key: 'below',
-        ok: !outside.length && !unready,
-        label: 'The layers under it can merge',
-        detail: outside.length ? `#${outside[0].number} merges with it and isn't in this review` : unready ? `${label(unready.x)} merges with it: ${unready.g}` : `${names} merge${under.length === 1 ? 's' : ''} with it`,
-      });
-    }
-    return {
-      id: s.id,
-      title: s.title,
-      repo: s.repo,
-      repoRoot: s.repoRoot,
-      trunk: s.trunk,
-      mergeMethod: s.mergeMethod,
-      methods: this.methods.get(s.repoRoot) ?? ['merge'],
-      source: sourceOf(s),
-      ghStack: s.ghStack,
-      origin: ownerOf(s.originUid, s.originKey),
-      link: linkPlan(views, natives),
-      planPath: s.planPath,
-      state: s.state,
-      syncedAt: s.syncedAt,
-      syncError: s.syncError,
-      syncing: this.syncs.has(id),
-      owner: ownerOf(s.ownerUid, s.ownerKey),
-      layers: views,
-      next: firstOpen,
-      decisions: decisions.map((d) => ({ id: d.id, text: d.text, fromPr: d.fromPr, at: d.at })),
-    };
+    return buildStackView(s, { layers, revs, findings, dispatches, decisions }, { sessions, natives: this.native.get(s.repoRoot)?.stacks ?? [], methods: this.methods.get(s.repoRoot) ?? ['merge'], syncing: this.syncs.has(id) });
   }
 
   async update(id: string, patch: { title?: string; planPath?: string | null; mergeMethod?: string; order?: number[]; ownerUid?: string | null; originUid?: string | null; state?: string }): Promise<StackView> {
@@ -950,23 +812,27 @@ export class ReviewService {
       }
       // New PRs stacked on an open layer join the stack, right after their parent's line; a stack you picked stays as picked.
       const heads = new Map(s.source !== 'tree' ? [] : layers.filter((l) => l.state === 'open').map((l) => [l.headRef, l]));
-      const others = await this.db.reviewLayer.findMany({ where: { pr: { in: all.map((p) => p.number) }, stackId: { not: id } }, select: { pr: true } });
-      const elsewhere = new Set(others.map((o) => o.pr));
-      for (const p of all) {
-        if (p.state !== 'OPEN' || p.crossRepo || elsewhere.has(p.number) || layers.some((l) => l.pr === p.number)) continue;
-        const parent = heads.get(p.baseRefName);
-        if (!parent) continue;
-        const nodes = layers.map((l) => ({ number: l.pr, headRefName: l.headRef, baseRefName: l.baseRef }));
-        const order = layers.map((l) => l.pr);
-        const tail = [parent.pr, ...descendants(nodes, parent.pr, order)];
-        const at = Math.max(...tail.map((n) => order.indexOf(n))) + 1;
-        await this.db.$transaction([
-          ...layers.filter((l) => l.position >= at).map((l) => this.db.reviewLayer.update({ where: { stackId_pr: { stackId: id, pr: l.pr } }, data: { position: l.position + 1 } })),
-          this.db.reviewLayer.create({ data: { stackId: id, pr: p.number, position: at, title: p.title, url: p.url, headRef: p.headRefName, baseRef: p.baseRefName, headSha: p.headRefOid, draft: p.isDraft, author: p.author } }),
-        ]);
-        layers = await this.db.reviewLayer.findMany({ where: { stackId: id }, orderBy: { position: 'asc' } });
-        heads.set(p.headRefName, layers.find((l) => l.pr === p.number)!);
-      }
+      // Joining checks and claims in one step, per repository: two stacks never take one PR.
+      let elsewhere = new Set<number>();
+      await this.claiming(s.repoRoot, async () => {
+        const others = await this.db.reviewLayer.findMany({ where: { pr: { in: all.map((p) => p.number) }, stackId: { not: id } }, select: { pr: true } });
+        elsewhere = new Set(others.map((o) => o.pr));
+        for (const p of all) {
+          if (p.state !== 'OPEN' || p.crossRepo || elsewhere.has(p.number) || layers.some((l) => l.pr === p.number)) continue;
+          const parent = heads.get(p.baseRefName);
+          if (!parent) continue;
+          const nodes = layers.map((l) => ({ number: l.pr, headRefName: l.headRef, baseRefName: l.baseRef }));
+          const order = layers.map((l) => l.pr);
+          const tail = [parent.pr, ...descendants(nodes, parent.pr, order)];
+          const at = Math.max(...tail.map((n) => order.indexOf(n))) + 1;
+          await this.db.$transaction([
+            ...layers.filter((l) => l.position >= at).map((l) => this.db.reviewLayer.update({ where: { stackId_pr: { stackId: id, pr: l.pr } }, data: { position: l.position + 1 } })),
+            this.db.reviewLayer.create({ data: { stackId: id, pr: p.number, position: at, title: p.title, url: p.url, headRef: p.headRefName, baseRef: p.baseRefName, headSha: p.headRefOid, draft: p.isDraft, author: p.author } }),
+          ]);
+          layers = await this.db.reviewLayer.findMany({ where: { stackId: id }, orderBy: { position: 'asc' } });
+          heads.set(p.headRefName, layers.find((l) => l.pr === p.number)!);
+        }
+      });
       const natives = await this.nativeStacks(s.repoRoot, s.repo, _force);
       if (natives && s.source === 'native') layers = await this.follow(s, natives, layers, all, elsewhere);
       // GitHub's view of each layer.
@@ -1273,8 +1139,7 @@ export class ReviewService {
     const key = l.ownerKey ?? s.ownerKey;
     const uid = l.ownerUid ?? s.ownerUid;
     if (!key && !uid) return null;
-    const sessions = await this.deps.sessions();
-    return sessions.find((x) => key && x.key === key && x.live) ?? sessions.find((x) => key && x.key === key) ?? sessions.find((x) => x.uid === uid) ?? null;
+    return resolveSession(await this.deps.sessions(), key, uid);
   }
 
   /** The message for the agent: findings with locations, the plan's constraints, and the restack of the layers above. */
@@ -1354,10 +1219,23 @@ export class ReviewService {
       if (!s.ownerKey && !l.ownerKey) await this.db.reviewStack.update({ where: { id }, data: { ownerUid: target.uid, ownerKey: target.key } });
     } else target = await this.target(s, l);
     if (!target) throw new ReviewError(409, 'choose the session that owns this stack first');
-    const sent = await this.deps.send(target.uid, text);
-    const d = await this.db.reviewDispatch.create({
-      data: { stackId: id, pr, kind: input.kind ?? 'fix', targetUid: target.uid, targetKey: target.key, text, fromRevId: l.currentRevId, fromHead: l.headSha, queueId: sent.queueId ?? null, sentAt: now() },
+    // The record first, then the message, named after it: a dispatch that reached the
+    // agent is never unrecorded (and so never sent twice by a retry), and one that
+    // fails to go out leaves nothing behind.
+    let d = await this.db.reviewDispatch.create({
+      data: { stackId: id, pr, kind: input.kind ?? 'fix', targetUid: target.uid, targetKey: target.key, text, fromRevId: l.currentRevId, fromHead: l.headSha, queueId: null, sentAt: now() },
     });
+    let sent: { outcome: string; queueId?: string };
+    try {
+      sent = await this.deps.send(target.uid, text, `rd-${d.id}`);
+    } catch (err) {
+      // Refused, or nothing typed: nothing went out, so no dispatch. Some of it landed
+      // (a paste that failed half way): the agent has it, so the record stays.
+      const typed = (err as { typed?: unknown }).typed === true;
+      if (!typed) await this.db.reviewDispatch.delete({ where: { id: d.id } }).catch(() => {});
+      throw err;
+    }
+    if (sent.queueId) d = await this.db.reviewDispatch.update({ where: { id: d.id }, data: { queueId: sent.queueId } });
     // The revision the findings were written against is the checkpoint the fix is compared with.
     if (input.kind !== 'merge') await this.db.reviewLayer.update({ where: { stackId_pr: { stackId: id, pr } }, data: { reviewedRevId: l.currentRevId ?? l.reviewedRevId } });
     if (input.findingIds.length) {
@@ -1724,8 +1602,7 @@ export class ReviewService {
 
   private async originSession(s: ReviewStack): Promise<SessionLite | null> {
     if (!s.originUid && !s.originKey) return null;
-    const sessions = await this.deps.sessions();
-    return sessions.find((x) => s.originKey && x.key === s.originKey && x.live) ?? sessions.find((x) => s.originKey && x.key === s.originKey) ?? sessions.find((x) => x.uid === s.originUid) ?? null;
+    return resolveSession(await this.deps.sessions(), s.originKey, s.originUid);
   }
 
   /** What the reviewer's origin tool reads: the human's messages to the session that made the stack, or passages that mention a query. */
@@ -1970,10 +1847,12 @@ export class ReviewService {
   /** Apply a re-check's verdicts: addressed findings close; the rest go back to open. */
   async acceptVerdict(id: string, pr: number, overrides: Record<number, 'addressed' | 'open'> = {}): Promise<StackView> {
     const cur = await this.currentRev(id, pr);
-    const verdict = cur?.verdictJson ? (JSON.parse(cur.verdictJson) as Verdict) : null;
+    const verdict = verdictOf(cur);
+    // A verdict that's there but unreadable decides nothing: every finding would reopen.
+    if (cur?.verdictJson && !verdict) throw new ReviewError(409, "the re-check's verdict can't be read; run the re-check again");
     const sent = await this.db.reviewFinding.findMany({ where: { stackId: id, ownerPr: pr, state: 'sent' } });
     for (const f of sent) {
-      const v = verdict?.items.find((i) => i.id === f.id);
+      const v = verdict?.items?.find((i) => i.id === f.id);
       const state = overrides[f.id] ?? (v?.verdict === 'addressed' ? 'addressed' : 'open');
       await this.db.reviewFinding.update({ where: { id: f.id }, data: { state, note: v?.evidence || f.note, stateBy: overrides[f.id] ? 'you' : 'reviewer', stateRevId: cur?.id ?? null, updatedAt: now() } });
     }
@@ -2024,30 +1903,6 @@ export class ReviewService {
   private snapshotPrimed = false;
 }
 
-/**
- * How a stack's open layers would become a stack on GitHub: all of them, in
- * order, each based on the one before; or, when its bottom layers already are
- * the top of one, the rest on top of that.
- */
-export function linkPlan(layers: Pick<LayerView, 'pr' | 'role' | 'state' | 'headRef' | 'baseRef' | 'ghStack'>[], natives: NativeStack[]): StackView['link'] {
-  const open = layers.filter((l) => l.state === 'open' || l.state === 'skipped');
-  const no = (why: string) => ({ ok: false, prs: [], onto: null, why });
-  const stacks = [...new Set(open.map((l) => l.ghStack).filter((n): n is number => n !== null))];
-  if (stacks.length === 1 && open.every((l) => l.ghStack === stacks[0])) return null;
-  if (open.length < 2) return null;
-  if (stacks.length > 1) return no(`its pull requests are in ${stacks.length} stacks on GitHub`);
-  const inStack = open.filter((l) => l.ghStack !== null).length;
-  if (open.slice(0, inStack).some((l) => l.ghStack === null)) return no('only its bottom layers can already be a stack on GitHub');
-  const ns = stacks.length ? natives.find((n) => n.number === stacks[0]) : undefined;
-  if (stacks.length && ns && ns.prs.filter((p) => p.open).at(-1)?.number !== open[inStack - 1].pr) return no(`stack #${stacks[0]} on GitHub goes on past #${open[inStack - 1].pr}`);
-  for (let i = Math.max(1, inStack); i < open.length; i++) {
-    if (open[i].baseRef !== open[i - 1].headRef) return no(`#${open[i].pr} isn't built on #${open[i - 1].pr}, the layer before it`);
-  }
-  const rest = open.slice(inStack);
-  const skipped = rest.find((l) => l.state === 'skipped');
-  if (skipped) return no(`#${skipped.pr} is skipped here`);
-  return { ok: true, prs: rest.map((l) => l.pr), onto: stacks[0] ?? null, why: null };
-}
 
 /**
  * A review comment's title: its first sentence, without the badge images,

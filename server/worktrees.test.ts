@@ -1,7 +1,8 @@
+import '../test/scratch.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Core, type State } from './core.ts';
@@ -9,7 +10,11 @@ import { createWorktree, removeWorktree } from './git.ts';
 
 // Exercise Core's cleanup policy independently of tmux timing and the database.
 test('bulk cleanup protects live registry ownership and ended resumable sessions', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'ah-worktree-policy-'));
+  // Worktrees go beside the repository (<parent>/.worktrees/<repo>): both inside one temp
+  // dir, removed after, so a run leaves nothing in /tmp.
+  const parent = await mkdtemp(join(tmpdir(), 'ah-worktree-policy-'));
+  const dir = join(parent, 'repo');
+  await mkdir(dir);
   execFileSync('git', ['init', '-q', '-b', 'main', dir]);
   execFileSync('git', ['-C', dir, 'config', 'user.email', 't@t']);
   execFileSync('git', ['-C', dir, 'config', 'user.name', 't']);
@@ -34,5 +39,6 @@ test('bulk cleanup protects live registry ownership and ended resumable sessions
     assert.equal((await core.removeWorktreesBulk([wt.path], []))[0].ok, true);
   } finally {
     await removeWorktree(wt.path, true).catch(() => {});
+    await rm(parent, { recursive: true, force: true });
   }
 });

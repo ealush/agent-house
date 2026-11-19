@@ -4,6 +4,7 @@
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
 
 const run = promisify(execFile);
 const SEP = '\x1f';
@@ -37,6 +38,11 @@ export function cleanEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv 
   const env = { ...process.env, ...extra };
   delete env.TMUX;
   delete env.TMUX_PANE;
+  // A TMUX_TMPDIR that no longer exists makes tmux fall back to the default socket in
+  // /tmp: the real server of whoever runs this, with every session in it. Refuse instead.
+  // (On 2026-11-19 a test whose temporary TMUX_TMPDIR was removed before its own
+  // `kill-server` killed the developer's tmux server four times.)
+  if (env.TMUX_TMPDIR && !existsSync(env.TMUX_TMPDIR)) throw new Error(`TMUX_TMPDIR ${env.TMUX_TMPDIR} is gone: refusing to fall back to the default tmux server`);
   return env;
 }
 

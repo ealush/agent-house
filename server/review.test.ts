@@ -1,3 +1,4 @@
+import '../test/scratch.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -208,14 +209,17 @@ async function setup() {
     { uid: 'u-agent', key: 'claude:conv-1', title: 'Feature work', agent: 'claude', status: 'idle', cwd: w.local, branch: 'feat', live: true },
     { uid: 'u-shell', key: 'u-shell', title: 'zsh', agent: null, status: 'idle', cwd: w.local, branch: 'main', live: true },
   ];
-  const sent: { uid: string; text: string }[] = [];
+  const sent: { uid: string; text: string; id: string }[] = [];
+  const failSend = { on: false, partly: false };
   const alerts: string[] = [];
   const launched: { preset: string; root: string; label: string; fromRef: string }[] = [];
   const transcripts = new Map<string, { prompts: { at: number; text: string }[]; entries: { role: string; at: number; text: string }[] }>();
   const svc = new ReviewService(getDb(dbPath), chat, {
     sessions: async () => sessions,
-    send: async (uid, text) => {
-      sent.push({ uid, text });
+    send: async (uid, text, id) => {
+      if (failSend.on) throw new Error('the session went away');
+      if (failSend.partly) throw Object.assign(new Error('Enter failed'), { typed: true });
+      sent.push({ uid, text, id });
       return { outcome: 'queued', queueId: 'q1' };
     },
     alert: (p) => alerts.push(p.title),
@@ -234,7 +238,7 @@ async function setup() {
     fn(cur);
     await writeFile(w.stateFile, JSON.stringify(cur));
   };
-  return { w, svc, db: getDb(dbPath), chat, sessions, sent, alerts, transcripts, launched, setState, heads: { h1, h2, h3, h4 } };
+  return { w, svc, db: getDb(dbPath), chat, sessions, sent, failSend, alerts, transcripts, launched, setState, heads: { h1, h2, h3, h4 } };
 }
 
 test('review: stack from a PR tree, fix loop through the owner, re-review, merge and next', async () => {
@@ -267,8 +271,24 @@ test('review: stack from a PR tree, fix loop through the owner, re-review, merge
     assert.match(text, /\[blocking\] Return 2\. c\.ts:1/);
     assert.match(text, /restack the layers above it.*docs \(#3, [0-9a-f]{8}\) on feat/);
     assert.match(text, /\(ah review [\w-]+\/2\)/);
+    // A send that fails leaves nothing behind: no dispatch, the finding still open.
+    t.failSend.on = true;
+    await assert.rejects(t.svc.dispatch(v.id, 2, { findingIds: [f.id], text }), /went away/);
+    t.failSend.on = false;
+    assert.equal(await t.db.reviewDispatch.count({ where: { stackId: v.id } }), 0);
+    assert.equal((await t.svc.findings(v.id)).find((x) => x.id === f.id)?.state, 'open');
+    // A send that typed part of it and then failed: the agent has it, so the record stays.
+    t.failSend.partly = true;
+    await assert.rejects(t.svc.dispatch(v.id, 2, { findingIds: [], text: 'partial' }), /Enter failed/);
+    t.failSend.partly = false;
+    assert.equal(await t.db.reviewDispatch.count({ where: { stackId: v.id } }), 1);
+    await t.db.reviewDispatch.deleteMany({ where: { stackId: v.id } });
     await t.svc.dispatch(v.id, 2, { findingIds: [f.id], text });
     assert.deepEqual(t.sent.map((s) => s.uid), ['u-agent']);
+    // Recorded before it went out, and sent under the record's name (a retry is recognized).
+    const row = await t.db.reviewDispatch.findFirst({ where: { stackId: v.id } });
+    assert.equal(t.sent[0].id, `rd-${row!.id}`);
+    assert.equal(row!.queueId, 'q1');
     v = await t.svc.view(v.id);
     assert.equal(v.layers.find((l) => l.pr === 2)!.status, 'fixing');
     assert.equal(t.svc.state().fixing[0]?.uid, 'u-agent', 'the session shows what it is fixing');
@@ -1098,5 +1118,27 @@ test('review: fixes can go to a new agent session, in a worktree at the layer, t
     assert.equal(v.owner?.uid, 'u-agent', 'the stack keeps its owner');
     assert.equal(v.layers.find((l) => l.pr === 2)!.ownerUid, 'u-new1', "the layer's fixes go to the new session from now on");
     assert.equal(v.layers.find((l) => l.pr === 2)!.status, 'fixing');
+  });
+});
+
+test('review: two stacks started at once for the same PR — one takes it, the other is told', async () => {
+  const t = await setup();
+  // Each check that #4 is free waits for the other to have checked too (or 2 s): the
+  // moment two requests would both find it free and both take it.
+  const svc = t.svc as unknown as { untaken: (root: string, prs: number[]) => Promise<void> };
+  const check = svc.untaken.bind(t.svc);
+  let checked = 0;
+  let both!: () => void;
+  const met = new Promise<void>((r) => (both = r));
+  svc.untaken = async (root, prs) => {
+    await check(root, prs);
+    if (++checked === 2) both();
+    await Promise.race([met, new Promise((r) => setTimeout(r, 2000))]);
+  };
+  await withGh(t.w, async () => {
+    const out = await Promise.allSettled([t.svc.create(t.w.local, { prs: [4] }), t.svc.create(t.w.local, { prs: [4] })]);
+    assert.deepEqual(out.map((o) => o.status).sort(), ['fulfilled', 'rejected']);
+    assert.match(String((out.find((o) => o.status === 'rejected') as PromiseRejectedResult).reason), /already in a stack under review/);
+    assert.equal(await t.db.reviewLayer.count({ where: { pr: 4 } }), 1);
   });
 });

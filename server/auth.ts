@@ -28,6 +28,7 @@ import {
   type AuthenticationResponseJSON,
   type RegistrationResponseJSON,
 } from '@simplewebauthn/server';
+import { DomainError } from './errors.ts';
 
 const scrypt = promisify(scryptCb) as (pw: string, salt: Buffer, len: number, opts: object) => Promise<Buffer>;
 
@@ -88,13 +89,7 @@ type Store = {
 
 export type Caller = { kind: 'session'; session: Session } | { kind: 'token'; token: Token } | { kind: 'open' };
 
-export class AuthError extends Error {
-  status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
+export class AuthError extends DomainError {}
 
 const now = () => Date.now();
 const b64url = (b: Uint8Array) => Buffer.from(b).toString('base64url');

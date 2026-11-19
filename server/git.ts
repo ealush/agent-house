@@ -7,6 +7,7 @@ import { mkdir, rm, rmdir, stat, lstat } from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { cachedSize, invalidateSize, requestSize } from './size.ts';
+import { DomainError } from './errors.ts';
 
 const exec = promisify(execFile);
 
@@ -57,7 +58,12 @@ function gitStdin(cwd: string, env: Record<string, string>, args: string[], inpu
   });
 }
 
-export class GitError extends Error {}
+/** A git command that refused: the caller's request (a branch, a path) is what's wrong. */
+export class GitError extends DomainError {
+  constructor(message: string) {
+    super(400, message);
+  }
+}
 
 /** The main checkout of the repo containing `dir` (resolves linked worktrees). */
 export async function mainRepo(dir: string): Promise<string> {

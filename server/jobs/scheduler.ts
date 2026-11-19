@@ -21,6 +21,7 @@ import type { PrismaClient, Job as JobRow, JobRun as RunRow } from '@prisma/clie
 import type { SessionRecord } from '../registry.ts';
 import type { WindowView } from '../sessions.ts';
 import { checkZone, nextRun, parseCron, CronError } from './cron.ts';
+import { DomainError } from '../errors.ts';
 
 export type LaunchAction = { kind: 'launch'; preset: string; cwd: string; prompt: string; name?: string; model?: string; effort?: string; mode?: string; worktree?: boolean };
 export type SendAction = { kind: 'send'; target: string; text: string };
@@ -54,13 +55,10 @@ export type Policy = {
   autoRecover?: boolean;
 };
 
-export class JobError extends Error {
-  status: number;
-  code: string;
+export class JobError extends DomainError {
+  declare readonly code: string;
   constructor(status: number, code: string, message: string) {
-    super(message);
-    this.status = status;
-    this.code = code;
+    super(status, message, code);
   }
 }
 

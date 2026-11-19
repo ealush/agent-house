@@ -1,3 +1,4 @@
+import '../test/scratch.ts';
 // The scheduler's pure parts: cron in time zones across DST, and the run policy.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

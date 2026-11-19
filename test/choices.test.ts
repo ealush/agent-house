@@ -4,7 +4,7 @@ import { readFileSync, existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { startAh, cleanup, http, until } from './helpers.ts';
+import { startAh, cleanup, http, until, sleep } from './helpers.ts';
 
 const fixture = fileURLToPath(new URL('./fixtures/picker.js', import.meta.url));
 const keys = (log: string) => (existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l.slice(4))).join('') : '');
@@ -116,6 +116,12 @@ test('picks a row of a permission prompt by its digit', async () => {
     assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/choose`, { body: { key: '7' } })).status, 409);
     assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/choose`, { body: { key: '2' } })).status, 200);
     await until(() => keys(log) === '2', 5000, 'digit typed');
+    // The picker is still on screen (the agent hasn't redrawn): a second tap types nothing.
+    const again = await http(ah, 'POST', `/api/sessions/${uid}/choose`, { body: { key: '2' } });
+    assert.equal(again.status, 409, again.body);
+    assert.equal(again.json().code, 'already_answered');
+    await sleep(300);
+    assert.equal(keys(log), '2', 'typed once');
   } finally {
     await cleanup(ah);
   }
@@ -149,6 +155,15 @@ test('approve from a notification goes through only while the same prompt is sho
     const ok = await http(ah, 'POST', `/api/sessions/${uid}/answer`, { body: { answer: 'approve', prompt: w.askId } });
     assert.equal(ok.status, 200, ok.body);
     await until(() => keys(log) === '\r', 5000, 'Enter typed');
+    // The prompt is still on screen (the agent hasn't redrawn): a second tap, from this
+    // device or another, with or without the prompt's id, types nothing.
+    for (const body of [{ answer: 'approve', prompt: w.askId }, { answer: 'approve' }, { answer: 'deny' }]) {
+      const again = await http(ah, 'POST', `/api/sessions/${uid}/answer`, { body });
+      assert.equal(again.status, 409, again.body);
+      assert.equal(again.json().code, 'already_answered');
+    }
+    await sleep(300);
+    assert.equal(keys(log), '\r', 'typed once');
   } finally {
     await cleanup(ah);
   }
@@ -176,6 +191,65 @@ test('a hook stuck on "waiting" over a screen with no prompt does not hold "need
       const w = await window();
       return w && w.status !== 'waiting' && w.statusSource === 'hook';
     }, 10000, 'stale waiting dropped once the screen is quiet with no picker');
+  } finally {
+    await cleanup(ah);
+  }
+});
+
+test('a named message that picked a row, asked again, picks nothing more', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ah-it-'));
+  const log = `${dir}/keys.log`;
+  const ah = await startAh({
+    auth: { mode: 'off' },
+    idleAfter: 1,
+    presets: [{ id: 'test-claude', name: 'Test', command: `exec ${process.execPath} ${fixture} permission ${log}`, match: '^node$', waitingPatterns: ['Do you want to proceed'], approveKeys: ['Enter'], denyKeys: ['Escape'] }],
+  }, dir);
+  try {
+    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'test-claude', cwd: `${ah.dir}/files` } });
+    const { uid } = created.json();
+    const window = async () => (await http(ah, 'GET', '/api/state')).json().windows.find((w: any) => w.uid === uid);
+    await until(async () => (await window())?.ask?.options?.length, 15000, 'the picker');
+    const first = await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: '2', id: 'pick-1' } });
+    assert.equal(first.json().outcome, 'delivered', first.body);
+    await until(() => keys(log) === '2', 5000, 'row picked');
+    // The answer was lost; asked again with the same id, long after the hold.
+    await sleep(4500);
+    const again = await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: '2', id: 'pick-1' } });
+    assert.equal(again.status, 200, again.body);
+    assert.equal(again.json().outcome, 'delivered');
+    await sleep(500);
+    assert.equal(keys(log), '2', 'picked once');
+  } finally {
+    await cleanup(ah);
+  }
+});
+
+test('two devices answering the same question: the first is typed, the second is told it was answered', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ah-it-'));
+  const log = `${dir}/keys.log`;
+  const ah = await startAh({
+    auth: { mode: 'off' },
+    idleAfter: 1,
+    presets: [{ id: 'test-claude', name: 'Test', command: `exec ${process.execPath} ${fixture} plain ${log}`, match: '^node$', waitingPatterns: ['all done here'] }],
+  }, dir);
+  try {
+    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'test-claude', cwd: `${ah.dir}/files` } });
+    assert.equal(created.status, 201, created.body);
+    const { uid } = created.json();
+    const window = async () => (await http(ah, 'GET', '/api/state')).json().windows.find((w: any) => w.uid === uid);
+    await until(async () => (await window())?.status === 'waiting', 15000, 'waiting on its question');
+    const [a, b] = await Promise.all([
+      http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'blue' } }),
+      http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'green' } }),
+    ]);
+    const [won, lost] = a.status === 200 ? [a, b] : [b, a];
+    assert.equal(won.json().outcome, 'delivered', won.body);
+    assert.equal(lost.status, 409, lost.body);
+    assert.equal(lost.json().code, 'already_answered');
+    await sleep(500);
+    const typed = keys(log);
+    assert.ok(typed.includes('blue') !== typed.includes('green'), `one answer typed, not both: ${JSON.stringify(typed)}`);
+    assert.equal((await http(ah, 'GET', `/api/sessions/${uid}/queue`)).json().length, 0, 'and nothing waits to land later as a turn');
   } finally {
     await cleanup(ah);
   }

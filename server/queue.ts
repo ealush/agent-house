@@ -17,6 +17,8 @@ export type QueueItem = {
   enter: boolean;
   at: number;
   launchChange?: LaunchChange;
+  /** Its id is its sender's (an idempotency id), not one ah made up: remembered once delivered. */
+  named?: boolean;
 };
 
 const now = () => Math.floor(Date.now() / 1000);
@@ -108,6 +110,14 @@ const CONFIRM_GRACE_MS = 10_000;
 /** Slash commands answer on screen and may never reach the transcript as typed. */
 export const confirmable = (item: QueueItem) => item.enter && !/^\/[\w-]+(\s|$)/.test(item.text.trimStart()) && needleFor(item.text) !== null;
 
+/** How many delivered message ids a session remembers (QueueManager.noteDelivered). */
+export const DELIVERED_KEEP = 64;
+
+/** The ledger with `id` as its newest entry, oldest dropped past `keep`. Pure. */
+export function withDelivered(ledger: readonly string[], id: string, keep = DELIVERED_KEEP): string[] {
+  return [...ledger.filter((x) => x !== id), id].slice(-keep);
+}
+
 export class QueueManager {
   private registry: Registry;
   private rt: QueueRuntime;
@@ -190,6 +200,21 @@ export class QueueManager {
   delivered(uid: string, item: QueueItem, mark: TranscriptMark | null): void {
     if (mark) this.unconfirmed.set(uid, { item, mark, at: Date.now() });
     else this.unconfirmed.delete(uid);
+    if (item.named) this.noteDelivered(uid, item.id);
+  }
+
+  /**
+   * A message the caller named (an idempotency id) was typed into the session. The last
+   * DELIVERED_KEEP ids stay in the session's record, so asking again with the same id —
+   * a retry after a lost answer, or after a restart — is "delivered", not a second turn.
+   */
+  noteDelivered(uid: string, id: string): void {
+    const r = this.registry.get(uid);
+    if (r) this.registry.setMeta(uid, 'ah.delivered', withDelivered((r.meta['ah.delivered'] as string[] | undefined) ?? [], id));
+  }
+
+  wasDelivered(uid: string, id: string): boolean {
+    return ((this.registry.get(uid)?.meta['ah.delivered'] as string[] | undefined) ?? []).includes(id);
   }
 
   /**
@@ -266,11 +291,13 @@ export class QueueManager {
         const first = this.items(w.uid)[0];
         if (!first) return;
         const mark = await this.markFor(w, first);
+        // The turn's snapshot first (it can take seconds), with the follow-up still in
+        // the queue on disk: a restart meanwhile delivers it after, rather than lose it.
+        if (first.enter) await this.rt.captureTurnStart(w.uid, first.text);
         const taken = this.take(w.uid, first.id);
         if (!taken) return;
         const { next, rest } = taken;
         this.rt.markSent(w.uid);
-        if (next.enter) await this.rt.captureTurnStart(w.uid, next.text);
         try {
           await this.rt.paste(w.id, next.text, next.enter);
           this.delivered(w.uid, next, mark);
@@ -284,6 +311,7 @@ export class QueueManager {
             w.queued = rest.length + 1;
             return;
           }
+          if (next.named) this.noteDelivered(w.uid, next.id);
         }
         w.queued = rest.length;
         w.status = 'busy';

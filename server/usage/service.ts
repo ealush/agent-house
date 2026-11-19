@@ -14,15 +14,8 @@ import { conversationKey } from '../registry.ts';
 import { parseUsageLine, readFrom, type ParseState } from './ingest.ts';
 import { estimate, LIST_PRICES_AS_OF, priceOf, providerOf, type Price } from './prices.ts';
 
-export type UsageConfig = {
-  retentionDays: number;
-  /** Your prices per model id (USD per million tokens), over the built-in list prices. */
-  prices: Record<string, Partial<Price>>;
-  /** How each provider bills you: `api` (per token), `subscription` (a plan), or `unknown`. */
-  billing: Record<string, 'api' | 'subscription' | 'unknown'>;
-};
-
-export const DEFAULT_USAGE: UsageConfig = { retentionDays: 400, prices: {}, billing: {} };
+import type { UsageConfig } from './settings.ts';
+export { DEFAULT_USAGE, type UsageConfig } from './settings.ts';
 
 export type UsageDeps = {
   host: () => string;

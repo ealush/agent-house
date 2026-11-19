@@ -1,3 +1,4 @@
+import '../test/scratch.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cp, mkdir, mkdtemp, writeFile } from 'node:fs/promises';

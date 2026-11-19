@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { basename, dirname, join } from 'node:path';
 import type { IncomingMessage } from 'node:http';
 import type { Readable } from 'node:stream';
+import { DomainError } from './errors.ts';
 
 export type UploadLimits = {
   /** Largest single upload. */
@@ -30,13 +31,10 @@ export const DEFAULT_UPLOAD_LIMITS: UploadLimits = {
 };
 
 /** A refused or failed upload. `code` lets clients tell the cases apart without reading the message. */
-export class UploadError extends Error {
-  status: number;
-  code: string;
+export class UploadError extends DomainError {
+  declare readonly code: string;
   constructor(status: number, code: string, message: string) {
-    super(message);
-    this.status = status;
-    this.code = code;
+    super(status, message, code);
   }
 }
 

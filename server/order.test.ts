@@ -1,3 +1,4 @@
+import '../test/scratch.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
@@ -44,4 +45,15 @@ test('setOrder persists a sparse key; unknown uid is 404', () => {
   assert.equal(c.registry.get('u2')!.meta['ah.order'], 200);
   assert.throws(() => c.setOrder('nope', 1), (e: any) => e.status === 404);
   assert.throws(() => c.setOrder('u1', Number.NaN), (e: any) => e.status === 400);
+});
+
+test('Core is connected once, by the composition root, and hands session ends on', () => {
+  const c = core();
+  const ended: string[] = [];
+  const views = { review: () => null, jobs: () => null, notes: () => null, interruptions: () => null, recoveryOf: () => null };
+  const connections = { harnesses: { probe: () => null, custom: () => [] }, peers: { list: () => [] }, apns: {}, launchEnv: async () => ({}), views, copied: () => {}, ended: (r: { id: string }) => void ended.push(r.id) } as unknown as Parameters<typeof c.connect>[0];
+  c.connect(connections);
+  assert.throws(() => c.connect(connections), /already connected/);
+  c.registry.onEnd?.({ id: 'u1' } as never, 'idle');
+  assert.deepEqual(ended, ['u1']);
 });

@@ -1,3 +1,4 @@
+import '../test/scratch.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
@@ -206,4 +207,43 @@ test('a pasted screenshot path is no way to find a prompt: Claude Code swaps it 
   assert.equal(needleFor(text), 'We gotta be able to collapse the queue');
   assert.equal(needleFor('first\nthe "longest" line of the prompt'), 'the \\"longest\\" line of the prompt');
   assert.equal(needleFor('/home/me/shot.png'), null, 'only a path: nothing to tell it by');
+});
+
+test('a follow-up stays queued (on disk) through the turn snapshot: a restart then can’t lose it', async () => {
+  const during: string[][] = [];
+  let registry: Registry | undefined;
+  const { q, win } = await setup(async () => {}, {
+    captureTurnStart: async () => {
+      during.push(q.items('u1').map((i) => i.id));
+      during.push(((registry!.get('u1')?.meta['ah.queue'] as QueueItem[]) ?? []).map((i) => i.id));
+    },
+  });
+  registry = (q as unknown as { registry: Registry }).registry;
+  await q.deliverDue([win()]);
+  assert.deepEqual(during, [['a', 'b'], ['a', 'b']], 'still first in line, in memory and in the record, while the snapshot runs');
+  assert.deepEqual(q.items('u1').map((i) => i.id), ['b'], 'then typed and gone');
+});
+
+test('the delivered-ids ledger keeps the newest, once each', async () => {
+  const { withDelivered, DELIVERED_KEEP } = await import('./queue.ts');
+  assert.deepEqual(withDelivered([], 'a'), ['a']);
+  assert.deepEqual(withDelivered(['a', 'b'], 'a'), ['b', 'a'], 'asked again: newest, not twice');
+  const full = Array.from({ length: DELIVERED_KEEP }, (_, i) => `m${i}`);
+  const next = withDelivered(full, 'new');
+  assert.equal(next.length, DELIVERED_KEEP);
+  assert.equal(next[0], 'm1', 'the oldest goes');
+  assert.equal(next.at(-1), 'new');
+});
+
+test('a delivered follow-up its sender named is remembered by id, in the record; others aren’t', async () => {
+  const { q, win } = await setup(async () => {});
+  for (const id of ['a', 'b']) q.take('u1', id);
+  q.enqueue('u1', { id: 'job-run-1', text: 'go', enter: true, at: 0, named: true });
+  q.enqueue('u1', { id: 'r4nd0m01', text: 'hi', enter: true, at: 0 });
+  q.enqueue('u1', { id: 'job-run-2', text: 'more', enter: true, at: 0, named: true });
+  await q.deliverDue([win()]);
+  await q.deliverDue([win()]);
+  assert.equal(q.wasDelivered('u1', 'job-run-1'), true);
+  assert.equal(q.wasDelivered('u1', 'r4nd0m01'), false, 'an id ah made up takes no room in the ledger');
+  assert.equal(q.wasDelivered('u1', 'job-run-2'), false, 'still queued');
 });

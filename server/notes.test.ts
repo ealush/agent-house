@@ -1,3 +1,4 @@
+import '../test/scratch.ts';
 // Scratchpads on a real database (docs/spec/15-scratchpads.md): conditional writes,
 // retries, tombstones, the change feed; saving as a file inside a project only; and
 // hand-offs that are never sent twice.

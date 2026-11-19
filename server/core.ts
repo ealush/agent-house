@@ -13,7 +13,7 @@ import { randomUUID } from 'node:crypto';
 import type { InterruptionsState } from './interruptions.ts';
 import { LastReplies, type ReplyTarget } from './replies.ts';
 import { buildWindows, buildHistory, adoptTranscripts, footerMode, isQuestionDialog, type WindowView, type HistoryItem } from './sessions.ts';
-import { Registry, forkMetaOf, type ForkMeta, type SessionRecord } from './registry.ts';
+import { Registry, uidOfRef, type StartUndo, forkMetaOf, type ForkMeta, type SessionRecord } from './registry.ts';
 import { copyTranscript, forkUnavailableReason, removeCopiedTranscript, ForkError } from './fork.ts';
 import { PromptStore } from './prompts.ts';
 import { discover } from './discovery.ts';
@@ -23,9 +23,10 @@ import { withCatalog } from './catalog.ts';
 import { Harnesses, adjust, suggestions } from './harnesses.ts';
 import * as t from './tmux.ts';
 import { descendants, procTree } from './procs.ts';
-import { createSnapshot, restoreSnapshot as restoreSnapshotFiles, snapshotDiff, deleteSnapshotRef, createWorktree, headInfo, listWorktrees, mainRepo, removeWorktree, removeWorktreesBulk, GitError, type Worktree } from './git.ts';
+import { restoreSnapshot as restoreSnapshotFiles, createWorktree, headInfo, listWorktrees, mainRepo, removeWorktree, removeWorktreesBulk, GitError, type Worktree } from './git.ts';
 import { invalidateSize } from './size.ts';
 import { SnapshotStore, type SnapshotInfo } from './snapshots.ts';
+import { TurnSnapshots } from './turnSnapshots.ts';
 import { QueueManager, starting, transcriptHas, type LaunchChange, type QueueItem, type TranscriptMark } from './queue.ts';
 import { ADAPTERS } from './feed/feed.ts';
 import { Push } from './push.ts';
@@ -33,10 +34,14 @@ import { omarchyStamp } from './omarchy.ts';
 import { callbackFor, compileGates, readGate, type Gate, type GateKind } from './agentgate.ts';
 import { chatSteps, claudeQuestionGroups, cursorKeys, dialogAt, dialogSteps, parsePicker, parseQuestionDialog, type Answer, type ScreenOption, type Step } from './choices.ts';
 import type { Peers } from './peers.ts';
+import type { Apns } from './apns.ts';
+import { StateStream } from './stateStream.ts';
+import { AnswerGuard } from './answers.ts';
 import { fingerprint } from './env.ts';
 import { features } from './features.ts';
 import type { NotesState } from './notes/store.ts';
 import type { TranscriptSource } from './search.ts';
+import { DomainError } from './errors.ts';
 
 export type { LaunchChange, QueueItem } from './queue.ts';
 
@@ -73,6 +78,30 @@ export type State = {
 };
 
 /** `key` is the client's session key (a uid, or "<host>/<uid>" for a peer's session). */
+/** What the contexts built on sessions show in the state stream (each a cheap read of its own state). */
+export type CoreViews = {
+  review: () => ReviewState | null;
+  jobs: () => JobsState | null;
+  notes: () => NotesState | null;
+  interruptions: () => InterruptionsState | null;
+  /** A session's recovery, if any (server/recovery). */
+  recoveryOf: (s: { uid: string; agent?: string | null; harness?: string; harnessId: string | null }) => RecoveryView | null;
+};
+
+/** Everything Core is handed by the composition root (Core.connect). */
+export type CoreConnections = {
+  harnesses: Harnesses;
+  peers: Peers;
+  /** Native push beside Web Push. */
+  apns: Apns;
+  launchEnv: () => Promise<Record<string, string>>;
+  views: CoreViews;
+  /** A transcript ah copied for a fork: usage counts it from here on. */
+  copied: (file: string) => void;
+  /** A session ended (its window is gone): interruptions and recovery look at why. */
+  ended: (r: SessionRecord, lastStatus: string) => void;
+};
+
 export type Focus = { key: string; device: string; client: string; at: number };
 
 /** `starting`: queued only because the agent just launched; it goes in once its UI is up. */
@@ -146,15 +175,11 @@ async function screenSettles(target: string, quietMs: number, ms: number): Promi
 
 /** A transcript written within this long is one the agent may be mid-turn in. */
 const WRITING_MS = 2000;
+/** How long a Stop waits for a send in progress to finish typing before it goes in anyway. */
+const STOP_WAIT_MS = 1000;
 
 
-export class CoreError extends Error {
-  status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
+export class CoreError extends DomainError {}
 
 const STATE_DIR = join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah');
 const HIDDEN_FILE = join(STATE_DIR, 'hidden.json');
@@ -169,12 +194,10 @@ export class Core {
   readonly push = new Push();
   readonly viewers: Map<string, string[]>;
   private state: State | null = null;
-  private json = '';
-  private listeners = new Set<(json: string, patch: string | null, slim: string | null) => void>();
-  /** Each window's last JSON, for the per-window deltas a delta stream gets (`slim`). */
-  private winParts = new Map<string, string>();
-  /** Last JSON of each top-level state field, to send subscribers only what changed. */
-  private parts = new Map<string, string>();
+  /** Which prompt each session was just answered on: one answer per prompt (answers.ts). */
+  private answers = new AnswerGuard();
+  /** Subscribers get the whole state once, then what each pass changed (stateStream.ts). */
+  private stream = new StateStream();
   private tmuxPath = process.env.PATH ?? '';
   private ticking: Promise<State> | null = null;
   /** The pass queued behind the one in flight, for callers that changed something during it. */
@@ -191,28 +214,39 @@ export class Core {
   private sentAt = new Map<string, number>();
   /** Sessions whose trust prompt ah is answering right now. */
   private trusting = new Set<string>();
-  private snapshotStore: SnapshotStore;
-  private snapLocks = new Map<string, Promise<unknown>>();
-  /** Sessions inside a turn (busy or waiting on a prompt): one snapshot per turn, taken at its start. */
-  private turnPeriod = new Set<string>();
+  private snapshots: TurnSnapshots;
   private lastPrune = 0;
-  peers: Peers | null = null;
-  /** Each agent CLI's current choices, and the host's hidden and added agents; main.ts wires the store. */
-  harnesses: Harnesses | null = null;
+  private peers: Peers | null = null;
+  /** Each agent CLI's current choices, and the host's hidden and added agents. */
+  private harnesses: Harnesses | null = null;
   /** The presets as written (config or built in), before each CLI's current version adjusts them. */
   private basePresets: Preset[];
-  /** Variables each new session window starts with (Settings → Environment); main.ts wires the store. */
-  launchEnv: () => Promise<Record<string, string>> = async () => ({});
-  /** Stack review's alerts and banners for the stream; main.ts wires the service. */
-  reviewState: () => ReviewState | null = () => null;
-  /** The scheduler's summary for the stream; main.ts wires it. */
-  jobsState: () => JobsState | null = () => null;
-  notesState: () => NotesState | null = () => null;
-  interruptionsState: () => InterruptionsState | null = () => null;
+  /** Variables each new session window starts with (Settings → Environment). */
+  private launchEnv: () => Promise<Record<string, string>> = async () => ({});
+  private views: CoreViews = { review: () => null, jobs: () => null, notes: () => null, interruptions: () => null, recoveryOf: () => null };
   /** A transcript ah just made as a copy (a fork): usage counts only what's written to it from now. */
-  onCopy: (file: string) => void = () => {};
-  /** Each session's recovery, if any (server/recovery); main.ts wires the engine. */
-  recoveryOf: (s: { uid: string; agent?: string | null; harness?: string; harnessId: string | null }) => RecoveryView | null = () => null;
+  private copied: (file: string) => void = () => {};
+  private connected = false;
+
+  /**
+   * Plugs in what the sessions context reports about, and hands to, the contexts built on
+   * it: once, from the composition root, before start(). Every connection is required, so
+   * a forgotten one is a type error rather than a silent default. (Until then, and in unit
+   * tests that never connect, the state shows none of them.)
+   */
+  connect(c: CoreConnections) {
+    if (this.connected) throw new Error('Core is already connected');
+    this.connected = true;
+    this.harnesses = c.harnesses;
+    this.peers = c.peers;
+    this.push.apns = c.apns;
+    this.launchEnv = c.launchEnv;
+    this.views = c.views;
+    this.copied = c.copied;
+    this.registry.onEnd = c.ended;
+    this.applyHarnesses();
+  }
+
   /**
    * Run after every pass with its state (portable links settling, the scheduler, recovery):
    * each must be cheap or guard its own overlap; a failure in one never stops the pass.
@@ -222,7 +256,7 @@ export class Core {
   constructor(config: Config, viewers: Map<string, string[]>, registry = new Registry(), prompts = new PromptStore(), snapshots = new SnapshotStore()) {
     this.registry = registry;
     this.promptStore = prompts;
-    this.snapshotStore = snapshots;
+    this.snapshots = new TurnSnapshots(registry, snapshots, () => this.config, STATE_DIR);
     this.config = config;
     this.basePresets = config.presets;
     this.viewers = viewers;
@@ -230,7 +264,7 @@ export class Core {
       withInput: (uid, fn) => this.withInput(uid, fn),
       justSent: (uid) => this.justSent(uid),
       markSent: (uid) => void this.sentAt.set(uid, Date.now()),
-      captureTurnStart: (uid, text) => this.captureTurnStart(uid, text),
+      captureTurnStart: (uid, text) => this.snapshots.turnStart(uid, text),
       paste: (windowId, text, enter) => t.pasteText(windowId, text, enter),
       applyLaunchChange: (uid, change) => this.applyLaunchChange(uid, change),
       transcriptMark: (w) => this.transcriptMark(w),
@@ -276,9 +310,7 @@ export class Core {
    * for it (?delta=1): one working session no longer resends them all every tick.
    */
   subscribe(fn: (json: string, patch: string | null, slim: string | null) => void): () => void {
-    this.listeners.add(fn);
-    if (this.json) fn(this.json, null, null);
-    return () => this.listeners.delete(fn);
+    return this.stream.subscribe(fn);
   }
 
   /**
@@ -320,21 +352,14 @@ export class Core {
       }
       const alive = new Set(windows.map((w) => w.uid));
       for (const uid of this.sentAt.keys()) if (!alive.has(uid)) this.sentAt.delete(uid);
-      // Turn boundaries for snapshots (F39): entering busy/waiting from any
-      // other state starts a turn, but only hook status is exact enough to
-      // trust (activity-based busy also fires for a TUI merely drawing). The
-      // send path captures too (it knows the prompt, and is the fallback for
-      // agents without hooks); turnPeriod dedupes the two.
-      for (const w of windows) {
-        if (!w.agent) continue;
-        if (w.status === 'busy' || w.status === 'waiting') {
-          if (w.statusSource === 'hook' && !this.turnPeriod.has(w.uid)) void this.captureTurnStart(w.uid, '');
-        } else this.turnPeriod.delete(w.uid);
-      }
+      // Turn boundaries for snapshots (F39). The send path captures too (it knows the
+      // prompt, and is the fallback for agents without hooks); one capture per turn.
+      this.snapshots.observe(windows);
       if (now() - this.lastPrune > 3600) {
         this.lastPrune = now();
-        void this.pruneSnapshots().catch((err) => console.error('snapshot prune failed:', err));
+        void this.snapshots.prune().catch((err) => console.error('snapshot prune failed:', err));
       }
+      this.answers.observe(windows);
       this.acceptTrust(windows);
       await this.queues.confirmDeliveries(windows);
       await this.queues.deliverDue(windows);
@@ -347,9 +372,9 @@ export class Core {
       }
       this.busyBefore = new Set(windows.filter((w) => w.status === 'busy').map((w) => w.uid));
       this.push.observe(windows, (id) => this.config.presets.find((p) => p.id === id)?.name ?? id);
-      for (const w of windows) if (w.agent) w.recovery = this.recoveryOf(w);
+      for (const w of windows) if (w.agent) w.recovery = this.views.recoveryOf(w);
       const history = (await buildHistory(this.registry, windows)).filter((h) => !this.hidden.has(h.ref));
-      for (const h of history) if (h.kind === 'ended') h.recovery = this.recoveryOf({ uid: h.ref, harness: h.harness, harnessId: h.harnessId });
+      for (const h of history) if (h.kind === 'ended') h.recovery = this.views.recoveryOf({ uid: h.ref, harness: h.harness, harnessId: h.harnessId });
       const state: State = {
         api: API_VERSION,
         hostname: hostName(),
@@ -369,37 +394,14 @@ export class Core {
         ),
         omarchy: omarchyStamp(),
         focus: this.focus,
-        review: this.reviewState(),
+        review: this.views.review(),
         features: features(),
-        jobs: this.jobsState(),
-        interruptions: this.interruptionsState(),
-        notes: this.notesState(),
+        jobs: this.views.jobs(),
+        interruptions: this.views.interruptions(),
+        notes: this.views.notes(),
       };
       this.state = state;
-      // Subscribers get only the top-level fields that changed: history and the
-      // preset catalogs are most of the state and rarely change, while windows
-      // change every tick something is working.
-      const patch: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(state)) {
-        const part = JSON.stringify(v);
-        if (this.parts.get(k) !== part) {
-          this.parts.set(k, part);
-          patch[k] = v;
-        }
-      }
-      const parts = new Map<string, string>();
-      const changed = state.windows.filter((w) => {
-        const part = JSON.stringify(w);
-        parts.set(w.uid, part);
-        return this.winParts.get(w.uid) !== part;
-      });
-      this.winParts = parts;
-      if (Object.keys(patch).length) {
-        this.json = JSON.stringify(state);
-        const delta = JSON.stringify(patch);
-        const slim = 'windows' in patch ? JSON.stringify({ ...patch, windows: undefined, windowsDelta: { changed, order: state.windows.map((w) => w.uid) } }) : delta;
-        for (const fn of this.listeners) fn(this.json, delta, slim);
-      }
+      this.stream.publish(state);
       for (const fn of this.afterTick) {
         try {
           void Promise.resolve(fn(state)).catch((err) => console.error('after-tick hook failed:', err));
@@ -538,6 +540,7 @@ export class Core {
     // Until the fresh pass below: every pass that could have listed it before its
     // options landed has finished by then (passes run one at a time, in order).
     this.launching.add(windowId);
+    let started: StartUndo | null = null;
     try {
       const ts = String(now());
       await t.setWindowOptions(windowId, {
@@ -547,7 +550,7 @@ export class Core {
         '@ah-seen': ts,
         ...(o.harnessId ? { '@ah-harness': o.preset.id, '@ah-harness-id': o.harnessId } : {}),
       });
-      this.registry.starting(uid, {
+      started = this.registry.starting(uid, {
         harness: o.preset.id,
         harnessId: o.harnessId,
         cwd: o.cwd,
@@ -564,7 +567,10 @@ export class Core {
       return { uid, windowId };
     } catch (err) {
       await t.killWindow(windowId).catch(() => {});
-      this.registry.remove(uid);
+      // Undo exactly what the start changed: a session being resumed keeps its record,
+      // its queue and its links (it used to be deleted here, with all of them).
+      if (started) this.registry.abandonStart(started);
+      else if (!o.uid) this.registry.remove(uid);
       throw err;
     } finally {
       this.launching.delete(windowId);
@@ -596,6 +602,17 @@ export class Core {
       const w = state.windows.find((w) => w.uid === rec.id);
       if (w) return { uid: rec.id, windowId: w.id, resumed: false };
     }
+    // The conversation already runs in another window (relaunched under a new uid, or
+    // resumed from another device): that's where it is, not a second agent on it.
+    if (rec?.harnessId) {
+      // By the window's record, not by the process seen in it: a relaunched window is
+      // the conversation's from the moment it's registered, before its agent is up.
+      const running = state.windows.find((w) => {
+        const r = w.uid !== rec.id ? this.registry.get(w.uid) : undefined;
+        return !!r && (r.lifecycle === 'live' || r.lifecycle === 'starting') && r.harness === rec.harness && r.harnessId === rec.harnessId;
+      });
+      if (running) return { uid: running.uid, windowId: running.id, resumed: false };
+    }
 
     let harness: string;
     let harnessId: string | undefined;
@@ -613,7 +630,7 @@ export class Core {
       const [h, ...rest] = ref.split(':');
       const id = rest.join(':');
       const found = (await discover()).find((x) => x.harness === h && x.harnessId === id);
-      if (!found) throw new CoreError(404, 'session not found');
+      if (!found) throw new CoreError(404, 'session not found', 'session_not_found');
       ({ harness, harnessId, cwd, title } = found);
       title = shortTitle(title);
       meta = { 'ah.source': 'discovered' };
@@ -652,7 +669,7 @@ export class Core {
       const found = (await discover()).find((x) => x.harness === ref.slice(0, i) && x.harnessId === ref.slice(i + 1));
       if (found) return { uid: ref, harness: found.harness, harnessId: found.harnessId, cwd: found.cwd, title: found.title };
     }
-    throw new CoreError(404, 'session not found');
+    throw new CoreError(404, 'session not found', 'session_not_found');
   }
 
   /** What the fork dialog needs to know before anything is created. */
@@ -702,7 +719,7 @@ export class Core {
         const state = await this.current();
         const live = state.windows.find((w) => w.uid === parent.rec!.id);
         if (!live || live.status !== 'busy') break;
-        if (Date.now() > deadline) throw new CoreError(409, 'the session is still working; a fork starts when its current turn ends, so try again shortly');
+        if (Date.now() > deadline) throw new CoreError(409, 'the session is still working; a fork starts when its current turn ends, so try again shortly', 'busy');
         await sleep(500);
         await this.tick().catch(() => {});
       }
@@ -737,7 +754,7 @@ export class Core {
       let copied: { harnessId: string; file: string };
       try {
         copied = await copyTranscript(parent.harness, found.file, wt.path);
-        this.onCopy(copied.file);
+        this.copied(copied.file);
       } catch (err) {
         await removeWorktree(wt.path, true).catch(() => {});
         if (err instanceof ForkError) throw new CoreError(err.status, err.message);
@@ -802,7 +819,11 @@ export class Core {
    * queued until its next idle moment if busy, and resumed first if it isn't running.
    */
   async send(ref: string, text: string, enter = true, launchChange?: LaunchChange, o: { id?: string; remember?: boolean } = {}): Promise<SendResult> {
-    if (!text) throw new CoreError(400, 'empty message');
+    if (!text) throw new CoreError(400, 'empty message', 'empty_message');
+    // Asked again for a message it named: answered before anything else happens (no
+    // resume, no picker row, not remembered twice) — wherever the conversation is now.
+    const again = o.id ? this.namedAgain(ref, o.id) : null;
+    if (again) return again;
     const target = await this.resume(ref);
     const state = target.resumed ? await this.tick() : await this.current();
     // A message that is just one of the picker's keys ("2", "y") picks that row, as
@@ -811,6 +832,7 @@ export class Core {
     const row = enter && !target.resumed && shown?.agent && shown.status === 'waiting' ? pickerRow(shown.ask?.options, text) : undefined;
     if (row) {
       await this.choose(shown!.uid, row.key);
+      if (o.id) this.queues.noteDelivered(shown!.uid, o.id);
       return { outcome: 'delivered', windowId: target.windowId, resumed: false, queued: 0 };
     }
     if (o.remember !== false) this.remember(text);
@@ -821,6 +843,10 @@ export class Core {
       // after a crash or a retry: already waiting in the queue, it isn't queued twice.
       if (o.id && queued.some((q) => q.id === o.id)) {
         return { outcome: 'queued', windowId: target.windowId, resumed: target.resumed, queued: queued.length, queueId: o.id };
+      }
+      // …and already typed (directly, or from the queue), it isn't typed twice.
+      if (o.id && this.queues.wasDelivered(target.uid, o.id)) {
+        return { outcome: 'delivered', windowId: target.windowId, resumed: false, queued: queued.length };
       }
       // A waiting agent is blocked on your input: what you send now is the
       // answer to its question or approval prompt, so it is typed immediately
@@ -837,20 +863,37 @@ export class Core {
       // highlighted row, so the text would vanish and the row be chosen for you. It
       // waits in the queue and goes in once that's answered and the agent is at its prompt.
       const held: SendResult['held'] = w?.agent && w.status === 'waiting' ? (w.ask?.gate?.kind ?? (w.ask?.options?.length ? 'picker' : undefined)) : undefined;
-      const answering = !!w?.agent && w.status === 'waiting' && !held;
-      const ready = !target.resumed && !!w && !fresh && (answering || queued.length === 0) && (answering || !w.agent || (!this.justSent(w.uid) && (w.status === 'idle' || w.status === 'attention')));
+      // One answer per question, from any device (answers.ts): a second answer to the one
+      // just answered would land as a new turn nobody asked for, so it's refused, as a
+      // second approve is. Text typed without Enter answers nothing and claims nothing.
+      const free = !target.resumed && !!w && !fresh;
+      const asking = free && !!w.agent && w.status === 'waiting' && !held;
+      if (asking && enter && !this.answers.claim(w.uid, w.askId ?? null, Date.now())) throw new CoreError(409, 'that question was just answered', 'already_answered');
+      const answering = asking;
+      const ready = free && (answering || queued.length === 0) && (answering || !w.agent || (!this.justSent(w.uid) && (w.status === 'idle' || w.status === 'attention')));
       if (ready) {
         if (w.agent) {
           this.sentAt.set(w.uid, Date.now());
           // Snapshot before the prompt lands, so the turn starts from a known state (F39).
-          if (enter) await this.captureTurnStart(target.uid, text);
+          if (enter) await this.snapshots.turnStart(target.uid, text);
         }
-        await t.pasteText(target.windowId, text, enter);
+        try {
+          await t.pasteText(target.windowId, text, enter);
+        } catch (err) {
+          const typedNothing = err instanceof t.PasteError && !err.typed;
+          // Some of it landed: it counts as typed (never twice), and still fails here.
+          if (o.id && !typedNothing) this.queues.noteDelivered(target.uid, o.id);
+          // Nothing reached it: the question is still unanswered.
+          if (answering && enter && typedNothing) this.answers.release(w.uid, w.askId ?? null);
+          throw err;
+        }
+        if (o.id) this.queues.noteDelivered(target.uid, o.id);
         if (launchChange) this.applyLaunchChange(target.uid, launchChange);
         return { outcome: 'delivered', windowId: target.windowId, resumed: false, queued: 0 };
       }
       const item: QueueItem = {
         id: o.id ?? randomUUID().slice(0, 8),
+        ...(o.id ? { named: true } : {}),
         text,
         enter,
         at: now(),
@@ -859,6 +902,26 @@ export class Core {
       const queuedCount = this.queues.enqueue(target.uid, item);
       return { outcome: 'queued', windowId: target.windowId, resumed: target.resumed, queued: queuedCount, queueId: item.id, ...(fresh ? { starting: true } : {}), ...(held ? { held } : {}), ...(held === 'trust' ? { trust: true } : {}) };
     });
+  }
+
+  /**
+   * A named message asked for again: already typed into the conversation (under any of
+   * its records — a relaunch moves it to a new uid), or still queued where it runs now.
+   * A queued one on a stopped record is left to the send, whose resume delivers it.
+   */
+  private namedAgain(ref: string, id: string): SendResult | null {
+    const known = uidOfRef(this.registry.all(), ref);
+    const rec = known ? this.registry.get(known) : undefined;
+    if (!rec) return null;
+    const records = rec.harnessId ? this.registry.all().filter((r) => r.harness === rec.harness && r.harnessId === rec.harnessId) : [rec];
+    const answer = (r: SessionRecord, outcome: SendResult['outcome']): SendResult => {
+      const queued = this.queues.items(r.id);
+      return { outcome, windowId: r.tmux?.windowId ?? '', resumed: false, queued: queued.length, ...(outcome === 'queued' ? { queueId: id } : {}) };
+    };
+    const typed = records.find((r) => this.queues.wasDelivered(r.id, id));
+    if (typed) return answer(typed, 'delivered');
+    const waiting = records.find((r) => (r.lifecycle === 'live' || r.lifecycle === 'starting') && this.queues.items(r.id).some((q) => q.id === id));
+    return waiting ? answer(waiting, 'queued') : null;
   }
 
   private applyLaunchChange(uid: string, change: LaunchChange) {
@@ -941,7 +1004,7 @@ export class Core {
   /** Reorder: one queued item to position `to`. 404 once it was delivered or dropped. */
   moveQueued(uid: string, itemId: string, to: number): QueueItem[] {
     const items = this.queues.move(uid, itemId, to);
-    if (!items) throw new CoreError(404, 'that message is no longer queued');
+    if (!items) throw new CoreError(404, 'that message is no longer queued', 'queue_item_gone');
     return items;
   }
 
@@ -966,10 +1029,10 @@ export class Core {
    */
   async answer(uid: string, answer: 'approve' | 'deny', prompt?: string) {
     const check = (w: WindowView | undefined): WindowView => {
-      if (!w) throw new CoreError(404, 'session not found');
-      if (w.status !== 'waiting') throw new CoreError(409, 'it is no longer waiting');
+      if (!w) throw new CoreError(404, 'session not found', 'session_not_found');
+      if (w.status !== 'waiting') throw new CoreError(409, 'it is no longer waiting', 'not_waiting');
       if (!w.answerable || !w.agent) throw new CoreError(400, 'this prompt needs a reply, not approve/deny');
-      if (prompt && w.askId !== prompt) throw new CoreError(409, 'it is asking something else now');
+      if (prompt && w.askId !== prompt) throw new CoreError(409, 'it is asking something else now', 'prompt_changed');
       return w;
     };
     const w = check((await this.tick()).windows.find((w) => w.uid === uid));
@@ -977,10 +1040,24 @@ export class Core {
     if (!keys?.length) throw new CoreError(400, `no ${answer} keys configured for ${w.agent}`);
     await this.withInput(uid, async () => {
       // Nothing typed meanwhile (a send, another device's answer) changed what it asks.
-      if (prompt) check((await this.tick()).windows.find((x) => x.uid === uid));
-      await t.tmux('send-keys', '-t', w.id, ...keys);
+      // Read here, never through tick(): a pass in flight may be waiting for this very
+      // lock to deliver a queued follow-up, and waiting on that pass would hold both.
+      const now = check((await buildWindows(this.config, this.viewers, this.registry, this.launching)).find((x) => x.uid === uid));
+      if (now.askId !== w.askId) throw new CoreError(409, 'it is asking something else now', 'prompt_changed');
+      await this.answerOnce(uid, w.askId, () => t.tmux('send-keys', '-t', w.id, ...keys));
     });
     this.tick().catch(() => {});
+  }
+
+  /** Types an answer to the prompt `askId` unless it was just answered (answers.ts). */
+  private async answerOnce(uid: string, askId: string | null, type: () => Promise<unknown>): Promise<void> {
+    if (!this.answers.claim(uid, askId, Date.now())) throw new CoreError(409, 'that prompt was just answered', 'already_answered');
+    try {
+      await type();
+    } catch (err) {
+      this.answers.release(uid, askId);
+      throw err;
+    }
   }
 
   /**
@@ -990,18 +1067,18 @@ export class Core {
   async choose(uid: string, key: string) {
     const state = await this.tick();
     const w = state.windows.find((w) => w.uid === uid);
-    if (!w) throw new CoreError(404, 'session not found');
-    if (w.status !== 'waiting') throw new CoreError(409, 'it is no longer waiting');
-    if (!w.ask?.options?.some((o) => o.key === key)) throw new CoreError(409, 'that choice is no longer on screen');
+    if (!w) throw new CoreError(404, 'session not found', 'session_not_found');
+    if (w.status !== 'waiting') throw new CoreError(409, 'it is no longer waiting', 'not_waiting');
+    if (!w.ask?.options?.some((o) => o.key === key)) throw new CoreError(409, 'that choice is no longer on screen', 'choice_gone');
     // Read the screen again inside the input lock: the picker must still be there,
     // and a cursor list is moved from where its cursor is now.
     const option = await this.withInput(uid, async () => {
       const lines = (await t.capturePane(w.id, 0).catch(() => '')).split('\n').map((l) => l.trimEnd());
       const picker = parsePicker(lines.filter((l) => l.trim()).slice(-40));
       const found = picker?.options.find((o) => o.key === key);
-      if (!picker || !found) throw new CoreError(409, 'that choice is no longer on screen');
+      if (!picker || !found) throw new CoreError(409, 'that choice is no longer on screen', 'choice_gone');
       const keys = key.startsWith('nav:') ? cursorKeys(picker.cursor ?? 0, Number(key.slice(4))) : [key];
-      await t.tmux('send-keys', '-t', w.id, ...keys);
+      await this.answerOnce(uid, w.askId, () => t.tmux('send-keys', '-t', w.id, ...keys));
       return found;
     });
     this.tick().catch(() => {});
@@ -1020,7 +1097,7 @@ export class Core {
   async answerGate(uid: string, o: { text: string } | { back: true } | { callback: string }): Promise<{ status?: number }> {
     const state = await this.tick();
     const w = state.windows.find((w) => w.uid === uid);
-    if (!w) throw new CoreError(404, 'session not found');
+    if (!w) throw new CoreError(404, 'session not found', 'session_not_found');
     const back = 'back' in o;
     const relay = 'callback' in o;
     if ('text' in o && !o.text.trim()) throw new CoreError(400, 'nothing to type');
@@ -1034,7 +1111,7 @@ export class Core {
       // Read the screen again inside the lock: it must still be the one that asked.
       const lines = (await t.capturePane(w.id, 0).catch(() => '')).split('\n').map((l) => l.trimEnd()).filter((l) => l.trim());
       const gate = readGate(lines.slice(-40), compileGates(preset ?? {}))?.gate;
-      if (!fits(gate)) throw new CoreError(409, 'the screen has changed; look again');
+      if (!fits(gate)) throw new CoreError(409, 'the screen has changed; look again', 'prompt_changed');
       if (back) return void (await t.tmux('send-keys', '-t', w.id, 'Escape'));
       if ('callback' in o) {
         const url = callbackFor(gate!, o.callback);
@@ -1093,7 +1170,7 @@ export class Core {
   async answerQuestions(uid: string, answers: Answer[]) {
     const w = await this.askingWindow(uid);
     const questions = w.ask?.questions;
-    if (!questions) throw new CoreError(409, 'the question on screen has changed; answer it again');
+    if (!questions) throw new CoreError(409, 'the question on screen has changed; answer it again', 'prompt_changed');
     const groups = this.stepsOr400(() => claudeQuestionGroups(questions, answers));
     await this.typeChecked(
       w,
@@ -1152,8 +1229,8 @@ export class Core {
   private async askingWindow(uid: string) {
     const state = await this.tick();
     const w = state.windows.find((w) => w.uid === uid);
-    if (!w?.agent) throw new CoreError(404, 'session not found');
-    if (w.status !== 'waiting' || w.ask?.kind !== 'choice') throw new CoreError(409, 'it is no longer asking');
+    if (!w?.agent) throw new CoreError(404, 'session not found', 'session_not_found');
+    if (w.status !== 'waiting' || w.ask?.kind !== 'choice') throw new CoreError(409, 'it is no longer asking', 'not_waiting');
     if (this.preset(w.agent).questions !== 'claude') throw new CoreError(400, `answer ${w.agent} in its terminal`);
     return w;
   }
@@ -1203,7 +1280,7 @@ export class Core {
     if (Number(change.model !== undefined) + Number(change.effort !== undefined) !== 1) throw new CoreError(400, 'choose one setting to switch');
     const state = await this.current();
     const w = state.windows.find((w) => w.uid === uid);
-    if (!w?.agent) throw new CoreError(404, 'no agent session');
+    if (!w?.agent) throw new CoreError(404, 'no agent session', 'no_agent');
     const preset = await withCatalog(this.preset(w.agent));
     let text: string;
     // "default" goes back to the agent's own default, where it has a command for that.
@@ -1235,14 +1312,14 @@ export class Core {
    */
   async switchMode(uid: string, mode: string): Promise<{ switched: boolean }> {
     const w = (await this.current()).windows.find((w) => w.uid === uid);
-    if (!w?.agent) throw new CoreError(404, 'no agent session');
+    if (!w?.agent) throw new CoreError(404, 'no agent session', 'no_agent');
     const preset = this.preset(w.agent);
     if (!preset.modes?.some((m) => m.id === mode)) throw new CoreError(400, `unknown mode: ${mode}`);
     const cycle = preset.modeCycle;
     if (!cycle) return { switched: false };
     // The key means something else in a prompt (Claude: "allow all edits"), and a
     // working agent can open one at any moment: the screen is checked before every press.
-    if (w.status === 'waiting') throw new CoreError(409, 'answer the prompt on screen first');
+    if (w.status === 'waiting') throw new CoreError(409, 'answer the prompt on screen first', 'answer_first');
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     const screen = async () => (await t.capturePane(w.id, 0).catch(() => '')).split('\n');
     const read = async () => footerMode(await screen(), cycle.detect);
@@ -1275,7 +1352,7 @@ export class Core {
 
   async openSettings(uid: string, setting: 'model' | 'effort' | 'mode'): Promise<SendResult> {
     const w = (await this.current()).windows.find((w) => w.uid === uid);
-    if (!w?.agent) throw new CoreError(404, 'no agent session');
+    if (!w?.agent) throw new CoreError(404, 'no agent session', 'no_agent');
     const preset = this.preset(w.agent);
     const command = preset.settingsCommands?.[setting];
     if (!command) throw new CoreError(400, `${preset.name} has no live ${setting} picker configured`);
@@ -1295,13 +1372,13 @@ export class Core {
     if (Number(change.model !== undefined) + Number(change.effort !== undefined) + Number(change.mode !== undefined) > 1) throw new CoreError(400, 'choose one setting to relaunch with');
     const state = await this.current();
     const w = state.windows.find((w) => w.uid === uid);
-    if (!w?.agent) throw new CoreError(404, 'no agent session');
+    if (!w?.agent) throw new CoreError(404, 'no agent session', 'no_agent');
     if (w.status === 'busy' || w.status === 'waiting' || w.queued > 0 || this.justSent(uid)) {
-      throw new CoreError(409, 'relaunch when the session is idle; it is working, waiting or holding queued prompts');
+      throw new CoreError(409, 'relaunch when the session is idle; it is working, waiting or holding queued prompts', 'busy');
     }
     const rec = this.registry.get(uid);
     const harnessId = w.harnessId ?? rec?.harnessId;
-    if (!harnessId) throw new CoreError(422, 'this session has no conversation id yet, so there is nothing to resume');
+    if (!harnessId) throw new CoreError(422, 'this session has no conversation id yet, so there is nothing to resume', 'no_conversation');
     const preset = await withCatalog(this.preset(w.agent));
     let model: string | undefined;
     let effort: string | undefined;
@@ -1362,16 +1439,21 @@ export class Core {
       // The old agent must be gone before the new one resumes the conversation:
       // if it won't stop, the relaunch fails (launch removes the new window)
       // rather than run two agents on one conversation. Already gone is fine.
-      beforeCommand: async () => {
-        try {
-          await t.killWindow(w.id);
-        } catch {
-          // A check that fails can't say it's gone: cancel rather than risk two agents.
-          if (await t.windowExists(w.id).catch(() => true)) throw new CoreError(409, "the old window wouldn't stop, so the relaunch was cancelled; nothing changed");
-        }
-      },
+      // In the old session's input lock, so nothing is typed into it as it stops: a
+      // message that went in since the check above is the old agent's to answer, and
+      // stopping it now would cut that turn off (and its message with it).
+      beforeCommand: () =>
+        this.withInput(uid, async () => {
+          if (this.justSent(uid)) throw new CoreError(409, 'a message just went in, so the relaunch was cancelled; nothing changed', 'message_in_flight');
+          try {
+            await t.killWindow(w.id);
+          } catch {
+            // A check that fails can't say it's gone: cancel rather than risk two agents.
+            if (await t.windowExists(w.id).catch(() => true)) throw new CoreError(409, "the old window wouldn't stop, so the relaunch was cancelled; nothing changed");
+          }
+        }),
     });
-    await this.snapshotStore.rekey(uid, out.uid).catch(() => {});
+    await this.snapshots.rekey(uid, out.uid);
     const snap = rec?.meta['ah.snapshots'];
     if (snap !== undefined) this.registry.setMeta(out.uid, 'ah.snapshots', snap);
     this.tick().catch(() => {});
@@ -1405,7 +1487,7 @@ export class Core {
   /** A live session's agent preset and absolute working directory (composer autocomplete). */
   async sessionPlace(uid: string): Promise<{ preset: Preset | null; cwd: string }> {
     const w = (await this.current()).windows.find((w) => w.uid === uid);
-    if (!w) throw new CoreError(404, 'session not found');
+    if (!w) throw new CoreError(404, 'session not found', 'session_not_found');
     return { preset: w.agent ? this.preset(w.agent) : null, cwd: expandHome(this.registry.get(uid)?.cwd ?? w.cwd) };
   }
 
@@ -1413,12 +1495,41 @@ export class Core {
   async interrupt(uid: string) {
     const state = await this.current();
     const w = state.windows.find((w) => w.uid === uid);
-    if (!w) throw new CoreError(404, 'session not found');
-    const sent = Math.floor(Date.now() / 1000);
-    const box = w.agent ? await t.inputBox(w.id) : null;
-    await t.tmux('send-keys', '-t', w.id, ...this.interruptKeys(w));
-    // Taken now, so whatever's typed next (a queued message, a send) waits for the box.
-    if (box === '') void this.withInput(uid, () => this.clearHandedBack(w, 1000)).catch(() => {});
+    if (!w) throw new CoreError(404, 'session not found', 'session_not_found');
+    // In the input lock: a Stop between a send's paste and its Enter would cancel the
+    // text that send reports delivered. But a Stop is urgent and the lock can be held for
+    // seconds (Send now waiting out a turn, a snapshot of a big tree): it waits at most
+    // STOP_WAIT_MS, then goes in anyway. Whatever's typed next waits for the box to be
+    // cleared below; the answer doesn't.
+    let sent = 0;
+    let stopping: Promise<string | null> | null = null;
+    // Reads the box and sends the keys, once, from whichever path gets there first.
+    const stop = () =>
+      (stopping ??= (async () => {
+        const box = w.agent ? await t.inputBox(w.id) : null;
+        sent = Math.floor(Date.now() / 1000);
+        await t.tmux('send-keys', '-t', w.id, ...this.interruptKeys(w));
+        return box;
+      })());
+    let begun!: () => void;
+    const begin = new Promise<void>((r) => (begun = r));
+    const go = () => {
+      const p = stop();
+      begun();
+      return p;
+    };
+    // The locked turn, taken now: it sends the keys if the lock comes free in time, and
+    // either way clears a prompt the Stop handed back before anything else is typed.
+    void this.withInput(uid, async () => {
+      if ((await go().catch(() => null)) === '') await this.clearHandedBack(w, 1000);
+    }).catch(() => {});
+    const late = setTimeout(() => void go().catch(() => {}), STOP_WAIT_MS);
+    try {
+      await begin;
+      await stopping;
+    } finally {
+      clearTimeout(late);
+    }
     this.tick().catch(() => {});
     void this.recordStop(w, sent).then(() => this.tick()).catch(() => {});
   }
@@ -1466,36 +1577,28 @@ export class Core {
   async sendNow(uid: string, itemId: string): Promise<SendResult> {
     const state = await this.current();
     const w = state.windows.find((w) => w.uid === uid);
-    if (!w) throw new CoreError(404, 'session is not running');
+    if (!w) throw new CoreError(404, 'session is not running', 'not_running');
     return this.withInput<SendResult>(uid, async () => {
-      const taken = this.queues.take(uid, itemId);
-      if (!taken) throw new CoreError(404, 'queued message not found');
-      const { next } = taken;
+      // The follow-up stays in the queue (on disk) until the moment it's typed: a
+      // failure, or a restart, anywhere before that leaves it where it was (at most
+      // once, never lost, never twice).
+      const next = this.queues.items(uid).find((q) => q.id === itemId);
+      if (!next) throw new CoreError(404, 'queued message not found', 'queue_item_gone');
       // The snapshot above can predate a delivery that ran while this call
       // waited for the lock. Decide the interrupt from a fresh read inside
       // the lock: pasting onto that stale input state appends this message
-      // to the previous text instead of starting a new turn. Nothing is
-      // typed before this point, so an early failure puts the follow-up
-      // back first in line (at-most-once, never lost, never twice).
-      let live;
-      try {
-        live = (await buildWindows(this.config, this.viewers, this.registry, this.launching)).find((x) => x.uid === uid);
-      } catch (err) {
-        this.queues.requeue(uid, next);
-        throw err;
-      }
-      if (!live) {
-        this.queues.requeue(uid, next);
-        throw new CoreError(404, 'session is not running');
-      }
+      // to the previous text instead of starting a new turn.
+      const live = (await buildWindows(this.config, this.viewers, this.registry, this.launching)).find((x) => x.uid === uid);
+      if (!live) throw new CoreError(404, 'session is not running', 'not_running');
       // A screen in front of the prompt has no turn to stop: the interrupt key would
       // cancel it (Claude Code exits on Esc at its trust prompt) and the text would land
       // in it. It stays first.
       const gate = live.agent && live.status === 'waiting' ? live.ask?.gate : undefined;
-      if (gate) {
-        this.queues.requeue(uid, next);
-        throw new CoreError(409, `${GATE_FIRST[gate.kind]}; the message goes in right after`);
-      }
+      if (gate) throw new CoreError(409, `${GATE_FIRST[gate.kind]}; the message goes in right after`, 'gate_first');
+      // Still queued? (Another device may have removed it while the window was read.)
+      // Checked last before the interrupt: stopping a turn for a message that's gone
+      // would cost the agent its turn for nothing.
+      if (!this.queues.items(uid).some((q) => q.id === itemId)) throw new CoreError(404, 'queued message not found', 'queue_item_gone');
       const stopping = live.status === 'busy' || live.status === 'waiting' || this.justSent(uid);
       if (stopping && live.agent) {
         // Stop the live turn so the urgent message replaces it, then wait
@@ -1507,15 +1610,9 @@ export class Core {
         this.sentAt.delete(uid);
         for (let i = 0; i < 12; i++) {
           const cur = (await buildWindows(this.config, this.viewers, this.registry, this.launching)).find((x) => x.uid === uid);
-          if (!cur) {
-            this.queues.requeue(uid, next);
-            throw new CoreError(404, 'session is not running');
-          }
+          if (!cur) throw new CoreError(404, 'session is not running', 'not_running');
           if (cur.status !== 'busy' && cur.status !== 'waiting') break;
-          if (i === 11) {
-            this.queues.requeue(uid, next);
-            throw new CoreError(409, 'the agent is working; it did not stop after the interrupt');
-          }
+          if (i === 11) throw new CoreError(409, 'the agent is working; it did not stop after the interrupt', 'did_not_stop');
           await sleep(500);
         }
         // The stop threw away anything the agent held unsent, a follow-up ah typed
@@ -1529,10 +1626,12 @@ export class Core {
       if (live.agent) {
         this.sentAt.set(uid, Date.now());
         // The interrupted turn is over; this delivery starts a new one (F39).
-        this.turnPeriod.delete(uid);
-        if (next.enter) await this.captureTurnStart(uid, next.text);
+        this.snapshots.turnOver(uid);
+        if (next.enter) await this.snapshots.turnStart(uid, next.text);
       }
       const mark = live.agent ? await this.queues.markFor(live, next) : null;
+      // Only now out of the queue. Gone already: removed meanwhile (another device).
+      if (!this.queues.take(uid, itemId)) throw new CoreError(404, 'queued message not found', 'queue_item_gone');
       try {
         await t.pasteText(live.id, next.text, next.enter);
         this.queues.delivered(uid, next, mark);
@@ -1541,6 +1640,7 @@ export class Core {
         // goes back first in line. Once any text landed it stays delivered
         // (never twice).
         if (err instanceof t.PasteError && !err.typed) this.queues.requeue(uid, next);
+        else if (next.named) this.queues.noteDelivered(uid, next.id);
         throw err;
       }
       if (next.launchChange) this.applyLaunchChange(uid, next.launchChange);
@@ -1549,95 +1649,17 @@ export class Core {
     });
   }
 
-  // ---------- per-turn snapshots (F39)
-
-  private snapConfig() {
-    return { maxFileBytes: this.config.snapshots?.maxFileBytes ?? 10 * 1024 * 1024, keepTurns: this.config.snapshots?.keepTurns ?? 50, retentionDays: this.config.snapshots?.retentionDays ?? 7 };
-  }
-
-  private snapSettings(uid: string): { enabled: boolean; lastTurn: number } {
-    const s = this.registry.get(uid)?.meta['ah.snapshots'] as { enabled?: unknown; lastTurn?: unknown } | undefined;
-    return { enabled: this.config.snapshots?.enabled !== false && s?.enabled !== false, lastTurn: typeof s?.lastTurn === 'number' ? s.lastTurn : 0 };
-  }
-
-  /** Serialize snapshot work per session: captures and restores never overlap. */
-  private async withSnap<T>(uid: string, fn: () => Promise<T>): Promise<T> {
-    const prior = this.snapLocks.get(uid) ?? Promise.resolve();
-    const task = prior.catch(() => {}).then(fn);
-    this.snapLocks.set(uid, task);
-    try {
-      return await task;
-    } finally {
-      if (this.snapLocks.get(uid) === task) this.snapLocks.delete(uid);
-    }
-  }
-
-  /**
-   * Marks the start of a turn and captures its pre-turn snapshot. Called from
-   * the send path (which knows the prompt and runs before the paste) and from
-   * the ticker's status transitions (terminal-typed turns, where the prompt
-   * is unknown). One capture per turn period; failures are silent because a
-   * snapshot must never block or break a turn.
-   */
-  captureTurnStart(uid: string, promptText: string): Promise<SnapshotInfo | null> {
-    if (this.turnPeriod.has(uid)) return Promise.resolve(null);
-    this.turnPeriod.add(uid);
-    return this.captureSnapshot(uid, 'turn', promptText).catch((err) => {
-      console.error(`snapshot capture for ${uid} failed:`, err);
-      return null;
-    });
-  }
-
-  private async captureSnapshot(uid: string, kind: 'turn' | 'safety', promptText: string): Promise<SnapshotInfo | null> {
-    return this.withSnap(uid, async () => {
-      const rec = this.registry.get(uid);
-      if (!rec || !rec.harness || rec.harness === 'shell') return null;
-      const settings = this.snapSettings(uid);
-      if (kind !== 'safety' && !settings.enabled) return null;
-      const cwd = expandHome(rec.cwd);
-      if (!(await isDir(cwd))) return null;
-      const latest = await this.snapshotStore.latest(uid).catch(() => null);
-      const turn = Math.max(settings.lastTurn, latest?.turn ?? 0) + 1;
-      let made;
-      try {
-        made = await createSnapshot(cwd, {
-          uid,
-          turn,
-          indexFile: join(STATE_DIR, 'snapshots', uid, `index-${turn}`),
-          parent: latest?.commit ?? null,
-          maxFileBytes: this.snapConfig().maxFileBytes,
-        });
-      } catch {
-        return null; // not a git repo, or git refused: snapshots are unavailable here
-      }
-      const diff = await snapshotDiff(cwd, latest?.commit ?? null, made.commit).catch(() => ({ filesChanged: 0, insertions: 0, deletions: 0 }));
-      const info = await this.snapshotStore.create({
-        uid,
-        turn,
-        commit: made.commit,
-        repoRoot: await mainRepo(cwd),
-        kind,
-        promptExcerpt: promptText.replace(/\s+/g, ' ').trim().slice(0, 120),
-        branch: made.branch,
-        createdAt: now(),
-        ...diff,
-        skipped: made.skipped,
-        submodules: made.submodules,
-      });
-      this.registry.setMeta(uid, 'ah.snapshots', { enabled: settings.enabled, lastTurn: turn });
-      return info;
-    });
-  }
+  // ---------- per-turn snapshots (F39): turnSnapshots.ts captures; restoring stops the agent first
 
   async listSnapshots(uid: string): Promise<{ snapshots: SnapshotInfo[]; enabled: boolean; available: boolean; partial: boolean; branch: string | null }> {
     const rec = this.registry.get(uid);
-    if (!rec) throw new CoreError(404, 'session not found');
-    const snapshots = await this.snapshotStore.list(uid).catch(() => []);
+    if (!rec) throw new CoreError(404, 'session not found', 'session_not_found');
+    const snapshots = await this.snapshots.list(uid);
     const available = !!rec.harness && rec.harness !== 'shell' && await mainRepo(expandHome(rec.cwd)).then(() => true).catch(() => false);
     const w = (await this.current()).windows.find((x) => x.uid === uid);
     return {
       snapshots,
-      enabled: this.snapSettings(uid).enabled,
+      enabled: this.snapshots.settings(uid).enabled,
       available,
       // Turns typed straight into the raw terminal are captured from status
       // transitions only when hooks report them exactly.
@@ -1648,9 +1670,8 @@ export class Core {
 
   setSnapshotsEnabled(uid: string, enabled: boolean) {
     const rec = this.registry.get(uid);
-    if (!rec) throw new CoreError(404, 'session not found');
-    this.registry.setMeta(uid, 'ah.snapshots', { enabled, lastTurn: this.snapSettings(uid).lastTurn });
-    if (!enabled) this.turnPeriod.delete(uid);
+    if (!rec) throw new CoreError(404, 'session not found', 'session_not_found');
+    this.snapshots.setEnabled(uid, enabled);
     this.tick().catch(() => {});
   }
 
@@ -1662,9 +1683,9 @@ export class Core {
    */
   async restoreSnapshot(uid: string, turn: number, opts: { interrupt?: boolean } = {}): Promise<{ safety: SnapshotInfo; restored: SnapshotInfo; notified: boolean }> {
     const rec = this.registry.get(uid);
-    if (!rec) throw new CoreError(404, 'session not found');
-    const target = await this.snapshotStore.get(uid, turn).catch(() => null);
-    if (!target) throw new CoreError(404, 'snapshot not found');
+    if (!rec) throw new CoreError(404, 'session not found', 'session_not_found');
+    const target = await this.snapshots.get(uid, turn);
+    if (!target) throw new CoreError(404, 'snapshot not found', 'snapshot_not_found');
     // A just-finished turn can still read as busy for a few seconds (the
     // submit-protection window in tick): give a working agent a short grace
     // to finish on its own before calling it busy.
@@ -1676,7 +1697,7 @@ export class Core {
     const out = await this.withInput(uid, async () => {
       w = (await buildWindows(this.config, this.viewers, this.registry, this.launching)).find((x) => x.uid === uid);
       if (w && (w.status === 'busy' || w.status === 'waiting' || this.justSent(uid))) {
-        if (!opts.interrupt) throw new CoreError(409, 'the agent is working; stop it first or confirm the interrupt');
+        if (!opts.interrupt) throw new CoreError(409, 'the agent is working; stop it first or confirm the interrupt', 'busy');
         await this.sendInterrupt(w);
         this.sentAt.delete(uid);
         for (let i = 0; i < 12; i++) {
@@ -1684,11 +1705,11 @@ export class Core {
           w = (await buildWindows(this.config, this.viewers, this.registry, this.launching)).find((x) => x.uid === uid);
           if (!w || (w.status !== 'busy' && w.status !== 'waiting')) break;
         }
-        if (w && (w.status === 'busy' || w.status === 'waiting')) throw new CoreError(409, 'the agent is working; it did not stop after the interrupt');
+        if (w && (w.status === 'busy' || w.status === 'waiting')) throw new CoreError(409, 'the agent is working; it did not stop after the interrupt', 'did_not_stop');
       }
-      this.turnPeriod.add(uid);
+      this.snapshots.holdTurn(uid);
       const cwd = expandHome(rec.cwd);
-      const safety = await this.captureSnapshot(uid, 'safety', `Before restoring turn ${turn}`);
+      const safety = await this.snapshots.safety(uid, `Before restoring turn ${turn}`);
       if (!safety) throw new CoreError(400, 'could not snapshot the current state; nothing was restored');
       try {
         await restoreSnapshotFiles(cwd, { target: target.commit, current: safety.commit, indexFile: join(STATE_DIR, 'snapshots', uid, 'index-restore') });
@@ -1723,24 +1744,8 @@ export class Core {
    * after it ends, and each session keeps at most keepTurns of them. Pruned
    * rows lose their git refs too, so their commits become collectable.
    */
-  async pruneSnapshots(): Promise<void> {
-    const { keepTurns, retentionDays } = this.snapConfig();
-    const rows = await this.snapshotStore.all().catch(() => []);
-    const byUid = new Map<string, SnapshotInfo[]>();
-    for (const r of rows) byUid.set(r.uid, [...(byUid.get(r.uid) ?? []), r]);
-    for (const [uid, list] of byUid) {
-      const rec = this.registry.get(uid);
-      const last = list[list.length - 1];
-      const expired = rec?.endedAt
-        ? now() - rec.endedAt > retentionDays * 86_400
-        : !rec && last && now() - last.createdAt > retentionDays * 86_400;
-      const doomed = expired ? list : list.slice(0, Math.max(0, list.length - keepTurns));
-      for (const row of doomed) {
-        const repo = row.repoRoot || (rec ? expandHome(rec.cwd) : null);
-        if (repo) await deleteSnapshotRef(repo, uid, row.turn);
-        await this.snapshotStore.remove(uid, row.turn).catch(() => {});
-      }
-    }
+  pruneSnapshots(): Promise<void> {
+    return this.snapshots.prune();
   }
 
   // ---------- small mutations
@@ -1790,7 +1795,7 @@ export class Core {
 
   async forget(ref: string) {
     const rec = this.registry.get(ref);
-    if (rec && (rec.lifecycle === 'live' || rec.lifecycle === 'starting')) throw new CoreError(409, 'session is running');
+    if (rec && (rec.lifecycle === 'live' || rec.lifecycle === 'starting')) throw new CoreError(409, 'session is running', 'running');
     if (rec) this.registry.remove(ref);
     else this.hidden.add(ref);
     if (rec?.harnessId) this.hidden.add(`${rec.harness}:${rec.harnessId}`);

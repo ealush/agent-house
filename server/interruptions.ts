@@ -21,6 +21,7 @@ import type { Entry } from './feed/schema.ts';
 import type { QueueItem } from './queue.ts';
 import type { SessionRecord } from './registry.ts';
 import type { ServerSeen } from './tmux.ts';
+import { DomainError } from './errors.ts';
 
 export type InterruptCause = 'tmux_server' | 'host_restart' | 'window';
 
@@ -47,13 +48,10 @@ export type InterruptionsState = { count: number; midTurn: number; incidents: In
 
 export const INTERRUPTED = 'ah.interrupted';
 
-export class InterruptionError extends Error {
-  status: number;
-  code: string;
+export class InterruptionError extends DomainError {
+  declare readonly code: string;
   constructor(status: number, code: string, message: string) {
-    super(message);
-    this.status = status;
-    this.code = code;
+    super(status, message, code);
   }
 }
 

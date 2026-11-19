@@ -1,3 +1,4 @@
+import '../test/scratch.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Http2Server, type ServerHttp2Stream } from 'node:http2';

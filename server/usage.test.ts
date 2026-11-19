@@ -1,3 +1,4 @@
+import '../test/scratch.ts';
 // Usage: what's counted (once), from where, what it would cost at list price, and
 // what stays unknown.
 import { test } from 'node:test';

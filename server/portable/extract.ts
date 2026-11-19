@@ -17,14 +17,12 @@ import { join, relative, isAbsolute } from 'node:path';
 import { ADAPTERS, DOC_ADAPTERS, type Adapter, type DocAdapter } from '../feed/feed.ts';
 import type { Entry, Part } from '../feed/schema.ts';
 import { PORTABLE_FORMAT, PORTABLE_VERSION, type Limitation, type PortableArtifact, type PortableAttachment, type PortableConversation, type PortableMessage, type PortablePart, type PortableSummary } from './schema.ts';
+import { DomainError } from '../errors.ts';
 
-export class PortableError extends Error {
-  status: number;
-  code: string;
+export class PortableError extends DomainError {
+  declare readonly code: string;
   constructor(status: number, code: string, message: string) {
-    super(message);
-    this.status = status;
-    this.code = code;
+    super(status, message, code);
   }
 }
 

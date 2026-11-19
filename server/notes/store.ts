@@ -9,6 +9,7 @@
 // and project) gets the same answer; the same id with anything else is a new write, checked
 // like one. Deleting leaves a tombstone, so a device that was offline can't bring a note back.
 import type { PrismaClient, Note } from '@prisma/client';
+import { DomainError } from '../errors.ts';
 
 /** A note as the API shows it. Times are seconds since the epoch, as everywhere in ah. */
 export type NoteView = {
@@ -32,15 +33,12 @@ export type NoteExport = { host: string; path: string; revision: number; at: num
 /** What the state stream says about notes: clients pull `?since=` when `cursor` moves. */
 export type NotesState = { cursor: number; count: number };
 
-export class NoteError extends Error {
-  status: number;
-  code: string;
+export class NoteError extends DomainError {
+  declare readonly code: string;
   /** The note as the host has it, for a refused write (conflict, deleted). */
   note?: NoteView;
   constructor(status: number, code: string, message: string, note?: NoteView) {
-    super(message);
-    this.status = status;
-    this.code = code;
+    super(status, message, code);
     if (note) this.note = note;
   }
 }
