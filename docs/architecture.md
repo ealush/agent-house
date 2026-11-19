@@ -91,6 +91,9 @@ Locks (all in-process, per session): the **input lock** (`Core.withInput`) seria
 everything typed into a session; snapshots have their own (`TurnSnapshots.exclusive`).
 Nothing holding the input lock may wait on a pass (`tick()`): a pass delivers queued
 follow-ups through the same lock, so the two would wait on each other forever.
+Reading tmux into windows (`buildWindows`) is one read at a time: a read registers what
+it finds (a new window gets its uid), so two overlapping reads could register one
+window twice.
 Neither survives a restart: what must survive is on disk first (the queue, the
 delivered-id ledger, the dispatch row).
 
