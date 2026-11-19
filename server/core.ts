@@ -602,6 +602,12 @@ export class Core {
       const w = state.windows.find((w) => w.uid === rec.id);
       if (w) return { uid: rec.id, windowId: w.id, resumed: false };
     }
+    // The conversation already runs in another window (relaunched under a new uid, or
+    // resumed from another device): that's where it is, not a second agent on it.
+    if (rec?.harnessId) {
+      const running = state.windows.find((w) => w.uid !== rec.id && w.agent === rec.harness && w.harnessId === rec.harnessId);
+      if (running) return { uid: running.uid, windowId: running.id, resumed: false };
+    }
 
     let harness: string;
     let harnessId: string | undefined;
