@@ -1,10 +1,10 @@
 # Server architecture
 
 How `server/` is put together, which rules hold, and where each kind of code goes.
-The rules below marked **checked** are enforced by tests (`test/architecture.test.ts`,
-`server/errors.test.ts`, `server/routes.test.ts`);
-the rest are conventions a reviewer holds you to. Keep this page current: change it in
-the same commit as the code it describes.
+Rules marked *(checked)* are enforced by tests (`test/architecture.test.ts`,
+`server/errors.test.ts`, `server/routes.test.ts`, `test/contract.test.ts`); the rest
+are conventions a reviewer holds you to. Keep this page current: change it in the same
+commit as the code it describes.
 
 ## Shape: a modular monolith, functional core, imperative shell
 
@@ -17,7 +17,13 @@ peer hosts. Inside it:
 | **Application services** | A context's use cases (send a note, run a job, recover a session). Orchestrate effects through *ports* they're handed (a `deps` object, a `PrismaClient` passed in). | Core; ports (interfaces) only. |
 | **Infrastructure** | tmux, processes, the filesystem, Prisma, gh/git, providers, APNs/Web Push. | Node, packages. Never routes. |
 | **Delivery** | `admission.ts` (who gets in), `api/*.ts` (one route table per context), the sub-routers (`review/api.ts`, `jobs/api.ts`, …), SSE, the terminal WebSocket, the CLI. Decode and validate input, authorize, call one use case, map its outcome to the protocol. | Application services, `http.ts`, `errors.ts`. |
-| **Composition root** | `main.ts`: builds every service, connects their ports, starts the server. The only place that knows every context. | Everything. Nothing depends on it. |
+| **Composition root** | `main.ts`: builds every service, connects their ports (`core.connect`, each context's `deps`), starts the server. The only place that knows every context. | Everything. Nothing depends on it. |
+
+A request, end to end: `handle()` (main.ts) → the gate (`gate.ts`: Host, Serve
+identity) → `admitRequest()` (`admission.ts`: CSRF, `/h/<host>`, default deny) →
+`api()` → the first matching route in its context's table (`api/<context>.ts`) →
+one service call → `send()`; any `DomainError` on the way becomes its status and
+`{ error, code? }` (`errorReply()`), anything else a logged 500.
 
 ## Rules
 
@@ -42,59 +48,96 @@ peer hosts. Inside it:
    composition root implements its ports, through `SessionGateway` where they're
    about sessions.
 7. **Who gets in is one pure decision.** `admission.ts` decides every request and
-   WebSocket upgrade that passed the gate (Host and Serve identity): CSRF (X-AH plus
-   ah's own Origin, or the native app with nothing ambient), `/h/<host>` routing, and
-   default deny outside `PUBLIC_ROUTES`. `handle()` and `upgrade()` only gather the facts
-   and carry out the answer. Change a rule there, with its test, never in a handler.
+   WebSocket upgrade that passed the gate: CSRF (X-AH plus ah's own Origin, or the
+   native app with nothing ambient), `/h/<host>` routing, and default deny outside
+   `PUBLIC_ROUTES`. `handle()` and `upgrade()` only gather the facts and carry out the
+   answer. Change a rule there, with its test, never in a handler.
 8. **Routes live in their context's table.** `server/api/<context>.ts` exports
    `<context>Routes(deps)`: an ordered list of `route(method, /^…$/, handler)`, given
-   only the services it uses. `api/index.ts` puts the tables together; main.ts hands
-   in the services. The full list is pinned in `docs/spec/api-routes.txt`
-   (`server/routes.test.ts`, which also fails on a route shadowed by an earlier one
-   and on a public route that admission doesn't let through). *(checked)*
+   only the services it uses. `api/index.ts` puts the tables together. The full list is
+   pinned in `docs/spec/api-routes.txt` (`server/routes.test.ts`, which also fails on a
+   route shadowed by an earlier one and on a public route admission doesn't let
+   through). *(checked)*
 9. **Wire shapes are contracts.** Paths, field names, status codes, error `code`s, SSE
    frames and WebSocket close codes are consumed by ah-native and the web client.
    Change them only additively, and announce new capabilities in `features.ts`;
-   `API_VERSION` (core.ts) must stay 28 while the native app checks it for equality. `test/contract.test.ts` pins what clients read
-   (hello, auth status, state, capabilities, the first SSE frame, a send, a queue, the
-   error body) in `docs/spec/wire-shapes.txt`: every listed field must stay, with its
-   type; additions are fine. *(checked)*
+   `API_VERSION` (core.ts) stays 28 while the native app checks it for equality.
+   `test/contract.test.ts` pins what clients read (hello, auth status, state,
+   capabilities, the first SSE frame, a send, a queue, the error body) in
+   `docs/spec/wire-shapes.txt`: every listed field must stay, with its type. *(checked)*
+
+## Effects, commit points and what a crash leaves
+
+The operations that span more than one effect, in the order they take them, and why.
+
+| Operation | Order | A crash or failure in between leaves |
+|---|---|---|
+| Start a session (`Core.launch`) | window → its options → registry `starting` (returns an undo) → command | `abandonStart(undo)`: a new record goes; a resumed one is put back as it was, its queue (and follow-ups taken from sibling records) returned. Never a deleted session. |
+| Send (`Core.send`) | resume if needed → input lock → queued? delivered? (by `id`) → snapshot → paste → note the id | A named message asked again answers `queued` / `delivered`; nothing is typed twice. Unnamed sends are new messages. A send to an ended record whose conversation runs in another window (relaunched) goes to that window; nothing new starts. |
+| Deliver a queued follow-up (`deliverDue`, `sendNow`) | input lock → snapshot → **take** → paste → note the id | The follow-up stays queued (on disk) until the instant it's typed. A paste that typed nothing goes back first; once text landed it counts as delivered. |
+| Answer a prompt (`answer`, `choose`, a free-text answer by `send`) | input lock → re-read the window (never a `tick()` under the lock) → claim the prompt (`AnswerGuard`) → keys | A second answer to the prompt just answered is 409 `already_answered` (a free-text one is queued); keys that failed release the claim. The hold lasts until a pass sees the prompt go, or 4 s. |
+| Stop | input lock, waited for at most 1 s → keys | Not between a send's paste and its Enter; never more than a second late. |
+| Relaunch | new window → input lock → kill the old one | A message that went in since relaunch's check cancels it; a message to the old uid afterwards follows the conversation. |
+| Hand a note to an agent (`notes/handoff.ts`) | row `sending` → send (named) → wait for the queue on disk → row | Uncertain until confirmed; a retry is the same write. |
+| Dispatch review findings (`ReviewService.dispatch`) | dispatch row → send named `rd-<id>` → queue id | A failed send removes the row; a sent one is never unrecorded. |
+| Registry writes (`Registry.flush`) | changed rows + deletions, one write at a time | A failed write is pending again (rows and deletions): the next flush retries. |
+
+Locks (all in-process, per session): the **input lock** (`Core.withInput`) serializes
+everything typed into a session; snapshots have their own (`TurnSnapshots.exclusive`).
+Nothing holding the input lock may wait on a pass (`tick()`): a pass delivers queued
+follow-ups through the same lock, so the two would wait on each other forever.
+Neither survives a restart: what must survive is on disk first (the queue, the
+delivered-id ledger, the dispatch row).
 
 ## Bounded contexts
 
 | Context | Owns | Lives in | Talks to the rest through |
 |---|---|---|---|
-| Sessions & lifecycle | The registry of sessions (uid ↔ tmux window ↔ conversation), launch, resume, fork, status, the state stream | `core.ts`, `sessions.ts`, `registry.ts`, `launch.ts`, `tmux.ts` | `Core` (the only god object left; being split) |
-| Messaging & delivery | Typing into an agent, the per-session queue, delivery confirmation | `queue.ts`, `core.ts` (send/sendNow) | `Core.send` → `SendResult` |
-| Screens & answers | Reading an agent's screen: pickers, questions, sign-in/trust gates | `choices.ts`, `agentgate.ts` (pure), `core.ts` (answering) | `WindowView.ask` |
+| Sessions & lifecycle | The registry of sessions (uid ↔ tmux window ↔ conversation), launch, resume, fork, status, the state stream | `core.ts`, `sessions.ts`, `registry.ts`, `launch.ts`, `tmux.ts`, `stateStream.ts` | `SessionGateway` (for other contexts), `Core` (for routes) |
+| Messaging & delivery | Typing into an agent, the per-session queue, delivery confirmation, the delivered-id ledger | `queue.ts`, `core.ts` (send, sendNow) | `Core.send` → `SendResult` |
+| Screens & answers | Reading an agent's screen (pickers, questions, sign-in/trust gates), answering it once | `choices.ts`, `agentgate.ts`, `answers.ts` (pure), `core.ts` (answering) | `WindowView.ask`, `askId` |
+| Turn snapshots | The tree before each turn, the per-session switch, retention | `turnSnapshots.ts`, `snapshots.ts`; restore in `core.ts` | `Core.listSnapshots`, `restoreSnapshot` |
 | Conversations & feeds | Transcripts on disk, per-harness adapters, the feed stream | `feed/`, `discovery.ts`, `replies.ts`, `search.ts` | `feedPage`, `streamFeed`, `discover` |
 | Portability & migration | Continuing a conversation in another agent or host | `portable/`, `migrate/`, `fork.ts` | `PortableService`, `MigrationService` deps |
 | Jobs | Scheduled and conditional runs | `jobs/` | `SchedulerDeps` |
 | Recovery & interruptions | Sessions cut off or stuck on a provider error | `recovery/`, `interruptions.ts` | `RecoveryDeps`, `InterruptionDeps` |
 | Notes | Scratchpads synced by revision, handed to agents | `notes/` | `NotesStore`, `Handoffs` deps |
-| Review | Stacked PRs, reviewer chats, merges | `review/` | `ReviewService` deps |
-| Identity & access | Passkeys, native devices, tokens, the gate | `auth.ts`, `gate.ts` | `Auth.identify` → `Caller` |
+| Review | Stacked PRs, reviewer chats, merges | `review/` (`view.ts`, `owners.ts`, `stack.ts` pure) | `ReviewService` deps |
+| Identity & access | Passkeys, native devices, tokens, the gate, admission | `auth.ts`, `gate.ts`, `admission.ts` | `Auth.identify` → `Caller` |
 | Hosts | Peers, proxying `/h/<host>/…` | `peers.ts` | `Peers` |
 | Files & uploads | Rooted file access, streamed uploads | `files.ts`, `uploads.ts` | `safePath`, `receive` |
 | Voice, side chats, subscriptions | Provider calls through your subscriptions | `voice.ts`, `sidechat.ts` | `VoiceService`, `SideChatStore` |
 | Attention | Web Push, APNs, Live Activities | `push.ts`, `apns.ts` | `Push.alert` |
 | Usage | Tokens and limits from transcripts | `usage/` | `UsageDeps` |
 
+## Decisions
+
+- **Late binding through one typed call, not constructor injection.** Core and the
+  contexts built on it need each other (review shows in the state; review sends
+  through Core). `core.connect({...})` takes every connection at once, required by its
+  type, once; contexts get `deps` objects. A DI container would hide the same graph.
+- **Route tables, not a framework.** `route(method, regex, handler)` and a first-match
+  `match()` are 40 lines; the manifest test pins the result. Handlers keep using
+  `send`/`readJson`/`str` directly.
+- **At most once for typed text.** When ah can't tell whether text reached the agent
+  (a paste that partly landed), it counts as delivered: a lost message is visible and
+  can be sent again, a duplicate turn can't be taken back. Named messages make the
+  retry safe.
+- **Contracts are additive and observed.** The wire-shape manifest is generated from a
+  running host and only ever checked for removals and retypes.
+
 ## Known debt (ranked)
 
-Kept current as layers land; the PR stack `arch/*` works down this list.
-
-1. ~~`main.ts` is the composition root *and* the whole HTTP layer.~~ Admission is
-   `admission.ts`; routes are `api/*.ts`. main.ts (870 lines) is the composition root,
-   the static file server and the WebSocket upgrade. The adapters it builds for each
-   context are still inline (next item).
-2. ~~The adapters main.ts hands each context duplicate the same rules.~~ What other
-   contexts need from sessions (start a configured agent, resolve a ref, find a
-   transcript, send as a program) is `SessionGateway` (`sessionGateway.ts`), once.
-3. ~~`Core` is wired by assigning public fields after construction.~~ The composition
-   root calls `core.connect({...})` once; every connection is required by its type.
-4. `Core.tick` still mixes reading tmux, adopting transcripts, queue delivery and
-   snapshots in one pass. (The state stream's diff is out: `stateStream.ts`, pure.)
-5. `review/service.ts` (1,900 lines) still holds the sync, merge and dispatch decisions
-   next to their gh/git effects. (The stack view is out: `review/view.ts`, pure, with
-   one owner rule in `review/owners.ts`.)
+1. **Core still reaches tmux directly** (`import * as t`): its ordering guarantees
+   (Stop between a paste and its Enter, a double answer) can only be tested end to end
+   with a fake agent. A `Terminal` port handed to Core would make them unit-testable.
+2. **`Core.tick` is one long pass**: reading tmux, adopting transcripts, queue delivery,
+   snapshots, alerts. Its pure parts (the state diff, turn boundaries, answer holds)
+   are out; the pass's own ordering is still implicit.
+3. **`review/service.ts` (1,900 lines)** still holds sync, merge and dispatch decisions
+   next to their gh/git effects (`layerNeeds`, merge runs, the dispatch watcher). Its
+   merge state (`merging`, `settle`) lives in memory and is lost on restart.
+4. **Locks are per process.** Two ah processes on one database (a misconfigured
+   second instance, the CLI writing) aren't serialized; invariants that must hold
+   across processes (one open review per PR, one position per layer) have no database
+   constraint.
