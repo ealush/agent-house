@@ -38,7 +38,12 @@ peer hosts. Inside it:
    context calls `scheduler.create(…)`, never reads the scheduler's tables.
 6. **Ports are narrow and named for what the caller needs** (`send`, `resolve`,
    `queueIds`), not for how the host does it. A context never imports `core.ts`.
-7. **Wire shapes are contracts.** Paths, field names, status codes, error `code`s, SSE
+7. **Who gets in is one pure decision.** `admission.ts` decides every request and
+   WebSocket upgrade that passed the gate (Host and Serve identity): CSRF (X-AH plus
+   ah's own Origin, or the native app with nothing ambient), `/h/<host>` routing, and
+   default deny outside `PUBLIC_ROUTES`. `handle()` and `upgrade()` only gather the facts
+   and carry out the answer. Change a rule there, with its test, never in a handler.
+8. **Wire shapes are contracts.** Paths, field names, status codes, error `code`s, SSE
    frames and WebSocket close codes are consumed by ah-native and the web client.
    Change them only additively, and announce new capabilities in `features.ts`;
    `API_VERSION` (core.ts) must stay 28 while the native app checks it for equality.
@@ -68,8 +73,8 @@ peer hosts. Inside it:
 Kept current as layers land; the PR stack `arch/*` works down this list.
 
 1. `main.ts` is the composition root *and* the whole HTTP layer (2,100 lines, ~150
-   routes in one `if` chain). Routes should be per-context modules; the request
-   pipeline (gate → CSRF → host → default-deny) a small, separately tested unit.
+   routes in one `if` chain). Routes should be per-context modules. (The admission
+   policy is out: `admission.ts`.)
 2. The adapters main.ts hands each context duplicate the same rules: "a uid or
    `harness:harnessId`" is resolved in three places, "launch a preset" in four.
 3. `Core` is wired by assigning public fields after construction (`core.reviewState =`,

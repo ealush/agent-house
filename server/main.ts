@@ -46,6 +46,7 @@ import { Auth, clearCookies, type Caller } from './auth.ts';
 import { Gate, LOOPBACK_BIND, servedAt } from './gate.ts';
 import { Apns } from './apns.ts';
 import { errorReply } from './errors.ts';
+import { admitRequest, admitUpgrade } from './admission.ts';
 import { HttpError, send, readBody, readJson, str, safeDecode } from './http.ts';
 import { admit, declaredLength, streamToFile, sweepParts } from './uploads.ts';
 import { rebuildFailure, rebuildWeb } from './rebuild.ts';
@@ -466,39 +467,6 @@ const peers = new Peers(config.peers, PORT);
 core.peers = peers;
 setRoots(config.files.roots.map(expandHome));
 
-
-/** Routes reachable without signing in: only what's needed to sign in. Everything else is denied. */
-export const PUBLIC_ROUTES = new Set([
-  'GET /api/hello',
-  'GET /api/auth/status',
-  'POST /api/auth/register/options', // needs a host-issued setup code (or a session) inside
-  'POST /api/auth/register/verify',
-  'POST /api/auth/login/options',
-  'POST /api/auth/login/verify',
-  'POST /api/auth/password/login',
-  'POST /api/auth/logout',
-  // The native app's sign-in: enrollment still needs a host-issued code (or a session) inside.
-  'POST /api/auth/native/enroll/options',
-  'POST /api/auth/native/enroll/verify',
-  'POST /api/auth/native/login/options',
-  'POST /api/auth/native/login/verify',
-]);
-
-/** Native sign-in routes: writes before there is a caller, so they can't carry a bearer yet. */
-const NATIVE_SIGN_IN = /^(?:\/h\/[\w.-]{1,64})?\/api\/auth\/native\/(?:enroll|login)\/(?:options|verify)$/;
-
-/**
- * The native app has no Origin: it isn't a web page. Its writes and terminals skip the
- * same-Origin check only when nothing ambient rides along: no Origin and no cookie, and
- * either a native bearer sign-in or the native sign-in routes themselves. A browser always
- * sends Origin on writes and WebSockets, can't attach Authorization or X-AH cross-site
- * without a preflight ah never grants, and never sees a native bearer secret, so the
- * browser's CSRF defenses are unchanged.
- */
-function nativeWithoutOrigin(req: IncomingMessage, caller: Caller | null, path: string): boolean {
-  if (req.headers.origin !== undefined || req.headers.cookie !== undefined) return false;
-  return auth.isNative(caller) || NATIVE_SIGN_IN.test(path);
-}
 
 function audit(req: IncomingMessage, event: string, detail: Record<string, unknown> = {}) {
   auth.audit(event, { ...detail, from: String(req.headers['tailscale-user-login'] ?? 'local') });
@@ -1827,31 +1795,28 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   const method = req.method ?? 'GET';
   try {
     const caller = auth.identify(req);
-    // CSRF: a custom header can't be sent cross-site without a preflight we never answer.
-    if (method !== 'GET' && method !== 'HEAD' && (req.headers['x-ah'] !== '1' || !(gate.originOk(req) || nativeWithoutOrigin(req, caller, safeDecode(url.pathname))))) throw new HttpError(403, 'forbidden');
-
-    // /h/<host>/… addresses a host: ourselves (served here) or a peer (proxied).
-    let path = safeDecode(url.pathname);
-    const h = path.match(/^\/h\/([\w.-]{1,64})(\/.*)$/);
-    if (h && h[1] !== hostName()) {
-      if (!caller) throw new HttpError(401, 'sign in required');
-      const peer = peers.get(h[1]);
-      if (!peer) throw new HttpError(502, `host ${h[1]} is offline`);
-      return await proxyHttp(peer, h[2] + url.search, req, res);
+    const decoded = safeDecode(url.pathname);
+    const admission = admitRequest({
+      method,
+      path: decoded,
+      origin: req.headers.origin !== undefined,
+      cookie: req.headers.cookie !== undefined,
+      sameOrigin: gate.originOk(req),
+      csrfHeader: req.headers['x-ah'] === '1',
+      signedIn: !!caller,
+      native: auth.isNative(caller),
+      self: hostName(),
+    });
+    if (admission.kind === 'deny') throw new HttpError(admission.status, admission.reason);
+    if (admission.kind === 'peer') {
+      const peer = peers.get(admission.host);
+      if (!peer) throw new HttpError(502, `host ${admission.host} is offline`);
+      return await proxyHttp(peer, admission.path + url.search, req, res);
     }
-    if (h) {
-      path = h[2];
-      url = new URL(h[2] + url.search, 'http://x');
-      if (path.startsWith('/h/')) throw new HttpError(404, 'not found');
-    }
-
-    if (path.startsWith('/api/')) {
-      // Default deny (invariant 4).
-      if (!caller && !PUBLIC_ROUTES.has(`${method} ${path}`)) throw new HttpError(401, 'sign in required');
-      return await api(req, res, url, path, caller);
-    }
-    if (method !== 'GET' && method !== 'HEAD') throw new HttpError(405, 'method not allowed');
-    await serveStatic(req, res, url.pathname);
+    // /h/<this host>/… is served here, as if the prefix weren't there.
+    const target = admission.path === decoded ? url : new URL(admission.path + url.search, 'http://x');
+    if (admission.kind === 'api') return await api(req, res, target, admission.path, caller);
+    await serveStatic(req, res, target.pathname);
   } catch (err) {
     const reply = errorReply(err);
     if (reply.internal) console.error(err);
@@ -1901,23 +1866,24 @@ function upgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
   };
   const verdict = gate.check(req);
   if (!verdict.ok) return reject(`${verdict.status} Forbidden`);
-  // A WebSocket has no preflight: a browser's needs ah's exact Origin. The native app's
-  // carries its bearer sign-in and no Origin or cookie at all.
   const caller = auth.identify(req);
-  const native = req.headers.origin === undefined && req.headers.cookie === undefined && auth.isNative(caller);
-  if (!gate.originOk(req) && !native) return reject('403 Forbidden');
-  let url: URL;
+  let url: URL | null = null;
   try {
     url = new URL(req.url ?? '/', 'http://x');
-  } catch {
-    return reject('400 Bad Request');
-  }
-  const m = safeDecode(url.pathname).match(/^(?:\/h\/([\w.-]{1,64}))?\/ws\/(@\d+)$/);
-  if (!m) return reject('404 Not Found');
-  if (!caller) return reject('401 Unauthorized');
-  const [, host, windowId] = m;
-  const peer = host && host !== hostName() ? peers.get(host) : null;
-  if (host && host !== hostName() && !peer) return reject('502 Bad Gateway');
+  } catch {}
+  const admission = admitUpgrade({
+    path: url && safeDecode(url.pathname),
+    origin: req.headers.origin !== undefined,
+    cookie: req.headers.cookie !== undefined,
+    sameOrigin: gate.originOk(req),
+    signedIn: !!caller,
+    native: auth.isNative(caller),
+    self: hostName(),
+  });
+  if (admission.kind === 'reject' || !url || !caller) return reject(admission.kind === 'reject' ? admission.status : '400 Bad Request');
+  const { host, windowId } = admission;
+  const peer = host ? peers.get(host) : null;
+  if (host && !peer) return reject('502 Bad Gateway');
 
   wss.handleUpgrade(req, socket, head, (ws) => {
     ws.on('pong', () => missed.delete(ws));

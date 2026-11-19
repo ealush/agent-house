@@ -107,6 +107,7 @@ test('reading the config never loads a service or the database', () => {
 // Each runs in a unit test with plain values or fakes. Add to this list; don't remove from it.
 const CORE = [
   'errors.ts',
+  'admission.ts',
   'features.ts',
   'choices.ts',
   'agentgate.ts',
